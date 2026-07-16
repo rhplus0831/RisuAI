@@ -496,6 +496,34 @@ export async function listPendingMutations(): Promise<PendingMutationOutboxEntry
 }
 
 /**
+ * Count the current writer/database's raw encrypted rows without decrypting
+ * them. Startup uses this after replay so an unreadable intent cannot be
+ * mistaken for an empty outbox and followed by stale authoritative hydration.
+ */
+export async function countPendingMutationRecords(): Promise<number | null> {
+  const scope = pendingMutationScope
+  if (!scope) return 0
+  if (typeof globalThis.indexedDB === 'undefined') return 0
+  const database = await openOutboxDatabase()
+  if (!database) return null
+
+  try {
+    const transaction = database.transaction(OUTBOX_MUTATION_STORE, 'readonly')
+    const stored = await requestResult<StoredPendingMutation[]>(transaction.objectStore(OUTBOX_MUTATION_STORE).getAll())
+    await transactionDone(transaction)
+    return stored.filter(
+      (candidate) =>
+        candidate.ownerWriterSessionId === scope.writerSessionId &&
+        candidate.writerEpoch === scope.writerEpoch &&
+        candidate.databaseLineage === scope.databaseLineage,
+    ).length
+  } catch (error) {
+    reportPersistenceWarning('Unable to count pending server mutations', error)
+    return null
+  }
+}
+
+/**
  * Read the transitive closure of older generations that this mutation owns or
  * depends on. A dependency introduced by an older predecessor only reaches
  * rows older than that predecessor, preserving the durable global-order

@@ -554,6 +554,7 @@ export interface PatchServerBackedSettingsInput {
   mutationId?: string
   databaseLineage?: string
   executionWrapper?: ServerCommandExecutionWrapper
+  failureRollbackDisposition?: ServerCommandFailureRollbackDispositionResolver
 }
 
 export type PresetSnapshot = Record<string, unknown> & {
@@ -1552,6 +1553,7 @@ export interface RunServerPresetCommandInput<T extends Record<string, unknown> =
   mutationId?: string
   databaseLineage?: string
   executionWrapper?: ServerCommandExecutionWrapper
+  failureRollbackDisposition?: ServerCommandFailureRollbackDispositionResolver
 }
 
 export type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
@@ -1570,7 +1572,14 @@ export interface ServerCommandTransportOptions {
   mutationId?: string
   databaseLineage?: string
   executionWrapper?: ServerCommandExecutionWrapper
+  failureRollbackDisposition?: ServerCommandFailureRollbackDispositionResolver
 }
+
+export type ServerCommandFailureRollbackDisposition = 'retain' | 'rollback'
+
+export type ServerCommandFailureRollbackDispositionResolver = (
+  result: Exclude<ServerCommandResult, { status: 'ok' }>,
+) => ServerCommandFailureRollbackDisposition
 
 export type ServerCommandExecutionWrapper = <T extends Record<string, unknown>>(
   execute: () => Promise<ServerCommandResult<T>>,
@@ -2107,9 +2116,29 @@ export async function patchServerBackedSettings(input: PatchServerBackedSettings
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
-    withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, () => {
-      const execute = () => executeServerBackedSettingsPatch(input, grouped, rollbackEpoch)
-      return input.executionWrapper ? input.executionWrapper(execute) : execute()
+    withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, async () => {
+      const deferredRollback = input.failureRollbackDisposition ? input.rollback : undefined
+      const executionInput = input.failureRollbackDisposition ? { ...input, rollback: undefined } : input
+      const execute = () => executeServerBackedSettingsPatch(executionInput, grouped, rollbackEpoch)
+      let result: ServerCommandResult
+      try {
+        result = input.executionWrapper ? await input.executionWrapper(execute) : await execute()
+      } catch (error) {
+        if (
+          input.failureRollbackDisposition &&
+          input.failureRollbackDisposition({ status: 'unavailable' }) !== 'retain'
+        ) {
+          runRollbackUnlessDestructiveRefreshChanged(deferredRollback, rollbackEpoch)
+        }
+        throw error
+      }
+      if (
+        result.status !== 'ok' &&
+        (!input.failureRollbackDisposition || input.failureRollbackDisposition(result) === 'rollback')
+      ) {
+        runRollbackUnlessDestructiveRefreshChanged(deferredRollback, rollbackEpoch)
+      }
+      return result
     }),
   )
 }
@@ -4975,14 +5004,32 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
   return enqueueServerCommandExecution(() =>
     withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, async () => {
       let executionStarted = false
+      const deferredRollback = input.failureRollbackDisposition ? input.rollback : undefined
+      const executionInput = input.failureRollbackDisposition ? { ...input, rollback: undefined } : input
       const execute = () => {
         executionStarted = true
-        return executeServerCommand(input, rollbackEpoch)
+        return executeServerCommand(executionInput, rollbackEpoch)
       }
-      if (!input.executionWrapper) return execute()
-
-      const result = await input.executionWrapper(execute)
-      if (!executionStarted && result.status !== 'ok') {
+      let result: ServerCommandResult<T>
+      try {
+        result = input.executionWrapper ? await input.executionWrapper(execute) : await execute()
+      } catch (error) {
+        if (
+          (input.failureRollbackDisposition &&
+            input.failureRollbackDisposition({ status: 'unavailable' }) !== 'retain') ||
+          (!input.failureRollbackDisposition && !executionStarted)
+        ) {
+          runRollbackUnlessDestructiveRefreshChanged(deferredRollback ?? input.rollback, rollbackEpoch)
+        }
+        throw error
+      }
+      if (
+        result.status !== 'ok' &&
+        input.failureRollbackDisposition &&
+        input.failureRollbackDisposition(result) === 'rollback'
+      ) {
+        runRollbackUnlessDestructiveRefreshChanged(deferredRollback, rollbackEpoch)
+      } else if (!executionStarted && result.status !== 'ok' && !input.failureRollbackDisposition) {
         // Durable dependency wrappers can retain a successor without sending
         // it when an older owner mutation is still transiently blocked. The
         // normal executor did not run in that branch, so restore the optimistic

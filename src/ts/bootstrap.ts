@@ -41,7 +41,11 @@ import {
 } from './server/activeWriterSession'
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
 import { replayPendingMutations } from './server/pendingMutationReplay'
-import { preparePendingMutationOutbox, readSinglePendingMutationOwner } from './server/pendingMutationOutbox'
+import {
+  countPendingMutationRecords,
+  preparePendingMutationOutbox,
+  readSinglePendingMutationOwner,
+} from './server/pendingMutationOutbox'
 import { flushPendingMutationReceiptAcknowledgements } from './server/durableMutationDispatch'
 import {
   acknowledgeCreatedChatTranscriptLocalEffect,
@@ -247,8 +251,13 @@ export async function loadWebInitialDatabase() {
   }
   await flushPendingMutationReceiptAcknowledgements()
   const pendingMutationReplay = await replayPendingMutations()
-  if (pendingMutationReplay.retained > 0) {
-    alertError(language.pendingMutationReplayRetained)
+  const remainingPendingMutationRecords = await countPendingMutationRecords()
+  if (
+    pendingMutationReplay.retained > 0 ||
+    remainingPendingMutationRecords === null ||
+    remainingPendingMutationRecords > 0
+  ) {
+    throw new Error(language.pendingMutationReplayRetained)
   }
 
   const resources = await loadInitialServerResources({ hooks: serverResourceInvalidationHooks })

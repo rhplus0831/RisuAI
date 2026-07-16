@@ -65,7 +65,7 @@ describe('pending mutation replay', () => {
     await expect(replayPendingMutations()).resolves.toEqual({
       attempted: 2,
       discarded: 0,
-      retained: 1,
+      retained: 2,
       succeeded: 1,
     })
     expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['mutation-a', 'mutation-c'])
@@ -86,7 +86,7 @@ describe('pending mutation replay', () => {
     await expect(replayPendingMutations()).resolves.toEqual({
       attempted: 1,
       discarded: 0,
-      retained: 1,
+      retained: 2,
       succeeded: 0,
     })
     expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['id-repair'])
@@ -119,7 +119,7 @@ describe('pending mutation replay', () => {
     await expect(replayPendingMutations()).resolves.toEqual({
       attempted: 2,
       discarded: 0,
-      retained: 1,
+      retained: 3,
       succeeded: 1,
     })
     expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['patch-b', 'unrelated'])

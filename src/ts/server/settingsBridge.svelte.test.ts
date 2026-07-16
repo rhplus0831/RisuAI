@@ -29,6 +29,7 @@ const durabilityMocks = vi.hoisted(() => ({
   acknowledged: [] as Array<{ mutationId: string }>,
   dispatched: [] as Array<{ key: string; mutationId: string; intent: unknown }>,
   nextId: 1,
+  retainFailures: false,
   staged: [] as Array<{ key: string; mutationId: string; intent: unknown }>,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
@@ -103,9 +104,18 @@ vi.mock('./commands', () => ({
     },
   ),
   runServerCommand: vi.fn(
-    async (args: { command: (baseRevision: number) => Promise<{ status: string }>; rollback?: () => void }) => {
+    async (args: {
+      command: (baseRevision: number) => Promise<{ status: string }>
+      rollback?: () => void
+      failureRollbackDisposition?: (result: { status: string }) => 'retain' | 'rollback'
+    }) => {
       const result = await args.command(1)
-      if (result.status !== 'ok') args.rollback?.()
+      if (
+        result.status !== 'ok' &&
+        (!args.failureRollbackDisposition || args.failureRollbackDisposition(result) === 'rollback')
+      ) {
+        args.rollback?.()
+      }
       return result
     },
   ),
@@ -177,7 +187,11 @@ vi.mock('./durableMutationDispatch', () => ({
     ) => {
       handle.phase = 'dispatching'
       durabilityMocks.dispatched.push({ key: handle.key, mutationId: handle.mutationId, intent })
-      return dispatch({ mutationId: handle.mutationId, databaseLineage: 'database-a' })
+      return dispatch({
+        mutationId: handle.mutationId,
+        databaseLineage: 'database-a',
+        failureRollbackDisposition: () => (durabilityMocks.retainFailures ? 'retain' : 'rollback'),
+      })
     },
   ),
 }))
@@ -326,6 +340,7 @@ beforeEach(() => {
   durabilityMocks.acknowledged.length = 0
   durabilityMocks.dispatched.length = 0
   durabilityMocks.nextId = 1
+  durabilityMocks.retainFailures = false
   durabilityMocks.staged.length = 0
   presetMocks.setPreset.mockClear()
 })
@@ -1121,6 +1136,31 @@ describe('settingsBridge coalescing', () => {
       update: { patch: { width: 832 } },
       optimisticProjectionEpoch: intentEpoch,
     })
+    stop()
+  })
+
+  it('keeps a durable sparse-object projection visible after a retryable failure', async () => {
+    const original = { width: 512, height: 768 }
+    const attempted = { width: 832, height: 768 }
+    durabilityMocks.retainFailures = true
+    recorded.objectResults.push({ status: 'error', error: 'temporarily unavailable' })
+    recorded.groupReads.push({
+      status: 'ok',
+      revision: Number.MAX_SAFE_INTEGER,
+      group: 'media',
+      settings: { NAIImgConfig: original },
+    })
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = attempted
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    for (let index = 0; index < 4; index += 1) await flushAndSettle()
+
+    expect(recorded.objectPatches).toHaveLength(1)
+    expect(testDatabaseState.db.NAIImgConfig).toEqual(attempted)
+    expect(recorded.groupReads).toHaveLength(1)
     stop()
   })
 

@@ -31,6 +31,7 @@ export async function replayPendingMutations(): Promise<PendingMutationReplaySum
       // Propagate the dependency failure into this mutation's own lane so its
       // later successors cannot overtake the skipped correction.
       blockedKeys.add(entry.handle.key)
+      summary.retained += 1
       continue
     }
     summary.attempted += 1

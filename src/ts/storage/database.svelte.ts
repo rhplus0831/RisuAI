@@ -1683,28 +1683,17 @@ function runPromptPresetSelectionCommand(
   intent: DurableMutationIntent,
 ): void {
   if (!canUseServerCommands()) return
-  void (async () => {
-    const stillAttemptedSelection = () => currentSplitPresetSelectedId('prompt') === promptPresetId
-    const command = (baseRevision: number) =>
-      selectPromptPresetCommand({
-        baseRevision,
-        promptPresetId,
-      })
-
-    try {
-      const dispatch = () =>
-        dispatchDurableMutation(outbox, intent, (transport) => runServerCommand({ command, ...transport }))
-      const result = await dispatch()
-      if (result.status === 'ok') return
-      if (result.status === 'conflict' && stillAttemptedSelection()) {
-        const retry = await dispatch()
-        if (retry.status === 'ok') return
-      }
-    } catch (error) {
-      console.error('Prompt preset selection command rejected:', error)
-    }
-    rollback()
-  })()
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        selectPromptPresetCommand({
+          baseRevision,
+          promptPresetId,
+        }),
+      rollback,
+      ...transport,
+    }),
+  ).catch((error) => console.error('Prompt preset selection command rejected:', error))
 }
 
 function presetReorderOptimisticAcknowledgement(input: {

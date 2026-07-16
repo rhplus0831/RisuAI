@@ -2187,6 +2187,7 @@ describe('chat command projection helpers', () => {
     withTrustedResourceWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
+    const olderCharacter = jsonClone(getDatabase().characters[0])
     const generationCalls: Array<{
       body: Record<string, unknown>
       mutationId: string | null
@@ -2227,7 +2228,9 @@ describe('chat command projection helpers', () => {
     try {
       expect(dispatchSaveChatGenerationSettings('chat-a', firstTarget)).toBe(true)
       await waitForPendingChatGenerationSettingsSave('chat-a')
-      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initial)
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(firstTarget)
+      expect(applyCharacterResource({ revision: 11, character: jsonClone(olderCharacter) })).toBe(true)
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(firstTarget)
       const retained = await listPendingMutations()
       expect(retained).toHaveLength(1)
       expect(retained[0].handle.key).toBe('character-owner:char-a')
@@ -2244,6 +2247,9 @@ describe('chat command projection helpers', () => {
       })
       expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(correctiveTarget)
       expect(await listPendingMutations()).toEqual([])
+
+      expect(applyCharacterResource({ revision: 13, character: jsonClone(olderCharacter) })).toBe(true)
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initial)
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -2324,10 +2330,9 @@ describe('chat command projection helpers', () => {
       await waitForPendingChatGenerationSettingsSave('chat-a')
       expect(generationCalls).toHaveLength(1)
       expect(generationCalls[0].mutationId).toBe(predecessor.mutationId)
-      // The retained predecessor prevented this slot from sending, so the
-      // command wrapper restores the optimistic projection until a later slot
-      // can drain and retry the durable chain.
-      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initial)
+      // Both the retained predecessor and this unsent durable head remain
+      // queued, so their visible optimistic projection must remain as well.
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(firstTarget)
       expect(await listPendingMutations()).toHaveLength(2)
 
       expect(dispatchSaveChatGenerationSettings('chat-a', secondTarget)).toBe(true)
@@ -5618,9 +5623,9 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
         status: 'unavailable',
       })
       expect(commands).toHaveLength(commandCount)
-      // Replay commits the server delete without projecting resources; the
-      // transient rollback remains local until authoritative hydration.
-      expect(getDatabase().characters[0].chats.some((chat) => chat.id === 'chat-a')).toBe(true)
+      // The blocked DELETE remained durable, so its optimistic projection
+      // stayed visible while replay later committed the same deletion.
+      expect(getDatabase().characters[0].chats.some((chat) => chat.id === 'chat-a')).toBe(false)
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

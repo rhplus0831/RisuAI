@@ -6,6 +6,7 @@ import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
   completePendingMutation,
+  countPendingMutationRecords,
   deletePendingMutationReceiptAcknowledgement,
   discardPendingMutation,
   listPendingMutationPredecessors,
@@ -51,6 +52,16 @@ afterEach(async () => {
 })
 
 describe('pending mutation outbox', () => {
+  it('counts scoped raw rows even when an encrypted intent cannot be decrypted', async () => {
+    const handle = stagePendingMutation('settings:runtime', settingsIntent('unreadable'))
+    await expect(handle.ready).resolves.toBe('persisted')
+    await corruptRawMutationCiphertext(handle.mutationId)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(listPendingMutations()).resolves.toEqual([])
+    await expect(countPendingMutationRecords()).resolves.toBe(1)
+  })
+
   it('persists encrypted intents across runtime cache resets without plaintext secrets at rest', async () => {
     const secret = 'sentinel-provider-secret-never-store-plaintext'
     const handle = stagePendingMutation('settings:runtime', settingsIntent(secret))
@@ -616,6 +627,32 @@ async function removeRawDispatchStarted(mutationId: string): Promise<void> {
       request.onerror = () => reject(request.error)
     })
     delete record.dispatchStarted
+    store.put(record)
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error)
+    })
+  } finally {
+    database.close()
+  }
+}
+
+async function corruptRawMutationCiphertext(mutationId: string): Promise<void> {
+  const database = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open('risu-pending-mutations-v1', 3)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  try {
+    const transaction = database.transaction('mutations', 'readwrite')
+    const store = transaction.objectStore('mutations')
+    const record = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const request = store.get(mutationId)
+      request.onsuccess = () => resolve(request.result as Record<string, unknown>)
+      request.onerror = () => reject(request.error)
+    })
+    record.ciphertext = new ArrayBuffer(1)
     store.put(record)
     await new Promise<void>((resolve, reject) => {
       transaction.oncomplete = () => resolve()

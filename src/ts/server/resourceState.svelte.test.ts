@@ -2424,6 +2424,27 @@ describe('resource-scoped database state', () => {
         }),
       ).toBe(true)
       expect(getResourceDatabase().characters[0].chats[0].generationSettings).toEqual(pendingSettings)
+
+      const acknowledged = metadataCharacter('char-a', 'Acknowledged')
+      acknowledged.chats = [
+        {
+          id: 'chat-a',
+          message: [],
+          generationSettings: pendingSettings,
+        } as unknown as (typeof acknowledged.chats)[number],
+      ]
+      expect(applyCharacterResource({ revision: 4, character: acknowledged })).toBe(true)
+
+      const afterAcknowledgement = metadataCharacter('char-a', 'After acknowledgement')
+      afterAcknowledgement.chats = [
+        {
+          id: 'chat-a',
+          message: [],
+          generationSettings: staleSettings,
+        } as unknown as (typeof afterAcknowledgement.chats)[number],
+      ]
+      expect(applyCharacterResource({ revision: 5, character: afterAcknowledgement })).toBe(true)
+      expect(getResourceDatabase().characters[0].chats[0].generationSettings).toEqual(staleSettings)
     } finally {
       clearPendingChatGenerationSettingsSave(pending)
     }

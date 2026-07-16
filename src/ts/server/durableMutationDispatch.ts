@@ -33,17 +33,21 @@ export interface PreparedDurableMutationExecutionInput {
   onStandaloneIntent?: () => void
 }
 
+export type DurableMutationSettlement = 'accepted' | 'discarded' | 'retained' | 'superseded' | 'unavailable'
+
 export type PreparedDurableMutationExecutionOutcome<T extends Record<string, unknown> = {}> =
   | {
       disposition: 'sent'
       handle: PendingMutationHandle
       intent: DurableMutationIntent
       result: ServerCommandResult<T>
+      settlement: DurableMutationSettlement
     }
   | {
       disposition: 'retained-without-send'
       handle: PendingMutationHandle
       intent: DurableMutationIntent
+      settlement: Extract<DurableMutationSettlement, 'retained' | 'superseded' | 'unavailable'>
     }
 
 /**
@@ -60,25 +64,34 @@ export function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
   // Freeze synchronously before the caller can stage a successor, and enqueue
   // the command synchronously so later structural actions cannot overtake it.
   const readiness = beginPendingMutationDispatch(handle)
-  const executionWrapper: ServerCommandExecutionWrapper = (execute) =>
-    withPendingMutationDispatchLocks(handle, intent.dependencyKeys ?? [], async () => {
-      const persistence = await readiness
-      if (persistence === 'superseded') return { status: 'unavailable' }
-      if (persistence === 'persisted' && !(await isPendingMutationCurrent(handle))) {
-        return { status: 'unavailable' }
-      }
-      if (persistence === 'persisted' && !(await drainPendingMutationPredecessors(handle))) {
-        return { status: 'unavailable' }
-      }
-      const result =
-        persistence === 'unavailable' ? await runServerCommandWithoutMutationReceipt(execute) : await execute()
-      await settleDurableMutation(handle, intent, result)
-      return result
-    })
+  let settlement: DurableMutationSettlement = 'unavailable'
+  const executionWrapper: ServerCommandExecutionWrapper = async (execute) => {
+    try {
+      return await withPendingMutationDispatchLocks(handle, intent.dependencyKeys ?? [], async () => {
+        const persistence = await readiness
+        if (persistence === 'superseded') return { status: 'unavailable' }
+        if (persistence === 'persisted' && !(await isPendingMutationCurrent(handle))) {
+          return { status: 'unavailable' }
+        }
+        if (persistence === 'persisted' && !(await drainPendingMutationPredecessors(handle))) {
+          settlement = 'retained'
+          return { status: 'unavailable' }
+        }
+        const result =
+          persistence === 'unavailable' ? await runServerCommandWithoutMutationReceipt(execute) : await execute()
+        settlement = await settleDurableMutation(handle, intent, result)
+        return result
+      })
+    } catch (error) {
+      if ((await readiness) === 'persisted') settlement = 'retained'
+      throw error
+    }
+  }
   return dispatch({
     mutationId: handle.mutationId,
     databaseLineage: handle.databaseLineage,
     executionWrapper,
+    failureRollbackDisposition: () => (settlement === 'retained' ? 'retain' : 'rollback'),
   })
 }
 
@@ -93,7 +106,7 @@ export async function executePreparedDurableMutationWithinQueue<T extends Record
 ): Promise<PreparedDurableMutationExecutionOutcome<T>> {
   if (!input.handle.databaseLineage) {
     const result = await runServerCommandWithoutMutationReceipt(execute)
-    return { disposition: 'sent', handle: input.handle, intent: input.intent, result }
+    return { disposition: 'sent', handle: input.handle, intent: input.intent, result, settlement: 'unavailable' }
   }
 
   const anticipatedDependencyKeys = [
@@ -137,10 +150,10 @@ export async function executePreparedDurableMutationWithinQueue<T extends Record
         input.onStandaloneIntent?.()
       }
       const result = await runServerCommandWithoutMutationReceipt(execute)
-      return { disposition: 'sent' as const, handle, intent, result }
+      return { disposition: 'sent' as const, handle, intent, result, settlement: 'unavailable' as const }
     }
     if (exactReplacement === 'retained') {
-      return { disposition: 'retained-without-send' as const, handle, intent }
+      return { disposition: 'retained-without-send' as const, handle, intent, settlement: 'retained' as const }
     }
     if (exactReplacement === 'successor') {
       const standalone = await selectStandaloneIntent()
@@ -151,21 +164,26 @@ export async function executePreparedDurableMutationWithinQueue<T extends Record
           input.onStandaloneIntent?.()
         }
         const result = await runServerCommandWithoutMutationReceipt(execute)
-        return { disposition: 'sent' as const, handle, intent, result }
+        return { disposition: 'sent' as const, handle, intent, result, settlement: 'unavailable' as const }
       }
       if (standalone === 'retained') {
-        return { disposition: 'retained-without-send' as const, handle, intent }
+        return { disposition: 'retained-without-send' as const, handle, intent, settlement: 'retained' as const }
       }
     }
 
     const predecessors = await listPendingMutationPredecessors(handle)
     if (predecessors.status !== 'ok') {
-      return { disposition: 'retained-without-send' as const, handle, intent }
+      return {
+        disposition: 'retained-without-send' as const,
+        handle,
+        intent,
+        settlement: predecessors.status,
+      }
     }
     if (predecessors.entries.length > 0) {
       const standalone = await selectStandaloneIntent()
       if (standalone !== 'ready') {
-        return { disposition: 'retained-without-send' as const, handle, intent }
+        return { disposition: 'retained-without-send' as const, handle, intent, settlement: standalone }
       }
     }
 
@@ -177,24 +195,29 @@ export async function executePreparedDurableMutationWithinQueue<T extends Record
       preparedPredecessors.status !== 'ok' ||
       preparedPredecessors.semanticKeys.some((semanticKey) => !lockedKeys.has(semanticKey))
     ) {
-      return { disposition: 'retained-without-send' as const, handle, intent }
+      return {
+        disposition: 'retained-without-send' as const,
+        handle,
+        intent,
+        settlement: preparedPredecessors.status === 'ok' ? 'retained' : preparedPredecessors.status,
+      }
     }
     if (preparedPredecessors.entries.length > 0 && !(await drainPendingMutationPredecessors(handle))) {
-      return { disposition: 'retained-without-send' as const, handle, intent }
+      return { disposition: 'retained-without-send' as const, handle, intent, settlement: 'retained' as const }
     }
 
     const persistence = await beginPendingMutationDispatch(handle)
     if (persistence !== 'persisted') {
-      return { disposition: 'retained-without-send' as const, handle, intent }
+      return { disposition: 'retained-without-send' as const, handle, intent, settlement: persistence }
     }
 
     return withPendingMutationLock(handle.databaseLineage!, handle.mutationId, async () => {
       if (!(await isPendingMutationCurrent(handle))) {
-        return { disposition: 'retained-without-send' as const, handle, intent }
+        return { disposition: 'retained-without-send' as const, handle, intent, settlement: 'superseded' as const }
       }
       const result = await runServerCommandWithMutationReceipt(execute, handle.mutationId, handle.databaseLineage!)
-      await settleDurableMutation(handle, intent, result)
-      return { disposition: 'sent' as const, handle, intent, result }
+      const settlement = await settleDurableMutation(handle, intent, result)
+      return { disposition: 'sent' as const, handle, intent, result, settlement }
     })
   })
 }
@@ -277,7 +300,8 @@ async function drainPendingMutationPredecessors(handle: PendingMutationHandle): 
           return true
         }
         if (result.status === 'error' && shouldDiscardDurableMutation(result.reason)) {
-          await discardPendingMutation(predecessor.handle)
+          const discarded = await discardPendingMutation(predecessor.handle)
+          if (discarded !== 'deleted' && discarded !== 'superseded') return false
           // A malformed/orphaned predecessor says nothing about a later exact
           // body. Ownership and lineage failures do, so they still stop here.
           return result.reason === 'mutation-id-conflict' || isTerminalRequestRejection(result.reason)
@@ -293,29 +317,40 @@ async function drainPendingMutationPredecessors(handle: PendingMutationHandle): 
 /**
  * Accepted requests atomically become durable receipt-ACK work. Exact requests
  * rejected as invalid or missing cannot recover unchanged, so they are dropped
- * after the command runner performs its optimistic rollback. Ownership,
+ * before the command runner decides whether to restore its projection. Ownership,
  * lineage, and receipt-id failures remain terminal; all other failures retry.
  */
 export async function settleDurableMutation(
   handle: PendingMutationHandle,
   intent: DurableMutationIntent,
   result: ServerCommandResult | null | undefined,
-): Promise<boolean> {
+): Promise<DurableMutationSettlement> {
   if (result?.status === 'ok') {
     const completed = await completePendingMutation(handle, intent.requests.length)
-    if (completed !== 'deleted' || !handle.databaseLineage) return false
+    if (completed !== 'deleted' || !handle.databaseLineage) {
+      return completed === 'superseded' ? 'superseded' : 'unavailable'
+    }
     await flushReceiptAcknowledgement({
       mutationId: handle.mutationId,
       requestCount: intent.requests.length,
       databaseLineage: handle.databaseLineage,
       queuedAt: 0,
     })
-    return true
+    return 'accepted'
   }
   if (result?.status === 'error' && shouldDiscardDurableMutation(result.reason)) {
-    await discardPendingMutation(handle)
+    const persistence = await handle.ready
+    if (persistence !== 'persisted') return persistence
+    const discarded = await discardPendingMutation(handle)
+    if (discarded === 'deleted') return 'discarded'
+    if (discarded === 'superseded') return 'superseded'
+    // Never restore a projection while an exact terminal row may still be
+    // durable. Startup replay will discard it before authoritative hydration.
+    return 'retained'
   }
-  return false
+  const persistence = await handle.ready
+  if (persistence === 'persisted') return 'retained'
+  return persistence
 }
 
 /** Retry crash-safe receipt cleanup after authenticated bootstrap. */

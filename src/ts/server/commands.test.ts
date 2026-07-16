@@ -1432,6 +1432,42 @@ describe('server command API adapter', () => {
     expect(rollback).toHaveBeenCalledOnce()
   })
 
+  it('keeps an optimistic projection when a durable execution wrapper retains the exact row', async () => {
+    const rollback = vi.fn()
+    const command = vi.fn(async () => ({ status: 'unavailable' as const }))
+
+    await expect(
+      runServerCommand({
+        command,
+        rollback,
+        executionWrapper: async () => ({ status: 'unavailable' }),
+        failureRollbackDisposition: () => 'retain',
+      }),
+    ).resolves.toEqual({ status: 'unavailable' })
+
+    expect(command).not.toHaveBeenCalled()
+    expect(rollback).not.toHaveBeenCalled()
+  })
+
+  it('consults a durable rollback disposition when an execution wrapper rejects', async () => {
+    const rollback = vi.fn()
+    let retained = false
+
+    await expect(
+      runServerCommand({
+        command: async () => ({ status: 'unavailable' }),
+        rollback,
+        executionWrapper: async () => {
+          retained = true
+          throw new Error('durable lock failed')
+        },
+        failureRollbackDisposition: () => (retained ? 'retain' : 'rollback'),
+      }),
+    ).rejects.toThrow('durable lock failed')
+
+    expect(rollback).not.toHaveBeenCalled()
+  })
+
   it('normalizes a rejected per-step execution wrapper and rolls the sequence back once', async () => {
     setCachedServerCommandRevision(50)
     const rollback = vi.fn()

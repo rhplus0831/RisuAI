@@ -65,6 +65,7 @@ const runtimeApi = vi.hoisted(() => ({
 
 const bridgeApi = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }))
 const pendingMutationApi = vi.hoisted(() => ({
+  count: vi.fn(),
   flushAcknowledgements: vi.fn(),
   prepare: vi.fn(),
   readOwner: vi.fn(),
@@ -122,6 +123,7 @@ vi.mock('./server/pendingMutationReplay', () => ({
   replayPendingMutations: pendingMutationApi.replay,
 }))
 vi.mock('./server/pendingMutationOutbox', () => ({
+  countPendingMutationRecords: pendingMutationApi.count,
   preparePendingMutationOutbox: pendingMutationApi.prepare,
   readSinglePendingMutationOwner: pendingMutationApi.readOwner,
 }))
@@ -313,6 +315,8 @@ beforeEach(() => {
   bridgeApi.start.mockReturnValue(bridgeApi.stop)
   pendingMutationApi.flushAcknowledgements.mockReset()
   pendingMutationApi.flushAcknowledgements.mockResolvedValue(undefined)
+  pendingMutationApi.count.mockReset()
+  pendingMutationApi.count.mockResolvedValue(0)
   pendingMutationApi.prepare.mockReset()
   pendingMutationApi.prepare.mockResolvedValue({ discarded: 0 })
   pendingMutationApi.readOwner.mockReset()
@@ -496,12 +500,21 @@ describe('API-backed client bootstrap', () => {
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
   })
 
-  it('warns when transient failures leave encrypted changes queued for a later start', async () => {
+  it('stops before hydration when transient failures leave encrypted changes queued', async () => {
     pendingMutationApi.replay.mockResolvedValue({ attempted: 1, discarded: 0, retained: 1, succeeded: 0 })
+    pendingMutationApi.count.mockResolvedValue(1)
 
-    await loadWebInitialDatabase()
+    await expect(loadWebInitialDatabase()).rejects.toThrow('pending changes')
 
-    expect(alertError).toHaveBeenCalledWith(expect.stringContaining('pending changes'))
+    expect(resourceApi.loadInitial).not.toHaveBeenCalled()
+  })
+
+  it.each([1, null])('stops before hydration when the raw pending-row count is %s', async (count) => {
+    pendingMutationApi.count.mockResolvedValue(count)
+
+    await expect(loadWebInitialDatabase()).rejects.toThrow('pending changes')
+
+    expect(resourceApi.loadInitial).not.toHaveBeenCalled()
   })
 
   it('warns when stale-writer drafts are quarantined during ownership preparation', async () => {

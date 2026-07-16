@@ -53,6 +53,7 @@ import {
   hasDestructiveRefreshEpochChanged,
 } from './server/staleStateGuards'
 import {
+  acknowledgePendingChatGenerationSettingsSave,
   clearPendingChatGenerationSettingsSave,
   registerPendingChatGenerationSettingsSave,
 } from './server/chatGenerationSettingsResourceGuard'
@@ -2087,6 +2088,7 @@ function executeChatGenerationSettingsQueueSlot(
 ): Promise<ServerCommandResult> {
   let activePrepared: PreparedChatGenerationSettingsSave | null = null
   const completed: Array<{ prepared: PreparedChatGenerationSettingsSave; result: ServerCommandResult }> = []
+  let retainOptimisticFailure = false
 
   const queued = runServerCommand({
     command: (baseRevision) => {
@@ -2100,6 +2102,7 @@ function executeChatGenerationSettingsQueueSlot(
     rollback: () => {
       if (activePrepared) restoreChatGenerationSettings(activePrepared.rollback)
     },
+    failureRollbackDisposition: () => (retainOptimisticFailure ? 'retain' : 'rollback'),
     executionWrapper: async (execute) => {
       let lastResult: ServerCommandResult = { status: 'unavailable' }
       while (state.jobs.length > 0) {
@@ -2119,9 +2122,19 @@ function executeChatGenerationSettingsQueueSlot(
         )
         head.outbox = outcome.handle
         head.durableIntent = outcome.intent
-        if (outcome.disposition === 'retained-without-send') return { status: 'unavailable' }
+        retainOptimisticFailure = outcome.settlement === 'retained'
+        if (outcome.disposition === 'retained-without-send') {
+          if (outcome.settlement === 'retained') {
+            finishRetainedChatGenerationSettingsSave(chatId, state, head, prepared)
+          }
+          return { status: 'unavailable' }
+        }
 
         lastResult = outcome.result
+        if (outcome.result.status !== 'ok' && outcome.settlement === 'retained') {
+          finishRetainedChatGenerationSettingsSave(chatId, state, head, prepared)
+          return outcome.result
+        }
         await finishChatGenerationSettingsSave(chatId, state, head, prepared, outcome.result)
         completed.push({ prepared, result: outcome.result })
         if (head === reservedJob) return lastResult
@@ -2136,6 +2149,23 @@ function executeChatGenerationSettingsQueueSlot(
     }
     return result
   })
+}
+
+function finishRetainedChatGenerationSettingsSave(
+  chatId: string,
+  state: PendingChatGenerationSettingsQueue,
+  job: PendingChatGenerationSettingsJob,
+  prepared: PreparedChatGenerationSettingsSave,
+): void {
+  if (state.jobs[0] !== job) return
+  state.jobs.shift()
+  state.confirmed = {
+    characterId: prepared.characterId,
+    chatId,
+    hadGenerationSettings: true,
+    generationSettings: cloneJsonValue(prepared.fullCommandInput.generationSettings),
+  }
+  projectChatGenerationSettingsQueue(chatId, state)
 }
 
 function prepareChatGenerationSettingsSave(
@@ -2202,7 +2232,11 @@ async function finishChatGenerationSettingsSave(
 ): Promise<void> {
   if (state.jobs[0] !== job) return
   state.jobs.shift()
-  clearPendingChatGenerationSettingsSave(job.pendingSave)
+  if (result.status === 'ok') {
+    acknowledgePendingChatGenerationSettingsSave(job.pendingSave)
+  } else {
+    clearPendingChatGenerationSettingsSave(job.pendingSave)
+  }
 
   const resultRecord = result?.status === 'ok' ? (result as unknown as Record<string, unknown>) : null
   const acknowledged = resultRecord?.acknowledgedGenerationSettings

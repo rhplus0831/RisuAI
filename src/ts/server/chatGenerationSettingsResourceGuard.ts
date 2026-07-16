@@ -39,12 +39,29 @@ export function clearPendingChatGenerationSettingsSave(token: PendingChatGenerat
   pendingSavesByChatId.set(token.chatId, next)
 }
 
+/** An accepted save also acknowledges every older projection it supersedes. */
+export function acknowledgePendingChatGenerationSettingsSave(token: PendingChatGenerationSettingsSaveToken): void {
+  const pending = pendingSavesByChatId.get(token.chatId)
+  if (!pending) return
+
+  const next = pending.filter((save) => save.sequence > token.sequence)
+  if (next.length === 0) {
+    pendingSavesByChatId.delete(token.chatId)
+    return
+  }
+  pendingSavesByChatId.set(token.chatId, next)
+}
+
 export function shouldPreserveLiveChatGenerationSettingsForResource(
   chatId: string,
   incomingGenerationSettings: unknown,
 ): boolean {
   const latestPending = pendingSavesByChatId.get(chatId)?.at(-1)
   if (!latestPending) return false
+  if (isJsonValueEqual(incomingGenerationSettings, latestPending.generationSettings)) {
+    acknowledgePendingChatGenerationSettingsSave({ chatId, sequence: latestPending.sequence })
+    return false
+  }
   return !isJsonValueEqual(incomingGenerationSettings, latestPending.generationSettings)
 }
 

@@ -86,6 +86,97 @@ describe('durable mutation terminal request rejection', () => {
     expect(await listPendingMutations()).toEqual([])
   })
 
+  it('keeps the optimistic projection with a persisted row after a retryable live failure', async () => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 12_000 } } }],
+    }
+    const handle = stagePendingMutation('settings:runtime', intent)
+    const rollback = vi.fn()
+    setCachedServerCommandRevision(10)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ error: 'temporarily unavailable' }, 500)) as unknown as typeof fetch,
+    )
+
+    const result = await dispatchDurableMutation(handle, intent, (options) =>
+      runServerCommand({
+        ...options,
+        rollback,
+        command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxContext: 12_000 } }),
+      }),
+    )
+
+    expect(result).toEqual({ status: 'error', error: 'temporarily unavailable' })
+    expect(rollback).not.toHaveBeenCalled()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([handle.mutationId])
+  })
+
+  it('rolls back a retryable failure when durable browser staging was unavailable', async () => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 12_000 } } }],
+    }
+    const handle = {
+      key: 'settings:runtime',
+      mutationId: 'unavailable-staging',
+      sequence: 1,
+      ownerWriterSessionId: 'writer-terminal-rejection',
+      writerEpoch: 1,
+      databaseLineage,
+      phase: 'staged' as const,
+      ready: Promise.resolve('unavailable' as const),
+    }
+    const rollback = vi.fn()
+    setCachedServerCommandRevision(10)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ error: 'temporarily unavailable' }, 500)) as unknown as typeof fetch,
+    )
+
+    const result = await dispatchDurableMutation(handle, intent, (options) =>
+      runServerCommand({
+        ...options,
+        rollback,
+        command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxContext: 12_000 } }),
+      }),
+    )
+
+    expect(result).toEqual({ status: 'error', error: 'temporarily unavailable' })
+    expect(rollback).toHaveBeenCalledOnce()
+    expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('keeps a persisted projection when its durable lock rejects before transport', async () => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 12_000 } } }],
+    }
+    const handle = stagePendingMutation('settings:runtime', intent)
+    await expect(handle.ready).resolves.toBe('persisted')
+    const rollback = vi.fn()
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: vi.fn(async () => {
+          throw new Error('lock manager unavailable')
+        }),
+      },
+    })
+
+    await expect(
+      dispatchDurableMutation(handle, intent, (options) =>
+        runServerCommand({
+          ...options,
+          rollback,
+          command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxContext: 12_000 } }),
+        }),
+      ),
+    ).rejects.toThrow('lock manager unavailable')
+
+    expect(rollback).not.toHaveBeenCalled()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([handle.mutationId])
+  })
+
   it('discards an orphaned HTTP 404 during bootstrap replay', async () => {
     const intent: DurableMutationIntent = {
       version: 1,

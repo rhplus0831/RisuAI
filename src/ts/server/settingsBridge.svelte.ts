@@ -539,6 +539,7 @@ function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {
       mutationId: transport.mutationId,
       databaseLineage: transport.databaseLineage,
       executionWrapper: transport.executionWrapper,
+      failureRollbackDisposition: transport.failureRollbackDisposition,
       previous: commandPrevious,
       attempted: commandAttempted,
     }),
@@ -555,6 +556,7 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
   mutationId?: string
   databaseLineage?: string
   executionWrapper?: ServerCommandTransportOptions['executionWrapper']
+  failureRollbackDisposition?: ServerCommandTransportOptions['failureRollbackDisposition']
 }): Promise<ServerCommandResult> {
   const attempt = registerSettingsAttempt(input.previous, input.attempted)
   const reportFailure = createSettingsSaveFailureReporter()
@@ -567,6 +569,7 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
     mutationId: input.mutationId,
     databaseLineage: input.databaseLineage,
     executionWrapper: input.executionWrapper,
+    failureRollbackDisposition: input.failureRollbackDisposition,
     rollback: () => {
       rollbackSettingsAttempt(attempt)
       reportFailure()
@@ -733,35 +736,55 @@ async function dispatchSparseObjectSettingQueue(
 
   state.running = true
   let failed = false
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
   const reportFailure = createSettingsSaveFailureReporter()
-  const result = await dispatchDurableMutation(outbox!, intent!, (transport) =>
-    runServerCommand({
-      signal: options.signal,
-      keepalive: options.keepalive,
-      mutationId: transport.mutationId,
-      databaseLineage: transport.databaseLineage,
-      executionWrapper: transport.executionWrapper,
-      command: (baseRevision) =>
-        patchSettingsObjectFieldsCommand(
-          {
-            baseRevision,
-            group: state.group,
-            key: state.key,
-            update,
-            attemptedObject,
-            optimisticProjectionEpoch: projectionEpoch,
-          },
-          options.signal,
-          options.keepalive,
-        ),
-      rollback: () => {
-        failed = true
-        markSettingsGroupAcknowledgementTainted(state.group)
-        reportFailure()
-      },
-    }),
-  )
+  let result: Awaited<ReturnType<typeof patchSettingsObjectFieldsCommand>>
+  try {
+    result = await dispatchDurableMutation(outbox!, intent!, (transport) => {
+      failureRollbackDisposition = transport.failureRollbackDisposition
+      return runServerCommand({
+        signal: options.signal,
+        keepalive: options.keepalive,
+        mutationId: transport.mutationId,
+        databaseLineage: transport.databaseLineage,
+        executionWrapper: transport.executionWrapper,
+        failureRollbackDisposition,
+        command: (baseRevision) =>
+          patchSettingsObjectFieldsCommand(
+            {
+              baseRevision,
+              group: state.group,
+              key: state.key,
+              update,
+              attemptedObject,
+              optimisticProjectionEpoch: projectionEpoch,
+            },
+            options.signal,
+            options.keepalive,
+          ),
+        rollback: () => {
+          failed = true
+          markSettingsGroupAcknowledgementTainted(state.group)
+          reportFailure()
+        },
+      })
+    })
+  } catch (error) {
+    console.error('Sparse settings command rejected:', error)
+    result = { status: 'unavailable' }
+  }
   if (result.status !== 'ok') reportFailure()
+  if (result.status !== 'ok' && failureRollbackDisposition?.(result) === 'retain') {
+    // The exact attempted object is still represented by a durable row. Keep
+    // both its visible projection and its queue baseline; a later edit stages
+    // an ordered correction instead of silently exposing stale server state.
+    state.running = false
+    state.outbox ??= outbox
+    if (state.desired && state.stagedUpdate && state.intent && state.outbox) {
+      queueMicrotask(() => void dispatchSparseObjectSettingQueue(state, options))
+    }
+    return
+  }
 
   await Promise.resolve()
   let baseline: Record<string, unknown> | null = null
