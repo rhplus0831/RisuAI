@@ -312,9 +312,9 @@ describe('Phase 9-3f compatibility adapters', () => {
     }
     testDatabaseState.db.characters[0].chats[0] = nextChat
 
-    const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
-    expect(factories).toHaveLength(3)
-    runOptimisticCommandSequence(factories, rollback)
+    const prepared = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
+    expect(prepared.commandCount).toBe(3)
+    prepared.dispatch()
 
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate')).toBe(true)
@@ -333,9 +333,9 @@ describe('Phase 9-3f compatibility adapters', () => {
     const previousChat = snapshot(testDatabaseState.db.characters[0].chats[0]) as Chat
     const previous = currentChatStateSnapshot()
     const nextChat = snapshot(previousChat)
-    const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
-    expect(factories).toEqual([])
-    expect(typeof rollback).toBe('function')
+    const prepared = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
+    expect(prepared.commandCount).toBe(0)
+    expect(typeof prepared.dispatch).toBe('function')
   })
 
   it('routes character asset helper writes through character commands', async () => {

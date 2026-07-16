@@ -340,6 +340,140 @@ describe('transactional command mutation receipts', () => {
     expect(receiptCount()).toBe(3)
   })
 
+  it('replays chat and folder edits and reorders without applying structure twice', async () => {
+    revision = await importDatabase({
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Character A',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'Chat A',
+              note: '',
+              localLore: [],
+              message: [],
+              folderId: 'folder-a',
+            },
+            {
+              id: 'chat-b',
+              name: 'Chat B',
+              note: '',
+              localLore: [],
+              message: [],
+              folderId: null,
+            },
+          ],
+          chatFolders: [
+            { id: 'folder-a', name: 'Folder A', folded: false },
+            { id: 'folder-b', name: 'Folder B', folded: false },
+          ],
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const lineageDb = openRawDatabase()
+    try {
+      databaseLineage = getDatabaseLineage(lineageDb)
+    } finally {
+      lineageDb.close()
+    }
+    harness.commandEvents.clear()
+
+    const durableHeaders = (mutationId: string) => ({
+      'risu-auth': assertion,
+      'risu-writer-session': 'writer-chat-structure',
+      'risu-mutation-id': mutationId,
+      'risu-database-lineage': databaseLineage,
+    })
+    const executeAndReplay = async (
+      mutationId: string,
+      method: 'PATCH' | 'POST',
+      url: string,
+      payload: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> => {
+      const first = await harness.app.inject({
+        method,
+        url,
+        headers: durableHeaders(mutationId),
+        payload,
+      })
+      expect(first.statusCode, first.body).toBe(200)
+      const firstBody = first.json() as Record<string, unknown>
+      const replay = await harness.app.inject({
+        method,
+        url,
+        headers: durableHeaders(mutationId),
+        payload: { ...payload, baseRevision: (firstBody.revision as number) + 100 },
+      })
+      expect(replay.statusCode, replay.body).toBe(200)
+      expect(replay.json()).toEqual(firstBody)
+      return firstBody
+    }
+
+    const chatUpdated = await executeAndReplay('chat-update-receipt', 'PATCH', '/api/v1/commands/chats/chat-b', {
+      baseRevision: revision,
+      patch: { name: 'Chat B renamed' },
+      select: true,
+    })
+    const folderUpdated = await executeAndReplay(
+      'folder-update-receipt',
+      'PATCH',
+      '/api/v1/commands/chat-folders/folder-b',
+      {
+        baseRevision: chatUpdated.revision,
+        patch: { name: 'Folder B renamed', folded: true },
+      },
+    )
+    const foldersReordered = await executeAndReplay(
+      'folder-reorder-receipt',
+      'POST',
+      '/api/v1/commands/characters/char-a/chat-folders/reorder',
+      {
+        baseRevision: folderUpdated.revision,
+        folderIds: ['folder-b', 'folder-a'],
+        selectedChatId: 'chat-b',
+      },
+    )
+    const chatsReordered = await executeAndReplay(
+      'chat-reorder-receipt',
+      'POST',
+      '/api/v1/commands/characters/char-a/chats/reorder',
+      {
+        baseRevision: foldersReordered.revision,
+        chatIds: ['chat-b', 'chat-a'],
+        folderByChatId: { 'chat-b': 'folder-b', 'chat-a': null },
+        selectedChatId: 'chat-b',
+      },
+    )
+
+    const characterResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(characterResponse.statusCode, characterResponse.body).toBe(200)
+    const character = characterResponse.json().character as {
+      chatPage: number
+      chats: Array<{ id: string; name: string; folderId?: string | null }>
+      chatFolders: Array<{ id: string; name: string; folded: boolean }>
+    }
+    expect(character.chatPage).toBe(0)
+    expect(character.chats.map(({ id, name, folderId }) => ({ id, name, folderId: folderId ?? null }))).toEqual([
+      { id: 'chat-b', name: 'Chat B renamed', folderId: 'folder-b' },
+      { id: 'chat-a', name: 'Chat A', folderId: null },
+    ])
+    expect(character.chatFolders).toEqual([
+      { id: 'folder-b', name: 'Folder B renamed', folded: true },
+      { id: 'folder-a', name: 'Folder A', folded: false },
+    ])
+    expect(chatsReordered.revision).toBe(revision + 4)
+    expect(harness.commandEvents.list()).toHaveLength(4)
+    expect(receiptCount()).toBe(4)
+  })
+
   it('replays across writer handoffs and rejects semantic mutation-id collisions globally', async () => {
     const first = await harness.app.inject({
       method: 'PATCH',

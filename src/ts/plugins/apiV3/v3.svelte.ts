@@ -1276,10 +1276,7 @@ const makeRisuaiAPIV3 = (
           withTrustedResourceWrite(() => {
             getDatabase().characters[charId].chats[chatIndex] = chat
           })
-          // Route through the sequencer so this call shares one advancing revision
-          // baseline with other makeRisuaiAPIV3 command factories.
-          const { factories, rollback } = prepareCompatibleChatUpdateScoped(previousChatSnapshot, chat, previous)
-          runOptimisticCommandSequence(factories, rollback)
+          prepareCompatibleChatUpdateScoped(previousChatSnapshot, chat, previous).dispatch()
         }
       }
     },

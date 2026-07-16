@@ -23,7 +23,12 @@ import { translateHTML } from './translator/translator'
 import { activeGenerationTarget, doingChat } from './process/index.svelte'
 import { importCharacter } from './characterCards'
 import { PngChunk } from './pngChunk'
-import { currentChatStateSnapshot, dispatchCreateChatForImport, dispatchCreateImportedChats } from './chatCommands'
+import {
+  CHAT_IMPORT_TOO_LARGE_ERROR,
+  currentChatStateSnapshot,
+  dispatchCreateChatForImport,
+  dispatchCreateImportedChats,
+} from './chatCommands'
 import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from './chatGenerationSettings'
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
@@ -756,6 +761,8 @@ function reportChatImportCommandResult(result: Awaited<ReturnType<typeof dispatc
     alertError(language.modelProfiles.commandUnavailable)
   } else if (result.error.startsWith('revision_conflict:')) {
     alertError(language.modelProfiles.commandConflict)
+  } else if (result.error === CHAT_IMPORT_TOO_LARGE_ERROR) {
+    alertError(language.errors.chatImportTooLarge)
   } else {
     alertError(result.error)
   }

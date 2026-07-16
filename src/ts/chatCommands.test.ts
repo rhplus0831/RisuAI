@@ -60,10 +60,12 @@ import {
   currentChatSelectionSnapshot,
   currentChatStateSnapshot,
   dispatchAppendMessage,
+  dispatchCharacterOwnedDurableBatch,
   dispatchCreateChat,
   dispatchCreateChatForImport,
   dispatchCreateImportedChats,
   dispatchCreateChatFolder,
+  dispatchCompatibleChatUpdateScoped,
   dispatchDeleteChat,
   dispatchDeleteChatFolder,
   dispatchDeleteMessageScoped,
@@ -114,11 +116,14 @@ import {
   clearPendingMutationOutbox,
   listPendingMutations,
   MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
+  pendingMutationIntentPayloadByteLength,
+  pendingMutationModuleEnabledProjectionTarget,
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
   stagePendingMutation,
 } from './server/pendingMutationOutbox'
 import { replayPendingMutations } from './server/pendingMutationReplay'
+import { dispatchDurableMutation } from './server/durableMutationDispatch'
 import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRegistry'
 import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from './server/chatBridge.svelte'
 import { PERSONA_SELECTION_MUTATION_KEY } from './server/personaMutationKeys'
@@ -3675,7 +3680,182 @@ describe('chat command projection helpers', () => {
     }
   })
 
-  it('falls back an oversized import to one live sequence and rolls back the projection on failure', async () => {
+  it('chunks an oversized multi-message transcript into durable ordered tail rows', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-chunked-import',
+      writerEpoch: 38,
+      databaseLineage: 'lineage-chat-chunked-import',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    const previous = currentChatStateSnapshot()
+    const messageSize = Math.ceil(MAX_DURABLE_MUTATION_PAYLOAD_BYTES / 2)
+    const chunkedChat = {
+      id: 'chat-chunked-import',
+      name: 'Chunked import',
+      note: '',
+      localLore: [],
+      message: [
+        { role: 'user', data: 'a'.repeat(messageSize), chatId: 'message-chunk-a' },
+        { role: 'char', data: 'b'.repeat(messageSize), chatId: 'message-chunk-b' },
+      ],
+    } as Chat
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats.unshift(chunkedChat)
+    })
+
+    const commandBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/characters/char-a/chats') {
+          commandBodies.push(typeof init.body === 'string' ? JSON.parse(init.body) : {})
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(dispatchCreateImportedChats('char-a', [], [chunkedChat], previous)).resolves.toEqual({
+        status: 'ok',
+      })
+      expect(commandBodies).toHaveLength(1)
+      expect(commandBodies[0]).toMatchObject({ chat: { id: chunkedChat.id, message: [] }, select: false })
+      expect(getDatabase().characters[0].chats[0].message).toHaveLength(2)
+
+      const pending = await listPendingMutations()
+      expect(pending).toHaveLength(3)
+      expect(pending.map((entry) => entry.handle.key)).toEqual([
+        'character-owner:char-a',
+        'character-owner:char-a',
+        'character-owner:char-a',
+      ])
+      expect(pending[0].intent.requests[0]).toMatchObject({
+        method: 'POST',
+        path: '/characters/char-a/chats',
+        body: { chat: { id: chunkedChat.id, message: [] }, select: false },
+      })
+      expect(pending[1].intent.requests[0]).toMatchObject({
+        method: 'POST',
+        path: '/chats/chat-chunked-import/messages/tail',
+        body: { afterMessageId: null, messages: [{ chatId: 'message-chunk-a' }] },
+      })
+      expect(pending[2].intent.requests[0]).toMatchObject({
+        method: 'POST',
+        path: '/chats/chat-chunked-import/messages/tail',
+        body: { afterMessageId: 'message-chunk-a', messages: [{ chatId: 'message-chunk-b' }] },
+      })
+      expect(
+        pending.every(
+          (entry) => pendingMutationIntentPayloadByteLength(entry.intent) <= MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
+        ),
+      ).toBe(true)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps an accepted chunked-import prefix when a later tail is terminally rejected', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-chunked-terminal',
+      writerEpoch: 39,
+      databaseLineage: 'lineage-chat-chunked-terminal',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    const previous = currentChatStateSnapshot()
+    const messageSize = Math.ceil(MAX_DURABLE_MUTATION_PAYLOAD_BYTES / 2)
+    const chunkedChat = {
+      id: 'chat-chunked-terminal',
+      name: 'Chunked terminal import',
+      note: '',
+      localLore: [],
+      message: [
+        { role: 'user', data: 'a'.repeat(messageSize), chatId: 'message-terminal-a' },
+        { role: 'char', data: 'b'.repeat(messageSize), chatId: 'message-terminal-b' },
+      ],
+    } as Chat
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats.unshift(chunkedChat)
+    })
+
+    let revision = 10
+    let tailCalls = 0
+    const commandPaths: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/characters/char-a/chats') {
+          commandPaths.push('/characters/char-a/chats')
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: 'chat.created',
+              revision,
+              resource: 'chatTranscript',
+              id: chunkedChat.id,
+              parentId: 'char-a',
+            },
+            chatId: chunkedChat.id,
+            selectedChatId: 'chat-a',
+            generationSettings: null,
+          })
+        }
+        if (url === '/api/v1/commands/chats/chat-chunked-terminal/messages/tail') {
+          commandPaths.push('/chats/chat-chunked-terminal/messages/tail')
+          tailCalls += 1
+          if (tailCalls === 2) return jsonResponse({ error: 'invalid second tail' }, 400)
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: 'messages.replaced',
+              revision,
+              resource: 'message',
+              parentId: chunkedChat.id,
+            },
+            chatId: chunkedChat.id,
+            afterMessageId: body.afterMessageId ?? null,
+            replacedCount: body.messages?.length ?? 0,
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(dispatchCreateImportedChats('char-a', [], [chunkedChat], previous)).resolves.toEqual({
+        status: 'error',
+        error: 'invalid second tail',
+        reason: 'invalid-request',
+      })
+      expect(commandPaths).toEqual([
+        '/characters/char-a/chats',
+        '/chats/chat-chunked-terminal/messages/tail',
+        '/chats/chat-chunked-terminal/messages/tail',
+      ])
+      const imported = getDatabase().characters[0].chats.find((chat) => chat.id === chunkedChat.id)
+      expect(imported?.message).toHaveLength(1)
+      expect(imported?.message[0].chatId).toBe('message-terminal-a')
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('rejects an unchunkable oversized message before sending and rolls back the projection', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
     await preparePendingMutationOutbox({
@@ -3718,7 +3898,7 @@ describe('chat command projection helpers', () => {
     try {
       await expect(dispatchCreateImportedChats('char-a', [], [oversizedChat], previous)).resolves.toEqual({
         status: 'error',
-        error: 'oversized import failed',
+        error: 'chat_import_too_large',
       })
       expect(mutationIdHeader).toBeUndefined()
       expect(getDatabase().characters[0].chats.some((chat) => chat.id === oversizedChat.id)).toBe(false)
@@ -5044,8 +5224,8 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
-    expect(prepared.factories).toHaveLength(1)
-    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+    expect(prepared.commandCount).toBe(1)
+    prepared.dispatch()
 
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -5083,8 +5263,8 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
-    expect(prepared.factories).toHaveLength(1)
-    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+    expect(prepared.commandCount).toBe(1)
+    prepared.dispatch()
 
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -5122,8 +5302,8 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
-    expect(prepared.factories).toHaveLength(1)
-    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+    expect(prepared.commandCount).toBe(1)
+    prepared.dispatch()
 
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -5157,8 +5337,8 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
-    expect(prepared.factories).toHaveLength(1)
-    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+    expect(prepared.commandCount).toBe(1)
+    prepared.dispatch()
 
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -5196,8 +5376,8 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
-    expect(prepared.factories).toHaveLength(1)
-    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+    expect(prepared.commandCount).toBe(1)
+    prepared.dispatch()
 
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -5242,8 +5422,8 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
-    expect(prepared.factories).toHaveLength(1)
-    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+    expect(prepared.commandCount).toBe(1)
+    prepared.dispatch()
 
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -5289,8 +5469,8 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
-    expect(prepared.factories).toHaveLength(1)
-    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+    expect(prepared.commandCount).toBe(1)
+    prepared.dispatch()
 
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -5333,7 +5513,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
 
-    expect(prepared.factories).toHaveLength(0)
+    expect(prepared.commandCount).toBe(0)
   })
 
   it('P5: scoped compatible chat preparation preserves accepted metadata when message persistence fails', async () => {
@@ -5377,7 +5557,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     getDatabase().characters[0].chats[0] = jsonClone(nextChat)
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
-    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+    prepared.dispatch()
     await waitForCallCount(calls, 3)
 
     expect(getDatabase().characters[0].chats[0].name).toBe('Accepted name')
@@ -6448,5 +6628,671 @@ describe('Phase 3 setCurrentChat scoped snapshot (U4)', () => {
 
     expect(getDatabase().characters[0].chats[0].name).toBe('Chat A')
     expect(getDatabase().characters[0].chats[1].name).toBe('Concurrent sibling edit')
+  })
+})
+
+describe('durable chat and folder structure dispatch', () => {
+  async function prepareDurableOutbox(suffix: string): Promise<void> {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: `writer-chat-structure-${suffix}`,
+      writerEpoch: 51,
+      databaseLineage: `lineage-chat-structure-${suffix}`,
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+  }
+
+  async function clearDurableOutbox(): Promise<void> {
+    await clearPendingMutationOutbox()
+    resetPendingMutationOutboxForTests()
+  }
+
+  it('waits for every batch row to persist and reapplies only the latest retained projection', async () => {
+    await prepareDurableOutbox('batch-readiness')
+    const encryptionGate = createDeferred<void>()
+    const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
+    let encryptCalls = 0
+    const encryptSpy = vi
+      .spyOn(globalThis.crypto.subtle, 'encrypt')
+      .mockImplementation(async (algorithm, key, data) => {
+        encryptCalls += 1
+        if (encryptCalls === 2) await encryptionGate.promise
+        return originalEncrypt(algorithm, key, data)
+      })
+    const commandCalls: string[] = []
+    const reapplyFences: boolean[] = []
+    const rollback = vi.fn()
+    const target = pendingMutationModuleEnabledProjectionTarget('module-a')
+
+    try {
+      const batch = dispatchCharacterOwnedDurableBatch('char-a', [
+        {
+          method: 'PATCH',
+          path: '/chats/chat-a',
+          body: { patch: { name: 'first' }, select: false },
+          projectionTargets: [target],
+          command: async () => {
+            commandCalls.push('first')
+            return { status: 'unavailable' }
+          },
+          rollback,
+          reapply: (isCurrent) => reapplyFences.push(isCurrent(target)),
+        },
+        {
+          method: 'PATCH',
+          path: '/chats/chat-a',
+          body: { patch: { name: 'second' }, select: false },
+          projectionTargets: [target],
+          command: async () => {
+            commandCalls.push('second')
+            return { status: 'unavailable' }
+          },
+          rollback,
+          reapply: (isCurrent) => reapplyFences.push(isCurrent(target)),
+        },
+      ])
+
+      await vi.waitFor(() => expect(encryptCalls).toBe(2))
+      expect(commandCalls).toEqual([])
+      encryptionGate.resolve()
+      await expect(batch).resolves.toMatchObject({ status: 'retained', acceptedCount: 0 })
+      expect(commandCalls).toEqual(['first'])
+      expect(reapplyFences).toEqual([false, true])
+      expect(rollback).not.toHaveBeenCalled()
+    } finally {
+      encryptionGate.resolve()
+      encryptSpy.mockRestore()
+      await clearDurableOutbox()
+    }
+  })
+
+  it('sends no batch request and rolls back every row when one durable row cannot persist', async () => {
+    await prepareDurableOutbox('batch-persistence-failure')
+    const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
+    let encryptCalls = 0
+    const encryptSpy = vi
+      .spyOn(globalThis.crypto.subtle, 'encrypt')
+      .mockImplementation(async (algorithm, key, data) => {
+        encryptCalls += 1
+        if (encryptCalls === 2) throw new Error('simulated suffix persistence failure')
+        return originalEncrypt(algorithm, key, data)
+      })
+    const command = vi.fn(async () => ({ status: 'unavailable' as const }))
+    const rollback = vi.fn()
+
+    try {
+      await expect(
+        dispatchCharacterOwnedDurableBatch('char-a', [
+          {
+            method: 'PATCH',
+            path: '/chats/chat-a',
+            body: { patch: { name: 'first' }, select: false },
+            command,
+            rollback,
+          },
+          {
+            method: 'PATCH',
+            path: '/chats/chat-b',
+            body: { patch: { name: 'second' }, select: false },
+            command,
+            rollback,
+          },
+        ]),
+      ).resolves.toMatchObject({
+        status: 'failure',
+        acceptedCount: 0,
+        failure: { status: 'error', reason: 'invalid-request' },
+      })
+      expect(command).not.toHaveBeenCalled()
+      expect(rollback).toHaveBeenCalledTimes(2)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      encryptSpy.mockRestore()
+      await clearDurableOutbox()
+    }
+  })
+
+  it('retains an optimistic chat patch with the exact frozen live body on the character owner', async () => {
+    await prepareDurableOutbox('chat-patch')
+    let liveBody: Record<string, unknown> | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH') {
+          liveBody = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const previous = currentChatStateSnapshot()
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].name = 'Durable rename'
+      })
+      dispatchUpdateChat('chat-a', { name: 'Durable rename' }, previous)
+
+      await vi.waitFor(() => expect(liveBody).toBeDefined())
+      expect(getDatabase().characters[0].chats[0].name).toBe('Durable rename')
+      const pending = await listPendingMutations()
+      expect(pending).toMatchObject([
+        {
+          handle: { key: 'character-owner:char-a' },
+          intent: {
+            version: 1,
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/chats/chat-a',
+                body: { patch: { name: 'Durable rename' }, select: false },
+              },
+            ],
+          },
+        },
+      ])
+      const { baseRevision: _baseRevision, ...sentBody } = liveBody ?? {}
+      expect(sentBody).toEqual(pending[0].intent.requests[0].body)
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
+  it('retains optimistic chat selection and folder metadata edits on retryable failures', async () => {
+    await prepareDurableOutbox('selection')
+    let liveBody: Record<string, unknown> | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/chats/chat-b' && init.method === 'PATCH') {
+          liveBody = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
+      await vi.waitFor(() => expect(liveBody).toBeDefined())
+
+      expect(getDatabase().characters[0].chatPage).toBe(1)
+      const pending = await listPendingMutations()
+      expect(pending).toMatchObject([
+        {
+          handle: { key: 'character-owner:char-a' },
+          intent: {
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/chats/chat-b',
+                body: { patch: {}, select: true },
+              },
+            ],
+          },
+        },
+      ])
+      const { baseRevision: _baseRevision, ...sentBody } = liveBody ?? {}
+      expect(sentBody).toEqual(pending[0].intent.requests[0].body)
+    } finally {
+      await clearDurableOutbox()
+    }
+
+    await prepareDurableOutbox('folder-patch')
+    liveBody = undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH') {
+          liveBody = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const previous = currentChatStateSnapshot()
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chatFolders[0].name = 'Durable folder rename'
+      })
+      dispatchUpdateChatFolder('folder-a', { name: 'Durable folder rename' }, previous)
+      await vi.waitFor(() => expect(liveBody).toBeDefined())
+
+      expect(getDatabase().characters[0].chatFolders[0].name).toBe('Durable folder rename')
+      const pending = await listPendingMutations()
+      expect(pending).toMatchObject([
+        {
+          handle: { key: 'character-owner:char-a' },
+          intent: {
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/chat-folders/folder-a',
+                body: { patch: { name: 'Durable folder rename' } },
+              },
+            ],
+          },
+        },
+      ])
+      const { baseRevision: _baseRevision, ...sentBody } = liveBody ?? {}
+      expect(sentBody).toEqual(pending[0].intent.requests[0].body)
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
+  it('retains direct scriptstate and author-note projections with explicit character ownership', async () => {
+    await prepareDurableOutbox('scriptstate')
+    let liveBody: Record<string, unknown> | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/chats/chat-a/scriptstate' && init.method === 'PATCH') {
+          liveBody = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const previous = currentChatScriptstateSnapshot()
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].scriptstate = { $score: 'durable' }
+      })
+      dispatchPatchChatScriptstateScoped('chat-a', { $score: 'durable' }, ['$old'], previous)
+      await vi.waitFor(() => expect(liveBody).toBeDefined())
+
+      expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({ $score: 'durable' })
+      const pending = await listPendingMutations()
+      expect(pending).toMatchObject([
+        {
+          handle: { key: 'character-owner:char-a' },
+          intent: {
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/chats/chat-a/scriptstate',
+                body: { patch: { $score: 'durable' }, deleteKeys: ['$old'] },
+              },
+            ],
+          },
+        },
+      ])
+      const { baseRevision: _baseRevision, ...sentBody } = liveBody ?? {}
+      expect(sentBody).toEqual(pending[0].intent.requests[0].body)
+    } finally {
+      await clearDurableOutbox()
+    }
+
+    await prepareDurableOutbox('direct-note')
+    liveBody = undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH') {
+          liveBody = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const previous = currentChatScriptstateSnapshot(true)
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].note = 'Durable trigger note'
+      })
+      const result = dispatchUpdateChatNoteScoped('chat-a', 'Durable trigger note', previous)
+      await expect(result).resolves.toMatchObject({ status: expect.any(String) })
+
+      expect(getDatabase().characters[0].chats[0].note).toBe('Durable trigger note')
+      const pending = await listPendingMutations()
+      expect(pending).toMatchObject([
+        {
+          handle: { key: 'character-owner:char-a' },
+          intent: {
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/chats/chat-a',
+                body: { patch: { note: 'Durable trigger note' }, select: false },
+              },
+            ],
+          },
+        },
+      ])
+      const { baseRevision: _baseRevision, ...sentBody } = liveBody ?? {}
+      expect(sentBody).toEqual(pending[0].intent.requests[0].body)
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
+  it('does not nest a chat-row mutation that already carries durable transport', async () => {
+    await prepareDurableOutbox('existing-transport')
+    const intent = {
+      version: 1 as const,
+      requests: [
+        {
+          method: 'PATCH' as const,
+          path: '/chats/chat-a',
+          body: { patch: { suggestMessages: ['durable suggestion'] }, select: false },
+        },
+      ],
+    }
+    const outer = stagePendingMutation('character-owner:char-a', intent)
+    const commandMutationIds: Array<string | null> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH') {
+          const headers = init.headers as Record<string, string> | undefined
+          commandMutationIds.push(headers?.['risu-mutation-id'] ?? null)
+          return jsonResponse({
+            revision: 11,
+            event: {
+              type: 'chat.updated',
+              revision: 11,
+              resource: 'characterRow',
+              id: 'chat-a',
+              parentId: 'char-a',
+            },
+            chatId: 'chat-a',
+            selectedChatId: 'chat-a',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].suggestMessages = ['durable suggestion']
+      })
+      const rollback = {
+        selectedCharID: 0,
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        metadata: {},
+      }
+      await expect(
+        dispatchDurableMutation(outer, intent, (transport) => {
+          return (
+            dispatchUpdateChatRow('chat-a', { suggestMessages: ['durable suggestion'] }, rollback, transport) ??
+            Promise.resolve({ status: 'unavailable' as const })
+          )
+        }),
+      ).resolves.toMatchObject({ status: 'ok' })
+
+      expect(commandMutationIds).toEqual([outer.mutationId])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
+  it('pre-stages combined folder and chat reorders and replays them in owner order', async () => {
+    await prepareDurableOutbox('combined-reorder')
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chatFolders.push({ id: 'folder-b', name: 'Folder B', folded: false })
+    })
+    const previous = currentChatStateSnapshot()
+    let recover = false
+    let revision = 10
+    const commandPaths: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        const path = url.replace('/api/v1/commands', '')
+        if (path === '/characters/char-a/chat-folders/reorder' || path === '/characters/char-a/chats/reorder') {
+          commandPaths.push(path)
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 503)
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: path.includes('/chat-folders/') ? 'chatFolder.reordered' : 'chat.reordered',
+              revision,
+              resource: 'characterRow',
+              parentId: 'char-a',
+            },
+            selectedChatId: 'chat-b',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      dispatchReorderChatFoldersAndChatsByIds(
+        'char-a',
+        ['folder-b', 'folder-a'],
+        ['chat-b', 'chat-a'],
+        { 'chat-b': 'folder-b', 'chat-a': null },
+        previous,
+        'chat-b',
+      )
+      await vi.waitFor(() => expect(commandPaths).toEqual(['/characters/char-a/chat-folders/reorder']))
+
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b', 'folder-a'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-b', 'chat-a'])
+      const pending = await listPendingMutations()
+      expect(pending.map((entry) => entry.handle.key)).toEqual(['character-owner:char-a', 'character-owner:char-a'])
+      expect(pending.map((entry) => entry.intent.requests[0])).toEqual([
+        {
+          method: 'POST',
+          path: '/characters/char-a/chat-folders/reorder',
+          body: { folderIds: ['folder-b', 'folder-a'], selectedChatId: 'chat-b' },
+        },
+        {
+          method: 'POST',
+          path: '/characters/char-a/chats/reorder',
+          body: {
+            chatIds: ['chat-b', 'chat-a'],
+            folderByChatId: { 'chat-b': 'folder-b' },
+            selectedChatId: 'chat-b',
+          },
+        },
+      ])
+
+      recover = true
+      const replayStart = commandPaths.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2, retained: 0 })
+      expect(commandPaths.slice(replayStart)).toEqual([
+        '/characters/char-a/chat-folders/reorder',
+        '/characters/char-a/chats/reorder',
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
+  it('keeps an accepted folder reorder when the later chat reorder is terminally rejected', async () => {
+    await prepareDurableOutbox('combined-terminal')
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chatFolders.push({ id: 'folder-b', name: 'Folder B', folded: false })
+    })
+    const previous = currentChatStateSnapshot()
+    const commandPaths: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        const path = url.replace('/api/v1/commands', '')
+        if (path === '/characters/char-a/chat-folders/reorder') {
+          commandPaths.push(path)
+          return jsonResponse({
+            revision: 11,
+            event: {
+              type: 'chatFolder.reordered',
+              revision: 11,
+              resource: 'characterRow',
+              parentId: 'char-a',
+            },
+            selectedChatId: 'chat-b',
+          })
+        }
+        if (path === '/characters/char-a/chats/reorder') {
+          commandPaths.push(path)
+          return jsonResponse({ error: 'invalid chat reorder' }, 400)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      dispatchReorderChatFoldersAndChatsByIds(
+        'char-a',
+        ['folder-b', 'folder-a'],
+        ['chat-b', 'chat-a'],
+        { 'chat-b': 'folder-b', 'chat-a': null },
+        previous,
+        'chat-b',
+      )
+      await vi.waitFor(() => {
+        expect(commandPaths).toEqual(['/characters/char-a/chat-folders/reorder', '/characters/char-a/chats/reorder'])
+      })
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b', 'folder-a'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.folderId ?? null)).toEqual([null, 'folder-a'])
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
+  it('retains every compatibility sub-write after the first retryable failure', async () => {
+    await prepareDurableOutbox('compatibility')
+    const previous = currentChatScopedSnapshot()
+    const previousChat = jsonClone(previous.chat!)
+    const nextChat = jsonClone(previousChat)
+    nextChat.name = 'Compatible durable rename'
+    nextChat.message = [{ role: 'user', data: 'compatible append', chatId: 'message-compatible' }]
+    nextChat.scriptstate = { $score: 'compatible', $old: 'gone' }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0] = jsonClone(nextChat)
+    })
+
+    const commandPaths: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        const path = url.replace('/api/v1/commands', '')
+        commandPaths.push(path)
+        return jsonResponse({ error: 'temporarily unavailable' }, 503)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      dispatchCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+      await vi.waitFor(() => expect(commandPaths).toEqual(['/chats/chat-a']))
+
+      expect(getDatabase().characters[0].chats[0]).toMatchObject({
+        name: 'Compatible durable rename',
+        message: [{ role: 'user', data: 'compatible append', chatId: 'message-compatible' }],
+        scriptstate: { $score: 'compatible', $old: 'gone' },
+      })
+      const pending = await listPendingMutations()
+      expect(pending.map((entry) => entry.handle.key)).toEqual([
+        'character-owner:char-a',
+        'character-owner:char-a',
+        'character-owner:char-a',
+      ])
+      expect(pending.map((entry) => entry.intent.requests[0])).toEqual([
+        {
+          method: 'PATCH',
+          path: '/chats/chat-a',
+          body: { patch: { name: 'Compatible durable rename' }, select: false },
+        },
+        {
+          method: 'POST',
+          path: '/chats/chat-a/messages',
+          body: {
+            message: { role: 'user', data: 'compatible append', chatId: 'message-compatible' },
+          },
+        },
+        {
+          method: 'PATCH',
+          path: '/chats/chat-a/scriptstate',
+          body: { patch: { $score: 'compatible' }, deleteKeys: [] },
+        },
+      ])
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
+  it('keeps an accepted compatibility prefix and rolls back only unaccepted sub-writes', async () => {
+    await prepareDurableOutbox('compatibility-terminal')
+    const previous = currentChatScopedSnapshot()
+    const previousChat = jsonClone(previous.chat!)
+    const nextChat = jsonClone(previousChat)
+    nextChat.name = 'Accepted compatible rename'
+    nextChat.message = [{ role: 'user', data: 'rejected append', chatId: 'message-rejected' }]
+    nextChat.scriptstate = { $score: 'unaccepted scriptstate', $old: 'gone' }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0] = jsonClone(nextChat)
+    })
+
+    const commandPaths: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        const path = url.replace('/api/v1/commands', '')
+        if (path === '/chats/chat-a') {
+          commandPaths.push(path)
+          return jsonResponse({
+            revision: 11,
+            event: {
+              type: 'chat.updated',
+              revision: 11,
+              resource: 'characterRow',
+              id: 'chat-a',
+              parentId: 'char-a',
+            },
+            chatId: 'chat-a',
+            selectedChatId: 'chat-a',
+          })
+        }
+        if (path === '/chats/chat-a/messages') {
+          commandPaths.push(path)
+          return jsonResponse({ error: 'invalid message append' }, 400)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      dispatchCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+      await vi.waitFor(() => expect(commandPaths).toEqual(['/chats/chat-a', '/chats/chat-a/messages']))
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+
+      expect(getDatabase().characters[0].chats[0]).toMatchObject({
+        name: 'Accepted compatible rename',
+        message: [],
+        scriptstate: { $score: '1', $old: 'gone' },
+      })
+    } finally {
+      await clearDurableOutbox()
+    }
   })
 })

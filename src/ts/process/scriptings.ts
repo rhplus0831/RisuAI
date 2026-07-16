@@ -34,7 +34,6 @@ import {
   captureActiveChatTarget,
   isActiveChatTargetFresh,
   prepareCompatibleChatUpdateScoped,
-  runOptimisticCommandSequence,
   type ActiveChatTarget,
   type ChatScopedSnapshot,
 } from '../chatCommands'
@@ -1790,7 +1789,7 @@ function reconcileLuaEditTriggerWorkingChat(context: LuaEditTriggerWorkingContex
   const commandNextChat: Chat = messagesChanged ? nextChat : { ...nextChat, message: [] }
   const preparation = prepareCompatibleChatUpdateScoped(commandPreviousChat, commandNextChat, reconciliation.previous)
   const expectedChatCommandCount = Number(messagesChanged) + Number(scriptstateChanged)
-  if (preparation.factories.length !== expectedChatCommandCount) return
+  if (preparation.commandCount !== expectedChatCommandCount) return
   const nextLocalLore = localLoreChanged ? safeStructuredClone(workingChat.localLore ?? []) : null
   if (nextLocalLore) ensureClientLorebookEntryIds(nextLocalLore)
   const lorebookPrevious = localLoreChanged
@@ -1828,9 +1827,7 @@ function reconcileLuaEditTriggerWorkingChat(context: LuaEditTriggerWorkingContex
   })
   if (!applied) return
 
-  if (preparation.factories.length > 0) {
-    runOptimisticCommandSequence(preparation.factories, preparation.rollback)
-  }
+  preparation.dispatch()
   if (nextLocalLore && lorebookPrevious && reconciliation.target.chatId) {
     dispatchReplaceChatLorebooks(reconciliation.target.chatId, nextLocalLore, lorebookPrevious, 0)
   }

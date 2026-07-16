@@ -143,8 +143,12 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'DELETE', path: /^\/characters\/[^/?#]+$/ },
   { method: 'POST', path: /^\/characters\/select$/ },
   { method: 'POST', path: /^\/characters\/[^/?#]+\/chats$/ },
+  { method: 'POST', path: /^\/characters\/[^/?#]+\/chats\/reorder$/ },
   { method: 'POST', path: /^\/characters\/[^/?#]+\/chat-folders$/ },
+  { method: 'POST', path: /^\/characters\/[^/?#]+\/chat-folders\/reorder$/ },
+  { method: 'POST', path: /^\/characters\/[^/?#]+\/modules\/reorder$/ },
   { method: 'PATCH', path: /^\/chats\/[^/?#]+$/ },
+  { method: 'PATCH', path: /^\/chats\/[^/?#]+\/scriptstate$/ },
   { method: 'DELETE', path: /^\/chats\/[^/?#]+$/ },
   { method: 'POST', path: /^\/chats\/[^/?#]+\/fork$/ },
   { method: 'POST', path: /^\/chats\/[^/?#]+\/messages$/ },
@@ -229,6 +233,18 @@ export function pendingMutationLoadoutRowProjectionTarget(loadoutId: string): st
 
 export function pendingMutationChatGenerationSettingsProjectionTarget(chatId: string): string {
   return `chat-generation-settings:${encodeProjectionTargetPart(chatId)}`
+}
+
+export function pendingMutationCharacterLorebooksProjectionTarget(characterId: string): string {
+  return `character-lorebooks:${encodeProjectionTargetPart(characterId)}`
+}
+
+export function pendingMutationCharacterScriptsProjectionTarget(characterId: string): string {
+  return `character-scripts:${encodeProjectionTargetPart(characterId)}`
+}
+
+export function pendingMutationCharacterTriggersProjectionTarget(characterId: string): string {
+  return `character-triggers:${encodeProjectionTargetPart(characterId)}`
 }
 
 export function pendingMutationPersonaRowProjectionTarget(personaId: string): string {
@@ -506,6 +522,11 @@ export function stagePendingMutation(
     if (status !== 'persisted') retirePendingMutationProjectionGeneration(handle)
   })
   return handle
+}
+
+/** Exact encrypted JSON envelope size used by the persisted outbox row. */
+export function pendingMutationIntentPayloadByteLength(intent: DurableMutationIntent): number {
+  return serializePendingMutationIntent(normalizeIntent(intent)).byteLength
 }
 
 /** Freeze this exact payload/id for dispatch. Later edits must stage a new id. */
@@ -902,7 +923,7 @@ async function persistPendingMutation(
   if (!database || !encryptionKey || order === null) return 'unavailable'
 
   try {
-    const payload = new TextEncoder().encode(JSON.stringify({ intent } satisfies EncryptedPendingMutationPayload))
+    const payload = serializePendingMutationIntent(intent)
     if (payload.byteLength > MAX_DURABLE_MUTATION_PAYLOAD_BYTES) {
       throw new RangeError('Pending mutation payload is too large')
     }
@@ -986,7 +1007,7 @@ async function replacePendingMutationIntentExact(
     if (candidate.dispatchStarted === true) return { status: 'started' }
 
     const sequence = nextMutationSequence()
-    const payload = new TextEncoder().encode(JSON.stringify({ intent } satisfies EncryptedPendingMutationPayload))
+    const payload = serializePendingMutationIntent(intent)
     if (payload.byteLength > MAX_DURABLE_MUTATION_PAYLOAD_BYTES) {
       throw new RangeError('Pending mutation payload is too large')
     }
@@ -1094,6 +1115,10 @@ function normalizeIntent(value: unknown): DurableMutationIntent {
   }
 }
 
+function serializePendingMutationIntent(intent: DurableMutationIntent): Uint8Array<ArrayBuffer> {
+  return new TextEncoder().encode(JSON.stringify({ intent } satisfies EncryptedPendingMutationPayload))
+}
+
 function normalizeRequest(value: unknown): DurableMutationRequest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError('Pending mutation request must be an object')
@@ -1154,6 +1179,32 @@ function pendingMutationRequestProjectionTargets(request: DurableMutationRequest
   if (request.method === 'PUT' && chatGenerationSettings) {
     return [
       pendingMutationChatGenerationSettingsProjectionTarget(decodeProjectionTargetPart(chatGenerationSettings[1]!)),
+    ]
+  }
+
+  const characterLorebooksCollection =
+    request.method === 'PUT' ? /^\/characters\/([^/]+)\/lorebooks$/.exec(request.path) : null
+  const characterLorebookEntry =
+    request.method === 'PUT' || request.method === 'DELETE'
+      ? /^\/characters\/([^/]+)\/lorebooks\/entries\/[^/]+$/.exec(request.path)
+      : null
+  const characterLorebookReorder =
+    request.method === 'POST' ? /^\/characters\/([^/]+)\/lorebooks\/entries\/reorder$/.exec(request.path) : null
+  const characterLorebooks = characterLorebooksCollection ?? characterLorebookEntry ?? characterLorebookReorder
+  if (characterLorebooks) {
+    return [pendingMutationCharacterLorebooksProjectionTarget(decodeProjectionTargetPart(characterLorebooks[1]!))]
+  }
+
+  const characterDefinitions =
+    request.method === 'PUT' || request.method === 'PATCH'
+      ? /^\/characters\/([^/]+)\/(scripts|triggers)$/.exec(request.path)
+      : null
+  if (characterDefinitions) {
+    const characterId = decodeProjectionTargetPart(characterDefinitions[1]!)
+    return [
+      characterDefinitions[2] === 'scripts'
+        ? pendingMutationCharacterScriptsProjectionTarget(characterId)
+        : pendingMutationCharacterTriggersProjectionTarget(characterId),
     ]
   }
 

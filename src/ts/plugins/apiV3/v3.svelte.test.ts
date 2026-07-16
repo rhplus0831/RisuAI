@@ -182,7 +182,11 @@ vi.mock('src/ts/chatCommands', () => ({
     'bookmarkNames',
     'modules',
   ]),
-  prepareCompatibleChatUpdateScoped: vi.fn(() => ({ factories: [], rollback: vi.fn() })),
+  prepareCompatibleChatUpdateScoped: vi.fn(() => ({
+    commandCount: 0,
+    dispatch: vi.fn(),
+    dispatchAsync: vi.fn(async () => null),
+  })),
   runOptimisticCommandSequence: vi.fn(),
 }))
 
@@ -567,15 +571,18 @@ describe('V3 chat command bridge', () => {
       scriptstate: { count: 1 },
       localLore: [{ key: 'old lore' }],
     }
-    const factories = [vi.fn()]
-    const rollback = vi.fn()
+    const dispatch = vi.fn()
     mockDbState.db.characters = {
       0: {
         chaId: 'char-a',
         chats: [existingChat],
       },
     }
-    vi.mocked(prepareCompatibleChatUpdateScoped).mockReturnValueOnce({ factories, rollback })
+    vi.mocked(prepareCompatibleChatUpdateScoped).mockReturnValueOnce({
+      commandCount: 3,
+      dispatch,
+      dispatchAsync: vi.fn(async () => null),
+    })
     const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
     const pluginChat = {
       ...existingChat,
@@ -594,7 +601,7 @@ describe('V3 chat command bridge', () => {
       chatId: 'chat-a',
       chat: existingChat,
     })
-    expect(runOptimisticCommandSequence).toHaveBeenCalledWith(factories, rollback)
+    expect(dispatch).toHaveBeenCalledOnce()
   })
 })
 

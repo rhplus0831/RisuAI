@@ -15,9 +15,13 @@ import {
   listPendingMutationReceiptAcknowledgements,
   listPendingMutations,
   isPendingMutationProjectionFenceCurrent,
+  pendingMutationCharacterLorebooksProjectionTarget,
+  pendingMutationCharacterScriptsProjectionTarget,
+  pendingMutationCharacterTriggersProjectionTarget,
   pendingMutationLocalProjectionFence,
   pendingMutationProjectionFence,
   pendingMutationProjectionGenerationCountForTests,
+  pendingMutationProjectionTargets,
   pendingMutationSettingsFieldProjectionTarget,
   preparePendingMutationOutbox,
   readSinglePendingMutationOwner,
@@ -462,6 +466,30 @@ describe('pending mutation outbox', () => {
     expect(await listPendingMutationReceiptAcknowledgements()).toEqual([])
   })
 
+  it('maps character lorebook, script, and trigger variants to shared owner projections', () => {
+    const targetsFor = (method: 'DELETE' | 'PATCH' | 'POST' | 'PUT', path: string) =>
+      pendingMutationProjectionTargets({ version: 1, requests: [{ method, path, body: {} }] })
+    const lorebooksTarget = pendingMutationCharacterLorebooksProjectionTarget('character a')
+
+    expect([
+      targetsFor('PUT', '/characters/character%20a/lorebooks'),
+      targetsFor('PUT', '/characters/character%20a/lorebooks/entries/entry-a'),
+      targetsFor('DELETE', '/characters/character%20a/lorebooks/entries/entry-a'),
+      targetsFor('POST', '/characters/character%20a/lorebooks/entries/reorder'),
+    ]).toEqual([[lorebooksTarget], [lorebooksTarget], [lorebooksTarget], [lorebooksTarget]])
+    expect(targetsFor('PUT', '/characters/character%20a/scripts')).toEqual([
+      pendingMutationCharacterScriptsProjectionTarget('character a'),
+    ])
+    expect(targetsFor('PATCH', '/characters/character%20a/triggers')).toEqual([
+      pendingMutationCharacterTriggersProjectionTarget('character a'),
+    ])
+
+    expect(targetsFor('PUT', '/chats/character%20a/lorebooks')).toEqual(['request:PUT:/chats/character%20a/lorebooks'])
+    expect(targetsFor('PATCH', '/modules/character%20a/scripts')).toEqual([
+      'request:PATCH:/modules/character%20a/scripts',
+    ])
+  })
+
   it('fences concrete fields independently even when writers share a semantic key', async () => {
     const openAIKeyTarget = pendingMutationSettingsFieldProjectionTarget('openAIKey')
     const temperatureTarget = pendingMutationSettingsFieldProjectionTarget('temperature')
@@ -675,7 +703,12 @@ describe('pending mutation outbox', () => {
     ['DELETE', '/characters/character-a'],
     ['POST', '/characters/select'],
     ['POST', '/characters/character-a/chats'],
+    ['POST', '/characters/character-a/chats/reorder'],
     ['POST', '/characters/character-a/chat-folders'],
+    ['POST', '/characters/character-a/chat-folders/reorder'],
+    ['POST', '/characters/character-a/modules/reorder'],
+    ['PATCH', '/chats/chat-a'],
+    ['PATCH', '/chats/chat-a/scriptstate'],
     ['POST', '/chats/chat-a/fork'],
     ['POST', '/chats/chat-a/messages'],
     ['POST', '/chats/chat-a/messages/truncate'],
@@ -758,7 +791,11 @@ describe('pending mutation outbox', () => {
     ['POST', '/characters/create-and-select/extra'],
     ['POST', '/characters/character-a'],
     ['POST', '/characters/character-a/chats/extra'],
+    ['POST', '/characters/character-a/chats/reorder/extra'],
     ['POST', '/characters/character-a/chat-folders/extra'],
+    ['POST', '/characters/character-a/chat-folders/reorder/extra'],
+    ['POST', '/characters/character-a/modules/reorder/extra'],
+    ['PATCH', '/chats/chat-a/scriptstate/extra'],
     ['POST', '/chats/chat-a/fork/extra'],
     ['POST', '/chats/chat-a/messages/extra'],
     ['POST', '/chats/chat-a/messages/truncate/extra'],
