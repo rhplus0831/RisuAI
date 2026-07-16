@@ -315,6 +315,8 @@
           insertContent(autocompleteContents[selectingAutoComplete])
           return
         case 'Escape':
+          e.preventDefault()
+          e.stopPropagation()
           hideAutoComplete()
           return
       }

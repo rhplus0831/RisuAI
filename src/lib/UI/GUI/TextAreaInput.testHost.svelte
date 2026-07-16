@@ -4,11 +4,22 @@
   interface Props {
     initialContext: string
     initialValue: string
+    highlight?: boolean
+    popupEditor?: boolean | 'auto'
     onInput?: (value: string) => void
     onchange?: () => void
+    onAncestorKeydown?: (event: KeyboardEvent) => void
   }
 
-  let { initialContext, initialValue, onInput = () => {}, onchange = () => {} }: Props = $props()
+  let {
+    initialContext,
+    initialValue,
+    highlight = false,
+    popupEditor = 'auto',
+    onInput = () => {},
+    onchange = () => {},
+    onAncestorKeydown = () => {},
+  }: Props = $props()
   const readInitialContext = () => initialContext
   const readInitialValue = () => initialValue
   let popupEditorContext = $state(readInitialContext())
@@ -24,4 +35,6 @@
   }
 </script>
 
-<TextAreaInput bind:value {popupEditorContext} {onInput} {onchange} />
+<div role="dialog" aria-label="Test ancestor" tabindex="-1" onkeydown={onAncestorKeydown}>
+  <TextAreaInput bind:value {popupEditorContext} {highlight} {popupEditor} {onInput} {onchange} />
+</div>

@@ -36,16 +36,27 @@ function autocompleteSuggestion(label: string): HTMLButtonElement | null {
   return Array.from(target.querySelectorAll('button')).find((button) => button.textContent?.trim() === label) ?? null
 }
 
-async function openAutocomplete(): Promise<HTMLDivElement> {
+async function openAutocomplete(onAncestorKeydown?: (event: KeyboardEvent) => void): Promise<HTMLDivElement> {
   vi.spyOn(Range.prototype, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ x: 10, y: 10 }))
-  component = mount(TextAreaInput, {
-    target,
-    props: {
-      value: '{{cha',
-      highlight: true,
-      popupEditor: false,
-    },
-  })
+  component = onAncestorKeydown
+    ? mount(TextAreaInputTestHost, {
+        target,
+        props: {
+          initialContext: 'autocomplete-owner',
+          initialValue: '{{cha',
+          highlight: true,
+          popupEditor: false,
+          onAncestorKeydown,
+        },
+      })
+    : mount(TextAreaInput, {
+        target,
+        props: {
+          value: '{{cha',
+          highlight: true,
+          popupEditor: false,
+        },
+      })
   await tick()
 
   const editor = highlightedEditor()
@@ -317,5 +328,18 @@ describe('TextAreaInput autocomplete selection', () => {
 
     expect(event.defaultPrevented).toBe(true)
     expect(editor.textContent).toBe('{{char}}')
+  })
+
+  it('keeps autocomplete Escape from closing an ancestor dialog', async () => {
+    const ancestorKeydown = vi.fn()
+    const editor = await openAutocomplete(ancestorKeydown)
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    editor.dispatchEvent(event)
+    await tick()
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(ancestorKeydown).not.toHaveBeenCalled()
+    expect(autocompleteSuggestion('char')).toBeNull()
   })
 })
