@@ -82,6 +82,60 @@ describe('TextAreaResizable popup editor', () => {
     expect(onchange).toHaveBeenCalledOnce()
   })
 
+  it('discards a delayed popup edit after the textarea is unmounted', async () => {
+    const onchange = vi.fn()
+    component = mount(TextAreaResizable, {
+      target,
+      props: {
+        value: 'departed message',
+        onchange,
+        popupEditor: true,
+      },
+    })
+
+    target.querySelector<HTMLButtonElement>('button[aria-label]')?.click()
+    await tick()
+    expect(popUpEditorStore.open).toBe(true)
+
+    popUpEditorStore.value = 'stale edit after navigation'
+    unmount(component)
+    component = undefined
+    popUpEditorStore.open = false
+    await vi.advanceTimersByTimeAsync(100)
+    await tick()
+
+    expect(onchange).not.toHaveBeenCalled()
+  })
+
+  it('discards a delayed popup edit after the bound value changes', async () => {
+    const onchange = vi.fn()
+    component = mount(TextAreaResizable, {
+      target,
+      props: {
+        value: 'original message',
+        onchange,
+        popupEditor: true,
+      },
+    })
+
+    target.querySelector<HTMLButtonElement>('button[aria-label]')?.click()
+    await tick()
+    expect(popUpEditorStore.open).toBe(true)
+
+    const input = textarea()
+    input.value = 'new live value'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    popUpEditorStore.value = 'stale popup value'
+    popUpEditorStore.open = false
+    await vi.advanceTimersByTimeAsync(100)
+    await tick()
+
+    expect(textarea().value).toBe('new live value')
+    expect(onchange).not.toHaveBeenCalled()
+  })
+
   it('keeps a stable editing height instead of writing measured content height', async () => {
     component = mount(TextAreaResizable, {
       target,

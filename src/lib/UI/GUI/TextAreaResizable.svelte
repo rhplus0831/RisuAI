@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Maximize2Icon } from '@lucide/svelte'
-  import { onMount, tick } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
 
   import { language } from 'src/lang'
   import { hotkeyMatches } from 'src/ts/hotkey'
@@ -13,6 +13,7 @@
   let previousScrollHeight = 0
   let resizeRequest = 0
   let openingPopupEditor = false
+  let popupEditorRun = 0
   interface Props {
     value?: string
     handleLongPress?: any
@@ -49,6 +50,8 @@
 
   async function openPopupEditor() {
     if (!popupEditor || openingPopupEditor) return
+    const run = ++popupEditorRun
+    const initialValue = value
     openingPopupEditor = true
     popUpEditorStore.value = value
     popUpEditorStore.mode = 'default'
@@ -56,10 +59,11 @@
     popUpEditorStore.open = true
 
     try {
-      while (popUpEditorStore.open) {
+      while (run === popupEditorRun && value === initialValue && popUpEditorStore.open) {
         await sleep(100)
       }
 
+      if (run !== popupEditorRun || value !== initialValue) return
       value = popUpEditorStore.value
       onchange()
       await tick()
@@ -71,6 +75,11 @@
 
   onMount(() => {
     resize()
+  })
+
+  onDestroy(() => {
+    popupEditorRun += 1
+    resizeRequest += 1
   })
 
   $effect(() => {
