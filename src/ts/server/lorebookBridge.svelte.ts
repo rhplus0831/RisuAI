@@ -615,7 +615,9 @@ export function applyServerCharacterLorebookResource(characterId: string, global
 
 export function setActiveChatLorebookLocalActivation(book: loreBook, active: boolean, delayMs = 250): boolean {
   const chatId = getCurrentChatFromResources()?.id
-  const previous = chatId ? currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId }) : null
+  const scope = chatId ? ({ kind: 'chat', chatId } as const) : null
+  if (scope) flushPendingLorebookEntryBeforeCollectionMutation(scope)
+  const previous = scope ? currentLorebookCollectionScopedSnapshot(scope) : null
   if (!chatId || !previous) return false
 
   let entries: loreBook[] | null = null
@@ -673,7 +675,9 @@ export function replaceModuleLorebookCollectionDraft(
 ): boolean {
   if (!moduleId) return false
 
-  const previous = currentLorebookCollectionScopedSnapshot({ kind: 'module', moduleId })
+  const scope = { kind: 'module', moduleId } as const
+  flushPendingLorebookEntryBeforeCollectionMutation(scope)
+  const previous = currentLorebookCollectionScopedSnapshot(scope)
   const hasLiveModule = Boolean(findModule(moduleId))
   const cloned = cloneJsonValue(entries ?? [])
   ensureClientLorebookEntryIds(cloned)
@@ -705,6 +709,7 @@ function replaceLorebookCollection(
   delayMs: number,
   source: LorebookReplacementSource = 'collection',
 ): boolean {
+  flushPendingLorebookEntryBeforeCollectionMutation(scope)
   const previous = currentLorebookCollectionScopedSnapshot(scope)
   const cloned = cloneJsonValue(entries ?? [])
   const applied = withTrustedResourceWrite(() => assignLorebookCollection(scope, cloned))
@@ -720,6 +725,13 @@ function replaceLorebookCollection(
     case 'global':
       dispatchReplaceGlobalLorebookEntries(scope.lorebookId, cloned, previous, delayMs)
       return true
+  }
+}
+
+function flushPendingLorebookEntryBeforeCollectionMutation(scope: DiscreteLorebookEditScope): void {
+  const key = lorebookCollectionScopeKey(scope)
+  if (pendingReplacements.get(key)?.source === 'entry') {
+    runPendingReplacement(key)
   }
 }
 
@@ -1169,6 +1181,7 @@ function queueScopedLorebookReplacement(
   source: LorebookReplacementSource,
 ): void {
   const key = lorebookCollectionScopeKey(scope)
+  if (source !== 'entry') flushPendingLorebookEntryBeforeCollectionMutation(scope)
   const attemptedEntries = cloneJsonValue(entries ?? []) as loreBook[]
   const projectionEpochs = captureLorebookProjectionEpochs(scope)
   queueReplacement(
@@ -1677,10 +1690,8 @@ function planLorebookCommand(
   }
 
   if (isLorebookCollectionReplacementSource(source) && !isLorebookEntryStateSnapshot(rollbackSnapshot)) {
-    if (!hasEarlierEntryAttempt) {
-      const deltaPlan = planLorebookCollectionDelta(entries, rollbackSnapshot)
-      if (deltaPlan) return deltaPlan
-    }
+    const deltaPlan = planLorebookCollectionDelta(entries, rollbackSnapshot)
+    if (deltaPlan) return deltaPlan
   }
 
   return {
@@ -1690,6 +1701,31 @@ function planLorebookCommand(
         ? (cloneJsonValue(entries ?? []) as LorebookEntrySnapshot[])
         : cloneLorebookEntriesForCommand(entries),
   }
+}
+
+function planLorebookEntryNetRevertCorrection(
+  entries: loreBook[],
+  rollbackSnapshot: LorebookReplacementSnapshot,
+): PlannedLorebookCommand | null {
+  if (isLorebookEntryStateSnapshot(rollbackSnapshot)) {
+    const upsert = planLorebookEntryUpsert(entries, rollbackSnapshot)
+    if (!upsert || upsert.kind !== 'upsert') return null
+    const { sparseUpdate: _sparseUpdate, ...fullEntryUpsert } = upsert
+    return fullEntryUpsert
+  }
+  if (!Array.isArray(rollbackSnapshot.scopedValue)) return null
+  return { kind: 'replace', entries: cloneLorebookEntriesForCommand(entries) }
+}
+
+function lorebookCollectionMatchesRollbackBaseline(
+  entries: loreBook[],
+  rollbackSnapshot: LorebookReplacementSnapshot,
+): boolean {
+  return (
+    !isLorebookEntryStateSnapshot(rollbackSnapshot) &&
+    Array.isArray(rollbackSnapshot.scopedValue) &&
+    snapshotJson(rollbackSnapshot.scopedValue) === snapshotJson(entries)
+  )
 }
 
 function lorebookDurableIntent(scope: DiscreteLorebookEditScope, plan: PlannedLorebookCommand): DurableMutationIntent {
@@ -1868,7 +1904,17 @@ export function watchServerBackedLorebooks(options: WatchServerBackedLorebooksOp
           }
           continue
         }
-        if (pendingEntryEditKeys.has(key)) continue
+        if (pendingEntryEditKeys.has(key)) {
+          const pendingEntry = pendingReplacements.get(key)
+          if (pendingEntry?.source === 'entry') {
+            const pendingEntrySnapshot = snapshotJson(pendingEntry.attemptedEntries)
+            if (snapshot !== pendingEntrySnapshot) {
+              const previousState = scopedLorebookStateSnapshot(key, pendingEntrySnapshot)
+              untrack(() => dispatchWatchedReplacement(key, previousState, delayMs))
+            }
+          }
+          continue
+        }
         if (flushedEntrySnapshot !== undefined) {
           if (flushedEntrySnapshot === snapshot) {
             scheduleFlushedEntrySuppressionClear(key, snapshot)
@@ -2267,7 +2313,28 @@ function queueReplacement(
   const effectivePrevious = useExisting ? existing.previous : previous
   const effectiveSource = useExisting && existing?.source === 'collection' ? 'collection' : source
   const effectiveProjectionEpochs = useExisting ? existing.projectionEpochs : projectionEpochs
-  const plan = planLorebookCommand(key, attemptedEntries, effectivePrevious, effectiveSource)
+  let plan = planLorebookCommand(key, attemptedEntries, effectivePrevious, effectiveSource)
+  let correctionOnly = false
+  if (!plan && existingProjectionIsCurrent && existing?.source === 'entry' && source === 'entry') {
+    // A different tab can freeze the staged edit between the local no-op check
+    // and durable replacement. Keep a full baseline successor so an older
+    // generation that still lands is explicitly corrected instead of silently
+    // deleting the only recovery intent.
+    plan = planLorebookEntryNetRevertCorrection(attemptedEntries, effectivePrevious)
+    correctionOnly = plan !== null
+  }
+  if (
+    existingProjectionIsCurrent &&
+    existing?.source !== 'entry' &&
+    source !== 'entry' &&
+    lorebookCollectionMatchesRollbackBaseline(attemptedEntries, existing.previous)
+  ) {
+    // A remotely frozen structural generation can still land after this local
+    // total revert. Replace the whole baseline as an ordered correction rather
+    // than deleting the only durable row that can undo that predecessor.
+    plan = { kind: 'replace', entries: cloneLorebookEntriesForCommand(attemptedEntries) }
+    correctionOnly = true
+  }
   if (!plan) {
     if (existing) void acknowledgePendingMutation(existing.outbox)
     pendingReplacements.delete(key)
@@ -2305,8 +2372,12 @@ function queueReplacement(
     flushedEntryEditSnapshots.delete(key)
     flushedEntryEditClearSnapshots.delete(key)
   }
-  pending.timer = setTimeout(() => runPendingReplacement(key), delay)
   pendingReplacements.set(key, pending)
+  if (correctionOnly) {
+    runPendingReplacement(key)
+  } else {
+    pending.timer = setTimeout(() => runPendingReplacement(key), delay)
+  }
 }
 
 function isLorebookCollectionReplacementSource(

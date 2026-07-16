@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 vi.mock('../platform', async (importActual) => {
   const actual = await importActual<typeof import('../platform')>()
@@ -13,6 +14,7 @@ import { selectedCharID } from '../stores.svelte'
 import { getDatabase, setDatabaseLite } from '../storage/database.svelte'
 import { setResourceWriteGuardEnabled } from './resourceWriteGuard.svelte'
 import {
+  applyLorebookEntryDraftEdit,
   currentGlobalLorebookStateSnapshot,
   currentLorebookCollectionScopedSnapshot,
   currentLorebookStateSnapshot,
@@ -20,13 +22,22 @@ import {
   ensureGlobalLorebookListIds,
   globalLorebookListIdsNeedNormalization,
   markCharacterLorebookHydrated,
+  replaceGlobalLorebookEntryCollection,
+  resetServerBackedLorebookBridgeForTests,
   resetLorebookHydration,
   restoreGlobalLorebookState,
   restoreLorebookState,
   restoreScopedLorebookState,
   scopedLorebookStateSnapshot,
 } from './lorebookBridge.svelte'
-import { clearCachedServerCommandRevision } from './commands'
+import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './commands'
+import {
+  beginPendingMutationDispatch,
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from './pendingMutationOutbox'
 import {
   assertRollbackRestoresOnly,
   assertSnapshotOmitsCollections,
@@ -57,6 +68,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetServerBackedLorebookBridgeForTests()
   setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
@@ -315,5 +327,283 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
 
     expect(((getDatabase().loreBook as any[])[0].data as any[]).map((e) => e.key)).toEqual(['g'])
     expect((getDatabase().characters[0].globalLore as any[]).map((e) => e.key)).toEqual(['concurrent'])
+  })
+})
+
+describe('lorebook durable generation ordering', () => {
+  it('keeps a marked entry edit ahead of the full-entry correction for a net revert', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-lorebook-marker',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-lorebook-marker',
+      requestedWriterWasActive: true,
+    })
+    const original = {
+      id: 'entry-marker',
+      key: 'marker',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Marker entry',
+      content: 'server baseline',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    setDatabaseLite({
+      characters: [],
+      modules: [],
+      loreBookPage: 0,
+      loreBook: [{ id: 'book-marker', name: 'Marker book', data: [original] }],
+    } as any)
+    setCachedServerCommandRevision(30)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'marked predecessor still offline' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          }),
+      ) as unknown as typeof fetch,
+    )
+    const scope = { kind: 'global', lorebookId: 'book-marker' } as const
+
+    try {
+      applyLorebookEntryDraftEdit(scope, 0, { ...original, content: 'marked stale edit' } as any, 10_000)
+      let staged = await listPendingMutations()
+      await vi.waitFor(async () => {
+        staged = await listPendingMutations()
+        expect(staged).toHaveLength(1)
+      })
+      await expect(beginPendingMutationDispatch(staged[0].handle)).resolves.toBe('persisted')
+
+      applyLorebookEntryDraftEdit(scope, 0, original as any, 10_000)
+      await vi.waitFor(async () => {
+        staged = await listPendingMutations()
+        expect(staged.map((entry) => entry.intent)).toEqual([
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PUT',
+                path: '/lorebooks/book-marker/entries/entry-marker',
+                body: { patch: { content: 'marked stale edit' } },
+              },
+            ],
+          },
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PUT',
+                path: '/lorebooks/book-marker/entries/entry-marker',
+                body: { entry: original },
+              },
+            ],
+          },
+        ])
+      })
+      expect(staged[0].handle.mutationId).not.toBe(staged[1].handle.mutationId)
+    } finally {
+      resetServerBackedLorebookBridgeForTests()
+      await Promise.resolve()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('retains the structural delta without sending it past a transient entry predecessor', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-lorebook-structural',
+      writerEpoch: 5,
+      databaseLineage: 'lineage-lorebook-structural',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(40)
+    const original = {
+      id: 'entry-before-structure',
+      key: 'before',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Before structure',
+      content: 'original content',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    const added = {
+      id: 'entry-inline-add',
+      key: '',
+      secondkey: '',
+      insertorder: 100,
+      comment: '',
+      content: '',
+      mode: 'normal',
+      alwaysActive: true,
+      selective: false,
+      folder: 'folder-inline',
+    }
+    setDatabaseLite({
+      characters: [],
+      modules: [],
+      loreBookPage: 0,
+      loreBook: [{ id: 'book-structural', name: 'Structural book', data: [original] }],
+    } as any)
+    const calls: Array<{ url: string; body: unknown }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        return new Response(JSON.stringify({ error: 'offline predecessor' }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        })
+      }) as unknown as typeof fetch,
+    )
+    const scope = { kind: 'global', lorebookId: 'book-structural' } as const
+
+    try {
+      applyLorebookEntryDraftEdit(scope, 0, { ...original, content: 'edited before add' } as any, 10_000)
+      expect(
+        replaceGlobalLorebookEntryCollection(
+          'book-structural',
+          [{ ...original, content: 'edited before add' }, added] as any,
+          0,
+        ),
+      ).toBe(true)
+
+      const predecessorUrl = '/api/v1/commands/lorebooks/book-structural/entries/entry-before-structure'
+      const structuralUrl = '/api/v1/commands/lorebooks/book-structural/entries/entry-inline-add'
+      await vi.waitFor(() => {
+        expect(calls.filter((call) => call.url === predecessorUrl)).toHaveLength(2)
+      })
+      expect(calls.some((call) => call.url === structuralUrl)).toBe(false)
+      await vi.waitFor(async () => {
+        expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PUT',
+                path: '/lorebooks/book-structural/entries/entry-before-structure',
+                body: { patch: { content: 'edited before add' } },
+              },
+            ],
+          },
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PUT',
+                path: '/lorebooks/book-structural/entries/entry-inline-add',
+                body: { entry: added },
+              },
+            ],
+          },
+        ])
+      })
+    } finally {
+      resetServerBackedLorebookBridgeForTests()
+      await Promise.resolve()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps a marked create ahead of an immediate full-collection correction when the create is removed', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-lorebook-create-revert',
+      writerEpoch: 6,
+      databaseLineage: 'lineage-lorebook-create-revert',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(50)
+    const original = {
+      id: 'entry-collection-baseline',
+      key: 'baseline',
+      content: 'baseline content',
+    }
+    const created = {
+      id: 'entry-created-then-removed',
+      key: 'temporary',
+      content: 'temporary content',
+    }
+    setDatabaseLite({
+      characters: [],
+      modules: [],
+      loreBookPage: 0,
+      loreBook: [{ id: 'book-create-revert', name: 'Create revert book', data: [original] }],
+    } as any)
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        calls.push(String(input))
+        return new Response(JSON.stringify({ error: 'marked create still offline' }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      expect(replaceGlobalLorebookEntryCollection('book-create-revert', [original, created] as any, 10_000)).toBe(true)
+      let staged = await listPendingMutations()
+      await vi.waitFor(async () => {
+        staged = await listPendingMutations()
+        expect(staged).toHaveLength(1)
+      })
+      await expect(beginPendingMutationDispatch(staged[0].handle)).resolves.toBe('persisted')
+
+      expect(replaceGlobalLorebookEntryCollection('book-create-revert', [original] as any, 10_000)).toBe(true)
+      await vi.waitFor(async () => {
+        staged = await listPendingMutations()
+        expect(staged.map((entry) => entry.intent)).toEqual([
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PUT',
+                path: '/lorebooks/book-create-revert/entries/entry-created-then-removed',
+                body: { entry: created },
+              },
+            ],
+          },
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PUT',
+                path: '/lorebooks/book-create-revert/entries',
+                body: { entries: [original] },
+              },
+            ],
+          },
+        ])
+      })
+      await vi.waitFor(() => {
+        expect(
+          calls.filter(
+            (url) => url === '/api/v1/commands/lorebooks/book-create-revert/entries/entry-created-then-removed',
+          ),
+        ).toHaveLength(1)
+      })
+      expect(calls).not.toContain('/api/v1/commands/lorebooks/book-create-revert/entries')
+    } finally {
+      resetServerBackedLorebookBridgeForTests()
+      await Promise.resolve()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 })

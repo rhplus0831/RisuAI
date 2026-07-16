@@ -1661,18 +1661,169 @@ describe('K4 lorebook editor entry draft scope', () => {
     })
   })
 
-  it('discards a staged entry mutation when the draft returns to its queue-time baseline', async () => {
+  it('immediately dispatches a full-entry baseline correction when a draft returns to its baseline', async () => {
     setupK4EditorDb()
     const scope = { kind: 'character', characterId: 'c-k4' } as const
     const original = cloneEntries([(getDatabase().characters[0].globalLore as Entry[])[5]])[0]
 
     applyLorebookEntryDraftEdit(scope, 5, { ...original, content: 'temporary' } as any, DELAY)
     applyLorebookEntryDraftEdit(scope, 5, original as any, DELAY)
-    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(durableRecorded.dispatched).toHaveLength(1)
+    await flushServerCommandRecording()
 
-    expect(characterEntryCommands()).toEqual([])
+    expect(characterEntryCommands()).toHaveLength(1)
+    expect(characterEntryCommands()[0].a).toMatchObject({
+      characterId: 'c-k4',
+      entryId: 'entry-5',
+      entry: original,
+    })
+    expect((characterEntryCommands()[0].a as Record<string, unknown>).sparseUpdate).toBeUndefined()
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/c-k4/lorebooks/entries/entry-5',
+          body: { entry: original },
+        },
+      ],
+    })
+    expect(durableRecorded.acknowledged).toEqual([])
+  })
+
+  it('immediately dispatches a full-collection correction for a total collection revert', async () => {
+    setupK4EditorDb()
+    const original = cloneEntries(getDatabase().characters[0].globalLore as Entry[])
+    const changed = cloneEntries(original)
+    changed[1].content = 'temporary collection edit'
+
+    expect(replaceCharacterLorebookCollection('c-k4', changed as any, DELAY)).toBe(true)
     expect(durableRecorded.dispatched).toEqual([])
-    expect(durableRecorded.acknowledged).toEqual(['lore-mutation-1'])
+    expect(replaceCharacterLorebookCollection('c-k4', original as any, DELAY)).toBe(true)
+
+    expect(durableRecorded.staged).toHaveLength(2)
+    expect(durableRecorded.staged[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/c-k4/lorebooks/entries/entry-1',
+          body: { patch: { content: 'temporary collection edit' } },
+        },
+      ],
+    })
+    expect(durableRecorded.dispatched).toHaveLength(1)
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/c-k4/lorebooks',
+          body: { entries: original },
+        },
+      ],
+    })
+    await flushServerCommandRecording()
+    expect(characterReplaceCommands()).toHaveLength(1)
+    expect(durableRecorded.acknowledged).toEqual([])
+  })
+
+  it('preserves a staged entry edit as the predecessor of a same-scope collection delta', async () => {
+    setupK4EditorDb()
+    const scope = { kind: 'character', characterId: 'c-k4' } as const
+    const edited = {
+      ...(getDatabase().characters[0].globalLore as Entry[])[5],
+      content: 'edited before inline folder add',
+    }
+    applyLorebookEntryDraftEdit(scope, 5, edited as any, DELAY * 10)
+
+    const inlineEntry = {
+      id: 'inline-folder-entry',
+      key: '',
+      secondkey: '',
+      insertorder: 100,
+      comment: '',
+      content: '',
+      mode: 'normal',
+      alwaysActive: true,
+      selective: false,
+      folder: 'folder-k4',
+    }
+    const nextEntries = [...(getDatabase().characters[0].globalLore as Entry[]), inlineEntry]
+    expect(replaceCharacterLorebookCollection('c-k4', nextEntries as any, DELAY)).toBe(true)
+
+    expect(durableRecorded.staged.map(({ mutationId }) => mutationId)).toEqual(['lore-mutation-1', 'lore-mutation-2'])
+    expect(durableRecorded.staged.map(({ intent }) => intent)).toEqual([
+      {
+        version: 1,
+        requests: [
+          {
+            method: 'PUT',
+            path: '/characters/c-k4/lorebooks/entries/entry-5',
+            body: { patch: { content: 'edited before inline folder add' } },
+          },
+        ],
+      },
+      {
+        version: 1,
+        requests: [
+          {
+            method: 'PUT',
+            path: '/characters/c-k4/lorebooks/entries/inline-folder-entry',
+            body: { entry: inlineEntry },
+          },
+        ],
+      },
+    ])
+    expect(durableRecorded.dispatched.map(({ mutationId }) => mutationId)).toEqual(['lore-mutation-1'])
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(durableRecorded.dispatched.map(({ mutationId }) => mutationId)).toEqual([
+      'lore-mutation-1',
+      'lore-mutation-2',
+    ])
+  })
+
+  it('preserves the staged entry when the same-scope watcher observes a structural mutation', async () => {
+    setupK4EditorDb()
+    const stop = watchServerBackedLorebooks({ delayMs: DELAY, scope: { kind: 'character' } })
+    flushSync()
+    const scope = { kind: 'character', characterId: 'c-k4' } as const
+    const edited = {
+      ...(getDatabase().characters[0].globalLore as Entry[])[4],
+      content: 'watched entry edit before structure',
+    }
+    applyLorebookEntryDraftEdit(scope, 4, edited as any, DELAY * 10)
+    flushSync()
+    ;(getDatabase().characters[0].globalLore as Entry[]).push({
+      id: 'watched-structural-entry',
+      key: '',
+      content: '',
+      folder: 'watched-folder',
+    })
+    flushSync()
+
+    expect(durableRecorded.staged.map(({ mutationId }) => mutationId)).toEqual(['lore-mutation-1', 'lore-mutation-2'])
+    expect(durableRecorded.dispatched.map(({ mutationId }) => mutationId)).toEqual(['lore-mutation-1'])
+    expect(durableRecorded.staged[1].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/c-k4/lorebooks/entries/watched-structural-entry',
+          body: {
+            entry: expect.objectContaining({ id: 'watched-structural-entry', folder: 'watched-folder' }),
+          },
+        },
+      ],
+    })
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(durableRecorded.dispatched.map(({ mutationId }) => mutationId)).toEqual([
+      'lore-mutation-1',
+      'lore-mutation-2',
+    ])
+    stop()
   })
 
   it('K4: coalesces sparse fields against the original entry and distinguishes deletion from null', async () => {
