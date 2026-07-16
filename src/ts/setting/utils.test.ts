@@ -680,4 +680,36 @@ describe('server-backed data-driven settings', () => {
     await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
     expect(calls.filter((call) => call.url === '/api/v1/commands/settings/display')).toHaveLength(1)
   })
+
+  it('cascades a lifecycle-flushed preset input into its split-preset command', async () => {
+    vi.useFakeTimers()
+    const calls = stubSuccessfulSettingsFetch()
+    replaceResourceDatabase({
+      temperature: 0.5,
+      modelPresets: [{ id: 'model-a', name: 'Model A', temperature: 0.5 }],
+      modelPresetsId: 0,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const item: SettingItem = {
+      id: 'model.temperature',
+      type: 'slider',
+      bindKey: 'temperature' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setDeferredSettingValue(item, 0.8, ctx)
+    flushDeferredSettingWrites({ keepalive: true })
+    await vi.advanceTimersByTimeAsync(0)
+
+    const patches = calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')
+    expect(patches).toHaveLength(1)
+    expect(patches[0]).toMatchObject({
+      body: { patch: { temperature: 0.8 } },
+      keepalive: true,
+    })
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS + 500)
+    expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')).toHaveLength(1)
+  })
 })

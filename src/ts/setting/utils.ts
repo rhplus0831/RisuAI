@@ -1,5 +1,5 @@
 import type { SettingItem, SettingContext } from './types'
-import { getDatabase } from '../storage/database.svelte'
+import { flushPendingSplitPresetPatch, getDatabase } from '../storage/database.svelte'
 import { language } from 'src/lang'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
 import { advancedSettingsItems } from './advancedSettingsData'
@@ -347,11 +347,15 @@ function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTr
 
   const attemptedRoot = cloneJsonValue(pending.desiredRoot)
   if (pending.target.kind === 'preset') {
-    mirrorTopLevelPresetFieldToTarget(pending.target.target, attemptedRoot)
+    if (mirrorTopLevelPresetFieldToTarget(pending.target.target, attemptedRoot)) {
+      flushPendingSplitPresetPatch(pending.target.target.kind, pending.target.target.presetId, options)
+    }
     return
   }
   if (pending.target.kind === 'promptOverride') {
-    mirrorPromptPresetModelOverrideFieldToTarget(pending.target.target, attemptedRoot)
+    if (mirrorPromptPresetModelOverrideFieldToTarget(pending.target.target, attemptedRoot)) {
+      flushPendingSplitPresetPatch('prompt', pending.target.target.presetId, options)
+    }
     return
   }
   const serverTarget = pending.target
