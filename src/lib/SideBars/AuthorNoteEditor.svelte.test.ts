@@ -212,6 +212,7 @@ describe('AuthorNoteEditor debounce persistence', () => {
     await tick()
 
     const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="author-note-input"]')!
+    expect(textarea.dataset.popupEditorContext).toBe('chat-a')
     textarea.value = 'unsaved first-chat draft'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
@@ -226,6 +227,7 @@ describe('AuthorNoteEditor debounce persistence', () => {
       {},
     )
     expect(textarea.value).toBe('second note')
+    expect(textarea.dataset.popupEditorContext).toBe('chat-b')
 
     vi.advanceTimersByTime(300)
     expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()

@@ -166,6 +166,7 @@
     ariaLabel={language.authorNote}
     bind:value={authorNoteDraft}
     onInput={handleAuthorNoteInput}
+    popupEditorContext={authorNoteChatId}
     highlight
     placeholder={getAuthorNoteDefaultText()} />
   <span class="text-textcolor2 mb-6 text-sm">{tokenCount} {language.tokens}</span>

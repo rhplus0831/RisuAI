@@ -10,6 +10,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import TextAreaInput from './TextAreaInput.svelte'
+import TextAreaInputTestHost from './TextAreaInput.testHost.svelte'
 import { disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte'
 import { textAreaSize } from 'src/ts/gui/guisize'
 import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
@@ -228,6 +229,65 @@ describe('TextAreaInput popup editor finalization', () => {
 
     expect(onInput).toHaveBeenCalledOnce()
     expect(onchange).toHaveBeenCalledOnce()
+  })
+
+  it('discards a delayed popup edit after the bound target changes, even when its value is unchanged', async () => {
+    const onInput = vi.fn()
+    const onchange = vi.fn()
+    component = mount(TextAreaInputTestHost, {
+      target,
+      props: {
+        initialContext: 'chat-a',
+        initialValue: 'same note',
+        onInput,
+        onchange,
+      },
+    })
+
+    target.querySelector<HTMLButtonElement>('button[aria-label]')?.click()
+    await tick()
+    expect(popUpEditorStore.open).toBe(true)
+
+    popUpEditorStore.value = 'stale chat-a edit'
+    ;(component as unknown as { replaceTarget: (context: string, value: string) => void }).replaceTarget(
+      'chat-b',
+      'same note',
+    )
+    await tick()
+    popUpEditorStore.open = false
+    await vi.advanceTimersByTimeAsync(100)
+    await tick()
+
+    expect((component as unknown as { getValue: () => string }).getValue()).toBe('same note')
+    expect(onInput).not.toHaveBeenCalled()
+    expect(onchange).not.toHaveBeenCalled()
+  })
+
+  it('discards a delayed popup edit after the input is unmounted', async () => {
+    const onInput = vi.fn()
+    const onchange = vi.fn()
+    component = mount(TextAreaInput, {
+      target,
+      props: {
+        value: 'before',
+        onInput,
+        onchange,
+      },
+    })
+
+    target.querySelector<HTMLButtonElement>('button[aria-label]')?.click()
+    await tick()
+    expect(popUpEditorStore.open).toBe(true)
+
+    popUpEditorStore.value = 'stale edit after close'
+    unmount(component)
+    component = undefined
+    popUpEditorStore.open = false
+    await vi.advanceTimersByTimeAsync(100)
+    await tick()
+
+    expect(onInput).not.toHaveBeenCalled()
+    expect(onchange).not.toHaveBeenCalled()
   })
 })
 

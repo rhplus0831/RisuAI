@@ -29,6 +29,7 @@
     onchange?: () => void
     popupLanguage?: string
     popupEditor?: PopupEditorAvailability
+    popupEditorContext?: unknown
     ariaLabel?: string
   }
 
@@ -49,6 +50,7 @@
     onchange = () => {},
     popupLanguage = 'markdown',
     popupEditor = 'auto',
+    popupEditorContext = undefined,
     ariaLabel,
   }: Props = $props()
   let selectingAutoComplete = $state(0)
@@ -61,6 +63,8 @@
   let autocompleteContents: string[] = $state([])
   let inputDom: HTMLDivElement = $state()
   let highlightTimer: ReturnType<typeof setTimeout> | null = null
+  let popupEditorRun = 0
+  let popupEditorContextRevision = 0
 
   const isPopupEditorEnabled = () =>
     popupEditor === true ||
@@ -71,18 +75,37 @@
       return
     }
 
+    const run = ++popupEditorRun
+    const initialValue = value
+    const initialContext = popupEditorContext
+    const initialContextRevision = popupEditorContextRevision
     hideAutoComplete()
     popUpEditorStore.value = value
     popUpEditorStore.mode = 'default'
     popUpEditorStore.language = popupLanguage
     popUpEditorStore.open = true
 
-    while (popUpEditorStore.open) {
+    while (
+      run === popupEditorRun &&
+      popupEditorContextRevision === initialContextRevision &&
+      popupEditorContext === initialContext &&
+      value === initialValue &&
+      popUpEditorStore.open
+    ) {
       await sleep(100)
     }
 
+    if (
+      run !== popupEditorRun ||
+      popupEditorContextRevision !== initialContextRevision ||
+      popupEditorContext !== initialContext ||
+      value !== initialValue
+    ) {
+      return
+    }
+
     value = popUpEditorStore.value
-    onInput(value)
+    onInput(value, initialContext)
     onchange()
     scheduleHighlight(value)
   }
@@ -255,6 +278,7 @@
   })
 
   onDestroy(() => {
+    popupEditorRun++
     if (highlightTimer) {
       clearTimeout(highlightTimer)
       highlightTimer = null
@@ -310,6 +334,10 @@
     }
   }
 
+  $effect.pre(() => {
+    void popupEditorContext
+    popupEditorContextRevision++
+  })
   $effect.pre(() => {
     optiValue = value
   })
