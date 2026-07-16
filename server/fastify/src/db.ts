@@ -4,6 +4,7 @@ import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
 import { createPushSubscriptionsTable } from './pushNotifications.js'
+import { createCommandMutationReceiptTable } from './commandMutationReceipts.js'
 import {
   createAssetMetadataTable,
   createCharacterTables,
@@ -12,7 +13,7 @@ import {
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 23
+export const CURRENT_SCHEMA_VERSION = 24
 
 export interface MigrationStep {
   version: number
@@ -222,6 +223,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       repairPersistedGlobalLorebookIdsInSqlite(db)
     },
   },
+  {
+    version: 24,
+    name: 'command-mutation-idempotency-receipts',
+    up: (db) => {
+      createCommandMutationReceiptTable(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -258,6 +266,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       createMessageTable(db)
       createChatBlobTable(db)
       createCommandEventTable(db)
+      createCommandMutationReceiptTable(db)
       createGenerationFinalizationRetryTable(db)
       createAssetMetadataTable(db)
       createCharacterTables(db)

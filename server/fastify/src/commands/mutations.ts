@@ -35,6 +35,13 @@ import {
   protocolNowMs,
   takeTableWrites,
 } from '../protocolMetrics.js'
+import {
+  loadCommandMutationReceipt,
+  persistCommandMutationReceipt,
+  type CommandMutationReceiptKey,
+} from '../commandMutationReceipts.js'
+
+export type { CommandMutationReceiptKey } from '../commandMutationReceipts.js'
 
 export interface JsonCommandMutationResult<TExtra extends Record<string, unknown>> {
   revision: number
@@ -48,6 +55,7 @@ export interface JsonCommandMutationArgs<TExtra extends Record<string, unknown>>
   baseRevision: number
   eventSink: CommandEventSink
   eventOrigin?: CommandEventOrigin
+  mutationReceiptKey?: CommandMutationReceiptKey
   mutate: (database: unknown) => {
     event: CommandEventDraft
     extra?: TExtra
@@ -67,6 +75,7 @@ export interface MessageFreeJsonCommandMutationArgs<TExtra extends Record<string
   baseRevision: number
   eventSink: CommandEventSink
   eventOrigin?: CommandEventOrigin
+  mutationReceiptKey?: CommandMutationReceiptKey
   mutate: (database: unknown) => {
     event: CommandEventDraft
     extra?: TExtra
@@ -79,6 +88,7 @@ export interface TargetedCommandMutationArgs<TExtra extends Record<string, unkno
   baseRevision: number
   eventSink: CommandEventSink
   eventOrigin?: CommandEventOrigin
+  mutationReceiptKey?: CommandMutationReceiptKey
   mutationPath: string
   writeDatabase?: boolean
   /**
@@ -131,6 +141,7 @@ export interface CharacterSelectionCommandMutationArgs {
   lastInteraction: number
   eventSink: CommandEventSink
   eventOrigin?: CommandEventOrigin
+  mutationReceiptKey?: CommandMutationReceiptKey
 }
 
 export function readBaseRevision(body: unknown): number {
@@ -205,6 +216,14 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
   transactionOpen = true
 
   try {
+    const replayed = loadMutationReceipt<TExtra>(args)
+    if (replayed) {
+      args.db.exec('COMMIT')
+      transactionOpen = false
+      emitMutationReplayMetric(replayed, args.mutationPath, totalStartedAt)
+      return replayed
+    }
+
     const { revision: currentRevision } = getSchemaState(args.db)
     if (args.baseRevision !== currentRevision) {
       throw new RevisionMismatchError(currentRevision)
@@ -246,6 +265,12 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     // Persist with the writer-session origin so reconnect replay
     // keeps own-echo suppression; the returned/route event stays origin-free.
     persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
+    const result: JsonCommandMutationResult<TExtra> = {
+      revision,
+      event,
+      extra: (mutation.extra ?? {}) as TExtra,
+    }
+    persistMutationReceipt(args, result)
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
     const writtenTables = takeTableWrites()
 
@@ -269,11 +294,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
       ...(writtenTables ? { writtenTables } : {}),
     })
 
-    return {
-      revision,
-      event,
-      extra: (mutation.extra ?? {}) as TExtra,
-    }
+    return result
   } catch (err) {
     if (transactionOpen) {
       args.db.exec('ROLLBACK')
@@ -309,6 +330,14 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
   transactionOpen = true
 
   try {
+    const replayed = loadMutationReceipt<TExtra>(args)
+    if (replayed) {
+      args.db.exec('COMMIT')
+      transactionOpen = false
+      emitMutationReplayMetric(replayed, 'message-free', totalStartedAt)
+      return replayed
+    }
+
     const { revision: currentRevision } = getSchemaState(args.db)
     if (args.baseRevision !== currentRevision) {
       throw new RevisionMismatchError(currentRevision)
@@ -335,6 +364,12 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     // Persist with the writer-session origin so reconnect replay
     // keeps own-echo suppression; the returned/route event stays origin-free.
     persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
+    const result: JsonCommandMutationResult<TExtra> = {
+      revision,
+      event,
+      extra: (mutation.extra ?? {}) as TExtra,
+    }
+    persistMutationReceipt(args, result)
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
     const writtenTables = takeTableWrites()
 
@@ -358,11 +393,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
       ...(writtenTables ? { writtenTables } : {}),
     })
 
-    return {
-      revision,
-      event,
-      extra: (mutation.extra ?? {}) as TExtra,
-    }
+    return result
   } catch (err) {
     if (transactionOpen) {
       args.db.exec('ROLLBACK')
@@ -398,6 +429,14 @@ export function applyCharacterSelectionCommandMutation(
   transactionOpen = true
 
   try {
+    const replayed = loadMutationReceipt<{ characterId: string }>(args)
+    if (replayed) {
+      args.db.exec('COMMIT')
+      transactionOpen = false
+      emitMutationReplayMetric(replayed, 'targeted-character-selection', totalStartedAt)
+      return replayed
+    }
+
     const { revision: currentRevision } = getSchemaState(args.db)
     if (args.baseRevision !== currentRevision) {
       throw new RevisionMismatchError(currentRevision)
@@ -424,6 +463,12 @@ export function applyCharacterSelectionCommandMutation(
     // Persist with the writer-session origin so reconnect replay
     // keeps own-echo suppression; the returned/route event stays origin-free.
     persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
+    const result: JsonCommandMutationResult<{ characterId: string }> = {
+      revision,
+      event,
+      extra: { characterId: args.characterId },
+    }
+    persistMutationReceipt(args, result)
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
     const writtenTables = takeTableWrites()
 
@@ -447,11 +492,7 @@ export function applyCharacterSelectionCommandMutation(
       ...(writtenTables ? { writtenTables } : {}),
     })
 
-    return {
-      revision,
-      event,
-      extra: { characterId: args.characterId },
-    }
+    return result
   } catch (err) {
     if (transactionOpen) {
       args.db.exec('ROLLBACK')
@@ -487,6 +528,14 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
   transactionOpen = true
 
   try {
+    const replayed = loadMutationReceipt<TExtra>(args)
+    if (replayed) {
+      args.db.exec('COMMIT')
+      transactionOpen = false
+      emitMutationReplayMetric(replayed, 'hydrated', totalStartedAt)
+      return replayed
+    }
+
     const { revision: currentRevision } = getSchemaState(args.db)
     if (args.baseRevision !== currentRevision) {
       throw new RevisionMismatchError(currentRevision)
@@ -520,6 +569,12 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     // Persist with the writer-session origin so reconnect replay
     // keeps own-echo suppression; the returned/route event stays origin-free.
     persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
+    const result: JsonCommandMutationResult<TExtra> = {
+      revision,
+      event,
+      extra: (mutation.extra ?? {}) as TExtra,
+    }
+    persistMutationReceipt(args, result)
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
     const writtenTables = takeTableWrites()
 
@@ -543,11 +598,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
       ...(writtenTables ? { writtenTables } : {}),
     })
 
-    return {
-      revision,
-      event,
-      extra: (mutation.extra ?? {}) as TExtra,
-    }
+    return result
   } catch (err) {
     if (transactionOpen) {
       args.db.exec('ROLLBACK')
@@ -566,6 +617,48 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
     })
     throw err
   }
+}
+
+interface MutationReceiptArgs {
+  db: DatabaseSync
+  mutationReceiptKey?: CommandMutationReceiptKey
+}
+
+function loadMutationReceipt<TExtra extends Record<string, unknown>>(
+  args: MutationReceiptArgs,
+): JsonCommandMutationResult<TExtra> | undefined {
+  if (!args.mutationReceiptKey) return undefined
+  return loadCommandMutationReceipt<TExtra>(args.db, args.mutationReceiptKey)
+}
+
+function persistMutationReceipt<TExtra extends Record<string, unknown>>(
+  args: MutationReceiptArgs,
+  result: JsonCommandMutationResult<TExtra>,
+): void {
+  if (!args.mutationReceiptKey) return
+  persistCommandMutationReceipt(args.db, args.mutationReceiptKey, result)
+}
+
+function emitMutationReplayMetric<TExtra extends Record<string, unknown>>(
+  result: JsonCommandMutationResult<TExtra>,
+  mutationPath: string,
+  totalStartedAt: number,
+): void {
+  emitProtocolMetric('command_mutation', {
+    type: result.event.type,
+    resource: result.event.resource,
+    revision: result.revision,
+    loadMs: 0,
+    cloneMutateMs: 0,
+    sqliteSyncMs: 0,
+    dbJsonWriteMs: 0,
+    eventEmitMs: 0,
+    totalMs: protocolDurationMs(totalStartedAt),
+    status: 'ok',
+    mutationPath,
+    idempotentReplay: true,
+    writtenTables: [],
+  })
 }
 
 function liveCommandEvent(event: CommandEvent, origin?: CommandEventOrigin): CommandEvent {

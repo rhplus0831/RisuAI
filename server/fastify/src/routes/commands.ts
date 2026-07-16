@@ -22,6 +22,15 @@ import {
   TARGETED_MUTATION_PATHS,
 } from '../commands/mutations.js'
 import { readActiveWriterSessionId } from '../activeWriter.js'
+import {
+  COMMAND_MUTATION_ACK_MAX_REQUEST_COUNT,
+  COMMAND_MUTATION_ID_HEADER,
+  COMMAND_MUTATION_ID_MAX_LENGTH,
+  CommandMutationIdConflictError,
+  acknowledgeCommandMutationReceipts,
+  commandMutationRequestFingerprint,
+  type CommandMutationReceiptKey,
+} from '../commandMutationReceipts.js'
 import { maskProviderSecrets, resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   normalizeLegacyFallbackModels,
@@ -338,7 +347,74 @@ function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined
 
 function commandMutationContext(req: FastifyRequest, eventSink: CommandEventSink) {
   const origin = commandEventOrigin(req)
-  return origin ? { eventSink, eventOrigin: origin } : { eventSink }
+  const mutationReceiptKey = readCommandMutationReceiptKey(req)
+  return {
+    eventSink,
+    ...(origin ? { eventOrigin: origin } : {}),
+    ...(mutationReceiptKey ? { mutationReceiptKey } : {}),
+  }
+}
+
+function readCommandMutationReceiptKey(req: FastifyRequest): CommandMutationReceiptKey | undefined {
+  const rawMutationId = req.headers[COMMAND_MUTATION_ID_HEADER]
+  if (rawMutationId === undefined) return undefined
+  if (Array.isArray(rawMutationId) || typeof rawMutationId !== 'string') {
+    throw new ValidationError(`${COMMAND_MUTATION_ID_HEADER} must be a single header value`)
+  }
+  const mutationId = readCommandMutationId(rawMutationId, COMMAND_MUTATION_ID_HEADER)
+  const writerSessionId = readActiveWriterSessionId(req)
+  if (!writerSessionId) {
+    throw new ValidationError(`${COMMAND_MUTATION_ID_HEADER} requires a valid risu-writer-session header`)
+  }
+  return {
+    writerSessionId,
+    mutationId,
+    requestFingerprint: commandMutationRequestFingerprint(req.method, req.url.split('?')[0] ?? req.url, req.body),
+  }
+}
+
+function readCommandMutationId(value: unknown, label: string): string {
+  if (typeof value !== 'string') {
+    throw new ValidationError(`${label} must be a string`)
+  }
+  const mutationId = value.trim()
+  if (
+    mutationId.length === 0 ||
+    mutationId.length > COMMAND_MUTATION_ID_MAX_LENGTH ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(mutationId)
+  ) {
+    throw new ValidationError(
+      `${label} must contain 1-${COMMAND_MUTATION_ID_MAX_LENGTH} letters, numbers, dots, underscores, colons, or hyphens`,
+    )
+  }
+  return mutationId
+}
+
+function readCommandMutationReceiptAcknowledgement(body: unknown): {
+  mutationIds: string[]
+  requestCount: number
+} {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new ValidationError('request body must be an object')
+  }
+  const record = body as Record<string, unknown>
+  const unsupportedKey = Object.keys(record).find((key) => key !== 'mutationId' && key !== 'requestCount')
+  if (unsupportedKey) {
+    throw new ValidationError(`Unsupported mutation receipt acknowledgement field: ${unsupportedKey}`)
+  }
+  const mutationId = readCommandMutationId(record.mutationId, 'mutationId')
+  const requestCount = record.requestCount
+  if (
+    !Number.isSafeInteger(requestCount) ||
+    (requestCount as number) < 1 ||
+    (requestCount as number) > COMMAND_MUTATION_ACK_MAX_REQUEST_COUNT
+  ) {
+    throw new ValidationError(`requestCount must be an integer from 1 to ${COMMAND_MUTATION_ACK_MAX_REQUEST_COUNT}`)
+  }
+  const mutationIds = Array.from({ length: requestCount as number }, (_, index) =>
+    index === 0 ? mutationId : readCommandMutationId(`${mutationId}.${index}`, `derived mutation id ${index}`),
+  )
+  return { mutationIds, requestCount: requestCount as number }
 }
 
 function emitCommandEventForRequest(req: FastifyRequest, eventSink: CommandEventSink, event: CommandEvent): void {
@@ -1679,6 +1755,25 @@ export function registerCommandRoutes(
       }
       emitCommandEventForRequest(req, eventSink, result.event)
       return { revision: result.revision, initialized: true, event: result.event }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/mutation-receipts/ack', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const writerSessionId = readActiveWriterSessionId(req)
+      if (!writerSessionId) {
+        throw new ValidationError('mutation receipt acknowledgement requires a valid risu-writer-session header')
+      }
+      const acknowledgement = readCommandMutationReceiptAcknowledgement(req.body)
+      const acknowledged = acknowledgeCommandMutationReceipts(db, acknowledgement.mutationIds)
+      return {
+        acknowledged,
+        requested: acknowledgement.requestCount,
+      }
     } catch (err) {
       return sendCommandError(reply, err)
     }
@@ -8176,6 +8271,10 @@ function recordOrBlank(value: unknown): Record<string, unknown> {
 }
 
 function sendCommandError(reply: FastifyReply, err: unknown): { error: string; currentRevision?: number } {
+  if (err instanceof CommandMutationIdConflictError) {
+    reply.code(409)
+    return { error: 'mutation_id_conflict' }
+  }
   if (err instanceof RevisionMismatchError) {
     reply.code(409)
     return { error: 'revision_conflict', currentRevision: err.currentRevision }

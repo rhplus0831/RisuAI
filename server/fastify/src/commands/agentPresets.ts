@@ -28,6 +28,7 @@ import {
   applyMessageFreeJsonCommandMutation,
   applyTargetedCommandMutation,
   TARGETED_MUTATION_PATHS,
+  type CommandMutationReceiptKey,
   type JsonCommandMutationResult,
 } from './mutations.js'
 import {
@@ -45,6 +46,7 @@ interface AgentPresetCommandArgs {
   baseRevision: number
   eventSink: CommandEventSink
   eventOrigin?: CommandEventOrigin
+  mutationReceiptKey?: CommandMutationReceiptKey
   body: unknown
 }
 
@@ -190,6 +192,7 @@ export function deleteAgentPresetCommand(
     baseRevision: args.baseRevision,
     eventSink: args.eventSink,
     ...(args.eventOrigin ? { eventOrigin: args.eventOrigin } : {}),
+    ...(args.mutationReceiptKey ? { mutationReceiptKey: args.mutationReceiptKey } : {}),
     mutate(database) {
       const target = readDatabaseTarget(database)
       const presets = currentAgentPresets(target)
@@ -439,6 +442,7 @@ function applyAgentPresetSettingsMutation<TExtra extends AgentPresetMutationExtr
     baseRevision: args.baseRevision,
     eventSink: args.eventSink,
     ...(args.eventOrigin ? { eventOrigin: args.eventOrigin } : {}),
+    ...(args.mutationReceiptKey ? { mutationReceiptKey: args.mutationReceiptKey } : {}),
     mutationPath: TARGETED_MUTATION_PATHS.settings,
     settingsScopedRead: true,
     mutate(database, innerDb) {

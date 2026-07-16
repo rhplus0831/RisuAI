@@ -35,7 +35,12 @@ import {
   ValidationError,
   writeSettingsOnly,
 } from '../repository.js'
-import { applyTargetedCommandMutation, TARGETED_MUTATION_PATHS, type JsonCommandMutationResult } from './mutations.js'
+import {
+  applyTargetedCommandMutation,
+  TARGETED_MUTATION_PATHS,
+  type CommandMutationReceiptKey,
+  type JsonCommandMutationResult,
+} from './mutations.js'
 import {
   COMMAND_EVENT_CATALOG,
   type CommandEventDraft,
@@ -49,6 +54,7 @@ interface ModelProfileCommandArgs {
   baseRevision: number
   eventSink: CommandEventSink
   eventOrigin?: CommandEventOrigin
+  mutationReceiptKey?: CommandMutationReceiptKey
   body: unknown
 }
 
@@ -382,6 +388,7 @@ function applyModelProfileMutation<TExtra extends ModelProfileMutationExtra = {}
     baseRevision: args.baseRevision,
     eventSink: args.eventSink,
     ...(args.eventOrigin ? { eventOrigin: args.eventOrigin } : {}),
+    ...(args.mutationReceiptKey ? { mutationReceiptKey: args.mutationReceiptKey } : {}),
     mutationPath: TARGETED_MUTATION_PATHS.settings,
     settingsScopedRead: true,
     mutate(database, innerDb) {

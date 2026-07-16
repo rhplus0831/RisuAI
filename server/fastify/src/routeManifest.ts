@@ -535,6 +535,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'sse-optional',
   },
   {
+    id: 'command-mutation-receipt-ack',
+    methods: ['POST'],
+    path: '/api/v1/commands/mutation-receipts/ack',
+    auth: {
+      decision: 'required',
+      reason: 'Receipt acknowledgement deletes authenticated durable command replay metadata.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Only the current writer may acknowledge durable mutation intents after local outbox deletion.',
+    },
+    streaming: 'none',
+    notes: 'Operational idempotency metadata only; does not bump the user-data revision or emit a command event.',
+  },
+  {
     id: 'commands',
     methods: PROTOCOL_MUTATING_METHODS,
     path: '/api/v1/commands/',

@@ -9,7 +9,7 @@ sends revision-checked commands or explicit server-owned mutation requests.
 
 | Store            | Path                                                                                               | Contents                                                                                                                                                                                                             |
 | ---------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite           | `data/risu.db`                                                                                     | Schema v22: `schema_version.version` plus domain `revision`; settings; row tables for characters, chats, messages, and `chat_hypa_v3`; split collections in `modules`, `plugins`, `model_presets`, `prompt_presets`, `bot_presets`, `prompt_templates`, `personas`, `loadouts`, `lore_books`, `translator_presets`, `hypa_v3_presets`, and `plugin_custom_storage`; `assets`, `command_events`, `push_subscriptions`, Hypa V3 memory tables/jobs/tombstones, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror. |
+| SQLite           | `data/risu.db`                                                                                     | Schema v24: `schema_version.version` plus domain `revision`; settings; row tables for characters, chats, messages, and `chat_hypa_v3`; split collections in `modules`, `plugins`, `model_presets`, `prompt_presets`, `bot_presets`, `prompt_templates`, `personas`, `loadouts`, `lore_books`, `translator_presets`, `hypa_v3_presets`, and `plugin_custom_storage`; `assets`, `command_events`, durable `command_mutation_receipts`, `push_subscriptions`, Hypa V3 memory tables/jobs/tombstones, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror. |
 | Asset bytes      | `data/assets/<sha256>.<ext>`                                                                       | Content-addressed images, audio, video, fonts, CSS, ONNX, inlay signatures, and other supported asset types. Metadata is in SQLite `assets`.                                                                         |
 | Backups          | `data/backups/<id>/`                                                                               | Snapshot `risu.db`, `manifest.json`, assets when present, and legacy `save/` when present. Creation copies `risu.db` after a WAL checkpoint; restore uses `ATTACH` and swaps only the `SQLITE_BACKUP_TABLES` allowlist. |
 | Legacy `db.json` | `data/db.json`                                                                                     | Import-only compatibility input. Boot imports it into SQLite and renames it to `db.json.migrated`.                                                                                                                   |
@@ -27,10 +27,11 @@ preserves displaced/new candidates as alternates, while send/continue clears the
 reroll buffer for the appended path. Per-chat `hypaV3Data` lives in
 `chat_hypa_v3`.
 
-`CURRENT_SCHEMA_VERSION` is 22. Migration v22 drops the retired
-`collection_body_revisions` and `projection_body_cache_state` tables; current
-browser state is rebuilt from concrete REST resources rather than a cached
-database projection.
+`CURRENT_SCHEMA_VERSION` is 24. Migration v22 drops the retired
+`collection_body_revisions` and `projection_body_cache_state` tables; v23
+persists stable ids for legacy global lorebooks and entries; v24 adds durable
+command-mutation receipts. Current browser state is rebuilt from concrete REST
+resources rather than a cached database projection.
 
 Prompt-template ownership follows the split-preset contract:
 `prompt_presets.prompt_template` is the durable owner for modern prompt preset
@@ -46,14 +47,26 @@ active top-level collection.
 
 Normal command mutations use optimistic concurrency:
 
-1. Read `baseRevision`.
-2. Compare it with `schema_version.revision`.
-3. Load the needed SQLite-backed domain shape.
-4. Mutate through server validators/helpers.
-5. Write changed table families in one transaction.
-6. Bump the revision exactly once.
-7. Persist one command event for that revision.
-8. Commit, then emit the live event.
+1. Check a supplied durable mutation id for an existing receipt.
+2. Read `baseRevision` when no receipt exists.
+3. Compare it with `schema_version.revision`.
+4. Load the needed SQLite-backed domain shape.
+5. Mutate through server validators/helpers.
+6. Write changed table families in one transaction.
+7. Bump the revision exactly once.
+8. Persist one command event and, when requested, its mutation receipt.
+9. Commit, then emit the live event.
+
+`risu-mutation-id` receipts are globally keyed so an accepted mutation remains
+idempotent across active-writer session changes. The current active writer is
+still required to submit a replay or acknowledge receipts. A receipt stores the
+original revision, event, and compact response extras atomically with the domain
+write; a replay returns them before the revision check and emits no second
+event. Unacknowledged receipts are not age- or count-pruned. After the browser
+has durably deleted an outbox intent, it acknowledges the base id and request
+count at `POST /api/v1/commands/mutation-receipts/ack`; the server then deletes
+the base id and deterministic `.1`, `.2`, … request ids without changing the
+domain revision.
 
 Stale clients receive 409. Browser command helpers cache the latest revision
 from bootstrap, command responses, and event reconciliation.

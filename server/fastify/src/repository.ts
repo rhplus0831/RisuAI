@@ -2220,6 +2220,7 @@ function sqliteDbPath(dataDir: string): string {
 const SQLITE_BACKUP_TABLES = [
   'schema_version',
   'command_events',
+  'command_mutation_receipts',
   'memory_chunks',
   'memory_summaries',
   'memory_embeddings',

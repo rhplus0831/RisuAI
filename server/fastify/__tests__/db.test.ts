@@ -71,6 +71,7 @@ describe('schema migrations', () => {
         'chat_hypa_v3',
         'chats',
         'command_events',
+        'command_mutation_receipts',
         'generation_finalization_retries',
         'hypa_v3_presets',
         'loadouts',
@@ -272,6 +273,24 @@ describe('schema migrations', () => {
     }
   })
 
+  it('adds durable command mutation receipts without changing the domain revision', () => {
+    const dataDir = makeDataDir()
+    seedSchemaVersion(dataDir, 23, 12)
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 12 })
+      expect(listTables(db)).toContain('command_mutation_receipts')
+      const columns = db.prepare('PRAGMA table_info(command_mutation_receipts)').all() as Array<{
+        name: string
+        pk: number
+      }>
+      expect(columns.filter((column) => column.pk > 0).map((column) => column.name)).toEqual(['mutation_id'])
+    } finally {
+      db.close()
+    }
+  })
+
   it('L15: opens Fastify databases with WAL synchronous NORMAL', () => {
     const db = openDatabase(makeDataDir())
     try {
@@ -299,6 +318,7 @@ describe('schema migrations', () => {
         'chat_hypa_v3',
         'chats',
         'command_events',
+        'command_mutation_receipts',
         'generation_finalization_retries',
         'hypa_v3_presets',
         'loadouts',
