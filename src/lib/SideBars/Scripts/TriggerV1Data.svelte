@@ -29,6 +29,25 @@
     idx,
   }: Props = $props()
   let open = $state(false)
+  let deletionPending = $state(false)
+
+  async function removeRow(): Promise<void> {
+    if (deletionPending) return
+    deletionPending = true
+    try {
+      const targetId = value.id?.trim() || v4()
+      if (!value.id?.trim()) value.id = targetId
+      const confirmed = await alertConfirm(language.removeConfirm + value.comment)
+      if (!confirmed) return
+      if (open) {
+        open = false
+        onClose()
+      }
+      onRemove(targetId)
+    } finally {
+      deletionPending = false
+    }
+  }
 </script>
 
 <div
@@ -51,17 +70,8 @@
     <button
       class="valuer"
       aria-label={`${language.remove}: ${value.comment || `#${idx + 1}`}`}
-      onclick={async () => {
-        const targetId = value.id?.trim() || v4()
-        if (!value.id?.trim()) value.id = targetId
-        const d = await alertConfirm(language.removeConfirm + value.comment)
-        if (d) {
-          if (open) {
-            onClose()
-          }
-          onRemove(targetId)
-        }
-      }}
+      disabled={deletionPending}
+      onclick={removeRow}
       data-risu-trigger-v1-action="delete">
       <XIcon />
     </button>

@@ -72,6 +72,51 @@ describe('TriggerV1Data deletion', () => {
     expect(onClose).not.toHaveBeenCalled()
     expect(onRemove).toHaveBeenCalledWith('trigger-closed')
   })
+
+  it('settles one expanded-row deletion when the action is clicked repeatedly', async () => {
+    let resolveConfirmation: (confirmed: boolean) => void = () => {}
+    triggerDataMocks.alertConfirm.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirmation = resolve
+        }),
+    )
+    const onOpen = vi.fn()
+    const onClose = vi.fn()
+    const onRemove = vi.fn()
+    const value = {
+      id: 'trigger-open',
+      comment: 'Open trigger',
+      type: 'start',
+      conditions: [],
+      effect: [],
+    } as triggerscript
+
+    component = mount(TriggerV1Data, {
+      target,
+      props: { value, idx: 0, onOpen, onClose, onRemove },
+    })
+
+    const expand = target.querySelector<HTMLButtonElement>('button.endflex')!
+    const remove = target.querySelector<HTMLButtonElement>('[data-risu-trigger-v1-action="delete"]')!
+    expand.click()
+    await tick()
+    remove.click()
+    remove.click()
+    await tick()
+
+    expect(triggerDataMocks.alertConfirm).toHaveBeenCalledTimes(1)
+    expect(remove.disabled).toBe(true)
+
+    resolveConfirmation(true)
+    await Promise.resolve()
+    await tick()
+
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onRemove).toHaveBeenCalledTimes(1)
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+  })
 })
 
 describe('TriggerV1Data action accessibility', () => {
