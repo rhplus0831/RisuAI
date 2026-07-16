@@ -18,6 +18,8 @@ export const languageEnglish = {
     copyLink: 'Copy Realm character link',
     clipboardFailed: 'Could not copy the Realm character link.',
     chat: 'Chat with character',
+    catalogLoadFailed: 'Realm characters could not be loaded.',
+    emptyCatalog: 'No Realm characters found.',
   },
   secretInput: {
     savedPlaceholder: 'Saved credential',

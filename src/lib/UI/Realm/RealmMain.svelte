@@ -20,6 +20,8 @@
 
   let charas: hubType[] = $state([])
   let additionalHTML = $state('')
+  let hubLoading = $state(true)
+  let hubLoadFailed = $state(false)
 
   let page = $state(0)
   let sort = $state('recommended')
@@ -36,17 +38,36 @@
     hubRequestController?.abort()
     const controller = new AbortController()
     hubRequestController = controller
-    const nextCatalog = await getRisuHub({
-      search: search,
-      page: page,
-      nsfw: nsfw,
-      sort: sort,
-      signal: controller.signal,
-    })
-    if (!hubLifecycleActive || controller.signal.aborted || request !== latestHubRequest) return
-    applyCatalogPresentation(nextCatalog)
-    if (hubRequestController === controller) {
-      hubRequestController = null
+    hubLoading = true
+    hubLoadFailed = false
+    try {
+      const nextCatalog = await getRisuHub({
+        search: search,
+        page: page,
+        nsfw: nsfw,
+        sort: sort,
+        signal: controller.signal,
+      })
+      if (!hubLifecycleActive || controller.signal.aborted || request !== latestHubRequest) return
+      if (nextCatalog.status === 'error') {
+        charas = []
+        additionalHTML = ''
+        hubLoadFailed = true
+        return
+      }
+      applyCatalogPresentation(nextCatalog)
+    } catch {
+      if (!hubLifecycleActive || controller.signal.aborted || request !== latestHubRequest) return
+      charas = []
+      additionalHTML = ''
+      hubLoadFailed = true
+    } finally {
+      if (hubLifecycleActive && !controller.signal.aborted && request === latestHubRequest) {
+        hubLoading = false
+      }
+      if (hubRequestController === controller) {
+        hubRequestController = null
+      }
     }
   }
 
@@ -233,20 +254,36 @@
     </button>
   </div>
 {/if}
-{@html additionalHTML}
-<div class="w-full flex gap-4 p-2 flex-wrap justify-center">
-  {#key charas}
-    {#each charas as chara}
-      <RisuHubIcon
-        onClick={() => {
-          cancelPendingRealmInfoRequest()
-          openedData = chara
-        }}
-        {chara} />
-    {/each}
-  {/key}
-</div>
-{#if sort !== 'random' && sort !== 'recommended'}
+{#if hubLoading}
+  <div class="flex w-full justify-center p-6 text-textcolor2" role="status">{language.loading}</div>
+{:else if hubLoadFailed}
+  <div class="flex w-full flex-col items-center gap-3 p-6 text-center text-textcolor2" role="alert">
+    <span>{language.realm.catalogLoadFailed}</span>
+    <button
+      type="button"
+      class="rounded-md border border-darkborderc px-3 py-2 text-textcolor hover:bg-selected"
+      onclick={getHub}>{language.retry}</button>
+  </div>
+{:else}
+  {@html additionalHTML}
+  {#if charas.length === 0}
+    <div class="flex w-full justify-center p-6 text-textcolor2">{language.realm.emptyCatalog}</div>
+  {:else}
+    <div class="w-full flex gap-4 p-2 flex-wrap justify-center">
+      {#key charas}
+        {#each charas as chara}
+          <RisuHubIcon
+            onClick={() => {
+              cancelPendingRealmInfoRequest()
+              openedData = chara
+            }}
+            {chara} />
+        {/each}
+      {/key}
+    </div>
+  {/if}
+{/if}
+{#if !hubLoading && !hubLoadFailed && sort !== 'random' && sort !== 'recommended'}
   <div class="w-full flex justify-center">
     <div class="flex">
       <button

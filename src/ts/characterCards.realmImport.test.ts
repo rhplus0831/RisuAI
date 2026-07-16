@@ -191,6 +191,7 @@ import {
   characterURLImport,
   downloadRisuHub,
   getRealmInfo,
+  getRisuHub,
   showRealmInfoStore,
 } from './characterCards'
 import { get } from 'svelte/store'
@@ -270,6 +271,39 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('Realm catalog failures', () => {
+  it('distinguishes an HTTP failure from a valid empty catalog', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response('', { status: 500 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 })),
+    )
+
+    await expect(getRisuHub({ search: '', page: 0, nsfw: false, sort: '' })).resolves.toEqual({
+      status: 'error',
+      cards: [],
+      additionalHTML: '',
+    })
+    await expect(getRisuHub({ search: '', page: 0, nsfw: false, sort: '' })).resolves.toEqual({
+      status: 'ok',
+      cards: [],
+      additionalHTML: '',
+    })
+  })
+
+  it('reports a network rejection as a catalog failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new Error('offline')))
+
+    await expect(getRisuHub({ search: '', page: 0, nsfw: false, sort: '' })).resolves.toEqual({
+      status: 'error',
+      cards: [],
+      additionalHTML: '',
+    })
+  })
 })
 
 describe('Realm URL imports', () => {

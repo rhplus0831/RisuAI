@@ -81,7 +81,7 @@ function card(id: string, name: string): hubType {
 }
 
 function catalog(cards: hubType[], additionalHTML = ''): RisuHubCatalogResult {
-  return { cards, additionalHTML }
+  return { status: 'ok', cards, additionalHTML }
 }
 
 function button(label: string): HTMLButtonElement {
@@ -156,6 +156,21 @@ afterEach(() => {
 })
 
 describe('RealmMain request ownership', () => {
+  it('distinguishes a failed catalog request from a valid empty result and retries', async () => {
+    realmMocks.getRisuHub
+      .mockResolvedValueOnce({ status: 'error', cards: [], additionalHTML: '' })
+      .mockResolvedValueOnce(catalog([]))
+
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(target.textContent).toContain(language.realm.catalogLoadFailed))
+    expect(target.querySelector('[role="alert"]')).toBeTruthy()
+
+    button(language.retry).click()
+    await vi.waitFor(() => expect(target.textContent).toContain(language.realm.emptyCatalog))
+    expect(target.querySelector('[role="alert"]')).toBeNull()
+    expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(2)
+  })
+
   it('does not let an older catalog response replace the latest cards or banner', async () => {
     const older = deferred<RisuHubCatalogResult>()
     const latest = deferred<RisuHubCatalogResult>()

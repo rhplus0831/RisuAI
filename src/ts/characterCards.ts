@@ -1740,6 +1740,7 @@ export type hubType = {
 }
 
 export interface RisuHubCatalogResult {
+  status: 'ok' | 'error'
   cards: hubType[]
   additionalHTML: string
 }
@@ -1788,22 +1789,23 @@ export async function getRisuHub(arg: RisuHubCatalogQuery): Promise<RisuHubCatal
       signal: arg.signal,
     })
     if (da.status !== 200) {
-      return { cards: [], additionalHTML: '' }
+      return { status: 'error', cards: [], additionalHTML: '' }
     }
     const jso = await da.json()
     if (Array.isArray(jso)) {
-      return { cards: jso, additionalHTML: '' }
+      return { status: 'ok', cards: jso, additionalHTML: '' }
     }
     const additionalHTML =
       typeof jso?.additionalHTML === 'string' && jso.additionalHTML.length > 0
         ? sanitizeHubAdditionalHtml(jso.additionalHTML)
         : ''
     return {
+      status: 'ok',
       cards: Array.isArray(jso?.cards) ? jso.cards : [],
       additionalHTML,
     }
   } catch (error) {
-    return { cards: [], additionalHTML: '' }
+    return { status: 'error', cards: [], additionalHTML: '' }
   }
 }
 
