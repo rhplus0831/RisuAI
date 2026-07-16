@@ -11,7 +11,11 @@
 </script>
 
 <span class="text-textcolor mt-4">{language.colorScheme}</span>
-<SelectInput className="mt-2" value={getDatabase().colorSchemeName} onchange={onSchemeInputChange}>
+<SelectInput
+  className="mt-2"
+  value={getDatabase().colorSchemeName}
+  ariaLabel={language.colorScheme}
+  onchange={onSchemeInputChange}>
   {#each colorSchemeList as scheme}
     <OptionInput value={scheme}>{scheme}</OptionInput>
   {/each}

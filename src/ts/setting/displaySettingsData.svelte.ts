@@ -141,7 +141,7 @@ export const displayThemeSettingsItems: SettingItem[] = [
   {
     id: 'display.customFont',
     type: 'text',
-    fallbackLabel: '',
+    labelKey: 'customFont',
     bindKey: 'customFont',
     condition: (ctx) => ctx.db.font === 'custom',
     onChange: () => updateTextThemeAndCSS(),

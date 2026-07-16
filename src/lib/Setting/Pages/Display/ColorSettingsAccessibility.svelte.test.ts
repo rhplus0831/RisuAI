@@ -15,7 +15,9 @@ vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   applyServerBackedSetting: vi.fn(),
 }))
 vi.mock('src/ts/gui/colorscheme', () => ({
+  changeColorScheme: vi.fn(),
   changeColorSchemeType: vi.fn(),
+  colorSchemeList: ['default', 'dark'],
   exportColorScheme: vi.fn(),
   importColorScheme: vi.fn(),
   updateColorScheme: vi.fn(),
@@ -24,6 +26,7 @@ vi.mock('src/ts/gui/colorscheme', () => ({
 
 import CustomColorSchemeEditor from './CustomColorSchemeEditor.svelte'
 import CustomTextThemeEditor from './CustomTextThemeEditor.svelte'
+import ColorSchemeSelect from './ColorSchemeSelect.svelte'
 import NullableTextColorToggle from './NullableTextColorToggle.svelte'
 import { language } from 'src/lang'
 
@@ -94,6 +97,13 @@ afterEach(() => {
 })
 
 describe('display color setting names', () => {
+  it('names the color-scheme selector from its visible label', async () => {
+    component = mount(ColorSchemeSelect, { target })
+    await tick()
+
+    expect(target.querySelector('select')?.getAttribute('aria-label')).toBe(language.colorScheme)
+  })
+
   it('names every custom color-scheme input from its visible setting label', async () => {
     component = mount(CustomColorSchemeEditor, { target })
     await tick()

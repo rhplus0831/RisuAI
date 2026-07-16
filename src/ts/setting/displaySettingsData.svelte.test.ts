@@ -28,6 +28,13 @@ function contextForTheme(theme: string): SettingContext {
 }
 
 describe('display theme settings data', () => {
+  it('gives the conditional custom-font field a visible and accessible label', () => {
+    const customFont = displayThemeSettingsItems.find((item) => item.id === 'display.customFont')
+
+    expect(customFont?.labelKey).toBe('customFont')
+    expect(customFont?.condition?.({ ...contextForTheme('fastify'), db: { font: 'custom' } as any })).toBe(true)
+  })
+
   it('makes the custom GUI editor reachable for the rendered customHTML/guiHTML path', () => {
     const customGuiButton = displayThemeSettingsItems.find((item) => item.id === 'display.customGui')
     const guiHtmlEditor = displayThemeSettingsItems.find((item) => item.id === 'display.guiHTML')

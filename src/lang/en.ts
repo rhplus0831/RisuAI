@@ -1466,6 +1466,7 @@ export const languageEnglish = {
     commandError: (error: string) => `The module could not be saved: ${error}`,
   },
   font: 'Font',
+  customFont: 'Custom Font',
   lineHeight: 'Line Height',
   notCharxWarn:
     'This character uses multiple assets. It is recommended to export this character as a CharX format for better compatibility.',
