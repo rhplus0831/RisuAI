@@ -186,6 +186,14 @@ function rowForCharacterId(listKind: GridCatalogListKind, characterId: string) {
   return row!
 }
 
+function descriptionForCharacterId(listKind: GridCatalogListKind, characterId: string) {
+  const description = rowForCharacterId(listKind, characterId).querySelector<HTMLElement>(
+    '[data-risu-character-description]',
+  )
+  expect(description, `grid catalog ${listKind} row ${characterId} description`).toBeTruthy()
+  return description!.textContent?.trim()
+}
+
 function gridAction(listKind: GridCatalogListKind, characterId: string, actionKind: string) {
   const action = rowForCharacterId(listKind, characterId).querySelector<HTMLButtonElement>(
     `button[data-risu-grid-action="${actionKind}"]`,
@@ -250,6 +258,21 @@ describe('GridCatalog derived lists', () => {
 
     await clickCatalogTab('list')
     expect(catalogCountText()).toBe('2Character')
+  })
+
+  it('uses the active locale and nonblank fallbacks for List and Trash descriptions', async () => {
+    getDatabase().language = 'ko'
+    getDatabase().characters[0].creatorNotes = '\n# `en`\n   \n# `ko`\n활성 캐릭터 설명'
+    getDatabase().characters[1].creatorNotes = '\n# `en`\n   \n# `fr`\nDescription de la corbeille'
+
+    mountCatalog()
+    await clickCatalogTab('list')
+
+    expect(descriptionForCharacterId('list', 'alpha-main')).toBe('활성 캐릭터 설명')
+
+    await clickCatalogTab('trash')
+
+    expect(descriptionForCharacterId('trash', 'trash-beta')).toBe('Description de la corbeille')
   })
 
   it('L42: GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs', async () => {

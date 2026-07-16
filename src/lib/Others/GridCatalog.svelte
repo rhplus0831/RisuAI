@@ -83,6 +83,26 @@
     selectedListKind === 'trash' ? catalogCharacters.trash.length : catalogCharacters.active.length,
   )
 
+  function resolveGridCatalogDescription(
+    creatorNotes: string,
+    preferredLanguage: string | undefined,
+    fallback = 'No description',
+  ) {
+    const descriptions = parseMultilangString(creatorNotes)
+    const languageOrder = [preferredLanguage, 'en', 'xx', ...Object.keys(descriptions)]
+    const visitedLanguages = new Set<string>()
+
+    for (const languageCode of languageOrder) {
+      if (!languageCode || visitedLanguages.has(languageCode)) continue
+      visitedLanguages.add(languageCode)
+
+      const description = descriptions[languageCode]?.trim()
+      if (description) return description
+    }
+
+    return fallback
+  }
+
   function openCharacterRoute(index: number) {
     const character = getDatabase().characters?.[index]
     if (!character?.chaId) {
@@ -255,10 +275,8 @@
               <h4 class="text-textcolor font-bold text-lg mb-1" data-risu-character-name>
                 {char.name || 'Unnamed'}
               </h4>
-              <span class="text-textcolor2"
-                >{parseMultilangString(char.desc)['en'] ||
-                  parseMultilangString(char.desc)['xx'] ||
-                  'No description'}</span>
+              <span class="text-textcolor2" data-risu-character-description
+                >{resolveGridCatalogDescription(char.desc, getDatabase().language)}</span>
               <div class="flex gap-2 justify-end">
                 <button
                   data-risu-grid-action="open"
@@ -312,10 +330,8 @@
               <h4 class="text-textcolor font-bold text-lg mb-1" data-risu-character-name>
                 {char.name || 'Unnamed'}
               </h4>
-              <span class="text-textcolor2"
-                >{parseMultilangString(char.desc)['en'] ||
-                  parseMultilangString(char.desc)['xx'] ||
-                  'No description'}</span>
+              <span class="text-textcolor2" data-risu-character-description
+                >{resolveGridCatalogDescription(char.desc, getDatabase().language)}</span>
               <div class="flex gap-2 justify-end">
                 <button
                   data-risu-grid-action="restore"
