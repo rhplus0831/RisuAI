@@ -3011,6 +3011,7 @@ export function mutateChatWithScopedCommand(
     const liveChat = liveCharacter?.chats?.[selectedChat]
     if (!liveCharacter || !liveChat) return
     mutate(liveChat, liveCharacter)
+    ensureCompatibleAppendedMessageId(previousChat, liveChat)
     applied = true
   })
   if (!applied) return false
@@ -3046,6 +3047,7 @@ export async function mutateChatWithScopedCommandAsync(
     const liveChat = liveCharacter?.chats?.[selectedChat]
     if (!liveCharacter || !liveChat) return
     mutate(liveChat, liveCharacter)
+    ensureCompatibleAppendedMessageId(previousChat, liveChat)
     applied = true
   })
   if (!applied) return false
@@ -3307,6 +3309,11 @@ function singleMessageAppend(previousMessages: Message[], nextMessages: Message[
 
   const appendedMessage = nextMessages[nextMessages.length - 1]
   return isServerChatMessagePlaceholder(appendedMessage) ? null : appendedMessage
+}
+
+function ensureCompatibleAppendedMessageId(previousChat: Chat, nextChat: Chat): void {
+  const appendedMessage = singleMessageAppend(previousChat.message ?? [], nextChat.message ?? [])
+  if (appendedMessage) ensureMessageId(appendedMessage)
 }
 
 function singleMessagePatch(
