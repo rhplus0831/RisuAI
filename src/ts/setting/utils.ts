@@ -44,6 +44,7 @@ import {
   type SplitPresetDraftProjection,
 } from '../server/settingsDraftAcknowledgement'
 import { dispatchDurableMutation } from '../server/durableMutationDispatch'
+import { SETTINGS_BRIDGE_MUTATION_KEY } from '../server/settingsMutationKey'
 import {
   acknowledgePendingMutation,
   stagePendingMutation,
@@ -104,6 +105,7 @@ interface DeferredSettingEdit {
 
 interface PendingDeferredSettingWrite {
   desiredRoot: unknown
+  durableAttemptedRoot?: unknown
   edits: Map<string, DeferredSettingEdit>
   intent?: DurableMutationIntent
   outbox?: PendingMutationHandle
@@ -156,8 +158,10 @@ export function getSettingValue(item: SettingItem, ctx: SettingContext): any {
 export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
   const previousValue = getSettingValue(item, ctx)
   const commandPatch = buildServerSettingsPatch(item)
+  const serverTarget = commandPatch ? resolveDeferredServerSettingTarget(commandPatch.key) : null
+  const previousRoot = serverTarget ? currentDeferredSettingTargetValue(serverTarget) : undefined
   const optimisticProjectionEpochs = commandPatch
-    ? captureSettingsPatchProjectionEpochs({ [commandPatch.key]: newValue })
+    ? captureSettingsPatchProjectionEpochs({ [commandPatch.key]: previousRoot })
     : undefined
 
   writeLocalSettingValue(item, newValue, ctx)
@@ -165,7 +169,23 @@ export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingCo
   const mirroredToPreset = mirrorSettingValueToSelectedPreset(item, newValue, ctx)
 
   if (commandPatch && !mirroredToPreset) {
-    void patchServerBackedSetting(item, commandPatch, newValue, previousValue, ctx, optimisticProjectionEpochs)
+    const desiredRoot = commandPatch.valueFromDb()
+    if (!serverTarget || desiredRoot === undefined) {
+      rollbackLocalSetting(item, newValue, previousValue, ctx)
+      return
+    }
+    const path = deferredSettingPath(item)
+    const queued = queueDeferredSettingWrite(
+      serverTarget,
+      previousRoot,
+      path,
+      path.length === 0 ? desiredRoot : newValue,
+      item,
+      ctx,
+      optimisticProjectionEpochs,
+      0,
+    )
+    if (queued) dispatchDeferredSettingWrite(serverTarget.ownerKey)
   }
 }
 
@@ -323,7 +343,8 @@ function queueDeferredSettingWrite(
   }
 
   const baseline = existing?.previousRoot ?? cloneJsonValue(previousRoot)
-  if (snapshotJson(desiredRoot) === snapshotJson(baseline)) {
+  const netChanged = snapshotJson(desiredRoot) !== snapshotJson(baseline)
+  if (!netChanged && target.kind !== 'server') {
     // The split-preset queue was entered on the first edit. Mirror the revert
     // through that same queue so it can discard its staged intermediate value.
     if (target.kind === 'preset') {
@@ -362,11 +383,20 @@ function queueDeferredSettingWrite(
     return true
   }
 
+  const changedFromDurable =
+    !!existing?.outbox && snapshotJson(desiredRoot) !== snapshotJson(existing.durableAttemptedRoot)
+  if (!netChanged && !changedFromDurable) {
+    pendingDeferredSettingWrites.delete(target.ownerKey)
+    if (existing?.outbox) void acknowledgePendingMutation(existing.outbox)
+    return false
+  }
+
   const intent = deferredServerSettingDurableIntent(target, desiredRoot)
-  const outbox = stagePendingMutation(`setting-renderer:${target.ownerKey}`, intent, existing?.outbox)
+  const outbox = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, intent, existing?.outbox)
 
   const pending: PendingDeferredSettingWrite = {
     desiredRoot: cloneJsonValue(desiredRoot),
+    durableAttemptedRoot: cloneJsonValue(desiredRoot),
     edits,
     intent,
     outbox,
@@ -376,6 +406,7 @@ function queueDeferredSettingWrite(
     timer: setTimeout(() => dispatchDeferredSettingWrite(target.ownerKey), delayMs),
   }
   pendingDeferredSettingWrites.set(target.ownerKey, pending)
+  if (!netChanged) dispatchDeferredSettingWrite(target.ownerKey)
   return true
 }
 
@@ -644,28 +675,6 @@ function buildServerSettingsPatch(item: SettingItem): { key: string; valueFromDb
     key: String(key),
     valueFromDb: () => cloneJsonValue((getDatabase() as any)[key]),
   }
-}
-
-async function patchServerBackedSetting(
-  item: SettingItem,
-  commandPatch: { key: string; valueFromDb: () => unknown },
-  newValue: unknown,
-  previousValue: unknown,
-  ctx: SettingContext,
-  optimisticProjectionEpochs: SettingsGroupProjectionEpochs | undefined,
-): Promise<void> {
-  const patch = { [commandPatch.key]: commandPatch.valueFromDb() }
-  if (patch[commandPatch.key] === undefined) {
-    rollbackLocalSetting(item, newValue, previousValue, ctx)
-    return
-  }
-
-  await patchServerBackedSettings({
-    patch,
-    acknowledgeOptimistic: true,
-    optimisticProjectionEpochs,
-    rollback: () => rollbackLocalSetting(item, newValue, previousValue, ctx),
-  })
 }
 
 function rollbackLocalSetting(

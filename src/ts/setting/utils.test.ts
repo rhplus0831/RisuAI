@@ -711,7 +711,7 @@ describe('server-backed data-driven settings', () => {
 
     expect(durableSettingState.stages).toHaveLength(1)
     expect(durableSettingState.stages[0]).toMatchObject({
-      key: 'setting-renderer:settings:guiHTML',
+      key: 'settings:bridge',
       intent: {
         version: 1,
         requests: [
@@ -734,6 +734,134 @@ describe('server-backed data-driven settings', () => {
         intent: durableSettingState.stages[0].intent,
       },
     ])
+  })
+
+  it('dispatches a deferred root correction immediately when it returns to baseline', async () => {
+    vi.useFakeTimers()
+    stubSuccessfulSettingsFetch()
+    replaceResourceDatabase({
+      guiHTML: 'server baseline',
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const item: SettingItem = {
+      id: 'display.guiHTML',
+      type: 'textarea',
+      bindKey: 'guiHTML' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setDeferredSettingValue(item, 'staged intermediate', ctx)
+    setDeferredSettingValue(item, 'server baseline', ctx)
+
+    expect(durableSettingState.stages.at(-1)).toMatchObject({
+      key: 'settings:bridge',
+      intent: {
+        requests: [
+          {
+            path: '/settings/display',
+            body: { patch: { guiHTML: 'server baseline' } },
+          },
+        ],
+      },
+    })
+    expect(durableSettingState.dispatches.at(-1)?.intent).toMatchObject({
+      requests: [
+        {
+          body: { patch: { guiHTML: 'server baseline' } },
+        },
+      ],
+    })
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    expect(durableSettingState.dispatches).toHaveLength(1)
+  })
+
+  it('keeps the full desired root when one nested field reverts and a sibling remains dirty', async () => {
+    vi.useFakeTimers()
+    stubSuccessfulSettingsFetch()
+    replaceResourceDatabase({
+      deeplOptions: { key: 'old key', proxy: 'old proxy' },
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const keyItem: SettingItem = {
+      id: 'language.deepl.key',
+      type: 'text',
+      bindPath: 'deeplOptions.key',
+    }
+    const proxyItem: SettingItem = {
+      id: 'language.deepl.proxy',
+      type: 'text',
+      bindPath: 'deeplOptions.proxy',
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setDeferredSettingValue(keyItem, 'intermediate key', ctx)
+    setDeferredSettingValue(proxyItem, 'final proxy', ctx)
+    setDeferredSettingValue(keyItem, 'old key', ctx)
+
+    expect(durableSettingState.stages.at(-1)?.intent).toMatchObject({
+      requests: [
+        {
+          body: {
+            patch: {
+              deeplOptions: { key: 'old key', proxy: 'final proxy' },
+            },
+          },
+        },
+      ],
+    })
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    expect(durableSettingState.dispatches.at(-1)?.intent).toMatchObject({
+      requests: [
+        {
+          body: {
+            patch: {
+              deeplOptions: { key: 'old key', proxy: 'final proxy' },
+            },
+          },
+        },
+      ],
+    })
+  })
+
+  it('merges an immediate write into pending deferred work for the same server root', async () => {
+    vi.useFakeTimers()
+    stubSuccessfulSettingsFetch()
+    replaceResourceDatabase({
+      guiHTML: 'server baseline',
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const item: SettingItem = {
+      id: 'display.guiHTML',
+      type: 'textarea',
+      bindKey: 'guiHTML' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setDeferredSettingValue(item, 'deferred intermediate', ctx)
+    setSettingValue(item, 'immediate final', ctx)
+
+    expect(durableSettingState.dispatches).toHaveLength(1)
+    expect(durableSettingState.dispatches[0].intent).toMatchObject({
+      requests: [
+        {
+          body: { patch: { guiHTML: 'immediate final' } },
+        },
+      ],
+    })
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    expect(durableSettingState.dispatches).toHaveLength(1)
   })
 
   it('rebases a queued deferred root rollback after the older save fails', async () => {
@@ -811,7 +939,7 @@ describe('server-backed data-driven settings', () => {
     expect(calls.filter((call) => call.url === '/api/v1/commands/settings/display')).toHaveLength(1)
   })
 
-  it('cancels the staged model-preset value when a deferred input returns to its baseline', async () => {
+  it('preserves a durable model-preset correction when a deferred input returns to its baseline', async () => {
     vi.useFakeTimers()
     const calls = stubSuccessfulSettingsFetch()
     replaceResourceDatabase({
@@ -844,12 +972,27 @@ describe('server-backed data-driven settings', () => {
     setDeferredSettingValue(item, 0.5, ctx)
 
     expect(getResourceDatabase().modelPresets[0].temperature).toBe(0.5)
-    expect(durableSettingState.acknowledgements).toContain(staged?.handle)
+    expect(durableSettingState.acknowledgements).not.toContain(staged?.handle)
+    expect(durableSettingState.stages.at(-1)).toMatchObject({
+      key: 'split-preset:model:model-revert',
+      intent: {
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/model-presets/model-revert',
+            body: { patch: { temperature: 0.5 } },
+          },
+        ],
+      },
+    })
+    expect(durableSettingState.dispatches.at(-1)?.intent).toMatchObject({
+      requests: [{ body: { patch: { temperature: 0.5 } } }],
+    })
     await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
-    expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-revert')).toEqual([])
+    expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-revert')).toHaveLength(1)
   })
 
-  it('cancels the staged prompt override when a deferred input returns to its baseline', async () => {
+  it('preserves a durable prompt override correction when a deferred input returns to its baseline', async () => {
     vi.useFakeTimers()
     const calls = stubSuccessfulSettingsFetch()
     replaceResourceDatabase({
@@ -887,9 +1030,24 @@ describe('server-backed data-driven settings', () => {
     setDeferredSettingValue(item, 0.5, ctx)
 
     expect(getResourceDatabase().promptPresets[0].temperature).toBe(0.5)
-    expect(durableSettingState.acknowledgements).toContain(staged?.handle)
+    expect(durableSettingState.acknowledgements).not.toContain(staged?.handle)
+    expect(durableSettingState.stages.at(-1)).toMatchObject({
+      key: 'prompt-template-owner:prompt-revert',
+      intent: {
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/prompt-presets/prompt-revert',
+            body: { patch: { temperature: 0.5 } },
+          },
+        ],
+      },
+    })
+    expect(durableSettingState.dispatches.at(-1)?.intent).toMatchObject({
+      requests: [{ body: { patch: { temperature: 0.5 } } }],
+    })
     await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
-    expect(calls.filter((call) => call.url === '/api/v1/commands/prompt-presets/prompt-revert')).toEqual([])
+    expect(calls.filter((call) => call.url === '/api/v1/commands/prompt-presets/prompt-revert')).toHaveLength(1)
   })
 
   it('cascades a lifecycle-flushed preset input into its split-preset command', async () => {

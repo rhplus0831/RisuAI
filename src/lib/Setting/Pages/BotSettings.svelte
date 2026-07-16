@@ -65,6 +65,7 @@
   } from 'src/ts/server/commands'
   import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
   import { dispatchDurableMutation } from 'src/ts/server/durableMutationDispatch'
+  import { SETTINGS_BRIDGE_MUTATION_KEY } from 'src/ts/server/settingsMutationKey'
   import {
     acknowledgePendingMutation,
     stagePendingMutation,
@@ -127,6 +128,7 @@
     patch: {} as SettingsPatch,
     previous: {} as SettingsPatch,
     attempted: {} as SettingsPatch,
+    durableAttempted: {} as SettingsPatch,
     projectionEpoch: null as number | null,
     intent: null as DurableMutationIntent | null,
     outbox: null as PendingMutationHandle | null,
@@ -631,29 +633,22 @@
     if (!canUseServerCommands()) return
     for (const [key, value] of Object.entries(patch)) {
       if (!(key in pendingPromptFieldPatch.previous)) {
-        pendingPromptFieldPatch.previous[key] = previous[key]
+        pendingPromptFieldPatch.previous[key] = cloneJsonValue(previous[key])
       }
-      if (snapshotJson(value) === snapshotJson(pendingPromptFieldPatch.previous[key])) {
-        delete pendingPromptFieldPatch.patch[key]
-        delete pendingPromptFieldPatch.previous[key]
-        delete pendingPromptFieldPatch.attempted[key]
-        continue
-      }
-      pendingPromptFieldPatch.patch[key] = value
-      pendingPromptFieldPatch.attempted[key] = value
+      pendingPromptFieldPatch.attempted[key] = cloneJsonValue(value)
     }
 
     if (pendingPromptFieldPatch.timer) clearTimeout(pendingPromptFieldPatch.timer)
+    pendingPromptFieldPatch.timer = null
+    pendingPromptFieldPatch.projectionEpoch ??= captureSettingsGroupProjectionEpoch('prompt')
+    const correctionOnly = refreshPendingPromptFieldDurability()
     if (Object.keys(pendingPromptFieldPatch.patch).length === 0) {
-      if (pendingPromptFieldPatch.outbox) void acknowledgePendingMutation(pendingPromptFieldPatch.outbox)
-      pendingPromptFieldPatch.intent = null
-      pendingPromptFieldPatch.outbox = null
-      pendingPromptFieldPatch.projectionEpoch = null
-      pendingPromptFieldPatch.timer = null
       return
     }
-    refreshPendingPromptFieldDurability()
-    pendingPromptFieldPatch.projectionEpoch ??= captureSettingsGroupProjectionEpoch('prompt')
+    if (correctionOnly) {
+      dispatchPendingPromptFieldPatch()
+      return
+    }
     pendingPromptFieldPatch.timer = setTimeout(() => {
       dispatchPendingPromptFieldPatch()
     }, 250)
@@ -675,12 +670,7 @@
     const commandProjectionEpoch = pendingPromptFieldPatch.projectionEpoch
     const commandIntent = pendingPromptFieldPatch.intent
     const commandOutbox = pendingPromptFieldPatch.outbox
-    pendingPromptFieldPatch.patch = {}
-    pendingPromptFieldPatch.previous = {}
-    pendingPromptFieldPatch.attempted = {}
-    pendingPromptFieldPatch.projectionEpoch = null
-    pendingPromptFieldPatch.intent = null
-    pendingPromptFieldPatch.outbox = null
+    resetPendingPromptFieldPatch()
 
     if (Object.keys(commandPatch).length === 0 || !commandIntent || !commandOutbox) {
       if (commandOutbox) void acknowledgePendingMutation(commandOutbox)
@@ -725,23 +715,25 @@
   }
 
   function refreshPendingPromptFieldDurability(): boolean {
-    for (const key of Object.keys(pendingPromptFieldPatch.patch)) {
-      if (
-        snapshotJson(pendingPromptFieldPatch.attempted[key]) !== snapshotJson(pendingPromptFieldPatch.previous[key])
-      ) {
-        continue
-      }
-      delete pendingPromptFieldPatch.patch[key]
-      delete pendingPromptFieldPatch.previous[key]
-      delete pendingPromptFieldPatch.attempted[key]
+    const netChangedKeys = changedPromptFieldPatchKeys(
+      pendingPromptFieldPatch.previous,
+      pendingPromptFieldPatch.attempted,
+    )
+    const changedFromDurable = pendingPromptFieldPatch.outbox
+      ? changedPromptFieldPatchKeys(pendingPromptFieldPatch.durableAttempted, pendingPromptFieldPatch.attempted)
+      : new Set<string>()
+    const nextPatch: SettingsPatch = {}
+    for (const key of new Set([...netChangedKeys, ...changedFromDurable])) {
+      if (!Object.prototype.hasOwnProperty.call(pendingPromptFieldPatch.attempted, key)) continue
+      const value = pendingPromptFieldPatch.attempted[key]
+      if (value === undefined) continue
+      nextPatch[key] = cloneJsonValue(value)
     }
-    if (Object.keys(pendingPromptFieldPatch.patch).length === 0) {
+    pendingPromptFieldPatch.patch = nextPatch
+
+    if (Object.keys(nextPatch).length === 0) {
       if (pendingPromptFieldPatch.outbox) void acknowledgePendingMutation(pendingPromptFieldPatch.outbox)
-      pendingPromptFieldPatch.intent = null
-      pendingPromptFieldPatch.outbox = null
-      if (pendingPromptFieldPatch.timer) clearTimeout(pendingPromptFieldPatch.timer)
-      pendingPromptFieldPatch.timer = null
-      pendingPromptFieldPatch.projectionEpoch = null
+      resetPendingPromptFieldPatch()
       return false
     }
     const intent: DurableMutationIntent = {
@@ -750,17 +742,40 @@
         {
           method: 'PATCH',
           path: '/settings/prompt',
-          body: { patch: cloneJsonValue(pendingPromptFieldPatch.patch) },
+          body: { patch: cloneJsonValue(nextPatch) },
         },
       ],
     }
     pendingPromptFieldPatch.intent = intent
     pendingPromptFieldPatch.outbox = stagePendingMutation(
-      'bot-settings:prompt-fields',
+      SETTINGS_BRIDGE_MUTATION_KEY,
       intent,
       pendingPromptFieldPatch.outbox,
     )
-    return true
+    pendingPromptFieldPatch.durableAttempted = cloneJsonValue(pendingPromptFieldPatch.attempted)
+    return netChangedKeys.size === 0
+  }
+
+  function changedPromptFieldPatchKeys(left: SettingsPatch, right: SettingsPatch): Set<string> {
+    const changed = new Set<string>()
+    for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
+      const leftHas = Object.prototype.hasOwnProperty.call(left, key)
+      const rightHas = Object.prototype.hasOwnProperty.call(right, key)
+      if (leftHas !== rightHas || snapshotJson(left[key]) !== snapshotJson(right[key])) changed.add(key)
+    }
+    return changed
+  }
+
+  function resetPendingPromptFieldPatch(): void {
+    if (pendingPromptFieldPatch.timer) clearTimeout(pendingPromptFieldPatch.timer)
+    pendingPromptFieldPatch.patch = {}
+    pendingPromptFieldPatch.previous = {}
+    pendingPromptFieldPatch.attempted = {}
+    pendingPromptFieldPatch.durableAttempted = {}
+    pendingPromptFieldPatch.projectionEpoch = null
+    pendingPromptFieldPatch.intent = null
+    pendingPromptFieldPatch.outbox = null
+    pendingPromptFieldPatch.timer = null
   }
 
   function settlePromptFieldPatchAttempt(attempt: PromptFieldPatchAttempt, accepted: boolean): void {
@@ -772,7 +787,7 @@
       rebasePromptFieldPatchPrevious(laterAttempt.previous, attempt, accepted)
     }
     rebasePromptFieldPatchPrevious(pendingPromptFieldPatch.previous, attempt, accepted)
-    refreshPendingPromptFieldDurability()
+    if (refreshPendingPromptFieldDurability()) dispatchPendingPromptFieldPatch()
     if (attemptIndex >= 0) unsettledPromptFieldPatches.splice(attemptIndex, 1)
   }
 

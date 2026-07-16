@@ -30,6 +30,7 @@ import {
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 import { dispatchDurableMutation } from './durableMutationDispatch'
+import { SETTINGS_BRIDGE_MUTATION_KEY } from './settingsMutationKey'
 import {
   acknowledgePendingMutation,
   stagePendingMutation,
@@ -164,6 +165,7 @@ interface PendingPromptSettingsPatch {
   patch: SettingsPatch
   previous: SettingsPatch
   attempted: SettingsPatch
+  durableAttempted: SettingsPatch
   projectionEpoch: number | null
   timer: ReturnType<typeof setTimeout> | null
   intent: DurableMutationIntent | null
@@ -183,6 +185,7 @@ const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
   patch: {},
   previous: {},
   attempted: {},
+  durableAttempted: {},
   projectionEpoch: null,
   timer: null,
   intent: null,
@@ -473,68 +476,38 @@ export function queuePromptSettingsProjectionPatch(patch: SettingsPatch, previou
     if (!(key in pendingPromptSettingsPatch.previous)) {
       pendingPromptSettingsPatch.previous[key] = cloneJsonValue(previous[key])
     }
-    if (snapshotJson(value) === snapshotJson(pendingPromptSettingsPatch.previous[key])) {
-      delete pendingPromptSettingsPatch.patch[key]
-      delete pendingPromptSettingsPatch.previous[key]
-      delete pendingPromptSettingsPatch.attempted[key]
-      continue
-    }
-    pendingPromptSettingsPatch.patch[key] = cloneJsonValue(value)
     pendingPromptSettingsPatch.attempted[key] = cloneJsonValue(value)
   }
 
   if (pendingPromptSettingsPatch.timer) clearTimeout(pendingPromptSettingsPatch.timer)
+  pendingPromptSettingsPatch.timer = null
+  pendingPromptSettingsPatch.projectionEpoch ??= captureSettingsGroupProjectionEpoch('prompt')
+  const correctionOnly = refreshPendingPromptSettingsMutation()
   if (Object.keys(pendingPromptSettingsPatch.patch).length === 0) {
-    pendingPromptSettingsPatch.projectionEpoch = null
-    pendingPromptSettingsPatch.timer = null
-    cancelPendingPromptSettingsMutation()
     return
   }
-  pendingPromptSettingsPatch.projectionEpoch ??= captureSettingsGroupProjectionEpoch('prompt')
-  stagePendingPromptSettingsMutation()
+  if (correctionOnly) {
+    runPendingPromptSettingsPatch()
+    return
+  }
   pendingPromptSettingsPatch.timer = setTimeout(() => {
     runPendingPromptSettingsPatch()
   }, delayMs)
 }
 
 export function dropPendingPromptSettingsProjectionPatchKeys(keys: readonly string[]): void {
-  let dropped = false
-  for (const key of keys) {
-    if (
-      key in pendingPromptSettingsPatch.patch ||
-      key in pendingPromptSettingsPatch.previous ||
-      key in pendingPromptSettingsPatch.attempted
-    ) {
-      dropped = true
-    }
-    delete pendingPromptSettingsPatch.patch[key]
-    delete pendingPromptSettingsPatch.previous[key]
-    delete pendingPromptSettingsPatch.attempted[key]
-  }
-
-  if (dropped && pendingPromptSettingsPatch.timer && Object.keys(pendingPromptSettingsPatch.patch).length === 0) {
-    clearTimeout(pendingPromptSettingsPatch.timer)
-    pendingPromptSettingsPatch.timer = null
-  }
-  if (Object.keys(pendingPromptSettingsPatch.patch).length === 0) {
-    pendingPromptSettingsPatch.projectionEpoch = null
-    cancelPendingPromptSettingsMutation()
-  } else if (dropped) {
-    stagePendingPromptSettingsMutation()
-  }
+  if (!keys.some((key) => hasOwnField(pendingPromptSettingsPatch.attempted, key))) return
+  // A projection acknowledgement can arrive after another tab has frozen the
+  // staged receipt. Flush the exact desired batch instead of discarding a row
+  // whose immutable predecessor may still be delivered later.
+  runPendingPromptSettingsPatch()
 }
 
 export function replacePendingPromptSettingsProjectionPatchValue(key: string, value: unknown): void {
-  if (!(key in pendingPromptSettingsPatch.patch)) return
-
-  if (snapshotJson(value) === snapshotJson(pendingPromptSettingsPatch.previous[key])) {
-    dropPendingPromptSettingsProjectionPatchKeys([key])
-    return
-  }
-
-  pendingPromptSettingsPatch.patch[key] = cloneJsonValue(value)
+  if (!hasOwnField(pendingPromptSettingsPatch.attempted, key)) return
   pendingPromptSettingsPatch.attempted[key] = cloneJsonValue(value)
-  stagePendingPromptSettingsMutation()
+  const correctionOnly = refreshPendingPromptSettingsMutation()
+  if (correctionOnly) runPendingPromptSettingsPatch()
 }
 
 export function flushPendingPromptTemplatePatches(options: ServerCommandTransportOptions = {}): void {
@@ -553,14 +526,38 @@ export function resetPromptTemplateSelectionDirtyState(): void {
   promptItemDirtyFieldsByOwnerAndId.clear()
 }
 
-function stagePendingPromptSettingsMutation(): void {
-  const intent = promptSettingsDurableIntent(pendingPromptSettingsPatch.patch)
+function refreshPendingPromptSettingsMutation(): boolean {
+  const netChangedKeys = changedSettingsPatchKeys(
+    pendingPromptSettingsPatch.previous,
+    pendingPromptSettingsPatch.attempted,
+  )
+  const changedFromDurable = pendingPromptSettingsPatch.outbox
+    ? changedSettingsPatchKeys(pendingPromptSettingsPatch.durableAttempted, pendingPromptSettingsPatch.attempted)
+    : new Set<string>()
+  const nextPatch: SettingsPatch = {}
+  for (const key of new Set([...netChangedKeys, ...changedFromDurable])) {
+    if (!hasOwnField(pendingPromptSettingsPatch.attempted, key)) continue
+    const value = pendingPromptSettingsPatch.attempted[key]
+    if (value === undefined) continue
+    nextPatch[key] = cloneJsonValue(value)
+  }
+  pendingPromptSettingsPatch.patch = nextPatch
+
+  if (Object.keys(nextPatch).length === 0) {
+    cancelPendingPromptSettingsMutation()
+    resetPendingPromptSettingsPatch()
+    return false
+  }
+
+  const intent = promptSettingsDurableIntent(nextPatch)
   pendingPromptSettingsPatch.intent = intent
   pendingPromptSettingsPatch.outbox = stagePendingMutation(
-    'prompt-settings:bridge',
+    SETTINGS_BRIDGE_MUTATION_KEY,
     intent,
     pendingPromptSettingsPatch.outbox,
   )
+  pendingPromptSettingsPatch.durableAttempted = cloneJsonValue(pendingPromptSettingsPatch.attempted)
+  return netChangedKeys.size === 0
 }
 
 function cancelPendingPromptSettingsMutation(): void {
@@ -569,6 +566,27 @@ function cancelPendingPromptSettingsMutation(): void {
   }
   pendingPromptSettingsPatch.intent = null
   pendingPromptSettingsPatch.outbox = null
+  pendingPromptSettingsPatch.durableAttempted = {}
+}
+
+function changedSettingsPatchKeys(left: SettingsPatch, right: SettingsPatch): Set<string> {
+  const changed = new Set<string>()
+  for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
+    if (!sameSettingsFieldValue(left, right, key)) changed.add(key)
+  }
+  return changed
+}
+
+function resetPendingPromptSettingsPatch(): void {
+  if (pendingPromptSettingsPatch.timer) clearTimeout(pendingPromptSettingsPatch.timer)
+  pendingPromptSettingsPatch.patch = {}
+  pendingPromptSettingsPatch.previous = {}
+  pendingPromptSettingsPatch.attempted = {}
+  pendingPromptSettingsPatch.durableAttempted = {}
+  pendingPromptSettingsPatch.projectionEpoch = null
+  pendingPromptSettingsPatch.intent = null
+  pendingPromptSettingsPatch.outbox = null
+  pendingPromptSettingsPatch.timer = null
 }
 
 function promptSettingsDurableIntent(patch: SettingsPatch): DurableMutationIntent {
@@ -648,12 +666,7 @@ function runPendingPromptSettingsPatch(options: ServerCommandTransportOptions = 
   const commandProjectionEpoch = pendingPromptSettingsPatch.projectionEpoch
   const stagedIntent = pendingPromptSettingsPatch.intent
   const stagedOutbox = pendingPromptSettingsPatch.outbox
-  pendingPromptSettingsPatch.patch = {}
-  pendingPromptSettingsPatch.previous = {}
-  pendingPromptSettingsPatch.attempted = {}
-  pendingPromptSettingsPatch.projectionEpoch = null
-  pendingPromptSettingsPatch.intent = null
-  pendingPromptSettingsPatch.outbox = null
+  resetPendingPromptSettingsPatch()
 
   if (Object.keys(commandPatch).length === 0) {
     if (stagedOutbox) void acknowledgePendingMutation(stagedOutbox)
@@ -662,7 +675,7 @@ function runPendingPromptSettingsPatch(options: ServerCommandTransportOptions = 
 
   const attempt = registerPromptSettingsAttempt(commandPrevious, commandAttempted, commandProjectionEpoch)
   const intent = stagedIntent ?? promptSettingsDurableIntent(commandPatch)
-  const outbox = stagedOutbox ?? stagePendingMutation('prompt-settings:bridge', intent)
+  const outbox = stagedOutbox ?? stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, intent)
 
   void dispatchDurableMutation(outbox, intent, (transport) =>
     runServerCommand({
@@ -775,7 +788,10 @@ function rollbackPromptSettingsAttempt(attempt: PendingPromptSettingsAttempt): v
   const canRebase =
     attempt.projectionEpoch !== null && !hasSettingsGroupProjectionEpochChanged('prompt', attempt.projectionEpoch)
   rollbackPromptSettingsPatch(attempt.previous, attempt.attempted, attempt.projectionEpoch)
-  if (canRebase) rebaseLaterPromptSettingsAttempts(attempt)
+  if (canRebase) {
+    rebaseLaterPromptSettingsAttempts(attempt)
+    if (refreshPendingPromptSettingsMutation()) runPendingPromptSettingsPatch()
+  }
   clearPromptSettingsAttempt(attempt)
 }
 
