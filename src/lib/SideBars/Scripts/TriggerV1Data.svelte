@@ -10,6 +10,7 @@
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import Help from 'src/lib/Others/Help.svelte'
   import { v4 } from 'uuid'
+  import { onDestroy } from 'svelte'
 
   interface Props {
     value: triggerscript
@@ -31,6 +32,14 @@
   let open = $state(false)
   let deletionPending = $state(false)
 
+  function closeOpenRegistration(): void {
+    if (!open) return
+    open = false
+    onClose()
+  }
+
+  onDestroy(closeOpenRegistration)
+
   async function removeRow(): Promise<void> {
     if (deletionPending) return
     deletionPending = true
@@ -39,10 +48,7 @@
       if (!value.id?.trim()) value.id = targetId
       const confirmed = await alertConfirm(language.removeConfirm + value.comment)
       if (!confirmed) return
-      if (open) {
-        open = false
-        onClose()
-      }
+      closeOpenRegistration()
       onRemove(targetId)
     } finally {
       deletionPending = false

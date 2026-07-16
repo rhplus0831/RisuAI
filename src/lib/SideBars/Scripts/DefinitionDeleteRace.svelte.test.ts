@@ -75,6 +75,24 @@ async function verifyExpandedRowIdentity(kind: 'regex' | 'trigger') {
   expect(remainingButton?.getAttribute('aria-expanded')).toBe('true')
 }
 
+async function verifySortableRecoversAfterOpenTargetDisappears(kind: 'regex' | 'trigger') {
+  component = mount(DefinitionDeleteRaceHarness, { target, props: { kind } })
+  await tick()
+  const initialSortableCount = deleteRaceMocks.sortableCreate.mock.calls.length
+
+  const expandButtons = target.querySelectorAll<HTMLButtonElement>('button.endflex')
+  expandButtons[0].click()
+  await tick()
+
+  target.querySelector<HTMLButtonElement>('[data-testid="remove-target"]')?.click()
+  await tick()
+
+  const remainingButton = target.querySelector<HTMLButtonElement>('button.endflex')
+  expect(remainingButton?.textContent).toContain('B')
+  expect(remainingButton?.getAttribute('aria-expanded')).toBe('false')
+  expect(deleteRaceMocks.sortableCreate).toHaveBeenCalledTimes(initialSortableCount + 1)
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -126,5 +144,13 @@ describe('definition row deletion', () => {
 
   it('keeps an expanded V1 trigger editor attached to its definition after an earlier row disappears', async () => {
     await verifyExpandedRowIdentity('trigger')
+  })
+
+  it('restores regex reordering when an expanded definition disappears', async () => {
+    await verifySortableRecoversAfterOpenTargetDisappears('regex')
+  })
+
+  it('restores V1 trigger reordering when an expanded definition disappears', async () => {
+    await verifySortableRecoversAfterOpenTargetDisappears('trigger')
   })
 })

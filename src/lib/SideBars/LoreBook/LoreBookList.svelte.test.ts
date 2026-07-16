@@ -404,6 +404,29 @@ describe('LoreBookList', () => {
     expect(lorebookListMocks.SortableMock.create).toHaveBeenCalledTimes(initialSortableCount + 1)
   })
 
+  it('restores reordering when an expanded row disappears in a collection projection', async () => {
+    component = mountHarness([
+      makeLoreBook({ id: 'entry-a', comment: 'Entry A', content: 'Open content' }),
+      makeLoreBook({ id: 'entry-b', comment: 'Entry B' }),
+    ])
+    await tick()
+    const initialSortableCount = lorebookListMocks.SortableMock.create.mock.calls.length
+
+    toggleButtonForRow(rowByEntryId('entry-a')).click()
+    await tick()
+    component.setEntries([makeLoreBook({ id: 'entry-b', comment: 'Entry B' })])
+    await tick()
+
+    expect(rowByEntryId('entry-b').textContent).not.toContain('Prompt')
+    expect(lorebookListMocks.SortableMock.create).toHaveBeenCalledTimes(initialSortableCount + 1)
+
+    toggleButtonForRow(rowByEntryId('entry-b')).click()
+    await tick()
+    toggleButtonForRow(rowByEntryId('entry-b')).click()
+    await tick()
+    expect(lorebookListMocks.SortableMock.create).toHaveBeenCalledTimes(initialSortableCount + 2)
+  })
+
   it('reacts to resource-backed character lorebook replacement and dispatches deletion for the current character', async () => {
     setDatabaseLite({
       characters: [
@@ -444,6 +467,42 @@ describe('LoreBookList', () => {
     await flushAsyncWork()
 
     expect(lorebookListMocks.replaceCharacterLorebookCollection).toHaveBeenCalledWith('character-resource', [])
+  })
+
+  it('does not transfer an open row to another character with the same entry id', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'character-a',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'shared-entry', comment: 'Character A Entry', content: 'A prompt' })],
+        },
+        {
+          chaId: 'character-b',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'shared-entry', comment: 'Character B Entry', content: 'B prompt' })],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 0 } })
+    await tick()
+    const initialSortableCount = lorebookListMocks.SortableMock.create.mock.calls.length
+
+    toggleButtonForRow(rowByEntryId('shared-entry')).click()
+    await tick()
+    expect(rowByEntryId('shared-entry').textContent).toContain('Prompt')
+
+    selectedCharID.set(1)
+    await tick()
+
+    expect(rowByEntryId('shared-entry').textContent).toContain('Character B Entry')
+    expect(rowByEntryId('shared-entry').textContent).not.toContain('Prompt')
+    expect(lorebookListMocks.SortableMock.create).toHaveBeenCalledTimes(initialSortableCount + 1)
   })
 
   it('dispatches a resource-backed local lorebook deletion for the selected chat', async () => {

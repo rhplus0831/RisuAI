@@ -50,6 +50,15 @@
   let ele: HTMLDivElement = $state()
   let sorted = $state(0)
   let idgroup = 'a' + v4()
+  let destroyed = false
+
+  function destroyStb(): void {
+    if (!stb) return
+    try {
+      stb.destroy()
+    } catch (error) {}
+    stb = null
+  }
 
   function selectedCharacter() {
     return getDatabase().characters?.[$selectedCharID]
@@ -319,11 +328,8 @@
   }
 
   const recreateStb = async () => {
-    try {
-      stb.destroy()
-    } catch (error) {
-      // Ignore destroy failure (may already be removed)
-    }
+    if (destroyed) return
+    destroyStb()
 
     sorted += 1
 
@@ -352,6 +358,7 @@
   }
 
   const createStb = () => {
+    if (destroyed || !ele || openedDetails > 0 || stb) return
     stb = Sortable.create(ele, {
       ...sortableOptions,
       group: 'lorebook',
@@ -486,6 +493,46 @@
 
   let openedDetails = 0 // Count only lorebook details (for drag deactivation)
   let openedRefs = $state(new Set<LorebookOpenRef>()) // Track both folders + lorebooks (for UI state)
+  let openedOwner: string | undefined
+  let openedOwnerInitialized = false
+
+  $effect(() => {
+    const nextOwner = resolvedEntryDraftScopeKey
+    if (!openedOwnerInitialized) {
+      openedOwnerInitialized = true
+      openedOwner = nextOwner
+      return
+    }
+    if (nextOwner === openedOwner) return
+    openedOwner = nextOwner
+    openedDetails = 0
+    openedRefs = new Set()
+    destroyStb()
+    createStb()
+  })
+
+  $effect(() => {
+    const entries = externalLoreBooks
+      ? externalLoreBooks
+      : globalMode
+        ? globalLorebookEntries()
+        : submenu === 1
+          ? chatLocalLore()
+          : characterGlobalLore()
+    const liveRefs = new Set(entries.map(openedRefForEntry))
+    const retainedRefs = new Set(Array.from(openedRefs).filter((ref) => liveRefs.has(ref)))
+    const refsChanged = retainedRefs.size !== openedRefs.size
+    const expectedOpenedDetails = entries.filter(
+      (entry) => entry.mode !== 'folder' && retainedRefs.has(openedRefForEntry(entry)),
+    ).length
+    const detailsChanged = expectedOpenedDetails !== openedDetails
+    if (!refsChanged && !detailsChanged) return
+
+    openedRefs = retainedRefs
+    openedDetails = expectedOpenedDetails
+    if (openedDetails === 0) createStb()
+    else destroyStb()
+  })
 
   let openFolders = $derived(() => {
     let count = 0
@@ -502,13 +549,10 @@
   })
 
   const onOpen = (isDetail: boolean = true, bookRef?: any) => {
+    if (destroyed) return
     if (isDetail) {
       openedDetails += 1
-      if (stb) {
-        try {
-          stb.destroy()
-        } catch (error) {}
-      }
+      destroyStb()
     }
     if (bookRef) {
       openedRefs.add(openedRefForEntry(bookRef))
@@ -517,8 +561,8 @@
   }
   const onClose = (isDetail: boolean = true, bookRef?: any) => {
     if (isDetail) {
-      openedDetails -= 1
-      if (openedDetails === 0) {
+      openedDetails = Math.max(0, openedDetails - 1)
+      if (openedDetails === 0 && !destroyed) {
         createStb()
       }
     }
@@ -529,11 +573,8 @@
   }
 
   onDestroy(() => {
-    if (stb) {
-      try {
-        stb.destroy()
-      } catch (error) {}
-    }
+    destroyed = true
+    destroyStb()
   })
 </script>
 

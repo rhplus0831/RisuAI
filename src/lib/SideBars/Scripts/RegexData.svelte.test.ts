@@ -47,6 +47,34 @@ afterEach(() => {
 })
 
 describe('RegexData deletion', () => {
+  it('balances an expanded row registration when its definition is destroyed externally', async () => {
+    const onOpen = vi.fn()
+    const onClose = vi.fn()
+    component = mount(RegexData, {
+      target,
+      props: {
+        value: {
+          id: 'script-replaced',
+          comment: 'Replaced script',
+          in: '',
+          out: '',
+          type: 'editinput',
+        } as customscript,
+        idx: 0,
+        onOpen,
+        onClose,
+      },
+    })
+
+    target.querySelector<HTMLButtonElement>('button.endflex')?.click()
+    await tick()
+    unmount(component)
+    component = undefined
+
+    expect(onOpen).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   it('does not close an already-closed row before removing it', async () => {
     const onClose = vi.fn()
     const onRemove = vi.fn()

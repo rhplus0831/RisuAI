@@ -17,7 +17,9 @@
   let ele: HTMLDivElement = $state()
   let sorted = $state(0)
   let opened = 0
+  let destroyed = false
   const createStb = () => {
+    if (destroyed || !ele || opened > 0) return
     stb = Sortable.create(ele, {
       onEnd: async () => {
         let idx: number[] = []
@@ -41,6 +43,7 @@
   }
 
   const onOpen = () => {
+    if (destroyed) return
     opened += 1
     if (stb) {
       try {
@@ -49,8 +52,8 @@
     }
   }
   const onClose = () => {
-    opened -= 1
-    if (opened === 0) {
+    opened = Math.max(0, opened - 1)
+    if (opened === 0 && !destroyed) {
       createStb()
     }
   }
@@ -71,11 +74,13 @@
   onMount(createStb)
 
   onDestroy(() => {
+    destroyed = true
     if (stb) {
       try {
         stb.destroy()
       } catch (error) {}
     }
+    stb = null
   })
 </script>
 

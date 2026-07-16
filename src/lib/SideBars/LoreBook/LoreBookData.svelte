@@ -197,7 +197,14 @@
     settleDraftSoon()
   }
 
+  function closeOpenRegistration(): void {
+    if (!open) return
+    open = false
+    onClose(draft.mode !== 'folder')
+  }
+
   onDestroy(() => {
+    closeOpenRegistration()
     if (!deletionCommitted) propagateDraft(true)
     dirtyDraftFields.clear()
   })
@@ -307,8 +314,7 @@
             onOpen(draft.mode !== 'folder')
           } else {
             settleDraftSoon()
-            open = false
-            onClose(draft.mode !== 'folder')
+            closeOpenRegistration()
           }
         }}>
         {#if draft.mode === 'folder'}
@@ -367,9 +373,7 @@
             )
             if (secondConfirm) {
               deletionCommitted = true
-              if (open) {
-                onClose(target.mode !== 'folder')
-              }
+              closeOpenRegistration()
               deactivateLocally(target.snapshot)
               onRemove(target)
             }
@@ -391,9 +395,7 @@
           const d = await alertConfirm(language.removeConfirm + getParentLoreName(target.snapshot))
           if (d) {
             deletionCommitted = true
-            if (open) {
-              onClose(target.mode !== 'folder')
-            }
+            closeOpenRegistration()
             onRemove(target)
           }
         }}

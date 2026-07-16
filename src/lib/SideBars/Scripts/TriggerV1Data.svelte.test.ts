@@ -48,6 +48,34 @@ afterEach(() => {
 })
 
 describe('TriggerV1Data deletion', () => {
+  it('balances an expanded row registration when its definition is destroyed externally', async () => {
+    const onOpen = vi.fn()
+    const onClose = vi.fn()
+    component = mount(TriggerV1Data, {
+      target,
+      props: {
+        value: {
+          id: 'trigger-replaced',
+          comment: 'Replaced trigger',
+          type: 'start',
+          conditions: [],
+          effect: [],
+        } as triggerscript,
+        idx: 0,
+        onOpen,
+        onClose,
+      },
+    })
+
+    target.querySelector<HTMLButtonElement>('button.endflex')?.click()
+    await tick()
+    unmount(component)
+    component = undefined
+
+    expect(onOpen).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   it('does not close an already-closed row before removing it', async () => {
     const onClose = vi.fn()
     const onRemove = vi.fn()
