@@ -630,6 +630,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
           {
             version: 1,
+            dependencyKeys: ['translator-preset:selection'],
             requests: [
               {
                 method: 'PATCH',
@@ -686,6 +687,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         expect(staged.map((entry) => entry.intent)).toEqual([
           {
             version: 1,
+            dependencyKeys: ['translator-preset:selection'],
             requests: [
               {
                 method: 'PATCH',
@@ -696,6 +698,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
           },
           {
             version: 1,
+            dependencyKeys: ['translator-preset:selection'],
             requests: [
               {
                 method: 'PATCH',
@@ -749,6 +752,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         expect(staged).toHaveLength(2)
         expect(staged[1].intent).toEqual({
           version: 1,
+          dependencyKeys: ['translator-preset:selection'],
           requests: [
             {
               method: 'PATCH',
@@ -1119,6 +1123,90 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(commandSpies.updateInputs.some((input) => input.presetId === createdPresetId)).toBe(false)
   })
 
+  it('replays a retained create before an edit to its new translator preset owner', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-create-edit',
+      writerEpoch: 6,
+      databaseLineage: 'lineage-translator-create-edit',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.deferNextCreate = true
+
+    try {
+      await clickCreatePreset()
+      await vi.waitFor(() => expect(commandSpies.createInputs).toHaveLength(1))
+      const createdPresetId = commandSpies.createInputs[0].preset.id as string
+      await editPrompt('draft after retained create')
+
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
+      await failDeferredCommand(commandSpies.deferredCreateResults, 'transient create failure')
+      await vi.waitFor(() => {
+        expect(getDatabase().translatorPresets.some((preset) => preset.id === createdPresetId)).toBe(false)
+      })
+
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => entry.handle.key)).toEqual([
+        'translator-preset:selection',
+        `translator-preset:${createdPresetId}`,
+      ])
+      expect(retained[0].intent.dependencyKeys).toEqual([
+        'translator-preset:preset-a',
+        `translator-preset:${createdPresetId}`,
+      ])
+      expect(retained[1].intent).toEqual({
+        version: 1,
+        dependencyKeys: ['translator-preset:selection'],
+        requests: [
+          {
+            method: 'PATCH',
+            path: `/translator-presets/${createdPresetId}`,
+            body: { patch: { prompt: 'draft after retained create' } },
+          },
+        ],
+      })
+      expect(commandSpies.updateInputs).toEqual([])
+
+      for (const entry of retained) {
+        await expect(dispatchDurableMutationReplay(entry.handle, entry.intent)).resolves.toMatchObject({
+          disposition: 'succeeded',
+        })
+      }
+      expect(commandSpies.replayInputs.map(({ requests }) => requests[0])).toEqual([
+        {
+          method: 'POST',
+          path: '/translator-presets',
+          body: {
+            preset: {
+              id: createdPresetId,
+              name: 'New Preset',
+              prompt: '',
+              maxResponse: 1000,
+            },
+            select: true,
+          },
+        },
+        {
+          method: 'PATCH',
+          path: `/translator-presets/${createdPresetId}`,
+          body: { patch: { prompt: 'draft after retained create' } },
+        },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
   it('keeps a later optimistic create visible through the first create projection', async () => {
     commandSpies.deferNextCreate = true
     await clickCreatePreset()
@@ -1371,6 +1459,134 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorMaxResponse).toBe(200)
   })
 
+  it('holds translator selection behind retained outgoing and target preset owners', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-select-dependencies',
+      writerEpoch: 7,
+      databaseLineage: 'lineage-translator-select-dependencies',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.failNextUpdate = true
+    commandSpies.inlineReplayResults.push({ status: 'error', error: 'preset row predecessor still offline' })
+
+    try {
+      await editPrompt('retained prompt A')
+      await selectTranslatorPreset(1)
+
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
+      expect(commandSpies.selectInputs).toEqual([])
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => entry.handle.key)).toEqual([
+        'translator-preset:preset-a',
+        'translator-preset:selection',
+      ])
+      expect(retained[1].intent).toEqual({
+        version: 1,
+        dependencyKeys: ['translator-preset:preset-a', 'translator-preset:preset-b'],
+        requests: [
+          {
+            method: 'POST',
+            path: '/translator-presets/select',
+            body: { presetId: 'preset-b' },
+          },
+        ],
+      })
+
+      for (const entry of retained) {
+        await expect(dispatchDurableMutationReplay(entry.handle, entry.intent)).resolves.toMatchObject({
+          disposition: 'succeeded',
+        })
+      }
+      expect(commandSpies.replayInputs.map(({ requests }) => requests[0])).toEqual([
+        {
+          method: 'PATCH',
+          path: '/translator-presets/preset-a',
+          body: { patch: { prompt: 'retained prompt A' } },
+        },
+        {
+          method: 'POST',
+          path: '/translator-presets/select',
+          body: { presetId: 'preset-b' },
+        },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
+  it('keeps a later translator selection behind a retained delete fallback', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-delete-select',
+      writerEpoch: 8,
+      databaseLineage: 'lineage-translator-delete-select',
+      requestedWriterWasActive: true,
+    })
+    await appendPresetC()
+    commandSpies.failNextDelete = true
+
+    try {
+      await clickDeletePreset()
+      await vi.waitFor(() => {
+        expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      })
+      await tick()
+      commandSpies.inlineReplayResults.push({ status: 'error', error: 'delete fallback still offline' })
+      await selectTranslatorPreset(2)
+
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
+      expect(commandSpies.selectInputs).toEqual([])
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => [entry.handle.key, entry.intent.requests[0].method])).toEqual([
+        ['translator-preset:selection', 'DELETE'],
+        ['translator-preset:selection', 'POST'],
+      ])
+      expect(retained[0].intent.dependencyKeys).toEqual(['translator-preset:preset-a'])
+      expect(retained[1].intent.dependencyKeys).toEqual(['translator-preset:preset-a', 'translator-preset:preset-c'])
+
+      for (const entry of retained) {
+        await expect(dispatchDurableMutationReplay(entry.handle, entry.intent)).resolves.toMatchObject({
+          disposition: 'succeeded',
+        })
+      }
+      expect(commandSpies.replayInputs.map(({ requests }) => requests[0])).toEqual([
+        {
+          method: 'DELETE',
+          path: '/translator-presets/preset-a',
+          body: { selectPresetId: 'preset-b' },
+        },
+        {
+          method: 'POST',
+          path: '/translator-presets/select',
+          body: { presetId: 'preset-c' },
+        },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
   it('retains PATCH then DELETE order after a transient predecessor and restores the latest optimistic row', async () => {
     vi.useRealTimers()
     vi.stubGlobal('indexedDB', new IDBFactory())
@@ -1392,6 +1608,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
           {
             version: 1,
+            dependencyKeys: ['translator-preset:selection'],
             requests: [
               {
                 method: 'PATCH',
@@ -1402,6 +1619,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
           },
           {
             version: 1,
+            dependencyKeys: ['translator-preset:preset-a'],
             requests: [
               {
                 method: 'DELETE',
@@ -1498,6 +1716,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       expect(retainedDelete.map((entry) => entry.intent)).toEqual([
         {
           version: 1,
+          dependencyKeys: ['translator-preset:preset-a'],
           requests: [
             {
               method: 'DELETE',

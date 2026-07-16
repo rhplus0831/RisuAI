@@ -27,6 +27,7 @@
   import { dispatchDurableMutation } from 'src/ts/server/durableMutationDispatch'
   import {
     acknowledgePendingMutation,
+    isPendingMutationCurrent,
     stagePendingMutation,
     type DurableMutationIntent,
     type PendingMutationHandle,
@@ -40,6 +41,10 @@
   } from 'src/ts/server/resourceState.svelte'
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
+  import {
+    TRANSLATOR_PRESET_SELECTION_MUTATION_KEY,
+    translatorPresetOwnerMutationKey,
+  } from 'src/ts/server/translatorPresetMutationKeys'
   import {
     createTranslatorPreset,
     decodeTranslatorPresetFile,
@@ -82,11 +87,13 @@
     operationId: number
     attemptedPreset: TranslatorPreset & { id: string }
     draftPreset: TranslatorPreset & { id: string }
+    previousSelectedPresetId: string | null
     collectionProjectionEpoch: number
   }
 
   interface TranslatorPresetSelectionAttempt {
     operationId: number
+    previousSelectedPresetId: string | null
     attemptedPresetId: string
   }
 
@@ -161,6 +168,14 @@
 
   function currentSelectedTranslatorPresetId(): string | null {
     return getDatabase().translatorPresets?.[getDatabase().translatorPresetId]?.id ?? null
+  }
+
+  function translatorPresetOwnerDependencyKeys(...presetIds: Array<string | null | undefined>): string[] {
+    return Array.from(
+      new Set(
+        presetIds.filter((presetId): presetId is string => Boolean(presetId)).map(translatorPresetOwnerMutationKey),
+      ),
+    )
   }
 
   function projectedSelectedTranslatorPresetId(): string | null {
@@ -255,8 +270,12 @@
     translatorPresetRollbackBaselinesById.delete(presetId)
   }
 
-  function translatorPresetMutationKey(presetId: string): string {
-    return `translator-preset:${presetId}`
+  function retainPendingTranslatorPresetUpdateForReplay(presetId: string): void {
+    const pending = pendingTranslatorPresetUpdates.get(presetId)
+    if (pending?.timer) clearTimeout(pending.timer)
+    pendingTranslatorPresetUpdates.delete(presetId)
+    translatorPresetDirtyFieldsById.delete(presetId)
+    translatorPresetRollbackBaselinesById.delete(presetId)
   }
 
   function translatorPresetRollbackInsertionIndex(
@@ -657,9 +676,10 @@
   function runTranslatorPresetCommand<T extends Record<string, unknown>>(
     command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
     rollback?: () => void,
+    transport: ServerCommandTransportOptions = {},
   ): Promise<ServerCommandResult<T>> {
     if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
-    return runServerCommand({ command, rollback })
+    return runServerCommand({ command, rollback, ...transport })
   }
 
   function applyOptimisticTranslatorPresetCreate(preset: TranslatorPreset): TranslatorPresetCreateAttempt | null {
@@ -667,12 +687,14 @@
     const presetId = attemptedPreset.id
     if (!presetId || presetId.trim().length === 0) return null
     const attemptedPresetWithId = attemptedPreset as TranslatorPreset & { id: string }
+    const previousSelectedPresetId = currentSelectedTranslatorPresetId()
     confirmedSelectedTranslatorPresetId()
 
     const attempt: TranslatorPresetCreateAttempt = {
       operationId: nextTranslatorPresetStructuralOperationId++,
       attemptedPreset: attemptedPresetWithId,
       draftPreset: cloneJsonValue(attemptedPresetWithId),
+      previousSelectedPresetId,
       collectionProjectionEpoch: captureCollectionProjectionEpoch('translatorPresets'),
     }
     let applied = false
@@ -699,7 +721,6 @@
     absorbUnreconciledTranslatorPresetProjectionEpochs()
     removePendingTranslatorPresetStructuralMutation(attempt.operationId)
     translatorPresetCreateOutcomesById.set(attempt.attemptedPreset.id, 'failed')
-    cancelPendingTranslatorPresetUpdates(attempt.attemptedPreset.id)
     markCollectionAcknowledgementTainted('translatorPresets')
     markSettingsGroupAcknowledgementTainted('language')
 
@@ -739,46 +760,79 @@
 
   function dispatchCreateTranslatorPreset(
     preset: TranslatorPreset,
+    previousSelectedPresetId: string | null,
     rollback?: () => void,
+    captureOutbox?: (outbox: PendingMutationHandle) => void,
   ): Promise<ServerCommandResult> {
-    return runTranslatorPresetCommand(
-      (baseRevision) =>
-        createTranslatorPresetCommand({
-          baseRevision,
-          preset: cloneJsonValue(preset) as TranslatorPresetSnapshot,
-          select: true,
-        }),
-      rollback,
+    if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
+    const attemptedPreset = cloneJsonValue(preset) as TranslatorPresetSnapshot
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/translator-presets',
+          body: { preset: attemptedPreset, select: true },
+        },
+      ],
+      dependencyKeys: translatorPresetOwnerDependencyKeys(
+        previousSelectedPresetId,
+        typeof attemptedPreset.id === 'string' ? attemptedPreset.id : null,
+      ),
+    }
+    const outbox = stagePendingMutation(TRANSLATOR_PRESET_SELECTION_MUTATION_KEY, intent)
+    captureOutbox?.(outbox)
+    return dispatchDurableMutation(outbox, intent, (transport) =>
+      runTranslatorPresetCommand(
+        (baseRevision) =>
+          createTranslatorPresetCommand({
+            baseRevision,
+            preset: cloneJsonValue(attemptedPreset),
+            select: true,
+          }),
+        rollback,
+        transport,
+      ),
     )
   }
 
   function createTranslatorPresetOptimistically(preset: TranslatorPreset): void {
     const attempt = applyOptimisticTranslatorPresetCreate(preset)
     if (!attempt) return
-    void dispatchCreateTranslatorPreset(preset, () => rollbackOptimisticTranslatorPresetCreate(attempt)).then(
-      (result) => {
-        if (result.status !== 'ok') {
-          if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
-            rollbackOptimisticTranslatorPresetCreate(attempt)
-          }
-          return
-        }
-        removePendingTranslatorPresetStructuralMutation(attempt.operationId)
-        translatorPresetCreateOutcomesById.set(attempt.attemptedPreset.id, 'succeeded')
-        settleConfirmedTranslatorPresetCreate(attempt)
+    let createOutbox: PendingMutationHandle | null = null
+    void dispatchCreateTranslatorPreset(
+      preset,
+      attempt.previousSelectedPresetId,
+      () => rollbackOptimisticTranslatorPresetCreate(attempt),
+      (outbox) => {
+        createOutbox = outbox
       },
-    )
+    ).then(async (result) => {
+      if (result.status !== 'ok') {
+        if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+          rollbackOptimisticTranslatorPresetCreate(attempt)
+        }
+        const retained = createOutbox ? await isPendingMutationCurrent(createOutbox) : false
+        if (retained) retainPendingTranslatorPresetUpdateForReplay(attempt.attemptedPreset.id)
+        else cancelPendingTranslatorPresetUpdates(attempt.attemptedPreset.id)
+        return
+      }
+      removePendingTranslatorPresetStructuralMutation(attempt.operationId)
+      translatorPresetCreateOutcomesById.set(attempt.attemptedPreset.id, 'succeeded')
+      settleConfirmedTranslatorPresetCreate(attempt)
+    })
   }
 
   function applyOptimisticTranslatorPresetSelection(presetId: string): TranslatorPresetSelectionAttempt | null {
     const presets = getDatabase().translatorPresets ?? []
     const presetIndex = presets.findIndex((preset) => preset.id === presetId)
     if (presetIndex === -1) return null
+    const previousSelectedPresetId = currentSelectedTranslatorPresetId()
     confirmedSelectedTranslatorPresetId()
 
-    const attemptedPreset = presets[presetIndex]
     const attempt: TranslatorPresetSelectionAttempt = {
       operationId: nextTranslatorPresetStructuralOperationId++,
+      previousSelectedPresetId,
       attemptedPresetId: presetId,
     }
     let applied = false
@@ -819,19 +873,39 @@
     reassertPendingTranslatorPresetStructuralMutations()
   }
 
-  function dispatchSelectTranslatorPreset(presetId: string, rollback?: () => void): Promise<ServerCommandResult> {
-    return runTranslatorPresetCommand(
-      (baseRevision) =>
-        selectTranslatorPresetCommand({
-          baseRevision,
-          presetId,
-        }),
-      rollback,
+  function dispatchSelectTranslatorPreset(
+    presetId: string,
+    previousSelectedPresetId: string | null,
+    rollback?: () => void,
+  ): Promise<ServerCommandResult> {
+    if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/translator-presets/select',
+          body: { presetId },
+        },
+      ],
+      dependencyKeys: translatorPresetOwnerDependencyKeys(previousSelectedPresetId, presetId),
+    }
+    const outbox = stagePendingMutation(TRANSLATOR_PRESET_SELECTION_MUTATION_KEY, intent)
+    return dispatchDurableMutation(outbox, intent, (transport) =>
+      runTranslatorPresetCommand(
+        (baseRevision) =>
+          selectTranslatorPresetCommand({
+            baseRevision,
+            presetId,
+          }),
+        rollback,
+        transport,
+      ),
     )
   }
 
   function dispatchOptimisticTranslatorPresetSelection(attempt: TranslatorPresetSelectionAttempt): void {
-    void dispatchSelectTranslatorPreset(attempt.attemptedPresetId, () =>
+    void dispatchSelectTranslatorPreset(attempt.attemptedPresetId, attempt.previousSelectedPresetId, () =>
       rollbackOptimisticTranslatorPresetSelection(attempt),
     ).then((result) => {
       if (result.status !== 'ok') {
@@ -1001,6 +1075,7 @@
           body: selectPresetId ? { selectPresetId } : {},
         },
       ],
+      dependencyKeys: [translatorPresetOwnerMutationKey(presetId)],
     }
   }
 
@@ -1010,7 +1085,7 @@
     rollback: () => void,
   ): Promise<ServerCommandResult> {
     const intent = translatorPresetDeleteDurableIntent(presetId, selectPresetId)
-    const outbox = stagePendingMutation(translatorPresetMutationKey(presetId), intent)
+    const outbox = stagePendingMutation(TRANSLATOR_PRESET_SELECTION_MUTATION_KEY, intent)
     return dispatchDurableMutation(outbox, intent, (transport) =>
       runServerCommand({
         command: (baseRevision) =>
@@ -1212,7 +1287,7 @@
     }
 
     pending.intent = translatorPresetUpdateDurableIntent(presetId, pending.patch)
-    pending.outbox = stagePendingMutation(translatorPresetMutationKey(presetId), pending.intent, pending.outbox)
+    pending.outbox = stagePendingMutation(translatorPresetOwnerMutationKey(presetId), pending.intent, pending.outbox)
     pending.durableAttempted = cloneJsonValue(pending.attempted)
 
     pendingTranslatorPresetUpdates.set(presetId, pending)
@@ -1276,6 +1351,7 @@
           body: { patch: cloneJsonValue(patch) },
         },
       ],
+      dependencyKeys: [TRANSLATOR_PRESET_SELECTION_MUTATION_KEY],
     }
   }
 
@@ -1336,7 +1412,7 @@
       if (!canUseServerCommands()) {
         getDatabase().translatorPresetId = presetIndex
         syncCurrentTranslatorPreset()
-        if (presetId) dispatchSelectTranslatorPreset(presetId)
+        if (presetId) dispatchSelectTranslatorPreset(presetId, null)
       } else if (presetId) {
         const attempt = applyOptimisticTranslatorPresetSelection(presetId)
         if (!attempt) return
@@ -1366,7 +1442,7 @@
         getDatabase().translatorPresets = presets
         getDatabase().translatorPresetId = getDatabase().translatorPresets.length - 1
         normalizeTranslatorPresets()
-        dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId])
+        dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId], null)
       } else {
         createTranslatorPresetOptimistically(newPreset)
       }
@@ -1497,7 +1573,7 @@
           getDatabase().translatorPresets = presets
           getDatabase().translatorPresetId = getDatabase().translatorPresets.length - 1
           normalizeTranslatorPresets()
-          dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId])
+          dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId], null)
         } else {
           createTranslatorPresetOptimistically(newPreset)
         }
