@@ -32,6 +32,7 @@ vi.mock('src/lib/UI/GUI/Portal.svelte', async () => {
 import TriggerV2ListHarness from './TriggerV2List.testHarness.svelte'
 import type { triggerscript } from 'src/ts/process/triggers'
 import { language } from 'src/lang'
+import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
 type MountedComponent = Parameters<typeof unmount>[0] & {
   getValue: () => triggerscript[]
@@ -392,6 +393,64 @@ describe('TriggerV2List effect display', () => {
     expect(component.getValue().map((trigger) => trigger.comment)).toEqual(['Header', 'Alpha', 'Beta'])
   })
 
+  it('owns focus above a responsive modal and closes with Escape from an editable field', async () => {
+    setViewportWidth(767)
+    const appRoot = document.createElement('div')
+    const background = document.createElement('main')
+    const backgroundButton = document.createElement('button')
+    const responsiveRoot = document.createElement('div')
+    const responsiveDialog = document.createElement('div')
+    background.append(backgroundButton)
+    responsiveRoot.dataset.modalRoot = ''
+    responsiveDialog.tabIndex = -1
+    responsiveDialog.append(target)
+    responsiveRoot.append(responsiveDialog)
+    appRoot.append(background, responsiveRoot)
+    document.body.append(appRoot)
+
+    const responsiveTrap = modalFocusTrap(responsiveDialog)
+    try {
+      component = mount(TriggerV2ListHarness, {
+        target,
+        props: {
+          initialValue: [
+            { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+            { comment: 'Alpha', type: 'manual', conditions: [], effect: [] },
+          ],
+        },
+      }) as MountedComponent
+      await settle()
+
+      const editButton = target.querySelector<HTMLButtonElement>('button')!
+      editButton.focus()
+      editButton.click()
+      await settle()
+
+      const triggerDialog = target.querySelector<HTMLElement>('[data-risu-trigger-v2-dialog]')
+      expect(triggerDialog).toBeTruthy()
+      expect(triggerDialog?.getAttribute('role')).toBe('dialog')
+      expect(triggerDialog?.getAttribute('aria-modal')).toBe('true')
+      expect(triggerDialog?.getAttribute('aria-label')).toBe(language.triggerScript)
+      expect(triggerDialog?.inert).toBe(false)
+      expect(triggerDialog?.contains(document.activeElement)).toBe(true)
+      expect(background.inert).toBe(true)
+
+      const nameInput = triggerDialog?.querySelector<HTMLInputElement>('input[type="text"]')
+      expect(nameInput).toBeTruthy()
+      nameInput?.focus()
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      nameInput?.dispatchEvent(escape)
+      await settle()
+
+      expect(escape.defaultPrevented).toBe(true)
+      expect(target.querySelector('[data-risu-trigger-v2-dialog]')).toBeNull()
+      expect(document.activeElement).toBe(editButton)
+      expect(background.inert).toBe(true)
+    } finally {
+      responsiveTrap.destroy()
+    }
+  })
+
   it('keeps a selected trigger identity when an unselected row is dragged across it', async () => {
     component = mount(TriggerV2ListHarness, {
       target,
@@ -420,8 +479,12 @@ describe('TriggerV2List effect display', () => {
     expect(triggerButton('Alpha').getAttribute('aria-pressed')).toBe('true')
     expect(triggerButton('Gamma').getAttribute('aria-pressed')).toBe('false')
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true, cancelable: true }))
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, bubbles: true, cancelable: true }))
+    triggerButton('Alpha').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true, cancelable: true }),
+    )
+    triggerButton('Alpha').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, bubbles: true, cancelable: true }),
+    )
     await settle()
 
     expect(component.getValue().map((trigger) => trigger.comment)).toEqual([

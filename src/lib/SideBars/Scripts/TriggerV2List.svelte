@@ -9,6 +9,7 @@
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import Help from 'src/lib/Others/Help.svelte'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import {
     type triggerEffectV2,
     type triggerEffect,
@@ -2352,8 +2353,9 @@
   }
 
   const handleKeydown = (e: KeyboardEvent) => {
-    if (isEditableShortcutTarget(e.target)) return
     if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
       if (contextMenu) {
         contextMenu = false
         return
@@ -2367,7 +2369,9 @@
         }
         menuMode = 0
       }
+      return
     }
+    if (isEditableShortcutTarget(e.target)) return
     if (selectedIndex > 0 && selectedEffectIndex !== -1 && menuMode === 0 && selectMode === 1) {
       if (e.key === 'ArrowUp') {
         if (selectedEffectIndex > 0) {
@@ -2607,7 +2611,6 @@
     checkMobileScreen()
     window.addEventListener('resize', checkMobileScreen)
 
-    window.addEventListener('keydown', handleKeydown)
     window.addEventListener('resize', updateGuideLines)
 
     const handleGlobalClick = (e: MouseEvent) => {
@@ -2633,7 +2636,6 @@
   })
 
   onDestroy(() => {
-    window.removeEventListener('keydown', handleKeydown)
     window.removeEventListener('resize', updateGuideLines)
     scrollManager.stopAutoScroll()
   })
@@ -2658,7 +2660,15 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
+      use:modalFocusTrap
+      data-modal-root
+      data-risu-trigger-v2-dialog
+      role="dialog"
+      aria-modal="true"
+      aria-label={language.triggerScript}
+      tabindex="-1"
       class="text-textcolor absolute top-0 bottom-0 bg-black/50 max-w-full w-full h-full z-40 flex justify-center items-center"
+      onkeydown={handleKeydown}
       onclick={(e) => {
         if (e.target === e.currentTarget) {
           contextMenu = false
