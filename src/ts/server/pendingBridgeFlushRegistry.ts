@@ -5,8 +5,11 @@ type PendingBridgePatchFlusher = (options: ServerCommandTransportOptions) => voi
 const pendingBridgePatchFlushers = new Map<string, PendingBridgePatchFlusher>()
 
 /** Register a lazily loaded bridge without making bootstrap import its feature module. */
-export function registerPendingBridgePatchFlusher(id: string, flusher: PendingBridgePatchFlusher): void {
+export function registerPendingBridgePatchFlusher(id: string, flusher: PendingBridgePatchFlusher): () => void {
   pendingBridgePatchFlushers.set(id, flusher)
+  return () => {
+    if (pendingBridgePatchFlushers.get(id) === flusher) pendingBridgePatchFlushers.delete(id)
+  }
 }
 
 export function flushRegisteredPendingBridgePatches(options: ServerCommandTransportOptions): void {

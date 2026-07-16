@@ -1,3 +1,7 @@
+<script module lang="ts">
+  let nextTranslatorPresetFlushId = 1
+</script>
+
 <script lang="ts">
   import { DownloadIcon, HardDriveUploadIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import Help from 'src/lib/Others/Help.svelte'
@@ -15,9 +19,11 @@
     subscribeServerCommandLocalEffectApplied,
     updateTranslatorPresetCommand,
     type ServerCommandResult,
+    type ServerCommandTransportOptions,
     type TranslatorPresetPatchOptimisticAcknowledgement,
     type TranslatorPresetSnapshot,
   } from 'src/ts/server/commands'
+  import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
   import {
     captureCollectionProjectionEpoch,
     captureSettingsGroupProjectionEpoch,
@@ -962,7 +968,10 @@
     })
   }
 
-  function dispatchPendingTranslatorPresetUpdate(pending: PendingTranslatorPresetUpdate): Promise<ServerCommandResult> {
+  function dispatchPendingTranslatorPresetUpdate(
+    pending: PendingTranslatorPresetUpdate,
+    options: ServerCommandTransportOptions = {},
+  ): Promise<ServerCommandResult> {
     if (pending.timer) {
       clearTimeout(pending.timer)
       pending.timer = null
@@ -987,13 +996,18 @@
     const dispatch = () =>
       runServerCommand({
         command: (baseRevision) =>
-          updateTranslatorPresetCommand({
-            baseRevision,
-            presetId: commandPresetId,
-            patch: commandPatch,
-            optimisticAcknowledgement,
-          }),
+          updateTranslatorPresetCommand(
+            {
+              baseRevision,
+              presetId: commandPresetId,
+              patch: commandPatch,
+              optimisticAcknowledgement,
+            },
+            options.signal,
+            options.keepalive,
+          ),
         rollback,
+        ...options,
       })
     const dispatchAndSettle = async () => {
       const result = await dispatch()
@@ -1013,10 +1027,10 @@
     return translatorPresetUpdateDispatchChain
   }
 
-  async function flushPendingTranslatorPresetUpdates(): Promise<void> {
+  async function flushPendingTranslatorPresetUpdates(options: ServerCommandTransportOptions = {}): Promise<void> {
     if (!canUseServerCommands()) return
     for (const pending of Array.from(pendingTranslatorPresetUpdates.values())) {
-      void dispatchPendingTranslatorPresetUpdate(pending)
+      void dispatchPendingTranslatorPresetUpdate(pending, options)
     }
     await translatorPresetUpdateDispatchChain
   }
@@ -1115,8 +1129,16 @@
     })
   })
 
+  const unregisterPendingTranslatorPresetFlush = registerPendingBridgePatchFlusher(
+    `translator-preset-settings:${nextTranslatorPresetFlushId++}`,
+    (options) => {
+      void flushPendingTranslatorPresetUpdates(options)
+    },
+  )
+
   onDestroy(() => {
     unsubscribeLocalEffectApplied()
+    unregisterPendingTranslatorPresetFlush()
     void flushPendingTranslatorPresetUpdates()
   })
 </script>

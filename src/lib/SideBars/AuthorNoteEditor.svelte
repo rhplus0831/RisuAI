@@ -1,3 +1,7 @@
+<script module lang="ts">
+  let nextAuthorNoteEditorFlushId = 1
+</script>
+
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte'
 
@@ -6,6 +10,8 @@
   import type { character } from 'src/ts/storage/database.svelte'
   import { tokenizeAccurate } from 'src/ts/tokenizer'
   import { getAuthorNoteDefaultText } from 'src/ts/util'
+  import type { ServerCommandTransportOptions } from 'src/ts/server/commands'
+  import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
 
   import Help from '../Others/Help.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
@@ -55,14 +61,14 @@
     pendingAuthorNoteSave = null
   }
 
-  function flushPendingAuthorNoteSave(): void {
+  function flushPendingAuthorNoteSave(options: ServerCommandTransportOptions = {}): void {
     const pending = pendingAuthorNoteSave
     if (!pending) return
     clearAuthorNoteSaveTimer()
     pendingAuthorNoteSave = null
     if (pending.note === authorNoteLastSubmitted) return
     authorNoteLastSubmitted = pending.note
-    setChatNoteValue(pending.chatId, pending.note)
+    setChatNoteValue(pending.chatId, pending.note, options)
   }
 
   function scheduleAuthorNoteSave(chatId: string, note: string): void {
@@ -112,7 +118,15 @@
     }
   })
 
-  onDestroy(flushPendingAuthorNoteSave)
+  const unregisterPendingAuthorNoteFlush = registerPendingBridgePatchFlusher(
+    `author-note-editor:${nextAuthorNoteEditorFlushId++}`,
+    flushPendingAuthorNoteSave,
+  )
+
+  onDestroy(() => {
+    unregisterPendingAuthorNoteFlush()
+    flushPendingAuthorNoteSave()
+  })
 </script>
 
 <div data-risu-chat-author-note>

@@ -14,6 +14,7 @@ import {
 } from './server/commands'
 import { serializePersonaCollectionDigestInput, serializePersonaProfileDigestInput } from './personaMutationCertificate'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
+import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
 import {
   applyCollectionsResource,
   applySettingsResource,
@@ -358,6 +359,44 @@ describe('persona ID read and command preparation', () => {
       personaPrompt: 'Unsaved prompt',
     })
     expect(currentPersonaStateSnapshot()).toEqual(previous)
+  })
+
+  it('flushes a debounced selected persona save with keepalive through the lifecycle registry', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Old Name',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+        }),
+      ],
+      0,
+    )
+    const previous = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('personaPrompt', 'Draft before pagehide')
+    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ revision: 1 }))
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        revision: 2,
+        event: { type: 'persona.updated', revision: 2, resource: 'persona', id: 'persona-a' },
+        personaId: 'persona-a',
+        acknowledgedKeys: ['personaPrompt'],
+        legacyProfileProjectionApplied: true,
+      }),
+    )
+
+    flushRegisteredPendingBridgePatches({ keepalive: true })
+    await flushPendingSelectedPersonaUpdate()
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(fetch).mock.calls[0]?.[1]).toMatchObject({ keepalive: true })
+    expect(vi.mocked(fetch).mock.calls[1]?.[1]).toMatchObject({ keepalive: true })
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body))).toMatchObject({
+      patch: { personaPrompt: 'Draft before pagehide' },
+    })
   })
 
   it('enqueues a debounced persona PATCH before a structural selection', async () => {

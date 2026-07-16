@@ -4201,20 +4201,34 @@ export function patchChatScriptstateValue(
 // Author-note write (`v2SetAuthorNote`) with a scriptstate-scoped rollback. The
 // note is a chat-row scalar, so the command is a chat update, but the rollback
 // reuses the pass's `ChatScriptstateSnapshot` (which also restores `note`).
-export function dispatchUpdateChatNoteScoped(chatId: string, note: string, previous: ChatScriptstateSnapshot): void {
+export function dispatchUpdateChatNoteScoped(
+  chatId: string,
+  note: string,
+  previous: ChatScriptstateSnapshot,
+  options: ServerCommandTransportOptions = {},
+): void {
   runChatCommand(
     (baseRevision) =>
-      updateChatCommand({
-        baseRevision,
-        chatId,
-        patch: sanitizeChatPatch({ note }),
-        select: false,
-      }),
+      updateChatCommand(
+        {
+          baseRevision,
+          chatId,
+          patch: sanitizeChatPatch({ note }),
+          select: false,
+        },
+        options.signal,
+        options.keepalive,
+      ),
     () => restoreChatNoteAttempt(previous, note),
+    options,
   )
 }
 
-export function setChatNoteValue(chatId: string | undefined, note: string): boolean {
+export function setChatNoteValue(
+  chatId: string | undefined,
+  note: string,
+  options: ServerCommandTransportOptions = {},
+): boolean {
   if (!chatId) return false
 
   const location = locateChatById(chatId)
@@ -4233,7 +4247,7 @@ export function setChatNoteValue(chatId: string | undefined, note: string): bool
   })
   if (!applied) return false
 
-  dispatchUpdateChatNoteScoped(chatId, note, previous)
+  dispatchUpdateChatNoteScoped(chatId, note, previous, options)
   return true
 }
 

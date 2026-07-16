@@ -20,7 +20,9 @@ import {
   type PersonaPatchOptimisticAcknowledgement,
   type PersonaSnapshot,
   type ServerCommandResult,
+  type ServerCommandTransportOptions,
 } from './server/commands'
+import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRegistry'
 import { subscribeServerCommandLocalEffectApplied } from './server/commandLocalEffectEvents'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
@@ -1189,7 +1191,9 @@ function takePendingSelectedPersonaUpdate(): {
   return { personaId, patch, previous, attempted, collectionProjectionEpoch, settingsProjectionEpoch }
 }
 
-export function flushPendingSelectedPersonaUpdate(): Promise<ServerCommandResult<{ personaId: string }> | null> {
+export function flushPendingSelectedPersonaUpdate(
+  options: ServerCommandTransportOptions = {},
+): Promise<ServerCommandResult<{ personaId: string }> | null> {
   if (!canUseServerCommands()) return Promise.resolve(null)
 
   const pending = takePendingSelectedPersonaUpdate()
@@ -1214,13 +1218,17 @@ export function flushPendingSelectedPersonaUpdate(): Promise<ServerCommandResult
   // mismatch followed by an authoritative collection/settings read.
   const next = runServerCommand({
     command: (baseRevision) =>
-      updatePersonaCommand({
-        baseRevision,
-        personaId: pending.personaId,
-        patch: pending.patch,
-        mirrorLegacyProfile: true,
-        optimisticAcknowledgement,
-      }),
+      updatePersonaCommand(
+        {
+          baseRevision,
+          personaId: pending.personaId,
+          patch: pending.patch,
+          mirrorLegacyProfile: true,
+          optimisticAcknowledgement,
+        },
+        options.signal,
+        options.keepalive,
+      ),
     rollback: personaCommandRollback({ personas: true, settings: true }, () => {
       if (!pending.previous || !pending.attempted) return
       applyPersonaProfileCommandRollback({
@@ -1230,6 +1238,7 @@ export function flushPendingSelectedPersonaUpdate(): Promise<ServerCommandResult
         rowKeys: personaRowRollbackKeysForPatch(pending.patch),
       })
     }),
+    ...options,
   }).finally(() => {
     if (pendingPersonaUpdate.promise === next) {
       pendingPersonaUpdate.promise = null
@@ -1239,6 +1248,10 @@ export function flushPendingSelectedPersonaUpdate(): Promise<ServerCommandResult
   pendingPersonaUpdate.promise = next
   return next
 }
+
+registerPendingBridgePatchFlusher('selected-persona-profile', (options) => {
+  void flushPendingSelectedPersonaUpdate(options)
+})
 
 export function updateSelectedPersonaField(field: SelectedPersonaProfileField, value: string): void {
   markSelectedPersonaFieldDirty(field, value)

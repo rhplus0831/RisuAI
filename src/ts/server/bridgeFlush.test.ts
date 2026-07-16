@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const calls = vi.hoisted(() => ({
   settingInputs: [] as unknown[],
@@ -8,12 +8,6 @@ const calls = vi.hoisted(() => ({
   lorebook: [] as unknown[],
   promptTemplate: [] as unknown[],
   scriptDefinition: [] as unknown[],
-}))
-
-vi.mock('./pendingBridgeFlushRegistry', () => ({
-  flushRegisteredPendingBridgePatches: vi.fn((options: unknown) => {
-    calls.settingInputs.push(options)
-  }),
 }))
 
 vi.mock('./settingsBridge.svelte', () => ({
@@ -53,6 +47,9 @@ vi.mock('./scriptDefinitionBridge.svelte', () => ({
 }))
 
 import { flushAllPendingBridgePatches, startBridgePatchLifecycleFlush } from './bridgeFlush'
+import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
+
+let unregisterTestFlusher: (() => void) | undefined
 
 function allCallBuckets(): unknown[][] {
   return [
@@ -68,10 +65,18 @@ function allCallBuckets(): unknown[][] {
 
 beforeEach(() => {
   for (const bucket of allCallBuckets()) bucket.length = 0
+  unregisterTestFlusher = registerPendingBridgePatchFlusher('test:bridge-flush-lifecycle', (options) => {
+    calls.settingInputs.push(options)
+  })
   Object.defineProperty(document, 'visibilityState', {
     value: 'visible',
     configurable: true,
   })
+})
+
+afterEach(() => {
+  unregisterTestFlusher?.()
+  unregisterTestFlusher = undefined
 })
 
 describe('flushAllPendingBridgePatches', () => {

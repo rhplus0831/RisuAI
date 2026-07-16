@@ -42,6 +42,7 @@ vi.mock('../Others/Help.svelte', async () => {
 import AuthorNoteEditor from './AuthorNoteEditor.svelte'
 import AuthorNoteEditorTestHost from './AuthorNoteEditor.testHost.svelte'
 import type { character } from 'src/ts/storage/database.svelte'
+import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -116,7 +117,7 @@ describe('AuthorNoteEditor debounce persistence', () => {
     component = undefined
 
     expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledTimes(1)
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'draft before close')
+    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'draft before close', {})
 
     vi.advanceTimersByTime(300)
     expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledTimes(1)
@@ -140,8 +141,33 @@ describe('AuthorNoteEditor debounce persistence', () => {
     await tick()
 
     expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'unsaved first-chat draft')
+    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'unsaved first-chat draft', {})
     expect(textarea.value).toBe('second note')
+
+    vi.advanceTimersByTime(300)
+    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()
+  })
+
+  it('flushes a pending author-note edit with keepalive through the lifecycle registry', async () => {
+    component = mount(AuthorNoteEditor, {
+      target,
+      props: {
+        chara: makeCharacter(),
+      },
+    })
+    await tick()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="author-note-input"]')!
+    textarea.value = 'draft before pagehide'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    flushRegisteredPendingBridgePatches({ keepalive: true })
+
+    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'draft before pagehide', {
+      keepalive: true,
+    })
 
     vi.advanceTimersByTime(300)
     expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()

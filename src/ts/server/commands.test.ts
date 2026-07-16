@@ -4221,6 +4221,53 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('marks lifecycle persona and translator preset patches as keepalive requests', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/personas/persona-a')) {
+        return {
+          revision: 2,
+          event: { type: 'persona.updated', revision: 2, resource: 'persona', id: 'persona-a' },
+          personaId: 'persona-a',
+        }
+      }
+      return {
+        revision: 3,
+        event: {
+          type: 'translatorPreset.updated',
+          revision: 3,
+          resource: 'translatorPreset',
+          id: 'translator-a',
+        },
+        presetId: 'translator-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await updatePersonaCommand(
+      {
+        baseRevision: 1,
+        personaId: 'persona-a',
+        patch: { personaPrompt: 'draft before pagehide' },
+        mirrorLegacyProfile: true,
+      },
+      undefined,
+      true,
+    )
+    await updateTranslatorPresetCommand(
+      {
+        baseRevision: 2,
+        presetId: 'translator-a',
+        patch: { prompt: 'draft before pagehide' },
+      },
+      undefined,
+      true,
+    )
+
+    expect(vi.mocked(commandFetch.fetch).mock.calls).toHaveLength(2)
+    expect(vi.mocked(commandFetch.fetch).mock.calls[0]?.[1]).toMatchObject({ keepalive: true })
+    expect(vi.mocked(commandFetch.fetch).mock.calls[1]?.[1]).toMatchObject({ keepalive: true })
+  })
+
   it('exposes an exact translator preset PATCH acknowledgement without serializing optimistic proof', async () => {
     const event = {
       type: 'translatorPreset.updated',

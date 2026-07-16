@@ -1,3 +1,7 @@
+<script module lang="ts">
+  let nextBotSettingsFlushId = 1
+</script>
+
 <script lang="ts">
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { language } from 'src/lang'
@@ -56,8 +60,10 @@
     enablePromptItemsCommand,
     patchPromptSettingsCommand,
     runServerCommand,
+    type ServerCommandTransportOptions,
     type SettingsPatch,
   } from 'src/ts/server/commands'
+  import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
   import { subscribeServerCommandLocalEffectApplied } from 'src/ts/server/commandLocalEffectEvents'
   import {
     appliedLocalEffectAcknowledgesSettingDraft,
@@ -117,6 +123,10 @@
     projectionEpoch: null as number | null,
     timer: null as ReturnType<typeof setTimeout> | null,
   }
+  const unregisterPendingPromptFieldFlush = registerPendingBridgePatchFlusher(
+    `bot-settings-prompt-fields:${nextBotSettingsFlushId++}`,
+    flushPendingPromptFieldPatch,
+  )
   const PROMPT_SETTINGS_COMMAND_KEYS = new Set<string>(PROMPT_SETTINGS_KEYS)
   const oobaDraft = createServerBackedSettingDraft<Record<string, any>>('ooba', { formating: {} })
   const promptOobaDraft = createPromptPresetModelOverrideDraft<Record<string, any>>('ooba', { formating: {} })
@@ -628,11 +638,11 @@
     }, 250)
   }
 
-  function flushPendingPromptFieldPatch(): void {
-    dispatchPendingPromptFieldPatch()
+  function flushPendingPromptFieldPatch(options: ServerCommandTransportOptions = {}): void {
+    dispatchPendingPromptFieldPatch(options)
   }
 
-  function dispatchPendingPromptFieldPatch(): void {
+  function dispatchPendingPromptFieldPatch(options: ServerCommandTransportOptions = {}): void {
     if (pendingPromptFieldPatch.timer) {
       clearTimeout(pendingPromptFieldPatch.timer)
       pendingPromptFieldPatch.timer = null
@@ -651,13 +661,18 @@
 
     void runServerCommand({
       command: (baseRevision) =>
-        patchPromptSettingsCommand({
-          baseRevision,
-          patch: commandPatch,
-          acknowledgeOptimistic: commandProjectionEpoch !== null,
-          optimisticProjectionEpoch: commandProjectionEpoch ?? undefined,
-        }),
+        patchPromptSettingsCommand(
+          {
+            baseRevision,
+            patch: commandPatch,
+            acknowledgeOptimistic: commandProjectionEpoch !== null,
+            optimisticProjectionEpoch: commandProjectionEpoch ?? undefined,
+          },
+          options.signal,
+          options.keepalive,
+        ),
       rollback: () => rollbackPromptFields(commandPrevious, commandAttempted, commandProjectionEpoch),
+      ...options,
     })
   }
 
@@ -972,6 +987,7 @@
   })
 
   onDestroy(() => {
+    unregisterPendingPromptFieldFlush()
     flushPendingPromptFieldPatch()
   })
 

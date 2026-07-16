@@ -22,12 +22,13 @@ const commandSpies = vi.hoisted(() => {
     deferNextUpdate: false,
     nextBaseRevision: 100,
     skipNextRollback: false,
-    runInputs: [] as Array<{ rollback?: () => void }>,
+    runInputs: [] as Array<{ rollback?: () => void; signal?: AbortSignal | null; keepalive?: boolean }>,
     createInputs: [] as Array<{ baseRevision: number; preset: Record<string, unknown>; select?: boolean }>,
     deleteInputs: [] as Array<{ baseRevision: number; presetId: string; selectPresetId?: string }>,
     selectInputs: [] as Array<{ baseRevision: number; presetId: string }>,
     updateInputs: [] as Array<{ baseRevision: number; presetId: string; patch: Record<string, unknown> }>,
     updateAcknowledgements: [] as Array<Record<string, unknown> | undefined>,
+    updateTransportOptions: [] as Array<{ signal?: AbortSignal | null; keepalive?: boolean }>,
     localEffectListeners: new Set<(event: Record<string, unknown>, localEffect: Record<string, unknown>) => void>(),
     deferredCreateResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
     deferredDeleteResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
@@ -50,8 +51,13 @@ const commandSpies = vi.hoisted(() => {
   )
 
   spies.runServerCommand.mockImplementation(
-    async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
-      spies.runInputs.push({ rollback: input.rollback })
+    async (input: {
+      command: (baseRevision: number) => Promise<unknown>
+      rollback?: () => void
+      signal?: AbortSignal | null
+      keepalive?: boolean
+    }) => {
+      spies.runInputs.push({ rollback: input.rollback, signal: input.signal, keepalive: input.keepalive })
       const result = (await input.command(spies.nextBaseRevision++)) as { status?: string }
       if (result.status !== 'ok') {
         if (spies.skipNextRollback) spies.skipNextRollback = false
@@ -61,15 +67,20 @@ const commandSpies = vi.hoisted(() => {
     },
   )
   spies.updateTranslatorPresetCommand.mockImplementation(
-    async (input: {
-      baseRevision: number
-      presetId: string
-      patch: Record<string, unknown>
-      optimisticAcknowledgement?: Record<string, unknown>
-    }) => {
+    async (
+      input: {
+        baseRevision: number
+        presetId: string
+        patch: Record<string, unknown>
+        optimisticAcknowledgement?: Record<string, unknown>
+      },
+      signal?: AbortSignal | null,
+      keepalive?: boolean,
+    ) => {
       const { optimisticAcknowledgement, ...wireInput } = input
       spies.updateInputs.push(wireInput)
       spies.updateAcknowledgements.push(optimisticAcknowledgement)
+      spies.updateTransportOptions.push({ signal, keepalive })
       if (spies.deferNextUpdate) {
         spies.deferNextUpdate = false
         const deferred = createDeferredCommandResult()
@@ -232,6 +243,7 @@ import {
   withServerResourceApply,
   withTrustedResourceWrite,
 } from 'src/ts/server/resourceWriteGuard.svelte'
+import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -450,6 +462,7 @@ beforeEach(() => {
   commandSpies.selectInputs.length = 0
   commandSpies.updateInputs.length = 0
   commandSpies.updateAcknowledgements.length = 0
+  commandSpies.updateTransportOptions.length = 0
   commandSpies.localEffectListeners.clear()
   commandSpies.deferredCreateResults.length = 0
   commandSpies.deferredDeleteResults.length = 0
@@ -1412,6 +1425,28 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         patch: { prompt: 'destroy-flushed prompt A' },
       },
     ])
+  })
+
+  it('flushes a pending preset edit with keepalive through the lifecycle registry', async () => {
+    await editPrompt('pagehide-flushed prompt A')
+
+    expect(commandSpies.updateInputs).toHaveLength(0)
+
+    flushRegisteredPendingBridgePatches({ keepalive: true })
+    await flushMicrotasks()
+
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'pagehide-flushed prompt A' },
+      },
+    ])
+    expect(commandSpies.updateTransportOptions).toEqual([{ signal: undefined, keepalive: true }])
+    expect(commandSpies.runInputs[0]).toMatchObject({ keepalive: true })
+
+    await vi.advanceTimersByTimeAsync(250)
+    expect(commandSpies.updateInputs).toHaveLength(1)
   })
 
   it('keeps a dirty prompt through a stale projection for the same preset', async () => {

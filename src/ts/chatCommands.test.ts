@@ -4776,6 +4776,33 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
     })
     expect(getDatabase().characters[0].chats[0].note).toBe('')
   })
+
+  it('sends lifecycle author-note saves with keepalive', async () => {
+    setCachedServerCommandRevision(10)
+    let commandInit: RequestInit | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/chats/chat-a') {
+          commandInit = init
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'chat.updated', revision: 11, resource: 'chat', id: 'chat-a' },
+            chatId: 'chat-a',
+            selectedChatId: 'chat-a',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    expect(setChatNoteValue('chat-a', 'draft before pagehide', { keepalive: true })).toBe(true)
+    await vi.waitFor(() => expect(commandInit).toBeDefined())
+
+    expect(commandInit).toMatchObject({ keepalive: true })
+    expect(JSON.parse(String(commandInit?.body))).toMatchObject({ patch: { note: 'draft before pagehide' } })
+  })
 })
 
 describe('Phase 3 runner rejection rollback (L36)', () => {

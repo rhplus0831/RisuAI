@@ -2842,6 +2842,7 @@ export async function createPersonaCommand(
 export async function updatePersonaCommand(
   input: UpdatePersonaCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ personaId: string }>> {
   return requestCommandJson(`/personas/${encodeURIComponent(input.personaId)}`, {
     method: 'PATCH',
@@ -2851,6 +2852,7 @@ export async function updatePersonaCommand(
       mirrorLegacyProfile: input.mirrorLegacyProfile,
     },
     signal,
+    keepalive,
     readLocalEffect: (body, event) =>
       readPersonaPatchLocalEffect(body, event, {
         personaId: input.personaId,
@@ -2955,6 +2957,7 @@ export async function createTranslatorPresetCommand(
 export async function updateTranslatorPresetCommand(
   input: UpdateTranslatorPresetCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ presetId: string; acknowledgedKeys: string[]; selectedPresetId: string | null }>> {
   return requestCommandJson(`/translator-presets/${encodeURIComponent(input.presetId)}`, {
     method: 'PATCH',
@@ -2963,6 +2966,7 @@ export async function updateTranslatorPresetCommand(
       patch: input.patch,
     },
     signal,
+    keepalive,
     readLocalEffect: input.optimisticAcknowledgement
       ? (body, event) =>
           readTranslatorPresetPatchLocalEffect(body, event, {
