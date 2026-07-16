@@ -1,7 +1,3 @@
-<script module lang="ts">
-  let nextPresetRenameFlushId = 1
-</script>
-
 <script lang="ts">
   import { alertConfirm, alertError } from '../../ts/alert'
   import { language } from '../../lang'
@@ -12,7 +8,6 @@
     deletePromptPreset,
     downloadPreset,
     extractLegacyBotPresetByIndex,
-    flushPendingSplitPresetPatches,
     importPreset,
     reorderModelPresets,
     reorderPromptPresets,
@@ -42,26 +37,15 @@
     saveActiveChatGenerationSettingsSelection,
   } from 'src/ts/activeChatGenerationSettings'
   import type { ActiveChatTarget } from 'src/ts/chatCommands'
-  import { onDestroy } from 'svelte'
   import ModelPresetList from './Pages/Model/ModelPresetList.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
-  import type { ServerCommandTransportOptions } from 'src/ts/server/commands'
-  import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
 
   type ModernPreset = ModelPreset | PromptPreset
-  type PendingRenameTarget = {
-    kind: 'model' | 'prompt'
-    presetId: string | null
-    index: number
-  }
 
   let editMode = $state(false)
   let isDragging = $state(false)
   let dragOverIndex = $state(-1)
   let renameDrafts = $state<Record<string, string>>({})
-  const pendingRenameTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const pendingRenameTargets = new Map<string, PendingRenameTarget>()
-  const RENAME_DEBOUNCE_MS = 250
 
   interface Props {
     close?: () => void
@@ -112,52 +96,15 @@
   function updatePresetNameDraft(preset: ModernPreset | undefined, index: number, name: string) {
     const key = presetDraftKey(preset, index)
     renameDrafts[key] = name
-    schedulePresetRename(key, {
-      kind: kind === 'prompt' ? 'prompt' : 'model',
-      presetId: nonEmptyId(preset?.id),
-      index,
-    })
-  }
 
-  function schedulePresetRename(key: string, target: PendingRenameTarget) {
-    const existing = pendingRenameTimers.get(key)
-    if (existing) clearTimeout(existing)
-    pendingRenameTargets.set(key, target)
-    pendingRenameTimers.set(
-      key,
-      setTimeout(() => {
-        pendingRenameTimers.delete(key)
-        commitPendingRename(key)
-      }, RENAME_DEBOUNCE_MS),
-    )
-  }
+    const presetId = nonEmptyId(preset?.id)
+    const presets = kind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets
+    const liveIndex = presetId ? presets.findIndex((candidate) => candidate?.id === presetId) : index
+    const livePreset = presets[liveIndex]
+    if (!livePreset || (!presetId && livePreset !== preset) || (livePreset.name ?? '') === name) return
 
-  function commitPendingRename(key: string) {
-    const target = pendingRenameTargets.get(key)
-    pendingRenameTargets.delete(key)
-    if (!target) return
-
-    const presets = target.kind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets
-    const index = target.presetId ? presets.findIndex((preset) => preset?.id === target.presetId) : target.index
-    const preset = presets[index]
-    if (!preset) return
-
-    const name = renameDrafts[key] ?? ''
-    if ((preset.name ?? '') === name) return
-    if (target.kind === 'prompt') updatePromptPreset(index, { name })
-    else updateModelPreset(index, { name })
-  }
-
-  function flushPendingRenames(options: ServerCommandTransportOptions = {}) {
-    const hadPendingRenames = pendingRenameTargets.size > 0
-    for (const timer of pendingRenameTimers.values()) {
-      clearTimeout(timer)
-    }
-    pendingRenameTimers.clear()
-    for (const key of Array.from(pendingRenameTargets.keys())) {
-      commitPendingRename(key)
-    }
-    if (hadPendingRenames) flushPendingSplitPresetPatches(options)
+    if (kind === 'prompt') updatePromptPreset(liveIndex, { name })
+    else updateModelPreset(liveIndex, { name })
   }
 
   function clearRenameDrafts() {
@@ -166,7 +113,6 @@
 
   function toggleEditMode() {
     if (editMode) {
-      flushPendingRenames()
       clearRenameDrafts()
       editMode = false
       return
@@ -256,16 +202,6 @@
   function handleBackdropClick(event: MouseEvent): void {
     if (event.target === event.currentTarget) close()
   }
-
-  const unregisterPendingRenameFlush = registerPendingBridgePatchFlusher(
-    `preset-quick-rename:${nextPresetRenameFlushId++}`,
-    flushPendingRenames,
-  )
-
-  onDestroy(() => {
-    unregisterPendingRenameFlush()
-    flushPendingRenames()
-  })
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->

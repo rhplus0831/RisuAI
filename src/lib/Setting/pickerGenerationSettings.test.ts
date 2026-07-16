@@ -1,5 +1,6 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 const presetSpies = vi.hoisted(() => ({
   changeToPreset: vi.fn(),
@@ -77,6 +78,12 @@ import ListedPersona from './listedPersona.svelte'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
 import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
 import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from 'src/ts/server/pendingMutationOutbox'
 import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
@@ -132,6 +139,25 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
       })
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
+      if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+      if (init.method === 'PATCH' && url.startsWith('/api/v1/commands/model-presets/')) {
+        const modelPresetId = decodeURIComponent(url.slice('/api/v1/commands/model-presets/'.length))
+        return jsonResponse({
+          status: 'ok',
+          revision: 201,
+          event: {
+            type: 'modelPreset.updated',
+            revision: 201,
+            resource: 'preset',
+            id: modelPresetId,
+          },
+          modelPresetId,
+          acknowledgedKeys: Object.keys(body?.patch ?? {}),
+          preset: body?.patch ?? {},
+          settings: {},
+          selectedProjectionApplied: false,
+        })
+      }
       if (init.method === 'PATCH' && url.startsWith('/api/v1/commands/prompt-presets/')) {
         const promptPresetId = decodeURIComponent(url.slice('/api/v1/commands/prompt-presets/'.length))
         return jsonResponse({
@@ -494,24 +520,32 @@ describe('generation settings picker mode', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
-  it('flushes a quick preset rename with keepalive through the lifecycle registry', async () => {
+  it('projects and exports a quick prompt preset rename before lifecycle keepalive flushes it', async () => {
     const calls = stubCommandFetch()
+    let exportedName: string | undefined
+    presetSpies.downloadPreset.mockImplementation(async (index: number) => {
+      exportedName = getDatabase().promptPresets[index]?.name
+    })
     mountPresetPicker('global')
 
     elementBySelector<HTMLButtonElement>('[data-risu-preset-edit]', 'prompt preset edit button').click()
     await tick()
 
-    const input = pickerRow('prompt', 'preset-a').querySelector<HTMLInputElement>('input')
+    const row = pickerRow('prompt', 'preset-a')
+    const input = row.querySelector<HTMLInputElement>('input')
+    const exportButton = row.querySelector<SVGElement>('svg.lucide-share-2')?.closest('button')
     expect(input).toBeTruthy()
+    expect(exportButton).toBeTruthy()
     input!.value = 'Renamed before pagehide'
     input!.dispatchEvent(new Event('input', { bubbles: true }))
-    await tick()
 
-    expect(getDatabase().promptPresets[0].name).toBe('Preset A')
+    expect(getDatabase().promptPresets[0].name).toBe('Renamed before pagehide')
+    exportButton!.click()
+    await tick()
+    expect(exportedName).toBe('Renamed before pagehide')
 
     flushRegisteredPendingBridgePatches({ keepalive: true })
 
-    expect(getDatabase().promptPresets[0].name).toBe('Renamed before pagehide')
     await waitForFetchCount(calls, 2)
     const patchCalls = calls.filter(
       (call) => call.method === 'PATCH' && call.url === '/api/v1/commands/prompt-presets/preset-a',
@@ -525,6 +559,82 @@ describe('generation settings picker mode', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 300))
     expect(calls.filter((call) => call.method === 'PATCH')).toHaveLength(1)
+  })
+
+  it('projects a quick model preset rename immediately and keeps its edit draft', async () => {
+    const calls = stubCommandFetch()
+    mountPresetPicker('active-chat-generation-settings', vi.fn(), 'model')
+
+    elementBySelector<HTMLButtonElement>('[data-risu-preset-edit]', 'model preset edit button').click()
+    await tick()
+
+    const input = pickerRow('model', 'model-preset-a').querySelector<HTMLInputElement>('input')
+    expect(input).toBeTruthy()
+    input!.value = 'Renamed Model Preset'
+    input!.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(getDatabase().modelPresets[0].name).toBe('Renamed Model Preset')
+    await tick()
+    expect(input!.value).toBe('Renamed Model Preset')
+
+    flushRegisteredPendingBridgePatches({})
+    await waitForFetchCount(calls, 2)
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        url: '/api/v1/commands/model-presets/model-preset-a',
+        method: 'PATCH',
+        body: expect.objectContaining({ patch: { name: 'Renamed Model Preset' } }),
+      }),
+    )
+  })
+
+  it('stages the encrypted quick prompt rename intent before the network debounce', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-quick-preset-rename',
+      writerEpoch: 3,
+      databaseLineage: 'lineage-quick-preset-rename',
+      requestedWriterWasActive: true,
+    })
+    const calls = stubCommandFetch()
+
+    try {
+      mountPresetPicker('global')
+      elementBySelector<HTMLButtonElement>('[data-risu-preset-edit]', 'prompt preset edit button').click()
+      await tick()
+
+      const input = pickerRow('prompt', 'preset-a').querySelector<HTMLInputElement>('input')
+      expect(input).toBeTruthy()
+      input!.value = 'Crash-safe quick rename'
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+
+      expect(getDatabase().promptPresets[0].name).toBe('Crash-safe quick rename')
+      expect(calls).toHaveLength(0)
+      await vi.waitFor(async () => {
+        expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/prompt-presets/preset-a',
+                body: { patch: { name: 'Crash-safe quick rename' } },
+              },
+            ],
+          },
+        ])
+      })
+
+      flushRegisteredPendingBridgePatches({})
+      await vi.waitFor(async () => {
+        expect(await listPendingMutations()).toEqual([])
+      })
+    } finally {
+      flushRegisteredPendingBridgePatches({})
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('names preset icon actions by target and exposes edit mode state', async () => {
@@ -749,6 +859,37 @@ describe('generation settings picker mode', () => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
+  })
+
+  it('restores the synchronous quick rename when a slow prompt preset delete fails', async () => {
+    const deleteResponse = createDeferred<Response>()
+    alertSpies.alertConfirm.mockResolvedValue(true)
+    const calls = stubCommandFetch({ promptDeleteResponse: deleteResponse.promise })
+    mountPresetPicker('global')
+
+    elementBySelector<HTMLButtonElement>('[data-risu-preset-edit]', 'prompt preset edit button').click()
+    await tick()
+
+    const row = pickerRow('prompt', 'preset-b')
+    const input = row.querySelector<HTMLInputElement>('input')
+    const deleteButton = row.querySelector<SVGElement>('svg.lucide-trash')?.closest('button')
+    expect(input).toBeTruthy()
+    expect(deleteButton).toBeTruthy()
+    input!.value = 'Preset B renamed before delete'
+    input!.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(getDatabase().promptPresets[1].name).toBe('Preset B renamed before delete')
+    deleteButton!.click()
+    await waitForFetchCount(calls, 3)
+    await tick()
+    expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['preset-a'])
+
+    deleteResponse.resolve(jsonResponse({ error: 'slow delete failed' }, 500))
+    await vi.waitFor(() => {
+      expect(getDatabase().promptPresets.find((preset) => preset.id === 'preset-b')).toMatchObject({
+        name: 'Preset B renamed before delete',
+      })
+    })
   })
 
   it('saves persona rows to the active chat without calling global persona selection', async () => {
