@@ -99,7 +99,9 @@
   import {
     capturePromptItemOptimisticAcknowledgement,
     capturePromptTemplateOwnerMutationFence,
+    flushPendingPromptTemplatePatches,
     promptTemplateOwnerCommandId,
+    promptTemplateOwnerMutationKey,
     runPromptTemplateOwnerCommand,
     runPromptTemplateOwnerRollback,
   } from 'src/ts/server/promptTemplateBridge.svelte'
@@ -275,6 +277,10 @@
   let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
   let selectedPromptPreset = $derived(getDatabase().promptPresets?.[getDatabase().promptPresetsId])
   let selectedPromptPresetOwnsPromptTemplate = $derived(selectedPromptPresetHasOwnPromptTemplate())
+  let selectedPromptTemplateEnabledControl = $state(selectedPromptPresetHasOwnPromptTemplate())
+  $effect(() => {
+    selectedPromptTemplateEnabledControl = selectedPromptPresetOwnsPromptTemplate
+  })
   const PROMPT_PRESET_ICON_SIZE = 48
   type SelectedPromptPresetIconFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
 
@@ -847,7 +853,9 @@
 
   function selectedPromptPresetHasOwnPromptTemplate(): boolean {
     const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
-    return !!preset && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
+    return preset
+      ? Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
+      : Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate')
   }
 
   function promptTemplatePresetSelectionSignature(): string {
@@ -900,35 +908,55 @@
     const ownerId = currentPromptTemplateOwnerId()
     if (!(await ensurePromptTemplateHydrated({ promptPresetId: ownerId }))) return
     if (ownerId !== currentPromptTemplateOwnerId()) return
+    if (canUseServerCommands()) flushPendingPromptTemplatePatches()
 
     const projectionFence = capturePromptTemplateOwnerMutationFence(ownerId)
     const previous = snapshotPromptTemplateOwnerProjection(ownerId)
     setSelectedPromptPresetTemplateProjection(enabled)
+    selectedPromptTemplateEnabledControl = enabled
     const attempted = snapshotPromptTemplateOwnerProjection(ownerId)
     const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
     if (!canUseServerCommands()) return
 
-    void runServerCommand({
-      command: (baseRevision) =>
-        runPromptTemplateOwnerCommand(ownerId, () =>
-          enablePromptItemsCommand({
-            baseRevision,
-            promptPresetId: promptTemplateOwnerCommandId(ownerId),
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/prompt-items/enable',
+          body: {
+            ...(ownerId ? { promptPresetId: ownerId } : {}),
             enabled,
-            optimisticAcknowledgement,
-          }),
-        ),
-      rollback: () =>
-        runPromptTemplateOwnerRollback(
-          ownerId,
-          () => {
-            if (snapshotJson(snapshotPromptTemplateOwnerProjection(ownerId)) !== snapshotJson(attempted)) return false
-            restoreSelectedPromptPresetTemplateProjection(previous)
-            return true
           },
-          projectionFence,
-        ),
-    })
+        },
+      ],
+    }
+    const outbox = stagePendingMutation(promptTemplateOwnerMutationKey(ownerId), intent)
+    void dispatchDurableMutation(outbox, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          runPromptTemplateOwnerCommand(ownerId, () =>
+            enablePromptItemsCommand({
+              baseRevision,
+              promptPresetId: promptTemplateOwnerCommandId(ownerId),
+              enabled,
+              optimisticAcknowledgement,
+            }),
+          ),
+        rollback: () =>
+          runPromptTemplateOwnerRollback(
+            ownerId,
+            () => {
+              if (snapshotJson(snapshotPromptTemplateOwnerProjection(ownerId)) !== snapshotJson(attempted)) return false
+              restoreSelectedPromptPresetTemplateProjection(previous)
+              selectedPromptTemplateEnabledControl = previous.hasTemplate
+              return true
+            },
+            projectionFence,
+          ),
+        ...transport,
+      }),
+    )
   }
 
   function currentPromptPresetIconUploadTarget() {
@@ -2121,17 +2149,18 @@
       <Accordion styled name={language.promptTemplate}>
         {#if !promptTemplateHydrated}
           <span class="text-textcolor2">{language.loading}</span>
-        {:else if selectedPromptPresetOwnsPromptTemplate}
-          <Check check={true} name={language.usePromptTemplate} onChange={setSelectedPromptTemplateEnabled} />
-          {#if submenu !== -1}
+        {:else}
+          <Check
+            bind:check={selectedPromptTemplateEnabledControl}
+            name={language.usePromptTemplate}
+            onChange={setSelectedPromptTemplateEnabled} />
+          {#if selectedPromptPresetOwnsPromptTemplate && submenu !== -1}
             <PromptSettings
               mode="inline"
               subMenu={1}
               promptPresetModelOverrideMode={promptOwnsOthers}
               showPromptModelOverrideFields={true} />
           {/if}
-        {:else}
-          <Check check={false} name={language.usePromptTemplate} onChange={setSelectedPromptTemplateEnabled} />
         {/if}
       </Accordion>
     {/if}

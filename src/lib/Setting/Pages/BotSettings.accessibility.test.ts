@@ -69,4 +69,18 @@ describe('BotSettings pending prompt persistence', () => {
     expect(source).toContain('options.keepalive,')
     expect(source).toContain('unregisterPendingPromptFieldFlush()')
   })
+
+  it('flushes prompt rows before staging and durably dispatching the owner enable toggle', () => {
+    const toggleStart = source.indexOf('async function setSelectedPromptTemplateEnabled')
+    const toggleEnd = source.indexOf('function currentPromptPresetIconUploadTarget', toggleStart)
+    const toggleSource = source.slice(toggleStart, toggleEnd)
+
+    expect(toggleSource).toContain('flushPendingPromptTemplatePatches()')
+    expect(toggleSource).toContain("path: '/prompt-items/enable'")
+    expect(toggleSource).toContain('promptTemplateOwnerMutationKey(ownerId)')
+    expect(toggleSource).toContain('dispatchDurableMutation(outbox, intent')
+    expect(toggleSource.indexOf('flushPendingPromptTemplatePatches()')).toBeLessThan(
+      toggleSource.indexOf('setSelectedPromptPresetTemplateProjection(enabled)'),
+    )
+  })
 })

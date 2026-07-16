@@ -1017,7 +1017,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     ])
   })
 
-  it('orders modern prompt rows by owner while keeping legacy rows item-scoped', () => {
+  it('orders modern and legacy prompt rows by owner', () => {
     seedTemplate()
     hydrationState.setOwner('prompt-a')
     let draftItems = draftCopy()
@@ -1042,8 +1042,8 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(durableState.stages.map(({ key }) => key)).toEqual([
       'prompt-template-owner:prompt-a',
       'prompt-template-owner:prompt-a',
-      'prompt-item:__legacy__:p-2',
-      'prompt-item:__legacy__:p-3',
+      'prompt-template-owner:__legacy__',
+      'prompt-template-owner:__legacy__',
     ])
     resetPromptTemplateSelectionDirtyState()
   })
@@ -1092,7 +1092,7 @@ describe('flushPendingPromptTemplatePatches', () => {
 
     expect(durableState.dispatches).toHaveLength(1)
     expect(commandMocks.updatePromptItemCommand).toHaveBeenCalledOnce()
-    expect(stagePromptItemDeleteMutation(null, 'legacy-item').outbox.key).toBe('prompt-item:__legacy__:legacy-item')
+    expect(stagePromptItemDeleteMutation(null, 'legacy-item').outbox.key).toBe('prompt-template-owner:__legacy__')
     resetPromptTemplateSelectionDirtyState()
   })
 
@@ -1567,6 +1567,80 @@ describe('flushPendingPromptTemplatePatches', () => {
 
     await vi.advanceTimersByTimeAsync(500)
     expect(commandState.commands).toHaveLength(1)
+  })
+
+  it.each(['create', 'reorder'] as const)('flushes an edited row before a durable legacy prompt %s', async (action) => {
+    const first = promptItemFixture({ ...item('p-0', 'original first'), name: 'First row' })
+    const second = promptItemFixture({ ...item('p-1', 'original second'), name: 'Second row' })
+    seedPromptSettings({ promptTemplate: [first, second] })
+    let draftItems = draftCopy()
+    draftItems[0] = promptItemFixture({ ...draftItems[0], text: 'edited before structure' })
+    queuePromptItemProjectionUpdate(
+      draftBindingFor(
+        () => draftItems,
+        (items) => {
+          draftItems = items
+        },
+      ),
+      'p-0',
+      first,
+      500,
+      null,
+    )
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      const actionButton =
+        action === 'create'
+          ? target.querySelector<HTMLButtonElement>(`button[aria-label="${language.add}: ${language.promptTemplate}"]`)
+          : target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moveDown}: First row"]`)
+      expect(actionButton).toBeTruthy()
+      actionButton!.click()
+      await tick()
+      await flushMicrotasks()
+
+      const ownerStages = durableState.stages.filter(({ key }) => key === 'prompt-template-owner:__legacy__')
+      const ownerRequests = ownerStages.map(({ intent }) => (intent.requests as Array<Record<string, unknown>>)[0])
+      expect(ownerRequests.map((request) => request?.path)).toEqual([
+        '/prompt-items/p-0',
+        action === 'create' ? '/prompt-items' : '/prompt-items/reorder',
+      ])
+      expect(ownerRequests[0]).toEqual({
+        method: 'PATCH',
+        path: '/prompt-items/p-0',
+        body: { patch: { text: 'edited before structure' } },
+      })
+      expect(ownerRequests[1]).toMatchObject(
+        action === 'create'
+          ? {
+              method: 'POST',
+              path: '/prompt-items',
+              body: { promptItem: expect.objectContaining({ id: expect.any(String), text: '' }) },
+            }
+          : {
+              method: 'POST',
+              path: '/prompt-items/reorder',
+              body: { itemIds: ['p-1', 'p-0'] },
+            },
+      )
+      expect(commandState.commands.map(({ built }) => built.kind)).toEqual([
+        'updatePromptItem',
+        action === 'create' ? 'createPromptItem' : 'reorderPromptItems',
+      ])
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
   })
 
   it('PromptSettings does not dispatch or write an empty template while unloaded', async () => {
@@ -2232,6 +2306,20 @@ describe('flushPendingPromptTemplatePatches', () => {
         postEndInnerFormat: 'local format',
         sendName: true,
       })
+      expect(durableState.stages.at(-1)?.intent).toMatchObject({
+        requests: [
+          {
+            body: {
+              patch: {
+                promptSettings: {
+                  postEndInnerFormat: 'local format',
+                  sendName: true,
+                },
+              },
+            },
+          },
+        ],
+      })
 
       await vi.advanceTimersByTimeAsync(250)
       await flushMicrotasks()
@@ -2279,7 +2367,10 @@ describe('flushPendingPromptTemplatePatches', () => {
 
       await vi.advanceTimersByTimeAsync(250)
       await flushMicrotasks()
-      expect(commandState.commands).toHaveLength(0)
+      expect(commandState.commands).toHaveLength(1)
+      expect(commandState.commands[0].built).toMatchObject({
+        patch: { customPromptTemplateToggle: 'local accepted' },
+      })
     } finally {
       if (component) await unmount(component)
       target.remove()
@@ -2400,15 +2491,26 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(getResourceDatabase().customPromptTemplateToggle).toBe('server baseline')
   })
 
-  it('drops a pending prompt settings patch when the value returns to its original snapshot', async () => {
+  it('dispatches an immediate prompt settings correction when the value returns to its original snapshot', async () => {
     resourceDatabase.current = { jsonSchemaEnabled: true }
 
     queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
     queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: true }, { jsonSchemaEnabled: false }, 500)
     await vi.advanceTimersByTimeAsync(500)
 
-    expect(commandState.commands).toHaveLength(0)
-    expect(durableState.acknowledgements).toEqual([durableState.stages[0].handle])
+    expect(commandState.commands).toHaveLength(1)
+    expect(commandState.commands[0].built).toMatchObject({ patch: { jsonSchemaEnabled: true } })
+    expect(durableState.dispatches.at(-1)?.intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/settings/prompt',
+          body: { patch: { jsonSchemaEnabled: true } },
+        },
+      ],
+    })
+    expect(durableState.acknowledgements).toEqual([])
   })
 
   it('captures a fresh prompt settings epoch after a pending batch fully reverts', async () => {
@@ -2426,9 +2528,53 @@ describe('flushPendingPromptTemplatePatches', () => {
     queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
     await vi.advanceTimersByTimeAsync(500)
 
+    expect(commandState.commands).toHaveLength(2)
     expect(commandState.commands[0].built).toMatchObject({
+      optimisticProjectionEpoch: abandonedEpoch,
+      patch: { jsonSchemaEnabled: true },
+    })
+    expect(commandState.commands[1].built).toMatchObject({
       acknowledgeOptimistic: true,
       optimisticProjectionEpoch: nextEpoch,
+    })
+  })
+
+  it('keeps a reverted prompt field in the absolute closure while a sibling remains dirty', async () => {
+    resourceDatabase.current = {
+      jsonSchemaEnabled: true,
+      customPromptTemplateToggle: 'server baseline',
+    }
+
+    queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
+    queuePromptSettingsProjectionPatch(
+      { customPromptTemplateToggle: 'local sibling' },
+      { customPromptTemplateToggle: 'server baseline' },
+      500,
+    )
+    queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: true }, { jsonSchemaEnabled: false }, 500)
+
+    expect(durableState.stages.at(-1)?.intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/settings/prompt',
+          body: {
+            patch: {
+              customPromptTemplateToggle: 'local sibling',
+              jsonSchemaEnabled: true,
+            },
+          },
+        },
+      ],
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect(commandState.commands.at(-1)?.built).toMatchObject({
+      patch: {
+        customPromptTemplateToggle: 'local sibling',
+        jsonSchemaEnabled: true,
+      },
     })
   })
 

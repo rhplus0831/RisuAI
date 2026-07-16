@@ -391,25 +391,42 @@
     const itemId = promptItemId(promptItem)
     const attemptedItem = cloneJsonValue(promptItem)
     const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
-    void runServerCommand({
-      command: (baseRevision) =>
-        runPromptTemplateOwnerCommand(ownerId, () =>
-          createPromptItemCommand({
-            baseRevision,
-            promptPresetId: promptTemplateOwnerCommandId(ownerId),
-            promptItem: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
-            optimisticAcknowledgement,
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/prompt-items',
+          body: {
+            ...(ownerId ? { promptPresetId: ownerId } : {}),
+            promptItem: cloneJsonValue(attemptedItem),
+          },
+        },
+      ],
+    }
+    const outbox = stagePendingMutation(promptTemplateOwnerMutationKey(ownerId), intent)
+    void dispatchDurableMutation(outbox, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          runPromptTemplateOwnerCommand(ownerId, () =>
+            createPromptItemCommand({
+              baseRevision,
+              promptPresetId: promptTemplateOwnerCommandId(ownerId),
+              promptItem: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
+              optimisticAcknowledgement,
+            }),
+          ),
+        rollback: () =>
+          rollbackFailedPromptTemplateItemCreate({
+            ownerId,
+            binding: promptTemplateDraftBinding,
+            itemId,
+            attemptedItem,
+            projectionFence,
           }),
-        ),
-      rollback: () =>
-        rollbackFailedPromptTemplateItemCreate({
-          ownerId,
-          binding: promptTemplateDraftBinding,
-          itemId,
-          attemptedItem,
-          projectionFence,
-        }),
-    })
+        ...transport,
+      }),
+    )
   }
 
   function dispatchDeletePromptItem(
@@ -465,25 +482,42 @@
     if (!itemIds || !previousItemIds) return
     const attemptedItemIds = [...itemIds]
     const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
-    void runServerCommand({
-      command: (baseRevision) =>
-        runPromptTemplateOwnerCommand(ownerId, () =>
-          reorderPromptItemsCommand({
-            baseRevision,
-            promptPresetId: promptTemplateOwnerCommandId(ownerId),
-            itemIds,
-            optimisticAcknowledgement,
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/prompt-items/reorder',
+          body: {
+            ...(ownerId ? { promptPresetId: ownerId } : {}),
+            itemIds: [...itemIds],
+          },
+        },
+      ],
+    }
+    const outbox = stagePendingMutation(promptTemplateOwnerMutationKey(ownerId), intent)
+    void dispatchDurableMutation(outbox, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          runPromptTemplateOwnerCommand(ownerId, () =>
+            reorderPromptItemsCommand({
+              baseRevision,
+              promptPresetId: promptTemplateOwnerCommandId(ownerId),
+              itemIds,
+              optimisticAcknowledgement,
+            }),
+          ),
+        rollback: () =>
+          rollbackFailedPromptTemplateItemReorder({
+            ownerId,
+            binding: promptTemplateDraftBinding,
+            previousItemIds,
+            attemptedItemIds,
+            projectionFence,
           }),
-        ),
-      rollback: () =>
-        rollbackFailedPromptTemplateItemReorder({
-          ownerId,
-          binding: promptTemplateDraftBinding,
-          previousItemIds,
-          attemptedItemIds,
-          projectionFence,
-        }),
-    })
+        ...transport,
+      }),
+    )
   }
 
   function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem, originalIndex: number): void {
@@ -619,6 +653,7 @@
   function movePromptItem(originalIndex: number, nextIndex: number): void {
     if (!promptTemplateHydrated) return
     if (nextIndex < 0 || nextIndex >= promptTemplateDraft.value.length) return
+    if (canUseServerCommands()) flushPendingPromptTemplatePatches()
     const previous = currentPromptTemplateSnapshot()
     const templates = [...promptTemplateDraft.value]
     const temp = templates[originalIndex]
@@ -1006,6 +1041,7 @@
       return
     }
 
+    if (canUseServerCommands()) flushPendingPromptTemplatePatches()
     const templates = [...promptTemplateDraft.value]
     const previous = currentPromptTemplateSnapshot()
     const projectionFence = capturePromptTemplateOwnerMutationFence()
@@ -1151,6 +1187,7 @@
             onUpdate={(promptItem, previousItem) => queuePromptItemUpdate(promptItem, previousItem, originalIndex)}
             onDrop={handlePromptDrop}
             onRemove={() => {
+              if (canUseServerCommands()) flushPendingPromptTemplatePatches()
               const previous = currentPromptTemplateSnapshot()
               const projectionFence = capturePromptTemplateOwnerMutationFence()
               const removed = promptTemplateDraft.value[originalIndex]
@@ -1219,6 +1256,7 @@
       aria-label={`${language.add}: ${language.promptTemplate}`}
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={() => {
+        if (canUseServerCommands()) flushPendingPromptTemplatePatches()
         const promptItem = createPromptItem()
         const projectionFence = capturePromptTemplateOwnerMutationFence()
         const ownerId = applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])

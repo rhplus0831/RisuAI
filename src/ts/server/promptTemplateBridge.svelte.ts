@@ -246,17 +246,17 @@ export function promptTemplateOwnerCommandId(ownerId: string | null): string | u
 }
 
 /**
- * Modern prompt rows are partial writes against one preset-owned template, so
- * they share an owner key with whole-preset repairs. This lets live dispatch
- * and bootstrap replay drain every older owner generation before a later row.
- * Legacy top-level rows have no stable owner and remain scoped by item id.
+ * Prompt rows are partial writes against one owner-owned template, so every
+ * structural mutation for that owner shares one key. The legacy top-level
+ * template has no database id, but still needs one stable synthetic owner key
+ * so a toggle or delete cannot overtake an older row patch.
  */
-export function promptTemplateOwnerMutationKey(ownerId: string): string {
-  return `prompt-template-owner:${ownerId}`
+export function promptTemplateOwnerMutationKey(ownerId: string | null): string {
+  return `prompt-template-owner:${ownerId ?? '__legacy__'}`
 }
 
-function promptItemMutationKey(ownerId: string | null, itemId: string): string {
-  return ownerId !== null ? promptTemplateOwnerMutationKey(ownerId) : `prompt-item:__legacy__:${itemId}`
+function promptItemMutationKey(ownerId: string | null, _itemId: string): string {
+  return promptTemplateOwnerMutationKey(ownerId)
 }
 
 function promptTemplateOwnerCollectionName(ownerId: string | null): 'promptTemplate' | 'promptPresets' {
