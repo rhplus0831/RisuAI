@@ -1,3 +1,7 @@
+<script module lang="ts">
+  let nextPresetRenameFlushId = 1
+</script>
+
 <script lang="ts">
   import { alertConfirm, alertError } from '../../ts/alert'
   import { language } from '../../lang'
@@ -8,6 +12,7 @@
     deletePromptPreset,
     downloadPreset,
     extractLegacyBotPresetByIndex,
+    flushPendingSplitPresetPatches,
     importPreset,
     reorderModelPresets,
     reorderPromptPresets,
@@ -40,6 +45,8 @@
   import { onDestroy } from 'svelte'
   import ModelPresetList from './Pages/Model/ModelPresetList.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import type { ServerCommandTransportOptions } from 'src/ts/server/commands'
+  import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
 
   type ModernPreset = ModelPreset | PromptPreset
   type PendingRenameTarget = {
@@ -141,7 +148,8 @@
     else updateModelPreset(index, { name })
   }
 
-  function flushPendingRenames() {
+  function flushPendingRenames(options: ServerCommandTransportOptions = {}) {
+    const hadPendingRenames = pendingRenameTargets.size > 0
     for (const timer of pendingRenameTimers.values()) {
       clearTimeout(timer)
     }
@@ -149,6 +157,7 @@
     for (const key of Array.from(pendingRenameTargets.keys())) {
       commitPendingRename(key)
     }
+    if (hadPendingRenames) flushPendingSplitPresetPatches(options)
   }
 
   function clearRenameDrafts() {
@@ -248,7 +257,13 @@
     if (event.target === event.currentTarget) close()
   }
 
+  const unregisterPendingRenameFlush = registerPendingBridgePatchFlusher(
+    `preset-quick-rename:${nextPresetRenameFlushId++}`,
+    flushPendingRenames,
+  )
+
   onDestroy(() => {
+    unregisterPendingRenameFlush()
     flushPendingRenames()
   })
 </script>

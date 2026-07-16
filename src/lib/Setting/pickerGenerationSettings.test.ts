@@ -76,6 +76,7 @@ import Botpreset from './botpreset.svelte'
 import ListedPersona from './listedPersona.svelte'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
 import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
+import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
 import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
@@ -87,6 +88,7 @@ interface CapturedFetch {
   method: string
   authHeader: string | null
   body: unknown
+  keepalive: boolean
 }
 
 interface StubCommandFetchOptions {
@@ -126,9 +128,29 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
         method: init.method ?? 'GET',
         authHeader: headers?.['risu-auth'] ?? null,
         body,
+        keepalive: init.keepalive === true,
       })
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
+      if (init.method === 'PATCH' && url.startsWith('/api/v1/commands/prompt-presets/')) {
+        const promptPresetId = decodeURIComponent(url.slice('/api/v1/commands/prompt-presets/'.length))
+        return jsonResponse({
+          status: 'ok',
+          revision: 201,
+          event: {
+            type: 'promptPreset.updated',
+            revision: 201,
+            resource: 'preset',
+            id: promptPresetId,
+          },
+          promptPresetId,
+          acknowledgedKeys: Object.keys(body?.patch ?? {}),
+          preset: body?.patch ?? {},
+          settings: {},
+          selectedProjectionApplied: false,
+          ownerProjectionApplied: false,
+        })
+      }
       if (init.method === 'DELETE' && url.endsWith('/prompt-presets/preset-b') && options.promptDeleteResponse) {
         return options.promptDeleteResponse
       }
@@ -472,6 +494,39 @@ describe('generation settings picker mode', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
+  it('flushes a quick preset rename with keepalive through the lifecycle registry', async () => {
+    const calls = stubCommandFetch()
+    mountPresetPicker('global')
+
+    elementBySelector<HTMLButtonElement>('[data-risu-preset-edit]', 'prompt preset edit button').click()
+    await tick()
+
+    const input = pickerRow('prompt', 'preset-a').querySelector<HTMLInputElement>('input')
+    expect(input).toBeTruthy()
+    input!.value = 'Renamed before pagehide'
+    input!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    expect(getDatabase().promptPresets[0].name).toBe('Preset A')
+
+    flushRegisteredPendingBridgePatches({ keepalive: true })
+
+    expect(getDatabase().promptPresets[0].name).toBe('Renamed before pagehide')
+    await waitForFetchCount(calls, 2)
+    const patchCalls = calls.filter(
+      (call) => call.method === 'PATCH' && call.url === '/api/v1/commands/prompt-presets/preset-a',
+    )
+    expect(patchCalls).toEqual([
+      expect.objectContaining({
+        body: expect.objectContaining({ patch: { name: 'Renamed before pagehide' } }),
+        keepalive: true,
+      }),
+    ])
+
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(calls.filter((call) => call.method === 'PATCH')).toHaveLength(1)
+  })
+
   it('names preset icon actions by target and exposes edit mode state', async () => {
     mountPresetPicker('global')
 
@@ -614,6 +669,7 @@ describe('generation settings picker mode', () => {
           method: init.method ?? 'GET',
           authHeader: headers?.['risu-auth'] ?? null,
           body,
+          keepalive: init.keepalive === true,
         })
 
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
