@@ -352,6 +352,25 @@ describe('chat message hydration bridge', () => {
     expect(messages.map((message) => message.data)).toEqual(['older-1', 'older-2', 'older-3', 'tail'])
   })
 
+  it('reports an older-window hydration failure without claiming the range is resident', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      projectionState.fetchChat.mockResolvedValueOnce(
+        okWindowResult('chat-1', [{ role: 'char', data: 'tail', chatId: 'm4' }], 3, 4),
+      )
+      await hydrateActiveChat({ loadPages: 1 })
+      projectionState.fetchChat.mockResolvedValueOnce({ status: 'error', error: 'older range unavailable' })
+
+      await expect(hydrateActiveChatWindow(4)).resolves.toBe(false)
+
+      const messages = db().characters[0].chats[0].message as Message[]
+      expect(messages.slice(0, 3).every(isServerChatMessagePlaceholder)).toBe(true)
+      expect(messages[3]).toEqual({ role: 'char', data: 'tail', chatId: 'm4' })
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('ensureAllChatsHydrated fills every chat', async () => {
     await ensureAllChatsHydrated()
 

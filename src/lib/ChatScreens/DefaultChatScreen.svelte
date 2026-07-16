@@ -629,8 +629,9 @@
   async function expandTranscriptWindow(nextLoadPages: number) {
     const targetIdentity = getActiveTranscriptWindowIdentity()
     if (!targetIdentity || nextLoadPages <= loadPages) return
-    await hydrateActiveChatWindow(nextLoadPages)
+    const hydrated = await hydrateActiveChatWindow(nextLoadPages)
     if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
+    if (!hydrated) return
     loadPages = Math.max(loadPages, nextLoadPages)
   }
 
@@ -693,8 +694,11 @@
       const neededLoadPages = getLoadPagesForMessageJump(loadPages, totalMessages, index)
 
       if (loadPages < neededLoadPages) {
-        await hydrateActiveChatWindow(neededLoadPages)
+        const hydrated = await hydrateActiveChatWindow(neededLoadPages)
         if (!isCurrentJump()) {
+          return
+        }
+        if (!hydrated) {
           return
         }
         loadPages = neededLoadPages

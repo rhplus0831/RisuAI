@@ -29,7 +29,7 @@ const loadPageMocks = vi.hoisted(() => ({
   stopTTS: vi.fn(),
   guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
   hydrateActiveChatFully: vi.fn(async () => undefined),
-  hydrateActiveChatWindow: vi.fn(async () => undefined),
+  hydrateActiveChatWindow: vi.fn(async () => true),
   isActiveChatTargetFresh: vi.fn((_target: ActiveChatTarget | null | undefined) => false),
   currentRouteSubscribers: new Set<(value: unknown) => void>(),
   currentRouteValue: {
@@ -768,6 +768,21 @@ describe('DefaultChatScreen transcript window state', () => {
       expect(indexes).toContain(119)
       expect(indexes).not.toContain(2)
     })
+  })
+
+  it('keeps the current window intact when older-message hydration fails', async () => {
+    seedDatabase([120])
+    loadPageMocks.hydrateActiveChatWindow.mockResolvedValueOnce(false)
+    mountScreen()
+    await waitFor(() => expect(messageRowIndexes()).toHaveLength(30))
+
+    ScrollToMessageStore.value = 8
+
+    await waitFor(() => {
+      expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledWith(117)
+    })
+    expect(messageRowIndexes()).toHaveLength(30)
+    expect(messageRowIndexes()).not.toContain(8)
   })
 
   it('resets the bounded window when the active chat identity changes after a deep jump', async () => {

@@ -493,12 +493,12 @@ export async function hydrateActiveChat(options: { force?: boolean; loadPages?: 
  * chat path: first open fetches only the tail; later scroll/jump expansion fills
  * just the newly visible unloaded ranges.
  */
-export async function hydrateActiveChatWindow(loadPages: number, options: { force?: boolean } = {}): Promise<void> {
+export async function hydrateActiveChatWindow(loadPages: number, options: { force?: boolean } = {}): Promise<boolean> {
   const chatId = activeChatId()
-  if (!chatId) return
+  if (!chatId) return false
   if (!Number.isFinite(loadPages)) {
     await hydrateChat(chatId, { force: options.force, seedReroll: true })
-    return
+    return activeChatId() === chatId && hydratedChatIds.has(chatId)
   }
 
   const messages = activeChatMessageArray()
@@ -508,7 +508,13 @@ export async function hydrateActiveChatWindow(loadPages: number, options: { forc
       range: { tail: requestedTailSize(loadPages) },
       seedReroll: true,
     })
-    return
+    const hydratedMessages = activeChatMessageArray()
+    return (
+      activeChatId() === chatId &&
+      !failedChatIds.has(chatId) &&
+      Boolean(hydratedMessages) &&
+      (hydratedChatIds.has(chatId) || unloadedRangesForTail(hydratedMessages!, loadPages).length === 0)
+    )
   }
 
   const ranges = unloadedRangesForTail(messages, loadPages)
@@ -518,6 +524,13 @@ export async function hydrateActiveChatWindow(loadPages: number, options: { forc
       seedReroll: range.start + range.limit >= messages.length,
     })
   }
+  const hydratedMessages = activeChatMessageArray()
+  return (
+    activeChatId() === chatId &&
+    !failedChatIds.has(chatId) &&
+    Boolean(hydratedMessages) &&
+    unloadedRangesForTail(hydratedMessages!, loadPages).length === 0
+  )
 }
 
 /** Hydrate the currently-open chat's complete transcript. */
