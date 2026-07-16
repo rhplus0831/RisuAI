@@ -8,6 +8,7 @@ import {
   completePendingMutation,
   deletePendingMutationReceiptAcknowledgement,
   discardPendingMutation,
+  listPendingMutationPredecessors,
   listPendingMutationReceiptAcknowledgements,
   listPendingMutations,
   preparePendingMutationOutbox,
@@ -110,6 +111,28 @@ describe('pending mutation outbox', () => {
     expect(entries).toHaveLength(1)
     expect(entries[0]?.handle.mutationId).toBe(queuedB.mutationId)
     expect(entries[0]?.intent).toEqual(settingsIntent('queued-b'))
+  })
+
+  it('lists only older generations for the same semantic resource and ownership scope', async () => {
+    const retained = stagePendingMutation('settings:runtime', settingsIntent('retained-a'))
+    await expect(beginPendingMutationDispatch(retained)).resolves.toBe('persisted')
+    const successor = stagePendingMutation('settings:runtime', settingsIntent('successor-b'), retained)
+    const unrelated = stagePendingMutation('settings:other', settingsIntent('unrelated'))
+    await Promise.all([successor.ready, unrelated.ready])
+
+    await expect(listPendingMutationPredecessors(successor)).resolves.toEqual({
+      status: 'ok',
+      entries: [
+        {
+          handle: expect.objectContaining({
+            key: 'settings:runtime',
+            mutationId: retained.mutationId,
+          }),
+          intent: settingsIntent('retained-a'),
+        },
+      ],
+    })
+    await expect(listPendingMutationPredecessors(unrelated)).resolves.toEqual({ status: 'ok', entries: [] })
   })
 
   it('rejects a slow older coalesced write after the exact newer payload is durable', async () => {

@@ -34,6 +34,10 @@ export interface PendingMutationOutboxEntry {
   intent: DurableMutationIntent
 }
 
+export type PendingMutationPredecessorResult =
+  | { status: 'ok'; entries: PendingMutationOutboxEntry[] }
+  | { status: 'superseded' | 'unavailable' }
+
 export interface PendingMutationReceiptAcknowledgement {
   mutationId: string
   requestCount: number
@@ -380,6 +384,67 @@ export async function listPendingMutations(): Promise<PendingMutationOutboxEntry
     }
   }
   return entries
+}
+
+/**
+ * Read every older retained generation for this exact semantic resource. A
+ * live successor drains these entries inside its already-queued command task,
+ * so partial patches cannot overtake an earlier response-loss retry.
+ */
+export async function listPendingMutationPredecessors(
+  handle: PendingMutationHandle,
+): Promise<PendingMutationPredecessorResult> {
+  const persistence = await handle.ready
+  if (persistence !== 'persisted') return { status: persistence }
+  const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
+  if (!database || !encryptionKey) return { status: 'unavailable' }
+
+  let records: StoredPendingMutation[]
+  try {
+    const transaction = database.transaction(OUTBOX_MUTATION_STORE, 'readonly')
+    records = await requestResult<StoredPendingMutation[]>(transaction.objectStore(OUTBOX_MUTATION_STORE).getAll())
+    await transactionDone(transaction)
+  } catch (error) {
+    reportPersistenceWarning('Unable to read pending server mutation predecessors', error)
+    return { status: 'unavailable' }
+  }
+
+  const current = records.find((record) => record.mutationId === handle.mutationId)
+  if (!current || !storedMutationMatchesHandle(current, handle)) return { status: 'superseded' }
+  const predecessors = records
+    .filter(
+      (record) =>
+        record.semanticKey === current.semanticKey &&
+        record.ownerWriterSessionId === current.ownerWriterSessionId &&
+        record.writerEpoch === current.writerEpoch &&
+        record.databaseLineage === current.databaseLineage &&
+        record.order < current.order,
+    )
+    .sort((left, right) => left.order - right.order)
+
+  const entries: PendingMutationOutboxEntry[] = []
+  for (const record of predecessors) {
+    try {
+      const intent = await decryptIntent(record, encryptionKey)
+      entries.push({
+        handle: {
+          key: record.semanticKey,
+          mutationId: record.mutationId,
+          sequence: record.sequence,
+          ownerWriterSessionId: record.ownerWriterSessionId,
+          writerEpoch: record.writerEpoch,
+          databaseLineage: record.databaseLineage,
+          phase: 'staged',
+          ready: Promise.resolve('persisted'),
+        },
+        intent,
+      })
+    } catch (error) {
+      reportPersistenceWarning(`Unable to decrypt pending predecessor ${record.semanticKey}`, error)
+      return { status: 'unavailable' }
+    }
+  }
+  return { status: 'ok', entries }
 }
 
 export async function listPendingMutationReceiptAcknowledgements(): Promise<PendingMutationReceiptAcknowledgement[]> {

@@ -49,6 +49,27 @@ describe('pending mutation replay', () => {
       succeeded: 0,
     })
   })
+
+  it('blocks only later rows for a semantic key when its oldest replay remains transient', async () => {
+    outboxApi.list.mockResolvedValue([
+      entry('settings:runtime', 'mutation-a'),
+      entry('settings:runtime', 'mutation-b'),
+      entry('chat:chat-a', 'mutation-c'),
+    ])
+    durableApi.replay.mockImplementation(async (handle) =>
+      handle.mutationId === 'mutation-a'
+        ? { disposition: 'retained', result: { status: 'error', error: 'offline' } }
+        : { disposition: 'succeeded', result: { status: 'ok' } },
+    )
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 2,
+      discarded: 0,
+      retained: 1,
+      succeeded: 1,
+    })
+    expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['mutation-a', 'mutation-c'])
+  })
 })
 
 function entry(key: string, mutationId: string) {

@@ -4992,6 +4992,52 @@ export async function replayDurableMutationRequests(
   return failed ?? { status: 'ok' }
 }
 
+/**
+ * Replay an older durable generation from inside a successor's existing queue
+ * task. Calling the public replay helper here would enqueue behind the current
+ * task and deadlock; this variant temporarily swaps only the receipt sequence
+ * while preserving the active rollback epoch and reconciliation batch.
+ */
+export async function replayDurableMutationRequestsInline(
+  requests: readonly DurableMutationRequest[],
+  mutationId: string,
+  databaseLineage: string,
+): Promise<DurableMutationReplayResult> {
+  if (requests.length === 0) return { status: 'ok' }
+  if (!canUseServerCommands()) return { status: 'unavailable' }
+  const reconciliationBatch = activeServerCommandReconciliationBatch
+  const rollbackEpoch = activeQueuedCommandDestructiveRefreshEpoch
+  if (!reconciliationBatch || rollbackEpoch === null) return { status: 'unavailable' }
+
+  const normalizedMutationId = normalizeMutationId(mutationId)
+  const normalizedDatabaseLineage = normalizeDatabaseLineage(databaseLineage)
+  const factories = requests.map(
+    (request): ServerCommandFactory =>
+      (baseRevision) =>
+        requestCommandJson(request.path, {
+          method: request.method,
+          body: { ...cloneJsonValue(request.body), baseRevision },
+        }),
+  )
+  const executeAttempt = async (): Promise<ServerCommandResult | null> => {
+    const previousMutation = activeQueuedCommandMutation
+    activeQueuedCommandMutation = {
+      id: normalizedMutationId,
+      databaseLineage: normalizedDatabaseLineage,
+      requestIndex: 0,
+    }
+    try {
+      return await executeServerCommandSequence(factories, undefined, rollbackEpoch, reconciliationBatch)
+    } finally {
+      activeQueuedCommandMutation = previousMutation
+    }
+  }
+
+  let failed = await executeAttempt()
+  if (failed?.status === 'conflict') failed = await executeAttempt()
+  return failed ?? { status: 'ok' }
+}
+
 export async function acknowledgeServerMutationReceipts(
   mutationId: string,
   requestCount: number,

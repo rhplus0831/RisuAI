@@ -104,6 +104,7 @@ import {
   reorderAgentPresetStepsCommand,
   reorderPresetsCommand,
   replayDurableMutationRequests,
+  replayDurableMutationRequestsInline,
   runServerCommand,
   runServerCommandSequence,
   runServerPresetCommand,
@@ -880,6 +881,52 @@ describe('server command API adapter', () => {
         body: { baseRevision: 22, patch: { name: 'Recovered name' } },
         databaseLineage: 'database-a',
         mutationId: 'pending-replay-a.1',
+      },
+    ])
+  })
+
+  it('replays a predecessor inline before its queued successor without losing either receipt context', async () => {
+    const calls: Array<{ body: Record<string, unknown>; mutationId: string | null }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string>
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>
+        calls.push({ body, mutationId: headers['risu-mutation-id'] ?? null })
+        const revision = 21 + calls.length
+        return jsonResponse({
+          revision,
+          event: { type: 'settings.updated', revision, resource: 'settings' },
+        })
+      }) as unknown as typeof fetch,
+    )
+    setCachedServerCommandRevision(21)
+
+    const result = await runServerCommand({
+      mutationId: 'successor-b',
+      databaseLineage: 'database-a',
+      executionWrapper: async (execute) => {
+        await expect(
+          replayDurableMutationRequestsInline(
+            [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 8_000 } } }],
+            'predecessor-a',
+            'database-a',
+          ),
+        ).resolves.toEqual({ status: 'ok' })
+        return execute()
+      },
+      command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxResponse: 1_000 } }),
+    })
+
+    expect(result).toMatchObject({ status: 'ok', revision: 23 })
+    expect(calls).toEqual([
+      {
+        body: { baseRevision: 21, patch: { maxContext: 8_000 } },
+        mutationId: 'predecessor-a',
+      },
+      {
+        body: { baseRevision: 22, patch: { maxResponse: 1_000 } },
+        mutationId: 'successor-b',
       },
     ])
   })

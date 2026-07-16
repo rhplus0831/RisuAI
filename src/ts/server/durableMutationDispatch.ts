@@ -1,6 +1,7 @@
 import {
   acknowledgeServerMutationReceipts,
   replayDurableMutationRequests,
+  replayDurableMutationRequestsInline,
   runServerCommandWithoutMutationReceipt,
   type DurableMutationReplayResult,
   type ServerCommandExecutionWrapper,
@@ -13,6 +14,7 @@ import {
   deletePendingMutationReceiptAcknowledgement,
   discardPendingMutation,
   isPendingMutationCurrent,
+  listPendingMutationPredecessors,
   listPendingMutationReceiptAcknowledgements,
   type DurableMutationIntent,
   type PendingMutationHandle,
@@ -36,10 +38,13 @@ export function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
   // the command synchronously so later structural actions cannot overtake it.
   const readiness = beginPendingMutationDispatch(handle)
   const executionWrapper: ServerCommandExecutionWrapper = (execute) =>
-    withPendingMutationLock(handle.databaseLineage!, handle.mutationId, async () => {
+    withPendingMutationDispatchLocks(handle, async () => {
       const persistence = await readiness
       if (persistence === 'superseded') return { status: 'unavailable' }
       if (persistence === 'persisted' && !(await isPendingMutationCurrent(handle))) {
+        return { status: 'unavailable' }
+      }
+      if (persistence === 'persisted' && !(await drainPendingMutationPredecessors(handle))) {
         return { status: 'unavailable' }
       }
       const result =
@@ -64,7 +69,7 @@ export async function dispatchDurableMutationReplay(
   intent: DurableMutationIntent,
 ): Promise<DurableMutationReplayOutcome> {
   if (!handle.databaseLineage) return { disposition: 'discarded' }
-  return withPendingMutationLock(handle.databaseLineage, handle.mutationId, async () => {
+  return withPendingMutationDispatchLocks(handle, async () => {
     const persistence = await beginPendingMutationDispatch(handle)
     if (persistence !== 'persisted') return { disposition: 'skipped' }
 
@@ -91,6 +96,53 @@ export async function dispatchDurableMutationReplay(
     }
     return { disposition: 'retained', result }
   })
+}
+
+async function drainPendingMutationPredecessors(handle: PendingMutationHandle): Promise<boolean> {
+  const predecessors = await listPendingMutationPredecessors(handle)
+  if (predecessors.status !== 'ok') return false
+
+  for (const predecessor of predecessors.entries) {
+    const ready = await withPendingMutationLock(
+      predecessor.handle.databaseLineage!,
+      predecessor.handle.mutationId,
+      async () => {
+        const persistence = await beginPendingMutationDispatch(predecessor.handle)
+        if (persistence === 'superseded') return true
+        if (persistence !== 'persisted') return false
+
+        const result = await replayDurableMutationRequestsInline(
+          predecessor.intent.requests,
+          predecessor.handle.mutationId,
+          predecessor.handle.databaseLineage!,
+        )
+        if (result.status === 'ok') {
+          const completed = await completePendingMutation(predecessor.handle, predecessor.intent.requests.length)
+          if (completed === 'superseded') return true
+          if (completed !== 'deleted') return false
+          await flushReceiptAcknowledgement({
+            mutationId: predecessor.handle.mutationId,
+            requestCount: predecessor.intent.requests.length,
+            databaseLineage: predecessor.handle.databaseLineage!,
+            queuedAt: 0,
+          })
+          return true
+        }
+        if (
+          result.status === 'error' &&
+          (result.reason === 'stale-writer' ||
+            result.reason === 'database-lineage' ||
+            result.reason === 'mutation-id-conflict')
+        ) {
+          await discardPendingMutation(predecessor.handle)
+          return result.reason === 'mutation-id-conflict'
+        }
+        return false
+      },
+    )
+    if (!ready) return false
+  }
+  return true
 }
 
 /**
@@ -149,12 +201,10 @@ async function withPendingMutationLock<T>(
   mutationId: string,
   task: () => Promise<T>,
 ): Promise<T> {
-  const name = `risu:durable-mutation:${databaseLineage}:${mutationId}`
-  const lockManager = globalThis.navigator?.locks
-  if (lockManager) {
-    return lockManager.request(name, { mode: 'exclusive' }, task)
-  }
+  return withNamedPendingMutationLock(`risu:durable-mutation:${databaseLineage}:${mutationId}`, task)
+}
 
+async function withLocalPendingMutationLock<T>(name: string, task: () => Promise<T>): Promise<T> {
   // Web Locks are widely available, but keep same-tab correctness in older
   // engines. Server receipt tombstones remain the cross-tab fallback defense.
   const previous = localMutationLockTails.get(name) ?? Promise.resolve()
@@ -171,4 +221,16 @@ async function withPendingMutationLock<T>(
     release()
     if (localMutationLockTails.get(name) === queuedTail) localMutationLockTails.delete(name)
   }
+}
+
+function withPendingMutationDispatchLocks<T>(handle: PendingMutationHandle, task: () => Promise<T>): Promise<T> {
+  return withNamedPendingMutationLock(`risu:durable-mutation-key:${handle.databaseLineage}:${handle.key}`, () =>
+    withPendingMutationLock(handle.databaseLineage!, handle.mutationId, task),
+  )
+}
+
+async function withNamedPendingMutationLock<T>(name: string, task: () => Promise<T>): Promise<T> {
+  const lockManager = globalThis.navigator?.locks
+  if (lockManager) return lockManager.request(name, { mode: 'exclusive' }, task)
+  return withLocalPendingMutationLock(name, task)
 }

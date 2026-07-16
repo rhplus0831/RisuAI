@@ -3,12 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const commandApi = vi.hoisted(() => ({
   acknowledge: vi.fn(),
+  inlineReplay: vi.fn(),
   replay: vi.fn(),
   withoutReceipt: vi.fn(<T>(execute: () => Promise<T>) => execute()),
 }))
 
 vi.mock('./commands', () => ({
   acknowledgeServerMutationReceipts: commandApi.acknowledge,
+  replayDurableMutationRequestsInline: commandApi.inlineReplay,
   replayDurableMutationRequests: commandApi.replay,
   runServerCommandWithoutMutationReceipt: commandApi.withoutReceipt,
 }))
@@ -34,6 +36,8 @@ beforeEach(async () => {
   resetPendingMutationOutboxForTests()
   commandApi.acknowledge.mockReset()
   commandApi.acknowledge.mockResolvedValue(true)
+  commandApi.inlineReplay.mockReset()
+  commandApi.inlineReplay.mockResolvedValue({ status: 'ok' })
   commandApi.withoutReceipt.mockClear()
   await preparePendingMutationOutbox({
     writerSessionId: 'writer-a',
@@ -152,6 +156,93 @@ describe('durable mutation dispatch', () => {
     expect(await listPendingMutations()).toEqual([])
     expect(await listPendingMutationReceiptAcknowledgements()).toEqual([
       expect.objectContaining({ mutationId: handle.mutationId, databaseLineage: 'database-a' }),
+    ])
+  })
+
+  it('replays an older request that never reached the server before sending its successor', async () => {
+    const retained = stagePendingMutation('settings:runtime', intent)
+    await dispatchDurableMutation(
+      retained,
+      intent,
+      wrappedDispatch(async () => ({ status: 'error', error: 'network request failed' })),
+    )
+    const successorIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxResponse: 1_000 } } }],
+    }
+    const successor = stagePendingMutation('settings:runtime', successorIntent, retained)
+    const order: string[] = []
+    commandApi.inlineReplay.mockImplementation(async () => {
+      order.push('retained')
+      return { status: 'ok' }
+    })
+
+    await expect(
+      dispatchDurableMutation(
+        successor,
+        successorIntent,
+        wrappedDispatch(async () => {
+          order.push('successor')
+          return acceptedResult()
+        }),
+      ),
+    ).resolves.toMatchObject({ status: 'ok' })
+
+    expect(order).toEqual(['retained', 'successor'])
+    expect(commandApi.inlineReplay).toHaveBeenCalledWith(intent.requests, retained.mutationId, 'database-a')
+    expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('deduplicates an accepted response-loss predecessor before sending its successor', async () => {
+    const retained = stagePendingMutation('settings:runtime', intent)
+    await dispatchDurableMutation(
+      retained,
+      intent,
+      wrappedDispatch(async () => ({ status: 'error', error: 'response stream ended' })),
+    )
+    const successor = stagePendingMutation('settings:runtime', intent, retained)
+    const order: string[] = []
+    commandApi.inlineReplay.mockImplementation(async (_requests, mutationId) => {
+      order.push(`receipt:${mutationId}`)
+      return { status: 'ok' }
+    })
+
+    await dispatchDurableMutation(
+      successor,
+      intent,
+      wrappedDispatch(async () => {
+        order.push(`successor:${successor.mutationId}`)
+        return acceptedResult()
+      }),
+    )
+
+    expect(order).toEqual([`receipt:${retained.mutationId}`, `successor:${successor.mutationId}`])
+    expect(commandApi.acknowledge.mock.calls.map(([mutationId]) => mutationId)).toEqual([
+      retained.mutationId,
+      successor.mutationId,
+    ])
+    expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('retains both generations and does not send the successor while its predecessor is transient', async () => {
+    const retained = stagePendingMutation('settings:runtime', intent)
+    await dispatchDurableMutation(
+      retained,
+      intent,
+      wrappedDispatch(async () => ({ status: 'error', error: 'offline' })),
+    )
+    const successor = stagePendingMutation('settings:runtime', intent, retained)
+    commandApi.inlineReplay.mockResolvedValue({ status: 'error', error: 'still offline' })
+    const successorRequest = vi.fn(async () => acceptedResult())
+
+    await expect(dispatchDurableMutation(successor, intent, wrappedDispatch(successorRequest))).resolves.toEqual({
+      status: 'unavailable',
+    })
+
+    expect(successorRequest).not.toHaveBeenCalled()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([
+      retained.mutationId,
+      successor.mutationId,
     ])
   })
 })

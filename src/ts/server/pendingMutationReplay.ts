@@ -15,6 +15,7 @@ export interface PendingMutationReplaySummary {
  */
 export async function replayPendingMutations(): Promise<PendingMutationReplaySummary> {
   const entries = await listPendingMutations()
+  const blockedKeys = new Set<string>()
   const summary: PendingMutationReplaySummary = {
     attempted: 0,
     discarded: 0,
@@ -23,12 +24,14 @@ export async function replayPendingMutations(): Promise<PendingMutationReplaySum
   }
 
   for (const entry of entries) {
+    if (blockedKeys.has(entry.handle.key)) continue
     summary.attempted += 1
     const outcome = await dispatchDurableMutationReplay(entry.handle, entry.intent)
     if (outcome.disposition === 'succeeded') {
       summary.succeeded += 1
     } else if (outcome.disposition === 'retained') {
       summary.retained += 1
+      blockedKeys.add(entry.handle.key)
       console.warn(`Pending server mutation replay failed for ${entry.handle.key}`, outcome.result)
     } else if (outcome.disposition === 'discarded') {
       summary.discarded += 1
