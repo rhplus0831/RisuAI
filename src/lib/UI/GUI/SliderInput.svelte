@@ -35,6 +35,7 @@
   }: Props = $props()
 
   let isDisabledValue = $derived(value === -1000 || value === undefined)
+  let sliderDisabled = $derived(disableable && isDisabledValue)
   let sliderValue = $derived(isDisabledValue ? min : value)
   let sliderPercent = $derived(((sliderValue - min) / (max - min)) * 100)
   let displayText = $derived(
@@ -42,6 +43,7 @@
   )
 
   function changeValue(event: PointerEvent) {
+    if (sliderDisabled) return
     const rect = slider.getBoundingClientRect()
     const x = event.clientX - rect.left
     let newValue = (x / rect.width) * (max - min) + min
@@ -50,7 +52,8 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    let newValue = isDisabledValue ? min : value
+    if (sliderDisabled) return
+    let newValue = value
 
     switch (event.key) {
       case 'ArrowLeft':
@@ -97,20 +100,28 @@
   {/if}
   <div
     role="slider"
-    tabindex="0"
+    tabindex={sliderDisabled ? undefined : 0}
+    aria-disabled={sliderDisabled ? 'true' : undefined}
     aria-valuemin={min}
     aria-valuemax={max}
     aria-valuenow={sliderValue}
     aria-valuetext={displayText}
     aria-label={ariaLabel}
-    class="relative w-full h-8 border-darkborderc border rounded-full cursor-pointer"
+    class="relative w-full h-8 border-darkborderc border rounded-full"
     class:rounded-l-none={disableable}
+    class:cursor-pointer={!sliderDisabled}
+    class:cursor-not-allowed={sliderDisabled}
     style:background={`linear-gradient(to right, var(--risu-theme-darkbutton) 0%, var(--risu-theme-darkbutton) ${sliderPercent}%, var(--risu-theme-darkbg) ${sliderPercent}%, var(--risu-theme-darkbg) 100%)`}
     onpointerdown={(event) => {
+      if (sliderDisabled) return
       mouseDown = true
       changeValue(event)
     }}
     onpointermove={(event) => {
+      if (sliderDisabled) {
+        mouseDown = false
+        return
+      }
       if (mouseDown) {
         changeValue(event)
       }

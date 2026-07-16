@@ -47,6 +47,22 @@ describe('SliderInput accessible names', () => {
 
     expect(enable?.checked).toBe(false)
     expect(slider?.getAttribute('aria-valuetext')).toBe(language.disabled)
+    expect(slider?.getAttribute('aria-disabled')).toBe('true')
+    expect(slider?.hasAttribute('tabindex')).toBe(false)
+
+    slider?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 5 }))
+    slider?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+    await tick()
+
+    expect(enable?.checked).toBe(false)
+    expect(slider?.getAttribute('aria-valuetext')).toBe(language.disabled)
+
+    enable?.click()
+    await tick()
+
+    expect(enable?.checked).toBe(true)
+    expect(slider?.hasAttribute('aria-disabled')).toBe(false)
+    expect(slider?.getAttribute('tabindex')).toBe('0')
   })
 
   it('accepts a caller-provided name for the optional enable control', async () => {
