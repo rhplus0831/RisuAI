@@ -59,12 +59,12 @@
     const existingPreset = selectedPreset
     const target = captureActiveChatTarget()
     if (existingPreset) {
-      const selection = parseInt(
-        await alertSelect(
-          [language.chatGenerationTogglePresetOverwrite, language.chatGenerationTogglePresetCreateNew, language.cancel],
-          language.chatGenerationTogglePresetSaveChoice(existingPreset.name),
-        ),
+      const selectedAction = await alertSelect(
+        [language.chatGenerationTogglePresetOverwrite, language.chatGenerationTogglePresetCreateNew],
+        language.chatGenerationTogglePresetSaveChoice(existingPreset.name),
       )
+      if (selectedAction === null) return
+      const selection = Number(selectedAction)
       if (selection === 0) {
         const overwrittenPreset = overwriteCurrentChatGenerationTogglePreset(existingPreset.id, {
           expectedTarget: target,

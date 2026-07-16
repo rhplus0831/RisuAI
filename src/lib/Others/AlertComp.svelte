@@ -3,6 +3,7 @@
     alertGenerationInfoStore,
     cardExportCancelMessage,
     resolveAlertConfirmation,
+    resolveAlertSelection,
     type alertData,
   } from '../../ts/alert'
 
@@ -82,6 +83,7 @@
     if ($alertStore.type === 'error') return language.error
     if ($alertStore.type === 'ask') return language.confirm
     if ($alertStore.type === 'pluginconfirm') return language.pluginImport
+    if ($alertStore.type === 'select') return language.select
     if ($alertStore.type === 'selectChar') return language.select
     if ($alertStore.type === 'input') return language.input
     if ($alertStore.type === 'tos') return language.termsOfService
@@ -271,6 +273,22 @@
   function submitInputAlert() {
     closeInputAlert(alertInputElement?.value ?? $alertStore.defaultValue ?? '')
   }
+
+  function cancelSelectAlert() {
+    if ($alertStore.type !== 'select') return
+    resolveAlertSelection($alertStore.dialogOwner, null)
+  }
+
+  function handleAlertBackdropClick(event: MouseEvent) {
+    if (event.target === event.currentTarget) cancelSelectAlert()
+  }
+
+  function handleAlertKeydown(event: KeyboardEvent) {
+    if ($alertStore.type !== 'select' || event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    cancelSelectAlert()
+  }
 </script>
 
 <svelte:window
@@ -291,10 +309,13 @@
   }} />
 
 {#if $alertStore.type !== 'none' && $alertStore.type !== 'toast' && $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs'}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     data-modal-root
     class="fixed inset-0 z-[100] bg-black/50 flex justify-center items-center"
-    class:vis={$alertStore.type === 'wait2'}>
+    class:vis={$alertStore.type === 'wait2'}
+    onclick={handleAlertBackdropClick}
+    onkeydown={handleAlertKeydown}>
     <div
       use:modalFocusTrap
       role={alertDialogRole}
@@ -478,10 +499,7 @@
             <Button
               className="mt-4"
               onclick={() => {
-                alertStore.set({
-                  type: 'none',
-                  msg: i.toString(),
-                })
+                resolveAlertSelection($alertStore.dialogOwner, i)
               }}>{n}</Button>
           {/each}
         {:else}
@@ -490,13 +508,11 @@
             <Button
               className="mt-4"
               onclick={() => {
-                alertStore.set({
-                  type: 'none',
-                  msg: i.toString(),
-                })
+                resolveAlertSelection($alertStore.dialogOwner, i)
               }}>{n}</Button>
           {/each}
         {/if}
+        <Button className="mt-4" styled="outlined" onclick={cancelSelectAlert}>{language.cancel}</Button>
       {:else if $alertStore.type === 'error' || $alertStore.type === 'normal' || $alertStore.type === 'markdown'}
         <Button
           className="mt-4"

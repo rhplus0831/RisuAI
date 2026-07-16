@@ -1109,6 +1109,23 @@ describe('SideChatList DOM contract harness', () => {
     expect(folderHeaderContainer(folderElementById('folder-a')).classList.contains('bg-red-900')).toBe(true)
   })
 
+  it('does not change a folder color when the action selection is cancelled', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    setResourceWriteGuardEnabled(true)
+    sidebarMocks.alertSelect.mockResolvedValueOnce(null)
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    rowActionButton(folderElementById('folder-a'), 'folder-options').click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.alertSelect).toHaveBeenCalledWith([language.changeFolderColor])
+    expect(sidebarMocks.dispatchUpdateChatFolder).not.toHaveBeenCalled()
+    expect(selectedCharacter().chatFolders[0].color).toBeUndefined()
+  })
+
   it('keeps persona unbinding pending until failure rolls state and DOM back', async () => {
     const chara = seedSidebarDatabase()
     chara.chats[1].bindedPersona = 'persona-a'

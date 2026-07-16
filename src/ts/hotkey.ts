@@ -335,8 +335,9 @@ export function initHotkey() {
 }
 
 async function quickMenu() {
-  const selStr = await alertSelect([language.presets, language.persona, language.hotkeyDesc.loadout, language.cancel])
-  const sel = parseInt(selStr)
+  const selStr = await alertSelect([language.presets, language.persona, language.hotkeyDesc.loadout])
+  if (selStr === null) return
+  const sel = Number(selStr)
   if (sel === 0) {
     openPresetList.set(!get(openPresetList))
   }

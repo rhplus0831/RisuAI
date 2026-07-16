@@ -1650,7 +1650,7 @@ describe('sidebar chat generation settings controls', () => {
     })
   })
 
-  it('asks whether to overwrite, create, or cancel when saving with a selected toggle preset', async () => {
+  it('asks whether to overwrite or create when saving with a selected toggle preset', async () => {
     const calls = stubCommandFetch()
     testDatabaseState().chatGenerationTogglePresets = [
       {
@@ -1683,7 +1683,7 @@ describe('sidebar chat generation settings controls', () => {
     await flushAsyncWork()
 
     expect(alertSpies.alertSelect).toHaveBeenCalledWith(
-      ['Overwrite it', 'Create new Saved Toggle', 'Cancel'],
+      ['Overwrite it', 'Create new Saved Toggle'],
       'Save changes to "Saved Alpha"?',
     )
     expect(alertSpies.alertInput).not.toHaveBeenCalled()

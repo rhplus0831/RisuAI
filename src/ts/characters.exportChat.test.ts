@@ -129,6 +129,23 @@ afterEach(() => {
 })
 
 describe('chat export stable targets', () => {
+  it.each([
+    { name: 'format selection', selections: [null] },
+    { name: 'HTML translation selection', selections: ['2', null] },
+    { name: 'HTML persona-name selection', selections: ['2', '1', null] },
+  ])('does not hydrate or download after cancelling the $name', async ({ selections }) => {
+    const targetChat = makeChat('chat-a-target', 'Target Chat', 'target message')
+    setDatabase([makeCharacter('char-a', 'Character A', [targetChat])])
+    for (const selection of selections) exportMocks.alertSelect.mockResolvedValueOnce(selection)
+
+    await exportChat({ characterId: 'char-a', chatId: 'chat-a-target' })
+
+    expect(exportMocks.alertSelect).toHaveBeenCalledTimes(selections.length)
+    expect(exportMocks.hydrateChatMessages).not.toHaveBeenCalled()
+    expect(exportMocks.downloadFile).not.toHaveBeenCalled()
+    expect(exportMocks.alertError).not.toHaveBeenCalled()
+  })
+
   it('keeps the clicked chat through deferred dialogs, hydration, selection changes, and reordering', async () => {
     const targetChat = makeChat('chat-a-target', 'Target Chat', 'target message')
     const otherChat = makeChat('chat-a-other', 'Other Chat', 'other message')

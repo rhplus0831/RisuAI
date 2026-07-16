@@ -19,12 +19,16 @@ export const langState = $state({ changed: false })
 
 export async function downloadLanguageTemplate(): Promise<void> {
   const activeLanguage = getDatabase().language
-  const choice = parseInt(await alertSelect([language.continueTranslatingLanguage, language.makeNewLanguage]))
+  const selection = await alertSelect([language.continueTranslatingLanguage, language.makeNewLanguage])
+  if (selection === null) return
+  const choice = Number(selection)
 
   try {
     if (choice === 0) {
       const languages = ['de', 'es', 'ko', 'cn', 'vi', 'zh-Hant']
-      const selectedLanguage = languages[parseInt(await alertSelect(languages))]
+      const languageSelection = await alertSelect(languages)
+      if (languageSelection === null) return
+      const selectedLanguage = languages[Number(languageSelection)]
       if (!selectedLanguage) return
       changeLanguage(selectedLanguage)
       await downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(language, null, 4)))

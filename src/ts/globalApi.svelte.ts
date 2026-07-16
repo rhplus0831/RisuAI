@@ -1682,17 +1682,16 @@ export async function loadInternalBackup(options: LoadInternalBackupOptions = {}
     message: 'Waiting for backup selection',
     percent: 15,
   })
-  const selectOptions = [
-    'Cancel',
-    ...list.backups.map((backup) => {
-      const label = backup.label ? `${backup.label} - ` : ''
-      return `${label}${new Date(backup.createdAt).toLocaleString()}`
-    }),
-  ]
-  const alertResult = parseInt(await alertSelect(selectOptions)) - 1
-  if (alertResult === -1) return 'cancelled'
+  const selectOptions = list.backups.map((backup) => {
+    const label = backup.label ? `${backup.label} - ` : ''
+    return `${label}${new Date(backup.createdAt).toLocaleString()}`
+  })
+  const selection = await alertSelect(selectOptions)
+  if (selection === null) return 'cancelled'
+  const alertResult = Number(selection)
 
   const selectedBackup = list.backups[alertResult]
+  if (!selectedBackup) return 'cancelled'
   const restored = await restoreServerBackup({
     id: selectedBackup.id,
     signal: options.signal,

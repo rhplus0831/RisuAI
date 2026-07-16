@@ -78,4 +78,18 @@ describe('language settings actions', () => {
     expect(JSON.parse(new TextDecoder().decode(bytes as Uint8Array)).UiLanguage).toBe(languageSpanish.UiLanguage)
     expect(languageSettingsMocks.alertNormal).toHaveBeenCalledWith(language.translationTemplateDownloaded)
   })
+
+  it.each([
+    { name: 'template type', selections: [null] },
+    { name: 'existing language', selections: ['0', null] },
+  ])('does not download after cancelling the $name selection', async ({ selections }) => {
+    for (const selection of selections) languageSettingsMocks.alertSelect.mockResolvedValueOnce(selection)
+
+    await downloadLanguageTemplate()
+
+    expect(languageSettingsMocks.downloadFile).not.toHaveBeenCalled()
+    expect(languageSettingsMocks.alertNormal).not.toHaveBeenCalled()
+    expect(getResourceDatabase().language).toBe('es')
+    expect(language.UiLanguage).toBe(languageSpanish.UiLanguage)
+  })
 })

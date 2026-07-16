@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const subtitleMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
+  alertSelect: vi.fn(),
   decodeAudioFileWithTemporaryContext: vi.fn(),
+  downloadFile: vi.fn(),
   pipeline: vi.fn(),
   requestChatData: vi.fn(),
   requestOpenAITranscription: vi.fn(),
@@ -17,6 +19,7 @@ vi.mock('src/ts/storage/database.svelte', () => ({
     openAIKey: '',
     useStreaming: true,
   }),
+  reapplyPendingPresetProjections: vi.fn(),
 }))
 
 vi.mock('src/ts/model/modellist', () => ({
@@ -66,7 +69,16 @@ vi.mock('./subtitleMedia', () => ({
 
 vi.mock('src/ts/alert', () => ({
   alertError: subtitleMocks.alertError,
-  alertSelect: vi.fn(),
+  alertSelect: subtitleMocks.alertSelect,
+}))
+
+vi.mock('src/ts/globalApi.svelte', () => ({
+  AppendableBuffer: class {
+    buffer = new Uint8Array()
+    append() {}
+  },
+  downloadFile: subtitleMocks.downloadFile,
+  getLanguageCodes: () => [],
 }))
 
 vi.mock('src/ts/parser/parser.svelte', () => ({
@@ -106,14 +118,18 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.append(target)
   subtitleMocks.alertError.mockReset()
+  subtitleMocks.alertSelect.mockReset()
   subtitleMocks.decodeAudioFileWithTemporaryContext.mockReset()
+  subtitleMocks.downloadFile.mockReset()
   subtitleMocks.pipeline.mockReset()
   subtitleMocks.requestChatData.mockReset()
   subtitleMocks.requestOpenAITranscription.mockReset()
   subtitleMocks.selectFileByDom.mockReset()
   subtitleMocks.selectSingleFile.mockReset()
   audioPlay = vi.fn(async () => {})
-  audioConstructor = vi.fn(() => ({ play: audioPlay }))
+  audioConstructor = vi.fn(function () {
+    return { play: audioPlay }
+  })
   vi.stubGlobal('Audio', audioConstructor)
 })
 
@@ -254,6 +270,51 @@ describe('PlaygroundSubtitle run recovery', () => {
     expect(signal.aborted).toBe(true)
     expect(subtitleMocks.requestChatData).not.toHaveBeenCalled()
     expect(audioConstructor).not.toHaveBeenCalled()
+  })
+
+  it('does not download a generated subtitle when format selection is cancelled', async () => {
+    const file = new File([new Uint8Array([1, 2, 3])], 'sample.mp3', { type: 'audio/mpeg' })
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: vi.fn(async () => new Uint8Array([1, 2, 3]).buffer),
+    })
+    const reader = {
+      read: vi
+        .fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: {
+            response: '```webvtt\nWEBVTT\n\n00:00.000 --> 00:01.000\nHello\n```',
+          },
+        })
+        .mockResolvedValueOnce({ done: true, value: undefined }),
+      releaseLock: vi.fn(),
+    }
+    subtitleMocks.selectFileByDom.mockResolvedValue([file])
+    subtitleMocks.requestOpenAITranscription.mockResolvedValue('WEBVTT\n\n00:00.000 --> 00:01.000\nHello')
+    subtitleMocks.requestChatData.mockResolvedValue({
+      type: 'streaming',
+      result: { getReader: () => reader },
+    })
+    subtitleMocks.alertSelect.mockResolvedValue(null)
+    component = mount(PlaygroundSubtitle, { target })
+    await selectMode('whisper')
+
+    runButton()!.click()
+    await vi.waitFor(() => {
+      expect(
+        Array.from(target.querySelectorAll('button')).some(
+          (button) => button.textContent?.trim() === language.download,
+        ),
+      ).toBe(true)
+    })
+
+    const downloadButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === language.download,
+    )
+    downloadButton?.click()
+    await vi.waitFor(() => expect(subtitleMocks.alertSelect).toHaveBeenCalledWith(['WebVTT', 'SRT']))
+
+    expect(subtitleMocks.downloadFile).not.toHaveBeenCalled()
   })
 
   it('disposes a local Whisper pipeline when the tool unmounts mid-transcription', async () => {

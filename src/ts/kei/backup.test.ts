@@ -59,7 +59,7 @@ describe('Risu-Kei backups', () => {
     )
     backupMocks.alertSelect.mockImplementation(async (menu: string[]) => {
       const call = backupMocks.alertSelect.mock.calls.length
-      return String(menu.indexOf(call === 1 ? 'Previous' : 'Cancel'))
+      return call === 1 ? String(menu.indexOf('Previous')) : null
     })
 
     await autoServerBackup()
@@ -72,6 +72,18 @@ describe('Risu-Kei backups', () => {
       'backup-8',
       'backup-9',
     ])
+  })
+
+  it('does not restore a backup when the selection dialog is cancelled', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ activated: false, backups: [['backup-0', 'id-0']] }))
+    vi.stubGlobal('fetch', fetchMock)
+    backupMocks.alertSelect.mockResolvedValueOnce(null)
+
+    await autoServerBackup()
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(backupMocks.setDatabase).not.toHaveBeenCalled()
+    expect(backupMocks.alertSelect).toHaveBeenCalledWith(['backup-0', 'Next', 'Previous'])
   })
 
   it('allows an automatic save to retry after a failed request', async () => {

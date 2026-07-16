@@ -658,11 +658,15 @@
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
-                      const sel = parseInt(await alertSelect([language.changeFolderColor, language.cancel]))
+                      const selection = await alertSelect([language.changeFolderColor])
+                      if (selection === null) return
+                      const sel = Number(selection)
                       switch (sel) {
                         case 0:
                           const colors = ['red', 'green', 'blue', 'yellow', 'indigo', 'purple', 'pink', 'default']
-                          const sel = parseInt(await alertSelect(colors))
+                          const colorSelection = await alertSelect(colors)
+                          if (colorSelection === null) return
+                          const sel = Number(colorSelection)
                           const previous = currentChatStateSnapshot()
                           const color = colors[sel]
                           if (!color) break

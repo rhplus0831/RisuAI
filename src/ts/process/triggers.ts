@@ -1878,6 +1878,7 @@ export async function runTrigger(
             }
             case 'select': {
               const val = await alertSelect(effectValue.split('§'))
+              if (val === null) break
               setVar(inputVar, val)
             }
           }
@@ -2951,7 +2952,8 @@ export async function runTrigger(
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
           const options = value.split('|')
-          let result = await alertSelect(options, display)
+          const result = await alertSelect(options, display)
+          if (result === null) break
           setVar(risuChatParser(effect.outputVar, { chara: char }), result)
           break
         }

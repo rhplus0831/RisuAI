@@ -30,12 +30,11 @@ export async function autoServerBackup() {
       const menu = slices.map((backup) => backup[0])
       menu.push('Next')
       menu.push('Previous')
-      menu.push('Cancel')
-      const selectIndex = parseInt(await alertSelect(menu))
+      const selection = await alertSelect(menu)
+      if (selection === null) break
+      const selectIndex = Number(selection)
       const selected = menu[selectIndex]
-      if (selected === 'Cancel') {
-        break
-      } else if (selected === 'Next') {
+      if (selected === 'Next') {
         pointer += 5
         if (pointer >= backups.length) {
           pointer = 0

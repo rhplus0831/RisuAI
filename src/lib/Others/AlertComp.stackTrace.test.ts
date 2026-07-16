@@ -11,7 +11,8 @@ vi.mock('src/ts/process/modules', async (importActual) => {
 })
 
 import AlertComp from './AlertComp.svelte'
-import { alertConfirm } from 'src/ts/alert'
+import { alertConfirm, alertSelect } from 'src/ts/alert'
+import { language } from 'src/lang'
 import { alertStore } from 'src/ts/stores.svelte'
 
 function deferred<T>() {
@@ -117,6 +118,76 @@ describe('AlertComp input dialog', () => {
       expect(cancel).toBeTruthy()
       cancel?.click()
       expect(get(alertStore)).toMatchObject({ type: 'none', msg: '' })
+    } finally {
+      unmount(component)
+      target.remove()
+      alertStore.set({ type: 'none', msg: '' })
+    }
+  })
+})
+
+describe('AlertComp select dialog', () => {
+  beforeEach(() => {
+    translateStackTrace.mockReset()
+    alertStore.set({ type: 'none', msg: '' })
+  })
+
+  it('renders an accessible localized cancellation control and cancels with Escape', async () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(AlertComp, { target })
+
+    try {
+      const result = alertSelect(['WebVTT', 'SRT'], 'Choose a subtitle format')
+      await tick()
+      await Promise.resolve()
+
+      const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+      const cancel = Array.from(target.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === language.cancel,
+      )
+      expect(dialog).toBeTruthy()
+      expect(dialog?.getAttribute('aria-modal')).toBe('true')
+      expect(dialog?.textContent).toContain('Choose a subtitle format')
+      expect(cancel).toBeTruthy()
+      expect(dialog?.contains(document.activeElement)).toBe(true)
+
+      cancel?.click()
+      await expect(result).resolves.toBeNull()
+      expect(get(alertStore)).toMatchObject({ type: 'none', msg: '' })
+
+      const escapedResult = alertSelect(['Keep open'])
+      await tick()
+      target
+        .querySelector<HTMLElement>('[role="dialog"]')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await expect(escapedResult).resolves.toBeNull()
+    } finally {
+      unmount(component)
+      target.remove()
+      alertStore.set({ type: 'none', msg: '' })
+    }
+  })
+
+  it('cancels only when the modal backdrop itself is clicked', async () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(AlertComp, { target })
+
+    try {
+      const result = alertSelect(['Keep open'])
+      await tick()
+
+      const modalRoot = target.querySelector<HTMLElement>('[data-modal-root]')
+      const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+      expect(modalRoot).toBeTruthy()
+      expect(dialog).toBeTruthy()
+
+      dialog?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      expect(get(alertStore)).toMatchObject({ type: 'select' })
+
+      modalRoot?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await expect(result).resolves.toBeNull()
     } finally {
       unmount(component)
       target.remove()

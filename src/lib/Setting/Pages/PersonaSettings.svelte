@@ -154,7 +154,9 @@
       <BaseRoundedButton
         ariaLabel={`${language.add} ${language.persona}`}
         onClick={async () => {
-          const sel = parseInt(await alertSelect([language.createfromScratch, language.importCharacter]))
+          const selection = await alertSelect([language.createfromScratch, language.importCharacter])
+          if (selection === null) return
+          const sel = Number(selection)
           if (sel === 0) {
             createNewUserPersona()
           } else if (sel === 1) {

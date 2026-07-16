@@ -72,6 +72,7 @@ import {
   clearAlertWait,
   parseCardExportResult,
   resolveAlertConfirmation,
+  resolveAlertSelection,
   alertStore,
   updateAlertWait,
 } from './alert'
@@ -271,7 +272,8 @@ describe('passive alerts around response dialogs', () => {
       msg: '__DISPLAY__Choose one||First||Second',
     })
 
-    alertStore.set({ type: 'none', msg: '1' })
+    const owner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertSelection(owner, 1)
     await expect(selectResult).resolves.toBe('1')
     await vi.waitFor(() =>
       expect(alertTestState.alertStoreValue).toEqual({ type: 'normal', msg: 'Background result is ready' }),
@@ -305,6 +307,50 @@ describe('passive alerts around response dialogs', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(alertTestState.alertStoreValue).toEqual({ type: 'none', msg: 'saved input' })
+  })
+})
+
+describe('select results', () => {
+  it('returns a selected option index and converts dismissal into typed cancellation', async () => {
+    const selected = alertSelect(['First', 'Second'])
+    const selectedOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertSelection(selectedOwner, 1)
+    await expect(selected).resolves.toBe('1')
+
+    const cancelled = alertSelect(['First', 'Second'])
+    alertClear()
+    await expect(cancelled).resolves.toBeNull()
+  })
+
+  it('does not expose malformed or out-of-range modal results as selections', async () => {
+    const malformed = alertSelect(['Only option'])
+    const malformedOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    alertStore.set({ type: 'none', msg: 'not-an-index', dialogOwner: malformedOwner })
+    await expect(malformed).resolves.toBeNull()
+
+    const outOfRange = alertSelect(['Only option'])
+    const outOfRangeOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    alertStore.set({ type: 'none', msg: '1', dialogOwner: outOfRangeOwner })
+    await expect(outOfRange).resolves.toBeNull()
+  })
+
+  it('queues concurrent selectors and keeps responses bound to their owners', async () => {
+    const first = alertSelect(['First A', 'First B'])
+    const second = alertSelect(['Second A'])
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'select', msg: 'First A||First B' })
+    const firstOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    expect(resolveAlertSelection(firstOwner, 1)).toBe(true)
+    await expect(first).resolves.toBe('1')
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'select', msg: 'Second A' })
+    const secondOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    expect(secondOwner).not.toBe(firstOwner)
+    expect(resolveAlertSelection(firstOwner, 0)).toBe(false)
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'select', dialogOwner: secondOwner })
+
+    expect(resolveAlertSelection(secondOwner, null)).toBe(true)
+    await expect(second).resolves.toBeNull()
   })
 })
 

@@ -466,7 +466,6 @@
                         language.renameFolder,
                         language.changeFolderColor,
                         language.changeFolderImage,
-                        language.cancel,
                       ]
                       const selectedAction = parseAlertSelection(await alertSelect(folderActions), folderActions.length)
                       if (selectedAction === null) return
@@ -477,7 +476,7 @@
                           updateCharacterOrderFolder(folderId, { name: v })
                         }
                       } else if (selectedAction === 1) {
-                        const colorActions = [...characterFolderColors, language.cancel]
+                        const colorActions = [...characterFolderColors]
                         const selectedColor = parseAlertSelection(await alertSelect(colorActions), colorActions.length)
                         if (selectedColor === null) return
 
@@ -485,7 +484,7 @@
                         if (!color) return
                         updateCharacterOrderFolder(folderId, { color })
                       } else if (selectedAction === 2) {
-                        const imageActions = ['Reset to Default Image', 'Select Image File', language.cancel]
+                        const imageActions = ['Reset to Default Image', 'Select Image File']
                         const selectedImageAction = parseAlertSelection(
                           await alertSelect(imageActions),
                           imageActions.length,

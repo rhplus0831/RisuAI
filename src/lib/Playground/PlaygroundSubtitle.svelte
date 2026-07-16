@@ -737,8 +737,9 @@
   <Button
     className="mt-4"
     onclick={async () => {
-      const sel = parseInt(await alertSelect(['WebVTT', 'SRT']))
-      const a = document.createElement('a')
+      const selection = await alertSelect(['WebVTT', 'SRT'])
+      if (selection === null) return
+      const sel = Number(selection)
 
       // WebVTT
       if (sel === 0) {

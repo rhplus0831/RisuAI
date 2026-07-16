@@ -247,15 +247,15 @@ describe('Sidebar character folder context menu', () => {
     await tick()
   })
 
-  it('offers a color cancel choice without submitting an undefined color', async () => {
-    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('1').mockResolvedValueOnce('8')
+  it('cancels color selection without submitting an undefined color', async () => {
+    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('1').mockResolvedValueOnce(null)
 
     openFolderContextMenu('Folder A')
 
     await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(2))
     await tick()
 
-    expect(sidebarKeyboardMocks.alertSelect.mock.calls[1][0]).toHaveLength(9)
+    expect(sidebarKeyboardMocks.alertSelect.mock.calls[1][0]).toHaveLength(8)
     expect(sidebarKeyboardMocks.updateCharacterOrderFolder).not.toHaveBeenCalled()
   })
 
@@ -270,15 +270,15 @@ describe('Sidebar character folder context menu', () => {
     expect(sidebarKeyboardMocks.updateCharacterOrderFolder).not.toHaveBeenCalled()
   })
 
-  it('offers an image cancel choice without resetting or opening the file picker', async () => {
-    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('2').mockResolvedValueOnce('2')
+  it('cancels image selection without resetting or opening the file picker', async () => {
+    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('2').mockResolvedValueOnce(null)
 
     openFolderContextMenu('Folder A')
 
     await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(2))
     await tick()
 
-    expect(sidebarKeyboardMocks.alertSelect.mock.calls[1][0]).toHaveLength(3)
+    expect(sidebarKeyboardMocks.alertSelect.mock.calls[1][0]).toHaveLength(2)
     expect(sidebarKeyboardMocks.updateCharacterOrderFolder).not.toHaveBeenCalled()
     expect(sidebarKeyboardMocks.selectSingleFile).not.toHaveBeenCalled()
   })

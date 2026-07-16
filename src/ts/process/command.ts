@@ -83,7 +83,8 @@ async function processCommand(command: string, pipe: string): Promise<false | st
         try {
           const JSONLabels = JSON.parse(namedArg.labels)
           if (Array.isArray(JSONLabels)) {
-            pipe = await alertSelect(JSONLabels)
+            const selection = await alertSelect(JSONLabels)
+            if (selection !== null) pipe = selection
           }
         } catch (error) {}
       }

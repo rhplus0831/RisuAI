@@ -475,14 +475,19 @@ export async function exportChat(target: ChatExportTarget): Promise<void> {
   try {
     if (!resolveChatExportTarget(stableTarget)) return
     const mode = await alertSelect(['Export as JSON', 'Export as TXT', 'Export as HTML File', 'Export as HTML Embed'])
-    const doTranslate =
-      mode === '2' || mode === '3'
-        ? (await alertSelect([language.translateContent, language.doNotTranslate])) === '0'
-        : false
-    const anonymous =
-      mode === '2' || mode === '3'
-        ? (await alertSelect([language.includePersonaName, language.hidePersonaName])) === '1'
-        : false
+    if (mode === null) return
+
+    let doTranslate = false
+    let anonymous = false
+    if (mode === '2' || mode === '3') {
+      const translateSelection = await alertSelect([language.translateContent, language.doNotTranslate])
+      if (translateSelection === null) return
+      doTranslate = translateSelection === '0'
+
+      const personaSelection = await alertSelect([language.includePersonaName, language.hidePersonaName])
+      if (personaSelection === null) return
+      anonymous = personaSelection === '1'
+    }
     if (!resolveChatExportTarget(stableTarget)) return
     // The exported chat may not be the open (hydrated) one.
     await hydrateChatMessages(stableTarget.chatId)
