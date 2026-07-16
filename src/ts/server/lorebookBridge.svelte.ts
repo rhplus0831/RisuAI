@@ -57,6 +57,7 @@ import {
   mergeProjectionIntoDirtyDraft,
 } from './staleStateGuards'
 import { dispatchDurableMutation } from './durableMutationDispatch'
+import { GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY, globalLorebookOwnerMutationKey } from './lorebookMutationKeys'
 import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import {
   acknowledgePendingMutation,
@@ -1058,6 +1059,7 @@ function stageGlobalLorebookDeleteMutation(lorebookId: string): {
 } {
   const intent: DurableMutationIntent = {
     version: 1,
+    dependencyKeys: [globalLorebookOwnerMutationKey(lorebookId)],
     requests: [
       {
         method: 'DELETE',
@@ -1066,10 +1068,9 @@ function stageGlobalLorebookDeleteMutation(lorebookId: string): {
       },
     ],
   }
-  const scope = { kind: 'global', lorebookId } as const
   return {
     intent,
-    outbox: stagePendingMutation(lorebookOwnerMutationKey(scope, lorebookCollectionScopeKey(scope)), intent),
+    outbox: stagePendingMutation(GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY, intent),
   }
 }
 
@@ -1164,20 +1165,34 @@ export function dispatchSelectGlobalLorebook(lorebookId: string, previous: Globa
   const pageProjectionEpoch = captureLorebookPageProjectionEpoch()
   const stableIds = globalLorebookStableIds((getDatabase().loreBook ?? []) as GlobalLorebook[])
   const rollback = globalLorebookSelectionRollbackFromSnapshot(previous, lorebookId)
-  void runServerCommand({
-    command: (baseRevision) =>
-      selectGlobalLorebookCommand({
-        baseRevision,
-        lorebookId,
-        acknowledgeOptimistic: !!stableIds?.includes(lorebookId),
-        optimisticPageEpoch: pageProjectionEpoch,
-      }),
-    rollback: () => {
-      if (!hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)) {
-        rollbackGlobalLorebookSelection(rollback)
-      }
-    },
-  })
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: `/lorebooks/${encodeURIComponent(lorebookId)}/select`,
+        body: {},
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY, intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        selectGlobalLorebookCommand({
+          baseRevision,
+          lorebookId,
+          acknowledgeOptimistic: !!stableIds?.includes(lorebookId),
+          optimisticPageEpoch: pageProjectionEpoch,
+        }),
+      rollback: () => {
+        if (!hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)) {
+          rollbackGlobalLorebookSelection(rollback)
+        }
+      },
+      ...transport,
+    }),
+  )
 }
 
 export function dispatchReplaceGlobalLorebookEntries(
@@ -2394,7 +2409,7 @@ function queueReplacement(
   if (existing && !existingProjectionIsCurrent) void acknowledgePendingMutation(existing.outbox)
   const intent = lorebookDurableIntent(scope, plan)
   const outbox = stagePendingMutation(
-    lorebookOwnerMutationKey(scope, key),
+    lorebookOwnerMutationKey(scope),
     intent,
     existingProjectionIsCurrent ? existing?.outbox : undefined,
   )
@@ -2441,7 +2456,7 @@ export function flushPendingServerBackedLorebookPatches(options: ServerCommandTr
 
 registerPendingBridgePatchFlusher('lorebook', flushPendingServerBackedLorebookPatches)
 
-function lorebookOwnerMutationKey(scope: DiscreteLorebookEditScope, scopeKey: string): string {
+function lorebookOwnerMutationKey(scope: DiscreteLorebookEditScope): string {
   switch (scope.kind) {
     case 'character':
       return characterOwnerMutationKey(scope.characterId)
@@ -2450,7 +2465,7 @@ function lorebookOwnerMutationKey(scope: DiscreteLorebookEditScope, scopeKey: st
     case 'module':
       return moduleOwnerMutationKey(scope.moduleId)
     case 'global':
-      return `lorebook:${scopeKey}`
+      return globalLorebookOwnerMutationKey(scope.lorebookId)
   }
 }
 

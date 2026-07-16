@@ -30,7 +30,9 @@ import {
   restoreLorebookState,
   restoreScopedLorebookState,
   scopedLorebookStateSnapshot,
+  selectGlobalLorebook,
 } from './lorebookBridge.svelte'
+import { GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY, globalLorebookOwnerMutationKey } from './lorebookMutationKeys'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './commands'
 import {
   beginPendingMutationDispatch,
@@ -715,7 +717,7 @@ describe('lorebook durable generation ordering', () => {
         (await listPendingMutations()).map((entry) => ({ key: entry.handle.key, request: entry.intent.requests[0] })),
       ).toEqual([
         {
-          key: 'lorebook:global:book-delete-order',
+          key: globalLorebookOwnerMutationKey('book-delete-order'),
           request: {
             method: 'PUT',
             path: '/lorebooks/book-delete-order/entries/entry-before-book-delete',
@@ -723,7 +725,7 @@ describe('lorebook durable generation ordering', () => {
           },
         },
         {
-          key: 'lorebook:global:book-delete-order',
+          key: GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY,
           request: {
             method: 'DELETE',
             path: '/lorebooks/book-delete-order',
@@ -925,7 +927,7 @@ describe('lorebook durable generation ordering', () => {
       resetPendingMutationOutboxForTests()
       await preparePendingMutationOutbox(scope)
       expect((await listPendingMutations()).map((entry) => entry.handle.key)).toEqual([
-        'lorebook:global:book-delete-reload',
+        GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY,
       ])
 
       recover = true
@@ -934,6 +936,152 @@ describe('lorebook durable generation ordering', () => {
       expect(calls.slice(replayStart).map((call) => `${call.method} ${call.url}`)).toEqual([
         'DELETE /api/v1/commands/lorebooks/book-delete-reload',
       ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      resetServerBackedLorebookBridgeForTests()
+      await Promise.resolve()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('replays a retained lorebook delete before a newer explicit selection', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-global-lorebook-selection-order',
+      writerEpoch: 10,
+      databaseLineage: 'lineage-global-lorebook-selection-order',
+      requestedWriterWasActive: true,
+    })
+    setDatabaseLite({
+      characters: [],
+      modules: [],
+      loreBookPage: 0,
+      loreBook: [
+        { id: 'book-delete-a', name: 'Delete A', data: [] },
+        { id: 'book-b', name: 'Book B', data: [] },
+        { id: 'book-select-c', name: 'Select C', data: [] },
+      ],
+    } as any)
+    setCachedServerCommandRevision(90)
+
+    let recover = false
+    let revision = 90
+    let serverSelectedLorebookId = 'book-delete-a'
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return new Response(JSON.stringify({ acknowledged: true }), {
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (!recover) {
+          return new Response(JSON.stringify({ error: 'temporarily unavailable' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+
+        revision += 1
+        if (url.endsWith('/lorebooks/book-delete-a')) {
+          serverSelectedLorebookId = 'book-b'
+          return new Response(
+            JSON.stringify({
+              revision,
+              event: {
+                type: 'lorebook.deleted',
+                revision,
+                resource: 'globalLorebook',
+                id: 'book-delete-a',
+              },
+              lorebookId: 'book-delete-a',
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        }
+        if (url.endsWith('/lorebooks/book-select-c/select')) {
+          serverSelectedLorebookId = 'book-select-c'
+          return new Response(
+            JSON.stringify({
+              revision,
+              event: {
+                type: 'lorebook.selected',
+                revision,
+                resource: 'globalLorebook',
+                id: 'book-select-c',
+              },
+              selectedLorebookId: 'book-select-c',
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        }
+        return new Response(JSON.stringify({ error: `unexpected ${url}` }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      expect(deleteGlobalLorebookById('book-delete-a')).toBe(true)
+      await waitForCallCount(calls, 1)
+      await vi.waitFor(() =>
+        expect((getDatabase().loreBook as any[]).map((book) => book.id)).toContain('book-delete-a'),
+      )
+
+      const selectIndex = (getDatabase().loreBook as any[]).findIndex((book) => book.id === 'book-select-c')
+      expect(selectGlobalLorebook(selectIndex)).toBe(true)
+      await waitForCallCount(calls, 2)
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+        'DELETE /api/v1/commands/lorebooks/book-delete-a',
+        'DELETE /api/v1/commands/lorebooks/book-delete-a',
+      ])
+      expect((getDatabase().loreBook as any[])[getDatabase().loreBookPage]?.id).toBe('book-select-c')
+
+      expect(
+        (await listPendingMutations()).map((entry) => ({
+          key: entry.handle.key,
+          dependencies: entry.intent.dependencyKeys ?? [],
+          request: entry.intent.requests[0],
+        })),
+      ).toEqual([
+        {
+          key: GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY,
+          dependencies: [globalLorebookOwnerMutationKey('book-delete-a')],
+          request: {
+            method: 'DELETE',
+            path: '/lorebooks/book-delete-a',
+            body: {},
+          },
+        },
+        {
+          key: GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY,
+          dependencies: [],
+          request: {
+            method: 'POST',
+            path: '/lorebooks/book-select-c/select',
+            body: {},
+          },
+        },
+      ])
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(calls.slice(recoveryStart).map((call) => `${call.method} ${call.url}`)).toEqual([
+        'DELETE /api/v1/commands/lorebooks/book-delete-a',
+        'POST /api/v1/commands/lorebooks/book-select-c/select',
+      ])
+      expect(serverSelectedLorebookId).toBe('book-select-c')
       expect(await listPendingMutations()).toEqual([])
     } finally {
       resetServerBackedLorebookBridgeForTests()
