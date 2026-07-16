@@ -1542,6 +1542,7 @@ export const languageEnglish = {
   presetConversionQueued:
     'The converted preset is saved on this device and queued. It will finish saving when the server is available.',
   presetConversionFailed: 'Could not save the converted preset. Please try again.',
+  presetConversionNoUsableFiles: 'Add at least one supported prompt file before running conversion.',
   fixMarkdownNewline: 'Fix Markdown Newline',
   customQuotes: 'Custom Quotes',
   leadingSingleQuote: 'Leading Single Quote',

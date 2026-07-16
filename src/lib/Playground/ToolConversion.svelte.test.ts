@@ -63,6 +63,19 @@ afterEach(() => {
 })
 
 describe('ToolConversion file list', () => {
+  it('does not run until at least one supported file is present', async () => {
+    conversionMocks.detectPromptJSONType.mockReturnValue('NOTSUPPORTED')
+    component = mount(ToolConversion, { target })
+
+    expect(buttonByText('Run').disabled).toBe(true)
+    buttonByText('Add').click()
+    await vi.waitFor(() => expect(target.textContent).toContain('context.json'))
+
+    expect(buttonByText('Run').disabled).toBe(true)
+    buttonByText('Run').click()
+    expect(conversionMocks.promptConvertion).not.toHaveBeenCalled()
+  })
+
   it('removes deleted files before running conversion', async () => {
     component = mount(ToolConversion, { target })
 
@@ -71,6 +84,7 @@ describe('ToolConversion file list', () => {
       expect(target.textContent).toContain('context.json')
       expect(target.textContent).toContain('sampler.json')
     })
+    expect(buttonByText('Run').disabled).toBe(false)
 
     const firstDelete = Array.from(target.querySelectorAll('button')).find((button) => button.textContent === 'Delete')
     expect(firstDelete).toBeTruthy()

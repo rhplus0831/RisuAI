@@ -474,6 +474,11 @@ export async function promptConvertion(
       return typePriority.indexOf(a.type) - typePriority.indexOf(b.type)
     })
 
+  if (files.length === 0) {
+    alertError(language.presetConversionNoUsableFiles)
+    return 'failed'
+  }
+
   if (files.findIndex((x) => x.type === 'STINST') !== -1) {
     type = 'STINST'
   }

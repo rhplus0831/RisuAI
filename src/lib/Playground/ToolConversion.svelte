@@ -24,6 +24,8 @@
   const deleteFile = (index: number) => {
     files = files.filter((_, fileIndex) => fileIndex !== index)
   }
+
+  let hasUsableFiles = $derived(files.some((file) => file.type !== 'NOTSUPPORTED'))
 </script>
 
 <h2 class="text-4xl text-textcolor my-6 font-black relative">{language.promptConvertion}</h2>
@@ -50,6 +52,7 @@
 </div>
 <Button
   className="mt-6"
+  disabled={!hasUsableFiles}
   onclick={async () => {
     await promptConvertion(files)
   }}>Run</Button>

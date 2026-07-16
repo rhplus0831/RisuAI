@@ -56,6 +56,17 @@ afterEach(() => {
 })
 
 describe('prompt conversion persistence outcome', () => {
+  it.each([{ files: [] }, { files: [{ name: 'unsupported.json', type: 'NOTSUPPORTED', content: '{}' }] }])(
+    'rejects conversion without a usable prompt file',
+    async ({ files }) => {
+      await expect(promptConvertion(files)).resolves.toBe('failed')
+
+      expect(conversionMocks.addImportedLegacyPreset).not.toHaveBeenCalled()
+      expect(conversionMocks.alertError).toHaveBeenCalledWith(language.presetConversionNoUsableFiles)
+      expect(conversionMocks.alertNormal).not.toHaveBeenCalled()
+    },
+  )
+
   it.each([
     {
       outcome: 'applied' as const,
