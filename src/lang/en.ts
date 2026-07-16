@@ -1844,6 +1844,8 @@ export const languageEnglish = {
   requestLocation: 'Request Location',
   newImageHandlingBeta: 'New Image Handling (Beta)',
   settingsExported: 'Settings for bug report exported and copied to clipboard.',
+  settingsExportedWithoutClipboard:
+    'Settings for bug report exported, but clipboard access was unavailable. Use the downloaded file instead.',
   bookmarks: 'Bookmarks',
   noBookmarks: 'No Bookmarks',
   bookmarkAskNameOrDefault: 'Enter bookmark name. If not entered, it will be automatically assigned.',
