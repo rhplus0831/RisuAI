@@ -9,6 +9,7 @@ const loadoutMocks = vi.hoisted(() => ({
   saveCurrentLoadout: vi.fn(),
   toggleLoadoutFavorite: vi.fn(),
 }))
+const alertMocks = vi.hoisted(() => ({ confirm: vi.fn() }))
 
 vi.mock('src/ts/stores.svelte', () => ({
   loadoutModalStore: loadoutStore,
@@ -20,6 +21,7 @@ vi.mock('src/ts/loadout', () => loadoutMocks)
 vi.mock('src/ts/storage/database.svelte', () => ({
   getCurrentCharacter: vi.fn(() => null),
 }))
+vi.mock('src/ts/alert', () => ({ alertConfirm: alertMocks.confirm }))
 
 import LoadoutModal from './LoadoutModal.svelte'
 
@@ -50,6 +52,7 @@ beforeEach(() => {
   loadoutMocks.deleteLoadout.mockReset()
   loadoutMocks.saveCurrentLoadout.mockReset().mockResolvedValue({ id: 'saved-loadout' })
   loadoutMocks.toggleLoadoutFavorite.mockReset()
+  alertMocks.confirm.mockReset().mockResolvedValue(true)
   opener = document.createElement('button')
   opener.textContent = 'Open loadouts'
   target = document.createElement('div')
@@ -252,6 +255,29 @@ describe('LoadoutModal operations', () => {
     expect(input.value).toBe('Retry Snapshot')
     expect(input.disabled).toBe(false)
     expect(dialog.getAttribute('aria-busy')).toBe('false')
-    expect(target.querySelector('[role="alert"]')?.textContent).toContain('Could not apply this loadout')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain('Could not save this loadout')
+  })
+
+  it('confirms removal once and disables repeated destructive actions while the prompt is open', async () => {
+    loadoutDatabase.loadouts = [savedLoadout]
+    const confirmation = deferred<boolean>()
+    alertMocks.confirm.mockReturnValue(confirmation.promise)
+    component = mount(LoadoutModal, { target })
+    await settle()
+    const remove = target.querySelector<HTMLButtonElement>('[aria-label="Remove loadout"]')
+    if (!remove) throw new Error('Loadout remove control not found')
+
+    remove.click()
+    await settle()
+    expect(alertMocks.confirm).toHaveBeenCalledOnce()
+    expect(alertMocks.confirm).toHaveBeenCalledWith('Remove the loadout “Loadout A”?')
+    expect(remove.disabled).toBe(true)
+    remove.click()
+    expect(alertMocks.confirm).toHaveBeenCalledOnce()
+
+    confirmation.resolve(true)
+    await settle()
+    expect(loadoutMocks.deleteLoadout).toHaveBeenCalledOnce()
+    expect(loadoutMocks.deleteLoadout).toHaveBeenCalledWith('loadout-a')
   })
 })

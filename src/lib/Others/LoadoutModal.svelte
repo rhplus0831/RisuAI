@@ -6,6 +6,7 @@
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { language } from 'src/lang'
+  import { alertConfirm } from 'src/ts/alert'
 
   type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
@@ -17,17 +18,18 @@
   })
 
   const loadOptionLabels: Record<LoadoutApplyOption, string> = {
-    modules: 'Modules',
-    globalVariables: 'Global Variables',
-    preset: 'Preset',
-    persona: 'Persona',
+    modules: language.loadoutModal.modules,
+    globalVariables: language.loadoutModal.globalVariables,
+    preset: language.loadoutModal.preset,
+    persona: language.loadoutModal.persona,
   }
 
   let saveName = $state('')
   let applyingLoadoutId: string | null = $state(null)
   let savingLoadout = $state(false)
+  let deletingLoadoutId: string | null = $state(null)
   let applyError = $state('')
-  let operationBusy = $derived(applyingLoadoutId !== null || savingLoadout)
+  let operationBusy = $derived(applyingLoadoutId !== null || savingLoadout || deletingLoadoutId !== null)
 
   function close() {
     if (operationBusy) return
@@ -101,9 +103,9 @@
         if (saveName === originalName) saveName = ''
         return
       }
-      applyError = language.loadoutApplyFailed
+      applyError = language.loadoutSaveFailed
     } catch {
-      applyError = language.loadoutApplyFailed
+      applyError = language.loadoutSaveFailed
     } finally {
       savingLoadout = false
     }
@@ -124,8 +126,16 @@
     })
   }
 
-  function removeLoadout(loadout: Loadout) {
-    deleteLoadout(loadout.id)
+  async function removeLoadout(loadout: Loadout, event: MouseEvent): Promise<void> {
+    event.stopPropagation()
+    if (operationBusy) return
+    deletingLoadoutId = loadout.id
+    try {
+      if (!(await alertConfirm(language.loadoutModal.removeConfirm(loadout.name)))) return
+      deleteLoadout(loadout.id)
+    } finally {
+      deletingLoadoutId = null
+    }
   }
 </script>
 
@@ -140,7 +150,7 @@
       <span class="text-sm font-medium text-textcolor/90 truncate">{loadout.name}</span>
       <span class="flex items-center gap-2 mt-0.5 text-xs text-textcolor/40 flex-wrap">
         {#if loadout.presetName}
-          <span>Preset: <span class="text-textcolor/60">{loadout.presetName}</span></span>
+          <span>{language.loadoutModal.presetName(loadout.presetName)}</span>
         {/if}
         <span>{formatDate(loadout.lastUsed)}</span>
       </span>
@@ -151,16 +161,16 @@
         : 'text-textcolor/20 hover:text-textcolor/50'}"
       disabled={operationBusy}
       onclick={(e) => toggleFavorite(loadout, e)}
-      aria-label={loadout.favorite ? 'Unfavorite' : 'Favorite'}
-      title={loadout.favorite ? 'Unfavorite' : 'Favorite'}>
+      aria-label={loadout.favorite ? language.loadoutModal.removeFavorite : language.loadoutModal.addFavorite}
+      title={loadout.favorite ? language.loadoutModal.removeFavorite : language.loadoutModal.addFavorite}>
       <StarIcon size={15} fill={loadout.favorite ? 'currentColor' : 'none'} />
     </button>
     <button
       class="shrink-0 pr-3 py-2.5 transition-colors hover:text-red-400/50 text-textcolor/20"
       disabled={operationBusy}
-      onclick={(e) => removeLoadout(loadout)}
-      aria-label={'Remove'}
-      title={'Remove'}>
+      onclick={(event) => removeLoadout(loadout, event)}
+      aria-label={language.loadoutModal.remove}
+      title={language.loadoutModal.remove}>
       <TrashIcon size={15} />
     </button>
   </div>
@@ -184,19 +194,21 @@
     tabindex="-1"
     onkeydown={handleDialogKeydown}>
     <div class="flex items-center justify-between px-5 py-3 border-b border-textcolor/10 shrink-0">
-      <span id="risu-loadout-modal-title" class="text-base font-semibold text-textcolor/90">Select Loadout</span>
+      <span id="risu-loadout-modal-title" class="text-base font-semibold text-textcolor/90"
+        >{language.loadoutModal.title}</span>
       <button
         data-modal-initial-focus
         class="text-textcolor/50 hover:text-textcolor/90 transition-colors"
         disabled={operationBusy}
         onclick={close}
-        aria-label="Close">
+        aria-label={language.close}>
         <XIcon size={18} />
       </button>
     </div>
 
     <div class="flex items-center gap-2 px-5 py-2.5 border-b border-textcolor/10 shrink-0 flex-wrap">
-      <span class="text-xs text-textcolor/40 uppercase tracking-wider font-medium mr-1">Load:</span>
+      <span class="text-xs text-textcolor/40 uppercase tracking-wider font-medium mr-1"
+        >{language.loadoutModal.load}:</span>
       {#each Object.keys(loadOptions) as key}
         {@const k = key as LoadoutApplyOption}
         <button
@@ -221,7 +233,7 @@
         <section>
           <div class="flex items-center gap-1.5 mb-2 text-textcolor/50 text-xs uppercase tracking-wider font-medium">
             <ClockIcon size={13} />
-            <span>Recently Used</span>
+            <span>{language.loadoutModal.recentlyUsed}</span>
           </div>
           <div class="flex flex-col gap-1">
             {#each getRecentLoadouts() as loadout (loadout.id)}
@@ -235,7 +247,7 @@
         <section>
           <div class="flex items-center gap-1.5 mb-2 text-textcolor/50 text-xs uppercase tracking-wider font-medium">
             <UserIcon size={13} />
-            <span>Recently Used with This Character</span>
+            <span>{language.loadoutModal.recentlyUsedWithCharacter}</span>
           </div>
           <div class="flex flex-col gap-1">
             {#each getCharacterLoadouts() as loadout (loadout.id)}
@@ -249,7 +261,7 @@
         <section>
           <div class="flex items-center gap-1.5 mb-2 text-yellow-400/70 text-xs uppercase tracking-wider font-medium">
             <StarIcon size={13} />
-            <span>Favorites</span>
+            <span>{language.loadoutModal.favorites}</span>
           </div>
           <div class="flex flex-col gap-1">
             {#each getFavoriteLoadouts() as loadout (loadout.id)}
@@ -262,10 +274,10 @@
       <section>
         <div class="flex items-center gap-1.5 mb-2 text-textcolor/50 text-xs uppercase tracking-wider font-medium">
           <ListIcon size={13} />
-          <span>All Loadouts</span>
+          <span>{language.loadoutModal.all}</span>
         </div>
         {#if getAllLoadouts().length === 0}
-          <p class="text-textcolor/30 text-sm px-1">No loadouts saved yet.</p>
+          <p class="text-textcolor/30 text-sm px-1">{language.loadoutModal.empty}</p>
         {:else}
           <div class="flex flex-col gap-1">
             {#each getAllLoadouts() as loadout (loadout.id)}
@@ -281,7 +293,7 @@
         type="text"
         aria-label={`${language.loadout} ${language.name}`}
         bind:value={saveName}
-        placeholder="Loadout name…"
+        placeholder={language.loadoutModal.namePlaceholder}
         disabled={operationBusy}
         class="flex-1 min-w-0 bg-textcolor/5 hover:bg-textcolor/8 focus:bg-textcolor/10 border border-textcolor/10 focus:border-textcolor/25 rounded px-3 py-1.5 text-sm text-textcolor/80 placeholder:text-textcolor/25 outline-none transition-colors" />
       <button
@@ -290,7 +302,7 @@
         data-risu-loadout-action="save"
         onclick={saveLoadout}>
         <SaveIcon size={14} />
-        Save
+        {language.save}
       </button>
     </div>
   </div>
