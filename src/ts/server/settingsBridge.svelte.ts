@@ -50,6 +50,7 @@ import {
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
+import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 
 interface PendingSettingsPatch {
   patch: SettingsPatch
@@ -507,6 +508,8 @@ export function flushPendingServerBackedSettingsPatch(options: ServerCommandTran
     void dispatchSparseObjectSettingQueue(state, options)
   }
 }
+
+registerPendingBridgePatchFlusher('settings', flushPendingServerBackedSettingsPatch)
 
 function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {}): void {
   if (pendingSettingsPatch.timer) {

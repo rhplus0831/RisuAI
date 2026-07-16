@@ -117,7 +117,10 @@ import {
 import { fetchServerLegacyPreset } from '../server/hydrationReads'
 import { canUseServerResourceReads } from '../server/resourceReads'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from '../server/chatGenerationSettingsResourceGuard'
-import { registerPendingBridgePatchFlusher } from '../server/pendingBridgeFlushRegistry'
+import {
+  flushRegisteredPendingBridgePatch,
+  registerPendingBridgePatchFlusher,
+} from '../server/pendingBridgeFlushRegistry'
 import { dispatchDurableMutation } from '../server/durableMutationDispatch'
 import {
   acknowledgePendingMutation,
@@ -125,6 +128,7 @@ import {
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from '../server/pendingMutationOutbox'
+import { SETTINGS_BRIDGE_MUTATION_KEY } from '../server/settingsMutationKey'
 import {
   createExtractedModelPreset,
   createExtractedPromptPreset,
@@ -1595,7 +1599,12 @@ function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): v
   })
 }
 
-function runPromptPresetSelectionCommand(promptPresetId: string, rollback: () => void): void {
+function runPromptPresetSelectionCommand(
+  promptPresetId: string,
+  rollback: () => void,
+  outbox: PendingMutationHandle,
+  intent: DurableMutationIntent,
+): void {
   if (!canUseServerCommands()) return
   void (async () => {
     const stillAttemptedSelection = () => currentSplitPresetSelectedId('prompt') === promptPresetId
@@ -1606,10 +1615,12 @@ function runPromptPresetSelectionCommand(promptPresetId: string, rollback: () =>
       })
 
     try {
-      const result = await runServerCommand({ command })
+      const dispatch = () =>
+        dispatchDurableMutation(outbox, intent, (transport) => runServerCommand({ command, ...transport }))
+      const result = await dispatch()
       if (result.status === 'ok') return
       if (result.status === 'conflict' && stillAttemptedSelection()) {
-        const retry = await runServerCommand({ command })
+        const retry = await dispatch()
         if (retry.status === 'ok') return
       }
     } catch (error) {
@@ -4215,6 +4226,24 @@ function changeToPresetById(targetPresetId: string, savecurrent: boolean, intent
     normalizeBotPresetIds(db)
     const id = canonicalBotPresetIndexById(targetPresetId)
     if (id < 0 || !botPresetHasHydratedSettings(db.botPresets[id])) return
+    let durableSelection: { handle: PendingMutationHandle; intent: DurableMutationIntent } | null = null
+    if (canUseServerCommands()) {
+      flushRegisteredPendingBridgePatch('settings', {})
+      const selectionIntent: DurableMutationIntent = {
+        version: 1,
+        requests: [
+          {
+            method: 'POST',
+            path: '/presets/select',
+            body: { presetId: targetPresetId, apply: true, saveCurrent: savecurrent },
+          },
+        ],
+      }
+      durableSelection = {
+        handle: stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, selectionIntent),
+        intent: selectionIntent,
+      }
+    }
     const previousSelectedId = botPresetSelectedId(db)
     const previousSettings = snapshotSetPresetSettings(db)
     const saveCurrentRollback = savecurrent ? saveCurrentPresetLocalWithRollback().rollback : null
@@ -4230,21 +4259,25 @@ function changeToPresetById(targetPresetId: string, savecurrent: boolean, intent
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          selectPresetCommand({
-            baseRevision,
-            presetId: targetPresetId,
-            apply: true,
-            saveCurrent: savecurrent,
-          }),
-      ],
-      () => {
-        rollbackBotPresetFields(saveCurrentRollback)
-        rollbackBotPresetSelection(selectionRollback)
-      },
-    )
+    const rollback = () => {
+      rollbackBotPresetFields(saveCurrentRollback)
+      rollbackBotPresetSelection(selectionRollback)
+    }
+    if (durableSelection) {
+      void dispatchDurableMutation(durableSelection.handle, durableSelection.intent, (transport) =>
+        runServerCommand({
+          command: (baseRevision) =>
+            selectPresetCommand({
+              baseRevision,
+              presetId: targetPresetId,
+              apply: true,
+              saveCurrent: savecurrent,
+            }),
+          rollback,
+          ...transport,
+        }),
+      )
+    }
   })
 }
 
@@ -4368,6 +4401,24 @@ function deletePresetByIds(presetId: string, selectPresetId: string, apply: bool
     const selectedBeforeDelete = canonicalBotPresetIndexById(selectPresetId)
     if (id < 0 || selectedBeforeDelete < 0) return []
     if (apply && !botPresetHasHydratedSettings(db.botPresets[selectedBeforeDelete])) return []
+    let durableDelete: { handle: PendingMutationHandle; intent: DurableMutationIntent } | null = null
+    if (canUseServerCommands()) {
+      flushRegisteredPendingBridgePatch('settings', {})
+      const deleteIntent: DurableMutationIntent = {
+        version: 1,
+        requests: [
+          {
+            method: 'DELETE',
+            path: `/presets/${encodeURIComponent(presetId)}`,
+            body: { presetId: selectPresetId, apply, saveCurrent: false },
+          },
+        ],
+      }
+      durableDelete = {
+        handle: stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, deleteIntent),
+        intent: deleteIntent,
+      }
+    }
     const previousPreset = safeStructuredClone(db.botPresets[id])
     const previousSelectedId = botPresetSelectedId(db)
     const previousSettings = apply ? snapshotSetPresetSettings(db) : undefined
@@ -4393,22 +4444,25 @@ function deletePresetByIds(presetId: string, selectPresetId: string, apply: bool
           }
         : {}),
     }
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          deletePresetCommand({
-            baseRevision,
-            presetId,
-            selectPresetId,
-            apply,
-            saveCurrent: false,
-          }),
-      ],
-      () => {
-        rollbackBotPresetDelete(previousPreset, id)
-        rollbackBotPresetSelection(selectionRollback)
-      },
-    )
+    if (durableDelete) {
+      void dispatchDurableMutation(durableDelete.handle, durableDelete.intent, (transport) =>
+        runServerCommand({
+          command: (baseRevision) =>
+            deletePresetCommand({
+              baseRevision,
+              presetId,
+              selectPresetId,
+              apply,
+              saveCurrent: false,
+            }),
+          rollback: () => {
+            rollbackBotPresetDelete(previousPreset, id)
+            rollbackBotPresetSelection(selectionRollback)
+          },
+          ...transport,
+        }),
+      )
+    }
   })
 }
 
@@ -4531,8 +4585,10 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
     const selectModelPresetId = nextSelectedPreset?.id
     if (!modelPresetId || !previousPreset) return
     flushPendingSplitPresetPatches()
+    flushRegisteredPendingBridgePatch('settings', {})
     const deleteIntent: DurableMutationIntent = {
       version: 1,
+      dependencyKeys: [splitPresetMutationKey('model', modelPresetId)],
       requests: [
         {
           method: 'DELETE',
@@ -4541,7 +4597,7 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
         },
       ],
     }
-    const deleteOutbox = stagePendingMutation(splitPresetMutationKey('model', modelPresetId), deleteIntent)
+    const deleteOutbox = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, deleteIntent)
     db.modelPresets.splice(id, 1)
     db.modelPresets = db.modelPresets
     const selectedIndex = selectModelPresetId
@@ -4583,6 +4639,25 @@ export function selectModelPreset(id: number) {
     const modelPresetId = db.modelPresets[id]?.id
     if (!modelPresetId) return
     flushPendingSplitPresetPatches()
+    let durableSelection: { handle: PendingMutationHandle; intent: DurableMutationIntent } | null = null
+    if (canUseServerCommands()) {
+      flushRegisteredPendingBridgePatch('settings', {})
+      const selectionIntent: DurableMutationIntent = {
+        version: 1,
+        dependencyKeys: [splitPresetMutationKey('model', modelPresetId)],
+        requests: [
+          {
+            method: 'POST',
+            path: '/model-presets/select',
+            body: { modelPresetId },
+          },
+        ],
+      }
+      durableSelection = {
+        handle: stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, selectionIntent),
+        intent: selectionIntent,
+      }
+    }
     db.modelPresetsId = id
     applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
     const selectionRollback: SplitPresetSelectionRollback = {
@@ -4592,16 +4667,15 @@ export function selectModelPreset(id: number) {
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          selectModelPresetCommand({
-            baseRevision,
-            modelPresetId,
-          }),
-      ],
-      () => rollbackSplitPresetSelection(selectionRollback),
-    )
+    if (durableSelection) {
+      void dispatchDurableMutation(durableSelection.handle, durableSelection.intent, (transport) =>
+        runServerCommand({
+          command: (baseRevision) => selectModelPresetCommand({ baseRevision, modelPresetId }),
+          rollback: () => rollbackSplitPresetSelection(selectionRollback),
+          ...transport,
+        }),
+      )
+    }
   })
 }
 
@@ -4813,8 +4887,10 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
     if (!promptPresetId || !previousPreset) return
     flushPendingPromptTemplatePatches()
     flushPendingSplitPresetPatches()
+    flushRegisteredPendingBridgePatch('settings', {})
     const deleteIntent: DurableMutationIntent = {
       version: 1,
+      dependencyKeys: [promptTemplateOwnerMutationKey(promptPresetId)],
       requests: [
         {
           method: 'DELETE',
@@ -4823,7 +4899,7 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
         },
       ],
     }
-    const deleteOutbox = stagePendingMutation(promptTemplateOwnerMutationKey(promptPresetId), deleteIntent)
+    const deleteOutbox = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, deleteIntent)
     db.promptPresets.splice(id, 1)
     db.promptPresets = db.promptPresets
     const selectedIndex = selectPromptPresetId
@@ -4870,6 +4946,25 @@ export function selectPromptPreset(id: number) {
     // data loss.
     flushPendingPromptTemplatePatches()
     flushPendingSplitPresetPatches()
+    let durableSelection: { handle: PendingMutationHandle; intent: DurableMutationIntent } | null = null
+    if (canUseServerCommands()) {
+      flushRegisteredPendingBridgePatch('settings', {})
+      const selectionIntent: DurableMutationIntent = {
+        version: 1,
+        dependencyKeys: [promptTemplateOwnerMutationKey(promptPresetId)],
+        requests: [
+          {
+            method: 'POST',
+            path: '/prompt-presets/select',
+            body: { promptPresetId },
+          },
+        ],
+      }
+      durableSelection = {
+        handle: stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, selectionIntent),
+        intent: selectionIntent,
+      }
+    }
     db.promptPresetsId = id
     applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
     const selectionRollback: SplitPresetSelectionRollback = {
@@ -4879,7 +4974,14 @@ export function selectPromptPreset(id: number) {
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    runPromptPresetSelectionCommand(promptPresetId, () => rollbackSplitPresetSelection(selectionRollback))
+    if (durableSelection) {
+      runPromptPresetSelectionCommand(
+        promptPresetId,
+        () => rollbackSplitPresetSelection(selectionRollback),
+        durableSelection.handle,
+        durableSelection.intent,
+      )
+    }
   })
 }
 

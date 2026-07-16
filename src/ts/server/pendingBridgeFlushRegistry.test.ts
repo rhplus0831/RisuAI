@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { flushRegisteredPendingBridgePatches, registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
+import {
+  flushRegisteredPendingBridgePatch,
+  flushRegisteredPendingBridgePatches,
+  registerPendingBridgePatchFlusher,
+} from './pendingBridgeFlushRegistry'
 
 describe('pending bridge flush registry', () => {
   it('forwards lifecycle transport options until a component unregisters', () => {
@@ -29,5 +33,20 @@ describe('pending bridge flush registry', () => {
     expect(currentFlusher).toHaveBeenCalledOnce()
 
     unregisterCurrent()
+  })
+
+  it('flushes only the requested owner when a structural action is about to switch projections', () => {
+    const settingsFlusher = vi.fn()
+    const chatFlusher = vi.fn()
+    const unregisterSettings = registerPendingBridgePatchFlusher('test:settings-targeted', settingsFlusher)
+    const unregisterChat = registerPendingBridgePatchFlusher('test:chat-targeted', chatFlusher)
+
+    expect(flushRegisteredPendingBridgePatch('test:settings-targeted', {})).toBe(true)
+    expect(flushRegisteredPendingBridgePatch('test:missing-targeted', {})).toBe(false)
+    expect(settingsFlusher).toHaveBeenCalledOnce()
+    expect(chatFlusher).not.toHaveBeenCalled()
+
+    unregisterSettings()
+    unregisterChat()
   })
 })

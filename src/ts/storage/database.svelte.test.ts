@@ -66,6 +66,8 @@ import {
   listPendingMutations,
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
+  stagePendingMutation,
+  type DurableMutationIntent,
 } from '../server/pendingMutationOutbox'
 import { markPromptTemplateProjectionApplied, resetPromptTemplateHydration } from '../server/promptTemplateHydration'
 import {
@@ -76,6 +78,7 @@ import { replayPendingMutations } from '../server/pendingMutationReplay'
 import { MODEL_ROLES } from '../model/modelRoles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
 import { changeLanguage, language as activeLanguage } from '../../lang'
+import { SETTINGS_BRIDGE_MUTATION_KEY } from '../server/settingsMutationKey'
 
 interface CapturedFetch {
   url: string
@@ -2153,6 +2156,167 @@ describe('preset command rollback (L21)', () => {
     expect(calls[1].body.patch).toEqual({ name: 'Prompt before model select' })
   })
 
+  it('drains a retained settings projection before selecting a model preset', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-model-select-settings',
+      writerEpoch: 3,
+      databaseLineage: 'lineage-model-select-settings',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase({
+        modelPresets: [
+          makePreset('model-a', 'Model A', { proxyRequestModel: 'proxy-a' }) as unknown as ModelPreset,
+          makePreset('model-b', 'Model B', { proxyRequestModel: 'proxy-b' }) as unknown as ModelPreset,
+        ],
+        modelPresetsId: 0,
+        proxyRequestModel: 'proxy-a',
+      })
+      setCachedServerCommandRevision(100)
+      const predecessorIntent: DurableMutationIntent = {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/settings/model',
+            body: { patch: { proxyRequestModel: 'proxy-a-latest' } },
+          },
+        ],
+      }
+      const predecessor = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, predecessorIntent)
+      await predecessor.ready
+
+      let revision = 100
+      const calls: Array<CapturedFetch & { mutationId: string | null }> = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          const headers = init.headers as Record<string, string> | undefined
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+          calls.push({
+            url,
+            method: init.method ?? 'GET',
+            body,
+            mutationId: headers?.['risu-mutation-id'] ?? null,
+          })
+          revision += 1
+          if (url === '/api/v1/commands/settings/model') {
+            return jsonResponse({
+              revision,
+              event: { type: 'settings.updated', revision, resource: 'settings', id: 'model' },
+            })
+          }
+          if (url === '/api/v1/commands/model-presets/select') {
+            return jsonResponse({
+              revision,
+              event: { type: 'modelPreset.selected', revision, resource: 'preset', id: 'model-b' },
+              modelPresetId: 'model-b',
+            })
+          }
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }) as unknown as typeof fetch,
+      )
+
+      selectModelPreset(1)
+
+      await waitForState(() => expect(calls).toHaveLength(2))
+      expect(calls.map(({ method, url }) => `${method} ${url}`)).toEqual([
+        'PATCH /api/v1/commands/settings/model',
+        'POST /api/v1/commands/model-presets/select',
+      ])
+      expect(calls.map(({ body }) => body)).toEqual([
+        { baseRevision: 100, patch: { proxyRequestModel: 'proxy-a-latest' } },
+        { baseRevision: 101, modelPresetId: 'model-b' },
+      ])
+      expect(new Set(calls.map(({ mutationId }) => mutationId)).size).toBe(2)
+      expect(getDatabase().modelPresetsId).toBe(1)
+      expect(getDatabase().proxyRequestModel).toBe('proxy-b')
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('drains retained legacy settings before save-current selection applies the target preset', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-legacy-select-settings',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-legacy-select-settings',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase()
+      setCachedServerCommandRevision(200)
+      const predecessorIntent: DurableMutationIntent = {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/settings/model',
+            body: { patch: { temperature: 77 } },
+          },
+        ],
+      }
+      const predecessor = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, predecessorIntent)
+      await predecessor.ready
+
+      let revision = 200
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+          calls.push({ url, method: init.method ?? 'GET', body })
+          revision += 1
+          if (url === '/api/v1/commands/settings/model') {
+            return jsonResponse({
+              revision,
+              event: { type: 'settings.updated', revision, resource: 'settings', id: 'model' },
+            })
+          }
+          if (url === '/api/v1/commands/presets/select') {
+            return jsonResponse({
+              revision,
+              event: { type: 'preset.selected', revision, resource: 'preset', id: 'preset-b' },
+              presetId: 'preset-b',
+            })
+          }
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }) as unknown as typeof fetch,
+      )
+
+      changeToPreset(1, true)
+
+      await waitForState(() => expect(calls).toHaveLength(2))
+      expect(calls.map(({ method, url }) => `${method} ${url}`)).toEqual([
+        'PATCH /api/v1/commands/settings/model',
+        'POST /api/v1/commands/presets/select',
+      ])
+      expect(calls[1].body).toEqual({
+        baseRevision: 201,
+        presetId: 'preset-b',
+        apply: true,
+        saveCurrent: true,
+      })
+      expect(getDatabase().botPresetsId).toBe(1)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('flushes a pending prompt row edit before switching owners and preserves the edited owner', async () => {
     resetPromptTemplateHydration()
     resetPromptTemplateSelectionDirtyState()
@@ -2337,7 +2501,7 @@ describe('preset command rollback (L21)', () => {
           },
         },
         {
-          key: 'split-preset:model:model-a',
+          key: 'settings:bridge',
           request: {
             method: 'DELETE',
             path: '/model-presets/model-a',
@@ -2356,6 +2520,86 @@ describe('preset command rollback (L21)', () => {
       ])
       expect(await listPendingMutations()).toEqual([])
       expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-b'])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps a later model selection behind a retained delete so the latest target wins', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-model-delete-select',
+      writerEpoch: 5,
+      databaseLineage: 'lineage-model-delete-select',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase({
+        modelPresets: [
+          makePreset('model-a', 'Model A') as unknown as ModelPreset,
+          makePreset('model-b', 'Model B') as unknown as ModelPreset,
+          makePreset('model-c', 'Model C') as unknown as ModelPreset,
+        ],
+        modelPresetsId: 0,
+      })
+      setCachedServerCommandRevision(300)
+
+      let recover = false
+      let revision = 300
+      const calls: Array<{ method: string; url: string; body: Record<string, unknown>; mutationId: string | null }> = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          const method = init.method ?? 'GET'
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          const headers = init.headers as Record<string, string> | undefined
+          calls.push({ method, url, body, mutationId: headers?.['risu-mutation-id'] ?? null })
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          revision += 1
+          if (method === 'DELETE') {
+            return jsonResponse({
+              revision,
+              event: { type: 'modelPreset.deleted', revision, resource: 'preset', id: 'model-a' },
+              modelPresetId: 'model-a',
+              selectedModelPresetId: 'model-b',
+            })
+          }
+          return jsonResponse({
+            revision,
+            event: { type: 'modelPreset.selected', revision, resource: 'preset', id: 'model-c' },
+            modelPresetId: 'model-c',
+          })
+        }) as unknown as typeof fetch,
+      )
+
+      deleteModelPreset(0, 1)
+      selectModelPreset(1)
+
+      await waitForState(() => expect(calls).toHaveLength(2))
+      expect(calls.map(({ method, url }) => `${method} ${url}`)).toEqual([
+        'DELETE /api/v1/commands/model-presets/model-a',
+        'DELETE /api/v1/commands/model-presets/model-a',
+      ])
+      expect((await listPendingMutations()).map((entry) => entry.handle.key)).toEqual([
+        SETTINGS_BRIDGE_MUTATION_KEY,
+        SETTINGS_BRIDGE_MUTATION_KEY,
+      ])
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(calls.slice(recoveryStart).map(({ method, url }) => `${method} ${url}`)).toEqual([
+        'DELETE /api/v1/commands/model-presets/model-a',
+        'POST /api/v1/commands/model-presets/select',
+      ])
+      expect(calls.at(-1)?.body).toMatchObject({ modelPresetId: 'model-c' })
+      expect(new Set(calls.slice(recoveryStart).map(({ mutationId }) => mutationId)).size).toBe(2)
+      expect(await listPendingMutations()).toEqual([])
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -2551,7 +2795,7 @@ describe('preset command rollback (L21)', () => {
           },
         },
         {
-          key: 'prompt-template-owner:prompt-a',
+          key: 'settings:bridge',
           request: {
             method: 'DELETE',
             path: '/prompt-presets/prompt-a',
