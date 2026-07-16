@@ -812,6 +812,24 @@ describe('CharConfig remote TTS catalogs', () => {
 
     expect(target.textContent).toContain('Unable to load the TTS voice catalog.')
   })
+
+  it('keeps the TTS editor usable when an imported VOICEVOX speaker catalog is malformed', async () => {
+    await mountCharConfig(5, {
+      ttsMode: 'VOICEVOX',
+      ttsSpeech: '',
+      voicevoxConfig: {
+        speaker: 'not-json',
+        SPEED_SCALE: 1,
+        PITCH_SCALE: 0,
+        VOLUME_SCALE: 1,
+        INTONATION_SCALE: 1,
+      },
+    })
+
+    expect(target.querySelector('select[aria-label="Speaker"]')).toBeTruthy()
+    expect(target.querySelector('select[aria-label="Style"]')).toBeTruthy()
+    expect(target.querySelectorAll('select[aria-label="Style"] option')).toHaveLength(0)
+  })
 })
 
 describe('CharConfig TTS control accessible names', () => {

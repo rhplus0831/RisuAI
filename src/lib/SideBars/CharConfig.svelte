@@ -206,6 +206,23 @@
   const scriptDirtyFieldsById = new Map<string, Set<string>>()
   const triggerDirtyFieldsById = new Map<string, Set<string>>()
 
+  function voicevoxStyles(value: unknown): Array<{ id: string | number; name: string }> {
+    if (typeof value !== 'string' || value.length === 0) return []
+    try {
+      const parsed = JSON.parse(value)
+      if (!Array.isArray(parsed)) return []
+      return parsed.filter(
+        (style): style is { id: string | number; name: string } =>
+          !!style &&
+          typeof style === 'object' &&
+          (typeof style.id === 'string' || typeof style.id === 'number') &&
+          typeof style.name === 'string',
+      )
+    } catch {
+      return []
+    }
+  }
+
   onMount(() => {
     const synthesis = typeof speechSynthesis === 'undefined' ? null : speechSynthesis
     if (!synthesis) {
@@ -1746,7 +1763,7 @@
       {#if characterDraft.value.voicevoxConfig.speaker}
         <span class="text=neutral-200">Style</span>
         <SelectInput className="mb-4 mt-2" ariaLabel="Style" bind:value={characterDraft.value.ttsSpeech}>
-          {#each JSON.parse(characterDraft.value.voicevoxConfig.speaker) as styles}
+          {#each voicevoxStyles(characterDraft.value.voicevoxConfig.speaker) as styles}
             <OptionInput value={styles.id} selected={characterDraft.value.ttsSpeech === styles.id}
               >{styles.name}</OptionInput>
           {/each}
