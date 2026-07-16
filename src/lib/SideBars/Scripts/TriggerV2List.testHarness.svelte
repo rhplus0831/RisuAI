@@ -24,6 +24,10 @@
     ownerKey = nextOwnerKey
     value = nextValue
   }
+
+  export function getValue(): triggerscript[] {
+    return value
+  }
 </script>
 
 <TriggerV2List bind:value {ownerKey} />

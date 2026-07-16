@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PlusIcon, ArrowLeftIcon, DownloadIcon, UploadIcon } from '@lucide/svelte'
+  import { PlusIcon, ArrowLeftIcon, ArrowDownIcon, ArrowUpIcon, DownloadIcon, UploadIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
@@ -1820,6 +1820,11 @@
     if (isMultipleSelected() && isTriggerSelected(fromIndex)) {
       moveMultipleTriggers(toIndex)
     } else {
+      const selectedTriggers = Array.from(
+        new Set(selectedTriggerIndices.map((index) => value[index]).filter((trigger) => !!trigger)),
+      )
+      const selectedTrigger = value[selectedIndex]
+      const selectionAnchor = value[lastSelectedTriggerIndex]
       let triggers = [...value]
       const movedItem = triggers.splice(fromIndex, 1)[0]
       if (!movedItem) return
@@ -1827,16 +1832,39 @@
       const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
       triggers.splice(adjustedToIndex, 0, movedItem)
 
-      if (selectedIndex === fromIndex) {
-        selectedIndex = adjustedToIndex
-      } else if (fromIndex < selectedIndex && adjustedToIndex >= selectedIndex) {
-        selectedIndex = selectedIndex - 1
-      } else if (fromIndex > selectedIndex && adjustedToIndex <= selectedIndex) {
-        selectedIndex = selectedIndex + 1
-      }
+      selectedTriggerIndices = selectedTriggers.map((trigger) => triggers.indexOf(trigger)).filter((index) => index > 0)
+      const nextSelectedIndex = selectedTrigger ? triggers.indexOf(selectedTrigger) : -1
+      if (nextSelectedIndex >= 0) selectedIndex = nextSelectedIndex
+      const nextSelectionAnchor = selectionAnchor ? triggers.indexOf(selectionAnchor) : -1
+      lastSelectedTriggerIndex = nextSelectionAnchor > 0 ? nextSelectionAnchor : -1
 
       value = triggers
     }
+  }
+
+  const triggerMoveTarget = (index: number, direction: -1 | 1): number | null => {
+    if (isTriggerSelected(index) && selectedTriggerIndices.length > 0) {
+      const selectedIndices = Array.from(
+        new Set(selectedTriggerIndices.filter((selectedIndex) => selectedIndex > 0 && selectedIndex < value.length)),
+      ).sort((a, b) => a - b)
+      if (selectedIndices.length === 0) return null
+      if (direction === -1) return selectedIndices[0] > 1 ? selectedIndices[0] - 1 : null
+      const lastSelectedIndex = selectedIndices[selectedIndices.length - 1]
+      return lastSelectedIndex < value.length - 1 ? lastSelectedIndex + 2 : null
+    }
+
+    if (direction === -1) return index > 1 ? index - 1 : null
+    return index < value.length - 1 ? index + 2 : null
+  }
+
+  const moveTriggerOneStep = (index: number, direction: -1 | 1) => {
+    const targetIndex = triggerMoveTarget(index, direction)
+    if (targetIndex === null) return
+    moveTrigger(index, targetIndex)
+  }
+
+  const triggerDisplayName = (trigger: triggerscript | undefined, index: number): string => {
+    return trigger?.comment?.trim() || `${language.trigger} ${index}`
   }
 
   const moveMultipleTriggers = (toIndex: number) => {
@@ -2070,6 +2098,57 @@
     updateGuideLines()
   }
 
+  const effectBlockStartBefore = (index: number): number => {
+    const effects = value[selectedIndex]?.effect ?? []
+    const previousIndex = index - 1
+    if (previousIndex < 0) return -1
+    const previousEffect = effects[previousIndex] as triggerEffectV2 | undefined
+    if (previousEffect?.type !== 'v2EndIndent') return previousIndex
+
+    for (let candidateIndex = previousIndex - 1; candidateIndex >= 0; candidateIndex -= 1) {
+      const candidate = effects[candidateIndex] as triggerEffectV2 | undefined
+      if (
+        candidate?.type !== 'v2If' &&
+        candidate?.type !== 'v2IfAdvanced' &&
+        candidate?.type !== 'v2Loop' &&
+        candidate?.type !== 'v2LoopNTimes'
+      ) {
+        continue
+      }
+      if (getBlockRange(candidateIndex).end === previousIndex) return candidateIndex
+    }
+
+    return previousIndex
+  }
+
+  const effectMoveTarget = (index: number, direction: -1 | 1): number | null => {
+    const effects = value[selectedIndex]?.effect ?? []
+    const effect = effects[index] as triggerEffectV2 | undefined
+    if (!effect || effect.type === 'v2EndIndent' || effect.type === 'v2Else') return null
+
+    if (direction === -1) {
+      const targetIndex = effectBlockStartBefore(index)
+      return targetIndex >= 0 && canMoveEffect(index, targetIndex) ? targetIndex : null
+    }
+
+    const sourceRange = getBlockRange(index)
+    const nextIndex = sourceRange.end + 1
+    if (nextIndex >= effects.length) return null
+    const nextRange = getBlockRange(nextIndex)
+    const targetIndex = Math.max(nextIndex, nextRange.end) + 1
+    return canMoveEffect(index, targetIndex) ? targetIndex : null
+  }
+
+  const moveEffectOneStep = (index: number, direction: -1 | 1) => {
+    const targetIndex = effectMoveTarget(index, direction)
+    if (targetIndex === null) return
+    moveEffect(index, targetIndex)
+  }
+
+  const effectDisplayName = (effect: triggerEffect, index: number): string => {
+    return formatEffectDisplay(effect).plainText || `${language.effect} ${index + 1}`
+  }
+
   const handleEffectDrop = (targetIndex: number, e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -2081,6 +2160,7 @@
   }
 
   const handleKeydown = (e: KeyboardEvent) => {
+    if (isEditableShortcutTarget(e.target)) return
     if (e.key === 'Escape') {
       if (contextMenu) {
         contextMenu = false
@@ -2201,6 +2281,13 @@
       }
       // Deliberately omit a Delete-key shortcut; a mispress could remove a large trigger tree.
     }
+  }
+
+  const isEditableShortcutTarget = (target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) return false
+    const editable = target.closest('input, textarea, select, [contenteditable]')
+    if (!editable) return false
+    return !editable.hasAttribute('contenteditable') || editable.getAttribute('contenteditable') !== 'false'
   }
 
   const handleContextMenu = (e, mode, effectIndex = -1, effect = null) => {
@@ -2583,87 +2670,115 @@
                     }}>
                   </div>
 
-                  <button
-                    class="p-2 text-start trigger-item select-none"
-                    aria-pressed={isTriggerSelected(i) || selectedIndex === i}
-                    class:hover:cursor-grab={!isMobileScreen}
-                    class:active:cursor-grabbing={!isMobileScreen}
-                    class:text-textcolor2={!isTriggerSelected(i) && selectedIndex !== i}
-                    class:text-textcolor={isTriggerSelected(i) || selectedIndex === i}
-                    class:hover:text-textcolor={!isTriggerSelected(i) && selectedIndex !== i}
-                    class:bg-darkbg={selectedIndex === i && !isMultipleSelected()}
-                    class:bg-selected={isTriggerSelected(i)}
-                    style="user-select: none;"
-                    draggable={!isMobileScreen}
-                    ondragstart={(e) => {
-                      if (isMobileScreen) {
-                        e.preventDefault()
-                        return
-                      }
-                      isDragging = true
-                      e.dataTransfer?.setData('text', 'trigger')
-                      e.dataTransfer?.setData('triggerIndex', i.toString())
-
-                      const dragElement = document.createElement('div')
-                      if (isMultipleSelected() && isTriggerSelected(i)) {
-                        dragElement.textContent = `${selectedTriggerIndices.length} triggers selected`
-                      } else {
-                        dragElement.textContent = trigger?.comment || 'Unnamed Trigger'
-                      }
-                      dragElement.className =
-                        'absolute -top-96 -left-96 px-4 py-2 bg-darkbg text-textcolor2 rounded-sm text-sm whitespace-nowrap shadow-lg pointer-events-none z-50'
-                      document.body.appendChild(dragElement)
-                      e.dataTransfer?.setDragImage(dragElement, 10, 10)
-
-                      setTimeout(() => {
-                        document.body.removeChild(dragElement)
-                      }, 0)
-                    }}
-                    ondragend={(e) => {
-                      isDragging = false
-                      dragOverIndex = -1
-                      scrollManager.stopAutoScroll()
-                    }}
-                    ondragover={(e) => {
-                      if (!isMobileScreen) {
-                        e.preventDefault()
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const mouseY = e.clientY
-                        const elementCenter = rect.top + rect.height / 2
-
-                        if (mouseY < elementCenter) {
-                          dragOverIndex = i
-                        } else {
-                          dragOverIndex = i + 1
+                  <div class="flex items-stretch">
+                    <button
+                      class="min-w-0 flex-1 p-2 text-start trigger-item select-none"
+                      aria-pressed={isTriggerSelected(i) || selectedIndex === i}
+                      class:hover:cursor-grab={!isMobileScreen}
+                      class:active:cursor-grabbing={!isMobileScreen}
+                      class:text-textcolor2={!isTriggerSelected(i) && selectedIndex !== i}
+                      class:text-textcolor={isTriggerSelected(i) || selectedIndex === i}
+                      class:hover:text-textcolor={!isTriggerSelected(i) && selectedIndex !== i}
+                      class:bg-darkbg={selectedIndex === i && !isMultipleSelected()}
+                      class:bg-selected={isTriggerSelected(i)}
+                      style="user-select: none;"
+                      draggable={!isMobileScreen}
+                      ondragstart={(e) => {
+                        if (isMobileScreen) {
+                          e.preventDefault()
+                          return
                         }
-                      }
-                    }}
-                    ondragleave={(e) => {
-                      if (!isMobileScreen) {
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const mouseX = e.clientX
-                        const mouseY = e.clientY
+                        isDragging = true
+                        e.dataTransfer?.setData('text', 'trigger')
+                        e.dataTransfer?.setData('triggerIndex', i.toString())
 
-                        if (mouseX < rect.left || mouseX > rect.right || mouseY < rect.top || mouseY > rect.bottom) {
+                        const dragElement = document.createElement('div')
+                        if (isMultipleSelected() && isTriggerSelected(i)) {
+                          dragElement.textContent = `${selectedTriggerIndices.length} triggers selected`
+                        } else {
+                          dragElement.textContent = triggerDisplayName(trigger, i)
+                        }
+                        dragElement.className =
+                          'absolute -top-96 -left-96 px-4 py-2 bg-darkbg text-textcolor2 rounded-sm text-sm whitespace-nowrap shadow-lg pointer-events-none z-50'
+                        document.body.appendChild(dragElement)
+                        e.dataTransfer?.setDragImage(dragElement, 10, 10)
+
+                        setTimeout(() => {
+                          document.body.removeChild(dragElement)
+                        }, 0)
+                      }}
+                      ondragend={(e) => {
+                        isDragging = false
+                        dragOverIndex = -1
+                        scrollManager.stopAutoScroll()
+                      }}
+                      ondragover={(e) => {
+                        if (!isMobileScreen) {
+                          e.preventDefault()
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          const mouseY = e.clientY
+                          const elementCenter = rect.top + rect.height / 2
+
+                          if (mouseY < elementCenter) {
+                            dragOverIndex = i
+                          } else {
+                            dragOverIndex = i + 1
+                          }
+                        }
+                      }}
+                      ondragleave={(e) => {
+                        if (!isMobileScreen) {
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          const mouseX = e.clientX
+                          const mouseY = e.clientY
+
+                          if (mouseX < rect.left || mouseX > rect.right || mouseY < rect.top || mouseY > rect.bottom) {
+                            dragOverIndex = -1
+                          }
+                        }
+                      }}
+                      ondrop={(e) => {
+                        if (!isMobileScreen) {
+                          handleTriggerDrop(dragOverIndex, e)
                           dragOverIndex = -1
                         }
-                      }
-                    }}
-                    ondrop={(e) => {
-                      if (!isMobileScreen) {
-                        handleTriggerDrop(dragOverIndex, e)
-                        dragOverIndex = -1
-                      }
-                    }}
-                    onclick={(event) => {
-                      handleTriggerClick(i, event)
-                    }}
-                    oncontextmenu={(e) => {
-                      e.preventDefault()
-                      handleContextMenu(e, 0, i)
-                    }}>
-                    {trigger?.comment || 'Unnamed Trigger'}
-                  </button>
+                      }}
+                      onclick={(event) => {
+                        handleTriggerClick(i, event)
+                      }}
+                      oncontextmenu={(e) => {
+                        e.preventDefault()
+                        handleContextMenu(e, 0, i)
+                      }}>
+                      {triggerDisplayName(trigger, i)}
+                    </button>
+                    {#if isMobileScreen}
+                      <div class="flex shrink-0 items-stretch">
+                        <button
+                          type="button"
+                          class="px-2 text-textcolor2 enabled:hover:text-textcolor disabled:opacity-30"
+                          aria-label={`${language.moveUp}: ${triggerDisplayName(trigger, i)}`}
+                          disabled={triggerMoveTarget(i, -1) === null}
+                          onclick={(event) => {
+                            event.stopPropagation()
+                            moveTriggerOneStep(i, -1)
+                          }}>
+                          <ArrowUpIcon aria-hidden="true" size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          class="px-2 text-textcolor2 enabled:hover:text-textcolor disabled:opacity-30"
+                          aria-label={`${language.moveDown}: ${triggerDisplayName(trigger, i)}`}
+                          disabled={triggerMoveTarget(i, 1) === null}
+                          onclick={(event) => {
+                            event.stopPropagation()
+                            moveTriggerOneStep(i, 1)
+                          }}>
+                          <ArrowDownIcon aria-hidden="true" size={18} />
+                        </button>
+                      </div>
+                    {/if}
+                  </div>
                 {/if}
               {/each}
 
@@ -2959,43 +3074,66 @@
                   </button>
 
                   {#if effect.type !== 'v2EndIndent' && effect.type !== 'v2Else'}
-                    <div
-                      class="w-8 h-full flex items-center justify-center cursor-move opacity-30 hover:opacity-70 transition-opacity"
-                      draggable={!isMobileScreen}
-                      onclick={(e) => {
-                        e.stopPropagation()
-                      }}
-                      oncontextmenu={(e) => {
-                        e.stopPropagation()
-                        e.preventDefault()
-                      }}
-                      ondragstart={(e) => {
-                        if (isMobileScreen) {
+                    {#if isMobileScreen}
+                      <div class="flex shrink-0 items-stretch">
+                        <button
+                          type="button"
+                          class="px-2 text-textcolor2 enabled:hover:text-textcolor disabled:opacity-30"
+                          aria-label={`${language.moveUp}: ${effectDisplayName(effect, i)}`}
+                          disabled={effectMoveTarget(i, -1) === null}
+                          onclick={(event) => {
+                            event.stopPropagation()
+                            moveEffectOneStep(i, -1)
+                          }}>
+                          <ArrowUpIcon aria-hidden="true" size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          class="px-2 text-textcolor2 enabled:hover:text-textcolor disabled:opacity-30"
+                          aria-label={`${language.moveDown}: ${effectDisplayName(effect, i)}`}
+                          disabled={effectMoveTarget(i, 1) === null}
+                          onclick={(event) => {
+                            event.stopPropagation()
+                            moveEffectOneStep(i, 1)
+                          }}>
+                          <ArrowDownIcon aria-hidden="true" size={18} />
+                        </button>
+                      </div>
+                    {:else}
+                      <div
+                        class="w-8 h-full flex items-center justify-center cursor-move opacity-30 hover:opacity-70 transition-opacity"
+                        draggable="true"
+                        onclick={(e) => {
+                          e.stopPropagation()
+                        }}
+                        oncontextmenu={(e) => {
+                          e.stopPropagation()
                           e.preventDefault()
-                          return
-                        }
-                        isEffectDragging = true
-                        e.dataTransfer?.setData('text', 'effect')
-                        e.dataTransfer?.setData('effectIndex', i.toString())
+                        }}
+                        ondragstart={(e) => {
+                          isEffectDragging = true
+                          e.dataTransfer?.setData('text', 'effect')
+                          e.dataTransfer?.setData('effectIndex', i.toString())
 
-                        const dragElement = document.createElement('div')
-                        dragElement.textContent = formatEffectDisplay(effect).plainText || 'Effect'
-                        dragElement.className =
-                          'absolute -top-96 -left-96 px-4 py-2 bg-darkbg text-textcolor2 rounded-sm text-sm whitespace-nowrap shadow-lg pointer-events-none z-50'
-                        document.body.appendChild(dragElement)
-                        e.dataTransfer?.setDragImage(dragElement, 10, 10)
+                          const dragElement = document.createElement('div')
+                          dragElement.textContent = effectDisplayName(effect, i)
+                          dragElement.className =
+                            'absolute -top-96 -left-96 px-4 py-2 bg-darkbg text-textcolor2 rounded-sm text-sm whitespace-nowrap shadow-lg pointer-events-none z-50'
+                          document.body.appendChild(dragElement)
+                          e.dataTransfer?.setDragImage(dragElement, 10, 10)
 
-                        setTimeout(() => {
-                          document.body.removeChild(dragElement)
-                        }, 0)
-                      }}
-                      ondragend={(e) => {
-                        isEffectDragging = false
-                        effectDragOverIndex = -1
-                        scrollManager.stopAutoScroll()
-                      }}>
-                      <div class="text-textcolor2 text-xs select-none">⋮⋮</div>
-                    </div>
+                          setTimeout(() => {
+                            document.body.removeChild(dragElement)
+                          }, 0)
+                        }}
+                        ondragend={(e) => {
+                          isEffectDragging = false
+                          effectDragOverIndex = -1
+                          scrollManager.stopAutoScroll()
+                        }}>
+                        <div class="text-textcolor2 text-xs select-none">⋮⋮</div>
+                      </div>
+                    {/if}
                   {:else}
                     <div class="w-8 h-full flex items-center justify-center">
                       <div class="text-textcolor2 opacity-20 text-xs select-none"></div>
