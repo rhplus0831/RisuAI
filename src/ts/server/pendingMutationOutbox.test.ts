@@ -409,6 +409,7 @@ describe('pending mutation outbox', () => {
     ['DELETE', '/prompt-presets/prompt-a'],
     ['DELETE', '/prompt-items/item-a'],
     ['PATCH', '/translator-presets/translator-a'],
+    ['DELETE', '/translator-presets/translator-a'],
     ['PUT', '/chats/chat-a/generation-settings'],
     ['DELETE', '/chats/chat-a'],
     ['PATCH', '/settings/advanced/global-scripts'],

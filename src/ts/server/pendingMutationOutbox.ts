@@ -121,6 +121,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/prompt-presets\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/prompt-presets\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/translator-presets\/[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/translator-presets\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/settings\/advanced\/global-scripts$/ },
   { method: 'PUT', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },
   { method: 'PATCH', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },

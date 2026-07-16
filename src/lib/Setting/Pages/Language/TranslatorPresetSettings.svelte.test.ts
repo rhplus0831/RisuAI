@@ -30,6 +30,18 @@ const commandSpies = vi.hoisted(() => {
     updateInputs: [] as Array<{ baseRevision: number; presetId: string; patch: Record<string, unknown> }>,
     updateAcknowledgements: [] as Array<Record<string, unknown> | undefined>,
     updateTransportOptions: [] as Array<{ signal?: AbortSignal | null; keepalive?: boolean }>,
+    inlineReplayInputs: [] as Array<{
+      requests: Array<Record<string, unknown>>
+      mutationId: string
+      databaseLineage: string
+    }>,
+    replayInputs: [] as Array<{
+      requests: Array<Record<string, unknown>>
+      mutationId: string
+      databaseLineage: string
+    }>,
+    inlineReplayResults: [] as Array<Record<string, unknown>>,
+    replayResults: [] as Array<Record<string, unknown>>,
     localEffectListeners: new Set<(event: Record<string, unknown>, localEffect: Record<string, unknown>) => void>(),
     deferredCreateResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
     deferredDeleteResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
@@ -42,7 +54,25 @@ const commandSpies = vi.hoisted(() => {
     selectTranslatorPresetCommand: vi.fn(),
     updateTranslatorPresetCommand: vi.fn(),
     subscribeServerCommandLocalEffectApplied: vi.fn(),
+    acknowledgeServerMutationReceipts: vi.fn(async () => true),
+    replayDurableMutationRequests: vi.fn(),
+    replayDurableMutationRequestsInline: vi.fn(),
+    runServerCommandWithoutMutationReceipt: vi.fn(async (execute: () => Promise<unknown>) => execute()),
+    runServerCommandWithMutationReceipt: vi.fn(async (execute: () => Promise<unknown>) => execute()),
   }
+
+  spies.replayDurableMutationRequests.mockImplementation(
+    async (requests: Array<Record<string, unknown>>, mutationId: string, databaseLineage: string) => {
+      spies.replayInputs.push({ requests, mutationId, databaseLineage })
+      return spies.replayResults.shift() ?? { status: 'ok' }
+    },
+  )
+  spies.replayDurableMutationRequestsInline.mockImplementation(
+    async (requests: Array<Record<string, unknown>>, mutationId: string, databaseLineage: string) => {
+      spies.inlineReplayInputs.push({ requests, mutationId, databaseLineage })
+      return spies.inlineReplayResults.shift() ?? { status: 'ok' }
+    },
+  )
 
   spies.subscribeServerCommandLocalEffectApplied.mockImplementation(
     (listener: (event: Record<string, unknown>, localEffect: Record<string, unknown>) => void) => {
@@ -57,14 +87,20 @@ const commandSpies = vi.hoisted(() => {
       rollback?: () => void
       signal?: AbortSignal | null
       keepalive?: boolean
+      executionWrapper?: (execute: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>
     }) => {
       spies.runInputs.push({ rollback: input.rollback, signal: input.signal, keepalive: input.keepalive })
-      const result = (await input.command(spies.nextBaseRevision++)) as { status?: string }
-      if (result.status !== 'ok') {
-        if (spies.skipNextRollback) spies.skipNextRollback = false
-        else input.rollback?.()
+      const execute = async () => {
+        const result = (await input.command(spies.nextBaseRevision++)) as Record<string, unknown> & {
+          status?: string
+        }
+        if (result.status !== 'ok') {
+          if (spies.skipNextRollback) spies.skipNextRollback = false
+          else input.rollback?.()
+        }
+        return result
       }
-      return result
+      return input.executionWrapper ? input.executionWrapper(execute) : execute()
     },
   )
   spies.updateTranslatorPresetCommand.mockImplementation(
@@ -188,10 +224,15 @@ const commandSpies = vi.hoisted(() => {
 })
 
 vi.mock('src/ts/server/commands', () => ({
+  acknowledgeServerMutationReceipts: commandSpies.acknowledgeServerMutationReceipts,
   canUseServerCommands: commandSpies.canUseServerCommands,
   createTranslatorPresetCommand: commandSpies.createTranslatorPresetCommand,
   deleteTranslatorPresetCommand: commandSpies.deleteTranslatorPresetCommand,
   runServerCommand: commandSpies.runServerCommand,
+  replayDurableMutationRequests: commandSpies.replayDurableMutationRequests,
+  replayDurableMutationRequestsInline: commandSpies.replayDurableMutationRequestsInline,
+  runServerCommandWithoutMutationReceipt: commandSpies.runServerCommandWithoutMutationReceipt,
+  runServerCommandWithMutationReceipt: commandSpies.runServerCommandWithMutationReceipt,
   selectTranslatorPresetCommand: commandSpies.selectTranslatorPresetCommand,
   subscribeServerCommandLocalEffectApplied: commandSpies.subscribeServerCommandLocalEffectApplied,
   updateTranslatorPresetCommand: commandSpies.updateTranslatorPresetCommand,
@@ -246,11 +287,13 @@ import {
 } from 'src/ts/server/resourceWriteGuard.svelte'
 import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
 import {
+  beginPendingMutationDispatch,
   clearPendingMutationOutbox,
   listPendingMutations,
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
 } from 'src/ts/server/pendingMutationOutbox'
+import { dispatchDurableMutationReplay } from 'src/ts/server/durableMutationDispatch'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -470,6 +513,10 @@ beforeEach(() => {
   commandSpies.updateInputs.length = 0
   commandSpies.updateAcknowledgements.length = 0
   commandSpies.updateTransportOptions.length = 0
+  commandSpies.inlineReplayInputs.length = 0
+  commandSpies.replayInputs.length = 0
+  commandSpies.inlineReplayResults.length = 0
+  commandSpies.replayResults.length = 0
   commandSpies.localEffectListeners.clear()
   commandSpies.deferredCreateResults.length = 0
   commandSpies.deferredDeleteResults.length = 0
@@ -482,6 +529,11 @@ beforeEach(() => {
   commandSpies.selectTranslatorPresetCommand.mockClear()
   commandSpies.updateTranslatorPresetCommand.mockClear()
   commandSpies.subscribeServerCommandLocalEffectApplied.mockClear()
+  commandSpies.acknowledgeServerMutationReceipts.mockClear()
+  commandSpies.replayDurableMutationRequests.mockClear()
+  commandSpies.replayDurableMutationRequestsInline.mockClear()
+  commandSpies.runServerCommandWithoutMutationReceipt.mockClear()
+  commandSpies.runServerCommandWithMutationReceipt.mockClear()
   vi.mocked(alertConfirm).mockClear()
   vi.mocked(alertInput).mockClear()
 
@@ -561,7 +613,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     })
   })
 
-  it('persists the exact translator preset PATCH at edit time and discards it on a net revert', async () => {
+  it('persists the exact translator preset PATCH and immediately closes a total revert', async () => {
     vi.useRealTimers()
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -590,8 +642,16 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       })
 
       await editPrompt('old prompt A')
+      await vi.waitFor(() => {
+        expect(commandSpies.updateInputs).toEqual([
+          {
+            baseRevision: 100,
+            presetId: 'preset-a',
+            patch: { prompt: 'old prompt A' },
+          },
+        ])
+      })
       await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
-      expect(commandSpies.updateInputs).toEqual([])
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -599,19 +659,139 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     }
   })
 
-  it('drops a pending field patch when rapid edits return to the first baseline', async () => {
+  it('keeps a remotely marked PATCH ahead of an immediate total-revert correction', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-total-revert',
+      writerEpoch: 6,
+      databaseLineage: 'lineage-translator-total-revert',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.inlineReplayResults.push({ status: 'error', error: 'predecessor still offline' })
+
+    try {
+      await editPrompt('marked prompt A')
+      let staged = await listPendingMutations()
+      await vi.waitFor(async () => {
+        staged = await listPendingMutations()
+        expect(staged).toHaveLength(1)
+      })
+      await expect(beginPendingMutationDispatch(staged[0].handle)).resolves.toBe('persisted')
+
+      await editPrompt('old prompt A')
+      await vi.waitFor(async () => {
+        staged = await listPendingMutations()
+        expect(staged.map((entry) => entry.intent)).toEqual([
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/translator-presets/preset-a',
+                body: { patch: { prompt: 'marked prompt A' } },
+              },
+            ],
+          },
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/translator-presets/preset-a',
+                body: { patch: { prompt: 'old prompt A' } },
+              },
+            ],
+          },
+        ])
+      })
+      expect(staged[0].handle.mutationId).not.toBe(staged[1].handle.mutationId)
+      await vi.waitFor(() => expect(commandSpies.inlineReplayInputs).toHaveLength(1))
+      expect(commandSpies.updateInputs).toEqual([])
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
+  it('keeps reverted and net-dirty fields in the successor behind a remotely marked PATCH', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-partial-revert',
+      writerEpoch: 7,
+      databaseLineage: 'lineage-translator-partial-revert',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.inlineReplayResults.push({ status: 'error', error: 'predecessor still offline' })
+
+    try {
+      await editPrompt('marked prompt A')
+      let staged = await listPendingMutations()
+      await vi.waitFor(async () => {
+        staged = await listPendingMutations()
+        expect(staged).toHaveLength(1)
+      })
+      await expect(beginPendingMutationDispatch(staged[0].handle)).resolves.toBe('persisted')
+
+      await editMaxResponse(321)
+      await editPrompt('old prompt A')
+      await vi.waitFor(async () => {
+        staged = await listPendingMutations()
+        expect(staged).toHaveLength(2)
+        expect(staged[1].intent).toEqual({
+          version: 1,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/translator-presets/preset-a',
+              body: { patch: { prompt: 'old prompt A', maxResponse: 321 } },
+            },
+          ],
+        })
+      })
+      expect(staged[0].handle.mutationId).not.toBe(staged[1].handle.mutationId)
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
+  it('immediately sends a baseline correction when rapid edits return to the first baseline', async () => {
     await editPrompt('temporary prompt A')
     await editPrompt('old prompt A')
+    await flushMicrotasks()
 
     expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'old prompt A' },
+      },
+    ])
 
     await vi.advanceTimersByTimeAsync(250)
 
-    expect(commandSpies.updateInputs).toHaveLength(0)
+    expect(commandSpies.updateInputs).toHaveLength(1)
   })
 
-  it('keeps disjoint pending fields while omitting a field that returns to its baseline', async () => {
+  it('keeps the reverted field in the absolute closure while a disjoint field remains dirty', async () => {
     await editPrompt('temporary prompt A')
     await editMaxResponse(321)
     await editPrompt('old prompt A')
@@ -622,7 +802,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       {
         baseRevision: 100,
         presetId: 'preset-a',
-        patch: { maxResponse: 321 },
+        patch: { prompt: 'old prompt A', maxResponse: 321 },
       },
     ])
     expect(getDatabase().translatorPresets[0]).toMatchObject({
@@ -745,7 +925,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
   })
 
-  it('keeps an unsettled field dirty when a later batch net-reverts to its attempted value', async () => {
+  it('keeps an unsettled target closed when a later staged batch returns to that value', async () => {
     commandSpies.deferNextUpdate = true
 
     await editPrompt('unsettled prompt A')
@@ -764,7 +944,18 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await failDeferredCommand(commandSpies.deferredUpdateResults, 'forced update failure')
     await vi.advanceTimersByTimeAsync(250)
 
-    expect(commandSpies.updateInputs).toHaveLength(1)
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'unsettled prompt A' },
+      },
+      {
+        baseRevision: 101,
+        presetId: 'preset-a',
+        patch: { prompt: 'unsettled prompt A' },
+      },
+    ])
     expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
   })
@@ -1178,6 +1369,158 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorPresetId).toBe(1)
     expect(getDatabase().translatorPrompt).toBe('old prompt B')
     expect(getDatabase().translatorMaxResponse).toBe(200)
+  })
+
+  it('retains PATCH then DELETE order after a transient predecessor and restores the latest optimistic row', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-delete',
+      writerEpoch: 8,
+      databaseLineage: 'lineage-translator-delete',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.failNextUpdate = true
+    commandSpies.inlineReplayResults.push({ status: 'error', error: 'PATCH predecessor still offline' })
+
+    try {
+      await editPrompt('latest optimistic prompt A')
+      await clickDeletePreset()
+
+      await vi.waitFor(async () => {
+        expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/translator-presets/preset-a',
+                body: { patch: { prompt: 'latest optimistic prompt A' } },
+              },
+            ],
+          },
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'DELETE',
+                path: '/translator-presets/preset-a',
+                body: { selectPresetId: 'preset-b' },
+              },
+            ],
+          },
+        ])
+      })
+      expect(commandSpies.deleteInputs).toEqual([])
+      expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+      expect(getDatabase().translatorPresets[0].prompt).toBe('latest optimistic prompt A')
+      expect(getDatabase().translatorPrompt).toBe('latest optimistic prompt A')
+
+      const retained = await listPendingMutations()
+      for (const entry of retained) {
+        await expect(dispatchDurableMutationReplay(entry.handle, entry.intent)).resolves.toMatchObject({
+          disposition: 'succeeded',
+        })
+      }
+
+      expect(commandSpies.replayInputs.map(({ requests }) => requests[0])).toEqual([
+        {
+          method: 'PATCH',
+          path: '/translator-presets/preset-a',
+          body: { patch: { prompt: 'latest optimistic prompt A' } },
+        },
+        {
+          method: 'DELETE',
+          path: '/translator-presets/preset-a',
+          body: { selectPresetId: 'preset-b' },
+        },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
+  it('restores and reasserts the pre-flush optimistic row when PATCH retry succeeds but DELETE fails', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-delete-rollback',
+      writerEpoch: 9,
+      databaseLineage: 'lineage-translator-delete-rollback',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.failNextUpdate = true
+    commandSpies.failNextDelete = true
+
+    try {
+      await editPrompt('pre-flush optimistic prompt A')
+      await clickDeletePreset()
+
+      await vi.waitFor(() => {
+        expect(commandSpies.deleteInputs).toEqual([
+          { baseRevision: 101, presetId: 'preset-a', selectPresetId: 'preset-b' },
+        ])
+      })
+      expect(commandSpies.inlineReplayInputs.map(({ requests }) => requests[0])).toEqual([
+        {
+          method: 'PATCH',
+          path: '/translator-presets/preset-a',
+          body: { patch: { prompt: 'pre-flush optimistic prompt A' } },
+        },
+      ])
+      expect(getDatabase().translatorPresets[0]).toMatchObject({
+        id: 'preset-a',
+        prompt: 'pre-flush optimistic prompt A',
+      })
+      expect(getDatabase().translatorPrompt).toBe('pre-flush optimistic prompt A')
+
+      await applyTranslatorPresetProjection({
+        presets: [
+          { id: 'preset-a', name: 'Preset A', prompt: 'old prompt A', maxResponse: 100 },
+          { id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 },
+        ],
+        selectedIndex: 0,
+      })
+      expect(getDatabase().translatorPresets[0].prompt).toBe('pre-flush optimistic prompt A')
+      expect(getDatabase().translatorPrompt).toBe('pre-flush optimistic prompt A')
+
+      const retainedDelete = await listPendingMutations()
+      expect(retainedDelete.map((entry) => entry.intent)).toEqual([
+        {
+          version: 1,
+          requests: [
+            {
+              method: 'DELETE',
+              path: '/translator-presets/preset-a',
+              body: { selectPresetId: 'preset-b' },
+            },
+          ],
+        },
+      ])
+      await expect(
+        dispatchDurableMutationReplay(retainedDelete[0].handle, retainedDelete[0].intent),
+      ).resolves.toMatchObject({ disposition: 'succeeded' })
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
   })
 
   it('preserves newer row edits and appended rows when a deferred delete command fails', async () => {

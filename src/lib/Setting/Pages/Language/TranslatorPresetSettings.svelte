@@ -70,6 +70,7 @@
     patch: TranslatorPresetSnapshot
     previous: TranslatorPresetSnapshot
     attempted: TranslatorPresetSnapshot
+    durableAttempted: TranslatorPresetSnapshot
     collectionProjectionEpoch: number
     languageSettingsProjectionEpoch: number
     selectedPresetId: string | null
@@ -252,6 +253,10 @@
     pendingTranslatorPresetUpdates.delete(presetId)
     translatorPresetDirtyFieldsById.delete(presetId)
     translatorPresetRollbackBaselinesById.delete(presetId)
+  }
+
+  function translatorPresetMutationKey(presetId: string): string {
+    return `translator-preset:${presetId}`
   }
 
   function translatorPresetRollbackInsertionIndex(
@@ -840,7 +845,10 @@
     })
   }
 
-  function applyOptimisticTranslatorPresetDelete(presetId: string): TranslatorPresetDeleteAttempt | null {
+  function applyOptimisticTranslatorPresetDelete(
+    presetId: string,
+    latestOptimisticPreset?: TranslatorPreset,
+  ): TranslatorPresetDeleteAttempt | null {
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
     confirmedSelectedTranslatorPresetId()
     let attempt: TranslatorPresetDeleteAttempt | null = null
@@ -851,7 +859,12 @@
       const selectedPresetId = presets[getDatabase().translatorPresetId]?.id
       if (previousIndex === -1 || presets.length <= 1 || selectedPresetId !== presetId) return
 
-      const deletedPreset = cloneJsonValue(presets[previousIndex])
+      const currentPreset = presets[previousIndex]
+      const deletedPreset = cloneJsonValue(
+        latestOptimisticPreset && isCanonicalTranslatorPreset(latestOptimisticPreset, presetId)
+          ? latestOptimisticPreset
+          : currentPreset,
+      )
       if (!deletedPreset.id) return
       const nextPresets = [...presets]
       nextPresets.splice(previousIndex, 1)
@@ -897,6 +910,14 @@
       return
     }
 
+    const authoritativePreset = hasCollectionProjectionEpochChanged(
+      'translatorPresets',
+      attempt.collectionProjectionEpoch,
+    )
+      ? confirmedTranslatorPresetCollection?.find((preset) => preset.id === attempt.deletedPreset.id)
+      : undefined
+    const restoredPreset = cloneJsonValue(authoritativePreset ?? attempt.deletedPreset)
+
     withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
       const selectedPreset = presets[getDatabase().translatorPresetId]
@@ -904,17 +925,11 @@
       const selectedProjectionMatchesAttempt = selectedPresetId === attempt.attemptedSelectedPreset.id
 
       const nextPresets = [...presets]
-      const authoritativePreset = hasCollectionProjectionEpochChanged(
-        'translatorPresets',
-        attempt.collectionProjectionEpoch,
-      )
-        ? confirmedTranslatorPresetCollection?.find((preset) => preset.id === attempt.deletedPreset.id)
-        : undefined
       if (!nextPresets.some((preset) => preset.id === attempt.deletedPreset.id)) {
         nextPresets.splice(
           translatorPresetRollbackInsertionIndex(nextPresets, attempt),
           0,
-          cloneJsonValue(authoritativePreset ?? attempt.deletedPreset),
+          cloneJsonValue(restoredPreset),
         )
       }
 
@@ -942,6 +957,18 @@
       getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? 0 : confirmedSelectedPresetIndex
       syncCurrentTranslatorPreset()
     })
+    if (!authoritativePreset) {
+      const confirmedPreset = confirmedTranslatorPresetCollection?.find((preset) => preset.id === restoredPreset.id)
+      if (confirmedPreset) {
+        const restoredDirtyPatch: TranslatorPresetSnapshot = {}
+        for (const field of translatorPresetDirtyFieldNames) {
+          if (snapshotJson(confirmedPreset[field]) !== snapshotJson(restoredPreset[field])) {
+            restoredDirtyPatch[field] = cloneJsonValue(restoredPreset[field]) as never
+          }
+        }
+        markTranslatorPresetDirtyFields(restoredPreset.id!, restoredDirtyPatch)
+      }
+    }
     reassertPendingTranslatorPresetStructuralMutations()
   }
 
@@ -961,10 +988,47 @@
     )
   }
 
-  function deleteTranslatorPresetOptimistically(presetId: string): void {
-    const attempt = applyOptimisticTranslatorPresetDelete(presetId)
+  function translatorPresetDeleteDurableIntent(
+    presetId: string,
+    selectPresetId: string | undefined,
+  ): DurableMutationIntent {
+    return {
+      version: 1,
+      requests: [
+        {
+          method: 'DELETE',
+          path: `/translator-presets/${encodeURIComponent(presetId)}`,
+          body: selectPresetId ? { selectPresetId } : {},
+        },
+      ],
+    }
+  }
+
+  function dispatchDurableDeleteTranslatorPreset(
+    presetId: string,
+    selectPresetId: string | undefined,
+    rollback: () => void,
+  ): Promise<ServerCommandResult> {
+    const intent = translatorPresetDeleteDurableIntent(presetId, selectPresetId)
+    const outbox = stagePendingMutation(translatorPresetMutationKey(presetId), intent)
+    return dispatchDurableMutation(outbox, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          deleteTranslatorPresetCommand({
+            baseRevision,
+            presetId,
+            selectPresetId,
+          }),
+        rollback,
+        ...transport,
+      }),
+    )
+  }
+
+  function deleteTranslatorPresetOptimistically(presetId: string, latestOptimisticPreset?: TranslatorPreset): void {
+    const attempt = applyOptimisticTranslatorPresetDelete(presetId, latestOptimisticPreset)
     if (!attempt) return
-    void dispatchDeleteTranslatorPreset(presetId, attempt.attemptedSelectedPreset.id, () =>
+    void dispatchDurableDeleteTranslatorPreset(presetId, attempt.attemptedSelectedPreset.id, () =>
       rollbackOptimisticTranslatorPresetDelete(attempt),
     ).then((result) => {
       if (result.status !== 'ok') {
@@ -997,6 +1061,13 @@
     const commandFields = translatorPresetPatchDirtyFields(commandPatch)
     if (!commandIntent || !commandOutbox || commandFields.length === 0) {
       if (commandOutbox) void acknowledgePendingMutation(commandOutbox)
+      return Promise.resolve({ status: 'unavailable' })
+    }
+    const currentPreset = currentTranslatorPresetById(commandPresetId)
+    if (!currentPreset || !isCanonicalTranslatorPreset(currentPreset, commandPresetId)) {
+      void acknowledgePendingMutation(commandOutbox)
+      translatorPresetDirtyFieldsById.delete(commandPresetId)
+      translatorPresetRollbackBaselinesById.delete(commandPresetId)
       return Promise.resolve({ status: 'unavailable' })
     }
     const optimisticAcknowledgement = translatorPresetPatchOptimisticAcknowledgement(pending)
@@ -1067,6 +1138,7 @@
       patch: {},
       previous: {},
       attempted: {},
+      durableAttempted: {},
       collectionProjectionEpoch: captureCollectionProjectionEpoch('translatorPresets'),
       languageSettingsProjectionEpoch: captureSettingsGroupProjectionEpoch('language'),
       selectedPresetId: selectedTranslatorPresetId(),
@@ -1074,9 +1146,21 @@
       outbox: null,
     }
     const previousPreset = translatorPresetFromSnapshot(previous, presetId)
+    const currentPreset = currentTranslatorPresetById(presetId)
+    if (
+      !previousPreset ||
+      !currentPreset ||
+      !isCanonicalTranslatorPreset(previousPreset, presetId) ||
+      !isCanonicalTranslatorPreset(currentPreset, presetId) ||
+      !isValidTranslatorPresetPatch(patch)
+    ) {
+      cancelPendingTranslatorPresetUpdates(presetId)
+      return
+    }
     const pendingPatch = pending.patch as Record<string, unknown>
     const pendingPrevious = pending.previous as Record<string, unknown>
     const pendingAttempted = pending.attempted as Record<string, unknown>
+    const pendingDurableAttempted = pending.durableAttempted as Record<string, unknown>
     let rollbackBaselines = translatorPresetRollbackBaselinesById.get(presetId)
 
     for (const field of translatorPresetPatchDirtyFields(patch)) {
@@ -1089,21 +1173,32 @@
       }
       if (!(field in pendingPrevious)) {
         pendingPrevious[field] = cloneJsonValue(previousPreset?.[field])
+        if (pending.outbox && !(field in pendingDurableAttempted)) {
+          pendingDurableAttempted[field] = cloneJsonValue(previousPreset?.[field])
+        }
       }
 
       const attemptedValue = cloneJsonValue(patch[field])
+      pendingAttempted[field] = attemptedValue
       if (snapshotJson(attemptedValue) === snapshotJson(pendingPrevious[field])) {
-        delete pendingPatch[field]
-        delete pendingPrevious[field]
-        delete pendingAttempted[field]
         if (!isTranslatorPresetFieldUnsettled(presetId, field)) {
           clearTranslatorPresetDirtyFieldsMatchingValues(presetId, { [field]: attemptedValue }, [field])
         }
-        continue
       }
+    }
 
-      pendingPatch[field] = attemptedValue
-      pendingAttempted[field] = attemptedValue
+    const netChangedFields = changedTranslatorPresetPatchFields(pending.previous, pending.attempted)
+    const changedFromDurableFields = pending.outbox
+      ? changedTranslatorPresetPatchFields(pending.durableAttempted, pending.attempted)
+      : new Set<TranslatorPresetDirtyField>()
+    const closureFields = new Set<TranslatorPresetDirtyField>([
+      ...translatorPresetPatchDirtyFields(pending.patch),
+      ...netChangedFields,
+      ...changedFromDurableFields,
+    ])
+    for (const field of translatorPresetDirtyFieldNames) {
+      if (closureFields.has(field)) pendingPatch[field] = cloneJsonValue(pendingAttempted[field])
+      else delete pendingPatch[field]
     }
 
     if (pending.timer) clearTimeout(pending.timer)
@@ -1117,12 +1212,55 @@
     }
 
     pending.intent = translatorPresetUpdateDurableIntent(presetId, pending.patch)
-    pending.outbox = stagePendingMutation(`translator-preset:${presetId}`, pending.intent, pending.outbox)
+    pending.outbox = stagePendingMutation(translatorPresetMutationKey(presetId), pending.intent, pending.outbox)
+    pending.durableAttempted = cloneJsonValue(pending.attempted)
 
     pendingTranslatorPresetUpdates.set(presetId, pending)
+    if (netChangedFields.size === 0 && changedFromDurableFields.size > 0) {
+      void dispatchPendingTranslatorPresetUpdate(pending)
+      return
+    }
     pending.timer = setTimeout(() => {
       void dispatchPendingTranslatorPresetUpdate(pending)
     }, translatorPresetUpdateDelayMs)
+  }
+
+  function changedTranslatorPresetPatchFields(
+    left: TranslatorPresetSnapshot,
+    right: TranslatorPresetSnapshot,
+  ): Set<TranslatorPresetDirtyField> {
+    const changed = new Set<TranslatorPresetDirtyField>()
+    for (const field of translatorPresetDirtyFieldNames) {
+      const leftPresent = Object.prototype.hasOwnProperty.call(left, field)
+      const rightPresent = Object.prototype.hasOwnProperty.call(right, field)
+      if (leftPresent !== rightPresent || snapshotJson(left[field]) !== snapshotJson(right[field])) {
+        changed.add(field)
+      }
+    }
+    return changed
+  }
+
+  function isCanonicalTranslatorPreset(preset: TranslatorPreset, presetId: string): boolean {
+    return (
+      preset.id === presetId &&
+      presetId.trim().length > 0 &&
+      typeof preset.name === 'string' &&
+      typeof preset.prompt === 'string' &&
+      typeof preset.maxResponse === 'number' &&
+      Number.isFinite(preset.maxResponse)
+    )
+  }
+
+  function isValidTranslatorPresetPatch(patch: TranslatorPresetSnapshot): boolean {
+    const fields = translatorPresetPatchDirtyFields(patch)
+    return (
+      fields.length > 0 &&
+      fields.length === Object.keys(patch).length &&
+      fields.every((field) => {
+        const value = patch[field]
+        return field === 'maxResponse' ? typeof value === 'number' && Number.isFinite(value) : typeof value === 'string'
+      })
+    )
   }
 
   function translatorPresetUpdateDurableIntent(
@@ -1292,11 +1430,12 @@
 
       if (!confirmed) return
 
+      const presetId = preset.id
+      const latestOptimisticPreset = presetId ? cloneJsonValue(currentTranslatorPresetById(presetId) ?? preset) : null
       await flushPendingTranslatorPresetUpdates()
       if (!canUseServerCommands()) {
         normalizeTranslatorPresets()
       }
-      const presetId = preset.id
       if (!canUseServerCommands()) {
         getDatabase().translatorPresetId = 0
         presets.splice(id, 1)
@@ -1307,7 +1446,7 @@
           dispatchDeleteTranslatorPreset(presetId, selectPresetId)
         }
       } else {
-        if (presetId) deleteTranslatorPresetOptimistically(presetId)
+        if (presetId) deleteTranslatorPresetOptimistically(presetId, latestOptimisticPreset ?? undefined)
       }
     }}>
     <TrashIcon size={24} />
