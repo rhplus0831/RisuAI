@@ -1170,6 +1170,106 @@ describe('module command projection helpers', () => {
     })
   })
 
+  it('preserves concurrently updated split-owned fields when rebasing a stale parent draft', () => {
+    const baseline = {
+      id: 'mod-a',
+      name: 'Module A',
+      lorebook: [{ id: 'lore-original', content: 'original lore' }],
+      regex: [{ id: 'regex-original', in: 'original regex' }],
+      trigger: [{ id: 'trigger-original', comment: 'original trigger' }],
+      mcp: { type: 'stdio', command: 'original-command' },
+    } as any
+    const draft = {
+      ...baseline,
+      name: 'Locally renamed',
+      lorebook: [{ id: 'lore-stale', content: 'stale lore' }],
+      regex: [{ id: 'regex-stale', in: 'stale regex' }],
+      trigger: [{ id: 'trigger-stale', comment: 'stale trigger' }],
+      mcp: { type: 'stdio', command: 'stale-command' },
+    } as any
+    const latest = {
+      ...baseline,
+      lorebook: [{ id: 'lore-latest', content: 'latest lore' }],
+      regex: [{ id: 'regex-latest', in: 'latest regex' }],
+      trigger: [{ id: 'trigger-latest', comment: 'latest trigger' }],
+      mcp: { type: 'stdio', command: 'latest-command' },
+    } as any
+
+    expect(rebaseModuleDraftOntoLatest(baseline, draft, latest)).toEqual({
+      ...latest,
+      name: 'Locally renamed',
+    })
+  })
+
+  it('does not resurrect rolled-back split-owned edits when rebasing the parent draft', () => {
+    const baseline = {
+      id: 'mod-a',
+      name: 'Module A',
+    } as any
+    const draft = {
+      ...baseline,
+      name: 'Locally renamed',
+      lorebook: [{ id: 'lore-rolled-back', content: 'rolled-back lore edit' }],
+      regex: [{ id: 'regex-rolled-back', in: 'rolled-back regex edit' }],
+      trigger: [{ id: 'trigger-rolled-back', comment: 'rolled-back trigger edit' }],
+      mcp: { type: 'stdio', command: 'rolled-back-command' },
+    } as any
+    const latestAfterRollback = { ...baseline }
+
+    expect(rebaseModuleDraftOntoLatest(baseline, draft, latestAfterRollback)).toEqual({
+      ...baseline,
+      name: 'Locally renamed',
+    })
+  })
+
+  it('optimistically applies only the sanitized parent patch from a stale full-module save', async () => {
+    const calls = stubCommandFetch()
+    const latestSplitFields = {
+      lorebook: [{ id: 'lore-latest', content: 'latest lore' }],
+      regex: [{ id: 'regex-latest', in: 'latest regex' }],
+      trigger: [{ id: 'trigger-latest', comment: 'latest trigger' }],
+      mcp: { type: 'stdio', command: 'latest-command' },
+    }
+    getDatabase().modules[0] = {
+      id: 'mod-a',
+      name: 'Module A',
+      description: 'Current description',
+      ...latestSplitFields,
+    } as any
+    setResourceWriteGuardEnabled(true)
+
+    const resultPromise = updateGlobalModule('mod-a', {
+      id: 'mod-a',
+      name: 'Locally renamed',
+      description: 'Current description',
+      lorebook: [{ id: 'lore-stale', content: 'stale lore' }],
+      regex: [{ id: 'regex-stale', in: 'stale regex' }],
+      trigger: [{ id: 'trigger-stale', comment: 'stale trigger' }],
+      mcp: { type: 'stdio', command: 'stale-command' },
+    } as any)
+
+    expect(getDatabase().modules[0]).toMatchObject({
+      name: 'Locally renamed',
+      ...latestSplitFields,
+    })
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/modules/mod-a',
+      method: 'PATCH',
+      authHeader: 'module-command-token',
+      body: {
+        baseRevision: 10,
+        patch: { name: 'Locally renamed' },
+      },
+    })
+    await expect(resultPromise).resolves.toMatchObject({ status: 'ok' })
+    expect(getDatabase().modules[0]).toMatchObject({
+      name: 'Locally renamed',
+      ...latestSplitFields,
+    })
+  })
+
   it('optimistically applies global module create and rolls back on command failure', async () => {
     const calls = stubFailingCommandFetch()
     setResourceWriteGuardEnabled(true)

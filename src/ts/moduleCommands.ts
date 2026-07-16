@@ -250,7 +250,7 @@ function moduleDraftTopLevelPatch(baseline: RisuModule, draft: RisuModule): Modu
   const keys = new Set([...Object.keys(baselineRecord), ...Object.keys(draftRecord)])
 
   for (const key of keys) {
-    if (key === 'id') continue
+    if (MODULE_PATCH_EXCLUDED_KEYS.has(key)) continue
 
     const baselineHasKey = hasOwnRecordKey(baselineRecord, key)
     const draftHasKey = hasOwnRecordKey(draftRecord, key)
@@ -271,7 +271,8 @@ function moduleDraftTopLevelPatch(baseline: RisuModule, draft: RisuModule): Modu
 /**
  * Rebase an editor draft onto the newest projected module without treating
  * untouched baseline fields as user edits. Changes within the same top-level
- * field remain last-writer-wins, matching the server's sparse module patch.
+ * parent-owned field remain last-writer-wins, matching the server's sparse
+ * module patch. Split-owned fields always stay on their newest projection.
  */
 export function rebaseModuleDraftOntoLatest(baseline: RisuModule, draft: RisuModule, latest: RisuModule): RisuModule {
   const patch = moduleDraftTopLevelPatch(baseline, draft)
@@ -679,17 +680,11 @@ export async function createGlobalModule(module: RisuModule): Promise<ServerComm
 export async function updateGlobalModule(moduleId: string, module: RisuModule): Promise<ServerCommandResult | null> {
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
-    const nextModule = cloneJsonValue(module)
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const index = getDatabase().modules.findIndex((candidate) => candidate.id === moduleId)
-      if (index !== -1) {
-        getDatabase().modules[index] = nextModule
-        applied = true
-      }
-    })
+    const moduleSnapshot = toModuleSnapshot(module)
+    const commandPatch = changedModulePatch(moduleId, moduleSnapshot, previous, { complete: true })
+    const applied = applyOptimisticGlobalModulePatch(moduleId, commandPatch)
     if (applied) reloadGuiAfterDefinitionChange()
-    return dispatchUpdateModule(moduleId, toModuleSnapshot(module), previous)
+    return dispatchUpdateModule(moduleId, moduleSnapshot, previous)
   }
 
   const index = getDatabase().modules.findIndex((candidate) => candidate.id === moduleId)
@@ -698,6 +693,27 @@ export async function updateGlobalModule(moduleId: string, module: RisuModule): 
     reloadGuiAfterDefinitionChange()
   }
   return null
+}
+
+function applyOptimisticGlobalModulePatch(moduleId: string, patch: ModuleSnapshot): boolean {
+  if (Object.keys(patch).length === 0) return false
+
+  return withTrustedResourceWrite(() => {
+    const modules = getDatabase().modules
+    const index = modules.findIndex((candidate) => candidate.id === moduleId)
+    if (index === -1) return false
+    const nextModule = cloneJsonValue(modules[index]) as RisuModule & Record<string, unknown>
+
+    for (const [field, value] of Object.entries(patch)) {
+      if (value === null && MODULE_PATCH_DELETABLE_KEYS.has(field)) {
+        delete nextModule[field]
+      } else {
+        nextModule[field] = cloneJsonValue(value)
+      }
+    }
+    modules[index] = nextModule
+    return true
+  })
 }
 
 export function deleteGlobalModule(moduleId: string): void {
