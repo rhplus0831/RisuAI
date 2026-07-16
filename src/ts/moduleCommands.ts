@@ -387,15 +387,33 @@ export function dispatchCreateModule(
   const moduleSnapshot = toModuleSnapshot(module)
   const rollbackEntry = moduleCreateRollbackEntry(moduleSnapshot as RisuModule)
   const operation = issueGlobalModuleOperation([rollbackEntry])
-  return runModuleCommand(
-    async (baseRevision) => {
-      const result = await createModuleCommand({ baseRevision, module: moduleSnapshot }, undefined, true)
-      if (result.status === 'ok') {
-        clearGlobalModuleOperation(operation)
-      }
-      return result
-    },
-    () => rollbackGlobalModuleEntries([rollbackEntry], operation),
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: '/modules',
+        body: { module: cloneJsonValue(moduleSnapshot) },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(moduleOwnerMutationKey(module.id), intent)
+  return dispatchDurableMutation(outbox, intent, (transport) =>
+    runModuleCommand(
+      async (baseRevision) => {
+        const result = await createModuleCommand(
+          { baseRevision, module: cloneJsonValue(moduleSnapshot) },
+          transport.signal,
+          true,
+        )
+        if (result.status === 'ok') {
+          clearGlobalModuleOperation(operation)
+        }
+        return result
+      },
+      () => rollbackGlobalModuleEntries([rollbackEntry], operation),
+      transport,
+    ),
   )
 }
 
@@ -410,19 +428,37 @@ export function dispatchUpdateModule(
   applyModuleDeletionSentinelsOptimistically(moduleId, commandPatch)
   const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
   const operation = rollbackEntries.length > 0 ? issueGlobalModuleOperation(rollbackEntries) : null
-  return runModuleCommand(
-    async (baseRevision) => {
-      const result = await updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }, undefined, true)
-      if (operation && result.status === 'ok') {
-        clearGlobalModuleOperation(operation)
-      }
-      return result
-    },
-    () => {
-      if (operation) {
-        rollbackGlobalModuleEntries(rollbackEntries, operation)
-      }
-    },
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/modules/${encodeURIComponent(moduleId)}`,
+        body: { patch: cloneJsonValue(commandPatch) },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(moduleOwnerMutationKey(moduleId), intent)
+  return dispatchDurableMutation(outbox, intent, (transport) =>
+    runModuleCommand(
+      async (baseRevision) => {
+        const result = await updateModuleCommand(
+          { baseRevision, moduleId, patch: cloneJsonValue(commandPatch) },
+          transport.signal,
+          true,
+        )
+        if (operation && result.status === 'ok') {
+          clearGlobalModuleOperation(operation)
+        }
+        return result
+      },
+      () => {
+        if (operation) {
+          rollbackGlobalModuleEntries(rollbackEntries, operation)
+        }
+      },
+      transport,
+    ),
   )
 }
 

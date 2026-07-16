@@ -151,6 +151,8 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/translator-presets\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/translator-presets\/[^/?#]+$/ },
   { method: 'POST', path: /^\/translator-presets\/select$/ },
+  { method: 'POST', path: /^\/modules$/ },
+  { method: 'PATCH', path: /^\/modules\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/modules\/[^/?#]+$/ },
   { method: 'POST', path: /^\/modules\/enable$/ },
   { method: 'PATCH', path: /^\/settings\/advanced\/global-scripts$/ },

@@ -500,6 +500,147 @@ describe('module command projection helpers', () => {
     ])
   })
 
+  it('keeps a new module edit behind its transient durable create', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-module-create-update',
+      writerEpoch: 9,
+      databaseLineage: 'lineage-module-create-update',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(20)
+    setResourceWriteGuardEnabled(true)
+
+    const firstCreate = createDeferred<Response>()
+    let recover = false
+    let revision = 20
+    const commands: Array<{ method: string; url: string }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const method = init.method ?? 'GET'
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/modules' && method === 'POST') {
+          commands.push({ method, url })
+          if (commands.length === 1) return firstCreate.promise
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: { type: 'module.created', revision, resource: 'module', id: 'mod-new' },
+            moduleId: 'mod-new',
+          })
+        }
+        if (url === '/api/v1/commands/modules/mod-new' && method === 'PATCH') {
+          commands.push({ method, url })
+          if (!recover) throw new Error('module update overtook retained create')
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: { type: 'module.updated', revision, resource: 'module', id: 'mod-new' },
+            moduleId: 'mod-new',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${method} ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const createResult = createGlobalModule({ id: 'mod-new', name: 'New Module', description: '' })
+      await vi.waitFor(() => expect(commands).toHaveLength(1))
+      const updateResult = updateGlobalModule('mod-new', {
+        id: 'mod-new',
+        name: 'Edited before create recovered',
+        description: '',
+      })
+      firstCreate.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
+
+      await expect(createResult).resolves.toMatchObject({ status: 'error' })
+      await expect(updateResult).resolves.toMatchObject({ status: 'unavailable' })
+      expect(commands.map(({ method }) => method)).toEqual(['POST', 'POST'])
+      expect(
+        (await listPendingMutations()).map((entry) => ({
+          key: entry.handle.key,
+          method: entry.intent.requests[0]?.method,
+        })),
+      ).toEqual([
+        { key: 'module-owner:mod-new', method: 'POST' },
+        { key: 'module-owner:mod-new', method: 'PATCH' },
+      ])
+
+      recover = true
+      const recoveryStart = commands.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(commands.slice(recoveryStart)).toEqual([
+        { method: 'POST', url: '/api/v1/commands/modules' },
+        { method: 'PATCH', url: '/api/v1/commands/modules/mod-new' },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      firstCreate.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('does not let a restored module metadata save overtake its retained delete', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-module-delete-update',
+      writerEpoch: 10,
+      databaseLineage: 'lineage-module-delete-update',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(30)
+    setResourceWriteGuardEnabled(true)
+
+    const deleteIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'DELETE', path: '/modules/mod-a', body: {} }],
+    }
+    const retainedDelete = stagePendingMutation('module-owner:mod-a', deleteIntent)
+    await expect(retainedDelete.ready).resolves.toBe('persisted')
+
+    const commands: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const method = init.method ?? 'GET'
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/modules/mod-a' && method === 'DELETE') {
+          commands.push(method)
+          return jsonResponse({ error: 'temporarily unavailable' }, 500)
+        }
+        if (method === 'PATCH') throw new Error('metadata save overtook retained module delete')
+        return jsonResponse({ error: `unexpected ${method} ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(
+        updateGlobalModule('mod-a', { id: 'mod-a', name: 'Restored edit', description: '' }),
+      ).resolves.toMatchObject({ status: 'unavailable' })
+      expect(commands).toEqual(['DELETE'])
+      expect(
+        (await listPendingMutations()).map((entry) => ({
+          key: entry.handle.key,
+          method: entry.intent.requests[0]?.method,
+        })),
+      ).toEqual([
+        { key: 'module-owner:mod-a', method: 'DELETE' },
+        { key: 'module-owner:mod-a', method: 'PATCH' },
+      ])
+      expect(getDatabase().modules.find((module) => module.id === 'mod-a')?.name).toBe('Module A')
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('keeps a newer global enable behind a retained module delete', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -550,6 +691,7 @@ describe('module command projection helpers', () => {
         }
         if (url === '/api/v1/commands/modules/enable' && method === 'POST') {
           commands.push({ method, mutationId: headers?.['risu-mutation-id'] ?? null })
+          if (recover) return jsonResponse({ error: 'module no longer exists' }, 404)
           revision += 1
           return jsonResponse({
             revision,
@@ -579,10 +721,10 @@ describe('module command projection helpers', () => {
           { key: 'module-owner:mod-a', method: 'POST', path: '/modules/enable' },
         ])
       })
-      expect(getDatabase().enabledModules).toEqual(['mod-a'])
+      expect(getDatabase().enabledModules).toEqual([])
 
       recover = true
-      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1, discarded: 1 })
       expect(commands.map(({ method }) => method)).toEqual(['DELETE', 'DELETE', 'POST'])
       expect(commands.every(({ mutationId }) => mutationId !== null)).toBe(true)
       expect(await listPendingMutations()).toEqual([])
