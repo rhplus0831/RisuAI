@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
+import { IDBFactory } from 'fake-indexeddb'
 
 vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'persona-command-token',
@@ -15,6 +16,11 @@ import {
 import { serializePersonaCollectionDigestInput, serializePersonaProfileDigestInput } from './personaMutationCertificate'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
+import {
+  clearPendingMutationOutbox,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from './server/pendingMutationOutbox'
 import {
   applyCollectionsResource,
   applySettingsResource,
@@ -397,6 +403,66 @@ describe('persona ID read and command preparation', () => {
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body))).toMatchObject({
       patch: { personaPrompt: 'Draft before pagehide' },
     })
+  })
+
+  it('stages the exact persona PATCH and binds the request to its durable database lineage', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona',
+      writerEpoch: 3,
+      databaseLineage: 'lineage-persona',
+      requestedWriterWasActive: true,
+    })
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-durable',
+          name: 'Durable Persona',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+        }),
+      ],
+      0,
+    )
+    const previous = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('personaPrompt', 'Crash-safe prompt')
+    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 1 })
+      if (url === '/api/v1/commands/personas/persona-durable') {
+        return jsonResponse({
+          revision: 2,
+          event: { type: 'persona.updated', revision: 2, resource: 'persona', id: 'persona-durable' },
+          personaId: 'persona-durable',
+          acknowledgedKeys: ['personaPrompt'],
+          legacyProfileProjectionApplied: true,
+        })
+      }
+      if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    })
+
+    try {
+      await expect(flushPendingSelectedPersonaUpdate()).resolves.toMatchObject({ status: 'ok' })
+
+      const commandCall = vi
+        .mocked(fetch)
+        .mock.calls.find(([input]) => String(input) === '/api/v1/commands/personas/persona-durable')
+      const headers = commandCall?.[1]?.headers as Record<string, string>
+      expect(headers['risu-mutation-id']).toMatch(/^[a-zA-Z0-9._:-]+$/)
+      expect(headers['risu-database-lineage']).toBe('lineage-persona')
+      expect(JSON.parse(String(commandCall?.[1]?.body))).toEqual({
+        baseRevision: 1,
+        patch: { personaPrompt: 'Crash-safe prompt' },
+        mirrorLegacyProfile: true,
+      })
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('enqueues a debounced persona PATCH before a structural selection', async () => {

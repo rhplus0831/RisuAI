@@ -23,6 +23,13 @@ import {
   type ServerCommandTransportOptions,
 } from './server/commands'
 import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRegistry'
+import { dispatchDurableMutation } from './server/durableMutationDispatch'
+import {
+  acknowledgePendingMutation,
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from './server/pendingMutationOutbox'
 import { subscribeServerCommandLocalEffectApplied } from './server/commandLocalEffectEvents'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
@@ -90,6 +97,8 @@ const pendingPersonaUpdate = {
   patch: null as PersonaSnapshot | null,
   collectionProjectionEpoch: null as number | null,
   settingsProjectionEpoch: null as number | null,
+  intent: null as DurableMutationIntent | null,
+  outbox: null as PendingMutationHandle | null,
   promise: null as Promise<ServerCommandResult<{ personaId: string }> | null> | null,
 }
 
@@ -999,6 +1008,9 @@ function clearPendingSelectedPersonaUpdate(): void {
   pendingPersonaUpdate.patch = null
   pendingPersonaUpdate.collectionProjectionEpoch = null
   pendingPersonaUpdate.settingsProjectionEpoch = null
+  pendingPersonaUpdate.intent = null
+  if (pendingPersonaUpdate.outbox) void acknowledgePendingMutation(pendingPersonaUpdate.outbox)
+  pendingPersonaUpdate.outbox = null
 }
 
 interface PersonaCommandAcknowledgementTaintScope {
@@ -1155,6 +1167,13 @@ export function queueSelectedPersonaUpdate(previous: PersonaStateSnapshot, attem
     clearPendingSelectedPersonaUpdate()
     return
   }
+  const intent = selectedPersonaUpdateDurableIntent(personaId, pendingPersonaUpdate.patch)
+  pendingPersonaUpdate.intent = intent
+  pendingPersonaUpdate.outbox = stagePendingMutation(
+    `persona-profile:${personaId}`,
+    intent,
+    pendingPersonaUpdate.outbox,
+  )
   pendingPersonaUpdate.timer = setTimeout(() => {
     void flushPendingSelectedPersonaUpdate()
   }, 250)
@@ -1167,6 +1186,8 @@ function takePendingSelectedPersonaUpdate(): {
   attempted: PersonaStateSnapshot | null
   collectionProjectionEpoch: number | null
   settingsProjectionEpoch: number | null
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
 } | null {
   if (pendingPersonaUpdate.timer) {
     clearTimeout(pendingPersonaUpdate.timer)
@@ -1178,6 +1199,8 @@ function takePendingSelectedPersonaUpdate(): {
   const attempted = pendingPersonaUpdate.attempted
   const collectionProjectionEpoch = pendingPersonaUpdate.collectionProjectionEpoch
   const settingsProjectionEpoch = pendingPersonaUpdate.settingsProjectionEpoch
+  const intent = pendingPersonaUpdate.intent
+  const outbox = pendingPersonaUpdate.outbox
 
   pendingPersonaUpdate.timer = null
   pendingPersonaUpdate.previous = null
@@ -1186,9 +1209,23 @@ function takePendingSelectedPersonaUpdate(): {
   pendingPersonaUpdate.patch = null
   pendingPersonaUpdate.collectionProjectionEpoch = null
   pendingPersonaUpdate.settingsProjectionEpoch = null
+  pendingPersonaUpdate.intent = null
+  pendingPersonaUpdate.outbox = null
 
-  if (!personaId || !patch) return null
-  return { personaId, patch, previous, attempted, collectionProjectionEpoch, settingsProjectionEpoch }
+  if (!personaId || !patch || !intent || !outbox) {
+    if (outbox) void acknowledgePendingMutation(outbox)
+    return null
+  }
+  return {
+    personaId,
+    patch,
+    previous,
+    attempted,
+    collectionProjectionEpoch,
+    settingsProjectionEpoch,
+    intent,
+    outbox,
+  }
 }
 
 export function flushPendingSelectedPersonaUpdate(
@@ -1216,30 +1253,33 @@ export function flushPendingSelectedPersonaUpdate(
   // older command. Enqueue it synchronously so a structural persona action in
   // the same task cannot overtake the debounced row update and force a digest
   // mismatch followed by an authoritative collection/settings read.
-  const next = runServerCommand({
-    command: (baseRevision) =>
-      updatePersonaCommand(
-        {
-          baseRevision,
+  const next = dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        updatePersonaCommand(
+          {
+            baseRevision,
+            personaId: pending.personaId,
+            patch: pending.patch,
+            mirrorLegacyProfile: true,
+            optimisticAcknowledgement,
+          },
+          options.signal,
+          options.keepalive,
+        ),
+      rollback: personaCommandRollback({ personas: true, settings: true }, () => {
+        if (!pending.previous || !pending.attempted) return
+        applyPersonaProfileCommandRollback({
           personaId: pending.personaId,
-          patch: pending.patch,
-          mirrorLegacyProfile: true,
-          optimisticAcknowledgement,
-        },
-        options.signal,
-        options.keepalive,
-      ),
-    rollback: personaCommandRollback({ personas: true, settings: true }, () => {
-      if (!pending.previous || !pending.attempted) return
-      applyPersonaProfileCommandRollback({
-        personaId: pending.personaId,
-        previous: pending.previous,
-        attempted: pending.attempted,
-        rowKeys: personaRowRollbackKeysForPatch(pending.patch),
-      })
+          previous: pending.previous,
+          attempted: pending.attempted,
+          rowKeys: personaRowRollbackKeysForPatch(pending.patch),
+        })
+      }),
+      ...options,
+      ...transport,
     }),
-    ...options,
-  }).finally(() => {
+  ).finally(() => {
     if (pendingPersonaUpdate.promise === next) {
       pendingPersonaUpdate.promise = null
     }
@@ -1247,6 +1287,22 @@ export function flushPendingSelectedPersonaUpdate(
 
   pendingPersonaUpdate.promise = next
   return next
+}
+
+function selectedPersonaUpdateDurableIntent(personaId: string, patch: PersonaSnapshot): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/personas/${encodeURIComponent(personaId)}`,
+        body: {
+          patch: cloneJsonValue(patch),
+          mirrorLegacyProfile: true,
+        },
+      },
+    ],
+  }
 }
 
 registerPendingBridgePatchFlusher('selected-persona-profile', (options) => {
