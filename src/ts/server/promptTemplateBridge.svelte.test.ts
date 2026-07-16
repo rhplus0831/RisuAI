@@ -1695,6 +1695,22 @@ describe('flushPendingPromptTemplatePatches', () => {
 
       expect(commandMocks.updatePromptPresetCommand).toHaveBeenCalledTimes(1)
       expect(commandMocks.updatePromptItemCommand).not.toHaveBeenCalled()
+      const syncedIds = presetSyncArgs.patch.promptTemplate.map((item) => item.id)
+      const successorStage = durableState.stages.find(({ key }) => key === `prompt-item:preset-a:${syncedIds[1]}`)
+      expect(successorStage?.intent).toEqual({
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: `/prompt-items/${syncedIds[1]}`,
+            body: {
+              promptPresetId: 'preset-a',
+              patch: { text: 'row B dirty' },
+            },
+          },
+        ],
+      })
+      expect(durableState.dispatches.map(({ handle }) => handle)).toEqual([idSyncStage?.handle])
 
       const syncedProjection = cloneJsonValue(presetSyncArgs.patch.promptTemplate)
       getResourceDatabase().promptPresets[0].promptTemplate = cloneJsonValue(syncedProjection) as never
@@ -1704,7 +1720,6 @@ describe('flushPendingPromptTemplatePatches', () => {
       await vi.advanceTimersByTimeAsync(250)
       await flushMicrotasks()
 
-      const syncedIds = presetSyncArgs.patch.promptTemplate.map((item) => item.id)
       expect(
         commandMocks.updatePromptItemCommand.mock.calls.map(([args]) => (args as { itemId: string }).itemId),
       ).toEqual([syncedIds[1]])
@@ -1723,6 +1738,118 @@ describe('flushPendingPromptTemplatePatches', () => {
       expect((getResourceDatabase().promptPresets[0].promptTemplate as PromptItem[])[1]).toMatchObject({
         text: 'row B dirty',
       })
+      expect(durableState.dispatches.map(({ handle }) => handle)).toEqual([idSyncStage?.handle, successorStage?.handle])
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('lifecycle flush dispatches a staged id-sync successor once and after its prerequisite', async () => {
+    hydrationState.setOwner('preset-a')
+    let resolvePresetSync: ((value: { kind: string } & Record<string, unknown>) => void) | null = null
+    commandMocks.updatePromptPresetCommand.mockImplementationOnce(
+      (args: Record<string, unknown>) =>
+        new Promise<{ kind: string } & Record<string, unknown>>((resolve) => {
+          resolvePresetSync = () => resolve({ kind: 'updatePromptPreset', ...args })
+        }),
+    )
+    resourceDatabase.current = {
+      promptSettings: { ...minimalPromptSettings },
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          promptTemplate: [
+            promptItemFixture({
+              type: 'plain',
+              type2: 'normal',
+              role: 'system',
+              text: 'server old',
+              name: 'Preset row',
+            }),
+          ],
+        },
+      ],
+      promptTemplate: [
+        promptItemFixture({
+          type: 'plain',
+          type2: 'normal',
+          role: 'system',
+          text: 'server old',
+          name: 'Preset row',
+        }),
+      ],
+    }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, altKey: true }))
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      await editPromptSettingsTextarea(target, 'first edit')
+      await flushMicrotasks()
+      const presetSyncArgs = commandMocks.updatePromptPresetCommand.mock.calls[0][0] as {
+        patch: { promptTemplate: Array<{ id?: string; text?: string }> }
+      }
+      const itemId = presetSyncArgs.patch.promptTemplate[0].id!
+      const prerequisite = durableState.stages.find(({ key }) => key === 'prompt-template-id-sync:preset-a')
+
+      await editPromptSettingsTextarea(target, 'latest before pagehide')
+      await flushMicrotasks()
+      const successor = durableState.stages.find(({ key }) => key === `prompt-item:preset-a:${itemId}`)
+      expect(successor?.intent).toEqual({
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: `/prompt-items/${itemId}`,
+            body: {
+              promptPresetId: 'preset-a',
+              patch: { text: 'latest before pagehide' },
+            },
+          },
+        ],
+      })
+      expect(durableState.dispatches.map(({ handle }) => handle)).toEqual([prerequisite?.handle])
+
+      flushPendingPromptTemplatePatches({ keepalive: true })
+      await flushMicrotasks()
+
+      expect(durableState.dispatches.map(({ handle }) => handle)).toEqual([prerequisite?.handle, successor?.handle])
+      expect(commandMocks.updatePromptItemCommand).toHaveBeenCalledTimes(1)
+      expect(commandState.commands[0]).toMatchObject({
+        built: {
+          kind: 'updatePromptItem',
+          itemId,
+          patch: { text: 'latest before pagehide' },
+        },
+        keepalive: true,
+      })
+
+      const syncedProjection = cloneJsonValue(presetSyncArgs.patch.promptTemplate)
+      getResourceDatabase().promptPresets[0].promptTemplate = cloneJsonValue(syncedProjection) as never
+      getResourceDatabase().promptTemplate = cloneJsonValue(syncedProjection) as never
+      resolvePresetSync?.({ kind: 'updatePromptPreset', ...presetSyncArgs })
+      await flushMicrotasks()
+      await vi.advanceTimersByTimeAsync(250)
+      await flushMicrotasks()
+
+      expect(commandMocks.updatePromptItemCommand).toHaveBeenCalledTimes(1)
+      expect(durableState.dispatches).toHaveLength(2)
     } finally {
       if (component) await unmount(component)
       target.remove()
@@ -2261,7 +2388,8 @@ describe('prompt settings draft dispatch contracts', () => {
     expect(source).toContain('queuePromptPresetTemplateIdServerSync(ownerId)')
     expect(source).toContain('syncSelectedPromptPresetItemProjection(itemId, promptItem)')
     expect(source).toContain('syncSelectedPromptPresetItemProjection(itemId, currentItem)')
-    expect(source).toContain('queueRowPatch(capturePromptTemplateOwnerMutationFence(ownerId))')
+    expect(source).toContain('queueRowPatch(projectionFence, null)')
+    expect(source).toContain('armPendingPromptItemProjectionUpdate(')
     expect(source).toContain('queuePromptItemProjectionUpdate(')
     expect(source).toContain('syncSelectedPromptPresetTemplateProjection(templates)')
     expect(source).toContain('promptPresetId: promptTemplateOwnerCommandId(ownerId)')

@@ -26,6 +26,7 @@
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import {
+    armPendingPromptItemProjectionUpdate,
     dropPendingPromptSettingsProjectionPatchKeys,
     capturePromptItemOptimisticAcknowledgement,
     capturePromptTemplateOwnerMutationFence,
@@ -485,20 +486,26 @@
     const projectionFence = capturePromptTemplateOwnerMutationFence(ownerId)
     const itemId = ensurePromptItemDraftId(promptItem, previousItem, originalIndex, ownerId)
     syncSelectedPromptPresetItemProjection(itemId, promptItem)
-    const queueRowPatch = (writeFence = projectionFence) =>
-      queuePromptItemProjectionUpdate(promptTemplateDraftBinding, itemId, previousItem, 250, ownerId, writeFence)
+    const queueRowPatch = (writeFence = projectionFence, delayMs: number | null = 250) =>
+      queuePromptItemProjectionUpdate(promptTemplateDraftBinding, itemId, previousItem, delayMs, ownerId, writeFence)
     const attemptedItemSnapshot = snapshotJson(promptItem)
     const templateIdSync = queuePromptPresetTemplateIdServerSync(ownerId)
     if (!templateIdSync) {
       queueRowPatch()
       return
     }
+    const changedAfterIdSync = templateIdSync.itemSnapshots.get(itemId) !== attemptedItemSnapshot
+    if (changedAfterIdSync) {
+      // Persist the successor before the prerequisite whole-preset repair
+      // settles. Its network timer is armed only after that repair succeeds;
+      // lifecycle flushes may safely enqueue it behind the already-queued repair.
+      queueRowPatch(projectionFence, null)
+    }
     void templateIdSync.completion.then((synced) => {
-      if (synced && templateIdSync.itemSnapshots.get(itemId) !== attemptedItemSnapshot) {
-        const currentItem = promptTemplateDraft.value.find((item) => item.id === itemId)
-        if (currentItem) syncSelectedPromptPresetItemProjection(itemId, currentItem)
-        queueRowPatch(capturePromptTemplateOwnerMutationFence(ownerId))
-      }
+      if (!synced || !changedAfterIdSync) return
+      const currentItem = promptTemplateDraft.value.find((item) => item.id === itemId)
+      if (currentItem) syncSelectedPromptPresetItemProjection(itemId, currentItem)
+      armPendingPromptItemProjectionUpdate(itemId, 250, ownerId, capturePromptTemplateOwnerMutationFence(ownerId))
     })
   }
 

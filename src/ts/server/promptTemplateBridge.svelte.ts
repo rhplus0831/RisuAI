@@ -359,7 +359,7 @@ export function queuePromptItemProjectionUpdate(
   binding: PromptTemplateDraftBinding,
   itemId: string,
   previousItem: PromptItem,
-  delayMs = 250,
+  delayMs: number | null = 250,
   promptPresetId: string | null = currentPromptTemplateOwnerId(),
   projectionFence?: PromptTemplateOwnerMutationFence,
 ): void {
@@ -395,8 +395,26 @@ export function queuePromptItemProjectionUpdate(
     intent,
     outbox: stagePendingMutation(`prompt-item:${promptPresetId ?? '__legacy__'}:${itemId}`, intent, existing?.outbox),
   }
-  pending.timer = setTimeout(() => runPendingPromptItemUpdate(pendingKey), delayMs)
+  if (delayMs !== null) {
+    pending.timer = setTimeout(() => runPendingPromptItemUpdate(pendingKey), delayMs)
+  }
   pendingPromptItemUpdates.set(pendingKey, pending)
+}
+
+/** Arm an already-durable row update after its prerequisite owner mutation settles. */
+export function armPendingPromptItemProjectionUpdate(
+  itemId: string,
+  delayMs = 250,
+  promptPresetId: string | null = currentPromptTemplateOwnerId(),
+  projectionFence?: PromptTemplateOwnerMutationFence,
+): boolean {
+  const pendingKey = promptItemStateKey(promptPresetId, itemId)
+  const pending = pendingPromptItemUpdates.get(pendingKey)
+  if (!pending) return false
+  if (pending.timer) clearTimeout(pending.timer)
+  if (projectionFence?.ownerId === promptPresetId) pending.projectionFence = projectionFence
+  pending.timer = setTimeout(() => runPendingPromptItemUpdate(pendingKey), delayMs)
+  return true
 }
 
 export function queuePromptSettingsProjectionPatch(patch: SettingsPatch, previous: SettingsPatch, delayMs = 250): void {
