@@ -621,8 +621,21 @@ function splitPresetPatchKey(kind: SplitPresetKind, presetId: string): string {
   return `${kind}:${presetId}`
 }
 
-function splitPresetMutationKey(kind: SplitPresetKind, presetId: string): string {
+export function splitPresetMutationKey(kind: SplitPresetKind, presetId: string): string {
   return kind === 'prompt' ? promptTemplateOwnerMutationKey(presetId) : `split-preset:model:${presetId}`
+}
+
+function splitPresetMutationDependencyKeys(
+  kind: SplitPresetKind,
+  ...presetIds: Array<string | null | undefined>
+): string[] {
+  return Array.from(
+    new Set(
+      presetIds
+        .filter((presetId): presetId is string => typeof presetId === 'string' && presetId.trim() !== '')
+        .map((presetId) => splitPresetMutationKey(kind, presetId)),
+    ),
+  )
 }
 
 function cloneSplitPresetPatchFieldAttempt(field: SplitPresetPatchFieldAttempt): SplitPresetPatchFieldAttempt {
@@ -4588,7 +4601,12 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
     flushRegisteredPendingBridgePatch('settings', {})
     const deleteIntent: DurableMutationIntent = {
       version: 1,
-      dependencyKeys: [splitPresetMutationKey('model', modelPresetId)],
+      dependencyKeys: splitPresetMutationDependencyKeys(
+        'model',
+        previousSelectedId,
+        modelPresetId,
+        selectModelPresetId,
+      ),
       requests: [
         {
           method: 'DELETE',
@@ -4644,7 +4662,7 @@ export function selectModelPreset(id: number) {
       flushRegisteredPendingBridgePatch('settings', {})
       const selectionIntent: DurableMutationIntent = {
         version: 1,
-        dependencyKeys: [splitPresetMutationKey('model', modelPresetId)],
+        dependencyKeys: splitPresetMutationDependencyKeys('model', previousSelectedId, modelPresetId),
         requests: [
           {
             method: 'POST',
@@ -4890,7 +4908,12 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
     flushRegisteredPendingBridgePatch('settings', {})
     const deleteIntent: DurableMutationIntent = {
       version: 1,
-      dependencyKeys: [promptTemplateOwnerMutationKey(promptPresetId)],
+      dependencyKeys: splitPresetMutationDependencyKeys(
+        'prompt',
+        previousSelectedId,
+        promptPresetId,
+        selectPromptPresetId,
+      ),
       requests: [
         {
           method: 'DELETE',
@@ -4951,7 +4974,7 @@ export function selectPromptPreset(id: number) {
       flushRegisteredPendingBridgePatch('settings', {})
       const selectionIntent: DurableMutationIntent = {
         version: 1,
-        dependencyKeys: [promptTemplateOwnerMutationKey(promptPresetId)],
+        dependencyKeys: splitPresetMutationDependencyKeys('prompt', previousSelectedId, promptPresetId),
         requests: [
           {
             method: 'POST',

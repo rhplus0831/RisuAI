@@ -2426,6 +2426,139 @@ describe('preset command rollback (L21)', () => {
     }
   })
 
+  it('retains prompt selection behind a transient flushed edit from the outgoing owner', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-prompt-select-owner-order',
+      writerEpoch: 5,
+      databaseLineage: 'lineage-prompt-select-owner-order',
+      requestedWriterWasActive: true,
+    })
+    resetPromptTemplateHydration()
+    resetPromptTemplateSelectionDirtyState()
+
+    try {
+      const promptA = makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset
+      const promptB = makePreset('prompt-b', 'Prompt B') as unknown as PromptPreset
+      const previousItem = clonePlain(promptA.promptTemplate[0])
+      let draftItems = clonePlain(promptA.promptTemplate)
+      ;(draftItems[0] as { text?: string }).text = 'Prompt A retained edit'
+      seedPresetDatabase({
+        promptPresets: [promptA, promptB],
+        promptPresetsId: 0,
+        promptTemplate: clonePlain(promptA.promptTemplate),
+      })
+      markPromptTemplateProjectionApplied('prompt-a', 100)
+      setCachedServerCommandRevision(100)
+
+      let recover = false
+      let revision = 100
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+          calls.push({ url, method: init.method ?? 'GET', body })
+          if (url === '/api/v1/commands/prompt-items/prompt-a-prompt') {
+            if (!recover) return jsonResponse({ error: 'prompt row temporarily unavailable' }, 500)
+            revision += 1
+            return jsonResponse({
+              revision,
+              event: {
+                type: 'prompt.item.updated',
+                revision,
+                resource: 'promptItem',
+                id: 'prompt-a-prompt',
+                parentId: 'prompt-a',
+              },
+              itemId: 'prompt-a-prompt',
+            })
+          }
+          if (url === '/api/v1/commands/prompt-presets/select') {
+            revision += 1
+            return jsonResponse({
+              revision,
+              event: {
+                type: 'promptPreset.selected',
+                revision,
+                resource: 'preset',
+                id: 'prompt-b',
+              },
+              promptPresetId: 'prompt-b',
+            })
+          }
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }) as unknown as typeof fetch,
+      )
+
+      queuePromptItemProjectionUpdate(
+        {
+          getItems: () => draftItems,
+          setItems: (items) => {
+            draftItems = items
+          },
+        },
+        'prompt-a-prompt',
+        previousItem,
+        60_000,
+        'prompt-a',
+      )
+      selectPromptPreset(1)
+
+      await waitForState(() => {
+        expect(calls.filter((call) => call.url.includes('/prompt-items/'))).toHaveLength(2)
+      })
+      expect(calls.some((call) => call.url === '/api/v1/commands/prompt-presets/select')).toBe(false)
+      expect((await listPendingMutations()).map((entry) => ({ key: entry.handle.key, intent: entry.intent }))).toEqual([
+        {
+          key: 'prompt-template-owner:prompt-a',
+          intent: {
+            version: 1,
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/prompt-items/prompt-a-prompt',
+                body: { promptPresetId: 'prompt-a', patch: { text: 'Prompt A retained edit' } },
+              },
+            ],
+          },
+        },
+        {
+          key: SETTINGS_BRIDGE_MUTATION_KEY,
+          intent: {
+            version: 1,
+            dependencyKeys: ['prompt-template-owner:prompt-a', 'prompt-template-owner:prompt-b'],
+            requests: [
+              {
+                method: 'POST',
+                path: '/prompt-presets/select',
+                body: { promptPresetId: 'prompt-b' },
+              },
+            ],
+          },
+        },
+      ])
+      expect(getDatabase().promptPresetsId).toBe(0)
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(calls.slice(recoveryStart).map(({ method, url }) => `${method} ${url}`)).toEqual([
+        'PATCH /api/v1/commands/prompt-items/prompt-a-prompt',
+        'POST /api/v1/commands/prompt-presets/select',
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      resetPromptTemplateSelectionDirtyState()
+      resetPromptTemplateHydration()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('keeps model-preset DELETE behind a transient row PATCH and replays both in order', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
