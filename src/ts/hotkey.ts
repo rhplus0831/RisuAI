@@ -7,6 +7,7 @@ import {
   doingAlert,
   alertRequestLogs,
   cardExportCancelMessage,
+  resolveAlertConfirmation,
 } from './alert'
 import { getDatabase, selectModelPreset, type Database } from './storage/database.svelte'
 import {
@@ -37,6 +38,39 @@ export function initHotkey() {
   const handleHotkeyKeydown = async (ev: KeyboardEvent): Promise<void> => {
     if (ev.defaultPrevented) return
     if (!ev.ctrlKey && !ev.altKey && !ev.shiftKey && isEditableHotkeyTarget(ev)) {
+      return
+    }
+
+    const activeAlert = get(alertStore)
+    if (activeAlert.type !== 'none' && activeAlert.type !== 'toast') {
+      if (ev.key === 'Escape') {
+        if (activeAlert.type === 'ask' || activeAlert.type === 'pluginconfirm') {
+          resolveAlertConfirmation(activeAlert.dialogOwner, false)
+        } else if (activeAlert.type === 'cardexport') {
+          alertStore.set({ type: 'none', msg: cardExportCancelMessage() })
+        } else if (!['wait', 'wait2', 'progress', 'login', 'tos'].includes(activeAlert.type)) {
+          alertStore.set({ type: 'none', msg: '' })
+        }
+        ev.preventDefault()
+        ev.stopPropagation()
+        return
+      }
+
+      if (ev.key === 'Enter') {
+        const target = ev.target
+        if (target instanceof Element && target.closest('[data-modal-root] button')) return
+
+        if (activeAlert.type === 'ask' || activeAlert.type === 'pluginconfirm') {
+          resolveAlertConfirmation(activeAlert.dialogOwner, true)
+        } else if (activeAlert.type === 'normal' || activeAlert.type === 'error') {
+          alertStore.set({ type: 'none', msg: 'yes' })
+        }
+      }
+
+      // A modal owns keyboard input. Modifier shortcuts must not navigate or
+      // mutate the inert page behind it.
+      ev.preventDefault()
+      ev.stopPropagation()
       return
     }
 
@@ -242,26 +276,10 @@ export function initHotkey() {
       }
     }
     if (ev.key === 'Escape') {
-      if (doingAlert()) {
-        if (get(alertStore).type === 'cardexport') {
-          alertStore.set({ type: 'none', msg: cardExportCancelMessage() })
-        } else {
-          alertToast('Alert Closed')
-        }
-      }
       if (get(settingsOpen)) {
         closeSettingsRoute()
       }
       ev.preventDefault()
-    }
-    if (ev.key === 'Enter') {
-      const alertType = get(alertStore).type
-      if (alertType === 'ask' || alertType === 'normal' || alertType === 'error') {
-        alertStore.set({
-          type: 'none',
-          msg: 'yes',
-        })
-      }
     }
   }
 

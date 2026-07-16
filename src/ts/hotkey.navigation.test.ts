@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 const hotkeyNavigationMocks = vi.hoisted(() => ({
   closeSettingsRoute: vi.fn(),
@@ -18,7 +19,8 @@ vi.mock('./process/modules', async (importActual) => {
 })
 
 import { initHotkey } from './hotkey'
-import { PlaygroundStore, selectedCharID, settingsOpen } from './stores.svelte'
+import { alertConfirm, alertPluginConfirm, cardExportCancelMessage } from './alert'
+import { alertStore, PlaygroundStore, selectedCharID, settingsOpen } from './stores.svelte'
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
 
 async function press(key: string, options: KeyboardEventInit = {}): Promise<KeyboardEvent> {
@@ -42,12 +44,14 @@ beforeEach(() => {
   hotkeyNavigationMocks.navigate.mockReset()
   hotkeyNavigationMocks.openSettingsRoute.mockReset()
   settingsOpen.set(false)
+  alertStore.set({ type: 'none', msg: '' })
   selectedCharID.set(-1)
   PlaygroundStore.set(0)
   testDatabaseState.db = {
     hotkeys: [
       { action: 'settings', ctrl: true, key: 's' },
       { action: 'home', ctrl: true, key: 'h' },
+      { action: 'send', ctrl: true, alt: true, key: 'Enter' },
     ],
   }
 })
@@ -81,6 +85,69 @@ describe('global hotkey route ownership', () => {
 
     expect(event.defaultPrevented).toBe(true)
     expect(hotkeyNavigationMocks.closeSettingsRoute).toHaveBeenCalledOnce()
+  })
+
+  it('confirms an owned ask dialog with Enter', async () => {
+    const confirmation = alertConfirm('Continue?')
+
+    const event = await press('Enter')
+
+    expect(event.defaultPrevented).toBe(true)
+    await expect(confirmation).resolves.toBe(true)
+    expect(get(alertStore)).toMatchObject({ type: 'none', msg: 'yes' })
+  })
+
+  it('confirms an owned plugin dialog with Enter', async () => {
+    const confirmation = alertPluginConfirm('Allow plugin?')
+
+    await press('Enter')
+
+    await expect(confirmation).resolves.toBe(true)
+  })
+
+  it('cancels only the active confirmation on Escape and leaves Settings open', async () => {
+    settingsOpen.set(true)
+    const confirmation = alertConfirm('Discard draft?')
+
+    const event = await press('Escape')
+
+    expect(event.defaultPrevented).toBe(true)
+    await expect(confirmation).resolves.toBe(false)
+    expect(hotkeyNavigationMocks.closeSettingsRoute).not.toHaveBeenCalled()
+    expect(get(settingsOpen)).toBe(true)
+  })
+
+  it('cancels card export on Escape without closing the route behind it', async () => {
+    settingsOpen.set(true)
+    alertStore.set({ type: 'cardexport', msg: 'export' })
+
+    await press('Escape')
+
+    expect(get(alertStore)).toEqual({ type: 'none', msg: cardExportCancelMessage() })
+    expect(hotkeyNavigationMocks.closeSettingsRoute).not.toHaveBeenCalled()
+  })
+
+  it('suppresses configured route and send shortcuts while a modal is active', async () => {
+    const sendButton = document.createElement('button')
+    sendButton.className = 'button-icon-send'
+    const sendSpy = vi.fn()
+    sendButton.addEventListener('click', sendSpy)
+    document.body.appendChild(sendButton)
+    alertStore.set({ type: 'input', msg: 'Name' })
+
+    const settingsEvent = await press('s', { ctrlKey: true })
+    const homeEvent = await press('h', { ctrlKey: true })
+    const sendEvent = await press('Enter', { ctrlKey: true, altKey: true })
+
+    expect(settingsEvent.defaultPrevented).toBe(true)
+    expect(homeEvent.defaultPrevented).toBe(true)
+    expect(sendEvent.defaultPrevented).toBe(true)
+    expect(hotkeyNavigationMocks.openSettingsRoute).not.toHaveBeenCalled()
+    expect(hotkeyNavigationMocks.navigate).not.toHaveBeenCalled()
+    expect(sendSpy).not.toHaveBeenCalled()
+
+    alertStore.set({ type: 'none', msg: '' })
+    sendButton.remove()
   })
 
   it('leaves Escape from an editable select to its owning control', async () => {
