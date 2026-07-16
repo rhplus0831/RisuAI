@@ -134,6 +134,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'DELETE', path: /^\/personas\/[^/?#]+$/ },
   { method: 'POST', path: /^\/personas$/ },
   { method: 'POST', path: /^\/personas\/select$/ },
+  { method: 'DELETE', path: /^\/presets\/[^/?#]+$/ },
   { method: 'POST', path: /^\/presets\/select$/ },
   { method: 'PATCH', path: /^\/model-presets\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/model-presets\/[^/?#]+$/ },
