@@ -107,6 +107,58 @@ function seedBookmarkDatabase(messageResident: boolean): void {
   } as never)
 }
 
+function bookmarkOwner(suffix: 'a' | 'b', messageResident: boolean) {
+  const bookmarkId = `message-${suffix}-old`
+  return {
+    chaId: `char-${suffix}`,
+    name: `Character ${suffix.toUpperCase()}`,
+    image: '',
+    chatPage: 0,
+    chats: [
+      {
+        id: `chat-${suffix}`,
+        name: `Chat ${suffix.toUpperCase()}`,
+        message: messageResident
+          ? [{ chatId: bookmarkId, role: 'user', data: `${suffix.toUpperCase()} older bookmarked message` }]
+          : [{ chatId: `message-${suffix}-tail`, role: 'char', data: `${suffix.toUpperCase()} resident tail` }],
+        bookmarks: [bookmarkId],
+        bookmarkNames: { [bookmarkId]: `${suffix.toUpperCase()} older bookmark` },
+        localLore: [],
+      },
+    ],
+    customscript: [],
+    emotionImages: [],
+    triggerscript: [],
+  }
+}
+
+function seedBookmarkOwners(aResident: boolean, bResident: boolean): void {
+  selectedCharID.set(0)
+  bookmarkListOpen.set(true)
+  setDatabaseLite({
+    language: 'en',
+    username: 'User',
+    characters: [bookmarkOwner('a', aResident), bookmarkOwner('b', bResident)],
+  } as never)
+}
+
+function installOwnerHydration(suffix: 'a' | 'b', ownerIndex: number, hydration: ReturnType<typeof deferred>): void {
+  bookmarkMocks.hydrateChatMessages.mockImplementation(async (chatId: string) => {
+    if (chatId !== `chat-${suffix}`) return
+    await hydration.promise
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[ownerIndex].chats[0].message = [
+        {
+          chatId: `message-${suffix}-old`,
+          role: 'user',
+          data: `${suffix.toUpperCase()} older bookmarked message`,
+        },
+        { chatId: `message-${suffix}-tail`, role: 'char', data: `${suffix.toUpperCase()} resident tail` },
+      ]
+    })
+  })
+}
+
 describe('BookmarkList hydration and navigation', () => {
   let target: HTMLElement
   let component: MountedComponent | undefined
@@ -169,5 +221,66 @@ describe('BookmarkList hydration and navigation', () => {
     expect(bookmarkMocks.navigateToCharacterChatMessage).toHaveBeenCalledOnce()
     expect(bookmarkMocks.navigateToCharacterChatMessage).toHaveBeenCalledWith('char-a', 'chat-a', 0)
     expect(get(bookmarkListOpen)).toBe(false)
+  })
+
+  it('ignores a stale hydration completion after switching bookmark owners', async () => {
+    const aHydration = deferred()
+    const bHydration = deferred()
+    seedBookmarkOwners(false, false)
+    bookmarkMocks.hydrateChatMessages.mockImplementation(async (chatId: string) => {
+      const suffix = chatId === 'chat-a' ? 'a' : 'b'
+      const ownerIndex = suffix === 'a' ? 0 : 1
+      const hydration = suffix === 'a' ? aHydration : bHydration
+      await hydration.promise
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[ownerIndex].chats[0].message = [
+          {
+            chatId: `message-${suffix}-old`,
+            role: 'user',
+            data: `${suffix.toUpperCase()} older bookmarked message`,
+          },
+          { chatId: `message-${suffix}-tail`, role: 'char', data: `${suffix.toUpperCase()} resident tail` },
+        ]
+      })
+    })
+
+    component = mount(BookmarkList, { target })
+    await tick()
+    expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a', { strict: true })
+
+    selectedCharID.set(1)
+    await vi.waitFor(() => expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-b', { strict: true }))
+
+    aHydration.resolve()
+    await tick()
+    await Promise.resolve()
+
+    expect(target.querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(target.querySelector('[role="status"]')?.textContent).toBe(language.loading)
+    expect(target.textContent).not.toContain(language.noBookmarks)
+
+    bHydration.resolve()
+    await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-id="message-b-old"]')).not.toBeNull())
+    expect(target.textContent).toContain('B older bookmark')
+    expect(target.textContent).not.toContain('A older bookmark')
+  })
+
+  it('hydrates a newly selected nonresident owner after the previous owner is ready', async () => {
+    const bHydration = deferred()
+    seedBookmarkOwners(true, false)
+    installOwnerHydration('b', 1, bHydration)
+
+    component = mount(BookmarkList, { target })
+    await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-id="message-a-old"]')).not.toBeNull())
+    expect(bookmarkMocks.hydrateChatMessages).not.toHaveBeenCalled()
+
+    selectedCharID.set(1)
+    await vi.waitFor(() => expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-b', { strict: true }))
+    expect(target.querySelector('[role="status"]')?.textContent).toBe(language.loading)
+    expect(target.textContent).not.toContain(language.noBookmarks)
+
+    bHydration.resolve()
+    await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-id="message-b-old"]')).not.toBeNull())
+    expect(target.textContent).toContain('B older bookmark')
   })
 })

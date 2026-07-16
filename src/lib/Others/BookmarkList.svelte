@@ -1,6 +1,6 @@
 <script lang="ts">
   import { XIcon, TrashIcon, PencilIcon, BookOpenCheckIcon, BookLockIcon, ArrowRightIcon } from '@lucide/svelte'
-  import { onMount } from 'svelte'
+  import { onDestroy } from 'svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
   import { getUserDisplayName, getUserIcon } from 'src/ts/util'
@@ -24,48 +24,110 @@
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import { navigateToCharacterChatMessage } from 'src/ts/router'
+  import type { Chat as ChatData, character } from 'src/ts/storage/database.svelte'
 
   const close = () => ($bookmarkListOpen = false)
   let chara = $derived(getDatabase().characters[$selectedCharID])
   const simpleChar = $derived(createSimpleCharacter(chara))
   let bookmarkHydrationState = $state<'loading' | 'ready' | 'error'>('loading')
   let bookmarkHydrationRun = 0
+  type BookmarkHydrationOwner = {
+    selectedCharacterIndex: number
+    characterId?: string
+    characterReference: character
+    chatPage: number
+    chatId?: string
+    chatReference: ChatData
+  }
+  let preparedBookmarkOwner: BookmarkHydrationOwner | null | undefined
 
   function activeBookmarkChat() {
     return chara?.chats?.[chara.chatPage]
   }
 
-  function hasNonresidentBookmarks(): boolean {
-    const chat = activeBookmarkChat()
-    if (!chat) return false
-    const residentMessageIds = new Set(chat.message.map((message) => message.chatId))
-    return (chat.bookmarks ?? []).some((bookmarkId) => !residentMessageIds.has(bookmarkId))
+  function captureBookmarkHydrationOwner(): BookmarkHydrationOwner | null {
+    const selectedCharacterIndex = $selectedCharID
+    const characterReference = getDatabase().characters?.[selectedCharacterIndex]
+    const chatPage = characterReference?.chatPage
+    const chatReference = chatPage === undefined ? undefined : characterReference?.chats?.[chatPage]
+    if (!characterReference || chatPage === undefined || !chatReference) return null
+
+    return {
+      selectedCharacterIndex,
+      characterId: characterReference.chaId,
+      characterReference,
+      chatPage,
+      chatId: chatReference.id,
+      chatReference,
+    }
   }
 
-  async function prepareBookmarkMessages(force = false): Promise<void> {
+  function isSameBookmarkHydrationOwner(
+    left: BookmarkHydrationOwner | null | undefined,
+    right: BookmarkHydrationOwner | null | undefined,
+  ): boolean {
+    if (!left || !right) return left === right
+
+    const leftCharacterId = left.characterId || undefined
+    const rightCharacterId = right.characterId || undefined
+    const sameCharacter =
+      leftCharacterId || rightCharacterId
+        ? leftCharacterId === rightCharacterId
+        : left.selectedCharacterIndex === right.selectedCharacterIndex &&
+          left.characterReference === right.characterReference
+    if (!sameCharacter) return false
+
+    const leftChatId = left.chatId || undefined
+    const rightChatId = right.chatId || undefined
+    return leftChatId || rightChatId
+      ? leftChatId === rightChatId
+      : left.chatPage === right.chatPage && left.chatReference === right.chatReference
+  }
+
+  function isCurrentBookmarkHydrationOwner(owner: BookmarkHydrationOwner): boolean {
+    return isSameBookmarkHydrationOwner(owner, captureBookmarkHydrationOwner())
+  }
+
+  function hasNonresidentBookmarks(owner: BookmarkHydrationOwner): boolean {
+    const residentMessageIds = new Set(owner.chatReference.message.map((message) => message.chatId))
+    return (owner.chatReference.bookmarks ?? []).some((bookmarkId) => !residentMessageIds.has(bookmarkId))
+  }
+
+  async function prepareBookmarkMessages(force = false, owner = captureBookmarkHydrationOwner()): Promise<void> {
     const run = ++bookmarkHydrationRun
-    const chat = activeBookmarkChat()
-    if (!chat || (!force && !hasNonresidentBookmarks()) || !chat.id) {
-      bookmarkHydrationState = 'ready'
+    if (!owner || !isCurrentBookmarkHydrationOwner(owner)) {
+      if (run === bookmarkHydrationRun) bookmarkHydrationState = 'ready'
+      return
+    }
+
+    const chat = owner.chatReference
+    if ((!force && !hasNonresidentBookmarks(owner)) || !chat.id) {
+      if (run === bookmarkHydrationRun && isCurrentBookmarkHydrationOwner(owner)) {
+        bookmarkHydrationState = 'ready'
+      }
       return
     }
 
     bookmarkHydrationState = 'loading'
     try {
       await hydrateChatMessages(chat.id, { strict: true })
-      if (run !== bookmarkHydrationRun) return
+      if (run !== bookmarkHydrationRun || !isCurrentBookmarkHydrationOwner(owner)) return
       bookmarkHydrationState = 'ready'
     } catch {
-      if (run !== bookmarkHydrationRun) return
+      if (run !== bookmarkHydrationRun || !isCurrentBookmarkHydrationOwner(owner)) return
       bookmarkHydrationState = 'error'
     }
   }
 
-  onMount(() => {
-    void prepareBookmarkMessages()
-    return () => {
-      bookmarkHydrationRun += 1
-    }
+  $effect(() => {
+    const owner = captureBookmarkHydrationOwner()
+    if (isSameBookmarkHydrationOwner(owner, preparedBookmarkOwner)) return
+    preparedBookmarkOwner = owner
+    void prepareBookmarkMessages(false, owner)
+  })
+
+  onDestroy(() => {
+    bookmarkHydrationRun += 1
   })
 
   const messageMap = $derived.by(() => {
