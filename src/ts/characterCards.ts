@@ -346,20 +346,46 @@ export async function importCharacterProcess(f: {
   return await importCharacterCardSpec(parsed, img, 'normal', assets)
 }
 
+export const showRealmInfoStore: Writable<null | hubType> = writable(null)
+
+let latestRealmInfoRequest = 0
+let realmInfoRequestController: AbortController | null = null
+
+export function cancelPendingRealmInfoRequest(): void {
+  latestRealmInfoRequest += 1
+  realmInfoRequestController?.abort()
+  realmInfoRequestController = null
+}
+
 export const getRealmInfo = async (realmPath: string) => {
+  const request = ++latestRealmInfoRequest
+  realmInfoRequestController?.abort()
+  const controller = new AbortController()
+  realmInfoRequestController = controller
   const url = new URL(location.href)
   url.searchParams.delete('realm')
   window.history.pushState(null, '', url.toString())
+  const ownerLocation = location.href
 
-  const res = await fetch(`${hubURL}/hub/info/${realmPath}`)
-  if (res.status !== 200) {
-    alertError(await res.text())
-    return
+  const stillOwnsRequest = () =>
+    request === latestRealmInfoRequest && !controller.signal.aborted && location.href === ownerLocation
+
+  try {
+    const res = await fetch(`${hubURL}/hub/info/${realmPath}`, { signal: controller.signal })
+    if (!stillOwnsRequest()) return
+    if (res.status !== 200) {
+      const body = await res.text()
+      if (stillOwnsRequest()) alertError(body)
+      return
+    }
+    const realmInfo = (await res.json()) as hubType
+    if (stillOwnsRequest()) showRealmInfoStore.set(realmInfo)
+  } catch (error) {
+    if (!controller.signal.aborted && stillOwnsRequest()) throw error
+  } finally {
+    if (realmInfoRequestController === controller) realmInfoRequestController = null
   }
-  showRealmInfoStore.set(await res.json())
 }
-
-export const showRealmInfoStore: Writable<null | hubType> = writable(null)
 
 export async function characterURLImport() {
   const realmPath = new URLSearchParams(location.search).get('realm')

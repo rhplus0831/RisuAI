@@ -7,12 +7,14 @@ const realmMocks = vi.hoisted(() => ({
   alertInput: vi.fn(),
   alertNormal: vi.fn(),
   authenticatedHubFetch: vi.fn(),
+  cancelPendingRealmInfoRequest: vi.fn(),
   downloadRisuHub: vi.fn(),
   getRisuHub: vi.fn(),
 }))
 
 vi.mock('src/ts/characterCards', () => ({
   authenticatedHubFetch: realmMocks.authenticatedHubFetch,
+  cancelPendingRealmInfoRequest: realmMocks.cancelPendingRealmInfoRequest,
   downloadRisuHub: realmMocks.downloadRisuHub,
   getRealmInfo: vi.fn(),
   getRisuHub: realmMocks.getRisuHub,

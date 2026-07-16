@@ -7,8 +7,10 @@ const popupMocks = vi.hoisted(() => ({
   alertInput: vi.fn(),
   alertNormal: vi.fn(),
   authenticatedHubFetch: vi.fn(),
+  cancelPendingRealmInfoRequest: vi.fn(),
   clipboardWrite: vi.fn(),
   downloadRisuHub: vi.fn(),
+  getRealmInfo: vi.fn(),
   database: {
     hideAllImages: true,
     language: 'en',
@@ -22,7 +24,8 @@ const popupMocks = vi.hoisted(() => ({
 vi.mock('src/ts/characterCards', () => ({
   authenticatedHubFetch: popupMocks.authenticatedHubFetch,
   downloadRisuHub: popupMocks.downloadRisuHub,
-  getRealmInfo: vi.fn(),
+  cancelPendingRealmInfoRequest: popupMocks.cancelPendingRealmInfoRequest,
+  getRealmInfo: popupMocks.getRealmInfo,
   hubURL: '/api/v1/hub',
 }))
 
@@ -102,8 +105,10 @@ beforeEach(() => {
   popupMocks.alertInput.mockReset()
   popupMocks.alertNormal.mockReset()
   popupMocks.authenticatedHubFetch.mockReset()
+  popupMocks.cancelPendingRealmInfoRequest.mockReset()
   popupMocks.clipboardWrite.mockReset()
   popupMocks.downloadRisuHub.mockReset()
+  popupMocks.getRealmInfo.mockReset()
   popupMocks.authenticatedHubFetch.mockResolvedValue(new Response('removed'))
   popupMocks.clipboardWrite.mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', {
@@ -146,6 +151,26 @@ describe('RealmPopUp removal ownership', () => {
     component = mount(RealmPopUp, { target, props: { openedData } })
 
     expect(target.querySelector('svg.lucide-trash')).toBeNull()
+  })
+
+  it('allows only one removal request and removes the accepted card from its owner', async () => {
+    popupMocks.alertConfirm.mockResolvedValue(true)
+    const response = deferred<Response>()
+    popupMocks.authenticatedHubFetch.mockReturnValue(response.promise)
+    const onRemoved = vi.fn()
+    component = mount(RealmPopUp, { target, props: { openedData: card('delete-once'), onRemoved } })
+
+    const remove = iconButton('lucide-trash')
+    remove.click()
+    await vi.waitFor(() => expect(popupMocks.authenticatedHubFetch).toHaveBeenCalledOnce())
+    expect(remove.disabled).toBe(true)
+    expect(remove.getAttribute('aria-busy')).toBe('true')
+    remove.click()
+    expect(popupMocks.authenticatedHubFetch).toHaveBeenCalledOnce()
+
+    response.resolve(new Response('removed'))
+    await vi.waitFor(() => expect(onRemoved).toHaveBeenCalledWith('delete-once'))
+    expect(popupMocks.cancelPendingRealmInfoRequest).toHaveBeenCalledOnce()
   })
 })
 

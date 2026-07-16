@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { downloadRisuHub, getRisuHub, type hubType, type RisuHubCatalogResult } from 'src/ts/characterCards'
+  import {
+    cancelPendingRealmInfoRequest,
+    downloadRisuHub,
+    getRisuHub,
+    type hubType,
+    type RisuHubCatalogResult,
+  } from 'src/ts/characterCards'
   import { ArrowLeft, ArrowRight, MenuIcon, SearchIcon, XIcon } from '@lucide/svelte'
   import { onDestroy } from 'svelte'
   import { alertError, alertInput } from 'src/ts/alert'
@@ -94,10 +100,12 @@
     latestHubRequest += 1
     hubRequestController?.abort()
     hubRequestController = null
+    cancelPendingRealmInfoRequest()
   })
 
   $effect(() => {
     if ($RealmInitialOpenChar) {
+      cancelPendingRealmInfoRequest()
       openedData = $RealmInitialOpenChar
       $RealmInitialOpenChar = null
     }
@@ -231,6 +239,7 @@
     {#each charas as chara}
       <RisuHubIcon
         onClick={() => {
+          cancelPendingRealmInfoRequest()
           openedData = chara
         }}
         {chara} />
@@ -274,7 +283,11 @@
 {/if}
 
 {#if openedData}
-  <RealmPopUp bind:openedData />
+  <RealmPopUp
+    bind:openedData
+    onRemoved={(removedId) => {
+      charas = charas.filter((card) => card.id !== removedId)
+    }} />
 {/if}
 
 {#if menuOpen}

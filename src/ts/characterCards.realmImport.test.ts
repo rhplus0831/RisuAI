@@ -186,7 +186,14 @@ vi.mock('./server/resourceRefresh', () => ({
   refreshServerRealmImportResources: resourceRefreshState.refreshServerRealmImportResources,
 }))
 
-import { characterURLImport, downloadRisuHub } from './characterCards'
+import {
+  cancelPendingRealmInfoRequest,
+  characterURLImport,
+  downloadRisuHub,
+  getRealmInfo,
+  showRealmInfoStore,
+} from './characterCards'
+import { get } from 'svelte/store'
 
 type Deferred<T> = {
   promise: Promise<T>
@@ -245,6 +252,8 @@ function fallbackRealmCard(name: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  cancelPendingRealmInfoRequest()
+  showRealmInfoStore.set(null)
   dbState.db = {
     characters: [],
     characterOrder: [],
@@ -279,7 +288,10 @@ describe('Realm URL imports', () => {
     realmInfo.resolve(new Response('Realm unavailable', { status: 503 }))
     await importing
 
-    expect(fetch).toHaveBeenCalledWith('/api/v1/hub/hub/info/author/character')
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/hub/hub/info/author/character',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
     expect(alertState.alertError).toHaveBeenCalledWith('Realm unavailable')
   })
 
@@ -290,6 +302,39 @@ describe('Realm URL imports', () => {
     await expect(characterURLImport()).resolves.toBeUndefined()
 
     expect(alertState.alertError).toHaveBeenCalledWith('No data')
+  })
+
+  it('keeps only the newest Realm information response', async () => {
+    const first = deferred<Response>()
+    const second = deferred<Response>()
+    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise))
+
+    const loadingFirst = getRealmInfo('first-card')
+    const loadingSecond = getRealmInfo('second-card')
+    second.resolve(new Response(JSON.stringify({ id: 'second-card' }), { status: 200 }))
+    await loadingSecond
+    first.resolve(new Response(JSON.stringify({ id: 'first-card' }), { status: 200 }))
+    await loadingFirst
+
+    expect(get(showRealmInfoStore)).toMatchObject({ id: 'second-card' })
+  })
+
+  it('does not reopen Realm information after cancellation or navigation', async () => {
+    const cancelled = deferred<Response>()
+    const navigated = deferred<Response>()
+    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(cancelled.promise).mockReturnValueOnce(navigated.promise))
+
+    const cancelledLoad = getRealmInfo('cancelled-card')
+    cancelPendingRealmInfoRequest()
+    cancelled.resolve(new Response(JSON.stringify({ id: 'cancelled-card' }), { status: 200 }))
+    await cancelledLoad
+    expect(get(showRealmInfoStore)).toBeNull()
+
+    const navigatedLoad = getRealmInfo('navigated-card')
+    window.history.pushState(null, '', '/somewhere-else')
+    navigated.resolve(new Response(JSON.stringify({ id: 'navigated-card' }), { status: 200 }))
+    await navigatedLoad
+    expect(get(showRealmInfoStore)).toBeNull()
   })
 })
 
