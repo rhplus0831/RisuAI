@@ -9,6 +9,8 @@ const presetSpies = vi.hoisted(() => ({
   deletePreset: vi.fn(),
   downloadPreset: vi.fn(),
   importPreset: vi.fn(),
+  reorderModelPresets: vi.fn(),
+  reorderPromptPresets: vi.fn(),
   reorderPresets: vi.fn(),
   updatePreset: vi.fn(),
 }))
@@ -46,6 +48,8 @@ vi.mock('../../ts/storage/database.svelte', async (importActual) => {
     deletePreset: presetSpies.deletePreset,
     downloadPreset: presetSpies.downloadPreset,
     importPreset: presetSpies.importPreset,
+    reorderModelPresets: presetSpies.reorderModelPresets,
+    reorderPromptPresets: presetSpies.reorderPromptPresets,
     reorderPresets: presetSpies.reorderPresets,
     updatePreset: presetSpies.updatePreset,
   }
@@ -355,6 +359,21 @@ function pickerSelectionControl(kind: 'model' | 'prompt' | 'persona', id: string
   return row.querySelector<HTMLElement>('[data-risu-picker-select]') ?? row
 }
 
+function createPresetDataTransfer(): DataTransfer {
+  const values = new Map<string, string>()
+  return {
+    getData: vi.fn((type: string) => values.get(type) ?? ''),
+    setData: vi.fn((type: string, value: string) => values.set(type, value)),
+  } as unknown as DataTransfer
+}
+
+function dispatchPresetDragEvent(element: Element, type: 'dragstart' | 'drop', dataTransfer: DataTransfer): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+  element.dispatchEvent(event)
+  return event
+}
+
 function expectPickerRowSelection(kind: 'model' | 'prompt' | 'persona', id: string, selected: boolean): void {
   const row = pickerRow(kind, id)
   const selectionControl = pickerSelectionControl(kind, id)
@@ -657,6 +676,51 @@ describe('generation settings picker mode', () => {
     edit.click()
     await tick()
     expect(edit.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('moves the dragged preset by stable id after the live list reorders', async () => {
+    const presetC = {
+      ...getDatabase().promptPresets[0],
+      id: 'preset-c',
+      name: 'Preset C',
+    }
+    getDatabase().promptPresets.push(presetC)
+    mountPresetPicker('global')
+
+    const dataTransfer = createPresetDataTransfer()
+    dispatchPresetDragEvent(pickerRow('prompt', 'preset-b'), 'dragstart', dataTransfer)
+    expect(dataTransfer.setData).toHaveBeenCalledWith('presetId', 'preset-b')
+
+    const [presetA, presetB] = getDatabase().promptPresets
+    getDatabase().promptPresets = [presetB, presetC, presetA]
+    await tick()
+
+    const dropTargets = pickerRoot('prompt', 'global').querySelectorAll<HTMLElement>('[role="listitem"]')
+    dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
+
+    expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
+    expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(0, 3)
+  })
+
+  it('does not reorder another preset when the dragged preset vanishes', async () => {
+    const presetC = {
+      ...getDatabase().promptPresets[0],
+      id: 'preset-c',
+      name: 'Preset C',
+    }
+    getDatabase().promptPresets.push(presetC)
+    mountPresetPicker('global')
+
+    const dataTransfer = createPresetDataTransfer()
+    dispatchPresetDragEvent(pickerRow('prompt', 'preset-b'), 'dragstart', dataTransfer)
+
+    getDatabase().promptPresets = getDatabase().promptPresets.filter((preset) => preset.id !== 'preset-b')
+    await tick()
+
+    const dropTargets = pickerRoot('prompt', 'global').querySelectorAll<HTMLElement>('[role="listitem"]')
+    dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
+
+    expect(presetSpies.reorderPromptPresets).not.toHaveBeenCalled()
   })
 
   it('saves preset rows to the active chat without calling global preset selection', async () => {

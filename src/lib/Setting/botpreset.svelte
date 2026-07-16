@@ -41,10 +41,12 @@
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   type ModernPreset = ModelPreset | PromptPreset
+  type ModernPresetKind = 'model' | 'prompt'
 
   let editMode = $state(false)
   let isDragging = $state(false)
   let dragOverIndex = $state(-1)
+  let draggedPreset = $state<{ kind: ModernPresetKind; id: string } | null>(null)
   let renameDrafts = $state<Record<string, string>>({})
 
   interface Props {
@@ -142,19 +144,36 @@
     return !!presetId && presetId === activeSelectedId
   }
 
-  function movePreset(fromIndex: number, toIndex: number) {
-    if (kind === 'prompt') reorderPromptPresets(fromIndex, toIndex)
-    else if (kind === 'model') reorderModelPresets(fromIndex, toIndex)
+  function presetsForKind(presetKind: ModernPresetKind): ModernPreset[] {
+    return presetKind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets
   }
 
-  function handlePresetDrop(targetIndex: number, e: DragEvent) {
+  function movePreset(presetKind: ModernPresetKind, fromIndex: number, toIndex: number) {
+    if (presetKind === 'prompt') reorderPromptPresets(fromIndex, toIndex)
+    else reorderModelPresets(fromIndex, toIndex)
+  }
+
+  function handlePresetDrop(targetPresetId: string | null | undefined, e: DragEvent) {
     e.preventDefault()
     e.stopPropagation()
     const data = e.dataTransfer?.getData('text')
-    if (data === 'preset') {
-      const sourceIndex = parseInt(e.dataTransfer?.getData('presetIndex') || '0')
-      movePreset(sourceIndex, targetIndex)
-    }
+    const drag = draggedPreset
+    if (data !== 'preset' || !drag || drag.kind !== kind || targetPresetId === null) return
+
+    const transferredPresetId = nonEmptyId(e.dataTransfer?.getData('presetId'))
+    if (transferredPresetId && transferredPresetId !== drag.id) return
+
+    const presets = presetsForKind(drag.kind)
+    const sourceIndex = presets.findIndex((preset) => nonEmptyId(preset?.id) === drag.id)
+    if (sourceIndex < 0) return
+
+    const targetIndex =
+      targetPresetId === undefined
+        ? presets.length
+        : presets.findIndex((preset) => nonEmptyId(preset?.id) === targetPresetId)
+    if (targetIndex < 0) return
+
+    movePreset(drag.kind, sourceIndex, targetIndex)
   }
 
   function createNewPreset() {
@@ -284,7 +303,7 @@
             dragOverIndex = -1
           }}
           ondrop={(e) => {
-            handlePresetDrop(i, e)
+            handlePresetDrop(nonEmptyId(preset?.id), e)
             dragOverIndex = -1
           }}>
         </div>
@@ -305,13 +324,21 @@
               e.preventDefault()
               return
             }
+            const presetId = nonEmptyId(preset?.id)
+            if (!presetId) {
+              e.preventDefault()
+              return
+            }
+            const presetKind: ModernPresetKind = kind === 'prompt' ? 'prompt' : 'model'
             isDragging = true
+            draggedPreset = { kind: presetKind, id: presetId }
             e.dataTransfer?.setData('text', 'preset')
-            e.dataTransfer?.setData('presetIndex', i.toString())
+            e.dataTransfer?.setData('presetId', presetId)
           }}
           ondragend={() => {
             isDragging = false
             dragOverIndex = -1
+            draggedPreset = null
           }}
           ondragover={(e) => {
             e.preventDefault()
@@ -380,7 +407,7 @@
           dragOverIndex = -1
         }}
         ondrop={(e) => {
-          handlePresetDrop(modernPresets.length, e)
+          handlePresetDrop(undefined, e)
           dragOverIndex = -1
         }}>
       </div>
