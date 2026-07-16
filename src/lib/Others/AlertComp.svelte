@@ -35,6 +35,7 @@
   import versionData from '../../../version.json'
   import { normalizeMessagePromptInfo } from './alertPromptInfo'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import { isTrustedLoginMessageOrigin } from 'src/ts/gui/loginMessageOrigin'
 
   let showDetails = $state(false)
   let translatedStackTrace = $state('')
@@ -323,12 +324,7 @@
 
 <svelte:window
   onmessage={async (e) => {
-    if (
-      e.origin.startsWith('https://sv.risuai.xyz') ||
-      e.origin.startsWith('https://nightly.sv.risuai.xyz') ||
-      e.origin.startsWith('http://127.0.0.1') ||
-      e.origin === window.location.origin
-    ) {
+    if (isTrustedLoginMessageOrigin(e.origin, window.location.origin)) {
       if (e.data.msg?.data?.vaild && $alertStore.type === 'login') {
         $alertStore = {
           type: 'none',
