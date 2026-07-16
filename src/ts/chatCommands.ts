@@ -64,12 +64,14 @@ import {
   type SparseChatGenerationSettingsUpdate,
 } from './chatGenerationSettings'
 import { v4 } from 'uuid'
-import { executePreparedDurableMutationWithinQueue } from './server/durableMutationDispatch'
+import { dispatchDurableMutation, executePreparedDurableMutationWithinQueue } from './server/durableMutationDispatch'
 import {
   stagePendingMutation,
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './server/pendingMutationOutbox'
+import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
+import { chatResourceOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 
 export interface ChatStateSnapshot {
   characters: character[]
@@ -2926,25 +2928,41 @@ function chatScriptstateSnapshotFromScoped(previous: ChatScopedSnapshot, chatId:
 }
 
 export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot): void {
+  if (!canUseServerCommands()) return
+  flushRegisteredPendingBridgePatches({})
   const optimisticEpoch = captureDestructiveRefreshEpoch()
   const rollback = chatDeleteRollbackFromState(chatId, previous)
   const optimisticRowEpoch = rollback?.characterId
     ? captureCharacterRowProjectionEpoch(rollback.characterId)
     : undefined
   const acknowledgeOptimistic = !!rollback && locateChatById(chatId) === null
-  runChatCommand(
-    (baseRevision) =>
-      deleteChatCommand({
-        baseRevision,
-        chatId,
-        acknowledgeOptimistic,
-        optimisticEpoch,
-        optimisticRowEpoch,
-      }),
-    () =>
-      rollbackChatStructureUnlessCharacterRowChanged(rollback?.characterId, optimisticRowEpoch, () =>
-        restoreDeletedChatAttempt(rollback),
-      ),
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'DELETE',
+        path: `/chats/${encodeURIComponent(chatId)}`,
+        body: {},
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(chatResourceOwnerMutationKey(chatId, rollback?.characterId), intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        deleteChatCommand({
+          baseRevision,
+          chatId,
+          acknowledgeOptimistic,
+          optimisticEpoch,
+          optimisticRowEpoch,
+        }),
+      rollback: () =>
+        rollbackChatStructureUnlessCharacterRowChanged(rollback?.characterId, optimisticRowEpoch, () =>
+          restoreDeletedChatAttempt(rollback),
+        ),
+      ...transport,
+    }),
   )
 }
 
@@ -4347,6 +4365,54 @@ export function dispatchUpdateChatNoteScoped(
     () => restoreChatNoteAttempt(previous, note),
     options,
   )
+}
+
+export interface StagedChatNoteMutation {
+  chatId: string
+  characterId?: string
+  note: string
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
+}
+
+export function stageChatNoteMutation(input: {
+  chatId: string
+  characterId?: string
+  note: string
+  previous?: PendingMutationHandle | null
+}): StagedChatNoteMutation {
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/chats/${encodeURIComponent(input.chatId)}`,
+        body: { patch: { note: input.note }, select: false },
+      },
+    ],
+  }
+  return {
+    chatId: input.chatId,
+    ...(input.characterId ? { characterId: input.characterId } : {}),
+    note: input.note,
+    intent,
+    outbox: stagePendingMutation(chatResourceOwnerMutationKey(input.chatId, input.characterId), intent, input.previous),
+  }
+}
+
+export function dispatchStagedChatNoteMutation(
+  mutation: StagedChatNoteMutation,
+  previous: ChatScriptstateSnapshot,
+  options: ServerCommandTransportOptions = {},
+): Promise<ServerCommandResult> {
+  return dispatchDurableMutation(mutation.outbox, mutation.intent, (transport) => {
+    return (
+      dispatchUpdateChatNoteScoped(mutation.chatId, mutation.note, previous, {
+        ...options,
+        ...transport,
+      }) ?? Promise.resolve({ status: 'unavailable' as const })
+    )
+  })
 }
 
 /** Apply an author-note edit optimistically without starting its transport. */

@@ -364,7 +364,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
 
     expect(durableState.stages.map(({ key, intent }) => ({ key, intent }))).toEqual([
       {
-        key: 'chat-metadata:chat-1',
+        key: 'character-owner:char-1',
         intent: {
           version: 1,
           requests: [

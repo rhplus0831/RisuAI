@@ -23,12 +23,14 @@ import type { Chat, ChatFolder } from '../storage/database.svelte'
 import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { dispatchDurableMutation } from './durableMutationDispatch'
+import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import {
   acknowledgePendingMutation,
   stagePendingMutation,
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
+import { chatResourceOwnerMutationKey } from './resourceOwnerMutationKeys'
 
 interface PendingChatPatch {
   chatId: string
@@ -228,7 +230,11 @@ function queueChatPatch(chatId: string, patch: ChatSnapshot, rollback: ChatRowMe
     rollback: pendingChatPatch?.rollback ?? rollback,
     timer: null,
     intent,
-    outbox: stagePendingMutation(`chat-metadata:${chatId}`, intent, pendingChatPatch?.outbox),
+    outbox: stagePendingMutation(
+      chatResourceOwnerMutationKey(chatId, rollback.characterId),
+      intent,
+      pendingChatPatch?.outbox,
+    ),
   }
 
   nextPatch.timer = setTimeout(() => runPendingChatPatch(chatId), delay)
@@ -273,6 +279,8 @@ export function flushPendingServerBackedChatPatches(options: ServerCommandTransp
     runPendingFolderPatch(folderId, options)
   }
 }
+
+registerPendingBridgePatchFlusher('chat-metadata', flushPendingServerBackedChatPatches)
 
 function runPendingChatPatch(chatId: string, options: ServerCommandTransportOptions = {}): void {
   const commandPatch = pendingChatPatches.get(chatId)

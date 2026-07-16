@@ -3,28 +3,42 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const authorNoteMocks = vi.hoisted(() => ({
   acknowledgePendingMutation: vi.fn(async () => 'deleted'),
-  applyChatNoteValueLocally: vi.fn(() => ({ chatId: 'chat-a', hadNote: true, note: 'initial note' })),
-  dispatchUpdateChatNoteScoped: vi.fn(async () => ({ status: 'ok', revision: 2, event: {} })),
-  dispatchDurableMutation: vi.fn(
-    async (
-      handle: { mutationId: string; databaseLineage: string },
-      _intent: unknown,
-      dispatch: (options: Record<string, unknown>) => Promise<unknown>,
-    ) => dispatch({ mutationId: handle.mutationId, databaseLineage: handle.databaseLineage }),
-  ),
-  stagePendingMutation: vi.fn(
-    (_key: string, _intent: unknown, previous?: { mutationId: string } | null) =>
-      previous ?? {
-        key: 'chat-note:chat-a',
-        mutationId: 'author-note-mutation',
-        sequence: 1,
+  applyChatNoteValueLocally: vi.fn((_chatId: string, _note: string) => ({
+    chatId: 'chat-a',
+    selectedCharID: 0,
+    scriptstate: undefined,
+    note: 'initial note',
+  })),
+  dispatchStagedChatNoteMutation: vi.fn(async () => ({ status: 'ok', revision: 2, event: {} })),
+  nextMutationId: 0,
+  stageChatNoteMutation: vi.fn((input: Record<string, any>) => {
+    const mutationId = `author-note-mutation-${++authorNoteMocks.nextMutationId}`
+    return {
+      chatId: input.chatId,
+      characterId: input.characterId,
+      note: input.note,
+      intent: {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: `/chats/${input.chatId}`,
+            body: { patch: { note: input.note }, select: false },
+          },
+        ],
+      },
+      outbox: {
+        key: `character-owner:${input.characterId}`,
+        mutationId,
+        sequence: authorNoteMocks.nextMutationId,
         ownerWriterSessionId: 'writer-a',
         writerEpoch: 1,
         databaseLineage: 'database-a',
         phase: 'staged',
         ready: Promise.resolve('persisted'),
       },
-  ),
+    }
+  }),
   syncServerBackedChatMetadataBaselines: vi.fn(),
   tokenizeAccurate: vi.fn(async () => 0),
 }))
@@ -42,20 +56,16 @@ vi.mock('src/lang', () => ({
 
 vi.mock('src/ts/chatCommands', () => ({
   applyChatNoteValueLocally: authorNoteMocks.applyChatNoteValueLocally,
-  dispatchUpdateChatNoteScoped: authorNoteMocks.dispatchUpdateChatNoteScoped,
+  dispatchStagedChatNoteMutation: authorNoteMocks.dispatchStagedChatNoteMutation,
+  stageChatNoteMutation: authorNoteMocks.stageChatNoteMutation,
 }))
 
 vi.mock('src/ts/server/chatBridge.svelte', () => ({
   syncServerBackedChatMetadataBaselines: authorNoteMocks.syncServerBackedChatMetadataBaselines,
 }))
 
-vi.mock('src/ts/server/durableMutationDispatch', () => ({
-  dispatchDurableMutation: authorNoteMocks.dispatchDurableMutation,
-}))
-
 vi.mock('src/ts/server/pendingMutationOutbox', () => ({
   acknowledgePendingMutation: authorNoteMocks.acknowledgePendingMutation,
-  stagePendingMutation: authorNoteMocks.stagePendingMutation,
 }))
 
 vi.mock('src/ts/tokenizer', () => ({
@@ -116,6 +126,14 @@ function makeCharacterWithTwoChats(): character {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
+  authorNoteMocks.applyChatNoteValueLocally.mockReset()
+  authorNoteMocks.applyChatNoteValueLocally.mockReturnValue({
+    chatId: 'chat-a',
+    selectedCharID: 0,
+    scriptstate: undefined,
+    note: 'initial note',
+  })
+  authorNoteMocks.nextMutationId = 0
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -132,11 +150,23 @@ afterEach(() => {
 })
 
 describe('AuthorNoteEditor debounce persistence', () => {
-  it('flushes a pending author-note edit when the component unmounts', async () => {
+  it('updates the live projection and watcher baseline immediately, then flushes transport on unmount', async () => {
+    const chara = makeCharacter()
+    authorNoteMocks.applyChatNoteValueLocally.mockImplementation((_chatId: string, note: string) => {
+      const chat = chara.chats[0]
+      const previous = {
+        chatId: chat.id,
+        selectedCharID: 0,
+        scriptstate: undefined,
+        note: chat.note ?? '',
+      }
+      chat.note = note
+      return previous
+    })
     component = mount(AuthorNoteEditor, {
       target,
       props: {
-        chara: makeCharacter(),
+        chara,
       },
     })
     await tick()
@@ -148,22 +178,28 @@ describe('AuthorNoteEditor debounce persistence', () => {
     textarea!.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
 
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).not.toHaveBeenCalled()
+    expect(chara.chats[0].note).toBe('draft before close')
+    expect(authorNoteMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.stageChatNoteMutation).toHaveBeenCalledWith({
+      chatId: 'chat-a',
+      characterId: 'character-a',
+      note: 'draft before close',
+      previous: undefined,
+    })
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).not.toHaveBeenCalled()
 
     unmount(component)
     component = undefined
 
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledTimes(1)
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledWith(
-      'chat-a',
-      'draft before close',
-      expect.any(Object),
-      expect.objectContaining({ mutationId: 'author-note-mutation', databaseLineage: 'database-a' }),
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ chatId: 'chat-a', characterId: 'character-a', note: 'draft before close' }),
+      expect.objectContaining({ note: 'initial note' }),
+      {},
     )
-    expect(authorNoteMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
 
     vi.advanceTimersByTime(300)
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledTimes(1)
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
   })
 
   it('flushes the old chat draft before switching owners', async () => {
@@ -179,21 +215,20 @@ describe('AuthorNoteEditor debounce persistence', () => {
     textarea.value = 'unsaved first-chat draft'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).not.toHaveBeenCalled()
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).not.toHaveBeenCalled()
     ;(component as unknown as { switchChat: (chatPage: number) => void }).switchChat(1)
     await tick()
 
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledOnce()
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledWith(
-      'chat-a',
-      'unsaved first-chat draft',
-      expect.any(Object),
-      expect.objectContaining({ mutationId: 'author-note-mutation', databaseLineage: 'database-a' }),
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ chatId: 'chat-a', note: 'unsaved first-chat draft' }),
+      expect.objectContaining({ note: 'initial note' }),
+      {},
     )
     expect(textarea.value).toBe('second note')
 
     vi.advanceTimersByTime(300)
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
   })
 
   it('flushes a pending author-note edit with keepalive through the lifecycle registry', async () => {
@@ -211,45 +246,96 @@ describe('AuthorNoteEditor debounce persistence', () => {
 
     flushRegisteredPendingBridgePatches({ keepalive: true })
 
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledOnce()
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledWith(
-      'chat-a',
-      'draft before pagehide',
-      expect.any(Object),
-      {
-        keepalive: true,
-        mutationId: 'author-note-mutation',
-        databaseLineage: 'database-a',
-      },
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ chatId: 'chat-a', note: 'draft before pagehide' }),
+      expect.objectContaining({ note: 'initial note' }),
+      { keepalive: true },
     )
     expect(authorNoteMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
 
     vi.advanceTimersByTime(300)
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
   })
 
-  it('deletes a staged row when an authoritative update makes the pending draft a no-op', async () => {
-    component = mount(AuthorNoteEditorTestHost, {
+  it('retains the earliest rollback while restaging an absolute desired note', async () => {
+    authorNoteMocks.applyChatNoteValueLocally
+      .mockReturnValueOnce({ chatId: 'chat-a', selectedCharID: 0, scriptstate: undefined, note: 'initial note' })
+      .mockReturnValueOnce({ chatId: 'chat-a', selectedCharID: 0, scriptstate: undefined, note: 'older draft' })
+    component = mount(AuthorNoteEditor, {
       target,
       props: {
-        initialCharacter: makeCharacter(),
+        chara: makeCharacter(),
       },
     })
     await tick()
 
     const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="author-note-input"]')!
-    textarea.value = 'already accepted elsewhere'
+    textarea.value = 'older draft'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
-    ;(component as unknown as { setCurrentChatNote: (note: string) => void }).setCurrentChatNote(
-      'already accepted elsewhere',
-    )
-    await tick()
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    const firstOutbox = authorNoteMocks.stageChatNoteMutation.mock.results[0].value.outbox
 
-    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).not.toHaveBeenCalled()
-    expect(authorNoteMocks.acknowledgePendingMutation).toHaveBeenCalledWith(
-      expect.objectContaining({ mutationId: 'author-note-mutation' }),
+    textarea.value = 'older draf'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    const secondStageInput = authorNoteMocks.stageChatNoteMutation.mock.calls[1][0]
+    expect(secondStageInput).toMatchObject({
+      chatId: 'chat-a',
+      characterId: 'character-a',
+      note: 'older draf',
+      previous: firstOutbox,
+    })
+    expect(authorNoteMocks.stageChatNoteMutation.mock.results[1].value.intent.requests[0].body).toEqual({
+      patch: { note: 'older draf' },
+      select: false,
+    })
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ note: 'older draf' }),
+      expect.objectContaining({ note: 'initial note' }),
+      {},
     )
+  })
+
+  it('dispatches a marker-safe total revert immediately without waiting for the debounce timer', async () => {
+    authorNoteMocks.applyChatNoteValueLocally
+      .mockReturnValueOnce({ chatId: 'chat-a', selectedCharID: 0, scriptstate: undefined, note: 'initial note' })
+      .mockReturnValueOnce({ chatId: 'chat-a', selectedCharID: 0, scriptstate: undefined, note: 'draft note' })
+    component = mount(AuthorNoteEditor, {
+      target,
+      props: {
+        chara: makeCharacter(),
+      },
+    })
+    await tick()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="author-note-input"]')!
+    textarea.value = 'draft note'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).not.toHaveBeenCalled()
+
+    textarea.value = 'initial note'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    expect(authorNoteMocks.stageChatNoteMutation.mock.results[1].value.intent.requests[0].body).toEqual({
+      patch: { note: 'initial note' },
+      select: false,
+    })
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ note: 'initial note' }),
+      expect.objectContaining({ note: 'initial note' }),
+      {},
+    )
+    expect(authorNoteMocks.acknowledgePendingMutation).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(300)
+    expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
   })
 })

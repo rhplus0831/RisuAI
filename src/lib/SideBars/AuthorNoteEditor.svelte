@@ -6,20 +6,20 @@
   import { onDestroy, untrack } from 'svelte'
 
   import { language } from 'src/lang'
-  import { applyChatNoteValueLocally, dispatchUpdateChatNoteScoped } from 'src/ts/chatCommands'
+  import {
+    applyChatNoteValueLocally,
+    dispatchStagedChatNoteMutation,
+    stageChatNoteMutation,
+    type ChatScriptstateSnapshot,
+    type StagedChatNoteMutation,
+  } from 'src/ts/chatCommands'
   import type { character } from 'src/ts/storage/database.svelte'
   import { tokenizeAccurate } from 'src/ts/tokenizer'
   import { getAuthorNoteDefaultText } from 'src/ts/util'
   import type { ServerCommandTransportOptions } from 'src/ts/server/commands'
   import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
   import { syncServerBackedChatMetadataBaselines } from 'src/ts/server/chatBridge.svelte'
-  import { dispatchDurableMutation } from 'src/ts/server/durableMutationDispatch'
-  import {
-    acknowledgePendingMutation,
-    stagePendingMutation,
-    type DurableMutationIntent,
-    type PendingMutationHandle,
-  } from 'src/ts/server/pendingMutationOutbox'
+  import { acknowledgePendingMutation } from 'src/ts/server/pendingMutationOutbox'
 
   import Help from '../Others/Help.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
@@ -38,12 +38,7 @@
   let lastTokenizedNote = ''
   let tokenizeRun = 0
   let authorNoteSaveTimer: ReturnType<typeof setTimeout> | null = null
-  let pendingAuthorNoteSave: {
-    chatId: string
-    note: string
-    intent: DurableMutationIntent
-    outbox: PendingMutationHandle
-  } | null = null
+  let pendingAuthorNoteSave: (StagedChatNoteMutation & { rollback: ChatScriptstateSnapshot }) | null = null
 
   async function loadTokenCount(note: string, run: number): Promise<void> {
     if (lastTokenizedNote === note) return
@@ -80,56 +75,50 @@
     if (!pending) return
     clearAuthorNoteSaveTimer()
     pendingAuthorNoteSave = null
-    if (pending.note === authorNoteLastSubmitted) {
-      void acknowledgePendingMutation(pending.outbox)
-      return
-    }
     authorNoteLastSubmitted = pending.note
-    const previous = applyChatNoteValueLocally(pending.chatId, pending.note)
-    if (previous) {
-      syncServerBackedChatMetadataBaselines()
-      void dispatchDurableMutation(pending.outbox, pending.intent, (transport) => {
-        return (
-          dispatchUpdateChatNoteScoped(pending.chatId, pending.note, previous, {
-            ...options,
-            ...transport,
-          }) ?? Promise.resolve({ status: 'unavailable' as const })
-        )
-      })
-    } else {
-      void acknowledgePendingMutation(pending.outbox)
-    }
+    void dispatchStagedChatNoteMutation(pending, pending.rollback, options)
   }
 
-  function scheduleAuthorNoteSave(chatId: string, note: string): void {
+  function scheduleAuthorNoteSave(chatId: string, note: string, rollback: ChatScriptstateSnapshot): void {
     clearAuthorNoteSaveTimer()
-    const intent: DurableMutationIntent = {
-      version: 1,
-      requests: [
-        {
-          method: 'PATCH',
-          path: `/chats/${encodeURIComponent(chatId)}`,
-          body: { patch: { note }, select: false },
-        },
-      ],
-    }
-    const previous = pendingAuthorNoteSave?.chatId === chatId ? pendingAuthorNoteSave.outbox : null
-    pendingAuthorNoteSave = {
+    const previousPending = pendingAuthorNoteSave?.chatId === chatId ? pendingAuthorNoteSave : null
+    const staged = stageChatNoteMutation({
       chatId,
+      characterId: chara?.chaId,
       note,
-      intent,
-      outbox: stagePendingMutation(`chat-note:${chatId}`, intent, previous),
+      previous: previousPending?.outbox,
+    })
+    pendingAuthorNoteSave = {
+      ...staged,
+      rollback: previousPending?.rollback ?? rollback,
     }
-    authorNoteSaveTimer = setTimeout(flushPendingAuthorNoteSave, 250)
+    const correctionOnly =
+      previousPending?.rollback.note !== undefined &&
+      note === previousPending.rollback.note &&
+      note !== previousPending.note
+    if (correctionOnly) {
+      flushPendingAuthorNoteSave()
+    } else {
+      authorNoteSaveTimer = setTimeout(flushPendingAuthorNoteSave, 250)
+    }
   }
 
   function handleAuthorNoteInput(note: string): void {
     const chatId = authorNoteChatId
-    if (!chatId || note === authorNoteLastSubmitted) {
+    if (!chatId) {
       clearPendingAuthorNoteSave()
       return
     }
-    scheduleAuthorNoteSave(chatId, note)
+    const previousPending = pendingAuthorNoteSave?.chatId === chatId ? pendingAuthorNoteSave : null
+    if (previousPending?.note === note) return
+
+    const rollback = applyChatNoteValueLocally(chatId, note)
+    if (!rollback) return
+    authorNoteServerNote = note
+    syncServerBackedChatMetadataBaselines()
+
+    if (!previousPending && note === authorNoteLastSubmitted) return
+    scheduleAuthorNoteSave(chatId, note, rollback)
   }
 
   $effect.pre(() => {

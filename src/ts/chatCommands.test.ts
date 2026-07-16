@@ -44,10 +44,12 @@ import {
   type Message,
 } from './storage/database.svelte'
 import { get } from 'svelte/store'
+import { flushSync } from 'svelte'
 import {
   applyOptimisticCreatedChat,
   applyOptimisticCreatedChatFolder,
   applyOptimisticDeletedChat,
+  applyChatNoteValueLocally,
   appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend,
   changedChatMetadata,
@@ -71,6 +73,7 @@ import {
   dispatchReplaceMessagesScoped,
   dispatchSaveChatGenerationSettings,
   dispatchSelectChat,
+  dispatchStagedChatNoteMutation,
   dispatchTruncateMessagesScoped,
   dispatchUpdateChat,
   dispatchUpdateChatAsync,
@@ -93,6 +96,7 @@ import {
   sanitizeChatPatch,
   setChatNoteValue,
   setChatScriptstateValue,
+  stageChatNoteMutation,
   waitForPendingChatGenerationSettingsSave,
 } from './chatCommands'
 import {
@@ -110,6 +114,9 @@ import {
   resetPendingMutationOutboxForTests,
   stagePendingMutation,
 } from './server/pendingMutationOutbox'
+import { replayPendingMutations } from './server/pendingMutationReplay'
+import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRegistry'
+import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from './server/chatBridge.svelte'
 
 interface CapturedFetch {
   url: string
@@ -1599,6 +1606,7 @@ describe('chat command projection helpers', () => {
     })
     setResourceWriteGuardEnabled(true)
 
+    expect(applyChatNoteValueLocally('chat-a', 'latest optimistic note')).toMatchObject({ note: '' })
     const previous = currentChatStateSnapshot()
     expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
       applied: true,
@@ -1611,6 +1619,7 @@ describe('chat command projection helpers', () => {
     await vi.waitFor(() => {
       expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     })
+    expect(getDatabase().characters[0].chats[0].note).toBe('latest optimistic note')
     expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
     expect(getDatabase().characters[0].chats[2].name).toBe('Newer appended chat')
     expect(getDatabase().characters[0].chatPage).toBe(0)
@@ -5338,6 +5347,240 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
 
     expect(commandInit).toMatchObject({ keepalive: true })
     expect(JSON.parse(String(commandInit?.body))).toMatchObject({ patch: { note: 'draft before pagehide' } })
+  })
+
+  it('persists and immediately dispatches an absolute note correction after a remote marker wins', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-author-note-revert',
+      writerEpoch: 3,
+      databaseLineage: 'lineage-author-note-revert',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].note = 'initial note'
+    })
+
+    try {
+      const first = stageChatNoteMutation({
+        chatId: 'chat-a',
+        characterId: 'char-a',
+        note: 'draft note',
+      })
+      await expect(first.outbox.ready).resolves.toBe('persisted')
+      const remoteHandle = (await listPendingMutations())[0]!.handle
+      await expect(beginPendingMutationDispatch(remoteHandle)).resolves.toBe('persisted')
+
+      const correction = stageChatNoteMutation({
+        chatId: 'chat-a',
+        characterId: 'char-a',
+        note: 'initial note',
+        previous: first.outbox,
+      })
+      await expect(correction.outbox.ready).resolves.toBe('persisted')
+      expect(
+        (await listPendingMutations()).map((entry) => ({ key: entry.handle.key, body: entry.intent.requests[0].body })),
+      ).toEqual([
+        {
+          key: 'character-owner:char-a',
+          body: { patch: { note: 'draft note' }, select: false },
+        },
+        {
+          key: 'character-owner:char-a',
+          body: { patch: { note: 'initial note' }, select: false },
+        },
+      ])
+
+      let revision = 10
+      const commandBodies: Array<Record<string, unknown>> = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          if (url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH') {
+            commandBodies.push(typeof init.body === 'string' ? JSON.parse(init.body) : {})
+            revision += 1
+            return jsonResponse({
+              revision,
+              event: { type: 'chat.updated', revision, resource: 'chat', id: 'chat-a' },
+              chatId: 'chat-a',
+              selectedChatId: 'chat-a',
+            })
+          }
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }) as unknown as typeof fetch,
+      )
+
+      const rollback = currentChatScriptstateSnapshot(true)
+      await expect(dispatchStagedChatNoteMutation(correction, rollback)).resolves.toMatchObject({ status: 'ok' })
+
+      expect(commandBodies.map((body) => body.patch)).toEqual([{ note: 'draft note' }, { note: 'initial note' }])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('holds chat DELETE behind a transient note PATCH, then replays both without a late note request', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-delete',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-chat-delete',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(20)
+
+    try {
+      const noteRollback = applyChatNoteValueLocally('chat-a', 'latest optimistic note')
+      expect(noteRollback).toMatchObject({ note: '' })
+      const noteMutation = stageChatNoteMutation({
+        chatId: 'chat-a',
+        characterId: 'char-a',
+        note: 'latest optimistic note',
+      })
+      const previous = currentChatStateSnapshot()
+      expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toMatchObject({ applied: true })
+
+      let recover = false
+      let revision = 20
+      const commands: Array<{ method: string; body: Record<string, unknown> }> = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          if (url === '/api/v1/commands/chats/chat-a') {
+            const method = init.method ?? 'GET'
+            const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+            commands.push({ method, body })
+            if (!recover && method === 'PATCH') return jsonResponse({ error: 'note temporarily unavailable' }, 500)
+            if (!recover) throw new Error('DELETE overtook its note predecessor')
+            revision += 1
+            if (method === 'PATCH') {
+              return jsonResponse({
+                revision,
+                event: { type: 'chat.updated', revision, resource: 'chat', id: 'chat-a' },
+                chatId: 'chat-a',
+                selectedChatId: 'chat-b',
+              })
+            }
+            return jsonResponse({
+              revision,
+              event: { type: 'chat.deleted', revision, resource: 'chat', id: 'chat-a' },
+              chatId: 'chat-a',
+              selectedChatId: 'chat-b',
+            })
+          }
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }) as unknown as typeof fetch,
+      )
+
+      dispatchDeleteChat('chat-a', previous)
+      await vi.waitFor(() => expect(commands).toEqual([expect.objectContaining({ method: 'PATCH' })]))
+      expect(
+        (await listPendingMutations()).map((entry) => ({
+          key: entry.handle.key,
+          method: entry.intent.requests[0].method,
+        })),
+      ).toEqual([
+        { key: 'character-owner:char-a', method: 'PATCH' },
+        { key: 'character-owner:char-a', method: 'DELETE' },
+      ])
+
+      recover = true
+      const recoveryStart = commands.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(commands.slice(recoveryStart).map((command) => command.method)).toEqual(['PATCH', 'DELETE'])
+      expect(await listPendingMutations()).toEqual([])
+
+      const commandCount = commands.length
+      await expect(dispatchStagedChatNoteMutation(noteMutation, noteRollback!)).resolves.toEqual({
+        status: 'unavailable',
+      })
+      expect(commands).toHaveLength(commandCount)
+      expect(getDatabase().characters[0].chats.some((chat) => chat.id === 'chat-a')).toBe(false)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('flushes note and chat metadata PATCHes before DELETE when durable storage is unavailable', async () => {
+    resetPendingMutationOutboxForTests()
+    setCachedServerCommandRevision(30)
+    setResourceWriteGuardEnabled(true)
+    const stopWatcher = watchServerBackedChatMetadata({ delayMs: 60_000 })
+    flushSync()
+
+    const noteRollback = applyChatNoteValueLocally('chat-a', 'fallback note')
+    expect(noteRollback).not.toBeNull()
+    syncServerBackedChatMetadataBaselines()
+    const noteMutation = stageChatNoteMutation({
+      chatId: 'chat-a',
+      characterId: 'char-a',
+      note: 'fallback note',
+    })
+    let pendingNote = true
+    const unregisterNoteFlusher = registerPendingBridgePatchFlusher('test-author-note-fallback', (options) => {
+      if (!pendingNote) return
+      pendingNote = false
+      void dispatchStagedChatNoteMutation(noteMutation, noteRollback!, options)
+    })
+
+    try {
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].name = 'Fallback rename'
+      })
+      flushSync()
+      const previous = currentChatStateSnapshot()
+      expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toMatchObject({ applied: true })
+
+      let revision = 30
+      const commands: Array<{ method: string; patch?: Record<string, unknown> }> = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url !== '/api/v1/commands/chats/chat-a') {
+            return jsonResponse({ error: `unexpected ${url}` }, 404)
+          }
+          const method = init.method ?? 'GET'
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          commands.push({ method, patch: body.patch })
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: method === 'DELETE' ? 'chat.deleted' : 'chat.updated',
+              revision,
+              resource: 'chat',
+              id: 'chat-a',
+            },
+            chatId: 'chat-a',
+            selectedChatId: 'chat-b',
+          })
+        }) as unknown as typeof fetch,
+      )
+
+      dispatchDeleteChat('chat-a', previous)
+      await vi.waitFor(() => expect(commands).toHaveLength(3))
+
+      expect(commands).toEqual([
+        { method: 'PATCH', patch: { name: 'Fallback rename' } },
+        { method: 'PATCH', patch: { note: 'fallback note' } },
+        { method: 'DELETE', patch: undefined },
+      ])
+    } finally {
+      unregisterNoteFlusher()
+      stopWatcher()
+      resetPendingMutationOutboxForTests()
+    }
   })
 })
 
