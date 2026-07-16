@@ -8,6 +8,7 @@
     {
       "role": "char",
       "data": "```risuerror\nupstream returned 500\n```",
+      "chatId": "uuid-1",
       "saying": "char-tess",
       "generationInfo": {
         "model": "gpt-4o",
