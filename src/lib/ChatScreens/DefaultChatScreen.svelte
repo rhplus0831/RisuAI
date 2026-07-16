@@ -32,7 +32,7 @@
     additionalFloatingActionButtons,
     easyPanelStore,
   } from '../../ts/stores.svelte'
-  import { tick, untrack } from 'svelte'
+  import { onDestroy, tick, untrack } from 'svelte'
   import Chat from './Chat.svelte'
   import {
     getDatabase,
@@ -115,6 +115,12 @@
   import { createLatestOperationGuard } from 'src/ts/server/staleStateGuards'
   import PostGenerationScriptProgress from './PostGenerationScriptProgress.svelte'
   import AgentPresetProgress from './AgentPresetProgress.svelte'
+  import {
+    deleteDefaultChatComposerDraft,
+    readDefaultChatComposerDraft,
+    writeDefaultChatComposerDraft,
+    type DefaultChatComposerDraft,
+  } from './DefaultChatScreen.composerDrafts'
 
   const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
   const composerFileOperationGuard = createLatestOperationGuard<string>()
@@ -129,11 +135,6 @@
   type ComposerOperationKind = 'send' | 'continue'
   type ComposerDraftField = 'message' | 'translation' | 'files'
   type ComposerTextField = 'message' | 'translation'
-  type ComposerDraft = {
-    messageInput: string
-    messageInputTranslate: string
-    fileInput: string[]
-  }
   type ComposerOperation = {
     token: ReturnType<typeof composerOperationGuard.issue>
     kind: ComposerOperationKind
@@ -163,8 +164,6 @@
     previousLoadPages: number
   }
 
-  const composerDrafts = new Map<string, ComposerDraft>()
-
   interface Props {
     openModuleList?: boolean
     openChatList?: boolean
@@ -193,6 +192,13 @@
   let lastInputTranslationRollback: InputTranslationRollback | null = $state(null)
   let activeScreenshotOperation: ScreenshotOperation | null = null
   let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
+
+  onDestroy(() => {
+    if (activeTranscriptWindowIdentity !== null) {
+      storeComposerDraft(activeTranscriptWindowIdentity)
+    }
+  })
+
   let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
   let activeChatOpen = $derived.by(() => {
     if ($selectedCharID < 0) return false
@@ -386,19 +392,19 @@
 
   function storeComposerDraft(identity: string): void {
     if (messageInput === '' && messageInputTranslate === '' && fileInput.length === 0) {
-      composerDrafts.delete(identity)
+      deleteDefaultChatComposerDraft(identity)
       return
     }
 
-    composerDrafts.set(identity, {
+    writeDefaultChatComposerDraft(identity, {
       messageInput,
       messageInputTranslate,
       fileInput: [...fileInput],
-    })
+    } satisfies DefaultChatComposerDraft)
   }
 
   function restoreComposerDraft(identity: string | null): void {
-    const draft = identity ? composerDrafts.get(identity) : undefined
+    const draft = identity ? readDefaultChatComposerDraft(identity) : undefined
     messageInput = draft?.messageInput ?? ''
     messageInputTranslate = draft?.messageInputTranslate ?? ''
     fileInput = [...(draft?.fileInput ?? [])]

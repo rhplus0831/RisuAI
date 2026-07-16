@@ -234,6 +234,7 @@ vi.mock('html-to-image', () => ({
 }))
 
 import DefaultChatScreen from './DefaultChatScreen.svelte'
+import { clearDefaultChatComposerDrafts } from './DefaultChatScreen.composerDrafts'
 import * as rerollNavigation from 'src/ts/process/rerollNavigation.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import {
@@ -488,6 +489,7 @@ function findClickableByText(text: string): HTMLElement | undefined {
 }
 
 beforeEach(() => {
+  clearDefaultChatComposerDrafts()
   target = document.createElement('div')
   document.body.appendChild(target)
   originalScrollIntoView = Element.prototype.scrollIntoView
@@ -526,6 +528,7 @@ afterEach(() => {
   document.documentElement.style.removeProperty('--risu-theme-bgcolor')
   target.remove()
   document.body.innerHTML = ''
+  clearDefaultChatComposerDrafts()
 })
 
 describe('DefaultChatScreen overflow menu accessibility', () => {
@@ -1654,6 +1657,35 @@ describe('DefaultChatScreen transcript window state', () => {
       expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')?.value).toBe(
         'Second chat draft',
       )
+    })
+  })
+
+  it('restores composer text and selected files after the screen remounts', async () => {
+    seedDatabase([1])
+    loadPageMocks.postChatFile.mockResolvedValueOnce([{ type: 'asset', data: 'asset-a' }])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Draft that survives a full-screen route'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await clickPostFileMenuItem()
+
+    await waitFor(() => {
+      expect(target.querySelector('button[aria-label="remove: asset-a"]')).toBeTruthy()
+    })
+
+    unmount(component!)
+    component = undefined
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')?.value).toBe(
+        'Draft that survives a full-screen route',
+      )
+      expect(target.querySelector('button[aria-label="remove: asset-a"]')).toBeTruthy()
     })
   })
 
