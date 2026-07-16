@@ -596,6 +596,10 @@
     try {
       const results = await postChatFile(messageInput)
       applyChatFileResultsForCurrentComposer(results, operation)
+    } catch (error) {
+      if (isCurrentComposerFileOperation(operation)) {
+        alertError(error)
+      }
     } finally {
       composerFileOperationGuard.clear(operation.token)
     }

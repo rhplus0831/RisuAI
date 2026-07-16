@@ -1863,4 +1863,25 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(pasteEvent.defaultPrevented).toBe(true)
     expect(textarea.value).toBe('Keep this draft')
   })
+
+  it('reports a menu attachment upload failure while the composer is still current', async () => {
+    seedDatabase([1])
+    const uploadError = new Error('menu attachment upload failed')
+    loadPageMocks.postChatFile.mockRejectedValueOnce(uploadError)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Keep this menu draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    await clickPostFileMenuItem()
+
+    await waitFor(() => expect(loadPageMocks.alertError).toHaveBeenCalledWith(uploadError))
+    expect(loadPageMocks.postChatFile).toHaveBeenCalledWith('Keep this menu draft')
+    expect(textarea.value).toBe('Keep this menu draft')
+  })
 })
