@@ -63,6 +63,7 @@ export type ServerResourceRefreshResult =
   | { status: 'unavailable' }
 
 export interface ServerResourceInvalidationHooks {
+  reapplyPendingPresetProjections(): void
   mergePendingAgentPresetSettings(value: Record<string, unknown>): Record<string, unknown>
   mergePendingAgentPresetLoadouts(
     value: NonNullable<ServerCollectionsResourcePayload['collections']['loadouts']>,
@@ -202,15 +203,19 @@ export async function refreshAllServerResources(
       )
       const mergedCollections = withPendingCollections(collections, options.hooks)
       const mergedCharacters = withPendingAgentPresetCharacters(characters, options.hooks)
-      const { settingsApplied, collectionsApplied, charactersApplied } = withServerResourceApply(() => ({
-        settingsApplied: applySettingsResource(mergedSettings),
-        collectionsApplied: applyCollectionsResource(mergedCollections),
-        // A complete refresh is used for startup, revision gaps, restores, and
-        // unknown resources. Character reads intentionally omit transcripts,
-        // so retaining same-id resident bodies here could preserve stale chat
-        // data across a restore. Leave the chats as API-hydration stubs.
-        charactersApplied: applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false }),
-      }))
+      const { settingsApplied, collectionsApplied, charactersApplied } = withServerResourceApply(() => {
+        const applied = {
+          settingsApplied: applySettingsResource(mergedSettings),
+          collectionsApplied: applyCollectionsResource(mergedCollections),
+          // A complete refresh is used for startup, revision gaps, restores, and
+          // unknown resources. Character reads intentionally omit transcripts,
+          // so retaining same-id resident bodies here could preserve stale chat
+          // data across a restore. Leave the chats as API-hydration stubs.
+          charactersApplied: applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false }),
+        }
+        options.hooks?.reapplyPendingPresetProjections?.()
+        return applied
+      })
       if (collectionsApplied) resetPromptTemplateHydration()
       if (
         (!settingsApplied && !settingsFullAlreadyAtLeast(revision)) ||
@@ -289,6 +294,7 @@ export async function refreshInvalidatedServerResources(
           if (entry.result.status !== 'ok') continue
           if (!applyTargetedRead(entry, bodyReadSupersessions, options.hooks)) return targetedReadLabel(entry)
         }
+        options.hooks?.reapplyPendingPresetProjections?.()
         return null
       })
       if (failedApply) {
@@ -301,6 +307,9 @@ export async function refreshInvalidatedServerResources(
 
   const promptTemplateRefreshError = await refreshInvalidatedPromptTemplateOwners(plan, normalized.revision)
   if (promptTemplateRefreshError) return { status: 'error', error: promptTemplateRefreshError }
+  if (plan.promptTemplateOwnerIds.size > 0 || plan.refreshSelectedPromptTemplate) {
+    options.hooks?.reapplyPendingPresetProjections?.()
+  }
 
   if (plan.chatIds.size > 0 || plan.generationChatMessageIds.size > 0) {
     options.hooks?.triggerOpenChatGenerationReattach?.()

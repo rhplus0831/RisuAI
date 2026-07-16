@@ -16,12 +16,14 @@ import {
   setServerCommandSuccessReconciler,
   type ServerCommandLocalEffect,
 } from '../server/commands'
+import * as serverCommands from '../server/commands'
 import { isCollectionAcknowledgementTainted, isSettingsAcknowledgementTainted } from '../server/resourceState.svelte'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
 import {
   applyModelPresetFieldsToDatabase,
   applyPromptPresetFieldsToDatabase,
   applyServerResourceDatabase,
+  addImportedPromptPreset,
   botPresetIdsNeedNormalization,
   changeToPreset,
   copyPreset,
@@ -44,6 +46,7 @@ import {
   reorderModelPresets,
   reorderPromptPresets,
   reorderPresets,
+  resetPendingPresetMutationsForTests,
   saveCurrentPreset,
   setDatabase,
   setDatabaseLite,
@@ -778,9 +781,11 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
+  resetPendingPresetMutationsForTests()
 })
 
 afterEach(() => {
+  resetPendingPresetMutationsForTests()
   setResourceWriteGuardEnabled(false)
   setServerCommandSuccessReconciler(null)
   setDatabaseLite({
@@ -2692,7 +2697,7 @@ describe('preset command rollback (L21)', () => {
           key: SETTINGS_BRIDGE_MUTATION_KEY,
           intent: {
             version: 1,
-            dependencyKeys: ['prompt-template-owner:prompt-a', 'prompt-template-owner:prompt-b'],
+            dependencyKeys: ['preset-operations', 'prompt-template-owner:prompt-a', 'prompt-template-owner:prompt-b'],
             requests: [
               {
                 method: 'POST',
@@ -4121,5 +4126,787 @@ describe('preset command rollback (L21)', () => {
       expect(getDatabase().promptPresets[0]).toMatchObject({ name: 'Existing Prompt edited after dispatch' })
       expect(getDatabase().promptPresets[1]).toMatchObject({ name: 'Newer Prompt appended after dispatch' })
     })
+  })
+})
+
+describe('durable preset mutation projections', () => {
+  it.each([
+    { operation: 'create' as const, refresh: 'targeted' as const },
+    { operation: 'update' as const, refresh: 'full' as const },
+    { operation: 'delete' as const, refresh: 'targeted' as const },
+    { operation: 'reorder' as const, refresh: 'full' as const },
+  ])('keeps a retained legacy $operation visible across a $refresh resource replacement', async (testCase) => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: `writer-preset-${testCase.operation}-refresh`,
+      writerEpoch: 1,
+      databaseLineage: `lineage-preset-${testCase.operation}-refresh`,
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase()
+      setCachedServerCommandRevision(100)
+      const authoritative = clonePlain(getDatabase())
+      let recover = false
+      let revision = 100
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          const call: CapturedFetch = {
+            url,
+            method: init.method ?? 'GET',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          }
+          calls.push(call)
+          if (!recover) return jsonResponse({ error: 'preset temporarily unavailable' }, 500)
+          revision += 1
+          const eventBase = { revision, resource: 'preset' }
+          if (url === '/api/v1/commands/presets' && call.method === 'POST') {
+            return jsonResponse({
+              revision,
+              event: { ...eventBase, type: 'preset.created', id: call.body.preset.id },
+              presetId: call.body.preset.id,
+            })
+          }
+          if (url === '/api/v1/commands/presets/reorder') {
+            return jsonResponse({
+              revision,
+              event: { ...eventBase, type: 'preset.reordered' },
+              selectedPresetId: 'preset-a',
+            })
+          }
+          const presetId = decodeURIComponent(url.slice('/api/v1/commands/presets/'.length))
+          if (call.method === 'DELETE') {
+            return jsonResponse({
+              revision,
+              event: { ...eventBase, type: 'preset.deleted', id: presetId },
+              presetId,
+              selectedPresetId: call.body.presetId,
+            })
+          }
+          return jsonResponse({
+            revision,
+            event: { ...eventBase, type: 'preset.updated', id: presetId },
+            presetId,
+          })
+        }) as unknown as typeof fetch,
+      )
+
+      if (testCase.operation === 'create') {
+        vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValueOnce(
+          'preset-retained-create' as `${string}-${string}-${string}-${string}-${string}`,
+        )
+        const preset = makePreset('placeholder', 'Retained Create')
+        delete preset.id
+        createPreset(preset)
+      } else if (testCase.operation === 'update') {
+        updatePreset(0, { name: 'Retained Update', temperature: 77 })
+      } else if (testCase.operation === 'delete') {
+        deletePreset(0, 1, false)
+      } else {
+        reorderPresets(0, 2)
+      }
+
+      await waitForState(() => expect(calls).toHaveLength(1))
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
+
+      if (testCase.refresh === 'full') {
+        applyServerResourceDatabase(clonePlain(authoritative), 100)
+      } else {
+        mergeServerResourceFields({
+          botPresets: clonePlain(authoritative.botPresets),
+          botPresetsId: authoritative.botPresetsId,
+        } as Partial<Database>)
+      }
+
+      if (testCase.operation === 'create') {
+        expect(getDatabase().botPresets.find((preset) => preset.id === 'preset-retained-create')).toMatchObject({
+          name: 'Retained Create',
+        })
+      } else if (testCase.operation === 'update') {
+        expect(getDatabase().botPresets[0]).toMatchObject({ name: 'Retained Update', temperature: 77 })
+      } else if (testCase.operation === 'delete') {
+        expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+        expect(getDatabase().botPresetsId).toBe(0)
+      } else {
+        expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-a'])
+      }
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('retires and rolls back a retained projection when replay is terminally rejected', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-preset-terminal-replay',
+      writerEpoch: 7,
+      databaseLineage: 'lineage-preset-terminal-replay',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase()
+      setCachedServerCommandRevision(100)
+      let replaying = false
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          return replaying
+            ? jsonResponse({ error: 'preset no longer exists' }, 404)
+            : jsonResponse({ error: 'preset temporarily unavailable' }, 500)
+        }) as unknown as typeof fetch,
+      )
+
+      updatePreset(0, { name: 'Retained but invalid' })
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
+      mergeServerResourceFields({
+        botPresets: [makePreset('preset-a', 'Alpha', { temperature: 11 }), makePreset('preset-b', 'Beta')],
+        botPresetsId: 0,
+      } as Partial<Database>)
+      expect(getDatabase().botPresets[0].name).toBe('Retained but invalid')
+
+      replaying = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ discarded: 1 })
+      expect(getDatabase().botPresets[0].name).toBe('Alpha')
+
+      mergeServerResourceFields({
+        botPresets: [makePreset('preset-a', 'Alpha', { temperature: 11 }), makePreset('preset-b', 'Beta')],
+        botPresetsId: 0,
+      } as Partial<Database>)
+      expect(getDatabase().botPresets[0].name).toBe('Alpha')
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('rebases two terminal legacy updates back to the original row', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-preset-rapid-update-failure',
+      writerEpoch: 2,
+      databaseLineage: 'lineage-preset-rapid-update-failure',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase()
+      setCachedServerCommandRevision(100)
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          calls.push({
+            url,
+            method: init.method ?? 'GET',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          })
+          return jsonResponse({ error: 'invalid preset update' }, 400)
+        }) as unknown as typeof fetch,
+      )
+
+      updatePreset(0, { name: 'First attempted name', temperature: 33 })
+      updatePreset(0, { name: 'Second attempted name', temperature: 44 })
+
+      expect(getDatabase().botPresets[0]).toMatchObject({ name: 'Second attempted name', temperature: 44 })
+      await waitForState(() => {
+        expect(calls).toHaveLength(2)
+        expect(getDatabase().botPresets[0]).toMatchObject({ name: 'Alpha', temperature: 11 })
+      })
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('does not retain inherited fields from an earlier failed partial update', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-preset-partial-successor-rebase',
+      writerEpoch: 8,
+      databaseLineage: 'lineage-preset-partial-successor-rebase',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase()
+      setCachedServerCommandRevision(100)
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          const call = {
+            url,
+            method: init.method ?? 'GET',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          }
+          calls.push(call)
+          return calls.length === 1
+            ? jsonResponse({ error: 'first update is invalid' }, 400)
+            : jsonResponse({ error: 'second update is temporarily unavailable' }, 500)
+        }) as unknown as typeof fetch,
+      )
+
+      updatePreset(0, { name: 'Failed inherited name', temperature: 33 })
+      updatePreset(0, { temperature: 44 })
+
+      await waitForState(() => {
+        expect(calls).toHaveLength(2)
+        expect(calls[1]?.body.patch).toEqual({ temperature: 44 })
+        expect(getDatabase().botPresets[0]).toMatchObject({ name: 'Alpha', temperature: 44 })
+      })
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
+
+      mergeServerResourceFields({
+        botPresets: [
+          makePreset('preset-a', 'Alpha', { temperature: 11 }),
+          makePreset('preset-b', 'Beta', { temperature: 22 }),
+        ],
+        botPresetsId: 0,
+      } as Partial<Database>)
+
+      expect(getDatabase().botPresets[0]).toMatchObject({ name: 'Alpha', temperature: 44 })
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps converted preset mutations local when server commands are unavailable', () => {
+    const canUseCommands = vi.spyOn(serverCommands, 'canUseServerCommands').mockReturnValue(false)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    try {
+      seedPresetDatabase()
+      createPreset(makePreset('preset-local', 'Local Create'))
+      updatePreset(0, { name: 'Local Update', temperature: 66 })
+      reorderPresets(0, 3)
+
+      expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-local', 'preset-a'])
+      expect(getDatabase().botPresets[2]).toMatchObject({ name: 'Local Update', temperature: 66 })
+      expect(fetchSpy).not.toHaveBeenCalled()
+    } finally {
+      canUseCommands.mockRestore()
+    }
+  })
+
+  it.each(['legacy', 'model', 'prompt'] as const)(
+    'keeps a retained %s selection visible across refresh and retires it after replay',
+    async (kind) => {
+      vi.stubGlobal('indexedDB', new IDBFactory())
+      resetPendingMutationOutboxForTests()
+      await preparePendingMutationOutbox({
+        writerSessionId: `writer-${kind}-selection-refresh`,
+        writerEpoch: 9,
+        databaseLineage: `lineage-${kind}-selection-refresh`,
+        requestedWriterWasActive: true,
+      })
+
+      try {
+        const legacyPresets = [
+          makePreset('preset-a', 'Legacy A', { temperature: 11 }),
+          makePreset('preset-b', 'Legacy B', { temperature: 22 }),
+        ]
+        const modelPresets = [
+          makePreset('model-a', 'Model A', { aiModel: 'model-a-api', temperature: 31 }) as unknown as ModelPreset,
+          makePreset('model-b', 'Model B', { aiModel: 'model-b-api', temperature: 42 }) as unknown as ModelPreset,
+        ]
+        const promptPresets = [
+          makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset,
+          makePreset('prompt-b', 'Prompt B') as unknown as PromptPreset,
+        ]
+        seedPresetDatabase({
+          botPresets: legacyPresets,
+          botPresetsId: 0,
+          modelPresets,
+          modelPresetsId: 0,
+          promptPresets,
+          promptPresetsId: 0,
+        })
+        setCachedServerCommandRevision(100)
+        let replaying = false
+        const calls: CapturedFetch[] = []
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+            const url = String(input)
+            if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+            const call = {
+              url,
+              method: init.method ?? 'GET',
+              body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+            }
+            calls.push(call)
+            if (!replaying) return jsonResponse({ error: 'selection temporarily unavailable' }, 500)
+            const revision = 101
+            if (url.endsWith('/presets/select')) {
+              return jsonResponse({
+                revision,
+                event: { type: 'preset.selected', revision, resource: 'preset', id: 'preset-b' },
+                presetId: 'preset-b',
+              })
+            }
+            if (url.endsWith('/model-presets/select')) {
+              return jsonResponse({
+                revision,
+                event: { type: 'modelPreset.selected', revision, resource: 'preset', id: 'model-b' },
+                modelPresetId: 'model-b',
+              })
+            }
+            if (url.endsWith('/prompt-presets/select')) {
+              return jsonResponse({
+                revision,
+                event: { type: 'promptPreset.selected', revision, resource: 'preset', id: 'prompt-b' },
+                promptPresetId: 'prompt-b',
+              })
+            }
+            return jsonResponse({ error: `unexpected ${url}` }, 404)
+          }) as unknown as typeof fetch,
+        )
+
+        if (kind === 'legacy') changeToPreset(1, false)
+        else if (kind === 'model') selectModelPreset(1)
+        else selectPromptPreset(1)
+
+        await waitForState(() => expect(calls).toHaveLength(1))
+        await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
+
+        if (kind === 'legacy') {
+          mergeServerResourceFields({
+            botPresets: clonePlain(legacyPresets),
+            botPresetsId: 0,
+            mainPrompt: 'authoritative legacy prompt',
+            temperature: 11,
+          } as Partial<Database>)
+          expect(getDatabase().botPresetsId).toBe(1)
+          expect(getDatabase()).toMatchObject({ mainPrompt: 'Legacy B prompt', temperature: 22 })
+        } else if (kind === 'model') {
+          mergeServerResourceFields({
+            modelPresets: clonePlain(modelPresets),
+            modelPresetsId: 0,
+            aiModel: 'authoritative-model',
+            temperature: 31,
+          } as Partial<Database>)
+          expect(getDatabase().modelPresetsId).toBe(1)
+          expect(getDatabase()).toMatchObject({ aiModel: 'model-b-api', temperature: 42 })
+        } else {
+          mergeServerResourceFields({
+            promptPresets: clonePlain(promptPresets),
+            promptPresetsId: 0,
+            mainPrompt: 'authoritative prompt',
+            globalNote: 'authoritative note',
+          } as Partial<Database>)
+          expect(getDatabase().promptPresetsId).toBe(1)
+          expect(getDatabase()).toMatchObject({ mainPrompt: 'Prompt B prompt', globalNote: 'Prompt B note' })
+        }
+
+        replaying = true
+        await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+        expect(await listPendingMutations()).toEqual([])
+
+        if (kind === 'legacy') {
+          mergeServerResourceFields({ botPresets: clonePlain(legacyPresets), botPresetsId: 0 } as Partial<Database>)
+          expect(getDatabase().botPresetsId).toBe(0)
+        } else if (kind === 'model') {
+          mergeServerResourceFields({ modelPresets: clonePlain(modelPresets), modelPresetsId: 0 } as Partial<Database>)
+          expect(getDatabase().modelPresetsId).toBe(0)
+        } else {
+          mergeServerResourceFields({
+            promptPresets: clonePlain(promptPresets),
+            promptPresetsId: 0,
+          } as Partial<Database>)
+          expect(getDatabase().promptPresetsId).toBe(0)
+        }
+      } finally {
+        await clearPendingMutationOutbox()
+        resetPendingMutationOutboxForTests()
+      }
+    },
+  )
+
+  it('rebases two terminal model selections back to the original selection and settings', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-model-rapid-selection-failure',
+      writerEpoch: 11,
+      databaseLineage: 'lineage-model-rapid-selection-failure',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase({
+        modelPresets: [
+          makePreset('model-a', 'Model A', { aiModel: 'model-a-api', temperature: 11 }) as unknown as ModelPreset,
+          makePreset('model-b', 'Model B', { aiModel: 'model-b-api', temperature: 22 }) as unknown as ModelPreset,
+          makePreset('model-c', 'Model C', { aiModel: 'model-c-api', temperature: 33 }) as unknown as ModelPreset,
+        ],
+        modelPresetsId: 0,
+        aiModel: 'model-a-api',
+        temperature: 11,
+      })
+      setCachedServerCommandRevision(100)
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          calls.push({
+            url,
+            method: init.method ?? 'GET',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          })
+          return jsonResponse({ error: 'invalid model selection' }, 400)
+        }) as unknown as typeof fetch,
+      )
+
+      selectModelPreset(1)
+      selectModelPreset(2)
+
+      expect(getDatabase()).toMatchObject({ modelPresetsId: 2, aiModel: 'model-c-api', temperature: 33 })
+      await waitForState(() => {
+        expect(calls).toHaveLength(2)
+        expect(getDatabase()).toMatchObject({ modelPresetsId: 0, aiModel: 'model-a-api', temperature: 11 })
+      })
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('reapplies a retained imported prompt preset after refresh and removes it after terminal replay', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-imported-prompt-refresh',
+      writerEpoch: 10,
+      databaseLineage: 'lineage-imported-prompt-refresh',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      const authoritativePrompts = [makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset]
+      seedPresetDatabase({ promptPresets: authoritativePrompts, promptPresetsId: 0 })
+      setCachedServerCommandRevision(100)
+      let replaying = false
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          return replaying
+            ? jsonResponse({ error: 'imported prompt is invalid' }, 404)
+            : jsonResponse({ error: 'prompt import temporarily unavailable' }, 500)
+        }) as unknown as typeof fetch,
+      )
+
+      await expect(
+        addImportedPromptPreset(makePreset('prompt-imported', 'Imported Prompt') as unknown as PromptPreset),
+      ).resolves.toBe('queued')
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-imported'])
+
+      mergeServerResourceFields({
+        promptPresets: clonePlain(authoritativePrompts),
+        promptPresetsId: 0,
+      } as Partial<Database>)
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-imported'])
+
+      replaying = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ discarded: 1 })
+      expect(await listPendingMutations()).toEqual([])
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a'])
+
+      mergeServerResourceFields({
+        promptPresets: clonePlain(authoritativePrompts),
+        promptPresetsId: 0,
+      } as Partial<Database>)
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a'])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it.each([
+    { kind: 'legacy' as const, path: '/presets/reorder' },
+    { kind: 'model' as const, path: '/model-presets/reorder' },
+    { kind: 'prompt' as const, path: '/prompt-presets/reorder' },
+  ])('rebases two terminal $kind reorder attempts back to the original order', async (testCase) => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: `writer-${testCase.kind}-rapid-reorder-failure`,
+      writerEpoch: 3,
+      databaseLineage: `lineage-${testCase.kind}-rapid-reorder-failure`,
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      const rows = [
+        makePreset(`${testCase.kind}-a`, 'Alpha'),
+        makePreset(`${testCase.kind}-b`, 'Beta'),
+        makePreset(`${testCase.kind}-c`, 'Gamma'),
+      ]
+      seedPresetDatabase(
+        testCase.kind === 'legacy'
+          ? { botPresets: rows, botPresetsId: 1 }
+          : testCase.kind === 'model'
+            ? { modelPresets: rows as unknown as ModelPreset[], modelPresetsId: 1 }
+            : { promptPresets: rows as unknown as PromptPreset[], promptPresetsId: 1 },
+      )
+      setCachedServerCommandRevision(100)
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          calls.push({
+            url,
+            method: init.method ?? 'GET',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          })
+          return jsonResponse({ error: 'invalid preset reorder' }, 400)
+        }) as unknown as typeof fetch,
+      )
+
+      const reorder =
+        testCase.kind === 'legacy'
+          ? reorderPresets
+          : testCase.kind === 'model'
+            ? reorderModelPresets
+            : reorderPromptPresets
+      reorder(0, 3)
+      reorder(0, 3)
+
+      await waitForState(() => {
+        expect(calls.map((call) => call.url)).toEqual([
+          `/api/v1/commands${testCase.path}`,
+          `/api/v1/commands${testCase.path}`,
+        ])
+        const liveRows =
+          testCase.kind === 'legacy'
+            ? getDatabase().botPresets
+            : testCase.kind === 'model'
+              ? getDatabase().modelPresets
+              : getDatabase().promptPresets
+        expect(liveRows.map((preset) => preset.id)).toEqual([
+          `${testCase.kind}-a`,
+          `${testCase.kind}-b`,
+          `${testCase.kind}-c`,
+        ])
+      })
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('rolls back a generated split preset when durable staging throws synchronously', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-model-create-stage-failure',
+      writerEpoch: 6,
+      databaseLineage: 'lineage-model-create-stage-failure',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase({
+        modelPresets: [makePreset('model-existing', 'Existing') as unknown as ModelPreset],
+        modelPresetsId: 0,
+      })
+      setCachedServerCommandRevision(100)
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementationOnce(() => {
+        throw new Error('mutation id generation failed')
+      })
+
+      expect(() =>
+        createModelPreset(makePreset('model-stage-failure', 'Must Roll Back') as unknown as ModelPreset),
+      ).not.toThrow()
+
+      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-existing'])
+      expect(await listPendingMutations()).toEqual([])
+      expect(consoleError).toHaveBeenCalledWith(
+        'Unable to stage durable preset mutation:',
+        expect.objectContaining({ message: 'mutation id generation failed' }),
+      )
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps model reorder behind a retained split row patch', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-model-patch-reorder',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-model-patch-reorder',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase({
+        modelPresets: [
+          makePreset('model-a', 'Alpha') as unknown as ModelPreset,
+          makePreset('model-b', 'Beta') as unknown as ModelPreset,
+          makePreset('model-c', 'Gamma') as unknown as ModelPreset,
+        ],
+        modelPresetsId: 0,
+      })
+      setCachedServerCommandRevision(100)
+      let recover = false
+      let revision = 100
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          const call = {
+            url,
+            method: init.method ?? 'GET',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          }
+          calls.push(call)
+          if (!recover) return jsonResponse({ error: 'model preset temporarily unavailable' }, 500)
+          revision += 1
+          return url.endsWith('/reorder')
+            ? jsonResponse({
+                revision,
+                event: { type: 'modelPreset.reordered', revision, resource: 'preset' },
+                selectedModelPresetId: 'model-a',
+              })
+            : jsonResponse({
+                revision,
+                event: { type: 'modelPreset.updated', revision, resource: 'preset', id: 'model-a' },
+                modelPresetId: 'model-a',
+              })
+        }) as unknown as typeof fetch,
+      )
+
+      updateModelPreset(0, { name: 'Alpha retained edit' })
+      reorderModelPresets(0, 3)
+
+      await waitForState(() => expect(calls.filter((call) => call.url.endsWith('/model-a'))).toHaveLength(2))
+      expect(calls.some((call) => call.url.endsWith('/reorder'))).toBe(false)
+      const queued = await listPendingMutations()
+      expect(queued).toHaveLength(2)
+      expect(queued[1]?.intent.dependencyKeys).toContain('split-preset:model:model-a')
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(calls.slice(recoveryStart).map((call) => `${call.method} ${call.url}`)).toEqual([
+        'PATCH /api/v1/commands/model-presets/model-a',
+        'POST /api/v1/commands/model-presets/reorder',
+      ])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps legacy extraction behind a retained split row patch', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-model-patch-extract',
+      writerEpoch: 5,
+      databaseLineage: 'lineage-model-patch-extract',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase({
+        botPresets: [makePreset('preset-a', 'Legacy Alpha'), makePreset('preset-b', 'Legacy Beta')],
+        botPresetsId: 0,
+        modelPresets: [makePreset('model-a', 'Model Alpha') as unknown as ModelPreset],
+        modelPresetsId: 0,
+        promptPresets: [makePreset('prompt-a', 'Prompt Alpha') as unknown as PromptPreset],
+        promptPresetsId: 0,
+      })
+      setCachedServerCommandRevision(100)
+      let recover = false
+      let revision = 100
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          const call = {
+            url,
+            method: init.method ?? 'GET',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          }
+          calls.push(call)
+          if (!recover) return jsonResponse({ error: 'preset temporarily unavailable' }, 500)
+          revision += 1
+          return url.includes('/legacy-bot-presets/')
+            ? jsonResponse({
+                revision,
+                event: { type: 'preset.extracted', revision, resource: 'preset', id: 'preset-a' },
+                legacyPresetId: 'preset-a',
+                modelPresetId: 'model-extracted',
+              })
+            : jsonResponse({
+                revision,
+                event: { type: 'modelPreset.updated', revision, resource: 'preset', id: 'model-a' },
+                modelPresetId: 'model-a',
+              })
+        }) as unknown as typeof fetch,
+      )
+
+      updateModelPreset(0, { name: 'Model Alpha retained edit' })
+      extractLegacyBotPresetByIndex(0, 'model')
+
+      await waitForState(() => expect(calls.filter((call) => call.url.endsWith('/model-a'))).toHaveLength(2))
+      expect(calls.some((call) => call.url.includes('/legacy-bot-presets/'))).toBe(false)
+      const queued = await listPendingMutations()
+      expect(queued).toHaveLength(2)
+      expect(queued[1]?.intent.dependencyKeys).toContain('split-preset:model:model-a')
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(calls.slice(recoveryStart).map((call) => `${call.method} ${call.url}`)).toEqual([
+        'PATCH /api/v1/commands/model-presets/model-a',
+        'POST /api/v1/commands/legacy-bot-presets/preset-a/extract',
+      ])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 })

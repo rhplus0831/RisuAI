@@ -19,6 +19,7 @@ const api = vi.hoisted(() => ({
 }))
 
 const sideEffects = vi.hoisted(() => ({
+  reapplyPendingPresets: vi.fn(),
   mergeAgentPresetSettings: vi.fn((value: Record<string, unknown>) => value),
   mergeAgentPresetLoadouts: vi.fn((value: any[]) => value),
   mergeAgentPresetCharacters: vi.fn((value: any[]) => value),
@@ -103,6 +104,7 @@ import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
 
 const hooks: ServerResourceInvalidationHooks = {
+  reapplyPendingPresetProjections: sideEffects.reapplyPendingPresets,
   mergePendingAgentPresetSettings: sideEffects.mergeAgentPresetSettings,
   mergePendingAgentPresetLoadouts: sideEffects.mergeAgentPresetLoadouts,
   mergePendingAgentPresetCharacters: sideEffects.mergeAgentPresetCharacters,
@@ -230,6 +232,7 @@ describe('API-backed resource invalidation', () => {
       ],
     })
     expect(sideEffects.mergePluginStorage).toHaveBeenCalledWith({ authoritative: true })
+    expect(sideEffects.reapplyPendingPresets).toHaveBeenCalledTimes(1)
     expect(promptHydration.reset).toHaveBeenCalledTimes(1)
     expect(languageSideEffects.change).toHaveBeenLastCalledWith('ko')
   })
@@ -388,6 +391,7 @@ describe('API-backed resource invalidation', () => {
     const database = getResourceDatabase()
     expect(database).toMatchObject({ language: 'ja', modules: [{ id: 'module-a' }] })
     expect(languageSideEffects.change).toHaveBeenLastCalledWith('ja')
+    expect(sideEffects.reapplyPendingPresets).toHaveBeenCalledTimes(1)
     expect(database.characters.find((candidate) => candidate.chaId === 'char-a')).toMatchObject({
       chaId: 'char-a',
       name: 'Ada updated',

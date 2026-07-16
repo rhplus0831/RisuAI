@@ -69,11 +69,7 @@ import {
   type SplitPresetPatchOptimisticAcknowledgement,
 } from '../server/commands'
 import { currentCharacterRowSnapshot, dispatchCompatibleCharacterUpdateScoped } from '../characterCommands'
-import {
-  currentChatScopedSnapshot,
-  dispatchCompatibleChatUpdateScoped,
-  runOptimisticCommandSequence,
-} from '../chatCommands'
+import { currentChatScopedSnapshot, dispatchCompatibleChatUpdateScoped } from '../chatCommands'
 import {
   isResourceWriteGuardEnabled,
   setResourceWriteGuardEnabled,
@@ -121,12 +117,12 @@ import {
   flushRegisteredPendingBridgePatch,
   registerPendingBridgePatchFlusher,
 } from '../server/pendingBridgeFlushRegistry'
-import { dispatchDurableMutation } from '../server/durableMutationDispatch'
+import { dispatchDurableMutation, registerDurableMutationSettlementListener } from '../server/durableMutationDispatch'
 import {
+  MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
   acknowledgePendingMutation,
   isPendingMutationCurrent,
-  isPendingMutationProjectionFenceCurrent,
-  pendingMutationProjectionFence,
+  pendingMutationIntentPayloadByteLength,
   pendingMutationPresetRowProjectionTarget,
   pendingMutationSettingsFieldProjectionTarget,
   recordPendingMutationProjectionTargets,
@@ -574,6 +570,7 @@ interface PendingSplitPresetPatch {
 }
 
 interface DispatchedSplitPresetPatch {
+  sequence: number
   kind: SplitPresetKind
   presetId: string
   fields: Map<string, SplitPresetPatchFieldAttempt>
@@ -586,6 +583,8 @@ interface DispatchedSplitPresetPatch {
   promptOwnerRevision: number | null
   selectedProjectionExpected: boolean
   ownerProjectionExpected: boolean
+  outbox: PendingMutationHandle
+  settlementCleanup?: () => void
   settled: boolean
 }
 
@@ -596,13 +595,6 @@ const modelPresetFieldNames = new Set<string>(MODEL_PRESET_FIELDS)
 const promptPresetFieldNames = new Set<string>(PROMPT_PRESET_FIELDS)
 const promptPresetModelParameterFieldNames = new Set<string>(PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS)
 const promptPresetModelOthersFieldNames = new Set<string>(PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS)
-
-interface BotPresetListRollbackEntry {
-  key: string
-  previous: botPreset | null
-  attempted: botPreset | null
-  previousIndex?: number
-}
 
 interface BotPresetFieldRollback {
   presetId: string
@@ -636,6 +628,58 @@ interface SplitPresetSelectionRollback {
   attemptedSettings: Partial<Record<SetPresetRollbackKey, unknown>>
 }
 
+type PresetRowKind = 'legacy' | SplitPresetKind
+type PresetRow = botPreset | SplitPresetRow
+
+interface PresetRowMutationEntry {
+  kind: PresetRowKind
+  key: string
+  previous: PresetRow | null
+  attempted: PresetRow | null
+  previousIndex?: number
+}
+
+interface PresetSelectionMutation {
+  kind: PresetRowKind
+  previousSelectedId: string | null
+  attemptedSelectedId: string | null
+  previousSettings?: Partial<Record<SetPresetRollbackKey, unknown>>
+  attemptedSettings?: Partial<Record<SetPresetRollbackKey, unknown>>
+}
+
+interface PresetRowMutationAttempt {
+  sequence: number
+  entries: PresetRowMutationEntry[]
+  selection?: PresetSelectionMutation
+  outbox: PendingMutationHandle | null
+  settlementCleanup?: () => void
+  settled: boolean
+}
+
+interface PresetReorderMutationAttempt {
+  sequence: number
+  kind: PresetRowKind
+  previousPresetIds: string[]
+  attemptedPresetIds: string[]
+  outbox: PendingMutationHandle | null
+  settlementCleanup?: () => void
+  settled: boolean
+}
+
+type PreparedPresetMutation =
+  | { status: 'plain' }
+  | { status: 'durable'; handle: PendingMutationHandle; intent: DurableMutationIntent }
+  | { status: 'failed' }
+
+const PRESET_MUTATION_KEY = 'preset-operations'
+let nextPresetMutationSequence = 0
+const unsettledPresetRowMutationAttempts: PresetRowMutationAttempt[] = []
+const unsettledPresetReorderMutationAttempts: PresetReorderMutationAttempt[] = []
+const activeImportedSplitPresetOwnerKeys = new Map<SplitPresetKind, Set<string>>([
+  ['model', new Set()],
+  ['prompt', new Set()],
+])
+
 function splitPresetPatchKey(kind: SplitPresetKind, presetId: string): string {
   return `${kind}:${presetId}`
 }
@@ -649,75 +693,47 @@ function splitPresetMutationDependencyKeys(
   ...presetIds: Array<string | null | undefined>
 ): string[] {
   return Array.from(
-    new Set(
-      presetIds
+    new Set([
+      PRESET_MUTATION_KEY,
+      ...presetIds
         .filter((presetId): presetId is string => typeof presetId === 'string' && presetId.trim() !== '')
         .map((presetId) => splitPresetMutationKey(kind, presetId)),
-    ),
+    ]),
   )
 }
 
-interface StagedSplitPresetCreate {
-  intent: DurableMutationIntent
-  outbox: PendingMutationHandle
+function activeSplitPresetOwnerMutationKeys(kinds: readonly SplitPresetKind[]): string[] {
+  const requestedKinds = new Set(kinds)
+  const keys = new Set<string>()
+  for (const pending of pendingSplitPresetPatches.values()) {
+    if (requestedKinds.has(pending.kind) && pending.outbox) keys.add(pending.outbox.key)
+  }
+  for (const attempts of unsettledSplitPresetPatches.values()) {
+    for (const attempt of attempts) {
+      if (requestedKinds.has(attempt.kind) && !attempt.settled) keys.add(attempt.outbox.key)
+    }
+  }
+  for (const attempt of unsettledPresetRowMutationAttempts) {
+    if (attempt.settled || !attempt.outbox || attempt.outbox.key === PRESET_MUTATION_KEY) continue
+    if (attempt.entries.some((entry) => entry.kind !== 'legacy' && requestedKinds.has(entry.kind))) {
+      keys.add(attempt.outbox.key)
+    }
+  }
+  for (const kind of requestedKinds) {
+    for (const key of activeImportedSplitPresetOwnerKeys.get(kind) ?? []) keys.add(key)
+  }
+  return [...keys]
 }
 
-function stageSplitPresetCreate(
-  kind: SplitPresetKind,
-  attemptedPreset: SplitPresetRow,
-): StagedSplitPresetCreate | null {
-  const presetId = attemptedPreset.id
-  if (!presetId || !canUseServerCommands()) return null
-  const intent: DurableMutationIntent = {
-    version: 1,
-    requests: [
-      {
-        method: 'POST',
-        path: kind === 'model' ? '/model-presets' : '/prompt-presets',
-        body: { preset: safeStructuredClone(attemptedPreset) },
-      },
-    ],
-  }
-  return {
-    intent,
-    outbox: stagePendingMutation(splitPresetMutationKey(kind, presetId), intent),
-  }
-}
-
-function dispatchSplitPresetCreate(
-  kind: SplitPresetKind,
-  attemptedPreset: SplitPresetRow,
-  staged: StagedSplitPresetCreate | null,
-): void {
-  if (!staged) return
-  const presetId = attemptedPreset.id
-  if (!presetId) return
-  const rollback = () => rollbackSplitPresetCreate(kind, attemptedPreset)
-  if (kind === 'model') {
-    void dispatchDurableMutation(staged.outbox, staged.intent, (transport) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          createModelPresetCommand({
-            baseRevision,
-            preset: safeStructuredClone(attemptedPreset) as unknown as ModelPresetSnapshot,
-          }),
-        rollback,
-        ...transport,
-      }),
+function activeLegacyPresetOperationDependencyKeys(): string[] {
+  const hasActiveOwner =
+    unsettledPresetRowMutationAttempts.some(
+      (attempt) => !attempt.settled && attempt.outbox?.key === PRESET_MUTATION_KEY,
+    ) ||
+    unsettledPresetReorderMutationAttempts.some(
+      (attempt) => !attempt.settled && attempt.outbox?.key === PRESET_MUTATION_KEY,
     )
-    return
-  }
-  void dispatchDurableMutation(staged.outbox, staged.intent, (transport) =>
-    runServerCommand({
-      command: (baseRevision) =>
-        createPromptPresetCommand({
-          baseRevision,
-          preset: safeStructuredClone(attemptedPreset) as unknown as PromptPresetSnapshot,
-        }),
-      rollback,
-      ...transport,
-    }),
-  )
+  return hasActiveOwner ? [PRESET_MUTATION_KEY] : []
 }
 
 function cloneSplitPresetPatchFieldAttempt(field: SplitPresetPatchFieldAttempt): SplitPresetPatchFieldAttempt {
@@ -967,8 +983,10 @@ function splitPresetPatchDurableIntent(
   presetId: string,
   patch: Record<string, unknown>,
 ): DurableMutationIntent {
+  const dependencyKeys = activeLegacyPresetOperationDependencyKeys()
   return {
     version: 1,
+    ...(dependencyKeys.length > 0 ? { dependencyKeys } : {}),
     requests: [
       {
         method: 'PATCH',
@@ -1042,6 +1060,7 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
     Object.prototype.hasOwnProperty.call(livePreset, 'promptTemplate')
 
   const attempt: DispatchedSplitPresetPatch = {
+    sequence: reservePresetMutationSequence(),
     kind: pending.kind,
     presetId: pending.presetId,
     fields,
@@ -1054,6 +1073,7 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
     promptOwnerRevision: pending.promptOwnerRevision,
     selectedProjectionExpected,
     ownerProjectionExpected,
+    outbox: pending.outbox,
     settled: false,
   }
   const optimisticAcknowledgement: SplitPresetPatchOptimisticAcknowledgement = {
@@ -1075,39 +1095,44 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
   const unsettled = unsettledSplitPresetPatches.get(pendingKey) ?? []
   unsettled.push(attempt)
   unsettledSplitPresetPatches.set(pendingKey, unsettled)
+  attempt.settlementCleanup = registerDurableMutationSettlementListener(attempt.outbox.mutationId, (settlement) => {
+    if (attempt.settled) return
+    if (settlement === 'accepted') {
+      settleSplitPresetPatchAttempt(attempt, true)
+      return
+    }
+    taintSplitPresetPatchAttempt(attempt)
+    settleSplitPresetPatchAttempt(attempt, false)
+    rollbackSplitPresetPatchAttempt(attempt)
+  })
 
-  void dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
+  const dispatch = dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
     runServerCommand({
       command: async (baseRevision) => {
-        try {
-          const result =
-            attempt.kind === 'model'
-              ? await updateModelPresetCommand(
-                  {
-                    baseRevision,
-                    modelPresetId: attempt.presetId,
-                    patch: safeStructuredClone(patch) as ModelPresetSnapshot,
-                    optimisticAcknowledgement,
-                  },
-                  options.signal,
-                  options.keepalive,
-                )
-              : await updatePromptPresetCommand(
-                  {
-                    baseRevision,
-                    promptPresetId: attempt.presetId,
-                    patch: safeStructuredClone(patch) as PromptPresetSnapshot,
-                    optimisticAcknowledgement,
-                  },
-                  options.signal,
-                  options.keepalive,
-                )
-          settleSplitPresetPatchAttempt(attempt, result.status === 'ok')
-          return result
-        } catch (error) {
-          settleSplitPresetPatchAttempt(attempt, false)
-          throw error
-        }
+        const result =
+          attempt.kind === 'model'
+            ? await updateModelPresetCommand(
+                {
+                  baseRevision,
+                  modelPresetId: attempt.presetId,
+                  patch: safeStructuredClone(patch) as ModelPresetSnapshot,
+                  optimisticAcknowledgement,
+                },
+                options.signal,
+                options.keepalive,
+              )
+            : await updatePromptPresetCommand(
+                {
+                  baseRevision,
+                  promptPresetId: attempt.presetId,
+                  patch: safeStructuredClone(patch) as PromptPresetSnapshot,
+                  optimisticAcknowledgement,
+                },
+                options.signal,
+                options.keepalive,
+              )
+        if (result.status === 'ok') settleSplitPresetPatchAttempt(attempt, true)
+        return result
       },
       rollback: () => {
         taintSplitPresetPatchAttempt(attempt)
@@ -1119,6 +1144,28 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
       ...transport,
     }),
   )
+  void dispatch
+    .then(async (result) => {
+      if (result.status === 'ok' || attempt.settled) return
+      if ((await attempt.outbox.ready) === 'persisted' && (await isPendingMutationCurrent(attempt.outbox))) {
+        reapplyPendingPresetProjections()
+        return
+      }
+      taintSplitPresetPatchAttempt(attempt)
+      settleSplitPresetPatchAttempt(attempt, false)
+      rollbackSplitPresetPatchAttempt(attempt)
+    })
+    .catch(async (error) => {
+      if (attempt.settled) return
+      if ((await attempt.outbox.ready) === 'persisted' && (await isPendingMutationCurrent(attempt.outbox))) {
+        reapplyPendingPresetProjections()
+        return
+      }
+      taintSplitPresetPatchAttempt(attempt)
+      settleSplitPresetPatchAttempt(attempt, false)
+      rollbackSplitPresetPatchAttempt(attempt)
+      console.error('Split preset patch command rejected:', error)
+    })
 }
 
 function taintSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): void {
@@ -1162,6 +1209,8 @@ function splitPresetPatchFieldValuesDiffer(
 function settleSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch, accepted: boolean): void {
   if (attempt.settled) return
   attempt.settled = true
+  attempt.settlementCleanup?.()
+  attempt.settlementCleanup = undefined
 
   const pendingKey = splitPresetPatchKey(attempt.kind, attempt.presetId)
   const unsettled = unsettledSplitPresetPatches.get(pendingKey) ?? []
@@ -1483,43 +1532,6 @@ function legacyPresetPatchOptimisticAcknowledgement(input: {
   }
 }
 
-function rollbackBotPresetListEntry(entry: BotPresetListRollbackEntry): void {
-  withTrustedResourceWrite(() => {
-    const list = getDatabase().botPresets
-    const selectedId = currentBotPresetSelectedId()
-    const rolledBack = applyAttemptedKeyedListRollback<botPreset, string>({
-      list,
-      entries: [entry],
-      getKey: (preset) => preset?.id,
-    })
-    if (rolledBack.length === 0) return
-
-    getDatabase().botPresets = list
-    restoreBotPresetSelectionToId(selectedId)
-  })
-}
-
-function rollbackBotPresetCreate(attemptedPreset: botPreset): void {
-  const presetId = attemptedPreset.id
-  if (!presetId) return
-  rollbackBotPresetListEntry({
-    key: presetId,
-    previous: null,
-    attempted: safeStructuredClone(attemptedPreset),
-  })
-}
-
-function rollbackBotPresetDelete(previousPreset: botPreset, previousIndex: number): void {
-  const presetId = previousPreset.id
-  if (!presetId) return
-  rollbackBotPresetListEntry({
-    key: presetId,
-    previous: safeStructuredClone(previousPreset),
-    attempted: null,
-    previousIndex,
-  })
-}
-
 function rollbackBotPresetFields(rollback: BotPresetFieldRollback | null): void {
   if (!rollback) return
   withTrustedResourceWrite(() => {
@@ -1643,17 +1655,6 @@ function rollbackSplitPresetCreate(kind: SplitPresetKind, attemptedPreset: Split
   })
 }
 
-function rollbackSplitPresetDelete(kind: SplitPresetKind, previousPreset: SplitPresetRow, previousIndex: number): void {
-  const presetId = previousPreset.id
-  if (!presetId) return
-  rollbackSplitPresetListEntry(kind, {
-    key: presetId,
-    previous: safeStructuredClone(previousPreset),
-    attempted: null,
-    previousIndex,
-  })
-}
-
 function rollbackSplitPresetReorder(
   kind: SplitPresetKind,
   previousPresetIds: string[],
@@ -1694,24 +1695,663 @@ function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): v
   })
 }
 
-function runPromptPresetSelectionCommand(
-  promptPresetId: string,
-  rollback: () => void,
-  outbox: PendingMutationHandle,
-  intent: DurableMutationIntent,
+function presetRowList(kind: PresetRowKind): PresetRow[] {
+  return kind === 'legacy' ? getDatabase().botPresets : splitPresetList(kind)
+}
+
+function assignPresetRowList(kind: PresetRowKind, list: PresetRow[]): void {
+  if (kind === 'legacy') {
+    getDatabase().botPresets = list as botPreset[]
+    return
+  }
+  assignSplitPresetList(kind, list as SplitPresetRow[])
+}
+
+function currentPresetRowSelectedId(kind: PresetRowKind): string | null {
+  return kind === 'legacy' ? currentBotPresetSelectedId() : currentSplitPresetSelectedId(kind)
+}
+
+function restorePresetRowSelectionToId(kind: PresetRowKind, presetId: string | null): void {
+  const list = kind === 'legacy' ? getDatabase().botPresets : splitPresetList(kind)
+  if (!Array.isArray(list)) return
+  if (kind === 'legacy') {
+    restoreBotPresetSelectionToId(presetId)
+    return
+  }
+  restoreSplitPresetSelectionToId(kind, presetId)
+}
+
+function presetRowProjectionTarget(entry: Pick<PresetRowMutationEntry, 'kind' | 'key'>): string {
+  return pendingMutationPresetRowProjectionTarget(entry.kind, entry.key)
+}
+
+function presetOrderProjectionTarget(kind: PresetRowKind): string {
+  return `preset-order:${kind}`
+}
+
+function reservePresetMutationSequence(): number {
+  return ++nextPresetMutationSequence
+}
+
+function createPresetRowMutationAttempt(
+  entries: PresetRowMutationEntry[],
+  selection?: PresetRowMutationAttempt['selection'],
+): PresetRowMutationAttempt {
+  const attempt: PresetRowMutationAttempt = {
+    sequence: reservePresetMutationSequence(),
+    entries: safeStructuredClone(entries),
+    ...(selection ? { selection: safeStructuredClone(selection) } : {}),
+    outbox: null,
+    settled: false,
+  }
+  unsettledPresetRowMutationAttempts.push(attempt)
+  return attempt
+}
+
+function legacyPresetEntryFromFieldRollback(
+  rollback: BotPresetFieldRollback,
+  attemptedPreset: botPreset,
+  previousIndex?: number,
+): PresetRowMutationEntry {
+  const previousPreset = safeStructuredClone(attemptedPreset) as unknown as Record<string, unknown>
+  for (const key of Object.keys(rollback.attempted)) {
+    if (Object.prototype.hasOwnProperty.call(rollback.previous, key)) {
+      previousPreset[key] = safeStructuredClone(rollback.previous[key])
+    } else {
+      delete previousPreset[key]
+    }
+  }
+  return {
+    kind: 'legacy',
+    key: rollback.presetId,
+    previous: previousPreset as unknown as botPreset,
+    attempted: safeStructuredClone(attemptedPreset),
+    ...(previousIndex === undefined ? {} : { previousIndex }),
+  }
+}
+
+function createPresetReorderMutationAttempt(
+  kind: PresetRowKind,
+  previousPresetIds: string[],
+  attemptedPresetIds: string[],
+): PresetReorderMutationAttempt {
+  const attempt: PresetReorderMutationAttempt = {
+    sequence: reservePresetMutationSequence(),
+    kind,
+    previousPresetIds: [...previousPresetIds],
+    attemptedPresetIds: [...attemptedPresetIds],
+    outbox: null,
+    settled: false,
+  }
+  unsettledPresetReorderMutationAttempts.push(attempt)
+  return attempt
+}
+
+function settlePresetRowMutationAttempt(attempt: PresetRowMutationAttempt, accepted: boolean): void {
+  if (attempt.settled) return
+  attempt.settled = true
+  attempt.settlementCleanup?.()
+  attempt.settlementCleanup = undefined
+  const attemptIndex = unsettledPresetRowMutationAttempts.indexOf(attempt)
+  const laterAttempts = attemptIndex < 0 ? [] : unsettledPresetRowMutationAttempts.slice(attemptIndex + 1)
+  for (const laterAttempt of laterAttempts) {
+    if (attempt.selection && laterAttempt.selection) {
+      rebasePresetSelectionMutation(laterAttempt.selection, attempt.selection, accepted)
+    }
+    for (const settledEntry of attempt.entries) {
+      for (const laterEntry of laterAttempt.entries) {
+        if (laterEntry.kind !== settledEntry.kind || laterEntry.key !== settledEntry.key) continue
+        rebasePresetRowMutationEntry(laterEntry, settledEntry, accepted)
+      }
+    }
+  }
+  if (attemptIndex >= 0) unsettledPresetRowMutationAttempts.splice(attemptIndex, 1)
+}
+
+function rebasePresetSelectionMutation(
+  later: PresetSelectionMutation,
+  settled: PresetSelectionMutation,
+  accepted: boolean,
 ): void {
-  if (!canUseServerCommands()) return
-  void dispatchDurableMutation(outbox, intent, (transport) =>
+  if (later.kind === settled.kind && later.previousSelectedId === settled.attemptedSelectedId) {
+    later.previousSelectedId = accepted ? settled.attemptedSelectedId : settled.previousSelectedId
+  }
+  if (!later.previousSettings || !later.attemptedSettings || !settled.previousSettings || !settled.attemptedSettings) {
+    return
+  }
+
+  const laterPrevious = later.previousSettings as Record<string, unknown>
+  const settledPrevious = settled.previousSettings as Record<string, unknown>
+  const settledAttempted = settled.attemptedSettings as Record<string, unknown>
+  for (const key of SET_PRESET_ROLLBACK_KEYS) {
+    if (presetRowFieldStatesEqual(settledPrevious, settledAttempted, key)) continue
+    if (!presetRowFieldStatesEqual(laterPrevious, settledAttempted, key)) continue
+    copyPresetRowFieldState(laterPrevious, accepted ? settledAttempted : settledPrevious, key)
+  }
+}
+
+function rebasePresetRowMutationEntry(
+  later: PresetRowMutationEntry,
+  settled: PresetRowMutationEntry,
+  accepted: boolean,
+): void {
+  if (!settled.previous || !settled.attempted || !later.previous || !later.attempted) {
+    if (!exactJsonValuesEqual(later.previous, settled.attempted)) return
+    later.previous = safeStructuredClone(accepted ? settled.attempted : settled.previous)
+    if (!accepted && settled.previousIndex !== undefined) later.previousIndex = settled.previousIndex
+    return
+  }
+
+  const settledFields = changedPresetRowFieldStates(settled.previous, settled.attempted)
+  const laterFields = changedPresetRowFieldStates(later.previous, later.attempted)
+  const laterChangedFields = new Set(laterFields.keys)
+  const settledPrevious = settled.previous as unknown as Record<string, unknown>
+  const settledAttempted = settled.attempted as unknown as Record<string, unknown>
+  const laterPrevious = later.previous as unknown as Record<string, unknown>
+  const laterAttempted = later.attempted as unknown as Record<string, unknown>
+
+  for (const key of settledFields.keys) {
+    if (!presetRowFieldStatesEqual(laterPrevious, settledAttempted, key)) continue
+    const baseline = accepted ? settledAttempted : settledPrevious
+    copyPresetRowFieldState(laterPrevious, baseline, key)
+    if (!accepted && !laterChangedFields.has(key)) copyPresetRowFieldState(laterAttempted, baseline, key)
+  }
+}
+
+function presetRowFieldStatesEqual(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+  key: string,
+): boolean {
+  const leftPresent = Object.prototype.hasOwnProperty.call(left, key)
+  const rightPresent = Object.prototype.hasOwnProperty.call(right, key)
+  return leftPresent === rightPresent && (!leftPresent || snapshotJson(left[key]) === snapshotJson(right[key]))
+}
+
+function copyPresetRowFieldState(target: Record<string, unknown>, source: Record<string, unknown>, key: string): void {
+  if (Object.prototype.hasOwnProperty.call(source, key)) target[key] = safeStructuredClone(source[key])
+  else delete target[key]
+}
+
+function settlePresetReorderMutationAttempt(attempt: PresetReorderMutationAttempt, accepted: boolean): void {
+  if (attempt.settled) return
+  attempt.settled = true
+  attempt.settlementCleanup?.()
+  attempt.settlementCleanup = undefined
+  const attemptIndex = unsettledPresetReorderMutationAttempts.indexOf(attempt)
+  const laterAttempts = attemptIndex < 0 ? [] : unsettledPresetReorderMutationAttempts.slice(attemptIndex + 1)
+  for (const laterAttempt of laterAttempts) {
+    if (laterAttempt.kind !== attempt.kind) continue
+    if (!stringArraysEqual(laterAttempt.previousPresetIds, attempt.attemptedPresetIds)) continue
+    laterAttempt.previousPresetIds = [...(accepted ? attempt.attemptedPresetIds : attempt.previousPresetIds)]
+  }
+  if (attemptIndex >= 0) unsettledPresetReorderMutationAttempts.splice(attemptIndex, 1)
+}
+
+function changedPresetRowFieldStates(
+  previous: PresetRow,
+  attempted: PresetRow,
+): {
+  previous: Record<string, unknown>
+  attempted: Record<string, unknown>
+  keys: string[]
+} {
+  const previousRecord = previous as unknown as Record<string, unknown>
+  const attemptedRecord = attempted as unknown as Record<string, unknown>
+  const previousFields: Record<string, unknown> = {}
+  const attemptedFields: Record<string, unknown> = {}
+  const keys: string[] = []
+  for (const key of new Set([...Object.keys(previousRecord), ...Object.keys(attemptedRecord)])) {
+    const previousPresent = Object.prototype.hasOwnProperty.call(previousRecord, key)
+    const attemptedPresent = Object.prototype.hasOwnProperty.call(attemptedRecord, key)
+    if (
+      previousPresent === attemptedPresent &&
+      (!previousPresent || snapshotJson(previousRecord[key]) === snapshotJson(attemptedRecord[key]))
+    ) {
+      continue
+    }
+    keys.push(key)
+    previousFields[key] = previousPresent ? safeStructuredClone(previousRecord[key]) : undefined
+    attemptedFields[key] = attemptedPresent ? safeStructuredClone(attemptedRecord[key]) : undefined
+  }
+  return { previous: previousFields, attempted: attemptedFields, keys }
+}
+
+function applyPresetRowTransition(entry: PresetRowMutationEntry, from: PresetRow | null, to: PresetRow | null): void {
+  withTrustedResourceWrite(() => {
+    const list = presetRowList(entry.kind)
+    const selectedId = currentPresetRowSelectedId(entry.kind)
+    if (from && to) {
+      const index = list.findIndex((preset) => preset?.id === entry.key)
+      if (index < 0) return
+      const fields = changedPresetRowFieldStates(from, to)
+      if (fields.keys.length === 0) return
+      const changed = applyAttemptedFieldRollback({
+        target: list[index] as unknown as Record<string, unknown>,
+        previous: fields.attempted,
+        attempted: fields.previous,
+        keys: fields.keys,
+        deleteMissingPrevious: true,
+      })
+      if (changed.length === 0) return
+      assignPresetRowList(entry.kind, list)
+      restorePresetRowSelectionToId(entry.kind, selectedId)
+      return
+    }
+
+    const changed = applyAttemptedKeyedListRollback<PresetRow, string>({
+      list,
+      entries: [
+        {
+          key: entry.key,
+          previous: to ? safeStructuredClone(to) : null,
+          attempted: from ? safeStructuredClone(from) : null,
+          previousIndex: entry.previousIndex,
+        },
+      ],
+      getKey: (preset) => preset?.id,
+    })
+    if (changed.length === 0) return
+    assignPresetRowList(entry.kind, list)
+    restorePresetRowSelectionToId(entry.kind, selectedId)
+  })
+}
+
+function rollbackPresetRowMutationAttempt(attempt: PresetRowMutationAttempt): void {
+  for (const entry of attempt.entries) {
+    applyPresetRowTransition(entry, entry.attempted, entry.previous)
+  }
+  const selection = attempt.selection
+  if (!selection) return
+  if (selection.kind === 'legacy') {
+    rollbackBotPresetSelection(selection)
+    return
+  }
+  if (!selection.previousSettings || !selection.attemptedSettings) return
+  rollbackSplitPresetSelection({
+    kind: selection.kind,
+    previousSelectedId: selection.previousSelectedId,
+    attemptedSelectedId: selection.attemptedSelectedId,
+    previousSettings: selection.previousSettings,
+    attemptedSettings: selection.attemptedSettings,
+  })
+}
+
+function reapplyRetainedPresetRowMutationAttempt(
+  attempt: PresetRowMutationAttempt,
+  handle: PendingMutationHandle,
+): void {
+  attempt.outbox = handle
+  reapplyPendingPresetProjections()
+}
+
+function applyPresetReorderTransition(kind: PresetRowKind, fromPresetIds: string[], toPresetIds: string[]): void {
+  if (kind === 'legacy') {
+    rollbackBotPresetReorder(toPresetIds, fromPresetIds)
+    return
+  }
+  rollbackSplitPresetReorder(kind, toPresetIds, fromPresetIds)
+}
+
+function rollbackPresetReorderMutationAttempt(attempt: PresetReorderMutationAttempt): void {
+  applyPresetReorderTransition(attempt.kind, attempt.attemptedPresetIds, attempt.previousPresetIds)
+}
+
+function reapplyRetainedPresetReorderMutationAttempt(
+  attempt: PresetReorderMutationAttempt,
+  handle: PendingMutationHandle,
+): void {
+  attempt.outbox = handle
+  reapplyPendingPresetProjections()
+}
+
+function applyPresetRowProjectionEntry(entry: PresetRowMutationEntry): void {
+  const list = presetRowList(entry.kind)
+  const index = list.findIndex((preset) => preset?.id === entry.key)
+
+  if (entry.attempted === null) {
+    if (index >= 0) {
+      list.splice(index, 1)
+      assignPresetRowList(entry.kind, list)
+    }
+    return
+  }
+
+  if (entry.previous === null) {
+    if (index < 0) {
+      const insertAt = Math.min(Math.max(entry.previousIndex ?? list.length, 0), list.length)
+      list.splice(insertAt, 0, safeStructuredClone(entry.attempted))
+    } else {
+      list[index] = {
+        ...(list[index] as unknown as Record<string, unknown>),
+        ...(safeStructuredClone(entry.attempted) as unknown as Record<string, unknown>),
+      } as PresetRow
+    }
+    assignPresetRowList(entry.kind, list)
+    return
+  }
+
+  if (index < 0) {
+    const insertAt = Math.min(Math.max(entry.previousIndex ?? list.length, 0), list.length)
+    list.splice(insertAt, 0, safeStructuredClone(entry.attempted))
+    assignPresetRowList(entry.kind, list)
+    return
+  }
+
+  const previous = entry.previous as unknown as Record<string, unknown>
+  const attempted = entry.attempted as unknown as Record<string, unknown>
+  const target = list[index] as unknown as Record<string, unknown>
+  for (const key of new Set([...Object.keys(previous), ...Object.keys(attempted)])) {
+    const previousPresent = Object.prototype.hasOwnProperty.call(previous, key)
+    const attemptedPresent = Object.prototype.hasOwnProperty.call(attempted, key)
+    if (
+      previousPresent === attemptedPresent &&
+      (!previousPresent || snapshotJson(previous[key]) === snapshotJson(attempted[key]))
+    ) {
+      continue
+    }
+    if (attemptedPresent) target[key] = safeStructuredClone(attempted[key])
+    else delete target[key]
+  }
+  assignPresetRowList(entry.kind, list)
+}
+
+function applyPresetReorderProjection(attempt: PresetReorderMutationAttempt): void {
+  const list = presetRowList(attempt.kind)
+  const rowsById = new Map<string, PresetRow>()
+  for (const row of list) {
+    if (row?.id) rowsById.set(row.id, row)
+  }
+  if (attempt.attemptedPresetIds.some((presetId) => !rowsById.has(presetId))) return
+  const ordered = attempt.attemptedPresetIds.map((presetId) => rowsById.get(presetId)!)
+  const attemptedIds = new Set(attempt.attemptedPresetIds)
+  ordered.push(...list.filter((row) => !row?.id || !attemptedIds.has(row.id)))
+  assignPresetRowList(attempt.kind, ordered)
+}
+
+function applySplitPresetPatchProjection(attempt: DispatchedSplitPresetPatch): void {
+  const list = splitPresetList(attempt.kind)
+  const index = list.findIndex((preset) => preset?.id === attempt.presetId)
+  if (index >= 0) {
+    const target = list[index] as unknown as Record<string, unknown>
+    for (const [fieldName, field] of attempt.fields) {
+      if (field.attemptedPresent) target[fieldName] = safeStructuredClone(field.attemptedValue)
+      else delete target[fieldName]
+    }
+    assignSplitPresetList(attempt.kind, list)
+  }
+
+  if (currentSplitPresetSelectedId(attempt.kind) === attempt.presetId) {
+    if (attempt.kind !== 'model' || currentSplitPresetSelectedId('prompt') === attempt.selectedPromptPresetId) {
+      const database = getDatabase() as unknown as Record<string, unknown>
+      for (const [fieldName, field] of attempt.projectionFields) {
+        if (field.attemptedPresent) database[fieldName] = safeStructuredClone(field.attemptedValue)
+        else delete database[fieldName]
+      }
+    }
+  }
+
+  attempt.collectionProjectionEpoch = captureCollectionProjectionEpoch(
+    attempt.kind === 'model' ? 'modelPresets' : 'promptPresets',
+  )
+  attempt.settingsProjectionEpoch = captureSettingsProjectionEpoch()
+  if (attempt.kind === 'prompt' && attempt.ownerProjectionExpected) {
+    attempt.promptOwnerProjectionEpoch = capturePromptTemplateOwnerProjectionEpoch(attempt.presetId)
+    attempt.promptOwnerRevision = peekPromptTemplateOwnerRevision(attempt.presetId)
+  }
+}
+
+function reapplyPendingPresetProjectionsMutable(): void {
+  const operations: Array<
+    | { sequence: number; type: 'row'; attempt: PresetRowMutationAttempt }
+    | { sequence: number; type: 'reorder'; attempt: PresetReorderMutationAttempt }
+    | { sequence: number; type: 'split-patch'; attempt: DispatchedSplitPresetPatch }
+    | { sequence: number; type: 'imported-create'; attempt: StagedImportedSplitPreset }
+  > = [
+    ...unsettledPresetRowMutationAttempts.map((attempt) => ({
+      sequence: attempt.sequence,
+      type: 'row' as const,
+      attempt,
+    })),
+    ...unsettledPresetReorderMutationAttempts.map((attempt) => ({
+      sequence: attempt.sequence,
+      type: 'reorder' as const,
+      attempt,
+    })),
+    ...Array.from(unsettledSplitPresetPatches.values()).flatMap((attempts) =>
+      attempts.map((attempt) => ({
+        sequence: attempt.sequence,
+        type: 'split-patch' as const,
+        attempt,
+      })),
+    ),
+    ...unsettledImportedSplitPresets.map((attempt) => ({
+      sequence: attempt.sequence,
+      type: 'imported-create' as const,
+      attempt,
+    })),
+  ].sort((left, right) => left.sequence - right.sequence)
+  if (operations.length === 0) return
+
+  const selectedIds: Record<PresetRowKind, string | null> = {
+    legacy: currentPresetRowSelectedId('legacy'),
+    model: currentPresetRowSelectedId('model'),
+    prompt: currentPresetRowSelectedId('prompt'),
+  }
+
+  for (const operation of operations) {
+    if (operation.attempt.settled) continue
+    if (operation.type === 'row') {
+      for (const entry of operation.attempt.entries) applyPresetRowProjectionEntry(entry)
+      if (operation.attempt.selection) {
+        selectedIds[operation.attempt.selection.kind] = operation.attempt.selection.attemptedSelectedId
+        if (operation.attempt.selection.attemptedSettings) {
+          const database = getDatabase() as unknown as Record<string, unknown>
+          for (const [fieldName, value] of Object.entries(operation.attempt.selection.attemptedSettings)) {
+            database[fieldName] = safeStructuredClone(value)
+          }
+        }
+      }
+    } else if (operation.type === 'reorder') {
+      applyPresetReorderProjection(operation.attempt)
+    } else if (operation.type === 'split-patch') {
+      applySplitPresetPatchProjection(operation.attempt)
+    } else {
+      const presetId = operation.attempt.preset.id
+      if (presetId) {
+        applyPresetRowProjectionEntry({
+          kind: operation.attempt.kind,
+          key: presetId,
+          previous: null,
+          attempted: operation.attempt.preset,
+        })
+      }
+    }
+    restorePresetRowSelectionToId('legacy', selectedIds.legacy)
+    restorePresetRowSelectionToId('model', selectedIds.model)
+    restorePresetRowSelectionToId('prompt', selectedIds.prompt)
+  }
+
+  restorePresetRowSelectionToId('legacy', selectedIds.legacy)
+  restorePresetRowSelectionToId('model', selectedIds.model)
+  restorePresetRowSelectionToId('prompt', selectedIds.prompt)
+}
+
+/** Reassert optimistic preset mutations after an authoritative resource slice is replaced. */
+export function reapplyPendingPresetProjections(): void {
+  withTrustedResourceWrite(reapplyPendingPresetProjectionsMutable)
+}
+
+export function resetPendingPresetMutationsForTests(): void {
+  for (const pending of pendingSplitPresetPatches.values()) {
+    if (pending.timer) clearTimeout(pending.timer)
+  }
+  for (const attempts of unsettledSplitPresetPatches.values()) {
+    for (const attempt of attempts) attempt.settlementCleanup?.()
+  }
+  for (const attempt of unsettledPresetRowMutationAttempts) attempt.settlementCleanup?.()
+  for (const attempt of unsettledPresetReorderMutationAttempts) attempt.settlementCleanup?.()
+  for (const attempt of unsettledImportedSplitPresets) attempt.settlementCleanup?.()
+  pendingSplitPresetPatches.clear()
+  unsettledSplitPresetPatches.clear()
+  unsettledPresetRowMutationAttempts.splice(0)
+  unsettledPresetReorderMutationAttempts.splice(0)
+  unsettledImportedSplitPresets.splice(0)
+  activeImportedSplitPresetOwnerKeys.get('model')?.clear()
+  activeImportedSplitPresetOwnerKeys.get('prompt')?.clear()
+  nextPresetMutationSequence = 0
+}
+
+function preparePresetMutation(
+  intent: DurableMutationIntent,
+  projectionTargets: string[],
+  semanticKey = PRESET_MUTATION_KEY,
+): PreparedPresetMutation {
+  if (!canUseServerCommands()) return { status: 'plain' }
+  try {
+    if (pendingMutationIntentPayloadByteLength(intent) > MAX_DURABLE_MUTATION_PAYLOAD_BYTES) {
+      throw new RangeError('Pending preset mutation payload is too large')
+    }
+    const handle = stagePendingMutation(semanticKey, intent)
+    recordPendingMutationProjectionTargets(handle, projectionTargets)
+    return { status: 'durable', handle, intent }
+  } catch (error) {
+    console.error('Unable to stage durable preset mutation:', error)
+    return { status: 'failed' }
+  }
+}
+
+function dispatchPreparedPresetMutation<T extends Record<string, unknown>>(input: {
+  prepared: PreparedPresetMutation
+  command: (baseRevision: number) => Promise<ServerCommandResult<T>>
+  onAccepted: () => void
+  onRollback: () => void
+  onRetained: (handle: PendingMutationHandle) => void
+  retryConflictWhile?: () => boolean
+}): void {
+  let settled = false
+  let retained = false
+  const acceptOnce = () => {
+    if (settled) return
+    settled = true
+    input.onAccepted()
+  }
+  const rollbackOnce = () => {
+    if (settled) return
+    settled = true
+    input.onRollback()
+  }
+  const retainOnce = (handle: PendingMutationHandle) => {
+    if (settled || retained) return
+    retained = true
+    input.onRetained(handle)
+  }
+
+  if (input.prepared.status === 'failed') {
+    rollbackOnce()
+    return
+  }
+  if (input.prepared.status === 'plain') {
+    acceptOnce()
+    return
+  }
+  const prepared = input.prepared
+
+  const dispatch = (suppressRollback: boolean, transport: ServerCommandTransportOptions = {}) =>
     runServerCommand({
-      command: (baseRevision) =>
-        selectPromptPresetCommand({
-          baseRevision,
-          promptPresetId,
-        }),
-      rollback,
+      command: async (baseRevision) => {
+        const result = await input.command(baseRevision)
+        if (result.status === 'ok') acceptOnce()
+        return result
+      },
+      rollback: suppressRollback ? () => {} : rollbackOnce,
       ...transport,
-    }),
-  ).catch((error) => console.error('Prompt preset selection command rejected:', error))
+    })
+  const dispatchOnce = (suppressRollback: boolean) =>
+    dispatchDurableMutation(prepared.handle, prepared.intent, (transport) => dispatch(suppressRollback, transport))
+  const pending = (async () => {
+    const result = await dispatchOnce(!!input.retryConflictWhile)
+    if (result.status !== 'conflict' || !input.retryConflictWhile) return result
+    if (input.retryConflictWhile()) return dispatchOnce(false)
+
+    await acknowledgePendingMutation(prepared.handle)
+    rollbackOnce()
+    return result
+  })()
+
+  void pending
+    .then(async (result) => {
+      if (result.status === 'ok' || settled) return
+      if ((await prepared.handle.ready) === 'persisted' && (await isPendingMutationCurrent(prepared.handle))) {
+        retainOnce(prepared.handle)
+        return
+      }
+      rollbackOnce()
+    })
+    .catch(async (error) => {
+      if ((await prepared.handle.ready) === 'persisted' && (await isPendingMutationCurrent(prepared.handle))) {
+        retainOnce(prepared.handle)
+        return
+      }
+      rollbackOnce()
+      console.error('Preset command rejected:', error)
+    })
+}
+
+function dispatchPresetRowMutation<T extends Record<string, unknown>>(
+  prepared: PreparedPresetMutation,
+  attempt: PresetRowMutationAttempt,
+  command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
+  onTerminalRollback: () => void = () => {},
+  options: { retryConflictWhile?: () => boolean } = {},
+): void {
+  const accept = () => settlePresetRowMutationAttempt(attempt, true)
+  const rollback = () => {
+    settlePresetRowMutationAttempt(attempt, false)
+    rollbackPresetRowMutationAttempt(attempt)
+    onTerminalRollback()
+  }
+  if (prepared.status === 'durable') {
+    attempt.outbox = prepared.handle
+    attempt.settlementCleanup = registerDurableMutationSettlementListener(prepared.handle.mutationId, (settlement) =>
+      settlement === 'accepted' ? accept() : rollback(),
+    )
+  }
+  dispatchPreparedPresetMutation({
+    prepared,
+    command,
+    onAccepted: accept,
+    onRollback: rollback,
+    onRetained: (handle) => reapplyRetainedPresetRowMutationAttempt(attempt, handle),
+    ...options,
+  })
+}
+
+function dispatchPresetReorderMutation<T extends Record<string, unknown>>(
+  prepared: PreparedPresetMutation,
+  attempt: PresetReorderMutationAttempt,
+  command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
+  onTerminalRollback: () => void = () => {},
+): void {
+  const accept = () => settlePresetReorderMutationAttempt(attempt, true)
+  const rollback = () => {
+    settlePresetReorderMutationAttempt(attempt, false)
+    rollbackPresetReorderMutationAttempt(attempt)
+    onTerminalRollback()
+  }
+  if (prepared.status === 'durable') {
+    attempt.outbox = prepared.handle
+    attempt.settlementCleanup = registerDurableMutationSettlementListener(prepared.handle.mutationId, (settlement) =>
+      settlement === 'accepted' ? accept() : rollback(),
+    )
+  }
+  dispatchPreparedPresetMutation({
+    prepared,
+    command,
+    onAccepted: accept,
+    onRollback: rollback,
+    onRetained: (handle) => reapplyRetainedPresetReorderMutationAttempt(attempt, handle),
+  })
 }
 
 function presetReorderOptimisticAcknowledgement(input: {
@@ -2480,6 +3120,7 @@ export function applyServerResourceDatabase(data: Database, revision?: number) {
     normalizeAgentPresetSettings(data)
     changeLanguage(data.language)
     setDatabaseLite(data, revision)
+    reapplyPendingPresetProjectionsMutable()
   })
   createDestructiveRefreshToken('server-resource-database-replace')
   return result
@@ -2510,6 +3151,7 @@ export function mergeServerResourceFields(fields: Partial<Database>) {
     if (typeof fields.language === 'string') {
       changeLanguage(fields.language)
     }
+    reapplyPendingPresetProjectionsMutable()
   })
 }
 
@@ -4197,19 +4839,32 @@ export function saveCurrentPreset() {
             expectedPreset: acknowledgedPreset,
           })
         : null
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          updatePresetCommand({
-            baseRevision,
-            presetId: savedPreset.id!,
-            patch: safeStructuredClone(commandPatch) as PresetSnapshot,
-            ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
-          }),
+    if (!rollback || !livePreset) return []
+    const entry = legacyPresetEntryFromFieldRollback(rollback, safeStructuredClone(livePreset), presetIndex)
+    const attempt = createPresetRowMutationAttempt([entry])
+    const durableIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: `/presets/${encodeURIComponent(savedPreset.id)}`,
+          body: { patch: safeStructuredClone(commandPatch) },
+        },
       ],
+    }
+    const prepared = preparePresetMutation(durableIntent, [presetRowProjectionTarget(entry)])
+    dispatchPresetRowMutation(
+      prepared,
+      attempt,
+      (baseRevision) =>
+        updatePresetCommand({
+          baseRevision,
+          presetId: savedPreset.id!,
+          patch: safeStructuredClone(commandPatch) as PresetSnapshot,
+          ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
+        }),
       () => {
         markCollectionAcknowledgementTainted('botPresets')
-        rollbackBotPresetFields(rollback)
       },
     )
   })
@@ -4254,21 +4909,51 @@ function copyPresetById(sourcePresetId: string): void {
     newPres.name += ' Copy'
     db.botPresets.push(newPres)
     const attemptedCopy = safeStructuredClone(newPres)
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          copyPresetCommand({
-            baseRevision,
-            presetId: sourcePresetId,
+    const entries: PresetRowMutationEntry[] = [
+      {
+        kind: 'legacy',
+        key: newPres.id,
+        previous: null,
+        attempted: attemptedCopy,
+      },
+    ]
+    if (saveCurrentRollback) {
+      const savedSourceIndex = canonicalBotPresetIndexById(saveCurrentRollback.presetId)
+      const savedSourcePreset = savedSourceIndex >= 0 ? db.botPresets[savedSourceIndex] : undefined
+      if (savedSourcePreset) {
+        entries.unshift(
+          legacyPresetEntryFromFieldRollback(
+            saveCurrentRollback,
+            safeStructuredClone(savedSourcePreset),
+            savedSourceIndex,
+          ),
+        )
+      }
+    }
+    const attempt = createPresetRowMutationAttempt(entries)
+    const durableIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: `/presets/${encodeURIComponent(sourcePresetId)}/copy`,
+          body: {
             newPresetId: newPres.id,
             name: newPres.name,
             saveCurrent: true,
-          }),
+          },
+        },
       ],
-      () => {
-        rollbackBotPresetCreate(attemptedCopy)
-        rollbackBotPresetFields(saveCurrentRollback)
-      },
+    }
+    const prepared = preparePresetMutation(durableIntent, entries.map(presetRowProjectionTarget))
+    dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
+      copyPresetCommand({
+        baseRevision,
+        presetId: sourcePresetId,
+        newPresetId: newPres.id,
+        name: newPres.name,
+        saveCurrent: true,
+      }),
     )
   })
 }
@@ -4310,23 +4995,8 @@ function changeToPresetById(targetPresetId: string, savecurrent: boolean, intent
     normalizeBotPresetIds(db)
     const id = canonicalBotPresetIndexById(targetPresetId)
     if (id < 0 || !botPresetHasHydratedSettings(db.botPresets[id])) return
-    let durableSelection: { handle: PendingMutationHandle; intent: DurableMutationIntent } | null = null
     if (canUseServerCommands()) {
       flushRegisteredPendingBridgePatch('settings', {})
-      const selectionIntent: DurableMutationIntent = {
-        version: 1,
-        requests: [
-          {
-            method: 'POST',
-            path: '/presets/select',
-            body: { presetId: targetPresetId, apply: true, saveCurrent: savecurrent },
-          },
-        ],
-      }
-      durableSelection = {
-        handle: stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, selectionIntent),
-        intent: selectionIntent,
-      }
     }
     const previousSelectedId = botPresetSelectedId(db)
     const previousSettings = snapshotSetPresetSettings(db)
@@ -4343,35 +5013,60 @@ function changeToPresetById(targetPresetId: string, savecurrent: boolean, intent
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    const rollback = () => {
-      rollbackBotPresetFields(saveCurrentRollback)
-      rollbackBotPresetSelection(selectionRollback)
+    const entries: PresetRowMutationEntry[] = []
+    if (saveCurrentRollback) {
+      const savedPresetIndex = canonicalBotPresetIndexById(saveCurrentRollback.presetId)
+      const savedPreset = savedPresetIndex >= 0 ? db.botPresets[savedPresetIndex] : undefined
+      if (savedPreset) {
+        entries.push(
+          legacyPresetEntryFromFieldRollback(saveCurrentRollback, safeStructuredClone(savedPreset), savedPresetIndex),
+        )
+      }
     }
-    if (durableSelection) {
+    const attempt = createPresetRowMutationAttempt(entries, {
+      kind: 'legacy',
+      previousSelectedId: selectionRollback.previousSelectedId,
+      attemptedSelectedId: selectionRollback.attemptedSelectedId,
+      previousSettings: selectionRollback.previousSettings,
+      attemptedSettings: selectionRollback.attemptedSettings,
+    })
+    const selectionIntent: DurableMutationIntent = {
+      version: 1,
+      dependencyKeys: [PRESET_MUTATION_KEY],
+      requests: [
+        {
+          method: 'POST',
+          path: '/presets/select',
+          body: { presetId: targetPresetId, apply: true, saveCurrent: savecurrent },
+        },
+      ],
+    }
+    const prepared = preparePresetMutation(
+      selectionIntent,
+      entries.map(presetRowProjectionTarget),
+      SETTINGS_BRIDGE_MUTATION_KEY,
+    )
+    if (prepared.status === 'durable') {
       recordPresetSelectionProjectionTargets(
-        durableSelection.handle,
+        prepared.handle,
         selectionRollback.previousSettings ?? {},
         selectionRollback.attemptedSettings ?? {},
       )
-      if (saveCurrentRollback) {
-        recordPendingMutationProjectionTargets(durableSelection.handle, [
-          pendingMutationPresetRowProjectionTarget('legacy', saveCurrentRollback.presetId),
-        ])
-      }
-      void dispatchDurableMutation(durableSelection.handle, durableSelection.intent, (transport) =>
-        runServerCommand({
-          command: (baseRevision) =>
-            selectPresetCommand({
-              baseRevision,
-              presetId: targetPresetId,
-              apply: true,
-              saveCurrent: savecurrent,
-            }),
-          rollback,
-          ...transport,
-        }),
-      )
     }
+    dispatchPresetRowMutation(
+      prepared,
+      attempt,
+      (baseRevision) =>
+        selectPresetCommand({
+          baseRevision,
+          presetId: targetPresetId,
+          apply: true,
+          saveCurrent: savecurrent,
+        }),
+      () => {
+        rollbackBotPresetFields(saveCurrentRollback)
+      },
+    )
   })
 }
 
@@ -4384,15 +5079,29 @@ export function createPreset(preset: botPreset) {
     db.botPresets.push(newPreset)
     db.botPresets = db.botPresets
     const attemptedPreset = safeStructuredClone(newPreset)
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          createPresetCommand({
-            baseRevision,
-            preset: safeStructuredClone(attemptedPreset) as unknown as PresetSnapshot,
-          }),
+    const entry: PresetRowMutationEntry = {
+      kind: 'legacy',
+      key: newPreset.id,
+      previous: null,
+      attempted: attemptedPreset,
+    }
+    const attempt = createPresetRowMutationAttempt([entry])
+    const durableIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/presets',
+          body: { preset: safeStructuredClone(attemptedPreset) },
+        },
       ],
-      () => rollbackBotPresetCreate(attemptedPreset),
+    }
+    const prepared = preparePresetMutation(durableIntent, [presetRowProjectionTarget(entry)])
+    dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
+      createPresetCommand({
+        baseRevision,
+        preset: safeStructuredClone(attemptedPreset) as unknown as PresetSnapshot,
+      }),
     )
   })
 }
@@ -4435,19 +5144,31 @@ export function updatePreset(id: number, patch: Partial<botPreset>) {
           collectionProjectionEpoch,
         })
       : null
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          updatePresetCommand({
-            baseRevision,
-            presetId,
-            patch: commandPatch,
-            ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
-          }),
+    const entry = legacyPresetEntryFromFieldRollback(rollback, safeStructuredClone(db.botPresets[id]), id)
+    const attempt = createPresetRowMutationAttempt([entry])
+    const durableIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: `/presets/${encodeURIComponent(presetId)}`,
+          body: { patch: safeStructuredClone(commandPatch) },
+        },
       ],
+    }
+    const prepared = preparePresetMutation(durableIntent, [presetRowProjectionTarget(entry)])
+    dispatchPresetRowMutation(
+      prepared,
+      attempt,
+      (baseRevision) =>
+        updatePresetCommand({
+          baseRevision,
+          presetId,
+          patch: safeStructuredClone(commandPatch),
+          ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
+        }),
       () => {
         markCollectionAcknowledgementTainted('botPresets')
-        rollbackBotPresetFields(rollback)
       },
     )
   })
@@ -4495,24 +5216,8 @@ function deletePresetByIds(presetId: string, selectPresetId: string, apply: bool
     const selectedBeforeDelete = canonicalBotPresetIndexById(selectPresetId)
     if (id < 0 || selectedBeforeDelete < 0) return []
     if (apply && !botPresetHasHydratedSettings(db.botPresets[selectedBeforeDelete])) return []
-    let durableDelete: { handle: PendingMutationHandle; intent: DurableMutationIntent } | null = null
-    if (canUseServerCommands()) {
-      flushRegisteredPendingBridgePatch('settings', {})
-      const deleteIntent: DurableMutationIntent = {
-        version: 1,
-        requests: [
-          {
-            method: 'DELETE',
-            path: `/presets/${encodeURIComponent(presetId)}`,
-            body: { presetId: selectPresetId, apply, saveCurrent: false },
-          },
-        ],
-      }
-      durableDelete = {
-        handle: stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, deleteIntent),
-        intent: deleteIntent,
-      }
-    }
+    const durable = canUseServerCommands()
+    if (durable) flushRegisteredPendingBridgePatch('settings', {})
     const previousPreset = safeStructuredClone(db.botPresets[id])
     const previousSelectedId = botPresetSelectedId(db)
     const previousSettings = apply ? snapshotSetPresetSettings(db) : undefined
@@ -4538,25 +5243,53 @@ function deletePresetByIds(presetId: string, selectPresetId: string, apply: bool
           }
         : {}),
     }
-    if (durableDelete) {
-      void dispatchDurableMutation(durableDelete.handle, durableDelete.intent, (transport) =>
-        runServerCommand({
-          command: (baseRevision) =>
-            deletePresetCommand({
-              baseRevision,
-              presetId,
-              selectPresetId,
-              apply,
-              saveCurrent: false,
-            }),
-          rollback: () => {
-            rollbackBotPresetDelete(previousPreset, id)
-            rollbackBotPresetSelection(selectionRollback)
-          },
-          ...transport,
-        }),
+    if (!durable) return
+    const entry: PresetRowMutationEntry = {
+      kind: 'legacy',
+      key: presetId,
+      previous: previousPreset,
+      attempted: null,
+      previousIndex: id,
+    }
+    const attempt = createPresetRowMutationAttempt([entry], {
+      kind: 'legacy',
+      previousSelectedId: selectionRollback.previousSelectedId,
+      attemptedSelectedId: selectionRollback.attemptedSelectedId,
+      ...(selectionRollback.previousSettings ? { previousSettings: selectionRollback.previousSettings } : {}),
+      ...(selectionRollback.attemptedSettings ? { attemptedSettings: selectionRollback.attemptedSettings } : {}),
+    })
+    const deleteIntent: DurableMutationIntent = {
+      version: 1,
+      dependencyKeys: [PRESET_MUTATION_KEY],
+      requests: [
+        {
+          method: 'DELETE',
+          path: `/presets/${encodeURIComponent(presetId)}`,
+          body: { presetId: selectPresetId, apply, saveCurrent: false },
+        },
+      ],
+    }
+    const prepared = preparePresetMutation(
+      deleteIntent,
+      [presetRowProjectionTarget(entry)],
+      SETTINGS_BRIDGE_MUTATION_KEY,
+    )
+    if (prepared.status === 'durable' && selectionRollback.previousSettings && selectionRollback.attemptedSettings) {
+      recordPresetSelectionProjectionTargets(
+        prepared.handle,
+        selectionRollback.previousSettings,
+        selectionRollback.attemptedSettings,
       )
     }
+    dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
+      deletePresetCommand({
+        baseRevision,
+        presetId,
+        selectPresetId,
+        apply,
+        saveCurrent: false,
+      }),
+    )
   })
 }
 
@@ -4600,19 +5333,24 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
       beforeSelectedPresetId: previousSelectedPresetId,
       attemptedSelectedPresetId: botPresetSelectedId(db),
     })
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          reorderPresetsCommand({
-            baseRevision,
-            presetIds,
-            ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
-          }),
-      ],
+    const attempt = createPresetReorderMutationAttempt('legacy', previousPresetIds, presetIds)
+    const durableIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'POST', path: '/presets/reorder', body: { presetIds: [...presetIds] } }],
+    }
+    const prepared = preparePresetMutation(durableIntent, [presetOrderProjectionTarget('legacy')])
+    dispatchPresetReorderMutation(
+      prepared,
+      attempt,
+      (baseRevision) =>
+        reorderPresetsCommand({
+          baseRevision,
+          presetIds: [...presetIds],
+          ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
+        }),
       () => {
         markCollectionAcknowledgementTainted('botPresets')
         markSettingsAcknowledgementTainted()
-        rollbackBotPresetReorder(previousPresetIds, presetIds)
       },
     )
   })
@@ -4626,10 +5364,37 @@ export function createModelPreset(preset: ModelPreset) {
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
     const attemptedPreset = safeStructuredClone(newPreset)
-    const stagedCreate = stageSplitPresetCreate('model', attemptedPreset)
     db.modelPresets.push(newPreset)
     db.modelPresets = db.modelPresets
-    dispatchSplitPresetCreate('model', attemptedPreset, stagedCreate)
+    const entry: PresetRowMutationEntry = {
+      kind: 'model',
+      key: newPreset.id,
+      previous: null,
+      attempted: attemptedPreset,
+    }
+    const attempt = createPresetRowMutationAttempt([entry])
+    const durableIntent: DurableMutationIntent = {
+      version: 1,
+      dependencyKeys: [PRESET_MUTATION_KEY],
+      requests: [
+        {
+          method: 'POST',
+          path: '/model-presets',
+          body: { preset: safeStructuredClone(attemptedPreset) },
+        },
+      ],
+    }
+    const prepared = preparePresetMutation(
+      durableIntent,
+      [presetRowProjectionTarget(entry)],
+      splitPresetMutationKey('model', newPreset.id),
+    )
+    dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
+      createModelPresetCommand({
+        baseRevision,
+        preset: safeStructuredClone(attemptedPreset) as unknown as ModelPresetSnapshot,
+      }),
+    )
   })
 }
 
@@ -4688,7 +5453,6 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
         },
       ],
     }
-    const deleteOutbox = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, deleteIntent)
     db.modelPresets.splice(id, 1)
     db.modelPresets = db.modelPresets
     const selectedIndex = selectModelPresetId
@@ -4712,23 +5476,46 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    void dispatchDurableMutation(deleteOutbox, deleteIntent, (transport) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          deleteModelPresetCommand({
-            baseRevision,
-            modelPresetId,
-            selectModelPresetId,
-          }),
-        rollback: () => {
-          rollbackSplitPresetDelete('model', previousPreset, id)
-          rollbackSplitPresetSelection(selectionRollback)
-          if (getDatabase().modelPresets.filter((preset) => preset.id === modelPresetId).length === 1) {
-            referenceCascade.rollback()
-          }
-        },
-        ...transport,
-      }),
+    const entry: PresetRowMutationEntry = {
+      kind: 'model',
+      key: modelPresetId,
+      previous: previousPreset,
+      attempted: null,
+      previousIndex: id,
+    }
+    const attempt = createPresetRowMutationAttempt([entry], {
+      kind: 'model',
+      previousSelectedId: selectionRollback.previousSelectedId,
+      attemptedSelectedId: selectionRollback.attemptedSelectedId,
+      previousSettings: selectionRollback.previousSettings,
+      attemptedSettings: selectionRollback.attemptedSettings,
+    })
+    const prepared = preparePresetMutation(
+      deleteIntent,
+      [presetRowProjectionTarget(entry)],
+      SETTINGS_BRIDGE_MUTATION_KEY,
+    )
+    if (prepared.status === 'durable') {
+      recordPresetSelectionProjectionTargets(
+        prepared.handle,
+        selectionRollback.previousSettings,
+        selectionRollback.attemptedSettings,
+      )
+    }
+    dispatchPresetRowMutation(
+      prepared,
+      attempt,
+      (baseRevision) =>
+        deleteModelPresetCommand({
+          baseRevision,
+          modelPresetId,
+          selectModelPresetId,
+        }),
+      () => {
+        if (getDatabase().modelPresets.filter((preset) => preset.id === modelPresetId).length === 1) {
+          referenceCascade.rollback()
+        }
+      },
     )
   })
 }
@@ -4742,24 +5529,8 @@ export function selectModelPreset(id: number) {
     const modelPresetId = db.modelPresets[id]?.id
     if (!modelPresetId) return
     flushPendingSplitPresetPatches()
-    let durableSelection: { handle: PendingMutationHandle; intent: DurableMutationIntent } | null = null
     if (canUseServerCommands()) {
       flushRegisteredPendingBridgePatch('settings', {})
-      const selectionIntent: DurableMutationIntent = {
-        version: 1,
-        dependencyKeys: splitPresetMutationDependencyKeys('model', previousSelectedId, modelPresetId),
-        requests: [
-          {
-            method: 'POST',
-            path: '/model-presets/select',
-            body: { modelPresetId },
-          },
-        ],
-      }
-      durableSelection = {
-        handle: stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, selectionIntent),
-        intent: selectionIntent,
-      }
     }
     db.modelPresetsId = id
     applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
@@ -4770,20 +5541,35 @@ export function selectModelPreset(id: number) {
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    if (durableSelection) {
+    const attempt = createPresetRowMutationAttempt([], {
+      kind: 'model',
+      previousSelectedId: selectionRollback.previousSelectedId,
+      attemptedSelectedId: selectionRollback.attemptedSelectedId,
+      previousSettings: selectionRollback.previousSettings,
+      attemptedSettings: selectionRollback.attemptedSettings,
+    })
+    const selectionIntent: DurableMutationIntent = {
+      version: 1,
+      dependencyKeys: splitPresetMutationDependencyKeys('model', previousSelectedId, modelPresetId),
+      requests: [
+        {
+          method: 'POST',
+          path: '/model-presets/select',
+          body: { modelPresetId },
+        },
+      ],
+    }
+    const prepared = preparePresetMutation(selectionIntent, [], SETTINGS_BRIDGE_MUTATION_KEY)
+    if (prepared.status === 'durable') {
       recordPresetSelectionProjectionTargets(
-        durableSelection.handle,
+        prepared.handle,
         selectionRollback.previousSettings,
         selectionRollback.attemptedSettings,
       )
-      void dispatchDurableMutation(durableSelection.handle, durableSelection.intent, (transport) =>
-        runServerCommand({
-          command: (baseRevision) => selectModelPresetCommand({ baseRevision, modelPresetId }),
-          rollback: () => rollbackSplitPresetSelection(selectionRollback),
-          ...transport,
-        }),
-      )
     }
+    dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
+      selectModelPresetCommand({ baseRevision, modelPresetId }),
+    )
   })
 }
 
@@ -4796,6 +5582,7 @@ export function reorderModelPresets(fromIndex: number, toIndex: number) {
       return
     }
     flushPendingSplitPresetPatchesForKind('model')
+    const dependencyKeys = activeSplitPresetOwnerMutationKeys(['model'])
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('modelPresets')
     const settingsProjectionEpoch = captureSettingsProjectionEpoch()
     const previousPresetIds = splitPresetIds(db.modelPresets)
@@ -4817,19 +5604,31 @@ export function reorderModelPresets(fromIndex: number, toIndex: number) {
       beforeSelectedPresetId: previousSelectedPresetId,
       attemptedSelectedPresetId: splitPresetSelectedId(db, 'model'),
     })
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          reorderModelPresetsCommand({
-            baseRevision,
-            modelPresetIds,
-            ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
-          }),
+    const attempt = createPresetReorderMutationAttempt('model', previousPresetIds, modelPresetIds)
+    const durableIntent: DurableMutationIntent = {
+      version: 1,
+      ...(dependencyKeys.length > 0 ? { dependencyKeys } : {}),
+      requests: [
+        {
+          method: 'POST',
+          path: '/model-presets/reorder',
+          body: { modelPresetIds: [...modelPresetIds] },
+        },
       ],
+    }
+    const prepared = preparePresetMutation(durableIntent, [presetOrderProjectionTarget('model')])
+    dispatchPresetReorderMutation(
+      prepared,
+      attempt,
+      (baseRevision) =>
+        reorderModelPresetsCommand({
+          baseRevision,
+          modelPresetIds: [...modelPresetIds],
+          ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
+        }),
       () => {
         markCollectionAcknowledgementTainted('modelPresets')
         markSettingsAcknowledgementTainted()
-        rollbackSplitPresetReorder('model', previousPresetIds, modelPresetIds)
       },
     )
   })
@@ -4843,10 +5642,37 @@ export function createPromptPreset(preset: PromptPreset) {
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
     const attemptedPreset = safeStructuredClone(newPreset)
-    const stagedCreate = stageSplitPresetCreate('prompt', attemptedPreset)
     db.promptPresets.push(newPreset)
     db.promptPresets = db.promptPresets
-    dispatchSplitPresetCreate('prompt', attemptedPreset, stagedCreate)
+    const entry: PresetRowMutationEntry = {
+      kind: 'prompt',
+      key: newPreset.id,
+      previous: null,
+      attempted: attemptedPreset,
+    }
+    const attempt = createPresetRowMutationAttempt([entry])
+    const durableIntent: DurableMutationIntent = {
+      version: 1,
+      dependencyKeys: [PRESET_MUTATION_KEY],
+      requests: [
+        {
+          method: 'POST',
+          path: '/prompt-presets',
+          body: { preset: safeStructuredClone(attemptedPreset) },
+        },
+      ],
+    }
+    const prepared = preparePresetMutation(
+      durableIntent,
+      [presetRowProjectionTarget(entry)],
+      splitPresetMutationKey('prompt', newPreset.id),
+    )
+    dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
+      createPromptPresetCommand({
+        baseRevision,
+        preset: safeStructuredClone(attemptedPreset) as unknown as PromptPresetSnapshot,
+      }),
+    )
   })
 }
 
@@ -4858,9 +5684,14 @@ interface ImportedSplitPresetDefinition {
 }
 
 interface StagedImportedSplitPreset extends ImportedSplitPresetDefinition {
+  sequence: number
   handle: PendingMutationHandle
   intent: DurableMutationIntent
+  settlementCleanup?: () => void
+  settled: boolean
 }
+
+const unsettledImportedSplitPresets: StagedImportedSplitPreset[] = []
 
 interface ImportedSplitPresetDispatchOutcome {
   result: ServerCommandResult
@@ -4879,12 +5710,20 @@ function projectImportedSplitPresets(attempts: readonly ImportedSplitPresetDefin
 }
 
 function reapplyRetainedImportedSplitPreset(attempt: StagedImportedSplitPreset): void {
-  const presetId = attempt.preset.id
-  if (!presetId) return
-  const target = pendingMutationPresetRowProjectionTarget(attempt.kind, presetId)
-  const fence = pendingMutationProjectionFence(attempt.handle, target)
-  if (!fence || !isPendingMutationProjectionFenceCurrent(fence)) return
-  projectImportedSplitPresets([attempt])
+  if (!attempt.settled) reapplyPendingPresetProjections()
+}
+
+function settleImportedSplitPreset(attempt: StagedImportedSplitPreset, accepted: boolean): void {
+  if (attempt.settled) return
+  attempt.settled = true
+  attempt.settlementCleanup?.()
+  attempt.settlementCleanup = undefined
+  const index = unsettledImportedSplitPresets.indexOf(attempt)
+  if (index >= 0) unsettledImportedSplitPresets.splice(index, 1)
+  if (!unsettledImportedSplitPresets.some((candidate) => candidate.handle.key === attempt.handle.key)) {
+    activeImportedSplitPresetOwnerKeys.get(attempt.kind)?.delete(attempt.handle.key)
+  }
+  if (!accepted) rollbackSplitPresetCreate(attempt.kind, attempt.preset)
 }
 
 async function dispatchImportedSplitPresetBatch(
@@ -4906,17 +5745,30 @@ async function dispatchImportedSplitPresetBatch(
             body: { preset: safeStructuredClone(definition.preset) },
           },
         ],
-        ...(predecessorKey ? { dependencyKeys: [predecessorKey] } : {}),
+        dependencyKeys: [PRESET_MUTATION_KEY, ...(predecessorKey ? [predecessorKey] : [])],
       }
       const handle = stagePendingMutation(ownerKey, intent)
       recordPendingMutationProjectionTargets(handle, [
         pendingMutationPresetRowProjectionTarget(definition.kind, presetId),
       ])
-      staged.push({ ...definition, handle, intent })
+      const attempt: StagedImportedSplitPreset = {
+        ...definition,
+        sequence: reservePresetMutationSequence(),
+        handle,
+        intent,
+        settled: false,
+      }
+      attempt.settlementCleanup = registerDurableMutationSettlementListener(handle.mutationId, (settlement) =>
+        settleImportedSplitPreset(attempt, settlement === 'accepted'),
+      )
+      staged.push(attempt)
+      unsettledImportedSplitPresets.push(attempt)
+      activeImportedSplitPresetOwnerKeys.get(definition.kind)?.add(ownerKey)
       predecessorKey = ownerKey
     }
   } catch {
     await Promise.all(staged.map(({ handle }) => acknowledgePendingMutation(handle)))
+    for (const attempt of staged) settleImportedSplitPreset(attempt, false)
     return 'failed'
   }
 
@@ -4974,16 +5826,20 @@ async function dispatchImportedSplitPresetBatch(
   let queued = false
   let failed = false
   settled.forEach((outcome, index) => {
+    const attempt = staged[index]
     if (outcome.status === 'rejected') {
+      settleImportedSplitPreset(attempt, false)
       failed = true
       return
     }
     if (outcome.value.retained) {
       queued = true
-      reapplyRetainedImportedSplitPreset(staged[index])
+      reapplyRetainedImportedSplitPreset(attempt)
       return
     }
-    if (outcome.value.result.status !== 'ok') failed = true
+    const accepted = outcome.value.result.status === 'ok'
+    settleImportedSplitPreset(attempt, accepted)
+    if (!accepted) failed = true
   })
   if (queued) return 'queued'
   return failed ? 'failed' : 'applied'
@@ -5107,7 +5963,6 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
         },
       ],
     }
-    const deleteOutbox = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, deleteIntent)
     db.promptPresets.splice(id, 1)
     db.promptPresets = db.promptPresets
     const selectedIndex = selectPromptPresetId
@@ -5131,23 +5986,46 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    void dispatchDurableMutation(deleteOutbox, deleteIntent, (transport) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          deletePromptPresetCommand({
-            baseRevision,
-            promptPresetId,
-            selectPromptPresetId,
-          }),
-        rollback: () => {
-          rollbackSplitPresetDelete('prompt', previousPreset, id)
-          rollbackSplitPresetSelection(selectionRollback)
-          if (getDatabase().promptPresets.filter((preset) => preset.id === promptPresetId).length === 1) {
-            referenceCascade.rollback()
-          }
-        },
-        ...transport,
-      }),
+    const entry: PresetRowMutationEntry = {
+      kind: 'prompt',
+      key: promptPresetId,
+      previous: previousPreset,
+      attempted: null,
+      previousIndex: id,
+    }
+    const attempt = createPresetRowMutationAttempt([entry], {
+      kind: 'prompt',
+      previousSelectedId: selectionRollback.previousSelectedId,
+      attemptedSelectedId: selectionRollback.attemptedSelectedId,
+      previousSettings: selectionRollback.previousSettings,
+      attemptedSettings: selectionRollback.attemptedSettings,
+    })
+    const prepared = preparePresetMutation(
+      deleteIntent,
+      [presetRowProjectionTarget(entry)],
+      SETTINGS_BRIDGE_MUTATION_KEY,
+    )
+    if (prepared.status === 'durable') {
+      recordPresetSelectionProjectionTargets(
+        prepared.handle,
+        selectionRollback.previousSettings,
+        selectionRollback.attemptedSettings,
+      )
+    }
+    dispatchPresetRowMutation(
+      prepared,
+      attempt,
+      (baseRevision) =>
+        deletePromptPresetCommand({
+          baseRevision,
+          promptPresetId,
+          selectPromptPresetId,
+        }),
+      () => {
+        if (getDatabase().promptPresets.filter((preset) => preset.id === promptPresetId).length === 1) {
+          referenceCascade.rollback()
+        }
+      },
     )
   })
 }
@@ -5166,24 +6044,8 @@ export function selectPromptPreset(id: number) {
     // data loss.
     flushPendingPromptTemplatePatches()
     flushPendingSplitPresetPatches()
-    let durableSelection: { handle: PendingMutationHandle; intent: DurableMutationIntent } | null = null
     if (canUseServerCommands()) {
       flushRegisteredPendingBridgePatch('settings', {})
-      const selectionIntent: DurableMutationIntent = {
-        version: 1,
-        dependencyKeys: splitPresetMutationDependencyKeys('prompt', previousSelectedId, promptPresetId),
-        requests: [
-          {
-            method: 'POST',
-            path: '/prompt-presets/select',
-            body: { promptPresetId },
-          },
-        ],
-      }
-      durableSelection = {
-        handle: stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, selectionIntent),
-        intent: selectionIntent,
-      }
     }
     db.promptPresetsId = id
     applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
@@ -5194,19 +6056,39 @@ export function selectPromptPreset(id: number) {
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    if (durableSelection) {
+    const attempt = createPresetRowMutationAttempt([], {
+      kind: 'prompt',
+      previousSelectedId: selectionRollback.previousSelectedId,
+      attemptedSelectedId: selectionRollback.attemptedSelectedId,
+      previousSettings: selectionRollback.previousSettings,
+      attemptedSettings: selectionRollback.attemptedSettings,
+    })
+    const selectionIntent: DurableMutationIntent = {
+      version: 1,
+      dependencyKeys: splitPresetMutationDependencyKeys('prompt', previousSelectedId, promptPresetId),
+      requests: [
+        {
+          method: 'POST',
+          path: '/prompt-presets/select',
+          body: { promptPresetId },
+        },
+      ],
+    }
+    const prepared = preparePresetMutation(selectionIntent, [], SETTINGS_BRIDGE_MUTATION_KEY)
+    if (prepared.status === 'durable') {
       recordPresetSelectionProjectionTargets(
-        durableSelection.handle,
+        prepared.handle,
         selectionRollback.previousSettings,
         selectionRollback.attemptedSettings,
       )
-      runPromptPresetSelectionCommand(
-        promptPresetId,
-        () => rollbackSplitPresetSelection(selectionRollback),
-        durableSelection.handle,
-        durableSelection.intent,
-      )
     }
+    dispatchPresetRowMutation(
+      prepared,
+      attempt,
+      (baseRevision) => selectPromptPresetCommand({ baseRevision, promptPresetId }),
+      () => {},
+      { retryConflictWhile: () => currentSplitPresetSelectedId('prompt') === promptPresetId },
+    )
   })
 }
 
@@ -5219,6 +6101,7 @@ export function reorderPromptPresets(fromIndex: number, toIndex: number) {
       return
     }
     flushPendingSplitPresetPatchesForKind('prompt')
+    const dependencyKeys = activeSplitPresetOwnerMutationKeys(['prompt'])
     const previousPresetIds = splitPresetIds(db.promptPresets)
     const promptPresets = [...db.promptPresets]
     const movedItem = promptPresets.splice(fromIndex, 1)[0]
@@ -5228,15 +6111,24 @@ export function reorderPromptPresets(fromIndex: number, toIndex: number) {
     db.promptPresetsId = movedSelectedIndex(db.promptPresetsId, fromIndex, adjustedToIndex)
     db.promptPresets = promptPresets
     const promptPresetIds = db.promptPresets.map((preset) => preset.id).filter((id): id is string => !!id)
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          reorderPromptPresetsCommand({
-            baseRevision,
-            promptPresetIds,
-          }),
+    const attempt = createPresetReorderMutationAttempt('prompt', previousPresetIds, promptPresetIds)
+    const durableIntent: DurableMutationIntent = {
+      version: 1,
+      ...(dependencyKeys.length > 0 ? { dependencyKeys } : {}),
+      requests: [
+        {
+          method: 'POST',
+          path: '/prompt-presets/reorder',
+          body: { promptPresetIds: [...promptPresetIds] },
+        },
       ],
-      () => rollbackSplitPresetReorder('prompt', previousPresetIds, promptPresetIds),
+    }
+    const prepared = preparePresetMutation(durableIntent, [presetOrderProjectionTarget('prompt')])
+    dispatchPresetReorderMutation(prepared, attempt, (baseRevision) =>
+      reorderPromptPresetsCommand({
+        baseRevision,
+        promptPresetIds: [...promptPresetIds],
+      }),
     )
   })
 }
@@ -5274,6 +6166,7 @@ function extractLegacyBotPresetById(presetId: string, mode: 'all' | 'model' | 'p
     const preset = db.botPresets[id]
     if (!botPresetHasHydratedSettings(preset)) return []
     flushPendingSplitPresetPatches()
+    const dependencyKeys = activeSplitPresetOwnerMutationKeys(['model', 'prompt'])
     const previousPreset = safeStructuredClone(preset)
     const previousSelectedId = botPresetSelectedId(db)
     const legacyName = typeof preset.name === 'string' && preset.name.trim() ? preset.name : 'Legacy'
@@ -5310,25 +6203,58 @@ function extractLegacyBotPresetById(presetId: string, mode: 'all' | 'model' | 'p
       previousSelectedId,
       attemptedSelectedId: botPresetSelectedId(db),
     }
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          extractLegacyBotPresetCommand({
-            baseRevision,
-            presetId,
-            mode,
-          }),
-      ],
-      () => {
-        rollbackBotPresetDelete(previousPreset, id)
-        if (attemptedModelPreset) {
-          rollbackSplitPresetCreate('model', attemptedModelPreset)
-        }
-        if (attemptedPromptPreset) {
-          rollbackSplitPresetCreate('prompt', attemptedPromptPreset)
-        }
-        rollbackBotPresetSelection(selectionRollback)
+    const entries: PresetRowMutationEntry[] = [
+      {
+        kind: 'legacy',
+        key: presetId,
+        previous: previousPreset,
+        attempted: null,
+        previousIndex: id,
       },
+    ]
+    if (attemptedModelPreset?.id) {
+      entries.push({
+        kind: 'model',
+        key: attemptedModelPreset.id,
+        previous: null,
+        attempted: attemptedModelPreset,
+      })
+    }
+    if (attemptedPromptPreset?.id) {
+      entries.push({
+        kind: 'prompt',
+        key: attemptedPromptPreset.id,
+        previous: null,
+        attempted: attemptedPromptPreset,
+      })
+    }
+    const attempt = createPresetRowMutationAttempt(entries, {
+      kind: 'legacy',
+      previousSelectedId: selectionRollback.previousSelectedId,
+      attemptedSelectedId: selectionRollback.attemptedSelectedId,
+    })
+    const durableIntent: DurableMutationIntent = {
+      version: 1,
+      ...(dependencyKeys.length > 0 ? { dependencyKeys } : {}),
+      requests: [
+        {
+          method: 'POST',
+          path: `/legacy-bot-presets/${encodeURIComponent(presetId)}/extract`,
+          body: { mode },
+        },
+      ],
+    }
+    const projectionTargets = entries.map(presetRowProjectionTarget)
+    if (attemptedModelPreset) projectionTargets.push(presetOrderProjectionTarget('model'))
+    if (attemptedPromptPreset) projectionTargets.push(presetOrderProjectionTarget('prompt'))
+    projectionTargets.push(presetOrderProjectionTarget('legacy'))
+    const prepared = preparePresetMutation(durableIntent, projectionTargets)
+    dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
+      extractLegacyBotPresetCommand({
+        baseRevision,
+        presetId,
+        mode,
+      }),
     )
   })
 }
