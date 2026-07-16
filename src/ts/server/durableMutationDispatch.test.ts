@@ -303,6 +303,69 @@ describe('durable mutation dispatch', () => {
     expect(await listPendingMutations()).toEqual([])
   })
 
+  it('holds prompt-item DELETE behind a transient row PATCH and recovers in order', async () => {
+    const ownerKey = 'prompt-template-owner:preset-a'
+    const patchIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/prompt-items/row-a',
+          body: { promptPresetId: 'preset-a', patch: { text: 'latest edit' } },
+        },
+      ],
+    }
+    const deleteIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'DELETE',
+          path: '/prompt-items/row-a',
+          body: { promptPresetId: 'preset-a' },
+        },
+      ],
+    }
+    const patch = stagePendingMutation(ownerKey, patchIntent)
+    await dispatchDurableMutation(
+      patch,
+      patchIntent,
+      wrappedDispatch(async () => ({ status: 'error', error: 'offline' })),
+    )
+    const deletion = stagePendingMutation(ownerKey, deleteIntent)
+    const order: string[] = []
+    const deleteRequest = vi.fn(async () => {
+      order.push('delete')
+      return acceptedResult()
+    })
+
+    commandApi.inlineReplay.mockImplementationOnce(async () => {
+      order.push('patch-blocked')
+      return { status: 'error', error: 'still offline' }
+    })
+    await expect(dispatchDurableMutation(deletion, deleteIntent, wrappedDispatch(deleteRequest))).resolves.toEqual({
+      status: 'unavailable',
+    })
+
+    expect(order).toEqual(['patch-blocked'])
+    expect(deleteRequest).not.toHaveBeenCalled()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([
+      patch.mutationId,
+      deletion.mutationId,
+    ])
+
+    commandApi.inlineReplay.mockImplementationOnce(async () => {
+      order.push('patch-recovered')
+      return { status: 'ok' }
+    })
+    await expect(
+      dispatchDurableMutation(deletion, deleteIntent, wrappedDispatch(deleteRequest)),
+    ).resolves.toMatchObject({ status: 'ok' })
+
+    expect(order).toEqual(['patch-blocked', 'patch-recovered', 'delete'])
+    expect(deleteRequest).toHaveBeenCalledOnce()
+    expect(await listPendingMutations()).toEqual([])
+  })
+
   it('replaces a prepared placeholder before sending under its preserved receipt id', async () => {
     const fallbackIntent: DurableMutationIntent = {
       version: 1,

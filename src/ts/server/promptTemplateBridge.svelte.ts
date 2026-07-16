@@ -145,6 +145,11 @@ interface PendingPromptItemUpdate {
   outbox: PendingMutationHandle
 }
 
+export interface StagedPromptItemDeleteMutation {
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
+}
+
 interface PendingPromptItemAttempt {
   sequence: number
   pending: PendingPromptItemUpdate
@@ -390,7 +395,9 @@ export function queuePromptItemProjectionUpdate(
 
   if (existing?.timer) clearTimeout(existing.timer)
   const retainedPreviousItem = cloneJsonValue(existing?.previousItem ?? previousItem)
-  const sparseUpdate = sparsePromptItemUpdate(retainedPreviousItem, attemptedItem)
+  const netUpdate = sparsePromptItemUpdate(retainedPreviousItem, attemptedItem)
+  const correctiveUpdate = existing ? sparsePromptItemUpdate(existing.attemptedItem, attemptedItem) : null
+  const sparseUpdate = mergeSparsePromptItemUpdates(netUpdate, correctiveUpdate)
   if (!sparseUpdate) {
     if (existing) void acknowledgePendingMutation(existing.outbox)
     pendingPromptItemUpdates.delete(pendingKey)
@@ -409,10 +416,39 @@ export function queuePromptItemProjectionUpdate(
     intent,
     outbox: stagePendingMutation(promptItemMutationKey(promptPresetId, itemId), intent, existing?.outbox),
   }
-  if (delayMs !== null) {
+  const requiresImmediateCorrection = netUpdate === null && correctiveUpdate !== null
+  if (!requiresImmediateCorrection && delayMs !== null) {
     pending.timer = setTimeout(() => runPendingPromptItemUpdate(pendingKey), delayMs)
   }
   pendingPromptItemUpdates.set(pendingKey, pending)
+  // A correction-only successor exists solely because an older generation may
+  // already be immutable. Reserve it now so a following structural mutation
+  // cannot overtake the value that restores the retained baseline.
+  if (requiresImmediateCorrection) runPendingPromptItemUpdate(pendingKey)
+}
+
+/**
+ * Detach a targeted row debounce without discarding its durable PATCH, then
+ * append DELETE under the same semantic key. A remotely marked PATCH therefore
+ * remains an ordered predecessor instead of being overtaken or orphaned.
+ */
+export function stagePromptItemDeleteMutation(ownerId: string | null, itemId: string): StagedPromptItemDeleteMutation {
+  const pendingKey = promptItemStateKey(ownerId, itemId)
+  const pending = pendingPromptItemUpdates.get(pendingKey)
+  if (pending?.timer) clearTimeout(pending.timer)
+  pendingPromptItemUpdates.delete(pendingKey)
+
+  const intent = promptItemDeleteDurableIntent(ownerId, itemId)
+  const stagedDelete = {
+    intent,
+    outbox: stagePendingMutation(promptItemMutationKey(ownerId, itemId), intent),
+  }
+  // Reserve the detached PATCH in the live command queue as well. This keeps
+  // PATCH-before-DELETE ordering even when IndexedDB durability is unavailable;
+  // with durability, a transient attempt remains the DELETE's predecessor.
+  if (pending && isCurrentPromptTemplateOwner(ownerId)) dispatchPromptItemUpdate(pending)
+  promptItemDirtyFieldsByOwnerAndId.delete(pendingKey)
+  return stagedDelete
 }
 
 /** Arm an already-durable row update after its prerequisite owner mutation settles. */
@@ -560,6 +596,10 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
     return
   }
 
+  dispatchPromptItemUpdate(pending, options)
+}
+
+function dispatchPromptItemUpdate(pending: PendingPromptItemUpdate, options: ServerCommandTransportOptions = {}): void {
   const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(pending.projectionFence)
   const attempt = registerPromptItemAttempt(pending)
 
@@ -1016,6 +1056,25 @@ function sparsePromptItemUpdate(previousItem: PromptItem, attemptedItem: PromptI
   return Object.keys(patch).length > 0 || deleteKeys.length > 0 ? { patch, deleteKeys } : null
 }
 
+function mergeSparsePromptItemUpdates(...updates: Array<SparsePromptItemUpdate | null>): SparsePromptItemUpdate | null {
+  const patch: PromptItemSnapshot = {}
+  const deleteKeys = new Set<string>()
+
+  for (const update of updates) {
+    if (!update) continue
+    for (const [key, value] of Object.entries(update.patch)) {
+      patch[key] = cloneJsonValue(value)
+      deleteKeys.delete(key)
+    }
+    for (const key of update.deleteKeys) {
+      delete patch[key]
+      deleteKeys.add(key)
+    }
+  }
+
+  return Object.keys(patch).length > 0 || deleteKeys.size > 0 ? { patch, deleteKeys: [...deleteKeys] } : null
+}
+
 function promptItemUpdateDurableIntent(
   ownerId: string | null,
   itemId: string,
@@ -1032,6 +1091,19 @@ function promptItemUpdateDurableIntent(
           patch: cloneJsonValue(update.patch),
           ...(update.deleteKeys.length > 0 ? { deleteKeys: [...update.deleteKeys] } : {}),
         },
+      },
+    ],
+  }
+}
+
+function promptItemDeleteDurableIntent(ownerId: string | null, itemId: string): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'DELETE',
+        path: `/prompt-items/${encodeURIComponent(itemId)}`,
+        body: ownerId ? { promptPresetId: ownerId } : {},
       },
     ],
   }

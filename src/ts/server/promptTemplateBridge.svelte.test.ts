@@ -262,6 +262,7 @@ import {
   runPromptTemplateOwnerCommand,
   runPromptTemplateOwnerRollback,
   snapshotJson,
+  stagePromptItemDeleteMutation,
   type PromptTemplateDraftBinding,
 } from './promptTemplateBridge.svelte'
 
@@ -1047,6 +1048,134 @@ describe('flushPendingPromptTemplatePatches', () => {
     resetPromptTemplateSelectionDirtyState()
   })
 
+  it('detaches a pending row PATCH and appends DELETE without discarding its durable predecessor', async () => {
+    seedTemplate()
+    hydrationState.setOwner('prompt-a')
+    let draftItems = draftCopy()
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    draftItems[0] = item('p-0', 'edited before delete')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500, 'prompt-a')
+    const stagedDelete = stagePromptItemDeleteMutation('prompt-a', 'p-0')
+
+    expect(durableState.stages.map(({ key }) => key)).toEqual([
+      'prompt-template-owner:prompt-a',
+      'prompt-template-owner:prompt-a',
+    ])
+    expect(stagedDelete.intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'DELETE',
+          path: '/prompt-items/p-0',
+          body: { promptPresetId: 'prompt-a' },
+        },
+      ],
+    })
+    expect(durableState.acknowledgements).toEqual([])
+    await flushMicrotasks()
+    expect(durableState.dispatches).toHaveLength(1)
+    expect(commandState.commands[0].built).toMatchObject({
+      kind: 'updatePromptItem',
+      itemId: 'p-0',
+      patch: { text: 'edited before delete' },
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+    flushPendingPromptTemplatePatches()
+    await flushMicrotasks()
+
+    expect(durableState.dispatches).toHaveLength(1)
+    expect(commandMocks.updatePromptItemCommand).toHaveBeenCalledOnce()
+    expect(stagePromptItemDeleteMutation(null, 'legacy-item').outbox.key).toBe('prompt-item:__legacy__:legacy-item')
+    resetPromptTemplateSelectionDirtyState()
+  })
+
+  it('immediately dispatches a corrective total revert when an earlier row generation may already dispatch', async () => {
+    seedTemplate()
+    hydrationState.setOwner('prompt-a')
+    let draftItems = draftCopy()
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    draftItems[0] = item('p-0', 'first generation')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500, 'prompt-a')
+    durableState.stages[0].handle.phase = 'dispatching'
+
+    draftItems[0] = item('p-0', 'small')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'first generation'), 500, 'prompt-a')
+
+    expect(durableState.stages).toHaveLength(2)
+    expect(durableState.stages[1].handle.mutationId).not.toBe(durableState.stages[0].handle.mutationId)
+    expect(durableState.stages[1].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/prompt-items/p-0',
+          body: {
+            promptPresetId: 'prompt-a',
+            patch: { text: 'small' },
+          },
+        },
+      ],
+    })
+    expect(durableState.acknowledgements).toEqual([])
+    expect(durableState.dispatches.map(({ handle }) => handle)).toEqual([durableState.stages[1].handle])
+    await flushMicrotasks()
+    expect(commandState.commands[0].built).toMatchObject({ patch: { text: 'small' } })
+    resetPromptTemplateSelectionDirtyState()
+  })
+
+  it('merges net row edits with fields reverted from a possibly immutable generation', () => {
+    seedTemplate()
+    hydrationState.setOwner('prompt-a')
+    let draftItems = draftCopy()
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    draftItems[0] = { ...item('p-0', 'first generation'), role: 'user' } as PromptItem
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500, 'prompt-a')
+    durableState.stages[0].handle.phase = 'dispatching'
+
+    draftItems[0] = { ...item('p-0', 'small'), role: 'assistant' } as PromptItem
+    queuePromptItemProjectionUpdate(
+      binding,
+      'p-0',
+      { ...item('p-0', 'first generation'), role: 'user' } as PromptItem,
+      500,
+      'prompt-a',
+    )
+
+    expect(durableState.stages[1].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/prompt-items/p-0',
+          body: {
+            promptPresetId: 'prompt-a',
+            patch: { role: 'assistant', text: 'small' },
+          },
+        },
+      ],
+    })
+    resetPromptTemplateSelectionDirtyState()
+  })
+
   it('M8: flushes pending prompt item updates with keepalive and clears debounce', async () => {
     seedTemplate()
     hydrationState.setOwner('prompt-a')
@@ -1370,7 +1499,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     })
   })
 
-  it('suppresses a debounced update that reverts to the first retained previous row', async () => {
+  it('sends an idempotent correction when a debounced update reverts to its retained baseline', async () => {
     seedTemplate()
     let draftItems = draftCopy()
     const binding = draftBindingFor(
@@ -1386,9 +1515,14 @@ describe('flushPendingPromptTemplatePatches', () => {
     queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'draft edit'), 500)
     await vi.advanceTimersByTimeAsync(500)
 
-    expect(commandState.commands).toHaveLength(0)
-    expect(commandMocks.updatePromptItemCommand).not.toHaveBeenCalled()
-    expect(durableState.acknowledgements).toEqual([durableState.stages[0].handle])
+    expect(commandState.commands).toHaveLength(1)
+    expect(commandState.commands[0].built).toEqual({
+      kind: 'updatePromptItem',
+      baseRevision: 1,
+      itemId: 'p-0',
+      patch: { text: 'small' },
+    })
+    expect(durableState.acknowledgements).toEqual([])
   })
 
   it('M8: PromptSettings component teardown flushes pending prompt-template patches', async () => {

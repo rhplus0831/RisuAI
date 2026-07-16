@@ -28,6 +28,7 @@ import {
   createPreset,
   createPromptPreset,
   deleteModelPreset,
+  deletePromptPreset,
   deletePreset,
   ensureBotPresetHydrated,
   extractLegacyBotPresetByIndex,
@@ -70,6 +71,7 @@ import {
   queuePromptItemProjectionUpdate,
   resetPromptTemplateSelectionDirtyState,
 } from '../server/promptTemplateBridge.svelte'
+import { replayPendingMutations } from '../server/pendingMutationReplay'
 import { MODEL_ROLES } from '../model/modelRoles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
 import { changeLanguage, language as activeLanguage } from '../../lang'
@@ -2125,6 +2127,163 @@ describe('preset command rollback (L21)', () => {
       })
       expect(getDatabase().promptTemplate).toEqual(promptB.promptTemplate)
     } finally {
+      resetPromptTemplateSelectionDirtyState()
+      resetPromptTemplateHydration()
+    }
+  })
+
+  it('keeps prompt-preset DELETE behind a transient row PATCH and replays both in order', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-prompt-delete',
+      writerEpoch: 2,
+      databaseLineage: 'lineage-prompt-delete',
+      requestedWriterWasActive: true,
+    })
+    resetPromptTemplateHydration()
+    resetPromptTemplateSelectionDirtyState()
+
+    try {
+      const promptA = makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset
+      const promptB = makePreset('prompt-b', 'Prompt B') as unknown as PromptPreset
+      const previousItem = clonePlain(promptA.promptTemplate[0])
+      let draftItems = clonePlain(promptA.promptTemplate)
+      ;(draftItems[0] as { text?: string }).text = 'Edited immediately before delete'
+      seedPresetDatabase({
+        promptPresets: [promptA, promptB],
+        promptPresetsId: 0,
+        promptTemplate: clonePlain(promptA.promptTemplate),
+      })
+      withTrustedResourceWrite(() => {
+        getDatabase().promptPresets[0].promptTemplate = clonePlain(draftItems)
+      })
+      markPromptTemplateProjectionApplied('prompt-a', 100)
+      setCachedServerCommandRevision(100)
+
+      let recover = false
+      let revision = 100
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+          calls.push({ url, method: init.method ?? 'GET', body })
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          if (url === '/api/v1/commands/prompt-items/prompt-a-prompt') {
+            if (!recover) return jsonResponse({ error: 'row temporarily unavailable' }, 500)
+            revision += 1
+            return jsonResponse({
+              revision,
+              event: {
+                type: 'prompt.item.updated',
+                revision,
+                resource: 'promptItem',
+                id: 'prompt-a-prompt',
+                parentId: 'prompt-a',
+              },
+              itemId: 'prompt-a-prompt',
+            })
+          }
+          if (url === '/api/v1/commands/prompt-presets/prompt-a') {
+            if (!recover) throw new Error('Prompt preset mutation overtook its row predecessor')
+            revision += 1
+            if ((init.method ?? 'GET') === 'PATCH') {
+              return jsonResponse({
+                revision,
+                event: {
+                  type: 'promptPreset.updated',
+                  revision,
+                  resource: 'preset',
+                  id: 'prompt-a',
+                },
+                promptPresetId: 'prompt-a',
+              })
+            }
+            return jsonResponse({
+              revision,
+              event: {
+                type: 'promptPreset.deleted',
+                revision,
+                resource: 'preset',
+                id: 'prompt-a',
+              },
+              promptPresetId: 'prompt-a',
+              selectedPromptPresetId: 'prompt-b',
+            })
+          }
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }) as unknown as typeof fetch,
+      )
+
+      queuePromptItemProjectionUpdate(
+        {
+          getItems: () => draftItems,
+          setItems: (items) => {
+            draftItems = items
+          },
+        },
+        'prompt-a-prompt',
+        previousItem,
+        60_000,
+        'prompt-a',
+      )
+      updatePromptPreset(0, { name: 'Prompt A edited before delete' })
+      deletePromptPreset(0)
+
+      await waitForState(() => {
+        expect(calls.filter((call) => call.url.includes('/prompt-items/'))).toHaveLength(3)
+      })
+      expect(calls.some((call) => call.url === '/api/v1/commands/prompt-presets/prompt-a')).toBe(false)
+      expect(
+        (await listPendingMutations()).map((entry) => ({ key: entry.handle.key, request: entry.intent.requests[0] })),
+      ).toEqual([
+        {
+          key: 'prompt-template-owner:prompt-a',
+          request: {
+            method: 'PATCH',
+            path: '/prompt-items/prompt-a-prompt',
+            body: { promptPresetId: 'prompt-a', patch: { text: 'Edited immediately before delete' } },
+          },
+        },
+        {
+          key: 'prompt-template-owner:prompt-a',
+          request: {
+            method: 'PATCH',
+            path: '/prompt-presets/prompt-a',
+            body: { patch: { name: 'Prompt A edited before delete' } },
+          },
+        },
+        {
+          key: 'prompt-template-owner:prompt-a',
+          request: {
+            method: 'DELETE',
+            path: '/prompt-presets/prompt-a',
+            body: { promptPresetId: 'prompt-b' },
+          },
+        },
+      ])
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 3 })
+
+      expect(
+        calls
+          .slice(recoveryStart)
+          .filter((call) => call.url.includes('/prompt-items/') || call.url.includes('/prompt-presets/'))
+          .map((call) => `${call.method} ${call.url}`),
+      ).toEqual([
+        'PATCH /api/v1/commands/prompt-items/prompt-a-prompt',
+        'PATCH /api/v1/commands/prompt-presets/prompt-a',
+        'DELETE /api/v1/commands/prompt-presets/prompt-a',
+      ])
+      expect(await listPendingMutations()).toEqual([])
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-b'])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
       resetPromptTemplateSelectionDirtyState()
       resetPromptTemplateHydration()
     }

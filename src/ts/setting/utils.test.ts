@@ -872,7 +872,7 @@ describe('server-backed data-driven settings', () => {
     } as SettingContext
 
     setDeferredSettingValue(item, 0.8, ctx)
-    const staged = durableSettingState.stages.find(({ key }) => key === 'split-preset:prompt:prompt-revert')
+    const staged = durableSettingState.stages.find(({ key }) => key === 'prompt-template-owner:prompt-revert')
     expect(staged?.intent).toEqual({
       version: 1,
       requests: [

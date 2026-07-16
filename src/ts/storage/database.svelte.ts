@@ -98,7 +98,10 @@ import {
   markPromptTemplateOwnerAcknowledgementTainted,
   peekPromptTemplateOwnerRevision,
 } from '../server/promptTemplateHydration'
-import { flushPendingPromptTemplatePatches } from '../server/promptTemplateBridge.svelte'
+import {
+  flushPendingPromptTemplatePatches,
+  promptTemplateOwnerMutationKey,
+} from '../server/promptTemplateBridge.svelte'
 import {
   applyAttemptedFieldRollback,
   applyAttemptedKeyedListRollback,
@@ -808,7 +811,11 @@ function refreshPendingSplitPresetDurability(pending: PendingSplitPresetPatch): 
   }
   const intent = splitPresetPatchDurableIntent(pending.kind, pending.presetId, patch)
   pending.intent = intent
-  pending.outbox = stagePendingMutation(`split-preset:${pending.kind}:${pending.presetId}`, intent, pending.outbox)
+  const mutationKey =
+    pending.kind === 'prompt'
+      ? promptTemplateOwnerMutationKey(pending.presetId)
+      : `split-preset:${pending.kind}:${pending.presetId}`
+  pending.outbox = stagePendingMutation(mutationKey, intent, pending.outbox)
 }
 
 function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: ServerCommandTransportOptions): void {
@@ -4654,7 +4661,19 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
         : db.promptPresets[selectIndex]
     const selectPromptPresetId = nextSelectedPreset?.id
     if (!promptPresetId || !previousPreset) return
+    flushPendingPromptTemplatePatches()
     flushPendingSplitPresetPatches()
+    const deleteIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'DELETE',
+          path: `/prompt-presets/${encodeURIComponent(promptPresetId)}`,
+          body: { promptPresetId: selectPromptPresetId },
+        },
+      ],
+    }
+    const deleteOutbox = stagePendingMutation(promptTemplateOwnerMutationKey(promptPresetId), deleteIntent)
     db.promptPresets.splice(id, 1)
     db.promptPresets = db.promptPresets
     const selectedIndex = selectPromptPresetId
@@ -4669,19 +4688,20 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
+    void dispatchDurableMutation(deleteOutbox, deleteIntent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
           deletePromptPresetCommand({
             baseRevision,
             promptPresetId,
             selectPromptPresetId,
           }),
-      ],
-      () => {
-        rollbackSplitPresetDelete('prompt', previousPreset, id)
-        rollbackSplitPresetSelection(selectionRollback)
-      },
+        rollback: () => {
+          rollbackSplitPresetDelete('prompt', previousPreset, id)
+          rollbackSplitPresetSelection(selectionRollback)
+        },
+        ...transport,
+      }),
     )
   })
 }

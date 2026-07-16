@@ -42,6 +42,7 @@
     rollbackFailedPromptTemplateItemDelete,
     rollbackFailedPromptTemplateItemReorder,
     runPromptTemplateOwnerCommand,
+    stagePromptItemDeleteMutation,
     type PromptTemplateDraftBinding,
     type PromptTemplateOwnerMutationFence,
   } from 'src/ts/server/promptTemplateBridge.svelte'
@@ -424,26 +425,30 @@
     const previousIndex = previous.findIndex((item) => item.id === itemId)
     const previousItem = previousIndex === -1 ? cloneJsonValue(promptItem) : previous[previousIndex]
     const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
-    void runServerCommand({
-      command: (baseRevision) =>
-        runPromptTemplateOwnerCommand(ownerId, () =>
-          deletePromptItemCommand({
-            baseRevision,
-            promptPresetId: promptTemplateOwnerCommandId(ownerId),
+    const stagedDelete = stagePromptItemDeleteMutation(ownerId, itemId)
+    void dispatchDurableMutation(stagedDelete.outbox, stagedDelete.intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          runPromptTemplateOwnerCommand(ownerId, () =>
+            deletePromptItemCommand({
+              baseRevision,
+              promptPresetId: promptTemplateOwnerCommandId(ownerId),
+              itemId,
+              optimisticAcknowledgement,
+            }),
+          ),
+        rollback: () =>
+          rollbackFailedPromptTemplateItemDelete({
+            ownerId,
+            binding: promptTemplateDraftBinding,
             itemId,
-            optimisticAcknowledgement,
+            previousIndex,
+            previousItem,
+            projectionFence,
           }),
-        ),
-      rollback: () =>
-        rollbackFailedPromptTemplateItemDelete({
-          ownerId,
-          binding: promptTemplateDraftBinding,
-          itemId,
-          previousIndex,
-          previousItem,
-          projectionFence,
-        }),
-    })
+        ...transport,
+      }),
+    )
   }
 
   function dispatchReorderPromptItems(
