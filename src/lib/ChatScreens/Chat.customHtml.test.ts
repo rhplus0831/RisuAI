@@ -1155,6 +1155,45 @@ describe('message action target freshness', () => {
     expect(customHtmlMocks.navigate).toHaveBeenCalledWith('/character/custom-html-character/custom-html-chat')
   })
 
+  it('hydrates a nonresident branch source before folding to its origin message', async () => {
+    seedDatabase(1, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    const marker = '{{specialcomment::branchedfrom::custom-html-chat::Custom HTML Chat::message-0::}}'
+    const character = testDatabaseState.db.characters[0]
+    const sourceChat = character.chats[0]
+    sourceChat.message = [
+      { role: 'char', data: '', isComment: true, disabled: true, __risuServerUnloadedMessage: true },
+      { chatId: 'message-tail', data: 'resident tail', role: 'char' },
+    ] as typeof sourceChat.message
+    character.chatPage = 1
+    character.chats[1].message[0].data = marker
+    const hydration = deferred<void>()
+    customHtmlMocks.hydrateChatMessages.mockImplementationOnce(async () => {
+      await hydration.promise
+      sourceChat.message = [
+        { chatId: 'message-0', data: 'loaded branch origin', role: 'user' },
+        { chatId: 'message-tail', data: 'resident tail', role: 'char' },
+      ]
+    })
+
+    mountCustomHtmlRows(1, 'char', { message: marker, isComment: true })
+    await settle()
+
+    buttonByText('branchedText')?.click()
+    await settle()
+
+    expect(customHtmlMocks.hydrateChatMessages).toHaveBeenCalledWith('custom-html-chat', { strict: true })
+    expect(customHtmlMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(customHtmlMocks.foldChatToMessage).not.toHaveBeenCalled()
+
+    hydration.resolve()
+    await settle()
+
+    expect(customHtmlMocks.changeChatTo).toHaveBeenCalledWith('custom-html-chat')
+    expect(customHtmlMocks.foldChatToMessage).toHaveBeenCalledWith('message-0')
+    expect(customHtmlMocks.navigate).toHaveBeenCalledWith('/character/custom-html-character/custom-html-chat')
+  })
+
   it('branches from the clicked chat when the active chat switches immediately after the click', async () => {
     seedDatabase(1, null as unknown as string)
     mountPopupList()

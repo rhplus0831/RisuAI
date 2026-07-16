@@ -67,6 +67,7 @@ function renderBranch(branch: ChatBranch, x: number, y: number, connectX = -1, c
 
 export function getChatBranches() {
   const character = getCurrentCharacter()
+  if (!character) return []
 
   const mainBranch: ChatBranch = {
     children: new Map(),

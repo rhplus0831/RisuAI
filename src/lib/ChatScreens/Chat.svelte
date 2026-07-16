@@ -572,6 +572,39 @@
     }
   }
 
+  async function openBranchSource(branchReference: ReturnType<typeof parseBranchComment>): Promise<void> {
+    if (!branchReference) return
+    const originTarget = captureMessageEditorTarget()
+    if (!originTarget) return
+
+    if (canUseServerCommands()) {
+      try {
+        await hydrateChatMessages(branchReference.sourceChatId, { strict: true })
+      } catch {
+        if (isCurrentMessageEditorTarget(originTarget)) alertError(language.chatDataLoadFailed)
+        return
+      }
+    }
+
+    if (!isCurrentMessageEditorTarget(originTarget)) return
+    const currentCharacter = getDatabase().characters?.[selIdState.selId]
+    const sourceChat = currentCharacter?.chats?.find((chat) => chat.id === branchReference.sourceChatId)
+    if (
+      !currentCharacter ||
+      !sourceChat ||
+      !sourceChat.message.some((candidate) => candidate.chatId === branchReference.sourceMessageId)
+    ) {
+      alertError(language.chatDataLoadFailed)
+      return
+    }
+
+    changeChatTo(branchReference.sourceChatId)
+    foldChatToMessage(branchReference.sourceMessageId)
+    if (currentCharacter.chaId) {
+      navigate(characterRoutePath(currentCharacter.chaId, branchReference.sourceChatId))
+    }
+  }
+
   function resolveActiveMessageTarget(target: MessageEditorTarget): { chat: Chat; messageIndex: number } | null {
     const character = getDatabase().characters?.[selIdState.selId]
     if (
@@ -1533,12 +1566,7 @@
           <button
             class="text-blue-500 hover:underline"
             onclick={() => {
-              const characterId = getDatabase().characters?.[selIdState.selId]?.chaId
-              changeChatTo(branchReference.sourceChatId)
-              foldChatToMessage(branchReference.sourceMessageId)
-              if (characterId && branchReference.sourceChatId) {
-                navigate(characterRoutePath(characterId, branchReference.sourceChatId))
-              }
+              void openBranchSource(branchReference)
             }}>
             <GitBranch size={20} class="inline-block mr-1" />
             {language.branchedText.replace('{}', branchReference.sourceChatName)}

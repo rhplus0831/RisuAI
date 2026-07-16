@@ -188,4 +188,15 @@ describe('AlertComp branch graph accessibility', () => {
     await Promise.resolve()
     expect(document.activeElement).toBe(outsideButton)
   })
+
+  it('remains safe when its selected character owner disappears while open', async () => {
+    await openBranches()
+    expect(branchNodes()).toHaveLength(3)
+
+    selectedCharID.set(-1)
+    await tick()
+
+    expect(target.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(branchNodes()).toHaveLength(0)
+  })
 })

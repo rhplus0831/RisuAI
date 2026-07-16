@@ -106,6 +106,10 @@
   let branchHover: BranchDetails | null = $state(null)
   let branchFocusedDetails: BranchDetails | null = $state(null)
   let branchPointerFocusPending = false
+  const branchGraph = $derived.by(() => {
+    if ($alertStore.type !== 'branches' || $selectedCharID < 0) return []
+    return getChatBranches()
+  })
   let expandedLogs: Set<number> = $state(new Set())
   let allExpanded = $state(false)
   let copiedKey: string | null = $state(null)
@@ -1095,7 +1099,7 @@
       </button>
     </div>
 
-    {#each getChatBranches() as obj, index}
+    {#each branchGraph as obj, index}
       {@const detailsId = `risu-branch-details-${index}`}
       <button
         type="button"

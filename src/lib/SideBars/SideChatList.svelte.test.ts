@@ -115,6 +115,7 @@ const sidebarMocks = vi.hoisted(() => {
     alertError: vi.fn(),
     alertNormal: vi.fn(),
     alertSelect: vi.fn(async () => '0'),
+    alertStoreSet: vi.fn(),
     appendMessageCommand: unusedCommand,
     changeChatTo: vi.fn(),
     canUseServerCommands: vi.fn(() => serverCommandsEnabled),
@@ -155,6 +156,7 @@ const sidebarMocks = vi.hoisted(() => {
     dispatchReorderChatsByIds: vi.fn(),
     dispatchUpdateChat: vi.fn(),
     dispatchUpdateChatFolder: vi.fn(),
+    ensureAllChatsHydrated: vi.fn(async () => undefined),
     exportAllChats: vi.fn(),
     exportChat: vi.fn(),
     forkChatCommand: unusedCommand,
@@ -274,6 +276,7 @@ vi.mock('src/ts/alert', () => ({
   alertError: sidebarMocks.alertError,
   alertNormal: sidebarMocks.alertNormal,
   alertSelect: sidebarMocks.alertSelect,
+  alertStore: { set: sidebarMocks.alertStoreSet },
 }))
 
 vi.mock('src/ts/characters', () => ({
@@ -333,7 +336,7 @@ vi.mock('src/ts/server/chatBridge.svelte', () => ({
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(() => true),
-  ensureAllChatsHydrated: vi.fn(async () => undefined),
+  ensureAllChatsHydrated: sidebarMocks.ensureAllChatsHydrated,
   hydrateActiveChat: vi.fn(async () => undefined),
   hydrateChatMessages: sidebarMocks.hydrateChatMessages,
   resetChatHydration: vi.fn(),
@@ -652,6 +655,29 @@ describe('SideChatList DOM contract harness', () => {
         sidebarRoot().querySelector<HTMLElement>(`[data-risu-chat-action="${action}"]`)?.getAttribute('aria-label'),
       ).toBe(expectedName)
     }
+  })
+
+  it('does not open a stale branch graph after its character owner leaves during hydration', async () => {
+    seedSidebarDatabase()
+    let resolveHydration!: () => void
+    sidebarMocks.ensureAllChatsHydrated.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveHydration = resolve
+        }),
+    )
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="branches"]')!.click()
+    await tick()
+    expect(sidebarMocks.ensureAllChatsHydrated).toHaveBeenCalledWith({ strict: true })
+
+    selectedCharID.set(-1)
+    resolveHydration()
+    await flushCommandWork()
+
+    expect(sidebarMocks.alertStoreSet).not.toHaveBeenCalled()
   })
 
   it('reorders chats through keyboard-accessible organizer actions', async () => {

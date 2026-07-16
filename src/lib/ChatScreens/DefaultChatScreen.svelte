@@ -626,13 +626,15 @@
     navigate(characterRoutePath(character.chaId, chat.id))
   }
 
-  async function expandTranscriptWindow(nextLoadPages: number) {
+  async function expandTranscriptWindow(nextLoadPages: number, applyWindow = true): Promise<boolean> {
     const targetIdentity = getActiveTranscriptWindowIdentity()
-    if (!targetIdentity || nextLoadPages <= loadPages) return
+    if (!targetIdentity) return false
+    if (nextLoadPages <= loadPages) return true
     const hydrated = await hydrateActiveChatWindow(nextLoadPages)
-    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
-    if (!hydrated) return
-    loadPages = Math.max(loadPages, nextLoadPages)
+    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return false
+    if (!hydrated) return false
+    if (applyWindow) loadPages = Math.max(loadPages, nextLoadPages)
+    return true
   }
 
   $effect(() => {
@@ -1703,8 +1705,25 @@
             <Button
               className="max-w-xl w-full"
               onclick={async () => {
-                await expandTranscriptWindow(loadPages + chatFoldedStateMessageIndex.index + 1)
+                const foldedTarget = chatFoldedState.data
+                const foldedMessageIndex = chatFoldedStateMessageIndex.index
+                if (!foldedTarget || foldedMessageIndex < 0) return
+                const nextLoadPages = getLoadPagesForMessageJump(loadPages, currentChat.length, foldedMessageIndex)
+                const expanded = await expandTranscriptWindow(nextLoadPages, false)
+                const liveFoldedTarget = chatFoldedState.data
+                if (
+                  !expanded ||
+                  chatFoldedStateMessageIndex.index !== foldedMessageIndex ||
+                  !liveFoldedTarget ||
+                  liveFoldedTarget.targetCharacterId !== foldedTarget.targetCharacterId ||
+                  liveFoldedTarget.targetChatId !== foldedTarget.targetChatId ||
+                  liveFoldedTarget.targetMessageId !== foldedTarget.targetMessageId
+                ) {
+                  return
+                }
                 chatFoldedState.data = null
+                chatFoldedStateMessageIndex.index = -1
+                loadPages = Math.max(loadPages, nextLoadPages)
               }}>
               {language.loadMore}
             </Button>

@@ -79,6 +79,7 @@
   let opened = 0
   let sortableStructureSignature = ''
   let sortableReconcileGeneration = 0
+  let branchGraphHydrationRun = 0
 
   // Preserve source order and each chat's original array index within folder buckets.
   let chatsByFolderId = $derived(groupChatsByFolderId(chara.chats))
@@ -144,6 +145,16 @@
 
   function isCurrentOrganizerOwner(characterId: string): boolean {
     return chara.chaId === characterId && getDatabase().characters?.[$selectedCharID]?.chaId === characterId
+  }
+
+  function isCurrentBranchGraphOwner(
+    characterId: string | undefined,
+    selectedCharacterIndex: number,
+    characterReference: character,
+  ): boolean {
+    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
+    if (characterId) return selectedCharacter?.chaId === characterId
+    return $selectedCharID === selectedCharacterIndex && selectedCharacter === characterReference
   }
 
   function organizerButtonForChat(chatId: string): HTMLButtonElement | undefined {
@@ -840,6 +851,7 @@
   })
 
   onDestroy(() => {
+    branchGraphHydrationRun += 1
     sortableReconcileGeneration += 1
     destroyStb()
   })
@@ -1241,13 +1253,23 @@
           aria-label={language.branch}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={async () => {
+            const ownerCharacterId = chara.chaId
+            const ownerSelectedCharacterIndex = $selectedCharID
+            const ownerCharacterReference = chara
+            const run = ++branchGraphHydrationRun
+            const isFresh = () =>
+              run === branchGraphHydrationRun &&
+              isCurrentBranchGraphOwner(ownerCharacterId, ownerSelectedCharacterIndex, ownerCharacterReference)
+            if (!isFresh()) return
+
             // Branch tree hashes require all lazily-loaded chats first.
             try {
               await ensureAllChatsHydrated({ strict: true })
             } catch (error) {
-              alertError(error)
+              if (isFresh()) alertError(error)
               return
             }
+            if (!isFresh()) return
             alertStore.set({
               type: 'branches',
               msg: '',

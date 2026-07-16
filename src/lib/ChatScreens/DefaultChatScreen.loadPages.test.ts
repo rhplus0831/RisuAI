@@ -488,6 +488,12 @@ function findClickableByText(text: string): HTMLElement | undefined {
   )
 }
 
+function findButtonByText(text: string): HTMLButtonElement | undefined {
+  return Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+    (element) => element.textContent?.trim() === text,
+  )
+}
+
 beforeEach(() => {
   clearDefaultChatComposerDrafts()
   target = document.createElement('div')
@@ -720,6 +726,53 @@ describe('DefaultChatScreen transcript window state', () => {
       expect(loadMoreButtons).toHaveLength(1)
     })
     expect(target.querySelector('button button')).toBeNull()
+  })
+
+  it('expands a deep folded target by its distance from the transcript tail before unfolding', async () => {
+    seedDatabase([120])
+    loadPageMocks.chatFoldedState.data = {
+      targetCharacterId: 'character-0',
+      targetChatId: 'chat-0',
+      targetMessageId: 'chat-0-message-10',
+    }
+    loadPageMocks.chatFoldedStateMessageIndex.index = 10
+    mountScreen()
+
+    await waitFor(() => {
+      expect(messageRowIndexes()).toContain(10)
+      expect(messageRowIndexes()).not.toContain(119)
+    })
+    const loadMore = findButtonByText('loadMore')
+    expect(loadMore).toBeTruthy()
+    loadMore!.click()
+
+    await waitFor(() => {
+      expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledWith(115)
+      expect(loadPageMocks.chatFoldedState.data).toBeNull()
+      expect(messageRowIndexes()).toContain(10)
+      expect(messageRowIndexes()).toContain(119)
+    })
+  })
+
+  it('keeps a folded target available when transcript expansion hydration fails', async () => {
+    seedDatabase([120])
+    const foldedTarget = {
+      targetCharacterId: 'character-0',
+      targetChatId: 'chat-0',
+      targetMessageId: 'chat-0-message-10',
+    }
+    loadPageMocks.chatFoldedState.data = foldedTarget
+    loadPageMocks.chatFoldedStateMessageIndex.index = 10
+    loadPageMocks.hydrateActiveChatWindow.mockResolvedValueOnce(false)
+    mountScreen()
+
+    await waitFor(() => expect(messageRowIndexes()).toContain(10))
+    findButtonByText('loadMore')!.click()
+    await waitFor(() => expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledWith(115))
+
+    expect(loadPageMocks.chatFoldedState.data).toEqual(foldedTarget)
+    expect(loadPageMocks.chatFoldedStateMessageIndex.index).toBe(10)
+    expect(messageRowIndexes()).toContain(10)
   })
 
   it('offers the Stop TTS action for every active synthesis mode', async () => {
