@@ -170,6 +170,57 @@ export function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+interface ModuleDraftTopLevelPatch {
+  values: ModuleSnapshot
+  deletedKeys: string[]
+}
+
+function moduleDraftTopLevelPatch(baseline: RisuModule, draft: RisuModule): ModuleDraftTopLevelPatch {
+  const baselineRecord = baseline as RisuModule & Record<string, unknown>
+  const draftRecord = draft as RisuModule & Record<string, unknown>
+  const values: ModuleSnapshot = {}
+  const deletedKeys: string[] = []
+  const keys = new Set([...Object.keys(baselineRecord), ...Object.keys(draftRecord)])
+
+  for (const key of keys) {
+    if (key === 'id') continue
+
+    const baselineHasKey = hasOwnRecordKey(baselineRecord, key)
+    const draftHasKey = hasOwnRecordKey(draftRecord, key)
+    if (baselineHasKey === draftHasKey && (!draftHasKey || isJsonValueEqual(baselineRecord[key], draftRecord[key]))) {
+      continue
+    }
+
+    if (draftHasKey) {
+      values[key] = cloneJsonValue(draftRecord[key])
+    } else {
+      deletedKeys.push(key)
+    }
+  }
+
+  return { values, deletedKeys }
+}
+
+/**
+ * Rebase an editor draft onto the newest projected module without treating
+ * untouched baseline fields as user edits. Changes within the same top-level
+ * field remain last-writer-wins, matching the server's sparse module patch.
+ */
+export function rebaseModuleDraftOntoLatest(baseline: RisuModule, draft: RisuModule, latest: RisuModule): RisuModule {
+  const patch = moduleDraftTopLevelPatch(baseline, draft)
+  const rebased = cloneJsonValue(latest) as RisuModule & Record<string, unknown>
+
+  for (const [key, value] of Object.entries(patch.values)) {
+    rebased[key] = cloneJsonValue(value)
+  }
+  for (const key of patch.deletedKeys) {
+    delete rebased[key]
+  }
+
+  rebased.id = latest.id
+  return rebased
+}
+
 export function currentGlobalModuleStateSnapshot(moduleIdForReferences?: string): GlobalModuleStateSnapshot {
   const snapshot: GlobalModuleStateSnapshot = {
     modules: cloneJsonValue(getDatabase().modules ?? []),

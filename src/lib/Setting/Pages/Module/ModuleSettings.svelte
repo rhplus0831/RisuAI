@@ -56,6 +56,7 @@
   import {
     createGlobalModule,
     deleteGlobalModule,
+    rebaseModuleDraftOntoLatest,
     setGlobalModuleEnabled,
     updateGlobalModule,
   } from 'src/ts/moduleCommands'
@@ -71,6 +72,7 @@
     description: '',
     id: v4(),
   })
+  let editBaseline: RisuModule | null = null
   let mode = $state(0)
   let mutationPending = $state(false)
   let mutationError = $state('')
@@ -128,15 +130,18 @@
 
     const draft = cloneJsonValue(tempModule)
     mutationError = ''
-    if (!getResourceDatabase().modules.some((candidate) => candidate.id === draft.id)) {
+    const latest = getResourceDatabase().modules.find((candidate) => candidate.id === draft.id)
+    if (!latest || editBaseline?.id !== draft.id) {
       mutationError = language.moduleSave.editTargetMissing
       return
     }
+    const rebasedDraft = rebaseModuleDraftOntoLatest(editBaseline, draft, cloneJsonValue(latest))
 
     mutationPending = true
     try {
-      const result = await updateGlobalModule(draft.id, draft)
+      const result = await updateGlobalModule(draft.id, rebasedDraft)
       if (result === null || result.status === 'ok') {
+        editBaseline = null
         mode = 0
         return
       }
@@ -217,7 +222,9 @@
                 use:tooltip={language.edit}
                 onclick={async (e) => {
                   e.stopPropagation()
-                  tempModule = cloneJsonValue(rmodule)
+                  const baseline = cloneJsonValue(rmodule)
+                  tempModule = cloneJsonValue(baseline)
+                  editBaseline = baseline
                   mutationError = ''
                   mode = 2
                 }}>
@@ -260,7 +267,7 @@
           </div>
         </div>
         <div class="mt-1 mb-3 pl-3">
-          <span class="text-sm text-textcolor2">{rmodule.description || 'No description provided'}</span>
+          <span class="text-sm text-textcolor2">{rmodule.description || language.noModuleDescription}</span>
         </div>
       {/each}
     {/if}
@@ -277,6 +284,7 @@
           description: '',
           id: v4(),
         }
+        editBaseline = null
         mutationError = ''
         mode = 1
       }}>

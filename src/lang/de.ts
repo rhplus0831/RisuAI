@@ -1066,6 +1066,7 @@ export const languageGerman = {
   module: 'Modul',
   modules: 'Module',
   noModules: 'Es wurden keine Module installiert.',
+  noModuleDescription: 'Keine Beschreibung vorhanden.',
   createModule: 'Modul erstellen',
   basicInfo: 'Basisinfo',
   moduleContent: 'Modulinhalt',

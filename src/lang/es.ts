@@ -1049,6 +1049,7 @@ export const languageSpanish = {
   module: 'Módulo',
   modules: 'Módulos',
   noModules: 'No se han instalado módulos.',
+  noModuleDescription: 'No se proporcionó ninguna descripción.',
   createModule: 'Crear Módulo',
   basicInfo: 'Información Básica',
   moduleContent: 'Contenido del Módulo',

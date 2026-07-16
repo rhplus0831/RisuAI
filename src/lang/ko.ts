@@ -1048,6 +1048,7 @@ export const languageKorean = {
   module: '모듈',
   modules: '모듈',
   noModules: '모듈이 없습니다.',
+  noModuleDescription: '설명이 없습니다.',
   createModule: '모듈 생성',
   basicInfo: '기본 정보',
   moduleContent: '모듈 내용',

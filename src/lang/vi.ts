@@ -1042,6 +1042,7 @@ export const languageVietnamese = {
   module: 'Mô-đun',
   modules: 'Mô-đun',
   noModules: 'Không có mô-đun nào được cài đặt.',
+  noModuleDescription: 'Không có mô tả.',
   createModule: 'Tạo mô-đun',
   basicInfo: 'Thông tin cơ bản',
   moduleContent: 'Nội dung mô-đun',

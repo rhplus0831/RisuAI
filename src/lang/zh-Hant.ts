@@ -1009,6 +1009,7 @@ export const languageChineseTraditional = {
   module: '模組',
   modules: '模組',
   noModules: '尚未安裝任何模組。',
+  noModuleDescription: '未提供描述。',
   createModule: '建立模組',
   basicInfo: '基本資料',
   moduleContent: '模組內容',

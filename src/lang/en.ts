@@ -1317,6 +1317,7 @@ export const languageEnglish = {
   module: 'Module',
   modules: 'Modules',
   noModules: 'No modules has been installed.',
+  noModuleDescription: 'No description provided',
   createModule: 'Create Module',
   basicInfo: 'Basic Info',
   moduleContent: 'Module Content',

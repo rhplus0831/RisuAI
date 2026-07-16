@@ -26,6 +26,7 @@ import {
   createGlobalModule,
   deleteGlobalModule,
   dispatchModuleInfoPatch,
+  rebaseModuleDraftOntoLatest,
   restoreCharacterModuleState,
   setGlobalModuleEnabled,
   toggledModuleIds,
@@ -608,6 +609,38 @@ describe('module command projection helpers', () => {
       },
     })
     expect(getDatabase().modules[0]).toMatchObject({ cjs: 'x'.repeat(10_000), assets })
+  })
+
+  it('rebases module drafts with top-level edits and supported deletions while preserving untouched latest fields', () => {
+    const baseline = {
+      id: 'mod-a',
+      name: 'Module A',
+      description: 'Original description',
+      namespace: 'original-namespace',
+      cjs: 'original code',
+    }
+    const draft = {
+      id: 'mod-a',
+      name: 'Locally renamed',
+      description: 'Original description',
+      cjs: 'original code',
+    }
+    const latest = {
+      id: 'mod-a',
+      name: 'Module A',
+      description: 'Description changed remotely',
+      namespace: 'remote-namespace',
+      cjs: 'remote code',
+      hideIcon: true,
+    }
+
+    expect(rebaseModuleDraftOntoLatest(baseline, draft, latest)).toEqual({
+      id: 'mod-a',
+      name: 'Locally renamed',
+      description: 'Description changed remotely',
+      cjs: 'remote code',
+      hideIcon: true,
+    })
   })
 
   it('optimistically applies global module create and rolls back on command failure', async () => {

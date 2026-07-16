@@ -41,7 +41,10 @@ const mcpSpies = vi.hoisted(() => ({
 }))
 
 vi.mock('src/ts/process/modules', () => moduleProcessSpies)
-vi.mock('src/ts/moduleCommands', () => moduleCommandSpies)
+vi.mock('src/ts/moduleCommands', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/moduleCommands')>()),
+  ...moduleCommandSpies,
+}))
 vi.mock('src/ts/alert', () => alertSpies)
 vi.mock('src/ts/globalApi.svelte', () => globalApiSpies)
 vi.mock('src/ts/process/mcp/mcp', () => mcpSpies)
@@ -258,6 +261,13 @@ describe('ModuleSettings derived module rows', () => {
     expect(moduleSurfaceAction('import').getAttribute('aria-label')).toBe(`${language.import}: ${language.module}`)
   })
 
+  it('uses the localized fallback for a module without a description', () => {
+    getDatabase().modules[2].description = ''
+    mountSettings()
+
+    expect(target.textContent).toContain(language.noModuleDescription)
+  })
+
   it('names module lorebook actions', async () => {
     mountSettings()
     moduleAction('alpha-id', 'edit').click()
@@ -320,6 +330,37 @@ describe('ModuleSettings derived module rows', () => {
       expect.objectContaining({
         id: 'beta-id',
         name: 'beta Module',
+      }),
+    )
+  })
+
+  it('rebases an edit onto the latest module without overwriting untouched remote fields', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await updateModuleName('Locally renamed module')
+
+    getDatabase().modules = getDatabase().modules.map((candidate) =>
+      candidate.id === 'alpha-id'
+        ? {
+            ...candidate,
+            description: 'Description changed remotely',
+            cjs: 'remote module code',
+          }
+        : candidate,
+    )
+    await tick()
+
+    await clickModuleSurfaceAction('submit-edit')
+
+    expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledOnce()
+    expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledWith(
+      'alpha-id',
+      expect.objectContaining({
+        id: 'alpha-id',
+        name: 'Locally renamed module',
+        description: 'Description changed remotely',
+        cjs: 'remote module code',
       }),
     )
   })

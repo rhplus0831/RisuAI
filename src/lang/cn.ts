@@ -989,6 +989,7 @@ export const languageChinese = {
   module: '模块',
   modules: '模块',
   noModules: '尚未安装任何模块。',
+  noModuleDescription: '未提供描述。',
   createModule: '创建模块',
   basicInfo: '基本数据',
   moduleContent: '模块内容',
