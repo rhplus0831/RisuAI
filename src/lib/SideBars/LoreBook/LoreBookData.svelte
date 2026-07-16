@@ -334,6 +334,7 @@
             )
           }
           draft.alwaysActive = !draft.alwaysActive
+          settleDraftSoon()
         }}>
         {#if draft.alwaysActive}
           <SunIcon size={20} />

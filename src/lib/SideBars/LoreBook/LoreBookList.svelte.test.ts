@@ -83,6 +83,8 @@ const lorebookListMocks = vi.hoisted(() => {
         alwaysActive: 'Always active',
         alwaysActiveInChat: 'Always active in chat',
         childLoreDesc: 'Child lore',
+        disable: 'Disable',
+        enable: 'Enable',
         folderName: 'Folder name',
         folderRemoveConfirm: 'Remove folder children?',
         help: {
@@ -576,5 +578,38 @@ describe('LoreBookList', () => {
       expect.objectContaining({ id: 'global-entry-x' }),
       expect.objectContaining({ id: 'global-entry-a' }),
     ])
+  })
+
+  it('settles a global entry edit when the row always-active button is toggled', async () => {
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        {
+          id: 'global-book',
+          name: 'Global Book',
+          data: [makeLoreBook({ id: 'global-entry', comment: 'Global Entry', alwaysActive: false })],
+        },
+      ],
+      loreBookPage: 0,
+    } as unknown as Database)
+
+    resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
+    await tick()
+
+    const row = rowByEntryId('global-entry')
+    const toggle = row.querySelector<HTMLButtonElement>('button[aria-label^="Enable: Always active"]')
+    expect(toggle).toBeTruthy()
+    toggle!.click()
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.applyLorebookEntryDraftEdit).toHaveBeenCalledWith(
+      { kind: 'global', lorebookId: 'global-book' },
+      0,
+      expect.objectContaining({ id: 'global-entry', alwaysActive: true }),
+    )
+    expect(lorebookListMocks.flushPendingLorebookEntryDraftEdit).toHaveBeenCalledWith({
+      kind: 'global',
+      lorebookId: 'global-book',
+    })
   })
 })
