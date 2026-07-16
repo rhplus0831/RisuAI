@@ -94,11 +94,17 @@
   let cardExportType = $state('')
   let cardExportType2 = $state('')
   let generationInfoMenuIndex = $state(0)
-  let branchHover: null | {
+  type BranchNode = ReturnType<typeof getChatBranches>[number]
+  type BranchDetails = {
+    id: string
     x: number
     y: number
     content: string
-  } = $state(null)
+  }
+
+  let branchHover: BranchDetails | null = $state(null)
+  let branchFocusedDetails: BranchDetails | null = $state(null)
+  let branchPointerFocusPending = false
   let expandedLogs: Set<number> = $state(new Set())
   let allExpanded = $state(false)
   let copiedKey: string | null = $state(null)
@@ -146,6 +152,28 @@
     }
   }
 
+  function getBranchDetails(obj: BranchNode, index: number): BranchDetails {
+    const char = getCurrentCharacter()
+    const chat = char?.chats?.[obj.chatId]
+    const content =
+      obj.y === 0
+        ? chat?.fmIndex === -1
+          ? (char?.firstMessage ?? '')
+          : (char?.alternateGreetings?.[chat?.fmIndex ?? 0] ?? '')
+        : (chat?.message?.[obj.y - 1]?.data ?? '')
+
+    return {
+      id: `risu-branch-details-${index}`,
+      x: obj.x,
+      y: obj.y,
+      content,
+    }
+  }
+
+  function showBranchDetails(obj: BranchNode, index: number) {
+    branchHover = getBranchDetails(obj, index)
+  }
+
   $effect.pre(() => {
     $alertStore
     stackTraceTranslationRun += 1
@@ -155,6 +183,8 @@
     isTranslating = false
     if ($alertStore.type !== 'branches') {
       branchHover = null
+      branchFocusedDetails = null
+      branchPointerFocusPending = false
     }
     if ($alertStore.type !== 'cardexport') {
       cardExportType = ''
@@ -1046,6 +1076,9 @@
     tabindex="-1">
     {#if branchHover !== null}
       <div
+        id={branchHover.id}
+        role="tooltip"
+        aria-live="polite"
         class="z-30 whitespace-pre-wrap p-4 text-textcolor bg-darkbg border-darkborderc border rounded-md absolute"
         style="top: {branchHover.y * 80 + 24}px; left: {(branchHover.x + 1) * 80 + 24}px">
         {branchHover.content}
@@ -1066,37 +1099,55 @@
       </button>
     </div>
 
-    {#each getChatBranches() as obj}
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <div
-        role="table"
-        class="peer w-12 h-12 z-20 bg-bgcolor border border-darkborderc rounded-full flex justify-center items-center overflow-y-auto absolute"
+    {#each getChatBranches() as obj, index}
+      {@const detailsId = `risu-branch-details-${index}`}
+      <button
+        type="button"
+        data-risu-branch-node
+        aria-label={`${language.branch} ${index + 1}`}
+        aria-describedby={branchHover?.id === detailsId ? detailsId : undefined}
+        class="peer w-12 h-12 z-20 bg-bgcolor border border-darkborderc rounded-full flex justify-center items-center overflow-y-auto absolute focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
         style="top: {obj.y * 80 + 24}px; left: {obj.x * 80 + 24}px"
         onmouseenter={() => {
-          if (branchHover === null) {
-            const char = getCurrentCharacter()
-            branchHover = {
-              x: obj.x,
-              y: obj.y,
-              content: char.chats[obj.chatId].message[obj.y - 1].data,
-            }
-          }
+          showBranchDetails(obj, index)
+        }}
+        onpointerdown={(event) => {
+          if (event.button !== 0) return
+          branchPointerFocusPending = true
+          queueMicrotask(() => {
+            branchPointerFocusPending = false
+          })
+        }}
+        onpointerup={() => {
+          branchPointerFocusPending = false
+        }}
+        onpointercancel={() => {
+          branchPointerFocusPending = false
+        }}
+        onfocus={() => {
+          const details = getBranchDetails(obj, index)
+          if (!branchPointerFocusPending) branchFocusedDetails = details
+          branchHover = details
+          branchPointerFocusPending = false
         }}
         onclick={() => {
-          if (branchHover === null) {
-            const char = getCurrentCharacter()
-            branchHover = {
-              x: obj.x,
-              y: obj.y,
-              content: char.chats[obj.chatId].message[obj.y - 1].data,
-            }
-          }
+          branchPointerFocusPending = false
+          showBranchDetails(obj, index)
+        }}
+        onkeydown={(event) => {
+          if (event.key === 'Enter') showBranchDetails(obj, index)
+        }}
+        onkeyup={(event) => {
+          if (event.key === ' ') showBranchDetails(obj, index)
         }}
         onmouseleave={() => {
-          branchHover = null
+          if (branchHover?.id === detailsId) branchHover = branchFocusedDetails
+        }}
+        onblur={() => {
+          if (branchFocusedDetails?.id === detailsId) branchFocusedDetails = null
+          if (branchHover?.id === detailsId) branchHover = null
         }}>
-      </div>
+      </button>
       {#if obj.connectX === obj.x}
         {#if obj.multiChild}
           <div
