@@ -69,6 +69,7 @@ import {
   type DurableMutationIntent,
 } from './server/pendingMutationOutbox'
 import { replayPendingMutations } from './server/pendingMutationReplay'
+import * as pendingMutationOutboxModule from './server/pendingMutationOutbox'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID, selIdState } from './stores.svelte'
@@ -511,6 +512,87 @@ describe('character list create/delete rollback', () => {
     expect(testDatabaseState.db.characterOrder).toEqual(['char-a'])
     expect(get(selectedCharID)).toBe(0)
     expect((testDatabaseState.db as any).currentChar).toBe(0)
+  })
+
+  it('failed create-and-select preserves a later selected character by id after index compaction', async () => {
+    setCachedServerCommandRevision(10)
+    testDatabaseState.db = {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    setResourceWriteGuardEnabled(true)
+    const response = deferredResponse()
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/commands/characters/create-and-select') return response.promise
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    const previous = currentCharacterStateSnapshot()
+    const attempted = { chaId: 'char-playground', name: 'Playground', chats: [], lastInteraction: 1234 } as any
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters.push(attempted)
+      ;(testDatabaseState.db as any).currentChar = 1
+      selectedCharID.set(1)
+    })
+
+    const pending = dispatchCreateAndSelectCharacter(attempted, previous, 1234, {
+      shouldRestoreSelection: () => false,
+    })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters.push({ chaId: 'char-later', name: 'Later', chats: [] } as any)
+      ;(testDatabaseState.db as any).currentChar = 2
+      selectedCharID.set(2)
+    })
+    response.resolve(jsonResponse({ error: 'invalid create' }, 400))
+
+    await expect(pending).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
+    expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a', 'char-later'])
+    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(get(selectedCharID)).toBe(1)
+  })
+
+  it('rolls back create-and-select when durable staging throws synchronously', async () => {
+    testDatabaseState.db = {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    const previous = currentCharacterStateSnapshot()
+    const attempted = { chaId: 'char-playground', name: 'Playground', chats: [], lastInteraction: 1234 } as any
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters.push(attempted)
+      ;(testDatabaseState.db as any).currentChar = 1
+      selectedCharID.set(1)
+    })
+    const stage = vi.spyOn(pendingMutationOutboxModule, 'stagePendingMutation').mockImplementationOnce(() => {
+      throw new RangeError('Pending mutation payload is too large')
+    })
+
+    try {
+      await expect(dispatchCreateAndSelectCharacter(attempted, previous, 1234)).resolves.toMatchObject({
+        status: 'error',
+        reason: 'invalid-request',
+      })
+      expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a'])
+      expect((testDatabaseState.db as any).currentChar).toBe(0)
+      expect(get(selectedCharID)).toBe(0)
+    } finally {
+      stage.mockRestore()
+    }
   })
 
   it('failed import-style create with no optimistic local row is a no-op rollback and preserves newer local edits', async () => {
@@ -2967,6 +3049,109 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(testDatabaseState.db.characters[1].name).toBe('Newer sibling name')
     expect((testDatabaseState.db as any).currentChar).toBe(1)
     expect(get(selectedCharID)).toBe(1)
+  })
+
+  it('rolls back a compatible projection when durable staging throws synchronously', async () => {
+    testDatabaseState.db = {
+      characters: [{ chaId: 'char-a', name: 'Original', chats: [] }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    const previousCharacter = testDatabaseState.db.characters[0]
+    const prepared = prepareCompatibleCharacterUpdateScoped(
+      previousCharacter,
+      { ...previousCharacter, name: 'Oversized projection' } as any,
+      currentCharacterRowSnapshot(0),
+    )
+    testDatabaseState.db.characters[0] = prepared.optimisticCharacter as any
+    const stage = vi.spyOn(pendingMutationOutboxModule, 'stagePendingMutation').mockImplementationOnce(() => {
+      throw new RangeError('Pending mutation payload is too large')
+    })
+
+    try {
+      await expect(prepared.dispatchAsync()).resolves.toMatchObject({
+        status: 'error',
+        reason: 'invalid-request',
+      })
+      expect(testDatabaseState.db.characters[0].name).toBe('Original')
+    } finally {
+      stage.mockRestore()
+    }
+  })
+
+  it('rebases rapid nested-array replacements when both queued patches fail terminally', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-compatible-character-chain',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-compatible-character-chain',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    testDatabaseState.db = {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Character',
+          chats: [],
+          sdData: { nested: { values: ['original', 1] } },
+        },
+      ],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    const firstResponse = deferredResponse()
+    const patches: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/characters/char-a') {
+          patches.push(typeof init.body === 'string' ? JSON.parse(init.body) : {})
+          if (patches.length === 1) return firstResponse.promise
+          return jsonResponse({ error: 'second replacement rejected' }, 400)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const firstPreviousCharacter = testDatabaseState.db.characters[0]
+      const first = prepareCompatibleCharacterUpdateScoped(
+        firstPreviousCharacter,
+        { ...firstPreviousCharacter, sdData: { nested: { values: ['intermediate', 2] } } } as any,
+        currentCharacterRowSnapshot(0),
+      )
+      testDatabaseState.db.characters[0] = first.optimisticCharacter as any
+      const firstDispatch = first.dispatchAsync()
+
+      const secondPreviousCharacter = testDatabaseState.db.characters[0]
+      const second = prepareCompatibleCharacterUpdateScoped(
+        secondPreviousCharacter,
+        { ...secondPreviousCharacter, sdData: { nested: { values: ['original', 1] } } } as any,
+        currentCharacterRowSnapshot(0),
+      )
+      testDatabaseState.db.characters[0] = second.optimisticCharacter as any
+      const secondDispatch = second.dispatchAsync()
+
+      await vi.waitFor(() => expect(patches).toHaveLength(1))
+      firstResponse.resolve(jsonResponse({ error: 'first replacement rejected' }, 400))
+      await expect(firstDispatch).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
+      await expect(secondDispatch).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
+
+      expect(testDatabaseState.db.characters[0].sdData).toEqual({ nested: { values: ['original', 1] } })
+      expect(patches.map((body) => body.patch)).toEqual([
+        { sdData: { nested: { values: ['intermediate', 2] } } },
+        { sdData: { nested: { values: ['original', 1] } } },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('P2: compatible character updates do not target a replacement chaId when the previous row has no id', async () => {

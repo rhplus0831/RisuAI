@@ -166,7 +166,12 @@ vi.mock('src/ts/characterCommands', () => ({
     'coldStoragedChats',
   ]),
   currentCharacterRowSnapshot: vi.fn(() => ({})),
-  prepareCompatibleCharacterUpdateScoped: vi.fn(() => ({ factories: [], rollback: vi.fn() })),
+  prepareCompatibleCharacterUpdateScoped: vi.fn(() => ({
+    factories: [],
+    rollback: vi.fn(),
+    dispatch: vi.fn(),
+    dispatchAsync: vi.fn(async () => null),
+  })),
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
@@ -190,7 +195,6 @@ vi.mock('src/ts/chatCommands', () => ({
     dispatch: vi.fn(),
     dispatchAsync: vi.fn(async () => null),
   })),
-  runOptimisticCommandSequence: vi.fn(),
 }))
 
 vi.mock('../pluginSafeClass', () => ({
@@ -284,11 +288,7 @@ import { additionalFloatingActionButtons } from 'src/ts/stores.svelte'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
 import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
-import {
-  appendCurrentChatUserMessageForSend,
-  prepareCompatibleChatUpdateScoped,
-  runOptimisticCommandSequence,
-} from 'src/ts/chatCommands'
+import { appendCurrentChatUserMessageForSend, prepareCompatibleChatUpdateScoped } from 'src/ts/chatCommands'
 import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
 import {
   __v3PluginLifecycleTestHooks,
@@ -333,7 +333,6 @@ beforeEach(async () => {
   }
   vi.mocked(prepareCompatibleCharacterUpdateScoped).mockClear()
   vi.mocked(prepareCompatibleChatUpdateScoped).mockClear()
-  vi.mocked(runOptimisticCommandSequence).mockClear()
   vi.mocked(appendCurrentChatUserMessageForSend).mockReset()
   vi.mocked(processSendChat).mockReset()
   vi.mocked(dispatchDurableServerBackedSettingsPatch).mockReset()
@@ -370,8 +369,7 @@ describe('V3 character command bridge', () => {
       chats: existingCharacter.chats,
       globalLore: existingCharacter.globalLore,
     }
-    const factories = [vi.fn()]
-    const rollback = vi.fn()
+    const dispatch = vi.fn()
     mockDbState.db.characters = {
       0: existingCharacter,
     }
@@ -379,8 +377,10 @@ describe('V3 character command bridge', () => {
       characterId: 'char-a',
       patch: { name: 'New name' },
       optimisticCharacter,
-      factories,
-      rollback,
+      factories: [vi.fn()],
+      rollback: vi.fn(),
+      dispatch,
+      dispatchAsync: vi.fn(async () => null),
     } as any)
     const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
     const pluginCharacter = {
@@ -399,7 +399,7 @@ describe('V3 character command bridge', () => {
     )
     expect(mockDbState.db.characters[0]).toBe(optimisticCharacter)
     expect(mockDbState.db.characters[0]).not.toBe(pluginCharacter)
-    expect(runOptimisticCommandSequence).toHaveBeenCalledWith(factories, rollback)
+    expect(dispatch).toHaveBeenCalledOnce()
   })
 
   it('setCharacterToIndex rejects unsupported character fields before projection mutation', () => {
@@ -427,7 +427,6 @@ describe('V3 character command bridge', () => {
 
     expect(mockDbState.db.characters[0]).toBe(existingCharacter)
     expect(prepareCompatibleCharacterUpdateScoped).not.toHaveBeenCalled()
-    expect(runOptimisticCommandSequence).not.toHaveBeenCalled()
   })
 })
 
@@ -532,7 +531,6 @@ describe('V3 chat command bridge', () => {
 
     expect(mockDbState.db.characters[0].chats[0]).toBe(existingChat)
     expect(prepareCompatibleChatUpdateScoped).not.toHaveBeenCalled()
-    expect(runOptimisticCommandSequence).not.toHaveBeenCalled()
   })
 
   it('setChatToIndex rejects unsupported scriptstate value changes before projection mutation', () => {
@@ -562,7 +560,6 @@ describe('V3 chat command bridge', () => {
 
     expect(mockDbState.db.characters[0].chats[0]).toBe(existingChat)
     expect(prepareCompatibleChatUpdateScoped).not.toHaveBeenCalled()
-    expect(runOptimisticCommandSequence).not.toHaveBeenCalled()
   })
 
   it('setChatToIndex still dispatches supported chat changes in server mode', () => {

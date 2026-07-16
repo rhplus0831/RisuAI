@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 import { get } from 'svelte/store'
+import { IDBFactory } from 'fake-indexeddb'
 
 const pluginImportMocks = vi.hoisted(() => ({
   alertConfirm: vi.fn(),
@@ -84,9 +85,17 @@ vi.mock('./pluginSafety', () => ({
 
 import {
   clearCachedServerCommandRevision,
+  setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   type CommandEvent,
 } from '../server/commands'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from '../server/pendingMutationOutbox'
+import { replayPendingMutations } from '../server/pendingMutationReplay'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
@@ -162,7 +171,9 @@ function createPicker() {
   }
 }
 
-function stubCommandFetch(options: { failCommands?: boolean; failCommandUrls?: string[] } = {}): CapturedFetch[] {
+function stubCommandFetch(
+  options: { failCommands?: boolean; failCommandUrls?: string[]; failureStatus?: number } = {},
+): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
     'fetch',
@@ -174,7 +185,7 @@ function stubCommandFetch(options: { failCommands?: boolean; failCommandUrls?: s
         return jsonResponse({ revision: 10 })
       }
       if (options.failCommands || options.failCommandUrls?.includes(url)) {
-        return jsonResponse({ error: 'forced command failure' }, 500)
+        return jsonResponse({ error: 'forced command failure' }, options.failureStatus ?? 500)
       }
       const event: CommandEvent = {
         type: 'plugin.compat.updated',
@@ -1185,8 +1196,73 @@ describe('plugin database command bridge', () => {
     expect(patch).not.toHaveProperty('modules')
   })
 
+  it('setChar retains a transient optimistic replacement and replays its exact patch', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-plugin-v2-character',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-plugin-v2-character',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    let recover = false
+    const patches: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/characters/char-a') {
+          patches.push(typeof init.body === 'string' ? JSON.parse(init.body) : {})
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'character.updated', revision: 11, resource: 'character', id: 'char-a' },
+            characterId: 'char-a',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    selectedCharID.set(0)
+    getDatabase().characters = [
+      {
+        chaId: 'char-a',
+        name: 'Old name',
+        chats: [{ id: 'chat-a', message: [] }],
+      },
+    ] as any
+
+    try {
+      getV2PluginAPIs().setChar({
+        chaId: 'char-a',
+        name: 'Retained name',
+        chats: [{ id: 'chat-a', message: [] }],
+      })
+
+      await vi.waitFor(() => expect(patches).toHaveLength(1))
+      expect(getDatabase().characters[0].name).toBe('Retained name')
+      expect((await listPendingMutations()).map((entry) => entry.intent.requests[0])).toMatchObject([
+        {
+          method: 'PATCH',
+          path: '/characters/char-a',
+          body: { patch: { name: 'Retained name' } },
+        },
+      ])
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      expect(patches.map((body) => body.patch)).toEqual([{ name: 'Retained name' }, { name: 'Retained name' }])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('setChar failure rolls back attempted target fields without clobbering sibling edits or selection', async () => {
-    const calls = stubCommandFetch({ failCommands: true })
+    const calls = stubCommandFetch({ failCommands: true, failureStatus: 400 })
     const apis = getV2PluginAPIs()
     selectedCharID.set(0)
     getDatabase().characters = [

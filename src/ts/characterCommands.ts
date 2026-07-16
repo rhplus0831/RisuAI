@@ -27,6 +27,7 @@ import {
   pendingMutationProjectionFence,
   stagePendingMutation,
   type DurableMutationIntent,
+  type PendingMutationHandle,
   type PendingMutationProjectionFence,
 } from './server/pendingMutationOutbox'
 import { CHARACTER_SELECTION_MUTATION_KEY, characterOwnerMutationKey } from './server/resourceOwnerMutationKeys'
@@ -129,7 +130,6 @@ export interface CharacterOrderNormalizationResult {
 const CHARACTER_ORDER_FOLDER_METADATA_KEYS: CharacterOrderFolderMetadataKey[] = ['name', 'color', 'imgFile', 'img']
 const MAX_CHARACTER_ORDER_DEPENDENCY_KEYS = 32
 let characterOrderProjectionGeneration = 0
-const CHARACTER_FIELD_ROLLBACK_FENCE_FIELDS = new Set(['trashTime', 'supaMemory', 'useInputTranslationHook'])
 const currentCharacterFieldMutationAttempts = new Map<string, CharacterFieldMutationFieldAttempt>()
 
 export interface CompatibleCharacterUpdatePreparation {
@@ -138,6 +138,15 @@ export interface CompatibleCharacterUpdatePreparation {
   optimisticCharacter?: character
   factories: Array<(baseRevision: number) => Promise<ServerCommandResult>>
   rollback: () => void
+}
+
+export interface CompatibleCharacterScopedUpdatePreparation extends CompatibleCharacterUpdatePreparation {
+  dispatch: () => void
+  dispatchAsync: () => Promise<ServerCommandResult | null>
+}
+
+export interface CreateAndSelectCharacterDispatchOptions {
+  shouldRestoreSelection?: () => boolean
 }
 
 export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
@@ -157,6 +166,14 @@ export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
 export function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function pendingMutationStagingFailure(error: unknown): ServerCommandResult {
+  return {
+    status: 'error',
+    error: error instanceof Error ? error.message : 'Unable to stage pending server mutation',
+    reason: 'invalid-request',
+  }
 }
 
 export function currentCharacterStateSnapshot(): CharacterStateSnapshot {
@@ -506,15 +523,21 @@ function characterCreateRollbackFromState(
   }
 }
 
-function restoreCreatedCharacterAttempt(rollback: CharacterCreateRollback | null): void {
+function restoreCreatedCharacterAttempt(
+  rollback: CharacterCreateRollback | null,
+  options: CreateAndSelectCharacterDispatchOptions = {},
+): void {
   if (!rollback) return
 
   withTrustedResourceWrite(() => {
     const characters = getDatabase().characters
     if (!characters) return
 
+    const liveSelectedCharacterId = selectedCharacterIdAt(get(selectedCharID))
     const shouldRestoreSelection =
-      rollback.restoreSelection && shouldRestorePreviousSelectionAfterCreatedCharacterRollback(rollback.characterId)
+      rollback.restoreSelection &&
+      (options.shouldRestoreSelection?.() ?? true) &&
+      shouldRestorePreviousSelectionAfterCreatedCharacterRollback(rollback.characterId)
     const rolledBack = applyAttemptedKeyedListRollback<character, string>({
       list: characters,
       entries: [
@@ -532,6 +555,8 @@ function restoreCreatedCharacterAttempt(rollback: CharacterCreateRollback | null
     replaceCharacterOrderWithNormalized()
     if (shouldRestoreSelection) {
       restoreCharacterSelectionScalars(rollback.previousCurrentChar, rollback.previousSelectedCharID)
+    } else if (liveSelectedCharacterId && liveSelectedCharacterId !== rollback.characterId) {
+      restoreCharacterSelectionById(liveSelectedCharacterId)
     }
   })
 }
@@ -705,7 +730,13 @@ export function dispatchCreateCharacter(character: character, previous: Characte
       },
     ],
   }
-  const outbox = stagePendingMutation(characterOwnerMutationKey(character.chaId), intent)
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(characterOwnerMutationKey(character.chaId), intent)
+  } catch {
+    restoreCreatedCharacterAttempt(rollback)
+    return
+  }
   void dispatchDurableMutation(
     outbox,
     intent,
@@ -727,7 +758,8 @@ export function dispatchCreateAndSelectCharacter(
   character: character,
   previous: CharacterStateSnapshot,
   lastInteraction: number,
-): void {
+  options: CreateAndSelectCharacterDispatchOptions = {},
+): Promise<ServerCommandResult> | undefined {
   recordHydratedCharacterLorebooks([character])
   const rollback = characterCreateRollbackFromState(character, previous, true)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
@@ -752,8 +784,14 @@ export function dispatchCreateAndSelectCharacter(
       },
     ],
   }
-  const outbox = stagePendingMutation(characterOwnerMutationKey(character.chaId), intent)
-  void dispatchDurableMutation(
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(characterOwnerMutationKey(character.chaId), intent)
+  } catch (error) {
+    restoreCreatedCharacterAttempt(rollback, options)
+    return Promise.resolve(pendingMutationStagingFailure(error))
+  }
+  return dispatchDurableMutation(
     outbox,
     intent,
     (transport) =>
@@ -765,7 +803,7 @@ export function dispatchCreateAndSelectCharacter(
             lastInteraction,
             initialChat: cloneJsonValue(initialChat),
           }),
-        () => restoreCreatedCharacterAttempt(rollback),
+        () => restoreCreatedCharacterAttempt(rollback, options),
         transport,
       ) ?? Promise.resolve({ status: 'unavailable' as const }),
   )
@@ -856,7 +894,6 @@ function captureCharacterFieldMutationAttempt(
 ): CharacterFieldMutationAttempt {
   const fields = new Map<string, CharacterFieldMutationFieldAttempt>()
   for (const field of Object.keys(patch)) {
-    if (!CHARACTER_FIELD_ROLLBACK_FENCE_FIELDS.has(field)) continue
     const previous = previousFields.get(field)
     if (!previous) continue
     const key = characterFieldMutationKey(characterId, field)
@@ -876,9 +913,15 @@ function rebaseImmediateCharacterFieldMutationSuccessors(attempt: CharacterField
   for (const fieldAttempt of attempt.fields.values()) {
     const successor = fieldAttempt.successor
     if (!successor?.previous.hadValue) continue
-    if (!Object.is(successor.previous.value, fieldAttempt.attemptedValue)) continue
+    if (!characterFieldSnapshotEquals(successor.previous.value, fieldAttempt.attemptedValue)) continue
     successor.previous = { ...fieldAttempt.previous }
   }
+}
+
+function characterFieldSnapshotEquals(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  const leftSnapshot = JSON.stringify(left)
+  return leftSnapshot !== undefined && leftSnapshot === JSON.stringify(right)
 }
 
 function characterFieldMutationBaseline(
@@ -926,7 +969,14 @@ function dispatchDurableCharacterPatch(
       },
     ],
   }
-  const outbox = stagePendingMutation(characterOwnerMutationKey(characterId), intent)
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(characterOwnerMutationKey(characterId), intent)
+  } catch (error) {
+    rebaseImmediateCharacterFieldMutationSuccessors(attempt)
+    rollback(attempt)
+    return Promise.resolve(pendingMutationStagingFailure(error))
+  }
   return dispatchDurableMutation(
     outbox,
     intent,
@@ -960,7 +1010,6 @@ function characterRowMutationBaselines(
   const baselines = new Map<string, CharacterFieldMutationBaseline>()
   const character = previous.character as unknown as Record<string, unknown> | undefined
   for (const field of Object.keys(patch)) {
-    if (!CHARACTER_FIELD_ROLLBACK_FENCE_FIELDS.has(field)) continue
     baselines.set(field, {
       hadValue: !!character && Object.prototype.hasOwnProperty.call(character, field),
       value: character?.[field],
@@ -993,14 +1042,29 @@ export function dispatchUpdateCharacterScoped(
   characterId: string,
   patch: CharacterSnapshot,
   previous: CharacterRowSnapshot,
-): void {
+): Promise<ServerCommandResult> | undefined {
   const attempted = sanitizeCharacterPatch(patch)
   if (Object.keys(attempted).length === 0) return
-  void dispatchDurableCharacterPatch(
+  return dispatchDurableCharacterPatch(
     characterId,
     attempted,
     characterRowMutationBaselines(previous, attempted),
     (attempt) => restoreCharacterRow(rebasedCharacterRowSnapshot(previous, attempted, attempt)),
+  )
+}
+
+function dispatchCompatibleCharacterPatchScoped(
+  characterId: string,
+  patch: CharacterSnapshot,
+  previous: CharacterRowSnapshot,
+): Promise<ServerCommandResult> | undefined {
+  const attempted = sanitizeCharacterPatch(patch)
+  if (Object.keys(attempted).length === 0) return
+  return dispatchDurableCharacterPatch(
+    characterId,
+    attempted,
+    characterRowMutationBaselines(previous, attempted),
+    (attempt) => restoreCompatibleCharacterRowAttempt(rebasedCharacterRowSnapshot(previous, attempted, attempt)),
   )
 }
 
@@ -1096,12 +1160,12 @@ export function dispatchCompatibleCharacterUpdateScoped(
   previousCharacter: character | undefined,
   nextCharacter: character | undefined,
   previous: CharacterRowSnapshot,
-): void {
+): Promise<ServerCommandResult> | undefined {
   const characterId = previousCharacter?.chaId
   if (!characterId || !previousCharacter || !nextCharacter) return
   const attempted = sanitizeCharacterPatch(changedCharacterFields(previousCharacter, nextCharacter))
   if (Object.keys(attempted).length === 0) return
-  dispatchUpdateCharacterWith(characterId, attempted, () => restoreCharacterRow({ ...previous, attempted }))
+  return dispatchCompatibleCharacterPatchScoped(characterId, attempted, previous)
 }
 
 export function applyCharacterRowMutationScoped(
@@ -1124,9 +1188,8 @@ export function applyCharacterRowMutationScoped(
   return applied
 }
 
-// Factory-list form of dispatchCompatibleCharacterUpdate so the V3 plugin API
-// can route through runOptimisticCommandSequence instead of a fire-and-forget
-// dispatch. Returns the factories array and a rollback closure.
+// Factory-list form retained for legacy compatibility callers and focused
+// projection tests. Live plugin bridges use the durable scoped preparation.
 export function prepareCompatibleCharacterUpdate(
   previousCharacter: character | undefined,
   nextCharacter: character | undefined,
@@ -1148,15 +1211,15 @@ export function prepareCompatibleCharacterUpdate(
   return { ...compatibleUpdate, factories, rollback: () => restoreCharacterState(previous) }
 }
 
-// Scoped factory-list form for plugin compatibility bridges. It uses the same
-// optimistic projection and command patch as the broad helper, but failed
-// commands roll back only the attempted target-row fields. Later sibling edits
-// and selection changes are left alone.
+// Scoped preparation for plugin compatibility bridges. It keeps the legacy
+// factory fields for callers that inspect them, while live dispatch routes
+// through the durable character-owner outbox. Terminal failures roll back only
+// attempted target-row fields; later sibling edits and selection changes stay.
 export function prepareCompatibleCharacterUpdateScoped(
   previousCharacter: character | undefined,
   nextCharacter: character | undefined,
   previous: CharacterRowSnapshot,
-): CompatibleCharacterUpdatePreparation {
+): CompatibleCharacterScopedUpdatePreparation {
   const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
   const compatibleUpdate = prepareCompatibleCharacterProjectionUpdate(previousCharacter, nextCharacter)
   if (compatibleUpdate.characterId && Object.keys(compatibleUpdate.patch).length > 0) {
@@ -1170,10 +1233,19 @@ export function prepareCompatibleCharacterUpdateScoped(
       }),
     )
   }
+  const dispatchAsync = (): Promise<ServerCommandResult | null> => {
+    if (!compatibleUpdate.characterId || Object.keys(compatibleUpdate.patch).length === 0) return Promise.resolve(null)
+    return (
+      dispatchCompatibleCharacterPatchScoped(compatibleUpdate.characterId, compatibleUpdate.patch, previous) ??
+      Promise.resolve(null)
+    )
+  }
   return {
     ...compatibleUpdate,
     factories,
     rollback: () => restoreCompatibleCharacterRowAttempt({ ...previous, attempted: compatibleUpdate.patch }),
+    dispatch: () => void dispatchAsync(),
+    dispatchAsync,
   }
 }
 

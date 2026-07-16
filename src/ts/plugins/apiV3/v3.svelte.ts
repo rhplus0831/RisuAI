@@ -15,11 +15,7 @@ import { canUseServerCommands } from 'src/ts/server/commands'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
 import { captureSettingsPatchProjectionEpochs } from 'src/ts/server/resourceState.svelte'
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
-import {
-  appendCurrentChatUserMessageForSend,
-  prepareCompatibleChatUpdateScoped,
-  runOptimisticCommandSequence,
-} from 'src/ts/chatCommands'
+import { appendCurrentChatUserMessageForSend, prepareCompatibleChatUpdateScoped } from 'src/ts/chatCommands'
 import {
   SafeLocalPluginStorage,
   assertDeviceLocalPluginStorageEnabled,
@@ -1230,18 +1226,15 @@ const makeRisuaiAPIV3 = (
         assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setCharacterToIndex')
         const previous = currentCharacterRowSnapshot(index)
         const previousCharacterSnapshot = $state.snapshot(previousCharacter)
-        // Route through the sequencer so this call shares one advancing revision
-        // baseline with other makeRisuaiAPIV3 command factories.
-        const { factories, optimisticCharacter, rollback } = prepareCompatibleCharacterUpdateScoped(
-          previousCharacterSnapshot,
-          char,
-          previous,
-        )
-        if (!optimisticCharacter || factories.length === 0) return
+        // Route through the durable character-owner dispatcher so transient
+        // failures retain the plugin's optimistic replacement for replay.
+        const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacterSnapshot, char, previous)
+        const optimisticCharacter = preparation.optimisticCharacter
+        if (!optimisticCharacter || preparation.factories.length === 0) return
         withTrustedResourceWrite(() => {
           getDatabase().characters[charId] = optimisticCharacter
         })
-        runOptimisticCommandSequence(factories, rollback)
+        preparation.dispatch()
       }
     },
     getChatFromIndex: (characterIndex: number, chatIndex: number) => {

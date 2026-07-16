@@ -4,21 +4,14 @@ import { get } from 'svelte/store'
 const playgroundState = vi.hoisted(() => ({
   database: {
     characters: [] as Array<Record<string, unknown>>,
+    characterOrder: [] as string[],
     currentChar: -1,
   },
-  commandShouldFail: false,
-  persistedCharacter: null as Record<string, unknown> | null,
 }))
 
 const playgroundMocks = vi.hoisted(() => ({
-  applyCharactersResource: vi.fn(),
-  createAndSelectCharacterCommand: vi.fn(),
+  dispatchCreateAndSelectCharacter: vi.fn(),
   dispatchSelectCharacter: vi.fn(),
-  fetchServerCharacters: vi.fn(),
-  resetChatHydration: vi.fn(),
-  resetLorebookHydration: vi.fn(),
-  recordHydratedCharacterLorebooks: vi.fn(),
-  runServerCommand: vi.fn(),
 }))
 
 vi.mock('./util', () => ({
@@ -60,13 +53,23 @@ vi.mock('./stores.svelte', async () => {
 
 vi.mock('./characterCommands', () => ({
   currentCharacterSelectionSnapshot: () => ({}),
+  currentCharacterStateSnapshot: () => ({
+    characters: structuredClone(playgroundState.database.characters),
+    characterOrder: structuredClone(playgroundState.database.characterOrder),
+    currentChar: playgroundState.database.currentChar,
+    selectedCharID: playgroundState.database.currentChar,
+  }),
+  dispatchCreateAndSelectCharacter: playgroundMocks.dispatchCreateAndSelectCharacter,
   dispatchSelectCharacter: playgroundMocks.dispatchSelectCharacter,
-  initialCharacterChatSnapshot: (character: Record<string, unknown>) =>
-    structuredClone((character.chats as Array<Record<string, unknown>>)[0]),
-  toCharacterSnapshot: (character: Record<string, unknown>) => {
-    const snapshot = structuredClone(character)
-    delete snapshot.chats
-    return snapshot
+  restoreCharacterState: (snapshot: {
+    characters: Array<Record<string, unknown>>
+    characterOrder: string[]
+    currentChar: number
+    selectedCharID: number
+  }) => {
+    playgroundState.database.characters = structuredClone(snapshot.characters)
+    playgroundState.database.characterOrder = structuredClone(snapshot.characterOrder)
+    playgroundState.database.currentChar = snapshot.currentChar
   },
 }))
 
@@ -76,25 +79,6 @@ vi.mock('./server/resourceWriteGuard.svelte', () => ({
 
 vi.mock('./server/commands', () => ({
   canUseServerCommands: () => true,
-  createAndSelectCharacterCommand: playgroundMocks.createAndSelectCharacterCommand,
-  runServerCommand: playgroundMocks.runServerCommand,
-}))
-
-vi.mock('./server/resourceReads', () => ({
-  fetchServerCharacters: playgroundMocks.fetchServerCharacters,
-}))
-
-vi.mock('./server/resourceState.svelte', () => ({
-  applyCharactersResource: playgroundMocks.applyCharactersResource,
-}))
-
-vi.mock('./server/chatMessageHydration.svelte', () => ({
-  resetChatHydration: playgroundMocks.resetChatHydration,
-}))
-
-vi.mock('./server/lorebookBridge.svelte', () => ({
-  recordHydratedCharacterLorebooks: playgroundMocks.recordHydratedCharacterLorebooks,
-  resetLorebookHydration: playgroundMocks.resetLorebookHydration,
 }))
 
 import { openPlaygroundChat, PLAYGROUND_CHARACTER_ID } from './playground'
@@ -108,54 +92,23 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve }
 }
 
+function successfulCreateResult() {
+  return {
+    status: 'ok' as const,
+    revision: 11,
+    event: { type: 'character.createdAndSelected', revision: 11, resource: 'character' },
+    characterId: PLAYGROUND_CHARACTER_ID,
+  }
+}
+
 beforeEach(() => {
   playgroundState.database.characters = []
+  playgroundState.database.characterOrder = []
   playgroundState.database.currentChar = -1
-  playgroundState.commandShouldFail = false
-  playgroundState.persistedCharacter = null
   selectedCharID.set(-1)
   PlaygroundStore.set(0)
-
   for (const mock of Object.values(playgroundMocks)) mock.mockReset()
-
-  playgroundMocks.createAndSelectCharacterCommand.mockImplementation(
-    async (input: { character: Record<string, unknown>; initialChat?: Record<string, unknown> }) => {
-      if (playgroundState.commandShouldFail) {
-        return { status: 'error', error: 'create failed' }
-      }
-      playgroundState.persistedCharacter = {
-        ...structuredClone(input.character),
-        chats: input.initialChat ? [structuredClone(input.initialChat)] : [],
-      }
-      return {
-        status: 'ok',
-        revision: 11,
-        event: { type: 'character.createdAndSelected', revision: 11, resource: 'character' },
-        characterId: PLAYGROUND_CHARACTER_ID,
-      }
-    },
-  )
-  playgroundMocks.fetchServerCharacters.mockImplementation(async () => ({
-    status: 'ok',
-    revision: 11,
-    characters: playgroundState.persistedCharacter ? [structuredClone(playgroundState.persistedCharacter)] : [],
-  }))
-  playgroundMocks.applyCharactersResource.mockImplementation(
-    (result: { characters: Array<Record<string, unknown>> }) => {
-      playgroundState.database.characters = structuredClone(result.characters)
-      return true
-    },
-  )
-  playgroundMocks.runServerCommand.mockImplementation(
-    async (input: { command: (baseRevision: number) => Promise<{ status: string }> }) => {
-      const result = await input.command(10)
-      if (result.status === 'ok') {
-        const characters = await playgroundMocks.fetchServerCharacters()
-        playgroundMocks.applyCharactersResource(characters)
-      }
-      return result
-    },
-  )
+  playgroundMocks.dispatchCreateAndSelectCharacter.mockResolvedValue(successfulCreateResult())
 })
 
 afterEach(() => {
@@ -163,32 +116,30 @@ afterEach(() => {
 })
 
 describe('openPlaygroundChat', () => {
-  it('uses the character collection read completed by command reconciliation', async () => {
-    await openPlaygroundChat()
+  it('projects and selects a new character through the durable create-and-select dispatcher', async () => {
+    const accepted = deferred<ReturnType<typeof successfulCreateResult>>()
+    playgroundMocks.dispatchCreateAndSelectCharacter.mockReturnValueOnce(accepted.promise)
 
-    expect(playgroundMocks.fetchServerCharacters).toHaveBeenCalledTimes(1)
-    expect(playgroundMocks.createAndSelectCharacterCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        baseRevision: 10,
-        character: expect.objectContaining({ chaId: PLAYGROUND_CHARACTER_ID }),
-      }),
+    const opening = openPlaygroundChat()
+
+    expect(playgroundMocks.dispatchCreateAndSelectCharacter).toHaveBeenCalledWith(
+      expect.objectContaining({ chaId: PLAYGROUND_CHARACTER_ID }),
+      expect.objectContaining({ characters: [], selectedCharID: -1 }),
+      expect.any(Number),
+      { shouldRestoreSelection: expect.any(Function) },
     )
+    expect(playgroundState.database.characters.map((character) => character.chaId)).toEqual([PLAYGROUND_CHARACTER_ID])
+    expect(playgroundState.database.currentChar).toBe(0)
     expect(get(selectedCharID)).toBe(0)
     expect(get(PlaygroundStore)).toBe(2)
+
+    accepted.resolve(successfulCreateResult())
+    await opening
   })
 
-  it('formats the reconciled first-create character with a local chat before selecting it', async () => {
+  it('keeps the starter chat in the optimistic first-create projection', async () => {
     await openPlaygroundChat()
 
-    expect(playgroundMocks.createAndSelectCharacterCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        character: expect.not.objectContaining({ chats: expect.anything() }),
-        initialChat: expect.objectContaining({
-          id: 'initial-playground-chat',
-          message: [],
-        }),
-      }),
-    )
     expect(playgroundState.database.characters[0]).toMatchObject({
       chaId: PLAYGROUND_CHARACTER_ID,
       chatPage: 0,
@@ -199,37 +150,189 @@ describe('openPlaygroundChat', () => {
         }),
       ],
     })
-    expect(get(selectedCharID)).toBe(0)
   })
 
-  it('does not refresh or select a playground character after a failed create', async () => {
-    playgroundState.commandShouldFail = true
+  it('keeps a transiently retained playground projection usable instead of stranding the mode', async () => {
+    playgroundMocks.dispatchCreateAndSelectCharacter.mockResolvedValueOnce({
+      status: 'error',
+      error: 'temporarily unavailable',
+    })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
     await openPlaygroundChat()
 
-    expect(playgroundMocks.fetchServerCharacters).not.toHaveBeenCalled()
-    expect(playgroundState.database.characters).toEqual([])
-    expect(get(selectedCharID)).toBe(-1)
+    expect(playgroundState.database.characters[0]?.chaId).toBe(PLAYGROUND_CHARACTER_ID)
+    expect(get(selectedCharID)).toBe(0)
+    expect(get(PlaygroundStore)).toBe(2)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('restores the prior mode and selection after a terminal create rollback', async () => {
+    playgroundState.database.characters = [{ chaId: 'char-a', name: 'A', chats: [] }]
+    playgroundState.database.characterOrder = ['char-a']
+    playgroundState.database.currentChar = 0
+    selectedCharID.set(0)
+    PlaygroundStore.set(4)
+    playgroundMocks.dispatchCreateAndSelectCharacter.mockImplementationOnce(
+      async (
+        _character: Record<string, unknown>,
+        previous: {
+          characters: Array<Record<string, unknown>>
+          characterOrder: string[]
+          currentChar: number
+          selectedCharID: number
+        },
+        _lastInteraction: number,
+        options: { shouldRestoreSelection: () => boolean },
+      ) => {
+        playgroundState.database.characters = structuredClone(previous.characters)
+        playgroundState.database.characterOrder = structuredClone(previous.characterOrder)
+        playgroundState.database.currentChar = previous.currentChar
+        if (options.shouldRestoreSelection()) selectedCharID.set(previous.selectedCharID)
+        return { status: 'error', error: 'invalid create', reason: 'invalid-request' }
+      },
+    )
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await openPlaygroundChat()
+
+    expect(playgroundState.database.characters.map((character) => character.chaId)).toEqual(['char-a'])
+    expect(playgroundState.database.currentChar).toBe(0)
+    expect(get(selectedCharID)).toBe(0)
+    expect(get(PlaygroundStore)).toBe(4)
     expect(warn).toHaveBeenCalledWith(
       'Unable to create playground character',
-      expect.objectContaining({ status: 'error' }),
+      expect.objectContaining({ status: 'error', reason: 'invalid-request' }),
     )
   })
 
-  it('does not select a newly created playground character after its route becomes stale', async () => {
-    const command = deferred<{ status: 'ok' }>()
-    playgroundMocks.runServerCommand.mockReturnValueOnce(command.promise)
+  it('restores the prior mode when dispatch completes without a live projection', async () => {
+    PlaygroundStore.set(7)
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    playgroundMocks.dispatchCreateAndSelectCharacter.mockImplementationOnce(async () => {
+      playgroundState.database.characters = []
+      playgroundState.database.currentChar = -1
+      selectedCharID.set(-1)
+      return { status: 'unavailable' }
+    })
+
+    await openPlaygroundChat()
+
+    expect(get(PlaygroundStore)).toBe(7)
+    expect(get(selectedCharID)).toBe(-1)
+  })
+
+  it('restores the prior mode and selection when durable staging throws synchronously', async () => {
+    playgroundState.database.characters = [{ chaId: 'char-a', name: 'A', chats: [] }]
+    playgroundState.database.characterOrder = ['char-a']
+    playgroundState.database.currentChar = 0
+    selectedCharID.set(0)
+    PlaygroundStore.set(8)
+    playgroundMocks.dispatchCreateAndSelectCharacter.mockImplementationOnce(() => {
+      throw new RangeError('Pending mutation payload is too large')
+    })
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await expect(openPlaygroundChat()).resolves.toBeUndefined()
+
+    expect(playgroundState.database.characters.map((character) => character.chaId)).toEqual(['char-a'])
+    expect(playgroundState.database.currentChar).toBe(0)
+    expect(get(selectedCharID)).toBe(0)
+    expect(get(PlaygroundStore)).toBe(8)
+  })
+
+  it('does not submit a duplicate create when the playground route remounts while creation is queued', async () => {
+    const queued = deferred<{ status: 'error'; error: string }>()
+    playgroundMocks.dispatchCreateAndSelectCharacter.mockReturnValueOnce(queued.promise)
+
+    const firstOpening = openPlaygroundChat()
+    selectedCharID.set(-1)
+    const secondOpening = openPlaygroundChat()
+
+    expect(playgroundMocks.dispatchCreateAndSelectCharacter).toHaveBeenCalledOnce()
+    expect(playgroundMocks.dispatchSelectCharacter).not.toHaveBeenCalled()
+    expect(
+      playgroundState.database.characters.filter((character) => character.chaId === PLAYGROUND_CHARACTER_ID),
+    ).toHaveLength(1)
+
+    queued.resolve({ status: 'error', error: 'temporarily unavailable' })
+    await Promise.all([firstOpening, secondOpening])
+    expect(get(selectedCharID)).toBe(0)
+    expect(get(PlaygroundStore)).toBe(2)
+  })
+
+  it('restores the original mode when a fresh reopen shares a create that later fails terminally', async () => {
+    playgroundState.database.characters = [{ chaId: 'char-a', name: 'A', chats: [] }]
+    playgroundState.database.characterOrder = ['char-a']
+    playgroundState.database.currentChar = 0
+    selectedCharID.set(0)
+    PlaygroundStore.set(6)
+    const command = deferred<void>()
+    let firstRouteIsFresh = true
+    let reopenedRouteIsFresh = true
+    playgroundMocks.dispatchCreateAndSelectCharacter.mockImplementationOnce(
+      async (
+        _character: Record<string, unknown>,
+        previous: {
+          characters: Array<Record<string, unknown>>
+          characterOrder: string[]
+          currentChar: number
+          selectedCharID: number
+        },
+        _lastInteraction: number,
+        options: { shouldRestoreSelection: () => boolean },
+      ) => {
+        await command.promise
+        playgroundState.database.characters = structuredClone(previous.characters)
+        playgroundState.database.characterOrder = structuredClone(previous.characterOrder)
+        playgroundState.database.currentChar = previous.currentChar
+        if (options.shouldRestoreSelection()) selectedCharID.set(previous.selectedCharID)
+        return { status: 'error', error: 'invalid create', reason: 'invalid-request' }
+      },
+    )
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const firstOpening = openPlaygroundChat({ isFresh: () => firstRouteIsFresh })
+    firstRouteIsFresh = false
+    const reopened = openPlaygroundChat({ isFresh: () => reopenedRouteIsFresh })
+    expect(playgroundMocks.dispatchCreateAndSelectCharacter).toHaveBeenCalledOnce()
+
+    command.resolve()
+    await Promise.all([firstOpening, reopened])
+
+    expect(playgroundState.database.characters.map((character) => character.chaId)).toEqual(['char-a'])
+    expect(playgroundState.database.currentChar).toBe(0)
+    expect(get(selectedCharID)).toBe(0)
+    expect(get(PlaygroundStore)).toBe(6)
+    reopenedRouteIsFresh = false
+  })
+
+  it('does not reselect or restore playground state after its route becomes stale', async () => {
+    const command = deferred<void>()
     let routeIsFresh = true
+    playgroundMocks.dispatchCreateAndSelectCharacter.mockImplementationOnce(
+      async (
+        _character: Record<string, unknown>,
+        _previous: unknown,
+        _lastInteraction: number,
+        options: { shouldRestoreSelection: () => boolean },
+      ) => {
+        await command.promise
+        playgroundState.database.characters = []
+        playgroundState.database.currentChar = -1
+        if (options.shouldRestoreSelection()) selectedCharID.set(0)
+        return { status: 'error', error: 'invalid create', reason: 'invalid-request' }
+      },
+    )
 
     const opening = openPlaygroundChat({ isFresh: () => routeIsFresh })
+    expect(get(selectedCharID)).toBe(0)
     expect(get(PlaygroundStore)).toBe(2)
 
     routeIsFresh = false
     PlaygroundStore.set(0)
     selectedCharID.set(-1)
-    playgroundState.database.characters = [{ chaId: PLAYGROUND_CHARACTER_ID }]
-    command.resolve({ status: 'ok' })
+    command.resolve()
     await opening
 
     expect(get(PlaygroundStore)).toBe(0)

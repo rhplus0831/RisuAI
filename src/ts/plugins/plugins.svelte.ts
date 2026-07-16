@@ -43,7 +43,6 @@ import {
   dispatchModuleCollectionPatch,
 } from '../moduleCommands'
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from '../characterCommands'
-import { runOptimisticCommandSequence } from '../chatCommands'
 import { canUseServerCommands } from '../server/commands'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { assertNoUnsupportedCharacterChanges } from './unsupportedServerWriteGuard'
@@ -1006,16 +1005,13 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setChar')
       const previous = currentCharacterRowSnapshot(charid)
       const previousCharacterSnapshot = previousCharacter ? $state.snapshot(previousCharacter) : undefined
-      const { factories, optimisticCharacter, rollback } = prepareCompatibleCharacterUpdateScoped(
-        previousCharacterSnapshot,
-        char,
-        previous,
-      )
-      if (!optimisticCharacter || factories.length === 0) return
+      const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacterSnapshot, char, previous)
+      const optimisticCharacter = preparation.optimisticCharacter
+      if (!optimisticCharacter || preparation.factories.length === 0) return
       withTrustedResourceWrite(() => {
         getDatabase().characters[charid] = optimisticCharacter
       })
-      runOptimisticCommandSequence(factories, rollback)
+      preparation.dispatch()
     },
     addProvider: (
       name: string,
