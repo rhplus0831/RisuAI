@@ -39,15 +39,25 @@
       })),
   )
 
+  let hasObservedInitialOptions = false
+
   // Reset value if current selection becomes hidden due to condition changes
   $effect(() => {
+    const availableOptions = processedOptions
+    if (!hasObservedInitialOptions) {
+      // Persisted values can come from a newer client or an option that is
+      // temporarily hidden. Merely opening settings must not rewrite them.
+      hasObservedInitialOptions = true
+      return
+    }
+
     const currentVal = localValue
     if (
-      processedOptions.length > 0 &&
+      availableOptions.length > 0 &&
       currentVal !== undefined &&
-      !processedOptions.some((o) => o.value === currentVal)
+      !availableOptions.some((o) => o.value === currentVal)
     ) {
-      localValue = processedOptions[processedOptions.length - 1].value
+      localValue = availableOptions[availableOptions.length - 1].value
     }
   })
 </script>
