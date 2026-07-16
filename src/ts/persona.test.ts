@@ -1078,6 +1078,129 @@ describe('persona ID read and command preparation', () => {
     }
   })
 
+  it('keeps persona reorder behind a retained delete and replays the requested remaining order', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-delete-reorder',
+      writerEpoch: 9,
+      databaseLineage: 'lineage-persona-delete-reorder',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(40)
+    seedPersonaState(
+      [
+        makePersona({ id: 'persona-delete-reorder-a', name: 'Persona A' }),
+        makePersona({ id: 'persona-delete-reorder-b', name: 'Persona B' }),
+        makePersona({ id: 'persona-delete-reorder-c', name: 'Persona C' }),
+      ],
+      0,
+    )
+
+    const firstDelete = deferred<Response>()
+    let deleteAttempts = 0
+    let recover = false
+    let revision = 40
+    let serverPersonaIds = ['persona-delete-reorder-a', 'persona-delete-reorder-b', 'persona-delete-reorder-c']
+    const requests: Array<{ method: string; url: string }> = []
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+      if (url === '/api/v1/commands/personas/persona-delete-reorder-a' && method === 'DELETE') {
+        requests.push({ method, url })
+        deleteAttempts += 1
+        if (deleteAttempts === 1) return firstDelete.promise
+        if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+        serverPersonaIds = serverPersonaIds.filter((personaId) => personaId !== 'persona-delete-reorder-a')
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.deleted',
+            revision,
+            resource: 'persona',
+            id: 'persona-delete-reorder-a',
+          },
+          personaId: 'persona-delete-reorder-a',
+          selectedPersonaId: 'persona-delete-reorder-b',
+        })
+      }
+      if (url === '/api/v1/commands/personas/reorder' && method === 'POST') {
+        requests.push({ method, url })
+        if (!recover) throw new Error('persona reorder overtook retained delete')
+        const body = JSON.parse(String(init?.body)) as { personaIds: string[] }
+        if ([...body.personaIds].sort().join() !== [...serverPersonaIds].sort().join()) {
+          return jsonResponse({ error: 'persona list mismatch' }, 400)
+        }
+        serverPersonaIds = [...body.personaIds]
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.reordered',
+            revision,
+            resource: 'persona',
+          },
+          selectedPersonaId: 'persona-delete-reorder-b',
+        })
+      }
+      return jsonResponse({ error: `unexpected ${method} ${url}` }, 404)
+    })
+
+    try {
+      expect(deleteSelectedUserPersona()).toBe(true)
+      await vi.waitFor(() =>
+        expect(requests).toEqual([{ method: 'DELETE', url: '/api/v1/commands/personas/persona-delete-reorder-a' }]),
+      )
+
+      const selectedPersona = beginPersonaReorder()
+      expect(selectedPersona).toBe('persona-delete-reorder-b')
+      expect(reorderUserPersonasByIndices([1, 0], selectedPersona)).toBe(true)
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
+
+      firstDelete.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
+      await flushCommandEffects()
+
+      expect(requests).toEqual([
+        { method: 'DELETE', url: '/api/v1/commands/personas/persona-delete-reorder-a' },
+        { method: 'DELETE', url: '/api/v1/commands/personas/persona-delete-reorder-a' },
+      ])
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => [entry.handle.key, entry.intent.requests[0].method])).toEqual([
+        ['persona:selection', 'DELETE'],
+        ['persona:selection', 'POST'],
+      ])
+      expect(retained[1].intent).toEqual({
+        version: 1,
+        requests: [
+          {
+            method: 'POST',
+            path: '/personas/reorder',
+            body: {
+              personaIds: ['persona-delete-reorder-c', 'persona-delete-reorder-b'],
+            },
+          },
+        ],
+        dependencyKeys: ['persona-profile:persona-delete-reorder-c', 'persona-profile:persona-delete-reorder-b'],
+      })
+
+      recover = true
+      const recoveryStart = requests.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(requests.slice(recoveryStart)).toEqual([
+        { method: 'DELETE', url: '/api/v1/commands/personas/persona-delete-reorder-a' },
+        { method: 'POST', url: '/api/v1/commands/personas/reorder' },
+      ])
+      expect(serverPersonaIds).toEqual(['persona-delete-reorder-c', 'persona-delete-reorder-b'])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      firstDelete.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('keeps reverted fields in a partially reverted persona PATCH closure', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()

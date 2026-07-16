@@ -1180,20 +1180,35 @@ function dispatchReorderPersonas(previous: PersonaStateSnapshot): void {
     saveCurrent: false,
   })
   void flushPendingSelectedPersonaUpdate()
-  void runServerCommand({
-    command: (baseRevision) =>
-      reorderPersonasCommand({
-        baseRevision,
-        personaIds,
-        optimisticAcknowledgement,
-      }),
-    rollback: personaCommandRollback({ personas: true, settings: settingsProjectionChanged }, () =>
-      applyReorderPersonaRollback({
-        previousPersonaIds,
-        attemptedPersonaIds,
-      }),
-    ),
-  })
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: '/personas/reorder',
+        body: { personaIds: [...personaIds] },
+      },
+    ],
+    dependencyKeys: personaOwnerDependencyKeys(...personaIds),
+  }
+  const outbox = stagePendingMutation(PERSONA_SELECTION_MUTATION_KEY, intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        reorderPersonasCommand({
+          baseRevision,
+          personaIds,
+          optimisticAcknowledgement,
+        }),
+      rollback: personaCommandRollback({ personas: true, settings: settingsProjectionChanged }, () =>
+        applyReorderPersonaRollback({
+          previousPersonaIds,
+          attemptedPersonaIds,
+        }),
+      ),
+      ...transport,
+    }),
+  )
 }
 
 export function queueSelectedPersonaUpdate(previous: PersonaStateSnapshot, attempted: PersonaStateSnapshot): void {

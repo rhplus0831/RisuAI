@@ -481,6 +481,7 @@ describe('pending mutation outbox', () => {
     ['DELETE', '/personas/persona-a'],
     ['POST', '/personas'],
     ['POST', '/personas/select'],
+    ['POST', '/personas/reorder'],
     ['POST', '/translator-presets'],
     ['PATCH', '/translator-presets/translator-a'],
     ['DELETE', '/translator-presets/translator-a'],
