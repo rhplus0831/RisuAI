@@ -1,11 +1,26 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
-const botSettingsMocks = vi.hoisted(() => ({
-  patchInputs: [] as Array<Record<string, unknown>>,
-  patchTransportOptions: [] as Array<{ signal?: AbortSignal | null; keepalive?: boolean }>,
-  runInputs: [] as Array<{ signal?: AbortSignal | null; keepalive?: boolean }>,
-}))
+const botSettingsMocks = vi.hoisted(() => {
+  function deferredResult() {
+    let resolve!: (value: Record<string, unknown>) => void
+    const promise = new Promise<Record<string, unknown>>((resolvePromise) => {
+      resolve = resolvePromise
+    })
+    return { promise, resolve }
+  }
+  return {
+    patchInputs: [] as Array<Record<string, unknown>>,
+    patchTransportOptions: [] as Array<{ signal?: AbortSignal | null; keepalive?: boolean }>,
+    runInputs: [] as Array<{ signal?: AbortSignal | null; keepalive?: boolean }>,
+    failNextPatch: false,
+    deferNextPatch: false,
+    deferredPatchResults: [] as Array<ReturnType<typeof deferredResult>>,
+    deferredResult,
+    runTail: Promise.resolve() as Promise<unknown>,
+  }
+})
 
 vi.mock('src/ts/server/commands', () => ({
   canUseServerCommands: vi.fn(() => true),
@@ -18,17 +33,39 @@ vi.mock('src/ts/server/commands', () => ({
     ): Promise<Record<string, unknown>> => {
       botSettingsMocks.patchInputs.push(input)
       botSettingsMocks.patchTransportOptions.push({ signal, keepalive })
+      if (botSettingsMocks.deferNextPatch) {
+        botSettingsMocks.deferNextPatch = false
+        const deferred = botSettingsMocks.deferredResult()
+        botSettingsMocks.deferredPatchResults.push(deferred)
+        return deferred.promise
+      }
+      if (botSettingsMocks.failNextPatch) {
+        botSettingsMocks.failNextPatch = false
+        return { status: 'error', error: 'forced prompt patch failure' }
+      }
       return { status: 'ok', revision: Number(input.baseRevision) + 1 }
     },
   ),
   runServerCommand: vi.fn(
-    async (input: {
+    (input: {
       command: (baseRevision: number) => Promise<Record<string, unknown>>
+      rollback?: () => void
       signal?: AbortSignal | null
       keepalive?: boolean
+      executionWrapper?: (execute: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>
     }) => {
       botSettingsMocks.runInputs.push({ signal: input.signal, keepalive: input.keepalive })
-      return input.command(100)
+      const execution = botSettingsMocks.runTail.then(async () => {
+        const execute = () => input.command(100)
+        const result = input.executionWrapper ? await input.executionWrapper(execute) : await execute()
+        if (result.status !== 'ok') input.rollback?.()
+        return result
+      })
+      botSettingsMocks.runTail = execution.then(
+        () => undefined,
+        () => undefined,
+      )
+      return execution
     },
   ),
 }))
@@ -88,9 +125,15 @@ vi.mock('src/lib/UI/GUI/TextAreaInput.svelte', async () => {
 
 import BotSettings from './BotSettings.svelte'
 import { language } from 'src/lang'
-import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
 import { resetServerResourceState } from 'src/ts/server/resourceState.svelte'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from 'src/ts/server/pendingMutationOutbox'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -102,6 +145,10 @@ beforeEach(() => {
   botSettingsMocks.patchInputs.length = 0
   botSettingsMocks.patchTransportOptions.length = 0
   botSettingsMocks.runInputs.length = 0
+  botSettingsMocks.failNextPatch = false
+  botSettingsMocks.deferNextPatch = false
+  botSettingsMocks.deferredPatchResults.length = 0
+  botSettingsMocks.runTail = Promise.resolve()
   resetServerResourceState()
   setDatabaseLite({
     aiModel: 'gpt35',
@@ -133,16 +180,19 @@ afterEach(() => {
 })
 
 describe('BotSettings pending prompt persistence', () => {
-  it('flushes a pending prompt edit with keepalive through the lifecycle registry', async () => {
+  async function editMainPrompt(value: string): Promise<void> {
     await tick()
     const textarea = Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).find(
       (candidate) => candidate.getAttribute('aria-label') === language.mainPrompt,
     )
     expect(textarea).toBeTruthy()
-
-    textarea!.value = 'draft before pagehide'
+    textarea!.value = value
     textarea!.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
+  }
+
+  it('flushes a pending prompt edit with keepalive through the lifecycle registry', async () => {
+    await editMainPrompt('draft before pagehide')
 
     expect(botSettingsMocks.patchInputs).toHaveLength(0)
 
@@ -160,5 +210,65 @@ describe('BotSettings pending prompt persistence', () => {
 
     await vi.advanceTimersByTimeAsync(250)
     expect(botSettingsMocks.patchInputs).toHaveLength(1)
+  })
+
+  it('persists the exact prompt settings PATCH at edit time and discards it on a net revert', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-bot-prompt',
+      writerEpoch: 6,
+      databaseLineage: 'lineage-bot-prompt',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      await editMainPrompt('durable main prompt')
+      await vi.waitFor(async () => {
+        expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/settings/prompt',
+                body: { patch: { mainPrompt: 'durable main prompt' } },
+              },
+            ],
+          },
+        ])
+      })
+
+      await editMainPrompt('old main prompt')
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+      expect(botSettingsMocks.patchInputs).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
+  it('rebases a queued prompt rollback when the earlier optimistic patch fails', async () => {
+    botSettingsMocks.deferNextPatch = true
+    await editMainPrompt('first optimistic prompt')
+    await vi.advanceTimersByTimeAsync(250)
+    expect(botSettingsMocks.patchInputs).toHaveLength(1)
+
+    await editMainPrompt('second optimistic prompt')
+    botSettingsMocks.failNextPatch = true
+    await vi.advanceTimersByTimeAsync(250)
+    expect(botSettingsMocks.patchInputs).toHaveLength(1)
+
+    botSettingsMocks.deferredPatchResults.shift()?.resolve({ status: 'error', error: 'forced first failure' })
+    for (let attempt = 0; attempt < 10 && botSettingsMocks.patchInputs.length < 2; attempt += 1) {
+      await Promise.resolve()
+    }
+    await botSettingsMocks.runTail
+    await tick()
+
+    expect(botSettingsMocks.patchInputs).toHaveLength(2)
+    expect(getDatabase().mainPrompt).toBe('old main prompt')
   })
 })

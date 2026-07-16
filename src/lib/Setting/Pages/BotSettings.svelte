@@ -64,6 +64,13 @@
     type SettingsPatch,
   } from 'src/ts/server/commands'
   import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
+  import { dispatchDurableMutation } from 'src/ts/server/durableMutationDispatch'
+  import {
+    acknowledgePendingMutation,
+    stagePendingMutation,
+    type DurableMutationIntent,
+    type PendingMutationHandle,
+  } from 'src/ts/server/pendingMutationOutbox'
   import { subscribeServerCommandLocalEffectApplied } from 'src/ts/server/commandLocalEffectEvents'
   import {
     appliedLocalEffectAcknowledgesSettingDraft,
@@ -121,8 +128,18 @@
     previous: {} as SettingsPatch,
     attempted: {} as SettingsPatch,
     projectionEpoch: null as number | null,
+    intent: null as DurableMutationIntent | null,
+    outbox: null as PendingMutationHandle | null,
     timer: null as ReturnType<typeof setTimeout> | null,
   }
+  interface PromptFieldPatchAttempt {
+    patch: SettingsPatch
+    previous: SettingsPatch
+    attempted: SettingsPatch
+    projectionEpoch: number | null
+    settled: boolean
+  }
+  const unsettledPromptFieldPatches: PromptFieldPatchAttempt[] = []
   const unregisterPendingPromptFieldFlush = registerPendingBridgePatchFlusher(
     `bot-settings-prompt-fields:${nextBotSettingsFlushId++}`,
     flushPendingPromptFieldPatch,
@@ -628,10 +645,14 @@
 
     if (pendingPromptFieldPatch.timer) clearTimeout(pendingPromptFieldPatch.timer)
     if (Object.keys(pendingPromptFieldPatch.patch).length === 0) {
+      if (pendingPromptFieldPatch.outbox) void acknowledgePendingMutation(pendingPromptFieldPatch.outbox)
+      pendingPromptFieldPatch.intent = null
+      pendingPromptFieldPatch.outbox = null
       pendingPromptFieldPatch.projectionEpoch = null
       pendingPromptFieldPatch.timer = null
       return
     }
+    refreshPendingPromptFieldDurability()
     pendingPromptFieldPatch.projectionEpoch ??= captureSettingsGroupProjectionEpoch('prompt')
     pendingPromptFieldPatch.timer = setTimeout(() => {
       dispatchPendingPromptFieldPatch()
@@ -652,28 +673,119 @@
     const commandPrevious = pendingPromptFieldPatch.previous
     const commandAttempted = pendingPromptFieldPatch.attempted
     const commandProjectionEpoch = pendingPromptFieldPatch.projectionEpoch
+    const commandIntent = pendingPromptFieldPatch.intent
+    const commandOutbox = pendingPromptFieldPatch.outbox
     pendingPromptFieldPatch.patch = {}
     pendingPromptFieldPatch.previous = {}
     pendingPromptFieldPatch.attempted = {}
     pendingPromptFieldPatch.projectionEpoch = null
+    pendingPromptFieldPatch.intent = null
+    pendingPromptFieldPatch.outbox = null
 
-    if (Object.keys(commandPatch).length === 0) return
+    if (Object.keys(commandPatch).length === 0 || !commandIntent || !commandOutbox) {
+      if (commandOutbox) void acknowledgePendingMutation(commandOutbox)
+      return
+    }
 
-    void runServerCommand({
-      command: (baseRevision) =>
-        patchPromptSettingsCommand(
-          {
-            baseRevision,
-            patch: commandPatch,
-            acknowledgeOptimistic: commandProjectionEpoch !== null,
-            optimisticProjectionEpoch: commandProjectionEpoch ?? undefined,
-          },
-          options.signal,
-          options.keepalive,
-        ),
-      rollback: () => rollbackPromptFields(commandPrevious, commandAttempted, commandProjectionEpoch),
-      ...options,
+    const attempt: PromptFieldPatchAttempt = {
+      patch: commandPatch,
+      previous: commandPrevious,
+      attempted: commandAttempted,
+      projectionEpoch: commandProjectionEpoch,
+      settled: false,
+    }
+    unsettledPromptFieldPatches.push(attempt)
+
+    void dispatchDurableMutation(commandOutbox, commandIntent, (transport) =>
+      runServerCommand({
+        command: async (baseRevision) => {
+          const result = await patchPromptSettingsCommand(
+            {
+              baseRevision,
+              patch: commandPatch,
+              acknowledgeOptimistic: commandProjectionEpoch !== null,
+              optimisticProjectionEpoch: commandProjectionEpoch ?? undefined,
+            },
+            options.signal,
+            options.keepalive,
+          )
+          settlePromptFieldPatchAttempt(attempt, result.status === 'ok')
+          return result
+        },
+        rollback: () => {
+          settlePromptFieldPatchAttempt(attempt, false)
+          rollbackPromptFields(attempt.previous, attempt.attempted, attempt.projectionEpoch)
+        },
+        ...options,
+        ...transport,
+      }),
+    ).then((result) => {
+      if (!attempt.settled && result.status !== 'ok') settlePromptFieldPatchAttempt(attempt, false)
     })
+  }
+
+  function refreshPendingPromptFieldDurability(): boolean {
+    for (const key of Object.keys(pendingPromptFieldPatch.patch)) {
+      if (
+        snapshotJson(pendingPromptFieldPatch.attempted[key]) !== snapshotJson(pendingPromptFieldPatch.previous[key])
+      ) {
+        continue
+      }
+      delete pendingPromptFieldPatch.patch[key]
+      delete pendingPromptFieldPatch.previous[key]
+      delete pendingPromptFieldPatch.attempted[key]
+    }
+    if (Object.keys(pendingPromptFieldPatch.patch).length === 0) {
+      if (pendingPromptFieldPatch.outbox) void acknowledgePendingMutation(pendingPromptFieldPatch.outbox)
+      pendingPromptFieldPatch.intent = null
+      pendingPromptFieldPatch.outbox = null
+      if (pendingPromptFieldPatch.timer) clearTimeout(pendingPromptFieldPatch.timer)
+      pendingPromptFieldPatch.timer = null
+      pendingPromptFieldPatch.projectionEpoch = null
+      return false
+    }
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/settings/prompt',
+          body: { patch: cloneJsonValue(pendingPromptFieldPatch.patch) },
+        },
+      ],
+    }
+    pendingPromptFieldPatch.intent = intent
+    pendingPromptFieldPatch.outbox = stagePendingMutation(
+      'bot-settings:prompt-fields',
+      intent,
+      pendingPromptFieldPatch.outbox,
+    )
+    return true
+  }
+
+  function settlePromptFieldPatchAttempt(attempt: PromptFieldPatchAttempt, accepted: boolean): void {
+    if (attempt.settled) return
+    attempt.settled = true
+    const attemptIndex = unsettledPromptFieldPatches.indexOf(attempt)
+    const laterAttempts = attemptIndex < 0 ? [] : unsettledPromptFieldPatches.slice(attemptIndex + 1)
+    for (const laterAttempt of laterAttempts) {
+      rebasePromptFieldPatchPrevious(laterAttempt.previous, attempt, accepted)
+    }
+    rebasePromptFieldPatchPrevious(pendingPromptFieldPatch.previous, attempt, accepted)
+    refreshPendingPromptFieldDurability()
+    if (attemptIndex >= 0) unsettledPromptFieldPatches.splice(attemptIndex, 1)
+  }
+
+  function rebasePromptFieldPatchPrevious(
+    targetPrevious: SettingsPatch,
+    settled: PromptFieldPatchAttempt,
+    accepted: boolean,
+  ): void {
+    for (const key of Object.keys(settled.patch)) {
+      if (!(key in targetPrevious)) continue
+      if (snapshotJson(targetPrevious[key]) !== snapshotJson(settled.attempted[key])) continue
+      targetPrevious[key] = cloneJsonValue(accepted ? settled.attempted[key] : settled.previous[key])
+    }
   }
 
   function rollbackPromptFields(
