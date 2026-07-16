@@ -33,6 +33,44 @@ const lorebookListMocks = vi.hoisted(() => {
   const replaceChatLorebookCollection = vi.fn()
   const replaceGlobalLorebookEntryCollection = vi.fn()
 
+  function snapshot(value: unknown): string {
+    return JSON.stringify(value)
+  }
+
+  function changedLorebookEntryDraftFields(previousEntry: loreBook, currentEntry: loreBook): string[] {
+    const previous = previousEntry as unknown as Record<string, unknown>
+    const current = currentEntry as unknown as Record<string, unknown>
+    return [...new Set([...Object.keys(previous), ...Object.keys(current)])].filter(
+      (key) => key !== 'id' && snapshot(previous[key]) !== snapshot(current[key]),
+    )
+  }
+
+  function clearDirtyLorebookEntryFieldsMatchingProjection(
+    dirtyFields: Set<string>,
+    draft: loreBook,
+    projection: loreBook,
+  ): void {
+    const draftRecord = draft as unknown as Record<string, unknown>
+    const projectionRecord = projection as unknown as Record<string, unknown>
+    for (const field of dirtyFields) {
+      if (snapshot(draftRecord[field]) === snapshot(projectionRecord[field])) dirtyFields.delete(field)
+    }
+  }
+
+  function mergeLorebookEntryProjectionDraft(
+    draft: loreBook,
+    projection: loreBook,
+    dirtyFields: ReadonlySet<string>,
+  ): loreBook {
+    const merged = JSON.parse(JSON.stringify(projection)) as unknown as Record<string, unknown>
+    const draftRecord = draft as unknown as Record<string, unknown>
+    for (const field of dirtyFields) {
+      if (Object.prototype.hasOwnProperty.call(draftRecord, field)) merged[field] = draftRecord[field]
+      else delete merged[field]
+    }
+    return merged as unknown as loreBook
+  }
+
   function createDeferred<T>(): Deferred<T> {
     let resolveDeferred!: (value: T) => void
     let rejectDeferred!: (reason?: unknown) => void
@@ -73,6 +111,9 @@ const lorebookListMocks = vi.hoisted(() => {
     replaceCharacterLorebookCollection,
     replaceChatLorebookCollection,
     replaceGlobalLorebookEntryCollection,
+    changedLorebookEntryDraftFields,
+    clearDirtyLorebookEntryFieldsMatchingProjection,
+    mergeLorebookEntryProjectionDraft,
     setActiveChatLorebookLocalActivation: vi.fn(),
     languageMock: {
       language: {
@@ -130,11 +171,11 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   applyLorebookEntryDraftEdit: lorebookListMocks.applyLorebookEntryDraftEdit,
   applyLorebookEntryDraftRollback: vi.fn((draft: loreBook) => ({ draft, restoredFields: [] })),
   applyServerCharacterLorebookResource: vi.fn(() => true),
-  changedLorebookEntryDraftFields: vi.fn(() => []),
-  clearDirtyLorebookEntryFieldsMatchingProjection: vi.fn(),
+  changedLorebookEntryDraftFields: lorebookListMocks.changedLorebookEntryDraftFields,
+  clearDirtyLorebookEntryFieldsMatchingProjection: lorebookListMocks.clearDirtyLorebookEntryFieldsMatchingProjection,
   flushPendingLorebookEntryDraftEdit: lorebookListMocks.flushPendingLorebookEntryDraftEdit,
   markCharacterLorebookHydrated: vi.fn(),
-  mergeLorebookEntryProjectionDraft: vi.fn((draft: loreBook) => draft),
+  mergeLorebookEntryProjectionDraft: lorebookListMocks.mergeLorebookEntryProjectionDraft,
   recordHydratedCharacterLorebooks: vi.fn(),
   replaceCharacterLorebookCollection: lorebookListMocks.replaceCharacterLorebookCollection,
   replaceChatLorebookCollection: lorebookListMocks.replaceChatLorebookCollection,
@@ -503,6 +544,65 @@ describe('LoreBookList', () => {
     expect(rowByEntryId('shared-entry').textContent).toContain('Character B Entry')
     expect(rowByEntryId('shared-entry').textContent).not.toContain('Prompt')
     expect(lorebookListMocks.SortableMock.create).toHaveBeenCalledTimes(initialSortableCount + 1)
+  })
+
+  it('does not carry dirty entry fields to another character with the same entry id', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'character-a',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'shared-entry', comment: 'Character A Entry', content: 'A prompt' })],
+        },
+        {
+          chaId: 'character-b',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'shared-entry', comment: 'Character B Entry', content: 'B prompt' })],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 0 } })
+    await tick()
+
+    toggleButtonForRow(rowByEntryId('shared-entry')).click()
+    await tick()
+    const characterATextarea = rowByEntryId('shared-entry').querySelector<HTMLTextAreaElement>('textarea')
+    expect(characterATextarea).toBeTruthy()
+    characterATextarea!.value = 'Character A dirty prompt'
+    characterATextarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    lorebookListMocks.applyLorebookEntryDraftEdit.mockClear()
+
+    selectedCharID.set(1)
+    await tick()
+    toggleButtonForRow(rowByEntryId('shared-entry')).click()
+    await tick()
+
+    const characterBRow = rowByEntryId('shared-entry')
+    const characterBTextarea = characterBRow.querySelector<HTMLTextAreaElement>('textarea')
+    const characterBName = characterBRow.querySelector<HTMLInputElement>('input')
+    expect(characterBTextarea?.value).toBe('B prompt')
+    expect(characterBName).toBeTruthy()
+
+    characterBName!.value = 'Updated Character B Entry'
+    characterBName!.dispatchEvent(new Event('input', { bubbles: true }))
+    characterBName!.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }))
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.applyLorebookEntryDraftEdit).toHaveBeenLastCalledWith(
+      { kind: 'character', characterId: 'character-b' },
+      0,
+      expect.objectContaining({
+        id: 'shared-entry',
+        comment: 'Updated Character B Entry',
+        content: 'B prompt',
+      }),
+    )
   })
 
   it('dispatches a resource-backed local lorebook deletion for the selected chat', async () => {

@@ -210,8 +210,9 @@
   })
 
   function lorebookEntryDraftTargetKey(entry: loreBook): string {
-    if (typeof entry?.id === 'string' && entry.id.trim()) return `entry:${entry.id}`
-    return `fallback:${idgroup}:${idx}`
+    const scopeKey = entryDraftScopeKey ?? ''
+    if (typeof entry?.id === 'string' && entry.id.trim()) return `${scopeKey}:entry:${entry.id}`
+    return `${scopeKey}:fallback:${idgroup}:${idx}`
   }
 
   function parseLorebookEntrySnapshot(snapshot: string): loreBook {
