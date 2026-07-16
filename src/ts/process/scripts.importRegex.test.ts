@@ -34,6 +34,13 @@ function script(id: string): customscript {
   }
 }
 
+function regexImportFile(data: unknown): { name: string; data: Uint8Array } {
+  return {
+    name: 'regexscript_export.json',
+    data: Buffer.from(JSON.stringify({ type: 'regex', data })),
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
@@ -57,6 +64,59 @@ describe('importRegexRows', () => {
     await expect(importRegex(original, selectFile)).resolves.toBe(original)
 
     expect(original).toEqual([script('existing')])
+    expect(importRegexMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed regex members without returning a partial import', async () => {
+    const selectFile = vi.fn<typeof selectSingleFile>()
+    selectFile.mockResolvedValue(
+      regexImportFile([
+        script('valid'),
+        { id: 'invalid', comment: 'Invalid', in: 'x', out: { nested: 'not text' }, type: 'editinput' },
+      ]),
+    )
+
+    await expect(importRegexRows(selectFile)).resolves.toBeNull()
+
+    expect(importRegexMocks.alertError).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the existing collection unchanged when a mixed import contains an invalid member', async () => {
+    const original = [script('existing')]
+    const selectFile = vi.fn<typeof selectSingleFile>()
+    selectFile.mockResolvedValue(regexImportFile([script('valid'), null]))
+
+    await expect(importRegex(original, selectFile)).resolves.toBe(original)
+
+    expect(original).toEqual([script('existing')])
+    expect(importRegexMocks.alertError).toHaveBeenCalledOnce()
+  })
+
+  it('normalizes legitimate id-less legacy rows and preserves compatible extension data', async () => {
+    const selectFile = vi.fn<typeof selectSingleFile>()
+    selectFile.mockResolvedValue(
+      regexImportFile([
+        {
+          in: 'legacy pattern',
+          out: 'legacy replacement',
+          flag: 'gi',
+          ableFlag: true,
+          legacyExtension: { retained: true },
+        },
+      ]),
+    )
+
+    await expect(importRegexRows(selectFile)).resolves.toEqual([
+      {
+        comment: '',
+        in: 'legacy pattern',
+        out: 'legacy replacement',
+        type: 'editinput',
+        flag: 'gi',
+        ableFlag: true,
+        legacyExtension: { retained: true },
+      },
+    ])
     expect(importRegexMocks.alertError).not.toHaveBeenCalled()
   })
 })

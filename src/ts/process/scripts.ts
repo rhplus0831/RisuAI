@@ -97,15 +97,47 @@ export async function importRegexRows(
     const filedata = selected.data
     const imported = JSON.parse(Buffer.from(filedata).toString('utf-8'))
     if (imported.type === 'regex' && Array.isArray(imported.data)) {
-      return imported.data as customscript[]
+      const rows = normalizeImportedRegexRows(imported.data)
+      if (rows) return rows
     }
 
-    alertError('File invaid or corrupted')
+    alertError(language.errors.noData)
   } catch (error) {
     alertError(error)
   }
 
   return null
+}
+
+function normalizeImportedRegexRows(rows: unknown[]): customscript[] | null {
+  const normalized: customscript[] = []
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return null
+    const source = row as Record<string, unknown>
+    const comment = source.comment ?? ''
+    const input = source.in ?? ''
+    const output = source.out ?? ''
+    const type = source.type ?? 'editinput'
+
+    if (
+      typeof comment !== 'string' ||
+      typeof input !== 'string' ||
+      typeof output !== 'string' ||
+      typeof type !== 'string'
+    ) {
+      return null
+    }
+    if (source.id != null && typeof source.id !== 'string') return null
+    if (source.flag != null && typeof source.flag !== 'string') return null
+    if (source.ableFlag != null && typeof source.ableFlag !== 'boolean') return null
+
+    const next = { ...source, comment, in: input, out: output, type } as unknown as customscript
+    if (source.id == null) delete next.id
+    if (source.flag == null) delete next.flag
+    if (source.ableFlag == null) delete next.ableFlag
+    normalized.push(next)
+  }
+  return normalized
 }
 
 export async function importRegex(
