@@ -1279,42 +1279,49 @@ export function createBlankChar(): character {
   }
 }
 
+const pendingCharacterRemovalIds = new Set<string>()
+
 export async function removeChar(
   index: number,
   name: string,
   type: 'normal' | 'permanent' | 'permanentForce' = 'normal',
 ) {
   const characterId = getDatabase().characters?.[index]?.chaId
-  if (!characterId) return
-  if (type !== 'permanentForce') {
-    const conf = await alertConfirm(language.removeConfirm + name)
-    if (!conf) {
-      return
+  if (!characterId || pendingCharacterRemovalIds.has(characterId)) return
+  pendingCharacterRemovalIds.add(characterId)
+  try {
+    if (type !== 'permanentForce') {
+      const conf = await alertConfirm(language.removeConfirm + name)
+      if (!conf) {
+        return
+      }
+      const conf2 = await alertConfirm(language.removeConfirm2 + name)
+      if (!conf2) {
+        return
+      }
     }
-    const conf2 = await alertConfirm(language.removeConfirm2 + name)
-    if (!conf2) {
-      return
+    const liveIndex = findLiveCharacterIndex(characterId)
+    if (liveIndex < 0) return
+    if (type === 'normal') {
+      const previous = currentCharacterTrashTimeSnapshot(liveIndex)
+      const trashTime = Date.now()
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[liveIndex].trashTime = trashTime
+      })
+      dispatchUpdateCharacterTrashTime(characterId, trashTime, previous)
+    } else {
+      const previous = currentCharacterStateSnapshot()
+      withTrustedResourceWrite(() => {
+        getDatabase().characters.splice(liveIndex, 1)
+      })
+      dispatchDeleteCharacter(characterId, previous)
     }
+    repairCharacterOrderOptimistically({ dispatchReorder: false })
+    requiresFullEncoderReload.state = true
+    selectedCharID.set(-1)
+  } finally {
+    pendingCharacterRemovalIds.delete(characterId)
   }
-  const liveIndex = findLiveCharacterIndex(characterId)
-  if (liveIndex < 0) return
-  if (type === 'normal') {
-    const previous = currentCharacterTrashTimeSnapshot(liveIndex)
-    const trashTime = Date.now()
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[liveIndex].trashTime = trashTime
-    })
-    dispatchUpdateCharacterTrashTime(characterId, trashTime, previous)
-  } else {
-    const previous = currentCharacterStateSnapshot()
-    withTrustedResourceWrite(() => {
-      getDatabase().characters.splice(liveIndex, 1)
-    })
-    dispatchDeleteCharacter(characterId, previous)
-  }
-  repairCharacterOrderOptimistically({ dispatchReorder: false })
-  requiresFullEncoderReload.state = true
-  selectedCharID.set(-1)
 }
 
 export async function addCharacter(

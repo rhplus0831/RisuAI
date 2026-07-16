@@ -2084,6 +2084,32 @@ describe('Phase 3 kept-key character diff (M13)', () => {
 })
 
 describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
+  it('ignores repeated removal attempts while the same character confirmation is pending', async () => {
+    const calls = stubCommandFetch()
+    testDatabaseState.db = {
+      characters: [{ chaId: 'char-a', name: 'Character', chats: [] }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    const confirmation = deferredBoolean()
+    alertConfirmState.responses = [confirmation.promise, true]
+
+    const firstRemoval = removeChar(0, 'Character', 'normal')
+    await vi.waitFor(() => expect(alertConfirmState.messages).toHaveLength(1))
+    const repeatedRemoval = removeChar(0, 'Character', 'normal')
+
+    await repeatedRemoval
+    expect(alertConfirmState.messages).toHaveLength(1)
+
+    confirmation.resolve(true)
+    await firstRemoval
+    await waitForCharacterPatch(calls, 'char-a')
+
+    expect(alertConfirmState.messages).toHaveLength(2)
+    expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-a')).toHaveLength(1)
+  })
+
   it('trashes the original character when a preceding row is removed during confirmation', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
