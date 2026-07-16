@@ -11,6 +11,7 @@ import {
   updateCharacterCommand,
   type CharacterOrderEntry,
   type CharacterSnapshot,
+  type ChatSnapshot,
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './server/commands'
@@ -674,6 +675,7 @@ export function dispatchCreateCharacter(character: character, previous: Characte
       createCharacterCommand({
         baseRevision,
         character: toCharacterSnapshot(character),
+        initialChat: initialCharacterChatSnapshot(character),
       }),
     () => restoreCreatedCharacterAttempt(rollback),
   )
@@ -693,6 +695,7 @@ export function dispatchCreateAndSelectCharacter(
         baseRevision,
         character: toCharacterSnapshot(character),
         lastInteraction,
+        initialChat: initialCharacterChatSnapshot(character),
       }),
     () => restoreCreatedCharacterAttempt(rollback),
   )
@@ -1472,6 +1475,21 @@ export function setCharacterInputTranslationHook(characterId: string, enabled: b
 
 export function toCharacterSnapshot(character: character): CharacterSnapshot {
   return cloneJsonValue(character) as unknown as CharacterSnapshot
+}
+
+export function initialCharacterChatSnapshot(character: character): ChatSnapshot | undefined {
+  const chat = character.chats?.[0]
+  if (
+    !chat ||
+    typeof chat.id !== 'string' ||
+    !chat.id.trim() ||
+    !Array.isArray(chat.message) ||
+    chat.message.length > 0 ||
+    chat.hypaV3Data !== undefined
+  ) {
+    return undefined
+  }
+  return cloneJsonValue(chat) as unknown as ChatSnapshot
 }
 
 export function sanitizeCharacterPatch(patch: CharacterSnapshot): CharacterSnapshot {

@@ -61,6 +61,8 @@ vi.mock('./stores.svelte', async () => {
 vi.mock('./characterCommands', () => ({
   currentCharacterSelectionSnapshot: () => ({}),
   dispatchSelectCharacter: playgroundMocks.dispatchSelectCharacter,
+  initialCharacterChatSnapshot: (character: Record<string, unknown>) =>
+    structuredClone((character.chats as Array<Record<string, unknown>>)[0]),
   toCharacterSnapshot: (character: Record<string, unknown>) => {
     const snapshot = structuredClone(character)
     delete snapshot.chats
@@ -117,11 +119,14 @@ beforeEach(() => {
   for (const mock of Object.values(playgroundMocks)) mock.mockReset()
 
   playgroundMocks.createAndSelectCharacterCommand.mockImplementation(
-    async (input: { character: Record<string, unknown> }) => {
+    async (input: { character: Record<string, unknown>; initialChat?: Record<string, unknown> }) => {
       if (playgroundState.commandShouldFail) {
         return { status: 'error', error: 'create failed' }
       }
-      playgroundState.persistedCharacter = structuredClone(input.character)
+      playgroundState.persistedCharacter = {
+        ...structuredClone(input.character),
+        chats: input.initialChat ? [structuredClone(input.initialChat)] : [],
+      }
       return {
         status: 'ok',
         revision: 11,
@@ -133,9 +138,7 @@ beforeEach(() => {
   playgroundMocks.fetchServerCharacters.mockImplementation(async () => ({
     status: 'ok',
     revision: 11,
-    characters: playgroundState.persistedCharacter
-      ? [{ ...structuredClone(playgroundState.persistedCharacter), chats: [] }]
-      : [],
+    characters: playgroundState.persistedCharacter ? [structuredClone(playgroundState.persistedCharacter)] : [],
   }))
   playgroundMocks.applyCharactersResource.mockImplementation(
     (result: { characters: Array<Record<string, unknown>> }) => {
@@ -180,6 +183,10 @@ describe('openPlaygroundChat', () => {
     expect(playgroundMocks.createAndSelectCharacterCommand).toHaveBeenCalledWith(
       expect.objectContaining({
         character: expect.not.objectContaining({ chats: expect.anything() }),
+        initialChat: expect.objectContaining({
+          id: 'initial-playground-chat',
+          message: [],
+        }),
       }),
     )
     expect(playgroundState.database.characters[0]).toMatchObject({
@@ -187,7 +194,7 @@ describe('openPlaygroundChat', () => {
       chatPage: 0,
       chats: [
         expect.objectContaining({
-          id: 'local-playground-chat',
+          id: 'initial-playground-chat',
           message: [],
         }),
       ],

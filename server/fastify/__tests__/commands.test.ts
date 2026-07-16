@@ -6652,6 +6652,13 @@ describe('Phase 9-3a character commands', () => {
           chats: [],
           chatFolders: [],
         },
+        initialChat: {
+          id: 'chat-b-initial',
+          name: 'Chat 1',
+          note: '',
+          message: [],
+          localLore: [],
+        },
         lastInteraction: 9876,
       },
     })
@@ -6679,6 +6686,15 @@ describe('Phase 9-3a character commands', () => {
     ).toMatchObject({
       name: 'B',
       lastInteraction: 9876,
+      chatPage: 0,
+      chats: [
+        {
+          id: 'chat-b-initial',
+          name: 'Chat 1',
+          note: '',
+          localLore: [],
+        },
+      ],
     })
   })
 
@@ -6782,6 +6798,28 @@ describe('Phase 9-3a character commands', () => {
     })
     expect(embeddedHypaCreate.statusCode).toBe(400)
     expect(embeddedHypaCreate.json().error).toBe('character.chats must be empty; create chats with chat commands')
+
+    const initialChatWithTranscript = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/create-and-select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        character: {
+          chaId: 'char-c',
+          name: 'C',
+        },
+        initialChat: {
+          id: 'chat-c',
+          name: 'Chat 1',
+          message: [{ chatId: 'message-c', role: 'user', data: 'not message-free' }],
+        },
+      },
+    })
+    expect(initialChatWithTranscript.statusCode).toBe(400)
+    expect(initialChatWithTranscript.json().error).toBe(
+      'initialChat.message must be empty; create transcript messages with message commands',
+    )
 
     const bootstrap = await harness.app.inject({
       method: 'GET',

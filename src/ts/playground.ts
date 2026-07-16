@@ -3,7 +3,12 @@ import { findCharacterIndexbyId } from './util'
 import { characterFormatUpdate, createBlankChar } from './characters'
 import { getDatabase, setCharacterByIndex, type character } from './storage/database.svelte'
 import { PlaygroundStore, selectedCharID } from './stores.svelte'
-import { currentCharacterSelectionSnapshot, dispatchSelectCharacter, toCharacterSnapshot } from './characterCommands'
+import {
+  currentCharacterSelectionSnapshot,
+  dispatchSelectCharacter,
+  initialCharacterChatSnapshot,
+  toCharacterSnapshot,
+} from './characterCommands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { canUseServerCommands, createAndSelectCharacterCommand, runServerCommand } from './server/commands'
 
@@ -46,6 +51,7 @@ export async function openPlaygroundChat(options: { isFresh?: () => boolean } = 
           baseRevision,
           character: toCharacterSnapshot(formattedChar),
           lastInteraction,
+          initialChat: initialCharacterChatSnapshot(formattedChar),
         }),
     })
     if (result.status !== 'ok') {

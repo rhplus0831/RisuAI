@@ -174,6 +174,7 @@ import {
   validateChatScriptstateCommand,
   validateFullChatFolderOrder,
   validateFullChatOrder,
+  type ChatRecord,
 } from '../commands/chats.js'
 import {
   createMessageRecord,
@@ -825,6 +826,7 @@ interface LoadoutCommandBody {
 interface CharacterCommandBody {
   baseRevision?: unknown
   character?: unknown
+  initialChat?: unknown
   patch?: unknown
   characterId?: unknown
   characterIds?: unknown
@@ -844,6 +846,18 @@ interface ChatCommandBody {
   select?: unknown
   folder?: unknown
   sourcePatch?: unknown
+}
+
+function readInitialCharacterChat(value: unknown): ChatRecord | null {
+  if (value === undefined || value === null) return null
+  const chat = createChatRecord(value, 'initialChat')
+  if (chat.message.length > 0) {
+    throw new ValidationError('initialChat.message must be empty; create transcript messages with message commands')
+  }
+  if (chat.hypaV3Data !== undefined && chat.hypaV3Data !== null) {
+    throw new ValidationError('initialChat.hypaV3Data must be empty')
+  }
+  return chat
 }
 
 interface ChatFolderCommandBody {
@@ -4508,6 +4522,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
       const character = createCharacterRecord(body.character, { assetDb: db })
+      const initialChat = readInitialCharacterChat(body.initialChat)
       const result = applyMessageFreeJsonCommandMutation<{
         characterId: string
         selectedCharacterId: string | null
@@ -4522,6 +4537,11 @@ export function registerCommandRoutes(
           if (findCharacterIndex(characters, character.chaId) !== -1) {
             throw new ValidationError(`Duplicate character id: ${character.chaId}`)
           }
+          if (initialChat && chatIdExists(characters, initialChat.id)) {
+            throw new ValidationError(`Duplicate chat id: ${initialChat.id}`)
+          }
+          character.chats = initialChat ? [initialChat] : []
+          character.chatPage = 0
           characters.push(character)
           const normalizedCharacters = ensureCharacterCollection(target)
           return {
@@ -4551,6 +4571,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
       const character = createCharacterRecord(body.character, { assetDb: db })
+      const initialChat = readInitialCharacterChat(body.initialChat)
       const lastInteraction = readSelectionLastInteraction(body.lastInteraction)
       character.lastInteraction = lastInteraction
       const result = applyMessageFreeJsonCommandMutation<{
@@ -4567,6 +4588,11 @@ export function registerCommandRoutes(
           if (findCharacterIndex(characters, character.chaId) !== -1) {
             throw new ValidationError(`Duplicate character id: ${character.chaId}`)
           }
+          if (initialChat && chatIdExists(characters, initialChat.id)) {
+            throw new ValidationError(`Duplicate chat id: ${initialChat.id}`)
+          }
+          character.chats = initialChat ? [initialChat] : []
+          character.chatPage = 0
           characters.push(character)
           const normalizedCharacters = ensureCharacterCollection(target)
           target.currentChar = requireCharacterIndex(normalizedCharacters, character.chaId)

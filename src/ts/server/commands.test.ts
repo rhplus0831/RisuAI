@@ -4809,6 +4809,13 @@ describe('server command API adapter', () => {
       chatPage: 0,
       chats: [selectChat],
     }
+    const initialChat = {
+      id: 'chat-initial',
+      name: 'Chat 1',
+      note: '',
+      message: [],
+      localLore: [],
+    }
 
     await expect(
       createCharacterCommand({
@@ -4822,6 +4829,7 @@ describe('server command API adapter', () => {
         baseRevision: 2,
         character: selectCharacter,
         lastInteraction: 1234,
+        initialChat,
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 3, characterId: 'char-selected' })
 
@@ -4842,6 +4850,7 @@ describe('server command API adapter', () => {
           chatPage: 0,
         },
         lastInteraction: 1234,
+        initialChat,
       },
     ])
     expect(createCharacter.chats).toEqual([createChat])

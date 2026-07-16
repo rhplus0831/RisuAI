@@ -1067,6 +1067,7 @@ export interface CharacterCommandInput {
 
 export interface CreateCharacterCommandInput extends CharacterCommandInput {
   character: CharacterSnapshot
+  initialChat?: ChatSnapshot
 }
 
 export interface CreateAndSelectCharacterCommandInput extends CreateCharacterCommandInput {
@@ -3123,6 +3124,7 @@ export async function createCharacterCommand(
     body: {
       baseRevision: input.baseRevision,
       character: characterCreatePayload(input.character),
+      ...(input.initialChat ? { initialChat: input.initialChat } : {}),
     },
     signal,
     readLocalEffect: (body, event) =>
@@ -3140,6 +3142,7 @@ export async function createAndSelectCharacterCommand(
       baseRevision: input.baseRevision,
       character: characterCreatePayload(input.character),
       lastInteraction: input.lastInteraction,
+      ...(input.initialChat ? { initialChat: input.initialChat } : {}),
     },
     signal,
     readLocalEffect: (body, event) =>

@@ -449,6 +449,11 @@ describe('Phase 9-3f compatibility adapters', () => {
           chaId: testDatabaseState.db.characters[1].chaId,
           lastInteraction: testDatabaseState.db.characters[1].lastInteraction,
         }),
+        initialChat: expect.objectContaining({
+          id: testDatabaseState.db.characters[1].chats[0].id,
+          name: 'Chat 1',
+          message: [],
+        }),
         lastInteraction: testDatabaseState.db.characters[1].lastInteraction,
       },
     })
