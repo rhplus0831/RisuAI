@@ -761,7 +761,7 @@
 
   const createStb = () => {
     if (!listEle || !folderEles) return
-    for (let chat of listEle.querySelectorAll('.risu-chat')) {
+    for (const chat of listEle.querySelectorAll('[data-risu-sidebar-chat-sortable-list]')) {
       chatsStb.push(
         new Sortable(chat, {
           group: 'chats',
@@ -993,8 +993,9 @@
               <div
                 id={`risu-chat-folder-panel-${folder.id}`}
                 data-risu-chat-folder-panel-id={folder.id}
+                data-risu-sidebar-chat-sortable-list
                 hidden={folder.folded}
-                class="risu-chat flex flex-col w-full text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md {folder.folded
+                class="flex flex-col w-full text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md {folder.folded
                   ? 'hidden'
                   : ''}">
                 {#if (chatsByFolderId.get(folder.id) ?? []).length == 0}
@@ -1115,7 +1116,7 @@
             </div>
           {/each}
         </div>
-        <div class="risu-chat flex flex-col">
+        <div data-risu-sidebar-chat-sortable-list class="flex flex-col">
           {#each chara.chats as chat, i}
             {#if chat.folderId == null}
               <!-- svelte-ignore a11y_click_events_have_key_events -->

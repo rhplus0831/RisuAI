@@ -622,6 +622,15 @@ describe('SideChatList DOM contract harness', () => {
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
   })
 
+  it('keeps sortable sidebar lists outside transcript custom-style hooks', async () => {
+    seedSidebarDatabase()
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expect(sidebarRoot().querySelectorAll('[data-risu-sidebar-chat-sortable-list]')).toHaveLength(2)
+    expect(sidebarRoot().querySelector('.risu-chat')).toBeNull()
+  })
+
   it('gives every icon-only chat and folder action a specific accessible name', async () => {
     seedSidebarDatabase()
     component = mount(SideChatListHarness, { target })
