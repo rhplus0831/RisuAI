@@ -2,22 +2,22 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const commandSpies = vi.hoisted(() => ({
-  runServerCommand: vi.fn(),
-  createModelProfileCommand: vi.fn(),
-  updateModelProfileCommand: vi.fn(),
-  duplicateModelProfileCommand: vi.fn(),
-  deleteModelProfileCommand: vi.fn(),
-  updateModelRuntimeDefaultsCommand: vi.fn(),
+  createModelProfileDurably: vi.fn(),
+  updateModelProfileDurably: vi.fn(),
+  duplicateModelProfileDurably: vi.fn(),
+  deleteModelProfileDurably: vi.fn(),
+  updateModelRuntimeDefaultsDurably: vi.fn(),
 }))
 
 vi.mock('src/ts/server/commands', () => ({
   subscribeServerCommandLocalEffectApplied: vi.fn(() => () => {}),
-  runServerCommand: commandSpies.runServerCommand,
-  createModelProfileCommand: commandSpies.createModelProfileCommand,
-  updateModelProfileCommand: commandSpies.updateModelProfileCommand,
-  duplicateModelProfileCommand: commandSpies.duplicateModelProfileCommand,
-  deleteModelProfileCommand: commandSpies.deleteModelProfileCommand,
-  updateModelRuntimeDefaultsCommand: commandSpies.updateModelRuntimeDefaultsCommand,
+}))
+vi.mock('src/ts/model/modelProfileMutations', () => ({
+  createModelProfileDurably: commandSpies.createModelProfileDurably,
+  updateModelProfileDurably: commandSpies.updateModelProfileDurably,
+  duplicateModelProfileDurably: commandSpies.duplicateModelProfileDurably,
+  deleteModelProfileDurably: commandSpies.deleteModelProfileDurably,
+  updateModelRuntimeDefaultsDurably: commandSpies.updateModelRuntimeDefaultsDurably,
 }))
 vi.mock('src/ts/process/modules', () => ({
   applyModule: vi.fn(),
@@ -91,10 +91,8 @@ beforeEach(() => {
   } as any)
   for (const spy of Object.values(commandSpies)) {
     spy.mockReset()
+    spy.mockResolvedValue({ status: 'accepted', result: { status: 'ok' } })
   }
-  commandSpies.runServerCommand.mockImplementation(async (input: { command: (baseRevision: number) => unknown }) => {
-    return input.command(123)
-  })
 })
 
 afterEach(() => {
@@ -147,8 +145,7 @@ describe('ModelProfileList', () => {
     save.click()
     await flushAsync()
 
-    expect(commandSpies.updateModelProfileCommand).not.toHaveBeenCalled()
-    expect(commandSpies.runServerCommand).not.toHaveBeenCalled()
+    expect(commandSpies.updateModelProfileDurably).not.toHaveBeenCalled()
   })
 
   it('sends the frozen profile baseline and keeps a conflicting draft after an authoritative refresh', async () => {
@@ -162,7 +159,10 @@ describe('ModelProfileList', () => {
         runtimeOptions: { temperature: 50 },
       },
     ]
-    commandSpies.updateModelProfileCommand.mockResolvedValue({ status: 'conflict', currentRevision: 124 })
+    commandSpies.updateModelProfileDurably.mockResolvedValue({
+      status: 'failed',
+      result: { status: 'conflict', currentRevision: 124 },
+    })
 
     component = mount(ModelProfileList, { target })
     await tick()
@@ -193,10 +193,9 @@ describe('ModelProfileList', () => {
     buttonByText(language.modelProfiles.save).click()
     await flushAsync()
 
-    expect(commandSpies.updateModelProfileCommand).toHaveBeenCalledWith({
-      baseRevision: 123,
-      profileId: 'profile-1',
-      profile: {
+    expect(commandSpies.updateModelProfileDurably).toHaveBeenCalledWith(
+      'profile-1',
+      {
         id: 'profile-1',
         name: 'Locally renamed',
         providerId: 'openai',
@@ -204,7 +203,7 @@ describe('ModelProfileList', () => {
         providerOptions: { requestModel: 'wire-v1' },
         runtimeOptions: { temperature: 50 },
       },
-      expectedProfile: {
+      {
         id: 'profile-1',
         name: 'Profile 1',
         providerId: 'openai',
@@ -212,7 +211,7 @@ describe('ModelProfileList', () => {
         providerOptions: { requestModel: 'wire-v1' },
         runtimeOptions: { temperature: 50 },
       },
-    })
+    )
     expect(target.querySelector('[role="dialog"]')).not.toBeNull()
     expect(nameInput.value).toBe('Locally renamed')
     expect(target.textContent).toContain(language.modelProfiles.commandConflict)
@@ -239,21 +238,17 @@ describe('ModelProfileList', () => {
     buttonByText(language.modelProfiles.save).click()
     await flushAsync()
 
-    expect(commandSpies.createModelProfileCommand).not.toHaveBeenCalled()
-    expect(commandSpies.updateModelProfileCommand).not.toHaveBeenCalled()
-    expect(commandSpies.runServerCommand).not.toHaveBeenCalled()
+    expect(commandSpies.createModelProfileDurably).not.toHaveBeenCalled()
+    expect(commandSpies.updateModelProfileDurably).not.toHaveBeenCalled()
     expect(target.textContent).toContain(language.modelProfiles.editTargetMissing)
     expect(target.querySelector('[role="dialog"]')).not.toBeNull()
   })
 
   it('locks profile fields and dismissal paths until a deferred save failure settles', async () => {
-    const pending = deferred<{ status: 'error'; error: string }>()
+    const pending = deferred<{ status: 'failed'; result: { status: 'error'; error: string } }>()
     const confirm = vi.fn(() => true)
     vi.stubGlobal('confirm', confirm)
-    commandSpies.runServerCommand.mockImplementationOnce((input: { command: (baseRevision: number) => unknown }) => {
-      input.command(123)
-      return pending.promise
-    })
+    commandSpies.updateModelProfileDurably.mockReturnValueOnce(pending.promise)
 
     component = mount(ModelProfileList, { target })
     await tick()
@@ -299,7 +294,7 @@ describe('ModelProfileList', () => {
     expect(confirm).not.toHaveBeenCalled()
     expect(target.querySelector('[role="dialog"]')).toBe(dialog)
 
-    pending.resolve({ status: 'error', error: 'Profile save failed' })
+    pending.resolve({ status: 'failed', result: { status: 'error', error: 'Profile save failed' } })
     await flushAsync()
 
     expect(dialog.getAttribute('aria-busy')).toBe('false')
@@ -323,20 +318,68 @@ describe('ModelProfileList', () => {
   })
 
   it('duplicates profiles with secrets for internal settings copies', async () => {
-    commandSpies.duplicateModelProfileCommand.mockResolvedValue({ status: 'ok' })
-
     component = mount(ModelProfileList, { target })
     await tick()
 
     buttonByText(language.modelProfiles.duplicate).click()
     await flushAsync()
 
-    expect(commandSpies.duplicateModelProfileCommand).toHaveBeenCalledWith({
-      baseRevision: 123,
-      profileId: 'profile-1',
-      name: language.modelProfiles.copyName('Profile 1'),
-      includeSecrets: true,
+    expect(commandSpies.duplicateModelProfileDurably).toHaveBeenCalledWith(
+      'profile-1',
+      language.modelProfiles.copyName('Profile 1'),
+      true,
+    )
+  })
+
+  it('latches a queued profile mutation and prevents duplicate submits', async () => {
+    commandSpies.duplicateModelProfileDurably.mockResolvedValue({
+      status: 'queued',
+      result: { status: 'unavailable' },
     })
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const duplicate = buttonByText(language.modelProfiles.duplicate)
+    duplicate.click()
+    await flushAsync()
+
+    expect(target.querySelector('[data-model-profile-command-notice]')?.textContent).toContain(
+      language.modelProfiles.commandQueued,
+    )
+    expect(duplicate.disabled).toBe(true)
+    expect(buttonByText(language.modelProfiles.createProfile).disabled).toBe(true)
+    duplicate.click()
+    await flushAsync()
+    expect(commandSpies.duplicateModelProfileDurably).toHaveBeenCalledTimes(1)
+
+    getDatabase().modelProfiles = [
+      ...getDatabase().modelProfiles,
+      {
+        id: 'unrelated-copy',
+        name: language.modelProfiles.copyName('Profile 1'),
+        providerId: 'debug-echo',
+        modelId: 'different-model',
+      },
+    ]
+    await flushAsync()
+    expect(duplicate.disabled).toBe(true)
+    expect(target.querySelector('[data-model-profile-command-notice]')).not.toBeNull()
+
+    getDatabase().modelProfiles = [
+      ...getDatabase().modelProfiles,
+      {
+        ...JSON.parse(JSON.stringify(getDatabase().modelProfiles[0])),
+        id: 'profile-copy',
+        name: language.modelProfiles.copyName('Profile 1'),
+        providerOptions: {
+          apiKey: '__RISU_SECRET_MASKED__',
+          vertex: { privateKey: '__RISU_SECRET_MASKED__' },
+        },
+      },
+    ]
+    await flushAsync()
+    expect(target.querySelector('[data-model-profile-command-notice]')).toBeNull()
+    expect(duplicate.disabled).toBe(false)
   })
 
   it('keeps a dirty profile draft when Escape dismissal is rejected', async () => {

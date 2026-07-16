@@ -12,12 +12,8 @@
   import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from 'src/ts/model/modelRoles'
   import { getModelInfo } from 'src/ts/model/modellist'
   import { ProviderNames } from 'src/ts/model/types'
-  import {
-    canUseServerCommands,
-    runServerCommandSequence,
-    updateModelRoleProfilesCommand,
-    type ServerCommandResult,
-  } from 'src/ts/server/commands'
+  import { updateModelRoleProfilesDurably } from 'src/ts/model/modelProfileMutations'
+  import type { ServerCommandResult } from 'src/ts/server/commands'
   import { getDatabase, type Database } from 'src/ts/storage/database.svelte'
 
   type BindingMode = ModelRoleProfileBinding['mode']
@@ -26,7 +22,9 @@
   let serverBaselineBindings = $state<ModelRoleProfileMap>(normalizeModelRoleProfiles(undefined))
   let lastServerSnapshot = $state('')
   let applying = $state(false)
+  let applyQueued = $state(false)
   let commandError = $state('')
+  let commandNotice = $state('')
 
   let profiles = $derived(getDatabase().modelProfiles ?? [])
   let profileIdSet = $derived(new Set(profiles.map((profile) => profile.id)))
@@ -42,7 +40,7 @@
   )
   let changedBindings = $derived.by(() => collectChangedBindings())
   let hasChanges = $derived(Object.keys(changedBindings).length > 0)
-  let canApply = $derived(hasChanges && changedBindingsAreValid(changedBindings) && !applying)
+  let canApply = $derived(hasChanges && changedBindingsAreValid(changedBindings) && !applying && !applyQueued)
 
   $effect(() => {
     const normalized = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
@@ -53,6 +51,10 @@
     serverBaselineBindings = cloneJsonValue(normalized)
     lastServerSnapshot = snapshot
     commandError = ''
+    if (applyQueued && snapshotBindings(draftBindings) === snapshot) {
+      applyQueued = false
+      commandNotice = ''
+    }
   })
 
   function cloneJsonValue<T>(value: T): T {
@@ -172,11 +174,13 @@
   }
 
   function setBinding(role: ModelRole, binding: ModelRoleProfileBinding): void {
+    if (applying || applyQueued) return
     draftBindings = {
       ...draftBindings,
       [role]: binding,
     }
     commandError = ''
+    commandNotice = ''
   }
 
   function setBindingMode(role: ModelRole, mode: BindingMode): void {
@@ -200,11 +204,13 @@
   }
 
   function resetDraft(): void {
+    if (applying || applyQueued) return
     const normalized = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
     draftBindings = cloneJsonValue(normalized)
     serverBaselineBindings = cloneJsonValue(normalized)
     lastServerSnapshot = snapshotBindings(normalized)
     commandError = ''
+    commandNotice = ''
   }
 
   function selectedModelPresetId(): string | null {
@@ -213,7 +219,7 @@
     return typeof preset?.id === 'string' && preset.id.trim() ? preset.id : null
   }
 
-  function commandErrorMessage(result: ServerCommandResult): string {
+  function commandErrorMessage(result: Exclude<ServerCommandResult, { status: 'ok' }>): string {
     return result.status === 'conflict'
       ? language.modelProfiles.commandConflict
       : result.status === 'error'
@@ -223,26 +229,21 @@
 
   async function applyDraft(): Promise<void> {
     if (!canApply) return
-    if (!canUseServerCommands()) {
-      commandError = commandErrorMessage({ status: 'unavailable' })
-      return
-    }
     applying = true
     commandError = ''
+    commandNotice = ''
     const bindings = cloneJsonValue(changedBindings)
     const modelPresetId = selectedModelPresetId()
-    const failure = await runServerCommandSequence([
-      (baseRevision) =>
-        updateModelRoleProfilesCommand({
-          baseRevision,
-          bindings,
-          ...(modelPresetId ? { modelPresetId } : {}),
-        }),
-    ])
+    const outcome = await updateModelRoleProfilesDurably(bindings, modelPresetId)
     applying = false
 
-    if (failure === null) return
-    commandError = commandErrorMessage(failure)
+    if (outcome.status === 'accepted') return
+    if (outcome.status === 'queued') {
+      applyQueued = true
+      commandNotice = language.modelProfiles.commandQueued
+      return
+    }
+    commandError = commandErrorMessage(outcome.result)
   }
 </script>
 
@@ -255,13 +256,18 @@
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
   {/if}
+  {#if commandNotice}
+    <div class="rounded-md border border-selected p-3 text-sm text-textcolor" data-model-role-command-notice>
+      {commandNotice}
+    </div>
+  {/if}
 
   <div class="flex flex-wrap items-center justify-between gap-2">
     <span class="text-sm text-textcolor2">
       {hasChanges ? language.modelProfiles.unsavedRoleChanges : language.modelProfiles.noUnsavedRoleChanges}
     </span>
     <div class="flex gap-2">
-      <Button size="sm" styled="outlined" disabled={!hasChanges || applying} onclick={resetDraft}>
+      <Button size="sm" styled="outlined" disabled={!hasChanges || applying || applyQueued} onclick={resetDraft}>
         {language.modelProfiles.cancel}
       </Button>
       <Button size="sm" disabled={!canApply} onclick={applyDraft}>
@@ -296,7 +302,7 @@
               <SelectInput
                 size="sm"
                 ariaLabel={`${roleLabel(role)}: ${language.modelProfiles.bindingModeColumn}`}
-                disabled={applying}
+                disabled={applying || applyQueued}
                 value={binding.mode}
                 onchange={(event) => setBindingMode(role, event.currentTarget.value as BindingMode)}>
                 <OptionInput value="profile">{language.modelProfiles.bindingModes.profile}</OptionInput>
@@ -310,7 +316,7 @@
                   size="sm"
                   className="mt-2 w-full"
                   ariaLabel={`${roleLabel(role)}: ${language.modelProfiles.effectiveProfileColumn}`}
-                  disabled={applying}
+                  disabled={applying || applyQueued}
                   value={binding.profileId}
                   onchange={(event) => setBindingProfile(role, event.currentTarget.value)}>
                   {#if profiles.length === 0}

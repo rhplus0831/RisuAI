@@ -2,13 +2,14 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const commandSpies = vi.hoisted(() => ({
-  runServerCommand: vi.fn(),
-  updateModelRuntimeDefaultsCommand: vi.fn(),
+  updateModelRuntimeDefaultsDurably: vi.fn(),
 }))
 
 vi.mock('src/ts/server/commands', () => ({
-  runServerCommand: commandSpies.runServerCommand,
-  updateModelRuntimeDefaultsCommand: commandSpies.updateModelRuntimeDefaultsCommand,
+  subscribeServerCommandLocalEffectApplied: vi.fn(() => () => {}),
+}))
+vi.mock('src/ts/model/modelProfileMutations', () => ({
+  updateModelRuntimeDefaultsDurably: commandSpies.updateModelRuntimeDefaultsDurably,
 }))
 vi.mock('src/ts/process/modules', () => ({
   applyModule: vi.fn(),
@@ -25,7 +26,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
 import { language } from 'src/lang'
-import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -62,12 +63,8 @@ beforeEach(() => {
       temperature: 0.7,
     },
   } as any)
-  commandSpies.runServerCommand.mockReset()
-  commandSpies.updateModelRuntimeDefaultsCommand.mockReset()
-  commandSpies.updateModelRuntimeDefaultsCommand.mockResolvedValue({ status: 'ok' })
-  commandSpies.runServerCommand.mockImplementation(async (input: { command: (baseRevision: number) => unknown }) => {
-    return input.command(123)
-  })
+  commandSpies.updateModelRuntimeDefaultsDurably.mockReset()
+  commandSpies.updateModelRuntimeDefaultsDurably.mockResolvedValue({ status: 'accepted', result: { status: 'ok' } })
 })
 
 afterEach(() => {
@@ -95,18 +92,12 @@ describe('ModelRuntimeDefaultsEditor', () => {
     buttonByText(language.modelProfiles.save).click()
     await flushAsync()
 
-    expect(commandSpies.updateModelRuntimeDefaultsCommand).toHaveBeenCalledWith({
-      baseRevision: 123,
-      runtimeDefaults: {},
-    })
+    expect(commandSpies.updateModelRuntimeDefaultsDurably).toHaveBeenCalledWith({})
   })
 
   it('locks the runtime form until a deferred save failure settles', async () => {
-    const pending = deferred<{ status: 'error'; error: string }>()
-    commandSpies.runServerCommand.mockImplementationOnce((input: { command: (baseRevision: number) => unknown }) => {
-      input.command(123)
-      return pending.promise
-    })
+    const pending = deferred<{ status: 'failed'; result: { status: 'error'; error: string } }>()
+    commandSpies.updateModelRuntimeDefaultsDurably.mockReturnValueOnce(pending.promise)
     component = mount(ModelRuntimeDefaultsEditor, { target })
 
     buttonByText(language.modelProfiles.edit).click()
@@ -143,7 +134,7 @@ describe('ModelRuntimeDefaultsEditor', () => {
     expect(target.querySelector('[data-model-runtime-defaults-form]')).toBe(form)
     expect(maxContextInput.value).toBe('8192')
 
-    pending.resolve({ status: 'error', error: 'Runtime defaults save failed' })
+    pending.resolve({ status: 'failed', result: { status: 'error', error: 'Runtime defaults save failed' } })
     await flushAsync()
 
     expect(form.getAttribute('aria-busy')).toBe('false')
@@ -186,13 +177,41 @@ describe('ModelRuntimeDefaultsEditor', () => {
     buttonByText(language.modelProfiles.save).click()
     await flushAsync()
 
-    expect(commandSpies.updateModelRuntimeDefaultsCommand).toHaveBeenCalledWith({
-      baseRevision: 123,
-      runtimeDefaults: {
-        maxContext: 8192,
-        maxResponse: 2048,
-        temperature: 1.2,
-      },
+    expect(commandSpies.updateModelRuntimeDefaultsDurably).toHaveBeenCalledWith({
+      maxContext: 8192,
+      maxResponse: 2048,
+      temperature: 1.2,
     })
+  })
+
+  it('closes and latches the editor when the save is durably queued', async () => {
+    commandSpies.updateModelRuntimeDefaultsDurably.mockResolvedValue({
+      status: 'queued',
+      result: { status: 'unavailable' },
+    })
+    component = mount(ModelRuntimeDefaultsEditor, { target })
+
+    buttonByText(language.modelProfiles.edit).click()
+    await tick()
+    buttonByText(language.modelProfiles.reset).click()
+    await tick()
+    buttonByText(language.modelProfiles.save).click()
+    await flushAsync()
+
+    expect(target.querySelector('[data-model-runtime-command-notice]')?.textContent).toContain(
+      language.modelProfiles.commandQueued,
+    )
+    expect(buttonByText(language.modelProfiles.edit).disabled).toBe(true)
+    expect(commandSpies.updateModelRuntimeDefaultsDurably).toHaveBeenCalledTimes(1)
+
+    getDatabase().modelRuntimeDefaults = { maxContext: 1 }
+    await flushAsync()
+    expect(buttonByText(language.modelProfiles.edit).disabled).toBe(true)
+    expect(target.querySelector('[data-model-runtime-command-notice]')).not.toBeNull()
+
+    getDatabase().modelRuntimeDefaults = {}
+    await flushAsync()
+    expect(target.querySelector('[data-model-runtime-command-notice]')).toBeNull()
+    expect(buttonByText(language.modelProfiles.edit).disabled).toBe(false)
   })
 })

@@ -8,7 +8,8 @@
   import { normalizeLegacySeperateModels, normalizeModelRoleOverrides, MODEL_ROLES } from 'src/ts/model/modelRoles'
   import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
-  import { convertLegacyModelProfilesCommand, runServerCommand } from 'src/ts/server/commands'
+  import { convertLegacyModelProfilesDurably } from 'src/ts/model/modelProfileMutations'
+  import type { ServerCommandResult } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { openPresetListModal } from 'src/ts/stores.svelte'
   import LegacyModelRoleList from './ModelRoleList.svelte'
@@ -20,7 +21,9 @@
   let activeTab = $state<ModelSettingsTab>('roles')
   let conversionPromptDeclined = $state(false)
   let converting = $state(false)
+  let queuedConversionBaselineIds = $state<string[] | null>(null)
   let commandError = $state('')
+  let commandNotice = $state('')
 
   let modelProfileUiState = $derived.by(() =>
     resolveModelProfileUiState({
@@ -28,8 +31,9 @@
       lookupModelInfo: (_database, id) => getModelInfo(id),
     }),
   )
+  let conversionQueued = $derived(queuedConversionBaselineIds !== null)
   let legacyOnly = $derived(isClearlyLegacyOnly())
-  let showConversionPrompt = $derived(legacyOnly && !conversionPromptDeclined)
+  let showConversionPrompt = $derived((legacyOnly || conversionQueued) && !conversionPromptDeclined)
   let showAdvancedLegacySettings = $derived(!modelProfileUiState.allRolesUseDurableProfiles)
   let selectedModelPresetButtonLabel = $derived.by(() => {
     const database = getDatabase()
@@ -42,6 +46,12 @@
   })
   let legacyMainModel = $derived(getDatabase().aiModel || language.none)
   let legacyAuxModel = $derived(getDatabase().subModel || language.none)
+
+  $effect(() => {
+    if (!queuedConversionBaselineIds || !queuedConversionApplied(queuedConversionBaselineIds)) return
+    queuedConversionBaselineIds = null
+    commandNotice = ''
+  })
 
   function nonBlank(value: unknown): boolean {
     return typeof value === 'string' && value.trim() !== ''
@@ -72,28 +82,41 @@
     return hasLegacyModelFields()
   }
 
+  function queuedConversionApplied(baselineIds: string[]): boolean {
+    const database = getDatabase()
+    const baseline = new Set(baselineIds)
+    const newProfileCount = (database.modelProfiles ?? []).filter((profile) => !baseline.has(profile.id)).length
+    const roleProfiles = normalizeModelRoleProfiles(database.modelRoleProfiles)
+    return newProfileCount >= 2 && MODEL_ROLES.every((role) => roleProfiles[role].mode !== 'legacy')
+  }
+
+  function commandErrorMessage(result: Exclude<ServerCommandResult, { status: 'ok' }>): string {
+    return result.status === 'conflict'
+      ? language.modelProfiles.commandConflict
+      : result.status === 'error'
+        ? result.error
+        : language.modelProfiles.commandUnavailable
+  }
+
   async function convertLegacyProfiles(): Promise<void> {
-    if (converting) return
+    if (converting || conversionQueued) return
     converting = true
     commandError = ''
-    const result = await runServerCommand({
-      command: (baseRevision) =>
-        convertLegacyModelProfilesCommand({
-          baseRevision,
-        }),
-    })
+    commandNotice = ''
+    const baselineIds = (getDatabase().modelProfiles ?? []).map((profile) => profile.id)
+    const outcome = await convertLegacyModelProfilesDurably()
     converting = false
 
-    if (result.status === 'ok') {
+    if (outcome.status === 'accepted') {
       conversionPromptDeclined = false
       return
     }
-    commandError =
-      result.status === 'conflict'
-        ? language.modelProfiles.commandConflict
-        : result.status === 'error'
-          ? result.error
-          : language.modelProfiles.commandUnavailable
+    if (outcome.status === 'queued') {
+      queuedConversionBaselineIds = baselineIds
+      commandNotice = language.modelProfiles.commandQueued
+      return
+    }
+    commandError = commandErrorMessage(outcome.result)
   }
 </script>
 
@@ -107,14 +130,21 @@
       {#if commandError}
         <div class="mt-3 rounded-md border border-draculared p-2 text-sm text-draculared">{commandError}</div>
       {/if}
+      {#if commandNotice}
+        <div
+          class="mt-3 rounded-md border border-selected p-2 text-sm text-textcolor"
+          data-model-conversion-command-notice>
+          {commandNotice}
+        </div>
+      {/if}
       <div class="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" disabled={converting} onclick={convertLegacyProfiles}>
+        <Button size="sm" disabled={converting || conversionQueued} onclick={convertLegacyProfiles}>
           {converting ? language.modelProfiles.converting : language.modelProfiles.convertToProfiles}
         </Button>
         <Button
           size="sm"
           styled="outlined"
-          disabled={converting}
+          disabled={converting || conversionQueued}
           onclick={() => {
             conversionPromptDeclined = true
           }}>
@@ -125,7 +155,7 @@
   {:else if legacyOnly}
     <div class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-darkborderc p-3">
       <span class="text-sm text-textcolor2">{language.modelProfiles.convertDeclinedNotice}</span>
-      <Button size="sm" disabled={converting} onclick={convertLegacyProfiles}>
+      <Button size="sm" disabled={converting || conversionQueued} onclick={convertLegacyProfiles}>
         {converting ? language.modelProfiles.converting : language.modelProfiles.convertToProfiles}
       </Button>
     </div>
@@ -171,7 +201,7 @@
       </div>
       {#if legacyOnly}
         <div class="flex justify-end">
-          <Button size="sm" disabled={converting} onclick={convertLegacyProfiles}>
+          <Button size="sm" disabled={converting || conversionQueued} onclick={convertLegacyProfiles}>
             {converting ? language.modelProfiles.converting : language.modelProfiles.convertToProfiles}
           </Button>
         </div>

@@ -2321,6 +2321,7 @@ export const languageEnglish = {
     },
     commandConflict: 'The server has newer settings. Refresh and try again.',
     commandUnavailable: 'Server commands are unavailable.',
+    commandQueued: 'This change is saved on this device and queued. It will retry automatically.',
     editTargetMissing:
       'The profile you were editing no longer exists. Review your draft before closing or creating a new profile.',
     unsavedRoleChanges: 'Role binding changes are not applied yet.',
