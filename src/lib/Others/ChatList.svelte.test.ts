@@ -507,6 +507,22 @@ describe('ChatList DOM contract harness', () => {
     expect(chatListMocks.navigate).not.toHaveBeenCalled()
   })
 
+  it('passes stable character and chat ids to modal exports', async () => {
+    const chara = seedModalDatabase()
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+
+    rowActionButton(rowByChatId('chat-c'), 'export').click()
+    chara.chats.reverse()
+    await tick()
+
+    expect(chatListMocks.exportChat).toHaveBeenCalledWith({
+      characterId: 'char-a',
+      chatId: 'chat-c',
+    })
+  })
+
   it('paints a chat rename before dispatching the update command', async () => {
     seedModalDatabase()
     chatListMocks.setServerCommandsEnabled(true)

@@ -641,16 +641,23 @@ describe('SideChatList DOM contract harness', () => {
   })
 
   it('uses native sibling buttons for chat and folder actions', async () => {
-    seedSidebarDatabase()
+    const chara = seedSidebarDatabase()
     component = mount(SideChatListHarness, { target })
     await tick()
 
     const chatExport = rowActionButton(rowByChatId('chat-root-a'), 'export')
     expect(chatExport).toBeInstanceOf(HTMLButtonElement)
     chatExport.click()
+    rowActionButton(rowByChatId('chat-foldered'), 'export').click()
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="export-all"]')!.click()
+    chara.chats.reverse()
     await tick()
 
-    expect(sidebarMocks.exportChat).toHaveBeenCalledWith(0)
+    expect(sidebarMocks.exportChat.mock.calls).toEqual([
+      [{ characterId: 'char-a', chatId: 'chat-root-a' }],
+      [{ characterId: 'char-a', chatId: 'chat-foldered' }],
+    ])
+    expect(sidebarMocks.exportAllChats).toHaveBeenCalledWith('char-a')
 
     const folderDelete = rowActionButton(folderElementById('folder-a'), 'folder-delete')
     expect(folderDelete).toBeInstanceOf(HTMLButtonElement)

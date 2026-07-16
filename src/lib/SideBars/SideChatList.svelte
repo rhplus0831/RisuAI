@@ -801,7 +801,9 @@
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           onclick={async (e) => {
                             e.stopPropagation()
-                            exportChat(chara.chats.indexOf(chat))
+                            if (chara.chaId && chat.id) {
+                              exportChat({ characterId: chara.chaId, chatId: chat.id })
+                            }
                           }}>
                           <DownloadIcon size={18} />
                         </button>
@@ -898,7 +900,9 @@
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
-                      exportChat(i)
+                      if (chara.chaId && chat.id) {
+                        exportChat({ characterId: chara.chaId, chatId: chat.id })
+                      }
                     }}>
                     <DownloadIcon size={18} />
                   </button>
@@ -928,7 +932,9 @@
           aria-label={language.chatListExportAll}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
-            exportAllChats()
+            if (chara.chaId) {
+              exportAllChats(chara.chaId)
+            }
           }}>
           <DownloadIcon size={18} />
         </button>

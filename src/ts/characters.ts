@@ -447,8 +447,33 @@ export function rmCharEmotion(charId: number, emotionId: number) {
   dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charId], previous)
 }
 
-export async function exportChat(page: number) {
+export interface ChatExportTarget {
+  characterId: string
+  chatId: string
+}
+
+function resolveChatExportTarget({ characterId, chatId }: ChatExportTarget): {
+  char: character
+  chat: Chat
+} | null {
+  const char = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+  const chat = char?.chats?.find((candidate) => candidate.id === chatId)
+  if (!char || !chat) return null
+  return { char, chat }
+}
+
+function resolveCharacterExportTarget(characterId: string): character | null {
+  return getDatabase().characters?.find((candidate) => candidate.chaId === characterId) ?? null
+}
+
+export async function exportChat(target: ChatExportTarget): Promise<void> {
+  const stableTarget: ChatExportTarget = {
+    characterId: target.characterId,
+    chatId: target.chatId,
+  }
+
   try {
+    if (!resolveChatExportTarget(stableTarget)) return
     const mode = await alertSelect(['Export as JSON', 'Export as TXT', 'Export as HTML File', 'Export as HTML Embed'])
     const doTranslate =
       mode === '2' || mode === '3'
@@ -458,16 +483,12 @@ export async function exportChat(page: number) {
       mode === '2' || mode === '3'
         ? (await alertSelect([language.includePersonaName, language.hidePersonaName])) === '1'
         : false
-    const selectedID = get(selectedCharID)
-    const chatId = getDatabase().characters[selectedID]?.chats?.[page]?.id
+    if (!resolveChatExportTarget(stableTarget)) return
     // The exported chat may not be the open (hydrated) one.
-    if (chatId) await hydrateChatMessages(chatId)
-    const db = getDatabase()
-    const char = db.characters[selectedID]
-    const chat = char?.chats?.[page]
-    if (!char || !chat) {
-      throw new Error('Chat no longer exists')
-    }
+    await hydrateChatMessages(stableTarget.chatId)
+    const resolvedTarget = resolveChatExportTarget(stableTarget)
+    if (!resolvedTarget) return
+    const { char, chat } = resolvedTarget
     const date = new Date().toJSON()
     const htmlChatParse = async (v: string) => {
       v = parseMarkdownSafe(v)
@@ -489,7 +510,7 @@ export async function exportChat(page: number) {
     if (mode === '0') {
       let folders = []
       if (chat.folderId) {
-        folders = db.characters[selectedID].chatFolders?.filter((f) => f.id === chat.folderId)
+        folders = char.chatFolders?.filter((f) => f.id === chat.folderId)
       }
       const stringl = Buffer.from(
         JSON.stringify({
@@ -1061,13 +1082,15 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-export async function exportAllChats() {
+export async function exportAllChats(characterId: string): Promise<void> {
+  const stableCharacterId = characterId
+
   try {
+    if (!resolveCharacterExportTarget(stableCharacterId)) return
     // This serializes every chat's history, so hydrate lazy chats first.
     await ensureAllChatsHydrated({ strict: true })
-    const selectedID = get(selectedCharID)
-    const db = getDatabase()
-    const char = db.characters[selectedID]
+    const char = resolveCharacterExportTarget(stableCharacterId)
+    if (!char) return
     const date = new Date().toISOString().replace(/[:.]/g, '-')
     const allChats = char.chats
     const allFolders = char.chatFolders

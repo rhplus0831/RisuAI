@@ -234,9 +234,11 @@
     close()
   }
 
-  function exportModalChat(index) {
-    if (!resolveActiveOwnerCharacter()) return
-    exportChat(index)
+  function exportModalChat(chat) {
+    const characterId = resolveActiveOwnerCharacter()?.chaId
+    const chatId = chat?.id
+    if (!characterId || !chatId) return
+    exportChat({ characterId, chatId })
   }
 
   function importModalChat() {
@@ -312,7 +314,7 @@
               aria-label={`${language.export}: ${chat.name}`}
               class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
               onclick={async () => {
-                exportModalChat(i)
+                exportModalChat(chat)
               }}>
               <DownloadIcon size={18} />
             </button>
