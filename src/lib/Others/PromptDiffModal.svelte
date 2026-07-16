@@ -2,7 +2,7 @@
   import { XIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { ensureBotPresetHydratedById, getDatabase, type PromptDiffPrefs } from '../../ts/storage/database.svelte'
-  import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import type {
     PromptItem,
     PromptItemPlain,
@@ -185,13 +185,7 @@
       showOnlyChanges,
       contextRadius,
     }
-    if (canUseServerCommands()) {
-      void patchServerBackedSettings({ patch: { promptDiffPrefs: nextPrefs } })
-      return
-    }
-
-    const db = getDatabase()
-    db.promptDiffPrefs = nextPrefs
+    applyServerBackedSetting('promptDiffPrefs', nextPrefs)
   }
 
   function handleClose() {

@@ -4,11 +4,8 @@ import {
 } from 'src/ts/server/resourceState.svelte'
 import { MCPClient, type JsonRPC, type MCPRefreshTokenSource, type MCPTool, type RPCToolCallContent } from './mcplib'
 import { getModuleMcps, type RisuModule } from '../modules'
-import {
-  canUseServerCommands,
-  patchServerBackedSettings,
-  type PatchServerBackedSettingsInput,
-} from '../../server/commands'
+import { canUseServerCommands, type PatchServerBackedSettingsInput } from '../../server/commands'
+import { dispatchDurableServerBackedSettingsPatch } from '../../server/settingsBridge.svelte'
 import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { alertError, alertInput, alertNormal } from 'src/ts/alert'
 import { v4 } from 'uuid'
@@ -443,7 +440,7 @@ export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void 
   commandInput.rollback = () => rollbackMCPRefreshTokenPersistence(attempt)
   pendingMCPRefreshTokenPersistences.push(attempt)
 
-  const persistence = patchServerBackedSettings(commandInput)
+  const persistence = dispatchDurableServerBackedSettingsPatch(commandInput)
   void persistence.then(
     () => finishMCPRefreshTokenPersistence(attempt),
     () => finishMCPRefreshTokenPersistence(attempt),

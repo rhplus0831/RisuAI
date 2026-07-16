@@ -62,6 +62,7 @@ vi.mock('./commands', () => ({
     if (key === 'NAIImgConfig') return 'media'
     if (key === 'notification') return 'display'
     if (key === 'useAutoSuggestions') return 'sidebar'
+    if (key === 'authRefreshes') return 'providers'
     return null
   },
 }))
@@ -124,7 +125,11 @@ import {
   type PendingMutationOutboxEntry,
 } from './pendingMutationOutbox'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from './settingsMutationKey'
-import { flushPendingServerBackedSettingsPatch, watchServerBackedSettings } from './settingsBridge.svelte'
+import {
+  dispatchDurableServerBackedSettingsPatch,
+  flushPendingServerBackedSettingsPatch,
+  watchServerBackedSettings,
+} from './settingsBridge.svelte'
 
 const LONG_DELAY = 60_000
 
@@ -190,6 +195,39 @@ afterEach(async () => {
 })
 
 describe('settings bridge durable marker ordering', () => {
+  it('stages caller-owned optimistic settings patches before dispatch', async () => {
+    const authRefreshes = [
+      {
+        url: 'https://mcp.example/messages',
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+        refreshToken: 'refresh-token',
+        tokenUrl: 'https://mcp.example/token',
+      },
+    ]
+
+    await dispatchDurableServerBackedSettingsPatch({
+      patch: { authRefreshes },
+      acknowledgeOptimistic: true,
+    })
+
+    expect(recorded.dispatched).toHaveLength(1)
+    expect(recorded.dispatched[0]).toMatchObject({
+      key: SETTINGS_BRIDGE_MUTATION_KEY,
+      intent: {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/settings/providers',
+            body: { patch: { authRefreshes } },
+          },
+        ],
+      },
+    })
+    expect(recorded.patches).toEqual([{ authRefreshes }])
+  })
+
   it('retains a remotely marked scalar edit ahead of an immediate total-revert correction', async () => {
     setupSettings({ notification: false })
     const stop = watchServerBackedSettings(['notification'], { delayMs: LONG_DELAY })

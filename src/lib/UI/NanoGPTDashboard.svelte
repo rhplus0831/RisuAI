@@ -4,7 +4,7 @@
   import type { NanoGPTBalance, NanoGPTSubscriptionUsage } from 'src/ts/model/nanogpt'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
-  import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import {
     beginNanoGPTDashboardFetch,
     clearNanoGPTDashboardFetch,
@@ -44,14 +44,7 @@
         subscriptionState: subscription?.state ?? null,
       })
       if (subscriptionState !== null && subscriptionState !== (getDatabase().nanogptSubscriptionState ?? '')) {
-        if (canUseServerCommands()) {
-          void patchServerBackedSettings({
-            patch: { nanogptSubscriptionState: subscriptionState },
-          })
-        } else {
-          const db = getDatabase()
-          db.nanogptSubscriptionState = subscriptionState
-        }
+        applyServerBackedSetting('nanogptSubscriptionState', subscriptionState)
       }
       return { balance, subscription }
     } finally {

@@ -323,6 +323,27 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
   flushPendingServerBackedSettingsPatch()
 }
 
+/**
+ * Dispatch a caller-owned optimistic settings patch through the encrypted
+ * outbox while preserving its field-specific rollback semantics.
+ */
+export function dispatchDurableServerBackedSettingsPatch(
+  input: Parameters<typeof patchServerBackedSettings>[0],
+): Promise<ServerCommandResult> {
+  const intent = settingsPatchDurableIntent(input.patch)
+  if (intent.requests.length === 0) return Promise.resolve({ status: 'unavailable' })
+  const outbox = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, intent)
+  return dispatchDurableMutation(outbox, intent, (transport) =>
+    patchServerBackedSettings({
+      ...input,
+      mutationId: transport.mutationId,
+      databaseLineage: transport.databaseLineage,
+      executionWrapper: transport.executionWrapper,
+      failureRollbackDisposition: transport.failureRollbackDisposition,
+    }),
+  )
+}
+
 export async function applyOnboardingServerBackedSettings(
   options: ApplyOnboardingServerBackedSettingsOptions,
 ): Promise<boolean> {
