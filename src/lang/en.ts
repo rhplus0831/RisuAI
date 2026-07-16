@@ -1504,6 +1504,13 @@ export const languageEnglish = {
   translatorPresetImportQueued:
     'The translator preset is saved on this device and queued. It will finish importing when the server is available.',
   translatorPresetImportFailed: 'Could not import the translator preset. Please try again.',
+  presetImportQueued:
+    'The preset is saved on this device and queued. It will finish importing when the server is available.',
+  presetImportFailed: 'Could not save the imported preset. Please try again.',
+  presetConversionSuccess: 'Preset converted successfully. You can find it in the preset settings.',
+  presetConversionQueued:
+    'The converted preset is saved on this device and queued. It will finish saving when the server is available.',
+  presetConversionFailed: 'Could not save the converted preset. Please try again.',
   fixMarkdownNewline: 'Fix Markdown Newline',
   customQuotes: 'Custom Quotes',
   leadingSingleQuote: 'Leading Single Quote',

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 import { get } from 'svelte/store'
 
 // Importing presets must not write decoded payloads to console.log.
@@ -19,7 +20,14 @@ import * as fflate from 'fflate'
 import { encode as encodeMsgpack } from 'msgpackr/index-no-eval'
 import { encryptBuffer } from '../util'
 import { importPreset, presetTemplate } from './database.svelte'
-import { clearCachedServerCommandRevision } from '../server/commands'
+import { clearCachedServerCommandRevision, setServerCommandSuccessReconciler } from '../server/commands'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from '../server/pendingMutationOutbox'
+import { replayPendingMutations } from '../server/pendingMutationReplay'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import { alertStore } from '../stores.svelte'
@@ -55,7 +63,7 @@ function stubCommandFetch(): CapturedFetch[] {
         body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
       })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-      if (url === '/api/v1/commands/model-presets/import') {
+      if (url === '/api/v1/commands/model-presets') {
         revision += 1
         return jsonResponse({
           revision,
@@ -63,7 +71,7 @@ function stubCommandFetch(): CapturedFetch[] {
           modelPresetId: 'model-imported',
         })
       }
-      if (url === '/api/v1/commands/prompt-presets/import') {
+      if (url === '/api/v1/commands/prompt-presets') {
         revision += 1
         return jsonResponse({
           revision,
@@ -77,7 +85,7 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
-function stubFailedImportCommandFetch(onCommand?: (call: CapturedFetch) => void): CapturedFetch[] {
+function stubFailedImportCommandFetch(onCommand?: (call: CapturedFetch) => void, status = 500): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
     'fetch',
@@ -90,9 +98,9 @@ function stubFailedImportCommandFetch(onCommand?: (call: CapturedFetch) => void)
       }
       calls.push(call)
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 20 })
-      if (url === '/api/v1/commands/prompt-presets/import') {
+      if (url === '/api/v1/commands/prompt-presets') {
         onCommand?.(call)
-        return jsonResponse({ error: 'forced import failure' }, 500)
+        return jsonResponse({ error: 'forced import failure' }, status)
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
@@ -102,7 +110,7 @@ function stubFailedImportCommandFetch(onCommand?: (call: CapturedFetch) => void)
 
 async function waitForImportCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const match = calls.find((call) => call.url === '/api/v1/commands/prompt-presets/import' && call.method === 'POST')
+    const match = calls.find((call) => call.url === '/api/v1/commands/prompt-presets' && call.method === 'POST')
     if (match) return match
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -123,6 +131,25 @@ async function waitForState(assertion: () => void): Promise<void> {
   throw lastError
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
+}
+
+async function prepareDurablePresetImport(label: string): Promise<void> {
+  vi.stubGlobal('indexedDB', new IDBFactory())
+  resetPendingMutationOutboxForTests()
+  await preparePendingMutationOutbox({
+    writerSessionId: `writer-preset-import-${label}`,
+    writerEpoch: 7,
+    databaseLineage: `lineage-preset-import-${label}`,
+    requestedWriterWasActive: true,
+  })
+}
+
 /** A binary `.risupreset` file, built exactly like `downloadPreset` builds it. */
 async function buildRisupresetFile(preset: Record<string, unknown>): Promise<Uint8Array> {
   return fflate.compressSync(
@@ -136,6 +163,7 @@ async function buildRisupresetFile(preset: Record<string, unknown>): Promise<Uin
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
+  setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
   replaceResourceDatabase({
     modelPresets: [],
@@ -146,7 +174,10 @@ beforeEach(() => {
   alertStore.set({ type: 'none', msg: 'n' })
 })
 
-afterEach(() => {
+afterEach(async () => {
+  setServerCommandSuccessReconciler(null)
+  await clearPendingMutationOutbox()
+  resetPendingMutationOutboxForTests()
   vi.unstubAllGlobals()
 })
 
@@ -156,7 +187,7 @@ describe('importPreset warm-path logging (L37)', () => {
 
     try {
       await expect(importPreset({ name: 'broken.json', data: new TextEncoder().encode('{"name":') })).resolves.toBe(
-        false,
+        'failed',
       )
 
       expect(getResourceDatabase().modelPresets).toEqual([])
@@ -178,7 +209,7 @@ describe('importPreset warm-path logging (L37)', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
     try {
-      await expect(importPreset({ name: 'wrong.risupreset', data: file })).resolves.toBe(false)
+      await expect(importPreset({ name: 'wrong.risupreset', data: file })).resolves.toBe('failed')
 
       expect(getResourceDatabase().modelPresets).toEqual([])
       expect(getResourceDatabase().promptPresets).toEqual([])
@@ -296,10 +327,10 @@ describe('importPreset warm-path logging (L37)', () => {
     expect(getResourceDatabase().promptPresets[0].id).not.toBe('legacy-source-id')
 
     await vi.waitFor(() => {
-      expect(calls.filter((call) => call.url.endsWith('/model-presets/import'))).toHaveLength(1)
-      expect(calls.filter((call) => call.url.endsWith('/prompt-presets/import'))).toHaveLength(1)
+      expect(calls.filter((call) => call.url.endsWith('/model-presets'))).toHaveLength(1)
+      expect(calls.filter((call) => call.url.endsWith('/prompt-presets'))).toHaveLength(1)
     })
-    const [modelCommand, promptCommand] = calls.filter((call) => call.url.includes('-presets/import'))
+    const [modelCommand, promptCommand] = calls.filter((call) => /\/commands\/(?:model|prompt)-presets$/.test(call.url))
     expect(modelCommand.body.preset).toMatchObject({
       aiModel: 'gpt-4o',
       openrouterRequestModel: 'openai/gpt-4o',
@@ -339,12 +370,192 @@ describe('importPreset warm-path logging (L37)', () => {
       overrideModelParameters: true,
     })
     await vi.waitFor(() => {
-      expect(calls.filter((call) => call.url.endsWith('/model-presets/import'))).toHaveLength(0)
-      expect(calls.filter((call) => call.url.endsWith('/prompt-presets/import'))).toHaveLength(1)
+      expect(calls.filter((call) => call.url.endsWith('/model-presets'))).toHaveLength(0)
+      expect(calls.filter((call) => call.url.endsWith('/prompt-presets'))).toHaveLength(1)
     })
   })
 
-  it('L21: a failed preset import rolls back the optimistic imported row', async () => {
+  it('keeps the import pending until the server has accepted it', async () => {
+    await prepareDurablePresetImport('pending')
+    const response = deferred<Response>()
+    const calls: CapturedFetch[] = []
+    let revision = 30
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision })
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return jsonResponse({ acknowledged: true })
+        }
+        if (url === '/api/v1/commands/prompt-presets') return response.promise
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    let settled = false
+    const operation = importPreset({
+      name: 'pending.json',
+      data: new TextEncoder().encode(JSON.stringify({ name: 'Pending import', temperature: 48 })),
+    }).then((outcome) => {
+      settled = true
+      return outcome
+    })
+
+    const command = await waitForImportCommand(calls)
+    expect(settled).toBe(false)
+    expect(getResourceDatabase().promptPresets).toEqual([
+      expect.objectContaining({ id: command.body.preset.id, name: 'Pending import' }),
+    ])
+    expect(get(alertStore).type).toBe('none')
+
+    revision += 1
+    response.resolve(
+      jsonResponse({
+        revision,
+        event: {
+          type: 'promptPreset.created',
+          revision,
+          resource: 'prompt-preset',
+          id: command.body.preset.id,
+        },
+        promptPresetId: command.body.preset.id,
+      }),
+    )
+
+    await expect(operation).resolves.toBe('applied')
+    expect(get(alertStore)).toMatchObject({ type: 'normal', msg: language.successImport })
+    expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('keeps a retryable prompt import visible and reports it as queued', async () => {
+    await prepareDurablePresetImport('queued')
+    const calls = stubFailedImportCommandFetch()
+    const file = new TextEncoder().encode(JSON.stringify({ name: 'Queued prompt', temperature: 52 }))
+
+    await expect(importPreset({ name: 'queued.json', data: file })).resolves.toBe('queued')
+
+    const command = await waitForImportCommand(calls)
+    expect(getResourceDatabase().promptPresets).toEqual([
+      expect.objectContaining({ id: command.body.preset.id, name: 'Queued prompt' }),
+    ])
+    expect(get(alertStore)).toMatchObject({ type: 'normal', msg: language.presetImportQueued })
+    const retained = await listPendingMutations()
+    expect(retained).toHaveLength(1)
+    expect(retained[0]).toMatchObject({
+      handle: { key: `prompt-template-owner:${command.body.preset.id}` },
+      intent: {
+        requests: [
+          {
+            method: 'POST',
+            path: '/prompt-presets',
+            body: { preset: { id: command.body.preset.id, name: 'Queued prompt' } },
+          },
+        ],
+      },
+    })
+  })
+
+  it('retries only the unaccepted legacy-import suffix without duplicating its accepted model row', async () => {
+    await prepareDurablePresetImport('accepted-prefix')
+    let revision = 50
+    let recoverPrompt = false
+    let modelAttempts = 0
+    let promptAttempts = 0
+    const calls: CapturedFetch[] = []
+    const serverModels: Array<Record<string, unknown>> = []
+    const serverPrompts: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision })
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return jsonResponse({ acknowledged: true })
+        }
+        if (url === '/api/v1/commands/model-presets') {
+          modelAttempts += 1
+          serverModels.push(clonePlain(body.preset))
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: 'modelPreset.created',
+              revision,
+              resource: 'model-preset',
+              id: body.preset.id,
+            },
+            modelPresetId: body.preset.id,
+          })
+        }
+        if (url === '/api/v1/commands/prompt-presets') {
+          promptAttempts += 1
+          if (!recoverPrompt) return jsonResponse({ error: 'prompt temporarily unavailable' }, 503)
+          serverPrompts.push(clonePlain(body.preset))
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: 'promptPreset.created',
+              revision,
+              resource: 'prompt-preset',
+              id: body.preset.id,
+            },
+            promptPresetId: body.preset.id,
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerCommandSuccessReconciler((event) => {
+      if (event.type !== 'modelPreset.created') return
+      getResourceDatabase().modelPresets = clonePlain(serverModels) as any
+      // Simulate the authoritative model collection reconciliation replacing
+      // a sibling optimistic collection before the retained prompt settles.
+      getResourceDatabase().promptPresets = []
+    })
+    const file = await buildRisupresetFile({
+      name: 'Durable legacy import',
+      apiType: 'openai',
+      aiModel: 'gpt-4o',
+      mainPrompt: 'Keep the queued prompt visible',
+      temperature: 57,
+    })
+
+    await expect(importPreset({ name: 'legacy.risupreset', data: file })).resolves.toBe('queued')
+
+    expect(modelAttempts).toBe(1)
+    expect(promptAttempts).toBe(1)
+    expect(serverModels).toHaveLength(1)
+    expect(serverPrompts).toHaveLength(0)
+    expect(getResourceDatabase().modelPresets).toEqual([
+      expect.objectContaining({ id: serverModels[0].id, name: 'Durable legacy import' }),
+    ])
+    expect(getResourceDatabase().promptPresets).toEqual([
+      expect.objectContaining({ name: 'Durable legacy import', mainPrompt: 'Keep the queued prompt visible' }),
+    ])
+    const retained = await listPendingMutations()
+    expect(retained).toHaveLength(1)
+    expect(retained[0].handle.key).toBe(`prompt-template-owner:${getResourceDatabase().promptPresets[0].id}`)
+    expect(retained[0].intent.dependencyKeys).toEqual([`split-preset:model:${serverModels[0].id}`])
+
+    recoverPrompt = true
+    await expect(replayPendingMutations()).resolves.toMatchObject({ retained: 0, succeeded: 1 })
+
+    expect(modelAttempts).toBe(1)
+    expect(promptAttempts).toBe(2)
+    expect(serverModels).toHaveLength(1)
+    expect(serverPrompts).toHaveLength(1)
+    expect(serverPrompts[0].id).toBe(getResourceDatabase().promptPresets[0].id)
+    expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('rolls back only the terminally rejected imported row', async () => {
+    await prepareDurablePresetImport('terminal')
     getResourceDatabase().promptPresets = [
       {
         ...clonePlain(presetTemplate),
@@ -371,12 +582,11 @@ describe('importPreset warm-path logging (L37)', () => {
         id: 'preset-appended',
         name: 'Appended after dispatch',
       })
-    })
+    }, 400)
     const file = new TextEncoder().encode(JSON.stringify({ name: 'Import Will Roll Back', temperature: 66 }))
 
-    await importPreset({ name: 'plain-preset.json', data: file })
+    await expect(importPreset({ name: 'plain-preset.json', data: file })).resolves.toBe('failed')
 
-    expect(getResourceDatabase().promptPresets.map((preset) => preset.name)).toContain('Import Will Roll Back')
     await waitForImportCommand(calls)
     await waitForState(() => {
       expect(getResourceDatabase().promptPresets.map((preset) => preset.id)).toEqual([
@@ -388,5 +598,7 @@ describe('importPreset warm-path logging (L37)', () => {
       expect(getResourceDatabase().promptPresets[2]).toMatchObject({ name: 'Appended after dispatch' })
       expect(getResourceDatabase().promptPresetsId).toBe(beforeSelected)
     })
+    expect(await listPendingMutations()).toEqual([])
+    expect(get(alertStore)).toMatchObject({ type: 'error', msg: language.presetImportFailed })
   })
 })

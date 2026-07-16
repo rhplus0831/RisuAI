@@ -47,8 +47,6 @@ import {
   deletePromptPresetCommand,
   deletePresetCommand,
   extractLegacyBotPresetCommand,
-  importModelPresetCommand,
-  importPromptPresetCommand,
   reorderModelPresetsCommand,
   reorderPromptPresetsCommand,
   reorderPresetsCommand,
@@ -66,6 +64,7 @@ import {
   type PromptPresetSnapshot,
   type PresetSnapshot,
   type PresetReorderOptimisticAcknowledgement,
+  type ServerCommandResult,
   type ServerCommandTransportOptions,
   type SplitPresetPatchOptimisticAcknowledgement,
 } from '../server/commands'
@@ -125,6 +124,9 @@ import {
 import { dispatchDurableMutation } from '../server/durableMutationDispatch'
 import {
   acknowledgePendingMutation,
+  isPendingMutationCurrent,
+  isPendingMutationProjectionFenceCurrent,
+  pendingMutationProjectionFence,
   pendingMutationPresetRowProjectionTarget,
   pendingMutationSettingsFieldProjectionTarget,
   recordPendingMutationProjectionTargets,
@@ -4848,31 +4850,159 @@ export function createPromptPreset(preset: PromptPreset) {
   })
 }
 
-export function addImportedPromptPreset(preset: PromptPreset) {
+export type PresetImportOutcome = 'applied' | 'failed' | 'queued'
+
+interface ImportedSplitPresetDefinition {
+  kind: SplitPresetKind
+  preset: SplitPresetRow
+}
+
+interface StagedImportedSplitPreset extends ImportedSplitPresetDefinition {
+  handle: PendingMutationHandle
+  intent: DurableMutationIntent
+}
+
+interface ImportedSplitPresetDispatchOutcome {
+  result: ServerCommandResult
+  retained: boolean
+}
+
+function projectImportedSplitPresets(attempts: readonly ImportedSplitPresetDefinition[]): void {
   withTrustedResourceWrite(() => {
+    for (const attempt of attempts) {
+      const list = splitPresetList(attempt.kind)
+      if (list.some((preset) => preset?.id === attempt.preset.id)) continue
+      list.push(safeStructuredClone(attempt.preset))
+      assignSplitPresetList(attempt.kind, list)
+    }
+  })
+}
+
+function reapplyRetainedImportedSplitPreset(attempt: StagedImportedSplitPreset): void {
+  const presetId = attempt.preset.id
+  if (!presetId) return
+  const target = pendingMutationPresetRowProjectionTarget(attempt.kind, presetId)
+  const fence = pendingMutationProjectionFence(attempt.handle, target)
+  if (!fence || !isPendingMutationProjectionFenceCurrent(fence)) return
+  projectImportedSplitPresets([attempt])
+}
+
+async function dispatchImportedSplitPresetBatch(
+  definitions: readonly ImportedSplitPresetDefinition[],
+): Promise<PresetImportOutcome> {
+  const staged: StagedImportedSplitPreset[] = []
+  try {
+    let predecessorKey: string | null = null
+    for (const definition of definitions) {
+      const presetId = definition.preset.id
+      if (!presetId) throw new Error('Imported preset is missing an id')
+      const ownerKey = splitPresetMutationKey(definition.kind, presetId)
+      const intent: DurableMutationIntent = {
+        version: 1,
+        requests: [
+          {
+            method: 'POST',
+            path: definition.kind === 'model' ? '/model-presets' : '/prompt-presets',
+            body: { preset: safeStructuredClone(definition.preset) },
+          },
+        ],
+        ...(predecessorKey ? { dependencyKeys: [predecessorKey] } : {}),
+      }
+      const handle = stagePendingMutation(ownerKey, intent)
+      recordPendingMutationProjectionTargets(handle, [
+        pendingMutationPresetRowProjectionTarget(definition.kind, presetId),
+      ])
+      staged.push({ ...definition, handle, intent })
+      predecessorKey = ownerKey
+    }
+  } catch {
+    await Promise.all(staged.map(({ handle }) => acknowledgePendingMutation(handle)))
+    return 'failed'
+  }
+
+  projectImportedSplitPresets(staged)
+
+  let firstFailure: Exclude<ServerCommandResult, { status: 'ok' }> | undefined
+  const durabilityReady = Promise.all(staged.map(({ handle }) => handle.ready))
+  const dispatchAttempt = async (attempt: StagedImportedSplitPreset): Promise<ImportedSplitPresetDispatchOutcome> => {
+    let retained = false
+    try {
+      const result = await dispatchDurableMutation(
+        attempt.handle,
+        attempt.intent,
+        (transport) =>
+          runServerCommand({
+            command: async (baseRevision) => {
+              await durabilityReady
+              if (firstFailure) return firstFailure
+              const result =
+                attempt.kind === 'model'
+                  ? await createModelPresetCommand({
+                      baseRevision,
+                      preset: safeStructuredClone(attempt.preset) as unknown as ModelPresetSnapshot,
+                    })
+                  : await createPromptPresetCommand({
+                      baseRevision,
+                      preset: safeStructuredClone(attempt.preset) as unknown as PromptPresetSnapshot,
+                    })
+              if (result.status !== 'ok') firstFailure ??= result
+              return result
+            },
+            rollback: () => rollbackSplitPresetCreate(attempt.kind, attempt.preset),
+            ...transport,
+            failureRollbackDisposition: (failure) => {
+              const disposition = transport.failureRollbackDisposition?.(failure) ?? 'rollback'
+              if (disposition === 'retain') retained = true
+              return disposition
+            },
+          }),
+        {
+          beforeExecuteResult: () => firstFailure,
+        },
+      )
+      return { result, retained }
+    } catch (error) {
+      firstFailure ??= { status: 'unavailable' }
+      if ((await attempt.handle.ready) === 'persisted' && (await isPendingMutationCurrent(attempt.handle))) {
+        return { result: { status: 'unavailable' }, retained: true }
+      }
+      throw error
+    }
+  }
+
+  const settled = await Promise.allSettled(staged.map(dispatchAttempt))
+  let queued = false
+  let failed = false
+  settled.forEach((outcome, index) => {
+    if (outcome.status === 'rejected') {
+      failed = true
+      return
+    }
+    if (outcome.value.retained) {
+      queued = true
+      reapplyRetainedImportedSplitPreset(staged[index])
+      return
+    }
+    if (outcome.value.result.status !== 'ok') failed = true
+  })
+  if (queued) return 'queued'
+  return failed ? 'failed' : 'applied'
+}
+
+export async function addImportedPromptPreset(preset: PromptPreset): Promise<PresetImportOutcome> {
+  const attemptedPreset = withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
     flushPendingSplitPresetPatchesForKind('prompt')
     const newPreset = safeStructuredClone(promptPresetExportPayload(preset)) as PromptPreset
     newPreset.id ??= createClientPresetId()
-    db.promptPresets.push(newPreset)
-    db.promptPresets = db.promptPresets
-    const attemptedPreset = safeStructuredClone(newPreset)
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          importPromptPresetCommand({
-            baseRevision,
-            preset: safeStructuredClone(attemptedPreset) as unknown as PromptPresetSnapshot,
-          }),
-      ],
-      () => rollbackSplitPresetCreate('prompt', attemptedPreset),
-    )
+    return safeStructuredClone(newPreset)
   })
+  return dispatchImportedSplitPresetBatch([{ kind: 'prompt', preset: attemptedPreset }])
 }
 
-export function addImportedLegacyPreset(preset: botPreset) {
-  withTrustedResourceWrite(() => {
+export async function addImportedLegacyPreset(preset: botPreset): Promise<PresetImportOutcome> {
+  const imported = withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
     flushPendingSplitPresetPatches()
@@ -4890,40 +5020,15 @@ export function addImportedLegacyPreset(preset: botPreset) {
     // behavior when the prompt half is composed with its imported model half.
     promptPreset.overrideModelParameters = true
 
-    db.modelPresets.push(modelPreset)
-    db.promptPresets.push(promptPreset)
-    db.modelPresets = db.modelPresets
-    db.promptPresets = db.promptPresets
-
-    const attemptedModelPreset = safeStructuredClone(modelPreset)
-    const attemptedPromptPreset = safeStructuredClone(promptPreset)
-    let modelAccepted = false
-    let promptAccepted = false
-    runOptimisticCommandSequence(
-      [
-        async (baseRevision) => {
-          const result = await importModelPresetCommand({
-            baseRevision,
-            preset: safeStructuredClone(attemptedModelPreset) as unknown as ModelPresetSnapshot,
-          })
-          modelAccepted = result.status === 'ok'
-          return result
-        },
-        async (baseRevision) => {
-          const result = await importPromptPresetCommand({
-            baseRevision,
-            preset: safeStructuredClone(attemptedPromptPreset) as unknown as PromptPresetSnapshot,
-          })
-          promptAccepted = result.status === 'ok'
-          return result
-        },
-      ],
-      () => {
-        if (!modelAccepted) rollbackSplitPresetCreate('model', attemptedModelPreset)
-        if (!promptAccepted) rollbackSplitPresetCreate('prompt', attemptedPromptPreset)
-      },
-    )
+    return {
+      modelPreset: safeStructuredClone(modelPreset),
+      promptPreset: safeStructuredClone(promptPreset),
+    }
   })
+  return dispatchImportedSplitPresetBatch([
+    { kind: 'model', preset: imported.modelPreset },
+    { kind: 'prompt', preset: imported.promptPreset },
+  ])
 }
 
 export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
@@ -5500,17 +5605,28 @@ export async function downloadPreset(id: number, type: 'json' | 'risupreset' | '
   }
 }
 
+function reportPresetImportOutcome(outcome: PresetImportOutcome): PresetImportOutcome {
+  if (outcome === 'applied') {
+    alertNormal(language.successImport)
+  } else if (outcome === 'queued') {
+    alertNormal(language.presetImportQueued)
+  } else {
+    alertError(language.presetImportFailed)
+  }
+  return outcome
+}
+
 export async function importPreset(
   f: {
     name: string
     data: Uint8Array
   } | null = null,
-) {
+): Promise<PresetImportOutcome | null> {
   if (!f) {
     f = await selectSingleFile(['json', 'preset', 'risupreset', 'risup'])
   }
   if (!f) {
-    return false
+    return null
   }
   try {
     let pre: any
@@ -5546,7 +5662,6 @@ export async function importPreset(
       pre = { ...presetTemplate, ...(importedSource as Record<string, unknown>) }
     }
 
-    const db = getDatabase()
     if (pre.presetVersion && pre.presetVersion >= 3) {
       //NAI preset
       const pr = safeStructuredClone(prebuiltPresets.NAI)
@@ -5567,8 +5682,7 @@ export async function importPreset(
       pr.NAISettings.mirostat_lr = pre.parameters.mirostat_lr
       pr.NAISettings.mirostat_tau = pre.parameters.mirostat_tau
       pr.name = pre.name ?? 'Imported'
-      addImportedPromptPreset(pr)
-      return true
+      return reportPresetImportOutcome(await addImportedPromptPreset(pr))
     }
 
     if (Array.isArray(pre?.prompt_order?.[0]?.order) && Array.isArray(pre?.prompts)) {
@@ -5667,21 +5781,16 @@ export async function importPreset(
         })
       }
       pr.name = 'Imported ST Preset'
-      addImportedPromptPreset(pr)
-      return true
+      return reportPresetImportOutcome(await addImportedPromptPreset(pr))
     }
     pre.name ??= 'Imported'
-    if (!Array.isArray(db.botPresets)) {
-      db.botPresets = []
-    }
     if (hasModelPresetOnlyFields(importedSource)) {
-      addImportedLegacyPreset(pre)
+      return reportPresetImportOutcome(await addImportedLegacyPreset(pre))
     } else {
-      addImportedPromptPreset(pre)
+      return reportPresetImportOutcome(await addImportedPromptPreset(pre))
     }
-    return true
   } catch {
     alertError(language.errors.noData)
-    return false
+    return 'failed'
   }
 }

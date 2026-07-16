@@ -50,6 +50,6 @@
 </div>
 <Button
   className="mt-6"
-  onclick={() => {
-    promptConvertion(files)
+  onclick={async () => {
+    await promptConvertion(files)
   }}>Run</Button>

@@ -571,8 +571,8 @@ describe('App route/refreeze mounted DOM behavior', () => {
   })
 
   it('does not report a failed dropped preset import as successful', async () => {
-    let resolveImport!: (imported: boolean) => void
-    const importResult = new Promise<boolean>((resolve) => {
+    let resolveImport!: (imported: 'failed') => void
+    const importResult = new Promise<'failed'>((resolve) => {
       resolveImport = resolve
     })
     appRouteDomMocks.importPreset.mockReturnValueOnce(importResult)
@@ -600,7 +600,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
         data: new Uint8Array([1, 2, 3]),
       })
     })
-    resolveImport(false)
+    resolveImport('failed')
     await importResult
     await tick()
 

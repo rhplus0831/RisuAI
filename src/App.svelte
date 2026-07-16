@@ -36,7 +36,6 @@
   import { showRealmInfoStore, importCharacterProcess } from './ts/characterCards'
   import { importPreset } from './ts/storage/database.svelte'
   import { getResourceDatabase as getDatabase } from './ts/server/resourceState.svelte'
-  import { alertNormal } from './ts/alert'
   import { language } from './lang'
   import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte'
   import Botpreset from './lib/Setting/botpreset.svelte'
@@ -143,10 +142,7 @@
 
       if (name.endsWith('.risup')) {
         const data = new Uint8Array(await file.arrayBuffer())
-        const imported = await importPreset({ name: file.name, data })
-        if (imported) {
-          alertNormal(language.successImport)
-        }
+        await importPreset({ name: file.name, data })
       } else if (name.endsWith('.risum')) {
         const data = new Uint8Array(await file.arrayBuffer())
         await importRisuModuleData(data)

@@ -262,7 +262,7 @@ beforeEach(() => {
   alertState.alertConfirm.mockResolvedValue(true)
   alertState.alertTOS.mockResolvedValue(true)
   globalApiState.checkCharOrder.mockImplementation(() => undefined)
-  presetImportState.importPreset.mockResolvedValue(true)
+  presetImportState.importPreset.mockResolvedValue('applied')
   realmImportState.importRealmCharacterFromServer.mockResolvedValue(okRealmImport('char-imported'))
   resourceRefreshState.refreshServerRealmImportResources.mockResolvedValue({ status: 'ok', revision: 20 })
   window.history.replaceState(null, '', '/')
@@ -534,7 +534,7 @@ describe('preset URL imports', () => {
   it('does not open preset settings when an inline preset import fails', async () => {
     const encodedPreset = encodeURIComponent(Buffer.from([1, 2, 3]).toString('base64'))
     window.history.replaceState(null, '', `/#import_preset=${encodedPreset}`)
-    presetImportState.importPreset.mockResolvedValueOnce(false)
+    presetImportState.importPreset.mockResolvedValueOnce('failed')
 
     await characterURLImport()
 
@@ -547,9 +547,20 @@ describe('preset URL imports', () => {
     expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 
+  it('opens preset settings for an inline import that is safely queued', async () => {
+    const encodedPreset = encodeURIComponent(Buffer.from([7, 8, 9]).toString('base64'))
+    window.history.replaceState(null, '', `/#import_preset=${encodedPreset}`)
+    presetImportState.importPreset.mockResolvedValueOnce('queued')
+
+    await characterURLImport()
+
+    expect(settingsState.settingsMenuIndexSet).toHaveBeenCalledWith(18)
+    expect(settingsState.settingsOpenSet).toHaveBeenCalledWith(true)
+  })
+
   it('does not report success or open settings when a downloaded preset import fails', async () => {
     window.history.replaceState(null, '', '/#import=https://example.test/broken.risup')
-    presetImportState.importPreset.mockResolvedValueOnce(false)
+    presetImportState.importPreset.mockResolvedValueOnce('failed')
     vi.stubGlobal(
       'fetch',
       vi.fn(

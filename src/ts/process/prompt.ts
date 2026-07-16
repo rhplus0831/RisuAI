@@ -1,7 +1,8 @@
 import { tokenizeAccurate } from '../tokenizer'
-import { createPreset, getDatabase, presetTemplate, setDatabase } from '../storage/database.svelte'
+import { addImportedLegacyPreset, presetTemplate, type PresetImportOutcome } from '../storage/database.svelte'
 import { alertError, alertNormal } from '../alert'
 import type { OobaChatCompletionRequestParams } from '../model/ooba'
+import { language } from '../../lang'
 
 export type PromptItem =
   | PromptItemPlain
@@ -426,7 +427,20 @@ export const OobaParams = [
   'grammar_string',
 ]
 
-export function promptConvertion(files: { name: string; content: string; type: string }[]) {
+function reportPromptConversionOutcome(outcome: PresetImportOutcome): PresetImportOutcome {
+  if (outcome === 'applied') {
+    alertNormal(language.presetConversionSuccess)
+  } else if (outcome === 'queued') {
+    alertNormal(language.presetConversionQueued)
+  } else {
+    alertError(language.presetConversionFailed)
+  }
+  return outcome
+}
+
+export async function promptConvertion(
+  files: { name: string; content: string; type: string }[],
+): Promise<PresetImportOutcome> {
   let preset = safeStructuredClone(presetTemplate)
   let instData = {
     system_prompt: '',
@@ -466,7 +480,7 @@ export function promptConvertion(files: { name: string; content: string; type: s
   if (files.findIndex((x) => x.type === 'STCHAT') !== -1) {
     if (type !== '') {
       alertError(`Both ${type} and STCHAT are not supported together.`)
-      return
+      return 'failed'
     }
     type = 'STCHAT'
   }
@@ -557,10 +571,7 @@ export function promptConvertion(files: { name: string; content: string; type: s
   if (type === 'STCHAT') {
     preset.aiModel = 'openrouter'
     preset.subModel = 'openrouter'
-    createPreset(preset)
-
-    alertNormal('Preset converted successfully. You can find it in bot setting presets')
-    return
+    return reportPromptConversionOutcome(await addImportedLegacyPreset(preset))
   }
 
   preset.reverseProxyOobaArgs = oobaData
@@ -638,7 +649,5 @@ export function promptConvertion(files: { name: string; content: string; type: s
 
   preset.name ||= 'Converted from JSON'
 
-  createPreset(preset)
-
-  alertNormal('Preset converted successfully. You can find it in bot setting presets')
+  return reportPromptConversionOutcome(await addImportedLegacyPreset(preset))
 }

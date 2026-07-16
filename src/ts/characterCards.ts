@@ -459,7 +459,7 @@ export async function characterURLImport() {
       name: 'imported.risupreset',
       data: importData,
     })
-    if (imported) {
+    if (imported === 'applied' || imported === 'queued') {
       SettingsMenuIndex.set(18)
       settingsOpen.set(true)
     }
@@ -478,10 +478,9 @@ export async function characterURLImport() {
         name: name,
         data: data,
       })
-      if (imported) {
+      if (imported === 'applied' || imported === 'queued') {
         SettingsMenuIndex.set(18)
         settingsOpen.set(true)
-        alertNormal(language.successImport)
       }
       return
     }
