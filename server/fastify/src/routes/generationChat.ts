@@ -2136,6 +2136,7 @@ function attachGenerationViewer(
     'cache-control': 'no-store',
     connection: 'keep-alive',
     'x-accel-buffering': 'no',
+    'x-risu-generation-job-id': job.id,
   })
   const client = makeSseJobClient(reply)
   client.send(formatPromptChatFrame({ type: 'job_accepted', jobId: job.id }))

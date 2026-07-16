@@ -1185,6 +1185,45 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
     expect(deletes).toContain('/api/v1/generate/chat/job-xyz')
   })
 
+  it('DELETEs the accepted job when stopped before the first SSE frame arrives', async () => {
+    const deletes: string[] = []
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        start() {
+          // Model a response whose headers have arrived while the first body
+          // frame is still delayed in transit.
+        },
+      }),
+      {
+        status: 200,
+        headers: {
+          'content-type': 'text/event-stream',
+          'x-risu-generation-job-id': 'job-from-header',
+        },
+      },
+    )
+    const headerSpy = vi.spyOn(response.headers, 'get')
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        deletes.push(url)
+        return new Response(JSON.stringify({ success: true }), { status: 200 })
+      }
+      return response
+    })
+
+    const controller = new AbortController()
+    const pending = requestServerChatGeneration({ ...baseInput, durable: true }, controller.signal)
+    await vi.waitFor(() => {
+      expect(headerSpy).toHaveBeenCalledWith('X-Risu-Generation-Job-ID')
+    })
+
+    controller.abort()
+    await expect(pending).resolves.toMatchObject({ status: 'aborted' })
+    await vi.waitFor(() => {
+      expect(deletes).toEqual(['/api/v1/generate/chat/job-from-header'])
+    })
+  })
+
   it('does NOT cancel on abort for a non-durable send', async () => {
     const { deletes } = stubDurableStreamFetch('job-xyz')
     const controller = new AbortController()

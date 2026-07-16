@@ -48,6 +48,7 @@ const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
 const HUMAN_REASON_ERROR_CODES = new Set(['generation_in_progress', 'generation_job_not_found'])
 const REQUEST_UID_HEADER = 'X-Request-UID'
+const DURABLE_JOB_ID_HEADER = 'X-Risu-Generation-Job-ID'
 const SERVER_CHAT_CLIENT_CAPABILITIES = {
   compactPromptEvent: true,
   promptMetadataOnly: true,
@@ -441,18 +442,23 @@ export async function requestServerChatGeneration(
   let tokenStreamInactive = false
   let tokenResult = ''
   let streamKey = 'server-chat'
-  // Durable generation: the jobId (= generationId) arrives on the first `job_accepted`
-  // frame, before assembly. Capturing it here lets an abort at ANY point — including
-  // mid-assembly, before `ready` resolves — translate into a server-side DELETE-cancel
-  // (a bare disconnect only detaches the durable job; it keeps running otherwise).
-  let durableJobId = reattachJobId ?? ''
+  // The server also returns the durable job id in the response headers. Unlike
+  // the first `job_accepted` body frame, headers are available as soon as fetch
+  // accepts the response, so Stop can cancel a job even while its first body
+  // bytes are still delayed by the network.
+  let durableJobId = reattachJobId ?? opened.response.headers.get(DURABLE_JOB_ID_HEADER)?.trim() ?? ''
+  const watchesDurableJob = input.durable === true || reattachJobId !== undefined
+  let cancelledDurableJobId = ''
   const cancelDurableOnAbort = (): void => {
     // A durable send or a reattached generation: an explicit abort (the stop
     // button) cancels the server job; a bare disconnect only detaches.
-    if ((input.durable === true || reattachJobId !== undefined) && durableJobId.length > 0) {
-      void cancelServerChatGeneration(durableJobId)
-    }
+    if (!watchesDurableJob || durableJobId.length === 0 || cancelledDurableJobId === durableJobId) return
+    cancelledDurableJobId = durableJobId
+    void cancelServerChatGeneration(durableJobId)
   }
+  const stopWatchingAbort = (): void => signal?.removeEventListener('abort', cancelDurableOnAbort)
+  if (signal?.aborted) cancelDurableOnAbort()
+  else signal?.addEventListener('abort', cancelDurableOnAbort, { once: true })
 
   let resolveReady: (value: ServerChatGenerationResult) => void = () => {}
   const ready = new Promise<ServerChatGenerationResult>((resolve) => {
@@ -520,6 +526,9 @@ export async function requestServerChatGeneration(
             switch (frame.event) {
               case 'job_accepted':
                 if (typeof data.jobId === 'string') durableJobId = data.jobId
+                // Backward-compatible with servers that predate the response
+                // header: an abort may have won the race with this first frame.
+                if (signal?.aborted) cancelDurableOnAbort()
                 debugServerChat('server-chat-job-accepted', {
                   requestUid: opened.requestUid,
                   jobId: durableJobId,
@@ -595,6 +604,7 @@ export async function requestServerChatGeneration(
                 })
                 clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
                 closeTokenStream()
+                stopWatchingAbort()
                 return
               }
               case 'done':
@@ -621,6 +631,7 @@ export async function requestServerChatGeneration(
                 resolveTerminalOnce({ status: 'done', done: donePayload, sideEffects, warnings })
                 clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
                 closeTokenStream()
+                stopWatchingAbort()
                 return
               default:
                 break
@@ -641,6 +652,7 @@ export async function requestServerChatGeneration(
             clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
           }
           closeTokenStream()
+          stopWatchingAbort()
         } catch (err) {
           if (signal?.aborted) {
             cancelDurableOnAbort()
@@ -654,6 +666,7 @@ export async function requestServerChatGeneration(
             clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
           }
           closeTokenStream()
+          stopWatchingAbort()
         }
       })()
     },

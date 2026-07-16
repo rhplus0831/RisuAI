@@ -617,6 +617,15 @@ function seedGenerationFinalizationRetryRow(
 }
 
 describe('Durable generation (Milestone 1)', () => {
+  it('exposes the accepted durable job id before the SSE body is consumed', async () => {
+    const res = await postDurable({})
+    const headerJobId = res.headers.get('x-risu-generation-job-id')
+
+    expect(headerJobId).not.toBeNull()
+    const events = await readSse(res, (event) => event.type === 'done')
+    expect(jobIdFromEvents(events)).toBe(headerJobId)
+  })
+
   // The generation survives the client drop and persists with no client present.
   it('keeps generating after the client drops mid-stream and persists the result (EC-D1)', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
