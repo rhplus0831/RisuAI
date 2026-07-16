@@ -38,12 +38,14 @@ import {
   type ScriptDefinitionMutationPlan,
 } from './scriptDefinitionMutations'
 import { dispatchDurableMutation } from './durableMutationDispatch'
+import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import {
   acknowledgePendingMutation,
   stagePendingMutation,
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
+import { characterOwnerMutationKey, moduleOwnerMutationKey } from './resourceOwnerMutationKeys'
 
 export interface ScriptDefinitionStateSnapshot {
   characters: character[]
@@ -987,7 +989,7 @@ function queueReplacement(
   if (existing && !sameProjection) void acknowledgePendingMutation(existing.outbox)
   const intent = scriptDefinitionDurableIntent(mutation, plan)
   const outbox = stagePendingMutation(
-    `script-definition:${key}`,
+    scriptDefinitionOwnerMutationKey(key, mutation),
     intent,
     existing && sameProjection ? existing.outbox : undefined,
   )
@@ -1869,6 +1871,21 @@ function scriptDefinitionPendingFence(pending: PendingCollectionReplacement): Sc
 export function flushPendingServerBackedScriptDefinitionPatches(options: ServerCommandTransportOptions = {}): void {
   for (const key of Array.from(pendingReplacements.keys())) {
     runPendingScriptDefinitionReplacement(key, options)
+  }
+}
+
+registerPendingBridgePatchFlusher('script-definition', flushPendingServerBackedScriptDefinitionPatches)
+
+function scriptDefinitionOwnerMutationKey(key: string, mutation: QueuedScriptDefinitionMutation): string {
+  switch (mutation.kind) {
+    case 'characterScripts':
+    case 'characterTriggers':
+      return characterOwnerMutationKey(mutation.targetId)
+    case 'moduleScripts':
+    case 'moduleTriggers':
+      return moduleOwnerMutationKey(mutation.targetId)
+    case 'globalScripts':
+      return `script-definition:${key}`
   }
 }
 

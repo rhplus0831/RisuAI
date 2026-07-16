@@ -537,6 +537,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     flushSync()
 
     expect(durableState.stages).toHaveLength(2)
+    expect(durableState.stages.map(({ key }) => key)).toEqual(['character-owner:char-1', 'character-owner:char-1'])
     expect(durableState.stages[0].intent).toEqual({
       version: 1,
       requests: [

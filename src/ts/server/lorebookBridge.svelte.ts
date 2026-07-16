@@ -57,12 +57,18 @@ import {
   mergeProjectionIntoDirtyDraft,
 } from './staleStateGuards'
 import { dispatchDurableMutation } from './durableMutationDispatch'
+import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import {
   acknowledgePendingMutation,
   stagePendingMutation,
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
+import {
+  characterOwnerMutationKey,
+  chatResourceOwnerMutationKey,
+  moduleOwnerMutationKey,
+} from './resourceOwnerMutationKeys'
 
 type GlobalLorebook = { id?: string; name: string; data: loreBook[] }
 
@@ -2347,7 +2353,7 @@ function queueReplacement(
   if (existing && !existingProjectionIsCurrent) void acknowledgePendingMutation(existing.outbox)
   const intent = lorebookDurableIntent(scope, plan)
   const outbox = stagePendingMutation(
-    `lorebook:${key}`,
+    lorebookOwnerMutationKey(scope, key),
     intent,
     existingProjectionIsCurrent ? existing?.outbox : undefined,
   )
@@ -2389,6 +2395,21 @@ function isLorebookCollectionReplacementSource(
 export function flushPendingServerBackedLorebookPatches(options: ServerCommandTransportOptions = {}): void {
   for (const key of Array.from(pendingReplacements.keys())) {
     runPendingReplacement(key, options)
+  }
+}
+
+registerPendingBridgePatchFlusher('lorebook', flushPendingServerBackedLorebookPatches)
+
+function lorebookOwnerMutationKey(scope: DiscreteLorebookEditScope, scopeKey: string): string {
+  switch (scope.kind) {
+    case 'character':
+      return characterOwnerMutationKey(scope.characterId)
+    case 'chat':
+      return chatResourceOwnerMutationKey(scope.chatId, uniqueCharacterIdForChat(scope.chatId))
+    case 'module':
+      return moduleOwnerMutationKey(scope.moduleId)
+    case 'global':
+      return `lorebook:${scopeKey}`
   }
 }
 

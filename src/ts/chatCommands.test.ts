@@ -2027,10 +2027,7 @@ describe('chat command projection helpers', () => {
 
       await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
       const pending = await listPendingMutations()
-      expect(pending.map((entry) => entry.handle.key)).toEqual([
-        'chat-generation-settings:chat-a',
-        'chat-generation-settings:chat-a',
-      ])
+      expect(pending.map((entry) => entry.handle.key)).toEqual(['character-owner:char-a', 'character-owner:char-a'])
       expect(pending[0].handle.mutationId).not.toBe(pending[1].handle.mutationId)
       expect(pending[1].intent).toEqual({
         version: 1,
@@ -2119,7 +2116,7 @@ describe('chat command projection helpers', () => {
       expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initial)
       const retained = await listPendingMutations()
       expect(retained).toHaveLength(1)
-      expect(retained[0].handle.key).toBe('chat-generation-settings:chat-a')
+      expect(retained[0].handle.key).toBe('character-owner:char-a')
 
       expect(dispatchSaveChatGenerationSettings('chat-a', correctiveTarget)).toBe(true)
       await waitForPendingChatGenerationSettingsSave('chat-a')
@@ -2160,7 +2157,7 @@ describe('chat command projection helpers', () => {
     withTrustedResourceWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
-    const predecessor = stagePendingMutation('chat-generation-settings:chat-a', {
+    const predecessor = stagePendingMutation('character-owner:char-a', {
       version: 1,
       requests: [
         {

@@ -2042,7 +2042,7 @@ export function dispatchSaveChatGenerationSettings(
       pendingChatGenerationSettingsSaves.set(chatId, state)
     }
     const durableIntent = chatGenerationSettingsFullDurableIntent(chatId, commandSettings)
-    const durableKey = `chat-generation-settings:${chatId}`
+    const durableKey = chatResourceOwnerMutationKey(chatId, rollback.characterId)
     const job: PendingChatGenerationSettingsJob = {
       intent,
       originalTarget: commandSettings,

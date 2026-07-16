@@ -2752,10 +2752,12 @@ describe('K4 lorebook editor entry draft scope', () => {
 
   it('stages every full-collection scope with the exact command method, path, and body', async () => {
     const scenarios: Array<{
+      ownerKey: string
       path: string
       setup: () => { entries: Entry[]; dispatch: (previous: ReturnType<typeof currentLorebookStateSnapshot>) => void }
     }> = [
       {
+        ownerKey: 'character-owner:c0',
         path: '/characters/c0/lorebooks',
         setup: () => {
           setupMultiCollectionDb()
@@ -2767,6 +2769,7 @@ describe('K4 lorebook editor entry draft scope', () => {
         },
       },
       {
+        ownerKey: 'character-owner:c0',
         path: '/chats/c0chat/lorebooks',
         setup: () => {
           setupMultiCollectionDb()
@@ -2778,6 +2781,7 @@ describe('K4 lorebook editor entry draft scope', () => {
         },
       },
       {
+        ownerKey: 'lorebook:global:g1',
         path: '/lorebooks/g1/entries',
         setup: () => {
           setupMultiCollectionDb()
@@ -2789,6 +2793,7 @@ describe('K4 lorebook editor entry draft scope', () => {
         },
       },
       {
+        ownerKey: 'module-owner:m0',
         path: '/modules/m0/lorebooks',
         setup: () => {
           setupMultiCollectionDb()
@@ -2812,6 +2817,7 @@ describe('K4 lorebook editor entry draft scope', () => {
       entries[0].content = 'compound update'
       entries.push({ id: `${scenario.path.replace(/\W/g, '')}-new`, key: 'new', content: 'compound create' })
       dispatch(previous)
+      expect(durableRecorded.staged.at(-1)?.key).toBe(scenario.ownerKey)
       await vi.advanceTimersByTimeAsync(0)
 
       expect(durableRecorded.dispatched.at(-1)?.intent).toEqual({

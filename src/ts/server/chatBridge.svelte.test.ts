@@ -377,7 +377,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
         },
       },
       {
-        key: 'chat-folder-metadata:folder-1',
+        key: 'character-owner:char-1',
         intent: {
           version: 1,
           requests: [

@@ -1026,6 +1026,13 @@ describe('character script definition draft bridge', () => {
       DELAY,
     )
 
+    expect(durableRecorded.staged.map(({ key }) => key)).toEqual([
+      'character-owner:char-1',
+      'character-owner:char-1',
+      'character-owner:char-1',
+      'character-owner:char-1',
+    ])
+
     draftScripts[0].out = 'mutated draft script'
     draftTriggers[0].comment = 'mutated draft trigger'
     liveScripts[0].out = 'mutated live script'
@@ -1146,6 +1153,8 @@ describe('module script definition projection fencing', () => {
       },
       DELAY,
     )
+
+    expect(durableRecorded.staged.map(({ key }) => key)).toEqual(['module-owner:module-1'])
 
     moduleCollectionProjectionState.epoch += 1
     const authoritativeBaseline = [trigger('module-trigger-1', 'authoritative')]

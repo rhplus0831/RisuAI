@@ -15,12 +15,14 @@ import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER } from '../storag
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 import { dispatchDurableMutation } from './durableMutationDispatch'
+import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import {
   acknowledgePendingMutation,
   stagePendingMutation,
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
+import { characterOwnerMutationKey } from './resourceOwnerMutationKeys'
 
 interface PendingCharacterPatch {
   characterId: string
@@ -321,7 +323,7 @@ function queueCharacterPatch(
     previous: pendingPatch?.previous ?? previous,
     timer: null,
     intent,
-    outbox: stagePendingMutation(`character-profile:${characterId}`, intent, pendingPatch?.outbox),
+    outbox: stagePendingMutation(characterOwnerMutationKey(characterId), intent, pendingPatch?.outbox),
   }
 
   nextPatch.timer = setTimeout(() => runPendingCharacterPatch(characterId), delay)
@@ -333,6 +335,8 @@ export function flushPendingServerBackedCharacterPatches(options: ServerCommandT
     runPendingCharacterPatch(characterId, options)
   }
 }
+
+registerPendingBridgePatchFlusher('character-profile', flushPendingServerBackedCharacterPatches)
 
 function runPendingCharacterPatch(characterId: string, options: ServerCommandTransportOptions = {}): void {
   const commandPatch = pendingPatches.get(characterId)
