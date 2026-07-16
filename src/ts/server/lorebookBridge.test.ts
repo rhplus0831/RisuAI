@@ -18,6 +18,7 @@ import {
   currentGlobalLorebookStateSnapshot,
   currentLorebookCollectionScopedSnapshot,
   currentLorebookStateSnapshot,
+  deleteGlobalLorebookById,
   dispatchSelectGlobalLorebook,
   ensureGlobalLorebookListIds,
   globalLorebookListIdsNeedNormalization,
@@ -38,6 +39,7 @@ import {
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
 } from './pendingMutationOutbox'
+import { replayPendingMutations } from './pendingMutationReplay'
 import {
   assertRollbackRestoresOnly,
   assertSnapshotOmitsCollections,
@@ -599,6 +601,340 @@ describe('lorebook durable generation ordering', () => {
         ).toHaveLength(1)
       })
       expect(calls).not.toContain('/api/v1/commands/lorebooks/book-create-revert/entries')
+    } finally {
+      resetServerBackedLorebookBridgeForTests()
+      await Promise.resolve()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps a transient global entry edit ahead of its owner-ordered lorebook delete', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-global-lorebook-delete-order',
+      writerEpoch: 7,
+      databaseLineage: 'lineage-global-lorebook-delete-order',
+      requestedWriterWasActive: true,
+    })
+    const original = {
+      id: 'entry-before-book-delete',
+      key: 'before delete',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Before delete',
+      content: 'original content',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    setDatabaseLite({
+      characters: [],
+      modules: [],
+      loreBookPage: 0,
+      loreBook: [
+        { id: 'book-delete-order', name: 'Delete order', data: [original] },
+        { id: 'book-delete-sibling', name: 'Sibling', data: [] },
+      ],
+    } as any)
+    setCachedServerCommandRevision(60)
+    let recover = false
+    let revision = 60
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const method = init.method ?? 'GET'
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return new Response(JSON.stringify({ acknowledged: true }), {
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        calls.push({
+          url,
+          method,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (!recover) {
+          return new Response(JSON.stringify({ error: 'global lorebook owner offline' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        revision += 1
+        if (method === 'PUT') {
+          return new Response(
+            JSON.stringify({
+              revision,
+              event: {
+                type: 'lorebook.entries.replaced',
+                revision,
+                resource: 'globalLorebook',
+                id: 'book-delete-order',
+              },
+              lorebookId: 'book-delete-order',
+              entryId: original.id,
+              entryIndex: 0,
+              created: false,
+              patchedKeys: ['content'],
+              deletedKeys: [],
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        }
+        return new Response(
+          JSON.stringify({
+            revision,
+            event: {
+              type: 'lorebook.deleted',
+              revision,
+              resource: 'globalLorebook',
+              id: 'book-delete-order',
+            },
+            lorebookId: 'book-delete-order',
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        )
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const scope = { kind: 'global', lorebookId: 'book-delete-order' } as const
+      expect(
+        applyLorebookEntryDraftEdit(scope, 0, { ...original, content: 'latest content before delete' } as any, 10_000),
+      ).toBe(true)
+      expect(deleteGlobalLorebookById('book-delete-order')).toBe(true)
+
+      await vi.waitFor(() => {
+        expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(2)
+      })
+      expect(calls.some((call) => call.method === 'DELETE')).toBe(false)
+      expect(
+        (await listPendingMutations()).map((entry) => ({ key: entry.handle.key, request: entry.intent.requests[0] })),
+      ).toEqual([
+        {
+          key: 'lorebook:global:book-delete-order',
+          request: {
+            method: 'PUT',
+            path: '/lorebooks/book-delete-order/entries/entry-before-book-delete',
+            body: { patch: { content: 'latest content before delete' } },
+          },
+        },
+        {
+          key: 'lorebook:global:book-delete-order',
+          request: {
+            method: 'DELETE',
+            path: '/lorebooks/book-delete-order',
+            body: {},
+          },
+        },
+      ])
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(calls.slice(recoveryStart).map((call) => `${call.method} ${call.url}`)).toEqual([
+        'PUT /api/v1/commands/lorebooks/book-delete-order/entries/entry-before-book-delete',
+        'DELETE /api/v1/commands/lorebooks/book-delete-order',
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      resetServerBackedLorebookBridgeForTests()
+      await Promise.resolve()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('restores the latest edited global lorebook row, siblings, and page after delete failure', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-global-lorebook-delete-rollback',
+      writerEpoch: 8,
+      databaseLineage: 'lineage-global-lorebook-delete-rollback',
+      requestedWriterWasActive: true,
+    })
+    const original = {
+      id: 'entry-delete-rollback',
+      key: 'rollback',
+      content: 'original content',
+    }
+    setDatabaseLite({
+      characters: [],
+      modules: [],
+      loreBookPage: 1,
+      loreBook: [
+        { id: 'book-rollback-sibling', name: 'Sibling latest', data: [] },
+        { id: 'book-delete-rollback', name: 'Delete rollback', data: [original] },
+        { id: 'book-rollback-later', name: 'Later latest', data: [] },
+      ],
+    } as any)
+    setCachedServerCommandRevision(70)
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const method = init.method ?? 'GET'
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return new Response(JSON.stringify({ acknowledged: true }), {
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        calls.push({
+          url,
+          method,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (method === 'DELETE') {
+          return new Response(JSON.stringify({ error: 'forced global lorebook delete failure' }), {
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        return new Response(
+          JSON.stringify({
+            revision: 71,
+            event: {
+              type: 'lorebook.entries.replaced',
+              revision: 71,
+              resource: 'globalLorebook',
+              id: 'book-delete-rollback',
+            },
+            lorebookId: 'book-delete-rollback',
+            entryId: original.id,
+            entryIndex: 0,
+            created: false,
+            patchedKeys: ['content'],
+            deletedKeys: [],
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        )
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      expect(
+        applyLorebookEntryDraftEdit(
+          { kind: 'global', lorebookId: 'book-delete-rollback' },
+          0,
+          { ...original, content: 'latest edited content' } as any,
+          10_000,
+        ),
+      ).toBe(true)
+      expect(deleteGlobalLorebookById('book-delete-rollback')).toBe(true)
+      expect((getDatabase().loreBook as any[]).map((book) => book.id)).toEqual([
+        'book-rollback-sibling',
+        'book-rollback-later',
+      ])
+      expect(getDatabase().loreBookPage).toBe(0)
+
+      await vi.waitFor(() => {
+        expect(calls.map((call) => call.method)).toEqual(['PUT', 'DELETE'])
+        expect((getDatabase().loreBook as any[]).map((book) => book.id)).toEqual([
+          'book-rollback-sibling',
+          'book-delete-rollback',
+          'book-rollback-later',
+        ])
+      })
+      expect((getDatabase().loreBook as any[])[1].data[0].content).toBe('latest edited content')
+      expect((getDatabase().loreBook as any[])[0].name).toBe('Sibling latest')
+      expect((getDatabase().loreBook as any[])[2].name).toBe('Later latest')
+      expect(getDatabase().loreBookPage).toBe(1)
+      expect((await listPendingMutations()).map((entry) => entry.intent.requests[0]?.method)).toEqual(['DELETE'])
+    } finally {
+      resetServerBackedLorebookBridgeForTests()
+      await Promise.resolve()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('reloads and replays a durable global lorebook delete', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    const scope = {
+      writerSessionId: 'writer-global-lorebook-delete-reload',
+      writerEpoch: 9,
+      databaseLineage: 'lineage-global-lorebook-delete-reload',
+      requestedWriterWasActive: true,
+    }
+    await preparePendingMutationOutbox(scope)
+    setDatabaseLite({
+      characters: [],
+      modules: [],
+      loreBookPage: 0,
+      loreBook: [
+        { id: 'book-delete-reload', name: 'Reload delete', data: [] },
+        { id: 'book-reload-sibling', name: 'Sibling', data: [] },
+      ],
+    } as any)
+    setCachedServerCommandRevision(80)
+    let recover = false
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return new Response(JSON.stringify({ acknowledged: true }), {
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (!recover) {
+          return new Response(JSON.stringify({ error: 'offline before reload' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        return new Response(
+          JSON.stringify({
+            revision: 81,
+            event: {
+              type: 'lorebook.deleted',
+              revision: 81,
+              resource: 'globalLorebook',
+              id: 'book-delete-reload',
+            },
+            lorebookId: 'book-delete-reload',
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        )
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      expect(deleteGlobalLorebookById('book-delete-reload')).toBe(true)
+      await waitForCallCount(calls, 1)
+      expect((await listPendingMutations()).map((entry) => entry.intent.requests[0])).toEqual([
+        {
+          method: 'DELETE',
+          path: '/lorebooks/book-delete-reload',
+          body: {},
+        },
+      ])
+
+      resetPendingMutationOutboxForTests()
+      await preparePendingMutationOutbox(scope)
+      expect((await listPendingMutations()).map((entry) => entry.handle.key)).toEqual([
+        'lorebook:global:book-delete-reload',
+      ])
+
+      recover = true
+      const replayStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      expect(calls.slice(replayStart).map((call) => `${call.method} ${call.url}`)).toEqual([
+        'DELETE /api/v1/commands/lorebooks/book-delete-reload',
+      ])
+      expect(await listPendingMutations()).toEqual([])
     } finally {
       resetServerBackedLorebookBridgeForTests()
       await Promise.resolve()

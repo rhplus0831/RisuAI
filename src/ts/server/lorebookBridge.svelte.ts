@@ -962,20 +962,26 @@ export function deleteGlobalLorebook(index: number): boolean {
   const loreBooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
   if (loreBooks.length <= 1 || !loreBooks[index]) return false
 
+  const lorebookId = loreBooks[index]?.id
+  if (lorebookId) {
+    flushPendingLorebookEntryDraftEdit({ kind: 'global', lorebookId })
+  }
   const previous = currentGlobalLorebookStateSnapshot()
-  const lorebookId = ((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]?.id
-  withTrustedResourceWrite(() => {
+  const stagedDelete = lorebookId && canUseServerCommands() ? stageGlobalLorebookDeleteMutation(lorebookId) : null
+  const deleted = withTrustedResourceWrite(() => {
     const current = (getDatabase().loreBook ?? []) as GlobalLorebook[]
-    if (current.length <= 1 || !current[index]) return
+    if (current.length <= 1 || !current[index]) return false
     current.splice(index, 1)
     getDatabase().loreBookPage = 0
     getDatabase().loreBook = current as Database['loreBook']
-    if (lorebookId) {
-      dispatchDeleteGlobalLorebook(lorebookId, previous)
-    }
+    return true
   })
+  if (stagedDelete && lorebookId) {
+    if (deleted) dispatchStagedGlobalLorebookDelete(lorebookId, previous, stagedDelete)
+    else void acknowledgePendingMutation(stagedDelete.outbox)
+  }
 
-  return true
+  return deleted
 }
 
 export function deleteGlobalLorebookById(lorebookId: string): boolean {
@@ -1043,6 +1049,35 @@ export function dispatchUpdateGlobalLorebook(
 
 export function dispatchDeleteGlobalLorebook(lorebookId: string, previous: GlobalLorebookStateSnapshot): void {
   if (!canUseServerCommands()) return
+  dispatchStagedGlobalLorebookDelete(lorebookId, previous, stageGlobalLorebookDeleteMutation(lorebookId))
+}
+
+function stageGlobalLorebookDeleteMutation(lorebookId: string): {
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
+} {
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'DELETE',
+        path: `/lorebooks/${encodeURIComponent(lorebookId)}`,
+        body: {},
+      },
+    ],
+  }
+  const scope = { kind: 'global', lorebookId } as const
+  return {
+    intent,
+    outbox: stagePendingMutation(lorebookOwnerMutationKey(scope, lorebookCollectionScopeKey(scope)), intent),
+  }
+}
+
+function dispatchStagedGlobalLorebookDelete(
+  lorebookId: string,
+  previous: GlobalLorebookStateSnapshot,
+  staged: { intent: DurableMutationIntent; outbox: PendingMutationHandle },
+): void {
   const collectionProjectionEpoch = captureCollectionProjectionEpoch('loreBook')
   const pageProjectionEpoch = captureLorebookPageProjectionEpoch()
   const previousIndex = previous.loreBook.findIndex((lorebook) => lorebook.id === lorebookId)
@@ -1056,21 +1091,27 @@ export function dispatchDeleteGlobalLorebook(lorebookId: string, previous: Globa
       }
     : null
   const selectionRollback = globalLorebookSelectionRollbackFromSnapshot(previous)
-  void runServerCommand({
-    command: (baseRevision) =>
-      deleteGlobalLorebookCommand({
-        baseRevision,
-        lorebookId,
-        acknowledgeOptimistic: true,
-        optimisticCollectionEpoch: collectionProjectionEpoch,
-        optimisticPageEpoch: pageProjectionEpoch,
-      }),
-    rollback: () =>
-      rollbackDeletedGlobalLorebook(rollbackEntry, selectionRollback, {
-        restoreRow: !hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch),
-        restoreSelection: !hasLorebookPageProjectionEpochChanged(pageProjectionEpoch),
-      }),
-  })
+  void dispatchDurableMutation(staged.outbox, staged.intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        deleteGlobalLorebookCommand(
+          {
+            baseRevision,
+            lorebookId,
+            acknowledgeOptimistic: true,
+            optimisticCollectionEpoch: collectionProjectionEpoch,
+            optimisticPageEpoch: pageProjectionEpoch,
+          },
+          transport.signal,
+        ),
+      rollback: () =>
+        rollbackDeletedGlobalLorebook(rollbackEntry, selectionRollback, {
+          restoreRow: !hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch),
+          restoreSelection: !hasLorebookPageProjectionEpochChanged(pageProjectionEpoch),
+        }),
+      ...transport,
+    }),
+  )
 }
 
 export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot): void {
