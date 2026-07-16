@@ -3052,11 +3052,20 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensureModelPresetCollection(target)
+          const deletedIndex = findModelPresetIndex(presets, modelPresetId)
+          if (deletedIndex === -1) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.modelPresetDeleted, id: modelPresetId },
+              extra: {
+                modelPresetId,
+                selectedModelPresetId: selectedModelPresetId(target, presets),
+              },
+            }
+          }
           if (presets.length <= 1) {
             throw new ValidationError('Cannot delete the only model preset')
           }
           const beforeSelected = target.modelPresetsId
-          const deletedIndex = requireModelPresetIndex(presets, modelPresetId)
           const currentSelectedId = selectedModelPresetId(target, presets)
           const deletedWasSelected = currentSelectedId === modelPresetId
           presets.splice(deletedIndex, 1)
@@ -3385,11 +3394,20 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensurePromptPresetCollection(target)
+          const deletedIndex = findPromptPresetIndex(presets, promptPresetId)
+          if (deletedIndex === -1) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.promptPresetDeleted, id: promptPresetId },
+              extra: {
+                promptPresetId,
+                selectedPromptPresetId: selectedPromptPresetId(target, presets),
+              },
+            }
+          }
           if (presets.length <= 1) {
             throw new ValidationError('Cannot delete the only prompt preset')
           }
           const beforeSelected = target.promptPresetsId
-          const deletedIndex = requirePromptPresetIndex(presets, promptPresetId)
           const currentSelectedId = selectedPromptPresetId(target, presets)
           const deletedWasSelected = currentSelectedId === promptPresetId
           presets.splice(deletedIndex, 1)
@@ -3759,8 +3777,44 @@ export function registerCommandRoutes(
           ? COLLECTION_SCOPED_READS.promptPresets
           : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
-          const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
-          const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
+          let scoped: ReturnType<typeof requireSelectedPromptPresetCommandTarget> | undefined
+          let items: ReturnType<typeof ensurePromptTemplateCollection>
+          if (promptPresetId) {
+            const target = ensureSplitPresetDatabaseObject(database)
+            const presets = ensurePromptPresetCollection(target)
+            const presetIndex = findPromptPresetIndex(presets, promptPresetId)
+            if (presetIndex === -1) {
+              return {
+                event: {
+                  ...COMMAND_EVENT_CATALOG.promptItemDeleted,
+                  id: itemId,
+                  parentId: promptPresetId,
+                },
+                extra: { itemId },
+              }
+            }
+            const presetItems = ensurePromptTemplateCollection(presets[presetIndex])
+            if (!presetItems.some((item) => item.id === itemId)) {
+              return {
+                event: {
+                  ...COMMAND_EVENT_CATALOG.promptItemDeleted,
+                  id: itemId,
+                  parentId: promptPresetId,
+                },
+                extra: { itemId },
+              }
+            }
+            scoped = requireSelectedPromptPresetCommandTarget(database, promptPresetId)
+            items = scoped.items
+          } else {
+            items = ensurePromptTemplateCollection(ensureDatabaseObject(database))
+            if (!items.some((item) => item.id === itemId)) {
+              return {
+                event: { ...COMMAND_EVENT_CATALOG.promptItemDeleted, id: itemId },
+                extra: { itemId },
+              }
+            }
+          }
           const index = requirePromptItemIndex(items, itemId)
           items.splice(index, 1)
           if (scoped) {
@@ -4042,6 +4096,23 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
+          const deletedIndex = findPersonaIndex(personas, personaId)
+          if (deletedIndex === -1) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.personaDeleted, id: personaId },
+              extra: {
+                personaId,
+                ...buildPersonaMutationCertificate({
+                  operation: 'delete',
+                  database: target,
+                  personas,
+                  collectionWritten: false,
+                  settingsWritten: false,
+                  legacyProfileProjectionApplied: false,
+                }),
+              },
+            }
+          }
           if (personas.length <= 1) {
             throw new ValidationError('Cannot delete the only persona')
           }
@@ -4049,7 +4120,6 @@ export function registerCommandRoutes(
           if (saveCurrent) {
             saveSelectedPersonaSnapshot(target, personas)
           }
-          const deletedIndex = requirePersonaIndex(personas, personaId)
           const currentSelectedId = selectedPersonaId(target, personas)
           const deletedWasSelected = currentSelectedId === personaId
           personas.splice(deletedIndex, 1)
@@ -4370,10 +4440,19 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
+          const deletedIndex = findTranslatorPresetIndex(presets, presetId)
+          if (deletedIndex === -1) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, id: presetId },
+              extra: {
+                presetId,
+                selectedPresetId: selectedTranslatorPresetId(target, presets),
+              },
+            }
+          }
           if (presets.length <= 1) {
             throw new ValidationError('Cannot delete the only translator preset')
           }
-          const deletedIndex = requireTranslatorPresetIndex(presets, presetId)
           const currentSelectedId = selectedTranslatorPresetId(target, presets)
           const deletedWasSelected = currentSelectedId === presetId
           presets.splice(deletedIndex, 1)
@@ -4837,7 +4916,16 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
-          const index = requireCharacterIndex(characters, characterId)
+          const index = findCharacterIndex(characters, characterId)
+          if (index === -1) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.characterDeleted, id: characterId },
+              extra: {
+                characterId,
+                selectedCharacterId: selectedCharacterId(target, characters),
+              },
+            }
+          }
           const character = characters[index]
           const removedChatIds = ensureCharacterChats(character).map((chat) => chat.id)
           characters.splice(index, 1)
@@ -5179,7 +5267,21 @@ export function registerCommandRoutes(
         // removed with targeted deletes. Global sibling id de-dup mutates the
         // clone only and is discarded.
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const target = ensureCharacterDatabaseObject(database)
+          const characters = normalizeAllCharacterChats(target)
+          if (!chatIdExists(characters, chatId)) {
+            const currentCharacterIndex = Number.isInteger(target.currentChar as number)
+              ? (target.currentChar as number)
+              : -1
+            const currentCharacter = characters[currentCharacterIndex]
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.chatDeleted, id: chatId },
+              extra: {
+                chatId,
+                selectedChatId: currentCharacter ? selectedChatId(currentCharacter) : null,
+              },
+            }
+          }
           const { character, chatIndex } = requireChatLocation(characters, chatId)
           const chats = ensureCharacterChats(character)
           if (chats.length <= 1) {
@@ -5501,6 +5603,12 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
+          if (!chatFolderIdExists(characters, folderId)) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.chatFolderDeleted, id: folderId },
+              extra: { folderId },
+            }
+          }
           const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
           const folders = ensureCharacterChatFolders(character)
           folders.splice(folderIndex, 1)
@@ -6214,7 +6322,13 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const { target, lorebooks } = readGlobalLorebookCommandTarget(database)
           const beforeLoreBookPage = target.loreBookPage
-          const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          const index = lorebooks.findIndex((lorebook) => lorebook.id === lorebookId)
+          if (index === -1) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.lorebookDeleted, id: lorebookId },
+              extra: { lorebookId },
+            }
+          }
           if (lorebooks.length === 1) {
             throw new ValidationError('Cannot delete the last lorebook')
           }
@@ -6438,7 +6552,19 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const { lorebooks } = readGlobalLorebookCommandTarget(database)
-          const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          const index = lorebooks.findIndex((lorebook) => lorebook.id === lorebookId)
+          if (index === -1) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
+              extra: { lorebookId, entryId, entryIndex: -1 },
+            }
+          }
+          if (!lorebooks[index].data.some((entry) => entry.id === entryId)) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
+              extra: { lorebookId, entryId, entryIndex: -1 },
+            }
+          }
           const deleted = deleteLorebookEntryById(lorebooks[index].data, entryId)
           writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
           return {
@@ -6621,7 +6747,28 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
+          const rawTarget = readJsonObject(database, 'database')
+          if (!findJsonRecordById(rawTarget.characters, characterId, 'chaId')) {
+            return {
+              event: {
+                ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+                id: characterId,
+                resource: 'characterLorebook',
+              },
+              extra: { characterId, entryId, entryIndex: -1 },
+            }
+          }
           const { character, entries } = normalizeSelectedCharacterLorebooks(database, characterId)
+          if (!entries.some((entry) => entry.id === entryId)) {
+            return {
+              event: {
+                ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+                id: characterId,
+                resource: 'characterLorebook',
+              },
+              extra: { characterId, entryId, entryIndex: -1 },
+            }
+          }
           const deleted = deleteLorebookEntryById(entries, entryId)
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -6812,7 +6959,29 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
         chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
+          const rawTarget = readJsonObject(database, 'database')
+          if (!findRawChatRecord(rawTarget, chatId)) {
+            return {
+              event: {
+                ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+                id: chatId,
+                resource: 'characterRow',
+              },
+              extra: { chatId, entryId, entryIndex: -1 },
+            }
+          }
           const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
+          if (!chat.localLore.some((entry) => entry.id === entryId)) {
+            return {
+              event: {
+                ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+                id: chatId,
+                parentId,
+                resource: 'characterRow',
+              },
+              extra: { chatId, entryId, entryIndex: -1 },
+            }
+          }
           const deleted = deleteLorebookEntryById(chat.localLore, entryId)
           writeSingleChatRowExact(innerDb, chatId, chat)
           return {
@@ -6974,7 +7143,13 @@ export function registerCommandRoutes(
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
-          const index = requireModuleIndex(modules, moduleId)
+          const index = modules.findIndex((module) => module.id === moduleId && !module.mcp)
+          if (index === -1) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.moduleDeleted, id: moduleId },
+              extra: { moduleId },
+            }
+          }
           modules.splice(index, 1)
           removeModuleReferences(target, moduleId)
           return {
@@ -7597,8 +7772,28 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
           const { modules } = readModuleCollectionCommandTarget(database)
-          const module = requireModule(modules, moduleId)
+          const module = modules.find((candidate) => candidate.id === moduleId && !candidate.mcp)
+          if (!module) {
+            return {
+              event: {
+                ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+                id: moduleId,
+                resource: 'moduleUpdated',
+              },
+              extra: { moduleId, entryId, entryIndex: -1 },
+            }
+          }
           module.lorebook ??= []
+          if (!module.lorebook.some((entry) => entry.id === entryId)) {
+            return {
+              event: {
+                ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+                id: moduleId,
+                resource: 'moduleUpdated',
+              },
+              extra: { moduleId, entryId, entryIndex: -1 },
+            }
+          }
           const deleted = deleteLorebookEntryById(module.lorebook, entryId)
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
