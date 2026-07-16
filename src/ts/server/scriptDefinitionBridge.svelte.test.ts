@@ -1436,7 +1436,7 @@ describe('compact script definition mutations', () => {
     ])
   })
 
-  it('coalesces create then edit into one final create mutation', async () => {
+  it('immediately promotes create then edit to a full successor', async () => {
     setupScriptDefinitions()
     const baseline = [script('script-1', 'initial')]
     const firstFinal = [...baseline, script('script-2', 'created')]
@@ -1457,22 +1457,24 @@ describe('compact script definition mutations', () => {
       DELAY,
     )
 
-    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(durableRecorded.dispatched).toHaveLength(1)
     await drainDefinitionCommandMicrotasks()
 
-    expect(recorded.compactDefinitionCalls).toHaveLength(1)
-    expect(recorded.compactDefinitionCalls[0]).toMatchObject({
-      mutation: {
-        op: 'create',
-        row: script('script-2', 'edited before dispatch'),
-        index: 1,
-      },
-      expectedDefinitions: editedFinal,
+    expect(recorded.compactDefinitionCalls).toEqual([])
+    expect(recorded.fullDefinitionCalls).toEqual([{ scope: 'character', kind: 'scripts', targetId: 'char-1' }])
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/char-1/scripts',
+          body: { scripts: editedFinal },
+        },
+      ],
     })
-    expect(recorded.fullDefinitionCalls).toEqual([])
   })
 
-  it('suppresses a debounced net revert but keeps ambiguous edits on full PUT', async () => {
+  it('immediately dispatches a full baseline correction for a total revert', async () => {
     setupScriptDefinitions()
     const baseline = [script('script-1', 'initial')]
     const edited = [script('script-1', 'temporary')]
@@ -1490,10 +1492,103 @@ describe('compact script definition mutations', () => {
       { kind: 'characterScripts', characterId: 'char-1', scripts: edited },
       DELAY,
     )
-    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(durableRecorded.staged).toHaveLength(2)
+    expect(durableRecorded.dispatched).toHaveLength(1)
     await drainDefinitionCommandMicrotasks()
-    expect(recorded.commands).toEqual([])
-    expect(durableRecorded.acknowledged).toEqual(['script-mutation-1'])
+
+    expect(recorded.compactDefinitionCalls).toEqual([])
+    expect(recorded.fullDefinitionCalls).toEqual([{ scope: 'character', kind: 'scripts', targetId: 'char-1' }])
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/char-1/scripts',
+          body: { scripts: baseline },
+        },
+      ],
+    })
+    expect(durableRecorded.acknowledged).toEqual([])
+  })
+
+  it('immediately dispatches a full correction when a sparse successor partially reverts its predecessor', async () => {
+    setupScriptDefinitions()
+    const baseline = [script('script-1', 'initial')]
+    const firstFinal = [script('script-1', 'temporary')]
+    getDatabase().characters[0].customscript = firstFinal
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      firstFinal,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: baseline },
+      DELAY,
+    )
+
+    const finalDefinitions = [{ ...script('script-1', 'initial'), comment: 'retained change' }]
+    getDatabase().characters[0].customscript = finalDefinitions
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      finalDefinitions,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: firstFinal },
+      DELAY,
+    )
+
+    expect(durableRecorded.dispatched).toHaveLength(1)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.compactDefinitionCalls).toEqual([])
+    expect(recorded.fullDefinitionCalls).toEqual([{ scope: 'character', kind: 'scripts', targetId: 'char-1' }])
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/char-1/scripts',
+          body: { scripts: finalDefinitions },
+        },
+      ],
+    })
+  })
+
+  it('immediately dispatches a full module-collection correction for create then remove', async () => {
+    setupScriptDefinitions()
+    const baseline = [script('module-script-1', 'initial module')]
+    const created = [...baseline, script('module-script-2', 'temporary')]
+    getDatabase().modules[0].regex = created
+    dispatchReplaceModuleScripts(
+      'module-1',
+      created,
+      { kind: 'moduleScripts', moduleId: 'module-1', scripts: baseline },
+      DELAY,
+    )
+
+    getDatabase().modules[0].regex = baseline
+    dispatchReplaceModuleScripts(
+      'module-1',
+      baseline,
+      { kind: 'moduleScripts', moduleId: 'module-1', scripts: created },
+      DELAY,
+    )
+
+    expect(durableRecorded.dispatched).toHaveLength(1)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.compactDefinitionCalls).toEqual([])
+    expect(recorded.fullDefinitionCalls).toEqual([{ scope: 'module', kind: 'scripts', targetId: 'module-1' }])
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/modules/module-1/scripts',
+          body: { scripts: baseline },
+        },
+      ],
+    })
+  })
+
+  it('keeps ambiguous edits on a full PUT', async () => {
+    setupScriptDefinitions()
 
     const twoRowBaseline = [script('script-1', 'initial'), script('script-2', 'second')]
     const compoundFinal = [script('script-1', 'changed one'), script('script-2', 'changed two')]

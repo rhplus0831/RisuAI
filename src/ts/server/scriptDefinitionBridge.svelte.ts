@@ -81,6 +81,7 @@ export type ScriptDefinitionRollback = ScriptDefinitionStateSnapshot | ScopedScr
 interface PendingCollectionReplacement {
   key: string
   previous: ScriptDefinitionRollback
+  finalDefinitions: readonly unknown[]
   characterRowProjection?: { characterId: string; epoch: number }
   moduleCollectionProjectionEpoch?: number
   settingsGroupProjectionEpoch?: number
@@ -955,7 +956,28 @@ function queueReplacement(
     settingsGroupProjectionEpoch,
   )
   if (!fence) throw new TypeError('A queued script-definition projection fence is required')
-  const plan = planScriptDefinitionMutation(key, mutation, effectivePrevious, fence)
+  let plan = planScriptDefinitionMutation(key, mutation, effectivePrevious, fence)
+  let correctionOnly = false
+  if (
+    existing &&
+    sameProjection &&
+    snapshotJson(existing.finalDefinitions) !== snapshotJson(mutation.finalDefinitions)
+  ) {
+    if (
+      plan.kind === 'none' ||
+      (plan.kind === 'mutation' &&
+        !scriptDefinitionMutationProducesFinal(existing.finalDefinitions, plan.mutation, mutation.finalDefinitions))
+    ) {
+      // Durable restaging can preserve a predecessor once another tab has
+      // frozen its dispatch marker. A sparse successor is safe only when it
+      // also transforms that predecessor's final collection into this one.
+      // Otherwise persist an absolute correction for the full collection.
+      plan = { kind: 'replace' }
+      correctionOnly = true
+    } else if (plan.kind === 'replace') {
+      correctionOnly = true
+    }
+  }
   if (plan.kind === 'none') {
     if (existing) void acknowledgePendingMutation(existing.outbox)
     pendingReplacements.delete(key)
@@ -972,6 +994,7 @@ function queueReplacement(
   const pending: PendingCollectionReplacement = {
     key,
     previous: effectivePrevious,
+    finalDefinitions: cloneJsonValue(mutation.finalDefinitions),
     ...(characterRowProjection ? { characterRowProjection } : {}),
     ...(moduleCollectionProjectionEpoch !== undefined ? { moduleCollectionProjectionEpoch } : {}),
     ...(settingsGroupProjectionEpoch !== undefined ? { settingsGroupProjectionEpoch } : {}),
@@ -982,8 +1005,68 @@ function queueReplacement(
     ...(mutation.validateCurrent ? { validateCurrent: mutation.validateCurrent } : {}),
     timer: null,
   }
-  pending.timer = setTimeout(() => runPendingScriptDefinitionReplacement(key), delay)
   pendingReplacements.set(key, pending)
+  if (correctionOnly) {
+    runPendingScriptDefinitionReplacement(key)
+  } else {
+    pending.timer = setTimeout(() => runPendingScriptDefinitionReplacement(key), delay)
+  }
+}
+
+function scriptDefinitionMutationProducesFinal(
+  previousRows: readonly unknown[],
+  mutation: ScriptDefinitionCollectionMutation,
+  finalRows: readonly unknown[],
+): boolean {
+  if (!Array.isArray(previousRows)) return false
+  const rows = cloneJsonValue(previousRows) as unknown[]
+
+  switch (mutation.op) {
+    case 'update': {
+      const index = rows.findIndex((row) => scriptDefinitionRowIdFromUnknown(row) === mutation.id)
+      if (index < 0) return false
+      const current = rows[index]
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return false
+      const updated = { ...(current as Record<string, unknown>), ...cloneJsonValue(mutation.patch), id: mutation.id }
+      for (const key of mutation.deleteKeys) delete updated[key]
+      rows[index] = updated
+      break
+    }
+    case 'create': {
+      const rowId = scriptDefinitionRowIdFromUnknown(mutation.row)
+      if (
+        !rowId ||
+        rows.some((row) => scriptDefinitionRowIdFromUnknown(row) === rowId) ||
+        mutation.index < 0 ||
+        mutation.index > rows.length
+      ) {
+        return false
+      }
+      rows.splice(mutation.index, 0, cloneJsonValue(mutation.row))
+      break
+    }
+    case 'delete': {
+      const index = rows.findIndex((row) => scriptDefinitionRowIdFromUnknown(row) === mutation.id)
+      if (index < 0) return false
+      rows.splice(index, 1)
+      break
+    }
+    case 'reorder': {
+      if (mutation.ids.length !== rows.length || new Set(mutation.ids).size !== mutation.ids.length) return false
+      const rowsById = new Map(rows.map((row) => [scriptDefinitionRowIdFromUnknown(row), row]))
+      if (rowsById.has(null) || mutation.ids.some((id) => !rowsById.has(id))) return false
+      rows.splice(0, rows.length, ...mutation.ids.map((id) => rowsById.get(id)!))
+      break
+    }
+  }
+
+  return classifyScriptDefinitionMutation(rows, finalRows).kind === 'none'
+}
+
+function scriptDefinitionRowIdFromUnknown(row: unknown): string | null {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null
+  const id = (row as Record<string, unknown>).id
+  return typeof id === 'string' && id.trim() ? id : null
 }
 
 function scriptDefinitionProjectionFence(
