@@ -1375,6 +1375,75 @@ describe('server command API adapter', () => {
     expect(peekCachedServerCommandRevision()).toBe(23)
   })
 
+  it('runs a per-step execution wrapper before that step acquires its base revision', async () => {
+    const order: string[] = []
+    const bases: number[] = []
+    const success = (revision: number, type: string): ServerCommandResult => ({
+      status: 'ok',
+      revision,
+      event: { type, revision, resource: 'asset' },
+    })
+    setCachedServerCommandRevision(30)
+
+    const result = await runServerCommandSequence([
+      async (baseRevision) => {
+        order.push('first-command')
+        bases.push(baseRevision)
+        return success(baseRevision + 1, 'sequence.first')
+      },
+      {
+        command: async (baseRevision) => {
+          order.push('wrapped-command')
+          bases.push(baseRevision)
+          return success(baseRevision + 1, 'sequence.wrapped')
+        },
+        executionWrapper: async (execute) => {
+          order.push('wrapped-predecessor')
+          setCachedServerCommandRevision(40)
+          return execute()
+        },
+      },
+      async (baseRevision) => {
+        order.push('last-command')
+        bases.push(baseRevision)
+        return success(baseRevision + 1, 'sequence.last')
+      },
+    ])
+
+    expect(result).toBeNull()
+    expect(order).toEqual(['first-command', 'wrapped-predecessor', 'wrapped-command', 'last-command'])
+    expect(bases).toEqual([30, 40, 41])
+    expect(peekCachedServerCommandRevision()).toBe(42)
+  })
+
+  it('normalizes a rejected per-step execution wrapper and rolls the sequence back once', async () => {
+    setCachedServerCommandRevision(50)
+    const rollback = vi.fn()
+    const wrappedCommand = vi.fn(async () => ({ status: 'unavailable' as const }))
+    const skipped = vi.fn(async () => ({ status: 'unavailable' as const }))
+
+    const result = await runServerCommandSequence(
+      [
+        {
+          command: wrappedCommand,
+          executionWrapper: async () => {
+            throw new Error('prepared durability failed')
+          },
+        },
+        skipped,
+      ],
+      rollback,
+    )
+
+    expect(result).toEqual({
+      status: 'error',
+      error: 'Command execution wrapper rejected: prepared durability failed',
+    })
+    expect(wrappedCommand).not.toHaveBeenCalled()
+    expect(skipped).not.toHaveBeenCalled()
+    expect(rollback).toHaveBeenCalledOnce()
+  })
+
   it('fails a sequence fast and rolls back before reconciling its accepted events', async () => {
     const order: string[] = []
     let reconciledRevisions: number[] = []

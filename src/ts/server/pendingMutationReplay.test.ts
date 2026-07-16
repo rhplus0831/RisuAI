@@ -102,9 +102,54 @@ describe('pending mutation replay', () => {
     })
     expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['id-repair', 'row-successor'])
   })
+
+  it('propagates a retained dependency into the successor selection lane', async () => {
+    outboxApi.list.mockResolvedValue([
+      entry('character-owner:char-b', 'patch-b'),
+      entry('character-selection', 'select-b', '/characters/select', ['character-owner:char-b']),
+      entry('character-selection', 'select-c', '/characters/select'),
+      entry('settings:runtime', 'unrelated'),
+    ])
+    durableApi.replay.mockImplementation(async (handle) =>
+      handle.mutationId === 'patch-b'
+        ? { disposition: 'retained', result: { status: 'error', error: 'offline' } }
+        : { disposition: 'succeeded', result: { status: 'ok' } },
+    )
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 2,
+      discarded: 0,
+      retained: 1,
+      succeeded: 1,
+    })
+    expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['patch-b', 'unrelated'])
+  })
+
+  it('allows a dependent successor after its terminal predecessor is discarded', async () => {
+    outboxApi.list.mockResolvedValue([
+      entry('character-owner:char-b', 'orphaned-patch'),
+      entry('character-selection', 'select-b', '/characters/select', ['character-owner:char-b']),
+    ])
+    durableApi.replay.mockImplementation(async (handle) =>
+      handle.mutationId === 'orphaned-patch'
+        ? {
+            disposition: 'discarded',
+            result: { status: 'error', error: 'character not found', reason: 'not-found' },
+          }
+        : { disposition: 'succeeded', result: { status: 'ok' } },
+    )
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 2,
+      discarded: 1,
+      retained: 0,
+      succeeded: 1,
+    })
+    expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['orphaned-patch', 'select-b'])
+  })
 })
 
-function entry(key: string, mutationId: string, path = '/settings/runtime') {
+function entry(key: string, mutationId: string, path = '/settings/runtime', dependencyKeys?: string[]) {
   return {
     handle: {
       key,
@@ -119,6 +164,7 @@ function entry(key: string, mutationId: string, path = '/settings/runtime') {
     intent: {
       version: 1,
       requests: [{ method: 'PATCH', path, body: { patch: { maxContext: 8_000 } } }],
+      ...(dependencyKeys ? { dependencyKeys } : {}),
     },
   }
 }

@@ -197,6 +197,64 @@ describe('durable mutation dispatch', () => {
     expect(await listPendingMutations()).toEqual([])
   })
 
+  it('drains transitive cross-lane predecessors under stable sorted semantic locks', async () => {
+    const targetIntent: DurableMutationIntent = {
+      ...intent,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 4_000 } } }],
+    }
+    const selectBIntent: DurableMutationIntent = {
+      ...intent,
+      dependencyKeys: ['character-owner:char-b'],
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 6_000 } } }],
+    }
+    const selectCIntent: DurableMutationIntent = {
+      ...intent,
+      dependencyKeys: ['character-owner:char-c'],
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 8_000 } } }],
+    }
+    const targetB = stagePendingMutation('character-owner:char-b', targetIntent)
+    const selectB = stagePendingMutation('character-selection', selectBIntent)
+    const targetC = stagePendingMutation('character-owner:char-c', targetIntent)
+    const selectC = stagePendingMutation('character-selection', selectCIntent)
+    await Promise.all([targetB.ready, selectB.ready, targetC.ready, selectC.ready])
+    await beginPendingMutationDispatch(targetB)
+    await beginPendingMutationDispatch(selectB)
+    await beginPendingMutationDispatch(targetC)
+
+    const acquiredLocks: string[] = []
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: vi.fn(async (name: string, _options: unknown, task: () => Promise<unknown>) => {
+          acquiredLocks.push(name)
+          return task()
+        }),
+      },
+    })
+    const order: string[] = []
+    commandApi.inlineReplay.mockImplementation(async (_requests, mutationId) => {
+      order.push(mutationId)
+      return { status: 'ok' }
+    })
+
+    await expect(
+      dispatchDurableMutation(
+        selectC,
+        selectCIntent,
+        wrappedDispatch(async () => {
+          order.push(selectC.mutationId)
+          return acceptedResult()
+        }),
+      ),
+    ).resolves.toMatchObject({ status: 'ok' })
+
+    expect(order).toEqual([targetB.mutationId, selectB.mutationId, targetC.mutationId, selectC.mutationId])
+    const semanticLocks = acquiredLocks
+      .filter((name) => name.includes('durable-mutation-key:'))
+      .map((name) => name.slice(name.lastIndexOf(':') + 1))
+    expect(semanticLocks).toEqual(['char-b', 'char-c', 'character-selection'])
+    expect(await listPendingMutations()).toEqual([])
+  })
+
   it('deduplicates an accepted response-loss predecessor before sending its successor', async () => {
     const retained = stagePendingMutation('settings:runtime', intent)
     await dispatchDurableMutation(

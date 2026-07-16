@@ -61,7 +61,7 @@ export function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
   // the command synchronously so later structural actions cannot overtake it.
   const readiness = beginPendingMutationDispatch(handle)
   const executionWrapper: ServerCommandExecutionWrapper = (execute) =>
-    withPendingMutationDispatchLocks(handle, async () => {
+    withPendingMutationDispatchLocks(handle, intent.dependencyKeys ?? [], async () => {
       const persistence = await readiness
       if (persistence === 'superseded') return { status: 'unavailable' }
       if (persistence === 'persisted' && !(await isPendingMutationCurrent(handle))) {
@@ -96,7 +96,11 @@ export async function executePreparedDurableMutationWithinQueue<T extends Record
     return { disposition: 'sent', handle: input.handle, intent: input.intent, result }
   }
 
-  return withPendingMutationKeyLock(input.handle, async () => {
+  const anticipatedDependencyKeys = [
+    ...(input.intent.dependencyKeys ?? []),
+    ...(input.standaloneIntent?.dependencyKeys ?? []),
+  ]
+  return withPendingMutationDependencyKeyLocks(input.handle, anticipatedDependencyKeys, async (lockedKeys) => {
     let handle = input.handle
     let intent = input.intent
     let standaloneSelected = false
@@ -163,9 +167,20 @@ export async function executePreparedDurableMutationWithinQueue<T extends Record
       if (standalone !== 'ready') {
         return { disposition: 'retained-without-send' as const, handle, intent }
       }
-      if (!(await drainPendingMutationPredecessors(handle))) {
-        return { disposition: 'retained-without-send' as const, handle, intent }
-      }
+    }
+
+    // Exact replacement can create a later successor when another tab marked
+    // the placeholder first. Re-read its closure and never acquire a newly
+    // discovered key out of order while the current sorted lock set is held.
+    const preparedPredecessors = await listPendingMutationPredecessors(handle)
+    if (
+      preparedPredecessors.status !== 'ok' ||
+      preparedPredecessors.semanticKeys.some((semanticKey) => !lockedKeys.has(semanticKey))
+    ) {
+      return { disposition: 'retained-without-send' as const, handle, intent }
+    }
+    if (preparedPredecessors.entries.length > 0 && !(await drainPendingMutationPredecessors(handle))) {
+      return { disposition: 'retained-without-send' as const, handle, intent }
     }
 
     const persistence = await beginPendingMutationDispatch(handle)
@@ -207,7 +222,7 @@ export async function dispatchDurableMutationReplay(
   intent: DurableMutationIntent,
 ): Promise<DurableMutationReplayOutcome> {
   if (!handle.databaseLineage) return { disposition: 'discarded' }
-  return withPendingMutationDispatchLocks(handle, async () => {
+  return withPendingMutationDispatchLocks(handle, intent.dependencyKeys ?? [], async () => {
     const persistence = await beginPendingMutationDispatch(handle)
     if (persistence !== 'persisted') return { disposition: 'skipped' }
 
@@ -349,14 +364,56 @@ async function withLocalPendingMutationLock<T>(name: string, task: () => Promise
   }
 }
 
-function withPendingMutationDispatchLocks<T>(handle: PendingMutationHandle, task: () => Promise<T>): Promise<T> {
-  return withPendingMutationKeyLock(handle, () =>
+function withPendingMutationDispatchLocks<T>(
+  handle: PendingMutationHandle,
+  dependencyKeys: readonly string[],
+  task: () => Promise<T>,
+): Promise<T> {
+  return withPendingMutationDependencyKeyLocks(handle, dependencyKeys, () =>
     withPendingMutationLock(handle.databaseLineage!, handle.mutationId, task),
   )
 }
 
-function withPendingMutationKeyLock<T>(handle: PendingMutationHandle, task: () => Promise<T>): Promise<T> {
-  return withNamedPendingMutationLock(`risu:durable-mutation-key:${handle.databaseLineage}:${handle.key}`, task)
+const RETRY_DEPENDENCY_KEY_LOCKS = Symbol('retry-dependency-key-locks')
+
+async function withPendingMutationDependencyKeyLocks<T>(
+  handle: PendingMutationHandle,
+  dependencyKeys: readonly string[],
+  task: (lockedKeys: ReadonlySet<string>) => Promise<T>,
+): Promise<T> {
+  const knownKeys = new Set<string>([handle.key, ...dependencyKeys])
+  while (true) {
+    const discovery = await listPendingMutationPredecessors(handle, dependencyKeys)
+    if (discovery.status === 'ok') {
+      for (const semanticKey of discovery.semanticKeys) knownKeys.add(semanticKey)
+    }
+
+    const sortedKeys = Array.from(knownKeys).sort()
+    const lockedKeys = new Set(sortedKeys)
+    const outcome = await withPendingMutationKeyLocks(handle.databaseLineage!, sortedKeys, async () => {
+      const recheck = await listPendingMutationPredecessors(handle, dependencyKeys)
+      if (recheck.status === 'ok') {
+        const missingKeys = recheck.semanticKeys.filter((semanticKey) => !lockedKeys.has(semanticKey))
+        if (missingKeys.length > 0) return { retry: RETRY_DEPENDENCY_KEY_LOCKS, missingKeys } as const
+      }
+      return { value: await task(lockedKeys) } as const
+    })
+    if ('value' in outcome) return outcome.value
+    for (const semanticKey of outcome.missingKeys) knownKeys.add(semanticKey)
+  }
+}
+
+function withPendingMutationKeyLocks<T>(
+  databaseLineage: string,
+  semanticKeys: readonly string[],
+  task: () => Promise<T>,
+  index = 0,
+): Promise<T> {
+  const semanticKey = semanticKeys[index]
+  if (semanticKey === undefined) return task()
+  return withNamedPendingMutationLock(`risu:durable-mutation-key:${databaseLineage}:${semanticKey}`, () =>
+    withPendingMutationKeyLocks(databaseLineage, semanticKeys, task, index + 1),
+  )
 }
 
 async function withNamedPendingMutationLock<T>(name: string, task: () => Promise<T>): Promise<T> {

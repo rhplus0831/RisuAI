@@ -1556,6 +1556,14 @@ export interface RunServerPresetCommandInput<T extends Record<string, unknown> =
 
 export type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
 
+export interface ServerCommandSequenceStep {
+  command: ServerCommandFactory
+  /** Runs around this step before its base revision is acquired. */
+  executionWrapper?: ServerCommandExecutionWrapper
+}
+
+export type ServerCommandSequenceEntry = ServerCommandFactory | ServerCommandSequenceStep
+
 export interface ServerCommandTransportOptions {
   signal?: AbortSignal | null
   keepalive?: boolean
@@ -4975,7 +4983,7 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
  * returned and later factories are skipped.
  */
 export async function runServerCommandSequence(
-  commands: readonly ServerCommandFactory[],
+  commands: readonly ServerCommandSequenceEntry[],
   rollback?: () => void,
   options: ServerCommandTransportOptions = {},
 ): Promise<ServerCommandResult | null> {
@@ -5105,17 +5113,27 @@ export async function acknowledgeServerMutationReceipts(
 }
 
 async function executeServerCommandSequence(
-  commands: readonly ServerCommandFactory[],
+  commands: readonly ServerCommandSequenceEntry[],
   rollback: (() => void) | undefined,
   rollbackEpoch: number,
   reconciliationBatch: ServerCommandReconciliationBatch,
 ): Promise<ServerCommandResult | null> {
   const acceptedRevisions: number[] = []
-  for (const command of commands) {
+  for (const entry of commands) {
     // The sequence owns rollback so it runs exactly once for the first failed
     // step. executeServerCommand still normalizes thrown factories to an error
     // result and defers every accepted event into this sequence's active batch.
-    const result = await executeServerCommand({ command }, rollbackEpoch)
+    const command = typeof entry === 'function' ? entry : entry.command
+    const execute = () => executeServerCommand({ command }, rollbackEpoch)
+    let result: ServerCommandResult
+    try {
+      result =
+        typeof entry === 'function' || !entry.executionWrapper ? await execute() : await entry.executionWrapper(execute)
+    } catch (error) {
+      console.error('Server command sequence execution wrapper rejected:', error)
+      const message = error instanceof Error ? error.message : String(error)
+      result = { status: 'error', error: `Command execution wrapper rejected: ${message}` }
+    }
     if (result.status === 'ok') {
       if (Number.isInteger(result.event?.revision)) acceptedRevisions.push(result.event.revision)
       continue

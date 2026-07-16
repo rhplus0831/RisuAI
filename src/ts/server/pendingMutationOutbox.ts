@@ -11,6 +11,12 @@ export interface DurableMutationRequest {
 export interface DurableMutationIntent {
   version: 1
   requests: DurableMutationRequest[]
+  /**
+   * Additional semantic lanes that must settle before this intent. The keys
+   * are encrypted with the request payload and are used only for client-side
+   * ordering; they are never sent to the command API.
+   */
+  dependencyKeys?: string[]
 }
 
 type PendingMutationPhase = 'dispatching' | 'staged' | 'superseded'
@@ -35,7 +41,7 @@ export interface PendingMutationOutboxEntry {
 }
 
 export type PendingMutationPredecessorResult =
-  | { status: 'ok'; entries: PendingMutationOutboxEntry[] }
+  | { status: 'ok'; entries: PendingMutationOutboxEntry[]; semanticKeys: string[] }
   | { status: 'superseded' | 'unavailable' }
 
 export type PendingMutationIntentReplacementResult =
@@ -99,7 +105,9 @@ const OUTBOX_ORDER_STORE = 'orders'
 const OUTBOX_RECEIPT_ACK_STORE = 'receiptAcks'
 const OUTBOX_ENCRYPTION_KEY_ID = 'pending-mutation-aes-gcm-v1'
 const MAX_DURABLE_MUTATION_REQUESTS = 100
+const MAX_DURABLE_MUTATION_DEPENDENCY_KEYS = 32
 const MAX_DURABLE_MUTATION_PAYLOAD_BYTES = 16 * 1024 * 1024
+const MAX_PENDING_MUTATION_KEY_LENGTH = 2_048
 const MUTATION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,96}$/
 const SCOPE_VALUE_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 
@@ -468,12 +476,14 @@ export async function listPendingMutations(): Promise<PendingMutationOutboxEntry
 }
 
 /**
- * Read every older retained generation for this exact semantic resource. A
- * live successor drains these entries inside its already-queued command task,
- * so partial patches cannot overtake an earlier response-loss retry.
+ * Read the transitive closure of older generations that this mutation owns or
+ * depends on. A dependency introduced by an older predecessor only reaches
+ * rows older than that predecessor, preserving the durable global-order
+ * cutoff instead of pulling unrelated newer work into the chain.
  */
 export async function listPendingMutationPredecessors(
   handle: PendingMutationHandle,
+  additionalDependencyKeys: readonly string[] = [],
 ): Promise<PendingMutationPredecessorResult> {
   const persistence = await handle.ready
   if (persistence !== 'persisted') return { status: persistence }
@@ -492,10 +502,9 @@ export async function listPendingMutationPredecessors(
 
   const current = records.find((record) => record.mutationId === handle.mutationId)
   if (!current || !storedMutationMatchesHandle(current, handle)) return { status: 'superseded' }
-  const predecessors = records
+  const scopedPredecessors = records
     .filter(
       (record) =>
-        record.semanticKey === current.semanticKey &&
         record.ownerWriterSessionId === current.ownerWriterSessionId &&
         record.writerEpoch === current.writerEpoch &&
         record.databaseLineage === current.databaseLineage &&
@@ -503,29 +512,62 @@ export async function listPendingMutationPredecessors(
     )
     .sort((left, right) => left.order - right.order)
 
-  const entries: PendingMutationOutboxEntry[] = []
-  for (const record of predecessors) {
-    try {
-      const intent = await decryptIntent(record, encryptionKey)
-      entries.push({
-        handle: {
-          key: record.semanticKey,
-          mutationId: record.mutationId,
-          sequence: record.sequence,
-          ownerWriterSessionId: record.ownerWriterSessionId,
-          writerEpoch: record.writerEpoch,
-          databaseLineage: record.databaseLineage,
-          phase: 'staged',
-          ready: Promise.resolve('persisted'),
-        },
-        intent,
-      })
-    } catch (error) {
-      reportPersistenceWarning(`Unable to decrypt pending predecessor ${record.semanticKey}`, error)
-      return { status: 'unavailable' }
+  try {
+    const currentIntent = await decryptIntent(current, encryptionKey)
+    const orderCutoffByKey = new Map<string, number>([[current.semanticKey, current.order]])
+    for (const dependencyKey of [
+      ...(currentIntent.dependencyKeys ?? []),
+      ...normalizeDependencyKeys(additionalDependencyKeys, false),
+    ]) {
+      orderCutoffByKey.set(dependencyKey, current.order)
     }
+
+    const selected = new Map<string, PendingMutationOutboxEntry>()
+    let expanded = true
+    while (expanded) {
+      expanded = false
+      for (const record of scopedPredecessors) {
+        if (selected.has(record.mutationId)) continue
+        const cutoff = orderCutoffByKey.get(record.semanticKey)
+        if (cutoff === undefined || record.order >= cutoff) continue
+
+        const intent = await decryptIntent(record, encryptionKey)
+        selected.set(record.mutationId, {
+          handle: {
+            key: record.semanticKey,
+            mutationId: record.mutationId,
+            sequence: record.sequence,
+            ownerWriterSessionId: record.ownerWriterSessionId,
+            writerEpoch: record.writerEpoch,
+            databaseLineage: record.databaseLineage,
+            phase: 'staged',
+            ready: Promise.resolve('persisted'),
+          },
+          intent,
+        })
+        expanded = true
+
+        for (const dependencyKey of intent.dependencyKeys ?? []) {
+          const previousCutoff = orderCutoffByKey.get(dependencyKey)
+          if (previousCutoff === undefined || previousCutoff < record.order) {
+            orderCutoffByKey.set(dependencyKey, record.order)
+          }
+        }
+      }
+    }
+
+    const entries = scopedPredecessors
+      .map((record) => selected.get(record.mutationId))
+      .filter((entry): entry is PendingMutationOutboxEntry => entry !== undefined)
+    return {
+      status: 'ok',
+      entries,
+      semanticKeys: Array.from(orderCutoffByKey.keys()).sort(),
+    }
+  } catch (error) {
+    reportPersistenceWarning(`Unable to decrypt pending predecessor ${current.semanticKey}`, error)
+    return { status: 'unavailable' }
   }
-  return { status: 'ok', entries }
 }
 
 export async function listPendingMutationReceiptAcknowledgements(): Promise<PendingMutationReceiptAcknowledgement[]> {
@@ -778,7 +820,18 @@ function normalizeIntent(value: unknown): DurableMutationIntent {
   if (record.requests.length === 0 || record.requests.length > MAX_DURABLE_MUTATION_REQUESTS) {
     throw new RangeError('Pending mutation request count is invalid')
   }
-  return { version: 1, requests: record.requests.map(normalizeRequest) }
+  let dependencyKeys: string[] = []
+  if (record.dependencyKeys !== undefined) {
+    if (!Array.isArray(record.dependencyKeys)) {
+      throw new TypeError('Pending mutation dependency keys must be an array')
+    }
+    dependencyKeys = normalizeDependencyKeys(record.dependencyKeys)
+  }
+  return {
+    version: 1,
+    requests: record.requests.map(normalizeRequest),
+    ...(dependencyKeys.length === 0 ? {} : { dependencyKeys }),
+  }
 }
 
 function normalizeRequest(value: unknown): DurableMutationRequest {
@@ -819,10 +872,26 @@ function normalizeRequest(value: unknown): DurableMutationRequest {
 
 function normalizeOutboxKey(key: string): string {
   const normalized = key.trim()
-  if (normalized.length === 0 || normalized.length > 2_048) {
+  if (normalized.length === 0 || normalized.length > MAX_PENDING_MUTATION_KEY_LENGTH) {
     throw new TypeError('Pending mutation key is invalid')
   }
   return normalized
+}
+
+function normalizeDependencyKeys(value: readonly unknown[], enforceCount = true): string[] {
+  if (enforceCount && value.length > MAX_DURABLE_MUTATION_DEPENDENCY_KEYS) {
+    throw new RangeError('Pending mutation dependency key count is invalid')
+  }
+  return Array.from(
+    new Set(
+      value.map((dependencyKey) => {
+        if (typeof dependencyKey !== 'string') {
+          throw new TypeError('Pending mutation dependency key is invalid')
+        }
+        return normalizeOutboxKey(dependencyKey)
+      }),
+    ),
+  )
 }
 
 function normalizeScope(writerSessionId: string, writerEpoch: number, databaseLineage: string): PendingMutationScope {

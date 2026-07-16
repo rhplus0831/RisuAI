@@ -24,7 +24,15 @@ export async function replayPendingMutations(): Promise<PendingMutationReplaySum
   }
 
   for (const entry of entries) {
-    if (blockedKeys.has(entry.handle.key)) continue
+    if (
+      blockedKeys.has(entry.handle.key) ||
+      (entry.intent.dependencyKeys ?? []).some((dependencyKey) => blockedKeys.has(dependencyKey))
+    ) {
+      // Propagate the dependency failure into this mutation's own lane so its
+      // later successors cannot overtake the skipped correction.
+      blockedKeys.add(entry.handle.key)
+      continue
+    }
     summary.attempted += 1
     const outcome = await dispatchDurableMutationReplay(entry.handle, entry.intent)
     if (outcome.disposition === 'succeeded') {

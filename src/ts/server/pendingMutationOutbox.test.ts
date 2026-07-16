@@ -154,6 +154,7 @@ describe('pending mutation outbox', () => {
 
     await expect(listPendingMutationPredecessors(successor)).resolves.toEqual({
       status: 'ok',
+      semanticKeys: ['settings:runtime'],
       entries: [
         {
           handle: expect.objectContaining({
@@ -164,7 +165,68 @@ describe('pending mutation outbox', () => {
         },
       ],
     })
-    await expect(listPendingMutationPredecessors(unrelated)).resolves.toEqual({ status: 'ok', entries: [] })
+    await expect(listPendingMutationPredecessors(unrelated)).resolves.toEqual({
+      status: 'ok',
+      entries: [],
+      semanticKeys: ['settings:other'],
+    })
+  })
+
+  it('lists a transitive dependency closure without crossing the referring predecessor order', async () => {
+    const olderTargetB = stagePendingMutation('character-owner:char-b', settingsIntent('target-b-older'))
+    const selectB = stagePendingMutation('character-selection', {
+      ...settingsIntent('select-b'),
+      dependencyKeys: ['character-owner:char-b', 'character-selection'],
+    })
+    const newerTargetB = stagePendingMutation('character-owner:char-b', settingsIntent('target-b-newer'))
+    const targetC = stagePendingMutation('character-owner:char-c', settingsIntent('target-c'))
+    const selectC = stagePendingMutation('character-selection', {
+      ...settingsIntent('select-c'),
+      dependencyKeys: ['character-owner:char-c'],
+    })
+    await Promise.all([olderTargetB.ready, selectB.ready, newerTargetB.ready, targetC.ready, selectC.ready])
+
+    const predecessors = await listPendingMutationPredecessors(selectC)
+
+    expect(predecessors).toMatchObject({
+      status: 'ok',
+      semanticKeys: ['character-owner:char-b', 'character-owner:char-c', 'character-selection'],
+    })
+    if (predecessors.status !== 'ok') throw new Error('Expected a predecessor closure')
+    expect(predecessors.entries.map((entry) => entry.handle.mutationId)).toEqual([
+      olderTargetB.mutationId,
+      selectB.mutationId,
+      targetC.mutationId,
+    ])
+    expect(predecessors.entries.map((entry) => entry.handle.mutationId)).not.toContain(newerTargetB.mutationId)
+  })
+
+  it('normalizes bounded dependency keys and rejects near-malformed dependency metadata', async () => {
+    const normalized = stagePendingMutation('settings:runtime', {
+      ...settingsIntent('normalized'),
+      dependencyKeys: [' settings:bridge ', 'settings:bridge', 'settings:runtime'],
+    })
+    await normalized.ready
+    expect((await listPendingMutations())[0]?.intent.dependencyKeys).toEqual(['settings:bridge', 'settings:runtime'])
+
+    expect(() =>
+      stagePendingMutation('settings:runtime', {
+        ...settingsIntent('not-an-array'),
+        dependencyKeys: 'settings:bridge',
+      } as unknown as DurableMutationIntent),
+    ).toThrow('Pending mutation dependency keys must be an array')
+    expect(() =>
+      stagePendingMutation('settings:runtime', {
+        ...settingsIntent('too-many'),
+        dependencyKeys: Array.from({ length: 33 }, (_, index) => `dependency:${index}`),
+      }),
+    ).toThrow('Pending mutation dependency key count is invalid')
+    expect(() =>
+      stagePendingMutation('settings:runtime', {
+        ...settingsIntent('too-long'),
+        dependencyKeys: ['x'.repeat(2_049)],
+      }),
+    ).toThrow('Pending mutation key is invalid')
   })
 
   it('chains a slow predecessor persistence before atomically replacing it', async () => {
