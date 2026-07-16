@@ -55,6 +55,7 @@ import {
   restoreCharacterTrashTime,
   sanitizeCharacterPatch,
   setCharacterSupaMemory,
+  setCharacterInputTranslationHook,
   updateCharacterOrderFolder,
 } from './characterCommands'
 import { setCharacterByIndex, type Database, type folder } from './storage/database.svelte'
@@ -938,11 +939,9 @@ describe('character list create/delete rollback', () => {
       const commandCount = commands.length
       await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 0 })
       expect(commands).toHaveLength(commandCount)
-      // The unsent durable DELETE rolled its optimistic removal back while its
-      // profile predecessor was blocked. Raw startup replay updates the server;
-      // the following resource hydration, not the outbox helper itself, removes
-      // the restored local row.
-      expect(testDatabaseState.db.characters.some((character) => character.chaId === 'char-b')).toBe(true)
+      // The retained successor owns this optimistic deletion, so predecessor
+      // recovery must not resurrect the row before authoritative hydration.
+      expect(testDatabaseState.db.characters.some((character) => character.chaId === 'char-b')).toBe(false)
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -1016,8 +1015,17 @@ describe('character list create/delete rollback', () => {
     try {
       dispatchDeleteCharacter('char-trash', beforeDelete)
       await vi.waitFor(() => expect(commands.map(({ method }) => method)).toEqual(['DELETE']))
-      await vi.waitFor(() => {
-        expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a', 'char-trash'])
+      expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a'])
+
+      // Simulate an authoritative row refresh racing the retained DELETE. The
+      // restore PATCH must remain behind that predecessor and cannot send early.
+      withTrustedResourceWrite(() => {
+        testDatabaseState.db.characters.push({
+          chaId: 'char-trash',
+          name: 'Trashed',
+          chats: [],
+          trashTime: 123,
+        } as any)
       })
 
       const trashIndex = testDatabaseState.db.characters.findIndex((character) => character.chaId === 'char-trash')
@@ -1028,7 +1036,9 @@ describe('character list create/delete rollback', () => {
       dispatchUpdateCharacterScoped('char-trash', { trashTime: null }, beforeRestore)
 
       await vi.waitFor(() => expect(commands.map(({ method }) => method)).toEqual(['DELETE', 'DELETE']))
-      await vi.waitFor(() => expect(testDatabaseState.db.characters[trashIndex].trashTime).toBe(123))
+      // The retryable PATCH retains its optimistic projection while it waits
+      // for the retained DELETE predecessor to resolve.
+      expect(testDatabaseState.db.characters[trashIndex].trashTime).toBeNull()
       const retained = await listPendingMutations()
       expect(
         retained.map((entry) => ({
@@ -2147,6 +2157,160 @@ describe('character command projection helpers', () => {
 })
 
 describe('Phase 4 select supa memory flag patch (L34)', () => {
+  it('retains a transient supaMemory toggle for replay without duplicate sends', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-supa',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-character-supa',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    let recover = false
+    const patches: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/characters/char-a') {
+          patches.push(typeof init.body === 'string' ? JSON.parse(init.body) : {})
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'character.updated', revision: 11, resource: 'character', id: 'char-a' },
+            characterId: 'char-a',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(setCharacterSupaMemory('char-a', true)).resolves.toMatchObject({ status: 'error' })
+      expect(testDatabaseState.db.characters[0].supaMemory).toBe(true)
+      expect((await listPendingMutations()).map((entry) => entry.intent.requests[0])).toMatchObject([
+        {
+          method: 'PATCH',
+          path: '/characters/char-a',
+          body: { patch: { supaMemory: true } },
+        },
+      ])
+
+      expect(setCharacterSupaMemory('char-a', true)).toBeUndefined()
+      expect(patches).toHaveLength(1)
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      expect(patches).toHaveLength(2)
+      expect(patches.map((body) => body.patch)).toEqual([{ supaMemory: true }, { supaMemory: true }])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('fences an older terminal input-translation rollback behind a later toggle', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-input-translation',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-character-input-translation',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    testDatabaseState.db.characters[0].useInputTranslationHook = false
+    const firstResponse = deferredResponse()
+    const patches: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/characters/char-a') {
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          patches.push(body)
+          if (patches.length === 1) return firstResponse.promise
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'character.updated', revision: 11, resource: 'character', id: 'char-a' },
+            characterId: 'char-a',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const first = setCharacterInputTranslationHook('char-a', true)
+      const second = setCharacterInputTranslationHook('char-a', false)
+      await vi.waitFor(() => expect(patches).toHaveLength(1))
+      firstResponse.resolve(jsonResponse({ error: 'invalid translation toggle' }, 400))
+
+      await expect(first).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
+      await expect(second).resolves.toMatchObject({ status: 'ok' })
+      expect(testDatabaseState.db.characters[0].useInputTranslationHook).toBe(false)
+      expect(patches.map((body) => body.patch)).toEqual([
+        { useInputTranslationHook: true },
+        { useInputTranslationHook: false },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('rebases a later input-translation rollback when both queued toggles fail terminally', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-input-translation-chain',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-character-input-translation-chain',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    testDatabaseState.db.characters[0].useInputTranslationHook = false
+    const firstResponse = deferredResponse()
+    const patches: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/characters/char-a') {
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          patches.push(body)
+          if (patches.length === 1) return firstResponse.promise
+          return jsonResponse({ error: 'second toggle rejected' }, 400)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const first = setCharacterInputTranslationHook('char-a', true)
+      const second = setCharacterInputTranslationHook('char-a', false)
+      await vi.waitFor(() => expect(patches).toHaveLength(1))
+      firstResponse.resolve(jsonResponse({ error: 'first toggle rejected' }, 400))
+
+      await expect(first).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
+      await expect(second).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
+      expect(testDatabaseState.db.characters[0].useInputTranslationHook).toBe(false)
+      expect(patches.map((body) => body.patch)).toEqual([
+        { useInputTranslationHook: true },
+        { useInputTranslationHook: false },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('L34: supaMemory snapshots are scalar and restore only the target flag', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(1)
@@ -2833,6 +2997,60 @@ describe('Phase 3 kept-key character diff (M13)', () => {
 })
 
 describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
+  it('retains a transient soft-delete projection and replays its exact timestamp once', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-trash',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-character-trash',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    let recover = false
+    const patches: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/characters/char-a') {
+          patches.push(typeof init.body === 'string' ? JSON.parse(init.body) : {})
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'character.updated', revision: 11, resource: 'character', id: 'char-a' },
+            characterId: 'char-a',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    testDatabaseState.db.characterOrder = ['char-a']
+    ;(testDatabaseState.db as unknown as { currentChar?: number }).currentChar = 0
+    selectedCharID.set(0)
+
+    try {
+      await withMockedNow(654321, () => removeChar(0, 'Character', 'normal'))
+      await vi.waitFor(() => expect(patches).toHaveLength(1))
+
+      expect(testDatabaseState.db.characters[0].trashTime).toBe(654321)
+      expect(testDatabaseState.db.characterOrder).toEqual([])
+      expect((await listPendingMutations()).map((entry) => entry.intent.requests[0].body)).toEqual([
+        { patch: { trashTime: 654321 } },
+      ])
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      expect(patches).toHaveLength(2)
+      expect(patches.map((body) => body.patch)).toEqual([{ trashTime: 654321 }, { trashTime: 654321 }])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('ignores repeated removal attempts while the same character confirmation is pending', async () => {
     const calls = stubCommandFetch()
     testDatabaseState.db = {

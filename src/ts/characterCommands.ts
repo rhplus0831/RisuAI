@@ -129,6 +129,8 @@ export interface CharacterOrderNormalizationResult {
 const CHARACTER_ORDER_FOLDER_METADATA_KEYS: CharacterOrderFolderMetadataKey[] = ['name', 'color', 'imgFile', 'img']
 const MAX_CHARACTER_ORDER_DEPENDENCY_KEYS = 32
 let characterOrderProjectionGeneration = 0
+const CHARACTER_FIELD_ROLLBACK_FENCE_FIELDS = new Set(['trashTime', 'supaMemory', 'useInputTranslationHook'])
+const currentCharacterFieldMutationAttempts = new Map<string, CharacterFieldMutationFieldAttempt>()
 
 export interface CompatibleCharacterUpdatePreparation {
   characterId?: string
@@ -828,26 +830,91 @@ function dispatchUpdateCharacterWith(
   )
 }
 
-export function dispatchUpdateCharacter(
-  characterId: string,
-  patch: CharacterSnapshot,
-  previous: CharacterStateSnapshot,
-  rollback: (snapshot: CharacterStateSnapshot) => void = restoreCharacterState,
-  options: ServerCommandTransportOptions = {},
-): Promise<ServerCommandResult> | undefined {
-  return dispatchUpdateCharacterWith(characterId, patch, () => rollback(previous), options)
+interface CharacterFieldMutationBaseline {
+  hadValue: boolean
+  value: unknown
 }
 
-// Single-row rollback variant of `dispatchUpdateCharacter` for character-FIELD
-// edits: a failed update restores only the target character row (and the
-// selection scalars), never the whole characters array.
-export function dispatchUpdateCharacterScoped(
+interface CharacterFieldMutationFieldAttempt {
+  attemptedValue: unknown
+  previous: CharacterFieldMutationBaseline
+  successor?: CharacterFieldMutationFieldAttempt
+}
+
+interface CharacterFieldMutationAttempt {
+  fields: ReadonlyMap<string, CharacterFieldMutationFieldAttempt>
+}
+
+function characterFieldMutationKey(characterId: string, field: string): string {
+  return `${characterId}\u0000${field}`
+}
+
+function captureCharacterFieldMutationAttempt(
   characterId: string,
   patch: CharacterSnapshot,
-  previous: CharacterRowSnapshot,
-): void {
+  previousFields: ReadonlyMap<string, CharacterFieldMutationBaseline>,
+): CharacterFieldMutationAttempt {
+  const fields = new Map<string, CharacterFieldMutationFieldAttempt>()
+  for (const field of Object.keys(patch)) {
+    if (!CHARACTER_FIELD_ROLLBACK_FENCE_FIELDS.has(field)) continue
+    const previous = previousFields.get(field)
+    if (!previous) continue
+    const key = characterFieldMutationKey(characterId, field)
+    const fieldAttempt: CharacterFieldMutationFieldAttempt = {
+      attemptedValue: patch[field],
+      previous: { ...previous },
+    }
+    const predecessor = currentCharacterFieldMutationAttempts.get(key)
+    if (predecessor) predecessor.successor = fieldAttempt
+    currentCharacterFieldMutationAttempts.set(key, fieldAttempt)
+    fields.set(field, fieldAttempt)
+  }
+  return { fields }
+}
+
+function rebaseImmediateCharacterFieldMutationSuccessors(attempt: CharacterFieldMutationAttempt): void {
+  for (const fieldAttempt of attempt.fields.values()) {
+    const successor = fieldAttempt.successor
+    if (!successor?.previous.hadValue) continue
+    if (!Object.is(successor.previous.value, fieldAttempt.attemptedValue)) continue
+    successor.previous = { ...fieldAttempt.previous }
+  }
+}
+
+function characterFieldMutationBaseline(
+  attempt: CharacterFieldMutationAttempt,
+  field: string,
+  fallback: CharacterFieldMutationBaseline,
+): CharacterFieldMutationBaseline {
+  return attempt.fields.get(field)?.previous ?? fallback
+}
+
+function isCharacterFieldMutationAttemptCurrent(
+  characterId: string,
+  field: string,
+  attemptedValue: unknown,
+  attempt: CharacterFieldMutationAttempt,
+): boolean {
+  const fieldAttempt = attempt.fields.get(field)
+  if (
+    !fieldAttempt ||
+    currentCharacterFieldMutationAttempts.get(characterFieldMutationKey(characterId, field)) !== fieldAttempt
+  ) {
+    return false
+  }
+  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+  return !!character && Object.is((character as unknown as Record<string, unknown>)[field], attemptedValue)
+}
+
+function dispatchDurableCharacterPatch(
+  characterId: string,
+  patch: CharacterSnapshot,
+  previousFields: ReadonlyMap<string, CharacterFieldMutationBaseline>,
+  rollback: (attempt: CharacterFieldMutationAttempt) => void,
+): Promise<ServerCommandResult> | undefined {
   const attempted = sanitizeCharacterPatch(patch)
   if (Object.keys(attempted).length === 0) return
+  const attempt = captureCharacterFieldMutationAttempt(characterId, attempted, previousFields)
   const intent: DurableMutationIntent = {
     version: 1,
     dependencyKeys: [CHARACTER_SELECTION_MUTATION_KEY],
@@ -860,16 +927,80 @@ export function dispatchUpdateCharacterScoped(
     ],
   }
   const outbox = stagePendingMutation(characterOwnerMutationKey(characterId), intent)
-  void dispatchDurableMutation(
+  return dispatchDurableMutation(
     outbox,
     intent,
     (transport) =>
       dispatchUpdateCharacterWith(
         characterId,
         attempted,
-        () => restoreCharacterRow({ ...previous, attempted }),
+        () => {
+          rebaseImmediateCharacterFieldMutationSuccessors(attempt)
+          rollback(attempt)
+        },
         transport,
       ) ?? Promise.resolve({ status: 'unavailable' as const }),
+  )
+}
+
+export function dispatchUpdateCharacter(
+  characterId: string,
+  patch: CharacterSnapshot,
+  previous: CharacterStateSnapshot,
+  rollback: (snapshot: CharacterStateSnapshot) => void = restoreCharacterState,
+  options: ServerCommandTransportOptions = {},
+): Promise<ServerCommandResult> | undefined {
+  return dispatchUpdateCharacterWith(characterId, patch, () => rollback(previous), options)
+}
+
+function characterRowMutationBaselines(
+  previous: CharacterRowSnapshot,
+  patch: CharacterSnapshot,
+): ReadonlyMap<string, CharacterFieldMutationBaseline> {
+  const baselines = new Map<string, CharacterFieldMutationBaseline>()
+  const character = previous.character as unknown as Record<string, unknown> | undefined
+  for (const field of Object.keys(patch)) {
+    if (!CHARACTER_FIELD_ROLLBACK_FENCE_FIELDS.has(field)) continue
+    baselines.set(field, {
+      hadValue: !!character && Object.prototype.hasOwnProperty.call(character, field),
+      value: character?.[field],
+    })
+  }
+  return baselines
+}
+
+function rebasedCharacterRowSnapshot(
+  previous: CharacterRowSnapshot,
+  attempted: CharacterSnapshot,
+  attempt: CharacterFieldMutationAttempt,
+): CharacterRowSnapshot {
+  if (!previous.character || attempt.fields.size === 0) return { ...previous, attempted }
+  const character = { ...previous.character } as unknown as Record<string, unknown>
+  for (const [field, fieldAttempt] of attempt.fields) {
+    if (fieldAttempt.previous.hadValue) {
+      character[field] = fieldAttempt.previous.value
+    } else {
+      delete character[field]
+    }
+  }
+  return { ...previous, character: character as unknown as character, attempted }
+}
+
+// Single-row rollback variant of `dispatchUpdateCharacter` for character-FIELD
+// edits: a failed update restores only the target character row (and the
+// selection scalars), never the whole characters array.
+export function dispatchUpdateCharacterScoped(
+  characterId: string,
+  patch: CharacterSnapshot,
+  previous: CharacterRowSnapshot,
+): void {
+  const attempted = sanitizeCharacterPatch(patch)
+  if (Object.keys(attempted).length === 0) return
+  void dispatchDurableCharacterPatch(
+    characterId,
+    attempted,
+    characterRowMutationBaselines(previous, attempted),
+    (attempt) => restoreCharacterRow(rebasedCharacterRowSnapshot(previous, attempted, attempt)),
   )
 }
 
@@ -877,25 +1008,63 @@ export function dispatchUpdateCharacterTrashTime(
   characterId: string,
   trashTime: number,
   previous: CharacterTrashTimeSnapshot,
-): void {
-  dispatchUpdateCharacterWith(characterId, { trashTime }, () => restoreCharacterTrashTime(previous))
+): Promise<ServerCommandResult> | undefined {
+  const baseline = { hadValue: previous.hadTrashTime, value: previous.trashTime }
+  return dispatchDurableCharacterPatch(characterId, { trashTime }, new Map([['trashTime', baseline]]), (attempt) => {
+    if (!isCharacterFieldMutationAttemptCurrent(characterId, 'trashTime', trashTime, attempt)) return
+    const rebased = characterFieldMutationBaseline(attempt, 'trashTime', baseline)
+    restoreCharacterTrashTime({
+      ...previous,
+      hadTrashTime: rebased.hadValue,
+      trashTime: rebased.value as number | null | undefined,
+    })
+  })
 }
 
 export function dispatchUpdateCharacterSupaMemory(
   characterId: string,
   enabled: boolean,
   previous: CharacterSupaMemorySnapshot,
-): void {
-  dispatchUpdateCharacterWith(characterId, { supaMemory: enabled }, () => restoreCharacterSupaMemory(previous))
+): Promise<ServerCommandResult> | undefined {
+  const baseline = { hadValue: previous.hadSupaMemory, value: previous.supaMemory }
+  return dispatchDurableCharacterPatch(
+    characterId,
+    { supaMemory: enabled },
+    new Map([['supaMemory', baseline]]),
+    (attempt) => {
+      if (!isCharacterFieldMutationAttemptCurrent(characterId, 'supaMemory', enabled, attempt)) return
+      const rebased = characterFieldMutationBaseline(attempt, 'supaMemory', baseline)
+      restoreCharacterSupaMemory({
+        ...previous,
+        hadSupaMemory: rebased.hadValue,
+        supaMemory: rebased.value as boolean | undefined,
+      })
+    },
+  )
 }
 
 export function dispatchUpdateCharacterInputTranslationHook(
   characterId: string,
   enabled: boolean,
   previous: CharacterInputTranslationHookSnapshot,
-): void {
-  dispatchUpdateCharacterWith(characterId, { useInputTranslationHook: enabled }, () =>
-    restoreCharacterInputTranslationHook(previous),
+): Promise<ServerCommandResult> | undefined {
+  const baseline = {
+    hadValue: previous.hadUseInputTranslationHook,
+    value: previous.useInputTranslationHook,
+  }
+  return dispatchDurableCharacterPatch(
+    characterId,
+    { useInputTranslationHook: enabled },
+    new Map([['useInputTranslationHook', baseline]]),
+    (attempt) => {
+      if (!isCharacterFieldMutationAttemptCurrent(characterId, 'useInputTranslationHook', enabled, attempt)) return
+      const rebased = characterFieldMutationBaseline(attempt, 'useInputTranslationHook', baseline)
+      restoreCharacterInputTranslationHook({
+        ...previous,
+        hadUseInputTranslationHook: rebased.hadValue,
+        useInputTranslationHook: rebased.value as boolean | undefined,
+      })
+    },
   )
 }
 
@@ -1724,30 +1893,36 @@ function characterOrderEquals(
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
-export function setCharacterSupaMemory(characterId: string, enabled: boolean): void {
+export function setCharacterSupaMemory(
+  characterId: string,
+  enabled: boolean,
+): Promise<ServerCommandResult> | undefined {
   if (!characterId) return
-  withTrustedResourceWrite(() => {
+  return withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!character || Boolean(character.supaMemory) === enabled) return
 
     const previous = canUseServerCommands() ? currentCharacterSupaMemorySnapshot(characterId) : null
     character.supaMemory = enabled
     if (previous) {
-      dispatchUpdateCharacterSupaMemory(characterId, enabled, previous)
+      return dispatchUpdateCharacterSupaMemory(characterId, enabled, previous)
     }
   })
 }
 
-export function setCharacterInputTranslationHook(characterId: string, enabled: boolean): void {
+export function setCharacterInputTranslationHook(
+  characterId: string,
+  enabled: boolean,
+): Promise<ServerCommandResult> | undefined {
   if (!characterId) return
-  withTrustedResourceWrite(() => {
+  return withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!character || Boolean(character.useInputTranslationHook) === enabled) return
 
     const previous = canUseServerCommands() ? currentCharacterInputTranslationHookSnapshot(characterId) : null
     character.useInputTranslationHook = enabled
     if (previous) {
-      dispatchUpdateCharacterInputTranslationHook(characterId, enabled, previous)
+      return dispatchUpdateCharacterInputTranslationHook(characterId, enabled, previous)
     }
   })
 }
