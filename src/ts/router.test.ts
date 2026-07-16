@@ -406,6 +406,39 @@ describe('router character route freshness', () => {
     expect(router.hasPendingRouteApplication()).toBe(false)
   })
 
+  it('canonicalizes a missing chat to the bare selected character route', async () => {
+    const router = await importRouterAt('/character/char-a/missing-chat')
+    const stores = await import('./stores.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+        },
+      ],
+    } as any)
+    stores.selectedCharID.set(0)
+    routerMocks.findCharacterIndexbyId.mockReturnValue(0)
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(routerMocks.changeChar).not.toHaveBeenCalled()
+    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe('/character/char-a')
+    expect(get(router.currentRoute)).toEqual({
+      kind: 'character',
+      path: '/character/char-a',
+      chaId: 'char-a',
+      chatId: undefined,
+    })
+    expect(get(stores.selectedCharID)).toBe(0)
+    expect(router.isApplyingRouteToStores()).toBe(false)
+    expect(router.hasPendingRouteApplication()).toBe(false)
+  })
+
   it('does not let a stale character route clear a newer pending character route', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const stores = await import('./stores.svelte')

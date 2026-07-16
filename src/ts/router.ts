@@ -424,7 +424,13 @@ async function openCharacterRoute(
   if (!chatId) return
   const character = getDatabase().characters?.[liveIndex]
   const chatIndex = character?.chats?.findIndex((chat) => chat.id === chatId) ?? -1
-  if (!character || chatIndex < 0 || character.chatPage === chatIndex) return
+  if (!character) return
+  if (chatIndex < 0) {
+    if (!isFreshCharacterRoute()) return
+    commitPath(characterRoutePath(characterId), { replace: true, stateDriven: true })
+    return
+  }
+  if (character.chatPage === chatIndex) return
   if (!isFreshCharacterRoute()) return
   changeChatTo(chatId)
 }
