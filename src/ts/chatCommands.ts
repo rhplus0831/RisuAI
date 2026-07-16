@@ -157,9 +157,17 @@ function freezeJsonValue<T>(value: T): T {
 }
 
 type DurableChatRequestBody = Record<string, unknown>
+const ownedDurableChatRequestBodies = new WeakSet<object>()
 
 function freezeDurableChatRequestBody<T extends DurableChatRequestBody>(body: T): T {
-  return freezeJsonValue(cloneJsonValue(body))
+  if (ownedDurableChatRequestBodies.has(body)) return body
+  return freezeOwnedDurableChatRequestBody(cloneJsonValue(body))
+}
+
+function freezeOwnedDurableChatRequestBody<T extends DurableChatRequestBody>(body: T): T {
+  const frozen = freezeJsonValue(body)
+  ownedDurableChatRequestBodies.add(frozen)
+  return frozen
 }
 
 function durableChatMutationIntent(
@@ -194,6 +202,8 @@ export interface CharacterOwnedDurableBatchStep {
   method: DurableMutationRequestMethod
   path: string
   body: DurableChatRequestBody
+  /** The caller built this body entirely from detached snapshots or fresh scalar values. */
+  bodyIsOwned?: boolean
   dependencyKeys?: string[]
   projectionTargets?: string[]
   command: (baseRevision: number, frozenBody: Readonly<DurableChatRequestBody>) => Promise<ServerCommandResult>
@@ -235,7 +245,9 @@ export async function dispatchOwnedDurableBatch(
   if (steps.length === 0 || !canUseServerCommands()) return { status: 'ok', acceptedCount: 0 }
 
   const definitions = steps.map((step) => {
-    const body = freezeDurableChatRequestBody(step.body)
+    const body = step.bodyIsOwned
+      ? freezeOwnedDurableChatRequestBody(step.body)
+      : freezeDurableChatRequestBody(step.body)
     const intent: DurableMutationIntent = {
       version: 1,
       requests: [{ method: step.method, path: step.path, body }],
@@ -4017,7 +4029,7 @@ export function dispatchAppendMessage(chatId: string, message: Message, previous
   ensureMessageId(message)
   const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
   const characterId = characterIdForChatInState(previous, chatId)
-  const body = freezeDurableChatRequestBody({ message: toMessageSnapshot(message) })
+  const body = freezeOwnedDurableChatRequestBody({ message: toMessageSnapshot(message) })
   const intent = durableChatMutationIntent('POST', `/chats/${encodeURIComponent(chatId)}/messages`, body)
   void dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
     runServerCommand({
@@ -4151,7 +4163,7 @@ export async function appendCurrentChatUserMessageForSend(
       messageId,
     })
   const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
-  const body = freezeDurableChatRequestBody({ message: toMessageSnapshot(message) })
+  const body = freezeOwnedDurableChatRequestBody({ message: toMessageSnapshot(message) })
   const intent = durableChatMutationIntent('POST', `/chats/${encodeURIComponent(chatId)}/messages`, body)
 
   const outcome = await dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) =>

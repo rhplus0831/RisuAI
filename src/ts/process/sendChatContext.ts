@@ -221,6 +221,7 @@ export function setupSendChatContext(args: {
           method: 'PATCH',
           path: `/characters/${encodeURIComponent(pathCharacterId)}`,
           body: { patch: { lastInteraction } },
+          bodyIsOwned: true,
           command: (baseRevision, frozenBody) =>
             updateCharacterCommand({
               baseRevision,
@@ -244,6 +245,7 @@ export function setupSendChatContext(args: {
             afterMessageId: backfillTail.afterMessageId,
             messages: selectedChatRecord.message.slice(backfillTail.startIndex).map(toMessageSnapshot),
           },
+          bodyIsOwned: true,
           command: (baseRevision, frozenBody) =>
             replaceTailMessagesCommand({
               baseRevision,

@@ -1231,7 +1231,40 @@ function normalizeRequest(value: unknown): DurableMutationRequest {
   return {
     method,
     path: request.path,
-    body: cloneJsonValue(request.body),
+    body: isImmutableJsonSnapshot(request.body) ? request.body : cloneJsonValue(request.body),
+  }
+}
+
+function isImmutableJsonSnapshot(value: unknown, ancestors = new Set<object>()): boolean {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
+  if (typeof value === 'number') return Number.isFinite(value) && !Object.is(value, -0)
+  if (!value || typeof value !== 'object' || !Object.isFrozen(value) || ancestors.has(value)) return false
+
+  ancestors.add(value)
+  try {
+    if (Array.isArray(value)) {
+      const keys = Object.keys(value)
+      const ownKeys = Reflect.ownKeys(value)
+      if (keys.length !== value.length || ownKeys.length !== value.length + 1 || !ownKeys.includes('length')) {
+        return false
+      }
+      for (let index = 0; index < value.length; index += 1) {
+        if (keys[index] !== String(index)) return false
+      }
+      return value.every((entry) => isImmutableJsonSnapshot(entry, ancestors))
+    }
+
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) return false
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== 'string') return false
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)
+      if (!descriptor?.enumerable || !('value' in descriptor)) return false
+      if (!isImmutableJsonSnapshot(descriptor.value, ancestors)) return false
+    }
+    return true
+  } finally {
+    ancestors.delete(value)
   }
 }
 
