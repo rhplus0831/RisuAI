@@ -58,7 +58,7 @@ export function installFastifyBrowserSmokeHook() {
       }),
     refreshActiveChatMessages: () => hydrateActiveChatFully({ force: true }),
     swipeRerollBack: () => unReroll(),
-    swipeRerollForward: () => reroll({ sendChatMain: async () => {}, closeMenu: () => {} }),
+    swipeRerollForward: () => reroll({ sendChatMain: async () => true, closeMenu: () => {} }),
     showAlert: (message) => alertNormal(message),
   }
 }

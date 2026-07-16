@@ -1053,14 +1053,14 @@
     confirmBoundary: boolean = false,
     composerOperation?: ComposerOperation,
     expectedTarget?: ActiveChatTarget | null,
-  ) {
+  ): Promise<boolean> {
     if (expectedTarget !== undefined && !isActiveChatTargetFresh(expectedTarget)) {
-      return
+      return false
     }
     const currentCharacter = getDatabase().characters[$selectedCharID]
     const currentChatRecord = currentCharacter?.chats[currentCharacter.chatPage]
     if (!currentChatRecord) {
-      return
+      return false
     }
     let previousLength = currentChatRecord.message.length
     if (!continued) {
@@ -1076,7 +1076,7 @@
         ...(expectedTarget !== undefined ? { expectedTarget } : {}),
       })
       if (expectedTarget !== undefined && !isActiveChatTargetFresh(expectedTarget)) {
-        return
+        return false
       }
       if (
         !applySuccessfulSendChatEffects(
@@ -1089,11 +1089,13 @@
           },
         )
       ) {
-        return
+        return false
       }
+      return true
     } catch (error) {
       console.error(error)
       alertError(error)
+      return false
     } finally {
       clearActiveGenerationAbortController(abortController)
     }

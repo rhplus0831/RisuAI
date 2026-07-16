@@ -33,7 +33,7 @@ const rerollOperationGuard = createLatestOperationGuard<string>()
 
 export interface RerollDeps {
   /** The component's send wrapper (owns the AbortController + send sound). */
-  sendChatMain: (continued: boolean, regenerateMessageId?: string) => Promise<void>
+  sendChatMain: (continued: boolean, regenerateMessageId?: string) => Promise<boolean>
   /** Close the chat input menu (component UI state). */
   closeMenu: () => void
 }
@@ -46,6 +46,16 @@ export interface RerollCandidate {
 
 type RerollOperation = {
   token: ReturnType<typeof rerollOperationGuard.issue>
+}
+
+type RerollRecovery = {
+  selectedCharID: number
+  characterId: string | undefined
+  chatPage: number
+  chatId: string | undefined
+  keepLength: number
+  afterMessageId: string | null
+  removedTail: Message[]
 }
 
 function activeChatRecord(): Chat {
@@ -178,22 +188,89 @@ function applyTailSlice(slice: Message[], operation: RerollOperation): boolean {
  * proxies. The dispatch sends only the last retained message id, so the persisted
  * payload stays bounded to the truncate point.
  */
-async function applyRerollTruncate(keepLength: number, operation: RerollOperation): Promise<boolean> {
-  if (!isCurrentRerollOperation(operation)) return false
+async function applyRerollTruncate(keepLength: number, operation: RerollOperation): Promise<RerollRecovery | null> {
+  if (!isCurrentRerollOperation(operation)) return null
   const previous = currentChatScopedSnapshot()
+  const character = getDatabase().characters[get(selectedCharID)]
+  const record = character.chats[character.chatPage]
+  const recovery: RerollRecovery = {
+    selectedCharID: get(selectedCharID),
+    characterId: character.chaId,
+    chatPage: character.chatPage,
+    chatId: record.id,
+    keepLength,
+    afterMessageId: null,
+    removedTail: safeStructuredClone((previous.chat?.message ?? record.message).slice(keepLength)),
+  }
   const afterMessageId = withTrustedResourceWrite(() => {
     const msgs = activeChatRecord().message
     msgs.length = keepLength
     return msgs.length > 0 ? ensureMessageId(msgs[msgs.length - 1]) : null
   })
-  const record = activeChatRecord()
-  if (record.id) {
-    const result = await dispatchTruncateMessagesScoped(record.id, afterMessageId, previous, {
+  recovery.afterMessageId = afterMessageId
+  if (afterMessageId && previous.chat?.message[keepLength - 1] && !previous.chat.message[keepLength - 1].chatId) {
+    previous.chat.message[keepLength - 1].chatId = afterMessageId
+  }
+  if (recovery.chatId) {
+    const result = await dispatchTruncateMessagesScoped(recovery.chatId, afterMessageId, previous, {
       preserveRemovedAsAlternates: true,
     })
-    return result === null || result.status === 'ok' || result.status === 'unavailable'
+    return result === null || result.status === 'ok' || result.status === 'unavailable' ? recovery : null
   }
-  return true
+  return recovery
+}
+
+function locateRerollRecoveryChat(recovery: RerollRecovery): Chat | undefined {
+  const character = recovery.characterId
+    ? getDatabase().characters?.find((candidate) => candidate.chaId === recovery.characterId)
+    : getDatabase().characters?.[recovery.selectedCharID]
+  if (!character) return undefined
+  return recovery.chatId
+    ? character.chats?.find((candidate) => candidate.id === recovery.chatId)
+    : character.chats?.[recovery.chatPage]
+}
+
+function messageListsMatch(left: readonly Message[], right: readonly Message[]): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+/** Restore the displaced assistant tail when regenerate never produces a replacement. */
+function restoreFailedReroll(recovery: RerollRecovery): void {
+  const record = locateRerollRecoveryChat(recovery)
+  if (!record) return
+
+  const removedTail = recovery.removedTail
+  const liveMessages = record.message ?? []
+  if (removedTail.length === 0) return
+  const liveKeepLength =
+    recovery.afterMessageId === null
+      ? 0
+      : liveMessages.findIndex((message) => message.chatId === recovery.afterMessageId) + 1
+  if (recovery.afterMessageId !== null && liveKeepLength === 0) return
+  if (messageListsMatch(liveMessages.slice(liveKeepLength), removedTail)) return
+  // A failed regenerate may leave an assistant placeholder/partial after the
+  // anchor, but must never erase a user row appended by another client.
+  if (liveMessages.slice(liveKeepLength).some((message) => message.role === 'user')) return
+
+  const previous = {
+    selectedCharID: recovery.selectedCharID,
+    characterId: recovery.characterId,
+    chatId: recovery.chatId,
+    chat: safeStructuredClone(record),
+  }
+  withTrustedResourceWrite(() => {
+    const liveRecord = locateRerollRecoveryChat(recovery)
+    if (!liveRecord) return
+    liveRecord.message = liveRecord.message.slice(0, liveKeepLength).concat(safeStructuredClone(removedTail))
+  })
+  if (recovery.chatId) {
+    dispatchReplaceTailMessagesScoped(
+      recovery.chatId,
+      recovery.afterMessageId,
+      safeStructuredClone(removedTail),
+      previous,
+    )
+  }
 }
 
 async function regenerateFromCurrentTail(deps: RerollDeps, operation: RerollOperation): Promise<void> {
@@ -230,11 +307,23 @@ async function regenerateFromCurrentTail(deps: RerollDeps, operation: RerollOper
       return
     }
   }
-  const truncatePersisted = await applyRerollTruncate(cha.length, operation)
-  if (!truncatePersisted || !isCurrentRerollOperation(operation)) {
+  const recovery = await applyRerollTruncate(cha.length, operation)
+  if (!recovery) {
     return
   }
-  await deps.sendChatMain(false, regenerateMessageId)
+  if (!isCurrentRerollOperation(operation)) {
+    // A newer operation in this same chat owns the tail now. A navigation to a
+    // different chat has no such owner, so repair the original chat by id.
+    if (currentRerollScopeTarget() !== operation.token.target) restoreFailedReroll(recovery)
+    return
+  }
+
+  let generated = false
+  try {
+    generated = await deps.sendChatMain(false, regenerateMessageId)
+  } finally {
+    if (!generated) restoreFailedReroll(recovery)
+  }
 }
 
 function applyNextPrefetchedReroll(operation: RerollOperation): boolean {
