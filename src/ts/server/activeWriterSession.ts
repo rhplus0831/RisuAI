@@ -5,7 +5,7 @@ const ACTIVE_WRITER_SESSION_STORAGE_KEY = 'risu:active-writer-session-id'
 const ACTIVE_WRITER_SESSION_ID_MAX_LENGTH = 128
 
 let activeWriterSessionId: string | null = null
-let staleSessionReloadScheduled = false
+let serverStateReloadScheduled = false
 
 export function getActiveWriterSessionId(): string {
   activeWriterSessionId ??= readStoredActiveWriterSessionId() ?? createSessionId()
@@ -39,7 +39,16 @@ export function handleActiveWriterStaleResponse(response: Response): boolean {
 }
 
 export function scheduleServerOwnershipReload(): void {
-  scheduleStaleSessionReload()
+  scheduleServerStateReload('stale-session')
+}
+
+/**
+ * A terminally rejected durable predecessor no longer has its original live
+ * rollback closure. Reload so startup can replay every surviving successor
+ * before authoritative resources replace the optimistic projection.
+ */
+export function schedulePendingMutationRecoveryReload(): void {
+  scheduleServerStateReload('pending-mutation')
 }
 
 function createSessionId(): string {
@@ -70,15 +79,19 @@ function isUsableActiveWriterSessionId(sessionId: string): boolean {
 }
 
 function scheduleStaleSessionReload(): void {
-  if (staleSessionReloadScheduled) return
-  staleSessionReloadScheduled = true
-  void notifyStaleSession()
+  scheduleServerStateReload('stale-session')
+}
+
+function scheduleServerStateReload(reason: 'pending-mutation' | 'stale-session'): void {
+  if (serverStateReloadScheduled) return
+  serverStateReloadScheduled = true
+  void notifyServerStateReload(reason)
   globalThis.setTimeout(() => {
     globalThis.location?.reload()
   }, 100)
 }
 
-async function notifyStaleSession(): Promise<void> {
+async function notifyServerStateReload(reason: 'pending-mutation' | 'stale-session'): Promise<void> {
   const [{ language }, { alertError }] = await Promise.all([import('../../lang'), import('../alert')])
-  alertError(language.reloadSession)
+  alertError(reason === 'pending-mutation' ? language.pendingMutationRecoveryReload : language.reloadSession)
 }

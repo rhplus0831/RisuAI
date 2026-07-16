@@ -10,6 +10,7 @@ import {
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './commands'
+import { schedulePendingMutationRecoveryReload } from './activeWriterSession'
 import {
   beginPendingMutationDispatch,
   completePendingMutation,
@@ -302,6 +303,14 @@ async function drainPendingMutationPredecessors(handle: PendingMutationHandle): 
         if (result.status === 'error' && shouldDiscardDurableMutation(result.reason)) {
           const discarded = await discardPendingMutation(predecessor.handle)
           if (discarded !== 'deleted' && discarded !== 'superseded') return false
+          if (discarded === 'deleted') {
+            // The request was rejected and the durable row is gone, but this
+            // page no longer owns the predecessor's optimistic rollback. Stop
+            // the successor and let startup replay it before hydrating the
+            // authoritative state that removes the rejected projection.
+            schedulePendingMutationRecoveryReload()
+            return false
+          }
           // A malformed/orphaned predecessor says nothing about a later exact
           // body. Ownership and lineage failures do, so they still stop here.
           return result.reason === 'mutation-id-conflict' || isTerminalRequestRejection(result.reason)

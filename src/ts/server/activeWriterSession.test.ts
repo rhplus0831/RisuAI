@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const STORAGE_KEY = 'risu:active-writer-session-id'
+const reloadNotice = vi.hoisted(() => ({ alertError: vi.fn() }))
+
+vi.mock('../alert', () => ({ alertError: reloadNotice.alertError }))
+vi.mock('../../lang', () => ({
+  language: {
+    pendingMutationRecoveryReload: 'pending mutation recovery',
+    reloadSession: 'stale writer recovery',
+  },
+}))
 
 function stubSessionStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial))
@@ -26,8 +35,10 @@ async function importActiveWriterSession() {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.resetModules()
+  reloadNotice.alertError.mockReset()
 })
 
 describe('active writer browser session', () => {
@@ -69,5 +80,20 @@ describe('active writer browser session', () => {
     const activeWriterSession = await importActiveWriterSession()
 
     expect(activeWriterSession.getActiveWriterSessionId()).toBe('storage-blocked-writer')
+  })
+
+  it('notifies once and reloads when a terminal durable predecessor loses its rollback', async () => {
+    vi.useFakeTimers()
+    const reload = vi.fn()
+    vi.stubGlobal('location', { reload })
+    const activeWriterSession = await importActiveWriterSession()
+
+    activeWriterSession.schedulePendingMutationRecoveryReload()
+    activeWriterSession.scheduleServerOwnershipReload()
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(reloadNotice.alertError).toHaveBeenCalledOnce()
+    expect(reloadNotice.alertError).toHaveBeenCalledWith('pending mutation recovery')
+    expect(reload).toHaveBeenCalledOnce()
   })
 })

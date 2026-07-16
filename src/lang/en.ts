@@ -1479,6 +1479,8 @@ export const languageEnglish = {
   strictJsonSchema: 'Strict Schema',
   extractJson: 'Extract JSON',
   reloadSession: 'Newer version of save data is found. Reloading the session...',
+  pendingMutationRecoveryReload:
+    'A queued change could not be applied safely. Reloading to restore the latest server state...',
   pendingMutationReplayRetained:
     'Some pending changes still could not reach the server. They remain saved on this device and must be retried before the app can load.',
   pendingMutationDiscarded:

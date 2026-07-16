@@ -8,6 +8,7 @@ const commandApi = vi.hoisted(() => ({
   withoutReceipt: vi.fn(<T>(execute: () => Promise<T>) => execute()),
   withReceipt: vi.fn(<T>(execute: () => Promise<T>) => execute()),
 }))
+const recoveryApi = vi.hoisted(() => ({ scheduleReload: vi.fn() }))
 
 vi.mock('./commands', () => ({
   acknowledgeServerMutationReceipts: commandApi.acknowledge,
@@ -15,6 +16,9 @@ vi.mock('./commands', () => ({
   replayDurableMutationRequests: commandApi.replay,
   runServerCommandWithoutMutationReceipt: commandApi.withoutReceipt,
   runServerCommandWithMutationReceipt: commandApi.withReceipt,
+}))
+vi.mock('./activeWriterSession', () => ({
+  schedulePendingMutationRecoveryReload: recoveryApi.scheduleReload,
 }))
 
 import { dispatchDurableMutation, executePreparedDurableMutationWithinQueue } from './durableMutationDispatch'
@@ -43,6 +47,7 @@ beforeEach(async () => {
   commandApi.inlineReplay.mockResolvedValue({ status: 'ok' })
   commandApi.withoutReceipt.mockClear()
   commandApi.withReceipt.mockClear()
+  recoveryApi.scheduleReload.mockReset()
   await preparePendingMutationOutbox({
     writerSessionId: 'writer-a',
     writerEpoch: 1,
@@ -422,6 +427,34 @@ describe('durable mutation dispatch', () => {
     expect(order).toEqual(['patch-blocked', 'patch-recovered', 'delete'])
     expect(deleteRequest).toHaveBeenCalledOnce()
     expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('reloads instead of sending a successor after a terminal predecessor is discarded', async () => {
+    const predecessor = stagePendingMutation('settings:runtime', intent)
+    await dispatchDurableMutation(
+      predecessor,
+      intent,
+      wrappedDispatch(async () => ({ status: 'error', error: 'offline' })),
+    )
+    const successorIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxResponse: 2_000 } } }],
+    }
+    const successor = stagePendingMutation('settings:runtime', successorIntent)
+    const successorRequest = vi.fn(async () => acceptedResult())
+    commandApi.inlineReplay.mockResolvedValueOnce({
+      status: 'error',
+      error: 'invalid queued request',
+      reason: 'invalid-request',
+    })
+
+    await expect(
+      dispatchDurableMutation(successor, successorIntent, wrappedDispatch(successorRequest)),
+    ).resolves.toEqual({ status: 'unavailable' })
+
+    expect(successorRequest).not.toHaveBeenCalled()
+    expect(recoveryApi.scheduleReload).toHaveBeenCalledOnce()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([successor.mutationId])
   })
 
   it('replaces a prepared placeholder before sending under its preserved receipt id', async () => {
