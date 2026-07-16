@@ -457,7 +457,7 @@ export const languageSpanish = {
     v2UnshiftArrayVar: 'Agregar a Variable de Matriz como primer valor',
     v2UnshiftArrayVarDesc: 'Agregar {{value}} como primer valor de Variable de Matriz {{var}}',
     v2SpliceArrayVar: 'Agregar a Variable de Matriz en Índice',
-    v2SpliceArrayVarDesc: 'Agregar {{value}} como valor {{start}} de Variable de Matriz {{var}}',
+    v2SpliceArrayVarDesc: 'Agregar {{item}} como valor {{start}} de Variable de Matriz {{var}}',
     v2SliceArrayVar: 'Rebanar Variable de Matriz',
     v2SliceArrayVarDesc: 'Rebanar Variable de Matriz {{var}} desde {{start}} hasta {{end}} => {{outputVar}}',
     v2GetIndexOfValueInArrayVar: 'Obtener Índice de Valor en Variable de Matriz',

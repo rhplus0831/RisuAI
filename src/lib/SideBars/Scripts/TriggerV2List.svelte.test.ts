@@ -166,4 +166,48 @@ describe('TriggerV2List effect display', () => {
     expect(document.querySelector(`[aria-label="${language.goback}"]`)).toBeTruthy()
     expect(buttonByText(language.triggerCategories.Control)?.getAttribute('aria-pressed')).toBe('true')
   })
+
+  it('renders array insertion fields without null or malformed placeholders', async () => {
+    const value: triggerscript[] = [
+      { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+      {
+        comment: 'Array edits',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          {
+            type: 'v2UnshiftArrayVar',
+            var: 'queue',
+            value: 'first',
+            valueType: 'value',
+            indent: 0,
+          },
+          {
+            type: 'v2SpliceArrayVar',
+            var: 'queue',
+            start: '2',
+            startType: 'value',
+            item: 'middle',
+            itemType: 'value',
+            indent: 0,
+          },
+        ],
+      },
+    ]
+    component = mount(TriggerV2ListHarness, { target, props: { initialValue: value } }) as MountedComponent
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('button')?.click()
+    await settle()
+
+    const summaries = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-risu-trigger-effect-display="true"]'),
+      (display) => display.textContent ?? '',
+    )
+    expect(summaries).toEqual([
+      'Add "first" as first value of Array Variable queue',
+      'Add "middle" as "2" value of Array Variable queue',
+    ])
+    expect(summaries.join(' ')).not.toMatch(/null|{{|}}/)
+  })
 })

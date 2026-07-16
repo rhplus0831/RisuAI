@@ -451,7 +451,7 @@ export const languageVietnamese = {
     v2UnshiftArrayVar: 'Thêm vào biến mảng làm giá trị đầu tiên',
     v2UnshiftArrayVarDesc: 'Thêm {{value}} làm giá trị đầu tiên của biến mảng {{var}}',
     v2SpliceArrayVar: 'Thêm vào biến mảng tại chỉ số',
-    v2SpliceArrayVarDesc: 'Thêm {{value}} làm giá trị {{start}} của biến mảng {{var}}',
+    v2SpliceArrayVarDesc: 'Thêm {{item}} làm giá trị {{start}} của biến mảng {{var}}',
     v2SliceArrayVar: 'Cắt biến mảng',
     v2SliceArrayVarDesc: 'Cắt biến mảng {{var}} từ {{start}} đến {{end}} => {{outputVar}}',
     v2GetIndexOfValueInArrayVar: 'Lấy chỉ số của giá trị trong biến mảng',

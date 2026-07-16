@@ -431,7 +431,7 @@ export const languageChineseTraditional = {
     v2UnshiftArrayVar: '新增至陣列變數開頭',
     v2UnshiftArrayVarDesc: '將 {{value}} 新增至陣列變數 {{var}} 的開頭',
     v2SpliceArrayVar: '插入至陣列變數指定位置',
-    v2SpliceArrayVarDesc: '將 {{value}} 插入至陣列變數 {{var}} 的 {{start}} 位置',
+    v2SpliceArrayVarDesc: '將 {{item}} 插入至陣列變數 {{var}} 的 {{start}} 位置',
     v2SliceArrayVar: '擷取陣列片段',
     v2SliceArrayVarDesc: '擷取陣列變數 {{var}} 從 {{start}} 到 {{end}} 的片段 => {{outputVar}}',
     v2GetIndexOfValueInArrayVar: '取得值在陣列變數中的索引',

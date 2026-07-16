@@ -616,7 +616,7 @@ export const languageEnglish = {
     v2UnshiftArrayVar: 'Add to Array Variable as first value',
     v2UnshiftArrayVarDesc: 'Add {{value}} as first value of Array Variable {{var}}',
     v2SpliceArrayVar: 'Add to Array Variable in Index',
-    v2SpliceArrayVarDesc: 'Add {{value}} as {{start}} value of Array Variable {{var}}',
+    v2SpliceArrayVarDesc: 'Add {{item}} as {{start}} value of Array Variable {{var}}',
     v2SliceArrayVar: 'Slice Array Variable',
     v2SliceArrayVarDesc: 'Slice Array Variable {{var}} from {{start}} to {{end}} => {{outputVar}}',
     v2GetIndexOfValueInArrayVar: 'Get Index of Value in Array Variable',

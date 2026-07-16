@@ -406,7 +406,7 @@ export const languageChinese = {
     v2UnshiftArrayVar: '添加到数组变量开头',
     v2UnshiftArrayVarDesc: '将 {{value}} 添加到数组变量 {{var}} 的开头',
     v2SpliceArrayVar: '在指定索引处添加到数组变量',
-    v2SpliceArrayVarDesc: '将 {{value}} 添加到数组变量 {{var}} 的 {{start}} 处',
+    v2SpliceArrayVarDesc: '将 {{item}} 添加到数组变量 {{var}} 的 {{start}} 处',
     v2SliceArrayVar: '截取数组变量',
     v2SliceArrayVarDesc: '截取数组变量 {{var}} 从 {{start}} 到 {{end}} => {{outputVar}}',
     v2GetIndexOfValueInArrayVar: '获取值在数组变量中的索引',

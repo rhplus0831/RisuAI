@@ -470,7 +470,7 @@ export const languageGerman = {
     v2UnshiftArrayVar: 'Zu Array-Variable als ersten Wert hinzufügen',
     v2UnshiftArrayVarDesc: '{{value}} als ersten Wert der Array-Variable {{var}} hinzufügen',
     v2SpliceArrayVar: 'Zu Array-Variable an Index hinzufügen',
-    v2SpliceArrayVarDesc: '{{value}} als {{start}}-ten Wert der Array-Variable {{var}} hinzufügen',
+    v2SpliceArrayVarDesc: '{{item}} als {{start}}-ten Wert der Array-Variable {{var}} hinzufügen',
     v2SliceArrayVar: 'Array-Variable schneiden',
     v2SliceArrayVarDesc: 'Array-Variable {{var}} von {{start}} bis {{end}} schneiden => {{outputVar}}',
     v2GetIndexOfValueInArrayVar: 'Index des Werts in Array-Variable abrufen',

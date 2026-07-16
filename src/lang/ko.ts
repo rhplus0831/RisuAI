@@ -454,7 +454,7 @@ export const languageKorean = {
     v2ShiftArrayVar: '배열 변수에서 첫 값 제거 후 가져오기',
     v2ShiftArrayVarDesc: '배열 변수 {{var}} 에서 첫 값 제거 => {{outputVar}}',
     v2UnshiftArrayVar: '배열 변수에 첫 값 추가',
-    v2UnshiftArrayVarDesc: '배열 변수 {{var} }에 {{value}} 첫 값으로 추가',
+    v2UnshiftArrayVarDesc: '배열 변수 {{var}}에 {{value}} 첫 값으로 추가',
     v2SpliceArrayVar: '배열 변수 가운데에 값 추가',
     v2SpliceArrayVarDesc: '배열 변수 {{var}} 의 {{start}}에 {{item}} 추가',
     v2SliceArrayVar: '배열 변수 슬라이스',
