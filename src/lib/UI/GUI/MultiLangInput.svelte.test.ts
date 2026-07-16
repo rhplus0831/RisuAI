@@ -10,6 +10,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import MultiLangInputTestHost from './MultiLangInput.testHost.svelte'
+import { addLanguageIfMissing } from './MultiLangInput.svelte'
 import { language } from 'src/lang'
 import { encodeMultilangString, parseMultilangString, toLangName } from 'src/ts/util'
 
@@ -41,6 +42,13 @@ async function enterText(text: string): Promise<void> {
   input.value = text
   input.dispatchEvent(new Event('input', { bubbles: true }))
   await tick()
+}
+
+function languageButtons(code: string): HTMLButtonElement[] {
+  const label = toLangName(code)
+  return Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter(
+    (candidate) => candidate.textContent?.trim() === label,
+  )
 }
 
 beforeEach(() => {
@@ -123,5 +131,32 @@ describe('MultiLangInput external value changes', () => {
 
     await enterText('Legacy prefix\nEnglish note updated')
     expect(parseMultilangString(component.currentValue()).en).toBe('Legacy prefix\nEnglish note updated')
+  })
+})
+
+describe('MultiLangInput language additions', () => {
+  it('does not offer an already-present English language', async () => {
+    component = mount(MultiLangInputTestHost, {
+      target,
+      props: { initialValue: encodeMultilangString({ en: 'Existing English value' }) },
+    }) as MountedHost
+    await tick()
+
+    const addLanguage = target.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.add} ${language.language}"]`,
+    )
+    addLanguage?.click()
+    await tick()
+
+    expect(addLanguage?.getAttribute('aria-expanded')).toBe('true')
+    expect(languageButtons('en')).toHaveLength(1)
+    expect(textarea().value).toBe('Existing English value')
+  })
+
+  it('refuses a duplicate English addition without clearing its existing value', () => {
+    const valueByLanguage = { en: 'Existing English value' }
+
+    expect(addLanguageIfMissing(valueByLanguage, 'en')).toBe(false)
+    expect(valueByLanguage.en).toBe('Existing English value')
   })
 })

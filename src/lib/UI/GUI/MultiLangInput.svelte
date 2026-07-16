@@ -1,3 +1,16 @@
+<script module lang="ts">
+  function hasLanguage(valueByLanguage: Record<string, string>, languageCode: string): boolean {
+    return Object.prototype.hasOwnProperty.call(valueByLanguage, languageCode)
+  }
+
+  export function addLanguageIfMissing(valueByLanguage: Record<string, string>, languageCode: string): boolean {
+    if (hasLanguage(valueByLanguage, languageCode)) return false
+
+    valueByLanguage[languageCode] = ''
+    return true
+  }
+</script>
+
 <script lang="ts">
   import { language } from 'src/lang'
   import { encodeMultilangString, languageCodes, parseMultilangString, toLangName } from 'src/ts/util'
@@ -96,11 +109,12 @@
 {#if addingLang}
   <div class="m-1 p-1 g-2 flex max-w-fit rounded-md border-t-bgcolor flex-wrap gap-1">
     {#each languageCodes as lang}
-      {#if toLangName(lang) !== lang}
+      {#if toLangName(lang) !== lang && !hasLanguage(valueObject, lang)}
         <button
           class="bg-bgcolor py-2 rounded-lg px-4 text-nowrap"
           onclick={() => {
-            valueObject[lang] = ''
+            if (!addLanguageIfMissing(valueObject, lang)) return
+
             selectedLang = lang
             addingLang = false
           }}>{toLangName(lang)}</button>
