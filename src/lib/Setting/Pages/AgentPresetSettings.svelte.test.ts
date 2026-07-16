@@ -352,6 +352,31 @@ describe('AgentPresetSettings', () => {
     expect(agentPresetSpies.deleteAgentPreset).toHaveBeenCalledWith('ap_a')
   })
 
+  it('disables default selection while another preset command is pending', async () => {
+    let resolveReorder!: (result: AgentPresetCommandMockResult) => void
+    agentPresetSpies.reorderAgentPresets.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveReorder = resolve
+        }),
+    )
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent' }), preset({ id: 'ap_b', name: 'Critique Agent' })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-move-down]').click()
+    await tick()
+
+    const defaultSelect = target.querySelector<HTMLSelectElement>('[data-risu-agent-preset-default-select] select')
+    expect(defaultSelect).toBeTruthy()
+    expect(defaultSelect!.disabled).toBe(true)
+
+    resolveReorder({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })
+    await flushAsyncWork()
+
+    expect(defaultSelect!.disabled).toBe(false)
+  })
+
   it('disables and suppresses an unchanged metadata save', async () => {
     seedDb([preset({ id: 'ap_a', name: 'Research Agent', description: 'Existing description' })])
     mountPage()

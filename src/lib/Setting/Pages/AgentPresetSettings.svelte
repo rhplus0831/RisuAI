@@ -203,6 +203,7 @@
         <SelectInput
           value={defaultPresetId}
           className="w-full"
+          disabled={busy}
           onchange={(event) => {
             void selectDefaultPreset(event.currentTarget.value)
           }}>
