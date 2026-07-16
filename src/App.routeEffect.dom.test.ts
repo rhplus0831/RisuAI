@@ -31,9 +31,11 @@ const appRouteDomMocks = vi.hoisted(() => {
     alertNormal: vi.fn(),
     changeChar: vi.fn(),
     checkCharOrder: vi.fn(),
+    closeGridRoute: vi.fn(),
     getCharImage: vi.fn(() => ''),
     importCharacterProcess: vi.fn(),
     importPreset: vi.fn(),
+    openGridRoute: vi.fn(),
     state,
   }
 })
@@ -50,14 +52,14 @@ async function createRouteMock() {
         }
         return Promise.resolve(route)
       }),
-      characterRoutePath: (characterId: string, chatId?: string) =>
-        chatId ? `/character/${characterId}/${chatId}` : `/character/${characterId}`,
+      closeGridRoute: appRouteDomMocks.closeGridRoute,
       consumeStateDrivenRouteUpdate: () => false,
       currentRoute: writable(characterRoute),
       hasPendingRouteApplication: () => appRouteDomMocks.state.pendingRouteApplication,
       installRouter: vi.fn(),
       isApplyingRouteToStores: () => appRouteDomMocks.state.applyingRoute,
       navigate: vi.fn(),
+      openGridRoute: appRouteDomMocks.openGridRoute,
       parseRoute: vi.fn(() => characterRoute),
       syncRouteFromState: vi.fn(),
     }
@@ -73,6 +75,7 @@ vi.mock('./lang', () => ({
   language: {
     Chat: 'Chat',
     character: 'Character',
+    grid: 'Grid',
     home: 'Home',
     menu: 'Menu',
     playground: { playground: 'Playground' },
@@ -85,6 +88,7 @@ vi.mock('src/lang', () => ({
   language: {
     Chat: 'Chat',
     character: 'Character',
+    grid: 'Grid',
     home: 'Home',
     menu: 'Menu',
     playground: { playground: 'Playground' },
@@ -180,7 +184,7 @@ vi.mock('./lib/UI/Realm/RealmPopUp.svelte', async () => ({
   default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
 }))
 vi.mock('./lib/Others/GridCatalog.svelte', async () => ({
-  default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
+  default: (await import('./App.routeEffect.dom.GridMarker.svelte')).default,
 }))
 vi.mock('./lib/Others/BookmarkList.svelte', async () => ({
   default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
@@ -483,6 +487,49 @@ describe('App route/refreeze mounted DOM behavior', () => {
         settingsOpen: true,
       }),
     )
+  })
+
+  it('routes both desktop and responsive grid buttons through the grid history helper', async () => {
+    const desktopMenu = target.querySelector<HTMLButtonElement>('button[aria-label="Menu"]')
+    expect(desktopMenu).not.toBeNull()
+    desktopMenu?.click()
+    await tick()
+
+    const desktopGrid = target.querySelector<HTMLButtonElement>('button[aria-label="Grid"]')
+    expect(desktopGrid).not.toBeNull()
+    desktopGrid?.click()
+
+    expect(appRouteDomMocks.openGridRoute).toHaveBeenCalledTimes(1)
+
+    DynamicGUI.set(true)
+    await tick()
+    await Promise.resolve()
+
+    const responsiveSidebar = target.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')
+    const responsiveMenu = responsiveSidebar?.querySelector<HTMLButtonElement>('button[aria-label="Menu"]')
+    expect(responsiveMenu).not.toBeNull()
+    responsiveMenu?.click()
+    await tick()
+
+    const responsiveGrid = responsiveSidebar?.querySelector<HTMLButtonElement>('button[aria-label="Grid"]')
+    expect(responsiveGrid).not.toBeNull()
+    responsiveGrid?.click()
+
+    expect(appRouteDomMocks.openGridRoute).toHaveBeenCalledTimes(2)
+  })
+
+  it('routes the grid close control through the grid history helper', async () => {
+    const router = appRouteDomMocks.state.exports
+    if (!router) throw new Error('Router mock was not initialized')
+
+    router.currentRoute.set({ kind: 'grid', path: '/grid' })
+    await tick()
+
+    const closeButton = target.querySelector<HTMLButtonElement>('[data-testid="grid-close"]')
+    expect(closeButton).not.toBeNull()
+    closeButton?.click()
+
+    expect(appRouteDomMocks.closeGridRoute).toHaveBeenCalledOnce()
   })
 
   it('contains and restores focus while the responsive sidebar is open and closes it with Escape', async () => {

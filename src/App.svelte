@@ -59,12 +59,12 @@
   import { importRisuModuleData } from './ts/process/modules'
   import {
     applyRouteToStores,
-    characterRoutePath,
+    closeGridRoute,
     consumeStateDrivenRouteUpdate,
     currentRoute,
     hasPendingRouteApplication,
     isApplyingRouteToStores,
-    navigate,
+    openGridRoute,
     syncRouteFromState,
   } from './ts/router'
   import { modalFocusTrap } from './ts/gui/modalFocusTrap'
@@ -72,15 +72,6 @@
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
   let keepingSessionAlive = $state(false)
-
-  function closeGridRoute() {
-    const character = getDatabase().characters?.[$selectedCharID]
-    if ($selectedCharID >= 0 && character?.chaId) {
-      navigate(characterRoutePath(character.chaId))
-      return
-    }
-    navigate('/')
-  }
 
   function closeResponsiveSidebar(): void {
     if ($sideBarClosing) return
@@ -288,11 +279,7 @@
     <GridChars endGrid={closeGridRoute} />
   {:else}
     {#if !$DynamicGUI}
-      <Sidebar
-        openGrid={() => {
-          navigate('/grid')
-        }}
-        hidden={!$sideBarStore} />
+      <Sidebar openGrid={openGridRoute} hidden={!$sideBarStore} />
     {:else if $sideBarStore}
       <div
         data-modal-root
@@ -303,11 +290,7 @@
         tabindex="-1"
         class="fixed top-0 w-full h-full left-0 z-30 flex flex-row items-center"
         onkeydown={handleResponsiveSidebarKeydown}>
-        <Sidebar
-          openGrid={() => {
-            navigate('/grid')
-          }}
-          hidden={false} />
+        <Sidebar openGrid={openGridRoute} hidden={false} />
       </div>
     {/if}
     <ChatScreen />

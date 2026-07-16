@@ -37,6 +37,15 @@ interface StateRouteInput {
 
 const DEFAULT_SETTINGS_INDEX = 17
 const DEFAULT_PLAYGROUND_INDEX = 1
+const GRID_HISTORY_STATE_KEY = '__risuGridNavigation'
+const GRID_HISTORY_STATE_VERSION = 1
+
+interface GridHistoryState {
+  [GRID_HISTORY_STATE_KEY]: {
+    originPath: string
+    version: typeof GRID_HISTORY_STATE_VERSION
+  }
+}
 
 const settingIndexBySlug = new Map<string, number>([
   ['backup', 0],
@@ -156,6 +165,7 @@ const initialRoute = parseRoute(typeof window === 'undefined' ? '/' : window.loc
 let routeApplicationPending = initialRoute.kind !== 'home'
 let skipNextRouteApplication = false
 let routeApplicationEpoch = 0
+let gridHistoryTraversalPending = false
 
 export const currentRoute = writable<AppRoute>(initialRoute)
 
@@ -163,6 +173,7 @@ export function installRouter(): void {
   if (routerInstalled || typeof window === 'undefined') return
   routerInstalled = true
   window.addEventListener('popstate', () => {
+    gridHistoryTraversalPending = false
     routeApplicationPending = true
     currentRoute.set(parseRoute(window.location.pathname))
   })
@@ -178,6 +189,41 @@ export function navigate(path: string, options: { replace?: boolean } = {}): voi
     replace: options.replace ?? false,
     stateDriven: false,
   })
+}
+
+export function openGridRoute(): void {
+  if (typeof window === 'undefined') return
+
+  gridHistoryTraversalPending = false
+  const originPath = normalizePath(window.location.pathname)
+  if (parseRoute(originPath).kind === 'grid') return
+
+  const historyState: GridHistoryState = {
+    [GRID_HISTORY_STATE_KEY]: {
+      originPath,
+      version: GRID_HISTORY_STATE_VERSION,
+    },
+  }
+  commitPath('/grid', {
+    replace: false,
+    stateDriven: false,
+    historyState,
+  })
+}
+
+export function closeGridRoute(): void {
+  if (typeof window === 'undefined') return
+
+  const isGridRoute = parseRoute(window.location.pathname).kind === 'grid'
+  if (isGridRoute && gridOriginPath(window.history.state)) {
+    if (gridHistoryTraversalPending) return
+    gridHistoryTraversalPending = true
+    window.history.back()
+    return
+  }
+
+  gridHistoryTraversalPending = false
+  navigate('/', { replace: true })
 }
 
 export function syncRouteFromState(input: StateRouteInput): void {
@@ -506,6 +552,7 @@ function closeRouteBlockingViews(): void {
 function commitPath(
   path: string,
   options: {
+    historyState?: unknown
     replace: boolean
     stateDriven: boolean
   },
@@ -527,7 +574,7 @@ function commitPath(
 
   if (pathChanged) {
     const method = options.replace ? 'replaceState' : 'pushState'
-    window.history[method](null, '', normalizedPath)
+    window.history[method](options.historyState ?? null, '', normalizedPath)
   }
   if (options.stateDriven) {
     skipNextRouteApplication = true
@@ -536,6 +583,18 @@ function commitPath(
     routeApplicationPending = true
   }
   currentRoute.set(nextRoute)
+}
+
+function gridOriginPath(historyState: unknown): string | null {
+  if (!historyState || typeof historyState !== 'object') return null
+
+  const gridState = (historyState as Partial<GridHistoryState>)[GRID_HISTORY_STATE_KEY]
+  if (!gridState || gridState.version !== GRID_HISTORY_STATE_VERSION || typeof gridState.originPath !== 'string') {
+    return null
+  }
+
+  const originPath = normalizePath(gridState.originPath)
+  return parseRoute(originPath).kind === 'grid' ? null : originPath
 }
 
 function normalizePath(pathname: string): string {

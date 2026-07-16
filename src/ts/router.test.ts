@@ -187,6 +187,45 @@ describe('router initial application', () => {
   })
 })
 
+describe('router grid history', () => {
+  it('marks an in-app grid entry and closes it through browser history', async () => {
+    const router = await importRouterAt('/character/char-a/chat-a')
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+
+    router.openGridRoute()
+
+    expect(window.location.pathname).toBe('/grid')
+    expect(get(router.currentRoute)).toEqual({ kind: 'grid', path: '/grid' })
+    expect(window.history.state).toEqual({
+      __risuGridNavigation: {
+        originPath: '/character/char-a/chat-a',
+        version: 1,
+      },
+    })
+
+    router.closeGridRoute()
+    router.closeGridRoute()
+
+    expect(back).toHaveBeenCalledOnce()
+    back.mockRestore()
+  })
+
+  it('replaces a direct grid entry with home instead of adding a stale grid entry', async () => {
+    const router = await importRouterAt('/grid')
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+
+    router.closeGridRoute()
+
+    expect(window.location.pathname).toBe('/')
+    expect(get(router.currentRoute)).toEqual({ kind: 'home', path: '/' })
+    expect(pushState).not.toHaveBeenCalled()
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/')
+    pushState.mockRestore()
+    replaceState.mockRestore()
+  })
+})
+
 describe('router character route freshness', () => {
   it('routes character-only navigation to the active generation owner chat', async () => {
     const router = await importRouterAt('/')
