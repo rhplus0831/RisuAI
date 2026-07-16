@@ -2,6 +2,8 @@ function ownerMutationKey(kind: 'character' | 'chat' | 'chat-folder' | 'module',
   return `${kind}-owner:${id}`
 }
 
+export const CHARACTER_SELECTION_MUTATION_KEY = 'character-selection'
+
 export function characterOwnerMutationKey(characterId: string): string {
   return ownerMutationKey('character', characterId)
 }

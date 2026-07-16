@@ -22,7 +22,7 @@ import { recordHydratedCharacterLorebooks } from './server/lorebookBridge.svelte
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
 import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
 import { stagePendingMutation, type DurableMutationIntent } from './server/pendingMutationOutbox'
-import { characterOwnerMutationKey } from './server/resourceOwnerMutationKeys'
+import { CHARACTER_SELECTION_MUTATION_KEY, characterOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 import { selectedCharID } from './stores.svelte'
 import type { character, folder } from './storage/database.svelte'
 
@@ -931,6 +931,7 @@ export function dispatchDeleteCharacter(characterId: string, previous: Character
   flushRegisteredPendingBridgePatches({})
   const intent: DurableMutationIntent = {
     version: 1,
+    dependencyKeys: [characterOwnerMutationKey(characterId)],
     requests: [
       {
         method: 'DELETE',
@@ -939,7 +940,7 @@ export function dispatchDeleteCharacter(characterId: string, previous: Character
       },
     ],
   }
-  const outbox = stagePendingMutation(characterOwnerMutationKey(characterId), intent)
+  const outbox = stagePendingMutation(CHARACTER_SELECTION_MUTATION_KEY, intent)
   void dispatchDurableMutation(
     outbox,
     intent,
@@ -995,6 +996,7 @@ export function dispatchSelectCharacter(
   const attempted = currentCharacterSelectionAttempt(characterId, lastInteraction)
   const intent: DurableMutationIntent = {
     version: 1,
+    dependencyKeys: [characterOwnerMutationKey(characterId)],
     requests: [
       {
         method: 'POST',
@@ -1006,7 +1008,7 @@ export function dispatchSelectCharacter(
       },
     ],
   }
-  const outbox = stagePendingMutation(characterOwnerMutationKey(characterId), intent)
+  const outbox = stagePendingMutation(CHARACTER_SELECTION_MUTATION_KEY, intent)
   void dispatchDurableMutation(
     outbox,
     intent,

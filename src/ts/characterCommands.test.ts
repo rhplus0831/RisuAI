@@ -812,7 +812,7 @@ describe('character list create/delete rollback', () => {
         })),
       ).toEqual([
         { key: 'character-owner:char-b', method: 'PATCH' },
-        { key: 'character-owner:char-b', method: 'DELETE' },
+        { key: 'character-selection', method: 'DELETE' },
       ])
 
       recover = true
@@ -945,7 +945,7 @@ describe('character select command rollback', () => {
         })),
       ).toEqual([
         { key: 'character-owner:char-b', method: 'PATCH' },
-        { key: 'character-owner:char-b', method: 'POST' },
+        { key: 'character-selection', method: 'POST' },
       ])
 
       recover = true
@@ -959,6 +959,88 @@ describe('character select command rollback', () => {
         characterId: 'char-b',
         lastInteraction: 2_000,
       })
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps rapid cross-target selections in one durable lane so the latest target wins', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-cross-select',
+      writerEpoch: 14,
+      databaseLineage: 'lineage-character-cross-select',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(30)
+
+    let recover = false
+    let revision = 30
+    const commands: Array<{
+      characterId: string
+      mutationId: string | null
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url !== '/api/v1/commands/characters/select') {
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+        const headers = init.headers as Record<string, string> | undefined
+        commands.push({
+          characterId: body.characterId,
+          mutationId: headers?.['risu-mutation-id'] ?? null,
+        })
+        if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'character.selected',
+            revision,
+            resource: 'character',
+            id: body.characterId,
+          },
+          characterId: body.characterId,
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const previousB = currentCharacterSelectionSnapshot('char-b')
+      withTrustedResourceWrite(() => {
+        testDatabaseState.db.characters[1].lastInteraction = 2_000
+        ;(testDatabaseState.db as any).currentChar = 1
+        selectedCharID.set(1)
+      })
+      dispatchSelectCharacter('char-b', previousB, 2_000)
+      await vi.waitFor(() => expect(commands).toHaveLength(1))
+
+      const previousC = currentCharacterSelectionSnapshot('char-c')
+      withTrustedResourceWrite(() => {
+        testDatabaseState.db.characters[2].lastInteraction = 3_000
+        ;(testDatabaseState.db as any).currentChar = 2
+        selectedCharID.set(2)
+      })
+      dispatchSelectCharacter('char-c', previousC, 3_000)
+      await vi.waitFor(() => expect(commands).toHaveLength(2))
+      expect(commands.map(({ characterId }) => characterId)).toEqual(['char-b', 'char-b'])
+      expect((await listPendingMutations()).map((entry) => entry.handle.key)).toEqual([
+        'character-selection',
+        'character-selection',
+      ])
+
+      recover = true
+      const recoveryStart = commands.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(commands.slice(recoveryStart).map(({ characterId }) => characterId)).toEqual(['char-b', 'char-c'])
+      expect(new Set(commands.slice(recoveryStart).map(({ mutationId }) => mutationId)).size).toBe(2)
       expect(await listPendingMutations()).toEqual([])
     } finally {
       await clearPendingMutationOutbox()
