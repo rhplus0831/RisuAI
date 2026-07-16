@@ -12,7 +12,15 @@
   import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from 'src/ts/model/modelRoles'
   import { getModelInfo } from 'src/ts/model/modellist'
   import { ProviderNames } from 'src/ts/model/types'
-  import { updateModelRoleProfilesDurably } from 'src/ts/model/modelProfileMutations'
+  import {
+    beginPendingModelMutation,
+    finishPendingModelMutation,
+    getPendingModelMutations,
+    isPendingModelMutationProjectionApplied,
+    retainPendingModelMutation,
+    subscribePendingModelMutations,
+    updateModelRoleProfilesDurably,
+  } from 'src/ts/model/modelProfileMutations'
   import type { ServerCommandResult } from 'src/ts/server/commands'
   import { getDatabase, type Database } from 'src/ts/storage/database.svelte'
 
@@ -22,9 +30,8 @@
   let serverBaselineBindings = $state<ModelRoleProfileMap>(normalizeModelRoleProfiles(undefined))
   let lastServerSnapshot = $state('')
   let applying = $state(false)
-  let applyQueued = $state(false)
+  let pendingMutations = $state(getPendingModelMutations('model-profiles'))
   let commandError = $state('')
-  let commandNotice = $state('')
 
   let profiles = $derived(getDatabase().modelProfiles ?? [])
   let profileIdSet = $derived(new Set(profiles.map((profile) => profile.id)))
@@ -40,7 +47,17 @@
   )
   let changedBindings = $derived.by(() => collectChangedBindings())
   let hasChanges = $derived(Object.keys(changedBindings).length > 0)
+  let applyQueued = $derived(pendingMutations.length > 0)
+  let commandNotice = $derived(
+    pendingMutations.some((pending) => pending.phase !== 'dispatching') ? language.modelProfiles.commandQueued : '',
+  )
   let canApply = $derived(hasChanges && changedBindingsAreValid(changedBindings) && !applying && !applyQueued)
+
+  $effect(() => {
+    return subscribePendingModelMutations('model-profiles', (pending) => {
+      pendingMutations = pending
+    })
+  })
 
   $effect(() => {
     const normalized = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
@@ -51,9 +68,14 @@
     serverBaselineBindings = cloneJsonValue(normalized)
     lastServerSnapshot = snapshot
     commandError = ''
-    if (applyQueued && snapshotBindings(draftBindings) === snapshot) {
-      applyQueued = false
-      commandNotice = ''
+  })
+
+  $effect(() => {
+    for (const pending of pendingMutations) {
+      if (pending.phase === 'dispatching' || pending.projection.kind !== 'role-bindings') continue
+      if (isPendingModelMutationProjectionApplied(pending.projection, getDatabase())) {
+        finishPendingModelMutation(pending.token)
+      }
     }
   })
 
@@ -180,7 +202,6 @@
       [role]: binding,
     }
     commandError = ''
-    commandNotice = ''
   }
 
   function setBindingMode(role: ModelRole, mode: BindingMode): void {
@@ -210,7 +231,6 @@
     serverBaselineBindings = cloneJsonValue(normalized)
     lastServerSnapshot = snapshotBindings(normalized)
     commandError = ''
-    commandNotice = ''
   }
 
   function selectedModelPresetId(): string | null {
@@ -231,19 +251,34 @@
     if (!canApply) return
     applying = true
     commandError = ''
-    commandNotice = ''
     const bindings = cloneJsonValue(changedBindings)
     const modelPresetId = selectedModelPresetId()
-    const outcome = await updateModelRoleProfilesDurably(bindings, modelPresetId)
-    applying = false
-
-    if (outcome.status === 'accepted') return
-    if (outcome.status === 'queued') {
-      applyQueued = true
-      commandNotice = language.modelProfiles.commandQueued
+    const pendingToken = beginPendingModelMutation('model-profiles', {
+      kind: 'role-bindings',
+      bindings,
+    })
+    if (!pendingToken) {
+      applying = false
       return
     }
-    commandError = commandErrorMessage(outcome.result)
+    try {
+      const outcome = await updateModelRoleProfilesDurably(bindings, modelPresetId)
+      if (outcome.status === 'accepted') {
+        finishPendingModelMutation(pendingToken)
+        return
+      }
+      if (outcome.status === 'queued') {
+        retainPendingModelMutation(pendingToken, outcome.mutationId)
+        return
+      }
+      finishPendingModelMutation(pendingToken)
+      commandError = commandErrorMessage(outcome.result)
+    } catch {
+      finishPendingModelMutation(pendingToken)
+      commandError = commandErrorMessage({ status: 'unavailable' })
+    } finally {
+      applying = false
+    }
   }
 </script>
 

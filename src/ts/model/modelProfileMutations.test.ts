@@ -6,11 +6,14 @@ const mutationMocks = vi.hoisted(() => ({
   result: { status: 'ok' } as Record<string, unknown>,
   retained: false,
   runInputs: [] as Array<Record<string, unknown>>,
+  settlementListeners: new Map<string, (settlement: 'accepted' | 'discarded') => void>(),
+  stageThrows: false,
   staged: [] as Array<{ key: string; intent: unknown }>,
 }))
 
 vi.mock('../server/pendingMutationOutbox', () => ({
   stagePendingMutation: (key: string, intent: unknown) => {
+    if (mutationMocks.stageThrows) throw new Error('stage failed')
     mutationMocks.staged.push({ key, intent })
     return {
       key,
@@ -27,6 +30,12 @@ vi.mock('../server/durableMutationDispatch', () => ({
     async (_handle: unknown, _intent: unknown, dispatch: (transport: Record<string, unknown>) => Promise<unknown>) => {
       if (mutationMocks.dispatchThrows) throw new Error('dispatch failed')
       return dispatch({ mutationId: 'mutation-id', databaseLineage: 'database-models' })
+    },
+  ),
+  registerDurableMutationSettlementListener: vi.fn(
+    (mutationId: string, listener: (settlement: 'accepted' | 'discarded') => void) => {
+      mutationMocks.settlementListeners.set(mutationId, listener)
+      return () => mutationMocks.settlementListeners.delete(mutationId)
     },
   ),
 }))
@@ -52,21 +61,33 @@ vi.mock('../server/commands', () => {
 })
 
 import {
+  beginPendingModelMutation,
   convertLegacyModelProfilesDurably,
   createModelProfileDurably,
   deleteModelProfileDurably,
   duplicateModelProfileDurably,
+  finishPendingModelMutation,
+  getPendingModelMutations,
+  isPendingModelMutationProjectionApplied,
+  modelProfileProjectionFingerprint,
+  retainPendingModelMutation,
+  subscribePendingModelMutations,
   updateModelProfileDurably,
   updateModelRoleProfilesDurably,
   updateModelRuntimeDefaultsDurably,
 } from './modelProfileMutations'
 
 beforeEach(() => {
+  for (const lane of ['model-profiles', 'model-runtime-defaults'] as const) {
+    for (const pending of getPendingModelMutations(lane)) finishPendingModelMutation(pending.token)
+  }
   mutationMocks.commandCalls.length = 0
   mutationMocks.dispatchThrows = false
   mutationMocks.result = { status: 'ok' }
   mutationMocks.retained = false
   mutationMocks.runInputs.length = 0
+  mutationMocks.settlementListeners.clear()
+  mutationMocks.stageThrows = false
   mutationMocks.staged.length = 0
 })
 
@@ -206,6 +227,7 @@ describe('durable model-profile mutations', () => {
     await expect(updateModelRuntimeDefaultsDurably({ maxContext: 8192 })).resolves.toEqual({
       status: 'queued',
       result: { status: 'unavailable' },
+      mutationId: 'mutation-2',
     })
 
     mutationMocks.retained = false
@@ -219,6 +241,100 @@ describe('durable model-profile mutations', () => {
     await expect(updateModelRuntimeDefaultsDurably({ maxContext: 32768 })).resolves.toEqual({
       status: 'queued',
       result: { status: 'unavailable' },
+      mutationId: 'mutation-4',
     })
+  })
+
+  it('turns staging and input-freezing exceptions into retryable terminal outcomes', async () => {
+    mutationMocks.stageThrows = true
+    await expect(updateModelRuntimeDefaultsDurably({ maxContext: 8192 })).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'unavailable' },
+    })
+
+    const circular: any = { name: 'Circular' }
+    circular.self = circular
+    await expect(createModelProfileDurably(circular)).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'unavailable' },
+    })
+  })
+
+  it('shares one synchronous lane reservation across remount subscribers until settlement or projection', () => {
+    const snapshots: string[][] = []
+    const unsubscribe = subscribePendingModelMutations('model-profiles', (pending) => {
+      snapshots.push(pending.map((entry) => entry.phase))
+    })
+    const token = beginPendingModelMutation('model-profiles', {
+      kind: 'profile-create',
+      baselineIds: ['profile-a'],
+      attemptedFingerprint: 'attempt',
+    })
+    expect(token).toBeTypeOf('string')
+    expect(
+      beginPendingModelMutation('model-profiles', {
+        kind: 'profile-delete',
+        profileId: 'profile-a',
+      }),
+    ).toBeNull()
+
+    retainPendingModelMutation(token!, 'mutation-remount')
+    expect(getPendingModelMutations('model-profiles')).toMatchObject([
+      { token, mutationId: 'mutation-remount', phase: 'queued' },
+    ])
+    mutationMocks.settlementListeners.get('mutation-remount')?.('accepted')
+    expect(getPendingModelMutations('model-profiles')[0]?.phase).toBe('accepted-replay')
+
+    finishPendingModelMutation(token!)
+    expect(getPendingModelMutations('model-profiles')).toEqual([])
+    expect(snapshots).toEqual([[], ['dispatching'], ['queued'], ['accepted-replay'], []])
+    unsubscribe()
+
+    const discardedToken = beginPendingModelMutation('model-profiles', {
+      kind: 'profile-delete',
+      profileId: 'profile-a',
+    })
+    retainPendingModelMutation(discardedToken!, 'mutation-discarded')
+    mutationMocks.settlementListeners.get('mutation-discarded')?.('discarded')
+    expect(getPendingModelMutations('model-profiles')).toEqual([])
+  })
+
+  it('matches every retained model projection without exposing secret differences', () => {
+    const attempted = {
+      name: 'Copy',
+      providerId: 'vertex',
+      modelId: 'vertex-model',
+      providerOptions: { apiKey: 'raw', vertex: { privateKey: 'private' } },
+    }
+    const projected = {
+      id: 'server-id',
+      ...attempted,
+      providerOptions: {
+        apiKey: '__RISU_SECRET_MASKED__',
+        vertex: { privateKey: '__RISU_SECRET_MASKED__' },
+      },
+    }
+    expect(
+      isPendingModelMutationProjectionApplied(
+        {
+          kind: 'profile-create',
+          baselineIds: ['old-id'],
+          attemptedFingerprint: modelProfileProjectionFingerprint(attempted, true),
+        },
+        { modelProfiles: [projected] },
+      ),
+    ).toBe(true)
+    expect(
+      isPendingModelMutationProjectionApplied(
+        { kind: 'runtime-defaults', runtimeDefaults: { maxContext: 8192 } },
+        { modelRuntimeDefaults: { maxContext: 8192 } },
+      ),
+    ).toBe(true)
+    expect(
+      isPendingModelMutationProjectionApplied(
+        { kind: 'role-bindings', bindings: { chatMain: { mode: 'profile', profileId: 'server-id' } } },
+        { modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'server-id' } } },
+      ),
+    ).toBe(true)
   })
 })

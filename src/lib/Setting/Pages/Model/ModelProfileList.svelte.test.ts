@@ -12,7 +12,8 @@ const commandSpies = vi.hoisted(() => ({
 vi.mock('src/ts/server/commands', () => ({
   subscribeServerCommandLocalEffectApplied: vi.fn(() => () => {}),
 }))
-vi.mock('src/ts/model/modelProfileMutations', () => ({
+vi.mock('src/ts/model/modelProfileMutations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/model/modelProfileMutations')>()),
   createModelProfileDurably: commandSpies.createModelProfileDurably,
   updateModelProfileDurably: commandSpies.updateModelProfileDurably,
   duplicateModelProfileDurably: commandSpies.duplicateModelProfileDurably,
@@ -34,6 +35,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import ModelProfileList from './ModelProfileList.svelte'
 import { language } from 'src/lang'
+import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -68,7 +70,14 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve }
 }
 
+function clearPendingModelMutations(): void {
+  for (const lane of ['model-profiles', 'model-runtime-defaults'] as const) {
+    for (const pending of getPendingModelMutations(lane)) finishPendingModelMutation(pending.token)
+  }
+}
+
 beforeEach(() => {
+  clearPendingModelMutations()
   target = document.createElement('div')
   document.body.appendChild(target)
   setDatabaseLite({
@@ -101,6 +110,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
+  clearPendingModelMutations()
   setDatabaseLite({} as any)
   vi.restoreAllMocks()
 })
@@ -331,10 +341,25 @@ describe('ModelProfileList', () => {
     )
   })
 
+  it('releases profile controls when the mutation helper rejects unexpectedly', async () => {
+    commandSpies.duplicateModelProfileDurably.mockRejectedValueOnce(new Error('staging rejected'))
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    buttonByText(language.modelProfiles.duplicate).click()
+    await flushAsync()
+
+    expect(target.textContent).toContain(language.modelProfiles.commandUnavailable)
+    expect(buttonByText(language.modelProfiles.duplicate).disabled).toBe(false)
+    expect(buttonByText(language.modelProfiles.createProfile).disabled).toBe(false)
+    expect(getPendingModelMutations('model-profiles')).toEqual([])
+  })
+
   it('latches a queued profile mutation and prevents duplicate submits', async () => {
     commandSpies.duplicateModelProfileDurably.mockResolvedValue({
       status: 'queued',
       result: { status: 'unavailable' },
+      mutationId: 'queued-duplicate',
     })
     component = mount(ModelProfileList, { target })
     await tick()
@@ -380,6 +405,45 @@ describe('ModelProfileList', () => {
     await flushAsync()
     expect(target.querySelector('[data-model-profile-command-notice]')).toBeNull()
     expect(duplicate.disabled).toBe(false)
+  })
+
+  it('keeps a queued generated-ID duplicate fenced across a component remount', async () => {
+    commandSpies.duplicateModelProfileDurably.mockResolvedValue({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationId: 'queued-duplicate-remount',
+    })
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    buttonByText(language.modelProfiles.duplicate).click()
+    await flushAsync()
+    unmount(component)
+    component = undefined
+    target.replaceChildren()
+
+    component = mount(ModelProfileList, { target })
+    await tick()
+    const duplicate = buttonByText(language.modelProfiles.duplicate)
+    expect(duplicate.disabled).toBe(true)
+    duplicate.click()
+    await flushAsync()
+    expect(commandSpies.duplicateModelProfileDurably).toHaveBeenCalledTimes(1)
+
+    getDatabase().modelProfiles = [
+      ...getDatabase().modelProfiles,
+      {
+        ...JSON.parse(JSON.stringify(getDatabase().modelProfiles[0])),
+        id: 'profile-copy-after-remount',
+        name: language.modelProfiles.copyName('Profile 1'),
+        providerOptions: {
+          apiKey: '__RISU_SECRET_MASKED__',
+          vertex: { privateKey: '__RISU_SECRET_MASKED__' },
+        },
+      },
+    ]
+    await flushAsync()
+    expect(buttonByText(language.modelProfiles.duplicate).disabled).toBe(false)
   })
 
   it('keeps a dirty profile draft when Escape dismissal is rejected', async () => {

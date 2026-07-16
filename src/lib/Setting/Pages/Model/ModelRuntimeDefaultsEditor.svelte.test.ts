@@ -8,7 +8,8 @@ const commandSpies = vi.hoisted(() => ({
 vi.mock('src/ts/server/commands', () => ({
   subscribeServerCommandLocalEffectApplied: vi.fn(() => () => {}),
 }))
-vi.mock('src/ts/model/modelProfileMutations', () => ({
+vi.mock('src/ts/model/modelProfileMutations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/model/modelProfileMutations')>()),
   updateModelRuntimeDefaultsDurably: commandSpies.updateModelRuntimeDefaultsDurably,
 }))
 vi.mock('src/ts/process/modules', () => ({
@@ -26,6 +27,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
 import { language } from 'src/lang'
+import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -54,7 +56,14 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve }
 }
 
+function clearPendingModelMutations(): void {
+  for (const lane of ['model-profiles', 'model-runtime-defaults'] as const) {
+    for (const pending of getPendingModelMutations(lane)) finishPendingModelMutation(pending.token)
+  }
+}
+
 beforeEach(() => {
+  clearPendingModelMutations()
   target = document.createElement('div')
   document.body.appendChild(target)
   setDatabaseLite({
@@ -73,6 +82,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
+  clearPendingModelMutations()
   setDatabaseLite({} as any)
 })
 
@@ -188,6 +198,7 @@ describe('ModelRuntimeDefaultsEditor', () => {
     commandSpies.updateModelRuntimeDefaultsDurably.mockResolvedValue({
       status: 'queued',
       result: { status: 'unavailable' },
+      mutationId: 'queued-runtime-defaults',
     })
     component = mount(ModelRuntimeDefaultsEditor, { target })
 
@@ -213,5 +224,23 @@ describe('ModelRuntimeDefaultsEditor', () => {
     await flushAsync()
     expect(target.querySelector('[data-model-runtime-command-notice]')).toBeNull()
     expect(buttonByText(language.modelProfiles.edit).disabled).toBe(false)
+  })
+
+  it('releases the runtime form when the mutation helper rejects unexpectedly', async () => {
+    commandSpies.updateModelRuntimeDefaultsDurably.mockRejectedValueOnce(new Error('staging rejected'))
+    component = mount(ModelRuntimeDefaultsEditor, { target })
+
+    buttonByText(language.modelProfiles.edit).click()
+    await tick()
+    buttonByText(language.modelProfiles.reset).click()
+    await tick()
+    buttonByText(language.modelProfiles.save).click()
+    await flushAsync()
+
+    const form = target.querySelector<HTMLFieldSetElement>('[data-model-runtime-defaults-form]')
+    expect(form?.disabled).toBe(false)
+    expect(form?.getAttribute('aria-busy')).toBe('false')
+    expect(target.textContent).toContain(language.modelProfiles.commandUnavailable)
+    expect(buttonByText(language.modelProfiles.save).disabled).toBe(false)
   })
 })

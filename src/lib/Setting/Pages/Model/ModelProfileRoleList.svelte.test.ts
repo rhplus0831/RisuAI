@@ -15,7 +15,8 @@ vi.mock('src/ts/server/commands', () => ({
   subscribeServerCommandLocalEffectApplied: vi.fn(),
   updateModelPresetCommand: commandSpies.updateModelPresetCommand,
 }))
-vi.mock('src/ts/model/modelProfileMutations', () => ({
+vi.mock('src/ts/model/modelProfileMutations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/model/modelProfileMutations')>()),
   updateModelRoleProfilesDurably: commandSpies.updateModelRoleProfilesDurably,
 }))
 vi.mock('src/ts/stores.svelte', () => ({
@@ -23,6 +24,7 @@ vi.mock('src/ts/stores.svelte', () => ({
 }))
 import ModelProfileRoleList from './ModelProfileRoleList.svelte'
 import { language } from 'src/lang'
+import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
@@ -73,7 +75,14 @@ function roleModeSelect(roleIndex: number): HTMLSelectElement {
   return select
 }
 
+function clearPendingModelMutations(): void {
+  for (const lane of ['model-profiles', 'model-runtime-defaults'] as const) {
+    for (const pending of getPendingModelMutations(lane)) finishPendingModelMutation(pending.token)
+  }
+}
+
 beforeEach(() => {
+  clearPendingModelMutations()
   target = document.createElement('div')
   document.body.appendChild(target)
   setDatabaseLite({
@@ -110,6 +119,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
+  clearPendingModelMutations()
   setDatabaseLite({} as any)
 })
 
@@ -230,6 +240,7 @@ describe('ModelProfileRoleList', () => {
     commandSpies.updateModelRoleProfilesDurably.mockResolvedValue({
       status: 'queued',
       result: { status: 'unavailable' },
+      mutationId: 'queued-role-bindings',
     })
     component = mount(ModelProfileRoleList, { target })
     await tick()
@@ -263,6 +274,21 @@ describe('ModelProfileRoleList', () => {
     })
     await flushAsync()
     expect(target.querySelector('[data-model-role-command-notice]')).toBeNull()
+    expect(Array.from(target.querySelectorAll('select')).every((select) => !select.disabled)).toBe(true)
+  })
+
+  it('releases role controls when the mutation helper rejects unexpectedly', async () => {
+    commandSpies.updateModelRoleProfilesDurably.mockRejectedValueOnce(new Error('staging rejected'))
+    component = mount(ModelProfileRoleList, { target })
+    await tick()
+
+    setSelectValue(roleModeSelect(0), 'profile')
+    await tick()
+    buttonByText(language.modelProfiles.apply).click()
+    await flushAsync()
+
+    expect(target.textContent).toContain(language.modelProfiles.commandUnavailable)
+    expect(buttonByText(language.modelProfiles.apply).disabled).toBe(false)
     expect(Array.from(target.querySelectorAll('select')).every((select) => !select.disabled)).toBe(true)
   })
 

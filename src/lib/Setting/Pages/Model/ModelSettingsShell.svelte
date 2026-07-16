@@ -8,7 +8,15 @@
   import { normalizeLegacySeperateModels, normalizeModelRoleOverrides, MODEL_ROLES } from 'src/ts/model/modelRoles'
   import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
-  import { convertLegacyModelProfilesDurably } from 'src/ts/model/modelProfileMutations'
+  import {
+    beginPendingModelMutation,
+    convertLegacyModelProfilesDurably,
+    finishPendingModelMutation,
+    getPendingModelMutations,
+    isPendingModelMutationProjectionApplied,
+    retainPendingModelMutation,
+    subscribePendingModelMutations,
+  } from 'src/ts/model/modelProfileMutations'
   import type { ServerCommandResult } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { openPresetListModal } from 'src/ts/stores.svelte'
@@ -21,9 +29,9 @@
   let activeTab = $state<ModelSettingsTab>('roles')
   let conversionPromptDeclined = $state(false)
   let converting = $state(false)
-  let queuedConversionBaselineIds = $state<string[] | null>(null)
+  let pendingMutations = $state(getPendingModelMutations('model-profiles'))
+  let pendingRuntimeMutations = $state(getPendingModelMutations('model-runtime-defaults'))
   let commandError = $state('')
-  let commandNotice = $state('')
 
   let modelProfileUiState = $derived.by(() =>
     resolveModelProfileUiState({
@@ -31,7 +39,11 @@
       lookupModelInfo: (_database, id) => getModelInfo(id),
     }),
   )
-  let conversionQueued = $derived(queuedConversionBaselineIds !== null)
+  let modelMutationPending = $derived(pendingMutations.length > 0)
+  let conversionQueued = $derived(pendingMutations.some((pending) => pending.projection.kind === 'legacy-conversion'))
+  let commandNotice = $derived(
+    pendingMutations.some((pending) => pending.phase !== 'dispatching') ? language.modelProfiles.commandQueued : '',
+  )
   let legacyOnly = $derived(isClearlyLegacyOnly())
   let showConversionPrompt = $derived((legacyOnly || conversionQueued) && !conversionPromptDeclined)
   let showAdvancedLegacySettings = $derived(!modelProfileUiState.allRolesUseDurableProfiles)
@@ -48,9 +60,25 @@
   let legacyAuxModel = $derived(getDatabase().subModel || language.none)
 
   $effect(() => {
-    if (!queuedConversionBaselineIds || !queuedConversionApplied(queuedConversionBaselineIds)) return
-    queuedConversionBaselineIds = null
-    commandNotice = ''
+    return subscribePendingModelMutations('model-profiles', (pending) => {
+      pendingMutations = pending
+    })
+  })
+
+  $effect(() => {
+    return subscribePendingModelMutations('model-runtime-defaults', (pending) => {
+      pendingRuntimeMutations = pending
+    })
+  })
+
+  $effect(() => {
+    const database = getDatabase()
+    for (const pending of [...pendingMutations, ...pendingRuntimeMutations]) {
+      if (pending.phase === 'dispatching') continue
+      if (isPendingModelMutationProjectionApplied(pending.projection, database)) {
+        finishPendingModelMutation(pending.token)
+      }
+    }
   })
 
   function nonBlank(value: unknown): boolean {
@@ -82,14 +110,6 @@
     return hasLegacyModelFields()
   }
 
-  function queuedConversionApplied(baselineIds: string[]): boolean {
-    const database = getDatabase()
-    const baseline = new Set(baselineIds)
-    const newProfileCount = (database.modelProfiles ?? []).filter((profile) => !baseline.has(profile.id)).length
-    const roleProfiles = normalizeModelRoleProfiles(database.modelRoleProfiles)
-    return newProfileCount >= 2 && MODEL_ROLES.every((role) => roleProfiles[role].mode !== 'legacy')
-  }
-
   function commandErrorMessage(result: Exclude<ServerCommandResult, { status: 'ok' }>): string {
     return result.status === 'conflict'
       ? language.modelProfiles.commandConflict
@@ -99,24 +119,37 @@
   }
 
   async function convertLegacyProfiles(): Promise<void> {
-    if (converting || conversionQueued) return
+    if (converting || modelMutationPending) return
     converting = true
     commandError = ''
-    commandNotice = ''
     const baselineIds = (getDatabase().modelProfiles ?? []).map((profile) => profile.id)
-    const outcome = await convertLegacyModelProfilesDurably()
-    converting = false
-
-    if (outcome.status === 'accepted') {
-      conversionPromptDeclined = false
+    const pendingToken = beginPendingModelMutation('model-profiles', {
+      kind: 'legacy-conversion',
+      baselineIds,
+    })
+    if (!pendingToken) {
+      converting = false
       return
     }
-    if (outcome.status === 'queued') {
-      queuedConversionBaselineIds = baselineIds
-      commandNotice = language.modelProfiles.commandQueued
-      return
+    try {
+      const outcome = await convertLegacyModelProfilesDurably()
+      if (outcome.status === 'accepted') {
+        finishPendingModelMutation(pendingToken)
+        conversionPromptDeclined = false
+        return
+      }
+      if (outcome.status === 'queued') {
+        retainPendingModelMutation(pendingToken, outcome.mutationId)
+        return
+      }
+      finishPendingModelMutation(pendingToken)
+      commandError = commandErrorMessage(outcome.result)
+    } catch {
+      finishPendingModelMutation(pendingToken)
+      commandError = commandErrorMessage({ status: 'unavailable' })
+    } finally {
+      converting = false
     }
-    commandError = commandErrorMessage(outcome.result)
   }
 </script>
 
@@ -138,13 +171,13 @@
         </div>
       {/if}
       <div class="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" disabled={converting || conversionQueued} onclick={convertLegacyProfiles}>
+        <Button size="sm" disabled={converting || modelMutationPending} onclick={convertLegacyProfiles}>
           {converting ? language.modelProfiles.converting : language.modelProfiles.convertToProfiles}
         </Button>
         <Button
           size="sm"
           styled="outlined"
-          disabled={converting || conversionQueued}
+          disabled={converting || modelMutationPending}
           onclick={() => {
             conversionPromptDeclined = true
           }}>
@@ -155,7 +188,7 @@
   {:else if legacyOnly}
     <div class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-darkborderc p-3">
       <span class="text-sm text-textcolor2">{language.modelProfiles.convertDeclinedNotice}</span>
-      <Button size="sm" disabled={converting || conversionQueued} onclick={convertLegacyProfiles}>
+      <Button size="sm" disabled={converting || modelMutationPending} onclick={convertLegacyProfiles}>
         {converting ? language.modelProfiles.converting : language.modelProfiles.convertToProfiles}
       </Button>
     </div>
@@ -201,7 +234,7 @@
       </div>
       {#if legacyOnly}
         <div class="flex justify-end">
-          <Button size="sm" disabled={converting || conversionQueued} onclick={convertLegacyProfiles}>
+          <Button size="sm" disabled={converting || modelMutationPending} onclick={convertLegacyProfiles}>
             {converting ? language.modelProfiles.converting : language.modelProfiles.convertToProfiles}
           </Button>
         </div>

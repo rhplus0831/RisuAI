@@ -6,25 +6,41 @@
     normalizeModelRuntimeDefaults,
     type ModelProfileRecordRuntimeOptions,
   } from 'src/ts/model/modelProfileRecords'
-  import { updateModelRuntimeDefaultsDurably } from 'src/ts/model/modelProfileMutations'
+  import {
+    beginPendingModelMutation,
+    finishPendingModelMutation,
+    getPendingModelMutations,
+    isPendingModelMutationProjectionApplied,
+    retainPendingModelMutation,
+    subscribePendingModelMutations,
+    updateModelRuntimeDefaultsDurably,
+  } from 'src/ts/model/modelProfileMutations'
   import type { ServerCommandResult } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import ModelRuntimeOptionsEditor from './ModelRuntimeOptionsEditor.svelte'
 
   let editing = $state(false)
   let saving = $state(false)
-  let queuedRuntimeDefaults = $state<ModelProfileRecordRuntimeOptions | null>(null)
+  let pendingMutations = $state(getPendingModelMutations('model-runtime-defaults'))
   let commandError = $state('')
-  let commandNotice = $state('')
   let draft = $state<ModelProfileRecordRuntimeOptions>({})
   let editBaseline = $state<ModelProfileRecordRuntimeOptions>({})
   let lastServerSnapshot = $state('')
 
   let runtimeDefaults = $derived(normalizeModelRuntimeDefaults(getDatabase().modelRuntimeDefaults))
-  let saveQueued = $derived(queuedRuntimeDefaults !== null)
+  let saveQueued = $derived(pendingMutations.length > 0)
+  let commandNotice = $derived(
+    pendingMutations.some((pending) => pending.phase !== 'dispatching') ? language.modelProfiles.commandQueued : '',
+  )
   let runtimeDefaultCount = $derived(Object.keys(runtimeDefaults).length)
   let draftRuntimeDefaultCount = $derived(Object.keys(normalizeModelRuntimeDefaults(draft)).length)
   let draftChanged = $derived(snapshot(draft) !== snapshot(runtimeDefaults))
+
+  $effect(() => {
+    return subscribePendingModelMutations('model-runtime-defaults', (pending) => {
+      pendingMutations = pending
+    })
+  })
 
   $effect(() => {
     const nextSnapshot = snapshot(runtimeDefaults)
@@ -42,9 +58,17 @@
   })
 
   $effect(() => {
-    if (!queuedRuntimeDefaults || snapshot(queuedRuntimeDefaults) !== snapshot(runtimeDefaults)) return
-    queuedRuntimeDefaults = null
-    commandNotice = ''
+    for (const pending of pendingMutations) {
+      if (
+        pending.phase !== 'dispatching' &&
+        pending.projection.kind === 'runtime-defaults' &&
+        isPendingModelMutationProjectionApplied(pending.projection, {
+          modelRuntimeDefaults: runtimeDefaults,
+        })
+      ) {
+        finishPendingModelMutation(pending.token)
+      }
+    }
   })
 
   function cloneJsonValue<T>(value: T): T {
@@ -89,7 +113,6 @@
     editBaseline = cloneJsonValue(runtimeDefaults)
     lastServerSnapshot = snapshot(runtimeDefaults)
     commandError = ''
-    commandNotice = ''
     editing = true
   }
 
@@ -119,22 +142,35 @@
     if (saving || saveQueued) return
     saving = true
     commandError = ''
-    commandNotice = ''
     const runtimeDefaultsDraft = cloneJsonValue(normalizeModelRuntimeDefaults(draft))
-    const outcome = await updateModelRuntimeDefaultsDurably(runtimeDefaultsDraft)
-    saving = false
-
-    if (outcome.status === 'accepted') {
-      editing = false
+    const pendingToken = beginPendingModelMutation('model-runtime-defaults', {
+      kind: 'runtime-defaults',
+      runtimeDefaults: runtimeDefaultsDraft,
+    })
+    if (!pendingToken) {
+      saving = false
       return
     }
-    if (outcome.status === 'queued') {
-      editing = false
-      queuedRuntimeDefaults = cloneJsonValue(runtimeDefaultsDraft)
-      commandNotice = language.modelProfiles.commandQueued
-      return
+    try {
+      const outcome = await updateModelRuntimeDefaultsDurably(runtimeDefaultsDraft)
+      if (outcome.status === 'accepted') {
+        finishPendingModelMutation(pendingToken)
+        editing = false
+        return
+      }
+      if (outcome.status === 'queued') {
+        retainPendingModelMutation(pendingToken, outcome.mutationId)
+        editing = false
+        return
+      }
+      finishPendingModelMutation(pendingToken)
+      commandError = commandErrorMessage(outcome.result)
+    } catch {
+      finishPendingModelMutation(pendingToken)
+      commandError = commandErrorMessage({ status: 'unavailable' })
+    } finally {
+      saving = false
     }
-    commandError = commandErrorMessage(outcome.result)
   }
 </script>
 

@@ -11,7 +11,10 @@ const mutationMocks = vi.hoisted(() => ({
   updateModelRuntimeDefaultsDurably: vi.fn(),
 }))
 
-vi.mock('src/ts/model/modelProfileMutations', () => mutationMocks)
+vi.mock('src/ts/model/modelProfileMutations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/model/modelProfileMutations')>()),
+  ...mutationMocks,
+}))
 vi.mock('src/ts/server/commands', () => ({
   subscribeServerCommandLocalEffectApplied: vi.fn(() => () => {}),
 }))
@@ -29,6 +32,13 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import { language } from 'src/lang'
+import {
+  beginPendingModelMutation,
+  finishPendingModelMutation,
+  getPendingModelMutations,
+  modelProfileProjectionFingerprint,
+  retainPendingModelMutation,
+} from 'src/ts/model/modelProfileMutations'
 import { MODEL_ROLES } from 'src/ts/model/modelRoles'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import ModelSettingsShell from './ModelSettingsShell.svelte'
@@ -51,7 +61,14 @@ async function flushAsync(): Promise<void> {
   await tick()
 }
 
+function clearPendingModelMutations(): void {
+  for (const lane of ['model-profiles', 'model-runtime-defaults'] as const) {
+    for (const pending of getPendingModelMutations(lane)) finishPendingModelMutation(pending.token)
+  }
+}
+
 beforeEach(() => {
+  clearPendingModelMutations()
   target = document.createElement('div')
   document.body.appendChild(target)
   setDatabaseLite({
@@ -75,6 +92,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
+  clearPendingModelMutations()
   setDatabaseLite({} as any)
 })
 
@@ -98,6 +116,7 @@ describe('ModelSettingsShell legacy conversion', () => {
     mutationMocks.convertLegacyModelProfilesDurably.mockResolvedValue({
       status: 'queued',
       result: { status: 'unavailable' },
+      mutationId: 'queued-conversion',
     })
     component = mount(ModelSettingsShell, { target })
     await tick()
@@ -135,5 +154,78 @@ describe('ModelSettingsShell legacy conversion', () => {
     await flushAsync()
     expect(target.querySelector('[data-model-conversion-command-notice]')).toBeNull()
     expect(conversionButtons()).toHaveLength(0)
+  })
+
+  it('keeps conversion fenced across a settings remount until its projection converges', async () => {
+    mutationMocks.convertLegacyModelProfilesDurably.mockResolvedValue({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationId: 'queued-conversion-remount',
+    })
+    component = mount(ModelSettingsShell, { target })
+    await tick()
+    conversionButtons()[0]?.click()
+    await flushAsync()
+
+    unmount(component)
+    component = undefined
+    target.replaceChildren()
+    component = mount(ModelSettingsShell, { target })
+    await tick()
+
+    expect(conversionButtons().every((button) => button.disabled)).toBe(true)
+    conversionButtons()[0]?.click()
+    await flushAsync()
+    expect(mutationMocks.convertLegacyModelProfilesDurably).toHaveBeenCalledTimes(1)
+
+    getDatabase().modelProfiles = [
+      { id: 'converted-main', name: 'Main', providerId: 'debug-echo', modelId: 'echo_model' },
+      { id: 'converted-aux', name: 'Aux', providerId: 'debug-echo', modelId: 'echo_model' },
+    ]
+    getDatabase().modelRoleProfiles = Object.fromEntries(
+      MODEL_ROLES.map((role, index) => [
+        role,
+        { mode: 'profile', profileId: index % 2 === 0 ? 'converted-main' : 'converted-aux' },
+      ]),
+    ) as any
+    await flushAsync()
+
+    expect(getPendingModelMutations('model-profiles')).toEqual([])
+    expect(conversionButtons()).toHaveLength(0)
+  })
+
+  it('clears a queued profile create while the Profiles tab is unmounted', async () => {
+    const attemptedProfile = {
+      name: 'Queued profile',
+      providerId: 'debug-echo',
+      modelId: 'debug-echo',
+    }
+    const token = beginPendingModelMutation('model-profiles', {
+      kind: 'profile-create',
+      baselineIds: [],
+      attemptedFingerprint: modelProfileProjectionFingerprint(attemptedProfile, true),
+    })
+    retainPendingModelMutation(token!, 'queued-profile-create')
+
+    component = mount(ModelSettingsShell, { target })
+    await tick()
+    expect(getPendingModelMutations('model-profiles')).toHaveLength(1)
+
+    getDatabase().modelProfiles = [{ id: 'server-generated-id', ...attemptedProfile }]
+    await flushAsync()
+
+    expect(getPendingModelMutations('model-profiles')).toEqual([])
+  })
+
+  it('releases conversion controls when the mutation helper rejects unexpectedly', async () => {
+    mutationMocks.convertLegacyModelProfilesDurably.mockRejectedValueOnce(new Error('staging rejected'))
+    component = mount(ModelSettingsShell, { target })
+    await tick()
+
+    conversionButtons()[0]?.click()
+    await flushAsync()
+
+    expect(target.textContent).toContain(language.modelProfiles.commandUnavailable)
+    expect(conversionButtons()[0]?.disabled).toBe(false)
   })
 })
