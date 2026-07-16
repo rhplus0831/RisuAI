@@ -324,6 +324,13 @@ function queueDeferredSettingWrite(
 
   const baseline = existing?.previousRoot ?? cloneJsonValue(previousRoot)
   if (snapshotJson(desiredRoot) === snapshotJson(baseline)) {
+    // The split-preset queue was entered on the first edit. Mirror the revert
+    // through that same queue so it can discard its staged intermediate value.
+    if (target.kind === 'preset') {
+      mirrorTopLevelPresetFieldToTarget(target.target, desiredRoot)
+    } else if (target.kind === 'promptOverride') {
+      mirrorPromptPresetModelOverrideFieldToTarget(target.target, desiredRoot)
+    }
     pendingDeferredSettingWrites.delete(target.ownerKey)
     if (existing?.outbox) void acknowledgePendingMutation(existing.outbox)
     return false
