@@ -2703,7 +2703,9 @@ describe('preset command rollback (L21)', () => {
           },
         },
       ])
-      expect(getDatabase().promptPresetsId).toBe(0)
+      // The selection has its own durable successor row, so it stays visible
+      // while the outgoing prompt edit remains retryable.
+      expect(getDatabase().promptPresetsId).toBe(1)
 
       recover = true
       const recoveryStart = calls.length
@@ -2814,9 +2816,9 @@ describe('preset command rollback (L21)', () => {
         'DELETE /api/v1/commands/model-presets/model-a',
       ])
       expect(await listPendingMutations()).toEqual([])
-      // Durable replay is transport-only; the transient rollback remains
-      // projected until the next authoritative resource hydration.
-      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b'])
+      // Both exact rows were accepted in order, so the newer deletion remains
+      // the visible projection until authoritative hydration confirms it.
+      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-b'])
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -2903,7 +2905,7 @@ describe('preset command rollback (L21)', () => {
     }
   })
 
-  it('restores the latest optimistic model preset and settings when its durable delete fails', async () => {
+  it('retains the optimistic model deletion and selection when its durable delete is retryable', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
     await preparePendingMutationOutbox({
@@ -2951,16 +2953,15 @@ describe('preset command rollback (L21)', () => {
       expect(getDatabase().temperature).toBe(22)
       await waitForState(() => {
         expect(calls.map((call) => call.method)).toEqual(['PATCH', 'DELETE'])
-        expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b'])
       })
 
       expect(getDatabase().modelPresetsId).toBe(0)
       expect(getDatabase().modelPresets[0]).toMatchObject({
-        id: 'model-a',
-        name: 'Model A latest optimistic',
-        temperature: 44,
+        id: 'model-b',
+        name: 'Model B',
+        temperature: 22,
       })
-      expect(getDatabase().temperature).toBe(44)
+      expect(getDatabase().temperature).toBe(22)
       expect((await listPendingMutations()).map((entry) => entry.intent.requests[0]?.method)).toEqual(['DELETE'])
     } finally {
       await clearPendingMutationOutbox()
@@ -3232,7 +3233,7 @@ describe('preset command rollback (L21)', () => {
         'DELETE /api/v1/commands/prompt-presets/prompt-a',
       ])
       expect(await listPendingMutations()).toEqual([])
-      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b'])
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-b'])
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

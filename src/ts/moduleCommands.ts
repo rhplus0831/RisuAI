@@ -36,7 +36,14 @@ import {
 import type { ChatGenerationSettings } from './chatGenerationSettings'
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
 import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
-import { stagePendingMutation, type DurableMutationIntent } from './server/pendingMutationOutbox'
+import {
+  acceptPendingMutationLocalProjectionToken,
+  advancePendingMutationProjectionTargets,
+  pendingMutationModuleEnabledProjectionTarget,
+  retirePendingMutationLocalProjectionToken,
+  stagePendingMutation,
+  type DurableMutationIntent,
+} from './server/pendingMutationOutbox'
 import { moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 
 export interface GlobalModuleStateSnapshot {
@@ -800,33 +807,66 @@ function runModuleCollectionPatchSteps(steps: ModuleCollectionPatchStep[]): void
   const operationSteps = steps.map((step) => ({
     ...step,
     operation: issueGlobalModuleOperation(step.rollbackEntries),
+    projectionToken: advancePendingMutationProjectionTargets(
+      step.rollbackEntries
+        .filter((entry): entry is ModuleEnableRollbackEntry => entry.kind === 'module-enable')
+        .map((entry) => pendingMutationModuleEnabledProjectionTarget(entry.moduleId)),
+    ),
   }))
 
   void (async () => {
     let currentStepIndex = 0
+    let rollbackRan = false
     try {
-      await runServerCommandSequence(
+      const failure = await runServerCommandSequence(
         operationSteps.map((step, index) => async (baseRevision) => {
           currentStepIndex = index
           const result = await step.factory(baseRevision)
           if (result.status === 'ok') {
             clearGlobalModuleOperation(step.operation)
+            acceptPendingMutationLocalProjectionToken(step.projectionToken)
           }
           return result
         }),
         () => {
+          rollbackRan = true
+          retireModuleProjectionTokens(operationSteps, currentStepIndex)
           rollbackModuleCollectionPatchSteps(operationSteps, currentStepIndex)
         },
       )
+      // A destructive refresh can invalidate the sequence rollback while its
+      // request is in flight. The authoritative refresh owns the UI state, but
+      // these local fence tokens must still stop shadowing later generations.
+      if (failure !== null && !rollbackRan) retireModuleProjectionTokens(operationSteps, currentStepIndex)
     } catch (error) {
       console.error('Module collection command sequence rejected:', error)
+      retireModuleProjectionTokens(operationSteps, currentStepIndex)
       rollbackModuleCollectionPatchSteps(operationSteps, currentStepIndex)
     }
   })()
 }
 
+function retireModuleProjectionTokens(
+  steps: Array<
+    ModuleCollectionPatchStep & {
+      operation: GlobalModuleOperationToken
+      projectionToken: ReturnType<typeof advancePendingMutationProjectionTargets>
+    }
+  >,
+  failedStepIndex: number,
+): void {
+  for (let index = failedStepIndex; index < steps.length; index += 1) {
+    retirePendingMutationLocalProjectionToken(steps[index]?.projectionToken ?? null)
+  }
+}
+
 function rollbackModuleCollectionPatchSteps(
-  steps: Array<ModuleCollectionPatchStep & { operation: GlobalModuleOperationToken }>,
+  steps: Array<
+    ModuleCollectionPatchStep & {
+      operation: GlobalModuleOperationToken
+      projectionToken: ReturnType<typeof advancePendingMutationProjectionTargets>
+    }
+  >,
   failedStepIndex: number,
 ): void {
   for (let index = steps.length - 1; index >= failedStepIndex; index -= 1) {

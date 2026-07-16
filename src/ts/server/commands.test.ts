@@ -1522,8 +1522,10 @@ describe('server command API adapter', () => {
       reconciledRevisions = events.map((event) => event.revision)
       reconciledLocalEffects = Array.from(localEffects.entries())
     })
-    const rollback = vi.fn(() => {
-      order.push('rollback')
+    const rollback = vi.fn(async () => {
+      order.push('rollback-start')
+      await Promise.resolve()
+      order.push('rollback-finish')
     })
     const skipped = vi.fn(async (baseRevision: number) => ({
       status: 'ok' as const,
@@ -1554,10 +1556,34 @@ describe('server command API adapter', () => {
     ])
     expect(skipped).not.toHaveBeenCalled()
     expect(rollback).toHaveBeenCalledTimes(1)
-    expect(order).toEqual(['accepted-response', 'conflict-response', 'rollback', 'reconcile'])
+    expect(order).toEqual(['accepted-response', 'conflict-response', 'rollback-start', 'rollback-finish', 'reconcile'])
     expect(reconciledRevisions).toEqual([51])
     expect(reconciledLocalEffects).toEqual([])
     expect(peekCachedServerCommandRevision()).toBe(55)
+  })
+
+  it('invalidates an asynchronous sequence rollback when a destructive refresh wins during cleanup', async () => {
+    setCachedServerCommandRevision(50)
+    const cleanupStarted = createDeferred<void>()
+    const cleanupRelease = createDeferred<void>()
+    const restoreProjection = vi.fn()
+
+    const sequence = runServerCommandSequence(
+      [async () => ({ status: 'error' as const, error: 'terminal failure' })],
+      async (rollbackIsCurrent) => {
+        expect(rollbackIsCurrent()).toBe(true)
+        cleanupStarted.resolve()
+        await cleanupRelease.promise
+        if (rollbackIsCurrent()) restoreProjection()
+      },
+    )
+
+    await cleanupStarted.promise
+    createDestructiveRefreshToken('sequence-cleanup-refresh')
+    cleanupRelease.resolve()
+
+    await expect(sequence).resolves.toEqual({ status: 'error', error: 'terminal failure' })
+    expect(restoreProjection).not.toHaveBeenCalled()
   })
 
   it('completes compatibility sequences whose successful result has no command event', async () => {

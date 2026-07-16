@@ -26,6 +26,8 @@ import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRe
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
 import {
   acknowledgePendingMutation,
+  pendingMutationSettingsFieldProjectionTarget,
+  recordPendingMutationProjectionTargets,
   stagePendingMutation,
   type DurableMutationIntent,
   type PendingMutationHandle,
@@ -1745,6 +1747,12 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
       dependencyKeys: personaOwnerDependencyKeys(save === 'save' ? previousPersonaId : null, personaId),
     }
     const outbox = stagePendingMutation(PERSONA_SELECTION_MUTATION_KEY, intent)
+    recordPendingMutationProjectionTargets(
+      outbox,
+      (['username', 'userIcon', 'personaPrompt', 'userNote'] as const)
+        .filter((key) => !exactJsonValuesEqual(previous[key], attempted[key]))
+        .map(pendingMutationSettingsFieldProjectionTarget),
+    )
     void dispatchDurableMutation(outbox, intent, (transport) =>
       runServerCommand({
         command: (baseRevision) =>

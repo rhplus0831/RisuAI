@@ -35,6 +35,19 @@ export interface PendingMutationHandle {
   phase: PendingMutationPhase
 }
 
+export interface PendingMutationProjectionFence {
+  readonly target: string
+  readonly generationId: string
+  readonly ordinal: number
+  readonly ownerWriterSessionId: string
+  readonly writerEpoch: number
+  readonly databaseLineage: string
+}
+
+export interface PendingMutationLocalProjectionToken {
+  readonly generationId: string
+}
+
 export interface PendingMutationOutboxEntry {
   handle: PendingMutationHandle
   intent: DurableMutationIntent
@@ -76,6 +89,13 @@ interface PendingMutationScope {
   writerSessionId: string
   writerEpoch: number
   databaseLineage: string
+}
+
+interface LivePendingMutationProjectionGeneration {
+  id: string
+  ordinal: number
+  scope: PendingMutationScope
+  targetKeys: Set<string>
 }
 
 interface StoredPendingMutation {
@@ -164,6 +184,10 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/modules\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/modules\/[^/?#]+$/ },
   { method: 'POST', path: /^\/modules\/enable$/ },
+  { method: 'POST', path: /^\/loadouts$/ },
+  { method: 'DELETE', path: /^\/loadouts\/[^/?#]+$/ },
+  { method: 'POST', path: /^\/loadouts\/[^/?#]+\/favorite$/ },
+  { method: 'POST', path: /^\/loadouts\/[^/?#]+\/touch$/ },
   { method: 'PATCH', path: /^\/settings\/advanced\/global-scripts$/ },
   { method: 'PUT', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },
   { method: 'PATCH', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },
@@ -185,8 +209,155 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
 let outboxDatabasePromise: Promise<IDBDatabase | null> | null = null
 let outboxEncryptionKeyPromise: Promise<CryptoKey | null> | null = null
 let nextSequenceOffset = 0
+let nextProjectionGenerationOrdinal = 0
 let persistenceWarningReported = false
 let pendingMutationScope: PendingMutationScope | null = null
+const liveProjectionGenerations = new Map<string, LivePendingMutationProjectionGeneration>()
+const liveProjectionGenerationStacks = new Map<string, string[]>()
+
+export function pendingMutationSettingsFieldProjectionTarget(field: string): string {
+  return `settings-field:${encodeProjectionTargetPart(field)}`
+}
+
+export function pendingMutationModuleEnabledProjectionTarget(moduleId: string): string {
+  return `module-enabled:${encodeProjectionTargetPart(moduleId)}`
+}
+
+export function pendingMutationLoadoutRowProjectionTarget(loadoutId: string): string {
+  return `loadout-row:${encodeProjectionTargetPart(loadoutId)}`
+}
+
+export function pendingMutationChatGenerationSettingsProjectionTarget(chatId: string): string {
+  return `chat-generation-settings:${encodeProjectionTargetPart(chatId)}`
+}
+
+export function pendingMutationPersonaRowProjectionTarget(personaId: string): string {
+  return `persona-row:${encodeProjectionTargetPart(personaId)}`
+}
+
+export function pendingMutationPresetRowProjectionTarget(
+  kind: 'legacy' | 'model' | 'prompt',
+  presetId: string,
+): string {
+  return `preset-row:${kind}:${encodeProjectionTargetPart(presetId)}`
+}
+
+export function pendingMutationSelectionProjectionTarget(
+  kind: 'legacyPreset' | 'modelPreset' | 'persona' | 'promptPreset',
+): string {
+  return `selection:${kind}`
+}
+
+/**
+ * Record additional concrete projection fields owned by an already-staged
+ * durable generation. Registration preserves its original stage ordinal, so
+ * late intent preparation cannot jump ahead of a newer user action.
+ */
+export function recordPendingMutationProjectionTargets(
+  handle: PendingMutationHandle,
+  targets: readonly string[],
+): void {
+  const scope = pendingMutationScopeFromHandle(handle)
+  if (!scope) return
+  recordLiveProjectionGeneration(projectionGenerationId(scope, handle.mutationId), scope, targets)
+}
+
+/** Advance concrete projection fields for optimistic writers without an outbox row. */
+export function advancePendingMutationProjectionTargets(
+  targets: readonly string[],
+): PendingMutationLocalProjectionToken | null {
+  const scope = pendingMutationScope
+  if (!scope || targets.length === 0) return null
+  const generationId = projectionGenerationId(scope, `local-${createMutationId()}`)
+  recordLiveProjectionGeneration(generationId, scope, targets)
+  return { generationId }
+}
+
+export function retirePendingMutationLocalProjectionToken(token: PendingMutationLocalProjectionToken | null): void {
+  if (token) retireLiveProjectionGeneration(token.generationId)
+}
+
+export function acceptPendingMutationLocalProjectionToken(token: PendingMutationLocalProjectionToken | null): void {
+  if (token) compactAcceptedLiveProjectionGeneration(token.generationId)
+}
+
+export function pendingMutationProjectionTargets(intent: DurableMutationIntent): string[] {
+  const normalized = normalizeIntent(intent)
+  const targets = new Set<string>()
+  for (const request of normalized.requests) {
+    for (const target of pendingMutationRequestProjectionTargets(request)) targets.add(target)
+  }
+  if (normalized.requests.some((request) => request.path === '/personas/select')) {
+    for (const dependencyKey of normalized.dependencyKeys ?? []) {
+      if (dependencyKey.startsWith('persona-profile:')) {
+        targets.add(pendingMutationPersonaRowProjectionTarget(dependencyKey.slice('persona-profile:'.length)))
+      }
+    }
+  }
+  return Array.from(targets).sort()
+}
+
+export function pendingMutationProjectionFence(
+  handle: PendingMutationHandle,
+  target: string,
+): PendingMutationProjectionFence | null {
+  const scope = pendingMutationScopeFromHandle(handle)
+  if (!scope) return null
+  return liveProjectionFence(projectionGenerationId(scope, handle.mutationId), target)
+}
+
+export function pendingMutationLocalProjectionFence(
+  token: PendingMutationLocalProjectionToken | null,
+  target: string,
+): PendingMutationProjectionFence | null {
+  return token ? liveProjectionFence(token.generationId, target) : null
+}
+
+/** Test/support hook for asserting accepted-generation compaction. */
+export function pendingMutationProjectionGenerationCountForTests(): number {
+  return liveProjectionGenerations.size
+}
+
+function liveProjectionFence(generationId: string, target: string): PendingMutationProjectionFence | null {
+  const generation = liveProjectionGenerations.get(generationId)
+  if (!generation) return null
+  const normalizedTarget = normalizeProjectionTarget(target)
+  const targetKey = projectionTargetKey(generation.scope, normalizedTarget)
+  if (!generation.targetKeys.has(targetKey)) return null
+  return {
+    target: normalizedTarget,
+    generationId,
+    ordinal: generation.ordinal,
+    ownerWriterSessionId: generation.scope.writerSessionId,
+    writerEpoch: generation.scope.writerEpoch,
+    databaseLineage: generation.scope.databaseLineage,
+  }
+}
+
+export function isPendingMutationProjectionFenceCurrent(fence: PendingMutationProjectionFence): boolean {
+  const currentScope = pendingMutationScope
+  if (
+    !currentScope ||
+    currentScope.writerSessionId !== fence.ownerWriterSessionId ||
+    currentScope.writerEpoch !== fence.writerEpoch ||
+    currentScope.databaseLineage !== fence.databaseLineage
+  ) {
+    return false
+  }
+  const targetKey = projectionTargetKey(
+    {
+      writerSessionId: fence.ownerWriterSessionId,
+      writerEpoch: fence.writerEpoch,
+      databaseLineage: fence.databaseLineage,
+    },
+    fence.target,
+  )
+  return liveProjectionGenerationStacks.get(targetKey)?.at(-1) === fence.generationId
+}
+
+export function retirePendingMutationProjectionTargets(handle: PendingMutationHandle): void {
+  retirePendingMutationProjectionGeneration(handle)
+}
 
 /**
  * Recover a single unambiguous owner before writer-intent bootstrap when a
@@ -235,6 +406,15 @@ export async function preparePendingMutationOutbox(
   input: PreparePendingMutationOutboxInput,
 ): Promise<PreparePendingMutationOutboxSummary> {
   const scope = normalizeScope(input.writerSessionId, input.writerEpoch, input.databaseLineage)
+  if (
+    !input.requestedWriterWasActive ||
+    (pendingMutationScope &&
+      (pendingMutationScope.writerSessionId !== scope.writerSessionId ||
+        pendingMutationScope.writerEpoch !== scope.writerEpoch ||
+        pendingMutationScope.databaseLineage !== scope.databaseLineage))
+  ) {
+    clearLivePendingMutationProjectionGenerations()
+  }
   pendingMutationScope = scope
   const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
   if (!database || !encryptionKey) return { discarded: 0 }
@@ -311,7 +491,7 @@ export function stagePendingMutation(
     : Promise.resolve('unavailable' as const)
   if (!scope) reportPersistenceWarning('Pending mutation staged before server database ownership was established')
 
-  return {
+  const handle: PendingMutationHandle = {
     key: semanticKey,
     mutationId,
     sequence,
@@ -321,6 +501,11 @@ export function stagePendingMutation(
     phase: 'staged',
     ready,
   }
+  recordPendingMutationProjectionTargets(handle, pendingMutationProjectionTargets(normalizedIntent))
+  void ready.then((status) => {
+    if (status !== 'persisted') retirePendingMutationProjectionGeneration(handle)
+  })
+  return handle
 }
 
 /** Freeze this exact payload/id for dispatch. Later edits must stage a new id. */
@@ -349,6 +534,7 @@ export async function replaceStagedPendingMutationIntent(
   const replacement = await replacePendingMutationIntentExact(handle, normalizedIntent)
   if (replacement.status === 'replaced') {
     handle.phase = 'superseded'
+    recordPendingMutationProjectionTargets(replacement.handle, pendingMutationProjectionTargets(normalizedIntent))
     return replacement
   }
   if (replacement.status === 'unavailable') return { status: 'unavailable' }
@@ -402,7 +588,10 @@ async function markPendingMutationDispatchStarted(
 /** Delete a no-op or terminally rejected intent without creating a receipt ACK. */
 export async function discardPendingMutation(handle: PendingMutationHandle): Promise<PendingMutationAcknowledgement> {
   const persistence = await handle.ready
-  if (persistence === 'unavailable') return 'unavailable'
+  if (persistence === 'unavailable') {
+    retirePendingMutationProjectionGeneration(handle)
+    return 'unavailable'
+  }
   const database = await openOutboxDatabase()
   if (!database) return 'unavailable'
 
@@ -413,6 +602,7 @@ export async function discardPendingMutation(handle: PendingMutationHandle): Pro
     const matches = storedMutationMatchesHandle(current, handle)
     if (matches) store.delete(handle.mutationId)
     await transactionDone(transaction)
+    if (matches) retirePendingMutationProjectionGeneration(handle)
     return matches ? 'deleted' : 'superseded'
   } catch (error) {
     reportPersistenceWarning('Unable to discard a pending server mutation', error)
@@ -454,6 +644,7 @@ export async function completePendingMutation(
       } satisfies PendingMutationReceiptAcknowledgement)
     }
     await transactionDone(transaction)
+    if (matches) compactAcceptedPendingMutationProjectionGeneration(handle)
     return matches ? 'deleted' : 'superseded'
   } catch (error) {
     reportPersistenceWarning('Unable to complete a pending server mutation', error)
@@ -671,6 +862,7 @@ export async function deletePendingMutationReceiptAcknowledgement(
 
 /** Test/support hook. Production callers should delete exact handles. */
 export async function clearPendingMutationOutbox(): Promise<void> {
+  clearLivePendingMutationProjectionGenerations()
   const database = await openOutboxDatabase()
   if (!database) return
   const transaction = database.transaction([OUTBOX_MUTATION_STORE, OUTBOX_RECEIPT_ACK_STORE], 'readwrite')
@@ -683,8 +875,10 @@ export function resetPendingMutationOutboxForTests(): void {
   outboxDatabasePromise = null
   outboxEncryptionKeyPromise = null
   nextSequenceOffset = 0
+  nextProjectionGenerationOrdinal = 0
   persistenceWarningReported = false
   pendingMutationScope = null
+  clearLivePendingMutationProjectionGenerations()
 }
 
 async function persistPendingMutation(
@@ -696,8 +890,10 @@ async function persistPendingMutation(
   intent: DurableMutationIntent,
   replacement: PendingMutationHandle | null,
 ): Promise<PendingMutationPersistenceStatus> {
+  if (!pendingMutationScopeEquals(scope)) return 'superseded'
   const replacementPersistence = replacement ? await replacement.ready : null
   const persistedReplacement = replacementPersistence === 'persisted' ? replacement : null
+  if (!pendingMutationScopeEquals(scope)) return 'superseded'
   const [database, encryptionKey, order] = await Promise.all([
     openOutboxDatabase(),
     getOutboxEncryptionKey(),
@@ -732,6 +928,10 @@ async function persistPendingMutation(
       await transactionDone(transaction)
       return 'superseded'
     }
+    if (!pendingMutationScopeEquals(scope)) {
+      await transactionDone(transaction)
+      return 'superseded'
+    }
     store.put({
       mutationId,
       semanticKey,
@@ -745,14 +945,17 @@ async function persistPendingMutation(
       iv: iv.buffer,
       ciphertext,
     } satisfies StoredPendingMutation)
-    if (
+    const replacementDeleted =
       persistedReplacement &&
       storedMutationMatchesHandle(replaced, persistedReplacement) &&
       replaced?.dispatchStarted !== true
-    ) {
+    if (replacementDeleted && persistedReplacement) {
       store.delete(persistedReplacement.mutationId)
     }
     await transactionDone(transaction)
+    if (replacementDeleted && persistedReplacement) {
+      retirePendingMutationProjectionGeneration(persistedReplacement)
+    }
     return 'persisted'
   } catch (error) {
     reportPersistenceWarning('Unable to persist a pending server mutation', error)
@@ -927,6 +1130,208 @@ function normalizeRequest(value: unknown): DurableMutationRequest {
   }
 }
 
+function pendingMutationRequestProjectionTargets(request: DurableMutationRequest): string[] {
+  if (request.method === 'PATCH' && request.path.startsWith('/settings/')) {
+    const patch = request.body.patch
+    if (patch && typeof patch === 'object' && !Array.isArray(patch)) {
+      const fields = Object.keys(patch as Record<string, unknown>)
+      if (fields.length > 0) return fields.map(pendingMutationSettingsFieldProjectionTarget)
+    }
+  }
+
+  if (request.method === 'POST' && request.path === '/modules/enable') {
+    return typeof request.body.moduleId === 'string'
+      ? [pendingMutationModuleEnabledProjectionTarget(request.body.moduleId)]
+      : []
+  }
+
+  const deletedModule = request.method === 'DELETE' ? /^\/modules\/([^/]+)$/.exec(request.path) : null
+  if (deletedModule) {
+    return [pendingMutationModuleEnabledProjectionTarget(decodeProjectionTargetPart(deletedModule[1]!))]
+  }
+
+  const chatGenerationSettings = /^\/chats\/([^/]+)\/generation-settings$/.exec(request.path)
+  if (request.method === 'PUT' && chatGenerationSettings) {
+    return [
+      pendingMutationChatGenerationSettingsProjectionTarget(decodeProjectionTargetPart(chatGenerationSettings[1]!)),
+    ]
+  }
+
+  const loadoutTouch = request.method === 'POST' ? /^\/loadouts\/([^/]+)\/touch$/.exec(request.path) : null
+  if (loadoutTouch) {
+    return [
+      pendingMutationLoadoutRowProjectionTarget(decodeProjectionTargetPart(loadoutTouch[1]!)),
+      pendingMutationSettingsFieldProjectionTarget('lastLoadedLoadoutName'),
+    ]
+  }
+
+  if (request.method === 'POST' && request.path === '/loadouts') {
+    const loadout = request.body.loadout
+    if (loadout && typeof loadout === 'object' && !Array.isArray(loadout)) {
+      const loadoutId = (loadout as Record<string, unknown>).id
+      if (typeof loadoutId === 'string') return [pendingMutationLoadoutRowProjectionTarget(loadoutId)]
+    }
+  }
+
+  const loadoutRow = /^\/loadouts\/([^/]+)(?:\/favorite)?$/.exec(request.path)
+  if ((request.method === 'DELETE' || request.method === 'POST') && loadoutRow) {
+    return [pendingMutationLoadoutRowProjectionTarget(decodeProjectionTargetPart(loadoutRow[1]!))]
+  }
+
+  const personaPatch = request.method === 'PATCH' ? /^\/personas\/([^/]+)$/.exec(request.path) : null
+  if (personaPatch) {
+    return [pendingMutationPersonaRowProjectionTarget(decodeProjectionTargetPart(personaPatch[1]!))]
+  }
+
+  const presetRow = /^\/(presets|model-presets|prompt-presets)\/([^/]+)$/.exec(request.path)
+  if ((request.method === 'PATCH' || request.method === 'DELETE') && presetRow) {
+    const kind = presetRow[1] === 'presets' ? 'legacy' : presetRow[1] === 'model-presets' ? 'model' : 'prompt'
+    return [pendingMutationPresetRowProjectionTarget(kind, decodeProjectionTargetPart(presetRow[2]!))]
+  }
+
+  const selectionTarget =
+    request.path === '/personas/select'
+      ? pendingMutationSelectionProjectionTarget('persona')
+      : request.path === '/presets/select'
+        ? pendingMutationSelectionProjectionTarget('legacyPreset')
+        : request.path === '/model-presets/select'
+          ? pendingMutationSelectionProjectionTarget('modelPreset')
+          : request.path === '/prompt-presets/select'
+            ? pendingMutationSelectionProjectionTarget('promptPreset')
+            : null
+  if (selectionTarget) return [selectionTarget]
+
+  return [`request:${request.method}:${request.path}`]
+}
+
+function encodeProjectionTargetPart(value: string): string {
+  const normalized = value.trim()
+  if (!normalized) throw new TypeError('Pending mutation projection target part is invalid')
+  return encodeURIComponent(normalized)
+}
+
+function decodeProjectionTargetPart(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function normalizeProjectionTarget(target: string): string {
+  const normalized = target.trim()
+  if (!normalized || normalized.length > MAX_PENDING_MUTATION_KEY_LENGTH) {
+    throw new TypeError('Pending mutation projection target is invalid')
+  }
+  return normalized
+}
+
+function pendingMutationScopeFromHandle(handle: PendingMutationHandle): PendingMutationScope | null {
+  if (!handle.ownerWriterSessionId || handle.writerEpoch === null || !handle.databaseLineage) return null
+  return {
+    writerSessionId: handle.ownerWriterSessionId,
+    writerEpoch: handle.writerEpoch,
+    databaseLineage: handle.databaseLineage,
+  }
+}
+
+function projectionGenerationId(scope: PendingMutationScope, mutationId: string): string {
+  return JSON.stringify([scope.writerSessionId, scope.writerEpoch, scope.databaseLineage, mutationId])
+}
+
+function projectionTargetKey(scope: PendingMutationScope, target: string): string {
+  return JSON.stringify([
+    scope.writerSessionId,
+    scope.writerEpoch,
+    scope.databaseLineage,
+    normalizeProjectionTarget(target),
+  ])
+}
+
+function recordLiveProjectionGeneration(
+  generationId: string,
+  scope: PendingMutationScope,
+  targets: readonly string[],
+): void {
+  let generation = liveProjectionGenerations.get(generationId)
+  if (!generation) {
+    generation = {
+      id: generationId,
+      ordinal: ++nextProjectionGenerationOrdinal,
+      scope,
+      targetKeys: new Set<string>(),
+    }
+    liveProjectionGenerations.set(generationId, generation)
+  }
+
+  for (const target of new Set(targets.map(normalizeProjectionTarget))) {
+    const targetKey = projectionTargetKey(scope, target)
+    if (generation.targetKeys.has(targetKey)) continue
+    generation.targetKeys.add(targetKey)
+    const stack = liveProjectionGenerationStacks.get(targetKey) ?? []
+    stack.push(generationId)
+    stack.sort(
+      (left, right) =>
+        (liveProjectionGenerations.get(left)?.ordinal ?? -1) - (liveProjectionGenerations.get(right)?.ordinal ?? -1),
+    )
+    liveProjectionGenerationStacks.set(targetKey, stack)
+  }
+}
+
+function retirePendingMutationProjectionGeneration(handle: PendingMutationHandle): void {
+  const scope = pendingMutationScopeFromHandle(handle)
+  if (!scope) return
+  retireLiveProjectionGeneration(projectionGenerationId(scope, handle.mutationId))
+}
+
+function compactAcceptedPendingMutationProjectionGeneration(handle: PendingMutationHandle): void {
+  const scope = pendingMutationScopeFromHandle(handle)
+  if (!scope) return
+  compactAcceptedLiveProjectionGeneration(projectionGenerationId(scope, handle.mutationId))
+}
+
+/**
+ * Keep an accepted writer as the baseline for every field it owns while
+ * removing older writers for those fields. A newer optimistic writer stays on
+ * top and can still retire back to this accepted generation.
+ */
+function compactAcceptedLiveProjectionGeneration(generationId: string): void {
+  const generation = liveProjectionGenerations.get(generationId)
+  if (!generation) return
+
+  for (const targetKey of generation.targetKeys) {
+    const stack = liveProjectionGenerationStacks.get(targetKey)
+    const acceptedIndex = stack?.indexOf(generationId) ?? -1
+    if (!stack || acceptedIndex < 0) continue
+
+    for (const obsoleteGenerationId of stack.slice(0, acceptedIndex)) {
+      const obsolete = liveProjectionGenerations.get(obsoleteGenerationId)
+      if (!obsolete) continue
+      obsolete.targetKeys.delete(targetKey)
+      if (obsolete.targetKeys.size === 0) liveProjectionGenerations.delete(obsoleteGenerationId)
+    }
+    liveProjectionGenerationStacks.set(targetKey, stack.slice(acceptedIndex))
+  }
+}
+
+function retireLiveProjectionGeneration(generationId: string): void {
+  const generation = liveProjectionGenerations.get(generationId)
+  if (!generation) return
+  for (const targetKey of generation.targetKeys) {
+    const stack = liveProjectionGenerationStacks.get(targetKey)
+    if (!stack) continue
+    const retained = stack.filter((candidate) => candidate !== generationId)
+    if (retained.length === 0) liveProjectionGenerationStacks.delete(targetKey)
+    else liveProjectionGenerationStacks.set(targetKey, retained)
+  }
+  liveProjectionGenerations.delete(generationId)
+}
+
+function clearLivePendingMutationProjectionGenerations(): void {
+  liveProjectionGenerations.clear()
+  liveProjectionGenerationStacks.clear()
+}
+
 function normalizeOutboxKey(key: string): string {
   const normalized = key.trim()
   if (normalized.length === 0 || normalized.length > MAX_PENDING_MUTATION_KEY_LENGTH) {
@@ -970,6 +1375,14 @@ function pendingMutationScopeMatchesHandle(scope: PendingMutationScope, handle: 
     handle.ownerWriterSessionId === scope.writerSessionId &&
     handle.writerEpoch === scope.writerEpoch &&
     handle.databaseLineage === scope.databaseLineage
+  )
+}
+
+function pendingMutationScopeEquals(scope: PendingMutationScope): boolean {
+  return (
+    pendingMutationScope?.writerSessionId === scope.writerSessionId &&
+    pendingMutationScope.writerEpoch === scope.writerEpoch &&
+    pendingMutationScope.databaseLineage === scope.databaseLineage
   )
 }
 

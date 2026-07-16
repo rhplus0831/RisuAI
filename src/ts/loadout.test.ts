@@ -22,6 +22,7 @@ import type { Database } from './storage/database.svelte'
 import { selectedCharID } from './stores.svelte'
 import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from './loadout'
 import { currentPersonaStateSnapshot, isPersonaSettingsWatcherSuppressed, queueSelectedPersonaUpdate } from './persona'
+import { setGlobalModuleEnabled } from './moduleCommands'
 import { MODEL_ROLES } from './model/modelRoles'
 import {
   clearPendingMutationOutbox,
@@ -32,7 +33,11 @@ import {
   type DurableMutationIntent,
 } from './server/pendingMutationOutbox'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from './server/settingsMutationKey'
-import { chatResourceOwnerMutationKey, moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
+import {
+  chatResourceOwnerMutationKey,
+  loadoutOwnerMutationKey,
+  moduleOwnerMutationKey,
+} from './server/resourceOwnerMutationKeys'
 import { markPromptTemplateProjectionApplied, resetPromptTemplateHydration } from './server/promptTemplateHydration'
 import {
   queuePromptItemProjectionUpdate,
@@ -548,7 +553,7 @@ function stubApplyLoadoutFetch(
 }
 
 function stubDurableApplyLoadoutFetch(
-  onCommand?: (call: DurableCapturedFetch, commandNumber: number) => Response | null,
+  onCommand?: (call: DurableCapturedFetch, commandNumber: number) => Response | Promise<Response> | null,
 ): DurableCapturedFetch[] {
   const calls: DurableCapturedFetch[] = []
   let revision = 10
@@ -1054,9 +1059,10 @@ describe('loadout projection command helpers', () => {
           ? jsonResponse({ error: 'prompt row temporarily unavailable' }, 500)
           : null,
       )
+      vi.spyOn(Date, 'now').mockReturnValue(123456)
       setResourceWriteGuardEnabled(true)
 
-      await expect(applyLoadout(loadout, ['preset'])).resolves.toBe('persistence-failed')
+      await expect(applyLoadout(loadout, ['preset'])).resolves.toBe('queued')
 
       const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
       expect(commands.map(({ method, url }) => `${method} ${url}`)).toEqual([
@@ -1086,8 +1092,21 @@ describe('loadout projection command helpers', () => {
             },
           ],
         },
+        {
+          version: 1,
+          dependencyKeys: [SETTINGS_BRIDGE_MUTATION_KEY],
+          requests: [
+            {
+              method: 'POST',
+              path: '/loadouts/split-loadout/touch',
+              body: { lastUsed: 123456, characterId: 'char-a' },
+            },
+          ],
+        },
       ])
-      expect(testDatabaseState.db.promptPresetsId).toBe(0)
+      expect(testDatabaseState.db.promptPresetsId).toBe(1)
+      expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 123456, characterIds: ['char-a'] })
+      expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Split Loadout')
     } finally {
       resetPromptTemplateSelectionDirtyState()
       resetPromptTemplateHydration()
@@ -1096,7 +1115,7 @@ describe('loadout projection command helpers', () => {
     }
   })
 
-  it('discards durable steps skipped after an intervening module failure', async () => {
+  it('keeps a retryable module step and its persisted tail projected for replay', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
     await preparePendingMutationOutbox({
@@ -1108,9 +1127,159 @@ describe('loadout projection command helpers', () => {
 
     try {
       const loadout = seedApplyLoadoutState()
+      const authoritativeModules = cloneJsonValue(testDatabaseState.db.enabledModules)
+      const authoritativeGlobalVariables = cloneJsonValue(testDatabaseState.db.globalChatVariables)
+      let reconciledAcceptedPrefix = false
+      setServerCommandSuccessReconciler(() => {
+        reconciledAcceptedPrefix = true
+        // A legacy preset acknowledgement performs a full settings read in
+        // production. Simulate its affected groups replacing the retained
+        // module/global tail before the sequence promise resolves.
+        applySettingsGroupResource(
+          { revision: 21, group: 'modules', settings: { enabledModules: authoritativeModules } },
+          ['enabledModules'],
+        )
+        applySettingsGroupResource(
+          { revision: 21, group: 'sidebar', settings: { globalChatVariables: authoritativeGlobalVariables } },
+          ['globalChatVariables'],
+        )
+      })
       setCachedServerCommandRevision(20)
       const calls = stubDurableApplyLoadoutFetch((call) =>
         call.url === '/api/v1/commands/modules/enable' ? jsonResponse({ error: 'forced module failure' }, 500) : null,
+      )
+      vi.spyOn(Date, 'now').mockReturnValue(123456)
+      setResourceWriteGuardEnabled(true)
+
+      await expect(applyLoadout(loadout, ['preset', 'modules', 'globalVariables'])).resolves.toBe('queued')
+
+      const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
+      expect(commands.map((call) => call.url)).toEqual([
+        '/api/v1/commands/presets/select',
+        '/api/v1/commands/modules/enable',
+      ])
+      expect(commands.some((call) => call.url === '/api/v1/commands/settings/sidebar')).toBe(false)
+      const pending = await listPendingMutations()
+      expect(pending.map((entry) => ({ key: entry.handle.key, requests: entry.intent.requests }))).toEqual([
+        {
+          key: moduleOwnerMutationKey('module-a'),
+          requests: [
+            {
+              method: 'POST',
+              path: '/modules/enable',
+              body: { moduleId: 'module-a', enabled: true },
+            },
+          ],
+        },
+        {
+          key: moduleOwnerMutationKey('module-z'),
+          requests: [
+            {
+              method: 'POST',
+              path: '/modules/enable',
+              body: { moduleId: 'module-z', enabled: false },
+            },
+          ],
+        },
+        {
+          key: SETTINGS_BRIDGE_MUTATION_KEY,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/settings/sidebar',
+              body: { patch: { globalChatVariables: { mood: 'focused', scene: 'night' } } },
+            },
+          ],
+        },
+        {
+          key: loadoutOwnerMutationKey('loadout-a'),
+          requests: [
+            {
+              method: 'POST',
+              path: '/loadouts/loadout-a/touch',
+              body: { lastUsed: 123456, characterId: 'char-a' },
+            },
+          ],
+        },
+      ])
+      expect(testDatabaseState.db.botPresetsId).toBe(1)
+      expect(reconciledAcceptedPrefix).toBe(true)
+      expect(testDatabaseState.db.enabledModules).toEqual(['module-a', 'module-stay'])
+      expect(testDatabaseState.db.globalChatVariables).toEqual({ mood: 'focused', scene: 'night' })
+      expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 123456, characterIds: ['char-a'] })
+      expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Battle Loadout')
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('reserves the command queue before waiting for every loadout row to become durable', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-loadout-readiness-order',
+      writerEpoch: 8,
+      databaseLineage: 'lineage-loadout-readiness-order',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      const loadout = seedApplyLoadoutState()
+      const encryptionGate = deferred<void>()
+      const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
+      const encryptSpy = vi
+        .spyOn(globalThis.crypto.subtle, 'encrypt')
+        .mockImplementationOnce(async (algorithm, key, data) => {
+          await encryptionGate.promise
+          return originalEncrypt(algorithm, key, data)
+        })
+      setCachedServerCommandRevision(20)
+      const calls = stubDurableApplyLoadoutFetch()
+      setResourceWriteGuardEnabled(true)
+
+      const application = applyLoadout(loadout, ['modules'])
+      await vi.waitFor(() => expect(encryptSpy).toHaveBeenCalled())
+      expect(testDatabaseState.db.enabledModules).toEqual(['module-a', 'module-stay'])
+
+      setGlobalModuleEnabled('module-b', true)
+      expect(testDatabaseState.db.enabledModules).toEqual(['module-a', 'module-stay', 'module-b'])
+      await flushCommandEffects()
+      expect(calls.filter((call) => call.url.startsWith('/api/v1/commands/'))).toEqual([])
+
+      encryptionGate.resolve()
+      await expect(application).resolves.toBe('applied')
+      await vi.waitFor(() =>
+        expect(
+          calls
+            .filter((call) => call.url === '/api/v1/commands/modules/enable')
+            .map((call) => (call.body as { moduleId: string }).moduleId),
+        ).toEqual(['module-a', 'module-z', 'module-b']),
+      )
+      expect(testDatabaseState.db.enabledModules).toEqual(['module-a', 'module-stay', 'module-b'])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('discards a terminal module step and its skipped persisted tail before reverse rollback', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-loadout-terminal-step',
+      writerEpoch: 8,
+      databaseLineage: 'lineage-loadout-terminal-step',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      const loadout = seedApplyLoadoutState()
+      const previousModules = cloneJsonValue(testDatabaseState.db.enabledModules)
+      const previousGlobalVariables = cloneJsonValue(testDatabaseState.db.globalChatVariables)
+      setCachedServerCommandRevision(20)
+      const calls = stubDurableApplyLoadoutFetch((call) =>
+        call.url === '/api/v1/commands/modules/enable' ? jsonResponse({ error: 'module no longer exists' }, 404) : null,
       )
       setResourceWriteGuardEnabled(true)
 
@@ -1121,23 +1290,49 @@ describe('loadout projection command helpers', () => {
         '/api/v1/commands/presets/select',
         '/api/v1/commands/modules/enable',
       ])
-      expect(commands.some((call) => call.url === '/api/v1/commands/settings/sidebar')).toBe(false)
-      const pending = await listPendingMutations()
-      expect(pending).toHaveLength(1)
-      expect(pending[0]).toMatchObject({
-        handle: { key: moduleOwnerMutationKey('module-a') },
-        intent: {
-          requests: [
-            {
-              method: 'POST',
-              path: '/modules/enable',
-              body: { moduleId: 'module-a', enabled: true },
-            },
-          ],
-        },
-      })
+      expect(await listPendingMutations()).toEqual([])
+      expect(testDatabaseState.db.botPresetsId).toBe(1)
+      expect(testDatabaseState.db.enabledModules).toEqual(previousModules)
+      expect(testDatabaseState.db.globalChatVariables).toEqual(previousGlobalVariables)
+      expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 100, characterIds: [] })
+      expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
     } finally {
       await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('rolls back failed and skipped loadout steps when IndexedDB staging is unavailable', async () => {
+    resetPendingMutationOutboxForTests()
+    const persistenceWarning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      const loadout = seedApplyLoadoutState()
+      const previousModules = cloneJsonValue(testDatabaseState.db.enabledModules)
+      const previousGlobalVariables = cloneJsonValue(testDatabaseState.db.globalChatVariables)
+      setCachedServerCommandRevision(20)
+      const calls = stubDurableApplyLoadoutFetch((call) =>
+        call.url === '/api/v1/commands/modules/enable'
+          ? jsonResponse({ error: 'module temporarily unavailable' }, 500)
+          : null,
+      )
+      setResourceWriteGuardEnabled(true)
+
+      await expect(applyLoadout(loadout, ['preset', 'modules', 'globalVariables'])).resolves.toBe('persistence-failed')
+
+      const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
+      expect(commands.map((call) => ({ url: call.url, mutationId: call.mutationId }))).toEqual([
+        { url: '/api/v1/commands/presets/select', mutationId: null },
+        { url: '/api/v1/commands/modules/enable', mutationId: null },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+      expect(testDatabaseState.db.botPresetsId).toBe(1)
+      expect(testDatabaseState.db.enabledModules).toEqual(previousModules)
+      expect(testDatabaseState.db.globalChatVariables).toEqual(previousGlobalVariables)
+      expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 100, characterIds: [] })
+      expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
+    } finally {
+      persistenceWarning.mockRestore()
       resetPendingMutationOutboxForTests()
     }
   })
@@ -2160,6 +2355,163 @@ describe('loadout projection command helpers', () => {
     await flushCommandEffects()
 
     expect(testDatabaseState.db.loadouts).toEqual(authoritativeLoadouts)
+  })
+
+  it('reasserts a retained create after collection reconciliation erases its optimistic row', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-retained-loadout-create',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-retained-loadout-create',
+      requestedWriterWasActive: true,
+    })
+    try {
+      seedApplyLoadoutState()
+      const failure = stubDeferredCommandFailure()
+      setResourceWriteGuardEnabled(true)
+
+      const creation = saveCurrentLoadout('Retained Create')
+      const created = cloneJsonValue(testDatabaseState.db.loadouts.at(-1) as Loadout)
+      await waitForCallCount(failure.calls, 2)
+      applyCollectionsResource(
+        {
+          revision: 11,
+          collections: { loadouts: [makeLoadout({ id: 'loadout-a', name: 'Authoritative A' })] },
+        },
+        'loadouts',
+      )
+      failure.reject()
+
+      await expect(creation).resolves.toEqual(created)
+      expect(testDatabaseState.db.loadouts.at(-1)).toEqual(created)
+      expect((await listPendingMutations()).map((entry) => entry.handle.key)).toContain(
+        loadoutOwnerMutationKey(created.id),
+      )
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('reasserts a retained favorite after collection reconciliation restores its old value', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-retained-loadout-favorite',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-retained-loadout-favorite',
+      requestedWriterWasActive: true,
+    })
+    try {
+      const failure = stubDeferredCommandFailure()
+      setResourceWriteGuardEnabled(true)
+
+      expect(toggleLoadoutFavorite('loadout-a')).toBe(true)
+      await waitForCallCount(failure.calls, 2)
+      applyCollectionsResource(
+        {
+          revision: 11,
+          collections: {
+            loadouts: [
+              makeLoadout({ id: 'loadout-a', name: 'Authoritative A', favorite: false }),
+              makeLoadout({ id: 'loadout-b', name: 'Authoritative B', favorite: true }),
+            ],
+          },
+        },
+        'loadouts',
+      )
+      failure.reject()
+      await flushCommandEffects()
+
+      expect(testDatabaseState.db.loadouts.find((loadout) => loadout.id === 'loadout-a')?.favorite).toBe(true)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('reasserts a retained delete after collection reconciliation resurrects its row', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-retained-loadout-delete',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-retained-loadout-delete',
+      requestedWriterWasActive: true,
+    })
+    try {
+      const failure = stubDeferredCommandFailure()
+      setResourceWriteGuardEnabled(true)
+
+      expect(deleteLoadout('loadout-b')).toBe(true)
+      await waitForCallCount(failure.calls, 2)
+      applyCollectionsResource(
+        {
+          revision: 11,
+          collections: {
+            loadouts: [
+              makeLoadout({ id: 'loadout-a', name: 'Authoritative A' }),
+              makeLoadout({ id: 'loadout-b', name: 'Authoritative B' }),
+            ],
+          },
+        },
+        'loadouts',
+      )
+      failure.reject()
+      await flushCommandEffects()
+
+      expect(testDatabaseState.db.loadouts.some((loadout) => loadout.id === 'loadout-b')).toBe(false)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('composes a settled retained create with a later retained favorite after collection replacement', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-retained-loadout-composition',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-retained-loadout-composition',
+      requestedWriterWasActive: true,
+    })
+    try {
+      seedApplyLoadoutState()
+      const replayFailure = deferred<Response>()
+      const calls = stubDurableApplyLoadoutFetch((call, commandNumber) => {
+        if (call.url !== '/api/v1/commands/loadouts') return null
+        if (commandNumber === 1) return jsonResponse({ error: 'create response lost' }, 500)
+        return replayFailure.promise
+      })
+      setResourceWriteGuardEnabled(true)
+
+      const creation = saveCurrentLoadout('Composed Create')
+      const created = cloneJsonValue(testDatabaseState.db.loadouts.at(-1) as Loadout)
+      await expect(creation).resolves.toEqual(created)
+      expect(toggleLoadoutFavorite(created.id)).toBe(true)
+      await waitForCallCount(calls, 3)
+      applyCollectionsResource(
+        {
+          revision: 11,
+          collections: { loadouts: [makeLoadout({ id: 'loadout-a', name: 'Authoritative A' })] },
+        },
+        'loadouts',
+      )
+      replayFailure.resolve(jsonResponse({ error: 'create still unavailable' }, 500))
+      await flushCommandEffects()
+
+      expect(testDatabaseState.db.loadouts.find((loadout) => loadout.id === created.id)).toEqual({
+        ...created,
+        favorite: true,
+      })
+      expect(calls.filter((call) => call.url === '/api/v1/commands/loadouts')).toHaveLength(2)
+      expect(calls.some((call) => call.url.endsWith('/favorite'))).toBe(false)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('rolls back only touch settings after an authoritative loadout replacement', async () => {

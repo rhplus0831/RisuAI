@@ -9,7 +9,7 @@ const loadoutMocks = vi.hoisted(() => ({
   saveCurrentLoadout: vi.fn(),
   toggleLoadoutFavorite: vi.fn(),
 }))
-const alertMocks = vi.hoisted(() => ({ confirm: vi.fn() }))
+const alertMocks = vi.hoisted(() => ({ confirm: vi.fn(), normal: vi.fn() }))
 
 vi.mock('src/ts/stores.svelte', () => ({
   loadoutModalStore: loadoutStore,
@@ -21,7 +21,7 @@ vi.mock('src/ts/loadout', () => loadoutMocks)
 vi.mock('src/ts/storage/database.svelte', () => ({
   getCurrentCharacter: vi.fn(() => null),
 }))
-vi.mock('src/ts/alert', () => ({ alertConfirm: alertMocks.confirm }))
+vi.mock('src/ts/alert', () => ({ alertConfirm: alertMocks.confirm, alertNormal: alertMocks.normal }))
 
 import LoadoutModal from './LoadoutModal.svelte'
 
@@ -53,6 +53,7 @@ beforeEach(() => {
   loadoutMocks.saveCurrentLoadout.mockReset().mockResolvedValue({ id: 'saved-loadout' })
   loadoutMocks.toggleLoadoutFavorite.mockReset()
   alertMocks.confirm.mockReset().mockResolvedValue(true)
+  alertMocks.normal.mockReset()
   opener = document.createElement('button')
   opener.textContent = 'Open loadouts'
   target = document.createElement('div')
@@ -163,6 +164,26 @@ describe('LoadoutModal operations', () => {
     expect(loadoutStore.open).toBe(true)
     expect(dialog.getAttribute('aria-busy')).toBe('false')
     expect(target.querySelector('[role="alert"]')?.textContent).toContain('Could not apply this loadout')
+  })
+
+  it('closes with a no-retry notice when durable loadout work is queued locally', async () => {
+    loadoutDatabase.loadouts = [savedLoadout]
+    loadoutMocks.applyLoadout.mockResolvedValue('queued')
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    const apply = target.querySelector<HTMLButtonElement>(
+      '[data-risu-loadout-action="apply"][data-risu-loadout-id="loadout-a"]',
+    )
+    if (!apply) throw new Error('Loadout apply control not found')
+
+    apply.click()
+    await settle()
+
+    expect(loadoutStore.open).toBe(false)
+    expect(alertMocks.normal).toHaveBeenCalledWith(
+      'Changes are saved locally and queued. You do not need to apply this loadout again.',
+    )
   })
 
   it('stays open while applying and reports preset hydration failure', async () => {

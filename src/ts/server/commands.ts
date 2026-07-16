@@ -5055,7 +5055,7 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
  */
 export async function runServerCommandSequence(
   commands: readonly ServerCommandSequenceEntry[],
-  rollback?: () => void,
+  rollback?: (isCurrent: () => boolean) => void | Promise<void>,
   options: ServerCommandTransportOptions = {},
 ): Promise<ServerCommandResult | null> {
   if (!canUseServerCommands() || commands.length === 0) return null
@@ -5185,7 +5185,7 @@ export async function acknowledgeServerMutationReceipts(
 
 async function executeServerCommandSequence(
   commands: readonly ServerCommandSequenceEntry[],
-  rollback: (() => void) | undefined,
+  rollback: ((isCurrent: () => boolean) => void | Promise<void>) | undefined,
   rollbackEpoch: number,
   reconciliationBatch: ServerCommandReconciliationBatch,
 ): Promise<ServerCommandResult | null> {
@@ -5217,7 +5217,10 @@ async function executeServerCommandSequence(
     for (const revision of acceptedRevisions) {
       reconciliationBatch.pendingLocalEffects.delete(revision)
     }
-    runRollbackUnlessDestructiveRefreshChanged(rollback, rollbackEpoch)
+    const rollbackIsCurrent = () => !hasDestructiveRefreshEpochChanged(rollbackEpoch)
+    if (rollback && rollbackIsCurrent()) {
+      await rollback(rollbackIsCurrent)
+    }
     return result
   }
   return null

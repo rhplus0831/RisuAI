@@ -2,7 +2,9 @@ import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  acceptPendingMutationLocalProjectionToken,
   acknowledgePendingMutation,
+  advancePendingMutationProjectionTargets,
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
   completePendingMutation,
@@ -12,10 +14,16 @@ import {
   listPendingMutationPredecessors,
   listPendingMutationReceiptAcknowledgements,
   listPendingMutations,
+  isPendingMutationProjectionFenceCurrent,
+  pendingMutationLocalProjectionFence,
+  pendingMutationProjectionFence,
+  pendingMutationProjectionGenerationCountForTests,
+  pendingMutationSettingsFieldProjectionTarget,
   preparePendingMutationOutbox,
   readSinglePendingMutationOwner,
   replaceStagedPendingMutationIntent,
   resetPendingMutationOutboxForTests,
+  retirePendingMutationLocalProjectionToken,
   stagePendingMutation,
   type DurableMutationIntent,
 } from './pendingMutationOutbox'
@@ -454,6 +462,169 @@ describe('pending mutation outbox', () => {
     expect(await listPendingMutationReceiptAcknowledgements()).toEqual([])
   })
 
+  it('fences concrete fields independently even when writers share a semantic key', async () => {
+    const openAIKeyTarget = pendingMutationSettingsFieldProjectionTarget('openAIKey')
+    const temperatureTarget = pendingMutationSettingsFieldProjectionTarget('temperature')
+    const first = stagePendingMutation('settings:runtime', settingsIntent('first'))
+    const unrelated = stagePendingMutation('settings:runtime', {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { temperature: 0.7 } } }],
+    })
+    await Promise.all([first.ready, unrelated.ready])
+
+    const firstFence = pendingMutationProjectionFence(first, openAIKeyTarget)
+    const unrelatedFence = pendingMutationProjectionFence(unrelated, temperatureTarget)
+    expect(firstFence && isPendingMutationProjectionFenceCurrent(firstFence)).toBe(true)
+    expect(unrelatedFence && isPendingMutationProjectionFenceCurrent(unrelatedFence)).toBe(true)
+
+    const newer = stagePendingMutation('settings:other', settingsIntent('newer'))
+    await newer.ready
+    const newerFence = pendingMutationProjectionFence(newer, openAIKeyTarget)
+    expect(firstFence && isPendingMutationProjectionFenceCurrent(firstFence)).toBe(false)
+    expect(newerFence && isPendingMutationProjectionFenceCurrent(newerFence)).toBe(true)
+  })
+
+  it('keeps an accepted generation as the baseline when a newer rejected writer retires', async () => {
+    const target = pendingMutationSettingsFieldProjectionTarget('openAIKey')
+    const obsolete = stagePendingMutation('settings:obsolete', settingsIntent('obsolete'))
+    const accepted = stagePendingMutation('settings:accepted', settingsIntent('accepted'))
+    await Promise.all([obsolete.ready, accepted.ready])
+    await expect(completePendingMutation(accepted, 1)).resolves.toBe('deleted')
+
+    const acceptedFence = pendingMutationProjectionFence(accepted, target)
+    expect(pendingMutationProjectionFence(obsolete, target)).toBeNull()
+    expect(acceptedFence && isPendingMutationProjectionFenceCurrent(acceptedFence)).toBe(true)
+
+    const rejected = stagePendingMutation('settings:rejected', settingsIntent('rejected'))
+    await rejected.ready
+    expect(acceptedFence && isPendingMutationProjectionFenceCurrent(acceptedFence)).toBe(false)
+    await expect(discardPendingMutation(rejected)).resolves.toBe('deleted')
+    expect(acceptedFence && isPendingMutationProjectionFenceCurrent(acceptedFence)).toBe(true)
+  })
+
+  it('compacts accepted projection history instead of growing one field forever', async () => {
+    for (let index = 0; index < 24; index += 1) {
+      const handle = stagePendingMutation(`settings:accepted:${index}`, settingsIntent(`value-${index}`))
+      await handle.ready
+      await expect(completePendingMutation(handle, 1)).resolves.toBe('deleted')
+    }
+
+    expect(pendingMutationProjectionGenerationCountForTests()).toBe(1)
+  })
+
+  it('automatically retires an unavailable successor and reveals its prior writer', async () => {
+    const target = pendingMutationSettingsFieldProjectionTarget('openAIKey')
+    const prior = stagePendingMutation('settings:prior', settingsIntent('prior'))
+    await prior.ready
+    const priorFence = pendingMutationProjectionFence(prior, target)
+    vi.spyOn(globalThis.crypto.subtle, 'encrypt').mockRejectedValueOnce(new Error('encryption unavailable'))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const unavailable = stagePendingMutation('settings:unavailable', settingsIntent('unavailable'))
+    const unavailableFence = pendingMutationProjectionFence(unavailable, target)
+    expect(unavailableFence && isPendingMutationProjectionFenceCurrent(unavailableFence)).toBe(true)
+    await expect(unavailable.ready).resolves.toBe('unavailable')
+    await Promise.resolve()
+
+    expect(pendingMutationProjectionFence(unavailable, target)).toBeNull()
+    expect(priorFence && isPendingMutationProjectionFenceCurrent(priorFence)).toBe(true)
+  })
+
+  it('preserves a placeholder ordinal when exact intent replacement adds a target', async () => {
+    const temperatureTarget = pendingMutationSettingsFieldProjectionTarget('temperature')
+    const placeholder = stagePendingMutation('settings:placeholder', settingsIntent('placeholder'))
+    await placeholder.ready
+    const newer = stagePendingMutation('settings:newer', {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { temperature: 0.8 } } }],
+    })
+    await newer.ready
+
+    const replacement = await replaceStagedPendingMutationIntent(placeholder, {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/settings/runtime',
+          body: { patch: { openAIKey: 'placeholder', temperature: 0.4 } },
+        },
+      ],
+    })
+    expect(replacement.status).toBe('replaced')
+    if (replacement.status !== 'replaced') throw new Error('Expected exact replacement')
+
+    const replacementFence = pendingMutationProjectionFence(replacement.handle, temperatureTarget)
+    const newerFence = pendingMutationProjectionFence(newer, temperatureTarget)
+    expect(replacementFence && isPendingMutationProjectionFenceCurrent(replacementFence)).toBe(false)
+    expect(newerFence && isPendingMutationProjectionFenceCurrent(newerFence)).toBe(true)
+  })
+
+  it('advances and retires local projection writers without losing an accepted local baseline', async () => {
+    const target = pendingMutationSettingsFieldProjectionTarget('openAIKey')
+    const prior = stagePendingMutation('settings:prior', settingsIntent('prior'))
+    await prior.ready
+    const priorFence = pendingMutationProjectionFence(prior, target)
+    const accepted = advancePendingMutationProjectionTargets([target])
+    const acceptedFence = pendingMutationLocalProjectionFence(accepted, target)
+    expect(priorFence && isPendingMutationProjectionFenceCurrent(priorFence)).toBe(false)
+    expect(acceptedFence && isPendingMutationProjectionFenceCurrent(acceptedFence)).toBe(true)
+
+    acceptPendingMutationLocalProjectionToken(accepted)
+    expect(pendingMutationProjectionFence(prior, target)).toBeNull()
+    const failed = advancePendingMutationProjectionTargets([target])
+    expect(acceptedFence && isPendingMutationProjectionFenceCurrent(acceptedFence)).toBe(false)
+    retirePendingMutationLocalProjectionToken(failed)
+    expect(acceptedFence && isPendingMutationProjectionFenceCurrent(acceptedFence)).toBe(true)
+  })
+
+  it('invalidates live fences on scope changes and same-scope rejected-writer cleanup', async () => {
+    const target = pendingMutationSettingsFieldProjectionTarget('openAIKey')
+    const oldScope = stagePendingMutation('settings:old-scope', settingsIntent('old'))
+    const oldFence = pendingMutationProjectionFence(oldScope, target)
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 2,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: true,
+    })
+    expect(oldFence && isPendingMutationProjectionFenceCurrent(oldFence)).toBe(false)
+
+    const rejectedWriter = stagePendingMutation('settings:rejected-writer', settingsIntent('rejected'))
+    const rejectedFence = pendingMutationProjectionFence(rejectedWriter, target)
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 2,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: false,
+    })
+    expect(rejectedFence && isPendingMutationProjectionFenceCurrent(rejectedFence)).toBe(false)
+  })
+
+  it('cannot persist an old-scope row after a newer scope finishes quarantine cleanup', async () => {
+    const encryptionGate = deferred<void>()
+    const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
+    const encryptSpy = vi
+      .spyOn(globalThis.crypto.subtle, 'encrypt')
+      .mockImplementationOnce(async (algorithm, key, data) => {
+        await encryptionGate.promise
+        return originalEncrypt(algorithm, key, data)
+      })
+    const old = stagePendingMutation('settings:old-scope-race', settingsIntent('old'))
+    await vi.waitFor(() => expect(encryptSpy).toHaveBeenCalled())
+
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-b',
+      writerEpoch: 2,
+      databaseLineage: 'database-b',
+      requestedWriterWasActive: true,
+    })
+    encryptionGate.resolve()
+
+    await expect(old.ready).resolves.toBe('superseded')
+    expect(await readRawMutation(old.mutationId)).toBeUndefined()
+    expect(await listPendingMutations()).toEqual([])
+  })
+
   it('rejects persisted base revisions and command paths outside the autosave allowlist', () => {
     expect(() =>
       stagePendingMutation('settings:runtime', {
@@ -517,6 +688,10 @@ describe('pending mutation outbox', () => {
     ['PATCH', '/modules/module-a'],
     ['DELETE', '/modules/module-a'],
     ['POST', '/modules/enable'],
+    ['POST', '/loadouts'],
+    ['DELETE', '/loadouts/loadout-a'],
+    ['POST', '/loadouts/loadout-a/favorite'],
+    ['POST', '/loadouts/loadout-a/touch'],
     ['PUT', '/chats/chat-a/generation-settings'],
     ['DELETE', '/chats/chat-a'],
     ['PATCH', '/settings/advanced/global-scripts'],
@@ -573,6 +748,11 @@ describe('pending mutation outbox', () => {
     ['POST', '/modules/module-a'],
     ['PATCH', '/modules'],
     ['POST', '/modules/enable/extra'],
+    ['PATCH', '/loadouts/loadout-a'],
+    ['DELETE', '/loadouts'],
+    ['POST', '/loadouts/loadout-a'],
+    ['POST', '/loadouts/loadout-a/favorite/extra'],
+    ['POST', '/loadouts/loadout-a/touch/extra'],
     ['POST', '/personas/select/extra'],
     ['POST', '/translator-presets/select/extra'],
     ['POST', '/characters/create-and-select/extra'],

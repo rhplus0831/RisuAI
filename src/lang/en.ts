@@ -2028,6 +2028,7 @@ export const languageEnglish = {
   loadout: 'Loadout',
   loadoutPresetHydrationFailed: 'Could not load the preset for this loadout. Please try again.',
   loadoutApplyFailed: 'Could not apply this loadout. Please try again.',
+  loadoutApplyQueued: 'Changes are saved locally and queued. You do not need to apply this loadout again.',
   loadoutSaveFailed: 'Could not save this loadout. Please try again.',
   loadoutModal: {
     title: 'Select Loadout',

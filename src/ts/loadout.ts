@@ -1,4 +1,3 @@
-import { runOptimisticCommandSequenceAsync } from './chatCommands'
 import {
   currentPersonaStateSnapshot,
   flushPendingSelectedPersonaUpdate,
@@ -15,6 +14,7 @@ import {
   favoriteLoadoutCommand,
   patchSettingsGroup,
   runServerCommand,
+  runServerCommandSequence,
   saveChatGenerationSettingsCommand,
   selectModelPresetCommand,
   selectPromptPresetCommand,
@@ -37,6 +37,7 @@ import {
   hasSettingsGroupProjectionEpochChanged,
 } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
+import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
 import {
   applyModelPresetFieldsToDatabase,
@@ -55,17 +56,38 @@ import {
   type PromptPreset,
   type botPreset,
 } from './storage/database.svelte'
-import { executePreparedDurableMutationWithinQueue } from './server/durableMutationDispatch'
+import {
+  dispatchDurableMutation,
+  executePreparedDurableMutationWithinQueue,
+  type DurableMutationSettlement,
+} from './server/durableMutationDispatch'
 import {
   discardPendingMutation,
+  isPendingMutationProjectionFenceCurrent,
+  pendingMutationChatGenerationSettingsProjectionTarget,
+  pendingMutationLoadoutRowProjectionTarget,
+  pendingMutationModuleEnabledProjectionTarget,
+  pendingMutationPersonaRowProjectionTarget,
+  pendingMutationPresetRowProjectionTarget,
+  pendingMutationProjectionFence,
+  pendingMutationProjectionTargets,
+  pendingMutationSelectionProjectionTarget,
+  pendingMutationSettingsFieldProjectionTarget,
+  recordPendingMutationProjectionTargets,
   stagePendingMutation,
   type DurableMutationIntent,
   type PendingMutationHandle,
+  type PendingMutationPersistenceStatus,
+  type PendingMutationProjectionFence,
 } from './server/pendingMutationOutbox'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from './server/settingsMutationKey'
 import { flushRegisteredPendingBridgePatch } from './server/pendingBridgeFlushRegistry'
 import { flushPendingPromptTemplatePatches, promptTemplateOwnerMutationKey } from './server/promptTemplateBridge.svelte'
-import { chatResourceOwnerMutationKey, moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
+import {
+  chatResourceOwnerMutationKey,
+  loadoutOwnerMutationKey,
+  moduleOwnerMutationKey,
+} from './server/resourceOwnerMutationKeys'
 import { PERSONA_SELECTION_MUTATION_KEY, personaOwnerMutationKey } from './server/personaMutationKeys'
 import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGenerationSettingsMutationKeys'
 
@@ -120,7 +142,7 @@ export function makeLoadout(options: { name: string }): Loadout {
 
 type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
-export type LoadoutApplyStatus = 'applied' | 'superseded' | 'preset-hydration-failed' | 'persistence-failed'
+export type LoadoutApplyStatus = 'applied' | 'queued' | 'superseded' | 'preset-hydration-failed' | 'persistence-failed'
 
 type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
 
@@ -135,6 +157,8 @@ interface LoadoutFavoriteRollback {
   loadoutId: string
   previousFavorite: boolean
   attemptedFavorite: boolean
+  attemptedRow: Loadout
+  previousIndex: number
   loadoutsProjectionEpoch: number
 }
 
@@ -142,6 +166,8 @@ interface LoadoutTouchRollback {
   loadoutId: string
   previous: Partial<Pick<Loadout, 'lastUsed' | 'characterIds'>>
   attempted: Partial<Pick<Loadout, 'lastUsed' | 'characterIds'>>
+  attemptedRow?: Loadout
+  previousIndex?: number
   previousLastLoadedLoadoutName: string
   attemptedLastLoadedLoadoutName: string
   loadoutsProjectionEpoch: number
@@ -153,6 +179,8 @@ interface LoadoutModuleMembershipRollback {
   previousEnabled: boolean
   attemptedEnabled: boolean
   previousModules: string[]
+  attemptedModules: string[]
+  settingsProjectionEpoch: number
 }
 
 interface LoadoutGlobalVariablesRollback {
@@ -168,6 +196,8 @@ interface LoadoutPersonaRowRollback {
 
 interface LoadoutPersonaSelectionRollback {
   rows: LoadoutPersonaRowRollback[]
+  previousSelectedPersonaId: string | null
+  attemptedSelectedPersonaId: string | null
   previousMirror: Pick<PersonaStateSnapshot, 'selectedPersona' | 'username' | 'userIcon' | 'personaPrompt' | 'userNote'>
   attemptedMirror: Pick<
     PersonaStateSnapshot,
@@ -184,6 +214,8 @@ interface PresetFieldRollback {
 interface PresetSettingsRollback {
   previous: Partial<Record<SetPresetRollbackKey, unknown>>
   attempted: Partial<Record<SetPresetRollbackKey, unknown>>
+  changedKeys: SetPresetRollbackKey[]
+  retainedPrevious?: Partial<Record<SetPresetRollbackKey, unknown>>
 }
 
 interface LegacyPresetSelectionRollback extends PresetSettingsRollback {
@@ -212,14 +244,20 @@ interface LoadoutApplyStep {
   succeeded: boolean
   command: ServerCommandFactory
   rollback: () => void
+  reapply?: (isTargetCurrent: (target: string) => boolean) => void
   executionWrapper?: ServerCommandExecutionWrapper
   durability?: PreparedLoadoutDurableStep
+  presetProjection?: PresetSettingsRollback
 }
 
 interface PreparedLoadoutDurableStep {
   handle: PendingMutationHandle
   intent: DurableMutationIntent
   wrapperStarted: boolean
+  wrapperFailed: boolean
+  initialPersistence: PendingMutationPersistenceStatus | null
+  settlement: DurableMutationSettlement | null
+  projectionTargets: Set<string>
 }
 
 interface LoadoutModulePlan {
@@ -409,6 +447,34 @@ function snapshotJson(value: unknown): string {
   return snapshot === undefined ? '__undefined__' : snapshot
 }
 
+function recordFieldMatchesSnapshot(
+  target: Record<string, unknown>,
+  snapshot: Record<string, unknown>,
+  key: string,
+): boolean {
+  const targetHasKey = Object.hasOwn(target, key)
+  const snapshotHasKey = Object.hasOwn(snapshot, key)
+  return targetHasKey === snapshotHasKey && (!targetHasKey || snapshotJson(target[key]) === snapshotJson(snapshot[key]))
+}
+
+function applyRetainedAttemptedFields(input: {
+  target: Record<string, unknown>
+  previous: Record<string, unknown>
+  attempted: Record<string, unknown>
+  keys?: Iterable<string>
+}): void {
+  const keys = input.keys ?? new Set([...Object.keys(input.previous), ...Object.keys(input.attempted)])
+  for (const key of keys) {
+    if (recordFieldMatchesSnapshot(input.target, input.attempted, key)) continue
+    if (!recordFieldMatchesSnapshot(input.target, input.previous, key)) continue
+    if (Object.hasOwn(input.attempted, key)) {
+      input.target[key] = cloneJsonValue(input.attempted[key])
+    } else {
+      delete input.target[key]
+    }
+  }
+}
+
 function snapshotPresetSettings(): Partial<Record<SetPresetRollbackKey, unknown>> {
   const dbRecord = getDatabase() as unknown as Record<SetPresetRollbackKey, unknown>
   const setPresetSettings: Partial<Record<SetPresetRollbackKey, unknown>> = {}
@@ -416,6 +482,22 @@ function snapshotPresetSettings(): Partial<Record<SetPresetRollbackKey, unknown>
     setPresetSettings[key] = cloneJsonValue(dbRecord[key])
   }
   return setPresetSettings
+}
+
+function changedPresetSettingsKeys(
+  previous: Partial<Record<SetPresetRollbackKey, unknown>>,
+  attempted: Partial<Record<SetPresetRollbackKey, unknown>>,
+): SetPresetRollbackKey[] {
+  return SET_PRESET_ROLLBACK_KEYS.filter((key) => snapshotJson(previous[key]) !== snapshotJson(attempted[key]))
+}
+
+function registerPreparedLoadoutProjectionTargets(
+  prepared: PreparedLoadoutDurableStep | null,
+  targets: readonly string[],
+): void {
+  if (!prepared) return
+  for (const target of targets) prepared.projectionTargets.add(target)
+  recordPendingMutationProjectionTargets(prepared.handle, targets)
 }
 
 function rollbackLoadoutListEntry(entry: LoadoutListRollbackEntry): void {
@@ -438,6 +520,42 @@ function rollbackCreatedLoadout(attemptedLoadout: Loadout, loadoutsProjectionEpo
     key: attemptedLoadout.id,
     previous: null,
     attempted: cloneJsonValue(attemptedLoadout),
+  })
+}
+
+function isPendingLoadoutProjectionCurrent(handle: PendingMutationHandle, loadoutId: string): boolean {
+  const fence = pendingMutationProjectionFence(handle, pendingMutationLoadoutRowProjectionTarget(loadoutId))
+  return fence !== null && isPendingMutationProjectionFenceCurrent(fence)
+}
+
+function reapplyRetainedCreatedLoadout(attemptedLoadout: Loadout, attemptedIndex: number): void {
+  withTrustedResourceWrite(() => {
+    const list = getDatabase().loadouts ?? []
+    if (list.some((candidate) => candidate.id === attemptedLoadout.id)) return
+    list.splice(Math.min(Math.max(attemptedIndex, 0), list.length), 0, cloneJsonValue(attemptedLoadout))
+    getDatabase().loadouts = list
+  })
+}
+
+function reapplyRetainedFavoriteLoadout(rollback: LoadoutFavoriteRollback): void {
+  withTrustedResourceWrite(() => {
+    const list = getDatabase().loadouts ?? []
+    let loadout = list.find((candidate) => candidate.id === rollback.loadoutId)
+    if (!loadout) {
+      const index = Math.min(Math.max(rollback.previousIndex, 0), list.length)
+      list.splice(index, 0, cloneJsonValue(rollback.attemptedRow))
+      getDatabase().loadouts = list
+      loadout = list[index]
+    }
+    if (loadout) loadout.favorite = rollback.attemptedFavorite
+  })
+}
+
+function reapplyRetainedDeletedLoadout(loadoutId: string): void {
+  withTrustedResourceWrite(() => {
+    const list = getDatabase().loadouts ?? []
+    const index = list.findIndex((candidate) => candidate.id === loadoutId)
+    if (index !== -1) list.splice(index, 1)
   })
 }
 
@@ -495,6 +613,36 @@ function rollbackLoadoutTouch(rollback: LoadoutTouchRollback): void {
   })
 }
 
+function reapplyLoadoutTouch(rollback: LoadoutTouchRollback, isTargetCurrent: (target: string) => boolean): void {
+  withTrustedResourceWrite(() => {
+    if (isTargetCurrent(pendingMutationLoadoutRowProjectionTarget(rollback.loadoutId))) {
+      let loadout = getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
+      if (!loadout && rollback.attemptedRow) {
+        const list = getDatabase().loadouts ?? []
+        const index = Math.min(Math.max(rollback.previousIndex ?? list.length, 0), list.length)
+        list.splice(index, 0, cloneJsonValue(rollback.attemptedRow))
+        getDatabase().loadouts = list
+        loadout = list[index]
+      }
+      if (loadout) {
+        applyRetainedAttemptedFields({
+          target: loadout as unknown as Record<string, unknown>,
+          previous: rollback.previous as Record<string, unknown>,
+          attempted: rollback.attempted as Record<string, unknown>,
+          keys: Object.keys(rollback.attempted),
+        })
+      }
+    }
+    if (
+      isTargetCurrent(pendingMutationSettingsFieldProjectionTarget('lastLoadedLoadoutName')) &&
+      (getDatabase().lastLoadedLoadoutName === rollback.previousLastLoadedLoadoutName ||
+        getDatabase().lastLoadedLoadoutName === rollback.attemptedLastLoadedLoadoutName)
+    ) {
+      getDatabase().lastLoadedLoadoutName = rollback.attemptedLastLoadedLoadoutName
+    }
+  })
+}
+
 function insertModuleAtPreviousPosition(liveModules: string[], moduleId: string, previousModules: string[]): void {
   const previousIndex = previousModules.indexOf(moduleId)
   if (previousIndex === -1) {
@@ -539,9 +687,58 @@ function rollbackModuleMembership(rollback: LoadoutModuleMembershipRollback): vo
   })
 }
 
+function reapplyModuleMembership(
+  rollback: LoadoutModuleMembershipRollback,
+  isTargetCurrent: (target: string) => boolean,
+): void {
+  if (!isTargetCurrent(pendingMutationModuleEnabledProjectionTarget(rollback.moduleId))) return
+  withTrustedResourceWrite(() => {
+    const liveModules = Array.isArray(getDatabase().enabledModules) ? getDatabase().enabledModules : []
+    if (snapshotJson(liveModules) === snapshotJson(rollback.attemptedModules)) return
+    const liveEnabled = liveModules.includes(rollback.moduleId)
+    if (liveEnabled !== rollback.previousEnabled && liveEnabled !== rollback.attemptedEnabled) return
+    if (
+      liveEnabled !== rollback.attemptedEnabled &&
+      !hasSettingsGroupProjectionEpochChanged('modules', rollback.settingsProjectionEpoch)
+    ) {
+      return
+    }
+
+    let projected = liveModules
+    if (rollback.attemptedEnabled && !liveEnabled) {
+      projected = [...liveModules, rollback.moduleId]
+    } else if (!rollback.attemptedEnabled && liveEnabled) {
+      projected = liveModules.filter((moduleId) => moduleId !== rollback.moduleId)
+    }
+
+    const projectedIds = new Set(projected)
+    const attemptedIds = new Set(rollback.attemptedModules)
+    getDatabase().enabledModules =
+      projectedIds.size === attemptedIds.size &&
+      Array.from(projectedIds).every((moduleId) => attemptedIds.has(moduleId))
+        ? cloneJsonValue(rollback.attemptedModules)
+        : projected
+  })
+}
+
 function rollbackGlobalChatVariables(rollback: LoadoutGlobalVariablesRollback): void {
   withTrustedResourceWrite(() => {
     applyAttemptedFieldRollback({
+      target: getDatabase() as unknown as Record<string, unknown>,
+      previous: { globalChatVariables: rollback.previous },
+      attempted: { globalChatVariables: rollback.attempted },
+      keys: ['globalChatVariables'],
+    })
+  })
+}
+
+function reapplyGlobalChatVariables(
+  rollback: LoadoutGlobalVariablesRollback,
+  isTargetCurrent: (target: string) => boolean,
+): void {
+  if (!isTargetCurrent(pendingMutationSettingsFieldProjectionTarget('globalChatVariables'))) return
+  withTrustedResourceWrite(() => {
+    applyRetainedAttemptedFields({
       target: getDatabase() as unknown as Record<string, unknown>,
       previous: { globalChatVariables: rollback.previous },
       attempted: { globalChatVariables: rollback.attempted },
@@ -591,9 +788,53 @@ function personaSelectionRollback(
 
   return {
     rows,
+    previousSelectedPersonaId: nonBlankId(previous.personas?.[previous.selectedPersona]?.id),
+    attemptedSelectedPersonaId: nonBlankId(attempted.personas?.[attempted.selectedPersona]?.id),
     previousMirror: personaMirrorSnapshot(previous),
     attemptedMirror: personaMirrorSnapshot(attempted),
   }
+}
+
+function reapplyPersonaSelection(
+  rollback: LoadoutPersonaSelectionRollback,
+  isTargetCurrent: (target: string) => boolean,
+): void {
+  withTrustedResourceWrite(() => {
+    const personas = getDatabase().personas ?? []
+    const currentSelectedId = nonBlankId(personas[getDatabase().selectedPersona]?.id)
+    const attemptedIndex = rollback.attemptedSelectedPersonaId
+      ? personas.findIndex((persona) => persona?.id === rollback.attemptedSelectedPersonaId)
+      : -1
+
+    for (const row of rollback.rows) {
+      if (!isTargetCurrent(pendingMutationPersonaRowProjectionTarget(row.personaId))) continue
+      const persona = personas.find((item) => item?.id === row.personaId)
+      if (!persona) continue
+      applyRetainedAttemptedFields({
+        target: persona as unknown as Record<string, unknown>,
+        previous: row.previous,
+        attempted: row.attempted,
+      })
+    }
+    for (const key of ['username', 'userIcon', 'personaPrompt', 'userNote'] as const) {
+      if (!isTargetCurrent(pendingMutationSettingsFieldProjectionTarget(key))) continue
+      applyRetainedAttemptedFields({
+        target: getDatabase() as unknown as Record<string, unknown>,
+        previous: rollback.previousMirror as Record<string, unknown>,
+        attempted: rollback.attemptedMirror as Record<string, unknown>,
+        keys: [key],
+      })
+    }
+    if (
+      attemptedIndex >= 0 &&
+      isTargetCurrent(pendingMutationSelectionProjectionTarget('persona')) &&
+      (currentSelectedId === rollback.previousSelectedPersonaId ||
+        currentSelectedId === rollback.attemptedSelectedPersonaId) &&
+      getDatabase().selectedPersona !== attemptedIndex
+    ) {
+      getDatabase().selectedPersona = attemptedIndex
+    }
+  })
 }
 
 function rollbackPersonaSelection(rollback: LoadoutPersonaSelectionRollback): void {
@@ -694,6 +935,18 @@ function rollbackPresetFields(rollback: PresetFieldRollback | null): void {
   })
 }
 
+function reapplyPresetFields(rollback: PresetFieldRollback | null, isTargetCurrent: (target: string) => boolean): void {
+  if (!rollback) return
+  if (!isTargetCurrent(pendingMutationPresetRowProjectionTarget('legacy', rollback.presetId))) return
+  const preset = getDatabase().botPresets?.find((item) => item?.id === rollback.presetId)
+  if (!preset) return
+  applyRetainedAttemptedFields({
+    target: preset as unknown as Record<string, unknown>,
+    previous: rollback.previous,
+    attempted: rollback.attempted,
+  })
+}
+
 function rollbackPresetSettings(rollback: PresetSettingsRollback): void {
   applyAttemptedFieldRollback({
     target: getDatabase() as unknown as Record<string, unknown>,
@@ -712,6 +965,37 @@ function rollbackLegacyPresetSelection(rollback: LegacyPresetSelectionRollback):
   })
 }
 
+function reapplyLegacyPresetSelection(
+  rollback: LegacyPresetSelectionRollback,
+  isTargetCurrent: (target: string) => boolean,
+): void {
+  withTrustedResourceWrite(() => {
+    const currentSelectedId = currentBotPresetSelectedId()
+    if (currentSelectedId !== rollback.previousSelectedId && currentSelectedId !== rollback.attemptedSelectedId) return
+    const attemptedIndex = rollback.attemptedSelectedId
+      ? (getDatabase().botPresets?.findIndex((preset) => preset?.id === rollback.attemptedSelectedId) ?? -1)
+      : -1
+    if (attemptedIndex < 0) return
+
+    reapplyPresetFields(rollback.saveCurrentRollback, isTargetCurrent)
+    const currentKeys = rollback.changedKeys.filter((key) =>
+      isTargetCurrent(pendingMutationSettingsFieldProjectionTarget(key)),
+    )
+    applyRetainedAttemptedFields({
+      target: getDatabase() as unknown as Record<string, unknown>,
+      previous: (rollback.retainedPrevious ?? rollback.previous) as Record<string, unknown>,
+      attempted: rollback.attempted as Record<string, unknown>,
+      keys: currentKeys,
+    })
+    if (
+      isTargetCurrent(pendingMutationSelectionProjectionTarget('legacyPreset')) &&
+      getDatabase().botPresetsId !== attemptedIndex
+    ) {
+      getDatabase().botPresetsId = attemptedIndex
+    }
+  })
+}
+
 function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): void {
   withTrustedResourceWrite(() => {
     if (!rollback.attemptedSelectedId || currentSplitPresetSelectedId(rollback.kind) !== rollback.attemptedSelectedId) {
@@ -719,6 +1003,38 @@ function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): v
     }
     rollbackPresetSettings(rollback)
     restoreSplitPresetSelectionToId(rollback.kind, rollback.previousSelectedId)
+  })
+}
+
+function reapplySplitPresetSelection(
+  rollback: SplitPresetSelectionRollback,
+  isTargetCurrent: (target: string) => boolean,
+): void {
+  withTrustedResourceWrite(() => {
+    const currentSelectedId = currentSplitPresetSelectedId(rollback.kind)
+    if (currentSelectedId !== rollback.previousSelectedId && currentSelectedId !== rollback.attemptedSelectedId) return
+    const attemptedIndex = rollback.attemptedSelectedId
+      ? splitPresetList(rollback.kind).findIndex((preset) => preset?.id === rollback.attemptedSelectedId)
+      : -1
+    if (attemptedIndex < 0) return
+
+    const currentKeys = rollback.changedKeys.filter((key) =>
+      isTargetCurrent(pendingMutationSettingsFieldProjectionTarget(key)),
+    )
+    applyRetainedAttemptedFields({
+      target: getDatabase() as unknown as Record<string, unknown>,
+      previous: (rollback.retainedPrevious ?? rollback.previous) as Record<string, unknown>,
+      attempted: rollback.attempted as Record<string, unknown>,
+      keys: currentKeys,
+    })
+    if (
+      isTargetCurrent(
+        pendingMutationSelectionProjectionTarget(rollback.kind === 'model' ? 'modelPreset' : 'promptPreset'),
+      ) &&
+      currentSelectedId !== rollback.attemptedSelectedId
+    ) {
+      setSplitPresetSelectedIndex(rollback.kind, attemptedIndex)
+    }
   })
 }
 
@@ -737,12 +1053,38 @@ function rollbackAgentPresetSelection(rollback: AgentPresetSelectionRollback): v
   })
 }
 
+function reapplyAgentPresetSelection(
+  rollback: AgentPresetSelectionRollback,
+  isTargetCurrent: (target: string) => boolean,
+): void {
+  if (!isTargetCurrent(pendingMutationChatGenerationSettingsProjectionTarget(rollback.chatId))) return
+  withTrustedResourceWrite(() => {
+    const chat = findChatById(rollback.chatId, rollback.characterId)
+    if (!chat) return
+    const current = chat.generationSettings
+    const previous = rollback.hadGenerationSettings ? rollback.previousGenerationSettings : undefined
+    if (snapshotJson(current) === snapshotJson(rollback.attemptedGenerationSettings)) return
+    if (
+      snapshotJson(current) !== snapshotJson(previous) &&
+      snapshotJson(current) !== snapshotJson(rollback.attemptedGenerationSettings)
+    ) {
+      return
+    }
+    chat.generationSettings = cloneJsonValue(rollback.attemptedGenerationSettings)
+  })
+}
+
 function prepareLoadoutDurableStep(key: string, intent: DurableMutationIntent): PreparedLoadoutDurableStep | null {
   if (!canUseServerCommands()) return null
+  const handle = stagePendingMutation(key, intent)
   return {
-    handle: stagePendingMutation(key, intent),
+    handle,
     intent,
     wrapperStarted: false,
+    wrapperFailed: false,
+    initialPersistence: null,
+    settlement: null,
+    projectionTargets: new Set(pendingMutationProjectionTargets(intent)),
   }
 }
 
@@ -751,13 +1093,26 @@ function preparedLoadoutExecutionWrapper(prepared: PreparedLoadoutDurableStep): 
     execute: () => Promise<ServerCommandResult<T>>,
   ): Promise<ServerCommandResult<T>> => {
     prepared.wrapperStarted = true
-    const outcome = await executePreparedDurableMutationWithinQueue<T>(
-      { handle: prepared.handle, intent: prepared.intent },
-      execute,
-    )
-    prepared.handle = outcome.handle
-    prepared.intent = outcome.intent
-    return outcome.disposition === 'sent' ? outcome.result : { status: 'unavailable' }
+    try {
+      const outcome = await executePreparedDurableMutationWithinQueue<T>(
+        { handle: prepared.handle, intent: prepared.intent },
+        execute,
+      )
+      prepared.handle = outcome.handle
+      prepared.intent = outcome.intent
+      for (const target of pendingMutationProjectionTargets(outcome.intent)) {
+        prepared.projectionTargets.add(target)
+      }
+      recordPendingMutationProjectionTargets(prepared.handle, Array.from(prepared.projectionTargets))
+      prepared.settlement = outcome.settlement
+      return outcome.disposition === 'sent' ? outcome.result : { status: 'unavailable' }
+    } catch (error) {
+      // Once the exact row reached IndexedDB, an outbox/lock failure cannot
+      // prove that it disappeared. Keep its projection for eventual replay.
+      prepared.settlement = prepared.initialPersistence === 'persisted' ? 'retained' : 'unavailable'
+      prepared.wrapperFailed = true
+      throw error
+    }
   }
 }
 
@@ -765,6 +1120,8 @@ function createLoadoutApplyStep(
   command: ServerCommandFactory,
   rollback: () => void,
   durability: PreparedLoadoutDurableStep | null = null,
+  reapply?: (isTargetCurrent: (target: string) => boolean) => void,
+  presetProjection?: PresetSettingsRollback,
 ): LoadoutApplyStep {
   const step: LoadoutApplyStep = {
     succeeded: false,
@@ -776,6 +1133,8 @@ function createLoadoutApplyStep(
       return result
     },
     rollback,
+    reapply,
+    presetProjection,
     ...(durability
       ? {
           executionWrapper: preparedLoadoutExecutionWrapper(durability),
@@ -786,40 +1145,124 @@ function createLoadoutApplyStep(
   return step
 }
 
-function rollbackUnacceptedLoadoutApplySteps(steps: LoadoutApplyStep[]): void {
+async function awaitPreparedLoadoutDurability(steps: readonly LoadoutApplyStep[]): Promise<void> {
+  await Promise.all(
+    steps.map(async (step) => {
+      const durability = step.durability
+      if (!durability || durability.initialPersistence !== null) return
+      durability.initialPersistence = await durability.handle.ready
+    }),
+  )
+}
+
+function retainsDurableLoadoutProjection(durability: PreparedLoadoutDurableStep): boolean {
+  if (durability.initialPersistence !== 'persisted') return false
+  return (
+    durability.settlement === null || durability.settlement === 'retained' || durability.settlement === 'unavailable'
+  )
+}
+
+function failedLoadoutApplyStep(steps: readonly LoadoutApplyStep[]): LoadoutApplyStep | undefined {
+  return steps.find(
+    (step) =>
+      step.durability?.wrapperFailed === true ||
+      (!step.succeeded && (step.durability === undefined || step.durability.wrapperStarted)),
+  )
+}
+
+function rebaseRetainedPresetProjection(
+  retained: PresetSettingsRollback,
+  discardedPredecessors: readonly PresetSettingsRollback[],
+): void {
+  const rebased = cloneJsonValue(retained.previous)
+  for (const discarded of discardedPredecessors) {
+    for (const key of SET_PRESET_ROLLBACK_KEYS) {
+      if (snapshotJson(rebased[key]) !== snapshotJson(discarded.attempted[key])) continue
+      if (Object.hasOwn(discarded.previous, key)) rebased[key] = cloneJsonValue(discarded.previous[key])
+      else delete rebased[key]
+    }
+  }
+  retained.retainedPrevious = rebased
+}
+
+async function settleFailedLoadoutApplySteps(
+  steps: readonly LoadoutApplyStep[],
+  rollbackIsCurrent: () => boolean,
+): Promise<void> {
+  const failedStep = failedLoadoutApplyStep(steps)
+  const retainPersistedTail =
+    failedStep?.durability !== undefined && retainsDurableLoadoutProjection(failedStep.durability)
+
+  if (!retainPersistedTail) {
+    const skippedDurableSteps = steps.filter(
+      (step): step is LoadoutApplyStep & { durability: PreparedLoadoutDurableStep } =>
+        !step.succeeded && step.durability !== undefined && !step.durability.wrapperStarted,
+    )
+    const discardResults = await Promise.all(
+      skippedDurableSteps.map(async (step) => ({
+        durability: step.durability,
+        result: await discardPendingMutation(step.durability.handle),
+      })),
+    )
+    for (const { durability, result } of discardResults) {
+      durability.settlement =
+        result === 'deleted' ? 'discarded' : result === 'superseded' ? 'superseded' : 'unavailable'
+    }
+  }
+
+  // IndexedDB cleanup above can yield long enough for a destructive resource
+  // refresh to replace the projection. Never apply this older reverse patch
+  // after that authoritative refresh wins.
+  if (!rollbackIsCurrent()) return
+
+  // Preset projections overlap. Roll them back only after every skipped row's
+  // deletion is known, and always in reverse projection order.
+  const rolledBackPresetSteps: Array<{ index: number; projection: PresetSettingsRollback }> = []
   for (let index = steps.length - 1; index >= 0; index -= 1) {
     const step = steps[index]
-    if (!step.succeeded) {
-      step.rollback()
+    if (step.succeeded) continue
+    if (step.durability && retainsDurableLoadoutProjection(step.durability)) continue
+    step.rollback()
+    if (step.presetProjection) rolledBackPresetSteps.push({ index, projection: step.presetProjection })
+  }
+
+  if (rolledBackPresetSteps.length > 0) {
+    for (let index = 0; index < steps.length; index += 1) {
+      const step = steps[index]
+      if (!step?.presetProjection || !step.durability || !retainsDurableLoadoutProjection(step.durability)) continue
+      const discardedPredecessors = rolledBackPresetSteps
+        .filter((candidate) => candidate.index < index)
+        .sort((left, right) => right.index - left.index)
+        .map((candidate) => candidate.projection)
+      if (discardedPredecessors.length > 0) {
+        rebaseRetainedPresetProjection(step.presetProjection, discardedPredecessors)
+      }
     }
   }
 }
 
-async function discardSkippedLoadoutDurableSteps(steps: readonly LoadoutApplyStep[]): Promise<void> {
-  await Promise.all(
-    steps
-      .map((step) => step.durability)
-      .filter(
-        (durability): durability is PreparedLoadoutDurableStep =>
-          durability !== undefined && !durability.wrapperStarted,
-      )
-      .map((durability) => discardPendingMutation(durability.handle)),
-  )
-}
+function reapplyRetainedLoadoutApplySteps(steps: readonly LoadoutApplyStep[]): void {
+  const expectedFences = new Map<string, PendingMutationProjectionFence>()
+  for (const step of steps) {
+    const durability = step.durability
+    if (!durability) continue
+    for (const target of durability.projectionTargets) {
+      const fence = pendingMutationProjectionFence(durability.handle, target)
+      if (!fence) continue
+      const previous = expectedFences.get(target)
+      if (!previous || previous.ordinal < fence.ordinal) expectedFences.set(target, fence)
+    }
+  }
+  const isTargetCurrent = (target: string): boolean => {
+    const fence = expectedFences.get(target)
+    return fence ? isPendingMutationProjectionFenceCurrent(fence) : false
+  }
 
-async function runLoadoutCommandAsync<T extends Record<string, unknown>>(
-  command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
-  rollback: () => void,
-): Promise<ServerCommandResult<T> | null> {
-  if (!canUseServerCommands()) return null
-  return runServerCommand({ command, rollback })
-}
-
-function runLoadoutCommand<T extends Record<string, unknown>>(
-  command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
-  rollback: () => void,
-): void {
-  void runLoadoutCommandAsync(command, rollback)
+  for (const step of steps) {
+    if (step.succeeded && step.durability?.wrapperFailed !== true) continue
+    if (!step.durability || !retainsDurableLoadoutProjection(step.durability)) continue
+    step.reapply?.(isTargetCurrent)
+  }
 }
 
 function toLoadoutSnapshot(loadout: Loadout): LoadoutSnapshot {
@@ -834,18 +1277,43 @@ function dispatchCreateLoadout(
   loadout: Loadout,
   acknowledgeOptimistic: boolean,
   loadoutsProjectionEpoch: number,
-): Promise<ServerCommandResult | null> {
+): Promise<{ result: ServerCommandResult; projectionOwned: boolean } | null> {
+  if (!canUseServerCommands()) return Promise.resolve(null)
   const attemptedLoadout = cloneJsonValue(loadout)
-  return runLoadoutCommandAsync(
-    (baseRevision) =>
-      createLoadoutCommand({
-        baseRevision,
-        loadout: toLoadoutSnapshot(attemptedLoadout),
-        acknowledgeOptimistic,
-        loadoutsProjectionEpoch,
-      }),
-    () => rollbackCreatedLoadout(attemptedLoadout, loadoutsProjectionEpoch),
+  const attemptedIndex = Math.max(
+    0,
+    getDatabase().loadouts.findIndex((candidate) => candidate.id === attemptedLoadout.id),
   )
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [{ method: 'POST', path: '/loadouts', body: { loadout: toLoadoutSnapshot(attemptedLoadout) } }],
+  }
+  const handle = stagePendingMutation(loadoutOwnerMutationKey(loadout.id), intent)
+  return dispatchDurableMutation(handle, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        createLoadoutCommand(
+          {
+            baseRevision,
+            loadout: toLoadoutSnapshot(attemptedLoadout),
+            acknowledgeOptimistic,
+            loadoutsProjectionEpoch,
+          },
+          transport.signal,
+        ),
+      rollback: () => rollbackCreatedLoadout(attemptedLoadout, loadoutsProjectionEpoch),
+      ...transport,
+    }),
+  ).then((result) => {
+    if (result.status !== 'ok' && isPendingLoadoutProjectionCurrent(handle, loadout.id)) {
+      reapplyRetainedCreatedLoadout(attemptedLoadout, attemptedIndex)
+    }
+    return {
+      result,
+      projectionOwned:
+        pendingMutationProjectionFence(handle, pendingMutationLoadoutRowProjectionTarget(loadout.id)) !== null,
+    }
+  })
 }
 
 function dispatchDeleteLoadout(
@@ -855,34 +1323,73 @@ function dispatchDeleteLoadout(
   acknowledgeOptimistic: boolean,
   loadoutsProjectionEpoch: number,
 ): void {
-  runLoadoutCommand(
-    (baseRevision) =>
-      deleteLoadoutCommand({
-        baseRevision,
-        loadoutId,
-        acknowledgeOptimistic,
-        loadoutsProjectionEpoch,
-      }),
-    () => rollbackDeletedLoadout(previousLoadout, previousIndex, loadoutsProjectionEpoch),
-  )
+  if (!canUseServerCommands()) return
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [{ method: 'DELETE', path: `/loadouts/${encodeURIComponent(loadoutId)}`, body: {} }],
+  }
+  const handle = stagePendingMutation(loadoutOwnerMutationKey(loadoutId), intent)
+  void dispatchDurableMutation(handle, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        deleteLoadoutCommand(
+          {
+            baseRevision,
+            loadoutId,
+            acknowledgeOptimistic,
+            loadoutsProjectionEpoch,
+          },
+          transport.signal,
+        ),
+      rollback: () => rollbackDeletedLoadout(previousLoadout, previousIndex, loadoutsProjectionEpoch),
+      ...transport,
+    }),
+  ).then((result) => {
+    if (result.status !== 'ok' && isPendingLoadoutProjectionCurrent(handle, loadoutId)) {
+      reapplyRetainedDeletedLoadout(loadoutId)
+    }
+  })
 }
 
 function dispatchFavoriteLoadout(rollback: LoadoutFavoriteRollback): void {
-  runLoadoutCommand(
-    (baseRevision) =>
-      favoriteLoadoutCommand({
-        baseRevision,
-        loadoutId: rollback.loadoutId,
-        favorite: rollback.attemptedFavorite,
-        acknowledgeOptimistic: true,
-        loadoutsProjectionEpoch: rollback.loadoutsProjectionEpoch,
-      }),
-    () => rollbackLoadoutFavorite(rollback),
-  )
+  if (!canUseServerCommands()) return
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: `/loadouts/${encodeURIComponent(rollback.loadoutId)}/favorite`,
+        body: { favorite: rollback.attemptedFavorite },
+      },
+    ],
+  }
+  const handle = stagePendingMutation(loadoutOwnerMutationKey(rollback.loadoutId), intent)
+  void dispatchDurableMutation(handle, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        favoriteLoadoutCommand(
+          {
+            baseRevision,
+            loadoutId: rollback.loadoutId,
+            favorite: rollback.attemptedFavorite,
+            acknowledgeOptimistic: true,
+            loadoutsProjectionEpoch: rollback.loadoutsProjectionEpoch,
+          },
+          transport.signal,
+        ),
+      rollback: () => rollbackLoadoutFavorite(rollback),
+      ...transport,
+    }),
+  ).then((result) => {
+    if (result.status !== 'ok' && isPendingLoadoutProjectionCurrent(handle, rollback.loadoutId)) {
+      reapplyRetainedFavoriteLoadout(rollback)
+    }
+  })
 }
 
 export function toggleLoadoutFavorite(loadoutId: string): boolean {
-  const loadout = getDatabase().loadouts?.find((item) => item.id === loadoutId)
+  const previousIndex = getDatabase().loadouts?.findIndex((item) => item.id === loadoutId) ?? -1
+  const loadout = previousIndex === -1 ? undefined : getDatabase().loadouts[previousIndex]
   if (!loadout) return false
 
   const previousFavorite = loadout.favorite
@@ -897,6 +1404,8 @@ export function toggleLoadoutFavorite(loadoutId: string): boolean {
     loadoutId,
     previousFavorite,
     attemptedFavorite: favorite,
+    attemptedRow: cloneJsonValue(getDatabase().loadouts[previousIndex]),
+    previousIndex,
     loadoutsProjectionEpoch,
   })
   return true
@@ -1137,26 +1646,34 @@ function changedModulePlans(previousModules: string[], nextModules: string[]): L
   }))
 }
 
-function changedModuleSteps(previousModules: string[], plans: readonly LoadoutModulePlan[]): LoadoutApplyStep[] {
+function changedModuleSteps(
+  previousModules: string[],
+  attemptedModules: string[],
+  settingsProjectionEpoch: number,
+  plans: readonly LoadoutModulePlan[],
+): LoadoutApplyStep[] {
   const previousSet = new Set(previousModules)
-  return plans.map(({ moduleId, enabled, durability }) =>
-    createLoadoutApplyStep(
+  return plans.map(({ moduleId, enabled, durability }) => {
+    const rollback: LoadoutModuleMembershipRollback = {
+      moduleId,
+      previousEnabled: previousSet.has(moduleId),
+      attemptedEnabled: enabled,
+      previousModules,
+      attemptedModules,
+      settingsProjectionEpoch,
+    }
+    return createLoadoutApplyStep(
       (baseRevision) =>
         enableModuleCommand({
           baseRevision,
           moduleId,
           enabled,
         }),
-      () =>
-        rollbackModuleMembership({
-          moduleId,
-          previousEnabled: previousSet.has(moduleId),
-          attemptedEnabled: enabled,
-          previousModules,
-        }),
+      () => rollbackModuleMembership(rollback),
       durability,
-    ),
-  )
+      (isTargetCurrent) => reapplyModuleMembership(rollback, isTargetCurrent),
+    )
+  })
 }
 
 let loadoutApplyIntent = 0
@@ -1456,8 +1973,27 @@ async function applyLoadoutNowExclusive(
         })
       : null
   const lastUsed = Date.now()
-  const previousLoadout = getDatabase().loadouts?.find((item) => item.id === loadout.id)
+  const previousLoadoutIndex = getDatabase().loadouts?.findIndex((item) => item.id === loadout.id) ?? -1
+  const previousLoadout = previousLoadoutIndex === -1 ? undefined : getDatabase().loadouts[previousLoadoutIndex]
+  const shouldAddCurrentCharacter =
+    !!currentCharacterId && !(previousLoadout?.characterIds ?? loadout.characterIds ?? []).includes(currentCharacterId)
+  const touchCharacterId = shouldAddCurrentCharacter ? currentCharacterId : undefined
+  const touchDurability = prepareLoadoutDurableStep(loadoutOwnerMutationKey(loadout.id), {
+    version: 1,
+    dependencyKeys: [SETTINGS_BRIDGE_MUTATION_KEY],
+    requests: [
+      {
+        method: 'POST',
+        path: `/loadouts/${encodeURIComponent(loadout.id)}/touch`,
+        body: {
+          lastUsed,
+          ...(touchCharacterId ? { characterId: touchCharacterId } : {}),
+        },
+      },
+    ],
+  })
   const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
+  const modulesProjectionEpoch = captureSettingsGroupProjectionEpoch('modules')
   const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('sidebar')
   const touchRollback: LoadoutTouchRollback = {
     loadoutId: loadout.id,
@@ -1473,7 +2009,6 @@ async function applyLoadoutNowExclusive(
     loadoutsProjectionEpoch,
     settingsProjectionEpoch,
   }
-  let addedCurrentCharacter = false
   let touchedLiveLoadoutName: string | null = null
   let selectedLegacyPresetId: string | null = null
   let selectedModelPresetId: string | null = null
@@ -1502,15 +2037,16 @@ async function applyLoadoutNowExclusive(
     const liveTargetLoadout = getDatabase().loadouts.find((item) => item.id === loadout.id)
     const targetLoadout = liveTargetLoadout ?? loadout
     targetLoadout.lastUsed = lastUsed
-    if (currentCharacterId && !targetLoadout.characterIds.includes(currentCharacterId)) {
-      targetLoadout.characterIds.push(currentCharacterId)
-      addedCurrentCharacter = true
+    if (touchCharacterId && !targetLoadout.characterIds.includes(touchCharacterId)) {
+      targetLoadout.characterIds.push(touchCharacterId)
     }
     if (previousLoadout) {
       touchRollback.attempted = {
         lastUsed: targetLoadout.lastUsed,
         characterIds: cloneJsonValue(targetLoadout.characterIds ?? []),
       }
+      touchRollback.attemptedRow = cloneJsonValue(targetLoadout)
+      touchRollback.previousIndex = previousLoadoutIndex
     }
     if (liveTargetLoadout && nonBlankId(liveTargetLoadout.name)) {
       touchedLiveLoadoutName = liveTargetLoadout.name
@@ -1530,11 +2066,13 @@ async function applyLoadoutNowExclusive(
         selectedLegacyPresetId = nonBlankId(targetPreset.id)
         getDatabase().botPresetsId = resolvedPresetIndex
         setPreset(getDatabase(), targetPreset)
+        const attemptedSettings = snapshotPresetSettings()
         legacyPresetRollback = {
           previousSelectedId,
           attemptedSelectedId: currentBotPresetSelectedId(),
           previous: previousSettings,
-          attempted: snapshotPresetSettings(),
+          attempted: attemptedSettings,
+          changedKeys: changedPresetSettingsKeys(previousSettings, attemptedSettings),
           saveCurrentRollback,
         }
       }
@@ -1546,12 +2084,14 @@ async function applyLoadoutNowExclusive(
       selectedModelPresetId = modelPresetSelection.presetId
       getDatabase().modelPresetsId = modelPresetSelection.index
       applyModelPresetFieldsToDatabase(getDatabase(), getDatabase().modelPresets[modelPresetSelection.index])
+      const attemptedSettings = snapshotPresetSettings()
       modelPresetRollback = {
         kind: 'model',
         previousSelectedId,
         attemptedSelectedId: currentSplitPresetSelectedId('model'),
         previous: previousSettings,
-        attempted: snapshotPresetSettings(),
+        attempted: attemptedSettings,
+        changedKeys: changedPresetSettingsKeys(previousSettings, attemptedSettings),
       }
     }
 
@@ -1561,12 +2101,14 @@ async function applyLoadoutNowExclusive(
       selectedPromptPresetId = promptPresetSelection.presetId
       getDatabase().promptPresetsId = promptPresetSelection.index
       applyPromptPresetFieldsToDatabase(getDatabase(), getDatabase().promptPresets[promptPresetSelection.index])
+      const attemptedSettings = snapshotPresetSettings()
       promptPresetRollback = {
         kind: 'prompt',
         previousSelectedId,
         attemptedSelectedId: currentSplitPresetSelectedId('prompt'),
         previous: previousSettings,
-        attempted: snapshotPresetSettings(),
+        attempted: attemptedSettings,
+        changedKeys: changedPresetSettingsKeys(previousSettings, attemptedSettings),
       }
     }
 
@@ -1603,6 +2145,38 @@ async function applyLoadoutNowExclusive(
     getDatabase().lastLoadedLoadoutName = touchedLiveLoadoutName ?? loadout.name
   })
 
+  if (personaRollback) {
+    registerPreparedLoadoutProjectionTargets(personaDurability, [
+      ...personaRollback.rows.map((row) => pendingMutationPersonaRowProjectionTarget(row.personaId)),
+      ...(['username', 'userIcon', 'personaPrompt', 'userNote'] as const)
+        .filter(
+          (key) =>
+            snapshotJson(personaRollback.previousMirror[key]) !== snapshotJson(personaRollback.attemptedMirror[key]),
+        )
+        .map(pendingMutationSettingsFieldProjectionTarget),
+    ])
+  }
+  if (legacyPresetRollback) {
+    registerPreparedLoadoutProjectionTargets(legacyPresetDurability, [
+      ...legacyPresetRollback.changedKeys.map(pendingMutationSettingsFieldProjectionTarget),
+      ...(legacyPresetRollback.saveCurrentRollback
+        ? [pendingMutationPresetRowProjectionTarget('legacy', legacyPresetRollback.saveCurrentRollback.presetId)]
+        : []),
+    ])
+  }
+  if (modelPresetRollback) {
+    registerPreparedLoadoutProjectionTargets(
+      modelPresetDurability,
+      modelPresetRollback.changedKeys.map(pendingMutationSettingsFieldProjectionTarget),
+    )
+  }
+  if (promptPresetRollback) {
+    registerPreparedLoadoutProjectionTargets(
+      promptPresetDurability,
+      promptPresetRollback.changedKeys.map(pendingMutationSettingsFieldProjectionTarget),
+    )
+  }
+
   const steps: LoadoutApplyStep[] = []
   if (personaSelection && personaRollback) {
     steps.push(
@@ -1617,6 +2191,7 @@ async function applyLoadoutNowExclusive(
           }),
         () => rollbackPersonaSelection(personaRollback),
         personaDurability,
+        (isTargetCurrent) => reapplyPersonaSelection(personaRollback, isTargetCurrent),
       ),
     )
   }
@@ -1632,6 +2207,8 @@ async function applyLoadoutNowExclusive(
           }),
         () => rollbackLegacyPresetSelection(legacyPresetRollback),
         legacyPresetDurability,
+        (isTargetCurrent) => reapplyLegacyPresetSelection(legacyPresetRollback, isTargetCurrent),
+        legacyPresetRollback,
       ),
     )
   }
@@ -1645,6 +2222,8 @@ async function applyLoadoutNowExclusive(
           }),
         () => rollbackSplitPresetSelection(modelPresetRollback),
         modelPresetDurability,
+        (isTargetCurrent) => reapplySplitPresetSelection(modelPresetRollback, isTargetCurrent),
+        modelPresetRollback,
       ),
     )
   }
@@ -1658,6 +2237,8 @@ async function applyLoadoutNowExclusive(
           }),
         () => rollbackSplitPresetSelection(promptPresetRollback),
         promptPresetDurability,
+        (isTargetCurrent) => reapplySplitPresetSelection(promptPresetRollback, isTargetCurrent),
+        promptPresetRollback,
       ),
     )
   }
@@ -1673,15 +2254,20 @@ async function applyLoadoutNowExclusive(
           }),
         () => rollbackAgentPresetSelection(rollback),
         agentPresetDurability,
+        (isTargetCurrent) => reapplyAgentPresetSelection(rollback, isTargetCurrent),
       ),
     )
   }
   if (requested.has('modules')) {
-    steps.push(...changedModuleSteps(previousModules, modulePlans))
+    steps.push(...changedModuleSteps(previousModules, nextModules, modulesProjectionEpoch, modulePlans))
   }
   if (requested.has('globalVariables') && globalVariablesChanged) {
     const group = settingsGroupForKey('globalChatVariables')
     if (group) {
+      const rollback: LoadoutGlobalVariablesRollback = {
+        previous: previousGlobalChatVariables,
+        attempted: nextGlobalChatVariables,
+      }
       steps.push(
         createLoadoutApplyStep(
           (baseRevision) =>
@@ -1694,12 +2280,9 @@ async function applyLoadoutNowExclusive(
               acknowledgeOptimistic: true,
               optimisticProjectionEpoch: settingsProjectionEpoch,
             }),
-          () =>
-            rollbackGlobalChatVariables({
-              previous: previousGlobalChatVariables,
-              attempted: nextGlobalChatVariables,
-            }),
+          () => rollbackGlobalChatVariables(rollback),
           globalVariablesDurability,
+          (isTargetCurrent) => reapplyGlobalChatVariables(rollback, isTargetCurrent),
         ),
       )
     }
@@ -1711,24 +2294,46 @@ async function applyLoadoutNowExclusive(
           baseRevision,
           loadoutId: loadout.id,
           lastUsed,
-          characterId: addedCurrentCharacter ? currentCharacterId : undefined,
+          characterId: touchCharacterId,
           acknowledgeOptimistic: touchedLiveLoadoutName !== null,
           loadoutsProjectionEpoch,
           settingsProjectionEpoch,
           loadedName: touchedLiveLoadoutName ?? undefined,
         }),
       () => rollbackLoadoutTouch(touchRollback),
+      touchDurability,
+      (isTargetCurrent) => reapplyLoadoutTouch(touchRollback, isTargetCurrent),
     ),
   )
 
-  const sequenceEntries: ServerCommandSequenceEntry[] = steps.map((step) =>
-    step.executionWrapper ? { command: step.command, executionWrapper: step.executionWrapper } : step.command,
+  // Reserve the global command queue synchronously with the optimistic
+  // projection. The first queued step waits for every prepared row, so a
+  // later user action can neither overtake this sequence nor make its first
+  // request start before the retained tail is durable.
+  const rollbackEpoch = captureDestructiveRefreshEpoch()
+  const durabilityReady = awaitPreparedLoadoutDurability(steps)
+  const sequenceEntries: ServerCommandSequenceEntry[] = steps.map((step, index) => {
+    if (index !== 0) {
+      return step.executionWrapper ? { command: step.command, executionWrapper: step.executionWrapper } : step.command
+    }
+    return {
+      command: step.command,
+      executionWrapper: async (execute) => {
+        await durabilityReady
+        return step.executionWrapper ? step.executionWrapper(execute) : execute()
+      },
+    }
+  })
+  const failure = await runServerCommandSequence(sequenceEntries, (rollbackIsCurrent) =>
+    settleFailedLoadoutApplySteps(steps, rollbackIsCurrent),
   )
-  const failure = await runOptimisticCommandSequenceAsync(sequenceEntries, () =>
-    rollbackUnacceptedLoadoutApplySteps(steps),
-  )
-  if (failure !== null) await discardSkippedLoadoutDurableSteps(steps)
-  return failure === null ? 'applied' : 'persistence-failed'
+  if (failure !== null && !hasDestructiveRefreshEpochChanged(rollbackEpoch)) {
+    reapplyRetainedLoadoutApplySteps(steps)
+  }
+  if (failure === null) return 'applied'
+  return steps.some((step) => !step.succeeded && step.durability && retainsDurableLoadoutProjection(step.durability))
+    ? 'queued'
+    : 'persistence-failed'
 }
 
 export async function saveCurrentLoadout(name: string): Promise<Loadout | null> {
@@ -1739,5 +2344,5 @@ export async function saveCurrentLoadout(name: string): Promise<Loadout | null> 
     getDatabase().loadouts.push(loadout)
   })
   const result = await dispatchCreateLoadout(loadout, acknowledgeOptimistic, loadoutsProjectionEpoch)
-  return result === null || result.status === 'ok' ? loadout : null
+  return result === null || result.result.status === 'ok' || result.projectionOwned ? loadout : null
 }

@@ -6,7 +6,7 @@
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { language } from 'src/lang'
-  import { alertConfirm } from 'src/ts/alert'
+  import { alertConfirm, alertNormal } from 'src/ts/alert'
 
   type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
@@ -76,8 +76,9 @@
     applyError = ''
     try {
       const status = await applyLoadout(loadout, apply)
-      if (status === 'applied') {
+      if (status === 'applied' || status === 'queued') {
         applyingLoadoutId = null
+        if (status === 'queued') alertNormal(language.loadoutApplyQueued)
         close()
         return
       }

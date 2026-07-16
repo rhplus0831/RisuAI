@@ -779,20 +779,16 @@ describe('persona ID read and command preparation', () => {
       await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 0 })
       await expect(flushPendingSelectedPersonaUpdate()).resolves.toBeNull()
       expect(commands).toHaveLength(commandCount)
-      // Replay is transport-only; the transient failure restored the local
-      // projection, and bootstrap/resource hydration will apply the accepted
-      // deletion on the next authoritative read.
+      // The exact DELETE remained durable behind the transient PATCH, so its
+      // newer selected-persona projection stays visible through replay.
       expect(getDatabase()).toMatchObject({
         selectedPersona: 0,
-        username: 'Persona A',
-        userIcon: 'a.png',
-        personaPrompt: 'Latest optimistic A prompt',
-        userNote: 'A note',
+        username: 'Persona B',
+        userIcon: 'b.png',
+        personaPrompt: 'B prompt',
+        userNote: 'B note',
       })
-      expect(getDatabase().personas).toEqual([
-        { ...personaA, personaPrompt: 'Latest optimistic A prompt' },
-        personaB,
-      ])
+      expect(getDatabase().personas).toEqual([personaB])
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

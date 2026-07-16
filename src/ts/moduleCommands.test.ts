@@ -634,7 +634,9 @@ describe('module command projection helpers', () => {
         { key: 'module-owner:mod-a', method: 'DELETE' },
         { key: 'module-owner:mod-a', method: 'PATCH' },
       ])
-      expect(getDatabase().modules.find((module) => module.id === 'mod-a')?.name).toBe('Module A')
+      // The exact PATCH row is durable behind the retained delete, so its
+      // optimistic metadata stays visible until the owner chain replays.
+      expect(getDatabase().modules.find((module) => module.id === 'mod-a')?.name).toBe('Restored edit')
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -721,7 +723,9 @@ describe('module command projection helpers', () => {
           { key: 'module-owner:mod-a', method: 'POST', path: '/modules/enable' },
         ])
       })
-      expect(getDatabase().enabledModules).toEqual([])
+      // The newer enable has its own durable row and therefore keeps owning
+      // the projection while the predecessor delete is retryable.
+      expect(getDatabase().enabledModules).toEqual(['mod-a'])
 
       recover = true
       await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1, discarded: 1 })

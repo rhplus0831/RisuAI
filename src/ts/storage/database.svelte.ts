@@ -125,6 +125,9 @@ import {
 import { dispatchDurableMutation } from '../server/durableMutationDispatch'
 import {
   acknowledgePendingMutation,
+  pendingMutationPresetRowProjectionTarget,
+  pendingMutationSettingsFieldProjectionTarget,
+  recordPendingMutationProjectionTargets,
   stagePendingMutation,
   type DurableMutationIntent,
   type PendingMutationHandle,
@@ -522,6 +525,19 @@ function snapshotSetPresetSettings(db: Database): Partial<Record<SetPresetRollba
     snapshot[key] = safeStructuredClone(dbRecord[key])
   }
   return snapshot
+}
+
+function recordPresetSelectionProjectionTargets(
+  handle: PendingMutationHandle,
+  previous: Partial<Record<SetPresetRollbackKey, unknown>>,
+  attempted: Partial<Record<SetPresetRollbackKey, unknown>>,
+): void {
+  recordPendingMutationProjectionTargets(
+    handle,
+    SET_PRESET_ROLLBACK_KEYS.filter((key) => snapshotJson(previous[key]) !== snapshotJson(attempted[key])).map(
+      pendingMutationSettingsFieldProjectionTarget,
+    ),
+  )
 }
 
 type SplitPresetKind = 'model' | 'prompt'
@@ -4330,6 +4346,16 @@ function changeToPresetById(targetPresetId: string, savecurrent: boolean, intent
       rollbackBotPresetSelection(selectionRollback)
     }
     if (durableSelection) {
+      recordPresetSelectionProjectionTargets(
+        durableSelection.handle,
+        selectionRollback.previousSettings ?? {},
+        selectionRollback.attemptedSettings ?? {},
+      )
+      if (saveCurrentRollback) {
+        recordPendingMutationProjectionTargets(durableSelection.handle, [
+          pendingMutationPresetRowProjectionTarget('legacy', saveCurrentRollback.presetId),
+        ])
+      }
       void dispatchDurableMutation(durableSelection.handle, durableSelection.intent, (transport) =>
         runServerCommand({
           command: (baseRevision) =>
@@ -4743,6 +4769,11 @@ export function selectModelPreset(id: number) {
       attemptedSettings: snapshotSetPresetSettings(db),
     }
     if (durableSelection) {
+      recordPresetSelectionProjectionTargets(
+        durableSelection.handle,
+        selectionRollback.previousSettings,
+        selectionRollback.attemptedSettings,
+      )
       void dispatchDurableMutation(durableSelection.handle, durableSelection.intent, (transport) =>
         runServerCommand({
           command: (baseRevision) => selectModelPresetCommand({ baseRevision, modelPresetId }),
@@ -5059,6 +5090,11 @@ export function selectPromptPreset(id: number) {
       attemptedSettings: snapshotSetPresetSettings(db),
     }
     if (durableSelection) {
+      recordPresetSelectionProjectionTargets(
+        durableSelection.handle,
+        selectionRollback.previousSettings,
+        selectionRollback.attemptedSettings,
+      )
       runPromptPresetSelectionCommand(
         promptPresetId,
         () => rollbackSplitPresetSelection(selectionRollback),
