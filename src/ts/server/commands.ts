@@ -4963,9 +4963,23 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
-    withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, () => {
-      const execute = () => executeServerCommand(input, rollbackEpoch)
-      return input.executionWrapper ? input.executionWrapper(execute) : execute()
+    withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, async () => {
+      let executionStarted = false
+      const execute = () => {
+        executionStarted = true
+        return executeServerCommand(input, rollbackEpoch)
+      }
+      if (!input.executionWrapper) return execute()
+
+      const result = await input.executionWrapper(execute)
+      if (!executionStarted && result.status !== 'ok') {
+        // Durable dependency wrappers can retain a successor without sending
+        // it when an older owner mutation is still transiently blocked. The
+        // normal executor did not run in that branch, so restore the optimistic
+        // projection here instead of leaving a UI value that was never sent.
+        runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
+      }
+      return result
     }),
   )
 }

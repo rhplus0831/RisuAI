@@ -1416,6 +1416,22 @@ describe('server command API adapter', () => {
     expect(peekCachedServerCommandRevision()).toBe(42)
   })
 
+  it('rolls back when a command execution wrapper retains the mutation without sending', async () => {
+    const rollback = vi.fn()
+    const command = vi.fn(async () => ({ status: 'unavailable' as const }))
+
+    await expect(
+      runServerCommand({
+        command,
+        rollback,
+        executionWrapper: async () => ({ status: 'unavailable' }),
+      }),
+    ).resolves.toEqual({ status: 'unavailable' })
+
+    expect(command).not.toHaveBeenCalled()
+    expect(rollback).toHaveBeenCalledOnce()
+  })
+
   it('normalizes a rejected per-step execution wrapper and rolls the sequence back once', async () => {
     setCachedServerCommandRevision(50)
     const rollback = vi.fn()
