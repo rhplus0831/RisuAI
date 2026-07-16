@@ -286,6 +286,7 @@ import {
   renderCustomHtmlTemplate,
 } from './ChatCustomHtmlTemplate'
 import {
+  CurrentTriggerIdStore,
   HideIconStore,
   ReloadChatPointer,
   ReloadGUIPointer,
@@ -686,6 +687,48 @@ describe('customHTML template memo', () => {
 })
 
 describe('customHTML rendered button trigger freshness', () => {
+  it('does not let an older trigger cleanup clear a newer manual trigger identity', async () => {
+    seedDatabase(1, customHtmlMocks.templates.triggerButton)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    const secondTrigger = deferred<void>()
+    let invocation = 0
+    customHtmlMocks.runTrigger.mockImplementation(async (_char, _mode, arg) => {
+      invocation += 1
+      CurrentTriggerIdStore.set(arg.triggerId ?? null)
+      if (invocation === 2) await secondTrigger.promise
+      return undefined
+    })
+    CurrentTriggerIdStore.set(null)
+    vi.useFakeTimers()
+
+    try {
+      const button = target.querySelector<HTMLButtonElement>('.manual-trigger-button')
+      button?.click()
+      await settle()
+      expect(invocation).toBe(1)
+      expect(get(CurrentTriggerIdStore)).toBe('trigger-id')
+
+      button?.click()
+      await settle()
+      expect(invocation).toBe(2)
+
+      await vi.advanceTimersByTimeAsync(100)
+      await settle()
+      expect(get(CurrentTriggerIdStore)).toBe('trigger-id')
+
+      secondTrigger.resolve()
+      await settle()
+      await vi.advanceTimersByTimeAsync(100)
+      await settle()
+      expect(get(CurrentTriggerIdStore)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      CurrentTriggerIdStore.set(null)
+    }
+  })
+
   it('drops a stale risu-trigger result after the active chat switches', async () => {
     seedDatabase(1, customHtmlMocks.templates.triggerButton)
     mountCustomHtmlRows(1)

@@ -1,3 +1,7 @@
+<script module lang="ts">
+  let manualTriggerDisplayGeneration = 0
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte'
   import {
@@ -117,6 +121,7 @@
     type ChatButtonTriggerIdentity,
     type ChatButtonTriggerTarget,
   } from './chatButtonTriggerFreshness'
+
   import { createBranchComment, parseBranchComment } from './branchComment'
   import { characterRoutePath, navigate } from 'src/ts/router'
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
@@ -1268,44 +1273,48 @@
     if (!triggerTarget) {
       return
     }
+    const triggerDisplayGeneration = triggerName ? ++manualTriggerDisplayGeneration : null
 
-    let triggerResult = null
-    if (triggerName) {
-      const triggerController = createManualTriggerAbortController()
-      try {
-        triggerResult = await runTrigger(currentChar, 'manual', {
-          chat: triggerTarget.previous.chat ?? getCurrentChat(),
-          manualName: triggerName,
-          triggerId: triggerId || undefined,
-          signal: triggerController.signal,
+    try {
+      let triggerResult = null
+      if (triggerName) {
+        const triggerController = createManualTriggerAbortController()
+        try {
+          triggerResult = await runTrigger(currentChar, 'manual', {
+            chat: triggerTarget.previous.chat ?? getCurrentChat(),
+            manualName: triggerName,
+            triggerId: triggerId || undefined,
+            signal: triggerController.signal,
+            isFresh: () => isChatButtonTriggerTargetFresh(triggerTarget),
+            deferLiveChatSideEffects: true,
+          })
+        } finally {
+          clearManualTriggerAbortController(triggerController)
+        }
+      } else if (btnEvent) {
+        triggerResult = await runLuaButtonTrigger(currentChar, btnEvent, {
+          chat: triggerTarget.previous.chat,
           isFresh: () => isChatButtonTriggerTargetFresh(triggerTarget),
           deferLiveChatSideEffects: true,
         })
-      } finally {
-        clearManualTriggerAbortController(triggerController)
       }
-    } else if (btnEvent) {
-      triggerResult = await runLuaButtonTrigger(currentChar, btnEvent, {
-        chat: triggerTarget.previous.chat,
-        isFresh: () => isChatButtonTriggerTargetFresh(triggerTarget),
-        deferLiveChatSideEffects: true,
-      })
-    }
 
-    if (triggerResult?.chat && applyFreshChatButtonTriggerResult(triggerTarget, triggerResult.chat)) {
-      if (chatScriptstateSignature(triggerTarget.previous.chat) !== chatScriptstateSignature(triggerResult.chat)) {
-        refreshVariableOnlyGui()
+      if (triggerResult?.chat && applyFreshChatButtonTriggerResult(triggerTarget, triggerResult.chat)) {
+        if (chatScriptstateSignature(triggerTarget.previous.chat) !== chatScriptstateSignature(triggerResult.chat)) {
+          refreshVariableOnlyGui()
+        }
+        ReloadChatPointer.update((v) => {
+          v[idx] = (v[idx] ?? 0) + 1
+          return v
+        })
       }
-      ReloadChatPointer.update((v) => {
-        v[idx] = (v[idx] ?? 0) + 1
-        return v
-      })
-    }
-
-    if (triggerName && triggerId) {
-      setTimeout(() => {
-        CurrentTriggerIdStore.set(null)
-      }, 100) // Small delay to allow display mode to complete
+    } finally {
+      if (triggerName && triggerId) {
+        setTimeout(() => {
+          if (manualTriggerDisplayGeneration !== triggerDisplayGeneration) return
+          CurrentTriggerIdStore.update((currentTriggerId) => (currentTriggerId === triggerId ? null : currentTriggerId))
+        }, 100) // Small delay to allow display mode to complete
+      }
     }
   }
 
