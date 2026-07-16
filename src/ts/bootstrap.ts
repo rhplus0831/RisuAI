@@ -127,6 +127,7 @@ import {
 } from './server/promptTemplateHydration'
 import { setSettingsRuntimeProjectionHook } from './server/settingsRuntimeProjectionHooks'
 import { updateHeightMode } from './gui/heightMode'
+import { normalizeLegacyCustomBackgroundSetting } from './server/customBackgroundSetting'
 
 const COLOR_SCHEME_RUNTIME_KEYS = new Set(['colorScheme', 'colorSchemeName', 'customBackground'])
 const TEXT_THEME_RUNTIME_KEYS = new Set(['textTheme', 'customTextTheme', 'font', 'customFont', 'customCSS'])
@@ -294,6 +295,7 @@ export async function loadWebInitialDatabase() {
   stopBridgePatchLifecycleFlush?.()
   stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
   await startServerResourceEvents()
+  normalizeLegacyCustomBackgroundSetting()
 }
 
 /**

@@ -103,8 +103,8 @@ afterEach(() => {
   setDatabaseLite({} as any)
 })
 
-describe('CustomBackgroundToggle upload rollback', () => {
-  it('rolls back the placeholder setting when image upload fails', async () => {
+describe('CustomBackgroundToggle local upload state', () => {
+  it('keeps the durable setting unchanged when image upload fails', async () => {
     const selectedData = new Uint8Array([1, 2, 3])
     backgroundMocks.selectSingleFile.mockResolvedValue({
       data: selectedData,
@@ -116,17 +116,44 @@ describe('CustomBackgroundToggle upload rollback', () => {
     checkbox().click()
     await tick()
 
-    await vi.waitFor(() => {
-      expect(backgroundMocks.applyServerBackedSetting).toHaveBeenCalledTimes(2)
-    })
+    await vi.waitFor(() => expect(backgroundMocks.alertError).toHaveBeenCalledWith('upload failed'))
 
     expect(backgroundMocks.saveImage).toHaveBeenCalledWith(selectedData)
-    expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([
-      ['customBackground', '-'],
-      ['customBackground', ''],
-    ])
+    expect(backgroundMocks.applyServerBackedSetting).not.toHaveBeenCalled()
     expect(getDatabase().customBackground).toBe('')
-    expect(backgroundMocks.alertError).toHaveBeenCalledWith('upload failed')
+  })
+
+  it('persists only the completed image asset', async () => {
+    const selectedData = new Uint8Array([1, 2, 3])
+    backgroundMocks.selectSingleFile.mockResolvedValue({
+      data: selectedData,
+      name: 'background.png',
+    })
+    backgroundMocks.saveImage.mockResolvedValue('uploaded-background')
+
+    component = mount(CustomBackgroundToggle, { target })
+    checkbox().click()
+
+    await vi.waitFor(() => {
+      expect(backgroundMocks.applyServerBackedSetting).toHaveBeenCalledWith('customBackground', 'uploaded-background')
+    })
+
+    expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([['customBackground', 'uploaded-background']])
+    expect(getDatabase().customBackground).toBe('uploaded-background')
+  })
+
+  it('treats picker cancellation as a durable no-op', async () => {
+    backgroundMocks.selectSingleFile.mockResolvedValue(undefined)
+
+    component = mount(CustomBackgroundToggle, { target })
+    checkbox().click()
+    await vi.waitFor(() => expect(backgroundMocks.selectSingleFile).toHaveBeenCalledOnce())
+    await flushAsync()
+
+    expect(backgroundMocks.saveImage).not.toHaveBeenCalled()
+    expect(backgroundMocks.applyServerBackedSetting).not.toHaveBeenCalled()
+    expect(getDatabase().customBackground).toBe('')
+    expect(checkbox().checked).toBe(false)
   })
 
   it('drops stale upload completion after a later disable', async () => {
@@ -145,7 +172,8 @@ describe('CustomBackgroundToggle upload rollback', () => {
     })
     await tick()
 
-    expect(getDatabase().customBackground).toBe('-')
+    expect(getDatabase().customBackground).toBe('')
+    expect(checkbox().checked).toBe(true)
 
     checkbox().click()
     await tick()
@@ -155,10 +183,7 @@ describe('CustomBackgroundToggle upload rollback', () => {
     upload.resolve('uploaded-background')
     await flushAsync()
 
-    expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([
-      ['customBackground', '-'],
-      ['customBackground', ''],
-    ])
+    expect(backgroundMocks.applyServerBackedSetting).not.toHaveBeenCalled()
     expect(getDatabase().customBackground).toBe('')
     expect(backgroundMocks.alertError).not.toHaveBeenCalled()
   })
@@ -173,7 +198,7 @@ describe('CustomBackgroundToggle upload rollback', () => {
       expect(backgroundMocks.selectSingleFile).toHaveBeenCalledWith(['png', 'webp', 'gif'])
     })
 
-    expect(getDatabase().customBackground).toBe('-')
+    expect(getDatabase().customBackground).toBe('')
 
     withResourceDatabaseWrite((database) => {
       database.customBackground = 'newer-background'
@@ -181,7 +206,7 @@ describe('CustomBackgroundToggle upload rollback', () => {
     picker.resolve(undefined)
     await flushAsync()
 
-    expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([['customBackground', '-']])
+    expect(backgroundMocks.applyServerBackedSetting).not.toHaveBeenCalled()
     expect(getDatabase().customBackground).toBe('newer-background')
     expect(backgroundMocks.alertError).not.toHaveBeenCalled()
   })
@@ -201,7 +226,7 @@ describe('CustomBackgroundToggle upload rollback', () => {
       expect(backgroundMocks.saveImage).toHaveBeenCalledWith(selectedData)
     })
 
-    expect(getDatabase().customBackground).toBe('-')
+    expect(getDatabase().customBackground).toBe('')
 
     withResourceDatabaseWrite((database) => {
       database.customBackground = 'newer-background'
@@ -209,8 +234,41 @@ describe('CustomBackgroundToggle upload rollback', () => {
     upload.reject(new Error('upload failed'))
     await flushAsync()
 
-    expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([['customBackground', '-']])
+    expect(backgroundMocks.applyServerBackedSetting).not.toHaveBeenCalled()
     expect(getDatabase().customBackground).toBe('newer-background')
     expect(backgroundMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('drops upload completion after the owning component is destroyed', async () => {
+    const upload = createDeferred<string>()
+    backgroundMocks.selectSingleFile.mockResolvedValue({
+      data: new Uint8Array([10, 11, 12]),
+      name: 'background.png',
+    })
+    backgroundMocks.saveImage.mockReturnValue(upload.promise)
+
+    component = mount(CustomBackgroundToggle, { target })
+    checkbox().click()
+    await vi.waitFor(() => expect(backgroundMocks.saveImage).toHaveBeenCalledOnce())
+
+    unmount(component)
+    component = undefined
+    upload.resolve('stale-background')
+    await flushAsync()
+
+    expect(backgroundMocks.applyServerBackedSetting).not.toHaveBeenCalled()
+    expect(getDatabase().customBackground).toBe('')
+  })
+
+  it('durably clears the placeholder left by an older client', async () => {
+    withResourceDatabaseWrite((database) => {
+      database.customBackground = '-'
+    })
+
+    component = mount(CustomBackgroundToggle, { target })
+
+    expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([['customBackground', '']])
+    expect(getDatabase().customBackground).toBe('')
+    expect(checkbox().checked).toBe(false)
   })
 })
