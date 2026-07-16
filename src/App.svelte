@@ -67,6 +67,7 @@
     syncRouteFromState,
   } from './ts/router'
   import { modalFocusTrap } from './ts/gui/modalFocusTrap'
+  import { alertError } from './ts/alert'
 
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
@@ -138,21 +139,25 @@
     }
     const file = e.dataTransfer.files[0]
     if (file) {
-      const name = file.name.toLowerCase()
+      try {
+        const name = file.name.toLowerCase()
 
-      if (name.endsWith('.risup')) {
-        const data = new Uint8Array(await file.arrayBuffer())
-        await importPreset({ name: file.name, data })
-      } else if (name.endsWith('.risum')) {
-        const data = new Uint8Array(await file.arrayBuffer())
-        await importRisuModuleData(data)
-        return
-      } else {
-        await importCharacterProcess({
-          name: file.name,
-          data: file,
-        })
-        checkCharOrder()
+        if (name.endsWith('.risup')) {
+          const data = new Uint8Array(await file.arrayBuffer())
+          await importPreset({ name: file.name, data })
+        } else if (name.endsWith('.risum')) {
+          const data = new Uint8Array(await file.arrayBuffer())
+          await importRisuModuleData(data)
+          return
+        } else {
+          await importCharacterProcess({
+            name: file.name,
+            data: file,
+          })
+          checkCharOrder()
+        }
+      } catch (error) {
+        alertError(error as Error)
       }
     }
   }}

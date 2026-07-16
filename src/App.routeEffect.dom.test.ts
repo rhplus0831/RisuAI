@@ -611,4 +611,28 @@ describe('App route/refreeze mounted DOM behavior', () => {
 
     expect(appRouteDomMocks.alertNormal).not.toHaveBeenCalled()
   })
+
+  it('replaces a rejected dropped character import with an error', async () => {
+    const importError = new Error('Corrupt character archive')
+    appRouteDomMocks.importCharacterProcess.mockRejectedValueOnce(importError)
+
+    const droppedFile = {
+      name: 'broken.charx',
+      arrayBuffer: vi.fn(),
+    }
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      value: {
+        files: [droppedFile],
+        types: [],
+      },
+    })
+
+    const main = target.querySelector('main')
+    expect(main).not.toBeNull()
+    main?.dispatchEvent(dropEvent)
+
+    await vi.waitFor(() => expect(appRouteDomMocks.alertError).toHaveBeenCalledWith(importError))
+    expect(appRouteDomMocks.checkCharOrder).not.toHaveBeenCalled()
+  })
 })
