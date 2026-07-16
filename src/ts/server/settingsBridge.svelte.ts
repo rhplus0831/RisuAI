@@ -14,6 +14,7 @@ import {
   patchServerBackedSettings,
   runServerCommand,
   settingsGroupForKey,
+  type ServerCommandResult,
   type SettingsPatch,
   type SparseSettingsObjectUpdate,
   type ServerCommandTransportOptions,
@@ -304,7 +305,9 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
   dispatchServerBackedSettingsPatch(commandPatch, previous, attempted, optimisticProjectionEpochs)
 }
 
-export function applyOnboardingServerBackedSettings(options: ApplyOnboardingServerBackedSettingsOptions): void {
+export async function applyOnboardingServerBackedSettings(
+  options: ApplyOnboardingServerBackedSettingsOptions,
+): Promise<boolean> {
   const patch = buildOnboardingSettingsPatch(options)
   const beforeSetup = snapshotServerBackedSettings(getDatabase() as unknown as Record<string, unknown>)
   let fullPatch: SettingsPatch = {}
@@ -323,7 +326,19 @@ export function applyOnboardingServerBackedSettings(options: ApplyOnboardingServ
     })
   })
 
-  dispatchServerBackedSettingsPatch(fullPatch, previous, attempted, captureSettingsPatchProjectionEpochs(fullPatch))
+  const result = dispatchServerBackedSettingsPatch(
+    fullPatch,
+    previous,
+    attempted,
+    captureSettingsPatchProjectionEpochs(fullPatch),
+  )
+  if (!result) return true
+
+  try {
+    return (await result).status === 'ok'
+  } catch {
+    return false
+  }
 }
 
 function dispatchServerBackedSettingsPatch(
@@ -331,10 +346,10 @@ function dispatchServerBackedSettingsPatch(
   previous: SettingsPatch,
   attempted: SettingsPatch,
   optimisticProjectionEpochs: SettingsGroupProjectionEpochs,
-): void {
-  if (Object.keys(commandPatch).length === 0) return
+): Promise<ServerCommandResult> | null {
+  if (Object.keys(commandPatch).length === 0) return null
 
-  dispatchTrackedServerBackedSettingsPatch({
+  return dispatchTrackedServerBackedSettingsPatch({
     patch: commandPatch,
     optimisticProjectionEpochs,
     previous,
@@ -492,7 +507,7 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
   attempted: SettingsPatch
   keepalive?: boolean
   signal?: AbortSignal | null
-}): void {
+}): Promise<ServerCommandResult> {
   const attempt = registerSettingsAttempt(input.previous, input.attempted)
   const reportFailure = createSettingsSaveFailureReporter()
   const result = patchServerBackedSettings({
@@ -516,6 +531,7 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
       reportFailure()
     },
   )
+  return result
 }
 
 function registerSettingsAttempt(previous: SettingsPatch, attempted: SettingsPatch): PendingSettingsAttempt {

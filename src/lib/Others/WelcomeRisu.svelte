@@ -40,63 +40,69 @@
   let chatLang = $state(0)
   let chatMemorySelection = $state(0)
   let setupApplied = false
+  let setupCompletionPending = $state(false)
   let mounted = true
   let setupRunId = 0
-  let pendingSetupTimer: ReturnType<typeof setTimeout> | undefined
+
+  const SETUP_COMPLETION_PENDING_STEP = 9
+  const SETUP_COMPLETE_STEP = 10
 
   type SetupChoicesSnapshot = {
     chatLang: number
     chatMemorySelection: number
+    originStep: number
     provider: string
     runId: number
   }
 
-  function clearPendingSetupTimer(): void {
-    if (pendingSetupTimer !== undefined) {
-      clearTimeout(pendingSetupTimer)
-      pendingSetupTimer = undefined
-    }
-  }
-
   function invalidatePendingSetupRun(): void {
     setupRunId += 1
-    clearPendingSetupTimer()
+    setupCompletionPending = false
   }
 
-  function shouldApplySetupRun(snapshot: SetupChoicesSnapshot): boolean {
+  function isCurrentSetupRun(snapshot: SetupChoicesSnapshot): boolean {
     return (
       mounted &&
       snapshot.runId === setupRunId &&
-      step === 10 &&
+      setupCompletionPending &&
+      !setupApplied &&
+      step === SETUP_COMPLETION_PENDING_STEP &&
       provider === snapshot.provider &&
       chatLang === snapshot.chatLang &&
-      chatMemorySelection === snapshot.chatMemorySelection &&
-      getDatabase().didFirstSetup !== true
+      chatMemorySelection === snapshot.chatMemorySelection
     )
   }
 
-  function scheduleOnboardingSetupApplication(): void {
-    clearPendingSetupTimer()
+  async function completeOnboardingSetup(): Promise<void> {
+    if (!mounted || setupApplied || setupCompletionPending || getDatabase().didFirstSetup === true) return
+
     const snapshot: SetupChoicesSnapshot = {
       chatLang,
       chatMemorySelection,
+      originStep: step,
       provider,
       runId: setupRunId + 1,
     }
     setupRunId = snapshot.runId
-    pendingSetupTimer = setTimeout(() => {
-      pendingSetupTimer = undefined
-      if (!shouldApplySetupRun(snapshot)) {
-        return
-      }
+    setupCompletionPending = true
+    step = SETUP_COMPLETION_PENDING_STEP
 
-      applyOnboardingServerBackedSettings({
-        chatMemorySelection: snapshot.chatMemorySelection,
-        provider: snapshot.provider,
-        chatLang: snapshot.chatLang,
-      })
-      updateTextThemeAndCSS()
-    }, 1000)
+    const persisted = await applyOnboardingServerBackedSettings({
+      chatMemorySelection: snapshot.chatMemorySelection,
+      provider: snapshot.provider,
+      chatLang: snapshot.chatLang,
+    })
+
+    if (!isCurrentSetupRun(snapshot)) return
+    setupCompletionPending = false
+    if (!persisted) {
+      step = snapshot.originStep
+      return
+    }
+
+    setupApplied = true
+    updateTextThemeAndCSS()
+    step = SETUP_COMPLETE_STEP
   }
 
   onDestroy(() => {
@@ -174,13 +180,6 @@
       }
     }
   }
-
-  $effect.pre(() => {
-    if (step === 10 && !setupApplied) {
-      setupApplied = true
-      scheduleOnboardingSetupApplication()
-    }
-  })
 </script>
 
 <div class="w-full h-full flex justify-center welcome-bg text-textcolor relative bg-gray-900">
@@ -256,7 +255,7 @@
                 class="border-l-gray-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   provider = 'later'
-                  step = 10
+                  void completeOnboardingSetup()
                 }}>
                 <h1 class="text-md font-bold text-start text-gray-500">
                   {language.setup.setupMessageOption2}
@@ -298,7 +297,7 @@
                 class="border-l-red-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   provider = 'horde'
-                  step = 10
+                  void completeOnboardingSetup()
                 }}>
                 <h1 class="text-2xl font-bold text-start">Horde</h1>
                 <span class="mt-2 text-textcolor2 text-start">{language.setup.hordeProvider}</span>
@@ -387,7 +386,7 @@
                 class="border-l-red-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   chatMemorySelection = 2
-                  step = 10
+                  void completeOnboardingSetup()
                 }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseCheapOrMemoryOption3}
@@ -399,7 +398,7 @@
                 class="border-l-blue-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   chatMemorySelection = 0
-                  step = 10
+                  void completeOnboardingSetup()
                 }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseCheapOrMemoryOption1}
@@ -410,7 +409,7 @@
                 class="border-l-green-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   chatMemorySelection = 1
-                  step = 10
+                  void completeOnboardingSetup()
                 }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseCheapOrMemoryOption2}
@@ -421,7 +420,7 @@
                 class="border-l-yellow-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   chatMemorySelection = 3
-                  step = 10
+                  void completeOnboardingSetup()
                 }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseCheapOrMemoryOption4}
@@ -430,7 +429,7 @@
               </button>
             </div>
           {/if}
-          {#if step === 10}
+          {#if step === SETUP_COMPLETE_STEP}
             <Chat name="Airisu" img={airisuStyle} message={language.setup.allDone} isLastMemory={false} />
           {/if}
           <div class="flex items-stretch mb-2 w-full mt-auto">

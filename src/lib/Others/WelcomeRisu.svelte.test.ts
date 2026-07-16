@@ -79,8 +79,21 @@ import {
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T | PromiseLike<T>) => void
+}
+
 let target: HTMLElement
 let component: MountedComponent | undefined
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve']
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
 
 function buttons(): HTMLButtonElement[] {
   return Array.from(target.querySelectorAll('button'))
@@ -145,13 +158,17 @@ async function mountWelcome(): Promise<void> {
   await revealWelcomeChat()
 }
 
-async function completeOpenAiSetup(): Promise<void> {
+async function prepareOpenAiSetup(): Promise<void> {
   await mountWelcome()
   await setInputAndSend('Ada')
   await clickChoice('Set up now')
   await clickChoice('OpenAI')
   await setInputAndSend('sk-test-key')
   await clickChoice('Creative chat')
+}
+
+async function completeOpenAiSetup(): Promise<void> {
+  await prepareOpenAiSetup()
   await clickChoice('Long memory')
   await flushAsync()
 }
@@ -167,6 +184,7 @@ beforeEach(() => {
     username: '',
   } as never)
   welcomeMocks.applyOnboardingServerBackedSettings.mockReset()
+  welcomeMocks.applyOnboardingServerBackedSettings.mockResolvedValue(true)
   welcomeMocks.applyServerBackedSetting.mockReset()
   welcomeMocks.changeLanguage.mockReset()
   welcomeMocks.stopServerSettingsWatch.mockReset()
@@ -191,7 +209,7 @@ afterEach(() => {
   setDatabaseLite({} as never)
 })
 
-describe('WelcomeRisu onboarding setup timer', () => {
+describe('WelcomeRisu onboarding setup completion', () => {
   it('names the icon-only send action', async () => {
     await mountWelcome()
     expect(sendButton().getAttribute('aria-label')).toBe('Send')
@@ -216,14 +234,15 @@ describe('WelcomeRisu onboarding setup timer', () => {
     expect(welcomeMocks.applyServerBackedSetting).toHaveBeenCalledWith('language', expectedLanguage)
   })
 
-  it('applies final setup once after the delay with the captured choices', async () => {
-    await completeOpenAiSetup()
+  it('shows completion only after the captured final choices persist successfully', async () => {
+    const persistence = createDeferred<boolean>()
+    welcomeMocks.applyOnboardingServerBackedSettings.mockReturnValueOnce(persistence.promise)
+    await prepareOpenAiSetup()
 
-    vi.advanceTimersByTime(999)
-    expect(welcomeMocks.applyOnboardingServerBackedSettings).not.toHaveBeenCalled()
-    expect(welcomeMocks.updateTextThemeAndCSS).not.toHaveBeenCalled()
-
-    vi.advanceTimersByTime(1)
+    const finalChoice = buttonWithText('Long memory')
+    finalChoice.click()
+    expect(welcomeMocks.applyOnboardingServerBackedSettings).toHaveBeenCalledTimes(1)
+    finalChoice.click()
     await flushAsync()
 
     expect(welcomeMocks.applyOnboardingServerBackedSettings).toHaveBeenCalledTimes(1)
@@ -232,34 +251,55 @@ describe('WelcomeRisu onboarding setup timer', () => {
       chatMemorySelection: 3,
       provider: 'openai',
     })
-    expect(welcomeMocks.updateTextThemeAndCSS).toHaveBeenCalledTimes(1)
+    expect(target.textContent).not.toContain('All done')
+    expect(welcomeMocks.updateTextThemeAndCSS).not.toHaveBeenCalled()
 
-    vi.advanceTimersByTime(5000)
+    persistence.resolve(true)
+    await flushAsync()
+
+    expect(target.textContent).toContain('All done')
     expect(welcomeMocks.applyOnboardingServerBackedSettings).toHaveBeenCalledTimes(1)
     expect(welcomeMocks.updateTextThemeAndCSS).toHaveBeenCalledTimes(1)
   })
 
-  it('does not apply setup or update CSS after unmounting before the timer fires', async () => {
-    await completeOpenAiSetup()
+  it('keeps an in-flight final save alive while invalidating UI completion after unmount', async () => {
+    const persistence = createDeferred<boolean>()
+    welcomeMocks.applyOnboardingServerBackedSettings.mockReturnValueOnce(persistence.promise)
+    await prepareOpenAiSetup()
+    await clickChoice('Long memory')
 
     unmount(component!)
     component = undefined
-    vi.advanceTimersByTime(1000)
+    persistence.resolve(true)
     await flushAsync()
 
     expect(welcomeMocks.stopServerSettingsWatch).toHaveBeenCalledTimes(1)
-    expect(welcomeMocks.applyOnboardingServerBackedSettings).not.toHaveBeenCalled()
+    expect(welcomeMocks.applyOnboardingServerBackedSettings).toHaveBeenCalledTimes(1)
     expect(welcomeMocks.updateTextThemeAndCSS).not.toHaveBeenCalled()
   })
 
-  it('does not apply stale setup when first setup completes before the timer fires', async () => {
+  it('restores the final choice step after a failed save and permits one retry', async () => {
+    welcomeMocks.applyOnboardingServerBackedSettings.mockResolvedValueOnce(false)
     await completeOpenAiSetup()
 
-    getDatabase().didFirstSetup = true
-    vi.advanceTimersByTime(1000)
+    expect(target.textContent).not.toContain('All done')
+    expect(welcomeMocks.updateTextThemeAndCSS).not.toHaveBeenCalled()
+    expect(buttonWithText('Long memory')).toBeTruthy()
+
+    await clickChoice('Long memory')
     await flushAsync()
 
+    expect(welcomeMocks.applyOnboardingServerBackedSettings).toHaveBeenCalledTimes(2)
+    expect(target.textContent).toContain('All done')
+    expect(welcomeMocks.updateTextThemeAndCSS).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not start final setup after onboarding has already completed elsewhere', async () => {
+    await prepareOpenAiSetup()
+    getDatabase().didFirstSetup = true
+    await clickChoice('Long memory')
+
     expect(welcomeMocks.applyOnboardingServerBackedSettings).not.toHaveBeenCalled()
-    expect(welcomeMocks.updateTextThemeAndCSS).not.toHaveBeenCalled()
+    expect(target.textContent).not.toContain('All done')
   })
 })

@@ -268,6 +268,8 @@ afterEach(() => {
 
 describe('settingsBridge coalescing', () => {
   it('applies onboarding preset/settings and persists the full changed settings patch', async () => {
+    const persistence = createDeferred<{ status: 'ok'; revision: number }>()
+    recorded.patchResults.push(persistence.promise)
     setupSettings({
       language: 'cn',
       apiType: 'old-api',
@@ -297,7 +299,7 @@ describe('settingsBridge coalescing', () => {
       },
     })
 
-    applyOnboardingServerBackedSettings({
+    const setupResult = applyOnboardingServerBackedSettings({
       chatMemorySelection: 2,
       provider: 'openrouter',
       chatLang: 1,
@@ -349,6 +351,9 @@ describe('settingsBridge coalescing', () => {
       },
     ])
     expect(recorded.patches[0].patch).not.toHaveProperty('mainPrompt')
+
+    persistence.resolve({ status: 'ok', revision: 1 })
+    expect(await setupResult).toBe(true)
 
     recorded.patches[0].rollback?.()
     expect(testDatabaseState.db).toMatchObject({
