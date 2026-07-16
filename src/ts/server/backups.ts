@@ -1,6 +1,11 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
-import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
+import {
+  activeWriterSessionHeader,
+  getActiveWriterSessionId,
+  handleActiveWriterStaleResponse,
+} from './activeWriterSession'
 import type { CommandEvent } from './commands'
+import { preparePendingMutationOutbox } from './pendingMutationOutbox'
 import { forceServerResourceRefresh } from './resourceRefresh'
 
 const BACKUPS_ENDPOINT = '/api/v1/backups'
@@ -115,17 +120,26 @@ export async function restoreServerBackup(input: {
     signal: input.signal,
     validate: (body) => {
       if (!body || typeof body !== 'object') return null
-      const record = body as { revision?: unknown; event?: unknown }
+      const record = body as {
+        revision?: unknown
+        event?: unknown
+        databaseLineage?: unknown
+        writerEpoch?: unknown
+      }
       if (!Number.isInteger(record.revision) || (record.revision as number) < 0) return null
       if (record.event !== undefined && !isCommandEvent(record.event)) return null
+      const ownership = readDatabaseOwnership(record)
+      if (!ownership) return null
       return {
         revision: record.revision as number,
         ...(isCommandEvent(record.event) ? { event: record.event } : {}),
+        ...ownership,
       }
     },
     map: (result) => result,
   })
   if (restored.status !== 'ok') return restored
+  await adoptReplacementDatabaseOwnership(restored)
 
   reportProgress(input.onProgress, {
     phase: 'resync',
@@ -148,7 +162,11 @@ export async function restoreServerBackup(input: {
     message: 'Server backup loaded',
     percent: 100,
   })
-  return restored
+  return {
+    status: 'ok',
+    revision: restored.revision,
+    ...(restored.event ? { event: restored.event } : {}),
+  }
 }
 
 export async function deleteServerBackup(input: {
@@ -316,6 +334,7 @@ export async function importServerBundle(input: {
   if (imported === null) {
     return { status: 'error', error: 'Invalid bundle import response' }
   }
+  await adoptReplacementDatabaseOwnership(imported)
 
   reportProgress(input.onProgress, {
     phase: 'resync',
@@ -338,7 +357,11 @@ export async function importServerBundle(input: {
     message: 'Local backup loaded',
     percent: 100,
   })
-  return { status: 'ok', ...imported }
+  return {
+    status: 'ok',
+    revision: imported.revision,
+    ...(imported.event ? { event: imported.event } : {}),
+  }
 }
 
 function reportProgress(onProgress: ServerBackupProgressCallback | undefined, progress: ServerBackupProgress): void {
@@ -514,14 +537,48 @@ function parseXhrHeaders(rawHeaders: string): Headers {
   return headers
 }
 
-function readBundleImportResult(body: unknown): { revision: number; event?: CommandEvent } | null {
+function readBundleImportResult(
+  body: unknown,
+): { revision: number; event?: CommandEvent; databaseLineage: string; writerEpoch: number } | null {
   if (!body || typeof body !== 'object') return null
-  const record = body as { revision?: unknown; event?: unknown }
+  const record = body as {
+    revision?: unknown
+    event?: unknown
+    databaseLineage?: unknown
+    writerEpoch?: unknown
+  }
   if (!Number.isInteger(record.revision) || (record.revision as number) < 0) return null
+  const ownership = readDatabaseOwnership(record)
+  if (!ownership) return null
   return {
     revision: record.revision as number,
     ...(isCommandEvent(record.event) ? { event: record.event } : {}),
+    ...ownership,
   }
+}
+
+function readDatabaseOwnership(record: {
+  databaseLineage?: unknown
+  writerEpoch?: unknown
+}): { databaseLineage: string; writerEpoch: number } | null {
+  if (typeof record.databaseLineage !== 'string' || record.databaseLineage.trim().length === 0) return null
+  if (!Number.isSafeInteger(record.writerEpoch) || (record.writerEpoch as number) < 0) return null
+  return {
+    databaseLineage: record.databaseLineage,
+    writerEpoch: record.writerEpoch as number,
+  }
+}
+
+async function adoptReplacementDatabaseOwnership(ownership: {
+  databaseLineage: string
+  writerEpoch: number
+}): Promise<void> {
+  await preparePendingMutationOutbox({
+    writerSessionId: getActiveWriterSessionId(),
+    writerEpoch: ownership.writerEpoch,
+    databaseLineage: ownership.databaseLineage,
+    requestedWriterWasActive: true,
+  })
 }
 
 function filenameFromContentDisposition(header: string | null): string | null {

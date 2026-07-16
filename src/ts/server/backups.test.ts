@@ -3,9 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const resourceRefreshSpies = vi.hoisted(() => ({
   forceServerResourceRefresh: vi.fn(),
 }))
+const ownershipSpies = vi.hoisted(() => ({
+  preparePendingMutationOutbox: vi.fn(),
+}))
 
 vi.mock('./resourceRefresh', () => ({
   forceServerResourceRefresh: resourceRefreshSpies.forceServerResourceRefresh,
+}))
+
+vi.mock('./pendingMutationOutbox', () => ({
+  preparePendingMutationOutbox: ownershipSpies.preparePendingMutationOutbox,
 }))
 
 vi.mock('../platform', () => ({ isFastifyServer: true }))
@@ -79,12 +86,15 @@ const backupManifest = {
   revision: 7,
   assetCount: 2,
 }
+const replacementOwnership = { databaseLineage: 'database-restored', writerEpoch: 4 }
 
 beforeEach(() => {
   vi.stubGlobal('safeStructuredClone', (value: unknown) => JSON.parse(JSON.stringify(value)))
   clearCachedServerCommandRevision()
   resourceRefreshSpies.forceServerResourceRefresh.mockReset()
   resourceRefreshSpies.forceServerResourceRefresh.mockResolvedValue({ status: 'ok', revision: 12 })
+  ownershipSpies.preparePendingMutationOutbox.mockReset()
+  ownershipSpies.preparePendingMutationOutbox.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -130,7 +140,7 @@ describe('server backup helpers', () => {
     const event = { type: 'state.restored', resource: 'state', revision: 12 }
     const backupFetch = makeBackupFetch((url) => {
       if (url === '/api/v1/backups/2026-05-26-01-02-03-abcdef/restore') {
-        return { revision: 12, event }
+        return { revision: 12, event, ...replacementOwnership }
       }
       return { revision: 13, database: { characters: [], modules: [], personas: [] } }
     })
@@ -142,6 +152,11 @@ describe('server backup helpers', () => {
       event,
     })
     expect(resourceRefreshSpies.forceServerResourceRefresh).toHaveBeenCalledWith('backup-restore')
+    expect(ownershipSpies.preparePendingMutationOutbox).toHaveBeenCalledWith({
+      writerSessionId: expect.any(String),
+      requestedWriterWasActive: true,
+      ...replacementOwnership,
+    })
     expect(backupFetch.calls).toHaveLength(1)
     expect(backupFetch.calls[0]).toMatchObject({
       url: '/api/v1/backups/2026-05-26-01-02-03-abcdef/restore',
@@ -157,7 +172,11 @@ describe('server backup helpers', () => {
     })
     const backupFetch = makeBackupFetch((url) => {
       if (url === '/api/v1/backups/2026-05-26-01-02-03-abcdef/restore') {
-        return { revision: 12, event: { type: 'state.restored', resource: 'state', revision: 12 } }
+        return {
+          revision: 12,
+          event: { type: 'state.restored', resource: 'state', revision: 12 },
+          ...replacementOwnership,
+        }
       }
       return { revision: 13 }
     })
@@ -374,7 +393,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
   it('uploads a bundle file, restores it, and refreshes API-backed resources', async () => {
     const event = { type: 'state.imported', resource: 'state', revision: 21 }
     const backupFetch = makeBackupFetch((url) => {
-      if (url === '/api/v1/import/bundle') return { revision: 21, event }
+      if (url === '/api/v1/import/bundle') return { revision: 21, event, ...replacementOwnership }
       return { revision: 22 }
     })
     vi.stubGlobal('fetch', backupFetch.fetch)
@@ -386,6 +405,11 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       event,
     })
     expect(resourceRefreshSpies.forceServerResourceRefresh).toHaveBeenCalledWith('bundle-restore')
+    expect(ownershipSpies.preparePendingMutationOutbox).toHaveBeenCalledWith({
+      writerSessionId: expect.any(String),
+      requestedWriterWasActive: true,
+      ...replacementOwnership,
+    })
     expect(backupFetch.calls).toHaveLength(1)
     // The upload carries auth but no explicit content-type (the browser sets the
     // multipart boundary for the FormData body).
@@ -414,7 +438,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       body: unknown = null
       status = 200
       statusText = 'OK'
-      responseText = JSON.stringify({ revision: 21, event })
+      responseText = JSON.stringify({ revision: 21, event, ...replacementOwnership })
 
       constructor() {
         FakeXMLHttpRequest.instances.push(this)
@@ -495,7 +519,11 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     })
     const backupFetch = makeBackupFetch((url) => {
       if (url === '/api/v1/import/bundle') {
-        return { revision: 21, event: { type: 'state.imported', resource: 'state', revision: 21 } }
+        return {
+          revision: 21,
+          event: { type: 'state.imported', resource: 'state', revision: 21 },
+          ...replacementOwnership,
+        }
       }
       return { revision: 22 }
     })
