@@ -399,6 +399,7 @@ describe('lorebook durable generation ordering', () => {
         expect(staged.map((entry) => entry.intent)).toEqual([
           {
             version: 1,
+            dependencyKeys: [GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY],
             requests: [
               {
                 method: 'PUT',
@@ -409,6 +410,7 @@ describe('lorebook durable generation ordering', () => {
           },
           {
             version: 1,
+            dependencyKeys: [GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY],
             requests: [
               {
                 method: 'PUT',
@@ -504,6 +506,7 @@ describe('lorebook durable generation ordering', () => {
         expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
           {
             version: 1,
+            dependencyKeys: [GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY],
             requests: [
               {
                 method: 'PUT',
@@ -514,6 +517,7 @@ describe('lorebook durable generation ordering', () => {
           },
           {
             version: 1,
+            dependencyKeys: [GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY],
             requests: [
               {
                 method: 'PUT',
@@ -585,6 +589,7 @@ describe('lorebook durable generation ordering', () => {
         expect(staged.map((entry) => entry.intent)).toEqual([
           {
             version: 1,
+            dependencyKeys: [GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY],
             requests: [
               {
                 method: 'PUT',
@@ -595,6 +600,7 @@ describe('lorebook durable generation ordering', () => {
           },
           {
             version: 1,
+            dependencyKeys: [GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY],
             requests: [
               {
                 method: 'PUT',
@@ -1093,6 +1099,110 @@ describe('lorebook durable generation ordering', () => {
           headers: { 'content-type': 'application/json' },
         }),
       )
+      resetServerBackedLorebookBridgeForTests()
+      await Promise.resolve()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('does not let a restored lorebook rename overtake its retained delete', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-global-lorebook-delete-rename',
+      writerEpoch: 11,
+      databaseLineage: 'lineage-global-lorebook-delete-rename',
+      requestedWriterWasActive: true,
+    })
+    setDatabaseLite({
+      characters: [],
+      modules: [],
+      loreBookPage: 0,
+      loreBook: [
+        { id: 'book-delete-rename', name: 'Delete then rename', data: [] },
+        { id: 'book-delete-rename-fallback', name: 'Fallback', data: [] },
+      ],
+    } as any)
+    setCachedServerCommandRevision(100)
+
+    let recover = false
+    let revision = 100
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return new Response(JSON.stringify({ acknowledged: true }), {
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (!recover) {
+          if (init.method === 'PATCH') throw new Error('rename overtook retained lorebook delete')
+          return new Response(JSON.stringify({ error: 'temporarily unavailable' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        revision += 1
+        if (init.method === 'DELETE') {
+          return new Response(
+            JSON.stringify({
+              revision,
+              event: {
+                type: 'lorebook.deleted',
+                revision,
+                resource: 'globalLorebook',
+                id: 'book-delete-rename',
+              },
+              lorebookId: 'book-delete-rename',
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        }
+        return new Response(JSON.stringify({ error: 'lorebook no longer exists' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      expect(deleteGlobalLorebookById('book-delete-rename')).toBe(true)
+      await waitForCallCount(calls, 1)
+      await vi.waitFor(() =>
+        expect((getDatabase().loreBook as any[]).some((book) => book.id === 'book-delete-rename')).toBe(true),
+      )
+
+      const previous = currentLorebookStateSnapshot()
+      const restored = (getDatabase().loreBook as any[]).find((book) => book.id === 'book-delete-rename')
+      restored.name = 'Rename after rollback'
+      dispatchUpdateGlobalLorebook('book-delete-rename', { name: restored.name }, previous)
+
+      await waitForCallCount(calls, 2)
+      expect(calls.map((call) => call.method)).toEqual(['DELETE', 'DELETE'])
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => entry.handle.key)).toEqual([
+        GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY,
+        globalLorebookOwnerMutationKey('book-delete-rename'),
+      ])
+      expect(retained[1].intent.dependencyKeys).toEqual([GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY])
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1, discarded: 1 })
+      expect(calls.slice(recoveryStart).map((call) => `${call.method} ${call.url}`)).toEqual([
+        'DELETE /api/v1/commands/lorebooks/book-delete-rename',
+        'PATCH /api/v1/commands/lorebooks/book-delete-rename',
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
       resetServerBackedLorebookBridgeForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()

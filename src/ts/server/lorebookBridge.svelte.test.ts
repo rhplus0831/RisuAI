@@ -112,6 +112,7 @@ vi.mock('./resourceWriteGuard.svelte', () => ({
 }))
 
 import { selectedCharID } from '../stores.svelte'
+import { GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY } from './lorebookMutationKeys'
 import {
   applyCollectionsResource,
   applySettingsResource,
@@ -2822,6 +2823,9 @@ describe('K4 lorebook editor entry draft scope', () => {
 
       expect(durableRecorded.dispatched.at(-1)?.intent).toEqual({
         version: 1,
+        ...(scenario.path.startsWith('/lorebooks/')
+          ? { dependencyKeys: [GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY] }
+          : {}),
         requests: [{ method: 'PUT', path: scenario.path, body: { entries: cloneEntries(entries) } }],
       })
     }
@@ -2901,6 +2905,9 @@ describe('K4 lorebook editor entry draft scope', () => {
       expect(queued?.rollback).toEqual(expect.any(Function))
       expect(durableRecorded.dispatched.at(-1)?.intent).toEqual({
         version: 1,
+        ...(scenario.path.startsWith('/lorebooks/')
+          ? { dependencyKeys: [GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY] }
+          : {}),
         requests: [
           {
             method: 'PUT',

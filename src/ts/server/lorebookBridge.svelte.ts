@@ -1047,6 +1047,7 @@ export function dispatchUpdateGlobalLorebook(
   const rollback = globalLorebookNameRollbackFromSnapshot(lorebookId, previous, attempted)
   const intent: DurableMutationIntent = {
     version: 1,
+    dependencyKeys: [GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY],
     requests: [
       {
         method: 'PATCH',
@@ -1871,7 +1872,11 @@ function lorebookDurableIntent(scope: DiscreteLorebookEditScope, plan: PlannedLo
       break
   }
 
-  return { version: 1, requests: [{ method, path, body }] }
+  return {
+    version: 1,
+    ...(scope.kind === 'global' ? { dependencyKeys: [GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY] } : {}),
+    requests: [{ method, path, body }],
+  }
 }
 
 function lorebookCollectionCommandPath(scope: DiscreteLorebookEditScope): string {
