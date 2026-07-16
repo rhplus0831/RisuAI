@@ -104,6 +104,19 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/chat-folders\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/prompt-items\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/personas\/[^/?#]+$/ },
+  { method: 'PATCH', path: /^\/model-presets\/[^/?#]+$/ },
+  { method: 'PATCH', path: /^\/prompt-presets\/[^/?#]+$/ },
+  { method: 'PATCH', path: /^\/settings\/advanced\/global-scripts$/ },
+  { method: 'PUT', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },
+  { method: 'PATCH', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },
+  { method: 'PUT', path: /^\/lorebooks\/[^/?#]+\/entries$/ },
+  { method: 'PUT', path: /^\/lorebooks\/[^/?#]+\/entries\/[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/lorebooks\/[^/?#]+\/entries\/[^/?#]+$/ },
+  { method: 'POST', path: /^\/lorebooks\/[^/?#]+\/entries\/reorder$/ },
+  { method: 'PUT', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks$/ },
+  { method: 'PUT', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/[^/?#]+$/ },
+  { method: 'POST', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/reorder$/ },
 ]
 
 let outboxDatabasePromise: Promise<IDBDatabase | null> | null = null

@@ -7,6 +7,7 @@ import {
   clearPendingMutationOutbox,
   completePendingMutation,
   deletePendingMutationReceiptAcknowledgement,
+  discardPendingMutation,
   listPendingMutationReceiptAcknowledgements,
   listPendingMutations,
   preparePendingMutationOutbox,
@@ -239,6 +240,47 @@ describe('pending mutation outbox', () => {
       stagePendingMutation('unsafe', {
         version: 1,
         requests: [{ method: 'POST', path: '/messages/translate', body: { text: 'side effect' } }],
+      }),
+    ).toThrow('not allowlisted')
+  })
+
+  it.each([
+    ['PATCH', '/model-presets/model-a'],
+    ['PATCH', '/prompt-presets/prompt-a'],
+    ['PATCH', '/settings/advanced/global-scripts'],
+    ['PUT', '/characters/character-a/scripts'],
+    ['PATCH', '/characters/character-a/triggers'],
+    ['PUT', '/modules/module-a/scripts'],
+    ['PATCH', '/modules/module-a/triggers'],
+    ['PUT', '/lorebooks/lorebook-a/entries'],
+    ['PUT', '/lorebooks/lorebook-a/entries/entry-a'],
+    ['DELETE', '/lorebooks/lorebook-a/entries/entry-a'],
+    ['POST', '/lorebooks/lorebook-a/entries/reorder'],
+    ['PUT', '/characters/character-a/lorebooks'],
+    ['PUT', '/chats/chat-a/lorebooks/entries/entry-a'],
+    ['DELETE', '/modules/module-a/lorebooks/entries/entry-a'],
+    ['POST', '/chats/chat-a/lorebooks/entries/reorder'],
+  ] as const)('allowlists the durable bridge route %s %s', async (method, path) => {
+    const handle = stagePendingMutation(`allowlist:${method}:${path}`, {
+      version: 1,
+      requests: [{ method, path, body: { patch: { value: true } } }],
+    })
+
+    await expect(handle.ready).resolves.toBe('persisted')
+    await expect(discardPendingMutation(handle)).resolves.toBe('deleted')
+  })
+
+  it('keeps similar nested resource routes outside the durable allowlist', () => {
+    expect(() =>
+      stagePendingMutation('unsafe-nested-route', {
+        version: 1,
+        requests: [
+          {
+            method: 'POST',
+            path: '/characters/character-a/scripts/reorder',
+            body: { scriptIds: ['script-a'] },
+          },
+        ],
       }),
     ).toThrow('not allowlisted')
   })
