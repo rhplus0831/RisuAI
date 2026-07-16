@@ -56,9 +56,9 @@
   import {
     createGlobalModule,
     deleteGlobalModule,
-    rebaseModuleDraftOntoLatest,
+    rebaseModuleEditorDraftOntoLatest,
+    saveGlobalModuleDraft,
     setGlobalModuleEnabled,
-    updateGlobalModule,
   } from 'src/ts/moduleCommands'
   import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
   import type { ServerCommandResult } from 'src/ts/server/commands'
@@ -136,11 +136,11 @@
       mutationError = language.moduleSave.editTargetMissing
       return
     }
-    const rebasedDraft = rebaseModuleDraftOntoLatest(editBaseline, draft, cloneJsonValue(latest))
+    const rebasedDraft = rebaseModuleEditorDraftOntoLatest(editBaseline, draft, cloneJsonValue(latest))
 
     mutationPending = true
     try {
-      const result = await updateGlobalModule(draft.id, rebasedDraft)
+      const result = await saveGlobalModuleDraft(draft.id, rebasedDraft)
       if (result === null || result.status === 'ok') {
         editBaseline = null
         mode = 0
@@ -326,7 +326,7 @@
     </div>
   {/if}
   <fieldset class="contents" disabled={mutationPending} aria-busy={mutationPending}>
-    <ModuleMenu bind:currentModule={tempModule} />
+    <ModuleMenu bind:currentModule={tempModule} draftOnly />
     <div class="contents" data-risu-module-action="submit-create">
       <Button className="mt-6" disabled={mutationPending} onclick={createModuleFromDraft}>
         {mutationPending ? language.moduleSave.saving : language.createModule}
@@ -341,7 +341,7 @@
     </div>
   {/if}
   <fieldset class="contents" disabled={mutationPending} aria-busy={mutationPending}>
-    <ModuleMenu bind:currentModule={tempModule} />
+    <ModuleMenu bind:currentModule={tempModule} draftOnly />
     {#if tempModule.name !== ''}
       <div class="contents" data-risu-module-action="submit-edit">
         <Button className="mt-6" disabled={mutationPending} onclick={updateModuleFromDraft}>

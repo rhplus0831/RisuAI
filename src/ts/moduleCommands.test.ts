@@ -38,7 +38,9 @@ import {
   dispatchModuleInfoPatch,
   dispatchReorderModules,
   rebaseModuleDraftOntoLatest,
+  rebaseModuleEditorDraftOntoLatest,
   restoreCharacterModuleState,
+  saveGlobalModuleDraft,
   setGlobalModuleEnabled,
   toggledModuleIds,
   toggleSelectedCharacterModule,
@@ -123,6 +125,65 @@ function stubCommandFetch(): CapturedFetch[] {
             type: init.method === 'DELETE' ? 'module.deleted' : 'module.updated',
             revision: 11,
             resource: 'module',
+          },
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+function stubModuleDraftSaveFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  let revision = 10
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision })
+
+      revision += 1
+      const common = { revision, moduleId: 'mod-a' }
+      if (url === '/api/v1/commands/modules/mod-a') {
+        return jsonResponse({
+          ...common,
+          event: { type: 'module.updated', revision, resource: 'moduleUpdated', id: 'mod-a' },
+        })
+      }
+      if (url === '/api/v1/commands/modules/mod-a/lorebooks') {
+        return jsonResponse({
+          ...common,
+          event: { type: 'lorebook.entries.replaced', revision, resource: 'moduleUpdated', id: 'mod-a' },
+        })
+      }
+      if (url === '/api/v1/commands/modules/mod-a/scripts') {
+        return jsonResponse({
+          ...common,
+          event: {
+            type: 'scriptDefinitions.replaced',
+            revision,
+            resource: 'moduleScriptDefinition',
+            id: 'mod-a',
+          },
+        })
+      }
+      if (url === '/api/v1/commands/modules/mod-a/triggers') {
+        return jsonResponse({
+          ...common,
+          event: {
+            type: 'triggerDefinitions.replaced',
+            revision,
+            resource: 'moduleTriggerDefinition',
+            id: 'mod-a',
           },
         })
       }
@@ -1220,6 +1281,116 @@ describe('module command projection helpers', () => {
       ...baseline,
       name: 'Locally renamed',
     })
+  })
+
+  it('rebases only editor-changed split collections over the latest module projection', () => {
+    const baseline = {
+      id: 'mod-a',
+      name: 'Module A',
+      lorebook: [{ id: 'lore-original', content: 'original lore' }],
+      regex: [{ id: 'regex-original', in: 'original regex' }],
+      trigger: [{ id: 'trigger-original', comment: 'original trigger' }],
+    } as any
+    const draft = {
+      ...baseline,
+      name: 'Locally renamed',
+      lorebook: [{ id: 'lore-local', content: 'local lore' }],
+    } as any
+    const latest = {
+      ...baseline,
+      lorebook: [{ id: 'lore-remote', content: 'remote lore' }],
+      regex: [{ id: 'regex-remote', in: 'remote regex' }],
+      trigger: [{ id: 'trigger-remote', comment: 'remote trigger' }],
+    } as any
+
+    expect(rebaseModuleEditorDraftOntoLatest(baseline, draft, latest)).toEqual({
+      ...latest,
+      name: 'Locally renamed',
+      lorebook: [{ id: 'lore-local', content: 'local lore' }],
+    })
+  })
+
+  it('persists an explicit editor Save through every changed module slice', async () => {
+    const calls = stubModuleDraftSaveFetch()
+    getDatabase().modules[0] = {
+      id: 'mod-a',
+      name: 'Module A',
+      description: 'Description',
+      lorebook: [
+        {
+          id: 'lore-old',
+          key: 'old',
+          secondkey: '',
+          insertorder: 100,
+          comment: 'Old lore',
+          content: 'old lore',
+          mode: 'normal',
+          alwaysActive: false,
+          selective: false,
+        },
+      ],
+      regex: [{ id: 'regex-old', comment: 'Old regex', in: 'old', out: '', type: 'editinput' }],
+      trigger: [{ id: 'trigger-old', comment: 'Old trigger', type: 'start', conditions: [], effect: [] }],
+    } as any
+    setResourceWriteGuardEnabled(true)
+
+    const savedModule = {
+      id: 'mod-a',
+      name: 'Saved Module A',
+      description: 'Description',
+      lorebook: [
+        {
+          id: 'lore-new',
+          key: 'new',
+          secondkey: '',
+          insertorder: 100,
+          comment: 'New lore',
+          content: 'new lore',
+          mode: 'normal',
+          alwaysActive: false,
+          selective: false,
+        },
+      ],
+      regex: [{ id: 'regex-new', comment: 'New regex', in: 'new', out: '', type: 'editinput' }],
+      trigger: [{ id: 'trigger-new', comment: 'New trigger', type: 'start', conditions: [], effect: [] }],
+    } as any
+
+    const resultPromise = saveGlobalModuleDraft('mod-a', savedModule)
+
+    expect(getDatabase().modules[0]).toEqual(savedModule)
+    await expect(resultPromise).resolves.toBeNull()
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        method: 'GET',
+        authHeader: 'module-command-token',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a',
+        method: 'PATCH',
+        authHeader: 'module-command-token',
+        body: { baseRevision: 10, patch: { name: 'Saved Module A' } },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/lorebooks',
+        method: 'PUT',
+        authHeader: 'module-command-token',
+        body: { baseRevision: 11, entries: savedModule.lorebook },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/scripts',
+        method: 'PUT',
+        authHeader: 'module-command-token',
+        body: { baseRevision: 12, scripts: savedModule.regex },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/triggers',
+        method: 'PUT',
+        authHeader: 'module-command-token',
+        body: { baseRevision: 13, triggers: savedModule.trigger },
+      },
+    ])
   })
 
   it('optimistically applies only the sanitized parent patch from a stale full-module save', async () => {

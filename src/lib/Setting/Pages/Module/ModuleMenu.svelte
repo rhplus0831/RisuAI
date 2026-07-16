@@ -9,9 +9,20 @@
     convertExternalLorebook as convertExternalModuleLorebook,
   } from 'src/ts/process/lorebook.svelte'
   import type { RisuModule as ImportTargetRisuModule } from 'src/ts/process/modules'
-  import { replaceModuleLorebookCollectionDraft as replaceModuleLorebookImportDraft } from 'src/ts/server/lorebookBridge.svelte'
+  import {
+    ensureClientLorebookEntryIds as ensureImportedLorebookEntryIds,
+    replaceModuleLorebookCollectionDraft as replaceModuleLorebookImportDraft,
+  } from 'src/ts/server/lorebookBridge.svelte'
   import { getResourceDatabase as getModuleImportDatabase } from 'src/ts/server/resourceState.svelte'
-  import { applyModuleScriptDefinitionDraft as applyModuleScriptDefinitionImportDraft } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  import {
+    applyModuleScriptDefinitionDraft as applyModuleScriptDefinitionImportDraft,
+    ensureClientScriptDefinitionIds as ensureImportedScriptDefinitionIds,
+    ensureClientTriggerDefinitionIds as ensureImportedTriggerDefinitionIds,
+  } from 'src/ts/server/scriptDefinitionBridge.svelte'
+
+  function cloneModuleImportValue<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T
+  }
 
   export interface SelectedModuleImportFile {
     data: Uint8Array
@@ -71,8 +82,16 @@
     moduleId: string | null | undefined,
     currentModule: ImportTargetRisuModule | null | undefined,
     importedRows: ModuleLoreBook[] | null | undefined,
+    draftOnly = false,
   ): boolean {
     if (!moduleId || currentModule?.id !== moduleId || !importedRows || importedRows.length === 0) return false
+
+    if (draftOnly) {
+      currentModule.lorebook = ensureImportedLorebookEntryIds(
+        cloneModuleImportValue([...(currentModule.lorebook ?? []), ...importedRows]),
+      )
+      return true
+    }
 
     const latestLorebook = latestModuleLorebook(moduleId, currentModule)
     return replaceModuleLorebookImportDraft(moduleId, currentModule, [...latestLorebook, ...importedRows])
@@ -82,8 +101,17 @@
     moduleId: string | null | undefined,
     currentModule: ImportTargetRisuModule | null | undefined,
     importedRows: ModuleCustomScript[] | null | undefined,
+    draftOnly = false,
   ): boolean {
     if (!moduleId || currentModule?.id !== moduleId || !importedRows || importedRows.length === 0) return false
+
+    if (draftOnly) {
+      currentModule.regex = ensureImportedScriptDefinitionIds(
+        cloneModuleImportValue([...(currentModule.regex ?? []), ...importedRows]),
+      )
+      currentModule.trigger = ensureImportedTriggerDefinitionIds(cloneModuleImportValue(currentModule.trigger ?? []))
+      return true
+    }
 
     const regex = [...latestModuleRegex(moduleId, currentModule), ...importedRows]
     const trigger = latestModuleTriggers(moduleId, currentModule)
@@ -112,12 +140,15 @@
   import { untrack } from 'svelte'
   import {
     applyLorebookEntryDraftEdit,
+    ensureClientLorebookEntryIds,
     flushPendingLorebookEntryDraftEdit,
     replaceModuleLorebookCollectionDraft,
     watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
   import {
     applyModuleScriptDefinitionDraft,
+    ensureClientScriptDefinitionIds,
+    ensureClientTriggerDefinitionIds,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
   import {
@@ -155,9 +186,10 @@
   let submenu = $state(0)
   interface Props {
     currentModule: RisuModule
+    draftOnly?: boolean
   }
 
-  let { currentModule = $bindable() }: Props = $props()
+  let { currentModule = $bindable(), draftOnly = false }: Props = $props()
   let assetFileExtensions: Record<string, string | undefined> = $state({})
   let assetFilePath: Record<string, string | undefined> = $state({})
   let assetPreviewRun = 0
@@ -170,6 +202,7 @@
     // to it. Reading currentModule.id here re-runs the effect (restarting the
     // watcher with a fresh baseline) when the user opens a different module.
     const moduleId = currentModule?.id ?? ''
+    if (draftOnly) return
     const stopLorebooks = watchServerBackedLorebooks({ scope: { kind: 'module', moduleId } })
     return () => stopLorebooks()
   })
@@ -180,6 +213,7 @@
     // re-runs the effect (restarting the watcher with a fresh baseline) when the
     // user opens a different module.
     const moduleId = currentModule?.id ?? ''
+    if (draftOnly) return
     const stopScripts = watchServerBackedScriptDefinitions({ scope: { kind: 'module', moduleId } })
     return () => stopScripts()
   })
@@ -207,6 +241,7 @@
   $effect(() => {
     const moduleId = currentModule?.id ?? null
     const snapshot = snapshotModuleScriptDraft(moduleId)
+    if (draftOnly) return
     if (suppressModuleScriptDraftDispatch || !moduleId || moduleId !== moduleScriptDraftModuleId) return
     if (snapshot === moduleScriptDraftSnapshot) return
 
@@ -251,10 +286,18 @@
   function updateModuleLorebookValue(index: number, value: loreBook): void {
     const moduleId = currentModule?.id
     if (!moduleId) return
+    if (draftOnly) {
+      const lorebook = cloneModuleDraftValue(currentModule.lorebook ?? [])
+      if (index < 0 || index >= lorebook.length) return
+      lorebook[index] = cloneModuleDraftValue(value)
+      currentModule.lorebook = ensureClientLorebookEntryIds(lorebook)
+      return
+    }
     applyLorebookEntryDraftEdit({ kind: 'module', moduleId }, index, value)
   }
 
   function flushModuleLorebookValue(): void {
+    if (draftOnly) return
     const moduleId = currentModule?.id
     if (!moduleId) return
     flushPendingLorebookEntryDraftEdit({ kind: 'module', moduleId })
@@ -263,6 +306,10 @@
   function updateModuleLorebookCollection(entries: loreBook[]): void {
     const moduleId = currentModule?.id
     if (!moduleId) return
+    if (draftOnly) {
+      currentModule.lorebook = ensureClientLorebookEntryIds(cloneModuleDraftValue(entries))
+      return
+    }
     replaceModuleLorebookCollectionDraft(moduleId, currentModule, entries)
   }
 
@@ -272,11 +319,21 @@
   ) {
     const moduleId = currentModule?.id
     if (!moduleId) return false
+    if (draftOnly) {
+      currentModule.regex = ensureClientScriptDefinitionIds(cloneModuleDraftValue(regex))
+      currentModule.trigger = ensureClientTriggerDefinitionIds(cloneModuleDraftValue(trigger))
+      moduleScriptDraftSnapshot = snapshotModuleScriptDraft(moduleId)
+      return true
+    }
     const applied = applyModuleScriptDefinitionDraft(moduleId, currentModule, regex, trigger)
     if (applied) {
       moduleScriptDraftSnapshot = snapshotModuleScriptDraft(moduleId)
     }
     return applied
+  }
+
+  function cloneModuleDraftValue<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T
   }
 
   function moduleAssetExtension(name: string): string {
@@ -420,7 +477,7 @@
       const importedRows = parseImportedLorebookRows(lorebook)
       if (currentModule?.id !== moduleId || importedRows.length === 0) return
 
-      applyImportedModuleLorebookRows(moduleId, currentModule, importedRows)
+      applyImportedModuleLorebookRows(moduleId, currentModule, importedRows, draftOnly)
     } catch (error) {
       alertError(`${error}`)
     }
@@ -433,7 +490,7 @@
     const importedRows = await importRegexRows()
     if (currentModule?.id !== moduleId || !importedRows || importedRows.length === 0) return
 
-    const applied = applyImportedModuleRegexRows(moduleId, currentModule, importedRows)
+    const applied = applyImportedModuleRegexRows(moduleId, currentModule, importedRows, draftOnly)
     if (applied) {
       moduleScriptDraftSnapshot = snapshotModuleScriptDraft(moduleId)
     }

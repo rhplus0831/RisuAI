@@ -16,10 +16,22 @@ const moduleProcessSpies = vi.hoisted(() => ({
 }))
 
 const moduleCommandSpies = vi.hoisted(() => ({
-  createGlobalModule: vi.fn(async (): Promise<any> => null),
+  createGlobalModule: vi.fn(async (_module: any): Promise<any> => null),
   deleteGlobalModule: vi.fn(),
+  saveGlobalModuleDraft: vi.fn(async (_moduleId: string, _module: any): Promise<any> => null),
   setGlobalModuleEnabled: vi.fn(),
-  updateGlobalModule: vi.fn(async (): Promise<any> => null),
+}))
+
+const lorebookBridgeSpies = vi.hoisted(() => ({
+  applyLorebookEntryDraftEdit: vi.fn(() => false),
+  flushPendingLorebookEntryDraftEdit: vi.fn(),
+  replaceModuleLorebookCollectionDraft: vi.fn(() => false),
+  watchServerBackedLorebooks: vi.fn(() => () => {}),
+}))
+
+const scriptDefinitionBridgeSpies = vi.hoisted(() => ({
+  applyModuleScriptDefinitionDraft: vi.fn(() => false),
+  watchServerBackedScriptDefinitions: vi.fn(() => () => {}),
 }))
 
 const alertSpies = vi.hoisted(() => ({
@@ -44,6 +56,14 @@ vi.mock('src/ts/process/modules', () => moduleProcessSpies)
 vi.mock('src/ts/moduleCommands', async (importActual) => ({
   ...(await importActual<typeof import('src/ts/moduleCommands')>()),
   ...moduleCommandSpies,
+}))
+vi.mock('src/ts/server/lorebookBridge.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/lorebookBridge.svelte')>()),
+  ...lorebookBridgeSpies,
+}))
+vi.mock('src/ts/server/scriptDefinitionBridge.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/scriptDefinitionBridge.svelte')>()),
+  ...scriptDefinitionBridgeSpies,
 }))
 vi.mock('src/ts/alert', () => alertSpies)
 vi.mock('src/ts/globalApi.svelte', () => globalApiSpies)
@@ -204,6 +224,29 @@ function buttonByText(text: string): HTMLButtonElement {
   return button!
 }
 
+function buttonByAriaLabel(label: string): HTMLButtonElement {
+  const button = target.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+  expect(button, `button labelled ${label}`).toBeTruthy()
+  return button!
+}
+
+async function addNestedModuleDraftRows() {
+  buttonByText(language.loreBook).click()
+  await tick()
+  buttonByAriaLabel(`${language.add}: ${language.loreBook}`).click()
+  await tick()
+
+  buttonByText(language.regexScript).click()
+  await tick()
+  buttonByAriaLabel(`${language.add}: ${language.regexScript}`).click()
+  await tick()
+
+  buttonByText(language.triggerScript).click()
+  await tick()
+  buttonByText('Lua').click()
+  await tick()
+}
+
 async function updateSearch(value: string) {
   const input = target.querySelector(`input[placeholder="${language.search}"]`) as HTMLInputElement | null
   expect(input).toBeTruthy()
@@ -344,8 +387,8 @@ describe('ModuleSettings derived module rows', () => {
 
     await clickModuleSurfaceAction('submit-edit')
 
-    expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledOnce()
-    expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledWith(
+    expect(moduleCommandSpies.saveGlobalModuleDraft).toHaveBeenCalledOnce()
+    expect(moduleCommandSpies.saveGlobalModuleDraft).toHaveBeenCalledWith(
       'beta-id',
       expect.objectContaining({
         id: 'beta-id',
@@ -373,8 +416,8 @@ describe('ModuleSettings derived module rows', () => {
 
     await clickModuleSurfaceAction('submit-edit')
 
-    expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledOnce()
-    expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledWith(
+    expect(moduleCommandSpies.saveGlobalModuleDraft).toHaveBeenCalledOnce()
+    expect(moduleCommandSpies.saveGlobalModuleDraft).toHaveBeenCalledWith(
       'alpha-id',
       expect.objectContaining({
         id: 'alpha-id',
@@ -402,14 +445,99 @@ describe('ModuleSettings derived module rows', () => {
 
     await clickModuleSurfaceAction('submit-edit')
 
-    expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledOnce()
-    expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledWith(
+    expect(moduleCommandSpies.saveGlobalModuleDraft).toHaveBeenCalledOnce()
+    expect(moduleCommandSpies.saveGlobalModuleDraft).toHaveBeenCalledWith(
       'alpha-id',
       expect.objectContaining({
         id: 'alpha-id',
         backgroundEmbedding: '<style>.chattext .name { color: red; }</style>',
       }),
     )
+  })
+
+  it('abandons nested module edits without mutating or dispatching the live module', async () => {
+    getDatabase().modules[1] = {
+      ...getDatabase().modules[1],
+      lorebook: [],
+      regex: [],
+      trigger: [],
+    }
+    const liveBeforeEdit = JSON.parse(JSON.stringify(getDatabase().modules[1]))
+    mountSettings()
+
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await addNestedModuleDraftRows()
+
+    expect(getDatabase().modules[1]).toEqual(liveBeforeEdit)
+    expect(moduleCommandSpies.saveGlobalModuleDraft).not.toHaveBeenCalled()
+    expect(lorebookBridgeSpies.applyLorebookEntryDraftEdit).not.toHaveBeenCalled()
+    expect(lorebookBridgeSpies.flushPendingLorebookEntryDraftEdit).not.toHaveBeenCalled()
+    expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
+    expect(lorebookBridgeSpies.watchServerBackedLorebooks).not.toHaveBeenCalled()
+    expect(scriptDefinitionBridgeSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
+    expect(scriptDefinitionBridgeSpies.watchServerBackedScriptDefinitions).not.toHaveBeenCalled()
+
+    unmount(component!)
+    component = undefined
+    await tick()
+
+    expect(getDatabase().modules[1]).toEqual(liveBeforeEdit)
+    expect(moduleCommandSpies.saveGlobalModuleDraft).not.toHaveBeenCalled()
+  })
+
+  it('saves lorebook, regex, and trigger draft edits together only on explicit Save', async () => {
+    getDatabase().modules[1] = {
+      ...getDatabase().modules[1],
+      lorebook: [],
+      regex: [],
+      trigger: [],
+    }
+    mountSettings()
+
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await addNestedModuleDraftRows()
+
+    expect(getDatabase().modules[1]).toMatchObject({ lorebook: [], regex: [], trigger: [] })
+    expect(moduleCommandSpies.saveGlobalModuleDraft).not.toHaveBeenCalled()
+
+    await clickModuleSurfaceAction('submit-edit')
+
+    expect(moduleCommandSpies.saveGlobalModuleDraft).toHaveBeenCalledOnce()
+    const [, savedModule] = moduleCommandSpies.saveGlobalModuleDraft.mock.calls[0]
+    expect(savedModule.lorebook).toHaveLength(1)
+    expect(savedModule.lorebook[0]).toMatchObject({ comment: 'New Lore', content: '' })
+    expect(savedModule.regex).toHaveLength(1)
+    expect(savedModule.regex[0]).toMatchObject({ type: 'editinput', in: '', out: '' })
+    expect(savedModule.trigger).toHaveLength(1)
+    expect(savedModule.trigger[0]).toMatchObject({ type: 'start' })
+    expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
+    expect(scriptDefinitionBridgeSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
+  })
+
+  it('keeps nested collections in create drafts until the create command', async () => {
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+    await updateModuleName('Nested Module')
+    await addNestedModuleDraftRows()
+
+    expect(moduleCommandSpies.createGlobalModule).not.toHaveBeenCalled()
+    expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
+    expect(scriptDefinitionBridgeSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
+
+    await clickModuleSurfaceAction('submit-create')
+
+    expect(moduleCommandSpies.createGlobalModule).toHaveBeenCalledOnce()
+    expect(moduleCommandSpies.createGlobalModule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Nested Module',
+        lorebook: [expect.objectContaining({ comment: 'New Lore' })],
+        regex: [expect.objectContaining({ type: 'editinput' })],
+        trigger: expect.any(Array),
+      }),
+    )
+    expect(moduleCommandSpies.createGlobalModule.mock.calls[0][0].trigger).toHaveLength(1)
   })
 
   it('L43: ModuleSettings search recomputes sorted rows once per search edit and reuses them across view switches', async () => {
@@ -474,7 +602,7 @@ describe('ModuleSettings derived module rows', () => {
 
   it('keeps an edit draft open when the server reports a revision conflict', async () => {
     const save = createDeferred<any>()
-    moduleCommandSpies.updateGlobalModule.mockReturnValueOnce(save.promise)
+    moduleCommandSpies.saveGlobalModuleDraft.mockReturnValueOnce(save.promise)
     mountSettings()
     moduleAction('alpha-id', 'edit').click()
     await tick()
@@ -504,7 +632,7 @@ describe('ModuleSettings derived module rows', () => {
 
     await clickModuleSurfaceAction('submit-edit')
 
-    expect(moduleCommandSpies.updateGlobalModule).not.toHaveBeenCalled()
+    expect(moduleCommandSpies.saveGlobalModuleDraft).not.toHaveBeenCalled()
     expect(target.textContent).toContain(language.editModule)
     expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Recovered draft')
     expect(target.querySelector('[role="alert"]')?.textContent).toContain(language.moduleSave.editTargetMissing)

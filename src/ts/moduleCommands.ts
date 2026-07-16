@@ -15,19 +15,25 @@ import {
   enableModuleCommand,
   reorderCharacterModulesCommand,
   reorderModulesCommand,
+  replaceModuleLorebooksCommand,
+  replaceModuleScriptsCommand,
+  replaceModuleTriggersCommand,
   runServerCommand,
   saveChatGenerationSettingsCommand,
   updateChatCommand,
   updateModuleCommand,
+  type LorebookEntrySnapshot,
   type ModuleSnapshot,
+  type ScriptDefinitionSnapshot,
   type ServerCommandResult,
   type ServerCommandTransportOptions,
+  type TriggerDefinitionSnapshot,
 } from './server/commands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
+import { captureCollectionProjectionEpoch, getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { reloadGuiAfterDefinitionChange, selectedCharID } from './stores.svelte'
 import type { RisuModule } from './process/modules'
-import type { character } from './storage/database.svelte'
+import type { character, customscript, loreBook, triggerscript } from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
   fillMissingActiveChatSidebarToggleDefaults,
@@ -45,6 +51,11 @@ import {
 } from './server/pendingMutationOutbox'
 import { moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGenerationSettingsMutationKeys'
+import { ensureClientLorebookEntryIds } from './server/lorebookBridge.svelte'
+import {
+  ensureClientScriptDefinitionIds,
+  ensureClientTriggerDefinitionIds,
+} from './server/scriptDefinitionBridge.svelte'
 
 export interface GlobalModuleStateSnapshot {
   modules: RisuModule[]
@@ -86,6 +97,7 @@ interface ModuleReferenceStateSnapshot {
 }
 
 const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger'])
+const MODULE_EDITOR_SPLIT_COLLECTION_KEYS = ['lorebook', 'regex', 'trigger'] as const
 const MODULE_PATCH_DELETABLE_KEYS = new Set([
   'namespace',
   'lowLevelAccess',
@@ -286,6 +298,39 @@ export function rebaseModuleDraftOntoLatest(baseline: RisuModule, draft: RisuMod
   }
 
   rebased.id = latest.id
+  return rebased
+}
+
+function normalizedModuleSplitCollection(
+  module: RisuModule,
+  key: (typeof MODULE_EDITOR_SPLIT_COLLECTION_KEYS)[number],
+) {
+  const value = module[key]
+  return Array.isArray(value) ? cloneJsonValue(value) : []
+}
+
+/**
+ * Rebase the explicit ModuleSettings editor draft. Unlike legacy parent-only
+ * saves, a collection changed inside this editor is intentional and must be
+ * included in the final Save; untouched collections still retain the newest
+ * projected value.
+ */
+export function rebaseModuleEditorDraftOntoLatest(
+  baseline: RisuModule,
+  draft: RisuModule,
+  latest: RisuModule,
+): RisuModule {
+  const rebased = rebaseModuleDraftOntoLatest(baseline, draft, latest) as RisuModule & Record<string, unknown>
+  const rebasedRecord = rebased as Record<string, unknown>
+
+  for (const key of MODULE_EDITOR_SPLIT_COLLECTION_KEYS) {
+    const baselineCollection = normalizedModuleSplitCollection(baseline, key)
+    const draftCollection = normalizedModuleSplitCollection(draft, key)
+    if (!isJsonValueEqual(baselineCollection, draftCollection)) {
+      rebasedRecord[key] = draftCollection
+    }
+  }
+
   return rebased
 }
 
@@ -693,6 +738,149 @@ export async function updateGlobalModule(moduleId: string, module: RisuModule): 
     reloadGuiAfterDefinitionChange()
   }
   return null
+}
+
+/**
+ * Persist a complete ModuleSettings editor draft through the module's existing
+ * split command owners. The optimistic projection is applied as one local
+ * module value, while the durable batch retains per-field rollback fences and
+ * serializes each server-owned slice against the same module owner.
+ */
+export async function saveGlobalModuleDraft(moduleId: string, module: RisuModule): Promise<ServerCommandResult | null> {
+  if (!canUseServerCommands()) {
+    const index = getDatabase().modules.findIndex((candidate) => candidate.id === moduleId)
+    if (index !== -1) {
+      getDatabase().modules[index] = cloneJsonValue(module)
+      reloadGuiAfterDefinitionChange()
+    }
+    return null
+  }
+
+  const previous = currentGlobalModuleStateSnapshot()
+  const previousModule = previous.modules.find((candidate) => candidate.id === moduleId)
+  if (!previousModule) {
+    return { status: 'error', error: 'Module no longer exists' }
+  }
+
+  const target = cloneJsonValue(module)
+  const commandPatch = changedModulePatch(moduleId, toModuleSnapshot(target), previous, { complete: true })
+  const previousLorebook = normalizedModuleSplitCollection(previousModule, 'lorebook') as loreBook[]
+  const previousScripts = normalizedModuleSplitCollection(previousModule, 'regex') as customscript[]
+  const previousTriggers = normalizedModuleSplitCollection(previousModule, 'trigger') as triggerscript[]
+  let lorebook = normalizedModuleSplitCollection(target, 'lorebook') as loreBook[]
+  let scripts = normalizedModuleSplitCollection(target, 'regex') as customscript[]
+  let triggers = normalizedModuleSplitCollection(target, 'trigger') as triggerscript[]
+  const lorebookChanged = !isJsonValueEqual(previousLorebook, lorebook)
+  const scriptsChanged = !isJsonValueEqual(previousScripts, scripts)
+  const triggersChanged = !isJsonValueEqual(previousTriggers, triggers)
+
+  if (lorebookChanged) lorebook = ensureClientLorebookEntryIds(lorebook)
+  if (scriptsChanged) scripts = ensureClientScriptDefinitionIds(scripts)
+  if (triggersChanged) triggers = ensureClientTriggerDefinitionIds(triggers)
+
+  const optimisticPatch: ModuleSnapshot = cloneJsonValue(commandPatch)
+  if (lorebookChanged) optimisticPatch.lorebook = cloneJsonValue(lorebook)
+  if (scriptsChanged) optimisticPatch.regex = cloneJsonValue(scripts)
+  if (triggersChanged) optimisticPatch.trigger = cloneJsonValue(triggers)
+
+  const optimisticCollectionEpoch =
+    scriptsChanged || triggersChanged ? captureCollectionProjectionEpoch('modules') : undefined
+  const applied = applyOptimisticGlobalModulePatch(moduleId, optimisticPatch)
+  applyModuleDeletionSentinelsOptimistically(moduleId, commandPatch)
+  if (applied) reloadGuiAfterDefinitionChange()
+
+  const steps: ModuleCollectionPatchStep[] = []
+  const metadataRollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
+  if (metadataRollbackEntries.length > 0) {
+    steps.push({
+      method: 'PATCH',
+      path: `/modules/${encodeURIComponent(moduleId)}`,
+      body: { patch: cloneJsonValue(commandPatch) },
+      dependencyKeys: [moduleOwnerMutationKey(moduleId)],
+      factory: (baseRevision, body) =>
+        updateModuleCommand({ baseRevision, moduleId, patch: body.patch as ModuleSnapshot }, undefined, true),
+      rollbackEntries: metadataRollbackEntries,
+    })
+  }
+
+  if (lorebookChanged) {
+    const rollbackEntry = moduleFieldRollbackEntry(moduleId, 'lorebook', previous, true, lorebook)
+    if (rollbackEntry) {
+      steps.push({
+        method: 'PUT',
+        path: `/modules/${encodeURIComponent(moduleId)}/lorebooks`,
+        body: { entries: cloneJsonValue(lorebook) },
+        dependencyKeys: [moduleOwnerMutationKey(moduleId)],
+        factory: (baseRevision, body) =>
+          replaceModuleLorebooksCommand(
+            {
+              baseRevision,
+              moduleId,
+              entries: body.entries as LorebookEntrySnapshot[],
+            },
+            undefined,
+            true,
+            true,
+          ),
+        rollbackEntries: [rollbackEntry],
+      })
+    }
+  }
+
+  if (scriptsChanged) {
+    const rollbackEntry = moduleFieldRollbackEntry(moduleId, 'regex', previous, true, scripts)
+    if (rollbackEntry) {
+      steps.push({
+        method: 'PUT',
+        path: `/modules/${encodeURIComponent(moduleId)}/scripts`,
+        body: { scripts: cloneJsonValue(scripts) },
+        dependencyKeys: [moduleOwnerMutationKey(moduleId)],
+        factory: (baseRevision, body) =>
+          replaceModuleScriptsCommand(
+            {
+              baseRevision,
+              moduleId,
+              scripts: body.scripts as ScriptDefinitionSnapshot[],
+              optimisticCollectionEpoch,
+            },
+            undefined,
+            true,
+            true,
+          ),
+        rollbackEntries: [rollbackEntry],
+      })
+    }
+  }
+
+  if (triggersChanged) {
+    const rollbackEntry = moduleFieldRollbackEntry(moduleId, 'trigger', previous, true, triggers)
+    if (rollbackEntry) {
+      steps.push({
+        method: 'PUT',
+        path: `/modules/${encodeURIComponent(moduleId)}/triggers`,
+        body: { triggers: cloneJsonValue(triggers) },
+        dependencyKeys: [moduleOwnerMutationKey(moduleId)],
+        factory: (baseRevision, body) =>
+          replaceModuleTriggersCommand(
+            {
+              baseRevision,
+              moduleId,
+              triggers: body.triggers as TriggerDefinitionSnapshot[],
+              optimisticCollectionEpoch,
+            },
+            undefined,
+            true,
+            true,
+          ),
+        rollbackEntries: [rollbackEntry],
+      })
+    }
+  }
+
+  const batch = runModuleCollectionPatchSteps(steps)
+  if (!batch) return null
+  const outcome = await batch
+  return outcome.status === 'failure' ? outcome.failure : null
 }
 
 function applyOptimisticGlobalModulePatch(moduleId: string, patch: ModuleSnapshot): boolean {
