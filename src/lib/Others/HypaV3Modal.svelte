@@ -44,12 +44,12 @@
   import { buildServerSummaryPatch, type ServerSummaryPatchField } from './HypaV3Modal/server-summary-patch'
   import type { OpenAIChat } from 'src/ts/process/index.svelte'
 
-  const currentCharacter = $derived(getCharacterByIndex($selectedCharID))
-  const currentChat = $derived(currentCharacter.chats[currentCharacter.chatPage])
+  const currentCharacter = $derived<character | undefined>(getCharacterByIndex($selectedCharID))
+  const currentChat = $derived<Chat | undefined>(currentCharacter?.chats?.[currentCharacter.chatPage])
   const serverBackedMemoryMode = $derived(canUseServerMemoryApi())
-  const currentChatId = $derived(currentChat.id ?? '')
+  const currentChatId = $derived(currentChat?.id ?? '')
   const defaultHypaV3Data = $derived(createInitialHypaV3Data())
-  const legacyHypaV3Data = $derived(currentChat.hypaV3Data ?? defaultHypaV3Data)
+  const legacyHypaV3Data = $derived(currentChat?.hypaV3Data ?? defaultHypaV3Data)
 
   interface ServerSummaryView extends SerializableSummary {
     serverId: string
@@ -423,7 +423,8 @@
 
   onDestroy(cancelPendingSearchFocusRestore)
 
-  function captureBulkResummaryOwner(): BulkResummaryOwner {
+  function captureBulkResummaryOwner(): BulkResummaryOwner | null {
+    if (!currentCharacter || !currentChat) return null
     return {
       character: currentCharacter,
       characterId: currentCharacter.chaId,
@@ -435,11 +436,13 @@
 
   function matchesBulkResummaryOwner(
     owner: BulkResummaryOwner,
-    character: character = currentCharacter,
-    chat: Chat = currentChat,
+    character: character | undefined = currentCharacter,
+    chat: Chat | undefined = currentChat,
     data: SerializableHypaV3Data = hypaV3Data,
   ): boolean {
     return (
+      !!character &&
+      !!chat &&
       character === owner.character &&
       character.chaId === owner.characterId &&
       chat === owner.chat &&
@@ -492,6 +495,11 @@
     filterSelected
 
     untrack(() => {
+      if (!currentChat) {
+        hypaV3ModalOpen.set(false)
+        clearBulkResummary(true)
+        return
+      }
       if (!serverBackedMemoryMode && !currentChat.hypaV3Data) {
         currentChat.hypaV3Data = createInitialHypaV3Data()
       }
@@ -653,6 +661,7 @@
 
     const sortedIndices = Array.from(bulkEditState.selectedSummaries).sort((a, b) => a - b)
     const owner = captureBulkResummaryOwner()
+    if (!owner) return
     const operation = beginBulkResummaryOperation(owner)
 
     try {
@@ -820,6 +829,10 @@
 
   async function handleResetData() {
     if (serverBackedMemoryMode) return
+    if (!currentCharacter || !currentChat) {
+      hypaV3ModalOpen.set(false)
+      return
+    }
     const resetOwner = {
       character: currentCharacter,
       characterId: currentCharacter.chaId,
@@ -832,6 +845,8 @@
     )
     if (!confirmed) return
     if (
+      !currentCharacter ||
+      !currentChat ||
       currentCharacter !== resetOwner.character ||
       currentCharacter.chaId !== resetOwner.characterId ||
       currentChat !== resetOwner.chat ||

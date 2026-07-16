@@ -212,6 +212,16 @@ describe('Hypa V3 async ownership', () => {
     target.remove()
   })
 
+  it('closes safely when route navigation removes its character owner', async () => {
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    selectedCharID.set(-1)
+    await settle()
+
+    expect(get(hypaV3ModalOpen)).toBe(false)
+  })
+
   it('aborts a reset when the active chat changes during the second confirmation', async () => {
     const secondConfirmation = deferred<boolean>()
     resetMocks.alertConfirm.mockResolvedValueOnce(true).mockReturnValueOnce(secondConfirmation.promise)
