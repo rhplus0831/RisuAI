@@ -433,16 +433,32 @@
             <Chat name="Airisu" img={airisuStyle} message={language.setup.allDone} isLastMemory={false} />
           {/if}
           <div class="flex items-stretch mb-2 w-full mt-auto">
-            <textarea
-              class="peer focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full"
-              bind:value={input}
-              onkeydown={(e) => {
-                if (e.key.toLocaleLowerCase() === 'enter' && !e.shiftKey && !e.isComposing) {
-                  e.preventDefault()
-                  send()
-                }
-              }}
-              style:height={'44px'}></textarea>
+            {#if step === 4 && ['openai', 'openrouter', 'claude'].includes(provider)}
+              <input
+                type="password"
+                autocomplete="new-password"
+                aria-label={`${provider === 'openai' ? 'OpenAI' : provider === 'openrouter' ? 'OpenRouter' : 'Claude'} ${language.apiKey}`}
+                class="peer focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc overflow-hidden max-w-full"
+                bind:value={input}
+                onkeydown={(e) => {
+                  if (e.key.toLocaleLowerCase() === 'enter' && !e.isComposing) {
+                    e.preventDefault()
+                    send()
+                  }
+                }}
+                style:height={'44px'} />
+            {:else}
+              <textarea
+                class="peer focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full"
+                bind:value={input}
+                onkeydown={(e) => {
+                  if (e.key.toLocaleLowerCase() === 'enter' && !e.shiftKey && !e.isComposing) {
+                    e.preventDefault()
+                    send()
+                  }
+                }}
+                style:height={'44px'}></textarea>
+            {/if}
             <button
               aria-label={language.hotkeyDesc.send}
               onclick={send}

@@ -18,6 +18,7 @@ vi.mock('../ChatScreens/Chat.svelte', async () => {
 vi.mock('src/lang', () => ({
   changeLanguage: welcomeMocks.changeLanguage,
   language: {
+    apiKey: 'API Key',
     hotkeyDesc: {
       send: 'Send',
     },
@@ -116,12 +117,12 @@ function sendButton(): HTMLButtonElement {
   return button
 }
 
-function textInput(): HTMLTextAreaElement {
-  const textarea = target.querySelector<HTMLTextAreaElement>('textarea')
-  if (!textarea) {
+function textInput(): HTMLInputElement | HTMLTextAreaElement {
+  const input = target.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
+  if (!input) {
     throw new Error('Welcome input not found')
   }
-  return textarea
+  return input
 }
 
 async function flushAsync(): Promise<void> {
@@ -213,6 +214,19 @@ describe('WelcomeRisu onboarding setup completion', () => {
   it('names the icon-only send action', async () => {
     await mountWelcome()
     expect(sendButton().getAttribute('aria-label')).toBe('Send')
+  })
+
+  it('masks and names provider credentials', async () => {
+    await mountWelcome()
+    await setInputAndSend('Ada')
+    await clickChoice('Set up now')
+    await clickChoice('OpenAI')
+
+    const credential = target.querySelector<HTMLInputElement>('input[type="password"]')
+    expect(credential).toBeTruthy()
+    expect(credential?.getAttribute('aria-label')).toBe('OpenAI API Key')
+    expect(credential?.autocomplete).toBe('new-password')
+    expect(target.querySelector('textarea')).toBeNull()
   })
 
   it.each([
