@@ -382,6 +382,44 @@ describe('PartialEditController shared hover handler', () => {
     })
   })
 
+  it('cancels delayed edit-modal scrolling when the editor closes', async () => {
+    const fixture = createHoverFixture({
+      text: 'closing edit block',
+      left: 40,
+      top: 100,
+      width: 180,
+      height: 48,
+    })
+    stubElementFromPoint([fixture])
+    mountController(fixture.bodyRoot, {
+      messageData: 'alpha closing edit block omega',
+    })
+    await settleEffects()
+
+    movePointer(60, 112)
+    await flushHoverFrame()
+    const scrollIntoView = vi.mocked(HTMLElement.prototype.scrollIntoView)
+
+    vi.useFakeTimers()
+    try {
+      getBlockButtonWrapper().querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+      await tick()
+      vi.advanceTimersByTime(10)
+      await tick()
+
+      const cancel = document.querySelector<HTMLButtonElement>('.partial-edit-modal .partial-edit-cancel-btn')
+      expect(cancel).not.toBeNull()
+      cancel!.click()
+      await tick()
+      expect(document.querySelector('.partial-edit-modal')).toBeNull()
+
+      expect(() => vi.advanceTimersByTime(200)).not.toThrow()
+      expect(scrollIntoView).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows only the failure dialog when the rendered block has no source match', async () => {
     const fixture = createHoverFixture({
       text: 'rendered-only block',

@@ -227,6 +227,8 @@
   let isEditing = $state(false)
   let editText = $state('')
   let textareaRef: HTMLTextAreaElement | null = $state(null)
+  let editFocusTimer: ReturnType<typeof setTimeout> | null = null
+  let editScrollTimer: ReturnType<typeof setTimeout> | null = null
 
   let isConfirmingDelete = $state(false)
   let modalReturnFocus: HTMLElement | null = null
@@ -589,23 +591,40 @@
   }
 
   function proceedWithEdit(match: RangeResultWithContext) {
+    clearEditSetupTimers()
     const operation = captureOperation('edit', match)
     matchingState.mode = null
     editText = operation.sourceData.slice(operation.sourceRange.start, operation.sourceRange.end)
     isEditing = true
 
-    setTimeout(() => {
-      if (textareaRef) {
-        textareaRef.focus()
-        adjustHeight()
-        setTimeout(() => {
-          const buttonsEl = textareaRef.closest('.partial-edit-modal')?.querySelector('.partial-edit-buttons')
-          if (buttonsEl) {
-            ;(buttonsEl as HTMLElement).scrollIntoView({ behavior: 'instant', block: 'nearest' })
-          }
-        }, 200)
-      }
+    editFocusTimer = setTimeout(() => {
+      editFocusTimer = null
+      const editTextarea = textareaRef
+      if (!isEditing || !editTextarea?.isConnected) return
+
+      editTextarea.focus()
+      adjustHeight()
+      editScrollTimer = setTimeout(() => {
+        editScrollTimer = null
+        if (!isEditing || textareaRef !== editTextarea || !editTextarea.isConnected) return
+
+        const buttonsEl = editTextarea.closest('.partial-edit-modal')?.querySelector('.partial-edit-buttons')
+        if (buttonsEl) {
+          ;(buttonsEl as HTMLElement).scrollIntoView({ behavior: 'instant', block: 'nearest' })
+        }
+      }, 200)
     }, 10)
+  }
+
+  function clearEditSetupTimers(): void {
+    if (editFocusTimer) {
+      clearTimeout(editFocusTimer)
+      editFocusTimer = null
+    }
+    if (editScrollTimer) {
+      clearTimeout(editScrollTimer)
+      editScrollTimer = null
+    }
   }
 
   function selectMatchAtIndex(index: number) {
@@ -655,6 +674,7 @@
   }
 
   function closeEdit() {
+    clearEditSetupTimers()
     revealModalReturnFocus()
     isEditing = false
     editText = ''
@@ -926,6 +946,7 @@
   })
 
   onDestroy(() => {
+    clearEditSetupTimers()
     if (blockButtonWrapper) {
       blockButtonWrapper.remove()
       blockButtonWrapper = null
