@@ -19,7 +19,7 @@ vi.mock('../process/modules', async (importActual) => {
 import * as fflate from 'fflate'
 import { encode as encodeMsgpack } from 'msgpackr/index-no-eval'
 import { encryptBuffer } from '../util'
-import { importPreset, presetTemplate } from './database.svelte'
+import { importPreset, presetTemplate, resetPendingPresetMutationsForTests } from './database.svelte'
 import { clearCachedServerCommandRevision, setServerCommandSuccessReconciler } from '../server/commands'
 import {
   clearPendingMutationOutbox,
@@ -162,6 +162,7 @@ async function buildRisupresetFile(preset: Record<string, unknown>): Promise<Uin
 }
 
 beforeEach(() => {
+  resetPendingPresetMutationsForTests()
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
@@ -178,6 +179,7 @@ afterEach(async () => {
   setServerCommandSuccessReconciler(null)
   await clearPendingMutationOutbox()
   resetPendingMutationOutboxForTests()
+  resetPendingPresetMutationsForTests()
   vi.unstubAllGlobals()
 })
 
@@ -541,7 +543,7 @@ describe('importPreset warm-path logging (L37)', () => {
     const retained = await listPendingMutations()
     expect(retained).toHaveLength(1)
     expect(retained[0].handle.key).toBe(`prompt-template-owner:${getResourceDatabase().promptPresets[0].id}`)
-    expect(retained[0].intent.dependencyKeys).toEqual([`split-preset:model:${serverModels[0].id}`])
+    expect(retained[0].intent.dependencyKeys).toEqual(['preset-operations', `split-preset:model:${serverModels[0].id}`])
 
     recoverPrompt = true
     await expect(replayPendingMutations()).resolves.toMatchObject({ retained: 0, succeeded: 1 })
