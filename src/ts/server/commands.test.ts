@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
+import { serializeChatGenerationSettingsDigestInput } from '../chatGenerationSettings'
 import { PROMPT_SETTINGS_KEYS } from '../promptSettings'
 import {
   serializePersonaCollectionDigestInput,
@@ -30,6 +31,7 @@ import {
   createPluginCommand,
   clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
+  createChatGenerationSettingsCommandDurableBody,
   createPromptItemCommand,
   createPresetCommand,
   createTranslatorPresetCommand,
@@ -99,6 +101,7 @@ import {
   reorderModuleLorebookEntriesCommand,
   reorderPluginsCommand,
   runServerCommandWithoutMutationReceipt,
+  runServerCommandWithMutationReceipt,
   reorderPromptItemsCommand,
   reorderAgentPresetsCommand,
   reorderAgentPresetStepsCommand,
@@ -153,6 +156,7 @@ import {
   setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
+  sha256HexUtf8Sync,
   type AgentPresetStepSnapshot,
   type PromptItemSnapshot,
   type ServerCommandLocalEffect,
@@ -956,6 +960,44 @@ describe('server command API adapter', () => {
 
     expect(capturedHeaders?.['risu-mutation-id']).toBeUndefined()
     expect(capturedHeaders?.['risu-database-lineage']).toBeUndefined()
+  })
+
+  it('restores the reserved receipt context when an exact context throws', async () => {
+    let capturedHeaders: Record<string, string> | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        capturedHeaders = init.headers as Record<string, string>
+        return jsonResponse({
+          revision: 22,
+          event: { type: 'settings.updated', revision: 22, resource: 'settings' },
+        })
+      }) as unknown as typeof fetch,
+    )
+    setCachedServerCommandRevision(21)
+
+    await expect(
+      runServerCommand({
+        mutationId: 'reserved-placeholder',
+        databaseLineage: 'database-a',
+        executionWrapper: async (execute) => {
+          await expect(
+            runServerCommandWithMutationReceipt(
+              async () => {
+                throw new Error('prepared execution failed')
+              },
+              'exact-successor',
+              'database-a',
+            ),
+          ).rejects.toThrow('prepared execution failed')
+          return execute()
+        },
+        command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxContext: 7_000 } }),
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 22 })
+
+    expect(capturedHeaders?.['risu-mutation-id']).toBe('reserved-placeholder')
+    expect(capturedHeaders?.['risu-database-lineage']).toBe('database-a')
   })
 
   it('retries a durable conflict with live revisions while preserving receipt ids', async () => {
@@ -6479,6 +6521,25 @@ describe('server command API adapter', () => {
         },
       },
     ])
+  })
+
+  it('matches the synchronous generation-settings digest to WebCrypto SHA-256', async () => {
+    const baseGenerationSettings = {
+      configured: true,
+      personaId: 'persona-한글',
+      jailbreakToggle: false,
+      sidebarToggles: { notes: 'line one\nline two' },
+    }
+    const serialized = serializeChatGenerationSettingsDigestInput(baseGenerationSettings)
+    expect(sha256HexUtf8Sync(serialized)).toBe(await sha256Hex(serialized))
+
+    const body = createChatGenerationSettingsCommandDurableBody({
+      chatId: 'chat-a',
+      generationSettings: { ...baseGenerationSettings, personaId: 'persona-next' },
+      sparseUpdate: { patch: { personaId: 'persona-next' } },
+      sparseBaseGenerationSettings: baseGenerationSettings,
+    })
+    expect(body.baseGenerationSettingsDigest).toBe(await sha256Hex(serialized))
   })
 
   it('sends a sparse generation-settings update and reconstructs its value-free acknowledgement', async () => {

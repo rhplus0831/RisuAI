@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 vi.mock('./platform', async (importActual) => {
   const actual = await importActual<typeof import('./platform')>()
@@ -101,6 +102,14 @@ import {
   seedCloneCostDb,
   withCloneInstrumentation,
 } from './__tests__/cloneCostHarness'
+import {
+  beginPendingMutationDispatch,
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+  stagePendingMutation,
+} from './server/pendingMutationOutbox'
 
 interface CapturedFetch {
   url: string
@@ -1821,6 +1830,533 @@ describe('chat command projection helpers', () => {
         },
       },
     ])
+  })
+
+  it('reserves a generation-settings save before a synchronously dispatched structural command', async () => {
+    setResourceWriteGuardEnabled(true)
+    const settingsResponse = createDeferred<Response>()
+    const commandUrls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        commandUrls.push(url)
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') return settingsResponse.promise
+        if (url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH') {
+          return jsonResponse({
+            revision: 12,
+            event: {
+              type: 'chat.updated',
+              revision: 12,
+              resource: 'characterRow',
+              id: 'chat-a',
+              parentId: 'char-a',
+            },
+            chatId: 'chat-a',
+            characterId: 'char-a',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    const generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      jailbreakToggle: false,
+      sidebarToggles: { notes: 'queued first' },
+    }
+
+    expect(dispatchSaveChatGenerationSettings('chat-a', generationSettings)).toBe(true)
+    dispatchUpdateChat('chat-a', { name: 'Later rename' }, currentChatStateSnapshot())
+
+    await vi.waitFor(() => expect(commandUrls).toEqual(['/api/v1/commands/chats/chat-a/generation-settings']))
+    settingsResponse.resolve(successfulChatGenerationSettingsResponse(11, generationSettings))
+    await vi.waitFor(() =>
+      expect(commandUrls).toEqual([
+        '/api/v1/commands/chats/chat-a/generation-settings',
+        '/api/v1/commands/chats/chat-a',
+      ]),
+    )
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+  })
+
+  it('persists the exact live chat generation-settings request before sending it', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-generation',
+      writerEpoch: 7,
+      databaseLineage: 'lineage-chat-generation',
+      requestedWriterWasActive: true,
+    })
+    setResourceWriteGuardEnabled(true)
+    const initial = {
+      configured: true,
+      personaId: 'persona-a',
+      jailbreakToggle: false,
+      sidebarToggles: { notes: 'before' },
+    }
+    const attempted = {
+      ...initial,
+      sidebarToggles: { notes: 'durable' },
+    }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
+    })
+    const response = createDeferred<Response>()
+    const calls: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+        calls.push({ url, body, headers: init.headers as Record<string, string> })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') return response.promise
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      expect(dispatchSaveChatGenerationSettings('chat-a', attempted)).toBe(true)
+      await vi.waitFor(() =>
+        expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/generation-settings')).toBe(true),
+      )
+      const command = calls.find((call) => call.url === '/api/v1/commands/chats/chat-a/generation-settings')!
+      const { baseRevision: _baseRevision, ...durableBody } = command.body
+      expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+        {
+          version: 1,
+          requests: [
+            {
+              method: 'PUT',
+              path: '/chats/chat-a/generation-settings',
+              body: durableBody,
+            },
+          ],
+        },
+      ])
+      expect(command.headers['risu-mutation-id']).toMatch(/^[a-zA-Z0-9._:-]+$/)
+      expect(command.headers['risu-database-lineage']).toBe('lineage-chat-generation')
+
+      const patch = command.body.patch as Record<string, unknown>
+      response.resolve(
+        jsonResponse({
+          revision: 11,
+          event: {
+            type: 'chat.updated',
+            revision: 11,
+            resource: 'characterRow',
+            id: 'chat-a',
+            parentId: 'char-a',
+          },
+          chatId: 'chat-a',
+          characterId: 'char-a',
+          certificate: 'chat-generation-settings-sparse-v1',
+          patchedKeys: Object.keys(patch).sort(),
+          deletedKeys: [],
+          sidebarTogglePatchedKeys: Object.keys((patch.sidebarToggles as Record<string, unknown>) ?? {}).sort(),
+          sidebarToggleDeletedKeys: [],
+          prunedSidebarToggleKeys: [],
+        }),
+      )
+      await waitForPendingChatGenerationSettingsSave('chat-a')
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('persists a queued generation-settings edit while the earlier save is still in flight', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-generation-queue',
+      writerEpoch: 8,
+      databaseLineage: 'lineage-chat-generation-queue',
+      requestedWriterWasActive: true,
+    })
+    setResourceWriteGuardEnabled(true)
+    const initial = {
+      configured: true,
+      personaId: 'persona-initial',
+      jailbreakToggle: false,
+      sidebarToggles: { notes: 'before' },
+    }
+    const firstTarget = { ...initial, personaId: 'persona-first' }
+    const secondTarget = {
+      ...firstTarget,
+      sidebarToggles: { notes: 'queued' },
+    }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
+    })
+    const firstResponse = createDeferred<Response>()
+    const secondResponse = createDeferred<Response>()
+    const commandCalls: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+          commandCalls.push(typeof init.body === 'string' ? JSON.parse(init.body) : {})
+          return commandCalls.length === 1 ? firstResponse.promise : secondResponse.promise
+        }
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      expect(dispatchSaveChatGenerationSettings('chat-a', firstTarget)).toBe(true)
+      await vi.waitFor(() => expect(commandCalls).toHaveLength(1))
+      expect(dispatchSaveChatGenerationSettings('chat-a', secondTarget)).toBe(true)
+
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
+      const pending = await listPendingMutations()
+      expect(pending.map((entry) => entry.handle.key)).toEqual([
+        'chat-generation-settings:chat-a',
+        'chat-generation-settings:chat-a',
+      ])
+      expect(pending[0].handle.mutationId).not.toBe(pending[1].handle.mutationId)
+      expect(pending[1].intent).toEqual({
+        version: 1,
+        requests: [
+          {
+            method: 'PUT',
+            path: '/chats/chat-a/generation-settings',
+            body: { generationSettings: secondTarget },
+          },
+        ],
+      })
+      expect(commandCalls).toHaveLength(1)
+
+      firstResponse.resolve(successfulChatGenerationSettingsResponse(11, firstTarget))
+      await vi.waitFor(() => expect(commandCalls).toHaveLength(2))
+      secondResponse.resolve(successfulChatGenerationSettingsResponse(12, secondTarget))
+      await waitForPendingChatGenerationSettingsSave('chat-a')
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('replays a retained generation-settings predecessor before a full corrective successor', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-generation-predecessor',
+      writerEpoch: 9,
+      databaseLineage: 'lineage-chat-generation-predecessor',
+      requestedWriterWasActive: true,
+    })
+    setResourceWriteGuardEnabled(true)
+    const initial = {
+      configured: true,
+      personaId: 'persona-initial',
+      jailbreakToggle: false,
+      sidebarToggles: { notes: 'before' },
+    }
+    const firstTarget = { ...initial, personaId: 'persona-first' }
+    const correctiveTarget = { ...initial, sidebarToggles: { notes: 'corrective' } }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
+    })
+    const generationCalls: Array<{
+      body: Record<string, unknown>
+      mutationId: string | null
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+          const headers = init.headers as Record<string, string>
+          generationCalls.push({
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : {},
+            mutationId: headers['risu-mutation-id'] ?? null,
+          })
+          if (generationCalls.length === 1) return jsonResponse({ error: 'offline' }, 500)
+          if (generationCalls.length === 2) {
+            return jsonResponse({
+              revision: 11,
+              event: {
+                type: 'chat.updated',
+                revision: 11,
+                resource: 'characterRow',
+                id: 'chat-a',
+                parentId: 'char-a',
+              },
+              chatId: 'chat-a',
+              characterId: 'char-a',
+            })
+          }
+          return successfulChatGenerationSettingsResponse(12, correctiveTarget)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      expect(dispatchSaveChatGenerationSettings('chat-a', firstTarget)).toBe(true)
+      await waitForPendingChatGenerationSettingsSave('chat-a')
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initial)
+      const retained = await listPendingMutations()
+      expect(retained).toHaveLength(1)
+      expect(retained[0].handle.key).toBe('chat-generation-settings:chat-a')
+
+      expect(dispatchSaveChatGenerationSettings('chat-a', correctiveTarget)).toBe(true)
+      await waitForPendingChatGenerationSettingsSave('chat-a')
+
+      expect(generationCalls).toHaveLength(3)
+      expect(generationCalls[1].mutationId).toBe(retained[0].handle.mutationId)
+      expect(generationCalls[2].mutationId).not.toBe(retained[0].handle.mutationId)
+      expect(generationCalls[2].body).toEqual({
+        baseRevision: 11,
+        generationSettings: correctiveTarget,
+      })
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(correctiveTarget)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('uses a later chat slot to service an unsent retained head before its own edit', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-generation-retained-head',
+      writerEpoch: 11,
+      databaseLineage: 'lineage-chat-generation-retained-head',
+      requestedWriterWasActive: true,
+    })
+    setResourceWriteGuardEnabled(true)
+    const initial = {
+      configured: true,
+      personaId: 'persona-initial',
+      jailbreakToggle: false,
+      sidebarToggles: { notes: 'before' },
+    }
+    const firstTarget = { ...initial, personaId: 'persona-first' }
+    const secondTarget = { ...firstTarget, sidebarToggles: { notes: 'second' } }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
+    })
+    const predecessor = stagePendingMutation('chat-generation-settings:chat-a', {
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/chats/chat-a/generation-settings',
+          body: { generationSettings: initial },
+        },
+      ],
+    })
+    await predecessor.ready
+    const generationCalls: Array<{ body: Record<string, unknown>; mutationId: string | null }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+          const headers = init.headers as Record<string, string>
+          generationCalls.push({
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : {},
+            mutationId: headers['risu-mutation-id'] ?? null,
+          })
+          if (generationCalls.length === 1) return jsonResponse({ error: 'still offline' }, 500)
+          if (generationCalls.length === 2) {
+            return jsonResponse({
+              revision: 11,
+              event: {
+                type: 'chat.updated',
+                revision: 11,
+                resource: 'characterRow',
+                id: 'chat-a',
+                parentId: 'char-a',
+              },
+              chatId: 'chat-a',
+              characterId: 'char-a',
+            })
+          }
+          if (generationCalls.length === 3) {
+            return successfulChatGenerationSettingsResponse(12, firstTarget)
+          }
+          return successfulChatGenerationSettingsResponse(13, secondTarget)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      expect(dispatchSaveChatGenerationSettings('chat-a', firstTarget)).toBe(true)
+      await waitForPendingChatGenerationSettingsSave('chat-a')
+      expect(generationCalls).toHaveLength(1)
+      expect(generationCalls[0].mutationId).toBe(predecessor.mutationId)
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(firstTarget)
+      expect(await listPendingMutations()).toHaveLength(2)
+
+      expect(dispatchSaveChatGenerationSettings('chat-a', secondTarget)).toBe(true)
+      await waitForPendingChatGenerationSettingsSave('chat-a')
+
+      expect(generationCalls).toHaveLength(4)
+      expect(generationCalls[1].mutationId).toBe(predecessor.mutationId)
+      expect(generationCalls[2].body).toEqual({
+        baseRevision: 11,
+        generationSettings: firstTarget,
+      })
+      expect(generationCalls[3].body).toMatchObject({ baseRevision: 12 })
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(secondTarget)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('sends a full idempotent correction when a queued edit rebases to a no-op', async () => {
+    const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
+    setResourceWriteGuardEnabled(true)
+    const initial = {
+      configured: true,
+      personaId: 'persona-initial',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    const attempted = { ...initial, personaId: 'persona-attempted' }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
+    })
+
+    expect(dispatchSaveChatGenerationSettings('chat-a', attempted)).toBe(true)
+    await waitForCallCount(calls, 2)
+    expect(dispatchSaveChatGenerationSettings('chat-a', initial)).toBe(true)
+    firstResponse.resolve(jsonResponse({ error: 'offline' }, 500))
+    await waitForCallCount(calls, 3)
+
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      body: { baseRevision: 10, generationSettings: initial },
+    })
+    secondResponse.resolve(successfulChatGenerationSettingsResponse(11, initial))
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initial)
+  })
+
+  it('keeps a marked placeholder immutable and sends a full correction under a fresh receipt id', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-generation-marker',
+      writerEpoch: 10,
+      databaseLineage: 'lineage-chat-generation-marker',
+      requestedWriterWasActive: true,
+    })
+    setResourceWriteGuardEnabled(true)
+    const initial = {
+      configured: true,
+      personaId: 'persona-initial',
+      jailbreakToggle: false,
+      sidebarToggles: { notes: 'before' },
+    }
+    const firstTarget = {
+      ...initial,
+      personaId: 'persona-first',
+      sidebarToggles: { notes: 'before', temporary: '' },
+    }
+    const canonicalFirst = {
+      ...firstTarget,
+      sidebarToggles: { notes: 'before' },
+    }
+    const queuedTarget = {
+      ...firstTarget,
+      sidebarToggles: { notes: 'queued', temporary: '' },
+    }
+    const correctedTarget = {
+      ...canonicalFirst,
+      sidebarToggles: { notes: 'queued' },
+    }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
+    })
+    const firstResponse = createDeferred<Response>()
+    const generationCalls: Array<{
+      body: Record<string, unknown>
+      mutationId: string | null
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+          const headers = init.headers as Record<string, string>
+          generationCalls.push({
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : {},
+            mutationId: headers['risu-mutation-id'] ?? null,
+          })
+          if (generationCalls.length === 1) return firstResponse.promise
+          if (generationCalls.length === 2) {
+            return jsonResponse({
+              revision: 12,
+              event: {
+                type: 'chat.updated',
+                revision: 12,
+                resource: 'characterRow',
+                id: 'chat-a',
+                parentId: 'char-a',
+              },
+              chatId: 'chat-a',
+              characterId: 'char-a',
+            })
+          }
+          return successfulChatGenerationSettingsResponse(13, correctedTarget)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      expect(dispatchSaveChatGenerationSettings('chat-a', firstTarget)).toBe(true)
+      await vi.waitFor(() => expect(generationCalls).toHaveLength(1))
+      expect(dispatchSaveChatGenerationSettings('chat-a', queuedTarget)).toBe(true)
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
+      const before = await listPendingMutations()
+      const markedPlaceholder = before[1]
+      expect(markedPlaceholder.intent.requests[0].body).toEqual({ generationSettings: queuedTarget })
+      await expect(beginPendingMutationDispatch(markedPlaceholder.handle)).resolves.toBe('persisted')
+
+      firstResponse.resolve(successfulChatGenerationSettingsResponse(11, canonicalFirst))
+      await waitForPendingChatGenerationSettingsSave('chat-a')
+
+      expect(generationCalls).toHaveLength(3)
+      expect(generationCalls[1]).toMatchObject({
+        mutationId: markedPlaceholder.handle.mutationId,
+        body: { generationSettings: queuedTarget },
+      })
+      expect(generationCalls[2].mutationId).not.toBe(markedPlaceholder.handle.mutationId)
+      expect(generationCalls[2].body).toEqual({
+        baseRevision: 12,
+        generationSettings: correctedTarget,
+      })
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(correctedTarget)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('rolls back a failed generation settings save without touching sibling rows', async () => {

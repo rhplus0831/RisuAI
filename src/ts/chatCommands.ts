@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
 import {
   canUseServerCommands,
+  createChatGenerationSettingsCommandDurableBody,
   appendMessageCommand,
   createChatCommand,
   createChatFolderCommand,
@@ -28,6 +29,7 @@ import {
   type MessageSnapshot,
   type ServerCommandResult,
   type ServerCommandTransportOptions,
+  type SaveChatGenerationSettingsCommandInput,
 } from './server/commands'
 import { withServerResourceApply, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
@@ -62,6 +64,12 @@ import {
   type SparseChatGenerationSettingsUpdate,
 } from './chatGenerationSettings'
 import { v4 } from 'uuid'
+import { executePreparedDurableMutationWithinQueue } from './server/durableMutationDispatch'
+import {
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from './server/pendingMutationOutbox'
 
 export interface ChatStateSnapshot {
   characters: character[]
@@ -327,6 +335,21 @@ interface PendingChatGenerationSettingsJob {
   fallbackRollback: ChatGenerationSettingsSnapshot
   options: ServerCommandTransportOptions
   pendingSave: ReturnType<typeof registerPendingChatGenerationSettingsSave>
+  durableIntent: DurableMutationIntent
+  outbox: PendingMutationHandle
+}
+
+interface PreparedChatGenerationSettingsSave {
+  job: PendingChatGenerationSettingsJob
+  rollback: ChatGenerationSettingsSnapshot
+  characterId: string | undefined
+  destructiveRefreshEpoch: ReturnType<typeof captureDestructiveRefreshEpoch>
+  characterRowProjectionEpoch: number | null
+  appliedRevisionBefore: number | null
+  commandInput: Omit<SaveChatGenerationSettingsCommandInput, 'baseRevision'>
+  fullCommandInput: Omit<SaveChatGenerationSettingsCommandInput, 'baseRevision'>
+  durableIntent: DurableMutationIntent
+  standaloneDurableIntent: DurableMutationIntent
 }
 
 interface PendingChatGenerationSettingsQueue {
@@ -2016,12 +2039,16 @@ export function dispatchSaveChatGenerationSettings(
       }
       pendingChatGenerationSettingsSaves.set(chatId, state)
     }
+    const durableIntent = chatGenerationSettingsFullDurableIntent(chatId, commandSettings)
+    const durableKey = `chat-generation-settings:${chatId}`
     const job: PendingChatGenerationSettingsJob = {
       intent,
       originalTarget: commandSettings,
       fallbackRollback: rollback,
       options,
       pendingSave: registerPendingChatGenerationSettingsSave(chatId, commandSettings),
+      durableIntent,
+      outbox: stagePendingMutation(durableKey, durableIntent),
     }
     state.jobs.push(job)
     enqueueChatGenerationSettingsSave(chatId, state, job)
@@ -2034,8 +2061,9 @@ function enqueueChatGenerationSettingsSave(
   state: PendingChatGenerationSettingsQueue,
   job: PendingChatGenerationSettingsJob,
 ): void {
-  const previous = state.tail
-  const next = previous.catch(() => null).then(() => executeChatGenerationSettingsSave(chatId, state, job))
+  // Reserve the shared server revision queue in the same task as the UI edit.
+  // The execution wrapper services any retained head before this job.
+  const next = executeChatGenerationSettingsQueueSlot(chatId, state, job)
   state.tail = next
   void next.then(
     () => {
@@ -2051,11 +2079,69 @@ function enqueueChatGenerationSettingsSave(
   )
 }
 
-async function executeChatGenerationSettingsSave(
+function executeChatGenerationSettingsQueueSlot(
+  chatId: string,
+  state: PendingChatGenerationSettingsQueue,
+  reservedJob: PendingChatGenerationSettingsJob,
+): Promise<ServerCommandResult> {
+  let activePrepared: PreparedChatGenerationSettingsSave | null = null
+  const completed: Array<{ prepared: PreparedChatGenerationSettingsSave; result: ServerCommandResult }> = []
+
+  const queued = runServerCommand({
+    command: (baseRevision) => {
+      if (!activePrepared) throw new Error('Chat generation settings command ran before preparation')
+      return saveChatGenerationSettingsCommand(
+        { baseRevision, ...activePrepared.commandInput },
+        activePrepared.job.options.signal,
+        activePrepared.job.options.keepalive,
+      )
+    },
+    rollback: () => {
+      if (activePrepared) restoreChatGenerationSettings(activePrepared.rollback)
+    },
+    executionWrapper: async (execute) => {
+      let lastResult: ServerCommandResult = { status: 'unavailable' }
+      while (state.jobs.length > 0) {
+        const head = state.jobs[0]!
+        const prepared = prepareChatGenerationSettingsSave(chatId, state, head)
+        activePrepared = prepared
+        const outcome = await executePreparedDurableMutationWithinQueue(
+          {
+            handle: head.outbox,
+            intent: prepared.durableIntent,
+            standaloneIntent: prepared.standaloneDurableIntent,
+            onStandaloneIntent: () => {
+              prepared.commandInput = prepared.fullCommandInput
+            },
+          },
+          execute,
+        )
+        head.outbox = outcome.handle
+        head.durableIntent = outcome.intent
+        if (outcome.disposition === 'retained-without-send') return { status: 'unavailable' }
+
+        lastResult = outcome.result
+        await finishChatGenerationSettingsSave(chatId, state, head, prepared, outcome.result)
+        completed.push({ prepared, result: outcome.result })
+        if (head === reservedJob) return lastResult
+      }
+      return lastResult
+    },
+  })
+  return queued.then(async (result) => {
+    const latest = completed.at(-1)
+    if (latest && chatGenerationSettingsSaveNeedsReseed(latest.prepared, latest.result)) {
+      await reseedChatGenerationSettingsQueue(chatId, latest.prepared.characterId, state)
+    }
+    return result
+  })
+}
+
+function prepareChatGenerationSettingsSave(
   chatId: string,
   state: PendingChatGenerationSettingsQueue,
   job: PendingChatGenerationSettingsJob,
-): Promise<ServerCommandResult | null> {
+): PreparedChatGenerationSettingsSave {
   const confirmed = state.confirmed ? cloneJsonValue(state.confirmed) : null
   const confirmedSettings = confirmed?.hadGenerationSettings ? confirmed.generationSettings : undefined
   const attemptedSettings = confirmed
@@ -2076,75 +2162,114 @@ async function executeChatGenerationSettingsSave(
   const destructiveRefreshEpoch = captureDestructiveRefreshEpoch()
   const characterRowProjectionEpoch = characterId ? captureCharacterRowProjectionEpoch(characterId) : null
   const appliedRevisionBefore = peekAppliedServerResourceRevision()
-  let result: ServerCommandResult | null = null
+  const fullCommandInput: Omit<SaveChatGenerationSettingsCommandInput, 'baseRevision'> = {
+    chatId,
+    generationSettings: attemptedSettings,
+  }
+  let commandInput = fullCommandInput
   if (sparseUpdate && characterId && characterRowProjectionEpoch !== null) {
-    result = await runServerCommand({
-      command: (baseRevision) =>
-        saveChatGenerationSettingsCommand(
-          {
-            baseRevision,
-            chatId,
-            generationSettings: attemptedSettings,
-            sparseUpdate,
-            sparseBaseGenerationSettings: confirmedSettings ?? null,
-            expectedCharacterId: characterId,
-            optimisticCharacterRowEpoch: characterRowProjectionEpoch,
-          },
-          job.options.signal,
-          job.options.keepalive,
-        ),
-      rollback: () => restoreChatGenerationSettings(rollback),
-      ...job.options,
-    })
-  } else if (!confirmed || sparseUpdate) {
-    result = await runServerCommand({
-      command: (baseRevision) =>
-        saveChatGenerationSettingsCommand(
-          {
-            baseRevision,
-            chatId,
-            generationSettings: attemptedSettings,
-          },
-          job.options.signal,
-          job.options.keepalive,
-        ),
-      rollback: () => restoreChatGenerationSettings(rollback),
-      ...job.options,
-    })
+    commandInput = {
+      chatId,
+      generationSettings: attemptedSettings,
+      sparseUpdate,
+      sparseBaseGenerationSettings: confirmedSettings ?? null,
+      expectedCharacterId: characterId,
+      optimisticCharacterRowEpoch: characterRowProjectionEpoch,
+    }
   }
 
-  const head = state.jobs.shift()
-  if (head) clearPendingChatGenerationSettingsSave(head.pendingSave)
+  return {
+    job,
+    rollback,
+    characterId,
+    destructiveRefreshEpoch,
+    characterRowProjectionEpoch,
+    appliedRevisionBefore,
+    commandInput,
+    fullCommandInput,
+    durableIntent: chatGenerationSettingsCommandDurableIntent(commandInput),
+    standaloneDurableIntent: chatGenerationSettingsCommandDurableIntent(fullCommandInput),
+  }
+}
+
+async function finishChatGenerationSettingsSave(
+  chatId: string,
+  state: PendingChatGenerationSettingsQueue,
+  job: PendingChatGenerationSettingsJob,
+  prepared: PreparedChatGenerationSettingsSave,
+  result: ServerCommandResult,
+): Promise<void> {
+  if (state.jobs[0] !== job) return
+  state.jobs.shift()
+  clearPendingChatGenerationSettingsSave(job.pendingSave)
 
   const resultRecord = result?.status === 'ok' ? (result as unknown as Record<string, unknown>) : null
   const acknowledged = resultRecord?.acknowledgedGenerationSettings
   const acknowledgementValid = isChatGenerationSettingsValue(acknowledged)
-  const projectionChanged =
-    hasDestructiveRefreshEpochChanged(destructiveRefreshEpoch) ||
-    (characterId !== undefined &&
-      characterRowProjectionEpoch !== null &&
-      hasCharacterRowProjectionEpochChanged(characterId, characterRowProjectionEpoch))
-  const appliedRevision = peekAppliedServerResourceRevision()
-  const acknowledgementWasOvertaken =
-    appliedRevision !== null &&
-    (result?.status === 'ok'
-      ? appliedRevision > result.revision
-      : appliedRevisionBefore === null || appliedRevision > appliedRevisionBefore)
-  if ((result?.status === 'ok' && !acknowledgementValid) || acknowledgementWasOvertaken || projectionChanged) {
-    await reseedChatGenerationSettingsQueue(chatId, characterId, state)
-    return result
+  if ((result?.status === 'ok' && !acknowledgementValid) || chatGenerationSettingsSaveNeedsReseed(prepared, result)) {
+    await reseedChatGenerationSettingsQueue(chatId, prepared.characterId, state)
+    return
   }
 
   if (resultRecord && acknowledgementValid) {
     state.confirmed = {
-      characterId: typeof resultRecord.characterId === 'string' ? resultRecord.characterId : rollback.characterId,
+      characterId:
+        typeof resultRecord.characterId === 'string' ? resultRecord.characterId : prepared.rollback.characterId,
       chatId,
       hadGenerationSettings: true,
       generationSettings: cloneJsonValue(acknowledged),
     }
   }
   projectChatGenerationSettingsQueue(chatId, state)
-  return result
+}
+
+function chatGenerationSettingsSaveNeedsReseed(
+  prepared: PreparedChatGenerationSettingsSave,
+  result: ServerCommandResult,
+): boolean {
+  const projectionChanged =
+    hasDestructiveRefreshEpochChanged(prepared.destructiveRefreshEpoch) ||
+    (prepared.characterId !== undefined &&
+      prepared.characterRowProjectionEpoch !== null &&
+      hasCharacterRowProjectionEpochChanged(prepared.characterId, prepared.characterRowProjectionEpoch))
+  const appliedRevision = peekAppliedServerResourceRevision()
+  const acknowledgementWasOvertaken =
+    appliedRevision !== null &&
+    (result.status === 'ok'
+      ? appliedRevision > result.revision
+      : prepared.appliedRevisionBefore === null || appliedRevision > prepared.appliedRevisionBefore)
+  return acknowledgementWasOvertaken || projectionChanged
+}
+
+function chatGenerationSettingsFullDurableIntent(
+  chatId: string,
+  generationSettings: ChatGenerationSettings,
+): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PUT',
+        path: `/chats/${encodeURIComponent(chatId)}/generation-settings`,
+        body: { generationSettings: cloneJsonValue(generationSettings) },
+      },
+    ],
+  }
+}
+
+function chatGenerationSettingsCommandDurableIntent(
+  input: Omit<SaveChatGenerationSettingsCommandInput, 'baseRevision'>,
+): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PUT',
+        path: `/chats/${encodeURIComponent(input.chatId)}/generation-settings`,
+        body: createChatGenerationSettingsCommandDurableBody(input),
+      },
+    ],
+  }
 }
 
 async function reseedChatGenerationSettingsQueue(

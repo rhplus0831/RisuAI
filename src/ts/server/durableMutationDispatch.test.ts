@@ -6,6 +6,7 @@ const commandApi = vi.hoisted(() => ({
   inlineReplay: vi.fn(),
   replay: vi.fn(),
   withoutReceipt: vi.fn(<T>(execute: () => Promise<T>) => execute()),
+  withReceipt: vi.fn(<T>(execute: () => Promise<T>) => execute()),
 }))
 
 vi.mock('./commands', () => ({
@@ -13,10 +14,12 @@ vi.mock('./commands', () => ({
   replayDurableMutationRequestsInline: commandApi.inlineReplay,
   replayDurableMutationRequests: commandApi.replay,
   runServerCommandWithoutMutationReceipt: commandApi.withoutReceipt,
+  runServerCommandWithMutationReceipt: commandApi.withReceipt,
 }))
 
-import { dispatchDurableMutation } from './durableMutationDispatch'
+import { dispatchDurableMutation, executePreparedDurableMutationWithinQueue } from './durableMutationDispatch'
 import {
+  beginPendingMutationDispatch,
   clearPendingMutationOutbox,
   listPendingMutationReceiptAcknowledgements,
   listPendingMutations,
@@ -39,6 +42,7 @@ beforeEach(async () => {
   commandApi.inlineReplay.mockReset()
   commandApi.inlineReplay.mockResolvedValue({ status: 'ok' })
   commandApi.withoutReceipt.mockClear()
+  commandApi.withReceipt.mockClear()
   await preparePendingMutationOutbox({
     writerSessionId: 'writer-a',
     writerEpoch: 1,
@@ -296,6 +300,139 @@ describe('durable mutation dispatch', () => {
       repair.mutationId,
     ])
     expect(rowRequest).toHaveBeenCalledOnce()
+    expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('replaces a prepared placeholder before sending under its preserved receipt id', async () => {
+    const fallbackIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 4_000 } } }],
+    }
+    const handle = stagePendingMutation('settings:runtime', fallbackIntent)
+    const request = vi.fn(async () => acceptedResult())
+
+    const outcome = await executePreparedDurableMutationWithinQueue({ handle, intent }, request)
+
+    expect(outcome).toMatchObject({ disposition: 'sent', handle: { mutationId: handle.mutationId }, intent })
+    expect(commandApi.withReceipt).toHaveBeenCalledWith(request, handle.mutationId, 'database-a')
+    expect(request).toHaveBeenCalledOnce()
+    expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('uses a full successor and distinct receipt id when a remote dispatch marker wins', async () => {
+    const fallbackIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 4_000 } } }],
+    }
+    const fullIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        { method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 8_000, maxResponse: 1_000 } } },
+      ],
+    }
+    const placeholder = stagePendingMutation('settings:runtime', fallbackIntent)
+    await placeholder.ready
+    const remote = (await listPendingMutations())[0]!.handle
+    await expect(beginPendingMutationDispatch(remote)).resolves.toBe('persisted')
+    const selectFull = vi.fn()
+    const request = vi.fn(async () => acceptedResult())
+
+    const outcome = await executePreparedDurableMutationWithinQueue(
+      { handle: placeholder, intent, standaloneIntent: fullIntent, onStandaloneIntent: selectFull },
+      request,
+    )
+
+    expect(outcome.disposition).toBe('sent')
+    expect(outcome.handle.mutationId).not.toBe(placeholder.mutationId)
+    expect(outcome.intent).toEqual(fullIntent)
+    expect(selectFull).toHaveBeenCalledOnce()
+    expect(commandApi.inlineReplay).toHaveBeenCalledWith(fallbackIntent.requests, placeholder.mutationId, 'database-a')
+    expect(commandApi.withReceipt).toHaveBeenCalledWith(request, outcome.handle.mutationId, 'database-a')
+    expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('does not switch the live body when exact replacement must be retained without sending', async () => {
+    const placeholder = stagePendingMutation('settings:runtime', intent)
+    await placeholder.ready
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 1,
+      databaseLineage: 'database-b',
+      requestedWriterWasActive: true,
+    })
+    const fullIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        { method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 8_000, maxResponse: 1_000 } } },
+      ],
+    }
+    const selectFull = vi.fn()
+    const request = vi.fn(async () => acceptedResult())
+
+    const outcome = await executePreparedDurableMutationWithinQueue(
+      {
+        handle: placeholder,
+        intent,
+        standaloneIntent: fullIntent,
+        onStandaloneIntent: selectFull,
+      },
+      request,
+    )
+
+    expect(outcome).toMatchObject({ disposition: 'retained-without-send', intent })
+    expect(selectFull).not.toHaveBeenCalled()
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('retains an unstarted prepared successor until its transient predecessor can replay', async () => {
+    const predecessor = stagePendingMutation('settings:runtime', intent)
+    await dispatchDurableMutation(
+      predecessor,
+      intent,
+      wrappedDispatch(async () => ({ status: 'error', error: 'offline' })),
+    )
+    const successorIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxResponse: 1_000 } } }],
+    }
+    const fullIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        { method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 8_000, maxResponse: 1_000 } } },
+      ],
+    }
+    const successor = stagePendingMutation('settings:runtime', successorIntent)
+    const request = vi.fn(async () => acceptedResult())
+    const selectFull = vi.fn()
+    commandApi.inlineReplay.mockResolvedValueOnce({ status: 'error', error: 'still offline' })
+
+    const retained = await executePreparedDurableMutationWithinQueue(
+      {
+        handle: successor,
+        intent: successorIntent,
+        standaloneIntent: fullIntent,
+        onStandaloneIntent: selectFull,
+      },
+      request,
+    )
+
+    expect(retained).toMatchObject({ disposition: 'retained-without-send', intent: fullIntent })
+    expect(selectFull).toHaveBeenCalledOnce()
+    expect(request).not.toHaveBeenCalled()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([
+      predecessor.mutationId,
+      retained.handle.mutationId,
+    ])
+
+    commandApi.inlineReplay.mockResolvedValueOnce({ status: 'ok' })
+    const retried = await executePreparedDurableMutationWithinQueue(
+      { handle: retained.handle, intent: successorIntent, standaloneIntent: fullIntent },
+      request,
+    )
+
+    expect(retried).toMatchObject({ disposition: 'sent', intent: fullIntent })
+    expect(request).toHaveBeenCalledOnce()
     expect(await listPendingMutations()).toEqual([])
   })
 })

@@ -1,4 +1,5 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import { Sha256 } from '@aws-crypto/sha256-js'
 import {
   CHAT_GENERATION_SETTINGS_KEYS,
   serializeChatGenerationSettingsDigestInput,
@@ -1662,6 +1663,25 @@ function nextQueuedCommandMutationRequest(): { mutationId: string; databaseLinea
 export async function runServerCommandWithoutMutationReceipt<T>(execute: () => Promise<T>): Promise<T> {
   const previousMutation = activeQueuedCommandMutation
   activeQueuedCommandMutation = null
+  try {
+    return await execute()
+  } finally {
+    activeQueuedCommandMutation = previousMutation
+  }
+}
+
+/** Execute an already-reserved queue task under the exact prepared receipt id. */
+export async function runServerCommandWithMutationReceipt<T>(
+  execute: () => Promise<T>,
+  mutationId: string,
+  databaseLineage: string,
+): Promise<T> {
+  const previousMutation = activeQueuedCommandMutation
+  activeQueuedCommandMutation = {
+    id: normalizeMutationId(mutationId),
+    databaseLineage: normalizeDatabaseLineage(databaseLineage),
+    requestIndex: 0,
+  }
   try {
     return await execute()
   } finally {
@@ -3375,22 +3395,10 @@ export async function saveChatGenerationSettingsCommand(
     acknowledgedGenerationSettings?: ChatGenerationSettings
   }>
 > {
-  const body = input.sparseUpdate
-    ? {
-        baseRevision: input.baseRevision,
-        baseGenerationSettingsDigest: await sha256HexUtf8(
-          serializeChatGenerationSettingsDigestInput(input.sparseBaseGenerationSettings),
-        ),
-        patch: input.sparseUpdate.patch,
-        ...(input.sparseUpdate.deleteKeys?.length ? { deleteKeys: input.sparseUpdate.deleteKeys } : {}),
-        ...(input.sparseUpdate.sidebarToggleDeleteKeys?.length
-          ? { sidebarToggleDeleteKeys: input.sparseUpdate.sidebarToggleDeleteKeys }
-          : {}),
-      }
-    : {
-        baseRevision: input.baseRevision,
-        generationSettings: input.generationSettings,
-      }
+  const body = {
+    baseRevision: input.baseRevision,
+    ...createChatGenerationSettingsCommandDurableBody(input),
+  }
   const result = await requestCommandJson<{
     chatId: string
     characterId: string
@@ -3413,6 +3421,25 @@ export async function saveChatGenerationSettingsCommand(
   return {
     ...result,
     acknowledgedGenerationSettings: localEffect ? cloneJsonValue(localEffect.generationSettings) : undefined,
+  }
+}
+
+/** Exact replay-safe request body, excluding only the live base revision. */
+export function createChatGenerationSettingsCommandDurableBody(
+  input: Omit<SaveChatGenerationSettingsCommandInput, 'baseRevision'>,
+): Record<string, unknown> {
+  if (!input.sparseUpdate) {
+    return { generationSettings: cloneJsonValue(input.generationSettings) }
+  }
+  return {
+    baseGenerationSettingsDigest: sha256HexUtf8Sync(
+      serializeChatGenerationSettingsDigestInput(input.sparseBaseGenerationSettings),
+    ),
+    patch: cloneJsonValue(input.sparseUpdate.patch),
+    ...(input.sparseUpdate.deleteKeys?.length ? { deleteKeys: cloneJsonValue(input.sparseUpdate.deleteKeys) } : {}),
+    ...(input.sparseUpdate.sidebarToggleDeleteKeys?.length
+      ? { sidebarToggleDeleteKeys: cloneJsonValue(input.sparseUpdate.sidebarToggleDeleteKeys) }
+      : {}),
   }
 }
 
@@ -5388,7 +5415,17 @@ function readChatGenerationSettingsLocalEffect(
 
 async function sha256HexUtf8(value: string): Promise<string> {
   const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return bytesToHex(new Uint8Array(digest))
+}
+
+export function sha256HexUtf8Sync(value: string): string {
+  const hash = new Sha256()
+  hash.update(new TextEncoder().encode(value))
+  return bytesToHex(hash.digestSync())
+}
+
+function bytesToHex(value: Uint8Array): string {
+  return Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 const CHAT_GENERATION_SETTINGS_KEY_SET = new Set<string>(CHAT_GENERATION_SETTINGS_KEYS)
