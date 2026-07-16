@@ -4076,7 +4076,7 @@ describe('API-backed client bootstrap', () => {
     expect(runtimeApi.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
   })
 
-  it('does not advance the applied cursor when full-refresh prompt-template hydration fails', async () => {
+  it('invalidates body hydration without advancing the cursor when full-refresh prompt hydration fails', async () => {
     await loadWebInitialDatabase()
     promptTemplateApi.ensure.mockResolvedValueOnce(false)
     resourceApi.refreshInvalidated.mockResolvedValueOnce({ status: 'ok', revision: 12, scope: 'full' })
@@ -4085,7 +4085,10 @@ describe('API-backed client bootstrap', () => {
     await vi.waitFor(() => expect(promptTemplateApi.ensure).toHaveBeenCalledTimes(2))
     expect(promptTemplateApi.ensure).toHaveBeenLastCalledWith({ force: true, minimumRevision: 12 })
     expect(peekAppliedServerResourceRevision()).toBe(5)
-    expect(hydrationApi.hydrateActiveChat).not.toHaveBeenCalledWith({ force: true })
+    expect(hydrationApi.resetChatHydration).toHaveBeenCalledTimes(2)
+    expect(lorebookApi.resetLorebookHydration).toHaveBeenCalledTimes(2)
+    expect(hydrationApi.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(runtimeApi.triggerOpenChatGenerationReattach).not.toHaveBeenCalled()
   })
 
   it('does not advance the applied cursor when an invalidation read fails', async () => {

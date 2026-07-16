@@ -148,19 +148,21 @@ async function completeFullServerResourceRefresh(
   selection: SelectedCharacterRefreshSnapshot,
 ): Promise<ServerResourceRefreshResult> {
   syncSelectedCharacterAfterRefresh(selection)
+
+  // Full character reads intentionally carry message-free chat rows. Reset
+  // hydration identities before any later hydration can fail so every chat is
+  // fetched again from its REST body endpoint, including same-id transcripts
+  // replaced by a backup restore.
+  resetChatHydration()
+  resetLorebookHydration()
+  recordHydratedCharacterLorebooks(getDatabase().characters)
+  void hydrateActiveChat({ force: true })
+
   if (!(await ensurePromptTemplateHydrated({ force: true, minimumRevision: revision }))) {
     return { status: 'error', error: 'Selected prompt-template owner hydration failed' }
   }
   setCachedServerCommandRevision(revision)
   setAppliedServerResourceRevision(revision)
-
-  // Full character reads intentionally carry message-free chat rows. Reset
-  // hydration identities so every chat is fetched again from its REST body
-  // endpoint, including same-id transcripts replaced by a backup restore.
-  resetChatHydration()
-  resetLorebookHydration()
-  recordHydratedCharacterLorebooks(getDatabase().characters)
-  void hydrateActiveChat({ force: true })
   triggerOpenChatGenerationReattach()
   await refreshRuntimeJobs()
   return { status: 'ok', revision }

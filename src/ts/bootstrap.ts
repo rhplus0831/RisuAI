@@ -1492,6 +1492,20 @@ async function processAuthoritativeServerCommandEvents(events: readonly CommandE
     }
     if (result.scope === 'none') return true
 
+    reconcileSelectedCharacterAfterResourceRefresh(events, selectionTracker.snapshot())
+
+    if (result.scope === 'full') {
+      // Full character projections omit chat bodies. Clear their hydration
+      // identities before prompt-template hydration can fail so the active
+      // transcript is still fetched from its body endpoint.
+      resetChatHydration()
+      resetLorebookHydration()
+      recordHydratedCharacterLorebooks(getDatabase().characters)
+      void hydrateActiveChat({ force: true })
+    } else {
+      recordHydratedCharacterLorebooks(getDatabase().characters)
+    }
+
     if (
       result.scope === 'full' &&
       !(await ensurePromptTemplateHydrated({ force: true, minimumRevision: result.revision }))
@@ -1501,14 +1515,7 @@ async function processAuthoritativeServerCommandEvents(events: readonly CommandE
       return false
     }
 
-    reconcileSelectedCharacterAfterResourceRefresh(events, selectionTracker.snapshot())
-    recordHydratedCharacterLorebooks(getDatabase().characters)
-
     if (result.scope === 'full') {
-      resetChatHydration()
-      resetLorebookHydration()
-      recordHydratedCharacterLorebooks(getDatabase().characters)
-      void hydrateActiveChat({ force: true })
       triggerOpenChatGenerationReattach()
     }
 

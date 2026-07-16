@@ -265,7 +265,7 @@ describe('complete server resource refresh', () => {
     expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
   })
 
-  it('does not complete a full refresh when the selected prompt-template owner cannot be hydrated', async () => {
+  it('invalidates body hydration before a selected prompt-template owner hydration failure', async () => {
     sideEffects.hydratePromptTemplate.mockResolvedValueOnce(false)
 
     await expect(forceServerResourceRefresh('backup-restore')).resolves.toEqual({
@@ -275,7 +275,14 @@ describe('complete server resource refresh', () => {
 
     expect(peekCachedServerCommandRevision()).toBeNull()
     expect(peekAppliedServerResourceRevision()).toBeNull()
-    expect(sideEffects.resetChatHydration).not.toHaveBeenCalled()
+    expect(sideEffects.resetChatHydration).toHaveBeenCalledTimes(1)
+    expect(sideEffects.resetLorebooks).toHaveBeenCalledTimes(1)
+    expect(sideEffects.recordLorebooks).toHaveBeenCalledTimes(1)
+    expect(sideEffects.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(sideEffects.resetChatHydration.mock.invocationCallOrder[0]).toBeLessThan(
+      sideEffects.hydratePromptTemplate.mock.invocationCallOrder[0],
+    )
+    expect(sideEffects.triggerReattach).not.toHaveBeenCalled()
     expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
   })
 
