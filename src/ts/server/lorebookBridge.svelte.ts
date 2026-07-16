@@ -56,11 +56,12 @@ import {
   applyAttemptedKeyedListRollback,
   mergeProjectionIntoDirtyDraft,
 } from './staleStateGuards'
-import { dispatchDurableMutation } from './durableMutationDispatch'
+import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './durableMutationDispatch'
 import { GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY, globalLorebookOwnerMutationKey } from './lorebookMutationKeys'
 import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import {
   acknowledgePendingMutation,
+  isPendingMutationCurrent,
   stagePendingMutation,
   type DurableMutationIntent,
   type PendingMutationHandle,
@@ -123,6 +124,7 @@ interface PendingLorebookEntryAttempt {
 
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
 const pendingLorebookEntryAttempts: PendingLorebookEntryAttempt[] = []
+const pendingGlobalLorebookDeleteProjections = new Map<string, PendingGlobalLorebookDeleteProjection>()
 let nextLorebookEntryAttemptSequence = 0
 const pendingEntryEditKeys = new Set<string>()
 const flushedEntryEditSnapshots = new Map<string, string>()
@@ -135,6 +137,13 @@ interface LocalLoreSnapshotCacheEntry {
 }
 
 const characterScopeLocalLoreSnapshots = new Map<string, LocalLoreSnapshotCacheEntry>()
+
+interface PendingGlobalLorebookDeleteProjection {
+  lorebookId: string
+  outbox: PendingMutationHandle
+  settled: boolean
+  settlementCleanup?: () => void
+}
 
 // Mirror of the selected character id as $state so a `character`-scoped watcher
 // re-runs (and re-subscribes to the newly selected character's lore) when the
@@ -162,6 +171,11 @@ export function resetServerBackedLorebookBridgeForTests(): void {
   }
   pendingReplacements.clear()
   pendingLorebookEntryAttempts.length = 0
+  for (const pending of pendingGlobalLorebookDeleteProjections.values()) {
+    pending.settled = true
+    pending.settlementCleanup?.()
+  }
+  pendingGlobalLorebookDeleteProjections.clear()
   nextLorebookEntryAttemptSequence = 0
   pendingEntryEditKeys.clear()
   flushedEntryEditSnapshots.clear()
@@ -1121,7 +1135,8 @@ function dispatchStagedGlobalLorebookDelete(
       }
     : null
   const selectionRollback = globalLorebookSelectionRollbackFromSnapshot(previous)
-  void dispatchDurableMutation(staged.outbox, staged.intent, (transport) =>
+  const pendingProjection = trackPendingGlobalLorebookDeleteProjection(lorebookId, staged.outbox)
+  const dispatch = dispatchDurableMutation(staged.outbox, staged.intent, (transport) =>
     runServerCommand({
       command: (baseRevision) =>
         deleteGlobalLorebookCommand(
@@ -1140,8 +1155,83 @@ function dispatchStagedGlobalLorebookDelete(
           restoreSelection: !hasLorebookPageProjectionEpochChanged(pageProjectionEpoch),
         }),
       ...transport,
+      // A retained delete remains crash-safe in the outbox, but keeping its
+      // optimistic projection would strand the entire lorebook out of the UI
+      // while the server still has it. Restore now and reapply the deletion if
+      // replay is later accepted.
+      failureRollbackDisposition: () => 'rollback',
     }),
   )
+  void settleDispatchedGlobalLorebookDeleteProjection(pendingProjection, dispatch)
+}
+
+function trackPendingGlobalLorebookDeleteProjection(
+  lorebookId: string,
+  outbox: PendingMutationHandle,
+): PendingGlobalLorebookDeleteProjection {
+  const pending: PendingGlobalLorebookDeleteProjection = {
+    lorebookId,
+    outbox,
+    settled: false,
+  }
+  pending.settlementCleanup = registerDurableMutationSettlementListener(outbox.mutationId, (settlement) => {
+    settlePendingGlobalLorebookDeleteProjection(pending, settlement)
+  })
+  pendingGlobalLorebookDeleteProjections.set(outbox.mutationId, pending)
+  return pending
+}
+
+async function settleDispatchedGlobalLorebookDeleteProjection(
+  pending: PendingGlobalLorebookDeleteProjection,
+  dispatch: Promise<ServerCommandResult>,
+): Promise<void> {
+  try {
+    const result = await dispatch
+    if (result.status === 'ok') {
+      settlePendingGlobalLorebookDeleteProjection(pending, 'accepted')
+      return
+    }
+    if (!(await isPendingMutationCurrent(pending.outbox))) {
+      settlePendingGlobalLorebookDeleteProjection(pending, 'discarded')
+    }
+  } catch (error) {
+    if (!(await isPendingMutationCurrent(pending.outbox))) {
+      settlePendingGlobalLorebookDeleteProjection(pending, 'discarded')
+    }
+    console.error('Global lorebook delete command rejected:', error)
+  }
+}
+
+function settlePendingGlobalLorebookDeleteProjection(
+  pending: PendingGlobalLorebookDeleteProjection,
+  settlement: 'accepted' | 'discarded',
+): void {
+  if (pending.settled) return
+  pending.settled = true
+  pending.settlementCleanup?.()
+  pending.settlementCleanup = undefined
+  if (pendingGlobalLorebookDeleteProjections.get(pending.outbox.mutationId) === pending) {
+    pendingGlobalLorebookDeleteProjections.delete(pending.outbox.mutationId)
+  }
+  if (settlement === 'accepted') applyAcceptedGlobalLorebookDeleteProjection(pending.lorebookId)
+}
+
+function applyAcceptedGlobalLorebookDeleteProjection(lorebookId: string): void {
+  const selectedLorebookId = currentSelectedGlobalLorebookId()
+  withSuppressedLorebookWatcher(() => {
+    withTrustedResourceWrite(() => {
+      const lorebooks = mutableGlobalLorebookList()
+      const index = lorebooks.findIndex((lorebook) => lorebook.id === lorebookId)
+      if (index === -1) return
+      lorebooks.splice(index, 1)
+      getDatabase().loreBook = lorebooks as Database['loreBook']
+      if (selectedLorebookId && selectedLorebookId !== lorebookId) {
+        restoreGlobalLorebookSelectionById(selectedLorebookId)
+      } else {
+        getDatabase().loreBookPage = 0
+      }
+    })
+  })
 }
 
 export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot): void {

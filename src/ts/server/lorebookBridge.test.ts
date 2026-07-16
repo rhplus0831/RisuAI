@@ -1201,6 +1201,7 @@ describe('lorebook durable generation ordering', () => {
         'DELETE /api/v1/commands/lorebooks/book-delete-rename',
         'PATCH /api/v1/commands/lorebooks/book-delete-rename',
       ])
+      expect((getDatabase().loreBook as any[]).map((book) => book.id)).not.toContain('book-delete-rename')
       expect(await listPendingMutations()).toEqual([])
     } finally {
       resetServerBackedLorebookBridgeForTests()
@@ -1347,6 +1348,8 @@ describe('lorebook durable generation ordering', () => {
         'POST /api/v1/commands/lorebooks/book-select-c/select',
       ])
       expect(serverSelectedLorebookId).toBe('book-select-c')
+      expect((getDatabase().loreBook as any[]).map((book) => book.id)).not.toContain('book-delete-a')
+      expect((getDatabase().loreBook as any[])[getDatabase().loreBookPage]?.id).toBe('book-select-c')
       expect(await listPendingMutations()).toEqual([])
     } finally {
       resetServerBackedLorebookBridgeForTests()

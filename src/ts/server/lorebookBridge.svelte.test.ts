@@ -39,9 +39,11 @@ vi.mock('./pendingMutationOutbox', () => ({
     durableRecorded.acknowledged.push(handle.mutationId)
     return 'deleted'
   },
+  isPendingMutationCurrent: async (handle: { phase: string }) => handle.phase !== 'superseded',
 }))
 
 vi.mock('./durableMutationDispatch', () => ({
+  registerDurableMutationSettlementListener: () => () => {},
   dispatchDurableMutation: async (
     handle: { mutationId: string; phase: string },
     intent: Record<string, unknown>,
