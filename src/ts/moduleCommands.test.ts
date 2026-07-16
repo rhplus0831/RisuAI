@@ -36,6 +36,7 @@ import {
   createGlobalModule,
   deleteGlobalModule,
   dispatchModuleInfoPatch,
+  dispatchReorderModules,
   rebaseModuleDraftOntoLatest,
   restoreCharacterModuleState,
   setGlobalModuleEnabled,
@@ -424,6 +425,284 @@ describe('module command projection helpers', () => {
         },
       },
     ])
+  })
+
+  it('retains both chat-module defaults as one replayable batch after a transient first-step failure', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-module-defaults',
+      writerEpoch: 12,
+      databaseLineage: 'lineage-chat-module-defaults',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(20)
+
+    getDatabase().personas = [{ id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' }] as any
+    getDatabase().modelPresets = [{ id: 'model-a', name: 'Model A' }] as any
+    getDatabase().promptPresets = [{ id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: '' }] as any
+    getDatabase().modules = [
+      { id: 'mod-a', name: 'Module A' },
+      { id: 'mod-b', name: 'Module B', customModuleToggle: 'flag=Flag' },
+    ] as any
+    getDatabase().characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    setResourceWriteGuardEnabled(true)
+
+    let recover = false
+    let revision = 20
+    const commands: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/chats/chat-a') {
+          commands.push(url)
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: { type: 'chat.updated', revision, resource: 'chat', id: 'chat-a' },
+            chatId: 'chat-a',
+          })
+        }
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+          commands.push(url)
+          if (!recover) throw new Error('generation defaults overtook the retained module link')
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: { type: 'chat.generationSettings.updated', revision, resource: 'chat', id: 'chat-a' },
+            chatId: 'chat-a',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${init.method ?? 'GET'} ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      toggleSelectedChatModule('mod-b')
+
+      await vi.waitFor(() => expect(commands).toEqual(['/api/v1/commands/chats/chat-a']))
+      await vi.waitFor(async () => {
+        expect(
+          (await listPendingMutations()).map((entry) => ({
+            key: entry.handle.key,
+            path: entry.intent.requests[0]?.path,
+          })),
+        ).toEqual([
+          { key: 'character-owner:char-a', path: '/chats/chat-a' },
+          { key: 'character-owner:char-a', path: '/chats/chat-a/generation-settings' },
+        ])
+      })
+      expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'mod-b'])
+      expect(getDatabase().characters[0].chats[0].generationSettings?.sidebarToggles).toEqual({ flag: '0' })
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(commands).toEqual([
+        '/api/v1/commands/chats/chat-a',
+        '/api/v1/commands/chats/chat-a',
+        '/api/v1/commands/chats/chat-a/generation-settings',
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('rolls back both compound defaults when the module-link request is terminally rejected', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-module-terminal',
+      writerEpoch: 13,
+      databaseLineage: 'lineage-chat-module-terminal',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(30)
+
+    getDatabase().personas = [{ id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' }] as any
+    getDatabase().modelPresets = [{ id: 'model-a', name: 'Model A' }] as any
+    getDatabase().promptPresets = [{ id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: '' }] as any
+    getDatabase().modules[1] = { id: 'mod-b', name: 'Module B', customModuleToggle: 'flag=Flag' } as any
+    const initialSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    getDatabase().characters[0].chats[0].generationSettings = initialSettings
+    setResourceWriteGuardEnabled(true)
+
+    const commands: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        commands.push(url)
+        if (url === '/api/v1/commands/chats/chat-a') {
+          return jsonResponse({ error: 'chat no longer exists', reason: 'not-found' }, 404)
+        }
+        throw new Error('terminally rejected batch sent a later request')
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      toggleSelectedChatModule('mod-b')
+      await vi.waitFor(() => expect(commands).toEqual(['/api/v1/commands/chats/chat-a']))
+      await vi.waitFor(() => expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a']))
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initialSettings)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('preserves an accepted module link while rolling back only rejected generation defaults', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-module-prefix',
+      writerEpoch: 15,
+      databaseLineage: 'lineage-chat-module-prefix',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(50)
+
+    getDatabase().personas = [{ id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' }] as any
+    getDatabase().modelPresets = [{ id: 'model-a', name: 'Model A' }] as any
+    getDatabase().promptPresets = [{ id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: '' }] as any
+    getDatabase().modules[1] = { id: 'mod-b', name: 'Module B', customModuleToggle: 'flag=Flag' } as any
+    const initialSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    getDatabase().characters[0].chats[0].generationSettings = initialSettings
+    setResourceWriteGuardEnabled(true)
+
+    let revision = 50
+    const commands: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        commands.push(url)
+        if (url === '/api/v1/commands/chats/chat-a') {
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: { type: 'chat.updated', revision, resource: 'chat', id: 'chat-a' },
+            chatId: 'chat-a',
+          })
+        }
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+          return jsonResponse({ error: 'preset no longer exists' }, 404)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      toggleSelectedChatModule('mod-b')
+      await vi.waitFor(() =>
+        expect(commands).toEqual([
+          '/api/v1/commands/chats/chat-a',
+          '/api/v1/commands/chats/chat-a/generation-settings',
+        ]),
+      )
+      await vi.waitFor(() => expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initialSettings))
+      expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'mod-b'])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps a reordered global module list durable across a transient request failure', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-module-order',
+      writerEpoch: 14,
+      databaseLineage: 'lineage-module-order',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(40)
+    setResourceWriteGuardEnabled(true)
+
+    const previous = currentGlobalModuleStateSnapshot()
+    withTrustedResourceWrite(() => {
+      getDatabase().modules = [...getDatabase().modules].reverse()
+    })
+
+    let recover = false
+    let revision = 40
+    const commands: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url !== '/api/v1/commands/modules/reorder') {
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }
+        commands.push(url)
+        if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: { type: 'module.reordered', revision, resource: 'moduleReordered' },
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      dispatchReorderModules(previous)
+      await vi.waitFor(() => expect(commands).toHaveLength(1))
+      await vi.waitFor(async () => {
+        expect(
+          (await listPendingMutations()).map((entry) => ({
+            key: entry.handle.key,
+            path: entry.intent.requests[0]?.path,
+            body: entry.intent.requests[0]?.body,
+          })),
+        ).toEqual([
+          {
+            key: 'module-collection',
+            path: '/modules/reorder',
+            body: { moduleIds: ['mod-b', 'mod-a'] },
+          },
+        ])
+      })
+      expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-b', 'mod-a'])
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      expect(commands).toHaveLength(2)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('routes global module edits through commands under the resource guard', async () => {

@@ -26,6 +26,7 @@ import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRe
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
 import {
   acknowledgePendingMutation,
+  isPendingMutationCurrent,
   pendingMutationSettingsFieldProjectionTarget,
   recordPendingMutationProjectionTargets,
   stagePendingMutation,
@@ -46,6 +47,7 @@ import { PERSONA_SELECTION_MUTATION_KEY, personaOwnerMutationKey } from './serve
 import {
   captureCollectionProjectionEpoch,
   captureSettingsProjectionEpoch,
+  hasCollectionProjectionEpochChanged,
   markCollectionAcknowledgementTainted,
   markSettingsAcknowledgementTainted,
 } from './server/resourceState.svelte'
@@ -73,7 +75,8 @@ export interface SelectedPersonaProjectionSnapshot {
 }
 
 export type SelectedPersonaProfileField = 'username' | 'userNote' | 'personaPrompt'
-export type SelectedPersonaDirtyField = SelectedPersonaProfileField | 'displayName' | 'largePortrait'
+export type SelectedPersonaDirtyField = SelectedPersonaProfileField | 'userIcon' | 'displayName' | 'largePortrait'
+export type PersonaPersistenceStatus = 'accepted' | 'queued' | 'failed'
 type PersonaProfileMirrorField = 'username' | 'userIcon' | 'personaPrompt' | 'userNote'
 type PersonaRowProfileField = 'name' | 'icon' | 'personaPrompt' | 'note'
 type PersonaRowRollbackField = PersonaRowProfileField | 'displayName' | 'largePortrait'
@@ -107,8 +110,17 @@ const pendingPersonaUpdate = {
   promise: null as Promise<ServerCommandResult<{ personaId: string }> | null> | null,
 }
 
+interface PendingImportedPersonaCreate {
+  operationId: number
+  personaId: string
+  draftPersona: Persona
+  collectionProjectionEpoch: number
+}
+
 let personaSettingsWatcherSuppressed = false
 let personaSettingsWatcherSuppressionToken = 0
+let nextImportedPersonaCreateOperationId = 1
+const pendingImportedPersonaCreates: PendingImportedPersonaCreate[] = []
 const dirtySelectedPersonaFieldsById = new Map<string, Map<SelectedPersonaDirtyField, string | boolean>>()
 const personaProfileMirrorFields: readonly PersonaProfileMirrorField[] = [
   'username',
@@ -777,6 +789,58 @@ function applyImportPersonaRollback(input: { createdPersonaId: string; attempted
   })
 }
 
+function registerPendingImportedPersonaCreate(persona: Persona): PendingImportedPersonaCreate {
+  const attempt: PendingImportedPersonaCreate = {
+    operationId: nextImportedPersonaCreateOperationId++,
+    personaId: persona.id,
+    draftPersona: cloneJsonValue(persona),
+    collectionProjectionEpoch: captureCollectionProjectionEpoch('personas'),
+  }
+  pendingImportedPersonaCreates.push(attempt)
+  return attempt
+}
+
+function removePendingImportedPersonaCreate(operationId: number): void {
+  const index = pendingImportedPersonaCreates.findIndex((attempt) => attempt.operationId === operationId)
+  if (index !== -1) pendingImportedPersonaCreates.splice(index, 1)
+}
+
+function updatePendingImportedPersonaDraft(personaId: string, attempted: PersonaStateSnapshot): void {
+  const persona = personaRowFromSnapshot(attempted, personaId)
+  if (!persona) return
+  for (const attempt of pendingImportedPersonaCreates) {
+    if (attempt.personaId === personaId) attempt.draftPersona = cloneJsonValue(persona)
+  }
+}
+
+function reassertPendingImportedPersonaCreates(): void {
+  if (pendingImportedPersonaCreates.length === 0) return
+  const selectedId = selectedPersonaId()
+
+  withSuppressedPersonaSettingsWatcher(() => {
+    withTrustedResourceWrite(() => {
+      for (const attempt of [...pendingImportedPersonaCreates].sort(
+        (left, right) => left.operationId - right.operationId,
+      )) {
+        const existingIndex = findPersonaIndexById(getDatabase().personas, attempt.personaId)
+        if (existingIndex !== -1) {
+          if (hasCollectionProjectionEpochChanged('personas', attempt.collectionProjectionEpoch)) {
+            removePendingImportedPersonaCreate(attempt.operationId)
+            continue
+          }
+          attempt.draftPersona = cloneJsonValue(getDatabase().personas[existingIndex])
+          continue
+        }
+        getDatabase().personas.push(cloneJsonValue(attempt.draftPersona))
+        attempt.collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
+      }
+
+      const selectedIndex = findPersonaIndexById(getDatabase().personas, selectedId)
+      if (selectedIndex !== -1) getDatabase().selectedPersona = selectedIndex
+    })
+  })
+}
+
 function personaPatchFromLegacyProfile(): PersonaSnapshot {
   const selectedPersona = getDatabase().personas[getDatabase().selectedPersona]
   return {
@@ -866,14 +930,19 @@ function changedPersonaProfilePatch(
   return changed
 }
 
-function selectedPersonaProfileRowField(field: SelectedPersonaProfileField): 'name' | 'note' | 'personaPrompt' {
+function selectedPersonaProfileRowField(
+  field: SelectedPersonaProfileField | 'userIcon',
+): 'name' | 'icon' | 'note' | 'personaPrompt' {
   if (field === 'username') return 'name'
+  if (field === 'userIcon') return 'icon'
   if (field === 'userNote') return 'note'
   return 'personaPrompt'
 }
 
-function isSelectedPersonaProfileField(field: SelectedPersonaDirtyField): field is SelectedPersonaProfileField {
-  return field === 'username' || field === 'userNote' || field === 'personaPrompt'
+function isSelectedPersonaProfileField(
+  field: SelectedPersonaDirtyField,
+): field is SelectedPersonaProfileField | 'userIcon' {
+  return field === 'username' || field === 'userIcon' || field === 'userNote' || field === 'personaPrompt'
 }
 
 function selectedPersonaFieldProjectionValue(
@@ -890,7 +959,7 @@ function selectedPersonaFieldProjectionValue(
   return persona?.[rowField] ?? ''
 }
 
-function selectedPersonaLegacyProjectionValue(field: SelectedPersonaProfileField): string {
+function selectedPersonaLegacyProjectionValue(field: SelectedPersonaProfileField | 'userIcon'): string {
   return getDatabase()[field] ?? ''
 }
 
@@ -903,6 +972,44 @@ function markSelectedPersonaFieldDirty(field: SelectedPersonaDirtyField, value: 
     dirtySelectedPersonaFieldsById.set(personaId, dirtyFields)
   }
   dirtyFields.set(field, value)
+}
+
+function selectedPersonaDirtyFieldForRowField(field: PersonaRowRollbackField): SelectedPersonaDirtyField {
+  if (field === 'name') return 'username'
+  if (field === 'icon') return 'userIcon'
+  if (field === 'note') return 'userNote'
+  return field
+}
+
+function markPersonaPatchDirtyFields(personaId: string, attempted: PersonaStateSnapshot, patch: PersonaSnapshot): void {
+  if (uniquePersonaIdAt(attempted.personas, attempted.selectedPersona) !== personaId) return
+  const attemptedPersona = personaRowFromSnapshot(attempted, personaId)
+  if (!attemptedPersona) return
+
+  for (const rowField of personaRowRollbackKeysForPatch(patch)) {
+    const field = selectedPersonaDirtyFieldForRowField(rowField)
+    const value = selectedPersonaFieldProjectionValue(attemptedPersona, field)
+    if (value !== undefined) markSelectedPersonaFieldDirty(field, value)
+  }
+}
+
+function clearPersonaPatchDirtyFields(
+  personaId: string,
+  attempted: PersonaStateSnapshot,
+  rowFields: readonly PersonaRowRollbackField[],
+): void {
+  const dirtyFields = dirtySelectedPersonaFieldsById.get(personaId)
+  const attemptedPersona = personaRowFromSnapshot(attempted, personaId)
+  if (!dirtyFields || !attemptedPersona) return
+
+  for (const rowField of rowFields) {
+    const field = selectedPersonaDirtyFieldForRowField(rowField)
+    const attemptedValue = selectedPersonaFieldProjectionValue(attemptedPersona, field)
+    if (attemptedValue !== undefined && dirtyFields.get(field) === attemptedValue) {
+      dirtyFields.delete(field)
+    }
+  }
+  if (dirtyFields.size === 0) dirtySelectedPersonaFieldsById.delete(personaId)
 }
 
 function clearDirtySelectedPersonaFieldsMatchingProjection(
@@ -940,6 +1047,7 @@ export function settleAcceptedPersonaPatchDirtyFields(
   const acceptedFields: SelectedPersonaDirtyField[] = []
   if (legacyProfileProjectionApplied) {
     if (Object.prototype.hasOwnProperty.call(attemptedPatch, 'name')) acceptedFields.push('username')
+    if (Object.prototype.hasOwnProperty.call(attemptedPatch, 'icon')) acceptedFields.push('userIcon')
     if (Object.prototype.hasOwnProperty.call(attemptedPatch, 'note')) acceptedFields.push('userNote')
     if (Object.prototype.hasOwnProperty.call(attemptedPatch, 'personaPrompt')) {
       acceptedFields.push('personaPrompt')
@@ -958,6 +1066,14 @@ export function settleAcceptedPersonaPatchDirtyFields(
 }
 
 subscribeServerCommandLocalEffectApplied((_event, localEffect) => {
+  if (localEffect.kind === 'personaMutation' && localEffect.operation === 'create' && localEffect.targetPersonaId) {
+    for (const attempt of [...pendingImportedPersonaCreates]) {
+      if (attempt.personaId === localEffect.targetPersonaId) {
+        removePendingImportedPersonaCreate(attempt.operationId)
+      }
+    }
+    return
+  }
   if (localEffect.kind !== 'personaPatch') return
   settleAcceptedPersonaPatchDirtyFields(
     localEffect.personaId,
@@ -968,6 +1084,7 @@ subscribeServerCommandLocalEffectApplied((_event, localEffect) => {
 })
 
 export function reconcileSelectedPersonaProjectionEpoch(): void {
+  reassertPendingImportedPersonaCreates()
   const personaId = selectedPersonaId()
   if (!personaId) return
   const dirtyFields = dirtySelectedPersonaFieldsById.get(personaId)
@@ -1042,13 +1159,73 @@ function personaCommandRollback(scope: PersonaCommandAcknowledgementTaintScope, 
   }
 }
 
-function runPersonaCommand<T extends Record<string, unknown>>(
-  command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
-  rollback: (() => void) | undefined,
-  taintScope: PersonaCommandAcknowledgementTaintScope,
-): void {
-  if (!canUseServerCommands()) return
-  void runServerCommand({ command, rollback: personaCommandRollback(taintScope, rollback) })
+async function isPersonaMutationRetained(outbox: PendingMutationHandle | null): Promise<boolean> {
+  if (!outbox?.ownerWriterSessionId || outbox.writerEpoch === null || !outbox.databaseLineage) return false
+  return isPendingMutationCurrent(outbox)
+}
+
+async function personaPersistenceStatus(
+  result: ServerCommandResult,
+  outbox: PendingMutationHandle,
+): Promise<PersonaPersistenceStatus> {
+  if (result.status === 'ok') return 'accepted'
+  return (await isPersonaMutationRetained(outbox)) ? 'queued' : 'failed'
+}
+
+function dispatchPersonaProfilePatch(input: {
+  personaId: string
+  patch: PersonaSnapshot
+  previous: PersonaStateSnapshot
+  attempted: PersonaStateSnapshot
+  rollbackRowKeys: readonly PersonaRowRollbackField[]
+  rollbackLegacyKeys?: readonly PersonaProfileMirrorField[]
+  projectionLegacyKeys?: readonly PersonaProfileMirrorField[]
+}): Promise<PersonaPersistenceStatus> {
+  if (!canUseServerCommands()) return Promise.resolve('accepted')
+
+  void flushPendingSelectedPersonaUpdate()
+  markPersonaPatchDirtyFields(input.personaId, input.attempted, input.patch)
+  updatePendingImportedPersonaDraft(input.personaId, input.attempted)
+
+  const optimisticAcknowledgement = personaPatchOptimisticAcknowledgement({
+    personaId: input.personaId,
+    patch: input.patch,
+    attempted: input.attempted,
+    mirrorLegacyProfile: true,
+  })
+  const intent = selectedPersonaUpdateDurableIntent(input.personaId, input.patch)
+  const outbox = stagePendingMutation(personaOwnerMutationKey(input.personaId), intent)
+  const legacyKeys = input.rollbackLegacyKeys ?? legacyProfileRollbackKeysForRowKeys(input.rollbackRowKeys)
+  const projectionLegacyKeys =
+    input.projectionLegacyKeys ?? legacyProfileRollbackKeysForRowKeys(personaRowRollbackKeysForPatch(input.patch))
+  recordPendingMutationProjectionTargets(outbox, projectionLegacyKeys.map(pendingMutationSettingsFieldProjectionTarget))
+
+  return dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        updatePersonaCommand({
+          baseRevision,
+          personaId: input.personaId,
+          patch: input.patch,
+          mirrorLegacyProfile: true,
+          optimisticAcknowledgement,
+        }),
+      rollback: personaCommandRollback({ personas: true, settings: true }, () => {
+        applyPersonaProfileCommandRollback({
+          personaId: input.personaId,
+          previous: input.previous,
+          attempted: input.attempted,
+          rowKeys: input.rollbackRowKeys,
+          legacyKeys,
+        })
+        clearPersonaPatchDirtyFields(input.personaId, input.attempted, input.rollbackRowKeys)
+      }),
+      ...transport,
+    }),
+  ).then(
+    (result) => personaPersistenceStatus(result, outbox),
+    async () => ((await isPersonaMutationRetained(outbox)) ? 'queued' : 'failed'),
+  )
 }
 
 function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot): void {
@@ -1102,6 +1279,69 @@ function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot)
       ),
       ...transport,
     }),
+  )
+}
+
+function dispatchImportedPersonaCreate(
+  persona: Persona,
+  previous: PersonaStateSnapshot,
+): Promise<PersonaPersistenceStatus> {
+  if (!canUseServerCommands()) return Promise.resolve('accepted')
+  const personaId = nonBlankPersonaId(persona)
+  if (!personaId) return Promise.resolve('failed')
+
+  const attemptedPersona = cloneJsonValue(persona)
+  const attempted = currentPersonaStateSnapshot()
+  const optimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
+    operation: 'create',
+    previous,
+    attempted,
+    mirrorLegacyProfile: false,
+    saveCurrent: false,
+  })
+  void flushPendingSelectedPersonaUpdate()
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: '/personas',
+        body: { persona: cloneJsonValue(attemptedPersona) as PersonaSnapshot },
+      },
+    ],
+    dependencyKeys: personaOwnerDependencyKeys(uniquePersonaIdAt(previous.personas, previous.selectedPersona)),
+  }
+  const attempt = registerPendingImportedPersonaCreate(attemptedPersona)
+  const outbox = stagePendingMutation(PERSONA_SELECTION_MUTATION_KEY, intent)
+
+  return dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        createPersonaCommand({
+          baseRevision,
+          persona: cloneJsonValue(attemptedPersona) as PersonaSnapshot,
+          optimisticAcknowledgement,
+        }),
+      rollback: personaCommandRollback({ personas: true, settings: false }, () => {
+        removePendingImportedPersonaCreate(attempt.operationId)
+        applyImportPersonaRollback({
+          createdPersonaId: personaId,
+          attemptedPersona,
+        })
+      }),
+      ...transport,
+    }),
+  ).then(
+    async (result) => {
+      const status = await personaPersistenceStatus(result, outbox)
+      if (status !== 'queued') removePendingImportedPersonaCreate(attempt.operationId)
+      return status
+    },
+    async () => {
+      const retained = await isPersonaMutationRetained(outbox)
+      if (!retained) removePendingImportedPersonaCreate(attempt.operationId)
+      return retained ? 'queued' : 'failed'
+    },
   )
 }
 
@@ -1541,23 +1781,25 @@ export async function selectUserImg() {
     const previous = currentPersonaStateSnapshot()
     let attempted: PersonaStateSnapshot | null = null
     let applied = false
-    withTrustedResourceWrite(() => {
-      const freshIndex = resolveFreshPersonaIconUploadIndex(operation, {
-        selectedPersona: getDatabase().selectedPersona,
-        userIcon: getDatabase().userIcon,
-        personas: getDatabase().personas,
-      })
-      if (freshIndex === null) return
-      const persona = getDatabase().personas[freshIndex]
-      if (!persona) return
+    withSuppressedPersonaSettingsWatcher(() => {
+      withTrustedResourceWrite(() => {
+        const freshIndex = resolveFreshPersonaIconUploadIndex(operation, {
+          selectedPersona: getDatabase().selectedPersona,
+          userIcon: getDatabase().userIcon,
+          personas: getDatabase().personas,
+        })
+        if (freshIndex === null) return
+        const persona = getDatabase().personas[freshIndex]
+        if (!persona) return
 
-      getDatabase().userIcon = imgp
-      getDatabase().personas[freshIndex] = {
-        ...persona,
-        icon: imgp,
-      }
-      attempted = currentPersonaStateSnapshot()
-      applied = true
+        getDatabase().userIcon = imgp
+        getDatabase().personas[freshIndex] = {
+          ...persona,
+          icon: imgp,
+        }
+        attempted = currentPersonaStateSnapshot()
+        applied = true
+      })
     })
 
     if (!applied || !attempted) {
@@ -1568,33 +1810,24 @@ export async function selectUserImg() {
     if (Object.keys(patch).length === 0) {
       return
     }
-    const optimisticAcknowledgement = personaPatchOptimisticAcknowledgement({
+    const status = await dispatchPersonaProfilePatch({
       personaId: operation.personaId,
       patch,
+      previous,
       attempted,
-      mirrorLegacyProfile: true,
+      rollbackRowKeys: ['icon'],
+      rollbackLegacyKeys: ['userIcon'],
     })
-    runPersonaCommand(
-      (baseRevision) =>
-        updatePersonaCommand({
-          baseRevision,
-          personaId: operation.personaId,
-          patch,
-          mirrorLegacyProfile: true,
-          optimisticAcknowledgement,
-        }),
-      () => {
-        if (!attempted) return
-        applyPersonaProfileCommandRollback({
-          personaId: operation.personaId,
-          previous,
-          attempted,
-          rowKeys: ['icon'],
-          legacyKeys: ['userIcon'],
-        })
-      },
-      { personas: true, settings: true },
-    )
+    if (status === 'queued') {
+      alertNormal(language.personaIconSaveQueued)
+    } else if (status === 'failed') {
+      alertError(language.personaIconSaveFailed)
+    }
+    return status
+  } catch (error) {
+    console.error(error)
+    alertError(language.personaIconSaveFailed)
+    return 'failed'
   } finally {
     if (operation) {
       clearPersonaIconUpload(operation)
@@ -1602,95 +1835,64 @@ export async function selectUserImg() {
   }
 }
 
-export function saveUserPersona(options: { dispatch?: boolean } = {}) {
+export function saveUserPersona(options: { dispatch?: boolean } = {}): Promise<PersonaPersistenceStatus> {
   const dispatch = options.dispatch ?? true
   const previous = currentPersonaStateSnapshot()
-  if (!getDatabase().personas[getDatabase().selectedPersona]) return
+  if (!getDatabase().personas[getDatabase().selectedPersona]) return Promise.resolve('failed')
   withTrustedResourceWrite(() => {
     getDatabase().personas[getDatabase().selectedPersona].name = getDatabase().username
     getDatabase().personas[getDatabase().selectedPersona].icon = getDatabase().userIcon
     getDatabase().personas[getDatabase().selectedPersona].personaPrompt = getDatabase().personaPrompt
     getDatabase().personas[getDatabase().selectedPersona].note = getDatabase().userNote
   })
-  if (!dispatch) return
+  if (!dispatch) return Promise.resolve('accepted')
   const attempted = currentPersonaStateSnapshot()
   const personaId = selectedPersonaId()
   if (personaId) {
     const patch = changedPersonaProfilePatch(personaId, previous, attempted)
-    if (Object.keys(patch).length === 0) return
-    const optimisticAcknowledgement = personaPatchOptimisticAcknowledgement({
+    if (Object.keys(patch).length === 0) return Promise.resolve('accepted')
+    return dispatchPersonaProfilePatch({
       personaId,
       patch,
+      previous,
       attempted,
-      mirrorLegacyProfile: true,
+      rollbackRowKeys: personaRowRollbackKeysForPatch(patch),
+      rollbackLegacyKeys: [],
     })
-    runPersonaCommand(
-      (baseRevision) =>
-        updatePersonaCommand({
-          baseRevision,
-          personaId,
-          patch,
-          mirrorLegacyProfile: true,
-          optimisticAcknowledgement,
-        }),
-      () =>
-        applyPersonaProfileCommandRollback({
-          personaId,
-          previous,
-          attempted,
-          rowKeys: personaRowRollbackKeysForPatch(patch),
-          legacyKeys: [],
-        }),
-      { personas: true, settings: true },
-    )
   }
+  return Promise.resolve('failed')
 }
 
-export function setSelectedPersonaPromptFromTrigger(value: string): void {
+export function setSelectedPersonaPromptFromTrigger(value: string): Promise<PersonaPersistenceStatus> {
   const persona = getDatabase().personas[getDatabase().selectedPersona]
-  if (!persona) return
+  if (!persona) return Promise.resolve('failed')
   const personaId = selectedPersonaId()
-  if (!personaId) return
+  if (!personaId) return Promise.resolve('failed')
   const previous = currentPersonaStateSnapshot()
 
-  withTrustedResourceWrite(() => {
-    const selectedPersona = getDatabase().personas[getDatabase().selectedPersona]
-    if (!selectedPersona) return
-    getDatabase().personaPrompt = value
-    selectedPersona.name = getDatabase().username
-    selectedPersona.icon = getDatabase().userIcon
-    selectedPersona.personaPrompt = value
-    selectedPersona.note = getDatabase().userNote
+  withSuppressedPersonaSettingsWatcher(() => {
+    withTrustedResourceWrite(() => {
+      const selectedPersona = getDatabase().personas[getDatabase().selectedPersona]
+      if (!selectedPersona) return
+      getDatabase().personaPrompt = value
+      selectedPersona.name = getDatabase().username
+      selectedPersona.icon = getDatabase().userIcon
+      selectedPersona.personaPrompt = value
+      selectedPersona.note = getDatabase().userNote
+    })
   })
 
   const attempted = currentPersonaStateSnapshot()
   const patch = changedPersonaProfilePatch(personaId, previous, attempted)
-  if (Object.keys(patch).length === 0) return
-  const optimisticAcknowledgement = personaPatchOptimisticAcknowledgement({
+  if (Object.keys(patch).length === 0) return Promise.resolve('accepted')
+  return dispatchPersonaProfilePatch({
     personaId,
     patch,
+    previous,
     attempted,
-    mirrorLegacyProfile: true,
+    rollbackRowKeys: personaRowRollbackKeysForPatch(patch),
+    rollbackLegacyKeys: Object.prototype.hasOwnProperty.call(patch, 'personaPrompt') ? ['personaPrompt'] : [],
   })
-  runPersonaCommand(
-    (baseRevision) =>
-      updatePersonaCommand({
-        baseRevision,
-        personaId,
-        patch,
-        mirrorLegacyProfile: true,
-        optimisticAcknowledgement,
-      }),
-    () =>
-      applyPersonaProfileCommandRollback({
-        personaId,
-        previous,
-        attempted,
-        rowKeys: personaRowRollbackKeysForPatch(patch),
-        legacyKeys: Object.prototype.hasOwnProperty.call(patch, 'personaPrompt') ? ['personaPrompt'] : [],
-      }),
-    { personas: true, settings: true },
-  )
 }
 
 export function selectUserPersonaLocally(id: number, save: 'save' | 'noSave' = 'save'): boolean {
@@ -1865,39 +2067,24 @@ export async function importUserPersona() {
         id: v4(),
       }
       const previous = currentPersonaStateSnapshot()
-      const attemptedPersona = cloneJsonValue(persona)
       withTrustedResourceWrite(() => {
         getDatabase().personas.push(persona)
       })
-      const attempted = currentPersonaStateSnapshot()
-      const optimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
-        operation: 'create',
-        previous,
-        attempted,
-        mirrorLegacyProfile: false,
-        saveCurrent: false,
-      })
-      void flushPendingSelectedPersonaUpdate()
-      runPersonaCommand(
-        (baseRevision) =>
-          createPersonaCommand({
-            baseRevision,
-            persona: cloneJsonValue(attemptedPersona) as PersonaSnapshot,
-            optimisticAcknowledgement,
-          }),
-        () =>
-          applyImportPersonaRollback({
-            createdPersonaId: attemptedPersona.id,
-            attemptedPersona,
-          }),
-        { personas: true, settings: false },
-      )
-      alertNormal(language.successImport)
+      const status = await dispatchImportedPersonaCreate(persona, previous)
+      if (status === 'queued') {
+        alertNormal(language.personaImportQueued)
+      } else if (status === 'failed') {
+        alertError(language.personaImportFailed)
+      } else {
+        alertNormal(language.successImport)
+      }
+      return status
     } else {
       alertError(language.errors.noData)
     }
   } catch (error) {
-    alertError(error)
-    return
+    console.error(error)
+    alertError(language.personaImportFailed)
+    return 'failed'
   }
 }

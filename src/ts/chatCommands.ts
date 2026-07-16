@@ -216,6 +216,22 @@ export async function dispatchCharacterOwnedDurableBatch(
   characterId: string | undefined,
   steps: readonly CharacterOwnedDurableBatchStep[],
 ): Promise<CharacterOwnedDurableBatchResult> {
+  return dispatchOwnedDurableBatch(
+    characterId ? characterOwnerMutationKey(characterId) : undefined,
+    steps,
+    'Missing character mutation owner',
+  )
+}
+
+/**
+ * Generic form of the durable batch dispatcher for non-chat collections that
+ * still need accepted-prefix settlement and suffix-only rollback.
+ */
+export async function dispatchOwnedDurableBatch(
+  ownerKey: string | undefined,
+  steps: readonly CharacterOwnedDurableBatchStep[],
+  missingOwnerError = 'Missing durable mutation owner',
+): Promise<CharacterOwnedDurableBatchResult> {
   if (steps.length === 0 || !canUseServerCommands()) return { status: 'ok', acceptedCount: 0 }
 
   const definitions = steps.map((step) => {
@@ -230,14 +246,14 @@ export async function dispatchCharacterOwnedDurableBatch(
   const oversized = definitions.some(
     ({ intent }) => pendingMutationIntentPayloadByteLength(intent) > MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
   )
-  if (!characterId || oversized) {
+  if (!ownerKey || oversized) {
     for (let index = definitions.length - 1; index >= 0; index -= 1) definitions[index].rollback()
     return {
       status: 'failure',
       acceptedCount: 0,
       failure: {
         status: 'error',
-        error: oversized ? 'Pending mutation payload is too large' : 'Missing character mutation owner',
+        error: oversized ? 'Pending mutation payload is too large' : missingOwnerError,
         reason: 'invalid-request',
       },
     }
@@ -250,7 +266,7 @@ export async function dispatchCharacterOwnedDurableBatch(
   > = []
   try {
     for (const definition of definitions) {
-      const handle = stagePendingMutation(characterOwnerMutationKey(characterId), definition.intent)
+      const handle = stagePendingMutation(ownerKey, definition.intent)
       if (definition.projectionTargets?.length) {
         recordPendingMutationProjectionTargets(handle, definition.projectionTargets)
       }

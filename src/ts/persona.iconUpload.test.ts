@@ -1,11 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 const selectedFileState = vi.hoisted(() => ({
   queue: [] as Array<null | { name: string; data: Uint8Array }>,
 }))
 
+const personaAlertState = vi.hoisted(() => ({
+  current: { type: 'none', msg: '' } as { type: string; msg: unknown },
+}))
+
 vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'persona-icon-token',
+}))
+
+vi.mock('./alert', () => ({
+  alertClear: vi.fn(() => {
+    personaAlertState.current = { type: 'none', msg: '' }
+  }),
+  alertError: vi.fn((msg: unknown) => {
+    personaAlertState.current = { type: 'error', msg }
+  }),
+  alertNormal: vi.fn((msg: unknown) => {
+    personaAlertState.current = { type: 'normal', msg }
+  }),
+  alertStore: {
+    set: vi.fn((value: { type: string; msg: unknown }) => {
+      personaAlertState.current = value
+    }),
+  },
 }))
 
 vi.mock('./util', () => {
@@ -53,16 +75,26 @@ vi.mock('./util', () => {
 
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
+import { language } from 'src/lang'
 import './stores.svelte'
 import { getDatabase, setDatabaseLite } from './storage/database.svelte'
 import {
   importUserPersona,
+  reconcileSelectedPersonaProjectionEpoch,
   selectUserImg,
+  settleAcceptedPersonaPatchDirtyFields,
   updateSelectedPersonaDisplayName,
   updateSelectedPersonaField,
   updateSelectedPersonaLargePortrait,
 } from './persona'
 import { PngChunk } from './pngChunk'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from './server/pendingMutationOutbox'
+import { applyCollectionsResource, applySettingsResource } from './server/resourceState.svelte'
 
 interface CapturedFetch {
   url: string
@@ -219,10 +251,13 @@ function commandCalls(calls: CapturedFetch[]): CapturedFetch[] {
   return calls.filter((call) => call.url.startsWith('/api/v1/commands/'))
 }
 
+let authoritativeRevision = 10_000
+
 beforeEach(() => {
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
   selectedFileState.queue.length = 0
+  personaAlertState.current = { type: 'none', msg: '' }
 })
 
 afterEach(() => {
@@ -347,6 +382,138 @@ describe('Phase 3 persona icon upload freshness', () => {
     expect(getDatabase().personas[0].icon).toBe('older-icon')
   })
 
+  it('does not announce an imported persona until its create command is accepted', async () => {
+    const command = deferred<Response>()
+    const calls = stubCommandFetch(['imported-icon'], {
+      personaCommandResponses: [command.promise],
+    })
+    selectedFileState.queue.push(await personaImportFile())
+    seedPersonaState([makePersona({ id: 'persona-import-pending' })], 0)
+
+    const operation = importUserPersona()
+    await vi.waitFor(() => {
+      expect(commandCalls(calls)).toHaveLength(1)
+    })
+    expect(personaAlertState.current).not.toMatchObject({ type: 'normal', msg: language.successImport })
+
+    command.resolve(
+      jsonResponse({
+        revision: 21,
+        event: {
+          type: 'persona.created',
+          revision: 21,
+          resource: 'persona',
+          id: 'created-persona',
+        },
+        personaId: 'created-persona',
+      }),
+    )
+
+    await expect(operation).resolves.toBe('accepted')
+    expect(personaAlertState.current).toMatchObject({ type: 'normal', msg: language.successImport })
+  })
+
+  it('keeps an uploaded icon projected when its durable patch is retained', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-icon',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-persona-icon',
+      requestedWriterWasActive: true,
+    })
+    const calls = stubCommandFetch(['queued-icon'], {
+      personaCommandResponses: [jsonResponse({ error: 'temporarily unavailable' }, 500)],
+    })
+    selectedFileState.queue.push(personaFile('queued-icon.png'))
+    const serverPersona = makePersona({ id: 'persona-icon-retained', icon: 'old-icon' })
+    seedPersonaState([serverPersona], 0)
+
+    try {
+      await expect(selectUserImg()).resolves.toBe('queued')
+
+      expect(personaAlertState.current).toMatchObject({ type: 'normal', msg: language.personaIconSaveQueued })
+      expect(getDatabase().userIcon).toBe('queued-icon')
+      expect(getDatabase().personas[0].icon).toBe('queued-icon')
+      expect((await listPendingMutations()).map((entry) => entry.intent.requests[0].method)).toEqual(['PATCH'])
+      expect(commandCalls(calls)).toHaveLength(1)
+
+      authoritativeRevision += 1
+      applyCollectionsResource(
+        { revision: authoritativeRevision, collections: { personas: [serverPersona] as any } },
+        'personas',
+      )
+      applySettingsResource({
+        revision: authoritativeRevision,
+        settings: {
+          selectedPersona: 0,
+          username: String(serverPersona.name),
+          userIcon: 'old-icon',
+          personaPrompt: String(serverPersona.personaPrompt),
+          userNote: String(serverPersona.note),
+        },
+      })
+      reconcileSelectedPersonaProjectionEpoch()
+
+      expect(getDatabase().userIcon).toBe('queued-icon')
+      expect(getDatabase().personas[0].icon).toBe('queued-icon')
+      settleAcceptedPersonaPatchDirtyFields(
+        'persona-icon-retained',
+        { icon: 'queued-icon' },
+        { id: 'persona-icon-retained', icon: 'queued-icon' },
+        true,
+      )
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('retains and reasserts an imported row when its create is queued', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-import',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-persona-import',
+      requestedWriterWasActive: true,
+    })
+    stubCommandFetch(['imported-icon'], {
+      personaCommandResponses: [jsonResponse({ error: 'temporarily unavailable' }, 500)],
+    })
+    selectedFileState.queue.push(await personaImportFile())
+    const serverPersona = makePersona({ id: 'persona-import-retained', name: 'Existing Persona' })
+    seedPersonaState([serverPersona], 0)
+
+    try {
+      await expect(importUserPersona()).resolves.toBe('queued')
+      expect(personaAlertState.current).toMatchObject({ type: 'normal', msg: language.personaImportQueued })
+      expect(getDatabase().personas.map((persona) => persona.name)).toEqual(['Existing Persona', 'Imported Persona'])
+      expect((await listPendingMutations()).map((entry) => entry.intent.requests[0].method)).toEqual(['POST'])
+
+      authoritativeRevision += 1
+      applyCollectionsResource(
+        { revision: authoritativeRevision, collections: { personas: [serverPersona] as any } },
+        'personas',
+      )
+      reconcileSelectedPersonaProjectionEpoch()
+      expect(getDatabase().personas.map((persona) => persona.name)).toEqual(['Existing Persona', 'Imported Persona'])
+
+      authoritativeRevision += 1
+      applyCollectionsResource(
+        {
+          revision: authoritativeRevision,
+          collections: { personas: [...getDatabase().personas] as any },
+        },
+        'personas',
+      )
+      reconcileSelectedPersonaProjectionEpoch()
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('failed icon save rolls back only attempted icon fields after newer profile and selection changes', async () => {
     const command = deferred<Response>()
     const calls = stubCommandFetch(['attempted-icon'], {
@@ -379,7 +546,7 @@ describe('Phase 3 persona icon upload freshness', () => {
     getDatabase().personaPrompt = 'Persona B live prompt'
     getDatabase().userNote = 'Persona B live note'
     command.resolve(jsonResponse({ error: 'persona icon failed' }, 500))
-    await operation
+    await expect(operation).resolves.toBe('failed')
     await tick()
 
     expect(getDatabase().personas[0]).toMatchObject({
@@ -394,6 +561,7 @@ describe('Phase 3 persona icon upload freshness', () => {
       personaPrompt: 'Persona B live prompt',
       userNote: 'Persona B live note',
     })
+    expect(personaAlertState.current).toMatchObject({ type: 'error', msg: language.personaIconSaveFailed })
   })
 
   it('failed import create removes only the unchanged imported row and preserves newer rows and selection', async () => {
@@ -442,7 +610,7 @@ describe('Phase 3 persona icon upload freshness', () => {
     getDatabase().personaPrompt = 'Persona D live prompt'
     getDatabase().userNote = 'Persona D live note'
     command.resolve(jsonResponse({ error: 'persona import failed' }, 500))
-    await operation
+    await expect(operation).resolves.toBe('failed')
     await tick()
 
     expect(getDatabase().personas.map((persona) => persona.id)).toEqual(['persona-a', 'persona-b', 'persona-d'])
@@ -461,5 +629,6 @@ describe('Phase 3 persona icon upload freshness', () => {
       personaPrompt: 'Persona D live prompt',
       userNote: 'Persona D live note',
     })
+    expect(personaAlertState.current).toMatchObject({ type: 'error', msg: language.personaImportFailed })
   })
 })

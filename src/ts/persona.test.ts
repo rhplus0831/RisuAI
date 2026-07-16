@@ -1731,6 +1731,62 @@ describe('persona ID read and command preparation', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
+  it('returns queued and reasserts a direct profile save retained for retry', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-direct-save',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-persona-direct-save',
+      requestedWriterWasActive: true,
+    })
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-direct-save-retained',
+          name: 'Persona A',
+          icon: 'a.png',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+        }),
+      ],
+      0,
+    )
+    getDatabase().username = 'Persona A'
+    getDatabase().userIcon = 'a.png'
+    getDatabase().personaPrompt = 'Old prompt'
+    getDatabase().userNote = 'Queued note'
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ revision: 1 }))
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ error: 'temporarily unavailable' }, 500))
+
+    try {
+      await expect(saveUserPersona()).resolves.toBe('queued')
+      expect((await listPendingMutations()).map((entry) => entry.intent.requests[0])).toMatchObject([
+        {
+          method: 'PATCH',
+          path: '/personas/persona-direct-save-retained',
+          body: { patch: { note: 'Queued note' }, mirrorLegacyProfile: true },
+        },
+      ])
+
+      getDatabase().personas[0].note = 'Old note'
+      getDatabase().userNote = 'Old note'
+      reconcileSelectedPersonaProjectionEpoch()
+
+      expect(getDatabase().personas[0].note).toBe('Queued note')
+      expect(getDatabase().userNote).toBe('Queued note')
+      settleAcceptedPersonaPatchDirtyFields(
+        'persona-direct-save-retained',
+        { note: 'Queued note' },
+        { id: 'persona-direct-save-retained', note: 'Queued note' },
+        true,
+      )
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('failed trigger prompt save preserves newer same-row profile edits', async () => {
     seedPersonaState(
       [
@@ -1798,6 +1854,78 @@ describe('persona ID read and command preparation', () => {
     setSelectedPersonaPromptFromTrigger('Current prompt')
 
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('reports a terminal trigger patch failure and rolls its projection back', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-trigger-terminal',
+          name: 'Persona A',
+          icon: 'a.png',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+        }),
+      ],
+      0,
+    )
+    getDatabase().username = 'Persona A'
+    getDatabase().userIcon = 'a.png'
+    getDatabase().personaPrompt = 'Old prompt'
+    getDatabase().userNote = 'Old note'
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ revision: 1 }))
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ error: 'invalid persona prompt' }, 400))
+
+    await expect(setSelectedPersonaPromptFromTrigger('Rejected prompt')).resolves.toBe('failed')
+
+    expect(getDatabase().personaPrompt).toBe('Old prompt')
+    expect(getDatabase().personas[0].personaPrompt).toBe('Old prompt')
+  })
+
+  it('does not let an older rejected trigger patch roll back a later prompt write', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-trigger-later-writer',
+          name: 'Persona A',
+          icon: 'a.png',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+        }),
+      ],
+      0,
+    )
+    getDatabase().username = 'Persona A'
+    getDatabase().userIcon = 'a.png'
+    getDatabase().personaPrompt = 'Old prompt'
+    getDatabase().userNote = 'Old note'
+    const firstCommand = deferred<Response>()
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ revision: 1 }))
+    vi.mocked(fetch).mockReturnValueOnce(firstCommand.promise)
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        revision: 2,
+        event: {
+          type: 'persona.updated',
+          revision: 2,
+          resource: 'persona',
+          id: 'persona-trigger-later-writer',
+        },
+        personaId: 'persona-trigger-later-writer',
+        acknowledgedKeys: ['personaPrompt'],
+        legacyProfileProjectionApplied: true,
+      }),
+    )
+
+    const first = setSelectedPersonaPromptFromTrigger('First prompt')
+    const second = setSelectedPersonaPromptFromTrigger('Later prompt')
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    firstCommand.resolve(jsonResponse({ error: 'invalid first prompt' }, 400))
+
+    await expect(first).resolves.toBe('failed')
+    await expect(second).resolves.toBe('accepted')
+    expect(getDatabase().personaPrompt).toBe('Later prompt')
+    expect(getDatabase().personas[0].personaPrompt).toBe('Later prompt')
   })
 
   it('failed select preserves newer selection/profile changes while rolling back only the attempted save-current row', async () => {

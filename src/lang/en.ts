@@ -1501,6 +1501,12 @@ export const languageEnglish = {
     'Some pending changes still could not reach the server. They remain saved on this device and must be retried before the app can load.',
   pendingMutationDiscarded:
     'Some unsaved changes came from an older editing session and could not be applied safely. Please review the affected fields.',
+  personaImportQueued:
+    'The persona is saved on this device and queued. It will finish importing when the server is available.',
+  personaImportFailed: 'Could not import the persona. Please try again.',
+  personaIconSaveQueued:
+    'The persona image is saved on this device and queued. It will finish saving when the server is available.',
+  personaIconSaveFailed: 'Could not save the persona image. Please try again.',
   translatorPresetImportQueued:
     'The translator preset is saved on this device and queued. It will finish importing when the server is available.',
   translatorPresetImportFailed: 'Could not import the translator preset. Please try again.',

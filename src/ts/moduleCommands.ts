@@ -1,10 +1,11 @@
 import {
   currentChatGenerationSettingsSnapshot,
   currentChatScopedSnapshot,
-  dispatchUpdateChatScoped,
-  restoreChatGenerationSettings,
-  restoreChatScopedState,
-  runOptimisticCommandSequence,
+  dispatchCharacterOwnedDurableBatch,
+  dispatchOwnedDurableBatch,
+  type CharacterOwnedDurableBatchResult,
+  type CharacterOwnedDurableBatchStep,
+  type ChatScopedSnapshot,
   type ChatGenerationSettingsSnapshot,
 } from './chatCommands'
 import {
@@ -15,7 +16,6 @@ import {
   reorderCharacterModulesCommand,
   reorderModulesCommand,
   runServerCommand,
-  runServerCommandSequence,
   saveChatGenerationSettingsCommand,
   updateChatCommand,
   updateModuleCommand,
@@ -37,14 +37,14 @@ import type { ChatGenerationSettings } from './chatGenerationSettings'
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
 import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
 import {
-  acceptPendingMutationLocalProjectionToken,
-  advancePendingMutationProjectionTargets,
+  pendingMutationChatGenerationSettingsProjectionTarget,
   pendingMutationModuleEnabledProjectionTarget,
-  retirePendingMutationLocalProjectionToken,
+  recordPendingMutationProjectionTargets,
   stagePendingMutation,
   type DurableMutationIntent,
 } from './server/pendingMutationOutbox'
 import { moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
+import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGenerationSettingsMutationKeys'
 
 export interface GlobalModuleStateSnapshot {
   modules: RisuModule[]
@@ -173,8 +173,63 @@ interface ModuleOrderRollbackEntry {
 }
 
 interface ModuleCollectionPatchStep {
-  factory: (baseRevision: number) => Promise<ServerCommandResult>
+  method: CharacterOwnedDurableBatchStep['method']
+  path: string
+  body: Record<string, unknown>
+  dependencyKeys?: string[]
+  factory: (baseRevision: number, frozenBody: Readonly<Record<string, unknown>>) => Promise<ServerCommandResult>
   rollbackEntries: GlobalModuleRollbackEntry[]
+}
+
+const MODULE_COLLECTION_MUTATION_KEY = 'module-collection'
+let nextScopedModuleOperationSequence = 0
+const pendingScopedModuleOperations = new Map<string, PendingScopedModuleOperation[]>()
+
+interface PendingScopedModuleOperation {
+  sequence: number
+  key: string
+  status: 'pending' | 'failed'
+  rollbackIfLiveMatches: () => boolean
+}
+
+function issueScopedModuleOperation(key: string, rollbackIfLiveMatches: () => boolean): PendingScopedModuleOperation {
+  const operation: PendingScopedModuleOperation = {
+    sequence: ++nextScopedModuleOperationSequence,
+    key,
+    status: 'pending',
+    rollbackIfLiveMatches,
+  }
+  const pending = pendingScopedModuleOperations.get(key) ?? []
+  pending.push(operation)
+  pendingScopedModuleOperations.set(key, pending)
+  return operation
+}
+
+function acceptScopedModuleOperation(operation: PendingScopedModuleOperation): void {
+  const pending = pendingScopedModuleOperations.get(operation.key)
+  if (!pending) return
+  const index = pending.findIndex((candidate) => candidate.sequence === operation.sequence)
+  if (index === -1) return
+  const next = pending.filter(
+    (candidate, candidateIndex) =>
+      candidate.sequence !== operation.sequence && !(candidateIndex < index && candidate.status === 'failed'),
+  )
+  if (next.length > 0) pendingScopedModuleOperations.set(operation.key, next)
+  else pendingScopedModuleOperations.delete(operation.key)
+}
+
+function rejectScopedModuleOperation(operation: PendingScopedModuleOperation): void {
+  const pending = pendingScopedModuleOperations.get(operation.key)
+  const current = pending?.find((candidate) => candidate.sequence === operation.sequence)
+  if (!pending || !current) return
+  current.status = 'failed'
+  let changed = false
+  while (pending.at(-1)?.status === 'failed') {
+    changed = pending.pop()!.rollbackIfLiveMatches() || changed
+  }
+  if (pending.length > 0) pendingScopedModuleOperations.set(operation.key, pending)
+  else pendingScopedModuleOperations.delete(operation.key)
+  if (changed) reloadGuiAfterDefinitionChange()
 }
 
 export function cloneJsonValue<T>(value: T): T {
@@ -396,6 +451,7 @@ export function dispatchCreateModule(
   const operation = issueGlobalModuleOperation([rollbackEntry])
   const intent: DurableMutationIntent = {
     version: 1,
+    dependencyKeys: [MODULE_COLLECTION_MUTATION_KEY],
     requests: [
       {
         method: 'POST',
@@ -405,6 +461,7 @@ export function dispatchCreateModule(
     ],
   }
   const outbox = stagePendingMutation(moduleOwnerMutationKey(module.id), intent)
+  recordPendingMutationProjectionTargets(outbox, globalModuleProjectionTargets([rollbackEntry]))
   return dispatchDurableMutation(outbox, intent, (transport) =>
     runModuleCommand(
       async (baseRevision) => {
@@ -437,6 +494,7 @@ export function dispatchUpdateModule(
   const operation = rollbackEntries.length > 0 ? issueGlobalModuleOperation(rollbackEntries) : null
   const intent: DurableMutationIntent = {
     version: 1,
+    dependencyKeys: [MODULE_COLLECTION_MUTATION_KEY],
     requests: [
       {
         method: 'PATCH',
@@ -446,6 +504,7 @@ export function dispatchUpdateModule(
     ],
   }
   const outbox = stagePendingMutation(moduleOwnerMutationKey(moduleId), intent)
+  recordPendingMutationProjectionTargets(outbox, globalModuleProjectionTargets(rollbackEntries))
   return dispatchDurableMutation(outbox, intent, (transport) =>
     runModuleCommand(
       async (baseRevision) => {
@@ -485,8 +544,12 @@ export function dispatchModuleInfoPatch(
     const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
     if (rollbackEntries.length > 0) {
       steps.push({
-        factory: (baseRevision) =>
-          updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }, undefined, true),
+        method: 'PATCH',
+        path: `/modules/${encodeURIComponent(moduleId)}`,
+        body: { patch: cloneJsonValue(commandPatch) },
+        dependencyKeys: [moduleOwnerMutationKey(moduleId)],
+        factory: (baseRevision, body) =>
+          updateModuleCommand({ baseRevision, moduleId, patch: body.patch as ModuleSnapshot }, undefined, true),
         rollbackEntries,
       })
     }
@@ -494,7 +557,16 @@ export function dispatchModuleInfoPatch(
 
   if (enabled !== null) {
     steps.push({
-      factory: (baseRevision) => enableModuleCommand({ baseRevision, moduleId, enabled }, undefined, true),
+      method: 'POST',
+      path: '/modules/enable',
+      body: { moduleId, enabled },
+      dependencyKeys: [moduleOwnerMutationKey(moduleId)],
+      factory: (baseRevision, body) =>
+        enableModuleCommand(
+          { baseRevision, moduleId: body.moduleId as string, enabled: body.enabled as boolean },
+          undefined,
+          true,
+        ),
       rollbackEntries: [moduleEnableRollbackEntry(moduleId, enabled, previous)],
     })
   }
@@ -509,6 +581,7 @@ export function dispatchDeleteModule(moduleId: string, previous: GlobalModuleSta
   const operation = rollbackEntries.length > 0 ? issueGlobalModuleOperation(rollbackEntries) : null
   const intent: DurableMutationIntent = {
     version: 1,
+    dependencyKeys: [MODULE_COLLECTION_MUTATION_KEY],
     requests: [
       {
         method: 'DELETE',
@@ -518,6 +591,7 @@ export function dispatchDeleteModule(moduleId: string, previous: GlobalModuleSta
     ],
   }
   const outbox = stagePendingMutation(moduleOwnerMutationKey(moduleId), intent)
+  recordPendingMutationProjectionTargets(outbox, globalModuleProjectionTargets(rollbackEntries))
   void dispatchDurableMutation(outbox, intent, (transport) =>
     runModuleCommand(
       async (baseRevision) => {
@@ -546,6 +620,7 @@ export function dispatchEnableModule(moduleId: string, enabled: boolean, previou
   const operation = issueGlobalModuleOperation([rollbackEntry])
   const intent: DurableMutationIntent = {
     version: 1,
+    dependencyKeys: [MODULE_COLLECTION_MUTATION_KEY],
     requests: [
       {
         method: 'POST',
@@ -555,6 +630,7 @@ export function dispatchEnableModule(moduleId: string, enabled: boolean, previou
     ],
   }
   const outbox = stagePendingMutation(moduleOwnerMutationKey(moduleId), intent)
+  recordPendingMutationProjectionTargets(outbox, globalModuleProjectionTargets([rollbackEntry]))
   void dispatchDurableMutation(outbox, intent, (transport) =>
     runModuleCommand(
       async (baseRevision) => {
@@ -691,21 +767,24 @@ export function dispatchReorderModules(previous: GlobalModuleStateSnapshot): voi
   if (!canUseServerCommands()) return
   const attemptedModuleIds = (getDatabase().modules ?? []).map((module) => module.id)
   const rollbackEntry = moduleOrderRollbackEntry(previous, attemptedModuleIds)
-  const operation = issueGlobalModuleOperation([rollbackEntry])
-  runModuleCommand(
-    async (baseRevision) => {
-      const result = await reorderModulesCommand({ baseRevision, moduleIds: attemptedModuleIds }, undefined, true)
-      if (result.status === 'ok') {
-        clearGlobalModuleOperation(operation)
-      }
-      return result
+  runModuleCollectionPatchSteps([
+    {
+      method: 'POST',
+      path: '/modules/reorder',
+      body: { moduleIds: cloneJsonValue(attemptedModuleIds) },
+      dependencyKeys: attemptedModuleIds.map(moduleOwnerMutationKey),
+      factory: (baseRevision, body) =>
+        reorderModulesCommand({ baseRevision, moduleIds: body.moduleIds as string[] }, undefined, true),
+      rollbackEntries: [rollbackEntry],
     },
-    () => rollbackGlobalModuleEntries([rollbackEntry], operation),
-  )
+  ])
 }
 
-export function dispatchModuleCollectionPatch(modules: RisuModule[], previous: GlobalModuleStateSnapshot): void {
-  if (!canUseServerCommands()) return
+export function dispatchModuleCollectionPatch(
+  modules: RisuModule[],
+  previous: GlobalModuleStateSnapshot,
+): Promise<CharacterOwnedDurableBatchResult> | null {
+  if (!canUseServerCommands()) return null
 
   const beforeModules = new Map(previous.modules.map((module) => [module.id, module]))
   const nextModules = new Map(modules.map((module) => [module.id, module]))
@@ -717,7 +796,12 @@ export function dispatchModuleCollectionPatch(modules: RisuModule[], previous: G
     if (!before) {
       const moduleSnapshot = toModuleSnapshot(module)
       steps.push({
-        factory: (baseRevision) => createModuleCommand({ baseRevision, module: moduleSnapshot }, undefined, true),
+        method: 'POST',
+        path: '/modules',
+        body: { module: cloneJsonValue(moduleSnapshot) },
+        dependencyKeys: [moduleOwnerMutationKey(module.id)],
+        factory: (baseRevision, body) =>
+          createModuleCommand({ baseRevision, module: body.module as ModuleSnapshot }, undefined, true),
         rollbackEntries: [moduleCreateRollbackEntry(moduleSnapshot as RisuModule)],
       })
       continue
@@ -729,7 +813,12 @@ export function dispatchModuleCollectionPatch(modules: RisuModule[], previous: G
     const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
     if (rollbackEntries.length === 0) continue
     steps.push({
-      factory: (baseRevision) => updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }, undefined, true),
+      method: 'PATCH',
+      path: `/modules/${encodeURIComponent(moduleId)}`,
+      body: { patch: cloneJsonValue(commandPatch) },
+      dependencyKeys: [moduleOwnerMutationKey(moduleId)],
+      factory: (baseRevision, body) =>
+        updateModuleCommand({ baseRevision, moduleId, patch: body.patch as ModuleSnapshot }, undefined, true),
       rollbackEntries,
     })
   }
@@ -740,6 +829,10 @@ export function dispatchModuleCollectionPatch(modules: RisuModule[], previous: G
       const rollbackEntries = moduleDeleteRollbackEntries(moduleId, previous)
       if (rollbackEntries.length > 0) {
         steps.push({
+          method: 'DELETE',
+          path: `/modules/${encodeURIComponent(moduleId)}`,
+          body: {},
+          dependencyKeys: [moduleOwnerMutationKey(moduleId)],
           factory: (baseRevision) => deleteModuleCommand({ baseRevision, moduleId }),
           rollbackEntries,
         })
@@ -761,20 +854,24 @@ export function dispatchModuleCollectionPatch(modules: RisuModule[], previous: G
       // A preceding authoritative delete refresh can temporarily restore the
       // server's pre-reorder projection. Keep this sequence's final reorder
       // authoritative so it cannot fence that intermediate order as current.
-      factory: (baseRevision) => reorderModulesCommand({ baseRevision, moduleIds: attemptedModuleIds }),
+      method: 'POST',
+      path: '/modules/reorder',
+      body: { moduleIds: cloneJsonValue(attemptedModuleIds) },
+      dependencyKeys: attemptedModuleIds.map(moduleOwnerMutationKey),
+      factory: (baseRevision, body) => reorderModulesCommand({ baseRevision, moduleIds: body.moduleIds as string[] }),
       rollbackEntries: [moduleOrderRollbackEntry(previous, attemptedModuleIds)],
     })
   }
 
-  runModuleCollectionPatchSteps(steps)
+  return runModuleCollectionPatchSteps(steps)
 }
 
 export function dispatchEnabledModulesPatch(
   enabledModules: unknown[],
   previous: GlobalModuleStateSnapshot,
   modules: RisuModule[],
-): void {
-  if (!canUseServerCommands()) return
+): Promise<CharacterOwnedDurableBatchResult> | null {
+  if (!canUseServerCommands()) return null
 
   const before = new Set(previous.enabledModules)
   const next = new Set(enabledModules.filter((id): id is string => typeof id === 'string'))
@@ -784,7 +881,16 @@ export function dispatchEnabledModulesPatch(
   for (const moduleId of next) {
     if (!before.has(moduleId) && knownModules.has(moduleId)) {
       steps.push({
-        factory: (baseRevision) => enableModuleCommand({ baseRevision, moduleId, enabled: true }),
+        method: 'POST',
+        path: '/modules/enable',
+        body: { moduleId, enabled: true },
+        dependencyKeys: [moduleOwnerMutationKey(moduleId)],
+        factory: (baseRevision, body) =>
+          enableModuleCommand({
+            baseRevision,
+            moduleId: body.moduleId as string,
+            enabled: body.enabled as boolean,
+          }),
         rollbackEntries: [moduleEnableRollbackEntry(moduleId, true, previous)],
       })
     }
@@ -792,87 +898,65 @@ export function dispatchEnabledModulesPatch(
   for (const moduleId of before) {
     if (!next.has(moduleId) && knownModules.has(moduleId)) {
       steps.push({
-        factory: (baseRevision) => enableModuleCommand({ baseRevision, moduleId, enabled: false }),
+        method: 'POST',
+        path: '/modules/enable',
+        body: { moduleId, enabled: false },
+        dependencyKeys: [moduleOwnerMutationKey(moduleId)],
+        factory: (baseRevision, body) =>
+          enableModuleCommand({
+            baseRevision,
+            moduleId: body.moduleId as string,
+            enabled: body.enabled as boolean,
+          }),
         rollbackEntries: [moduleEnableRollbackEntry(moduleId, false, previous)],
       })
     }
   }
 
-  runModuleCollectionPatchSteps(steps)
+  return runModuleCollectionPatchSteps(steps)
 }
 
-function runModuleCollectionPatchSteps(steps: ModuleCollectionPatchStep[]): void {
-  if (steps.length === 0) return
+function runModuleCollectionPatchSteps(
+  steps: ModuleCollectionPatchStep[],
+): Promise<CharacterOwnedDurableBatchResult> | null {
+  if (steps.length === 0) return null
 
   const operationSteps = steps.map((step) => ({
     ...step,
     operation: issueGlobalModuleOperation(step.rollbackEntries),
-    projectionToken: advancePendingMutationProjectionTargets(
-      step.rollbackEntries
-        .filter((entry): entry is ModuleEnableRollbackEntry => entry.kind === 'module-enable')
-        .map((entry) => pendingMutationModuleEnabledProjectionTarget(entry.moduleId)),
-    ),
   }))
 
-  void (async () => {
-    let currentStepIndex = 0
-    let rollbackRan = false
-    try {
-      const failure = await runServerCommandSequence(
-        operationSteps.map((step, index) => async (baseRevision) => {
-          currentStepIndex = index
-          const result = await step.factory(baseRevision)
-          if (result.status === 'ok') {
-            clearGlobalModuleOperation(step.operation)
-            acceptPendingMutationLocalProjectionToken(step.projectionToken)
-          }
+  const result = dispatchOwnedDurableBatch(
+    MODULE_COLLECTION_MUTATION_KEY,
+    operationSteps.map((step) => {
+      const projectionTargets = globalModuleProjectionTargets(step.rollbackEntries)
+      return {
+        method: step.method,
+        path: step.path,
+        body: step.body,
+        dependencyKeys: step.dependencyKeys,
+        projectionTargets,
+        command: async (baseRevision: number, body: Readonly<Record<string, unknown>>) => {
+          const result = await step.factory(baseRevision, body)
+          if (result.status === 'ok') clearGlobalModuleOperation(step.operation)
           return result
-        }),
-        () => {
-          rollbackRan = true
-          retireModuleProjectionTokens(operationSteps, currentStepIndex)
-          rollbackModuleCollectionPatchSteps(operationSteps, currentStepIndex)
         },
-      )
-      // A destructive refresh can invalidate the sequence rollback while its
-      // request is in flight. The authoritative refresh owns the UI state, but
-      // these local fence tokens must still stop shadowing later generations.
-      if (failure !== null && !rollbackRan) retireModuleProjectionTokens(operationSteps, currentStepIndex)
-    } catch (error) {
-      console.error('Module collection command sequence rejected:', error)
-      retireModuleProjectionTokens(operationSteps, currentStepIndex)
-      rollbackModuleCollectionPatchSteps(operationSteps, currentStepIndex)
+        rollback: () => rollbackGlobalModuleEntries(step.rollbackEntries, step.operation),
+        reapply: (isTargetCurrent: (target: string) => boolean) =>
+          reapplyGlobalModuleEntries(step.rollbackEntries, isTargetCurrent),
+      }
+    }),
+  )
+  void result.then((outcome) => {
+    // A retryable suffix is now an encrypted, replayable baseline. Remove its
+    // in-memory rollback records so a later edit rolls back to that queued
+    // projection instead of treating it as a failed local write.
+    if (outcome.status !== 'retained') return
+    for (const step of operationSteps.slice(outcome.acceptedCount)) {
+      clearGlobalModuleOperation(step.operation)
     }
-  })()
-}
-
-function retireModuleProjectionTokens(
-  steps: Array<
-    ModuleCollectionPatchStep & {
-      operation: GlobalModuleOperationToken
-      projectionToken: ReturnType<typeof advancePendingMutationProjectionTargets>
-    }
-  >,
-  failedStepIndex: number,
-): void {
-  for (let index = failedStepIndex; index < steps.length; index += 1) {
-    retirePendingMutationLocalProjectionToken(steps[index]?.projectionToken ?? null)
-  }
-}
-
-function rollbackModuleCollectionPatchSteps(
-  steps: Array<
-    ModuleCollectionPatchStep & {
-      operation: GlobalModuleOperationToken
-      projectionToken: ReturnType<typeof advancePendingMutationProjectionTargets>
-    }
-  >,
-  failedStepIndex: number,
-): void {
-  for (let index = steps.length - 1; index >= failedStepIndex; index -= 1) {
-    const step = steps[index]
-    rollbackGlobalModuleEntries(step.rollbackEntries, step.operation)
-  }
+  })
+  return result
 }
 
 function moduleCreateRollbackEntry(module: RisuModule): ModuleCreateRollbackEntry {
@@ -1314,6 +1398,92 @@ function moduleLoadoutReferenceRollbackTarget(snapshot: LoadoutModuleReferenceSn
   return `module-reference:loadout-index:${snapshot.loadoutIndex}`
 }
 
+function globalModuleProjectionTarget(entry: GlobalModuleRollbackEntry): string {
+  if (entry.kind === 'module-enable') return pendingMutationModuleEnabledProjectionTarget(entry.moduleId)
+  return entry.target
+}
+
+function globalModuleProjectionTargets(entries: readonly GlobalModuleRollbackEntry[]): string[] {
+  return [
+    ...new Set(
+      entries.flatMap((entry) => [
+        globalModuleProjectionTarget(entry),
+        ...(entry.kind === 'module-field' ? [moduleRowRollbackTarget(entry.moduleId)] : []),
+      ]),
+    ),
+  ]
+}
+
+function reapplyGlobalModuleEntries(
+  entries: readonly GlobalModuleRollbackEntry[],
+  isTargetCurrent: (target: string) => boolean,
+): void {
+  let changed = false
+  withTrustedResourceWrite(() => {
+    for (const entry of entries) {
+      if (!isTargetCurrent(globalModuleProjectionTarget(entry))) continue
+      changed = reapplyGlobalModuleEntryIfLiveMatchesPrevious(entry) || changed
+    }
+  })
+  if (changed) reloadGuiAfterDefinitionChange()
+}
+
+function reapplyGlobalModuleEntryIfLiveMatchesPrevious(entry: GlobalModuleRollbackEntry): boolean {
+  if (entry.kind === 'module-create') {
+    const modules = getDatabase().modules ?? []
+    if (modules.some((module) => module.id === entry.moduleId)) return false
+    getDatabase().modules = [...modules, cloneJsonValue(entry.attemptedModule)]
+    return true
+  }
+  if (entry.kind === 'module-field') {
+    const module = getDatabase().modules?.find((candidate) => candidate.id === entry.moduleId) as
+      | (RisuModule & Record<string, unknown>)
+      | undefined
+    if (!module) return false
+    const liveExists = hasOwnRecordKey(module, entry.field)
+    if (liveExists !== entry.previousExists) return false
+    if (liveExists && !isJsonValueEqual(module[entry.field], entry.previousValue)) return false
+    if (entry.attemptedExists) module[entry.field] = cloneJsonValue(entry.attemptedValue)
+    else delete module[entry.field]
+    return true
+  }
+  if (entry.kind === 'module-delete-row') {
+    const modules = getDatabase().modules ?? []
+    const index = modules.findIndex((module) => module.id === entry.moduleId)
+    if (index === -1 || !isJsonValueEqual(modules[index], entry.previousModule)) return false
+    getDatabase().modules = modules.filter((_, moduleIndex) => moduleIndex !== index)
+    return true
+  }
+  if (entry.kind === 'module-enable') {
+    const enabledModules = getDatabase().enabledModules ?? []
+    const liveEnabled = enabledModules.includes(entry.moduleId)
+    if (liveEnabled !== entry.previousEnabled || liveEnabled === entry.attemptedEnabled) return false
+    if (entry.attemptedEnabled) getDatabase().enabledModules = [...enabledModules, entry.moduleId]
+    else getDatabase().enabledModules = enabledModules.filter((moduleId) => moduleId !== entry.moduleId)
+    return true
+  }
+  if (entry.kind === 'module-reference') {
+    const target = findModuleReferenceTarget(entry)
+    if (!target || !modulesFieldMatches(target, entry.previous)) return false
+    restoreModulesField(target, entry.attempted)
+    return true
+  }
+
+  const modules = getDatabase().modules ?? []
+  if (
+    !isStringArrayEqual(
+      modules.map((module) => module.id),
+      entry.previousModuleIds,
+    )
+  )
+    return false
+  const byId = new Map(modules.map((module) => [module.id, module]))
+  const reordered = entry.attemptedModuleIds.map((moduleId) => byId.get(moduleId))
+  if (reordered.some((module) => !module)) return false
+  getDatabase().modules = reordered as RisuModule[]
+  return true
+}
+
 function globalModuleRollbackTargets(entry: GlobalModuleRollbackEntry): string[] {
   if (entry.kind === 'module-field') {
     return [entry.target, moduleRowRollbackTarget(entry.moduleId)]
@@ -1384,89 +1554,282 @@ function hasBlockingGenerationSettingsSaveReason(
   })
 }
 
+interface ScopedModuleDurableBatchStep extends CharacterOwnedDurableBatchStep {
+  operation: PendingScopedModuleOperation
+}
+
+function dispatchScopedModuleDurableBatch(
+  characterId: string | undefined,
+  steps: ScopedModuleDurableBatchStep[],
+): void {
+  void dispatchCharacterOwnedDurableBatch(characterId, steps).then((outcome) => {
+    if (outcome.status !== 'retained') return
+    for (const step of steps.slice(outcome.acceptedCount)) acceptScopedModuleOperation(step.operation)
+  })
+}
+
+function chatForScopedModuleMutation(
+  chatId: string,
+  characterId?: string,
+): { modules?: string[]; generationSettings?: ChatGenerationSettings } | null {
+  const preferred = characterId ? findCharacterById(characterId) : undefined
+  const preferredChat = preferred?.chats?.find((chat) => chat.id === chatId)
+  if (preferredChat) return preferredChat
+  for (const character of getDatabase().characters ?? []) {
+    const chat = character.chats?.find((candidate) => candidate.id === chatId)
+    if (chat) return chat
+  }
+  return null
+}
+
+function modulesFieldMatchesAttempt(target: { modules?: string[] }, attempted: readonly string[]): boolean {
+  return (
+    Object.prototype.hasOwnProperty.call(target, 'modules') && isStringArrayEqual(target.modules ?? [], [...attempted])
+  )
+}
+
+function rollbackChatModuleAttempt(previous: ChatScopedSnapshot, attempted: readonly string[]): boolean {
+  if (!previous.chatId || !previous.chat) return false
+  let changed = false
+  withTrustedResourceWrite(() => {
+    const chat = chatForScopedModuleMutation(previous.chatId!, previous.characterId)
+    if (!chat || !modulesFieldMatchesAttempt(chat, attempted)) return
+    if (Object.prototype.hasOwnProperty.call(previous.chat, 'modules')) {
+      chat.modules = cloneJsonValue(previous.chat!.modules)
+    } else {
+      delete chat.modules
+    }
+    changed = true
+  })
+  return changed
+}
+
+function rollbackCharacterModuleAttempt(previous: CharacterModuleStateSnapshot, attempted: readonly string[]): boolean {
+  let changed = false
+  withTrustedResourceWrite(() => {
+    const character = findCharacterById(previous.characterId)
+    if (!character || !modulesFieldMatchesAttempt(character, attempted)) return
+    if (previous.hasModulesField) character.modules = cloneJsonValue(previous.modules)
+    else delete character.modules
+    changed = true
+  })
+  return changed
+}
+
+function rollbackGenerationSettingsAttempt(snapshot: ChatGenerationSettingsSnapshot): boolean {
+  if (!snapshot.attemptedGenerationSettings) return false
+  let changed = false
+  withTrustedResourceWrite(() => {
+    const chat = chatForScopedModuleMutation(snapshot.chatId, snapshot.characterId)
+    if (!chat) return
+    const row = chat as Record<string, unknown>
+    if (!Object.prototype.hasOwnProperty.call(row, 'generationSettings')) return
+    if (!isJsonValueEqual(chat.generationSettings, snapshot.attemptedGenerationSettings)) return
+    if (snapshot.hadGenerationSettings) chat.generationSettings = cloneJsonValue(snapshot.generationSettings)
+    else delete chat.generationSettings
+    changed = true
+  })
+  return changed
+}
+
+function changedModuleProjectionTargets(previous: readonly string[], attempted: readonly string[]): string[] {
+  const before = new Set(previous)
+  const after = new Set(attempted)
+  return [...new Set([...previous, ...attempted])]
+    .filter((moduleId) => before.has(moduleId) !== after.has(moduleId))
+    .map(pendingMutationModuleEnabledProjectionTarget)
+}
+
+function reapplyChatModuleAttempt(
+  previous: ChatScopedSnapshot,
+  attempted: readonly string[],
+  isTargetCurrent: (target: string) => boolean,
+): void {
+  if (!previous.chatId || !previous.chat) return
+  const chat = chatForScopedModuleMutation(previous.chatId, previous.characterId)
+  if (!chat) return
+  const previousModules = previous.chat.modules ?? []
+  const before = new Set(previousModules)
+  const after = new Set(attempted)
+  let next = [...(chat.modules ?? [])]
+  let changed = false
+  for (const moduleId of new Set([...previousModules, ...attempted])) {
+    if (before.has(moduleId) === after.has(moduleId)) continue
+    if (!isTargetCurrent(pendingMutationModuleEnabledProjectionTarget(moduleId))) continue
+    const liveHas = next.includes(moduleId)
+    if (liveHas === after.has(moduleId) || liveHas !== before.has(moduleId)) continue
+    if (after.has(moduleId)) {
+      next.splice(boundedInsertIndex(attempted.indexOf(moduleId), next.length), 0, moduleId)
+    } else {
+      next = next.filter((candidate) => candidate !== moduleId)
+    }
+    changed = true
+  }
+  if (!changed) return
+  withTrustedResourceWrite(() => {
+    chat.modules = next
+  })
+  reloadGuiAfterDefinitionChange()
+}
+
+function reapplyCharacterModuleAttempt(
+  previous: CharacterModuleStateSnapshot,
+  attempted: readonly string[],
+  projectionTarget: string,
+  isTargetCurrent: (target: string) => boolean,
+): void {
+  if (!isTargetCurrent(projectionTarget)) return
+  const character = findCharacterById(previous.characterId)
+  if (!character) return
+  const liveMatchesPrevious = previous.hasModulesField
+    ? Object.prototype.hasOwnProperty.call(character, 'modules') &&
+      isStringArrayEqual(character.modules ?? [], previous.modules ?? [])
+    : !Object.prototype.hasOwnProperty.call(character, 'modules')
+  if (!liveMatchesPrevious || modulesFieldMatchesAttempt(character, attempted)) return
+  withTrustedResourceWrite(() => {
+    character.modules = cloneJsonValue([...attempted])
+  })
+  reloadGuiAfterDefinitionChange()
+}
+
+function reapplyGenerationSettingsAttempt(
+  snapshot: ChatGenerationSettingsSnapshot,
+  projectionTarget: string,
+  isTargetCurrent: (target: string) => boolean,
+): void {
+  if (!snapshot.attemptedGenerationSettings || !isTargetCurrent(projectionTarget)) return
+  const chat = chatForScopedModuleMutation(snapshot.chatId, snapshot.characterId)
+  if (!chat) return
+  const hasLive = Object.prototype.hasOwnProperty.call(chat, 'generationSettings')
+  const liveMatchesPrevious = snapshot.hadGenerationSettings
+    ? hasLive && isJsonValueEqual(chat.generationSettings, snapshot.generationSettings)
+    : !hasLive
+  if (!liveMatchesPrevious || isJsonValueEqual(chat.generationSettings, snapshot.attemptedGenerationSettings)) return
+  withTrustedResourceWrite(() => {
+    chat.generationSettings = cloneJsonValue(snapshot.attemptedGenerationSettings)
+  })
+  reloadGuiAfterDefinitionChange()
+}
+
+function chatModuleDurableStep(
+  chatId: string,
+  nextModules: string[],
+  previous: ChatScopedSnapshot,
+): ScopedModuleDurableBatchStep {
+  const commandModules = cloneJsonValue(nextModules)
+  const operation = issueScopedModuleOperation(`chat-modules:${chatId}`, () =>
+    rollbackChatModuleAttempt(previous, commandModules),
+  )
+  return {
+    operation,
+    method: 'PATCH',
+    path: `/chats/${encodeURIComponent(chatId)}`,
+    body: { patch: { modules: commandModules }, select: false },
+    projectionTargets: changedModuleProjectionTargets(previous.chat?.modules ?? [], commandModules),
+    command: async (baseRevision, body) => {
+      const result = await updateChatCommand({
+        baseRevision,
+        chatId,
+        patch: body.patch as ModuleSnapshot,
+        select: body.select as boolean,
+      })
+      if (result.status === 'ok') acceptScopedModuleOperation(operation)
+      return result
+    },
+    rollback: () => rejectScopedModuleOperation(operation),
+    reapply: (isTargetCurrent) => reapplyChatModuleAttempt(previous, commandModules, isTargetCurrent),
+  }
+}
+
+function characterModuleDurableStep(
+  characterId: string,
+  nextModules: string[],
+  previous: CharacterModuleStateSnapshot,
+): ScopedModuleDurableBatchStep {
+  const commandModules = cloneJsonValue(nextModules)
+  const path = `/characters/${encodeURIComponent(characterId)}/modules/reorder`
+  const projectionTarget = `request:POST:${path}`
+  const operation = issueScopedModuleOperation(`character-modules:${characterId}`, () =>
+    rollbackCharacterModuleAttempt(previous, commandModules),
+  )
+  return {
+    operation,
+    method: 'POST',
+    path,
+    body: { moduleIds: commandModules },
+    projectionTargets: [projectionTarget],
+    command: async (baseRevision, body) => {
+      const result = await reorderCharacterModulesCommand(
+        { baseRevision, characterId, moduleIds: body.moduleIds as string[] },
+        undefined,
+        true,
+      )
+      if (result.status === 'ok') acceptScopedModuleOperation(operation)
+      return result
+    },
+    rollback: () => rejectScopedModuleOperation(operation),
+    reapply: (isTargetCurrent) =>
+      reapplyCharacterModuleAttempt(previous, commandModules, projectionTarget, isTargetCurrent),
+  }
+}
+
+function generationSettingsDurableStep(update: ActiveChatSidebarToggleDefaultUpdate): ScopedModuleDurableBatchStep {
+  const commandSettings = cloneJsonValue(update.generationSettings)
+  const rollback: ChatGenerationSettingsSnapshot = {
+    ...update.rollback,
+    attemptedGenerationSettings: commandSettings,
+  }
+  const projectionTarget = pendingMutationChatGenerationSettingsProjectionTarget(update.chatId)
+  const operation = issueScopedModuleOperation(`chat-generation-settings:${update.chatId}`, () =>
+    rollbackGenerationSettingsAttempt(rollback),
+  )
+  return {
+    operation,
+    method: 'PUT',
+    path: `/chats/${encodeURIComponent(update.chatId)}/generation-settings`,
+    body: { generationSettings: commandSettings },
+    dependencyKeys: chatGenerationSettingsMutationDependencyKeys(commandSettings),
+    projectionTargets: [projectionTarget],
+    command: async (baseRevision, body) => {
+      const result = await saveChatGenerationSettingsCommand({
+        baseRevision,
+        chatId: update.chatId,
+        generationSettings: body.generationSettings as ChatGenerationSettings,
+      })
+      if (result.status === 'ok') acceptScopedModuleOperation(operation)
+      return result
+    },
+    rollback: () => rejectScopedModuleOperation(operation),
+    reapply: (isTargetCurrent) => reapplyGenerationSettingsAttempt(rollback, projectionTarget, isTargetCurrent),
+  }
+}
+
 function dispatchUpdateChatScopedWithGenerationSettings(
   chatId: string,
   nextModules: string[],
-  generationUpdate: ActiveChatSidebarToggleDefaultUpdate,
-  previous: ReturnType<typeof currentChatScopedSnapshot>,
+  generationUpdate: ActiveChatSidebarToggleDefaultUpdate | null,
+  previous: ChatScopedSnapshot,
 ): void {
-  const commandModules = cloneJsonValue(nextModules)
-  const commandSettings = cloneJsonValue(generationUpdate.generationSettings)
-  runOptimisticCommandSequence(
-    [
-      (baseRevision) =>
-        updateChatCommand({
-          baseRevision,
-          chatId,
-          patch: { modules: commandModules },
-          select: false,
-        }),
-      (baseRevision) =>
-        saveChatGenerationSettingsCommand({
-          baseRevision,
-          chatId,
-          generationSettings: commandSettings,
-        }),
-    ],
-    () => restoreChatScopedState(previous),
-  )
+  const steps = [chatModuleDurableStep(chatId, nextModules, previous)]
+  if (generationUpdate) steps.push(generationSettingsDurableStep(generationUpdate))
+  dispatchScopedModuleDurableBatch(previous.characterId, steps)
 }
 
 function dispatchReorderCharacterModulesWithGenerationSettings(
   characterId: string,
   nextModules: string[],
   previous: CharacterModuleStateSnapshot,
-  generationUpdate: ActiveChatSidebarToggleDefaultUpdate,
+  generationUpdate: ActiveChatSidebarToggleDefaultUpdate | null,
 ): void {
-  const commandModules = cloneJsonValue(nextModules)
-  const commandSettings = cloneJsonValue(generationUpdate.generationSettings)
-  const rollback: ChatGenerationSettingsSnapshot = {
-    ...generationUpdate.rollback,
-    attemptedGenerationSettings: commandSettings,
-  }
-
-  runOptimisticCommandSequence(
-    [
-      (baseRevision) =>
-        reorderCharacterModulesCommand(
-          {
-            baseRevision,
-            characterId,
-            moduleIds: commandModules,
-          },
-          undefined,
-          true,
-        ),
-      (baseRevision) =>
-        saveChatGenerationSettingsCommand({
-          baseRevision,
-          chatId: generationUpdate.chatId,
-          generationSettings: commandSettings,
-        }),
-    ],
-    () => {
-      restoreCharacterModuleState(previous)
-      restoreChatGenerationSettings(rollback)
-    },
-  )
+  const steps = [characterModuleDurableStep(characterId, nextModules, previous)]
+  if (generationUpdate) steps.push(generationSettingsDurableStep(generationUpdate))
+  dispatchScopedModuleDurableBatch(characterId, steps)
 }
 
 export function dispatchReorderCharacterModules(characterId: string, previous: CharacterModuleStateSnapshot): void {
   const character = findCharacterById(characterId)
   if (!character) return
-  runModuleCommand(
-    (baseRevision) =>
-      reorderCharacterModulesCommand(
-        {
-          baseRevision,
-          characterId,
-          moduleIds: character.modules ?? [],
-        },
-        undefined,
-        true,
-      ),
-    () => restoreCharacterModuleState(previous),
-  )
+  dispatchReorderCharacterModulesWithGenerationSettings(characterId, character.modules ?? [], previous, null)
 }
 
 export function toggleSelectedChatModule(moduleId: string): void {
@@ -1491,11 +1854,7 @@ export function toggleSelectedChatModule(moduleId: string): void {
   })
 
   const generationUpdate = enabling ? applyMissingActiveChatSidebarToggleDefaults() : null
-  if (generationUpdate) {
-    dispatchUpdateChatScopedWithGenerationSettings(chat.id, nextModules, generationUpdate, previous)
-  } else {
-    dispatchUpdateChatScoped(chat.id, { modules: nextModules }, previous)
-  }
+  dispatchUpdateChatScopedWithGenerationSettings(chat.id, nextModules, generationUpdate, previous)
   reloadGuiAfterDefinitionChange()
 }
 
@@ -1516,11 +1875,7 @@ export function toggleSelectedCharacterModule(moduleId: string): void {
   })
 
   const generationUpdate = enabling ? applyMissingActiveChatSidebarToggleDefaults() : null
-  if (generationUpdate) {
-    dispatchReorderCharacterModulesWithGenerationSettings(character.chaId, nextModules, previous, generationUpdate)
-  } else {
-    dispatchReorderCharacterModules(character.chaId, previous)
-  }
+  dispatchReorderCharacterModulesWithGenerationSettings(character.chaId, nextModules, previous, generationUpdate)
   reloadGuiAfterDefinitionChange()
 }
 
