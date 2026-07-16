@@ -159,4 +159,40 @@ describe('ModelRuntimeDefaultsEditor', () => {
     await tick()
     expect(maxContextInput.value).toBe('16384')
   })
+
+  it('preserves untouched authoritative fields while an edit draft is dirty', async () => {
+    component = mount(ModelRuntimeDefaultsEditor, { target })
+
+    buttonByText(language.modelProfiles.edit).click()
+    await tick()
+
+    const maxContextInput = Array.from(target.querySelectorAll<HTMLInputElement>('input[type="number"]')).find(
+      (input) => input.value === '4096',
+    )
+    if (!maxContextInput) throw new Error('Max context input not found')
+    maxContextInput.value = '8192'
+    maxContextInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    setDatabaseLite({
+      modelRuntimeDefaults: {
+        maxContext: 4096,
+        maxResponse: 2048,
+        temperature: 1.2,
+      },
+    } as any)
+    await tick()
+
+    buttonByText(language.modelProfiles.save).click()
+    await flushAsync()
+
+    expect(commandSpies.updateModelRuntimeDefaultsCommand).toHaveBeenCalledWith({
+      baseRevision: 123,
+      runtimeDefaults: {
+        maxContext: 8192,
+        maxResponse: 2048,
+        temperature: 1.2,
+      },
+    })
+  })
 })

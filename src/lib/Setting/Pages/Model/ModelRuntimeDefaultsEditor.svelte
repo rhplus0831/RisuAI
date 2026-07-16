@@ -14,6 +14,7 @@
   let saving = $state(false)
   let commandError = $state('')
   let draft = $state<ModelProfileRecordRuntimeOptions>({})
+  let editBaseline = $state<ModelProfileRecordRuntimeOptions>({})
   let lastServerSnapshot = $state('')
 
   let runtimeDefaults = $derived(normalizeModelRuntimeDefaults(getDatabase().modelRuntimeDefaults))
@@ -27,11 +28,17 @@
     lastServerSnapshot = nextSnapshot
     if (!editing) {
       draft = cloneJsonValue(runtimeDefaults)
+      editBaseline = cloneJsonValue(runtimeDefaults)
       commandError = ''
+      return
     }
+
+    draft = rebaseDirtyRuntimeDefaults(editBaseline, draft, runtimeDefaults)
+    editBaseline = cloneJsonValue(runtimeDefaults)
   })
 
   function cloneJsonValue<T>(value: T): T {
+    if (value === undefined) return value
     return JSON.parse(JSON.stringify(value)) as T
   }
 
@@ -39,8 +46,36 @@
     return JSON.stringify(value ?? {})
   }
 
+  function snapshotValue(value: unknown): string {
+    const serialized = JSON.stringify(value)
+    return serialized === undefined ? '__undefined__' : serialized
+  }
+
+  function rebaseDirtyRuntimeDefaults(
+    baseline: ModelProfileRecordRuntimeOptions,
+    attempted: ModelProfileRecordRuntimeOptions,
+    projection: ModelProfileRecordRuntimeOptions,
+  ): ModelProfileRecordRuntimeOptions {
+    const baselineRecord = baseline as Record<string, unknown>
+    const attemptedRecord = attempted as Record<string, unknown>
+    const next = cloneJsonValue(projection) as Record<string, unknown>
+    const keys = new Set([...Object.keys(baselineRecord), ...Object.keys(attemptedRecord)])
+
+    for (const key of keys) {
+      if (snapshotValue(baselineRecord[key]) === snapshotValue(attemptedRecord[key])) continue
+      if (Object.prototype.hasOwnProperty.call(attemptedRecord, key)) {
+        next[key] = cloneJsonValue(attemptedRecord[key])
+      } else {
+        delete next[key]
+      }
+    }
+
+    return normalizeModelRuntimeDefaults(next)
+  }
+
   function startEditing(): void {
     draft = cloneJsonValue(runtimeDefaults)
+    editBaseline = cloneJsonValue(runtimeDefaults)
     lastServerSnapshot = snapshot(runtimeDefaults)
     commandError = ''
     editing = true
@@ -49,6 +84,7 @@
   function cancelEditing(): void {
     if (saving) return
     draft = cloneJsonValue(runtimeDefaults)
+    editBaseline = cloneJsonValue(runtimeDefaults)
     commandError = ''
     editing = false
   }
