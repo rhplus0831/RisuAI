@@ -1029,7 +1029,7 @@ interface ChatCreateRollback {
 interface ChatImportedCreateRollback {
   selectedCharID: number
   characterId: string | undefined
-  attemptedIndex: number
+  chatId: string
   attemptedChat: Chat
   previousSelectedChatId: string | undefined
 }
@@ -1183,6 +1183,7 @@ function importedChatCreateRollbackFromState(
   previous: ChatStateSnapshot,
   usedIndexes: Set<number>,
 ): ChatImportedCreateRollback | null {
+  if (!attemptedChat.id) return null
   const character = locateSnapshotCharacter(characterId, previous.selectedCharID)
   const attemptedSnapshot = snapshotJson(attemptedChat)
   const attemptedIndex =
@@ -1197,7 +1198,7 @@ function importedChatCreateRollbackFromState(
   return {
     selectedCharID: previous.selectedCharID,
     characterId,
-    attemptedIndex,
+    chatId: attemptedChat.id,
     attemptedChat: cloneJsonValue(attemptedChat),
     previousSelectedChatId: selectedChatIdForCharacter(previousCharacter),
   }
@@ -1260,11 +1261,13 @@ function restoreImportedCreatedChatAttempt(rollback: ChatImportedCreateRollback 
     const chats = character?.chats
     if (!character || !chats) return
 
-    const liveChat = chats[rollback.attemptedIndex]
+    const attemptedIndex = chats.findIndex((chat) => chat.id === rollback.chatId)
+    if (attemptedIndex < 0) return
+    const liveChat = chats[attemptedIndex]
     if (snapshotJson(liveChat) !== snapshotJson(rollback.attemptedChat)) return
 
     const liveSelectedChatId = selectedChatIdForCharacter(character)
-    chats.splice(rollback.attemptedIndex, 1)
+    chats.splice(attemptedIndex, 1)
     character.chats = chats
     preserveOrRestoreChatSelection(character, liveSelectedChatId, rollback.previousSelectedChatId)
   })
@@ -2217,6 +2220,11 @@ export async function dispatchCreateImportedChats(
 
   const outcome = await dispatchCharacterOwnedDurableBatch(characterId, durableSteps)
   if (outcome.status === 'ok' || outcome.status === 'retained') return { status: 'ok' }
+  // Individual step rollbacks can run while later optimistic chats still
+  // reference an unaccepted folder. Revisit the whole rejected suffix after
+  // every reserved batch slot has settled so those temporary references do
+  // not leave rows in the UI that the server rejected.
+  rollbackBatch()
   return chatImportDispatchResult(outcome.failure)
 }
 
