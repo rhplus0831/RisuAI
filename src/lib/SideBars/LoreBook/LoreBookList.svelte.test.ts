@@ -476,6 +476,31 @@ describe('LoreBookList', () => {
     expect(lorebookListMocks.replaceChatLorebookCollection).toHaveBeenCalledWith('chat-resource', [])
   })
 
+  it('does not settle a clean draft after its confirmed deletion supersedes the row', async () => {
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        {
+          id: 'global-book',
+          name: 'Global Book',
+          data: [makeLoreBook({ id: 'global-entry', comment: 'Global Entry' })],
+        },
+      ],
+      loreBookPage: 0,
+    } as unknown as Database)
+
+    resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
+    await tick()
+    lorebookListMocks.queueConfirm(true)
+    lorebookListMocks.flushPendingLorebookEntryDraftEdit.mockClear()
+
+    deleteButtonForRow(rowByEntryId('global-entry')).click()
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.replaceGlobalLorebookEntryCollection).toHaveBeenCalledWith('global-book', [])
+    expect(lorebookListMocks.flushPendingLorebookEntryDraftEdit).not.toHaveBeenCalled()
+  })
+
   it('renders selected global lorebook entries with stable id-backed row identity', async () => {
     const initialEntries = [
       makeLoreBook({ id: 'global-entry-a', comment: 'Global Entry A', content: 'Open content' }),

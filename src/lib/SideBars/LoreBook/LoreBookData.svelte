@@ -90,6 +90,8 @@
   const dirtyDraftFields = new Set<LorebookEntryDirtyField>()
   let previousValueSnapshot = snapshotJson(value)
   let lastDraftDispatchSnapshot = snapshotJson(value)
+  let draftNeedsSettlement = false
+  let deletionCommitted = false
   let tokenPromise = $state<Promise<number> | null>(null)
 
   $effect(() => {
@@ -175,8 +177,12 @@
       }
       previousValueSnapshot = draftSnapshot
       lastDraftDispatchSnapshot = draftSnapshot
+      draftNeedsSettlement = true
     }
-    if (settled) onDraftSettled()
+    if (settled && draftNeedsSettlement) {
+      draftNeedsSettlement = false
+      onDraftSettled()
+    }
   }
 
   function settleDraftSoon(): void {
@@ -192,7 +198,7 @@
   }
 
   onDestroy(() => {
-    propagateDraft(true)
+    if (!deletionCommitted) propagateDraft(true)
     dirtyDraftFields.clear()
   })
 
@@ -360,6 +366,7 @@
               language.removeConfirm + (target.snapshot.comment || 'Unnamed Folder'),
             )
             if (secondConfirm) {
+              deletionCommitted = true
               if (open) {
                 onClose(target.mode !== 'folder')
               }
@@ -383,6 +390,7 @@
           const target = captureDeletionTarget()
           const d = await alertConfirm(language.removeConfirm + getParentLoreName(target.snapshot))
           if (d) {
+            deletionCommitted = true
             if (open) {
               onClose(target.mode !== 'folder')
             }
