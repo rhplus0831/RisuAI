@@ -649,6 +649,22 @@ describe('agent preset database normalization', () => {
   })
 })
 
+describe('accessibility database normalization', () => {
+  it('defaults reduced motion to false and preserves an enabled preference', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as unknown as Record<string, unknown>).reducedMotion
+
+    setDatabase(legacyData)
+    expect(getDatabase().reducedMotion).toBe(false)
+
+    const enabledData = clonePlain(getDatabase())
+    enabledData.reducedMotion = true
+    setDatabase(enabledData)
+    expect(getDatabase().reducedMotion).toBe(true)
+  })
+})
+
 function seedPresetDatabase(patch: Partial<Database> = {}): void {
   setDatabaseLite({
     characters: [],

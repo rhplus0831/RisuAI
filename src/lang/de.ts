@@ -858,6 +858,7 @@ export const languageGerman = {
   globalLoreBook: 'Lore Buch',
   globalRegexScript: 'Regex',
   accessibility: 'Barrierefreiheit',
+  reducedMotion: 'Bewegungen reduzieren',
   sendWithEnter: 'Mit Enter senden(Umschalt + Enter beim Entpacken zu senden)',
   fixedChatTextarea: 'Unten im Chatfenster fixieren',
   clickToEdit: 'Text zum Bearbeiten anklicken',

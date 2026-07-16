@@ -35,6 +35,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   additionalParams: 'providers',
   alwaysScrollToNewMessage: 'sidebar',
   animationSpeed: 'display',
+  reducedMotion: 'display',
   antiClaudeOverload: 'runtime',
   antiServerOverloads: 'runtime',
   apiType: 'providers',

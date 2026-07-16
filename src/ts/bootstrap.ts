@@ -3,7 +3,7 @@ import { getDatabase, setResourceWriteGuardEnabled, type Database } from './stor
 import { botMakerMode, selectedCharID, loadedStore, LoadingStatusState } from './stores.svelte'
 import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertTOS, waitAlert } from './alert'
-import { updateAnimationSpeed } from './gui/animation'
+import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { language } from 'src/lang'
 import { startObserveDom } from './observer.svelte'
@@ -142,7 +142,7 @@ setSettingsRuntimeProjectionHook((keys) => {
   if (colorSchemeChanged) updateColorScheme()
   if (colorSchemeChanged || hasProjectedRuntimeKey(keys, TEXT_THEME_RUNTIME_KEYS)) updateTextThemeAndCSS()
   if (hasProjectedRuntimeKey(keys, GUI_SIZE_RUNTIME_KEYS)) updateGuisize()
-  if (keys.includes('animationSpeed')) updateAnimationSpeed()
+  if (keys.includes('animationSpeed') || keys.includes('reducedMotion')) updateReducedMotion()
   if (keys.includes('heightMode')) updateHeightMode()
   if (get(loadedStore) && keys.includes('notification')) {
     void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
@@ -191,7 +191,7 @@ export async function loadData(): Promise<void> {
       LoadingStatusState.text = 'Updating States...'
       updateColorScheme()
       updateTextThemeAndCSS()
-      updateAnimationSpeed()
+      updateReducedMotion()
       updateHeightMode()
       updateErrorHandling()
       updateGuisize()

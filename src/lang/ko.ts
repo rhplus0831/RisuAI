@@ -839,6 +839,7 @@ export const languageKorean = {
   globalLoreBook: '글로벌 로어북',
   globalRegexScript: '글로벌 정규식',
   accessibility: '접근성',
+  reducedMotion: '모션 줄이기',
   sendWithEnter: '엔터키로 메세지 보내기(체크 해제시 Shift + Enter가 메세지 전송으로 변경.)',
   fixedChatTextarea: '채팅창 하단 고정',
   clickToEdit: '클릭해서 수정하기',

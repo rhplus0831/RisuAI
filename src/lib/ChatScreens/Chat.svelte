@@ -1580,12 +1580,12 @@
     {#if !hasActiveAgentPresetProgress}
       <div class="chat-generation-loading" role="status" aria-live="polite" aria-busy="true">
         <div class="chat-generation-loading-header">
-          <LoaderCircleIcon size={16} class="animate-spin shrink-0" />
+          <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
           <span>{generationLoadingText}</span>
         </div>
         <div class="chat-generation-loading-track">
           <div
-            class={`chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
+            class={`risu-ongoing-pulse chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
             style:width={`${generationLoadingProgress}%`}>
           </div>
         </div>
@@ -2682,11 +2682,11 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .chat-generation-loading-fill,
-    .chat-generation-loading-fill::after {
-      animation: none;
-      transition: none;
-    }
+  :global(html.risu-reduced-motion) .chat-generation-loading-fill {
+    transition: none;
+  }
+
+  :global(html.risu-reduced-motion) .chat-generation-loading-fill::after {
+    animation: none;
   }
 </style>

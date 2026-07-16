@@ -787,6 +787,7 @@ export const languageChinese = {
   globalLoreBook: '全局世界书',
   globalRegexScript: '全局正则表达式',
   accessibility: '辅助功能',
+  reducedMotion: '减少动态效果',
   sendWithEnter: '使用 Enter 键发送（取消检查时Shift + Enter更改为消息传送。）',
   fixedChatTextarea: '固定聊天窗口底部',
   clickToEdit: '点击文字进行编辑',

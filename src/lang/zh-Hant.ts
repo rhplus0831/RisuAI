@@ -808,6 +808,7 @@ export const languageChineseTraditional = {
   globalLoreBook: '全域 Lorebook',
   globalRegexScript: '全域正規表達式',
   accessibility: '輔助功能',
+  reducedMotion: '減少動態效果',
   sendWithEnter: '使用 Enter 鍵發送（未勾選時，發送方式將改為 Shift + Enter。）',
   fixedChatTextarea: '固定對話視窗底部',
   clickToEdit: '點擊文字進行編輯',

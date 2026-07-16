@@ -35,4 +35,9 @@ describe('settings group contracts', () => {
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.language).toContain('translatorPresetId')
     expect(SERVER_SETTINGS_GROUP_BY_KEY).not.toHaveProperty('translatorPresetId')
   })
+
+  it('persists reduced motion through the display settings group', () => {
+    expect(SERVER_SETTINGS_GROUP_BY_KEY.reducedMotion).toBe('display')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('reducedMotion')
+  })
 })

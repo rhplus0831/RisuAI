@@ -109,6 +109,8 @@ export const languageEnglish = {
   waveSpeedCatalogModelsLoaded: (count: number) => `Successfully loaded ${count} models`,
   showHelp: 'Show Help',
   help: {
+    reducedMotion:
+      'Minimizes animations and transitions. This app setting is used instead of your operating system or browser preference.',
     model: 'Model option is a main model used in chat.',
     submodel:
       'Auxiliary Model is a model that used in analyzing emotion images and auto suggestions and etc. gpt3.5 is recommended.',
@@ -1108,6 +1110,7 @@ export const languageEnglish = {
   globalLoreBook: 'Global Lorebook',
   globalRegexScript: 'Global Regex',
   accessibility: 'Accessibility',
+  reducedMotion: 'Reduce Motion',
   sendWithEnter: 'Send with Enter Key',
   fixedChatTextarea: 'Fixed at the bottom of the chat window(When unchecked, Shift + Enter changes to send a message.)',
   clickToEdit: 'Click Text to Edit',

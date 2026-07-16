@@ -836,6 +836,7 @@ export const languageVietnamese = {
   globalLoreBook: 'Sách truyền thuyết toàn cầu',
   globalRegexScript: 'Regex toàn cầu',
   accessibility: 'Khả năng tiếp cận',
+  reducedMotion: 'Giảm chuyển động',
   sendWithEnter: 'Gửi bằng phím Enter(Shift + Enter chuyển sang gửi tin nhắn khi không kiểm tra.)',
   fixedChatTextarea: 'Cố định ở dưới khung chat',
   clickToEdit: 'Bấm vào văn bản để chỉnh sửa',

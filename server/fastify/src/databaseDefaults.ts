@@ -312,6 +312,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'NAIsettings', prebuiltNAIpresets)
   setDefault(database, 'assetWidth', -1)
   setDefault(database, 'animationSpeed', 0.4)
+  setDefault(database, 'reducedMotion', false)
   setDefault(database, 'colorScheme', DEFAULT_COLOR_SCHEME)
   setDefault(database, 'colorSchemeName', 'default')
   normalizeNAISettings(database)

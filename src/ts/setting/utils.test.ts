@@ -234,6 +234,15 @@ describe('server-backed data-driven settings', () => {
     expect(displayItems.some((item) => item.bindKey === 'hideApiKey')).toBe(false)
   })
 
+  it('exposes the app-owned reduced-motion toggle under Accessibility', () => {
+    expect(accessibilitySettingsItems.find((item) => item.id === 'acc.reducedMotion')).toMatchObject({
+      type: 'check',
+      labelKey: 'reducedMotion',
+      helpKey: 'reducedMotion',
+      bindKey: 'reducedMotion',
+    })
+  })
+
   it('keeps Display custom-control watchers disjoint from renderer-owned bindings', () => {
     const rendererKeys = new Set(
       collectSettingItems(displaySettingsItems).flatMap((item) =>

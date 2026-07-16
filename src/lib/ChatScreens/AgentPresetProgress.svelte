@@ -43,7 +43,7 @@
 {#if progress}
   <div class="agent-preset-progress" role="status" aria-live="polite" aria-busy="true">
     <div class="agent-preset-progress-header">
-      <LoaderCircleIcon size={15} class="animate-spin shrink-0" />
+      <LoaderCircleIcon size={15} class="risu-ongoing-pulse animate-spin shrink-0" />
       <span>{progressLabel}</span>
     </div>
     <div class="agent-preset-progress-detail">{activeStepLabel}</div>
@@ -57,7 +57,7 @@
       <div
         class:agent-preset-progress-fill-before={progress.phase === 'beforeMain'}
         class:agent-preset-progress-fill-after={progress.phase === 'afterMain'}
-        class="agent-preset-progress-fill"
+        class="risu-ongoing-pulse agent-preset-progress-fill"
         style:width={`${progressPercent}%`}>
       </div>
     </div>
@@ -138,11 +138,11 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .agent-preset-progress-fill,
-    .agent-preset-progress-fill::after {
-      animation: none;
-      transition: none;
-    }
+  :global(html.risu-reduced-motion) .agent-preset-progress-fill {
+    transition: none;
+  }
+
+  :global(html.risu-reduced-motion) .agent-preset-progress-fill::after {
+    animation: none;
   }
 </style>

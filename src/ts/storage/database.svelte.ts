@@ -2824,6 +2824,7 @@ export function setDatabase(data: Database) {
   data.NAIsettings ??= safeStructuredClone(prebuiltNAIpresets)
   data.assetWidth ??= -1
   data.animationSpeed ??= 0.4
+  data.reducedMotion ??= false
   data.colorScheme ??= safeStructuredClone(defaultColorScheme)
   data.colorSchemeName ??= 'default'
   data.NAIsettings.starter ??= ''
@@ -3656,6 +3657,7 @@ export interface Database {
   personaNote: boolean
   assetWidth: number
   animationSpeed: number
+  reducedMotion: boolean
   botSettingAtStart: false
   NAIsettings: NAISettings
   hideRealm: boolean

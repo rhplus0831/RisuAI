@@ -6,6 +6,7 @@
 
 import type { SettingItem } from './types'
 import { language } from 'src/lang'
+import { updateReducedMotion } from '../gui/animation'
 
 export const accessibilitySettingsItems: SettingItem[] = [
   // Header
@@ -17,6 +18,15 @@ export const accessibilitySettingsItems: SettingItem[] = [
   },
 
   // Checkboxes
+  {
+    id: 'acc.reducedMotion',
+    type: 'check',
+    labelKey: 'reducedMotion',
+    helpKey: 'reducedMotion',
+    bindKey: 'reducedMotion',
+    onChange: () => updateReducedMotion(),
+    keywords: ['reduced', 'motion', 'animation', 'accessibility'],
+  },
   {
     id: 'acc.askRemoval',
     type: 'check',

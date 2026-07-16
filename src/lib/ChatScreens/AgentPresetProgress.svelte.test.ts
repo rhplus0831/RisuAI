@@ -86,6 +86,7 @@ describe('AgentPresetProgress', () => {
     expect(target.textContent).toContain('2/4')
     expect(target.textContent).toContain('Critique, Fact Check')
     expect(target.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('50')
+    expect(target.querySelectorAll('.risu-ongoing-pulse')).toHaveLength(2)
   })
 
   it('hides progress for a different chat and after a terminal snapshot', async () => {

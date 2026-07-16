@@ -229,19 +229,17 @@ body {
   --risu-theme-success-900: #14532d;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --risu-animation-speed: 0.01ms;
-  }
+html.risu-reduced-motion {
+  scroll-behavior: auto !important;
+}
 
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+html.risu-reduced-motion *,
+html.risu-reduced-motion *::before,
+html.risu-reduced-motion *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
 
 .x-risu-language-json {
@@ -392,7 +390,7 @@ body {
 }
 
 .loadmove {
-  animation: spin 1s linear infinite;
+  animation: risu-loading-spin 1s linear infinite;
   border-radius: 50%;
   border: 0.4rem solid rgba(0, 0, 0, 0);
   width: 1rem;
@@ -400,6 +398,28 @@ body {
   border-top: 0.4rem solid var(--risu-theme-borderc);
   border-left: 0.4rem solid var(--risu-theme-borderc);
   transition: border-color 0.5s;
+}
+
+@keyframes risu-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes risu-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Keep ongoing work perceptible without the spatial movement of a spinner or shimmer. */
+html.risu-reduced-motion .risu-ongoing-pulse {
+  animation: risu-loading-pulse 1.5s ease-in-out infinite !important;
 }
 
 .x-risu-risu-comment {

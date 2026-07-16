@@ -1533,7 +1533,7 @@
             class="peer-focus:border-textcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors"
             onclick={abortChat}
             style:height={inputHeight}>
-            <div class="loadmove chat-process-stage-{$chatProcessStage}"></div>
+            <div class="risu-ongoing-pulse loadmove chat-process-stage-{$chatProcessStage}"></div>
           </button>
         {:else}
           <button
@@ -2034,14 +2034,5 @@
   .autoload {
     border-top: 0.4rem solid #10b981;
     border-left: 0.4rem solid #10b981;
-  }
-
-  @keyframes spin {
-    0% {
-      transform: rotate(0deg);
-    }
-    100% {
-      transform: rotate(360deg);
-    }
   }
 </style>

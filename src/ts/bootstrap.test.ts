@@ -164,7 +164,7 @@ vi.mock('./alert', () => ({
   alertTOS: vi.fn(async () => true),
   waitAlert: vi.fn(async () => undefined),
 }))
-vi.mock('./gui/animation', () => ({ updateAnimationSpeed: vi.fn() }))
+vi.mock('./gui/animation', () => ({ updateReducedMotion: vi.fn() }))
 vi.mock('./gui/colorscheme', () => ({ updateColorScheme: vi.fn(), updateTextThemeAndCSS: vi.fn() }))
 vi.mock('./gui/guisize', () => ({ updateGuisize: vi.fn() }))
 vi.mock('./gui/heightMode', () => ({ updateHeightMode: vi.fn() }))
@@ -232,7 +232,7 @@ import {
 import { getServerResourceApplyEpoch } from './server/resourceWriteGuard.svelte'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './server/staleStateGuards'
 import { loadedStore, selectedCharID } from './stores.svelte'
-import { updateAnimationSpeed } from './gui/animation'
+import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { updateGuisize } from './gui/guisize'
 
@@ -448,7 +448,7 @@ describe('API-backed client bootstrap', () => {
     expect(updateColorScheme).toHaveBeenCalledOnce()
     expect(updateTextThemeAndCSS).toHaveBeenCalledOnce()
     expect(updateGuisize).toHaveBeenCalledOnce()
-    expect(updateAnimationSpeed).toHaveBeenCalledOnce()
+    expect(updateReducedMotion).toHaveBeenCalledOnce()
     expect(updateHeightMode).toHaveBeenCalledOnce()
   })
 

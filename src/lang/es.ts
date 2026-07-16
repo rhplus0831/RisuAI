@@ -842,6 +842,7 @@ export const languageSpanish = {
   globalLoreBook: 'Libro de Lore Global',
   globalRegexScript: 'Regex Global',
   accessibility: 'Accesibilidad',
+  reducedMotion: 'Reducir movimiento',
   sendWithEnter:
     'Enviar con la Tecla Enter(Al desactivar la verificación, Shift + Enter cambia a Transmisión de Mensajes.)',
   fixedChatTextarea: 'Fijación en la parte inferior de la ventana de chat',

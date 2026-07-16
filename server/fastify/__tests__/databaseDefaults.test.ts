@@ -15,6 +15,7 @@ describe('database defaults', () => {
     expect(database.modelRuntimeDefaults).toEqual({})
     expect(database.agentPresets).toEqual([])
     expect(database.agentPresetDefaultId).toBeUndefined()
+    expect(database.reducedMotion).toBe(false)
     expect(database.loreBook).toEqual([
       expect.objectContaining({ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }),
     ])
@@ -45,6 +46,12 @@ describe('database defaults', () => {
       scriptAux: {},
       overrides: {},
     })
+  })
+
+  it('preserves an enabled app reduced-motion preference', () => {
+    const database = normalizeDatabaseDefaults({ reducedMotion: true }, { providerDefaults: false })
+
+    expect(database.reducedMotion).toBe(true)
   })
 
   it('normalizes old model maps without dropping script roles', () => {

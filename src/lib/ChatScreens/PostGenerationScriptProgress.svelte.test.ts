@@ -62,6 +62,7 @@ describe('PostGenerationScriptProgress', () => {
     await tick()
     expect(target.querySelector('[role="status"]')).toBeTruthy()
     expect(target.textContent).toContain('Translator')
+    expect(target.querySelectorAll('.risu-ongoing-pulse')).toHaveLength(2)
 
     publishProgress('finished')
     await tick()

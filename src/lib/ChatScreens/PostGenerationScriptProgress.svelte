@@ -58,11 +58,11 @@
 {#if progress}
   <div class="post-generation-progress" role="status" aria-live="polite" aria-busy="true">
     <div class="post-generation-progress-header">
-      <LoaderCircleIcon size={15} class="animate-spin shrink-0" />
+      <LoaderCircleIcon size={15} class="risu-ongoing-pulse animate-spin shrink-0" />
       <span>{progressLabel}</span>
     </div>
     <div class="post-generation-progress-track">
-      <div class="post-generation-progress-fill" style:width={`${progressPercent}%`}></div>
+      <div class="risu-ongoing-pulse post-generation-progress-fill" style:width={`${progressPercent}%`}></div>
     </div>
   </div>
 {/if}
@@ -127,11 +127,11 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .post-generation-progress-fill,
-    .post-generation-progress-fill::after {
-      animation: none;
-      transition: none;
-    }
+  :global(html.risu-reduced-motion) .post-generation-progress-fill {
+    transition: none;
+  }
+
+  :global(html.risu-reduced-motion) .post-generation-progress-fill::after {
+    animation: none;
   }
 </style>

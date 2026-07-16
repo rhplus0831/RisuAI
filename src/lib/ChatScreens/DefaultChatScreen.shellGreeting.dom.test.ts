@@ -444,7 +444,7 @@ describe('generation control ownership', () => {
     await tick()
 
     expect(error).toBeNull()
-    expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeTruthy()
+    expect(target.querySelector('[data-testid="default-chat-cancel-button"] .risu-ongoing-pulse.loadmove')).toBeTruthy()
 
     getResourceDatabase().characters[0].chatPage = 1
     shellMocks.setCurrentRoute({
