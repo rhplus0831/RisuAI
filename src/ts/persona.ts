@@ -40,6 +40,7 @@ import {
   type PersonaIconUploadOperation,
 } from './server/personaIconUpload'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
+import { PERSONA_SELECTION_MUTATION_KEY, personaOwnerMutationKey } from './server/personaMutationKeys'
 import {
   captureCollectionProjectionEpoch,
   captureSettingsProjectionEpoch,
@@ -320,6 +321,12 @@ function stringArraysEqual(left: readonly string[] | null, right: readonly strin
 
 export function selectedPersonaId(): string | null {
   return validUniquePersonaIdAt(getDatabase().selectedPersona)
+}
+
+function personaOwnerDependencyKeys(...personaIds: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(personaIds.filter((personaId): personaId is string => Boolean(personaId)).map(personaOwnerMutationKey)),
+  )
 }
 
 function profileMirrorRollbackSnapshotFromState(snapshot: PersonaStateSnapshot): PersonaProfileMirrorRollbackSnapshot {
@@ -1045,6 +1052,7 @@ function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot)
   if (!canUseServerCommands()) return
   const createdPersonaId = nonBlankPersonaId(persona)
   if (!createdPersonaId) return
+  const previousPersonaId = uniquePersonaIdAt(previous.personas, previous.selectedPersona)
   const previousProfile = profileMirrorRollbackSnapshotFromState(previous)
   const attemptedProfile = currentProfileMirrorRollbackSnapshot()
   const attempted = currentPersonaStateSnapshot()
@@ -1057,23 +1065,41 @@ function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot)
     saveCurrent: false,
   })
   void flushPendingSelectedPersonaUpdate()
-  void runServerCommand({
-    command: (baseRevision) =>
-      createPersonaCommand({
-        baseRevision,
-        persona: cloneJsonValue(attemptedCreatedPersona) as PersonaSnapshot,
-        mirrorLegacyProfile: true,
-        optimisticAcknowledgement,
-      }),
-    rollback: personaCommandRollback({ personas: true, settings: true }, () =>
-      applyCreatePersonaRollback({
-        createdPersonaId,
-        attemptedCreatedPersona,
-        previousProfile,
-        attemptedProfile,
-      }),
-    ),
-  })
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: '/personas',
+        body: {
+          persona: cloneJsonValue(attemptedCreatedPersona) as PersonaSnapshot,
+          mirrorLegacyProfile: true,
+        },
+      },
+    ],
+    dependencyKeys: personaOwnerDependencyKeys(previousPersonaId),
+  }
+  const outbox = stagePendingMutation(PERSONA_SELECTION_MUTATION_KEY, intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        createPersonaCommand({
+          baseRevision,
+          persona: cloneJsonValue(attemptedCreatedPersona) as PersonaSnapshot,
+          mirrorLegacyProfile: true,
+          optimisticAcknowledgement,
+        }),
+      rollback: personaCommandRollback({ personas: true, settings: true }, () =>
+        applyCreatePersonaRollback({
+          createdPersonaId,
+          attemptedCreatedPersona,
+          previousProfile,
+          attemptedProfile,
+        }),
+      ),
+      ...transport,
+    }),
+  )
 }
 
 function dispatchDeletePersona(
@@ -1109,8 +1135,9 @@ function dispatchDeletePersona(
         },
       },
     ],
+    dependencyKeys: [personaOwnerMutationKey(personaId)],
   }
-  const outbox = stagePendingMutation(`persona-profile:${personaId}`, intent)
+  const outbox = stagePendingMutation(PERSONA_SELECTION_MUTATION_KEY, intent)
   void dispatchDurableMutation(outbox, intent, (transport) =>
     runServerCommand({
       command: (baseRevision) =>
@@ -1193,7 +1220,7 @@ export function queueSelectedPersonaUpdate(previous: PersonaStateSnapshot, attem
   const intent = selectedPersonaUpdateDurableIntent(personaId, pendingPersonaUpdate.patch)
   pendingPersonaUpdate.intent = intent
   pendingPersonaUpdate.outbox = stagePendingMutation(
-    `persona-profile:${personaId}`,
+    personaOwnerMutationKey(personaId),
     intent,
     pendingPersonaUpdate.outbox,
   )
@@ -1679,24 +1706,44 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
     mirrorLegacyProfile: true,
     saveCurrent: save === 'save',
   })
-  if (personaId) {
+  if (personaId && canUseServerCommands()) {
+    const previousPersonaId = uniquePersonaIdAt(previous.personas, previous.selectedPersona)
     void flushPendingSelectedPersonaUpdate()
-    runPersonaCommand(
-      (baseRevision) =>
-        selectPersonaCommand({
-          baseRevision,
-          personaId,
-          saveCurrent: save === 'save',
-          mirrorLegacyProfile: true,
-          optimisticAcknowledgement,
-        }),
-      () =>
-        applySelectPersonaRollback({
-          previous,
-          attempted,
-          saveCurrent: save === 'save',
-        }),
-      { personas: save === 'save', settings: true },
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/personas/select',
+          body: {
+            personaId,
+            saveCurrent: save === 'save',
+            mirrorLegacyProfile: true,
+          },
+        },
+      ],
+      dependencyKeys: personaOwnerDependencyKeys(save === 'save' ? previousPersonaId : null, personaId),
+    }
+    const outbox = stagePendingMutation(PERSONA_SELECTION_MUTATION_KEY, intent)
+    void dispatchDurableMutation(outbox, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          selectPersonaCommand({
+            baseRevision,
+            personaId,
+            saveCurrent: save === 'save',
+            mirrorLegacyProfile: true,
+            optimisticAcknowledgement,
+          }),
+        rollback: personaCommandRollback({ personas: save === 'save', settings: true }, () =>
+          applySelectPersonaRollback({
+            previous,
+            attempted,
+            saveCurrent: save === 'save',
+          }),
+        ),
+        ...transport,
+      }),
     )
   }
 }

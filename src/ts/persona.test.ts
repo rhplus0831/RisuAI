@@ -759,9 +759,11 @@ describe('persona ID read and command preparation', () => {
         })),
       ).toEqual([
         { key: 'persona-profile:persona-transient-delete-a', method: 'PATCH' },
-        { key: 'persona-profile:persona-transient-delete-a', method: 'DELETE' },
+        { key: 'persona:selection', method: 'DELETE' },
       ])
-      expect((await listPendingMutations())[1].intent.requests[0].body).toEqual({
+      const retainedDelete = (await listPendingMutations())[1]
+      expect(retainedDelete.intent.dependencyKeys).toEqual(['persona-profile:persona-transient-delete-a'])
+      expect(retainedDelete.intent.requests[0].body).toEqual({
         selectPersonaId: 'persona-transient-delete-b',
         mirrorLegacyProfile: true,
         saveCurrent: true,
@@ -785,6 +787,203 @@ describe('persona ID read and command preparation', () => {
         userNote: 'B note',
       })
       expect(getDatabase().personas).toEqual([personaB])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('holds persona selection behind retained outgoing and target row owners', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-select-dependencies',
+      writerEpoch: 7,
+      databaseLineage: 'lineage-persona-select-dependencies',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(20)
+    seedPersonaState(
+      [
+        makePersona({ id: 'persona-select-owner-a', name: 'Persona A', personaPrompt: 'A prompt' }),
+        makePersona({ id: 'persona-select-owner-b', name: 'Persona B', personaPrompt: 'B prompt' }),
+      ],
+      0,
+    )
+    getDatabase().username = 'Persona A'
+    getDatabase().personaPrompt = 'A prompt'
+
+    const baseline = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('personaPrompt', 'Newest A prompt')
+    queueSelectedPersonaUpdate(baseline, currentPersonaStateSnapshot())
+
+    let recover = false
+    let revision = 20
+    const requests: Array<{ method: string; url: string }> = []
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+      if (url === '/api/v1/commands/personas/persona-select-owner-a' && method === 'PATCH') {
+        requests.push({ method, url })
+        if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.updated',
+            revision,
+            resource: 'persona',
+            id: 'persona-select-owner-a',
+          },
+          personaId: 'persona-select-owner-a',
+          acknowledgedKeys: ['personaPrompt'],
+          legacyProfileProjectionApplied: true,
+        })
+      }
+      if (url === '/api/v1/commands/personas/select' && method === 'POST') {
+        requests.push({ method, url })
+        if (!recover) throw new Error('persona selection overtook its row dependency')
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.selected',
+            revision,
+            resource: 'persona',
+            id: 'persona-select-owner-b',
+          },
+          personaId: 'persona-select-owner-b',
+        })
+      }
+      return jsonResponse({ error: `unexpected ${method} ${url}` }, 404)
+    })
+
+    try {
+      await expect(flushPendingSelectedPersonaUpdate()).resolves.toMatchObject({ status: 'error' })
+      changeUserPersona(1)
+      await flushCommandEffects()
+
+      expect(requests).toEqual([
+        { method: 'PATCH', url: '/api/v1/commands/personas/persona-select-owner-a' },
+        { method: 'PATCH', url: '/api/v1/commands/personas/persona-select-owner-a' },
+      ])
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => entry.handle.key)).toEqual([
+        'persona-profile:persona-select-owner-a',
+        'persona:selection',
+      ])
+      expect(retained[1].intent.dependencyKeys).toEqual([
+        'persona-profile:persona-select-owner-a',
+        'persona-profile:persona-select-owner-b',
+      ])
+
+      recover = true
+      const recoveryStart = requests.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(requests.slice(recoveryStart)).toEqual([
+        { method: 'PATCH', url: '/api/v1/commands/personas/persona-select-owner-a' },
+        { method: 'POST', url: '/api/v1/commands/personas/select' },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps a later persona selection behind a retained delete fallback', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-delete-select',
+      writerEpoch: 8,
+      databaseLineage: 'lineage-persona-delete-select',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(30)
+    seedPersonaState(
+      [
+        makePersona({ id: 'persona-delete-select-a', name: 'Persona A' }),
+        makePersona({ id: 'persona-delete-select-b', name: 'Persona B' }),
+        makePersona({ id: 'persona-delete-select-c', name: 'Persona C' }),
+      ],
+      0,
+    )
+
+    let recover = false
+    let revision = 30
+    let serverSelectedPersonaId = 'persona-delete-select-a'
+    const requests: Array<{ method: string; url: string }> = []
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+      if (url === '/api/v1/commands/personas/persona-delete-select-a' && method === 'DELETE') {
+        requests.push({ method, url })
+        if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+        const body = JSON.parse(String(init?.body)) as { selectPersonaId?: string }
+        serverSelectedPersonaId = body.selectPersonaId ?? 'persona-delete-select-b'
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.deleted',
+            revision,
+            resource: 'persona',
+            id: 'persona-delete-select-a',
+          },
+          personaId: 'persona-delete-select-a',
+          selectedPersonaId: serverSelectedPersonaId,
+        })
+      }
+      if (url === '/api/v1/commands/personas/select' && method === 'POST') {
+        requests.push({ method, url })
+        if (!recover) throw new Error('later persona selection overtook retained delete')
+        const body = JSON.parse(String(init?.body)) as { personaId: string }
+        serverSelectedPersonaId = body.personaId
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.selected',
+            revision,
+            resource: 'persona',
+            id: serverSelectedPersonaId,
+          },
+          personaId: serverSelectedPersonaId,
+        })
+      }
+      return jsonResponse({ error: `unexpected ${method} ${url}` }, 404)
+    })
+
+    try {
+      expect(deleteSelectedUserPersona()).toBe(true)
+      await flushCommandEffects()
+      const personaCIndex = getDatabase().personas.findIndex((persona) => persona.id === 'persona-delete-select-c')
+      expect(personaCIndex).toBeGreaterThanOrEqual(0)
+      changeUserPersona(personaCIndex)
+      await flushCommandEffects()
+
+      expect(requests).toEqual([
+        { method: 'DELETE', url: '/api/v1/commands/personas/persona-delete-select-a' },
+        { method: 'DELETE', url: '/api/v1/commands/personas/persona-delete-select-a' },
+      ])
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => [entry.handle.key, entry.intent.requests[0].method])).toEqual([
+        ['persona:selection', 'DELETE'],
+        ['persona:selection', 'POST'],
+      ])
+
+      recover = true
+      const recoveryStart = requests.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(requests.slice(recoveryStart)).toEqual([
+        { method: 'DELETE', url: '/api/v1/commands/personas/persona-delete-select-a' },
+        { method: 'POST', url: '/api/v1/commands/personas/select' },
+      ])
+      expect(serverSelectedPersonaId).toBe('persona-delete-select-c')
+      expect(await listPendingMutations()).toEqual([])
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
