@@ -42,13 +42,20 @@ import {
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
 } from '../server/resourceState.svelte'
-import { runOptimisticCommandSequence } from '../chatCommands'
+import { dispatchCharacterOwnedDurableBatch, type CharacterOwnedDurableBatchStep } from '../chatCommands'
 import {
   replaceCharacterLorebooksCommand,
   replaceCharacterScriptsCommand,
   replaceCharacterTriggersCommand,
   type ServerCommandResult,
 } from '../server/commands'
+import {
+  pendingMutationCharacterLorebooksProjectionTarget,
+  pendingMutationCharacterScriptsProjectionTarget,
+  pendingMutationCharacterTriggersProjectionTarget,
+} from '../server/pendingMutationOutbox'
+import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
+import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
 
 export interface MCPModule {
   url: string
@@ -749,63 +756,34 @@ export function getModuleMcps() {
   return modules.map((v) => v.mcp?.url).filter((v) => v)
 }
 
-type ModuleApplyCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
-
-interface ModuleApplyStep {
-  succeeded: boolean
-  command: ModuleApplyCommandFactory
-  rollback: () => void
+interface ModuleApplyBatchStep extends CharacterOwnedDurableBatchStep {
+  rejectStructuralAttempt?: () => void
 }
 
-function createModuleApplyStep(command: ModuleApplyCommandFactory, rollback: () => void): ModuleApplyStep {
-  const step: ModuleApplyStep = {
-    succeeded: false,
-    command: async (baseRevision) => {
-      const result = await command(baseRevision)
-      if (result.status === 'ok') {
-        step.succeeded = true
-      }
-      return result
-    },
-    rollback,
-  }
-  return step
+function moduleApplySnapshot(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
 }
 
-function rollbackUnacceptedModuleApplySteps(steps: ModuleApplyStep[]): void {
-  for (let i = steps.length - 1; i >= 0; i--) {
-    const step = steps[i]
-    if (!step.succeeded) {
-      step.rollback()
-    }
-  }
+function moduleApplyFailureMessage(result: Exclude<ServerCommandResult, { status: 'ok' }>): string {
+  if (result.status === 'conflict') return language.moduleApply.commandConflict
+  if (result.status === 'unavailable') return language.moduleApply.commandUnavailable
+  return language.moduleApply.commandError(result.error)
 }
 
-function runModuleApplySteps(steps: ModuleApplyStep[]): void {
-  if (steps.length === 0) return
-
-  // Enqueue the whole structural sequence as one command-queue unit. Each HTTP
-  // request still uses the previous response revision, but no later watcher or
-  // concurrent module apply can overtake scripts/triggers while an earlier
-  // lorebook request is in flight.
-  runOptimisticCommandSequence(
-    [
-      async (baseRevision) => {
-        let nextRevision = baseRevision
-        let finalResult: ServerCommandResult | null = null
-        for (const step of steps) {
-          finalResult = await step.command(nextRevision)
-          if (finalResult.status !== 'ok') return finalResult
-          nextRevision = finalResult.revision
-        }
-        return finalResult as ServerCommandResult
-      },
-    ],
-    () => rollbackUnacceptedModuleApplySteps(steps),
-  )
-}
+let moduleApplyInFlight = false
 
 export async function applyModule() {
+  if (moduleApplyInFlight) return
+  moduleApplyInFlight = true
+  try {
+    await applyModuleOnce()
+  } finally {
+    moduleApplyInFlight = false
+  }
+}
+
+async function applyModuleOnce() {
   const sel = await alertModuleSelect()
   if (!sel) {
     return
@@ -816,7 +794,7 @@ export async function applyModule() {
     return
   }
 
-  const currentChar = getCurrentCharacter()
+  let currentChar = getCurrentCharacter()
   if (!currentChar) {
     return
   }
@@ -825,14 +803,24 @@ export async function applyModule() {
   if (!characterId) {
     return
   }
-  const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
-  const optimisticLorebookEpoch = captureCharacterLorebookProjectionEpoch(characterId)
 
   const hasModuleLorebooks = (module.lorebook?.length ?? 0) > 0
   const hasModuleScripts = (module.regex?.length ?? 0) > 0
   const hasModuleTriggers = (module.trigger?.length ?? 0) > 0
-  const canApplyLorebooks =
-    hasModuleLorebooks && (!getDatabase()?.enableLorebookStubs || isCharacterLorebookHydrated(characterId))
+  if (hasModuleLorebooks && getDatabase()?.enableLorebookStubs && !isCharacterLorebookHydrated(characterId)) {
+    const hydrated = await ensureCharacterLorebookHydrated(characterId)
+    if (!hydrated) {
+      alertError(language.lorebookDataLoadFailed)
+      return
+    }
+    const hydratedCharacter = getDatabase().characters.find((character) => character.chaId === characterId)
+    if (!hydratedCharacter) return
+    currentChar = hydratedCharacter
+  }
+
+  const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
+  const optimisticLorebookEpoch = captureCharacterLorebookProjectionEpoch(characterId)
+  const canApplyLorebooks = hasModuleLorebooks
   const lorePrevious = canApplyLorebooks
     ? currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId })
     : null
@@ -895,6 +883,176 @@ export async function applyModule() {
         )
       : null
 
+  const rollbackEpoch = captureDestructiveRefreshEpoch()
+  const steps: ModuleApplyBatchStep[] = []
+  if (nextLorebooks && lorePrevious) {
+    const lorebookSnapshot = safeStructuredClone(nextLorebooks) as Parameters<
+      typeof replaceCharacterLorebooksCommand
+    >[0]['entries']
+    const attemptedLorebooks = safeStructuredClone(lorebookSnapshot) as loreBook[]
+    const previousLorebooks = safeStructuredClone(lorePrevious.scopedValue ?? []) as loreBook[]
+    const projectionTarget = pendingMutationCharacterLorebooksProjectionTarget(characterId)
+    steps.push({
+      method: 'PUT',
+      path: `/characters/${encodeURIComponent(characterId)}/lorebooks`,
+      body: { entries: lorebookSnapshot },
+      projectionTargets: [projectionTarget],
+      command: (baseRevision, frozenBody) => {
+        const entries = frozenBody.entries as Parameters<typeof replaceCharacterLorebooksCommand>[0]['entries']
+        return replaceCharacterLorebooksCommand({
+          baseRevision,
+          characterId,
+          entries,
+          acknowledgeOptimistic: true,
+          optimisticEntries: entries,
+          optimisticRowEpoch,
+          optimisticLorebookEpoch,
+        })
+      },
+      rollback: () => {
+        if (
+          hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch) ||
+          hasCharacterLorebookProjectionEpochChanged(characterId, optimisticLorebookEpoch)
+        ) {
+          return
+        }
+        rollbackCharacterLorebookReplacement(characterId, lorePrevious, attemptedLorebooks)
+      },
+      reapply: (isTargetCurrent) => {
+        if (hasDestructiveRefreshEpochChanged(rollbackEpoch) || !isTargetCurrent(projectionTarget)) return
+        withTrustedResourceWrite(() => {
+          const target = getDatabase().characters.find((character) => character.chaId === characterId)
+          if (!target) return
+          if (moduleApplySnapshot(target.globalLore ?? []) === moduleApplySnapshot(attemptedLorebooks)) return
+          if (moduleApplySnapshot(target.globalLore ?? []) !== moduleApplySnapshot(previousLorebooks)) return
+          target.globalLore = safeStructuredClone(attemptedLorebooks)
+        })
+      },
+    })
+  }
+  if (nextScripts && scriptsRollback && scriptStructuralAttempt) {
+    const scriptsSnapshot = safeStructuredClone(nextScripts) as Parameters<
+      typeof replaceCharacterScriptsCommand
+    >[0]['scripts']
+    const attemptedScripts = safeStructuredClone(scriptsSnapshot) as customscript[]
+    const projectionTarget = pendingMutationCharacterScriptsProjectionTarget(characterId)
+    steps.push({
+      method: 'PUT',
+      path: `/characters/${encodeURIComponent(characterId)}/scripts`,
+      body: { scripts: scriptsSnapshot },
+      projectionTargets: [projectionTarget],
+      command: async (baseRevision, frozenBody) => {
+        const scripts = frozenBody.scripts as Parameters<typeof replaceCharacterScriptsCommand>[0]['scripts']
+        const result = await replaceCharacterScriptsCommand(
+          {
+            baseRevision,
+            characterId,
+            scripts,
+            optimisticRowEpoch,
+          },
+          undefined,
+          false,
+          true,
+        )
+        if (result.status === 'ok') {
+          acknowledgeCharacterScriptDefinitionStructuralWrite(scriptStructuralAttempt)
+        }
+        return result
+      },
+      rollback: () => {
+        rejectCharacterScriptDefinitionStructuralWrite(scriptStructuralAttempt)
+        if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
+        rollbackScopedScriptDefinitionReplacement(scriptsRollback, {
+          kind: 'characterScripts',
+          characterId,
+          scripts: attemptedScripts,
+        })
+      },
+      reapply: (isTargetCurrent) => {
+        if (hasDestructiveRefreshEpochChanged(rollbackEpoch) || !isTargetCurrent(projectionTarget)) return
+        withTrustedResourceWrite(() => {
+          const target = getDatabase().characters.find((character) => character.chaId === characterId)
+          if (!target) return
+          const hasCurrent = Object.prototype.hasOwnProperty.call(target, 'customscript')
+          const matchesAttempted =
+            hasCurrent && moduleApplySnapshot(target.customscript) === moduleApplySnapshot(attemptedScripts)
+          if (matchesAttempted) return
+          const matchesPrevious = hadScriptsField
+            ? hasCurrent && moduleApplySnapshot(target.customscript) === moduleApplySnapshot(previousScripts)
+            : !hasCurrent
+          if (!matchesPrevious) return
+          target.customscript = safeStructuredClone(attemptedScripts)
+        })
+      },
+      rejectStructuralAttempt: () => rejectCharacterScriptDefinitionStructuralWrite(scriptStructuralAttempt),
+    })
+  }
+  if (nextTriggers && triggersRollback && triggerStructuralAttempt) {
+    const triggersSnapshot = safeStructuredClone(nextTriggers) as Parameters<
+      typeof replaceCharacterTriggersCommand
+    >[0]['triggers']
+    const attemptedTriggers = safeStructuredClone(triggersSnapshot) as triggerscript[]
+    const projectionTarget = pendingMutationCharacterTriggersProjectionTarget(characterId)
+    steps.push({
+      method: 'PUT',
+      path: `/characters/${encodeURIComponent(characterId)}/triggers`,
+      body: { triggers: triggersSnapshot },
+      projectionTargets: [projectionTarget],
+      command: async (baseRevision, frozenBody) => {
+        const triggers = frozenBody.triggers as Parameters<typeof replaceCharacterTriggersCommand>[0]['triggers']
+        const result = await replaceCharacterTriggersCommand(
+          {
+            baseRevision,
+            characterId,
+            triggers,
+            optimisticRowEpoch,
+          },
+          undefined,
+          false,
+          true,
+        )
+        if (result.status === 'ok') {
+          acknowledgeCharacterScriptDefinitionStructuralWrite(triggerStructuralAttempt)
+        }
+        return result
+      },
+      rollback: () => {
+        rejectCharacterScriptDefinitionStructuralWrite(triggerStructuralAttempt)
+        if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
+        rollbackScopedScriptDefinitionReplacement(triggersRollback, {
+          kind: 'characterTriggers',
+          characterId,
+          triggers: attemptedTriggers,
+        })
+      },
+      reapply: (isTargetCurrent) => {
+        if (hasDestructiveRefreshEpochChanged(rollbackEpoch) || !isTargetCurrent(projectionTarget)) return
+        withTrustedResourceWrite(() => {
+          const target = getDatabase().characters.find((character) => character.chaId === characterId)
+          if (!target) return
+          const hasCurrent = Object.prototype.hasOwnProperty.call(target, 'triggerscript')
+          const matchesAttempted =
+            hasCurrent && moduleApplySnapshot(target.triggerscript) === moduleApplySnapshot(attemptedTriggers)
+          if (matchesAttempted) return
+          const matchesPrevious = hadTriggersField
+            ? hasCurrent && moduleApplySnapshot(target.triggerscript) === moduleApplySnapshot(previousTriggers)
+            : !hasCurrent
+          if (!matchesPrevious) return
+          target.triggerscript = safeStructuredClone(attemptedTriggers)
+        })
+      },
+      rejectStructuralAttempt: () => rejectCharacterScriptDefinitionStructuralWrite(triggerStructuralAttempt),
+    })
+  }
+
+  // The batch helper synchronously freezes and stages every exact full-snapshot
+  // PUT before it reserves the shared command queue. Start it before projecting
+  // the rows, then wait for its accepted/retained outcome before reporting UI
+  // success.
+  const applyResult =
+    steps.length > 0
+      ? dispatchCharacterOwnedDurableBatch(characterId, steps)
+      : Promise.resolve({ status: 'ok' as const, acceptedCount: 0 })
   withTrustedResourceWrite(() => {
     const target = getDatabase().characters.find((character) => character.chaId === characterId)
     if (!target) return
@@ -902,131 +1060,6 @@ export async function applyModule() {
     if (nextScripts) target.customscript = safeStructuredClone(nextScripts)
     if (nextTriggers) target.triggerscript = safeStructuredClone(nextTriggers)
   })
-
-  // Serialize the three module-apply replacements. Each optimistic step owns a
-  // scoped rollback record, and the sequencer awaits each response so the next
-  // command reads the updated cached revision.
-  if (characterId) {
-    const steps: ModuleApplyStep[] = []
-    if (nextLorebooks && lorePrevious) {
-      const lorebookSnapshot = safeStructuredClone(nextLorebooks) as Parameters<
-        typeof replaceCharacterLorebooksCommand
-      >[0]['entries']
-      const attemptedLorebooks = safeStructuredClone(lorebookSnapshot) as loreBook[]
-      steps.push(
-        createModuleApplyStep(
-          (baseRevision) =>
-            replaceCharacterLorebooksCommand({
-              baseRevision,
-              characterId,
-              entries: lorebookSnapshot,
-              acknowledgeOptimistic: true,
-              optimisticEntries: lorebookSnapshot,
-              optimisticRowEpoch,
-              optimisticLorebookEpoch,
-            }),
-          () => {
-            if (
-              hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch) ||
-              hasCharacterLorebookProjectionEpochChanged(characterId, optimisticLorebookEpoch)
-            ) {
-              return
-            }
-            rollbackCharacterLorebookReplacement(characterId, lorePrevious, attemptedLorebooks)
-          },
-        ),
-      )
-    }
-    if (nextScripts && scriptsRollback && scriptStructuralAttempt) {
-      const scriptsSnapshot = safeStructuredClone(nextScripts) as Parameters<
-        typeof replaceCharacterScriptsCommand
-      >[0]['scripts']
-      const attemptedScripts = safeStructuredClone(scriptsSnapshot) as customscript[]
-      steps.push(
-        createModuleApplyStep(
-          async (baseRevision) => {
-            try {
-              const result = await replaceCharacterScriptsCommand(
-                {
-                  baseRevision,
-                  characterId,
-                  scripts: scriptsSnapshot,
-                  optimisticRowEpoch,
-                },
-                undefined,
-                false,
-                true,
-              )
-              if (result.status === 'ok') {
-                acknowledgeCharacterScriptDefinitionStructuralWrite(scriptStructuralAttempt)
-              } else {
-                rejectCharacterScriptDefinitionStructuralWrite(scriptStructuralAttempt)
-              }
-              return result
-            } catch (error) {
-              rejectCharacterScriptDefinitionStructuralWrite(scriptStructuralAttempt)
-              throw error
-            }
-          },
-          () => {
-            rejectCharacterScriptDefinitionStructuralWrite(scriptStructuralAttempt)
-            if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
-            rollbackScopedScriptDefinitionReplacement(scriptsRollback, {
-              kind: 'characterScripts',
-              characterId,
-              scripts: attemptedScripts,
-            })
-          },
-        ),
-      )
-    }
-    if (nextTriggers && triggersRollback && triggerStructuralAttempt) {
-      const triggersSnapshot = safeStructuredClone(nextTriggers) as Parameters<
-        typeof replaceCharacterTriggersCommand
-      >[0]['triggers']
-      const attemptedTriggers = safeStructuredClone(triggersSnapshot) as triggerscript[]
-      steps.push(
-        createModuleApplyStep(
-          async (baseRevision) => {
-            try {
-              const result = await replaceCharacterTriggersCommand(
-                {
-                  baseRevision,
-                  characterId,
-                  triggers: triggersSnapshot,
-                  optimisticRowEpoch,
-                },
-                undefined,
-                false,
-                true,
-              )
-              if (result.status === 'ok') {
-                acknowledgeCharacterScriptDefinitionStructuralWrite(triggerStructuralAttempt)
-              } else {
-                rejectCharacterScriptDefinitionStructuralWrite(triggerStructuralAttempt)
-              }
-              return result
-            } catch (error) {
-              rejectCharacterScriptDefinitionStructuralWrite(triggerStructuralAttempt)
-              throw error
-            }
-          },
-          () => {
-            rejectCharacterScriptDefinitionStructuralWrite(triggerStructuralAttempt)
-            if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
-            rollbackScopedScriptDefinitionReplacement(triggersRollback, {
-              kind: 'characterTriggers',
-              characterId,
-              triggers: attemptedTriggers,
-            })
-          },
-        ),
-      )
-    }
-    if (steps.length > 0) {
-      runModuleApplySteps(steps)
-    }
-  }
   // Keep the bridge dispatchers imported so delay-based coalescing can use
   // them without re-importing. Reference
   // them via void to satisfy the linter without dispatching.
@@ -1034,7 +1067,17 @@ export async function applyModule() {
   void dispatchReplaceCharacterScripts
   void dispatchReplaceCharacterTriggers
 
-  alertNormal(language.successApplyModule)
+  const outcome = await applyResult
+  for (const step of steps.slice(outcome.acceptedCount)) {
+    step.rejectStructuralAttempt?.()
+  }
+  if (outcome.status === 'ok') {
+    alertNormal(language.successApplyModule)
+  } else if (outcome.status === 'retained') {
+    alertNormal(language.moduleApply.queued)
+  } else {
+    alertError(moduleApplyFailureMessage(outcome.failure))
+  }
 }
 
 let lastModuleIds: string = ''

@@ -18,6 +18,7 @@ const getCurrentChatMock = vi.hoisted(() => vi.fn())
 type ModuleDatabaseFixture = {
   characters?: unknown[]
   enabledModules?: string[]
+  enableLorebookStubs?: boolean
   moduleIntergration?: string
   promptPresets?: Array<Record<string, unknown>>
   modules: Array<Record<string, unknown>>
@@ -43,9 +44,11 @@ const rejectCharacterScriptDefinitionStructuralWrite = vi.hoisted(() => vi.fn())
 const replaceCharacterLorebooksCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 1, data: {} })))
 const replaceCharacterScriptsCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 2, data: {} })))
 const replaceCharacterTriggersCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 3, data: {} })))
-const runOptimisticCommandSequence = vi.hoisted(() => vi.fn())
+const dispatchCharacterOwnedDurableBatch = vi.hoisted(() => vi.fn())
 const characterRowEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const characterLorebookEpochState = vi.hoisted(() => ({ epoch: 0 }))
+const destructiveRefreshEpochState = vi.hoisted(() => ({ epoch: 0 }))
+const ensureCharacterLorebookHydrated = vi.hoisted(() => vi.fn(async () => true))
 const testDatabaseState: { db: Record<string, any> } = {
   db: { modules: [], characters: [] },
 }
@@ -146,7 +149,22 @@ vi.mock('../server/scriptDefinitionBridge.svelte', () => ({
 }))
 
 vi.mock('../chatCommands', () => ({
-  runOptimisticCommandSequence,
+  dispatchCharacterOwnedDurableBatch,
+}))
+
+vi.mock('../server/pendingMutationOutbox', () => ({
+  pendingMutationCharacterLorebooksProjectionTarget: (characterId: string) => `character-lorebooks:${characterId}`,
+  pendingMutationCharacterScriptsProjectionTarget: (characterId: string) => `character-scripts:${characterId}`,
+  pendingMutationCharacterTriggersProjectionTarget: (characterId: string) => `character-triggers:${characterId}`,
+}))
+
+vi.mock('../server/staleStateGuards', () => ({
+  captureDestructiveRefreshEpoch: () => destructiveRefreshEpochState.epoch,
+  hasDestructiveRefreshEpochChanged: (epoch: number) => destructiveRefreshEpochState.epoch !== epoch,
+}))
+
+vi.mock('../server/chatMessageHydration.svelte', () => ({
+  ensureCharacterLorebookHydrated,
 }))
 
 vi.mock('../server/commands', () => ({
@@ -169,8 +187,21 @@ import {
   refreshModules,
 } from './modules'
 import { moduleBackgroundEmbedding } from '../stores.svelte'
-import type { character } from '../storage/database.svelte'
+import type { character, customscript, loreBook, triggerscript } from '../storage/database.svelte'
 import { language } from 'src/lang'
+
+type TestModuleApplyStep = {
+  method: 'PUT'
+  path: string
+  body: Record<string, unknown>
+  projectionTargets?: string[]
+  command: (
+    baseRevision: number,
+    body: Readonly<Record<string, unknown>>,
+  ) => Promise<{ status: string; revision?: number; error?: string; reason?: string }>
+  rollback: () => void
+  reapply?: (isProjectionTargetCurrent: (target: string) => boolean) => void
+}
 
 function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void
@@ -279,10 +310,39 @@ function installAttemptAwareRollbackMocks(): void {
   )
 }
 
+function installCompleteModuleApplyFixture(): character {
+  alertModuleSelect.mockResolvedValue('mod-a')
+  const currentCharacter = {
+    chaId: 'char-a',
+    globalLore: [{ comment: 'Existing lore', content: 'old' }],
+    customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
+    triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
+  } as unknown as character
+  testDatabaseState.db.characters = [currentCharacter]
+  getCurrentCharacter.mockReturnValue(currentCharacter)
+  getDatabase.mockReturnValue({
+    characters: [currentCharacter],
+    modules: [
+      {
+        id: 'mod-a',
+        name: 'Module A',
+        description: '',
+        lorebook: [{ comment: 'Module lore', content: 'lore' }],
+        regex: [{ comment: 'Module regex', in: 'in', out: 'out' }],
+        trigger: [{ comment: 'Module trigger', type: 'manual', conditions: [], effect: [] }],
+      },
+    ],
+  })
+  return currentCharacter
+}
+
 describe('module imports', () => {
   beforeEach(() => {
     characterRowEpochState.epoch = 0
     characterLorebookEpochState.epoch = 0
+    destructiveRefreshEpochState.epoch = 0
+    ensureCharacterLorebookHydrated.mockReset()
+    ensureCharacterLorebookHydrated.mockResolvedValue(true)
     selectedFileState.file = null
     testDatabaseState.db = { modules: [], characters: [] }
     alertError.mockClear()
@@ -302,7 +362,25 @@ describe('module imports', () => {
     getCurrentChatMock.mockReset()
     getDatabase.mockReset()
     getDatabase.mockReturnValue({ modules: [] })
-    runOptimisticCommandSequence.mockClear()
+    dispatchCharacterOwnedDurableBatch.mockReset()
+    dispatchCharacterOwnedDurableBatch.mockImplementation(
+      async (_characterId: string, steps: TestModuleApplyStep[]) => {
+        let revision = 10
+        let acceptedCount = 0
+        for (let index = 0; index < steps.length; index += 1) {
+          const result = await steps[index].command(revision, steps[index].body)
+          if (result.status !== 'ok') {
+            for (let rollbackIndex = steps.length - 1; rollbackIndex >= index; rollbackIndex -= 1) {
+              steps[rollbackIndex].rollback()
+            }
+            return { status: 'failure', acceptedCount, failure: result }
+          }
+          revision = result.revision ?? revision
+          acceptedCount += 1
+        }
+        return { status: 'ok', acceptedCount }
+      },
+    )
     replaceCharacterLorebooksCommand.mockReset()
     replaceCharacterLorebooksCommand.mockResolvedValue({ status: 'ok', revision: 1, data: {} })
     replaceCharacterScriptsCommand.mockReset()
@@ -605,373 +683,331 @@ describe('module imports', () => {
     )
   })
 
-  it('routes module apply through character child replacement commands', async () => {
-    alertModuleSelect.mockResolvedValue('mod-a')
-    const character = {
-      chaId: 'char-a',
-      globalLore: [{ comment: 'Existing lore', content: 'old' }],
-      customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
-      triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
-    } as unknown as character
-    testDatabaseState.db.characters = [character]
-    getCurrentCharacter.mockReturnValue(character)
-    getDatabase.mockReturnValue({
-      characters: [character],
-      modules: [
-        {
-          id: 'mod-a',
-          name: 'Module A',
-          description: '',
-          lorebook: [{ comment: 'Module lore', content: 'lore' }],
-          regex: [{ comment: 'Module regex', in: 'in', out: 'out' }],
-          trigger: [{ comment: 'Module trigger', type: 'manual', conditions: [], effect: [] }],
-        },
-      ],
-    })
+  it('pre-stages exact idempotent character snapshots and awaits all three replacements', async () => {
+    installCompleteModuleApplyFixture()
 
     await applyModule()
 
-    // One combined factory reserves the global command queue across all three
-    // raw replacement requests, so a watcher edit cannot overtake the script or
-    // trigger tail while lorebook I/O is pending.
-    expect(runOptimisticCommandSequence).toHaveBeenCalledTimes(1)
-    const [factories] = runOptimisticCommandSequence.mock.calls[0]
-    expect(factories).toHaveLength(1)
-
-    await factories[0](10)
-    expect(replaceCharacterLorebooksCommand).toHaveBeenCalledWith({
-      baseRevision: 10,
-      characterId: 'char-a',
-      entries: [
-        { comment: 'Existing lore', content: 'old' },
-        { comment: 'Module lore', content: 'lore' },
-      ],
-      acknowledgeOptimistic: true,
-      optimisticEntries: [
-        { comment: 'Existing lore', content: 'old' },
-        { comment: 'Module lore', content: 'lore' },
-      ],
-      optimisticRowEpoch: 0,
-      optimisticLorebookEpoch: 0,
-    })
-    expect(replaceCharacterScriptsCommand).toHaveBeenCalledWith(
+    expect(dispatchCharacterOwnedDurableBatch).toHaveBeenCalledTimes(1)
+    const [characterId, steps] = dispatchCharacterOwnedDurableBatch.mock.calls[0] as [string, TestModuleApplyStep[]]
+    expect(characterId).toBe('char-a')
+    expect(
+      steps.map(({ method, path, body, projectionTargets }) => ({ method, path, body, projectionTargets })),
+    ).toEqual([
       {
-        baseRevision: 1,
-        characterId: 'char-a',
-        scripts: [
-          { comment: 'Existing regex', in: 'old', out: 'old' },
-          { comment: 'Module regex', in: 'in', out: 'out' },
-        ],
-        optimisticRowEpoch: expect.any(Number),
+        method: 'PUT',
+        path: '/characters/char-a/lorebooks',
+        body: {
+          entries: [
+            { comment: 'Existing lore', content: 'old' },
+            { comment: 'Module lore', content: 'lore' },
+          ],
+        },
+        projectionTargets: ['character-lorebooks:char-a'],
       },
+      {
+        method: 'PUT',
+        path: '/characters/char-a/scripts',
+        body: {
+          scripts: [
+            { comment: 'Existing regex', in: 'old', out: 'old' },
+            { comment: 'Module regex', in: 'in', out: 'out' },
+          ],
+        },
+        projectionTargets: ['character-scripts:char-a'],
+      },
+      {
+        method: 'PUT',
+        path: '/characters/char-a/triggers',
+        body: {
+          triggers: [
+            { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
+            { comment: 'Module trigger', type: 'manual', conditions: [], effect: [] },
+          ],
+        },
+        projectionTargets: ['character-triggers:char-a'],
+      },
+    ])
+    expect(replaceCharacterLorebooksCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ baseRevision: 10, characterId: 'char-a' }),
+    )
+    expect(replaceCharacterScriptsCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ baseRevision: 1, characterId: 'char-a' }),
       undefined,
       false,
       true,
     )
     expect(replaceCharacterTriggersCommand).toHaveBeenCalledWith(
-      {
-        baseRevision: 2,
-        characterId: 'char-a',
-        triggers: [
-          { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
-          { comment: 'Module trigger', type: 'manual', conditions: [], effect: [] },
-        ],
-        optimisticRowEpoch: expect.any(Number),
-      },
+      expect.objectContaining({ baseRevision: 2, characterId: 'char-a' }),
       undefined,
       false,
       true,
     )
-    expect(replaceCharacterLorebooksCommand.mock.invocationCallOrder[0]).toBeLessThan(
-      replaceCharacterScriptsCommand.mock.invocationCallOrder[0],
-    )
-    expect(replaceCharacterScriptsCommand.mock.invocationCallOrder[0]).toBeLessThan(
-      replaceCharacterTriggersCommand.mock.invocationCallOrder[0],
-    )
-    expect(beginCharacterScriptDefinitionStructuralWrite).toHaveBeenCalledTimes(2)
     expect(acknowledgeCharacterScriptDefinitionStructuralWrite).toHaveBeenCalledTimes(2)
     expect(rejectCharacterScriptDefinitionStructuralWrite).not.toHaveBeenCalled()
-    expect(alertNormal).toHaveBeenCalled()
+    expect(alertNormal).toHaveBeenCalledWith(language.successApplyModule)
+    expect(alertError).not.toHaveBeenCalled()
   })
 
-  it('does not enqueue replacement commands for empty module collections', async () => {
+  it('projects only after staging and does not announce success before durable settlement', async () => {
+    const currentCharacter = installCompleteModuleApplyFixture()
+    const settlement = createDeferred<{ status: 'ok'; acceptedCount: number }>()
+    dispatchCharacterOwnedDurableBatch.mockImplementationOnce((_characterId: string, steps: TestModuleApplyStep[]) => {
+      expect(currentCharacter.globalLore).toEqual([{ comment: 'Existing lore', content: 'old' }])
+      expect(currentCharacter.customscript).toEqual([{ comment: 'Existing regex', in: 'old', out: 'old' }])
+      expect(steps).toHaveLength(3)
+      return settlement.promise
+    })
+
+    const applying = applyModule()
+    await vi.waitFor(() => expect(dispatchCharacterOwnedDurableBatch).toHaveBeenCalledTimes(1))
+    await applyModule()
+
+    expect(currentCharacter.globalLore).toHaveLength(2)
+    expect(currentCharacter.customscript).toHaveLength(2)
+    expect(currentCharacter.triggerscript).toHaveLength(2)
+    expect(alertModuleSelect).toHaveBeenCalledTimes(1)
+    expect(dispatchCharacterOwnedDurableBatch).toHaveBeenCalledTimes(1)
+    expect(alertNormal).not.toHaveBeenCalled()
+    expect(alertError).not.toHaveBeenCalled()
+
+    settlement.resolve({ status: 'ok', acceptedCount: 3 })
+    await applying
+    expect(alertNormal).toHaveBeenCalledWith(language.successApplyModule)
+  })
+
+  it('does not stage replacement commands for empty module collections', async () => {
     alertModuleSelect.mockResolvedValue('mod-empty')
-    const character = {
+    const currentCharacter = {
       chaId: 'char-a',
       globalLore: [{ comment: 'Existing lore', content: 'old' }],
       customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
       triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
     } as unknown as character
-    testDatabaseState.db.characters = [character]
-    getCurrentCharacter.mockReturnValue(character)
+    testDatabaseState.db.characters = [currentCharacter]
+    getCurrentCharacter.mockReturnValue(currentCharacter)
     getDatabase.mockReturnValue({
-      characters: [character],
-      modules: [
-        {
-          id: 'mod-empty',
-          name: 'Empty module',
-          description: '',
-          lorebook: [],
-          regex: [],
-          trigger: [],
-        },
-      ],
+      characters: [currentCharacter],
+      modules: [{ id: 'mod-empty', name: 'Empty module', description: '', lorebook: [], regex: [], trigger: [] }],
     })
 
     await applyModule()
 
-    expect(runOptimisticCommandSequence).not.toHaveBeenCalled()
+    expect(dispatchCharacterOwnedDurableBatch).not.toHaveBeenCalled()
     expect(beginCharacterScriptDefinitionStructuralWrite).not.toHaveBeenCalled()
     expect(replaceCharacterLorebooksCommand).not.toHaveBeenCalled()
     expect(replaceCharacterScriptsCommand).not.toHaveBeenCalled()
     expect(replaceCharacterTriggersCommand).not.toHaveBeenCalled()
-    expect(character).toMatchObject({
-      globalLore: [{ comment: 'Existing lore', content: 'old' }],
-      customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
-      triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
-    })
+    expect(alertNormal).toHaveBeenCalledWith(language.successApplyModule)
   })
 
-  it('keeps the combined queue factory occupied while lorebook I/O precedes script PUT', async () => {
-    alertModuleSelect.mockResolvedValue('mod-a')
-    const character = {
-      chaId: 'char-a',
-      globalLore: [{ comment: 'Existing lore', content: 'old' }],
-      customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
-    } as unknown as character
-    testDatabaseState.db.characters = [character]
-    getCurrentCharacter.mockReturnValue(character)
-    getDatabase.mockReturnValue({
-      characters: [character],
-      modules: [
-        {
-          id: 'mod-a',
-          name: 'Module A',
-          description: '',
-          lorebook: [{ comment: 'Module lore', content: 'lore' }],
-          regex: [{ comment: 'Module regex', in: 'in', out: 'out' }],
-        },
-      ],
-    })
-    const lorebookResult = createDeferred<{ status: 'ok'; revision: number; data: Record<string, never> }>()
-    replaceCharacterLorebooksCommand.mockReturnValueOnce(lorebookResult.promise)
+  it('fails closed instead of reporting success when a stubbed character lorebook cannot hydrate', async () => {
+    const currentCharacter = installCompleteModuleApplyFixture()
+    const database = getDatabase()
+    database.enableLorebookStubs = true
+    isCharacterLorebookHydrated.mockReturnValue(false)
+    ensureCharacterLorebookHydrated.mockResolvedValueOnce(false)
 
     await applyModule()
-    const [factories] = runOptimisticCommandSequence.mock.calls[0]
-    const combinedResult = factories[0](10)
-    await Promise.resolve()
 
-    expect(replaceCharacterLorebooksCommand).toHaveBeenCalledTimes(1)
-    expect(replaceCharacterScriptsCommand).not.toHaveBeenCalled()
+    expect(ensureCharacterLorebookHydrated).toHaveBeenCalledWith('char-a')
+    expect(dispatchCharacterOwnedDurableBatch).not.toHaveBeenCalled()
+    expect(currentCharacter.globalLore).toEqual([{ comment: 'Existing lore', content: 'old' }])
+    expect(alertNormal).not.toHaveBeenCalled()
+    expect(alertError).toHaveBeenCalledWith(language.lorebookDataLoadFailed)
+  })
 
-    lorebookResult.resolve({ status: 'ok', revision: 11, data: {} })
-    await combinedResult
+  it('hydrates a stubbed stable character before building the durable lorebook snapshot', async () => {
+    const originalCharacter = installCompleteModuleApplyFixture()
+    const database = getDatabase()
+    database.enableLorebookStubs = true
+    isCharacterLorebookHydrated.mockReturnValue(false)
+    const hydratedCharacter = {
+      ...originalCharacter,
+      globalLore: [{ comment: 'Server lore', content: 'hydrated' }],
+    } as character
+    ensureCharacterLorebookHydrated.mockImplementationOnce(async () => {
+      database.characters = [hydratedCharacter]
+      return true
+    })
 
-    expect(replaceCharacterScriptsCommand).toHaveBeenCalledWith(
-      expect.objectContaining({ baseRevision: 11, characterId: 'char-a' }),
-      undefined,
-      false,
-      true,
+    await applyModule()
+
+    const [, steps] = dispatchCharacterOwnedDurableBatch.mock.calls[0] as [string, TestModuleApplyStep[]]
+    expect(steps[0].body).toEqual({
+      entries: [
+        { comment: 'Server lore', content: 'hydrated' },
+        { comment: 'Module lore', content: 'lore' },
+      ],
+    })
+    expect(hydratedCharacter.globalLore).toEqual(steps[0].body.entries)
+    expect(originalCharacter.globalLore).toEqual([{ comment: 'Existing lore', content: 'old' }])
+    expect(alertNormal).toHaveBeenCalledWith(language.successApplyModule)
+  })
+
+  it.each([
+    ['first', 0],
+    ['middle', 1],
+    ['tail', 2],
+  ] as const)(
+    'retains and reasserts the queued suffix after a retryable %s-step failure',
+    async (_name, failureIndex) => {
+      const currentCharacter = installCompleteModuleApplyFixture()
+      dispatchCharacterOwnedDurableBatch.mockImplementationOnce(
+        async (_characterId: string, steps: TestModuleApplyStep[]) => {
+          await Promise.resolve()
+          let revision = 10
+          for (let index = 0; index < failureIndex; index += 1) {
+            const result = await steps[index].command(revision, steps[index].body)
+            revision = result.revision ?? revision
+          }
+
+          if (failureIndex === 0) {
+            currentCharacter.globalLore = [{ comment: 'Existing lore', content: 'old' }] as loreBook[]
+          }
+          if (failureIndex <= 1) {
+            currentCharacter.customscript = [{ comment: 'Existing regex', in: 'old', out: 'old' }] as customscript[]
+          }
+          currentCharacter.triggerscript = [
+            { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
+          ] as triggerscript[]
+          for (let index = failureIndex; index < steps.length; index += 1) {
+            steps[index].reapply?.(() => true)
+          }
+          return {
+            status: 'retained',
+            acceptedCount: failureIndex,
+            failure: { status: 'conflict', revision },
+          }
+        },
+      )
+
+      await applyModule()
+
+      expect(currentCharacter.globalLore).toHaveLength(2)
+      expect(currentCharacter.customscript).toHaveLength(2)
+      expect(currentCharacter.triggerscript).toHaveLength(2)
+      expect(rollbackCharacterLorebookReplacement).not.toHaveBeenCalled()
+      expect(rollbackScopedScriptDefinitionReplacement).not.toHaveBeenCalled()
+      expect(alertNormal).toHaveBeenCalledWith(language.moduleApply.queued)
+      expect(alertNormal).not.toHaveBeenCalledWith(language.successApplyModule)
+      expect(alertError).not.toHaveBeenCalled()
+      expect(new Set(rejectCharacterScriptDefinitionStructuralWrite.mock.calls.map(([handle]) => handle)).size).toBe(
+        failureIndex < 2 ? 2 : 1,
+      )
+    },
+  )
+
+  it('keeps an accepted prefix and rolls back only a terminally rejected suffix', async () => {
+    const currentCharacter = installCompleteModuleApplyFixture()
+    dispatchCharacterOwnedDurableBatch.mockImplementationOnce(
+      async (_characterId: string, steps: TestModuleApplyStep[]) => {
+        await Promise.resolve()
+        await steps[0].command(10, steps[0].body)
+        for (let index = steps.length - 1; index >= 1; index -= 1) steps[index].rollback()
+        return {
+          status: 'failure',
+          acceptedCount: 1,
+          failure: { status: 'error', error: 'invalid definitions', reason: 'invalid-request' },
+        }
+      },
     )
-    expect(acknowledgeCharacterScriptDefinitionStructuralWrite).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps accepted lorebook apply and rolls back only failed script plus trigger tail', async () => {
-    alertModuleSelect.mockResolvedValue('mod-a')
-    const character = {
-      chaId: 'char-a',
-      globalLore: [{ comment: 'Existing lore', content: 'old' }],
-      customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
-      triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
-    } as unknown as character
-    testDatabaseState.db.characters = [character]
-    getCurrentCharacter.mockReturnValue(character)
-    getDatabase.mockReturnValue({
-      characters: [character],
-      modules: [
-        {
-          id: 'mod-a',
-          name: 'Module A',
-          description: '',
-          lorebook: [{ comment: 'Module lore', content: 'lore' }],
-          regex: [{ comment: 'Module regex', in: 'in', out: 'out' }],
-          trigger: [{ comment: 'Module trigger', type: 'manual', conditions: [], effect: [] }],
-        },
-      ],
-    })
 
     await applyModule()
 
-    const [factories, rollback] = runOptimisticCommandSequence.mock.calls[0] as [
-      Array<(baseRevision: number) => Promise<{ status: string }>>,
-      () => void,
-    ]
-    replaceCharacterScriptsCommand.mockResolvedValueOnce({ status: 'conflict', revision: 2, data: {} })
-    await factories[0](10)
-    character.customscript = [{ comment: 'Newer regex', in: 'newer', out: 'newer', type: 'regex' }]
-    rollback()
-
-    expect(replaceCharacterTriggersCommand).not.toHaveBeenCalled()
+    expect(currentCharacter.globalLore).toHaveLength(2)
+    expect(currentCharacter.customscript).toEqual([{ comment: 'Existing regex', in: 'old', out: 'old' }])
+    expect(currentCharacter.triggerscript).toEqual([
+      { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
+    ])
     expect(rollbackCharacterLorebookReplacement).not.toHaveBeenCalled()
-    expect(rollbackScopedScriptDefinitionReplacement).toHaveBeenCalledTimes(2)
-    expect(rollbackScopedScriptDefinitionReplacement.mock.calls.map(([entry]) => entry.kind)).toEqual([
+    expect(rollbackScopedScriptDefinitionReplacement.mock.calls.map(([rollback]) => rollback.kind)).toEqual([
       'characterTriggers',
       'characterScripts',
     ])
-    expect(acknowledgeCharacterScriptDefinitionStructuralWrite).not.toHaveBeenCalled()
-    expect(new Set(rejectCharacterScriptDefinitionStructuralWrite.mock.calls.map(([handle]) => handle)).size).toBe(2)
-    expect(character.globalLore).toEqual([
-      { comment: 'Existing lore', content: 'old' },
-      { comment: 'Module lore', content: 'lore' },
-    ])
-    expect(character.customscript).toEqual([{ comment: 'Newer regex', in: 'newer', out: 'newer', type: 'regex' }])
-    expect(character.triggerscript).toEqual([
+    expect(alertNormal).not.toHaveBeenCalled()
+    expect(alertError).toHaveBeenCalledWith(language.moduleApply.commandError('invalid definitions'))
+  })
+
+  it('stores full-snapshot PUTs whose accepted-prefix replay cannot duplicate module definitions', async () => {
+    installCompleteModuleApplyFixture()
+    let replayedScripts: unknown[] = []
+    let replayedTriggers: unknown[] = []
+    dispatchCharacterOwnedDurableBatch.mockImplementationOnce(
+      async (_characterId: string, steps: TestModuleApplyStep[]) => {
+        await Promise.resolve()
+        await steps[0].command(10, steps[0].body)
+        for (let replay = 0; replay < 2; replay += 1) {
+          replayedScripts = cloneJsonValue(steps[1].body.scripts as unknown[])
+          replayedTriggers = cloneJsonValue(steps[2].body.triggers as unknown[])
+        }
+        return {
+          status: 'retained',
+          acceptedCount: 1,
+          failure: { status: 'unavailable' },
+        }
+      },
+    )
+
+    await applyModule()
+
+    expect(replayedScripts.filter((script: any) => script.comment === 'Module regex')).toHaveLength(1)
+    expect(replayedTriggers.filter((trigger: any) => trigger.comment === 'Module trigger')).toHaveLength(1)
+    const [, steps] = dispatchCharacterOwnedDurableBatch.mock.calls[0] as [string, TestModuleApplyStep[]]
+    expect(steps.slice(1).map((step) => step.method)).toEqual(['PUT', 'PUT'])
+    expect(steps[1].body).not.toHaveProperty('baseRevision')
+    expect(steps[2].body).not.toHaveProperty('baseRevision')
+  })
+
+  it('does not reassert retained definitions over a newer edit or newer projection owner', async () => {
+    const currentCharacter = installCompleteModuleApplyFixture()
+    const newerScripts = [{ comment: 'Newer regex', in: 'newer', out: 'newer', type: 'regex' }] as customscript[]
+    const previousTriggers = [
       { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
-    ])
-  })
-
-  it('does not roll back a rejected definition over a newer authoritative character row', async () => {
-    alertModuleSelect.mockResolvedValue('mod-a')
-    const character = {
-      chaId: 'char-a',
-      customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
-    } as unknown as character
-    testDatabaseState.db.characters = [character]
-    getCurrentCharacter.mockReturnValue(character)
-    getDatabase.mockReturnValue({
-      characters: [character],
-      modules: [
-        {
-          id: 'mod-a',
-          name: 'Module A',
-          description: '',
-          regex: [{ comment: 'Module regex', in: 'in', out: 'out' }],
-        },
-      ],
-    })
-    replaceCharacterScriptsCommand.mockResolvedValueOnce({ status: 'conflict', revision: 2, data: {} })
-
-    await applyModule()
-    const [factories, rollback] = runOptimisticCommandSequence.mock.calls[0] as [
-      Array<(baseRevision: number) => Promise<{ status: string }>>,
-      () => void,
-    ]
-    await factories[0](11)
-    characterRowEpochState.epoch += 1
-    rollback()
-
-    expect(rollbackScopedScriptDefinitionReplacement).not.toHaveBeenCalled()
-  })
-
-  it('does not roll back rejected lorebook apply over a newer dedicated lorebook projection', async () => {
-    alertModuleSelect.mockResolvedValue('mod-a')
-    const character = {
-      chaId: 'char-a',
-      globalLore: [{ comment: 'Existing lore', content: 'old' }],
-    } as unknown as character
-    testDatabaseState.db.characters = [character]
-    getCurrentCharacter.mockReturnValue(character)
-    getDatabase.mockReturnValue({
-      characters: [character],
-      modules: [
-        {
-          id: 'mod-a',
-          name: 'Module A',
-          description: '',
-          lorebook: [{ comment: 'Module lore', content: 'lore' }],
-        },
-      ],
-    })
-    replaceCharacterLorebooksCommand.mockResolvedValueOnce({ status: 'conflict', revision: 2, data: {} })
-
-    await applyModule()
-    const [factories, rollback] = runOptimisticCommandSequence.mock.calls[0] as [
-      Array<(baseRevision: number) => Promise<{ status: string }>>,
-      () => void,
-    ]
-    await factories[0](11)
-    characterLorebookEpochState.epoch += 1
-    rollback()
-
-    expect(rollbackCharacterLorebookReplacement).not.toHaveBeenCalled()
-  })
-
-  it('failure rollback preserves sibling characters and unrelated module/global state', async () => {
-    alertModuleSelect.mockResolvedValue('mod-a')
-    const target = {
-      chaId: 'char-a',
-      globalLore: [{ comment: 'Existing lore', content: 'old' }],
-      customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
-      triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
-    } as unknown as character
-    const sibling = {
-      chaId: 'char-b',
-      globalLore: [{ comment: 'Sibling lore', content: 'sibling' }],
-      customscript: [{ comment: 'Sibling regex', in: 'sib', out: 'sib' }],
-      triggerscript: [{ comment: 'Sibling trigger', type: 'manual', conditions: [], effect: [] }],
-    } as unknown as character
-    testDatabaseState.db.characters = [target, sibling]
-    testDatabaseState.db.modules = [
-      {
-        id: 'unrelated-module',
-        name: 'Unrelated module',
-        description: '',
-        regex: [{ comment: 'Unrelated module regex', in: 'module', out: 'module', type: 'regex' }],
+    ] as triggerscript[]
+    dispatchCharacterOwnedDurableBatch.mockImplementationOnce(
+      async (_characterId: string, steps: TestModuleApplyStep[]) => {
+        await Promise.resolve()
+        currentCharacter.customscript = cloneJsonValue(newerScripts)
+        currentCharacter.triggerscript = cloneJsonValue(previousTriggers)
+        steps[1].reapply?.(() => true)
+        steps[2].reapply?.(() => false)
+        return {
+          status: 'retained',
+          acceptedCount: 0,
+          failure: { status: 'conflict', revision: 10 },
+        }
       },
-    ]
-    testDatabaseState.db.loreBook = [
-      { id: 'global-lore', name: 'Global lore', data: [{ comment: 'Global', content: 'g' }] },
-    ] as never
-    getCurrentCharacter.mockReturnValue(target)
-    getDatabase.mockReturnValue({
-      characters: [target, sibling],
-      modules: [
-        {
-          id: 'mod-a',
-          name: 'Module A',
-          description: '',
-          lorebook: [{ comment: 'Module lore', content: 'lore' }],
-          regex: [{ comment: 'Module regex', in: 'in', out: 'out' }],
-          trigger: [{ comment: 'Module trigger', type: 'manual', conditions: [], effect: [] }],
-        },
-      ],
-    })
+    )
 
     await applyModule()
 
-    const [factories, rollback] = runOptimisticCommandSequence.mock.calls[0] as [
-      Array<(baseRevision: number) => Promise<{ status: string }>>,
-      () => void,
-    ]
-    replaceCharacterLorebooksCommand.mockResolvedValueOnce({ status: 'conflict', revision: 1, data: {} })
-    sibling.customscript = [{ comment: 'Sibling newer regex', in: 'new-sib', out: 'new-sib', type: 'regex' }]
-    ;(testDatabaseState.db.modules as unknown as Array<Record<string, unknown>>)[0].regex = [
-      { comment: 'Unrelated module newer regex', in: 'new-module', out: 'new-module', type: 'regex' },
-    ]
-    ;(testDatabaseState.db.loreBook as Array<Record<string, unknown>>)[0].name = 'Global lore newer'
+    expect(currentCharacter.customscript).toEqual(newerScripts)
+    expect(currentCharacter.triggerscript).toEqual(previousTriggers)
+    expect(alertNormal).toHaveBeenCalledWith(language.moduleApply.queued)
+  })
 
-    await factories[0](10)
-    rollback()
-
-    expect(replaceCharacterScriptsCommand).not.toHaveBeenCalled()
-    expect(replaceCharacterTriggersCommand).not.toHaveBeenCalled()
-    expect(target.globalLore).toEqual([{ comment: 'Existing lore', content: 'old' }])
-    expect(target.customscript).toEqual([{ comment: 'Existing regex', in: 'old', out: 'old' }])
-    expect(target.triggerscript).toEqual([{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }])
-    expect(sibling.customscript).toEqual([
-      { comment: 'Sibling newer regex', in: 'new-sib', out: 'new-sib', type: 'regex' },
-    ])
-    expect(testDatabaseState.db.modules).toEqual([
-      {
-        id: 'unrelated-module',
-        name: 'Unrelated module',
-        description: '',
-        regex: [{ comment: 'Unrelated module newer regex', in: 'new-module', out: 'new-module', type: 'regex' }],
+  it('does not reassert a retained suffix after a destructive authoritative refresh', async () => {
+    const currentCharacter = installCompleteModuleApplyFixture()
+    const previousLorebooks = [{ comment: 'Existing lore', content: 'old' }] as loreBook[]
+    dispatchCharacterOwnedDurableBatch.mockImplementationOnce(
+      async (_characterId: string, steps: TestModuleApplyStep[]) => {
+        await Promise.resolve()
+        currentCharacter.globalLore = cloneJsonValue(previousLorebooks)
+        destructiveRefreshEpochState.epoch += 1
+        steps[0].reapply?.(() => true)
+        return {
+          status: 'retained',
+          acceptedCount: 0,
+          failure: { status: 'unavailable' },
+        }
       },
-    ])
-    expect(testDatabaseState.db.loreBook).toEqual([
-      { id: 'global-lore', name: 'Global lore newer', data: [{ comment: 'Global', content: 'g' }] },
-    ])
+    )
+
+    await applyModule()
+
+    expect(currentCharacter.globalLore).toEqual(previousLorebooks)
+    expect(alertNormal).toHaveBeenCalledWith(language.moduleApply.queued)
   })
 
   it('refreshes active module triggers when module rows are replaced under the same enabled namespace', () => {

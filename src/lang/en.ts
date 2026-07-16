@@ -1439,6 +1439,12 @@ export const languageEnglish = {
   v2Warning: 'Warning: V2 card is no longer supported. It may not contain all the data.',
   applyModule: 'Apply Module',
   successApplyModule: 'Module is successfully applied',
+  moduleApply: {
+    queued: 'The module changes are saved locally and will retry automatically.',
+    commandConflict: 'The module could not be applied because the character changed on the server.',
+    commandUnavailable: 'The module could not be saved. Please try again.',
+    commandError: (error: string) => `The module could not be saved: ${error}`,
+  },
   font: 'Font',
   lineHeight: 'Line Height',
   notCharxWarn:
