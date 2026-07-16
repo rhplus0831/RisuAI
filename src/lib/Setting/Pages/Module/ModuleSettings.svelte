@@ -75,6 +75,7 @@
   let editBaseline: RisuModule | null = null
   let mode = $state(0)
   let mutationPending = $state(false)
+  let mcpImportPending = $state(false)
   let mutationError = $state('')
   let moduleSearch = $state('')
   let normalizedModuleSearch = $derived(normalizeModuleSearch(moduleSearch))
@@ -293,9 +294,17 @@
     <button
       data-risu-module-action="import-mcp"
       aria-label={`${language.import}: MCP`}
+      aria-busy={mcpImportPending}
+      disabled={mcpImportPending}
       class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
       onclick={async () => {
-        importMCPModule()
+        if (mcpImportPending) return
+        mcpImportPending = true
+        try {
+          await importMCPModule()
+        } finally {
+          mcpImportPending = false
+        }
       }}>
       <Waypoints />
     </button>

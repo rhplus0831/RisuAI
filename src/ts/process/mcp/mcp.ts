@@ -3,7 +3,7 @@ import {
   getResourceDatabase as getDatabase,
 } from 'src/ts/server/resourceState.svelte'
 import { MCPClient, type JsonRPC, type MCPRefreshTokenSource, type MCPTool, type RPCToolCallContent } from './mcplib'
-import { getModuleMcps } from '../modules'
+import { getModuleMcps, type RisuModule } from '../modules'
 import {
   canUseServerCommands,
   patchServerBackedSettings,
@@ -12,6 +12,8 @@ import {
 import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { alertError, alertInput, alertNormal } from 'src/ts/alert'
 import { v4 } from 'uuid'
+import { language } from 'src/lang'
+import { createGlobalModule } from 'src/ts/moduleCommands'
 import type { MCPClientLike } from './internalmcp'
 import localforage from 'localforage'
 import { sleep } from 'src/ts/util'
@@ -583,13 +585,30 @@ export async function callTool(methodName: string, args: any) {
   return await callMCPTool(methodName, args)
 }
 
-export async function importMCPModule() {
-  if (canUseServerCommands()) {
-    alertError('MCP module import is not supported in Fastify server-backed mode yet')
-    return
-  }
+export type MCPModuleImportOutcome = 'applied' | 'cancelled' | 'failed' | 'queued'
 
-  const x = await alertInput('Please enter the URL of the MCP module to import:', [
+function mcpModuleImportError(result: Exclude<Awaited<ReturnType<typeof createGlobalModule>>, null>): string {
+  if (result.status === 'conflict') return language.moduleImport.commandConflict
+  if (result.status === 'unavailable') return language.moduleImport.commandUnavailable
+  if (result.status === 'error') return language.moduleImport.commandError(result.error)
+  return ''
+}
+
+function isImportableMCPIdentifier(value: string): boolean {
+  if (/^(internal|stdio|plugin):\S+$/.test(value)) return true
+  if (!value.startsWith('https://') && !value.startsWith('http://')) return false
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'https:') return true
+    if (url.protocol !== 'http:') return false
+    return url.hostname === 'localhost' || url.hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+export async function importMCPModule(): Promise<MCPModuleImportOutcome> {
+  const input = await alertInput(language.moduleImport.mcpPrompt, [
     ['internal:aiaccess', 'LLM Call Client (internal:aiaccess)'],
     ['internal:risuai', 'Risu Access Client (internal:risuai)'],
     ['internal:fs', 'File System Client (internal:fs)'],
@@ -603,36 +622,33 @@ export async function importMCPModule() {
     ['https://mcp.deepwiki.com/mcp', 'DeepWiki MCP (https://mcp.deepwiki.com/mcp)'],
   ])
 
-  if (
-    !x.startsWith('http://localhost') &&
-    !x.startsWith('http://127') &&
-    !x.startsWith('https:') &&
-    !x.startsWith('internal:') &&
-    !x.startsWith('stdio:') &&
-    !x.startsWith('plugin:')
-  ) {
-    alertError('Invalid URL')
-    return
+  const x = input.trim()
+  if (!x) return 'cancelled'
+  if (!isImportableMCPIdentifier(x)) {
+    alertError(language.moduleImport.mcpInvalidUrl)
+    return 'failed'
   }
   try {
     const metas = await getMCPMeta([x])
     const meta = metas[x]
-    if (!meta) {
-      alertError('MCP module not found or invalid URL')
-      return
+    const serverName = typeof meta?.serverInfo?.name === 'string' ? meta.serverInfo.name.trim() : ''
+    const serverVersion = typeof meta?.serverInfo?.version === 'string' ? meta.serverInfo.version : ''
+    if (!serverName) {
+      alertError(language.moduleImport.mcpNotFound)
+      return 'failed'
     }
-    const db = getDatabase()
-    db.modules.push({
-      name: meta.serverInfo.name,
-      description: 'MCP from ' + x,
+    const moduleId = v4()
+    const importedModule: RisuModule = {
+      name: serverName,
+      description: language.moduleImport.mcpDescription(x),
       mcp: {
         url: x,
       },
-      id: v4(),
+      id: moduleId,
       lorebook: [
         {
           comment: 'MCP Info',
-          content: `@@mcp\n\n<MCP Info>Name:${meta.serverInfo.name}\nVersion:${meta.serverInfo.version}\nInst:${meta.instructions ?? 'None'}</MCP Info>`,
+          content: `@@mcp\n\n<MCP Info>Name:${serverName}\nVersion:${serverVersion}\nInst:${meta.instructions ?? 'None'}</MCP Info>`,
           key: '',
           alwaysActive: true,
           secondkey: '',
@@ -641,10 +657,21 @@ export async function importMCPModule() {
           selective: false,
         },
       ],
-    })
-    alertNormal(`MCP module imported successfully!\nName: ${meta.serverInfo.name}`)
+    }
+    const result = await createGlobalModule(importedModule)
+    if (result === null || result.status === 'ok') {
+      alertNormal(language.moduleImport.mcpSuccess(serverName))
+      return 'applied'
+    }
+    if (getDatabase().modules?.some((module) => module.id === moduleId)) {
+      alertNormal(language.moduleImport.queued)
+      return 'queued'
+    }
+    alertError(mcpModuleImportError(result))
+    return 'failed'
   } catch (error) {
-    alertError(error)
+    alertError(language.moduleImport.commandError(error instanceof Error ? error.message : String(error)))
+    return 'failed'
   }
 }
 

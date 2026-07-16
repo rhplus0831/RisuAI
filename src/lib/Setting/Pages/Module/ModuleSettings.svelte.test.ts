@@ -37,7 +37,7 @@ const globalApiSpies = vi.hoisted(() => ({
 }))
 
 const mcpSpies = vi.hoisted(() => ({
-  importMCPModule: vi.fn(),
+  importMCPModule: vi.fn(async () => {}),
 }))
 
 vi.mock('src/ts/process/modules', () => moduleProcessSpies)
@@ -259,6 +259,26 @@ describe('ModuleSettings derived module rows', () => {
     expect(moduleSurfaceAction('create').getAttribute('aria-label')).toBe(language.createModule)
     expect(moduleSurfaceAction('import-mcp').getAttribute('aria-label')).toBe(`${language.import}: MCP`)
     expect(moduleSurfaceAction('import').getAttribute('aria-label')).toBe(`${language.import}: ${language.module}`)
+  })
+
+  it('disables MCP import while its persistence outcome is pending', async () => {
+    const importing = createDeferred<void>()
+    mcpSpies.importMCPModule.mockReturnValue(importing.promise)
+    mountSettings()
+    const action = moduleSurfaceAction('import-mcp')
+
+    action.click()
+    action.click()
+    await tick()
+
+    expect(mcpSpies.importMCPModule).toHaveBeenCalledOnce()
+    expect(action.disabled).toBe(true)
+    expect(action.getAttribute('aria-busy')).toBe('true')
+
+    importing.resolve()
+    await tick()
+    expect(action.disabled).toBe(false)
+    expect(action.getAttribute('aria-busy')).toBe('false')
   })
 
   it('uses the localized fallback for a module without a description', () => {

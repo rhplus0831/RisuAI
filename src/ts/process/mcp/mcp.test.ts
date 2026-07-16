@@ -9,6 +9,9 @@ const alertMocks = vi.hoisted(() => ({
 const moduleMocks = vi.hoisted(() => ({
   mcps: [] as string[],
 }))
+const moduleCommandMocks = vi.hoisted(() => ({
+  createGlobalModule: vi.fn(),
+}))
 const mcpOAuthMocks = vi.hoisted(() => ({
   requestStoredMcpOAuthRefresh: vi.fn(async () => 'stored-access-token'),
 }))
@@ -39,6 +42,8 @@ vi.mock('../modules', () => ({
   getModuleToggles: () => '',
   moduleUpdate: vi.fn(),
 }))
+
+vi.mock('../../moduleCommands', () => moduleCommandMocks)
 
 vi.mock('src/ts/alert', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/alert')>()
@@ -73,6 +78,7 @@ import {
 import { MCPClient, type MCPTool } from './mcplib'
 import { registeredCustomPluginMCPs, registerMCPModule, unregisterMCPModule } from './pluginmcp'
 import { requestChatData } from '../request/request'
+import { language } from 'src/lang'
 
 interface CapturedFetch {
   url: string
@@ -277,6 +283,8 @@ beforeEach(() => {
   alertMocks.alertError.mockReset()
   alertMocks.alertInput.mockReset()
   alertMocks.alertNormal.mockReset()
+  moduleCommandMocks.createGlobalModule.mockReset()
+  moduleCommandMocks.createGlobalModule.mockResolvedValue(null)
   mcpOAuthMocks.requestStoredMcpOAuthRefresh.mockClear()
   clearMCPRuntimeState()
   setResourceWriteGuardEnabled(false)
@@ -766,24 +774,115 @@ describe('MCP runtime persistence', () => {
 })
 
 describe('MCP module import', () => {
-  it('rejects Fastify imports before prompting, networking, or initializing registries', async () => {
-    alertMocks.alertInput.mockResolvedValue('https://mcp.example/sse')
-    const fetchSpy = vi.fn()
-    vi.stubGlobal('fetch', fetchSpy)
+  async function importFixture(createResult: Awaited<ReturnType<typeof moduleCommandMocks.createGlobalModule>> = null) {
+    const mcpUrl = 'https://mcp.example/sse'
+    const serverInfo = mcpServerInfoFixture()
+    alertMocks.alertInput.mockResolvedValue(mcpUrl)
+    moduleCommandMocks.createGlobalModule.mockImplementation(async (module) => {
+      getDatabase().modules ??= []
+      getDatabase().modules.push(module)
+      if (createResult && createResult.status !== 'ok') {
+        getDatabase().modules = getDatabase().modules.filter((candidate) => candidate.id !== module.id)
+      }
+      return createResult
+    })
+    const handshake = vi.spyOn(MCPClient.prototype, 'checkHandshake').mockImplementation(function (this: MCPClient) {
+      this.serverInfo = serverInfo
+      return Promise.resolve(serverInfo)
+    })
+    try {
+      return await importMCPModule()
+    } finally {
+      handshake.mockRestore()
+    }
+  }
 
-    await importMCPModule()
+  it('imports a validated MCP through the durable global-module command', async () => {
+    await expect(importFixture()).resolves.toBe('applied')
 
-    expect(alertMocks.alertError).toHaveBeenCalledWith(
-      'MCP module import is not supported in Fastify server-backed mode yet',
+    expect(moduleCommandMocks.createGlobalModule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: expect.any(String),
+        name: 'test-mcp',
+        description: 'MCP from https://mcp.example/sse',
+        mcp: { url: 'https://mcp.example/sse' },
+      }),
     )
-    expect(alertMocks.alertInput).not.toHaveBeenCalled()
-    expect(alertMocks.alertNormal).not.toHaveBeenCalled()
-    expect(fetchSpy).not.toHaveBeenCalled()
-    expect(mcpOAuthMocks.requestStoredMcpOAuthRefresh).not.toHaveBeenCalled()
-    expect(MCPs).toEqual({})
-    expect(callOnlyMCPs).toEqual({})
-    expect(registeredCustomPluginMCPs.size).toBe(0)
+    expect(alertMocks.alertNormal).toHaveBeenCalledWith(language.moduleImport.mcpSuccess('test-mcp'))
+    expect(alertMocks.alertError).not.toHaveBeenCalled()
   })
+
+  it('does not announce success until module persistence settles', async () => {
+    const persistence = createDeferred<any>()
+    moduleCommandMocks.createGlobalModule.mockReturnValue(persistence.promise)
+    const mcpUrl = 'https://mcp.example/sse'
+    const serverInfo = mcpServerInfoFixture()
+    alertMocks.alertInput.mockResolvedValue(mcpUrl)
+    const handshake = vi.spyOn(MCPClient.prototype, 'checkHandshake').mockImplementation(function (this: MCPClient) {
+      this.serverInfo = serverInfo
+      return Promise.resolve(serverInfo)
+    })
+
+    const importing = importMCPModule()
+    await vi.waitFor(() => expect(moduleCommandMocks.createGlobalModule).toHaveBeenCalledOnce())
+    expect(alertMocks.alertNormal).not.toHaveBeenCalled()
+
+    persistence.resolve(null)
+    await expect(importing).resolves.toBe('applied')
+    expect(alertMocks.alertNormal).toHaveBeenCalledWith(language.moduleImport.mcpSuccess('test-mcp'))
+    handshake.mockRestore()
+  })
+
+  it('reports a rejected module command without showing success', async () => {
+    await expect(
+      importFixture({ status: 'error', error: 'invalid MCP module', reason: 'invalid-request' }),
+    ).resolves.toBe('failed')
+
+    expect(alertMocks.alertError).toHaveBeenCalledWith(language.moduleImport.commandError('invalid MCP module'))
+    expect(alertMocks.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('reports a retained optimistic module as queued', async () => {
+    const mcpUrl = 'https://mcp.example/sse'
+    const serverInfo = mcpServerInfoFixture()
+    alertMocks.alertInput.mockResolvedValue(mcpUrl)
+    moduleCommandMocks.createGlobalModule.mockImplementation(async (module) => {
+      getDatabase().modules ??= []
+      getDatabase().modules.push(module)
+      return { status: 'unavailable' }
+    })
+    const handshake = vi.spyOn(MCPClient.prototype, 'checkHandshake').mockImplementation(function (this: MCPClient) {
+      this.serverInfo = serverInfo
+      return Promise.resolve(serverInfo)
+    })
+
+    await expect(importMCPModule()).resolves.toBe('queued')
+
+    expect(alertMocks.alertNormal).toHaveBeenCalledWith(language.moduleImport.queued)
+    expect(alertMocks.alertError).not.toHaveBeenCalled()
+    handshake.mockRestore()
+  })
+
+  it('treats dismissing the URL prompt as cancellation', async () => {
+    alertMocks.alertInput.mockResolvedValue('')
+
+    await expect(importMCPModule()).resolves.toBe('cancelled')
+
+    expect(moduleCommandMocks.createGlobalModule).not.toHaveBeenCalled()
+    expect(alertMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it.each(['https:not-a-url', 'http://127.example/mcp', 'ftp://mcp.example/tools'])(
+    'rejects an unsafe or malformed MCP identifier: %s',
+    async (identifier) => {
+      alertMocks.alertInput.mockResolvedValue(identifier)
+
+      await expect(importMCPModule()).resolves.toBe('failed')
+
+      expect(moduleCommandMocks.createGlobalModule).not.toHaveBeenCalled()
+      expect(alertMocks.alertError).toHaveBeenCalledWith(language.moduleImport.mcpInvalidUrl)
+    },
+  )
 })
 
 describe('MCP indexed tool dispatch', () => {
