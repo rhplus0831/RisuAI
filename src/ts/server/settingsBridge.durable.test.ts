@@ -1,0 +1,368 @@
+import { IDBFactory } from 'fake-indexeddb'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushSync } from 'svelte'
+
+const recorded = vi.hoisted(() => ({
+  dispatched: [] as Array<{ key: string; mutationId: string; intent: unknown }>,
+  patches: [] as Array<Record<string, unknown>>,
+  objectPatches: [] as Array<{
+    baseRevision: number
+    group: string
+    key: string
+    update: { patch: Record<string, unknown>; deleteKeys?: string[] }
+    attemptedObject: Record<string, unknown>
+    optimisticProjectionEpoch: number
+  }>,
+}))
+const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
+
+vi.mock('./commands', () => ({
+  canUseServerCommands: () => true,
+  patchSettingsObjectFieldsCommand: vi.fn(
+    async (args: {
+      baseRevision: number
+      group: string
+      key: string
+      update: { patch: Record<string, unknown>; deleteKeys?: string[] }
+      attemptedObject: Record<string, unknown>
+      optimisticProjectionEpoch: number
+    }) => {
+      recorded.objectPatches.push(args)
+      return {
+        status: 'ok',
+        revision: args.baseRevision + 1,
+        event: {
+          type: 'settings.updated',
+          revision: args.baseRevision + 1,
+          resource: 'settings',
+          id: args.group,
+        },
+        group: args.group,
+        key: args.key,
+        certificate: 'settings-object-patch-v1',
+        patchedKeys: Object.keys(args.update.patch),
+        deletedKeys: args.update.deleteKeys ?? [],
+        canonicalValues: {},
+        canonicalDeletedKeys: [],
+      }
+    },
+  ),
+  patchServerBackedSettings: vi.fn(async (args: { patch: Record<string, unknown> }) => {
+    recorded.patches.push(args.patch)
+    return { status: 'ok', revision: 1 }
+  }),
+  runServerCommand: vi.fn(
+    async (args: { command: (baseRevision: number) => Promise<{ status: string }>; rollback?: () => void }) => {
+      const result = await args.command(1)
+      if (result.status !== 'ok') args.rollback?.()
+      return result
+    },
+  ),
+  settingsGroupForKey: (key: string) => {
+    if (key === 'NAIImgConfig') return 'media'
+    if (key === 'notification') return 'display'
+    if (key === 'useAutoSuggestions') return 'sidebar'
+    return null
+  },
+}))
+
+vi.mock('./durableMutationDispatch', () => ({
+  dispatchDurableMutation: vi.fn(
+    async (
+      handle: { key: string; mutationId: string },
+      intent: unknown,
+      dispatch: (options: Record<string, unknown>) => Promise<unknown>,
+    ) => {
+      recorded.dispatched.push({ key: handle.key, mutationId: handle.mutationId, intent })
+      return dispatch({ mutationId: handle.mutationId, databaseLineage: 'database-settings-bridge' })
+    },
+  ),
+}))
+
+vi.mock('./resourceReads', () => ({
+  fetchServerSettingsGroup: vi.fn(async () => ({ status: 'error', error: 'test' })),
+}))
+
+vi.mock('../alert', () => ({
+  alertError: vi.fn(),
+}))
+
+vi.mock('./resourceWriteGuard.svelte', () => ({
+  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
+  withServerResourceApply: (fn: () => unknown) => {
+    resourceGuardState.epoch += 1
+    return fn()
+  },
+  withTrustedResourceWrite: (fn: () => unknown) => fn(),
+}))
+
+vi.mock('../process/templates/templates', () => ({
+  prebuiltPresets: {
+    OAI: {
+      mainPrompt: 'default main prompt',
+      jailbreak: 'default jailbreak',
+    },
+    OAI2: {
+      apiType: 'preset-api',
+      temperature: 0.75,
+      mainPrompt: 'preset prompt',
+      maxContext: 16_000,
+      maxResponse: 1_000,
+    },
+  },
+}))
+
+import type { Database } from '../storage/database.svelte'
+import '../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from './resourceState.svelte'
+import {
+  beginPendingMutationDispatch,
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+  type PendingMutationOutboxEntry,
+} from './pendingMutationOutbox'
+import { SETTINGS_BRIDGE_MUTATION_KEY } from './settingsMutationKey'
+import { flushPendingServerBackedSettingsPatch, watchServerBackedSettings } from './settingsBridge.svelte'
+
+const LONG_DELAY = 60_000
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
+
+function setupSettings(settings: Record<string, unknown>): void {
+  ;(testDatabaseState as { db: unknown }).db = { ...settings }
+}
+
+async function markOnlyPendingMutationAsRemotelyStarted(): Promise<PendingMutationOutboxEntry> {
+  let pending: PendingMutationOutboxEntry[] = []
+  await vi.waitFor(async () => {
+    pending = await listPendingMutations()
+    expect(pending).toHaveLength(1)
+  })
+  await expect(beginPendingMutationDispatch(pending[0].handle)).resolves.toBe('persisted')
+  return pending[0]
+}
+
+async function expectMarkerWinnerAndSuccessor(
+  predecessor: PendingMutationOutboxEntry,
+): Promise<PendingMutationOutboxEntry[]> {
+  let pending: PendingMutationOutboxEntry[] = []
+  await vi.waitFor(async () => {
+    pending = await listPendingMutations()
+    expect(pending).toHaveLength(2)
+  })
+  expect(pending.map((entry) => entry.handle.key)).toEqual([SETTINGS_BRIDGE_MUTATION_KEY, SETTINGS_BRIDGE_MUTATION_KEY])
+  expect(pending[0].handle.mutationId).toBe(predecessor.handle.mutationId)
+  expect(pending[1].handle.mutationId).not.toBe(predecessor.handle.mutationId)
+  return pending
+}
+
+beforeEach(async () => {
+  vi.stubGlobal('indexedDB', new IDBFactory())
+  resetPendingMutationOutboxForTests()
+  await preparePendingMutationOutbox({
+    writerSessionId: 'writer-settings-bridge',
+    writerEpoch: 7,
+    databaseLineage: 'database-settings-bridge',
+    requestedWriterWasActive: true,
+  })
+  recorded.dispatched.length = 0
+  recorded.patches.length = 0
+  recorded.objectPatches.length = 0
+  resourceGuardState.epoch = 0
+})
+
+afterEach(async () => {
+  flushPendingServerBackedSettingsPatch()
+  await Promise.resolve()
+  await clearPendingMutationOutbox()
+  resetPendingMutationOutboxForTests()
+  ;(testDatabaseState as { db: unknown }).db = {}
+  vi.unstubAllGlobals()
+})
+
+describe('settings bridge durable marker ordering', () => {
+  it('retains a remotely marked scalar edit ahead of an immediate total-revert correction', async () => {
+    setupSettings({ notification: false })
+    const stop = watchServerBackedSettings(['notification'], { delayMs: LONG_DELAY })
+    try {
+      flushSync()
+      testDatabaseState.db.notification = true
+      flushSync()
+      const predecessor = await markOnlyPendingMutationAsRemotelyStarted()
+
+      testDatabaseState.db.notification = false
+      flushSync()
+      expect(recorded.dispatched).toHaveLength(1)
+
+      const pending = await expectMarkerWinnerAndSuccessor(predecessor)
+      expect(pending.map((entry) => entry.intent)).toEqual([
+        {
+          version: 1,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/settings/display',
+              body: { patch: { notification: true } },
+            },
+          ],
+        },
+        {
+          version: 1,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/settings/display',
+              body: { patch: { notification: false } },
+            },
+          ],
+        },
+      ])
+      expect(recorded.patches).toEqual([{ notification: false }])
+    } finally {
+      stop()
+    }
+  })
+
+  it('retains a remotely marked scalar edit ahead of a partial-revert absolute closure', async () => {
+    setupSettings({ notification: false, useAutoSuggestions: false })
+    const stop = watchServerBackedSettings(['notification', 'useAutoSuggestions'], {
+      delayMs: LONG_DELAY,
+    })
+    try {
+      flushSync()
+      testDatabaseState.db.notification = true
+      flushSync()
+      const predecessor = await markOnlyPendingMutationAsRemotelyStarted()
+
+      testDatabaseState.db.notification = false
+      testDatabaseState.db.useAutoSuggestions = true
+      flushSync()
+      expect(recorded.dispatched).toHaveLength(0)
+      flushPendingServerBackedSettingsPatch()
+
+      const pending = await expectMarkerWinnerAndSuccessor(predecessor)
+      expect(pending[1].intent).toEqual({
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/settings/sidebar',
+            body: { patch: { useAutoSuggestions: true } },
+          },
+          {
+            method: 'PATCH',
+            path: '/settings/display',
+            body: { patch: { notification: false } },
+          },
+        ],
+      })
+      expect(recorded.patches).toEqual([{ useAutoSuggestions: true, notification: false }])
+    } finally {
+      stop()
+    }
+  })
+
+  it('retains a remotely marked sparse edit ahead of an immediate total-revert correction', async () => {
+    const original = { width: 512, height: 768 }
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: LONG_DELAY })
+    try {
+      flushSync()
+      ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+      flushSync()
+      const predecessor = await markOnlyPendingMutationAsRemotelyStarted()
+
+      ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = original
+      flushSync()
+      expect(recorded.dispatched).toHaveLength(1)
+
+      const pending = await expectMarkerWinnerAndSuccessor(predecessor)
+      expect(pending.map((entry) => entry.intent)).toEqual([
+        {
+          version: 1,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/settings/media/objects/NAIImgConfig',
+              body: { patch: { width: 832 } },
+            },
+          ],
+        },
+        {
+          version: 1,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/settings/media/objects/NAIImgConfig',
+              body: { patch: { width: 512 } },
+            },
+          ],
+        },
+      ])
+      expect(recorded.objectPatches.at(-1)).toMatchObject({
+        update: { patch: { width: 512 } },
+        attemptedObject: original,
+      })
+    } finally {
+      stop()
+    }
+  })
+
+  it('retains a marked sparse edit ahead of a partial closure with an explicit delete correction', async () => {
+    const original = { width: 512, height: 768 }
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: LONG_DELAY })
+    try {
+      flushSync()
+      ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
+        ...original,
+        width: 832,
+        temporary: 'staged value',
+      }
+      flushSync()
+      const predecessor = await markOnlyPendingMutationAsRemotelyStarted()
+
+      ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
+        ...original,
+        width: 832,
+        height: 1024,
+      }
+      flushSync()
+      expect(recorded.dispatched).toHaveLength(0)
+      flushPendingServerBackedSettingsPatch()
+
+      const pending = await expectMarkerWinnerAndSuccessor(predecessor)
+      expect(pending[1].intent).toEqual({
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/settings/media/objects/NAIImgConfig',
+            body: {
+              patch: { width: 832, height: 1024 },
+              deleteKeys: ['temporary'],
+            },
+          },
+        ],
+      })
+      expect(recorded.objectPatches.at(-1)).toMatchObject({
+        update: {
+          patch: { width: 832, height: 1024 },
+          deleteKeys: ['temporary'],
+        },
+        attemptedObject: { ...original, width: 832, height: 1024 },
+      })
+    } finally {
+      stop()
+    }
+  })
+})

@@ -149,13 +149,13 @@ vi.mock('./pendingMutationOutbox', () => ({
   }),
   stagePendingMutation: vi.fn(
     (key: string, intent: unknown, previous?: { mutationId: string; phase: string } | null) => {
-      const mutationId =
-        previous?.phase === 'staged' ? previous.mutationId : `settings-mutation-${durabilityMocks.nextId++}`
       if (previous?.phase === 'staged') previous.phase = 'superseded'
+      const sequence = durabilityMocks.nextId++
+      const mutationId = `settings-mutation-${sequence}`
       const handle = {
         key,
         mutationId,
-        sequence: durabilityMocks.nextId,
+        sequence,
         ownerWriterSessionId: 'writer-a',
         writerEpoch: 1,
         databaseLineage: 'database-a',
@@ -888,6 +888,75 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
+  it('keeps a scalar correction in the absolute closure while another field remains dirty', async () => {
+    setupSettings({
+      notification: false,
+      useAutoSuggestions: false,
+    })
+    const stop = watchServerBackedSettings(['notification', 'useAutoSuggestions'], {
+      delayMs: DELAY,
+    })
+    flushSync()
+
+    testDatabaseState.db.notification = true
+    flushSync()
+    testDatabaseState.db.useAutoSuggestions = true
+    flushSync()
+    testDatabaseState.db.notification = false
+    flushSync()
+
+    const stagedRequests = (durabilityMocks.staged.at(-1)?.intent as { requests?: unknown[] }).requests
+    expect(durabilityMocks.staged.at(-1)?.key).toBe('settings:bridge')
+    expect(stagedRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: '/settings/display', body: { patch: { notification: false } } }),
+        expect.objectContaining({
+          path: '/settings/sidebar',
+          body: { patch: { useAutoSuggestions: true } },
+        }),
+      ]),
+    )
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false, useAutoSuggestions: true }])
+    stop()
+  })
+
+  it('merges an immediate setting apply with pending same-field and sibling work', async () => {
+    setupSettings({
+      notification: false,
+      useAutoSuggestions: false,
+    })
+    const stop = watchServerBackedSettings(['notification', 'useAutoSuggestions'], {
+      delayMs: DELAY,
+    })
+    flushSync()
+
+    testDatabaseState.db.notification = true
+    flushSync()
+    testDatabaseState.db.useAutoSuggestions = true
+    flushSync()
+    applyServerBackedSettingsPatch({ notification: false })
+    await flushAndSettle()
+
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false, useAutoSuggestions: true }])
+    const dispatchedRequests = (durabilityMocks.dispatched.at(-1)?.intent as { requests?: unknown[] }).requests
+    expect(durabilityMocks.dispatched.at(-1)?.key).toBe('settings:bridge')
+    expect(dispatchedRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: '/settings/display', body: { patch: { notification: false } } }),
+        expect.objectContaining({
+          path: '/settings/sidebar',
+          body: { patch: { useAutoSuggestions: true } },
+        }),
+      ]),
+    )
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches).toHaveLength(1)
+    stop()
+  })
+
   it('retains the intent-time group epoch across an authoritative apply before debounce dispatch', async () => {
     setupSettings({ notification: false })
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
@@ -943,6 +1012,79 @@ describe('settingsBridge coalescing', () => {
       update: { patch: { width: 832 } },
     })
     expect(recorded.objectPatches[0].attemptedObject).toEqual({ ...original, width: 832 })
+    stop()
+  })
+
+  it('dispatches an immediate sparse correction when the desired object returns to baseline', async () => {
+    const original = { width: 512, height: 768 }
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = original
+    flushSync()
+    await flushAndSettle()
+
+    expect(recorded.objectPatches).toHaveLength(1)
+    expect(recorded.objectPatches[0]).toMatchObject({
+      update: { patch: { width: 512 } },
+      attemptedObject: original,
+    })
+    expect(durabilityMocks.dispatched.at(-1)).toMatchObject({
+      key: 'settings:bridge',
+      intent: {
+        requests: [{ body: { patch: { width: 512 } } }],
+      },
+    })
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.objectPatches).toHaveLength(1)
+    stop()
+  })
+
+  it('keeps sparse delete corrections in the absolute closure while fields remain dirty', async () => {
+    const original = { width: 512, height: 768 }
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
+      ...original,
+      width: 832,
+      temporary: 'staged value',
+    }
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
+      ...original,
+      width: 832,
+      height: 1024,
+    }
+    flushSync()
+
+    expect(durabilityMocks.staged.at(-1)).toMatchObject({
+      key: 'settings:bridge',
+      intent: {
+        requests: [
+          {
+            body: {
+              patch: { width: 832, height: 1024 },
+              deleteKeys: ['temporary'],
+            },
+          },
+        ],
+      },
+    })
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await flushAndSettle()
+    expect(recorded.objectPatches).toHaveLength(1)
+    expect(recorded.objectPatches[0]).toMatchObject({
+      update: {
+        patch: { width: 832, height: 1024 },
+        deleteKeys: ['temporary'],
+      },
+      attemptedObject: { ...original, width: 832, height: 1024 },
+    })
     stop()
   })
 
@@ -1024,7 +1166,44 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
-  it('replaces an in-flight sparse successor with the exact rebased revert intent', async () => {
+  it('preserves a field deliberately returned to the in-flight sparse value after failure', async () => {
+    const original = { width: 512, height: 768 }
+    const firstResult = createDeferred<unknown>()
+    recorded.objectResults.push(firstResult.promise)
+    recorded.groupReads.push({
+      status: 'ok',
+      revision: Number.MAX_SAFE_INTEGER,
+      group: 'media',
+      settings: { NAIImgConfig: original },
+    })
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await flushAndSettle()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 1024 }
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
+      ...original,
+      width: 832,
+      height: 1024,
+    }
+    flushSync()
+    firstResult.resolve({ status: 'error', error: 'failed' })
+    for (let index = 0; index < 8; index += 1) await flushAndSettle()
+
+    expect(recorded.objectPatches).toHaveLength(2)
+    expect(recorded.objectPatches[1]).toMatchObject({
+      update: { patch: { width: 832, height: 1024 } },
+      attemptedObject: { ...original, width: 832, height: 1024 },
+    })
+    expect(testDatabaseState.db.NAIImgConfig).toEqual({ ...original, width: 832, height: 1024 })
+    stop()
+  })
+
+  it('restages an in-flight sparse successor with the exact desired revert intent', async () => {
     const original = { width: 512, height: 768 }
     const firstResult = createDeferred<unknown>()
     recorded.objectResults.push(firstResult.promise)
@@ -1043,9 +1222,11 @@ describe('settingsBridge coalescing', () => {
     })
     ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = original
     flushSync()
-    expect(durabilityMocks.acknowledged).toEqual(
-      expect.arrayContaining([expect.objectContaining({ mutationId: staleSuccessor?.mutationId })]),
-    )
+    expect(durabilityMocks.staged.at(-1)).toMatchObject({
+      key: 'settings:bridge',
+      intent: { requests: [{ body: { patch: { width: 512 } } }] },
+    })
+    expect(durabilityMocks.acknowledged).toHaveLength(0)
 
     firstResult.resolve(sparseObjectAcceptedResult(recorded.objectPatches[0]))
     for (let index = 0; index < 8; index += 1) await flushAndSettle()
@@ -1058,7 +1239,6 @@ describe('settingsBridge coalescing', () => {
       attemptedObject: original,
     })
     expect(durabilityMocks.dispatched.at(-1)).toMatchObject({
-      mutationId: expect.not.stringMatching(staleSuccessor?.mutationId ?? ''),
       intent: {
         requests: [{ body: { patch: { width: 512 } } }],
       },
@@ -1085,9 +1265,9 @@ describe('settingsBridge coalescing', () => {
     expect(recorded.objectPatches).toHaveLength(1)
     ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 1024 }
     flushSync()
-    const staleSuccessor = durabilityMocks.staged.at(-1)
     ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = original
     flushSync()
+    const correction = durabilityMocks.staged.at(-1)
 
     firstResult.resolve({ status: 'error', error: 'failed' })
     for (let index = 0; index < 8; index += 1) await flushAndSettle()
@@ -1095,11 +1275,11 @@ describe('settingsBridge coalescing', () => {
     expect(recorded.objectPatches).toHaveLength(1)
     expect(testDatabaseState.db.NAIImgConfig).toEqual(original)
     expect(durabilityMocks.acknowledged).toEqual(
-      expect.arrayContaining([expect.objectContaining({ mutationId: staleSuccessor?.mutationId })]),
+      expect.arrayContaining([expect.objectContaining({ mutationId: correction?.mutationId })]),
     )
     const replayableStaleSuccessor = durabilityMocks.staged.find(
       (entry) =>
-        entry.mutationId === staleSuccessor?.mutationId &&
+        entry.mutationId === correction?.mutationId &&
         !durabilityMocks.acknowledged.some((acknowledged) => acknowledged.mutationId === entry.mutationId),
     )
     expect(replayableStaleSuccessor).toBeUndefined()
@@ -1179,7 +1359,7 @@ describe('settingsBridge coalescing', () => {
     expect(recorded.patches).toHaveLength(1)
   })
 
-  it('drops watched settings when the final value returns to the original baseline', async () => {
+  it('dispatches an immediate durable correction when a watched setting returns to baseline', async () => {
     setupSettings({ notification: false })
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
     flushSync()
@@ -1190,7 +1370,13 @@ describe('settingsBridge coalescing', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(recorded.patches).toHaveLength(0)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false }])
+    expect(durabilityMocks.dispatched.at(-1)).toMatchObject({
+      key: 'settings:bridge',
+      intent: {
+        requests: [{ method: 'PATCH', path: '/settings/display', body: { patch: { notification: false } } }],
+      },
+    })
     stop()
   })
 

@@ -43,6 +43,7 @@ import {
   splitPresetSettingDraftOwnerKey,
 } from './settingsDraftAcknowledgement'
 import { dispatchDurableMutation } from './durableMutationDispatch'
+import { SETTINGS_BRIDGE_MUTATION_KEY } from './settingsMutationKey'
 import {
   acknowledgePendingMutation,
   stagePendingMutation,
@@ -54,6 +55,7 @@ interface PendingSettingsPatch {
   patch: SettingsPatch
   previous: SettingsPatch
   attempted: SettingsPatch
+  durableAttempted: SettingsPatch
   projectionEpochs: SettingsGroupProjectionEpochs
   timer: ReturnType<typeof setTimeout> | null
   outbox: PendingMutationHandle | null
@@ -74,6 +76,7 @@ const pendingSettingsPatch: PendingSettingsPatch = {
   patch: {},
   previous: {},
   attempted: {},
+  durableAttempted: {},
   projectionEpochs: {},
   timer: null,
   outbox: null,
@@ -85,11 +88,14 @@ interface SparseObjectSettingQueue {
   key: string
   group: SettingsGroup
   baseline: Record<string, unknown>
-  queued: SparseSettingsObjectUpdate | null
+  desired: Record<string, unknown> | null
+  stagedUpdate: SparseSettingsObjectUpdate | null
+  intent: DurableMutationIntent | null
+  durableAttempted: Record<string, unknown> | null
+  desiredTouchedKeys: Set<string>
   queuedProjectionEpoch: number | null
   timer: ReturnType<typeof setTimeout> | null
   running: boolean
-  superseded: boolean
   outbox: PendingMutationHandle | null
 }
 
@@ -299,9 +305,6 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
   }
 
   if (Object.keys(commandPatch).length === 0) return
-  const optimisticProjectionEpochs = captureSettingsPatchProjectionEpochs(commandPatch)
-
-  dropPendingSettingsPatchKeys(Object.keys(commandPatch))
 
   withSuppressedSettingsWatcher(() => {
     withTrustedResourceWrite(() => {
@@ -312,7 +315,11 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
     })
   })
 
-  dispatchServerBackedSettingsPatch(commandPatch, previous, attempted, optimisticProjectionEpochs)
+  // Fold an immediate write into any same-field debounce. This stages one
+  // absolute successor before reserving the command queue, so a remotely
+  // started predecessor cannot land after the immediate value.
+  queueSettingsPatch(commandPatch, previous, 0)
+  flushPendingServerBackedSettingsPatch()
 }
 
 export async function applyOnboardingServerBackedSettings(
@@ -427,61 +434,67 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
       pendingSettingsPatch.projectionEpochs[group] = captureSettingsGroupProjectionEpoch(group)
     }
     if (!(key in pendingSettingsPatch.previous)) {
-      pendingSettingsPatch.previous[key] = previous[key]
+      pendingSettingsPatch.previous[key] = cloneJsonValue(previous[key])
     }
-    if (snapshotJson(value) === snapshotJson(pendingSettingsPatch.previous[key])) {
-      delete pendingSettingsPatch.patch[key]
-      delete pendingSettingsPatch.previous[key]
-      delete pendingSettingsPatch.attempted[key]
-      continue
-    }
-    pendingSettingsPatch.patch[key] = value
-    pendingSettingsPatch.attempted[key] = value
+    pendingSettingsPatch.attempted[key] = cloneJsonValue(value)
   }
+  const netChangedKeys = changedSettingsPatchKeys(pendingSettingsPatch.previous, pendingSettingsPatch.attempted)
+  pendingSettingsPatch.patch = pendingSettingsDurableClosure(netChangedKeys)
   prunePendingSettingsPatchProjectionEpochs()
 
   if (pendingSettingsPatch.timer) clearTimeout(pendingSettingsPatch.timer)
   if (Object.keys(pendingSettingsPatch.patch).length === 0) {
     pendingSettingsPatch.timer = null
     if (pendingSettingsPatch.outbox) void acknowledgePendingMutation(pendingSettingsPatch.outbox)
-    pendingSettingsPatch.outbox = null
+    resetPendingSettingsPatch()
     return
   }
   const intent = settingsPatchDurableIntent(pendingSettingsPatch.patch)
-  pendingSettingsPatch.outbox = stagePendingMutation('settings:bridge', intent, pendingSettingsPatch.outbox)
+  pendingSettingsPatch.outbox = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, intent, pendingSettingsPatch.outbox)
+  pendingSettingsPatch.durableAttempted = cloneJsonValue(pendingSettingsPatch.attempted)
+  if (netChangedKeys.size === 0) {
+    // The only remaining fields correct a prior durable target back to its
+    // baseline. Reserve that correction immediately; another command must not
+    // overtake it while the old receipt may already be in flight in another tab.
+    dispatchPendingSettingsPatch()
+    return
+  }
   pendingSettingsPatch.timer = setTimeout(() => {
     dispatchPendingSettingsPatch()
   }, delay)
 }
 
-function dropPendingSettingsPatchKeys(keys: readonly string[]): void {
-  let dropped = false
-  for (const key of keys) {
-    supersedeSparseObjectSettingQueue(key)
-    if (
-      key in pendingSettingsPatch.patch ||
-      key in pendingSettingsPatch.previous ||
-      key in pendingSettingsPatch.attempted
-    ) {
-      dropped = true
+function pendingSettingsDurableClosure(netChangedKeys: ReadonlySet<string>): SettingsPatch {
+  const changedFromDurable = pendingSettingsPatch.outbox
+    ? changedSettingsPatchKeys(pendingSettingsPatch.durableAttempted, pendingSettingsPatch.attempted)
+    : new Set<string>()
+  const patch: SettingsPatch = {}
+  for (const key of new Set([...netChangedKeys, ...changedFromDurable])) {
+    if (!hasOwnKey(pendingSettingsPatch.attempted, key) || pendingSettingsPatch.attempted[key] === undefined) {
+      continue
     }
-    delete pendingSettingsPatch.patch[key]
-    delete pendingSettingsPatch.previous[key]
-    delete pendingSettingsPatch.attempted[key]
+    patch[key] = cloneJsonValue(pendingSettingsPatch.attempted[key])
   }
-  prunePendingSettingsPatchProjectionEpochs()
+  return patch
+}
 
-  if (dropped && pendingSettingsPatch.timer && Object.keys(pendingSettingsPatch.patch).length === 0) {
-    clearTimeout(pendingSettingsPatch.timer)
-    pendingSettingsPatch.timer = null
+function changedSettingsPatchKeys(left: SettingsPatch, right: SettingsPatch): Set<string> {
+  const changed = new Set<string>()
+  for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
+    if (hasOwnKey(left, key) !== hasOwnKey(right, key) || !isJsonSnapshotEqual(left[key], right[key])) {
+      changed.add(key)
+    }
   }
-  if (Object.keys(pendingSettingsPatch.patch).length === 0 && pendingSettingsPatch.outbox) {
-    void acknowledgePendingMutation(pendingSettingsPatch.outbox)
-    pendingSettingsPatch.outbox = null
-  } else if (dropped) {
-    const intent = settingsPatchDurableIntent(pendingSettingsPatch.patch)
-    pendingSettingsPatch.outbox = stagePendingMutation('settings:bridge', intent, pendingSettingsPatch.outbox)
-  }
+  return changed
+}
+
+function resetPendingSettingsPatch(): void {
+  pendingSettingsPatch.patch = {}
+  pendingSettingsPatch.previous = {}
+  pendingSettingsPatch.attempted = {}
+  pendingSettingsPatch.durableAttempted = {}
+  pendingSettingsPatch.projectionEpochs = {}
+  pendingSettingsPatch.outbox = null
 }
 
 export function flushPendingServerBackedSettingsPatch(options: ServerCommandTransportOptions = {}): void {
@@ -505,11 +518,7 @@ function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {
   const commandAttempted = pendingSettingsPatch.attempted
   const optimisticProjectionEpochs = pendingSettingsPatch.projectionEpochs
   const stagedOutbox = pendingSettingsPatch.outbox
-  pendingSettingsPatch.patch = {}
-  pendingSettingsPatch.previous = {}
-  pendingSettingsPatch.attempted = {}
-  pendingSettingsPatch.projectionEpochs = {}
-  pendingSettingsPatch.outbox = null
+  resetPendingSettingsPatch()
 
   if (Object.keys(commandPatch).length === 0) {
     if (stagedOutbox) void acknowledgePendingMutation(stagedOutbox)
@@ -517,7 +526,7 @@ function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {
   }
 
   const intent = settingsPatchDurableIntent(commandPatch)
-  const outbox = stagedOutbox ?? stagePendingMutation('settings:bridge', intent)
+  const outbox = stagedOutbox ?? stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, intent)
   void dispatchDurableMutation(outbox, intent, (transport) =>
     dispatchTrackedServerBackedSettingsPatch({
       patch: commandPatch,
@@ -647,45 +656,46 @@ function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted
     return false
   }
 
-  const intent = diffSparseObjectSetting(previous, attempted)
+  const netUpdate = diffSparseObjectSetting(previous, attempted)
   let state = sparseObjectSettingQueues.get(key)
   if (!state) {
-    if (!intent) return true
+    if (!netUpdate) return true
     state = {
       key,
       group,
       baseline: cloneJsonValue(previous),
-      queued: intent,
+      desired: cloneJsonValue(attempted),
+      stagedUpdate: null,
+      intent: null,
+      durableAttempted: null,
+      desiredTouchedKeys: new Set(),
       queuedProjectionEpoch: captureSettingsGroupProjectionEpoch(group),
       timer: null,
       running: false,
-      superseded: false,
       outbox: null,
     }
     sparseObjectSettingQueues.set(key, state)
-  } else if (intent) {
-    if (!state.queued) state.queuedProjectionEpoch = captureSettingsGroupProjectionEpoch(group)
-    state.queued = mergeSparseObjectSettingUpdates(state.queued, intent)
-  }
-
-  if (!state.running && state.queued) {
-    const desired = applySparseObjectSettingUpdate(state.baseline, state.queued)
-    state.queued = diffSparseObjectSetting(state.baseline, desired)
-    if (!state.queued) {
-      state.queuedProjectionEpoch = null
-      if (state.timer) clearTimeout(state.timer)
-      if (state.outbox) void acknowledgePendingMutation(state.outbox)
-      sparseObjectSettingQueues.delete(key)
-      return true
+  } else {
+    if (!state.desired) state.queuedProjectionEpoch = captureSettingsGroupProjectionEpoch(group)
+    if (state.running && netUpdate) {
+      for (const field of [...Object.keys(netUpdate.patch), ...(netUpdate.deleteKeys ?? [])]) {
+        state.desiredTouchedKeys.add(field)
+      }
     }
+    state.desired = cloneJsonValue(attempted)
   }
 
-  if (state.queued) {
-    const attemptedObject = applySparseObjectSettingUpdate(state.baseline, state.queued)
-    const update = diffSparseObjectSetting(state.baseline, attemptedObject)
-    refreshSparseObjectSettingOutbox(state, update)
-  }
   if (state.timer) clearTimeout(state.timer)
+  state.timer = null
+  const correctionOnly = refreshSparseObjectSettingOutbox(state)
+  if (!state.stagedUpdate || !state.intent || !state.outbox) {
+    if (!state.running) sparseObjectSettingQueues.delete(key)
+    return true
+  }
+  if (correctionOnly && !state.running) {
+    void dispatchSparseObjectSettingQueue(state)
+    return true
+  }
   state.timer = setTimeout(() => {
     state!.timer = null
     void dispatchSparseObjectSettingQueue(state!)
@@ -693,36 +703,27 @@ function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted
   return true
 }
 
-function supersedeSparseObjectSettingQueue(key: string): void {
-  const state = sparseObjectSettingQueues.get(key)
-  if (!state) return
-  state.superseded = true
-  state.queued = null
-  state.queuedProjectionEpoch = null
-  if (state.outbox) void acknowledgePendingMutation(state.outbox)
-  state.outbox = null
-  if (state.timer) clearTimeout(state.timer)
-  state.timer = null
-  if (!state.running) sparseObjectSettingQueues.delete(key)
-}
-
 async function dispatchSparseObjectSettingQueue(
   state: SparseObjectSettingQueue,
   options: ServerCommandTransportOptions = {},
 ): Promise<void> {
-  if (state.running || state.superseded || !state.queued) return
-  const attemptedObject = applySparseObjectSettingUpdate(state.baseline, state.queued)
-  const update = diffSparseObjectSetting(state.baseline, attemptedObject)
+  if (state.running || !state.desired || !state.stagedUpdate || !state.intent || !state.outbox) {
+    return
+  }
+  const previousBaseline = cloneJsonValue(state.baseline)
+  const attemptedObject = cloneJsonValue(state.desired)
+  const update = cloneJsonValue(state.stagedUpdate)
   const projectionEpoch = state.queuedProjectionEpoch
-  const intent = update ? sparseObjectSettingDurableIntent(state.group, state.key, update) : null
-  const outbox = intent
-    ? (state.outbox ?? stagePendingMutation(`settings-object:${state.group}:${state.key}`, intent))
-    : null
+  const intent = state.intent
+  const outbox = state.outbox
   state.outbox = null
-  state.queued = null
+  state.desired = null
+  state.stagedUpdate = null
+  state.intent = null
   state.queuedProjectionEpoch = null
-  if (!update || projectionEpoch === null) {
-    if (outbox) void acknowledgePendingMutation(outbox)
+  state.desiredTouchedKeys.clear()
+  if (projectionEpoch === null) {
+    void acknowledgePendingMutation(outbox)
     sparseObjectSettingQueues.delete(state.key)
     return
   }
@@ -781,23 +782,24 @@ async function dispatchSparseObjectSettingQueue(
   state.baseline = baseline
   state.running = false
 
-  if (state.superseded) {
-    sparseObjectSettingQueues.delete(state.key)
-    return
-  }
-
-  const queued = state.queued
-  if (queued) {
-    const desired = applySparseObjectSettingUpdate(state.baseline, queued)
-    writeSparseObjectSettingProjection(state.key, desired)
-    state.queued = diffSparseObjectSetting(state.baseline, desired)
-    if (state.queued) {
-      refreshSparseObjectSettingOutbox(state, state.queued)
+  const desired = state.desired
+  if (desired) {
+    state.desired = rebaseSparseObjectSettingDesired(
+      desired,
+      previousBaseline,
+      attemptedObject,
+      state.baseline,
+      state.desiredTouchedKeys,
+    )
+    writeSparseObjectSettingProjection(state.key, state.desired)
+    refreshSparseObjectSettingOutbox(state)
+    if (state.stagedUpdate && state.intent && state.outbox) {
+      if (state.timer) clearTimeout(state.timer)
+      state.timer = null
       queueMicrotask(() => void dispatchSparseObjectSettingQueue(state, options))
       return
     }
     state.queuedProjectionEpoch = null
-    refreshSparseObjectSettingOutbox(state, null)
   } else if (
     (failed || usedAuthoritativeBaseline) &&
     isJsonSnapshotEqual(currentSettingValue(state.key, {}), attemptedObject)
@@ -805,21 +807,65 @@ async function dispatchSparseObjectSettingQueue(
     writeSparseObjectSettingProjection(state.key, state.baseline)
   }
 
+  state.durableAttempted = null
   sparseObjectSettingQueues.delete(state.key)
 }
 
-function refreshSparseObjectSettingOutbox(
-  state: SparseObjectSettingQueue,
-  update: SparseSettingsObjectUpdate | null,
-): void {
+function rebaseSparseObjectSettingDesired(
+  desired: Record<string, unknown>,
+  previousBaseline: Record<string, unknown>,
+  attempted: Record<string, unknown>,
+  settledBaseline: Record<string, unknown>,
+  desiredTouchedKeys: ReadonlySet<string>,
+): Record<string, unknown> {
+  const rebased = cloneJsonValue(desired)
+  for (const key of new Set([...Object.keys(previousBaseline), ...Object.keys(attempted)])) {
+    const previousPresent = hasDefinedOwnKey(previousBaseline, key)
+    const attemptedPresent = hasDefinedOwnKey(attempted, key)
+    const desiredPresent = hasDefinedOwnKey(desired, key)
+    if (
+      desiredTouchedKeys.has(key) ||
+      (previousPresent === attemptedPresent &&
+        (!previousPresent || isJsonSnapshotEqual(previousBaseline[key], attempted[key]))) ||
+      desiredPresent !== attemptedPresent ||
+      (attemptedPresent && !isJsonSnapshotEqual(desired[key], attempted[key]))
+    ) {
+      continue
+    }
+
+    if (hasDefinedOwnKey(settledBaseline, key)) {
+      rebased[key] = cloneJsonValue(settledBaseline[key])
+    } else {
+      delete rebased[key]
+    }
+  }
+  return rebased
+}
+
+function refreshSparseObjectSettingOutbox(state: SparseObjectSettingQueue): boolean {
+  const desired = state.desired
+  if (!desired) {
+    state.stagedUpdate = null
+    state.intent = null
+    return false
+  }
+  const netUpdate = diffSparseObjectSetting(state.baseline, desired)
+  const correctiveUpdate = state.durableAttempted ? diffSparseObjectSetting(state.durableAttempted, desired) : null
+  const update = mergeSparseObjectSettingUpdatePair(netUpdate, correctiveUpdate)
   if (!update) {
     if (state.outbox) void acknowledgePendingMutation(state.outbox)
     state.outbox = null
-    return
+    state.stagedUpdate = null
+    state.intent = null
+    return false
   }
 
   const intent = sparseObjectSettingDurableIntent(state.group, state.key, update)
-  state.outbox = stagePendingMutation(`settings-object:${state.group}:${state.key}`, intent, state.outbox)
+  state.outbox = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, intent, state.outbox)
+  state.stagedUpdate = cloneJsonValue(update)
+  state.intent = intent
+  state.durableAttempted = cloneJsonValue(desired)
+  return netUpdate === null && correctiveUpdate !== null
 }
 
 async function refreshSparseObjectSettingBaseline(
@@ -899,30 +945,29 @@ function diffSparseObjectSetting(
   return { patch, ...(deleteKeys.length ? { deleteKeys: deleteKeys.sort() } : {}) }
 }
 
-function mergeSparseObjectSettingUpdates(
-  current: SparseSettingsObjectUpdate | null,
-  next: SparseSettingsObjectUpdate,
-): SparseSettingsObjectUpdate {
-  const patch = { ...(current?.patch ?? {}) }
-  const deleteKeys = new Set(current?.deleteKeys ?? [])
-  for (const [key, value] of Object.entries(next.patch)) {
-    patch[key] = cloneJsonValue(value)
-    deleteKeys.delete(key)
-  }
-  for (const key of next.deleteKeys ?? []) {
-    delete patch[key]
-    deleteKeys.add(key)
-  }
-  return { patch, ...(deleteKeys.size ? { deleteKeys: [...deleteKeys].sort() } : {}) }
+function hasDefinedOwnKey(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key) && value[key] !== undefined
 }
 
-function applySparseObjectSettingUpdate(
-  baseline: Record<string, unknown>,
-  update: SparseSettingsObjectUpdate,
-): Record<string, unknown> {
-  const next = { ...cloneJsonValue(baseline), ...cloneJsonValue(update.patch) }
-  for (const key of update.deleteKeys ?? []) delete next[key]
-  return next
+function mergeSparseObjectSettingUpdatePair(
+  first: SparseSettingsObjectUpdate | null,
+  second: SparseSettingsObjectUpdate | null,
+): SparseSettingsObjectUpdate | null {
+  if (!first && !second) return null
+  const patch: Record<string, unknown> = {}
+  const deleteKeys = new Set<string>()
+  for (const update of [first, second]) {
+    if (!update) continue
+    for (const [key, value] of Object.entries(update.patch)) {
+      patch[key] = cloneJsonValue(value)
+      deleteKeys.delete(key)
+    }
+    for (const key of update.deleteKeys ?? []) {
+      delete patch[key]
+      deleteKeys.add(key)
+    }
+  }
+  return { patch, ...(deleteKeys.size ? { deleteKeys: [...deleteKeys].sort() } : {}) }
 }
 
 function writeSparseObjectSettingProjection(key: string, value: Record<string, unknown>): void {
