@@ -317,6 +317,21 @@ describe('PlaygroundSubtitle run recovery', () => {
     expect(subtitleMocks.downloadFile).not.toHaveBeenCalled()
   })
 
+  it('reports a local Whisper pipeline failure without erasing its details', async () => {
+    const file = new File([new Uint8Array([1, 2, 3])], 'sample.mp3', { type: 'audio/mpeg' })
+    const pipelineError = new Error('local Whisper pipeline failed')
+    subtitleMocks.selectFileByDom.mockResolvedValue([file])
+    subtitleMocks.pipeline.mockRejectedValue(pipelineError)
+    component = mount(PlaygroundSubtitle, { target })
+    await selectMode('whisperLocal')
+
+    runButton()!.click()
+
+    await vi.waitFor(() => expect(subtitleMocks.alertError).toHaveBeenCalledWith(pipelineError))
+    expect(runButton()).toBeTruthy()
+    expect(target.textContent).not.toContain('Loading...')
+  })
+
   it('disposes a local Whisper pipeline when the tool unmounts mid-transcription', async () => {
     const file = new File([new Uint8Array([1, 2, 3])], 'sample.mp3', { type: 'audio/mpeg' })
     const dispose = vi.fn(async () => {})

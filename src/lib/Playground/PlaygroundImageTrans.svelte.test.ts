@@ -418,4 +418,19 @@ describe('PlaygroundImageTrans request ownership', () => {
     expect(imageMocks.alertError).toHaveBeenCalledOnce()
     expect(target.querySelectorAll('textarea')).toHaveLength(1)
   })
+
+  it('reports the parse error from malformed successful JSON', async () => {
+    installImageBrowserMocks()
+    imageMocks.selectSingleFile.mockResolvedValue({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })
+    imageMocks.requestChatData.mockResolvedValue({ type: 'success', result: 'not valid JSON' })
+    component = mount(PlaygroundImageTrans, { target })
+
+    translationButton().click()
+
+    await vi.waitFor(() => expect(imageMocks.alertError).toHaveBeenCalledOnce())
+    await waitForTranslationIdle()
+    const reportedError = imageMocks.alertError.mock.calls[0][0]
+    expect(reportedError).toBeInstanceOf(SyntaxError)
+    expect((reportedError as SyntaxError).message).toMatch(/JSON|Unexpected token/)
+  })
 })

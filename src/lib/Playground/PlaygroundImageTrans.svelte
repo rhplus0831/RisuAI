@@ -332,7 +332,7 @@
         render()
       }
     } catch (error) {
-      alertError(JSON.stringify(error))
+      alertError(error)
     } finally {
       loading = false
     }

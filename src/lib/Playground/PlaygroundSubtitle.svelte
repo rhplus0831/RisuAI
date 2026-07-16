@@ -435,7 +435,7 @@
         }
       } catch (error) {
         if (isAbortError(error)) throw error
-        alertError(JSON.stringify(error))
+        alertError(error)
         return false
       } finally {
         if (run.pipeline === transcriber) run.pipeline = null
