@@ -6,6 +6,7 @@ import { createInitialDatabase } from './databaseDefaults.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
 import { getSchemaState } from './db.js'
 import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent } from './commands/events.js'
+import { getDatabaseWriterMetadata, rotateDatabaseLineage } from './databaseLineage.js'
 import { recordTableWrite } from './protocolMetrics.js'
 import {
   applyChatMessageDiff,
@@ -1881,7 +1882,7 @@ export function applyImport(
     beforeRevision?: (db: DatabaseSync) => void
     cloneBeforeMessageSplit?: boolean
   } = {},
-): { revision: number; event: CommandEvent } {
+): { revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number } {
   if (database === null || database === undefined) {
     throw new ValidationError('database payload missing')
   }
@@ -1915,10 +1916,11 @@ export function applyImport(
     if (cloneBeforeMessageSplit) {
       options.beforeRevision?.(db)
     }
+    const databaseLineage = rotateDatabaseLineage(db)
     const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
     db.exec('COMMIT')
     transactionOpen = false
-    return { revision: event.revision, event }
+    return { revision: event.revision, event, databaseLineage, writerEpoch: getDatabaseWriterMetadata(db).epoch }
   } catch (err) {
     if (transactionOpen) {
       db.exec('ROLLBACK')
@@ -2220,7 +2222,6 @@ function sqliteDbPath(dataDir: string): string {
 const SQLITE_BACKUP_TABLES = [
   'schema_version',
   'command_events',
-  'command_mutation_receipts',
   'memory_chunks',
   'memory_summaries',
   'memory_embeddings',
@@ -2312,7 +2313,7 @@ export function listBackups(dataDir: string): BackupManifest[] {
   return manifests
 }
 
-function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string, beforeCommit?: () => void): void {
+function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string, beforeCommit?: () => void): string {
   // Use ATTACH + table-level swap so the existing `db` handle stays valid
   // (file-rename would orphan open file descriptors and break every other
   // active route holding the same handle). The transaction is atomic with
@@ -2327,19 +2328,21 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string, beforeC
         if (table === 'schema_version') continue
         db.exec(`DELETE FROM ${table}`)
       }
+      const databaseLineage = rotateDatabaseLineage(db)
       beforeCommit?.()
       db.exec('COMMIT')
+      return databaseLineage
     } catch (err) {
       db.exec('ROLLBACK')
       throw err
     }
-    return
   }
 
   // ATTACH expects a SQL string literal; the path is constructed locally and
   // sanitised by replacing single quotes.
   const sqlLiteralPath = backupDbPath.replaceAll("'", "''")
   db.exec(`ATTACH DATABASE '${sqlLiteralPath}' AS bak`)
+  let databaseLineage: string | undefined
   try {
     db.exec('BEGIN')
     try {
@@ -2369,6 +2372,7 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string, beforeC
         }
       }
       repairPersistedGlobalLorebookIdsInSqlite(db)
+      databaseLineage = rotateDatabaseLineage(db)
       beforeCommit?.()
       db.exec('COMMIT')
     } catch (err) {
@@ -2378,13 +2382,17 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string, beforeC
   } finally {
     db.exec('DETACH DATABASE bak')
   }
+  if (!databaseLineage) {
+    throw new Error('restore did not rotate database lineage')
+  }
+  return databaseLineage
 }
 
 export function restoreBackup(
   db: DatabaseSync,
   dataDir: string,
   id: string,
-): { revision: number; event: CommandEvent } {
+): { revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number } {
   if (!isValidBackupId(id)) {
     throw new EntityNotFoundError(`Backup not found: ${id}`)
   }
@@ -2428,8 +2436,9 @@ export function restoreBackup(
   }
 
   let event: CommandEvent | undefined
+  let databaseLineage: string | undefined
   try {
-    restoreSqliteFromBackup(db, backupSqlite, () => {
+    databaseLineage = restoreSqliteFromBackup(db, backupSqlite, () => {
       // If the backup carries a legacy db.json, import it into SQLite inside the
       // restore transaction so a failed re-import rolls the whole restore back.
       if (fs.existsSync(legacySnapshot)) {
@@ -2460,7 +2469,15 @@ export function restoreBackup(
   if (!event) {
     throw new Error('restore did not produce a command event')
   }
-  return { revision: event.revision, event }
+  if (!databaseLineage) {
+    throw new Error('restore did not return database lineage')
+  }
+  return {
+    revision: event.revision,
+    event,
+    databaseLineage,
+    writerEpoch: getDatabaseWriterMetadata(db).epoch,
+  }
 }
 
 export function deleteBackup(dataDir: string, id: string): void {

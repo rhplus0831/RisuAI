@@ -1,6 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { type AuthState, hasPassword, isAgentDevAuthBypassed, verifyAssertion } from './auth.js'
 
+const authenticatedRequests = new WeakSet<FastifyRequest>()
+
 export const PREFER_RETURN_MINIMAL = 'return=minimal'
 
 export function prefersMinimalResponse(prefer: string | string[] | undefined): boolean {
@@ -21,7 +23,9 @@ export function extractRisuAuth(req: FastifyRequest): string {
 }
 
 export async function requireAuth(state: AuthState, req: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+  if (authenticatedRequests.has(req)) return true
   if (isAgentDevAuthBypassed(state)) {
+    authenticatedRequests.add(req)
     return true
   }
   if (!hasPassword(state)) {
@@ -38,5 +42,6 @@ export async function requireAuth(state: AuthState, req: FastifyRequest, reply: 
     reply.code(401).send({ error: 'Auth required' })
     return false
   }
+  authenticatedRequests.add(req)
   return true
 }

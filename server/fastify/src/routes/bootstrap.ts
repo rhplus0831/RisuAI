@@ -1,13 +1,14 @@
 import type { FastifyInstance } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { ActiveWriterState } from '../activeWriter.js'
-import { registerActiveWriterSession } from '../activeWriter.js'
+import { registerActiveWriterSession, requestedWriterWasActive } from '../activeWriter.js'
 import type { AuthState } from '../auth.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
+import { getDatabaseLineage, getDatabaseWriterMetadata } from '../databaseLineage.js'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
 
@@ -22,6 +23,7 @@ export function registerBootstrapRoutes(
 ): void {
   app.get('/api/v1/bootstrap', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
+    const wasRequestedWriterActive = activeWriterState ? requestedWriterWasActive(activeWriterState, req) : undefined
     if (activeWriterState) {
       registerActiveWriterSession(activeWriterState, req)
     }
@@ -30,6 +32,9 @@ export function registerBootstrapRoutes(
       initialized: db.prepare('SELECT 1 FROM settings WHERE id = 1').get() !== undefined,
       revision,
       schemaVersion: version,
+      databaseLineage: getDatabaseLineage(db),
+      writerEpoch: activeWriterState?.epoch ?? getDatabaseWriterMetadata(db).epoch,
+      ...(wasRequestedWriterActive === undefined ? {} : { requestedWriterWasActive: wasRequestedWriterActive }),
       assetBaseUrl: ASSET_BASE_URL,
       // Transient running generations so a returning client, even after a full
       // reload, can discover and reattach. Server-memory only.

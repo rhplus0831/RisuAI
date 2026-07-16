@@ -92,11 +92,17 @@ export function registerSaveRoutes(
         const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req), {
           maxExpandedBytes: options.maxExpandedImportBytes,
         })
-        const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, snapshot.database)
+        const { revision, event, databaseLineage, writerEpoch, assetReport } = applyImportedDatabase(
+          db,
+          dataDir,
+          snapshot.database,
+        )
         eventSink.emit(event)
         return {
           revision,
           event,
+          databaseLineage,
+          writerEpoch,
           importReport: {
             incompleteChatCount: snapshot.incompleteChatCount,
             unsupportedReferenceCount: snapshot.unsupportedReferences.length,
@@ -110,11 +116,16 @@ export function registerSaveRoutes(
       // `normalizeRisuSaveImportDatabase` returns a request-body-isolated
       // throwaway object for JSON bodies, so the repository can split
       // message rows in place without a second full-corpus clone.
-      const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, database, {
-        cloneBeforeMessageSplit: false,
-      })
+      const { revision, event, databaseLineage, writerEpoch, assetReport } = applyImportedDatabase(
+        db,
+        dataDir,
+        database,
+        {
+          cloneBeforeMessageSplit: false,
+        },
+      )
       eventSink.emit(event)
-      return { revision, event, assetReport }
+      return { revision, event, databaseLineage, writerEpoch, assetReport }
     } catch (err) {
       if (err instanceof ValidationError) {
         reply.code(400)
@@ -151,17 +162,24 @@ export function registerSaveRoutes(
         decoded.format === 'legacy-local-backup'
           ? normalizeLegacyLocalBackupImportDatabase(snapshot.database, decoded.assetReferenceAliases)
           : snapshot.database
-      const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, importedDatabase, {
-        beforeRevision: () => {
-          const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
-          assetsCreated = assetResults.some((result) => result.created)
+      const { revision, event, databaseLineage, writerEpoch, assetReport } = applyImportedDatabase(
+        db,
+        dataDir,
+        importedDatabase,
+        {
+          beforeRevision: () => {
+            const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
+            assetsCreated = assetResults.some((result) => result.created)
+          },
+          onImportRollback: () => cleanupCopiedStagedAssetFiles(copiedAssetFiles),
         },
-        onImportRollback: () => cleanupCopiedStagedAssetFiles(copiedAssetFiles),
-      })
+      )
       eventSink.emit(event)
       return {
         revision,
         event,
+        databaseLineage,
+        writerEpoch,
         importReport: {
           incompleteChatCount: snapshot.incompleteChatCount,
           unsupportedReferenceCount: snapshot.unsupportedReferences.length,
@@ -470,6 +488,8 @@ function applyImportedDatabase(
 ): {
   revision: number
   event: ReturnType<typeof applyImport>['event']
+  databaseLineage: string
+  writerEpoch: number
   assetReport: ReturnType<typeof summarizeRisuSaveAssetReport>
 } {
   let result: ReturnType<typeof applyImport>

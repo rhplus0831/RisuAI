@@ -40,9 +40,9 @@ export function registerBackupRoutes(
   app.post<{ Params: { id: string } }>('/api/v1/backups/:id/restore', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     try {
-      const { revision, event } = restoreBackup(db, dataDir, req.params.id)
+      const { revision, event, databaseLineage, writerEpoch } = restoreBackup(db, dataDir, req.params.id)
       eventSink.emit(event)
-      return { revision, event }
+      return { revision, event, databaseLineage, writerEpoch }
     } catch (err) {
       if (err instanceof EntityNotFoundError) {
         reply.code(404)

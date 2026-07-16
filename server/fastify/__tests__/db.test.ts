@@ -72,6 +72,7 @@ describe('schema migrations', () => {
         'chats',
         'command_events',
         'command_mutation_receipts',
+        'database_metadata',
         'generation_finalization_retries',
         'hypa_v3_presets',
         'loadouts',
@@ -286,6 +287,100 @@ describe('schema migrations', () => {
         pk: number
       }>
       expect(columns.filter((column) => column.pk > 0).map((column) => column.name)).toEqual(['mutation_id'])
+      expect(columns.map((column) => column.name)).toEqual([
+        'mutation_id',
+        'database_lineage',
+        'creator_writer_session_id',
+        'request_fingerprint',
+        'response_json',
+        'created_at',
+        'acknowledged_at',
+        'delete_after',
+      ])
+      expect(db.prepare('SELECT lineage, active_writer_session_id, writer_epoch FROM database_metadata').get()).toEqual(
+        {
+          lineage: expect.any(String),
+          active_writer_session_id: null,
+          writer_epoch: 0,
+        },
+      )
+    } finally {
+      db.close()
+    }
+  })
+
+  it('migrates v24 receipts into the database lineage without deleting replay results', () => {
+    const dataDir = makeDataDir()
+    seedSchemaVersion(dataDir, 24, 13)
+    const before = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      before.exec(`
+        CREATE TABLE command_mutation_receipts (
+          mutation_id TEXT PRIMARY KEY,
+          creator_writer_session_id TEXT NOT NULL,
+          request_fingerprint TEXT NOT NULL,
+          response_json TEXT NOT NULL CHECK (json_valid(response_json)),
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+        CREATE INDEX idx_command_mutation_receipts_created_at
+          ON command_mutation_receipts (created_at);
+      `)
+      before
+        .prepare(
+          `
+            INSERT INTO command_mutation_receipts (
+              mutation_id,
+              creator_writer_session_id,
+              request_fingerprint,
+              response_json
+            ) VALUES (?, ?, ?, ?)
+          `,
+        )
+        .run(
+          'persisted-mutation',
+          'writer-before-upgrade',
+          'fingerprint',
+          JSON.stringify({
+            revision: 13,
+            event: { type: 'settings.updated', resource: 'settings', revision: 13 },
+            extra: { settings: { theme: 'light' } },
+          }),
+        )
+    } finally {
+      before.close()
+    }
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 13 })
+      const metadata = db.prepare('SELECT lineage, active_writer_session_id, writer_epoch FROM database_metadata').get()
+      expect(metadata).toEqual({
+        lineage: expect.any(String),
+        active_writer_session_id: null,
+        writer_epoch: 0,
+      })
+      expect(
+        db
+          .prepare(
+            `
+              SELECT mutation_id,
+                     database_lineage,
+                     creator_writer_session_id,
+                     request_fingerprint,
+                     acknowledged_at,
+                     delete_after
+              FROM command_mutation_receipts
+            `,
+          )
+          .get(),
+      ).toEqual({
+        mutation_id: 'persisted-mutation',
+        database_lineage: (metadata as { lineage: string }).lineage,
+        creator_writer_session_id: 'writer-before-upgrade',
+        request_fingerprint: 'fingerprint',
+        acknowledged_at: null,
+        delete_after: null,
+      })
     } finally {
       db.close()
     }
@@ -319,6 +414,7 @@ describe('schema migrations', () => {
         'chats',
         'command_events',
         'command_mutation_receipts',
+        'database_metadata',
         'generation_finalization_retries',
         'hypa_v3_presets',
         'loadouts',

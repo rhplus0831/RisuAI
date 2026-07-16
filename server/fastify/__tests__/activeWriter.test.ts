@@ -15,6 +15,10 @@ interface Harness {
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-active-writer-'))
+  return { app: await buildHarnessApp(dataDir), dataDir }
+}
+
+async function buildHarnessApp(dataDir: string): Promise<FastifyInstance> {
   const { app } = await buildApp({
     config: {
       host: '127.0.0.1',
@@ -27,7 +31,7 @@ async function startHarness(): Promise<Harness> {
     },
     memoryWorker: false,
   })
-  return { app, dataDir }
+  return app
 }
 
 async function stopHarness(h: Harness): Promise<void> {
@@ -69,6 +73,52 @@ afterEach(async () => {
 })
 
 describe('active writer session guard', () => {
+  it('persists writer ownership and epochs across a server restart', async () => {
+    const writerA = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: authedHeaders('session-a'),
+    })
+    expect(writerA.statusCode).toBe(200)
+    expect(writerA.json()).toMatchObject({ requestedWriterWasActive: true, writerEpoch: 1 })
+
+    const writerB = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: authedHeaders('session-b'),
+    })
+    expect(writerB.statusCode).toBe(200)
+    expect(writerB.json()).toMatchObject({ requestedWriterWasActive: false, writerEpoch: 2 })
+
+    await harness.app.close()
+    harness.app = await buildHarnessApp(harness.dataDir)
+
+    const staleBeforeBootstrap = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: authedHeaders('session-a'),
+      payload: { database: { shouldNotPersist: true } },
+    })
+    expectStaleWriter(staleBeforeBootstrap)
+
+    const returningWriterA = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: authedHeaders('session-a'),
+    })
+    expect(returningWriterA.statusCode).toBe(200)
+    expect(returningWriterA.json()).toMatchObject({ requestedWriterWasActive: false, writerEpoch: 3 })
+
+    const passive = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: authedHeaders(),
+    })
+    expect(passive.statusCode).toBe(200)
+    expect(passive.json()).toMatchObject({ writerEpoch: 3 })
+    expect(passive.json()).not.toHaveProperty('requestedWriterWasActive')
+  })
+
   it('lets the most recently bootstrapped session mutate and rejects stale command writers', async () => {
     await bootstrapSession(harness.app, 'session-a')
     await bootstrapSession(harness.app, 'session-b')

@@ -154,7 +154,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   })
 
   const db = openDatabase(config.dataDir)
-  const activeWriterState = createActiveWriterState()
+  const activeWriterState = createActiveWriterState(db)
   // Legacy memory backfill reads chat.message[]; hydrate from the table (or the
   // still-embedded legacy db.json before boot import retires it) so it sees the
   // real history.

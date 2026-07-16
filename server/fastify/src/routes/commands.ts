@@ -29,8 +29,10 @@ import {
   CommandMutationIdConflictError,
   acknowledgeCommandMutationReceipts,
   commandMutationRequestFingerprint,
+  loadCommandMutationReceipt,
   type CommandMutationReceiptKey,
 } from '../commandMutationReceipts.js'
+import { DATABASE_LINEAGE_HEADER, DatabaseLineageConflictError } from '../databaseLineage.js'
 import { maskProviderSecrets, resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   normalizeLegacyFallbackModels,
@@ -366,7 +368,13 @@ function readCommandMutationReceiptKey(req: FastifyRequest): CommandMutationRece
   if (!writerSessionId) {
     throw new ValidationError(`${COMMAND_MUTATION_ID_HEADER} requires a valid risu-writer-session header`)
   }
+  const rawDatabaseLineage = req.headers[DATABASE_LINEAGE_HEADER]
+  if (Array.isArray(rawDatabaseLineage)) {
+    throw new ValidationError(`${DATABASE_LINEAGE_HEADER} must be a single header value`)
+  }
+  const databaseLineage = readDatabaseLineage(rawDatabaseLineage, DATABASE_LINEAGE_HEADER)
   return {
+    databaseLineage,
     writerSessionId,
     mutationId,
     requestFingerprint: commandMutationRequestFingerprint(req.method, req.url.split('?')[0] ?? req.url, req.body),
@@ -390,7 +398,18 @@ function readCommandMutationId(value: unknown, label: string): string {
   return mutationId
 }
 
+function readDatabaseLineage(value: unknown, label: string): string {
+  if (
+    typeof value !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  ) {
+    throw new ValidationError(`${label} must be a valid database lineage UUID`)
+  }
+  return value.toLowerCase()
+}
+
 function readCommandMutationReceiptAcknowledgement(body: unknown): {
+  databaseLineage: string
   mutationIds: string[]
   requestCount: number
 } {
@@ -398,11 +417,14 @@ function readCommandMutationReceiptAcknowledgement(body: unknown): {
     throw new ValidationError('request body must be an object')
   }
   const record = body as Record<string, unknown>
-  const unsupportedKey = Object.keys(record).find((key) => key !== 'mutationId' && key !== 'requestCount')
+  const unsupportedKey = Object.keys(record).find(
+    (key) => key !== 'mutationId' && key !== 'requestCount' && key !== 'databaseLineage',
+  )
   if (unsupportedKey) {
     throw new ValidationError(`Unsupported mutation receipt acknowledgement field: ${unsupportedKey}`)
   }
   const mutationId = readCommandMutationId(record.mutationId, 'mutationId')
+  const databaseLineage = readDatabaseLineage(record.databaseLineage, 'databaseLineage')
   const requestCount = record.requestCount
   if (
     !Number.isSafeInteger(requestCount) ||
@@ -414,7 +436,7 @@ function readCommandMutationReceiptAcknowledgement(body: unknown): {
   const mutationIds = Array.from({ length: requestCount as number }, (_, index) =>
     index === 0 ? mutationId : readCommandMutationId(`${mutationId}.${index}`, `derived mutation id ${index}`),
   )
-  return { mutationIds, requestCount: requestCount as number }
+  return { databaseLineage, mutationIds, requestCount: requestCount as number }
 }
 
 function emitCommandEventForRequest(req: FastifyRequest, eventSink: CommandEventSink, event: CommandEvent): void {
@@ -1728,6 +1750,26 @@ export function registerCommandRoutes(
   eventSink: CommandEventSink,
   messageTranslationJobs?: MessageTranslationJobRegistry,
 ): void {
+  app.addHook('preHandler', async (req, reply) => {
+    const path = req.url.split('?')[0] ?? req.url
+    if (!path.startsWith('/api/v1/commands/') || req.headers[COMMAND_MUTATION_ID_HEADER] === undefined) return
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const receiptKey = readCommandMutationReceiptKey(req)
+      if (!receiptKey) return
+      const receipt = loadCommandMutationReceipt(db, receiptKey)
+      if (!receipt) return
+      return reply.send({
+        revision: receipt.revision,
+        event: receipt.event,
+        ...receipt.extra,
+      })
+    } catch (error) {
+      return reply.send(sendCommandError(reply, error))
+    }
+  })
+
   // First-run seed: a fresh server starts with `database: null`, which every
   // command path rejects (they require an existing object). The server creates
   // its default database here once before any ordinary command runs. Idempotent
@@ -1769,7 +1811,11 @@ export function registerCommandRoutes(
         throw new ValidationError('mutation receipt acknowledgement requires a valid risu-writer-session header')
       }
       const acknowledgement = readCommandMutationReceiptAcknowledgement(req.body)
-      const acknowledged = acknowledgeCommandMutationReceipts(db, acknowledgement.mutationIds)
+      const acknowledged = acknowledgeCommandMutationReceipts(
+        db,
+        acknowledgement.databaseLineage,
+        acknowledgement.mutationIds,
+      )
       return {
         acknowledged,
         requested: acknowledgement.requestCount,
@@ -8270,7 +8316,14 @@ function recordOrBlank(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
-function sendCommandError(reply: FastifyReply, err: unknown): { error: string; currentRevision?: number } {
+function sendCommandError(
+  reply: FastifyReply,
+  err: unknown,
+): { error: string; currentRevision?: number; databaseLineage?: string } {
+  if (err instanceof DatabaseLineageConflictError) {
+    reply.code(409)
+    return { error: 'database_lineage_conflict', databaseLineage: err.databaseLineage }
+  }
   if (err instanceof CommandMutationIdConflictError) {
     reply.code(409)
     return { error: 'mutation_id_conflict' }

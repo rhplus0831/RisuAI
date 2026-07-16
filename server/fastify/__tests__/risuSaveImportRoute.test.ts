@@ -139,6 +139,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(200)
     expect(imported.json()).toEqual({
       revision: 1,
+      databaseLineage: expect.any(String),
+      writerEpoch: 0,
       event: {
         type: 'state.imported',
         revision: 1,
@@ -513,6 +515,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(200)
     expect(imported.json()).toEqual({
       revision: 1,
+      databaseLineage: expect.any(String),
+      writerEpoch: 0,
       event: {
         type: 'state.imported',
         revision: 1,
@@ -617,6 +621,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(200)
     expect(imported.json()).toEqual({
       revision: 1,
+      databaseLineage: expect.any(String),
+      writerEpoch: 0,
       event: {
         type: 'state.imported',
         revision: 1,
@@ -653,6 +659,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(200)
     expect(imported.json()).toEqual({
       revision: 1,
+      databaseLineage: expect.any(String),
+      writerEpoch: 0,
       event: {
         type: 'state.imported',
         revision: 1,
@@ -793,6 +801,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(200)
     expect(imported.json()).toEqual({
       revision: 1,
+      databaseLineage: expect.any(String),
+      writerEpoch: 0,
       event: {
         type: 'state.imported',
         revision: 1,

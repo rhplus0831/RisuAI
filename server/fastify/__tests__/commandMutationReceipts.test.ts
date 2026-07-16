@@ -7,6 +7,8 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { getSchemaState } from '../src/db.js'
+import { getDatabaseLineage } from '../src/databaseLineage.js'
+import { insertAssetMetadataBatch } from '../src/repository.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 interface Harness {
@@ -18,6 +20,7 @@ interface Harness {
 let harness: Harness
 let assertion: string
 let revision: number
+let databaseLineage: string
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
@@ -84,6 +87,12 @@ beforeEach(async () => {
     modelProfiles: [],
     agentPresets: [],
   })
+  const db = openRawDatabase()
+  try {
+    databaseLineage = getDatabaseLineage(db)
+  } finally {
+    db.close()
+  }
   harness.commandEvents.clear()
 })
 
@@ -101,6 +110,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
         'risu-mutation-id': 'autosave-1',
+        'risu-database-lineage': databaseLineage,
       },
       payload: { baseRevision: revision, patch: { theme: 'light' } },
     })
@@ -119,6 +129,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
         'risu-mutation-id': 'autosave-1',
+        'risu-database-lineage': databaseLineage,
       },
       // Durable replays rebuild the transport cursor. The receipt lookup must
       // still win even when that cursor is now stale or otherwise different.
@@ -139,6 +150,70 @@ describe('transactional command mutation receipts', () => {
     }
   })
 
+  it('replays in preHandler before route validation can reject a formerly valid request', async () => {
+    const assetId = 'a'.repeat(64)
+    const seed = openRawDatabase()
+    try {
+      insertAssetMetadataBatch(seed, [{ id: assetId, ext: 'png', size: 1, contentType: 'image/png' }])
+    } finally {
+      seed.close()
+    }
+
+    const first = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+        'risu-mutation-id': 'asset-validation-replay',
+        'risu-database-lineage': databaseLineage,
+      },
+      payload: { baseRevision: revision, patch: { customBackground: assetId } },
+    })
+    expect(first.statusCode, first.body).toBe(200)
+    const firstBody = first.json() as Record<string, unknown>
+
+    const removeAsset = openRawDatabase()
+    try {
+      removeAsset.prepare('DELETE FROM assets WHERE id = ?').run(assetId)
+    } finally {
+      removeAsset.close()
+    }
+
+    const replay = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+        'risu-mutation-id': 'asset-validation-replay',
+        'risu-database-lineage': databaseLineage,
+      },
+      payload: {
+        baseRevision: (firstBody.revision as number) + 100,
+        patch: { customBackground: assetId },
+      },
+    })
+    expect(replay.statusCode, replay.body).toBe(200)
+    expect(replay.json()).toEqual(firstBody)
+    expect(harness.commandEvents.list()).toHaveLength(1)
+
+    const newIntent = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+        'risu-mutation-id': 'asset-validation-new-intent',
+        'risu-database-lineage': databaseLineage,
+      },
+      payload: { baseRevision: firstBody.revision, patch: { customBackground: assetId } },
+    })
+    expect(newIntent.statusCode, newIntent.body).toBe(400)
+    expect(newIntent.json()).toMatchObject({ error: expect.stringContaining('customBackground') })
+    expect(harness.commandEvents.list()).toHaveLength(1)
+  })
+
   it('replays across writer handoffs and rejects semantic mutation-id collisions globally', async () => {
     const first = await harness.app.inject({
       method: 'PATCH',
@@ -147,6 +222,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
         'risu-mutation-id': 'shared-id',
+        'risu-database-lineage': databaseLineage,
       },
       payload: { baseRevision: revision, patch: { theme: 'light' } },
     })
@@ -170,6 +246,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-b',
         'risu-mutation-id': 'shared-id',
+        'risu-database-lineage': databaseLineage,
       },
       payload: { baseRevision: firstRevision + 100, patch: { theme: 'light' } },
     })
@@ -186,6 +263,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-b',
         'risu-mutation-id': 'shared-id',
+        'risu-database-lineage': databaseLineage,
       },
       payload: { baseRevision: firstRevision, patch: { theme: 'dark' } },
     })
@@ -201,6 +279,7 @@ describe('transactional command mutation receipts', () => {
       headers: {
         'risu-auth': assertion,
         'risu-mutation-id': 'autosave-without-writer',
+        'risu-database-lineage': databaseLineage,
       },
       payload: { baseRevision: revision, patch: { theme: 'light' } },
     })
@@ -213,6 +292,25 @@ describe('transactional command mutation receipts', () => {
     expect(receiptCount()).toBe(0)
   })
 
+  it('requires the current database lineage for durable mutations', async () => {
+    const missingLineage = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+        'risu-mutation-id': 'autosave-without-lineage',
+      },
+      payload: { baseRevision: revision, patch: { theme: 'light' } },
+    })
+    expect(missingLineage.statusCode, missingLineage.body).toBe(400)
+    expect(missingLineage.json()).toEqual({
+      error: 'risu-database-lineage must be a valid database lineage UUID',
+    })
+    expect(readSettings().theme).toBe('dark')
+    expect(receiptCount()).toBe(0)
+  })
+
   it('retains unacknowledged receipts instead of expiring them during later writes', async () => {
     const first = await harness.app.inject({
       method: 'PATCH',
@@ -221,6 +319,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
         'risu-mutation-id': 'unacknowledged-old',
+        'risu-database-lineage': databaseLineage,
       },
       payload: { baseRevision: revision, patch: { theme: 'light' } },
     })
@@ -240,6 +339,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
         'risu-mutation-id': 'unacknowledged-new',
+        'risu-database-lineage': databaseLineage,
       },
       payload: { baseRevision: first.json().revision as number, patch: { zoomsize: 91 } },
     })
@@ -249,6 +349,7 @@ describe('transactional command mutation receipts', () => {
 
   it('lets the current writer acknowledge a completed multi-request intent from an earlier session', async () => {
     let currentRevision = revision
+    const originalResponses: Array<Record<string, unknown>> = []
     for (const [index, mutationId] of ['intent-a', 'intent-a.1', 'intent-a.2'].entries()) {
       const response = await harness.app.inject({
         method: 'PATCH',
@@ -257,11 +358,14 @@ describe('transactional command mutation receipts', () => {
           'risu-auth': assertion,
           'risu-writer-session': 'writer-a',
           'risu-mutation-id': mutationId,
+          'risu-database-lineage': databaseLineage,
         },
         payload: { baseRevision: currentRevision, patch: { zoomsize: 80 + index } },
       })
       expect(response.statusCode, response.body).toBe(200)
-      currentRevision = response.json().revision as number
+      const responseBody = response.json() as Record<string, unknown>
+      originalResponses.push(responseBody)
+      currentRevision = responseBody.revision as number
     }
 
     const writerHandoff = await harness.app.inject({
@@ -282,11 +386,26 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-b',
       },
-      payload: { mutationId: 'intent-a', requestCount: 3 },
+      payload: { mutationId: 'intent-a', requestCount: 3, databaseLineage },
     })
     expect(acknowledged.statusCode, acknowledged.body).toBe(200)
     expect(acknowledged.json()).toEqual({ acknowledged: 3, requested: 3 })
-    expect(receiptCount()).toBe(0)
+    expect(receiptCount()).toBe(3)
+
+    const delayedDuplicate = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-b',
+        'risu-mutation-id': 'intent-a',
+        'risu-database-lineage': databaseLineage,
+      },
+      payload: { baseRevision: currentRevision + 100, patch: { zoomsize: 80 } },
+    })
+    expect(delayedDuplicate.statusCode, delayedDuplicate.body).toBe(200)
+    expect(delayedDuplicate.json()).toEqual(originalResponses[0])
+    expect(harness.commandEvents.list()).toHaveLength(3)
 
     const repeated = await harness.app.inject({
       method: 'POST',
@@ -295,7 +414,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-b',
       },
-      payload: { mutationId: 'intent-a', requestCount: 3 },
+      payload: { mutationId: 'intent-a', requestCount: 3, databaseLineage },
     })
     expect(repeated.statusCode, repeated.body).toBe(200)
     expect(repeated.json()).toEqual({ acknowledged: 0, requested: 3 })
@@ -303,10 +422,98 @@ describe('transactional command mutation receipts', () => {
     const db = openRawDatabase()
     try {
       expect(getSchemaState(db).revision).toBe(currentRevision)
-      expect(db.prepare('SELECT mutation_id FROM command_mutation_receipts').all()).toEqual([])
+      expect(
+        db
+          .prepare(
+            `
+              SELECT mutation_id AS mutationId,
+                     acknowledged_at IS NOT NULL AS acknowledged,
+                     delete_after IS NOT NULL AS expires
+              FROM command_mutation_receipts
+              ORDER BY mutation_id
+            `,
+          )
+          .all(),
+      ).toEqual([
+        { mutationId: 'intent-a', acknowledged: 1, expires: 1 },
+        { mutationId: 'intent-a.1', acknowledged: 1, expires: 1 },
+        { mutationId: 'intent-a.2', acknowledged: 1, expires: 1 },
+      ])
     } finally {
       db.close()
     }
+  })
+
+  it('rotates lineage on restore and accepts the next autosave with the returned scope', async () => {
+    const writerBootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+      },
+    })
+    expect(writerBootstrap.statusCode, writerBootstrap.body).toBe(200)
+    expect(writerBootstrap.json()).toMatchObject({ databaseLineage, writerEpoch: 1 })
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+      },
+      payload: { label: 'before durable restore' },
+    })
+    expect(backup.statusCode, backup.body).toBe(201)
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${encodeURIComponent(backup.json().id as string)}/restore`,
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+      },
+    })
+    expect(restored.statusCode, restored.body).toBe(200)
+    const restoredBody = restored.json() as {
+      revision: number
+      databaseLineage: string
+      writerEpoch: number
+    }
+    expect(restoredBody.databaseLineage).not.toBe(databaseLineage)
+    expect(restoredBody.writerEpoch).toBe(1)
+
+    const staleLineage = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+        'risu-mutation-id': 'after-restore-stale-lineage',
+        'risu-database-lineage': databaseLineage,
+      },
+      payload: { baseRevision: restoredBody.revision, patch: { theme: 'light' } },
+    })
+    expect(staleLineage.statusCode, staleLineage.body).toBe(409)
+    expect(staleLineage.json()).toEqual({
+      error: 'database_lineage_conflict',
+      databaseLineage: restoredBody.databaseLineage,
+    })
+
+    const nextAutosave = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+        'risu-mutation-id': 'after-restore-live-lineage',
+        'risu-database-lineage': restoredBody.databaseLineage,
+      },
+      payload: { baseRevision: restoredBody.revision, patch: { theme: 'light' } },
+    })
+    expect(nextAutosave.statusCode, nextAutosave.body).toBe(200)
+    expect(nextAutosave.json().revision).toBe(restoredBody.revision + 1)
   })
 
   it('rolls back the domain write, revision, and event when receipt persistence fails', async () => {
@@ -330,6 +537,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
         'risu-mutation-id': 'atomic-write',
+        'risu-database-lineage': databaseLineage,
       },
       payload: { baseRevision: revision, patch: { theme: 'light' } },
     })
@@ -355,6 +563,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
         'risu-mutation-id': 'profile-create',
+        'risu-database-lineage': databaseLineage,
       },
       payload: {
         baseRevision: revision,
@@ -372,6 +581,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
         'risu-mutation-id': 'profile-create',
+        'risu-database-lineage': databaseLineage,
       },
       payload: {
         baseRevision: profileRevision,
@@ -388,6 +598,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
         'risu-mutation-id': 'agent-preset-create',
+        'risu-database-lineage': databaseLineage,
       },
       payload: {
         baseRevision: profileRevision,
@@ -404,6 +615,7 @@ describe('transactional command mutation receipts', () => {
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
         'risu-mutation-id': 'agent-preset-create',
+        'risu-database-lineage': databaseLineage,
       },
       payload: {
         baseRevision: presetBody.revision as number,

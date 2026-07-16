@@ -4,7 +4,11 @@ import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
 import { createPushSubscriptionsTable } from './pushNotifications.js'
-import { createCommandMutationReceiptTable } from './commandMutationReceipts.js'
+import {
+  createCommandMutationReceiptTable,
+  migrateCommandMutationReceiptsToDatabaseLineage,
+} from './commandMutationReceipts.js'
+import { createDatabaseMetadataTable } from './databaseLineage.js'
 import {
   createAssetMetadataTable,
   createCharacterTables,
@@ -13,7 +17,7 @@ import {
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 24
+export const CURRENT_SCHEMA_VERSION = 25
 
 export interface MigrationStep {
   version: number
@@ -230,6 +234,14 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createCommandMutationReceiptTable(db)
     },
   },
+  {
+    version: 25,
+    name: 'database-lineage-and-receipt-acknowledgements',
+    up: (db) => {
+      createDatabaseMetadataTable(db)
+      migrateCommandMutationReceiptsToDatabaseLineage(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -262,6 +274,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       )
     }
     if (schemaState.version === CURRENT_SCHEMA_VERSION) {
+      createDatabaseMetadataTable(db)
       createMemoryTables(db)
       createMessageTable(db)
       createChatBlobTable(db)
