@@ -413,7 +413,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /cut range keeps the legacy sliced transcript bytes', async () => {
+  it('L32: /cut range deletes the inclusive message range', async () => {
     const { command, messages } = await runMessageCommand(
       '/cut 1-3',
       [
@@ -421,16 +421,18 @@ describe('slash-command durable writes under the resource guard', () => {
         { role: 'char', data: 'one', chatId: 'm1' },
         { role: 'user', data: 'two', chatId: 'm2' },
         { role: 'char', data: 'three', chatId: 'm3' },
+        { role: 'user', data: 'four', chatId: 'm4' },
       ],
-      { url: '/api/v1/commands/chats/chat-1/messages', method: 'PUT' },
+      { url: '/api/v1/commands/chats/chat-1/messages/tail', method: 'POST' },
     )
 
-    expect(messages.map((message) => message.chatId)).toEqual(['m1', 'm2'])
-    expect(commandMessages(command).map((message) => message.chatId)).toEqual(['m1', 'm2'])
+    expect(messages.map((message) => message.chatId)).toEqual(['m0', 'm4'])
+    expect(command.body.afterMessageId).toBe('m0')
+    expect(commandMessages(command).map((message) => message.chatId)).toEqual(['m4'])
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /cut index keeps the legacy spliced row bytes', async () => {
+  it('L32: /cut index deletes only the selected message', async () => {
     const { command, messages } = await runMessageCommand(
       '/cut 1',
       [
@@ -438,12 +440,28 @@ describe('slash-command durable writes under the resource guard', () => {
         { role: 'char', data: 'one', chatId: 'm1' },
         { role: 'user', data: 'two', chatId: 'm2' },
       ],
-      { url: '/api/v1/commands/chats/chat-1/messages', method: 'PUT' },
+      { url: '/api/v1/commands/messages/m1', method: 'DELETE' },
     )
 
-    expect(messages).toEqual([{ role: 'char', data: 'one', chatId: 'm1' }])
-    expect(commandMessages(command)).toEqual([{ role: 'char', data: 'one', chatId: 'm1' }])
+    expect(messages.map((message) => message.chatId)).toEqual(['m0', 'm2'])
+    expect(command.body).toEqual({ baseRevision: 10 })
     expect(setDatabaseSpy.count).toBe(0)
+  })
+
+  it('L32: /cut treats a hyphenated message id as an id rather than a numeric range', async () => {
+    const messageId = 'message-uuid-with-hyphens'
+    const { command, messages } = await runMessageCommand(
+      `/cut ${messageId}`,
+      [
+        { role: 'user', data: 'zero', chatId: 'm0' },
+        { role: 'char', data: 'one', chatId: messageId },
+        { role: 'user', data: 'two', chatId: 'm2' },
+      ],
+      { url: `/api/v1/commands/messages/${messageId}`, method: 'DELETE' },
+    )
+
+    expect(messages.map((message) => message.chatId)).toEqual(['m0', 'm2'])
+    expect(command.body).toEqual({ baseRevision: 10 })
   })
 
   it('L32: /cut id removes the matching chatId without setDatabase', async () => {
@@ -462,7 +480,7 @@ describe('slash-command durable writes under the resource guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
-  it('L32: /del keeps the legacy last-N truncation without setDatabase', async () => {
+  it('L32: /del removes the last N messages without setDatabase', async () => {
     const { command, messages } = await runMessageCommand(
       '/del 2',
       [
@@ -471,11 +489,11 @@ describe('slash-command durable writes under the resource guard', () => {
         { role: 'user', data: 'two', chatId: 'm2' },
         { role: 'char', data: 'three', chatId: 'm3' },
       ],
-      { url: '/api/v1/commands/chats/chat-1/messages', method: 'PUT' },
+      { url: '/api/v1/commands/chats/chat-1/messages/truncate', method: 'POST' },
     )
 
-    expect(messages.map((message) => message.chatId)).toEqual(['m2', 'm3'])
-    expect(commandMessages(command).map((message) => message.chatId)).toEqual(['m2', 'm3'])
+    expect(messages.map((message) => message.chatId)).toEqual(['m0', 'm1'])
+    expect(command.body).toEqual({ baseRevision: 10, afterMessageId: 'm1' })
     expect(setDatabaseSpy.count).toBe(0)
   })
 
@@ -686,10 +704,10 @@ describe('slash-command durable writes under the resource guard', () => {
 
     const cmd = await waitForCommand(
       calls,
-      (call) => call.url === '/api/v1/commands/messages/m1' && call.method === 'DELETE',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages/truncate' && call.method === 'POST',
     )
-    expect(cmd.body).toEqual({ baseRevision: 10 })
-    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([{ role: 'char', data: 'two', chatId: 'm2' }])
+    expect(cmd.body).toEqual({ baseRevision: 10, afterMessageId: 'm1' })
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'one', chatId: 'm1' }])
     expect(setDatabaseSpy.count).toBe(0)
   })
 

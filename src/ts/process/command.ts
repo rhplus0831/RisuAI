@@ -128,14 +128,19 @@ async function processCommand(command: string, pipe: string): Promise<false | st
     }
     case 'cut': {
       mutateCurrentChatMessages((chat) => {
-        if (arg.includes('-')) {
-          const [start, end] = arg.split('-')
-          chat.message = chat.message.slice(parseInt(start), parseInt(end))
-        } else if (!isNaN(parseInt(arg))) {
-          const index = parseInt(arg)
-          chat.message = chat.message.splice(index, 1)
+        const range = /^(\d+)\s*-\s*(\d+)$/.exec(arg.trim())
+        if (range) {
+          const start = Number.parseInt(range[1], 10)
+          const end = Number.parseInt(range[2], 10)
+          if (start <= end) {
+            chat.message.splice(start, end - start + 1)
+          }
+        } else if (/^\d+$/.test(arg.trim())) {
+          chat.message.splice(Number.parseInt(arg.trim(), 10), 1)
         } else {
-          //For risu, doesn'ts work for STScript
+          // Risu extension: accept a stable message id as well as STScript's
+          // zero-based index/range syntax. UUID ids contain hyphens, so only a
+          // fully numeric `start-end` string is treated as a range.
           const id = arg
           chat.message = chat.message.filter((e) => e.chatId !== id)
         }
@@ -143,10 +148,10 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       return pipe
     }
     case 'del': {
-      const size = parseInt(arg)
-      if (!isNaN(size)) {
+      const size = /^\d+$/.test(arg.trim()) ? Number.parseInt(arg.trim(), 10) : Number.NaN
+      if (Number.isInteger(size) && size > 0) {
         mutateCurrentChatMessages((chat) => {
-          chat.message = chat.message.slice(chat.message.length - size)
+          chat.message = chat.message.slice(0, Math.max(0, chat.message.length - size))
         })
       }
       return pipe
