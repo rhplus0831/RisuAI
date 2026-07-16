@@ -4,6 +4,7 @@ import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { validateAssetTriples } from './assets.js'
 import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
 import { ensureCharacterChats } from './chats.js'
+import { isImportableMCPIdentifier } from '../../../../src/ts/process/mcp/mcpIdentifier.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -230,6 +231,12 @@ function validateModuleRecord(
   }
   if ('mcp' in record && !options.allowMcp) {
     throw new ValidationError(`${label}.mcp is not supported for module commands`)
+  }
+  if ('mcp' in record && options.allowMcp) {
+    const mcp = readJsonObject(record.mcp, `${label}.mcp`)
+    if (typeof mcp.url !== 'string' || !isImportableMCPIdentifier(mcp.url)) {
+      throw new ValidationError(`${label}.mcp.url must be a supported MCP identifier`)
+    }
   }
   validateModulePatch(
     record,

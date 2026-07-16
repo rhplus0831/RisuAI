@@ -7124,7 +7124,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
-      const module = createModuleRecord(body.module, 'module', {}, { assetDb: db })
+      const module = createModuleRecord(body.module, 'module', { allowMcp: true }, { assetDb: db })
       const result = applyTargetedCommandMutation<{ moduleId: string }>({
         db,
         dataDir,

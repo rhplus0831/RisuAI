@@ -12554,6 +12554,67 @@ describe('compact script and trigger definition mutations', () => {
 })
 
 describe('Phase 9-4c module record and enablement commands', () => {
+  it('creates MCP modules while rejecting malformed MCP identifiers', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      enabledModules: [],
+      modules: [],
+    })
+
+    const invalid = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        module: {
+          id: 'mcp-invalid',
+          name: 'Invalid MCP',
+          description: '',
+          mcp: { url: 'http://remote.example/mcp' },
+        },
+      },
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(invalid.json().error).toBe('module.mcp.url must be a supported MCP identifier')
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        module: {
+          id: 'mcp-dice',
+          name: 'Dice Tool',
+          description: 'Imported MCP module',
+          mcp: { url: 'internal:dice' },
+          lorebook: [{ comment: 'MCP Info', content: '@@mcp', alwaysActive: true }],
+        },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject({
+      revision: revision + 1,
+      moduleId: 'mcp-dice',
+      event: { type: 'module.created', id: 'mcp-dice' },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision + 1)
+    expect(bootstrap.json().database.modules).toContainEqual(
+      expect.objectContaining({
+        id: 'mcp-dice',
+        mcp: { url: 'internal:dice' },
+        lorebook: [expect.objectContaining({ comment: 'MCP Info' })],
+      }),
+    )
+  })
+
   it('creates, patches, enables, reorders, relinks, and deletes modules', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
