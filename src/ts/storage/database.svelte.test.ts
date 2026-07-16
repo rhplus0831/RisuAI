@@ -2814,7 +2814,9 @@ describe('preset command rollback (L21)', () => {
         'DELETE /api/v1/commands/model-presets/model-a',
       ])
       expect(await listPendingMutations()).toEqual([])
-      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-b'])
+      // Durable replay is transport-only; the transient rollback remains
+      // projected until the next authoritative resource hydration.
+      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b'])
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -2966,6 +2968,122 @@ describe('preset command rollback (L21)', () => {
     }
   })
 
+  it('rehomes model references immediately and restores them when model deletion fails', async () => {
+    seedPresetDatabase({
+      modelPresets: [
+        makePreset('model-a', 'Model A') as unknown as ModelPreset,
+        makePreset('model-b', 'Model B') as unknown as ModelPreset,
+      ],
+      modelPresetsId: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'chat-a',
+              message: [],
+              generationSettings: {
+                configured: true,
+                modelPresetId: 'model-a',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            },
+          ],
+        } as any,
+      ],
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'Loadout A',
+          lastUsed: 0,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          modelPresetId: 'model-a',
+          modelPresetName: 'Model A',
+          promptPresetId: '',
+          promptPresetName: '',
+          personaId: '',
+        },
+      ],
+    })
+    const calls = stubFailedPresetCommand()
+
+    deleteModelPreset(0, 1)
+
+    expect(getDatabase().characters[0].chats[0].generationSettings?.modelPresetId).toBe('model-b')
+    expect(getDatabase().loadouts[0]).toMatchObject({ modelPresetId: 'model-b', modelPresetName: 'Model B' })
+
+    await waitForPresetCommand(calls, '/model-presets/model-a')
+    await waitForState(() => {
+      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b'])
+      expect(getDatabase().characters[0].chats[0].generationSettings?.modelPresetId).toBe('model-a')
+      expect(getDatabase().loadouts[0]).toMatchObject({ modelPresetId: 'model-a', modelPresetName: 'Model A' })
+    })
+  })
+
+  it('rehomes prompt references immediately and restores them when prompt deletion fails', async () => {
+    seedPresetDatabase({
+      promptPresets: [
+        makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset,
+        makePreset('prompt-b', 'Prompt B') as unknown as PromptPreset,
+      ],
+      promptPresetsId: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'chat-a',
+              message: [],
+              generationSettings: {
+                configured: true,
+                promptPresetId: 'prompt-a',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            },
+          ],
+        } as any,
+      ],
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'Loadout A',
+          lastUsed: 0,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          modelPresetId: '',
+          modelPresetName: '',
+          promptPresetId: 'prompt-a',
+          promptPresetName: 'Prompt A',
+          personaId: '',
+        },
+      ],
+    })
+    const calls = stubFailedPresetCommand()
+
+    deletePromptPreset(0, 1)
+
+    expect(getDatabase().characters[0].chats[0].generationSettings?.promptPresetId).toBe('prompt-b')
+    expect(getDatabase().loadouts[0]).toMatchObject({ promptPresetId: 'prompt-b', promptPresetName: 'Prompt B' })
+
+    await waitForPresetCommand(calls, '/prompt-presets/prompt-a')
+    await waitForState(() => {
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b'])
+      expect(getDatabase().characters[0].chats[0].generationSettings?.promptPresetId).toBe('prompt-a')
+      expect(getDatabase().loadouts[0]).toMatchObject({ promptPresetId: 'prompt-a', promptPresetName: 'Prompt A' })
+    })
+  })
+
   it('keeps prompt-preset DELETE behind a transient row PATCH and replays both in order', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -3114,7 +3232,7 @@ describe('preset command rollback (L21)', () => {
         'DELETE /api/v1/commands/prompt-presets/prompt-a',
       ])
       expect(await listPendingMutations()).toEqual([])
-      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-b'])
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b'])
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

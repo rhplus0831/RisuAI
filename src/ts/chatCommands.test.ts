@@ -117,6 +117,7 @@ import {
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRegistry'
 import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from './server/chatBridge.svelte'
+import { PERSONA_SELECTION_MUTATION_KEY } from './server/personaMutationKeys'
 
 interface CapturedFetch {
   url: string
@@ -1939,6 +1940,7 @@ describe('chat command projection helpers', () => {
       expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
         {
           version: 1,
+          dependencyKeys: ['persona:selection', 'settings:bridge', 'persona-profile:persona-a'],
           requests: [
             {
               method: 'PUT',
@@ -2032,6 +2034,7 @@ describe('chat command projection helpers', () => {
       expect(pending[0].handle.mutationId).not.toBe(pending[1].handle.mutationId)
       expect(pending[1].intent).toEqual({
         version: 1,
+        dependencyKeys: ['persona:selection', 'settings:bridge', 'persona-profile:persona-first'],
         requests: [
           {
             method: 'PUT',
@@ -2046,6 +2049,116 @@ describe('chat command projection helpers', () => {
       await vi.waitFor(() => expect(commandCalls).toHaveLength(2))
       secondResponse.resolve(successfulChatGenerationSettingsResponse(12, secondTarget))
       await waitForPendingChatGenerationSettingsSave('chat-a')
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('settles a retained persona delete before saving a chat reference to that persona', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-generation-persona-delete',
+      writerEpoch: 12,
+      databaseLineage: 'lineage-chat-generation-persona-delete',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    setResourceWriteGuardEnabled(true)
+
+    const initial = {
+      configured: true,
+      personaId: 'persona-survivor',
+      modelPresetId: 'model-survivor',
+      promptPresetId: 'prompt-survivor',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    const doomedSelection = {
+      ...initial,
+      personaId: 'persona-doomed',
+      modelPresetId: 'model-doomed',
+      promptPresetId: 'prompt-doomed',
+    }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
+    })
+
+    const deleteRecovery = createDeferred<Response>()
+    const commands: Array<{ method: string; url: string }> = []
+    let deleteCalls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        const method = init.method ?? 'GET'
+        commands.push({ method, url })
+        if (url === '/api/v1/commands/personas/persona-doomed' && method === 'DELETE') {
+          deleteCalls += 1
+          if (deleteCalls === 1) return jsonResponse({ error: 'persona delete temporarily unavailable' }, 500)
+          return deleteRecovery.promise
+        }
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings' && method === 'PUT') {
+          return successfulChatGenerationSettingsResponse(12, doomedSelection)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const deleteIntent = {
+        version: 1 as const,
+        dependencyKeys: ['persona-profile:persona-doomed'],
+        requests: [
+          {
+            method: 'DELETE' as const,
+            path: '/personas/persona-doomed',
+            body: {
+              selectPersonaId: 'persona-survivor',
+              mirrorLegacyProfile: true,
+              saveCurrent: true,
+            },
+          },
+        ],
+      }
+      const retainedDelete = stagePendingMutation(PERSONA_SELECTION_MUTATION_KEY, deleteIntent)
+      await expect(retainedDelete.ready).resolves.toBe('persisted')
+      await expect(replayPendingMutations()).resolves.toMatchObject({ retained: 1, succeeded: 0 })
+
+      expect(dispatchSaveChatGenerationSettings('chat-a', doomedSelection)).toBe(true)
+      await vi.waitFor(() => expect(deleteCalls).toBe(2))
+      expect(commands.filter((command) => command.url.includes('/generation-settings'))).toEqual([])
+
+      const pending = await listPendingMutations()
+      const chatSave = pending.find((entry) => entry.handle.key === 'character-owner:char-a')
+      expect(chatSave?.intent.dependencyKeys).toEqual([
+        'persona:selection',
+        'settings:bridge',
+        'persona-profile:persona-doomed',
+        'split-preset:model:model-doomed',
+        'prompt-template-owner:prompt-doomed',
+      ])
+
+      deleteRecovery.resolve(
+        jsonResponse({
+          revision: 11,
+          event: { type: 'persona.deleted', revision: 11, resource: 'persona', id: 'persona-doomed' },
+          personaId: 'persona-doomed',
+          selectedPersonaId: 'persona-survivor',
+          cascadedChatCount: 1,
+          cascadedLoadoutCount: 0,
+        }),
+      )
+      await waitForPendingChatGenerationSettingsSave('chat-a')
+
+      expect(commands.filter((command) => command.url !== '/api/v1/commands/mutation-receipts/ack')).toEqual([
+        { method: 'DELETE', url: '/api/v1/commands/personas/persona-doomed' },
+        { method: 'DELETE', url: '/api/v1/commands/personas/persona-doomed' },
+        { method: 'PUT', url: '/api/v1/commands/chats/chat-a/generation-settings' },
+      ])
       expect(await listPendingMutations()).toEqual([])
     } finally {
       await clearPendingMutationOutbox()
@@ -2211,7 +2324,10 @@ describe('chat command projection helpers', () => {
       await waitForPendingChatGenerationSettingsSave('chat-a')
       expect(generationCalls).toHaveLength(1)
       expect(generationCalls[0].mutationId).toBe(predecessor.mutationId)
-      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(firstTarget)
+      // The retained predecessor prevented this slot from sending, so the
+      // command wrapper restores the optimistic projection until a later slot
+      // can drain and retry the durable chain.
+      expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initial)
       expect(await listPendingMutations()).toHaveLength(2)
 
       expect(dispatchSaveChatGenerationSettings('chat-a', secondTarget)).toBe(true)
@@ -5502,7 +5618,9 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
         status: 'unavailable',
       })
       expect(commands).toHaveLength(commandCount)
-      expect(getDatabase().characters[0].chats.some((chat) => chat.id === 'chat-a')).toBe(false)
+      // Replay commits the server delete without projecting resources; the
+      // transient rollback remains local until authoritative hydration.
+      expect(getDatabase().characters[0].chats.some((chat) => chat.id === 'chat-a')).toBe(true)
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

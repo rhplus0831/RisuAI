@@ -73,6 +73,7 @@ import {
 } from './server/pendingMutationOutbox'
 import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
 import { chatFolderResourceOwnerMutationKey, chatResourceOwnerMutationKey } from './server/resourceOwnerMutationKeys'
+import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGenerationSettingsMutationKeys'
 
 export interface ChatStateSnapshot {
   characters: character[]
@@ -2247,6 +2248,7 @@ function chatGenerationSettingsFullDurableIntent(
 ): DurableMutationIntent {
   return {
     version: 1,
+    dependencyKeys: chatGenerationSettingsMutationDependencyKeys(generationSettings),
     requests: [
       {
         method: 'PUT',
@@ -2262,6 +2264,7 @@ function chatGenerationSettingsCommandDurableIntent(
 ): DurableMutationIntent {
   return {
     version: 1,
+    dependencyKeys: chatGenerationSettingsMutationDependencyKeys(input.generationSettings),
     requests: [
       {
         method: 'PUT',

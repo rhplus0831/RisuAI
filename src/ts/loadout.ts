@@ -67,6 +67,7 @@ import { flushRegisteredPendingBridgePatch } from './server/pendingBridgeFlushRe
 import { flushPendingPromptTemplatePatches, promptTemplateOwnerMutationKey } from './server/promptTemplateBridge.svelte'
 import { chatResourceOwnerMutationKey, moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 import { PERSONA_SELECTION_MUTATION_KEY, personaOwnerMutationKey } from './server/personaMutationKeys'
+import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGenerationSettingsMutationKeys'
 
 export type Loadout = {
   name: string
@@ -1429,6 +1430,7 @@ async function applyLoadoutNowExclusive(
           chatResourceOwnerMutationKey(activeChatAgentPresetTarget.chatId, activeChatAgentPresetTarget.characterId),
           {
             version: 1,
+            dependencyKeys: chatGenerationSettingsMutationDependencyKeys(preparedAgentGenerationSettings),
             requests: [
               {
                 method: 'PUT',

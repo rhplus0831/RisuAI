@@ -110,6 +110,7 @@ import {
 import { isServerChatMessagePlaceholder, SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from '../server/chatMessagePlaceholders'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import { optimisticallyRehomeGenerationReferences } from '../generationReferenceCascade'
 import {
   normalizeChatGenerationTogglePresets,
   type ChatGenerationTogglePreset,
@@ -4678,6 +4679,15 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
       : -1
     db.modelPresetsId = selectedIndex >= 0 ? selectedIndex : Math.min(db.modelPresetsId, db.modelPresets.length - 1)
     applyModelPresetFieldsToDatabase(db, db.modelPresets[db.modelPresetsId])
+    const replacementPreset = db.modelPresets[db.modelPresetsId]
+    const referenceCascade = optimisticallyRehomeGenerationReferences({
+      getDatabase: () => getDatabase(),
+      kind: 'modelPreset',
+      deletedId: modelPresetId,
+      replacement: replacementPreset?.id
+        ? { id: replacementPreset.id, name: typeof replacementPreset.name === 'string' ? replacementPreset.name : '' }
+        : null,
+    })
     const selectionRollback: SplitPresetSelectionRollback = {
       kind: 'model',
       previousSelectedId,
@@ -4696,6 +4706,9 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
         rollback: () => {
           rollbackSplitPresetDelete('model', previousPreset, id)
           rollbackSplitPresetSelection(selectionRollback)
+          if (getDatabase().modelPresets.filter((preset) => preset.id === modelPresetId).length === 1) {
+            referenceCascade.rollback()
+          }
         },
         ...transport,
       }),
@@ -4977,6 +4990,15 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
       : -1
     db.promptPresetsId = selectedIndex >= 0 ? selectedIndex : Math.min(db.promptPresetsId, db.promptPresets.length - 1)
     applyPromptPresetFieldsToDatabase(db, db.promptPresets[db.promptPresetsId])
+    const replacementPreset = db.promptPresets[db.promptPresetsId]
+    const referenceCascade = optimisticallyRehomeGenerationReferences({
+      getDatabase: () => getDatabase(),
+      kind: 'promptPreset',
+      deletedId: promptPresetId,
+      replacement: replacementPreset?.id
+        ? { id: replacementPreset.id, name: typeof replacementPreset.name === 'string' ? replacementPreset.name : '' }
+        : null,
+    })
     const selectionRollback: SplitPresetSelectionRollback = {
       kind: 'prompt',
       previousSelectedId,
@@ -4995,6 +5017,9 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
         rollback: () => {
           rollbackSplitPresetDelete('prompt', previousPreset, id)
           rollbackSplitPresetSelection(selectionRollback)
+          if (getDatabase().promptPresets.filter((preset) => preset.id === promptPresetId).length === 1) {
+            referenceCascade.rollback()
+          }
         },
         ...transport,
       }),

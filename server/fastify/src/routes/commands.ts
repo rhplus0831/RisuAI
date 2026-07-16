@@ -142,6 +142,7 @@ import {
   readOptionalTimestamp,
   requireLoadoutIndex,
 } from '../commands/loadouts.js'
+import { rehomeGenerationReferences, type GenerationReferenceCascadeResult } from '../commands/generationReferences.js'
 import {
   type CharacterRecord,
   buildPatchedCharacterCollectionRow,
@@ -747,6 +748,19 @@ function writeLoadoutMutation(
   writeSingleCollectionTable(db, 'loadouts', loadouts)
   if (target.lastLoadedLoadoutName !== beforeLastLoaded) {
     writeSettingsOnly(db, extractSettings(target))
+  }
+}
+
+function writeGenerationReferenceCascade(
+  db: DatabaseSync,
+  target: Record<string, unknown>,
+  cascade: GenerationReferenceCascadeResult,
+): void {
+  for (const { chatId, chat } of cascade.changedChats) {
+    writeSingleChatRow(db, chatId, chat)
+  }
+  if (cascade.changedLoadoutCount > 0) {
+    writeSingleCollectionTable(db, 'loadouts', asArray(target.loadouts))
   }
 }
 
@@ -3042,23 +3056,33 @@ export function registerCommandRoutes(
       const result = applyTargetedCommandMutation<{
         modelPresetId: string
         selectedModelPresetId: string | null
+        cascadedChatCount: number
+        cascadedLoadoutCount: number
       }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensureModelPresetCollection(target)
           const deletedIndex = findModelPresetIndex(presets, modelPresetId)
           if (deletedIndex === -1) {
+            const selectedId = selectedModelPresetId(target, presets)
+            const replacementId = selectModelPresetId ?? selectedId
+            const replacementPreset = replacementId
+              ? (presets.find((preset) => preset.id === replacementId) ?? null)
+              : null
+            const cascade = rehomeGenerationReferences(target, 'modelPreset', modelPresetId, replacementPreset)
+            writeGenerationReferenceCascade(innerDb, target, cascade)
             return {
               event: { ...COMMAND_EVENT_CATALOG.modelPresetDeleted, id: modelPresetId },
               extra: {
                 modelPresetId,
-                selectedModelPresetId: selectedModelPresetId(target, presets),
+                selectedModelPresetId: selectedId,
+                cascadedChatCount: cascade.changedChatCount,
+                cascadedLoadoutCount: cascade.changedLoadoutCount,
               },
             }
           }
@@ -3077,15 +3101,24 @@ export function registerCommandRoutes(
             applyModelPreset(target, presets[nextSelectedIndex])
             applySelectedPromptPresetAfterModelPreset(target)
           }
+          const cascade = rehomeGenerationReferences(
+            target,
+            'modelPreset',
+            modelPresetId,
+            nextSelectedIndex >= 0 ? presets[nextSelectedIndex] : null,
+          )
           writeSingleCollectionTable(innerDb, 'modelPresets', presets)
           if (target.modelPresetsId !== beforeSelected || deletedWasSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
+          writeGenerationReferenceCascade(innerDb, target, cascade)
           return {
             event: { ...COMMAND_EVENT_CATALOG.modelPresetDeleted, id: modelPresetId },
             extra: {
               modelPresetId,
               selectedModelPresetId: selectedModelPresetId(target, presets),
+              cascadedChatCount: cascade.changedChatCount,
+              cascadedLoadoutCount: cascade.changedLoadoutCount,
             },
           }
         },
@@ -3384,23 +3417,33 @@ export function registerCommandRoutes(
       const result = applyTargetedCommandMutation<{
         promptPresetId: string
         selectedPromptPresetId: string | null
+        cascadedChatCount: number
+        cascadedLoadoutCount: number
       }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensurePromptPresetCollection(target)
           const deletedIndex = findPromptPresetIndex(presets, promptPresetId)
           if (deletedIndex === -1) {
+            const selectedId = selectedPromptPresetId(target, presets)
+            const replacementId = selectPromptPresetId ?? selectedId
+            const replacementPreset = replacementId
+              ? (presets.find((preset) => preset.id === replacementId) ?? null)
+              : null
+            const cascade = rehomeGenerationReferences(target, 'promptPreset', promptPresetId, replacementPreset)
+            writeGenerationReferenceCascade(innerDb, target, cascade)
             return {
               event: { ...COMMAND_EVENT_CATALOG.promptPresetDeleted, id: promptPresetId },
               extra: {
                 promptPresetId,
-                selectedPromptPresetId: selectedPromptPresetId(target, presets),
+                selectedPromptPresetId: selectedId,
+                cascadedChatCount: cascade.changedChatCount,
+                cascadedLoadoutCount: cascade.changedLoadoutCount,
               },
             }
           }
@@ -3421,15 +3464,24 @@ export function registerCommandRoutes(
               writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
             }
           }
+          const cascade = rehomeGenerationReferences(
+            target,
+            'promptPreset',
+            promptPresetId,
+            nextSelectedIndex >= 0 ? presets[nextSelectedIndex] : null,
+          )
           writeSingleCollectionTable(innerDb, 'promptPresets', presets)
           if (target.promptPresetsId !== beforeSelected || deletedWasSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
+          writeGenerationReferenceCascade(innerDb, target, cascade)
           return {
             event: { ...COMMAND_EVENT_CATALOG.promptPresetDeleted, id: promptPresetId },
             extra: {
               promptPresetId,
               selectedPromptPresetId: selectedPromptPresetId(target, presets),
+              cascadedChatCount: cascade.changedChatCount,
+              cascadedLoadoutCount: cascade.changedLoadoutCount,
             },
           }
         },
@@ -4086,22 +4138,32 @@ export function registerCommandRoutes(
         body.selectPersonaId === undefined ? undefined : readPersonaId(body.selectPersonaId, 'selectPersonaId')
       const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', true)
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
-      const result = applyTargetedCommandMutation<{ personaId: string } & PersonaMutationCertificate>({
+      const result = applyTargetedCommandMutation<
+        { personaId: string; cascadedChatCount: number; cascadedLoadoutCount: number } & PersonaMutationCertificate
+      >({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.personas,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
           const deletedIndex = findPersonaIndex(personas, personaId)
           if (deletedIndex === -1) {
+            const selectedId = selectedPersonaId(target, personas)
+            const replacementId = selectPersonaId ?? selectedId
+            const replacementPersona = replacementId
+              ? (personas.find((persona) => persona.id === replacementId) ?? null)
+              : null
+            const cascade = rehomeGenerationReferences(target, 'persona', personaId, replacementPersona)
+            writeGenerationReferenceCascade(innerDb, target, cascade)
             return {
               event: { ...COMMAND_EVENT_CATALOG.personaDeleted, id: personaId },
               extra: {
                 personaId,
+                cascadedChatCount: cascade.changedChatCount,
+                cascadedLoadoutCount: cascade.changedLoadoutCount,
                 ...buildPersonaMutationCertificate({
                   operation: 'delete',
                   database: target,
@@ -4147,11 +4209,20 @@ export function registerCommandRoutes(
           if (settingsWritten) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
+          const cascade = rehomeGenerationReferences(
+            target,
+            'persona',
+            personaId,
+            selectedIndex >= 0 ? personas[selectedIndex] : null,
+          )
+          writeGenerationReferenceCascade(innerDb, target, cascade)
 
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaDeleted, id: personaId },
             extra: {
               personaId,
+              cascadedChatCount: cascade.changedChatCount,
+              cascadedLoadoutCount: cascade.changedLoadoutCount,
               ...buildPersonaMutationCertificate({
                 operation: 'delete',
                 database: target,

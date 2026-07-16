@@ -506,12 +506,19 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
           addFullSettings()
           return
         case 'modelPreset.updated':
-        case 'modelPreset.deleted':
           if (!hasEntityId) break
-          // An update can project a selected row into settings; deletion can
-          // move or replace the selected pointer.
+          // An update can project a selected row into settings.
           addFullSettings()
           plan.collections.add('modelPresets')
+          return
+        case 'modelPreset.deleted':
+          if (!hasEntityId) break
+          // Deletion can move the selected pointer and atomically rehome chat
+          // and loadout generation references.
+          addFullSettings()
+          plan.collections.add('modelPresets')
+          plan.collections.add('loadouts')
+          addAllCharacters()
           return
         case 'modelPreset.reordered':
           if (event.id !== undefined || event.parentId !== undefined) break
@@ -543,13 +550,21 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
           plan.refreshSelectedPromptTemplate = true
           return
         case 'promptPreset.updated':
-        case 'promptPreset.deleted':
           if (!hasEntityId) break
-          // Updating a selected preset can project both settings and its prompt
-          // body; deleting one can select and apply a replacement.
+          // Updating a selected preset can project both settings and its prompt body.
           addFullSettings()
           plan.collections.add('promptPresets')
           plan.refreshSelectedPromptTemplate = true
+          return
+        case 'promptPreset.deleted':
+          if (!hasEntityId) break
+          // Deletion can apply a replacement prompt body and atomically rehome
+          // chat and loadout generation references.
+          addFullSettings()
+          plan.collections.add('promptPresets')
+          plan.collections.add('loadouts')
+          plan.refreshSelectedPromptTemplate = true
+          addAllCharacters()
           return
         case 'promptPreset.reordered':
           if (event.id !== undefined || event.parentId !== undefined) break
@@ -580,6 +595,10 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
     case 'persona':
       addFullSettings()
       plan.collections.add('personas')
+      if (event.type === 'persona.deleted') {
+        plan.collections.add('loadouts')
+        addAllCharacters()
+      }
       return
     case 'translatorPreset':
       addSettingsGroup('language')

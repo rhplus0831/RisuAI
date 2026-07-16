@@ -2311,7 +2311,14 @@ export async function updateModelPresetCommand(
 export async function deleteModelPresetCommand(
   input: DeleteModelPresetCommandInput,
   signal?: AbortSignal | null,
-): Promise<ServerCommandResult<{ modelPresetId: string; selectedModelPresetId: string | null }>> {
+): Promise<
+  ServerCommandResult<{
+    modelPresetId: string
+    selectedModelPresetId: string | null
+    cascadedChatCount: number
+    cascadedLoadoutCount: number
+  }>
+> {
   return requestCommandJson(`/model-presets/${encodeURIComponent(input.modelPresetId)}`, {
     method: 'DELETE',
     body: {
@@ -2412,7 +2419,14 @@ export async function updatePromptPresetCommand(
 export async function deletePromptPresetCommand(
   input: DeletePromptPresetCommandInput,
   signal?: AbortSignal | null,
-): Promise<ServerCommandResult<{ promptPresetId: string; selectedPromptPresetId: string | null }>> {
+): Promise<
+  ServerCommandResult<{
+    promptPresetId: string
+    selectedPromptPresetId: string | null
+    cascadedChatCount: number
+    cascadedLoadoutCount: number
+  }>
+> {
   return requestCommandJson(`/prompt-presets/${encodeURIComponent(input.promptPresetId)}`, {
     method: 'DELETE',
     body: {
@@ -2988,15 +3002,14 @@ export async function updatePersonaCommand(
 export async function deletePersonaCommand(
   input: DeletePersonaCommandInput,
   signal?: AbortSignal | null,
-): Promise<ServerCommandResult<{ personaId: string; selectedPersonaId: string | null }>> {
-  const acknowledgement = await preparePersonaMutationAcknowledgement({
-    operation: 'delete',
-    targetPersonaId: input.personaId,
-    requestedSelectedPersonaId: input.selectPersonaId,
-    mirrorLegacyProfile: input.mirrorLegacyProfile ?? true,
-    saveCurrent: input.saveCurrent ?? false,
-    acknowledgement: input.optimisticAcknowledgement,
-  })
+): Promise<
+  ServerCommandResult<{
+    personaId: string
+    selectedPersonaId: string | null
+    cascadedChatCount: number
+    cascadedLoadoutCount: number
+  }>
+> {
   return requestCommandJson(`/personas/${encodeURIComponent(input.personaId)}`, {
     method: 'DELETE',
     body: {
@@ -3006,9 +3019,6 @@ export async function deletePersonaCommand(
       saveCurrent: input.saveCurrent,
     },
     signal,
-    readLocalEffect: acknowledgement
-      ? (body, event) => readPersonaMutationLocalEffect(body, event, acknowledgement)
-      : undefined,
   })
 }
 

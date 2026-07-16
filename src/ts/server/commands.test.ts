@@ -4031,7 +4031,7 @@ describe('server command API adapter', () => {
     ])
   })
 
-  it('exposes exact structural persona acknowledgements without serializing optimistic proof', async () => {
+  it('keeps persona delete reconciliation authoritative while acknowledging other structural mutations', async () => {
     const profileA = { name: 'A', icon: 'asset-a', personaPrompt: 'Prompt A', note: 'Note A' }
     const profileB = { name: 'B', icon: 'asset-b', personaPrompt: 'Prompt B', note: 'Note B' }
     const personaA = { id: 'persona-a', ...profileA }
@@ -4194,15 +4194,6 @@ describe('server command API adapter', () => {
         targetPersonaId: 'persona-b',
         collectionProjectionEpoch: 10,
         settingsProjectionEpoch: 20,
-        collectionWritten: true,
-        settingsWritten: true,
-      },
-      {
-        kind: 'personaMutation',
-        operation: 'delete',
-        targetPersonaId: 'persona-a',
-        collectionProjectionEpoch: 11,
-        settingsProjectionEpoch: 21,
         collectionWritten: true,
         settingsWritten: true,
       },

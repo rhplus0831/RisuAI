@@ -1699,13 +1699,6 @@ describe('API-backed resource invalidation', () => {
       promptTemplate: false,
     },
     {
-      type: 'modelPreset.deleted',
-      resource: 'modelPreset',
-      collection: 'modelPresets',
-      settings: true,
-      promptTemplate: false,
-    },
-    {
       type: 'modelPreset.selected',
       resource: 'modelPreset',
       collection: null,
@@ -1735,13 +1728,6 @@ describe('API-backed resource invalidation', () => {
     },
     {
       type: 'promptPreset.updated',
-      resource: 'promptPreset',
-      collection: 'promptPresets',
-      settings: true,
-      promptTemplate: true,
-    },
-    {
-      type: 'promptPreset.deleted',
       resource: 'promptPreset',
       collection: 'promptPresets',
       settings: true,
@@ -1819,6 +1805,71 @@ describe('API-backed resource invalidation', () => {
       expect(promptHydration.reset).toHaveBeenCalledTimes(collection === 'promptPresets' ? 1 : 0)
       expect(api.collections).not.toHaveBeenCalled()
       expect(api.characters).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    {
+      type: 'persona.deleted',
+      resource: 'persona',
+      ownerCollection: 'personas',
+      promptTemplate: false,
+    },
+    {
+      type: 'modelPreset.deleted',
+      resource: 'modelPreset',
+      ownerCollection: 'modelPresets',
+      promptTemplate: false,
+    },
+    {
+      type: 'promptPreset.deleted',
+      resource: 'promptPreset',
+      ownerCollection: 'promptPresets',
+      promptTemplate: true,
+    },
+  ] as const)(
+    'refreshes every generation-reference cascade slice for $type',
+    async ({ type, resource, ownerCollection, promptTemplate }) => {
+      seedResources(1)
+      promptHydration.currentOwner = 'prompt-preset-a'
+      api.settings.mockResolvedValue({
+        status: 'ok',
+        revision: 2,
+        settings: { selectedPersona: 0, modelPresetsId: 0, promptPresetsId: 0 },
+      })
+      api.collection.mockImplementation(async (name: string) => ({
+        status: 'ok',
+        revision: 2,
+        collections: {
+          [name]:
+            name === 'loadouts'
+              ? [{ id: 'loadout-a', name: 'Loadout A' }]
+              : [{ id: `${name}-survivor`, name: `${name} survivor` }],
+        },
+      }))
+      api.characters.mockResolvedValue({
+        status: 'ok',
+        revision: 2,
+        characters: [metadataCharacter('char-a', 'Ada authoritative')],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+      })
+
+      await expect(
+        refreshInvalidatedServerResources(
+          { type, revision: 2, resource, id: `${resource}-deleted` },
+          { appliedRevision: 1, hooks },
+        ),
+      ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+      expect(api.settings).toHaveBeenCalledOnce()
+      expect(api.collection).toHaveBeenCalledTimes(2)
+      expect(api.collection).toHaveBeenCalledWith(ownerCollection, undefined)
+      expect(api.collection).toHaveBeenCalledWith('loadouts', undefined)
+      expect(api.characters).toHaveBeenCalledOnce()
+      expect(promptHydration.ensure).toHaveBeenCalledTimes(promptTemplate ? 1 : 0)
+      expect(promptHydration.invalidate).toHaveBeenCalledTimes(promptTemplate ? 1 : 0)
+      expect(api.collections).not.toHaveBeenCalled()
     },
   )
 

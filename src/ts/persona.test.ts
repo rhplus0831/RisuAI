@@ -630,7 +630,7 @@ describe('persona ID read and command preparation', () => {
       ['/api/v1/commands/personas/persona-delete-a', 'PATCH'],
       ['/api/v1/commands/personas/persona-delete-a', 'DELETE'],
     ])
-    expect(observedEffects.map((effect) => effect.kind)).toEqual(['personaPatch', 'personaMutation'])
+    expect(observedEffects.map((effect) => effect.kind)).toEqual(['personaPatch'])
     expect(getDatabase().personas).toEqual([personaB])
 
     getDatabase().personas.push(
@@ -779,14 +779,20 @@ describe('persona ID read and command preparation', () => {
       await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 0 })
       await expect(flushPendingSelectedPersonaUpdate()).resolves.toBeNull()
       expect(commands).toHaveLength(commandCount)
+      // Replay is transport-only; the transient failure restored the local
+      // projection, and bootstrap/resource hydration will apply the accepted
+      // deletion on the next authoritative read.
       expect(getDatabase()).toMatchObject({
         selectedPersona: 0,
-        username: 'Persona B',
-        userIcon: 'b.png',
-        personaPrompt: 'B prompt',
-        userNote: 'B note',
+        username: 'Persona A',
+        userIcon: 'a.png',
+        personaPrompt: 'Latest optimistic A prompt',
+        userNote: 'A note',
       })
-      expect(getDatabase().personas).toEqual([personaB])
+      expect(getDatabase().personas).toEqual([
+        { ...personaA, personaPrompt: 'Latest optimistic A prompt' },
+        personaB,
+      ])
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -2075,9 +2081,46 @@ describe('persona collection rollback guards', () => {
     updateSelectedPersonaField('userNote', 'Latest optimistic Note B')
     getDatabase().userIcon = 'latest-b.png'
     getDatabase().personas[1].icon = 'latest-b.png'
+    getDatabase().characters = [
+      {
+        chaId: 'char-a',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a',
+            message: [],
+            generationSettings: {
+              configured: true,
+              personaId: 'persona-b',
+              jailbreakToggle: false,
+              sidebarToggles: {},
+            },
+          },
+        ],
+      } as any,
+    ]
+    getDatabase().loadouts = [
+      {
+        id: 'loadout-a',
+        name: 'Loadout A',
+        lastUsed: 0,
+        favorite: false,
+        characterIds: [],
+        modules: [],
+        globalVariables: {},
+        presetName: '',
+        modelPresetId: '',
+        modelPresetName: '',
+        promptPresetId: '',
+        promptPresetName: '',
+        personaId: 'persona-b',
+      },
+    ]
     mockNextCommandFailure()
 
     expect(deleteSelectedUserPersona()).toBe(true)
+    expect(getDatabase().characters[0].chats[0].generationSettings?.personaId).toBe('persona-a')
+    expect(getDatabase().loadouts[0].personaId).toBe('persona-a')
     getDatabase().personas[1] = {
       ...getDatabase().personas[1],
       name: 'Persona C edited after dispatch',
@@ -2121,6 +2164,8 @@ describe('persona collection rollback guards', () => {
       personaPrompt: 'Latest optimistic Prompt B',
       userNote: 'Latest optimistic Note B',
     })
+    expect(getDatabase().characters[0].chats[0].generationSettings?.personaId).toBe('persona-b')
+    expect(getDatabase().loadouts[0].personaId).toBe('persona-b')
   })
 
   it('failed reorder restores the previous ID order while preserving newer row field edits', async () => {

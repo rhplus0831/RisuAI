@@ -47,6 +47,7 @@ import {
   markCollectionAcknowledgementTainted,
   markSettingsAcknowledgementTainted,
 } from './server/resourceState.svelte'
+import { optimisticallyRehomeGenerationReferences } from './generationReferenceCascade'
 
 export type Persona = Database['personas'][number]
 
@@ -1106,6 +1107,7 @@ function dispatchDeletePersona(
   personaId: string,
   selectPersonaId: string | undefined,
   previous: PersonaStateSnapshot,
+  rollbackReferences: () => void,
 ): void {
   if (!canUseServerCommands()) return
   const previousIndex = findPersonaIndexById(previous.personas, personaId)
@@ -1113,14 +1115,6 @@ function dispatchDeletePersona(
   if (!previousPersona) return
   const previousProfile = profileMirrorRollbackSnapshotFromState(previous)
   const attemptedProfile = currentProfileMirrorRollbackSnapshot()
-  const attempted = currentPersonaStateSnapshot()
-  const optimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
-    operation: 'delete',
-    previous,
-    attempted,
-    mirrorLegacyProfile: true,
-    saveCurrent: true,
-  })
   void flushPendingSelectedPersonaUpdate()
   const intent: DurableMutationIntent = {
     version: 1,
@@ -1147,17 +1141,21 @@ function dispatchDeletePersona(
           selectPersonaId,
           mirrorLegacyProfile: true,
           saveCurrent: true,
-          optimisticAcknowledgement,
         }),
-      rollback: personaCommandRollback({ personas: true, settings: true }, () =>
+      // Persona mutation certificates cover the collection/settings slices,
+      // but deletion also rewrites chats and loadouts. Leave this command
+      // without a local-effect acknowledgement so success reconciliation reads
+      // every cascaded slice through the authoritative invalidation plan.
+      rollback: personaCommandRollback({ personas: true, settings: true }, () => {
         applyDeletePersonaRollback({
           deletedPersonaId: personaId,
           previousIndex,
           previousPersona,
           previousProfile,
           attemptedProfile,
-        }),
-      ),
+        })
+        if (findPersonaIndexById(getDatabase().personas, personaId) !== -1) rollbackReferences()
+      }),
       ...transport,
     }),
   )
@@ -1488,7 +1486,13 @@ export function deleteSelectedUserPersona(expectedPersonaId?: string): boolean {
     getDatabase().personaPrompt = selected.personaPrompt
     getDatabase().userNote = selected.note ?? ''
   })
-  dispatchDeletePersona(personaId, selectedId, previous)
+  const references = optimisticallyRehomeGenerationReferences({
+    getDatabase: () => getDatabase(),
+    kind: 'persona',
+    deletedId: personaId,
+    replacement: selectedId ? { id: selectedId } : null,
+  })
+  dispatchDeletePersona(personaId, selectedId, previous, references.rollback)
   return true
 }
 
