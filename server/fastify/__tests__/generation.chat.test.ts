@@ -5644,12 +5644,12 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(res.json().missing.map((reason: { code: string }) => reason.code)).toContain('settings_missing')
   })
 
-  it('keeps deleted preset and persona references scoped to affected configured chats', async () => {
+  it('atomically rehomes deleted persona, model, and prompt references to explicit replacements', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     let revision = await seedDatabase(harness.app, assertion, {
       ...fixtureDatabase,
       selectedPersona: 1,
-      modelPresetsId: 0,
+      modelPresetsId: 1,
       promptPresetsId: 1,
       personas: [
         {
@@ -5671,6 +5671,12 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
         {
           id: 'model-survivor',
           name: 'Survivor Model Preset',
+          maxContext: 100_000,
+          maxResponse: 50,
+        },
+        {
+          id: 'model-deleted',
+          name: 'Deleted Model Preset',
           maxContext: 100_000,
           maxResponse: 50,
         },
@@ -5696,7 +5702,12 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
               modelPresetId: 'model-survivor',
               promptPresetId: 'prompt-survivor',
             }),
-            configuredChat('chat-deleted-preset', {
+            configuredChat('chat-deleted-model', {
+              personaId: 'persona-survivor',
+              modelPresetId: 'model-deleted',
+              promptPresetId: 'prompt-survivor',
+            }),
+            configuredChat('chat-deleted-prompt', {
               personaId: 'persona-survivor',
               modelPresetId: 'model-survivor',
               promptPresetId: 'prompt-deleted',
@@ -5709,31 +5720,38 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
           ],
         },
       ],
-    })
-
-    const deletePreset = await harness.app.inject({
-      method: 'DELETE',
-      url: '/api/v1/commands/prompt-presets/prompt-deleted',
-      headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision },
-    })
-    expect(deletePreset.statusCode).toBe(200)
-    expect(deletePreset.json()).toMatchObject({
-      promptPresetId: 'prompt-deleted',
-      selectedPromptPresetId: 'prompt-survivor',
-    })
-    revision = deletePreset.json().revision as number
-
-    const deletePersona = await harness.app.inject({
-      method: 'DELETE',
-      url: '/api/v1/commands/personas/persona-deleted',
-      headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision },
-    })
-    expect(deletePersona.statusCode).toBe(200)
-    expect(deletePersona.json()).toMatchObject({
-      personaId: 'persona-deleted',
-      selectedPersonaId: 'persona-survivor',
+      loadouts: [
+        {
+          id: 'loadout-deleted-references',
+          name: 'Deleted references',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          modelPresetId: 'model-deleted',
+          modelPresetName: 'Deleted Model Preset',
+          promptPresetId: 'prompt-deleted',
+          promptPresetName: 'Deleted Prompt Preset',
+          personaId: 'persona-deleted',
+        },
+        {
+          id: 'loadout-survivor-references',
+          name: 'Survivor references',
+          lastUsed: 200,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          modelPresetId: 'model-survivor',
+          modelPresetName: 'Survivor Model Preset',
+          promptPresetId: 'prompt-survivor',
+          promptPresetName: 'Survivor Prompt Preset',
+          personaId: 'persona-survivor',
+        },
+      ],
     })
 
     const preview = (chatId: string) =>
@@ -5744,28 +5762,53 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
         payload: { chatId, characterId: 'char-1' },
       })
 
-    const ok = await preview('chat-ok')
-    expect(ok.statusCode).toBe(200)
+    const deleteModel = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/model-presets/model-deleted',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, modelPresetId: 'model-survivor' },
+    })
+    expect(deleteModel.statusCode).toBe(200)
+    expect(deleteModel.json()).toMatchObject({
+      modelPresetId: 'model-deleted',
+      selectedModelPresetId: 'model-survivor',
+      cascadedChatCount: 1,
+      cascadedLoadoutCount: 1,
+    })
+    revision = deleteModel.json().revision as number
+    expect((await preview('chat-deleted-model')).statusCode).toBe(200)
 
-    const deletedPreset = await preview('chat-deleted-preset')
-    expect(deletedPreset.statusCode).toBe(409)
-    expectMissingCodes(deletedPreset.json(), ['prompt_preset_missing'], ['persona_missing'])
-    expect(deletedPreset.json().missing).toContainEqual(
-      expect.objectContaining({
-        code: 'prompt_preset_missing',
-        promptPresetId: 'prompt-deleted',
-      }),
-    )
+    const deletePrompt = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/prompt-presets/prompt-deleted',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, promptPresetId: 'prompt-survivor' },
+    })
+    expect(deletePrompt.statusCode).toBe(200)
+    expect(deletePrompt.json()).toMatchObject({
+      promptPresetId: 'prompt-deleted',
+      selectedPromptPresetId: 'prompt-survivor',
+      cascadedChatCount: 1,
+      cascadedLoadoutCount: 1,
+    })
+    revision = deletePrompt.json().revision as number
+    expect((await preview('chat-deleted-prompt')).statusCode).toBe(200)
 
-    const deletedPersona = await preview('chat-deleted-persona')
-    expect(deletedPersona.statusCode).toBe(409)
-    expectMissingCodes(deletedPersona.json(), ['persona_missing'], ['prompt_preset_missing'])
-    expect(deletedPersona.json().missing).toContainEqual(
-      expect.objectContaining({
-        code: 'persona_missing',
-        personaId: 'persona-deleted',
-      }),
-    )
+    const deletePersona = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/personas/persona-deleted',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, selectPersonaId: 'persona-survivor' },
+    })
+    expect(deletePersona.statusCode).toBe(200)
+    expect(deletePersona.json()).toMatchObject({
+      personaId: 'persona-deleted',
+      selectedPersonaId: 'persona-survivor',
+      cascadedChatCount: 1,
+      cascadedLoadoutCount: 1,
+    })
+    expect((await preview('chat-deleted-persona')).statusCode).toBe(200)
+    expect((await preview('chat-ok')).statusCode).toBe(200)
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -5777,17 +5820,28 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       id: string
       generationSettings?: Record<string, unknown>
     }>
-    const deletedPresetSettings = chats.find((chat) => chat.id === 'chat-deleted-preset')?.generationSettings
-    const deletedPersonaSettings = chats.find((chat) => chat.id === 'chat-deleted-persona')?.generationSettings
-    expect(deletedPresetSettings).toMatchObject({
+    for (const chatId of ['chat-ok', 'chat-deleted-model', 'chat-deleted-prompt', 'chat-deleted-persona']) {
+      expect(chats.find((chat) => chat.id === chatId)?.generationSettings).toMatchObject({
+        personaId: 'persona-survivor',
+        modelPresetId: 'model-survivor',
+        promptPresetId: 'prompt-survivor',
+      })
+    }
+
+    const loadouts = bootstrap.json().database.loadouts as Array<Record<string, unknown>>
+    expect(loadouts.find((loadout) => loadout.id === 'loadout-deleted-references')).toMatchObject({
       personaId: 'persona-survivor',
       modelPresetId: 'model-survivor',
-      promptPresetId: 'prompt-deleted',
-    })
-    expect(deletedPersonaSettings).toMatchObject({
-      personaId: 'persona-deleted',
-      modelPresetId: 'model-survivor',
+      modelPresetName: 'Survivor Model Preset',
       promptPresetId: 'prompt-survivor',
+      promptPresetName: 'Survivor Prompt Preset',
+    })
+    expect(loadouts.find((loadout) => loadout.id === 'loadout-survivor-references')).toMatchObject({
+      personaId: 'persona-survivor',
+      modelPresetId: 'model-survivor',
+      modelPresetName: 'Survivor Model Preset',
+      promptPresetId: 'prompt-survivor',
+      promptPresetName: 'Survivor Prompt Preset',
     })
   })
 
@@ -6145,19 +6199,5 @@ function configuredChat(
       jailbreakToggle: false,
       sidebarToggles: {},
     },
-  }
-}
-
-function expectMissingCodes(
-  body: { missing?: Array<{ code?: string }> },
-  expected: string[],
-  unexpected: string[],
-): void {
-  const codes = body.missing?.map((reason) => reason.code) ?? []
-  for (const code of expected) {
-    expect(codes).toContain(code)
-  }
-  for (const code of unexpected) {
-    expect(codes).not.toContain(code)
   }
 }

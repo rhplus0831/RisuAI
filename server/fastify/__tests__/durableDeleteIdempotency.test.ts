@@ -252,21 +252,21 @@ const DURABLE_DELETE_CASES: DeleteCase[] = [
     url: '/api/v1/commands/personas/persona-delete',
     body: { selectPersonaId: 'persona-stay', mirrorLegacyProfile: true, saveCurrent: true },
     event: { type: 'persona.deleted', resource: 'persona', id: 'persona-delete' },
-    extra: { selectedPersonaId: 'persona-stay' },
+    extra: { selectedPersonaId: 'persona-stay', cascadedChatCount: 0, cascadedLoadoutCount: 0 },
   },
   {
     name: 'model presets',
     url: '/api/v1/commands/model-presets/model-delete',
     body: { modelPresetId: 'model-stay' },
     event: { type: 'modelPreset.deleted', resource: 'modelPreset', id: 'model-delete' },
-    extra: { selectedModelPresetId: 'model-stay' },
+    extra: { selectedModelPresetId: 'model-stay', cascadedChatCount: 0, cascadedLoadoutCount: 0 },
   },
   {
     name: 'prompt presets',
     url: '/api/v1/commands/prompt-presets/prompt-delete',
     body: { promptPresetId: 'prompt-stay' },
     event: { type: 'promptPreset.deleted', resource: 'promptPreset', id: 'prompt-delete' },
-    extra: { selectedPromptPresetId: 'prompt-stay' },
+    extra: { selectedPromptPresetId: 'prompt-stay', cascadedChatCount: 0, cascadedLoadoutCount: 0 },
   },
   {
     name: 'translator presets',
@@ -314,6 +314,7 @@ describe('durable DELETE idempotency', () => {
     expect(first.json()).toMatchObject({
       revision: revision + 1,
       event: { ...testCase.event, revision: revision + 1 },
+      ...testCase.extra,
     })
 
     const second = await deleteCommand(testCase, first.json().revision, `${testCase.name.replaceAll(' ', '-')}-second`)
@@ -337,21 +338,21 @@ describe('durable DELETE idempotency', () => {
       url: '/api/v1/commands/model-presets/missing-model',
       body: { modelPresetId: 'missing-replacement' },
       event: { type: 'modelPreset.deleted', resource: 'modelPreset', id: 'missing-model' },
-      extra: { selectedModelPresetId: 'only-model' },
+      extra: { selectedModelPresetId: 'only-model', cascadedChatCount: 0, cascadedLoadoutCount: 0 },
     },
     {
       name: 'prompt preset',
       url: '/api/v1/commands/prompt-presets/missing-prompt',
       body: { promptPresetId: 'missing-replacement' },
       event: { type: 'promptPreset.deleted', resource: 'promptPreset', id: 'missing-prompt' },
-      extra: { selectedPromptPresetId: 'only-prompt' },
+      extra: { selectedPromptPresetId: 'only-prompt', cascadedChatCount: 0, cascadedLoadoutCount: 0 },
     },
     {
       name: 'persona',
       url: '/api/v1/commands/personas/missing-persona',
       body: { selectPersonaId: 'missing-replacement' },
       event: { type: 'persona.deleted', resource: 'persona', id: 'missing-persona' },
-      extra: { selectedPersonaId: 'only-persona' },
+      extra: { selectedPersonaId: 'only-persona', cascadedChatCount: 0, cascadedLoadoutCount: 0 },
     },
     {
       name: 'translator preset',
