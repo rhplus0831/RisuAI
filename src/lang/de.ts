@@ -650,6 +650,7 @@ export const languageGerman = {
     playground: 'Spielwiese',
     inlayDeleteConfirm: 'Möchten Sie "{name}" wirklich löschen?',
     inlayDeleteMultipleConfirm: 'Möchten Sie die ausgewählten {count} Ressourcen wirklich löschen?',
+    inlayDelete: 'Löschen',
     inlayDeleteSelected: 'Ausgewählte löschen',
     inlayDeselectAll: 'Alle abwählen',
     inlayEmpty: 'Keine gespeicherten Inlay-Ressourcen',

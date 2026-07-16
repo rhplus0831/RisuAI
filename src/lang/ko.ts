@@ -634,6 +634,7 @@ export const languageKorean = {
     playground: '플레이그라운드',
     inlayDeleteConfirm: '"{name}"을(를) 정말 삭제하시겠습니까?',
     inlayDeleteMultipleConfirm: '선택한 {count}개의 에셋을 정말 삭제하시겠습니까?',
+    inlayDelete: '삭제',
     inlayDeleteSelected: '선택 항목 삭제',
     inlayDeselectAll: '모두 선택 해제',
     inlayEmpty: '저장된 인레이 에셋이 없습니다',

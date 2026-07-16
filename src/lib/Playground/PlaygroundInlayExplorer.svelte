@@ -294,7 +294,8 @@
             <span>{getAssetSize(asset)}</span>
           </div>
 
-          <Button onclick={() => deleteAsset(id, asset.name)} styled="danger" size="sm">Delete</Button>
+          <Button onclick={() => deleteAsset(id, asset.name)} styled="danger" size="sm"
+            >{language.playground.inlayDelete}</Button>
         </div>
       {/key}
     {/each}
@@ -302,7 +303,7 @@
 
   {#if hasMore}
     <div bind:this={loadMoreSentinel} class="h-12 flex items-center justify-center text-textcolor2 text-sm">
-      Loading...
+      {language.loading}...
     </div>
   {/if}
 {/if}

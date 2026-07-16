@@ -813,6 +813,7 @@ export const languageEnglish = {
     translationOutputText: 'Translated text',
     translationSourceText: 'Source text',
     inlaySelectAsset: (name: string) => `Select ${name}`,
+    inlayDelete: 'Delete',
     inlayDeleteSelected: 'Delete Selected',
     inlayDeselectAll: 'Deselect All',
     inlayEmpty: 'No saved inlay assets',

@@ -610,6 +610,7 @@ export const languageChineseTraditional = {
     playground: 'Playground',
     inlayDeleteConfirm: '確定要刪除「{name}」嗎？',
     inlayDeleteMultipleConfirm: '確定要刪除選取的 {count} 個資源嗎？',
+    inlayDelete: '刪除',
     inlayDeleteSelected: '刪除選取項目',
     inlayDeselectAll: '取消全選',
     inlayEmpty: '沒有儲存的嵌入資源',

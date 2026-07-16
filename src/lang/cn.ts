@@ -584,6 +584,7 @@ export const languageChinese = {
     playground: 'Playground',
     inlayDeleteConfirm: '确定要删除"{name}"吗？',
     inlayDeleteMultipleConfirm: '确定要删除选中的{count}个资源吗？',
+    inlayDelete: '删除',
     inlayDeleteSelected: '删除选中项',
     inlayDeselectAll: '取消全选',
     inlayEmpty: '没有保存的内联资源',

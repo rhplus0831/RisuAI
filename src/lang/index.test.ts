@@ -17,6 +17,7 @@ async function loadLanguageModule() {
   const { languageEnglish } = await import('./en')
   const { languageKorean } = await import('./ko')
   const { languageSpanish } = await import('./es')
+  const { languageVietnamese } = await import('./vi')
 
   return {
     cloneSpy,
@@ -24,6 +25,7 @@ async function loadLanguageModule() {
     languageEnglish,
     languageKorean,
     languageSpanish,
+    languageVietnamese,
   }
 }
 
@@ -156,5 +158,12 @@ describe('changeLanguage same-code cache', () => {
       languageEnglish.errors.imageGenerationFailed(502),
     )
     expect(langModule.language.waveSpeedCatalogModelsLoaded(3)).toBe(languageEnglish.waveSpeedCatalogModelsLoaded(3))
+  })
+
+  it('renders Vietnamese inlay counts without a stray template-literal dollar sign', async () => {
+    const { languageVietnamese } = await loadLanguageModule()
+
+    expect(languageVietnamese.playground.inlayDeleteMultipleConfirm.replace('{count}', '3')).toContain('3 tài sản')
+    expect(languageVietnamese.playground.inlayTotalAssets.replace('{count}', '3')).toBe('Tổng cộng 3 tài sản')
   })
 })
