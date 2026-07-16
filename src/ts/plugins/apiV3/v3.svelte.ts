@@ -11,7 +11,8 @@ import {
 import { SandboxHost } from './factory'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { currentPluginStateSnapshot, dispatchUpdatePlugin } from 'src/ts/pluginCommands'
-import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
+import { canUseServerCommands } from 'src/ts/server/commands'
+import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
 import { captureSettingsPatchProjectionEpochs } from 'src/ts/server/resourceState.svelte'
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import {
@@ -81,7 +82,7 @@ function dispatchPluginApiSettingsPatch(patch: Record<string, unknown>, previous
   if (!canUseServerCommands()) return
   const attempted = cloneJsonValue(patch)
   const rollbackPrevious = cloneJsonValue(previous)
-  void patchServerBackedSettings({
+  void dispatchDurableServerBackedSettingsPatch({
     patch: attempted,
     acknowledgeOptimistic: true,
     optimisticProjectionEpochs: captureSettingsPatchProjectionEpochs(attempted),

@@ -146,7 +146,10 @@ vi.mock('src/ts/pluginCommands', () => ({
 
 vi.mock('src/ts/server/commands', () => ({
   canUseServerCommands: () => mockServerCommands.canUse,
-  patchServerBackedSettings: vi.fn(),
+}))
+
+vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+  dispatchDurableServerBackedSettingsPatch: vi.fn(),
 }))
 
 vi.mock('src/ts/characterCommands', () => ({
@@ -278,7 +281,7 @@ import { customProviderStore, pluginV2 } from '../plugins.svelte'
 import { alertConfirm } from 'src/ts/alert'
 import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import { additionalFloatingActionButtons } from 'src/ts/stores.svelte'
-import { patchServerBackedSettings } from 'src/ts/server/commands'
+import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
 import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
 import {
@@ -313,7 +316,7 @@ function messageCalls(spy: { mock: { calls: unknown[][] } }) {
 }
 
 function capturedSettingsRollback(): () => void {
-  const rollback = vi.mocked(patchServerBackedSettings).mock.calls.at(-1)?.[0].rollback
+  const rollback = vi.mocked(dispatchDurableServerBackedSettingsPatch).mock.calls.at(-1)?.[0].rollback
   expect(rollback).toEqual(expect.any(Function))
   return rollback as () => void
 }
@@ -333,7 +336,7 @@ beforeEach(async () => {
   vi.mocked(runOptimisticCommandSequence).mockClear()
   vi.mocked(appendCurrentChatUserMessageForSend).mockReset()
   vi.mocked(processSendChat).mockReset()
-  vi.mocked(patchServerBackedSettings).mockReset()
+  vi.mocked(dispatchDurableServerBackedSettingsPatch).mockReset()
   vi.mocked(updateColorScheme).mockReset()
   vi.mocked(updateTextThemeAndCSS).mockReset()
   vi.mocked(registerMCPModule).mockReset()
@@ -613,6 +616,13 @@ describe('V3 plugin settings rollback', () => {
 
     api.changeTextTheme('highcontrast')
     const rollback = capturedSettingsRollback()
+
+    expect(dispatchDurableServerBackedSettingsPatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acknowledgeOptimistic: true,
+        patch: { textTheme: 'highcontrast' },
+      }),
+    )
 
     expect((mockDbState.db as any).textTheme).toBe('highcontrast')
     ;(mockDbState.db as any).textTheme = 'newer-local-theme'
