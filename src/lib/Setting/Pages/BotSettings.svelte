@@ -2232,7 +2232,7 @@
 
     {#if showPromptExtras}
       <Accordion styled name={language.regexScript}>
-        <RegexList bind:value={presetRegexDraft.value} buttons />
+        <RegexList bind:value={presetRegexDraft.value} ownerKey={promptFieldOwnerSignature()} buttons />
       </Accordion>
 
       <Accordion styled name={language.icon}>

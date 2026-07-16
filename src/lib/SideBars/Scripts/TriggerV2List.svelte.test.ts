@@ -109,6 +109,14 @@ function effectValues(trigger: triggerscript): Array<string | undefined> {
   return trigger.effect.map((effect) => (effect as { value?: string }).value)
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
 function createDragDataTransfer(): DataTransfer {
   const values = new Map<string, string>()
   return {
@@ -299,6 +307,43 @@ describe('TriggerV2List effect display', () => {
     expect(buttonByText('Alpha B')).toBeUndefined()
     expect(buttonByText('Beta B')).toBeUndefined()
     expect(target.textContent).toContain(language.edit)
+  })
+
+  it('does not append a deferred trigger import after the owner changes', async () => {
+    const fileText = deferred<string>()
+    const file = { text: vi.fn(() => fileText.promise) } as unknown as File
+    const inputClick = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function () {
+      Object.defineProperty(this, 'files', { configurable: true, value: [file] })
+      this.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { comment: 'Header A', type: 'manual', conditions: [], effect: [] },
+          { comment: 'Alpha A', type: 'manual', conditions: [], effect: [] },
+        ],
+      },
+    }) as MountedComponent
+    await openEditor()
+
+    document.querySelector<HTMLButtonElement>(`[aria-label="${language.import}: ${language.trigger}"]`)?.click()
+    inputClick.mockRestore()
+    await settle()
+    expect(file.text).toHaveBeenCalledOnce()
+
+    component.replaceOwner('owner-b', [
+      { comment: 'Header B', type: 'manual', conditions: [], effect: [] },
+      { comment: 'Alpha B', type: 'manual', conditions: [], effect: [] },
+    ])
+    await settle()
+
+    fileText.resolve(
+      JSON.stringify([{ comment: 'Imported A', type: 'manual', conditions: [], effect: [] } satisfies triggerscript]),
+    )
+    await settle()
+
+    expect(component.getValue().map((trigger) => trigger.comment)).toEqual(['Header B', 'Alpha B'])
   })
 
   it('renders array insertion fields without null or malformed placeholders', async () => {

@@ -10,9 +10,10 @@
   interface Props {
     value?: customscript[]
     buttons?: boolean
+    ownerKey?: string
   }
 
-  let { value = $bindable([]), buttons = false }: Props = $props()
+  let { value = $bindable([]), buttons = false, ownerKey = '' }: Props = $props()
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
   let sorted = $state(0)
@@ -71,6 +72,14 @@
     return idIsUnique ? `regex:${id}` : script
   }
 
+  const importRows = async () => {
+    const importOwnerKey = ownerKey
+    const importValue = value
+    const importedRows = await importRegexRows()
+    if (ownerKey !== importOwnerKey || value !== importValue || !importedRows || importedRows.length === 0) return
+    value = [...value, ...importedRows]
+  }
+
   onMount(createStb)
 
   onDestroy(() => {
@@ -120,10 +129,6 @@
     <button
       class="rounded-md text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
       aria-label={`${language.import}: ${language.regexScript}`}
-      onclick={async () => {
-        const importedRows = await importRegexRows()
-        if (!importedRows || importedRows.length === 0) return
-        value = [...value, ...importedRows]
-      }}><HardDriveUploadIcon /></button>
+      onclick={importRows}><HardDriveUploadIcon /></button>
   </div>
 {/if}

@@ -614,6 +614,9 @@
   }
 
   const importTriggers = () => {
+    const importOwnerKey = ownerKey
+    const importValue = value
+    const isCurrentImportTarget = () => ownerKey === importOwnerKey && value === importValue
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.json'
@@ -623,6 +626,7 @@
 
       try {
         const text = await file.text()
+        if (!isCurrentImportTarget()) return
         const importedTriggers = parseTriggerV2Import(text)
         if (!importedTriggers) {
           alertError(language.errors.noData)
@@ -633,7 +637,7 @@
           value.push(trigger)
         }
       } catch {
-        alertError(language.errors.noData)
+        if (isCurrentImportTarget()) alertError(language.errors.noData)
       }
     }
 

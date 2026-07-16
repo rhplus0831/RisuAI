@@ -84,3 +84,11 @@ describe('BotSettings pending prompt persistence', () => {
     )
   })
 })
+
+describe('BotSettings preset regex ownership', () => {
+  it('passes the selected prompt preset identity to RegexList', () => {
+    expect(source).toContain(
+      '<RegexList bind:value={presetRegexDraft.value} ownerKey={promptFieldOwnerSignature()} buttons />',
+    )
+  })
+})
