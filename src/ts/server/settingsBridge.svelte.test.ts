@@ -243,6 +243,26 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, resolve }
 }
 
+function sparseObjectAcceptedResult(input: (typeof recorded.objectPatches)[number]) {
+  return {
+    status: 'ok' as const,
+    revision: input.baseRevision + 1,
+    event: {
+      type: 'settings.updated',
+      revision: input.baseRevision + 1,
+      resource: 'settings',
+      id: input.group,
+    },
+    group: input.group,
+    key: input.key,
+    certificate: 'settings-object-patch-v1',
+    patchedKeys: Object.keys(input.update.patch),
+    deletedKeys: input.update.deleteKeys ?? [],
+    canonicalValues: {},
+    canonicalDeletedKeys: [],
+  }
+}
+
 const testDatabaseState = {
   get db() {
     return getResourceDatabase()
@@ -1001,6 +1021,88 @@ describe('settingsBridge coalescing', () => {
       attemptedObject: { ...original, height: 1024 },
     })
     expect(testDatabaseState.db.NAIImgConfig).toEqual({ ...original, height: 1024 })
+    stop()
+  })
+
+  it('replaces an in-flight sparse successor with the exact rebased revert intent', async () => {
+    const original = { width: 512, height: 768 }
+    const firstResult = createDeferred<unknown>()
+    recorded.objectResults.push(firstResult.promise)
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.objectPatches).toHaveLength(1)
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 1024 }
+    flushSync()
+    const staleSuccessor = durabilityMocks.staged.at(-1)
+    expect(staleSuccessor?.intent).toMatchObject({
+      requests: [{ body: { patch: { width: 1024 } } }],
+    })
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = original
+    flushSync()
+    expect(durabilityMocks.acknowledged).toEqual(
+      expect.arrayContaining([expect.objectContaining({ mutationId: staleSuccessor?.mutationId })]),
+    )
+
+    firstResult.resolve(sparseObjectAcceptedResult(recorded.objectPatches[0]))
+    for (let index = 0; index < 8; index += 1) await flushAndSettle()
+
+    expect(recorded.objectPatches).toHaveLength(2)
+    expect(recorded.objectPatches[1]).toMatchObject({
+      group: 'media',
+      key: 'NAIImgConfig',
+      update: { patch: { width: 512 } },
+      attemptedObject: original,
+    })
+    expect(durabilityMocks.dispatched.at(-1)).toMatchObject({
+      mutationId: expect.not.stringMatching(staleSuccessor?.mutationId ?? ''),
+      intent: {
+        requests: [{ body: { patch: { width: 512 } } }],
+      },
+    })
+    stop()
+  })
+
+  it('deletes an in-flight sparse successor that rebases to a no-op after failure', async () => {
+    const original = { width: 512, height: 768 }
+    const firstResult = createDeferred<unknown>()
+    recorded.objectResults.push(firstResult.promise)
+    recorded.groupReads.push({
+      status: 'ok',
+      revision: Number.MAX_SAFE_INTEGER,
+      group: 'media',
+      settings: { NAIImgConfig: original },
+    })
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.objectPatches).toHaveLength(1)
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 1024 }
+    flushSync()
+    const staleSuccessor = durabilityMocks.staged.at(-1)
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = original
+    flushSync()
+
+    firstResult.resolve({ status: 'error', error: 'failed' })
+    for (let index = 0; index < 8; index += 1) await flushAndSettle()
+
+    expect(recorded.objectPatches).toHaveLength(1)
+    expect(testDatabaseState.db.NAIImgConfig).toEqual(original)
+    expect(durabilityMocks.acknowledged).toEqual(
+      expect.arrayContaining([expect.objectContaining({ mutationId: staleSuccessor?.mutationId })]),
+    )
+    const replayableStaleSuccessor = durabilityMocks.staged.find(
+      (entry) =>
+        entry.mutationId === staleSuccessor?.mutationId &&
+        !durabilityMocks.acknowledged.some((acknowledged) => acknowledged.mutationId === entry.mutationId),
+    )
+    expect(replayableStaleSuccessor).toBeUndefined()
     stop()
   })
 

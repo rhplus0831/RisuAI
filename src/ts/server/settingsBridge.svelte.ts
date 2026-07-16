@@ -683,10 +683,7 @@ function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted
   if (state.queued) {
     const attemptedObject = applySparseObjectSettingUpdate(state.baseline, state.queued)
     const update = diffSparseObjectSetting(state.baseline, attemptedObject)
-    if (update) {
-      const intent = sparseObjectSettingDurableIntent(state.group, state.key, update)
-      state.outbox = stagePendingMutation(`settings-object:${state.group}:${state.key}`, intent, state.outbox)
-    }
+    refreshSparseObjectSettingOutbox(state, update)
   }
   if (state.timer) clearTimeout(state.timer)
   state.timer = setTimeout(() => {
@@ -795,10 +792,12 @@ async function dispatchSparseObjectSettingQueue(
     writeSparseObjectSettingProjection(state.key, desired)
     state.queued = diffSparseObjectSetting(state.baseline, desired)
     if (state.queued) {
+      refreshSparseObjectSettingOutbox(state, state.queued)
       queueMicrotask(() => void dispatchSparseObjectSettingQueue(state, options))
       return
     }
     state.queuedProjectionEpoch = null
+    refreshSparseObjectSettingOutbox(state, null)
   } else if (
     (failed || usedAuthoritativeBaseline) &&
     isJsonSnapshotEqual(currentSettingValue(state.key, {}), attemptedObject)
@@ -807,6 +806,20 @@ async function dispatchSparseObjectSettingQueue(
   }
 
   sparseObjectSettingQueues.delete(state.key)
+}
+
+function refreshSparseObjectSettingOutbox(
+  state: SparseObjectSettingQueue,
+  update: SparseSettingsObjectUpdate | null,
+): void {
+  if (!update) {
+    if (state.outbox) void acknowledgePendingMutation(state.outbox)
+    state.outbox = null
+    return
+  }
+
+  const intent = sparseObjectSettingDurableIntent(state.group, state.key, update)
+  state.outbox = stagePendingMutation(`settings-object:${state.group}:${state.key}`, intent, state.outbox)
 }
 
 async function refreshSparseObjectSettingBaseline(
