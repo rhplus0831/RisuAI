@@ -353,10 +353,11 @@ describe('AgentPresetSettings', () => {
   })
 
   it('disables default selection while another preset command is pending', async () => {
-    let resolveReorder!: (result: AgentPresetCommandMockResult) => void
+    type ReorderResult = Awaited<ReturnType<typeof agentPresetSpies.reorderAgentPresets>>
+    let resolveReorder!: (result: ReorderResult) => void
     agentPresetSpies.reorderAgentPresets.mockImplementationOnce(
       () =>
-        new Promise((resolve) => {
+        new Promise<ReorderResult>((resolve) => {
           resolveReorder = resolve
         }),
     )
