@@ -237,6 +237,20 @@ export function promptTemplateOwnerCommandId(ownerId: string | null): string | u
   return ownerId ?? undefined
 }
 
+/**
+ * Modern prompt rows are partial writes against one preset-owned template, so
+ * they share an owner key with whole-preset repairs. This lets live dispatch
+ * and bootstrap replay drain every older owner generation before a later row.
+ * Legacy top-level rows have no stable owner and remain scoped by item id.
+ */
+export function promptTemplateOwnerMutationKey(ownerId: string): string {
+  return `prompt-template-owner:${ownerId}`
+}
+
+function promptItemMutationKey(ownerId: string | null, itemId: string): string {
+  return ownerId !== null ? promptTemplateOwnerMutationKey(ownerId) : `prompt-item:__legacy__:${itemId}`
+}
+
 function promptTemplateOwnerCollectionName(ownerId: string | null): 'promptTemplate' | 'promptPresets' {
   return ownerId === null ? 'promptTemplate' : 'promptPresets'
 }
@@ -393,7 +407,7 @@ export function queuePromptItemProjectionUpdate(
     projectionFence: effectiveProjectionFence,
     sparseUpdate,
     intent,
-    outbox: stagePendingMutation(`prompt-item:${promptPresetId ?? '__legacy__'}:${itemId}`, intent, existing?.outbox),
+    outbox: stagePendingMutation(promptItemMutationKey(promptPresetId, itemId), intent, existing?.outbox),
   }
   if (delayMs !== null) {
     pending.timer = setTimeout(() => runPendingPromptItemUpdate(pendingKey), delayMs)

@@ -325,6 +325,13 @@ function readSource(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8')
 }
 
+function durableStageByRequestPath(path: string) {
+  return durableState.stages.find(({ intent }) => {
+    const requests = intent.requests as Array<{ path?: string }> | undefined
+    return requests?.some((request) => request.path === path)
+  })
+}
+
 function draftCopy(): PromptItem[] {
   return cloneJsonValue((getResourceDatabase().promptTemplate ?? []) as PromptItem[])
 }
@@ -964,6 +971,10 @@ describe('flushPendingPromptTemplatePatches', () => {
     queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'first queued text'), 500, 'prompt-a')
 
     expect(durableState.stages).toHaveLength(2)
+    expect(durableState.stages.map(({ key }) => key)).toEqual([
+      'prompt-template-owner:prompt-a',
+      'prompt-template-owner:prompt-a',
+    ])
     expect(durableState.stages[0].intent).toEqual({
       version: 1,
       requests: [
@@ -1003,6 +1014,37 @@ describe('flushPendingPromptTemplatePatches', () => {
         databaseLineage: 'test-lineage',
       },
     ])
+  })
+
+  it('orders modern prompt rows by owner while keeping legacy rows item-scoped', () => {
+    seedTemplate()
+    hydrationState.setOwner('prompt-a')
+    let draftItems = draftCopy()
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    draftItems[0] = item('p-0', 'modern row zero')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500, 'prompt-a')
+    draftItems[1] = item('p-1', 'modern row one')
+    queuePromptItemProjectionUpdate(binding, 'p-1', item('p-1', BIG), 500, 'prompt-a')
+
+    hydrationState.setOwner(null)
+    draftItems[2] = item('p-2', 'legacy row two')
+    queuePromptItemProjectionUpdate(binding, 'p-2', item('p-2', BIG), 500, null)
+    draftItems[3] = item('p-3', 'legacy row three')
+    queuePromptItemProjectionUpdate(binding, 'p-3', item('p-3', BIG), 500, null)
+
+    expect(durableState.stages.map(({ key }) => key)).toEqual([
+      'prompt-template-owner:prompt-a',
+      'prompt-template-owner:prompt-a',
+      'prompt-item:__legacy__:p-2',
+      'prompt-item:__legacy__:p-3',
+    ])
+    resetPromptTemplateSelectionDirtyState()
   })
 
   it('M8: flushes pending prompt item updates with keepalive and clears debounce', async () => {
@@ -1674,7 +1716,8 @@ describe('flushPendingPromptTemplatePatches', () => {
         expect.objectContaining({ id: expect.any(String), text: 'row A dirty' }),
         expect.objectContaining({ id: expect.any(String), text: 'row B old' }),
       ])
-      const idSyncStage = durableState.stages.find(({ key }) => key === 'prompt-template-id-sync:preset-a')
+      const idSyncStage = durableStageByRequestPath('/prompt-presets/preset-a')
+      expect(idSyncStage?.key).toBe('prompt-template-owner:preset-a')
       expect(idSyncStage?.intent).toEqual({
         version: 1,
         requests: [
@@ -1696,7 +1739,8 @@ describe('flushPendingPromptTemplatePatches', () => {
       expect(commandMocks.updatePromptPresetCommand).toHaveBeenCalledTimes(1)
       expect(commandMocks.updatePromptItemCommand).not.toHaveBeenCalled()
       const syncedIds = presetSyncArgs.patch.promptTemplate.map((item) => item.id)
-      const successorStage = durableState.stages.find(({ key }) => key === `prompt-item:preset-a:${syncedIds[1]}`)
+      const successorStage = durableStageByRequestPath(`/prompt-items/${syncedIds[1]}`)
+      expect(successorStage?.key).toBe('prompt-template-owner:preset-a')
       expect(successorStage?.intent).toEqual({
         version: 1,
         requests: [
@@ -1806,11 +1850,13 @@ describe('flushPendingPromptTemplatePatches', () => {
         patch: { promptTemplate: Array<{ id?: string; text?: string }> }
       }
       const itemId = presetSyncArgs.patch.promptTemplate[0].id!
-      const prerequisite = durableState.stages.find(({ key }) => key === 'prompt-template-id-sync:preset-a')
+      const prerequisite = durableStageByRequestPath('/prompt-presets/preset-a')
+      expect(prerequisite?.key).toBe('prompt-template-owner:preset-a')
 
       await editPromptSettingsTextarea(target, 'latest before pagehide')
       await flushMicrotasks()
-      const successor = durableState.stages.find(({ key }) => key === `prompt-item:preset-a:${itemId}`)
+      const successor = durableStageByRequestPath(`/prompt-items/${itemId}`)
+      expect(successor?.key).toBe('prompt-template-owner:preset-a')
       expect(successor?.intent).toEqual({
         version: 1,
         requests: [

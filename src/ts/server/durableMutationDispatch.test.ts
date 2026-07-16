@@ -245,6 +245,59 @@ describe('durable mutation dispatch', () => {
       successor.mutationId,
     ])
   })
+
+  it('holds a prompt row behind a transient owner repair and releases it only after repair replay succeeds', async () => {
+    const ownerKey = 'prompt-template-owner:preset-a'
+    const repairIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/prompt-presets/preset-a',
+          body: { patch: { id: 'preset-a', promptTemplate: [{ id: 'row-a', text: 'repair snapshot' }] } },
+        },
+      ],
+    }
+    const rowIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/prompt-items/row-a',
+          body: { promptPresetId: 'preset-a', patch: { text: 'latest row edit' } },
+        },
+      ],
+    }
+    const repair = stagePendingMutation(ownerKey, repairIntent)
+    const repairRequest = vi.fn(async () => ({ status: 'error' as const, error: 'response stream ended' }))
+    await dispatchDurableMutation(repair, repairIntent, wrappedDispatch(repairRequest))
+    const row = stagePendingMutation(ownerKey, rowIntent)
+    const rowRequest = vi.fn(async () => acceptedResult())
+
+    commandApi.inlineReplay.mockResolvedValueOnce({ status: 'error', error: 'still offline' })
+    await expect(dispatchDurableMutation(row, rowIntent, wrappedDispatch(rowRequest))).resolves.toEqual({
+      status: 'unavailable',
+    })
+
+    expect(repairRequest).toHaveBeenCalledOnce()
+    expect(rowRequest).not.toHaveBeenCalled()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([
+      repair.mutationId,
+      row.mutationId,
+    ])
+
+    commandApi.inlineReplay.mockResolvedValueOnce({ status: 'ok' })
+    await expect(dispatchDurableMutation(row, rowIntent, wrappedDispatch(rowRequest))).resolves.toMatchObject({
+      status: 'ok',
+    })
+
+    expect(commandApi.inlineReplay.mock.calls.map(([, mutationId]) => mutationId)).toEqual([
+      repair.mutationId,
+      repair.mutationId,
+    ])
+    expect(rowRequest).toHaveBeenCalledOnce()
+    expect(await listPendingMutations()).toEqual([])
+  })
 })
 
 function acceptedResult() {

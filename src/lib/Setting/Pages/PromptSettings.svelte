@@ -36,6 +36,7 @@
     reconcilePromptTemplateDraft,
     resetPromptTemplateSelectionDirtyState,
     promptTemplateOwnerCommandId,
+    promptTemplateOwnerMutationKey,
     replacePendingPromptSettingsProjectionPatchValue,
     rollbackFailedPromptTemplateItemCreate,
     rollbackFailedPromptTemplateItemDelete,
@@ -579,7 +580,7 @@
         },
       ],
     }
-    const outbox = stagePendingMutation(`prompt-template-id-sync:${promptPresetId}`, intent)
+    const outbox = stagePendingMutation(promptTemplateOwnerMutationKey(promptPresetId), intent)
     const completion = dispatchDurableMutation(outbox, intent, (transport) =>
       runServerCommand({
         command: (baseRevision) =>

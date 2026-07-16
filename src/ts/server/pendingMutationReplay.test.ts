@@ -70,9 +70,41 @@ describe('pending mutation replay', () => {
     })
     expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['mutation-a', 'mutation-c'])
   })
+
+  it('keeps a prompt row blocked across reload until its owner repair succeeds', async () => {
+    const entries = [
+      entry('prompt-template-owner:preset-a', 'id-repair', '/prompt-presets/preset-a'),
+      entry('prompt-template-owner:preset-a', 'row-successor', '/prompt-items/row-a'),
+    ]
+    outboxApi.list.mockResolvedValue(entries)
+    durableApi.replay.mockImplementation(async (handle) =>
+      handle.mutationId === 'id-repair'
+        ? { disposition: 'retained', result: { status: 'error', error: 'offline' } }
+        : { disposition: 'succeeded', result: { status: 'ok' } },
+    )
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 1,
+      discarded: 0,
+      retained: 1,
+      succeeded: 0,
+    })
+    expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['id-repair'])
+
+    durableApi.replay.mockClear()
+    durableApi.replay.mockResolvedValue({ disposition: 'succeeded', result: { status: 'ok' } })
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 2,
+      discarded: 0,
+      retained: 0,
+      succeeded: 2,
+    })
+    expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['id-repair', 'row-successor'])
+  })
 })
 
-function entry(key: string, mutationId: string) {
+function entry(key: string, mutationId: string, path = '/settings/runtime') {
   return {
     handle: {
       key,
@@ -86,7 +118,7 @@ function entry(key: string, mutationId: string) {
     },
     intent: {
       version: 1,
-      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 8_000 } } }],
+      requests: [{ method: 'PATCH', path, body: { patch: { maxContext: 8_000 } } }],
     },
   }
 }
