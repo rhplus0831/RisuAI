@@ -526,6 +526,7 @@ function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {
       signal: options.signal,
       mutationId: transport.mutationId,
       databaseLineage: transport.databaseLineage,
+      executionWrapper: transport.executionWrapper,
       previous: commandPrevious,
       attempted: commandAttempted,
     }),
@@ -541,6 +542,7 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
   signal?: AbortSignal | null
   mutationId?: string
   databaseLineage?: string
+  executionWrapper?: ServerCommandTransportOptions['executionWrapper']
 }): Promise<ServerCommandResult> {
   const attempt = registerSettingsAttempt(input.previous, input.attempted)
   const reportFailure = createSettingsSaveFailureReporter()
@@ -552,6 +554,7 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
     signal: input.signal,
     mutationId: input.mutationId,
     databaseLineage: input.databaseLineage,
+    executionWrapper: input.executionWrapper,
     rollback: () => {
       rollbackSettingsAttempt(attempt)
       reportFailure()
@@ -736,6 +739,7 @@ async function dispatchSparseObjectSettingQueue(
       keepalive: options.keepalive,
       mutationId: transport.mutationId,
       databaseLineage: transport.databaseLineage,
+      executionWrapper: transport.executionWrapper,
       command: (baseRevision) =>
         patchSettingsObjectFieldsCommand(
           {

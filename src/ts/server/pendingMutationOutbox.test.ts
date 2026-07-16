@@ -158,13 +158,14 @@ describe('pending mutation outbox', () => {
     await expect(rejected.ready).resolves.toBe('persisted')
 
     resetPendingMutationOutboxForTests()
-    await preparePendingMutationOutbox({
+    const preparation = await preparePendingMutationOutbox({
       writerSessionId: 'writer-a',
       writerEpoch: 2,
       databaseLineage: 'database-a',
       requestedWriterWasActive: false,
     })
 
+    expect(preparation).toEqual({ discarded: 1 })
     expect(await listPendingMutations()).toEqual([])
     expect(await readRawMutation(rejected.mutationId)).toBeUndefined()
   })

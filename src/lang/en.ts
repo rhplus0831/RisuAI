@@ -1481,6 +1481,8 @@ export const languageEnglish = {
   reloadSession: 'Newer version of save data is found. Reloading the session...',
   pendingMutationReplayRetained:
     'Some pending changes could not reach the server. They remain saved on this device and will be retried the next time the app starts.',
+  pendingMutationDiscarded:
+    'Some unsaved changes came from an older editing session and could not be applied safely. Please review the affected fields.',
   fixMarkdownNewline: 'Fix Markdown Newline',
   customQuotes: 'Custom Quotes',
   leadingSingleQuote: 'Leading Single Quote',

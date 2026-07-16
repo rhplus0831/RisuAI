@@ -56,53 +56,94 @@ describe('durable mutation dispatch', () => {
       return originalEncrypt(algorithm, key, data)
     })
     const handle = stagePendingMutation('settings:runtime', intent)
-    const dispatch = vi.fn(async () => acceptedResult())
+    const request = vi.fn(async () => acceptedResult())
+    const dispatch = wrappedDispatch(request)
 
     const pending = dispatchDurableMutation(handle, intent, dispatch)
     await Promise.resolve()
-    expect(dispatch).not.toHaveBeenCalled()
+    expect(dispatch).toHaveBeenCalledOnce()
+    expect(request).not.toHaveBeenCalled()
 
     encryptionGate.resolve()
     await expect(pending).resolves.toMatchObject({ status: 'ok' })
-    expect(dispatch).toHaveBeenCalledWith({ mutationId: handle.mutationId, databaseLineage: 'database-a' })
+    expect(request).toHaveBeenCalledOnce()
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mutationId: handle.mutationId,
+        databaseLineage: 'database-a',
+        executionWrapper: expect.any(Function),
+      }),
+    )
   })
 
   it('locks duplicate same-id dispatches and revalidates the row after the first caller completes', async () => {
     const handle = stagePendingMutation('settings:runtime', intent)
     await handle.ready
     const firstResponse = deferred<ReturnType<typeof acceptedResult>>()
-    const dispatch = vi.fn(async () => firstResponse.promise)
+    const request = vi.fn(async () => firstResponse.promise)
+    const dispatch = wrappedDispatch(request)
 
     const first = dispatchDurableMutation(handle, intent, dispatch)
     const duplicate = dispatchDurableMutation(handle, intent, dispatch)
-    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
 
     firstResponse.resolve(acceptedResult())
     await expect(first).resolves.toMatchObject({ status: 'ok' })
     await expect(duplicate).resolves.toEqual({ status: 'unavailable' })
-    expect(dispatch).toHaveBeenCalledOnce()
+    expect(request).toHaveBeenCalledOnce()
     expect(await listPendingMutations()).toEqual([])
   })
 
   it('retains transient failures but discards a terminal stale-writer rejection', async () => {
     const transient = stagePendingMutation('settings:runtime', intent)
-    await dispatchDurableMutation(transient, intent, async () => ({ status: 'error', error: 'offline' }))
+    await dispatchDurableMutation(
+      transient,
+      intent,
+      wrappedDispatch(async () => ({ status: 'error', error: 'offline' })),
+    )
     expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toContain(transient.mutationId)
 
     const stale = stagePendingMutation('settings:runtime-2', intent)
-    await dispatchDurableMutation(stale, intent, async () => ({
-      status: 'error',
-      error: 'active_writer_stale',
-      reason: 'stale-writer',
-    }))
+    await dispatchDurableMutation(
+      stale,
+      intent,
+      wrappedDispatch(async () => ({
+        status: 'error',
+        error: 'active_writer_stale',
+        reason: 'stale-writer',
+      })),
+    )
     expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).not.toContain(stale.mutationId)
+  })
+
+  it('still sends an ordinary autosave when durable browser storage is unavailable', async () => {
+    const request = vi.fn(async () => acceptedResult())
+    const unavailableHandle = {
+      key: 'settings:runtime',
+      mutationId: 'storage-unavailable',
+      sequence: 1,
+      ownerWriterSessionId: 'writer-a',
+      writerEpoch: 1,
+      databaseLineage: 'database-a',
+      phase: 'staged' as const,
+      ready: Promise.resolve('unavailable' as const),
+    }
+
+    await expect(dispatchDurableMutation(unavailableHandle, intent, wrappedDispatch(request))).resolves.toMatchObject({
+      status: 'ok',
+    })
+    expect(request).toHaveBeenCalledOnce()
   })
 
   it('keeps an accepted receipt acknowledgement durable when its network cleanup fails', async () => {
     commandApi.acknowledge.mockResolvedValue(false)
     const handle = stagePendingMutation('settings:runtime', intent)
 
-    await dispatchDurableMutation(handle, intent, async () => acceptedResult())
+    await dispatchDurableMutation(
+      handle,
+      intent,
+      wrappedDispatch(async () => acceptedResult()),
+    )
 
     expect(await listPendingMutations()).toEqual([])
     expect(await listPendingMutationReceiptAcknowledgements()).toEqual([
@@ -117,6 +158,12 @@ function acceptedResult() {
     revision: 2,
     event: { type: 'settings.updated', revision: 2, resource: 'settings' },
   }
+}
+
+function wrappedDispatch<T>(request: () => Promise<T>) {
+  return vi.fn((options: { executionWrapper?: (execute: () => Promise<T>) => Promise<T> }) => {
+    return options.executionWrapper ? options.executionWrapper(request) : request()
+  })
 }
 
 function deferred<T>() {

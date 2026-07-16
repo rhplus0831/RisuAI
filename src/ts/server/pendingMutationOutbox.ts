@@ -48,6 +48,10 @@ export interface PreparePendingMutationOutboxInput {
   requestedWriterWasActive: boolean
 }
 
+export interface PreparePendingMutationOutboxSummary {
+  discarded: number
+}
+
 export interface PendingMutationOwnerCandidate {
   writerSessionId: string
   writerEpoch: number
@@ -95,7 +99,11 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
 }> = [
   { method: 'PATCH', path: /^\/settings\/[a-z][a-z-]*$/ },
   { method: 'PATCH', path: /^\/settings\/[a-z][a-z-]*\/objects\/[^/?#]+$/ },
+  { method: 'PATCH', path: /^\/characters\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/chats\/[^/?#]+$/ },
+  { method: 'PATCH', path: /^\/chat-folders\/[^/?#]+$/ },
+  { method: 'PATCH', path: /^\/prompt-items\/[^/?#]+$/ },
+  { method: 'PATCH', path: /^\/personas\/[^/?#]+$/ },
 ]
 
 let outboxDatabasePromise: Promise<IDBDatabase | null> | null = null
@@ -147,12 +155,15 @@ export async function readSinglePendingMutationOwner(): Promise<PendingMutationO
  * concrete server database. A writer takeover quarantines that writer's old
  * drafts instead of replaying a mutation that was already rejected with 423.
  */
-export async function preparePendingMutationOutbox(input: PreparePendingMutationOutboxInput): Promise<void> {
+export async function preparePendingMutationOutbox(
+  input: PreparePendingMutationOutboxInput,
+): Promise<PreparePendingMutationOutboxSummary> {
   const scope = normalizeScope(input.writerSessionId, input.writerEpoch, input.databaseLineage)
   pendingMutationScope = scope
   const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
-  if (!database || !encryptionKey) return
+  if (!database || !encryptionKey) return { discarded: 0 }
 
+  let discarded = 0
   try {
     const transaction = database.transaction([OUTBOX_MUTATION_STORE, OUTBOX_RECEIPT_ACK_STORE], 'readwrite')
     const mutationStore = transaction.objectStore(OUTBOX_MUTATION_STORE)
@@ -166,7 +177,10 @@ export async function preparePendingMutationOutbox(input: PreparePendingMutation
       const writerEpochMismatch = mutation.writerEpoch !== scope.writerEpoch
       const rejectedWriterDraft =
         !input.requestedWriterWasActive && mutation.ownerWriterSessionId === scope.writerSessionId
-      if (lineageMismatch || writerEpochMismatch || rejectedWriterDraft) mutationStore.delete(mutation.mutationId)
+      if (lineageMismatch || writerEpochMismatch || rejectedWriterDraft) {
+        mutationStore.delete(mutation.mutationId)
+        if (!lineageMismatch && (writerEpochMismatch || rejectedWriterDraft)) discarded += 1
+      }
     }
     for (const receipt of receipts) {
       if (receipt.databaseLineage !== scope.databaseLineage) receiptStore.delete(receipt.mutationId)
@@ -175,6 +189,7 @@ export async function preparePendingMutationOutbox(input: PreparePendingMutation
   } catch (error) {
     reportPersistenceWarning('Unable to prepare the pending-mutation outbox', error)
   }
+  return { discarded }
 }
 
 /**

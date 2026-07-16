@@ -545,6 +545,7 @@ export interface PatchServerBackedSettingsInput {
   keepalive?: boolean
   mutationId?: string
   databaseLineage?: string
+  executionWrapper?: ServerCommandExecutionWrapper
 }
 
 export type PresetSnapshot = Record<string, unknown> & {
@@ -1542,6 +1543,7 @@ export interface RunServerPresetCommandInput<T extends Record<string, unknown> =
   keepalive?: boolean
   mutationId?: string
   databaseLineage?: string
+  executionWrapper?: ServerCommandExecutionWrapper
 }
 
 export type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
@@ -1551,7 +1553,12 @@ export interface ServerCommandTransportOptions {
   keepalive?: boolean
   mutationId?: string
   databaseLineage?: string
+  executionWrapper?: ServerCommandExecutionWrapper
 }
+
+export type ServerCommandExecutionWrapper = <T extends Record<string, unknown>>(
+  execute: () => Promise<ServerCommandResult<T>>,
+) => Promise<ServerCommandResult<T>>
 
 let cachedServerCommandRevision: number | null = null
 // The command/base-revision cursor may move ahead of the browser projection:
@@ -2049,9 +2056,10 @@ export async function patchServerBackedSettings(input: PatchServerBackedSettings
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
-    withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, () =>
-      executeServerBackedSettingsPatch(input, grouped, rollbackEpoch),
-    ),
+    withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, () => {
+      const execute = () => executeServerBackedSettingsPatch(input, grouped, rollbackEpoch)
+      return input.executionWrapper ? input.executionWrapper(execute) : execute()
+    }),
   )
 }
 
@@ -4897,9 +4905,10 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
-    withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, () =>
-      executeServerCommand(input, rollbackEpoch),
-    ),
+    withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, () => {
+      const execute = () => executeServerCommand(input, rollbackEpoch)
+      return input.executionWrapper ? input.executionWrapper(execute) : execute()
+    }),
   )
 }
 
@@ -4947,6 +4956,7 @@ export async function replayDurableMutationRequests(
   databaseLineage: string,
 ): Promise<DurableMutationReplayResult> {
   if (requests.length === 0) return { status: 'ok' }
+  if (!canUseServerCommands()) return { status: 'unavailable' }
   const factories = requests.map(
     (request): ServerCommandFactory =>
       (baseRevision) =>

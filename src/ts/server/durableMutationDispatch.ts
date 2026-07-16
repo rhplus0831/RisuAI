@@ -2,6 +2,7 @@ import {
   acknowledgeServerMutationReceipts,
   replayDurableMutationRequests,
   type DurableMutationReplayResult,
+  type ServerCommandExecutionWrapper,
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './commands'
@@ -10,6 +11,7 @@ import {
   completePendingMutation,
   deletePendingMutationReceiptAcknowledgement,
   discardPendingMutation,
+  isPendingMutationCurrent,
   listPendingMutationReceiptAcknowledgements,
   type DurableMutationIntent,
   type PendingMutationHandle,
@@ -23,23 +25,30 @@ const localMutationLockTails = new Map<string, Promise<void>>()
  * start the network request. Page-exit callers rely on the already-staged row
  * and next-start replay if the asynchronous lock prevents a keepalive request.
  */
-export async function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
+export function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
   handle: PendingMutationHandle,
   intent: DurableMutationIntent,
   dispatch: (options: ServerCommandTransportOptions) => Promise<ServerCommandResult<T>>,
 ): Promise<ServerCommandResult<T>> {
   if (!handle.databaseLineage) return dispatch({})
-  return withPendingMutationLock(handle.databaseLineage, handle.mutationId, async () => {
-    const persistence = await beginPendingMutationDispatch(handle)
-    if (persistence === 'unavailable') return dispatch({})
-    if (persistence !== 'persisted') return { status: 'unavailable' }
-
-    const result = await dispatch({
-      mutationId: handle.mutationId,
-      databaseLineage: handle.databaseLineage!,
+  // Freeze synchronously before the caller can stage a successor, and enqueue
+  // the command synchronously so later structural actions cannot overtake it.
+  const readiness = beginPendingMutationDispatch(handle)
+  const executionWrapper: ServerCommandExecutionWrapper = (execute) =>
+    withPendingMutationLock(handle.databaseLineage!, handle.mutationId, async () => {
+      const persistence = await readiness
+      if (persistence === 'superseded') return { status: 'unavailable' }
+      if (persistence === 'persisted' && !(await isPendingMutationCurrent(handle))) {
+        return { status: 'unavailable' }
+      }
+      const result = await execute()
+      await settleDurableMutation(handle, intent, result)
+      return result
     })
-    await settleDurableMutation(handle, intent, result)
-    return result
+  return dispatch({
+    mutationId: handle.mutationId,
+    databaseLineage: handle.databaseLineage,
+    executionWrapper,
   })
 }
 

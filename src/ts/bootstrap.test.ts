@@ -314,7 +314,7 @@ beforeEach(() => {
   pendingMutationApi.flushAcknowledgements.mockReset()
   pendingMutationApi.flushAcknowledgements.mockResolvedValue(undefined)
   pendingMutationApi.prepare.mockReset()
-  pendingMutationApi.prepare.mockResolvedValue(undefined)
+  pendingMutationApi.prepare.mockResolvedValue({ discarded: 0 })
   pendingMutationApi.readOwner.mockReset()
   pendingMutationApi.readOwner.mockResolvedValue(null)
   pendingMutationApi.replay.mockResolvedValue({ attempted: 0, discarded: 0, retained: 0, succeeded: 0 })
@@ -502,6 +502,14 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
 
     expect(alertError).toHaveBeenCalledWith(expect.stringContaining('pending changes'))
+  })
+
+  it('warns when stale-writer drafts are quarantined during ownership preparation', async () => {
+    pendingMutationApi.prepare.mockResolvedValue({ discarded: 2 })
+
+    await loadWebInitialDatabase()
+
+    expect(alertError).toHaveBeenCalledWith(expect.stringContaining('older editing session'))
   })
 
   it('initializes a fresh server without refetching unchanged runtime metadata', async () => {

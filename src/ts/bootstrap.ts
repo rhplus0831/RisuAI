@@ -236,12 +236,15 @@ export async function loadWebInitialDatabase() {
   if (!databaseLineage || typeof requestedWriterWasActive !== 'boolean' || !Number.isSafeInteger(writerEpoch)) {
     throw new Error('Server bootstrap is missing durable mutation ownership metadata')
   }
-  await preparePendingMutationOutbox({
+  const pendingMutationPreparation = await preparePendingMutationOutbox({
     writerSessionId: getActiveWriterSessionId(),
     writerEpoch: writerEpoch!,
     databaseLineage,
     requestedWriterWasActive,
   })
+  if (pendingMutationPreparation.discarded > 0) {
+    alertError(language.pendingMutationDiscarded)
+  }
   await flushPendingMutationReceiptAcknowledgements()
   const pendingMutationReplay = await replayPendingMutations()
   if (pendingMutationReplay.retained > 0) {

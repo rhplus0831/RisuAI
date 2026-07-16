@@ -923,6 +923,7 @@ describe('server command API adapter', () => {
       'pending-replay-conflict.1',
     ])
     expect(calls.map((call) => call.body.baseRevision)).toEqual([30, 31, 32, 32])
+    expect(peekCachedServerCommandRevision()).toBe(33)
   })
 
   it('sends lineage-bound durable receipt acknowledgements', async () => {
