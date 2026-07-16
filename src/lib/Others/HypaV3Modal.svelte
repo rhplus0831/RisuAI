@@ -73,10 +73,13 @@
   let serverMemoryError = $state<string | null>(null)
   let serverSummaryRefreshEpoch = 0
   const serverSummaryMutationQueues = new Map<string, Promise<void>>()
+  const pendingServerSummaryTextSaves = new Map<string, Promise<boolean>>()
   const dirtyServerSummaryIds = new Set<string>()
+  const dirtyServerSummaryTextVersions = new Map<string, number>()
   const deletedServerSummaryIds = new Map<string, number>()
   const serverSummaryEditVersions = new Map<string, number>()
   let pendingServerSummaryRefreshChatId: string | null = null
+  let serverSummaryCloseRequest: Promise<boolean> | null = null
   const hypaV3Data = $derived(serverBackedMemoryMode ? serverHypaV3Data : legacyHypaV3Data)
 
   function createInitialHypaV3Data(): SerializableHypaV3Data {
@@ -155,6 +158,9 @@
         categories: categoriesSnapshot,
         lastSelectedSummaries: [],
       }
+      for (const summaryId of dirtyServerSummaryTextVersions.keys()) {
+        if (!dirtyServerSummaryIds.has(summaryId)) dirtyServerSummaryTextVersions.delete(summaryId)
+      }
       return
     }
     if (signal?.aborted) return
@@ -200,19 +206,42 @@
     return next
   }
 
-  async function handleServerSummaryChanged(summaryIndex: number, field: ServerSummaryPatchField): Promise<void> {
-    if (!serverBackedMemoryMode) return
+  function handleServerSummaryChanged(summaryIndex: number, field: ServerSummaryPatchField): Promise<boolean> {
+    if (!serverBackedMemoryMode) return Promise.resolve(true)
     const summary = serverHypaV3Data.summaries[summaryIndex] as ServerSummaryView | undefined
-    if (!summary) return
+    if (!summary) return Promise.resolve(false)
     const summaryId = summary.serverId
+    const mutation = persistServerSummaryChange(summary, summaryId, field)
+    if (field === 'text') {
+      pendingServerSummaryTextSaves.set(summaryId, mutation)
+      void mutation.finally(() => {
+        if (pendingServerSummaryTextSaves.get(summaryId) === mutation) {
+          pendingServerSummaryTextSaves.delete(summaryId)
+        }
+      })
+    }
+    return mutation
+  }
+
+  async function persistServerSummaryChange(
+    summary: ServerSummaryView,
+    summaryId: string,
+    field: ServerSummaryPatchField,
+  ): Promise<boolean> {
     const editVersion = markServerSummaryEdited(summaryId)
+    if (field === 'text') dirtyServerSummaryTextVersions.set(summaryId, editVersion)
     const patch: PatchServerMemorySummaryInput = buildServerSummaryPatch(summary, field)
+    let persisted = false
 
     await queueServerSummaryMutation(summaryId, async () => {
       const result = await patchServerMemorySummary(summaryId, patch)
       if (result.status === 'ok') {
         acknowledgeServerSummaryEdit(summaryId, editVersion)
+        if (field === 'text' && dirtyServerSummaryTextVersions.get(summaryId) === editVersion) {
+          dirtyServerSummaryTextVersions.delete(summaryId)
+        }
         serverMemoryError = null
+        persisted = true
         return
       }
       acknowledgeServerSummaryEdit(summaryId, editVersion)
@@ -222,13 +251,15 @@
       // client ahead of the server, and avoid an intermediate stale read.
       pendingServerSummaryRefreshChatId = currentChatId
     })
+    return persisted
   }
 
   function handleServerSummaryInput(summaryIndex: number): void {
     if (!serverBackedMemoryMode) return
     const summary = serverHypaV3Data.summaries[summaryIndex] as ServerSummaryView | undefined
     if (!summary) return
-    markServerSummaryEdited(summary.serverId)
+    const editVersion = markServerSummaryEdited(summary.serverId)
+    dirtyServerSummaryTextVersions.set(summary.serverId, editVersion)
   }
 
   async function deleteServerSummaryAt(summaryIndex: number): Promise<boolean> {
@@ -247,6 +278,8 @@
       )
       if (liveIndex !== -1) serverHypaV3Data.summaries.splice(liveIndex, 1)
       dirtyServerSummaryIds.delete(summaryId)
+      dirtyServerSummaryTextVersions.delete(summaryId)
+      pendingServerSummaryTextSaves.delete(summaryId)
       const deleteVersion = (serverSummaryEditVersions.get(summaryId) ?? 0) + 1
       serverSummaryEditVersions.set(summaryId, deleteVersion)
       deletedServerSummaryIds.set(summaryId, deleteVersion)
@@ -293,6 +326,8 @@
     if (!serverBackedMemoryMode || currentChatId.length === 0) return
     const chatId = currentChatId
     dirtyServerSummaryIds.clear()
+    dirtyServerSummaryTextVersions.clear()
+    pendingServerSummaryTextSaves.clear()
     deletedServerSummaryIds.clear()
     serverSummaryEditVersions.clear()
     pendingServerSummaryRefreshChatId = null
@@ -503,11 +538,53 @@
     tagManagerState.isOpen = true
   }
 
+  async function flushDirtyServerSummaryText(): Promise<boolean> {
+    while (dirtyServerSummaryTextVersions.size > 0) {
+      const dirtySnapshot = [...dirtyServerSummaryTextVersions.entries()]
+      for (const [summaryId, dirtyVersion] of dirtySnapshot) {
+        if (dirtyServerSummaryTextVersions.get(summaryId) !== dirtyVersion) continue
+        const pendingSave = pendingServerSummaryTextSaves.get(summaryId)
+        if (pendingSave) {
+          if (!(await pendingSave)) return false
+          continue
+        }
+        const summaryIndex = serverHypaV3Data.summaries.findIndex(
+          (summary) => (summary as ServerSummaryView).serverId === summaryId,
+        )
+        if (summaryIndex === -1) {
+          dirtyServerSummaryTextVersions.delete(summaryId)
+          continue
+        }
+        if (!(await handleServerSummaryChanged(summaryIndex, 'text'))) return false
+      }
+    }
+    return true
+  }
+
+  function requestModalClose(): boolean | Promise<boolean> {
+    if (!serverBackedMemoryMode || dirtyServerSummaryTextVersions.size === 0) {
+      $hypaV3ModalOpen = false
+      return true
+    }
+    if (serverSummaryCloseRequest) return serverSummaryCloseRequest
+
+    let closeRequest: Promise<boolean>
+    closeRequest = (async () => {
+      const persisted = await flushDirtyServerSummaryText()
+      if (persisted) $hypaV3ModalOpen = false
+      return persisted
+    })().finally(() => {
+      if (serverSummaryCloseRequest === closeRequest) serverSummaryCloseRequest = null
+    })
+    serverSummaryCloseRequest = closeRequest
+    return closeRequest
+  }
+
   function handleModalKeydown(event: KeyboardEvent) {
     if (event.key !== 'Escape') return
     event.preventDefault()
     event.stopPropagation()
-    $hypaV3ModalOpen = false
+    void requestModalClose()
   }
 
   // Search functionality
@@ -1044,7 +1121,8 @@
         readOnly={serverBackedMemoryMode}
         onResetData={handleResetData}
         onToggleBulkEditMode={handleToggleBulkEditMode}
-        onOpenCategoryManager={handleOpenCategoryManager} />
+        onOpenCategoryManager={handleOpenCategoryManager}
+        onRequestClose={requestModalClose} />
 
       <!-- Scrollable Container -->
       <div class="flex flex-col gap-2 overflow-y-auto sm:gap-4" tabindex="-1">

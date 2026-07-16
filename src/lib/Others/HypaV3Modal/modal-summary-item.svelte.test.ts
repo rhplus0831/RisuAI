@@ -4,6 +4,14 @@ import { summarize, type SerializableHypaV3Data, type SerializableSummary } from
 import { translateHTML } from 'src/ts/translator/translator'
 import type { BulkEditState, ExpandedMessageState, SearchState, SummaryItemState } from './types'
 
+const connectedMessageMocks = vi.hoisted(() => ({
+  currentChat: {
+    id: 'chat-1',
+    message: [{ chatId: 'message-1', role: 'char', data: 'Connected message' }],
+  },
+  hydrateChatMessages: vi.fn<(...args: unknown[]) => Promise<void>>(),
+}))
+
 vi.mock('src/lang', () => ({
   language: {
     loading: 'Loading',
@@ -45,9 +53,11 @@ vi.mock('src/ts/process/memory/hypav3', () => ({
 }))
 
 vi.mock('src/ts/storage/database.svelte', () => ({
-  getCurrentChat: vi.fn(() => ({
-    message: [{ chatId: 'message-1', role: 'char', data: 'Connected message' }],
-  })),
+  getCurrentChat: vi.fn(() => connectedMessageMocks.currentChat),
+}))
+
+vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
+  hydrateChatMessages: connectedMessageMocks.hydrateChatMessages,
 }))
 
 vi.mock('src/ts/translator/translator', () => ({
@@ -126,6 +136,11 @@ function actionButton(action: string): HTMLButtonElement {
 beforeEach(() => {
   summarizeMock.mockReset().mockResolvedValue('Rerolled summary')
   translateHTMLMock.mockReset().mockResolvedValue('Translated summary')
+  connectedMessageMocks.currentChat = {
+    id: 'chat-1',
+    message: [{ chatId: 'message-1', role: 'char', data: 'Connected message' }],
+  }
+  connectedMessageMocks.hydrateChatMessages.mockReset().mockResolvedValue(undefined)
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -239,6 +254,56 @@ describe('HypaV3 summary item keyboard navigation', () => {
       expect(labelledBy).toBeTruthy()
       expect(labelledBy ? target.querySelector(`#${labelledBy}`)?.textContent?.trim() : '').toBeTruthy()
     }
+  })
+})
+
+describe('HypaV3 connected-message hydration', () => {
+  it('hydrates a nonresident connected message before orphan, reroll, and expansion decisions', async () => {
+    const hydration = deferred<void>()
+    connectedMessageMocks.currentChat = {
+      id: 'chat-older',
+      message: [{ chatId: 'message-tail', role: 'user', data: 'Resident tail' }],
+    }
+    connectedMessageMocks.hydrateChatMessages.mockImplementationOnce(async () => {
+      await hydration.promise
+      connectedMessageMocks.currentChat.message = [
+        { chatId: 'message-older', role: 'char', data: 'Hydrated older message' },
+        { chatId: 'message-tail', role: 'user', data: 'Resident tail' },
+      ]
+    })
+    mountSummary({
+      text: 'Summary of older message',
+      chatMemos: ['message-older'],
+      isImportant: false,
+    })
+
+    await vi.waitFor(() =>
+      expect(connectedMessageMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-older', { strict: true }),
+    )
+    expect(actionButton('reroll').disabled).toBe(true)
+
+    const messageButton = target.querySelector<HTMLButtonElement>('[data-chat-memo="message-older"]')
+    expect(messageButton?.disabled).toBe(true)
+    messageButton?.click()
+    expect(target.textContent).not.toContain('Message not found')
+
+    hydration.resolve()
+    await vi.waitFor(() => expect(actionButton('reroll').disabled).toBe(false))
+
+    expect(messageButton?.disabled).toBe(false)
+    messageButton?.click()
+    await vi.waitFor(() =>
+      expect(
+        Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).some(
+          (textarea) => textarea.value === 'Hydrated older message',
+        ),
+      ).toBe(true),
+    )
+
+    actionButton('reroll').click()
+    await vi.waitFor(() =>
+      expect(summarizeMock).toHaveBeenCalledWith([{ role: 'assistant', content: 'Hydrated older message' }]),
+    )
   })
 })
 

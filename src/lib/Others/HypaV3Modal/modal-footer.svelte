@@ -1,6 +1,7 @@
 <script lang="ts">
   import { type SerializableHypaV3Data, getCurrentHypaV3Preset } from 'src/ts/process/memory/hypav3'
   import { getCurrentChat, type Message } from 'src/ts/storage/database.svelte'
+  import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import { language } from 'src/lang'
   import { getFirstMessage, processRegexScript } from './utils'
 
@@ -11,13 +12,22 @@
   let { hypaV3Data }: Props = $props()
 
   async function getNextSummarizationTarget(): Promise<Message | null> {
-    const chat = getCurrentChat()
+    let chat = getCurrentChat()
     const shouldProcess = getCurrentHypaV3Preset().settings.processRegexScript
 
     // Summaries exist
     if (hypaV3Data.summaries.length > 0) {
       const lastSummary = hypaV3Data.summaries.at(-1)
-      const lastMessageIndex = chat.message.findIndex((m) => m.chatId === lastSummary.chatMemos.at(-1))
+      const lastConnectedMessageId = lastSummary.chatMemos.at(-1)
+      let lastMessageIndex = chat.message.findIndex((m) => m.chatId === lastConnectedMessageId)
+
+      if (lastConnectedMessageId != null && lastMessageIndex === -1 && chat.id) {
+        const chatId = chat.id
+        await hydrateChatMessages(chatId, { strict: true })
+        chat = getCurrentChat()
+        if (chat.id !== chatId) return null
+        lastMessageIndex = chat.message.findIndex((message) => message.chatId === lastConnectedMessageId)
+      }
 
       if (lastMessageIndex !== -1) {
         const next = chat.message[lastMessageIndex + 1] ?? null

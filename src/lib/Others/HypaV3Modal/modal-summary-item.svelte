@@ -20,7 +20,8 @@
     getCurrentHypaV3Preset,
   } from 'src/ts/process/memory/hypav3'
   import { type OpenAIChat } from 'src/ts/process/index.svelte'
-  import { getCurrentChat, type Message } from 'src/ts/storage/database.svelte'
+  import { getCurrentChat, type Chat, type Message } from 'src/ts/storage/database.svelte'
+  import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import { translateHTML } from 'src/ts/translator/translator'
   import { alertConfirm } from 'src/ts/alert'
   import type { SummaryItemState, ExpandedMessageState, SearchState, Category, BulkEditState, UIState } from './types'
@@ -43,7 +44,7 @@
     onOpenTagManager?: (index: number) => void
     onToggleCollapse?: (index: number) => void
     onSummaryInput?: (index: number) => void
-    onSummaryChanged?: (index: number, field: ServerSummaryPatchField) => void | Promise<void>
+    onSummaryChanged?: (index: number, field: ServerSummaryPatchField) => void | Promise<unknown>
     onDeleteSummary?: (index: number) => void | Promise<void>
     onDeleteAfter?: (index: number) => void | Promise<void>
   }
@@ -90,6 +91,9 @@
   let rerollRun = 0
   let rerolledTranslationRun = 0
   let expandedTranslationRun = 0
+  let connectedMessageHydrationRun = 0
+  let connectedMessageHydrationState = $state<'ready' | 'loading' | 'error'>('ready')
+  let connectedMessageHydrationPromise: Promise<boolean> | null = null
 
   interface SummaryDeletionTarget {
     owner: SerializableHypaV3Data
@@ -103,6 +107,7 @@
     rerollRun += 1
     rerolledTranslationRun += 1
     expandedTranslationRun += 1
+    connectedMessageHydrationRun += 1
   })
 
   function ownsSummary(candidate: SerializableSummary): boolean {
@@ -158,6 +163,60 @@
 
   $effect.pre(() => {
     summaryItemStateMap.set(summary, summaryItemState)
+  })
+
+  function hasNonresidentConnectedMessages(owner: SerializableSummary, chat: Chat): boolean {
+    const residentMessageIds = new Set(chat.message.map((message) => message.chatId))
+    return owner.chatMemos.some((chatMemo) => chatMemo !== null && !residentMessageIds.has(chatMemo))
+  }
+
+  async function ensureConnectedMessages(owner: SerializableSummary = summary): Promise<boolean> {
+    const chat = getCurrentChat()
+    if (!hasNonresidentConnectedMessages(owner, chat)) {
+      if (connectedMessageHydrationState !== 'ready') connectedMessageHydrationState = 'ready'
+      return true
+    }
+    if (!chat.id) {
+      connectedMessageHydrationState = 'error'
+      return false
+    }
+    if (connectedMessageHydrationPromise) return connectedMessageHydrationPromise
+
+    const chatId = chat.id
+    const run = ++connectedMessageHydrationRun
+    connectedMessageHydrationState = 'loading'
+    let hydrationPromise: Promise<boolean>
+    hydrationPromise = (async () => {
+      try {
+        await hydrateChatMessages(chatId, { strict: true })
+        if (run !== connectedMessageHydrationRun || !ownsSummary(owner) || getCurrentChat().id !== chatId) {
+          return false
+        }
+        connectedMessageHydrationState = 'ready'
+        return true
+      } catch {
+        if (run === connectedMessageHydrationRun && ownsSummary(owner) && getCurrentChat().id === chatId) {
+          connectedMessageHydrationState = 'error'
+        }
+        return false
+      } finally {
+        if (connectedMessageHydrationPromise === hydrationPromise) connectedMessageHydrationPromise = null
+      }
+    })()
+    connectedMessageHydrationPromise = hydrationPromise
+    return hydrationPromise
+  }
+
+  $effect(() => {
+    const owner = summary
+    const chat = getCurrentChat()
+    owner.chatMemos
+    chat.message
+    if (!hasNonresidentConnectedMessages(owner, chat)) {
+      if (connectedMessageHydrationState !== 'ready') connectedMessageHydrationState = 'ready'
+      return
+    }
+    untrack(() => void ensureConnectedMessages(owner))
   })
 
   $effect.pre(() => {
@@ -248,6 +307,7 @@
 
   async function toggleReroll(): Promise<void> {
     if (isRerolling) return
+    if (!(await ensureConnectedMessages())) return
     if (isOrphan()) return
 
     const owner = summary
@@ -286,7 +346,6 @@
   }
 
   async function getMessageFromChatMemo(chatMemo: string | null): Promise<Message | null> {
-    const chat = getCurrentChat()
     const shouldProcess = getCurrentHypaV3Preset().settings.processRegexScript
 
     let msg = null
@@ -298,6 +357,8 @@
       if (!firstMessage) return null
       msg = { role: 'char', data: firstMessage }
     } else {
+      if (!(await ensureConnectedMessages())) return null
+      const chat = getCurrentChat()
       msgIndex = chat.message.findIndex((m) => m.chatId === chatMemo)
       if (msgIndex === -1) return null
       msg = chat.message[msgIndex]
@@ -464,7 +525,8 @@
     return expandedMessageState.summaryIndex === summaryIndex && expandedMessageState.selectedChatMemo === chatMemo
   }
 
-  function toggleExpandMessage(chatMemo: string | null): void {
+  async function toggleExpandMessage(chatMemo: string | null): Promise<void> {
+    if (!(await ensureConnectedMessages())) return
     expandedTranslationRun += 1
     expandedMessageState = isMessageExpanded(chatMemo)
       ? null
@@ -626,7 +688,8 @@
           data-summary-action="reroll"
           aria-label={language.hypaV3Modal.rerollSummaryAction}
           title={language.hypaV3Modal.rerollSummaryAction}
-          disabled={isOrphan()}
+          disabled={connectedMessageHydrationState === 'loading' ||
+            (connectedMessageHydrationState === 'ready' && isOrphan())}
           onclick={async () => await toggleReroll()}>
           <RefreshCw class="w-4 h-4" />
         </button>
@@ -813,7 +876,8 @@
               : ''}"
             data-chat-memo={chatMemo ?? 'first-message'}
             bind:this={summaryItemState.chatMemoRefs[memoIndex]}
-            onclick={() => toggleExpandMessage(chatMemo)}>
+            disabled={connectedMessageHydrationState === 'loading'}
+            onclick={() => void toggleExpandMessage(chatMemo)}>
             {chatMemo == null ? language.hypaV3Modal.connectedFirstMessageLabel : chatMemo}
           </button>
         {/each}

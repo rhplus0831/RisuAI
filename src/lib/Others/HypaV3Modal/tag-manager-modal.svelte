@@ -9,7 +9,7 @@
   interface Props {
     tagManagerState: TagManagerState
     hypaV3Data: SerializableHypaV3Data
-    onSummaryChanged?: (index: number, field: ServerSummaryPatchField) => void | Promise<void>
+    onSummaryChanged?: (index: number, field: ServerSummaryPatchField) => void | Promise<unknown>
   }
 
   let { tagManagerState = $bindable(), hypaV3Data, onSummaryChanged }: Props = $props()

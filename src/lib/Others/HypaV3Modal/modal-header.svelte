@@ -29,6 +29,7 @@
     onResetData?: () => Promise<void>
     onToggleBulkEditMode?: () => void
     onOpenCategoryManager?: () => void
+    onRequestClose?: () => boolean | Promise<boolean>
   }
 
   let {
@@ -45,6 +46,7 @@
     onResetData,
     onToggleBulkEditMode,
     onOpenCategoryManager,
+    onRequestClose,
   }: Props = $props()
 
   async function toggleSearch() {
@@ -73,10 +75,26 @@
     filterImportant = !filterImportant
   }
 
-  function openGlobalSettings() {
-    $hypaV3ModalOpen = false
+  function openSettings(): void {
     $settingsOpen = true
     $SettingsMenuIndex = 2 // Other bot settings
+  }
+
+  function requestClose(): boolean | Promise<boolean> {
+    if (onRequestClose) return onRequestClose()
+    $hypaV3ModalOpen = false
+    return true
+  }
+
+  function openGlobalSettings() {
+    const closeResult = requestClose()
+    if (closeResult instanceof Promise) {
+      void closeResult.then((closed) => {
+        if (closed) openSettings()
+      })
+      return
+    }
+    if (closeResult) openSettings()
   }
 
   function openDropdown(e: MouseEvent) {
@@ -95,7 +113,7 @@
   }
 
   function closeModal() {
-    $hypaV3ModalOpen = false
+    void requestClose()
   }
 
   function toggleBulkEditMode() {
