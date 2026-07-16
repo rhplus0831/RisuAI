@@ -10,6 +10,7 @@ vi.mock(
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
       getDatabase: () => ({}),
+      reapplyPendingPresetProjections: () => {},
     }) as typeof import('../../storage/database.svelte'),
 )
 

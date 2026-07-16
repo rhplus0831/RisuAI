@@ -217,6 +217,7 @@ vi.mock('../../ts/storage/database.svelte', () => ({
   getCurrentCharacter: vi.fn(),
   getCurrentChat: vi.fn(),
   getDatabase: customHtmlMocks.getDatabase,
+  reapplyPendingPresetProjections: () => {},
   setCurrentChat: vi.fn(),
 }))
 

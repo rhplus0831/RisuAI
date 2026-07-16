@@ -30,6 +30,7 @@ vi.mock(
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
       getDatabase: () => chatVarMocks.database,
+      reapplyPendingPresetProjections: () => {},
     }) as typeof import('../../storage/database.svelte'),
 )
 

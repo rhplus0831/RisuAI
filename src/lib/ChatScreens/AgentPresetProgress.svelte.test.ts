@@ -7,6 +7,7 @@ const databaseMocks = vi.hoisted(() => ({
 
 vi.mock('src/ts/storage/database.svelte', () => ({
   getDatabase: databaseMocks.getDatabase,
+  reapplyPendingPresetProjections: () => {},
 }))
 
 vi.mock('src/ts/process/modules', () => ({

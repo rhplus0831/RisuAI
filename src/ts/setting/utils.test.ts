@@ -27,6 +27,7 @@ vi.mock('../server/pendingMutationOutbox', () => ({
 }))
 
 vi.mock('../server/durableMutationDispatch', () => ({
+  registerDurableMutationSettlementListener: () => () => {},
   dispatchDurableMutation: async (
     handle: Record<string, any>,
     intent: Record<string, unknown>,

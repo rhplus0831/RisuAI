@@ -1338,9 +1338,11 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     ])
     expect(currentSelectedPresetId()).toBe(secondPreset.id)
 
-    const [firstResult, secondResult] = commandSpies.deferredCreateResults.splice(0)
-    firstResult.resolve({ status: 'ok' })
-    secondResult.resolve({ status: 'ok' })
+    const firstResult = commandSpies.deferredCreateResults.shift()
+    expect(firstResult).toBeTruthy()
+    firstResult!.resolve({ status: 'ok' })
+    await vi.waitFor(() => expect(commandSpies.deferredCreateResults).toHaveLength(1))
+    commandSpies.deferredCreateResults.shift()!.resolve({ status: 'ok' })
     await flushMicrotasks()
   })
 
@@ -1487,9 +1489,10 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await selectTranslatorPreset(0)
 
     expect(getDatabase().translatorPresetId).toBe(0)
-    expect(commandSpies.deferredSelectResults).toHaveLength(2)
+    expect(commandSpies.deferredSelectResults).toHaveLength(1)
 
     await failDeferredCommand(commandSpies.deferredSelectResults, 'forced first select failure')
+    await vi.waitFor(() => expect(commandSpies.deferredSelectResults).toHaveLength(1))
     await failDeferredCommand(commandSpies.deferredSelectResults, 'forced second select failure')
 
     expect(getDatabase().translatorPresetId).toBe(0)
@@ -1505,6 +1508,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await selectTranslatorPreset(1)
 
     await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
+    await vi.waitFor(() => expect(commandSpies.deferredSelectResults).toHaveLength(1))
     await failDeferredCommand(commandSpies.deferredSelectResults, 'forced select failure')
 
     expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])

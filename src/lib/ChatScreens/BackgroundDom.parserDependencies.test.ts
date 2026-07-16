@@ -31,6 +31,7 @@ vi.mock('src/ts/parser/parser.svelte', () => ({
 
 vi.mock('src/ts/storage/database.svelte', () => ({
   getDatabase: backgroundParserMocks.getDatabase,
+  reapplyPendingPresetProjections: () => {},
 }))
 
 vi.mock('src/ts/process/modules', () => ({
