@@ -735,6 +735,119 @@ describe('character list create/delete rollback', () => {
     expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-c', 'char-b'])
   })
 
+  it('holds a later selection behind a transient create-and-select owner', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-create-select',
+      writerEpoch: 12,
+      databaseLineage: 'lineage-character-create-select',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(20)
+    testDatabaseState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [], lastInteraction: 100 },
+        { chaId: 'char-b', name: 'B', chats: [], lastInteraction: 200 },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    setResourceWriteGuardEnabled(true)
+
+    const previous = currentCharacterStateSnapshot()
+    const created = { chaId: 'char-new', name: 'New', chats: [], lastInteraction: 2_000 } as any
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters.push(created)
+      testDatabaseState.db.characterOrder.push(created.chaId)
+      ;(testDatabaseState.db as any).currentChar = 2
+      selectedCharID.set(2)
+    })
+
+    const firstCreate = deferredResponse()
+    let recover = false
+    let revision = 20
+    const commands: Array<{ url: string; characterId: string | null }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+        if (url === '/api/v1/commands/characters/create-and-select') {
+          commands.push({ url, characterId: body.character?.chaId ?? null })
+          if (commands.length === 1) return firstCreate.promise
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: 'character.createdAndSelected',
+              revision,
+              resource: 'character',
+              id: 'char-new',
+            },
+            characterId: 'char-new',
+            selectedCharacterId: 'char-new',
+          })
+        }
+        if (url === '/api/v1/commands/characters/select') {
+          commands.push({ url, characterId: body.characterId ?? null })
+          if (!recover) throw new Error('selection overtook its retained created owner')
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: 'character.selected',
+              revision,
+              resource: 'character',
+              id: body.characterId,
+            },
+            characterId: body.characterId,
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      dispatchCreateAndSelectCharacter(created, previous, 2_000)
+      await vi.waitFor(() => expect(commands).toHaveLength(1))
+
+      const previousB = currentCharacterSelectionSnapshot('char-b')
+      withTrustedResourceWrite(() => {
+        testDatabaseState.db.characters[1].lastInteraction = 3_000
+        ;(testDatabaseState.db as any).currentChar = 1
+        selectedCharID.set(1)
+      })
+      dispatchSelectCharacter('char-b', previousB, 3_000)
+      firstCreate.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
+
+      await vi.waitFor(() => expect(commands).toHaveLength(2))
+      expect(commands.map(({ url }) => url)).toEqual([
+        '/api/v1/commands/characters/create-and-select',
+        '/api/v1/commands/characters/create-and-select',
+      ])
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => entry.handle.key)).toEqual(['character-owner:char-new', 'character-selection'])
+      expect(retained[1].intent.dependencyKeys).toEqual(['character-owner:char-new', 'character-owner:char-b'])
+
+      recover = true
+      const recoveryStart = commands.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(commands.slice(recoveryStart)).toEqual([
+        { url: '/api/v1/commands/characters/create-and-select', characterId: 'char-new' },
+        { url: '/api/v1/commands/characters/select', characterId: 'char-b' },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      firstCreate.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('holds character DELETE behind a transient profile PATCH and recovers in owner order', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()

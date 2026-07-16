@@ -675,14 +675,35 @@ export function dispatchCreateCharacter(character: character, previous: Characte
   recordHydratedCharacterLorebooks([character])
   const rollback = characterCreateRollbackFromState(character, previous, false)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
-  runCharacterCommand(
-    (baseRevision) =>
-      createCharacterCommand({
-        baseRevision,
-        character: toCharacterSnapshot(character),
-        initialChat: initialCharacterChatSnapshot(character),
-      }),
-    () => restoreCreatedCharacterAttempt(rollback),
+  if (!canUseServerCommands()) return
+
+  const characterSnapshot = toCharacterSnapshot(character)
+  const initialChat = initialCharacterChatSnapshot(character)
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: '/characters',
+        body: characterCreateDurableBody(characterSnapshot, initialChat),
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(characterOwnerMutationKey(character.chaId), intent)
+  void dispatchDurableMutation(
+    outbox,
+    intent,
+    (transport) =>
+      runCharacterCommand(
+        (baseRevision) =>
+          createCharacterCommand({
+            baseRevision,
+            character: cloneJsonValue(characterSnapshot),
+            initialChat: cloneJsonValue(initialChat),
+          }),
+        () => restoreCreatedCharacterAttempt(rollback),
+        transport,
+      ) ?? Promise.resolve({ status: 'unavailable' as const }),
   )
 }
 
@@ -694,16 +715,75 @@ export function dispatchCreateAndSelectCharacter(
   recordHydratedCharacterLorebooks([character])
   const rollback = characterCreateRollbackFromState(character, previous, true)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
-  runCharacterCommand(
-    (baseRevision) =>
-      createAndSelectCharacterCommand({
-        baseRevision,
-        character: toCharacterSnapshot(character),
-        lastInteraction,
-        initialChat: initialCharacterChatSnapshot(character),
-      }),
-    () => restoreCreatedCharacterAttempt(rollback),
+  if (!canUseServerCommands()) return
+
+  const characterSnapshot = toCharacterSnapshot(character)
+  const initialChat = initialCharacterChatSnapshot(character)
+  const previousSelectedCharacterId = selectedCharacterIdFromStateSnapshot(previous)
+  const intent: DurableMutationIntent = {
+    version: 1,
+    ...(previousSelectedCharacterId
+      ? { dependencyKeys: [characterOwnerMutationKey(previousSelectedCharacterId)] }
+      : {}),
+    requests: [
+      {
+        method: 'POST',
+        path: '/characters/create-and-select',
+        body: {
+          ...characterCreateDurableBody(characterSnapshot, initialChat),
+          lastInteraction,
+        },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(characterOwnerMutationKey(character.chaId), intent)
+  void dispatchDurableMutation(
+    outbox,
+    intent,
+    (transport) =>
+      runCharacterCommand(
+        (baseRevision) =>
+          createAndSelectCharacterCommand({
+            baseRevision,
+            character: cloneJsonValue(characterSnapshot),
+            lastInteraction,
+            initialChat: cloneJsonValue(initialChat),
+          }),
+        () => restoreCreatedCharacterAttempt(rollback),
+        transport,
+      ) ?? Promise.resolve({ status: 'unavailable' as const }),
   )
+}
+
+function characterCreateDurableBody(
+  characterSnapshot: CharacterSnapshot,
+  initialChat: ChatSnapshot | undefined,
+): Record<string, unknown> {
+  const character = cloneJsonValue(characterSnapshot)
+  delete character.chats
+  return {
+    character,
+    ...(initialChat ? { initialChat: cloneJsonValue(initialChat) } : {}),
+  }
+}
+
+function selectedCharacterIdFromStateSnapshot(snapshot: CharacterStateSnapshot): string | null {
+  for (const index of [snapshot.currentChar, snapshot.selectedCharID]) {
+    if (!Number.isInteger(index) || (index as number) < 0) continue
+    const characterId = snapshot.characters[index as number]?.chaId
+    if (typeof characterId === 'string' && characterId.trim()) return characterId
+  }
+  return null
+}
+
+function selectedCharacterIdFromSelectionSnapshot(snapshot: CharacterSelectionSnapshot): string | null {
+  const characters = getDatabase().characters ?? []
+  for (const index of [snapshot.currentChar, snapshot.selectedCharID]) {
+    if (!Number.isInteger(index) || (index as number) < 0) continue
+    const characterId = characters[index as number]?.chaId
+    if (typeof characterId === 'string' && characterId.trim()) return characterId
+  }
+  return null
 }
 
 // `*With(rollback)` core plus a broad (`CharacterStateSnapshot`) and a single-row
@@ -994,9 +1074,17 @@ export function dispatchSelectCharacter(
   lastInteraction?: number,
 ): void {
   const attempted = currentCharacterSelectionAttempt(characterId, lastInteraction)
+  const previousSelectedCharacterId = selectedCharacterIdFromSelectionSnapshot(previous)
+  const dependencyKeys = Array.from(
+    new Set(
+      [previousSelectedCharacterId, characterId]
+        .filter((candidate): candidate is string => Boolean(candidate))
+        .map(characterOwnerMutationKey),
+    ),
+  )
   const intent: DurableMutationIntent = {
     version: 1,
-    dependencyKeys: [characterOwnerMutationKey(characterId)],
+    dependencyKeys,
     requests: [
       {
         method: 'POST',
