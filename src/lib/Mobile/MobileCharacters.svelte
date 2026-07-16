@@ -130,6 +130,7 @@
   import { MessageSquareIcon, PlusIcon } from '@lucide/svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
   import { language } from 'src/lang'
+  import { onMount } from 'svelte'
 
   interface Props {
     endGrid?: () => void
@@ -138,6 +139,7 @@
   }
 
   let { endGrid = () => {}, search, hideTrash = false }: Props = $props()
+  let relativeTimeNow = $state(Date.now())
   let relativeTimeLocale = $derived(resolveMobileRelativeTimeLocale(getDatabase().language))
   let agoFormatter = $derived(new Intl.RelativeTimeFormat(relativeTimeLocale, { style: 'short' }))
   let normalizedSearch = $derived(normalizeMobileCharacterSearch(search ?? $MobileSearch))
@@ -146,9 +148,17 @@
       hideTrash,
       agoFormatter,
       unknownText: language.unknownInteractionTime,
+      now: relativeTimeNow,
     }),
   )
   let visibleMobileCharacterRows = $derived(filterMobileCharacterRows(mobileCharacterRows, normalizedSearch))
+
+  onMount(() => {
+    const timer = window.setInterval(() => {
+      relativeTimeNow = Date.now()
+    }, 60_000)
+    return () => window.clearInterval(timer)
+  })
 
   function openCharacterRoute(index: number) {
     const character = getDatabase().characters?.[index]
