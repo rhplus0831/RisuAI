@@ -329,6 +329,62 @@ function seedSplitPresetLoadoutState(): Loadout {
   return testDatabaseState.db.loadouts[0] as Loadout
 }
 
+function seedConcurrentApplyState(): Loadout {
+  const loadout = makeLoadout({
+    id: 'concurrent-loadout',
+    name: 'Concurrent Loadout',
+    lastUsed: 100,
+    characterIds: [],
+    modules: ['module-a'],
+    globalVariables: { mode: 'target' },
+    presetName: '',
+    agentPresetId: 'agent-target',
+    agentPresetName: 'Target Agent',
+    personaId: '',
+  })
+
+  selectedCharID.set(0)
+  testDatabaseState.db = {
+    loadouts: [cloneJsonValue(loadout)],
+    lastLoadedLoadoutName: 'Before Loadout',
+    characters: [
+      {
+        chaId: 'char-a',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a',
+            name: 'Chat A',
+            note: '',
+            message: [],
+            localLore: [],
+            generationSettings: {
+              configured: true,
+              agentPresetId: 'agent-before',
+              jailbreakToggle: false,
+              sidebarToggles: {},
+            },
+          },
+        ],
+      },
+    ],
+    agentPresets: [
+      { id: 'agent-before', name: 'Before Agent', enabled: true, version: 1, steps: [] },
+      { id: 'agent-target', name: 'Target Agent', enabled: true, version: 1, steps: [] },
+    ],
+    botPresets: [],
+    botPresetsId: -1,
+    modelPresets: [],
+    modelPresetsId: -1,
+    promptPresets: [],
+    promptPresetsId: -1,
+    enabledModules: [],
+    globalChatVariables: { mode: 'before' },
+  } as any
+
+  return testDatabaseState.db.loadouts[0] as Loadout
+}
+
 function stubCommandFetch(options: { failCommands?: boolean } = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
@@ -401,6 +457,41 @@ function stubDeferredCommandFailure() {
         }),
       ),
     reject: () => command.resolve(jsonResponse({ error: 'forced deferred failure' }, 500)),
+  }
+}
+
+function stubFirstDeferredApplyCommand() {
+  const calls: CapturedFetch[] = []
+  const firstCommand = deferred<Response>()
+  let commandNumber = 0
+  let revision = 10
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision })
+      if (url.startsWith('/api/v1/commands/')) {
+        commandNumber += 1
+        if (commandNumber === 1) return firstCommand.promise
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: { type: 'test.command', revision, resource: 'test' },
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return {
+    calls,
+    rejectFirst: () => firstCommand.resolve(jsonResponse({ error: 'forced deferred failure' }, 500)),
   }
 }
 
@@ -1192,6 +1283,162 @@ describe('loadout projection command helpers', () => {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
     }
+  })
+
+  it('replans a concurrent same-target module apply after the first apply rolls back', async () => {
+    const loadout = seedConcurrentApplyState()
+    const command = stubFirstDeferredApplyCommand()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    const first = applyLoadout(loadout, ['modules'])
+    await waitForCallCount(command.calls, 2)
+    const second = applyLoadout(loadout, ['modules'])
+
+    command.rejectFirst()
+
+    await expect(first).resolves.toBe('persistence-failed')
+    await expect(second).resolves.toBe('applied')
+    expect(
+      command.calls
+        .filter((call) => call.url.startsWith('/api/v1/commands/'))
+        .map((call) => ({ url: call.url, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/modules/enable',
+        body: { baseRevision: 10, moduleId: 'module-a', enabled: true },
+      },
+      {
+        url: '/api/v1/commands/modules/enable',
+        body: { baseRevision: 10, moduleId: 'module-a', enabled: true },
+      },
+      {
+        url: '/api/v1/commands/loadouts/concurrent-loadout/touch',
+        body: { baseRevision: 11, lastUsed: 123456, characterId: 'char-a' },
+      },
+    ])
+    expect(testDatabaseState.db.enabledModules).toEqual(['module-a'])
+  })
+
+  it('replans concurrent same-target global variables after the first apply rolls back', async () => {
+    const loadout = seedConcurrentApplyState()
+    const command = stubFirstDeferredApplyCommand()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    const first = applyLoadout(loadout, ['globalVariables'])
+    await waitForCallCount(command.calls, 2)
+    const second = applyLoadout(loadout, ['globalVariables'])
+
+    command.rejectFirst()
+
+    await expect(first).resolves.toBe('persistence-failed')
+    await expect(second).resolves.toBe('applied')
+    expect(
+      command.calls
+        .filter((call) => call.url.startsWith('/api/v1/commands/'))
+        .map((call) => ({ url: call.url, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/settings/sidebar',
+        body: { baseRevision: 10, patch: { globalChatVariables: { mode: 'target' } } },
+      },
+      {
+        url: '/api/v1/commands/settings/sidebar',
+        body: { baseRevision: 10, patch: { globalChatVariables: { mode: 'target' } } },
+      },
+      {
+        url: '/api/v1/commands/loadouts/concurrent-loadout/touch',
+        body: { baseRevision: 11, lastUsed: 123456, characterId: 'char-a' },
+      },
+    ])
+    expect(testDatabaseState.db.globalChatVariables).toEqual({ mode: 'target' })
+  })
+
+  it('replans a concurrent same-target Agent Preset after the first apply rolls back', async () => {
+    const loadout = seedConcurrentApplyState()
+    const command = stubFirstDeferredApplyCommand()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    const first = applyLoadout(loadout, ['preset'])
+    await waitForCallCount(command.calls, 2)
+    const second = applyLoadout(loadout, ['preset'])
+
+    command.rejectFirst()
+
+    await expect(first).resolves.toBe('persistence-failed')
+    await expect(second).resolves.toBe('applied')
+    expect(
+      command.calls
+        .filter((call) => call.url.startsWith('/api/v1/commands/'))
+        .map((call) => ({ url: call.url, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        body: {
+          baseRevision: 10,
+          generationSettings: {
+            configured: true,
+            agentPresetId: 'agent-target',
+            jailbreakToggle: false,
+            sidebarToggles: {},
+          },
+        },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        body: {
+          baseRevision: 10,
+          generationSettings: {
+            configured: true,
+            agentPresetId: 'agent-target',
+            jailbreakToggle: false,
+            sidebarToggles: {},
+          },
+        },
+      },
+      {
+        url: '/api/v1/commands/loadouts/concurrent-loadout/touch',
+        body: { baseRevision: 11, lastUsed: 123456, characterId: 'char-a' },
+      },
+    ])
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings.agentPresetId).toBe('agent-target')
+  })
+
+  it('recomputes a concurrent same-loadout touch after the first touch rolls back', async () => {
+    const loadout = seedConcurrentApplyState()
+    const command = stubFirstDeferredApplyCommand()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    setResourceWriteGuardEnabled(true)
+
+    const first = applyLoadout(loadout, [])
+    await waitForCallCount(command.calls, 2)
+    now.mockReturnValue(2000)
+    const second = applyLoadout(loadout, [])
+
+    // A queued apply must not capture the first apply's optimistic touch as its
+    // baseline before that touch has either committed or rolled back.
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 1000, characterIds: ['char-a'] })
+    command.rejectFirst()
+
+    await expect(first).resolves.toBe('persistence-failed')
+    await expect(second).resolves.toBe('applied')
+    expect(
+      command.calls
+        .filter((call) => call.url.startsWith('/api/v1/commands/'))
+        .map((call) => ({ url: call.url, body: call.body })),
+    ).toEqual([
+      {
+        url: '/api/v1/commands/loadouts/concurrent-loadout/touch',
+        body: { baseRevision: 10, lastUsed: 1000, characterId: 'char-a' },
+      },
+      {
+        url: '/api/v1/commands/loadouts/concurrent-loadout/touch',
+        body: { baseRevision: 10, lastUsed: 2000, characterId: 'char-a' },
+      },
+    ])
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 2000, characterIds: ['char-a'] })
   })
 
   it('keeps apply pending until the complete command sequence is accepted', async () => {

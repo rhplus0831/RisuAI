@@ -1159,6 +1159,45 @@ function changedModuleSteps(previousModules: string[], plans: readonly LoadoutMo
 }
 
 let loadoutApplyIntent = 0
+let loadoutApplyTail: Promise<void> | null = null
+
+function runSerializedLoadoutApply<T>(task: () => Promise<T>): Promise<T> {
+  const predecessor = loadoutApplyTail
+  let release!: () => void
+  const reservation = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  loadoutApplyTail = reservation
+
+  const run = (): Promise<T> => {
+    let result: Promise<T>
+    try {
+      // Start an uncontended apply in this task so its optimistic projection
+      // remains synchronous for callers. Only followers wait for the previous
+      // apply's complete projection/command/rollback lifecycle.
+      result = task()
+    } catch (error) {
+      result = Promise.reject(error)
+    }
+
+    const finish = () => {
+      release()
+      if (loadoutApplyTail === reservation) loadoutApplyTail = null
+    }
+    return result.then(
+      (value) => {
+        finish()
+        return value
+      },
+      (error) => {
+        finish()
+        throw error
+      },
+    )
+  }
+
+  return predecessor ? predecessor.then(run, run) : run()
+}
 
 export async function applyLoadout(
   loadout: Loadout,
@@ -1213,6 +1252,28 @@ export async function applyLoadout(
 }
 
 async function applyLoadoutNow(
+  loadout: Loadout,
+  apply: LoadoutApplyOption[],
+  legacyPresetId: string | null,
+  intent: number,
+  legacySelectionIntent: number | null,
+  activeChatAgentPresetTarget: ReturnType<typeof currentActiveChatRecord>,
+  currentCharacterId: string | undefined,
+): Promise<LoadoutApplyStatus> {
+  return runSerializedLoadoutApply(() =>
+    applyLoadoutNowExclusive(
+      loadout,
+      apply,
+      legacyPresetId,
+      intent,
+      legacySelectionIntent,
+      activeChatAgentPresetTarget,
+      currentCharacterId,
+    ),
+  )
+}
+
+async function applyLoadoutNowExclusive(
   loadout: Loadout,
   apply: LoadoutApplyOption[],
   legacyPresetId: string | null,
