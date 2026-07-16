@@ -1104,21 +1104,11 @@
     return JSON.parse(JSON.stringify(value)) as T
   }
 
-  function usesTextgenStreamUrl(model: string): boolean {
-    return model === 'textgen_webui' || model === 'mancer'
-  }
-
   $effect(() => {
     mainPromptDraft.value
     jailbreakDraft.value
     globalNoteDraft.value
     void loadTokenize()
-  })
-
-  $effect.pre(() => {
-    if (usesTextgenStreamUrl(getDatabase().aiModel) || usesTextgenStreamUrl(getDatabase().subModel)) {
-      useStreamingDraft.value = textgenWebUIStreamURLDraft.value.startsWith('wss://')
-    }
   })
 
   $effect(() => {

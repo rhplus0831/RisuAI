@@ -31,6 +31,8 @@ const botSettingsMocks = vi.hoisted(() => {
     networkOrder: [] as string[],
     ownerId: null as string | null,
     runTail: Promise.resolve() as Promise<unknown>,
+    settingDraftInitialValues: new Map<string, unknown>(),
+    settingDraftWrites: [] as Array<{ key: string; value: unknown }>,
   }
 })
 
@@ -133,7 +135,19 @@ vi.mock('src/ts/server/commands', () => ({
 }))
 
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
-  createServerBackedSettingDraft: (_key: string, fallback: unknown) => ({ value: fallback }),
+  createServerBackedSettingDraft: (key: string, fallback: unknown) => {
+    let value = botSettingsMocks.settingDraftInitialValues.has(key)
+      ? botSettingsMocks.settingDraftInitialValues.get(key)
+      : fallback
+    return Object.defineProperty({}, 'value', {
+      enumerable: true,
+      get: () => value,
+      set: (nextValue: unknown) => {
+        value = nextValue
+        botSettingsMocks.settingDraftWrites.push({ key, value: nextValue })
+      },
+    })
+  },
   watchServerBackedSettings: vi.fn(() => vi.fn()),
 }))
 
@@ -228,6 +242,8 @@ beforeEach(() => {
   botSettingsMocks.networkOrder.length = 0
   botSettingsMocks.ownerId = null
   botSettingsMocks.runTail = Promise.resolve()
+  botSettingsMocks.settingDraftInitialValues.clear()
+  botSettingsMocks.settingDraftWrites.length = 0
   resetServerResourceState()
   setDatabaseLite({
     aiModel: 'gpt35',
@@ -614,5 +630,38 @@ describe('BotSettings pending prompt persistence', () => {
 
     expect(botSettingsMocks.patchInputs).toHaveLength(2)
     expect(getDatabase().mainPrompt).toBe('old main prompt')
+  })
+})
+
+describe('BotSettings streaming persistence', () => {
+  it.each([
+    { useStreaming: false, streamUrl: 'wss://stream.example.test/api/' },
+    { useStreaming: true, streamUrl: 'ws://localhost:5005/api/' },
+  ])('does not rewrite $useStreaming from $streamUrl without user input', async ({ useStreaming, streamUrl }) => {
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+    target.replaceChildren()
+    setDatabaseLite({
+      aiModel: 'textgen_webui',
+      subModel: 'gpt35',
+      promptPresets: [],
+      promptPresetsId: -1,
+      botPresets: [],
+      useLegacyGUI: false,
+      mainPrompt: '',
+      jailbreak: '',
+      globalNote: '',
+      formatingOrder: [],
+    } as any)
+    botSettingsMocks.settingDraftInitialValues.set('useStreaming', useStreaming)
+    botSettingsMocks.settingDraftInitialValues.set('textgenWebUIStreamURL', streamUrl)
+    botSettingsMocks.settingDraftWrites.length = 0
+
+    component = mount(BotSettings, { target, props: { settingsKind: 'prompt' } })
+    await tick()
+
+    expect(botSettingsMocks.settingDraftWrites).toEqual([])
   })
 })
