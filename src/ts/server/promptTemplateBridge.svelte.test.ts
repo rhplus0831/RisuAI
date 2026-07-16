@@ -163,6 +163,7 @@ const pendingMutationOutboxMock = vi.hoisted(() => ({
 }))
 
 const durableMutationDispatchMock = vi.hoisted(() => ({
+  registerDurableMutationSettlementListener: () => () => {},
   dispatchDurableMutation: async (
     handle: Record<string, any>,
     intent: Record<string, unknown>,
@@ -397,6 +398,61 @@ async function mountPromptSettingsComponent(target: HTMLElement): Promise<Mounte
   await flushMicrotasks()
   await tick()
   return component
+}
+
+interface PromptDragTransfer {
+  getData: (type: string) => string
+  setData: (type: string, value: string) => void
+  setDragImage: ReturnType<typeof vi.fn>
+}
+
+function createPromptDragTransfer(): PromptDragTransfer {
+  const data = new Map<string, string>()
+  return {
+    getData: (type) => data.get(type) ?? '',
+    setData: (type, value) => data.set(type, value),
+    setDragImage: vi.fn(),
+  }
+}
+
+function promptRowToggle(target: HTMLElement, name: string): HTMLButtonElement {
+  const toggle = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+    (button) => button.textContent?.trim() === name,
+  )
+  expect(toggle).toBeTruthy()
+  return toggle!
+}
+
+function promptRowDragHandle(target: HTMLElement, name: string): HTMLElement {
+  const handle = promptRowToggle(target, name).closest<HTMLElement>('[draggable="true"]')
+  expect(handle).toBeTruthy()
+  return handle!
+}
+
+function promptRowDropTarget(target: HTMLElement, name: string): HTMLElement {
+  const dropTarget = promptRowDragHandle(target, name).parentElement
+  expect(dropTarget).toBeTruthy()
+  return dropTarget!
+}
+
+function dispatchPromptDragEvent(
+  target: HTMLElement,
+  type: 'dragstart' | 'dragover' | 'drop',
+  dataTransfer: PromptDragTransfer,
+  clientY = 0,
+): void {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperties(event, {
+    clientY: { value: clientY },
+    dataTransfer: { value: dataTransfer },
+  })
+  target.dispatchEvent(event)
+}
+
+function hoverPromptRowAfter(target: HTMLElement, name: string, dataTransfer: PromptDragTransfer): void {
+  const row = promptRowDropTarget(target, name)
+  row.getBoundingClientRect = () => ({ top: 0, height: 100 }) as DOMRect
+  dispatchPromptDragEvent(row, 'dragover', dataTransfer, 75)
 }
 
 function promptSettingsTextarea(target: HTMLElement, index = 0): HTMLTextAreaElement {
@@ -1639,6 +1695,158 @@ describe('flushPendingPromptTemplatePatches', () => {
       ])
     } finally {
       if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('keeps a prompt drag bound to stable item and target IDs across an authoritative reorder', async () => {
+    const first = promptItemFixture({ ...item('p-a', 'first'), name: 'Drag source' })
+    const second = promptItemFixture({ ...item('p-b', 'second'), name: 'Stable target' })
+    const third = promptItemFixture({ ...item('p-c', 'third'), name: 'Server first' })
+    seedPromptSettings({ promptTemplate: [first, second, third] })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      promptRowToggle(target, 'Drag source').click()
+      await tick()
+      const dataTransfer = createPromptDragTransfer()
+      dispatchPromptDragEvent(promptRowDragHandle(target, 'Drag source'), 'dragstart', dataTransfer)
+      hoverPromptRowAfter(target, 'Stable target', dataTransfer)
+      await tick()
+
+      commandState.revision = 2
+      await applyPromptSettingsProjection(() => {
+        getResourceDatabase().promptTemplate = cloneJsonValue([third, first, second])
+      })
+
+      dispatchPromptDragEvent(promptRowDropTarget(target, 'Stable target'), 'drop', dataTransfer)
+      await tick()
+      await flushMicrotasks()
+
+      expect((getResourceDatabase().promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual([
+        'p-c',
+        'p-b',
+        'p-a',
+      ])
+      expect(promptRowToggle(target, 'Drag source').getAttribute('aria-expanded')).toBe('true')
+      expect(commandMocks.reorderPromptItemsCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ itemIds: ['p-c', 'p-b', 'p-a'] }),
+      )
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it.each([
+    {
+      missing: 'source',
+      authoritativeTemplate: [
+        promptItemFixture({ ...item('p-c', 'third'), name: 'Remaining row' }),
+        promptItemFixture({ ...item('p-b', 'second'), name: 'Stable target' }),
+      ],
+      dropRow: 'Stable target',
+    },
+    {
+      missing: 'target',
+      authoritativeTemplate: [
+        promptItemFixture({ ...item('p-a', 'first'), name: 'Drag source' }),
+        promptItemFixture({ ...item('p-c', 'third'), name: 'Remaining row' }),
+      ],
+      dropRow: 'Remaining row',
+    },
+  ])('aborts a prompt drag when its stable $missing disappears', async ({ authoritativeTemplate, dropRow }) => {
+    const first = promptItemFixture({ ...item('p-a', 'first'), name: 'Drag source' })
+    const second = promptItemFixture({ ...item('p-b', 'second'), name: 'Stable target' })
+    const third = promptItemFixture({ ...item('p-c', 'third'), name: 'Remaining row' })
+    seedPromptSettings({ promptTemplate: [first, second, third] })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      const dataTransfer = createPromptDragTransfer()
+      dispatchPromptDragEvent(promptRowDragHandle(target, 'Drag source'), 'dragstart', dataTransfer)
+      hoverPromptRowAfter(target, 'Stable target', dataTransfer)
+      await tick()
+
+      commandState.revision = 2
+      await applyPromptSettingsProjection(() => {
+        getResourceDatabase().promptTemplate = cloneJsonValue(authoritativeTemplate)
+      })
+
+      dispatchPromptDragEvent(promptRowDropTarget(target, dropRow), 'drop', dataTransfer)
+      await tick()
+      await flushMicrotasks()
+
+      expect((getResourceDatabase().promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual(
+        authoritativeTemplate.map((promptItem) => promptItem.id),
+      )
+      expect(commandMocks.reorderPromptItemsCommand).not.toHaveBeenCalled()
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('aborts a prompt drag after its owner changes', async () => {
+    const first = promptItemFixture({ ...item('p-a', 'first'), name: 'Drag source' })
+    const second = promptItemFixture({ ...item('p-b', 'second'), name: 'Stable target' })
+    hydrationState.setOwner('preset-a')
+    seedPromptSettings({
+      promptTemplate: [first, second],
+      promptPresetsId: 0,
+      promptPresets: [
+        { id: 'preset-a', name: 'Preset A', promptTemplate: [first, second] },
+        { id: 'preset-b', name: 'Preset B', promptTemplate: [] },
+      ],
+    })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      const dataTransfer = createPromptDragTransfer()
+      dispatchPromptDragEvent(promptRowDragHandle(target, 'Drag source'), 'dragstart', dataTransfer)
+      hoverPromptRowAfter(target, 'Stable target', dataTransfer)
+      hydrationState.setOwner('preset-b')
+
+      dispatchPromptDragEvent(promptRowDropTarget(target, 'Stable target'), 'drop', dataTransfer)
+      await tick()
+      await flushMicrotasks()
+
+      expect(
+        (getResourceDatabase().promptPresets[0].promptTemplate as PromptItem[]).map((promptItem) => promptItem.id),
+      ).toEqual(['p-a', 'p-b'])
+      expect(commandMocks.reorderPromptItemsCommand).not.toHaveBeenCalled()
+    } finally {
+      if (component) await unmount(component)
       target.remove()
     }
   })

@@ -17,10 +17,11 @@
     moveUp?: () => void
     moveDown?: () => void
     onDrop?: () => void
+    onDragStart?: (promptItem: PromptItem) => void
+    onDragOver?: (promptItem: PromptItem, placement: 'before' | 'after') => void
+    onDragEnd?: () => void
     isDragging?: boolean
     isOpened?: boolean
-    draggedIndex?: number
-    dragOverIndex?: number
     openedItemIndices?: Set<number>
     currentIndex?: number
     displayIndex?: number
@@ -33,10 +34,11 @@
     moveUp = () => {},
     moveDown = () => {},
     onDrop = () => {},
+    onDragStart = () => {},
+    onDragOver = () => {},
+    onDragEnd = () => {},
     isDragging = false,
     isOpened = false,
-    draggedIndex = $bindable(-1),
-    dragOverIndex = $bindable(-1),
     openedItemIndices = $bindable(new Set<number>()),
     currentIndex = -1,
     displayIndex = -1,
@@ -132,26 +134,7 @@
   }
 </script>
 
-<div
-  class="first:mt-0 w-full h-2"
-  role="doc-pagebreak"
-  ondrop={(e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const data = e.dataTransfer.getData('text')
-    if (data === 'prompt') {
-      onDrop()
-    }
-  }}
-  ondragover={(e) => {
-    e.preventDefault()
-  }}
-  draggable="true"
-  ondragstart={(e) => {
-    e.dataTransfer.setData('text', 'prompt')
-    e.dataTransfer.setData('prompt', JSON.stringify(promptItem))
-  }}>
-</div>
+<div class="first:mt-0 w-full h-2" aria-hidden="true"></div>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="flex flex-col border border-selected p-4 rounded-md bg-darkbg transition-all duration-200"
@@ -159,22 +142,21 @@
   class:scale-95={isDragging}
   ondragover={(e) => {
     e.preventDefault()
-    if (draggedIndex === -1 || draggedIndex === currentIndex) {
-      return
-    }
+    if (isDragging) return
 
     const rect = e.currentTarget.getBoundingClientRect()
     const mouseY = e.clientY
     const elementCenter = rect.top + rect.height / 2
 
     if (mouseY < elementCenter) {
-      dragOverIndex = currentIndex
+      onDragOver(promptItem, 'before')
     } else {
-      dragOverIndex = currentIndex + 1
+      onDragOver(promptItem, 'after')
     }
   }}
   ondrop={(e) => {
     e.preventDefault()
+    e.stopPropagation()
     const data = e.dataTransfer.getData('text')
     if (data === 'prompt') {
       onDrop()
@@ -185,7 +167,7 @@
     draggable="true"
     style:cursor="grab"
     ondragstart={(e) => {
-      draggedIndex = currentIndex
+      onDragStart(promptItem)
       e.dataTransfer.setData('text', 'prompt')
       e.dataTransfer.setData('prompt', JSON.stringify(promptItem))
 
@@ -200,9 +182,8 @@
         document.body.removeChild(dragElement)
       }, 0)
     }}
-    ondragend={(e) => {
-      draggedIndex = -1
-      dragOverIndex = -1
+    ondragend={() => {
+      onDragEnd()
     }}>
     <button
       type="button"

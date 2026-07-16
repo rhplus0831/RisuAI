@@ -86,8 +86,18 @@
   let warns: string[] = $state([])
   let tokens = $state(0)
   let extokens = $state(0)
-  let draggedIndex = $state(-1)
-  let dragOverIndex = $state(-1)
+  type PromptDropPlacement = 'before' | 'after'
+  interface PromptItemDragState {
+    ownerId: string | null
+    itemId: string
+  }
+  interface PromptItemDropBoundary {
+    ownerId: string | null
+    targetItemId: string
+    placement: PromptDropPlacement
+  }
+  let promptItemDrag = $state<PromptItemDragState | null>(null)
+  let promptItemDropBoundary = $state<PromptItemDropBoundary | null>(null)
   let openedItemIndices = $state(new Set<number>())
   type FallbackModelKey = 'model' | 'memory' | 'translate' | 'emotion' | 'otherAx' | 'scriptMain' | 'scriptAux'
   type FallbackModelsDraft = Record<FallbackModelKey, string[]>
@@ -313,8 +323,12 @@
 
   function resetPromptTemplateUiState(): void {
     openedItemIndices = new Set<number>()
-    draggedIndex = -1
-    dragOverIndex = -1
+    resetPromptItemDragState()
+  }
+
+  function resetPromptItemDragState(): void {
+    promptItemDrag = null
+    promptItemDropBoundary = null
   }
 
   function promptTemplateStructureSignature(items: PromptItem[]): string {
@@ -331,6 +345,27 @@
     alignCompatibilityProjectionFromSelectedPromptPreset()
     promptTemplateDraftRenderEpoch += 1
     previousPromptTemplateRevision = peekCachedServerCommandRevision()
+  }
+
+  function uniquePromptItemIndex(items: PromptItem[], itemId: string): number | null {
+    let foundIndex = -1
+    for (let index = 0; index < items.length; index += 1) {
+      if (items[index]?.id !== itemId) continue
+      if (foundIndex !== -1) return null
+      foundIndex = index
+    }
+    return foundIndex === -1 ? null : foundIndex
+  }
+
+  function remapOpenedPromptItemIndices(previous: PromptItem[], next: PromptItem[]): Set<number> {
+    const nextOpenedIndices = new Set<number>()
+    for (const previousIndex of openedItemIndices) {
+      const itemId = previous[previousIndex]?.id
+      if (typeof itemId !== 'string' || itemId.length === 0) continue
+      const nextIndex = uniquePromptItemIndex(next, itemId)
+      if (nextIndex !== null) nextOpenedIndices.add(nextIndex)
+    }
+    return nextOpenedIndices
   }
 
   async function hydrateCurrentPromptTemplateOwner(
@@ -1009,7 +1044,7 @@
     previousPromptTemplateRevision = revision
     if (nextDraft) {
       if (promptTemplateStructureSignature(nextDraft) !== promptTemplateStructureSignature(promptTemplateDraft.value)) {
-        resetPromptTemplateUiState()
+        openedItemIndices = remapOpenedPromptItemIndices(promptTemplateDraft.value, nextDraft)
       }
       promptTemplateDraft.value = nextDraft
       syncSelectedPromptPresetTemplateProjection(nextDraft)
@@ -1034,22 +1069,14 @@
   }
 
   function getReorderedTemplate() {
-    if (
-      draggedIndex < 0 ||
-      draggedIndex >= promptTemplateDraft.value.length ||
-      dragOverIndex < 0 ||
-      dragOverIndex > promptTemplateDraft.value.length ||
-      draggedIndex === dragOverIndex
-    ) {
-      return getDisplayTemplate()
-    }
+    const drag = resolvePromptItemDrag()
+    if (!drag || drag.sourceIndex === drag.adjustedDropIndex) return getDisplayTemplate()
 
     const items = getDisplayTemplate()
-    const [movedItem] = items.splice(draggedIndex, 1)
+    const [movedItem] = items.splice(drag.sourceIndex, 1)
     if (!movedItem) return getDisplayTemplate()
 
-    const adjustedDropIndex = draggedIndex < dragOverIndex ? dragOverIndex - 1 : dragOverIndex
-    items.splice(adjustedDropIndex, 0, movedItem)
+    items.splice(drag.adjustedDropIndex, 0, movedItem)
 
     return items.map((item, displayIndex) => ({
       ...item,
@@ -1057,15 +1084,67 @@
     }))
   }
 
-  function handlePromptDrop() {
+  function capturePromptItemDrag(promptItem: PromptItem): void {
+    const ownerId = currentPromptTemplateOwnerId()
+    ensurePromptTemplateDraftIds(ownerId)
+    const itemId = promptItem.id
     if (
-      draggedIndex < 0 ||
-      draggedIndex >= promptTemplateDraft.value.length ||
-      dragOverIndex < 0 ||
-      dragOverIndex > promptTemplateDraft.value.length ||
-      draggedIndex === dragOverIndex
+      typeof itemId !== 'string' ||
+      itemId.length === 0 ||
+      uniquePromptItemIndex(promptTemplateDraft.value, itemId) === null
     ) {
-      resetPromptTemplateUiState()
+      resetPromptItemDragState()
+      return
+    }
+    promptItemDrag = { ownerId, itemId }
+    promptItemDropBoundary = null
+  }
+
+  function capturePromptItemDropBoundary(promptItem: PromptItem, placement: PromptDropPlacement): void {
+    const drag = promptItemDrag
+    const ownerId = currentPromptTemplateOwnerId()
+    const itemId = promptItem.id
+    if (
+      !drag ||
+      drag.ownerId !== ownerId ||
+      typeof itemId !== 'string' ||
+      itemId.length === 0 ||
+      uniquePromptItemIndex(promptTemplateDraft.value, itemId) === null
+    ) {
+      promptItemDropBoundary = null
+      return
+    }
+    promptItemDropBoundary = { ownerId, targetItemId: itemId, placement }
+  }
+
+  function resolvePromptItemDrag(): { sourceIndex: number; adjustedDropIndex: number } | null {
+    const drag = promptItemDrag
+    const boundary = promptItemDropBoundary
+    const ownerId = currentPromptTemplateOwnerId()
+    if (!drag || !boundary || drag.ownerId !== ownerId || boundary.ownerId !== ownerId) return null
+    if (!promptTemplateItemIds(promptTemplateDraft.value)) return null
+
+    const sourceIndex = uniquePromptItemIndex(promptTemplateDraft.value, drag.itemId)
+    const targetIndex = uniquePromptItemIndex(promptTemplateDraft.value, boundary.targetItemId)
+    if (sourceIndex === null || targetIndex === null) return null
+
+    const dropIndex = targetIndex + (boundary.placement === 'after' ? 1 : 0)
+    return {
+      sourceIndex,
+      adjustedDropIndex: sourceIndex < dropIndex ? dropIndex - 1 : dropIndex,
+    }
+  }
+
+  function isPromptItemDragging(originalIndex: number): boolean {
+    const drag = promptItemDrag
+    if (!drag || drag.ownerId !== currentPromptTemplateOwnerId()) return false
+    return uniquePromptItemIndex(promptTemplateDraft.value, drag.itemId) === originalIndex
+  }
+
+  function handlePromptDrop(): void {
+    const drag = resolvePromptItemDrag()
+    if (!drag || drag.sourceIndex === drag.adjustedDropIndex) {
+      resetPromptItemDragState()
       return
     }
 
@@ -1073,39 +1152,25 @@
     const templates = [...promptTemplateDraft.value]
     const previous = currentPromptTemplateSnapshot()
     const projectionFence = capturePromptTemplateOwnerMutationFence()
-    const [movedItem] = templates.splice(draggedIndex, 1)
+    const openedItemIds = new Set(
+      [...openedItemIndices]
+        .map((index) => templates[index]?.id)
+        .filter((itemId): itemId is string => typeof itemId === 'string' && itemId.length > 0),
+    )
+    const [movedItem] = templates.splice(drag.sourceIndex, 1)
     if (!movedItem) {
-      resetPromptTemplateUiState()
+      resetPromptItemDragState()
       return
     }
 
-    const adjustedDropIndex = draggedIndex < dragOverIndex ? dragOverIndex - 1 : dragOverIndex
-    templates.splice(adjustedDropIndex, 0, movedItem)
-
-    const newOpenedIndices = new Set<number>()
-    openedItemIndices.forEach((index) => {
-      if (index === draggedIndex) {
-        newOpenedIndices.add(adjustedDropIndex)
-      } else if (draggedIndex < adjustedDropIndex) {
-        if (index > draggedIndex && index <= adjustedDropIndex) {
-          newOpenedIndices.add(index - 1)
-        } else {
-          newOpenedIndices.add(index)
-        }
-      } else {
-        if (index >= adjustedDropIndex && index < draggedIndex) {
-          newOpenedIndices.add(index + 1)
-        } else {
-          newOpenedIndices.add(index)
-        }
-      }
-    })
-    openedItemIndices = newOpenedIndices
+    templates.splice(drag.adjustedDropIndex, 0, movedItem)
+    openedItemIndices = new Set(
+      templates.flatMap((item, index) => (item.id && openedItemIds.has(item.id) ? [index] : [])),
+    )
 
     const ownerId = applyPromptTemplateDraft(templates)
     dispatchReorderPromptItems(ownerId, previous, projectionFence)
-    draggedIndex = -1
-    dragOverIndex = -1
+    resetPromptItemDragState()
   }
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -1209,14 +1274,15 @@
         {#each getReorderedTemplate() as { item: prompt, originalIndex, displayIndex } (`${promptTemplateDraftRenderEpoch}:${prompt.id ?? originalIndex}`)}
           <PromptDataItem
             bind:promptItem={promptTemplateDraft.value[originalIndex]}
-            isDragging={draggedIndex === originalIndex}
+            isDragging={isPromptItemDragging(originalIndex)}
             isOpened={openedItemIndices.has(originalIndex)}
-            bind:draggedIndex
-            bind:dragOverIndex
             bind:openedItemIndices
             currentIndex={originalIndex}
             {displayIndex}
             onUpdate={(promptItem, previousItem) => queuePromptItemUpdate(promptItem, previousItem, originalIndex)}
+            onDragStart={capturePromptItemDrag}
+            onDragOver={capturePromptItemDropBoundary}
+            onDragEnd={resetPromptItemDragState}
             onDrop={handlePromptDrop}
             onRemove={() => {
               if (canUseServerCommands()) flushPendingPromptTemplatePatches()
@@ -1239,8 +1305,7 @@
               })
               openedItemIndices = newOpenedIndices
 
-              draggedIndex = -1
-              dragOverIndex = -1
+              resetPromptItemDragState()
               dispatchDeletePromptItem(ownerId, removed, previous, projectionFence)
             }}
             moveDown={() => {
