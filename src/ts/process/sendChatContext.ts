@@ -11,16 +11,14 @@ import {
 import { selectedCharID } from '../stores.svelte'
 import { ChatTokenizer } from '../tokenizer'
 import { parseToggleSyntax } from '../util'
-import { runOptimisticCommandSequence, toMessageSnapshot } from '../chatCommands'
+import {
+  dispatchCharacterOwnedDurableBatch,
+  toMessageSnapshot,
+  type CharacterOwnedDurableBatchResult,
+} from '../chatCommands'
 import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
 import type { ChatGenerationRequiredSidebarToggle } from '../chatGenerationSettings'
-import {
-  canUseServerCommands,
-  replaceTailMessagesCommand,
-  updateCharacterCommand,
-  type MessageSnapshot,
-  type ServerCommandResult,
-} from '../server/commands'
+import { canUseServerCommands, replaceTailMessagesCommand, updateCharacterCommand } from '../server/commands'
 import { isServerChatMessagePlaceholder } from '../server/chatMessagePlaceholders'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { captureChatBodyProjectionEpoch } from '../server/resourceState.svelte'
@@ -33,6 +31,7 @@ export interface SendChatContextResult {
   promptInfo: MessagePresetInfo
   tokenizer: ChatTokenizer
   maxContextTokens: number
+  persistence: Promise<CharacterOwnedDurableBatchResult>
 }
 
 interface SendRollbackSnapshot {
@@ -41,14 +40,20 @@ interface SendRollbackSnapshot {
   chatId: string | undefined
   chatIndex: number
   lastInteraction: number | undefined
-  messages?: MessageSnapshot[]
+  attemptedLastInteraction: number
+  messageIds?: Array<{
+    previous: string | undefined
+    attempted: string
+  }>
 }
 
 function currentSendRollbackSnapshot(input: {
   characterIndex: number
   character: character
   chatIndex: number
-  messages?: Message[]
+  attemptedLastInteraction: number
+  previousLastInteraction: number | undefined
+  messagesBeforeBackfill?: Message[]
 }): SendRollbackSnapshot {
   const chat = input.character.chats?.[input.chatIndex]
   return {
@@ -56,28 +61,43 @@ function currentSendRollbackSnapshot(input: {
     characterIndex: input.characterIndex,
     chatId: chat?.id,
     chatIndex: input.chatIndex,
-    lastInteraction: input.character.lastInteraction,
-    ...(input.messages
+    lastInteraction: input.previousLastInteraction,
+    attemptedLastInteraction: input.attemptedLastInteraction,
+    ...(input.messagesBeforeBackfill
       ? {
-          messages: input.messages.map(toMessageSnapshot),
+          messageIds: input.messagesBeforeBackfill.flatMap((message, index) => {
+            const attempted = chat?.message[index]?.chatId
+            return message.chatId == null && typeof attempted === 'string' && attempted.length > 0
+              ? [{ previous: message.chatId, attempted }]
+              : []
+          }),
         }
       : {}),
   }
 }
 
-function restoreSendRollbackSnapshot(snapshot: SendRollbackSnapshot): void {
+function restoreLastInteraction(snapshot: SendRollbackSnapshot): void {
   withTrustedResourceWrite(() => {
     const character = locateSendSnapshotCharacter(snapshot)
     if (!character) return
+    if (character.lastInteraction === snapshot.attemptedLastInteraction) {
+      character.lastInteraction = snapshot.lastInteraction
+    }
+  })
+}
 
-    character.lastInteraction = snapshot.lastInteraction
-
-    if (!snapshot.messages) return
+function restoreBackfilledMessageIds(snapshot: SendRollbackSnapshot): void {
+  if (!snapshot.messageIds?.length) return
+  withTrustedResourceWrite(() => {
+    const character = locateSendSnapshotCharacter(snapshot)
+    if (!character) return
     const chatIndex = locateSendSnapshotChatIndex(character, snapshot)
     if (chatIndex < 0) return
-    character.chats[chatIndex].message = snapshot.messages.map(
-      (message) => toMessageSnapshot(message as Message) as unknown as Message,
-    )
+    const messages = character.chats[chatIndex].message
+    for (const messageId of snapshot.messageIds) {
+      const message = messages.find((candidate) => candidate.chatId === messageId.attempted)
+      if (message) message.chatId = messageId.previous
+    }
   })
 }
 
@@ -115,8 +135,9 @@ function messageIdBackfillTail(messages: Message[]): { startIndex: number; after
  * Run the sendChat entry-context setup: retained compatibility-only preset-chain
  * and statistics handling (skipped by the live Fastify runtime), character + chat
  * lookup, lastInteraction stamp, chatId backfill, promptInfo seed (gated on
- * `promptInfoInsideChat`), and tokenizer creation. Mutates client resource state
- * (`statics.messages`, character `lastInteraction`, message `chatId`).
+ * `promptInfoInsideChat`), and tokenizer creation. The optimistic context is
+ * returned synchronously together with the exact durable maintenance promise.
+ * Reattach callers disable maintenance so they only reconstruct render context.
  *
  * The coordinator handles the closures (`throwError`,
  * `runCurrentChatFunction`, etc.) and the `doingChat` lifecycle around
@@ -125,11 +146,12 @@ function messageIdBackfillTail(messages: Message[]): { startIndex: number; after
 export function setupSendChatContext(args: {
   chatProcessIndex: number
   chatAdditonalTokens?: number
+  writeMaintenance?: boolean
 }): SendChatContextResult {
-  const { chatProcessIndex, chatAdditonalTokens: argChatAdditonalTokens } = args
+  const { chatProcessIndex, chatAdditonalTokens: argChatAdditonalTokens, writeMaintenance = true } = args
   const serverBacked = canUseServerCommands()
 
-  if (!serverBacked && chatProcessIndex === -1 && getDatabase().presetChain) {
+  if (writeMaintenance && !serverBacked && chatProcessIndex === -1 && getDatabase().presetChain) {
     const names = getDatabase()
       .presetChain.split(',')
       .map((v) => v.trim())
@@ -147,76 +169,110 @@ export function setupSendChatContext(args: {
     }
   }
 
-  if (!serverBacked) {
+  if (writeMaintenance && !serverBacked) {
     getDatabase().statics.messages += 1
   }
   const selectedChar = get(selectedCharID)
   const lastInteraction = Date.now()
+  let persistence: Promise<CharacterOwnedDurableBatchResult> = Promise.resolve({
+    status: 'ok',
+    acceptedCount: 0,
+  })
 
-  if (serverBacked) {
-    // Serialize the lastInteraction update and the message-id backfill against
-    // one optimistic snapshot. The sequencer awaits each response so the next
-    // command reads the updated revision.
-    const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
+  if (writeMaintenance && serverBacked) {
+    const steps: Parameters<typeof dispatchCharacterOwnedDurableBatch>[1][number][] = []
     let rollbackSnapshot: SendRollbackSnapshot | null = null
+    let characterId: string | undefined
 
     withTrustedResourceWrite(() => {
       const nowChatroom = getDatabase().characters[selectedChar]
-      const characterId = nowChatroom.chaId
+      characterId = nowChatroom.chaId
       const selectedChat = nowChatroom.chatPage
       const selectedChatRecord = nowChatroom.chats[selectedChat]
       const hasUnloadedMessages = selectedChatRecord.message.some(isServerChatMessagePlaceholder)
       const needsMessageIdBackfill = !hasUnloadedMessages && selectedChatRecord.message.some((v) => v.chatId == null)
       const backfillTail =
         needsMessageIdBackfill && selectedChatRecord.id ? messageIdBackfillTail(selectedChatRecord.message) : null
-
-      if (characterId || needsMessageIdBackfill) {
-        rollbackSnapshot = currentSendRollbackSnapshot({
-          characterIndex: selectedChar,
-          character: nowChatroom,
-          chatIndex: selectedChat,
-          messages: needsMessageIdBackfill ? selectedChatRecord.message : undefined,
-        })
-      }
+      const previousLastInteraction = nowChatroom.lastInteraction
+      const messagesBeforeBackfill = needsMessageIdBackfill
+        ? selectedChatRecord.message.map((message) => ({ ...message }))
+        : undefined
 
       nowChatroom.lastInteraction = lastInteraction
-      if (characterId) {
-        factories.push((baseRevision) =>
-          updateCharacterCommand({
-            baseRevision,
-            characterId,
-            patch: { lastInteraction },
-          }),
-        )
+      if (needsMessageIdBackfill) {
+        selectedChatRecord.message = selectedChatRecord.message.map((message) => {
+          message.chatId = message.chatId ?? v4()
+          return message
+        })
       }
 
-      if (needsMessageIdBackfill) {
-        selectedChatRecord.message = selectedChatRecord.message.map((v) => {
-          v.chatId = v.chatId ?? v4()
-          return v
+      rollbackSnapshot = currentSendRollbackSnapshot({
+        characterIndex: selectedChar,
+        character: nowChatroom,
+        chatIndex: selectedChat,
+        attemptedLastInteraction: lastInteraction,
+        previousLastInteraction,
+        messagesBeforeBackfill,
+      })
+
+      if (characterId) {
+        const pathCharacterId = characterId
+        steps.push({
+          method: 'PATCH',
+          path: `/characters/${encodeURIComponent(pathCharacterId)}`,
+          body: { patch: { lastInteraction } },
+          command: (baseRevision, frozenBody) =>
+            updateCharacterCommand({
+              baseRevision,
+              characterId: pathCharacterId,
+              patch: frozenBody.patch as { lastInteraction: number },
+            }),
+          rollback: () => {
+            if (rollbackSnapshot) restoreLastInteraction(rollbackSnapshot)
+            if (!backfillTail && rollbackSnapshot) restoreBackfilledMessageIds(rollbackSnapshot)
+          },
         })
-        if (selectedChatRecord.id && backfillTail) {
-          const chatId = selectedChatRecord.id
-          const messages = selectedChatRecord.message.slice(backfillTail.startIndex).map(toMessageSnapshot)
-          const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
-          factories.push((baseRevision) =>
+      }
+
+      if (selectedChatRecord.id && backfillTail) {
+        const chatId = selectedChatRecord.id
+        const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
+        steps.push({
+          method: 'POST',
+          path: `/chats/${encodeURIComponent(chatId)}/messages/tail`,
+          body: {
+            afterMessageId: backfillTail.afterMessageId,
+            messages: selectedChatRecord.message.slice(backfillTail.startIndex).map(toMessageSnapshot),
+          },
+          command: (baseRevision, frozenBody) =>
             replaceTailMessagesCommand({
               baseRevision,
               chatId,
-              afterMessageId: backfillTail.afterMessageId,
-              messages,
+              afterMessageId: frozenBody.afterMessageId as string,
+              messages: frozenBody.messages as ReturnType<typeof toMessageSnapshot>[],
               optimisticChatBodyProjectionEpoch,
             }),
-          )
-        }
+          rollback: () => {
+            if (rollbackSnapshot) restoreBackfilledMessageIds(rollbackSnapshot)
+          },
+        })
       }
     })
 
-    if (factories.length > 0 && rollbackSnapshot) {
-      const snapshot = rollbackSnapshot
-      runOptimisticCommandSequence(factories, () => restoreSendRollbackSnapshot(snapshot))
+    if (!characterId) {
+      if (rollbackSnapshot) {
+        restoreLastInteraction(rollbackSnapshot)
+        restoreBackfilledMessageIds(rollbackSnapshot)
+      }
+      persistence = Promise.resolve({
+        status: 'failure',
+        acceptedCount: 0,
+        failure: { status: 'error', error: 'Missing character mutation owner', reason: 'invalid-request' },
+      })
+    } else if (steps.length > 0) {
+      persistence = dispatchCharacterOwnedDurableBatch(characterId, steps)
     }
-  } else {
+  } else if (writeMaintenance && !serverBacked) {
     const nowChatroom = getDatabase().characters[selectedChar]
     nowChatroom.lastInteraction = lastInteraction
     const selectedChatRecord = nowChatroom.chats[nowChatroom.chatPage]
@@ -250,6 +306,7 @@ export function setupSendChatContext(args: {
     promptInfo,
     tokenizer,
     maxContextTokens,
+    persistence,
   }
 }
 

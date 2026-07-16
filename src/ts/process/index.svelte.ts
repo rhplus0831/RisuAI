@@ -29,6 +29,7 @@ import {
   type ActiveChatTarget,
 } from '../chatCommands'
 import { flushPendingSelectedPersonaUpdate } from '../persona'
+import { language } from '../../lang'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -168,9 +169,9 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
   }
 
   let isDoing = get(doingChat)
-  const generationTarget = arg.expectedTarget ?? captureActiveChatTarget()
+  const generationTarget = arg.expectedTarget === undefined ? captureActiveChatTarget() : arg.expectedTarget
 
-  if (!isExpectedTargetFresh(arg.expectedTarget)) {
+  if (!isExpectedTargetFresh(generationTarget)) {
     return false
   }
 
@@ -208,12 +209,13 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
 
   try {
     const setProcessStage = (stage: number) => chatProcessStage.set(stage)
-    if (!isExpectedTargetFresh(arg.expectedTarget)) {
+    if (!isExpectedTargetFresh(generationTarget)) {
       return false
     }
     const ctx = setupSendChatContext({
       chatProcessIndex,
       chatAdditonalTokens: arg.chatAdditonalTokens,
+      writeMaintenance: !arg.reattachJobId,
     })
     selectedChar = ctx.selectedChar
     selectedChat = ctx.selectedChat
@@ -226,8 +228,16 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     let currentChat = nowChatroom.chats[selectedChat]
 
     if (!arg.reattachJobId) {
+      const contextPersistence = await ctx.persistence
+      if (!isExpectedTargetFresh(generationTarget)) {
+        return false
+      }
+      if (contextPersistence.status !== 'ok') {
+        alertError(language.errors.sendContextPersistenceFailed)
+        return false
+      }
       const settingsSaveResult = await waitForPendingChatGenerationSettingsSave(currentChat.id)
-      if (!isExpectedTargetFresh(arg.expectedTarget)) {
+      if (!isExpectedTargetFresh(generationTarget)) {
         return false
       }
       if (settingsSaveResult && settingsSaveResult.status !== 'ok') {
@@ -235,7 +245,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         return false
       }
       const personaSaveResult = await flushPendingSelectedPersonaUpdate()
-      if (!isExpectedTargetFresh(arg.expectedTarget)) {
+      if (!isExpectedTargetFresh(generationTarget)) {
         return false
       }
       if (personaSaveResult && personaSaveResult.status !== 'ok') {

@@ -947,10 +947,36 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 })
 
 describe('sendChat fixtures (/chat adapter replay)', () => {
+  let contextCommandRevision = 1
+
+  const serverChatFixtureFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    if (
+      (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url) && (init?.method ?? 'GET') === 'PATCH') ||
+      (/\/api\/v1\/commands\/chats\/[^/]+\/messages\/tail$/.test(url) && (init?.method ?? 'GET') === 'POST')
+    ) {
+      const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as { baseRevision?: unknown }) : undefined
+      const baseRevision = typeof body?.baseRevision === 'number' ? body.baseRevision : contextCommandRevision
+      contextCommandRevision = Math.max(contextCommandRevision, baseRevision) + 1
+      return new Response(
+        JSON.stringify({
+          revision: contextCommandRevision,
+          event: {
+            type: 'context.updated',
+            revision: contextCommandRevision,
+            resource: 'context',
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    return serverChatFetch(input, init)
+  }
+
   beforeAll(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatFixtureFetch)
   })
 
   afterAll(() => {
@@ -968,6 +994,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     abortChat.set(false)
     chatProcessStage.set(0)
     uuidState.counter = 0
+    contextCommandRevision = 1
     setResourceWriteGuardEnabled(false)
   })
 

@@ -1,3 +1,4 @@
+import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
@@ -11,6 +12,7 @@ import { get } from 'svelte/store'
 // before reaching them.
 
 const localAssemblerState = vi.hoisted(() => ({ throwIfEntered: false }))
+const alertState = vi.hoisted(() => ({ errors: [] as string[] }))
 
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
@@ -23,6 +25,16 @@ vi.mock('../../platform', async (importActual) => {
 vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'fixture-auth-token',
 }))
+
+vi.mock('../../alert', async (importActual) => {
+  const actual = await importActual<typeof import('../../alert')>()
+  return {
+    ...actual,
+    alertError: (message: string) => {
+      alertState.errors.push(message)
+    },
+  }
+})
 
 vi.mock('../tts', () => import('../__fixtures__/mocks/tts'))
 vi.mock('../inlayScreen', () => import('../__fixtures__/mocks/inlayScreen'))
@@ -84,6 +96,13 @@ import * as chatModule from '../index.svelte'
 import { dispatchSaveChatGenerationSettings } from '../../chatCommands'
 import { currentPersonaStateSnapshot, queueSelectedPersonaUpdate, updateSelectedPersonaField } from '../../persona'
 import { clearCachedServerCommandRevision } from '../../server/commands'
+import { language } from '../../../lang'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from '../../server/pendingMutationOutbox'
 
 const testDatabaseState = {
   get db() {
@@ -95,6 +114,7 @@ const testDatabaseState = {
 }
 
 let cleanups: (() => void)[] = []
+let contextCommandRevision = 1
 
 beforeEach(() => {
   vi.stubGlobal('safeStructuredClone', (v: unknown) => JSON.parse(JSON.stringify(v)))
@@ -106,6 +126,8 @@ beforeEach(() => {
   abortChat.set(false)
   chatProcessStage.set(0)
   localAssemblerState.throwIfEntered = false
+  alertState.errors = []
+  contextCommandRevision = 1
 })
 
 afterEach(() => {
@@ -191,6 +213,28 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+function contextCommandSuccessResponse(init?: RequestInit): Response {
+  const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as { baseRevision?: unknown }) : undefined
+  const baseRevision = typeof body?.baseRevision === 'number' ? body.baseRevision : contextCommandRevision
+  contextCommandRevision = Math.max(contextCommandRevision, baseRevision) + 1
+  return jsonResponse({
+    revision: contextCommandRevision,
+    event: {
+      type: 'context.updated',
+      revision: contextCommandRevision,
+      resource: 'context',
+    },
+  })
+}
+
+async function serverChatWithContextFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+  if (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url) && (init?.method ?? 'GET') === 'PATCH') {
+    return contextCommandSuccessResponse(init)
+  }
+  return serverChatFetch(input, init)
+}
+
 function queuePersonaPromptSave(prompt: string): string {
   testDatabaseState.db.personas = Array.isArray(testDatabaseState.db.personas) ? testDatabaseState.db.personas : []
   const character = testDatabaseState.db.characters?.[0]
@@ -228,7 +272,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
         formated: [{ role: 'user', content: 'hi', name: 'User' }],
       },
     )
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
 
     const ok = await chatModule.sendChat(-1, { preview: true })
     expect(ok).toBe(true)
@@ -246,7 +290,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
   it('routes mode=previewPrompt to /chat (preview_prompt) and fills previewBody', async () => {
     await seedEcho()
     setServerChatPrompt([{ role: 'user', content: 'hi' }], { promptText: 'FLATTENED PROMPT' })
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
 
     const ok = await chatModule.sendChat(-1, { previewPrompt: true })
     expect(ok).toBe(true)
@@ -264,7 +308,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     'blocks %s before /chat, doingChat, and lifecycle writes when chat settings are incomplete',
     async (_mode, args) => {
       await seedEcho({ ready: false })
-      vi.stubGlobal('fetch', serverChatFetch)
+      vi.stubGlobal('fetch', serverChatWithContextFetch)
       const beforeLastInteraction = testDatabaseState.db.characters[0].lastInteraction
 
       const ok = await chatModule.sendChat(-1, args)
@@ -300,7 +344,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
           settingsSaveBody = typeof init?.body === 'string' ? JSON.parse(init.body) : null
           return pendingSettingsSave
         }
-        return serverChatFetch(input, init)
+        return serverChatWithContextFetch(input, init)
       }) as unknown as typeof fetch,
     )
 
@@ -359,6 +403,186 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(getServerChatCalls()).toHaveLength(1)
   })
 
+  it('waits for held message-id tail persistence before starting server generation', async () => {
+    await seedEcho()
+    setServerChatDispatchResult('server reply', { model: 'echo_model', outputTokens: 2, maxContext: 4000 })
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.id = 'chat-1'
+    chat.message.push({
+      role: 'user',
+      data: 'wait for my durable id',
+      chatId: undefined as unknown as string,
+      time: 1,
+    })
+
+    let resolveTail: (response: Response) => void = () => {
+      throw new Error('message tail persistence was not requested')
+    }
+    const heldTail = new Promise<Response>((resolve) => {
+      resolveTail = resolve
+    })
+    let tailInit: RequestInit | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        if (url.endsWith('/api/v1/commands/chats/chat-1/messages/tail')) {
+          tailInit = init
+          return heldTail
+        }
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+
+    const sendPromise = chatModule.sendChat(-1)
+    await waitForState(() => expect(tailInit).toBeDefined())
+
+    expect(getServerChatCalls()).toHaveLength(0)
+    resolveTail(contextCommandSuccessResponse(tailInit))
+
+    await expect(sendPromise).resolves.toBe(true)
+    expect(getServerChatCalls()).toHaveLength(1)
+  })
+
+  it('rechecks the active target after context persistence before generation', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const firstChat = character.chats[0]
+    firstChat.id = 'chat-1'
+    character.chats.push({
+      ...safeStructuredClone(firstChat),
+      id: 'chat-2',
+      name: 'other chat',
+      message: [{ role: 'user', data: 'other chat message', chatId: 'other-message' }],
+    })
+
+    let resolveContext: (response: Response) => void = () => {
+      throw new Error('context persistence was not requested')
+    }
+    const heldContext = new Promise<Response>((resolve) => {
+      resolveContext = resolve
+    })
+    let contextInit: RequestInit | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        if (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url)) {
+          contextInit = init
+          return heldContext
+        }
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+
+    const sendPromise = chatModule.sendChat(-1)
+    await waitForState(() => expect(contextInit).toBeDefined())
+    character.chatPage = 1
+    resolveContext(contextCommandSuccessResponse(contextInit))
+
+    await expect(sendPromise).resolves.toBe(false)
+    expect(getServerChatCalls()).toHaveLength(0)
+    expect(get(activeGenerationTarget)).toBeNull()
+  })
+
+  it('blocks generation and shows a localized error when context persistence fails', async () => {
+    await seedEcho()
+    const previousLastInteraction = testDatabaseState.db.characters[0].lastInteraction
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        if (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url)) {
+          return jsonResponse({ error: 'invalid timestamp' }, 400)
+        }
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+
+    await expect(chatModule.sendChat(-1)).resolves.toBe(false)
+
+    expect(getServerChatCalls()).toHaveLength(0)
+    expect(alertState.errors).toEqual([language.errors.sendContextPersistenceFailed])
+    expect(testDatabaseState.db.characters[0].lastInteraction).toBe(previousLastInteraction)
+    expect(get(doingChat)).toBe(false)
+  })
+
+  it('blocks generation on a retained context write while keeping its optimistic projection queued', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-send-gate',
+      writerEpoch: 8,
+      databaseLineage: 'lineage-send-gate',
+      requestedWriterWasActive: true,
+    })
+    await seedEcho()
+    const previousLastInteraction = testDatabaseState.db.characters[0].lastInteraction
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        if (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url)) {
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        if (url.endsWith('/api/v1/commands/mutation-receipts/ack')) {
+          return jsonResponse({ acknowledged: true })
+        }
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(chatModule.sendChat(-1)).resolves.toBe(false)
+
+      expect(getServerChatCalls()).toHaveLength(0)
+      expect(alertState.errors).toEqual([language.errors.sendContextPersistenceFailed])
+      expect(testDatabaseState.db.characters[0].lastInteraction).not.toBe(previousLastInteraction)
+      expect(await listPendingMutations()).toMatchObject([
+        {
+          handle: { key: 'character-owner:char-tess' },
+          intent: {
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/characters/char-tess',
+                body: { patch: { lastInteraction: expect.any(Number) } },
+              },
+            ],
+          },
+        },
+      ])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('reattaches without issuing or waiting for context maintenance writes', async () => {
+    await seedEcho()
+    setServerChatDispatchResult('reattached reply', {
+      model: 'echo_model',
+      outputTokens: 2,
+      maxContext: 4000,
+    })
+    const previousLastInteraction = testDatabaseState.db.characters[0].lastInteraction
+    const maintenanceCalls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        if (url.includes('/api/v1/commands/')) maintenanceCalls.push(url)
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+
+    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-reattach' })).resolves.toBe(true)
+
+    expect(maintenanceCalls).toEqual([])
+    expect(testDatabaseState.db.characters[0].lastInteraction).toBe(previousLastInteraction)
+    expect(getServerChatCalls()).toHaveLength(1)
+  })
+
   it.each([
     ['preview', { preview: true }],
     ['send', {}],
@@ -402,9 +626,9 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
         }
         if (url.endsWith('/api/v1/generate/chat')) {
           requestOrder.push('chat')
-          return serverChatFetch(input, init)
+          return serverChatWithContextFetch(input, init)
         }
-        return serverChatFetch(input, init)
+        return serverChatWithContextFetch(input, init)
       }) as unknown as typeof fetch,
     )
 
@@ -437,7 +661,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       maxContext: 4000,
       stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
     })
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
 
     const ok = await chatModule.sendChat(-1, { regenerateMessageId: 'msg-assistant-1' })
     expect(ok).toBe(true)
@@ -485,6 +709,9 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     })
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url)) {
+        return serverChatWithContextFetch(input, init)
+      }
       if (url.endsWith('/api/v1/generate/chat')) return serverChatFetch(input, init)
       return serverCompletionFetch(input, init)
     })
@@ -518,7 +745,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       maxContext: 4000,
       stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
     })
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
 
     await expect(chatModule.sendChat(-1)).resolves.toBe(true)
     expect(testDatabaseState.db.characters[0].chats[0].message.at(-1)?.data).toBe('metadata-only reply')
@@ -540,7 +767,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
     })
     setServerChatPostGenerationQueue([{ resendChat: true }, {}])
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
 
     const ok = await chatModule.sendChat(-1)
 
@@ -565,7 +792,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
     })
     setServerChatPostGenerationQueue([{ resendChat: true }, { resendChat: true }])
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
 
     const ok = await chatModule.sendChat(-1)
 
@@ -599,7 +826,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
         additionalSystemPrompt: [],
       },
     })
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
 
     const ok = await chatModule.sendChat(-1)
     expect(ok).toBe(false)
@@ -628,7 +855,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       maxContext: 4000,
       stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
     })
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
 
     const ok = await chatModule.sendChat(-1)
     expect(ok).toBe(true)
@@ -657,7 +884,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
         ],
       },
     ] as never
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
 
     const ok = await chatModule.sendChat(-1)
     expect(ok).toBe(false)
@@ -696,7 +923,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       maxContext: 4000,
       stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
     })
-    vi.stubGlobal('fetch', serverChatFetch)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
 
     const ok = await chatModule.sendChat(-1)
     expect(ok).toBe(true)
