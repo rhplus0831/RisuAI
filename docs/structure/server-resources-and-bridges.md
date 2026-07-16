@@ -13,8 +13,9 @@ explicit server-owned mutation routes.
 
 - `fetchServerBootstrap()` sends writer intent to `GET /api/v1/bootstrap`.
   Bootstrap is deliberately runtime-only metadata: initialization state,
-  revision/schema version, asset base URL, running generation jobs, and active
-  message translations. It does not carry durable application data.
+  revision/schema version, database lineage, durable writer epoch, the
+  pre-takeover writer verdict, asset base URL, running generation jobs, and
+  active message translations. It does not carry durable application data.
 - Empty state triggers `POST /api/v1/commands/state/initialize`. The winning
   client reuses the runtime metadata and accepted revision it already has; a
   read-only bootstrap retry is needed only when another client won the

@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-16.
 
 Fastify owns durable state. The browser reads authenticated REST resources and
 sends revision-checked commands or explicit server-owned mutation requests.
@@ -9,7 +9,7 @@ sends revision-checked commands or explicit server-owned mutation requests.
 
 | Store            | Path                                                                                               | Contents                                                                                                                                                                                                             |
 | ---------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite           | `data/risu.db`                                                                                     | Schema v24: `schema_version.version` plus domain `revision`; settings; row tables for characters, chats, messages, and `chat_hypa_v3`; split collections in `modules`, `plugins`, `model_presets`, `prompt_presets`, `bot_presets`, `prompt_templates`, `personas`, `loadouts`, `lore_books`, `translator_presets`, `hypa_v3_presets`, and `plugin_custom_storage`; `assets`, `command_events`, durable `command_mutation_receipts`, `push_subscriptions`, Hypa V3 memory tables/jobs/tombstones, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror. |
+| SQLite           | `data/risu.db`                                                                                     | Schema v25: `schema_version.version` plus domain `revision`; `database_metadata` lineage/writer ownership; settings; row tables for characters, chats, messages, and `chat_hypa_v3`; split collections in `modules`, `plugins`, `model_presets`, `prompt_presets`, `bot_presets`, `prompt_templates`, `personas`, `loadouts`, `lore_books`, `translator_presets`, `hypa_v3_presets`, and `plugin_custom_storage`; `assets`, `command_events`, durable `command_mutation_receipts`, `push_subscriptions`, Hypa V3 memory tables/jobs/tombstones, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror. |
 | Asset bytes      | `data/assets/<sha256>.<ext>`                                                                       | Content-addressed images, audio, video, fonts, CSS, ONNX, inlay signatures, and other supported asset types. Metadata is in SQLite `assets`.                                                                         |
 | Backups          | `data/backups/<id>/`                                                                               | Snapshot `risu.db`, `manifest.json`, assets when present, and legacy `save/` when present. Creation copies `risu.db` after a WAL checkpoint; restore uses `ATTACH` and swaps only the `SQLITE_BACKUP_TABLES` allowlist. |
 | Legacy `db.json` | `data/db.json`                                                                                     | Import-only compatibility input. Boot imports it into SQLite and renames it to `db.json.migrated`.                                                                                                                   |
@@ -27,11 +27,13 @@ preserves displaced/new candidates as alternates, while send/continue clears the
 reroll buffer for the appended path. Per-chat `hypaV3Data` lives in
 `chat_hypa_v3`.
 
-`CURRENT_SCHEMA_VERSION` is 24. Migration v22 drops the retired
+`CURRENT_SCHEMA_VERSION` is 25. Migration v22 drops the retired
 `collection_body_revisions` and `projection_body_cache_state` tables; v23
 persists stable ids for legacy global lorebooks and entries; v24 adds durable
-command-mutation receipts. Current browser state is rebuilt from concrete REST
-resources rather than a cached database projection.
+command-mutation receipts; v25 adds persistent database lineage, durable active
+writer ownership/epochs, and acknowledged-receipt tombstones. Current browser
+state is rebuilt from concrete REST resources rather than a cached database
+projection.
 
 Prompt-template ownership follows the split-preset contract:
 `prompt_presets.prompt_template` is the durable owner for modern prompt preset
@@ -57,16 +59,20 @@ Normal command mutations use optimistic concurrency:
 8. Persist one command event and, when requested, its mutation receipt.
 9. Commit, then emit the live event.
 
-`risu-mutation-id` receipts are globally keyed so an accepted mutation remains
-idempotent across active-writer session changes. The current active writer is
-still required to submit a replay or acknowledge receipts. A receipt stores the
+`risu-mutation-id` receipts are globally keyed within the current database
+lineage, supplied in `risu-database-lineage`, so an accepted mutation remains
+idempotent across active-writer session changes without crossing a destructive
+import/restore boundary. The authenticated command pre-handler returns an
+existing receipt before route validation or side effects; the transaction also
+checks again to close concurrent races. The current active writer is still
+required to submit a replay or acknowledge receipts. A receipt stores the
 original revision, event, and compact response extras atomically with the domain
-write; a replay returns them before the revision check and emits no second
-event. Unacknowledged receipts are not age- or count-pruned. After the browser
-has durably deleted an outbox intent, it acknowledges the base id and request
-count at `POST /api/v1/commands/mutation-receipts/ack`; the server then deletes
-the base id and deterministic `.1`, `.2`, … request ids without changing the
-domain revision.
+write; a replay emits no second event. Unacknowledged receipts are never
+age- or count-pruned. After the browser has durably deleted an outbox intent, it
+acknowledges `{ mutationId, requestCount, databaseLineage }` at
+`POST /api/v1/commands/mutation-receipts/ack`. The base id and deterministic
+`.1`, `.2`, … ids remain as replayable tombstones for 24 hours before lazy
+cleanup, without changing the domain revision.
 
 Stale clients receive 409. Browser command helpers cache the latest revision
 from bootstrap, command responses, and event reconciliation.
@@ -215,8 +221,10 @@ dev runner; `pnpm dev:agent` enables it by default, while `pnpm dev:human`
 leaves password auth enabled by default.
 
 The active-writer guard is separate. Any authenticated bootstrap carrying
-`risu-writer-session` latches the latest writer; routes whose manifest decision
-is `active-writer` reject stale sessions with `423 active_writer_stale`.
+`risu-writer-session` latches the latest writer durably and advances a monotonic
+writer epoch when ownership changes; routes whose manifest decision is
+`active-writer` reject stale sessions with `423 active_writer_stale` even after
+a server restart.
 Read-only bootstrap, resource-read, and event routes do not need writer
 ownership.
 
@@ -226,8 +234,11 @@ active-writer, streaming, public exceptions, and read-only POST decisions.
 ## REST Resources And Hydration
 
 `GET /api/v1/bootstrap` returns initialization state, revision, schema version,
-asset base URL, `activeGenerationJobs`, and `activeMessageTranslations`. It does
-not return durable application data. If no database exists, the browser calls
+`databaseLineage`, `writerEpoch`, asset base URL, `activeGenerationJobs`, and
+`activeMessageTranslations`. Writer-intent requests also receive
+`requestedWriterWasActive`, computed before the request takes ownership;
+read-only requests omit it. Bootstrap does not return durable application data.
+If no database exists, the browser calls
 `commands/state/initialize`; the winning client reuses the accepted runtime
 metadata/revision, while a client that lost the initialization race retries
 bootstrap read-only. It then loads the three root resources at one common

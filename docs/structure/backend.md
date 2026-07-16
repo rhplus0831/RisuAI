@@ -1,6 +1,6 @@
 # Backend Map
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-16.
 
 The backend is the Fastify server under `server/fastify`. It owns SQLite state,
 auth, provider secrets, prompt assembly, provider dispatch, Hypa V3 memory,
@@ -13,7 +13,7 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/index.ts`                                                 | Process entrypoint: load config, call `buildApp()`, listen, handle shutdown signals.                     |
 | `server/fastify/src/app.ts`                                                   | Composition root for plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA. |
 | `server/fastify/src/config.ts`                                                | Parses `RISU_API_*`, `TRUST_PROXY`, hub/Realm URLs, static root, trace mode, and agent auth bypass.      |
-| `server/fastify/src/db.ts`                                                    | SQLite schema v24, migrations, `schema_version`, global revision; v23 stabilizes global-lorebook ids and v24 adds durable command-mutation receipts. |
+| `server/fastify/src/db.ts`, `databaseLineage.ts`                              | SQLite schema v25, migrations, `schema_version`, global revision; v24 adds durable command-mutation receipts and v25 adds database lineage, receipt acknowledgements, and durable writer ownership/epochs. |
 | `server/fastify/src/repository.ts`                                            | Broad/scoped/exact domain loaders, REST resource/hydration readers, targeted row/table writers, legacy `db.json` import, `applyImport`, assets, backups. |
 | `server/fastify/src/messageStore.ts`                                          | Chat `messages`, reroll alternates, and per-chat `chat_hypa_v3` rows.                                    |
 | `server/fastify/src/chatGenerationSettingsStorage.ts`                         | Normalizes persisted chat-scoped generation settings on import/load.                                      |
@@ -84,7 +84,8 @@ from `app.printRoutes()` and checks every `/api/v1/*` route has a manifest
 decision. Runtime active-writer enforcement uses `activeWriter.ts`: before any
 writer is latched, guarded mutations are allowed; after a writer-intent
 bootstrap latches ownership, stale or missing writer sessions receive
-`423 active_writer_stale`.
+`423 active_writer_stale`. Ownership and its monotonic epoch live in
+`database_metadata`, so a server restart does not make an older tab active.
 
 Rate limits are opt-in per route. Current presets are setup `5/min`, login
 `10/min`, auth crypto `60/min`, proxy fetch `120/min`, proxy stream-job create
