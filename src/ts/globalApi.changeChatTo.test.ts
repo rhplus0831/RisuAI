@@ -12,6 +12,14 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'chat-select-token',
 }))
 
+const reattachMocks = vi.hoisted(() => ({
+  trigger: vi.fn(),
+}))
+
+vi.mock('./process/reattach', () => ({
+  triggerOpenChatGenerationReattach: reattachMocks.trigger,
+}))
+
 // stores first, then the heavy globalApi module (test import-order TDZ).
 import { selectedCharID } from './stores.svelte'
 import { changeChatTo } from './globalApi.svelte'
@@ -29,6 +37,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 beforeEach(() => {
+  reattachMocks.trigger.mockClear()
   clearCachedServerCommandRevision()
   testDatabaseState.db = seedCloneCostDb() as any
   ;(testDatabaseState.db.characters[0].chats as unknown[]).push({
@@ -79,10 +88,12 @@ describe('changeChatTo (H2 clone-cost gate)', () => {
 
     expect(testDatabaseState.db.characters[0].chatPage).toBe(1)
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+    expect(reattachMocks.trigger).toHaveBeenCalledOnce()
   })
 
   it('returns without mutation for an unknown chat id', () => {
     changeChatTo('missing-chat')
     expect(testDatabaseState.db.characters[0].chatPage).toBe(0)
+    expect(reattachMocks.trigger).not.toHaveBeenCalled()
   })
 })

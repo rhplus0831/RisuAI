@@ -50,6 +50,7 @@ import {
 } from './server/backups'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { normalizeCharacterOrder } from './characterCommands'
+import { triggerOpenChatGenerationReattach } from './process/reattach'
 
 export const forageStorage = new AutoStorage()
 
@@ -2061,6 +2062,7 @@ export function changeChatTo(IdOrIndex: string | number) {
   withTrustedResourceWrite(() => {
     getDatabase().characters[selIdState.selId].chatPage = index
   })
+  triggerOpenChatGenerationReattach()
   const chatId = currentCharacter.chats[index]?.id
   if (chatId) {
     dispatchSelectChat(chatId, previous)
