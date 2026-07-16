@@ -34,6 +34,7 @@ import {
   RevisionMismatchError,
   ValidationError,
   writeSettingsOnly,
+  writeSingleCollectionRow,
 } from '../repository.js'
 import {
   applyTargetedCommandMutation,
@@ -47,6 +48,7 @@ import {
   type CommandEventOrigin,
   type CommandEventSink,
 } from './events.js'
+import { ensureModelPresetCollection, readModelPresetId, requireModelPresetIndex } from './splitPresets.js'
 
 interface ModelProfileCommandArgs {
   db: DatabaseSync
@@ -254,7 +256,9 @@ export function updateModelRoleProfilesCommand(
 ): JsonCommandMutationResult<{ roles: ModelRole[] }> {
   const body = readObject(args.body, 'request body')
   const bindings = readPartialRoleBindings(body.bindings)
-  return applyModelProfileMutation(args, (target) => {
+  const modelPresetId = body.modelPresetId === undefined ? null : readModelPresetId(body.modelPresetId)
+
+  const mutateTarget = (target: Record<string, unknown>) => {
     const profileIds = new Set(currentProfiles(target).map((profile) => profile.id))
     const nextBindings = currentRoleProfiles(target)
     const roles = MODEL_ROLES.filter((role) => Object.prototype.hasOwnProperty.call(bindings, role))
@@ -269,9 +273,46 @@ export function updateModelRoleProfilesCommand(
 
     target.modelRoleProfiles = nextBindings
     return {
-      event: COMMAND_EVENT_CATALOG.modelRoleProfilesUpdated,
-      extra: { roles },
+      nextBindings,
+      roles,
     }
+  }
+
+  if (!modelPresetId) {
+    return applyModelProfileMutation(args, (target) => {
+      const { roles } = mutateTarget(target)
+      return {
+        event: COMMAND_EVENT_CATALOG.modelRoleProfilesUpdated,
+        extra: { roles },
+      }
+    })
+  }
+
+  return applyTargetedCommandMutation<{ roles: ModelRole[] }>({
+    db: args.db,
+    dataDir: args.dataDir,
+    baseRevision: args.baseRevision,
+    eventSink: args.eventSink,
+    ...(args.eventOrigin ? { eventOrigin: args.eventOrigin } : {}),
+    ...(args.mutationReceiptKey ? { mutationReceiptKey: args.mutationReceiptKey } : {}),
+    mutationPath: TARGETED_MUTATION_PATHS.collection,
+    collectionScopedRead: ['modelPresets'],
+    mutate(database, innerDb) {
+      const target = readSettingsTarget(database)
+      const { nextBindings, roles } = mutateTarget(target)
+      const modelPresets = ensureModelPresetCollection(target)
+      const modelPresetIndex = requireModelPresetIndex(modelPresets, modelPresetId)
+      modelPresets[modelPresetIndex] = {
+        ...modelPresets[modelPresetIndex],
+        modelRoleProfiles: cloneJsonValue(nextBindings),
+      }
+      writeSettingsOnly(innerDb, extractSettings(target))
+      writeSingleCollectionRow(innerDb, 'modelPresets', modelPresetIndex, modelPresets[modelPresetIndex])
+      return {
+        event: { ...COMMAND_EVENT_CATALOG.modelPresetUpdated, id: modelPresetId },
+        extra: { roles },
+      }
+    },
   })
 }
 

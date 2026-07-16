@@ -165,7 +165,7 @@ describe('ModelProfileRoleList', () => {
     expect(commandSpies.runServerCommandSequence).not.toHaveBeenCalled()
   })
 
-  it('patches the model preset selected when Apply was clicked after role bindings save', async () => {
+  it('atomically mirrors roles into the model preset selected when Apply was clicked', async () => {
     const roleCommand = createDeferred<{ status: 'ok' }>()
     commandSpies.updateModelRoleProfilesCommand.mockReturnValue(roleCommand.promise)
     component = mount(ModelProfileRoleList, { target })
@@ -185,23 +185,31 @@ describe('ModelProfileRoleList', () => {
       bindings: {
         chatMain: { mode: 'profile', profileId: 'profile-1' },
       },
+      modelPresetId: 'model-a',
     })
 
     getDatabase().modelPresetsId = 1
     roleCommand.resolve({ status: 'ok' })
     await flushAsync()
 
-    expect(commandSpies.updateModelPresetCommand).toHaveBeenCalledTimes(1)
-    expect(commandSpies.updateModelPresetCommand).toHaveBeenCalledWith({
-      baseRevision: 123,
-      modelPresetId: 'model-a',
-      patch: {
-        modelRoleProfiles: normalizeModelRoleProfiles({
-          chatMain: { mode: 'profile', profileId: 'profile-1' },
-        }),
-      },
-    })
+    expect(commandSpies.updateModelPresetCommand).not.toHaveBeenCalled()
     expect(commandSpies.runServerCommandSequence).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps Apply retryable when the atomic role update fails', async () => {
+    commandSpies.updateModelRoleProfilesCommand.mockResolvedValue({ status: 'error', error: 'save failed' })
+    component = mount(ModelProfileRoleList, { target })
+    await tick()
+
+    setSelectValue(roleModeSelect(0), 'profile')
+    await tick()
+    buttonByText(language.modelProfiles.apply).click()
+    await flushAsync()
+
+    expect(target.textContent).toContain('save failed')
+    expect(target.textContent).toContain(language.modelProfiles.unsavedRoleChanges)
+    expect(buttonByText(language.modelProfiles.apply).disabled).toBe(false)
+    expect(commandSpies.updateModelPresetCommand).not.toHaveBeenCalled()
   })
 
   it('prevents role edits while Apply is pending', async () => {
@@ -251,6 +259,7 @@ describe('ModelProfileRoleList', () => {
       bindings: {
         chatMain: { mode: 'profile', profileId: 'profile-1' },
       },
+      modelPresetId: 'model-a',
     })
   })
 
@@ -288,6 +297,7 @@ describe('ModelProfileRoleList', () => {
       bindings: {
         chatMain: { mode: 'profile', profileId: 'profile-1' },
       },
+      modelPresetId: 'model-a',
     })
   })
 

@@ -15,9 +15,7 @@
   import {
     canUseServerCommands,
     runServerCommandSequence,
-    updateModelPresetCommand,
     updateModelRoleProfilesCommand,
-    type ServerCommandFactory,
     type ServerCommandResult,
   } from 'src/ts/server/commands'
   import { getDatabase, type Database } from 'src/ts/storage/database.svelte'
@@ -232,28 +230,15 @@
     applying = true
     commandError = ''
     const bindings = cloneJsonValue(changedBindings)
-    const nextRoleProfiles = cloneJsonValue(normalizeModelRoleProfiles(draftBindings))
     const modelPresetId = selectedModelPresetId()
-    const commands: ServerCommandFactory[] = [
+    const failure = await runServerCommandSequence([
       (baseRevision) =>
         updateModelRoleProfilesCommand({
           baseRevision,
           bindings,
+          ...(modelPresetId ? { modelPresetId } : {}),
         }),
-    ]
-    if (modelPresetId) {
-      commands.push((baseRevision) =>
-        updateModelPresetCommand({
-          baseRevision,
-          modelPresetId,
-          patch: {
-            modelRoleProfiles: nextRoleProfiles,
-          },
-        }),
-      )
-    }
-
-    const failure = await runServerCommandSequence(commands)
+    ])
     applying = false
 
     if (failure === null) return

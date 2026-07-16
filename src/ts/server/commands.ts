@@ -925,6 +925,7 @@ export interface DeleteModelProfileCommandInput extends ModelProfileCommandInput
 
 export interface UpdateModelRoleProfilesCommandInput extends ModelProfileCommandInput {
   bindings: Partial<Record<ModelRole, ModelRoleProfileBinding>>
+  modelPresetId?: string
 }
 
 export interface CreateAndBindModelProfileCommandInput extends ModelProfileCommandInput {
@@ -2778,6 +2779,7 @@ export async function updateModelRoleProfilesCommand(
     body: {
       baseRevision: input.baseRevision,
       bindings: input.bindings,
+      ...(input.modelPresetId ? { modelPresetId: input.modelPresetId } : {}),
     },
     signal,
   })

@@ -1743,6 +1743,76 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('updates role bindings and their selected model-preset mirror atomically', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerId: 'debug-echo',
+          modelId: 'echo_model',
+        },
+      ],
+      modelPresets: [
+        { id: 'model-a', name: 'Model A' },
+        { id: 'model-b', name: 'Model B' },
+      ],
+      modelPresetsId: 0,
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/model-role-profiles',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        bindings: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+        modelPresetId: 'model-a',
+      },
+    })
+
+    expect(updated.statusCode, updated.body).toBe(200)
+    expect(updated.json()).toMatchObject({
+      revision: revision + 1,
+      roles: ['chatMain'],
+      event: {
+        type: 'modelPreset.updated',
+        resource: 'modelPreset',
+        id: 'model-a',
+      },
+    })
+    const persisted = loadPersistedFromDir(harness.dataDir).database
+    expect(persisted.modelRoleProfiles).toMatchObject({
+      chatMain: { mode: 'profile', profileId: 'profile-a' },
+    })
+    expect(persisted.modelPresets).toEqual([
+      expect.objectContaining({
+        id: 'model-a',
+        modelRoleProfiles: expect.objectContaining({
+          chatMain: { mode: 'profile', profileId: 'profile-a' },
+        }),
+      }),
+      expect.objectContaining({ id: 'model-b', name: 'Model B' }),
+    ])
+
+    const missingPreset = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/model-role-profiles',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision + 1,
+        bindings: { chatAux: { mode: 'profile', profileId: 'profile-a' } },
+        modelPresetId: 'missing-preset',
+      },
+    })
+    expect(missingPreset.statusCode).toBe(404)
+    const afterRejectedMirror = loadPersistedFromDir(harness.dataDir).database
+    expect(afterRejectedMirror.modelRoleProfiles).toMatchObject({
+      chatAux: { mode: 'legacy' },
+    })
+  })
+
   it('preserves masked profile secrets on update and clears omitted secrets on full-row save', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

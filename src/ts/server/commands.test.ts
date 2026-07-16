@@ -2432,6 +2432,7 @@ describe('server command API adapter', () => {
     await updateModelRoleProfilesCommand({
       baseRevision: 5,
       bindings: { memory: { mode: 'profile', profileId: 'profile-a' } },
+      modelPresetId: 'model-preset-a',
     })
     await createAndBindModelProfileCommand({
       baseRevision: 6,
@@ -2487,6 +2488,7 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 5,
           bindings: { memory: { mode: 'profile', profileId: 'profile-a' } },
+          modelPresetId: 'model-preset-a',
         },
       },
       {
