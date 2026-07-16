@@ -1,0 +1,234 @@
+import { IDBFactory } from 'fake-indexeddb'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../platform', () => ({ isFastifyServer: true }))
+
+vi.mock('../storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: async () => 'test-auth-token',
+}))
+
+import {
+  clearAppliedServerResourceRevision,
+  clearCachedServerCommandRevision,
+  deletePromptItemCommand,
+  patchRuntimeSettings,
+  runServerCommand,
+  setCachedServerCommandRevision,
+  setServerCommandSuccessReconciler,
+  type ServerCommandResult,
+  type ServerCommandTransportOptions,
+} from './commands'
+import { dispatchDurableMutation } from './durableMutationDispatch'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+  stagePendingMutation,
+  type DurableMutationIntent,
+} from './pendingMutationOutbox'
+import { replayPendingMutations } from './pendingMutationReplay'
+
+const databaseLineage = 'database-terminal-rejection'
+
+beforeEach(async () => {
+  vi.stubGlobal('indexedDB', new IDBFactory())
+  resetPendingMutationOutboxForTests()
+  clearAppliedServerResourceRevision()
+  clearCachedServerCommandRevision()
+  setServerCommandSuccessReconciler(null)
+  await preparePendingMutationOutbox({
+    writerSessionId: 'writer-terminal-rejection',
+    writerEpoch: 1,
+    databaseLineage,
+    requestedWriterWasActive: true,
+  })
+})
+
+afterEach(async () => {
+  await clearPendingMutationOutbox()
+  resetPendingMutationOutboxForTests()
+  clearAppliedServerResourceRevision()
+  clearCachedServerCommandRevision()
+  setServerCommandSuccessReconciler(null)
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
+describe('durable mutation terminal request rejection', () => {
+  it('rolls back a live HTTP 400 and removes its exact outbox generation', async () => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: -1 } } }],
+    }
+    const handle = stagePendingMutation('settings:runtime', intent)
+    const rollback = vi.fn()
+    setCachedServerCommandRevision(10)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ error: 'maxContext must be positive' }, 400)) as unknown as typeof fetch,
+    )
+
+    const result = await dispatchDurableMutation(handle, intent, (options) =>
+      runServerCommand({
+        ...options,
+        rollback,
+        command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxContext: -1 } }),
+      }),
+    )
+
+    expect(result).toEqual({
+      status: 'error',
+      error: 'maxContext must be positive',
+      reason: 'invalid-request',
+    })
+    expect(rollback).toHaveBeenCalledOnce()
+    expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('discards an orphaned HTTP 404 during bootstrap replay', async () => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/prompt-items/missing-row',
+          body: { promptPresetId: 'missing-preset', patch: { text: 'orphaned edit' } },
+        },
+      ],
+    }
+    const handle = stagePendingMutation('prompt-template-owner:missing-preset', intent)
+    await handle.ready
+    setCachedServerCommandRevision(20)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({ error: 'Prompt preset not found: missing-preset' }, 404),
+      ) as unknown as typeof fetch,
+    )
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 1,
+      discarded: 1,
+      retained: 0,
+      succeeded: 0,
+    })
+    expect(await listPendingMutations()).toEqual([])
+    expect(warning).toHaveBeenCalledWith(
+      'Pending server mutation was discarded for prompt-template-owner:missing-preset',
+      expect.objectContaining({
+        status: 'error',
+        reason: 'not-found',
+      }),
+    )
+  })
+
+  it('discards an invalid predecessor and lets its prompt-item DELETE successor proceed', async () => {
+    const ownerKey = 'prompt-template-owner:preset-a'
+    const patchIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/prompt-items/row-a',
+          body: { promptPresetId: 'preset-a', patch: { text: 'invalid predecessor' } },
+        },
+      ],
+    }
+    const deleteIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'DELETE',
+          path: '/prompt-items/row-a',
+          body: { promptPresetId: 'preset-a' },
+        },
+      ],
+    }
+    const predecessor = stagePendingMutation(ownerKey, patchIntent)
+    await dispatchDurableMutation(
+      predecessor,
+      patchIntent,
+      wrappedDispatch(async () => ({ status: 'error', error: 'response stream ended' })),
+    )
+    const successor = stagePendingMutation(ownerKey, deleteIntent, predecessor)
+    setCachedServerCommandRevision(30)
+
+    const calls: Array<{ method: string; mutationId: string | null; url: string }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const headers = init.headers as Record<string, string> | undefined
+        calls.push({
+          method: init.method ?? 'GET',
+          mutationId: headers?.['risu-mutation-id'] ?? null,
+          url,
+        })
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return jsonResponse({ acknowledged: 1, requested: 1 })
+        }
+        if (url.endsWith('/prompt-items/row-a') && init.method === 'PATCH') {
+          return jsonResponse({ error: 'Prompt item patch is no longer valid' }, 400)
+        }
+        return jsonResponse({
+          revision: 31,
+          event: {
+            type: 'prompt.item.deleted',
+            revision: 31,
+            resource: 'promptItem',
+            id: 'row-a',
+            parentId: 'preset-a',
+          },
+          itemId: 'row-a',
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    const result = await dispatchDurableMutation(successor, deleteIntent, (options) =>
+      runServerCommand({
+        ...options,
+        command: (baseRevision) =>
+          deletePromptItemCommand({
+            baseRevision,
+            promptPresetId: 'preset-a',
+            itemId: 'row-a',
+          }),
+      }),
+    )
+
+    expect(result).toMatchObject({ status: 'ok', revision: 31 })
+    expect(calls).toEqual([
+      {
+        method: 'PATCH',
+        mutationId: predecessor.mutationId,
+        url: '/api/v1/commands/prompt-items/row-a',
+      },
+      {
+        method: 'DELETE',
+        mutationId: successor.mutationId,
+        url: '/api/v1/commands/prompt-items/row-a',
+      },
+      {
+        method: 'POST',
+        mutationId: null,
+        url: '/api/v1/commands/mutation-receipts/ack',
+      },
+    ])
+    expect(await listPendingMutations()).toEqual([])
+  })
+})
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function wrappedDispatch(
+  request: () => Promise<ServerCommandResult>,
+): (options: ServerCommandTransportOptions) => Promise<ServerCommandResult> {
+  return (options) => (options.executionWrapper ? options.executionWrapper(request) : request())
+}

@@ -497,13 +497,20 @@ export type ServerCommandLocalEffect = (
   readonly destructiveRefreshEpoch?: number
 }
 
+export type ServerCommandErrorReason =
+  | 'database-lineage'
+  | 'invalid-request'
+  | 'mutation-id-conflict'
+  | 'not-found'
+  | 'stale-writer'
+
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
   | { status: 'conflict'; currentRevision: number }
   | {
       status: 'error'
       error: string
-      reason?: 'database-lineage' | 'mutation-id-conflict' | 'stale-writer'
+      reason?: ServerCommandErrorReason
     }
   | { status: 'unavailable' }
 
@@ -4988,7 +4995,7 @@ export type DurableMutationReplayResult =
   | {
       status: 'error'
       error: string
-      reason?: 'database-lineage' | 'mutation-id-conflict' | 'stale-writer'
+      reason?: ServerCommandErrorReason
     }
   | { status: 'unavailable' }
 
@@ -5257,6 +5264,22 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
 
     if (handleActiveWriterStaleResponse(response)) {
       return { status: 'error', error: errorMessageFromBody(body, 'HTTP 423'), reason: 'stale-writer' }
+    }
+
+    if (response.status === 400) {
+      return {
+        status: 'error',
+        error: errorMessageFromBody(body, 'HTTP 400'),
+        reason: 'invalid-request',
+      }
+    }
+
+    if (response.status === 404) {
+      return {
+        status: 'error',
+        error: errorMessageFromBody(body, 'HTTP 404'),
+        reason: 'not-found',
+      }
     }
 
     if (!response.ok) {

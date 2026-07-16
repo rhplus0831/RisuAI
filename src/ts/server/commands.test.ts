@@ -1665,8 +1665,16 @@ describe('server command API adapter', () => {
     expect(peekAppliedServerResourceRevision()).toBeNull()
   })
 
-  it('maps command errors to status:error', async () => {
-    const commandFetch = makeCommandFetch(() => jsonResponse({ error: 'streamGeminiThoughts must be a boolean' }, 400))
+  it.each([
+    { status: 400, reason: 'invalid-request' as const },
+    { status: 404, reason: 'not-found' as const },
+    { status: 401 },
+    { status: 403 },
+    { status: 429 },
+    { status: 500 },
+  ])('classifies command HTTP $status without making transient failures terminal', async ({ status, reason }) => {
+    const error = `command failed with ${status}`
+    const commandFetch = makeCommandFetch(() => jsonResponse({ error }, status))
     vi.stubGlobal('fetch', commandFetch.fetch)
 
     const result = await patchRuntimeSettings({
@@ -1676,7 +1684,8 @@ describe('server command API adapter', () => {
 
     expect(result).toEqual({
       status: 'error',
-      error: 'streamGeminiThoughts must be a boolean',
+      error,
+      ...(reason ? { reason } : {}),
     })
   })
 
@@ -1773,7 +1782,11 @@ describe('server command API adapter', () => {
       rollback,
     })
 
-    expect(result).toEqual({ status: 'error', error: 'maxContext must be a number' })
+    expect(result).toEqual({
+      status: 'error',
+      error: 'maxContext must be a number',
+      reason: 'invalid-request',
+    })
     expect(rollback).toHaveBeenCalledTimes(1)
     expect(reconciliations).toEqual([{ revisions: [11], localEffects: [] }])
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
@@ -1915,7 +1928,11 @@ describe('server command API adapter', () => {
       rollback,
     })
 
-    expect(result).toEqual({ status: 'error', error: 'aiModel must be a string' })
+    expect(result).toEqual({
+      status: 'error',
+      error: 'aiModel must be a string',
+      reason: 'invalid-request',
+    })
     expect(rollback).toHaveBeenCalledTimes(1)
   })
 
@@ -1937,7 +1954,11 @@ describe('server command API adapter', () => {
       rollback,
     })
 
-    expect(result).toEqual({ status: 'error', error: 'aiModel must be a string' })
+    expect(result).toEqual({
+      status: 'error',
+      error: 'aiModel must be a string',
+      reason: 'invalid-request',
+    })
     expect(rollback).not.toHaveBeenCalled()
     expect(liveSettings.aiModel).toBe('attempted')
   })

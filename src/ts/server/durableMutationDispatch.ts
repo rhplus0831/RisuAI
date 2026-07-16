@@ -5,6 +5,7 @@ import {
   runServerCommandWithoutMutationReceipt,
   runServerCommandWithMutationReceipt,
   type DurableMutationReplayResult,
+  type ServerCommandErrorReason,
   type ServerCommandExecutionWrapper,
   type ServerCommandResult,
   type ServerCommandTransportOptions,
@@ -188,6 +189,19 @@ export interface DurableMutationReplayOutcome {
   result?: DurableMutationReplayResult
 }
 
+function isTerminalRequestRejection(reason: ServerCommandErrorReason | undefined): boolean {
+  return reason === 'invalid-request' || reason === 'not-found'
+}
+
+function shouldDiscardDurableMutation(reason: ServerCommandErrorReason | undefined): boolean {
+  return (
+    isTerminalRequestRejection(reason) ||
+    reason === 'stale-writer' ||
+    reason === 'database-lineage' ||
+    reason === 'mutation-id-conflict'
+  )
+}
+
 export async function dispatchDurableMutationReplay(
   handle: PendingMutationHandle,
   intent: DurableMutationIntent,
@@ -209,12 +223,7 @@ export async function dispatchDurableMutationReplay(
       })
       return { disposition: 'succeeded', result }
     }
-    if (
-      result.status === 'error' &&
-      (result.reason === 'stale-writer' ||
-        result.reason === 'database-lineage' ||
-        result.reason === 'mutation-id-conflict')
-    ) {
+    if (result.status === 'error' && shouldDiscardDurableMutation(result.reason)) {
       await discardPendingMutation(handle)
       return { disposition: 'discarded', result }
     }
@@ -252,14 +261,11 @@ async function drainPendingMutationPredecessors(handle: PendingMutationHandle): 
           })
           return true
         }
-        if (
-          result.status === 'error' &&
-          (result.reason === 'stale-writer' ||
-            result.reason === 'database-lineage' ||
-            result.reason === 'mutation-id-conflict')
-        ) {
+        if (result.status === 'error' && shouldDiscardDurableMutation(result.reason)) {
           await discardPendingMutation(predecessor.handle)
-          return result.reason === 'mutation-id-conflict'
+          // A malformed/orphaned predecessor says nothing about a later exact
+          // body. Ownership and lineage failures do, so they still stop here.
+          return result.reason === 'mutation-id-conflict' || isTerminalRequestRejection(result.reason)
         }
         return false
       },
@@ -270,9 +276,10 @@ async function drainPendingMutationPredecessors(handle: PendingMutationHandle): 
 }
 
 /**
- * Accepted requests atomically become durable receipt-ACK work. Terminal
- * ownership/lineage/id collisions are discarded; transient failures remain for
- * replay against the same owner and database.
+ * Accepted requests atomically become durable receipt-ACK work. Exact requests
+ * rejected as invalid or missing cannot recover unchanged, so they are dropped
+ * after the command runner performs its optimistic rollback. Ownership,
+ * lineage, and receipt-id failures remain terminal; all other failures retry.
  */
 export async function settleDurableMutation(
   handle: PendingMutationHandle,
@@ -290,12 +297,7 @@ export async function settleDurableMutation(
     })
     return true
   }
-  if (
-    result?.status === 'error' &&
-    (result.reason === 'stale-writer' ||
-      result.reason === 'database-lineage' ||
-      result.reason === 'mutation-id-conflict')
-  ) {
+  if (result?.status === 'error' && shouldDiscardDurableMutation(result.reason)) {
     await discardPendingMutation(handle)
   }
   return false
