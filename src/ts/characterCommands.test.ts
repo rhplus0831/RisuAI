@@ -938,7 +938,11 @@ describe('character list create/delete rollback', () => {
       const commandCount = commands.length
       await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 0 })
       expect(commands).toHaveLength(commandCount)
-      expect(testDatabaseState.db.characters.some((character) => character.chaId === 'char-b')).toBe(false)
+      // The unsent durable DELETE rolled its optimistic removal back while its
+      // profile predecessor was blocked. Raw startup replay updates the server;
+      // the following resource hydration, not the outbox helper itself, removes
+      // the restored local row.
+      expect(testDatabaseState.db.characters.some((character) => character.chaId === 'char-b')).toBe(true)
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
