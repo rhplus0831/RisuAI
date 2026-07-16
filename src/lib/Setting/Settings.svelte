@@ -43,7 +43,7 @@
   import HotkeySettings from './Pages/HotkeySettings.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import { alertConfirm } from 'src/ts/alert'
-  import { navigate } from 'src/ts/router'
+  import { closeSettingsRoute, navigate } from 'src/ts/router'
 
   let openLoreList = $state(false)
   let supporterConfirmOpen = $state(false)
@@ -304,7 +304,7 @@
             class="absolute top-2 right-2 hover:text-green-500 text-textcolor"
             aria-label={language.close}
             onclick={() => {
-              navigate('/')
+              closeSettingsRoute()
             }}>
             <CircleXIcon size={getDatabase().settingsCloseButtonSize} />
           </button>
@@ -387,7 +387,7 @@
           class="absolute top-2 right-2 hover:text-green-500 text-textcolor"
           aria-label={language.close}
           onclick={() => {
-            navigate('/')
+            closeSettingsRoute()
           }}>
           <CircleXIcon size={getDatabase().settingsCloseButtonSize} />
         </button>

@@ -1,11 +1,15 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hotkeyNavigationMocks = vi.hoisted(() => ({
+  closeSettingsRoute: vi.fn(),
   navigate: vi.fn(),
+  openSettingsRoute: vi.fn(),
 }))
 
 vi.mock('./router', () => ({
+  closeSettingsRoute: hotkeyNavigationMocks.closeSettingsRoute,
   navigate: hotkeyNavigationMocks.navigate,
+  openSettingsRoute: hotkeyNavigationMocks.openSettingsRoute,
 }))
 
 vi.mock('./process/modules', async (importActual) => {
@@ -34,7 +38,9 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  hotkeyNavigationMocks.closeSettingsRoute.mockReset()
   hotkeyNavigationMocks.navigate.mockReset()
+  hotkeyNavigationMocks.openSettingsRoute.mockReset()
   settingsOpen.set(false)
   selectedCharID.set(-1)
   PlaygroundStore.set(0)
@@ -49,11 +55,11 @@ beforeEach(() => {
 describe('global hotkey route ownership', () => {
   it('routes the Settings shortcut through the router in both directions', async () => {
     await press('s', { ctrlKey: true })
-    expect(hotkeyNavigationMocks.navigate).toHaveBeenLastCalledWith('/settings')
+    expect(hotkeyNavigationMocks.openSettingsRoute).toHaveBeenCalledOnce()
 
     settingsOpen.set(true)
     await press('s', { ctrlKey: true })
-    expect(hotkeyNavigationMocks.navigate).toHaveBeenLastCalledWith('/')
+    expect(hotkeyNavigationMocks.closeSettingsRoute).toHaveBeenCalledOnce()
   })
 
   it('routes Home out of settings and playground state', async () => {
@@ -74,7 +80,7 @@ describe('global hotkey route ownership', () => {
     const event = await press('Escape')
 
     expect(event.defaultPrevented).toBe(true)
-    expect(hotkeyNavigationMocks.navigate).toHaveBeenCalledWith('/')
+    expect(hotkeyNavigationMocks.closeSettingsRoute).toHaveBeenCalledOnce()
   })
 
   it('leaves Escape from an editable select to its owning control', async () => {
@@ -90,7 +96,7 @@ describe('global hotkey route ownership', () => {
     })
     select.dispatchEvent(event)
 
-    expect(hotkeyNavigationMocks.navigate).not.toHaveBeenCalled()
+    expect(hotkeyNavigationMocks.closeSettingsRoute).not.toHaveBeenCalled()
     select.remove()
   })
 
@@ -106,6 +112,6 @@ describe('global hotkey route ownership', () => {
     document.dispatchEvent(event)
     await Promise.resolve()
 
-    expect(hotkeyNavigationMocks.navigate).not.toHaveBeenCalled()
+    expect(hotkeyNavigationMocks.closeSettingsRoute).not.toHaveBeenCalled()
   })
 })

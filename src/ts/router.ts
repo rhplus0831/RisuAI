@@ -39,11 +39,20 @@ const DEFAULT_SETTINGS_INDEX = 17
 const DEFAULT_PLAYGROUND_INDEX = 1
 const GRID_HISTORY_STATE_KEY = '__risuGridNavigation'
 const GRID_HISTORY_STATE_VERSION = 1
+const SETTINGS_HISTORY_STATE_KEY = '__risuSettingsNavigation'
+const SETTINGS_HISTORY_STATE_VERSION = 1
 
 interface GridHistoryState {
   [GRID_HISTORY_STATE_KEY]: {
     originPath: string
     version: typeof GRID_HISTORY_STATE_VERSION
+  }
+}
+
+interface SettingsHistoryState {
+  [SETTINGS_HISTORY_STATE_KEY]: {
+    originPath: string
+    version: typeof SETTINGS_HISTORY_STATE_VERSION
   }
 }
 
@@ -166,6 +175,7 @@ let routeApplicationPending = initialRoute.kind !== 'home'
 let skipNextRouteApplication = false
 let routeApplicationEpoch = 0
 let gridHistoryTraversalPending = false
+let settingsHistoryTraversalPending = false
 
 export const currentRoute = writable<AppRoute>(initialRoute)
 
@@ -174,21 +184,65 @@ export function installRouter(): void {
   routerInstalled = true
   window.addEventListener('popstate', () => {
     gridHistoryTraversalPending = false
+    settingsHistoryTraversalPending = false
     routeApplicationPending = true
     currentRoute.set(parseRoute(window.location.pathname))
   })
 }
 
 export function navigate(path: string, options: { replace?: boolean } = {}): void {
+  if (typeof window === 'undefined') return
+
   const requestedRoute = parseRoute(path)
   const canonicalPath = activeGenerationOwnerPathForCharacterRoute(requestedRoute) ?? path
   const nextRoute = canonicalPath === path ? requestedRoute : parseRoute(canonicalPath)
   if (blocksActiveCharacterGeneration(nextRoute)) return
 
+  if (nextRoute.kind === 'settings') {
+    const currentPath = normalizePath(window.location.pathname)
+    const currentRouteKind = parseRoute(currentPath).kind
+    if (currentRouteKind === 'settings') {
+      commitPath(canonicalPath, {
+        replace: true,
+        stateDriven: false,
+        historyState: window.history.state,
+      })
+      return
+    }
+
+    commitPath(canonicalPath, {
+      replace: options.replace ?? false,
+      stateDriven: false,
+      ...((options.replace ?? false) ? {} : { historyState: settingsHistoryState(currentPath) }),
+    })
+    return
+  }
+
   commitPath(canonicalPath, {
     replace: options.replace ?? false,
     stateDriven: false,
   })
+}
+
+export function openSettingsRoute(path = '/settings'): void {
+  if (parseRoute(path).kind !== 'settings') return
+  settingsHistoryTraversalPending = false
+  navigate(path)
+}
+
+export function closeSettingsRoute(): void {
+  if (typeof window === 'undefined') return
+
+  const isSettingsRoute = parseRoute(window.location.pathname).kind === 'settings'
+  if (isSettingsRoute && settingsOriginPath(window.history.state)) {
+    if (settingsHistoryTraversalPending) return
+    settingsHistoryTraversalPending = true
+    window.history.back()
+    return
+  }
+
+  settingsHistoryTraversalPending = false
+  navigate('/', { replace: true })
 }
 
 export function openGridRoute(): void {
@@ -229,6 +283,18 @@ export function closeGridRoute(): void {
 export function syncRouteFromState(input: StateRouteInput): void {
   if (applyingRoute || typeof window === 'undefined') return
   const path = routePathFromState(input)
+
+  const currentPath = normalizePath(window.location.pathname)
+  const currentRouteKind = parseRoute(currentPath).kind
+  if (parseRoute(path).kind === 'settings') {
+    commitPath(path, {
+      replace: currentRouteKind === 'settings',
+      stateDriven: true,
+      historyState: currentRouteKind === 'settings' ? window.history.state : settingsHistoryState(currentPath),
+    })
+    return
+  }
+
   commitPath(path, { replace: true, stateDriven: true })
 }
 
@@ -595,6 +661,31 @@ function gridOriginPath(historyState: unknown): string | null {
 
   const originPath = normalizePath(gridState.originPath)
   return parseRoute(originPath).kind === 'grid' ? null : originPath
+}
+
+function settingsHistoryState(originPath: string): SettingsHistoryState {
+  return {
+    [SETTINGS_HISTORY_STATE_KEY]: {
+      originPath: normalizePath(originPath),
+      version: SETTINGS_HISTORY_STATE_VERSION,
+    },
+  }
+}
+
+function settingsOriginPath(historyState: unknown): string | null {
+  if (!historyState || typeof historyState !== 'object') return null
+
+  const settingsState = (historyState as Partial<SettingsHistoryState>)[SETTINGS_HISTORY_STATE_KEY]
+  if (
+    !settingsState ||
+    settingsState.version !== SETTINGS_HISTORY_STATE_VERSION ||
+    typeof settingsState.originPath !== 'string'
+  ) {
+    return null
+  }
+
+  const originPath = normalizePath(settingsState.originPath)
+  return parseRoute(originPath).kind === 'settings' ? null : originPath
 }
 
 function normalizePath(pathname: string): string {

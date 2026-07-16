@@ -31,7 +31,7 @@ import {
   resolveActiveChatGenerationSettings,
   saveActiveChatGenerationSettingsSelection,
 } from './activeChatGenerationSettings'
-import { navigate } from './router'
+import { closeSettingsRoute, navigate, openSettingsRoute } from './router'
 
 export function initHotkey() {
   const handleHotkeyKeydown = async (ev: KeyboardEvent): Promise<void> => {
@@ -88,7 +88,11 @@ export function initHotkey() {
           break
         }
         case 'settings': {
-          navigate(get(settingsOpen) ? '/' : '/settings')
+          if (get(settingsOpen)) {
+            closeSettingsRoute()
+          } else {
+            openSettingsRoute()
+          }
           break
         }
         case 'home': {
@@ -246,7 +250,7 @@ export function initHotkey() {
         }
       }
       if (get(settingsOpen)) {
-        navigate('/')
+        closeSettingsRoute()
       }
       ev.preventDefault()
     }

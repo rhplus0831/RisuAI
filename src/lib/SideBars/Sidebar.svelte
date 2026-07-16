@@ -58,7 +58,12 @@
     isSidebarCharacterDrag,
     SIDEBAR_CHARACTER_DRAG_TYPE,
   } from './sidebarDrag'
-  import { characterRoutePath, navigate } from 'src/ts/router'
+  import {
+    characterRoutePath,
+    closeSettingsRoute,
+    navigate,
+    openSettingsRoute as openSettingsPath,
+  } from 'src/ts/router'
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -90,8 +95,12 @@
   }
 
   function openSettingsRoute() {
+    if ($settingsOpen) {
+      closeSettingsRoute()
+      return
+    }
     reseter()
-    navigate($settingsOpen ? '/' : '/settings')
+    openSettingsPath()
   }
 
   function openPlaygroundRoute() {

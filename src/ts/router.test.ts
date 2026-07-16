@@ -226,6 +226,101 @@ describe('router grid history', () => {
   })
 })
 
+describe('router settings history', () => {
+  it('uses one marked history entry for an in-app Settings session', async () => {
+    const router = await importRouterAt('/character/char-a/chat-a')
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+
+    router.openSettingsRoute()
+
+    expect(window.location.pathname).toBe('/settings')
+    expect(window.history.state).toEqual({
+      __risuSettingsNavigation: {
+        originPath: '/character/char-a/chat-a',
+        version: 1,
+      },
+    })
+
+    router.navigate('/settings/model')
+    router.navigate('/settings/display')
+
+    expect(window.location.pathname).toBe('/settings/display')
+    expect(pushState).toHaveBeenCalledOnce()
+    expect(replaceState).toHaveBeenCalledTimes(2)
+    expect(window.history.state).toEqual({
+      __risuSettingsNavigation: {
+        originPath: '/character/char-a/chat-a',
+        version: 1,
+      },
+    })
+
+    router.closeSettingsRoute()
+    router.closeSettingsRoute()
+
+    expect(back).toHaveBeenCalledOnce()
+    pushState.mockRestore()
+    replaceState.mockRestore()
+    back.mockRestore()
+  })
+
+  it('replaces a direct Settings entry with home when there is no marked origin', async () => {
+    const router = await importRouterAt('/settings/model')
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+
+    router.navigate('/settings/display')
+
+    expect(window.location.pathname).toBe('/settings/display')
+    expect(window.history.state).toBeNull()
+
+    router.closeSettingsRoute()
+
+    expect(window.location.pathname).toBe('/')
+    expect(pushState).not.toHaveBeenCalled()
+    expect(back).not.toHaveBeenCalled()
+    expect(replaceState).toHaveBeenLastCalledWith(null, '', '/')
+    pushState.mockRestore()
+    replaceState.mockRestore()
+    back.mockRestore()
+  })
+
+  it('marks legacy store-driven Settings openings and preserves the origin across sections', async () => {
+    const router = await importRouterAt('/grid')
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+
+    router.syncRouteFromState({
+      currentRouteKind: 'grid',
+      settingsOpen: true,
+      settingsMenuIndex: -1,
+      selectedCharID: -1,
+      playgroundStore: 0,
+    })
+    router.syncRouteFromState({
+      currentRouteKind: 'settings',
+      settingsOpen: true,
+      settingsMenuIndex: 17,
+      selectedCharID: -1,
+      playgroundStore: 0,
+    })
+
+    expect(window.location.pathname).toBe('/settings/model')
+    expect(pushState).toHaveBeenCalledOnce()
+    expect(replaceState).toHaveBeenCalledOnce()
+    expect(window.history.state).toEqual({
+      __risuSettingsNavigation: {
+        originPath: '/grid',
+        version: 1,
+      },
+    })
+    pushState.mockRestore()
+    replaceState.mockRestore()
+  })
+})
+
 describe('router character route freshness', () => {
   it('routes character-only navigation to the active generation owner chat', async () => {
     const router = await importRouterAt('/')
