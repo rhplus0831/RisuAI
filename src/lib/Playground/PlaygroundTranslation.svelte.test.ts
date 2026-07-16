@@ -208,6 +208,39 @@ describe('PlaygroundTranslation run ownership and failures', () => {
     expect(target.querySelector('[role="alert"]')?.textContent).toContain('Chunk 2 of 3 failed: chunk provider failure')
   })
 
+  it('translates the text field of a single JSON object without dropping its metadata', async () => {
+    translationMocks.runTranslator.mockResolvedValueOnce('translated hello')
+    component = mount(PlaygroundTranslation, { target })
+    await setSource('{"text":"hello","metadata":"kept"}')
+    await enableBulk()
+
+    translateButton().click()
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledOnce())
+    await waitForIdle()
+
+    expect(translationMocks.runTranslator).toHaveBeenCalledWith('hello', false, 'en', expect.any(String), {
+      translatorNote: '',
+    })
+    expect(JSON.parse(textareas()[1]?.value ?? '')).toEqual({ text: 'translated hello', metadata: 'kept' })
+  })
+
+  it('falls back to translating valid non-collection JSON instead of silently echoing it', async () => {
+    const source = '{"metadata":"hello"}'
+    translationMocks.runTranslator.mockResolvedValueOnce('translated document')
+    component = mount(PlaygroundTranslation, { target })
+    await setSource(source)
+    await enableBulk()
+
+    translateButton().click()
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledOnce())
+    await waitForIdle()
+
+    expect(translationMocks.runTranslator).toHaveBeenCalledWith(source, false, 'en', expect.any(String), {
+      translatorNote: '',
+    })
+    expect(textareas()[1]?.value).toBe('translated document')
+  })
+
   it('releases loading and permits a retry when the source changes during translation', async () => {
     const firstTranslation = deferred<string>()
     translationMocks.runTranslator

@@ -63,6 +63,7 @@
       const translatedChunks: Array<string | null> = []
       let parsedJson: unknown = null
       let jsonMode = false
+      let singleJsonObject = false
       try {
         parsedJson = JSON.parse(sourceSnapshot.trim())
         if (Array.isArray(parsedJson)) {
@@ -71,15 +72,29 @@
             const text = (item as { text?: unknown }).text
             return typeof text === 'string' ? text : ''
           })
+          jsonMode = true
+        } else if (parsedJson && typeof parsedJson === 'object' && !Array.isArray(parsedJson)) {
+          const text = (parsedJson as { text?: unknown }).text
+          if (typeof text === 'string') {
+            preChunks = [text]
+            jsonMode = true
+            singleJsonObject = true
+          } else {
+            preChunks = [sourceSnapshot]
+          }
+        } else {
+          preChunks = [sourceSnapshot]
         }
-        jsonMode = true
       } catch {
         preChunks = sourceSnapshot.split('\n\n')
       }
 
       const formattedOutput = () => {
         if (!jsonMode) return translatedChunks.map((chunk) => chunk ?? '').join('\n\n')
-        if (!Array.isArray(parsedJson)) return JSON.stringify(parsedJson, null, 2)
+        if (singleJsonObject && parsedJson && typeof parsedJson === 'object' && !Array.isArray(parsedJson)) {
+          return JSON.stringify({ ...parsedJson, text: translatedChunks[0] ?? '' }, null, 2)
+        }
+        if (!Array.isArray(parsedJson)) return translatedChunks.map((chunk) => chunk ?? '').join('\n\n')
 
         const rows = parsedJson.map((item, index) => {
           const translatedChunk = translatedChunks[index]
