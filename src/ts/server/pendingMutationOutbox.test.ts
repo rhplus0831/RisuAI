@@ -13,6 +13,7 @@ import {
   listPendingMutations,
   preparePendingMutationOutbox,
   readSinglePendingMutationOwner,
+  replaceStagedPendingMutationIntent,
   resetPendingMutationOutboxForTests,
   stagePendingMutation,
   type DurableMutationIntent,
@@ -80,18 +81,49 @@ describe('pending mutation outbox', () => {
     expect(entries[0]?.handle.mutationId).toBe(handle.mutationId)
   })
 
-  it('coalesces a staged payload under one mutation id and keeps only its latest encrypted value', async () => {
+  it('atomically replaces an unstarted staged payload under a fresh mutation id', async () => {
     const first = stagePendingMutation('settings:runtime', settingsIntent('first'))
+    await first.ready
+    const remoteReady = deferred<'persisted'>()
+    const remoteHandle = { ...(await listPendingMutations())[0]!.handle, ready: remoteReady.promise }
+    const remoteBegin = beginPendingMutationDispatch(remoteHandle)
     const latest = stagePendingMutation('settings:runtime', settingsIntent('latest'), first)
 
-    expect(latest.mutationId).toBe(first.mutationId)
+    expect(latest.mutationId).not.toBe(first.mutationId)
     expect(first.phase).toBe('superseded')
-    await Promise.all([first.ready, latest.ready])
+    await latest.ready
+    remoteReady.resolve('persisted')
+    await expect(remoteBegin).resolves.toBe('superseded')
 
     const entries = await listPendingMutations()
     expect(entries).toHaveLength(1)
     expect(entries[0]?.intent).toEqual(settingsIntent('latest'))
     expect(entries[0]?.handle.sequence).toBe(latest.sequence)
+  })
+
+  it('keeps both fresh-id generations when another tab marks the predecessor first', async () => {
+    const predecessor = stagePendingMutation('settings:runtime', settingsIntent('predecessor'))
+    await predecessor.ready
+    const remoteHandle = (await listPendingMutations())[0]!.handle
+    const encryptionGate = deferred<void>()
+    const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
+    const encryptSpy = vi
+      .spyOn(globalThis.crypto.subtle, 'encrypt')
+      .mockImplementationOnce(async (algorithm, key, data) => {
+        await encryptionGate.promise
+        return originalEncrypt(algorithm, key, data)
+      })
+
+    const successor = stagePendingMutation('settings:runtime', settingsIntent('successor'), predecessor)
+    await vi.waitFor(() => expect(encryptSpy).toHaveBeenCalledOnce())
+    await expect(beginPendingMutationDispatch(remoteHandle)).resolves.toBe('persisted')
+    encryptionGate.resolve()
+    await expect(successor.ready).resolves.toBe('persisted')
+
+    const entries = await listPendingMutations()
+    expect(entries.map((entry) => entry.handle.mutationId)).toEqual([predecessor.mutationId, successor.mutationId])
+    expect(entries.map((entry) => entry.intent)).toEqual([settingsIntent('predecessor'), settingsIntent('successor')])
+    expect(await readRawMutation(predecessor.mutationId)).toMatchObject({ dispatchStarted: true })
   })
 
   it('keeps a dispatching generation and its queued successor as separate durable rows', async () => {
@@ -135,7 +167,7 @@ describe('pending mutation outbox', () => {
     await expect(listPendingMutationPredecessors(unrelated)).resolves.toEqual({ status: 'ok', entries: [] })
   })
 
-  it('rejects a slow older coalesced write after the exact newer payload is durable', async () => {
+  it('chains a slow predecessor persistence before atomically replacing it', async () => {
     const encryptionGate = deferred<void>()
     const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
     const encryptSpy = vi.spyOn(globalThis.crypto.subtle, 'encrypt')
@@ -147,15 +179,119 @@ describe('pending mutation outbox', () => {
     const older = stagePendingMutation('settings:runtime', settingsIntent('older'))
     await vi.waitFor(() => expect(encryptSpy).toHaveBeenCalledOnce())
     const newer = stagePendingMutation('settings:runtime', settingsIntent('newer'), older)
-    expect(newer.mutationId).toBe(older.mutationId)
-    await expect(newer.ready).resolves.toBe('persisted')
+    expect(newer.mutationId).not.toBe(older.mutationId)
+    let newerSettled = false
+    void newer.ready.then(() => {
+      newerSettled = true
+    })
+    await Promise.resolve()
+    expect(newerSettled).toBe(false)
 
     encryptionGate.resolve()
-    await expect(older.ready).resolves.toBe('superseded')
+    await expect(Promise.all([older.ready, newer.ready])).resolves.toEqual(['persisted', 'persisted'])
     const entries = await listPendingMutations()
     expect(entries).toHaveLength(1)
     expect(entries[0]?.handle.sequence).toBe(newer.sequence)
     expect(entries[0]?.intent).toEqual(settingsIntent('newer'))
+  })
+
+  it('marks legacy rows before dispatch and treats a missing marker as unstarted for replacement', async () => {
+    const legacyDispatch = stagePendingMutation('settings:runtime', settingsIntent('legacy-dispatch'))
+    await legacyDispatch.ready
+    await removeRawDispatchStarted(legacyDispatch.mutationId)
+    await expect(beginPendingMutationDispatch(legacyDispatch)).resolves.toBe('persisted')
+    expect(await readRawMutation(legacyDispatch.mutationId)).toMatchObject({ dispatchStarted: true })
+
+    const legacyReplace = stagePendingMutation('settings:other', settingsIntent('legacy-replace'))
+    await legacyReplace.ready
+    await removeRawDispatchStarted(legacyReplace.mutationId)
+    const replacement = stagePendingMutation('settings:other', settingsIntent('replacement'), legacyReplace)
+    await replacement.ready
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([
+      legacyDispatch.mutationId,
+      replacement.mutationId,
+    ])
+  })
+
+  it('exactly replaces an unstarted placeholder without changing its id or durable order', async () => {
+    const placeholder = stagePendingMutation('settings:runtime', settingsIntent('fallback'))
+    await placeholder.ready
+    const staleReady = deferred<'persisted'>()
+    const staleReplayHandle = { ...(await listPendingMutations())[0]!.handle, ready: staleReady.promise }
+    const staleBegin = beginPendingMutationDispatch(staleReplayHandle)
+    const before = await readRawMutation(placeholder.mutationId)
+
+    const replacement = await replaceStagedPendingMutationIntent(placeholder, settingsIntent('exact'))
+    expect(replacement.status).toBe('replaced')
+    if (replacement.status !== 'replaced') throw new Error('Expected an exact replacement')
+    const exact = replacement.handle
+
+    expect(exact.mutationId).toBe(placeholder.mutationId)
+    expect(exact.sequence).not.toBe(placeholder.sequence)
+    expect(await readRawMutation(exact.mutationId)).toMatchObject({ order: before?.order, dispatchStarted: false })
+    expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([settingsIntent('exact')])
+    staleReady.resolve('persisted')
+    await expect(staleBegin).resolves.toBe('superseded')
+    await expect(beginPendingMutationDispatch(exact)).resolves.toBe('persisted')
+  })
+
+  it('gives an exact prepared intent a fresh successor id when dispatch marking wins the race', async () => {
+    const placeholder = stagePendingMutation('settings:runtime', settingsIntent('fallback'))
+    await placeholder.ready
+    const remoteHandle = (await listPendingMutations())[0]!.handle
+    const encryptionGate = deferred<void>()
+    const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
+    const encryptSpy = vi
+      .spyOn(globalThis.crypto.subtle, 'encrypt')
+      .mockImplementationOnce(async (algorithm, key, data) => {
+        await encryptionGate.promise
+        return originalEncrypt(algorithm, key, data)
+      })
+    const replacement = replaceStagedPendingMutationIntent(placeholder, settingsIntent('exact'))
+    await vi.waitFor(() => expect(encryptSpy).toHaveBeenCalledOnce())
+    await beginPendingMutationDispatch(remoteHandle)
+    encryptionGate.resolve()
+
+    const exact = await replacement
+
+    expect(exact.status).toBe('successor')
+    if (exact.status !== 'successor') throw new Error('Expected a fresh successor')
+    expect(exact.handle.mutationId).not.toBe(placeholder.mutationId)
+    expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+      settingsIntent('fallback'),
+      settingsIntent('exact'),
+    ])
+  })
+
+  it('keeps an exact same-scope correction when another tab removes its placeholder first', async () => {
+    const placeholder = stagePendingMutation('settings:runtime', settingsIntent('fallback'))
+    await placeholder.ready
+    const remoteHandle = (await listPendingMutations())[0]!.handle
+    await expect(discardPendingMutation(remoteHandle)).resolves.toBe('deleted')
+
+    const exact = await replaceStagedPendingMutationIntent(placeholder, settingsIntent('exact'))
+
+    expect(exact.status).toBe('successor')
+    if (exact.status !== 'successor') throw new Error('Expected a fresh successor')
+    expect(exact.handle.mutationId).not.toBe(placeholder.mutationId)
+    expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([settingsIntent('exact')])
+  })
+
+  it('does not bind a superseded prepared placeholder to a replacement database scope', async () => {
+    const placeholder = stagePendingMutation('settings:runtime', settingsIntent('old-database'))
+    await placeholder.ready
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 1,
+      databaseLineage: 'database-b',
+      requestedWriterWasActive: true,
+    })
+
+    await expect(replaceStagedPendingMutationIntent(placeholder, settingsIntent('must-not-restage'))).resolves.toEqual({
+      status: 'superseded',
+    })
+    expect(await listPendingMutations()).toEqual([])
   })
 
   it('atomically replaces an accepted row with durable receipt cleanup work', async () => {
@@ -271,6 +407,7 @@ describe('pending mutation outbox', () => {
     ['PATCH', '/model-presets/model-a'],
     ['PATCH', '/prompt-presets/prompt-a'],
     ['PATCH', '/translator-presets/translator-a'],
+    ['PUT', '/chats/chat-a/generation-settings'],
     ['PATCH', '/settings/advanced/global-scripts'],
     ['PUT', '/characters/character-a/scripts'],
     ['PATCH', '/characters/character-a/triggers'],
@@ -332,6 +469,32 @@ async function readRawMutation(mutationId: string): Promise<Record<string, unkno
       const request = transaction.objectStore('mutations').get(mutationId)
       request.onsuccess = () => resolve(request.result as Record<string, unknown> | undefined)
       request.onerror = () => reject(request.error)
+    })
+  } finally {
+    database.close()
+  }
+}
+
+async function removeRawDispatchStarted(mutationId: string): Promise<void> {
+  const database = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open('risu-pending-mutations-v1', 3)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  try {
+    const transaction = database.transaction('mutations', 'readwrite')
+    const store = transaction.objectStore('mutations')
+    const record = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const request = store.get(mutationId)
+      request.onsuccess = () => resolve(request.result as Record<string, unknown>)
+      request.onerror = () => reject(request.error)
+    })
+    delete record.dispatchStarted
+    store.put(record)
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error)
     })
   } finally {
     database.close()

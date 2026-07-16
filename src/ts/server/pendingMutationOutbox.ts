@@ -38,6 +38,10 @@ export type PendingMutationPredecessorResult =
   | { status: 'ok'; entries: PendingMutationOutboxEntry[] }
   | { status: 'superseded' | 'unavailable' }
 
+export type PendingMutationIntentReplacementResult =
+  | { status: 'replaced' | 'successor'; handle: PendingMutationHandle }
+  | { status: 'superseded' | 'unavailable' }
+
 export interface PendingMutationReceiptAcknowledgement {
   mutationId: string
   requestCount: number
@@ -73,6 +77,8 @@ interface StoredPendingMutation {
   semanticKey: string
   sequence: number
   order: number
+  /** Plaintext transaction fence; missing v3 rows are treated as unstarted. */
+  dispatchStarted?: boolean
   ownerWriterSessionId: string
   writerEpoch: number
   databaseLineage: string
@@ -105,6 +111,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/settings\/[a-z][a-z-]*\/objects\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/characters\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/chats\/[^/?#]+$/ },
+  { method: 'PUT', path: /^\/chats\/[^/?#]+\/generation-settings$/ },
   { method: 'PATCH', path: /^\/chat-folders\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/prompt-items\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/personas\/[^/?#]+$/ },
@@ -213,8 +220,9 @@ export async function preparePendingMutationOutbox(
 /**
  * Persist a coalesced autosave intent before its network debounce settles.
  *
- * A staged generation may reuse its id. Once dispatch begins, a successor gets
- * a new row so both the in-flight request and the queued edit remain durable.
+ * Every generation gets a fresh receipt id. Restaging transactionally removes
+ * an exact predecessor only while its persisted dispatch marker is still
+ * false; otherwise both ordered rows remain durable for predecessor draining.
  */
 export function stagePendingMutation(
   key: string,
@@ -224,20 +232,31 @@ export function stagePendingMutation(
   const semanticKey = normalizeOutboxKey(key)
   const normalizedIntent = normalizeIntent(intent)
   const scope = pendingMutationScope
-  const reusePrevious =
+  const replacePrevious =
     !!scope &&
     previous?.phase === 'staged' &&
     previous.key === semanticKey &&
     previous.ownerWriterSessionId === scope.writerSessionId &&
     previous.writerEpoch === scope.writerEpoch &&
     previous.databaseLineage === scope.databaseLineage
-  const mutationId = reusePrevious ? previous.mutationId : createMutationId()
+  // A server receipt permanently binds an id to one semantic fingerprint.
+  // Restaging therefore always gets a fresh id; the persistence transaction
+  // below may still atomically remove an exact predecessor that never started.
+  const mutationId = createMutationId()
   const sequence = nextMutationSequence()
 
-  if (reusePrevious && previous) previous.phase = 'superseded'
+  if (replacePrevious && previous) previous.phase = 'superseded'
 
   const ready = scope
-    ? persistPendingMutation(semanticKey, mutationId, sequence, scope, reservePendingMutationOrder(), normalizedIntent)
+    ? persistPendingMutation(
+        semanticKey,
+        mutationId,
+        sequence,
+        scope,
+        reservePendingMutationOrder(),
+        normalizedIntent,
+        replacePrevious ? previous : null,
+      )
     : Promise.resolve('unavailable' as const)
   if (!scope) reportPersistenceWarning('Pending mutation staged before server database ownership was established')
 
@@ -261,7 +280,34 @@ export async function beginPendingMutationDispatch(
   handle.phase = 'dispatching'
   const persistence = await handle.ready
   if (persistence !== 'persisted') return persistence
-  return (await isPendingMutationCurrent(handle)) ? 'persisted' : 'superseded'
+  return markPendingMutationDispatchStarted(handle)
+}
+
+/**
+ * Replace a queued placeholder with its exact prepared request without moving
+ * its durable order. The sequence changes so a replay that already decrypted
+ * the placeholder cannot send it after this transaction wins. If dispatch
+ * marked the placeholder first, preserve it and return a fresh successor.
+ */
+export async function replaceStagedPendingMutationIntent(
+  handle: PendingMutationHandle,
+  intent: DurableMutationIntent,
+): Promise<PendingMutationIntentReplacementResult> {
+  if (handle.phase !== 'staged') return { status: 'superseded' }
+  const normalizedIntent = normalizeIntent(intent)
+  const replacement = await replacePendingMutationIntentExact(handle, normalizedIntent)
+  if (replacement.status === 'replaced') {
+    handle.phase = 'superseded'
+    return replacement
+  }
+  if (replacement.status === 'unavailable') return { status: 'unavailable' }
+
+  const scope = pendingMutationScope
+  if (!scope || !pendingMutationScopeMatchesHandle(scope, handle)) return { status: 'superseded' }
+  handle.phase = 'superseded'
+  const successor = stagePendingMutation(handle.key, normalizedIntent)
+  const persistence = await successor.ready
+  return persistence === 'persisted' ? { status: 'successor', handle: successor } : { status: persistence }
 }
 
 /** Verify the exact encrypted generation still exists before starting a request. */
@@ -278,6 +324,27 @@ export async function isPendingMutationCurrent(handle: PendingMutationHandle): P
   } catch (error) {
     reportPersistenceWarning('Unable to verify a pending server mutation', error)
     return false
+  }
+}
+
+async function markPendingMutationDispatchStarted(
+  handle: PendingMutationHandle,
+): Promise<PendingMutationPersistenceStatus> {
+  const database = await openOutboxDatabase()
+  if (!database) return 'unavailable'
+  try {
+    const transaction = database.transaction(OUTBOX_MUTATION_STORE, 'readwrite')
+    const store = transaction.objectStore(OUTBOX_MUTATION_STORE)
+    const current = await requestResult<StoredPendingMutation | undefined>(store.get(handle.mutationId))
+    const matches = storedMutationMatchesHandle(current, handle)
+    if (matches && current && current.dispatchStarted !== true) {
+      store.put({ ...current, dispatchStarted: true } satisfies StoredPendingMutation)
+    }
+    await transactionDone(transaction)
+    return matches ? 'persisted' : 'superseded'
+  } catch (error) {
+    reportPersistenceWarning('Unable to mark a pending server mutation for dispatch', error)
+    return 'unavailable'
   }
 }
 
@@ -514,7 +581,10 @@ async function persistPendingMutation(
   scope: PendingMutationScope,
   reservedOrder: Promise<number | null>,
   intent: DurableMutationIntent,
+  replacement: PendingMutationHandle | null,
 ): Promise<PendingMutationPersistenceStatus> {
+  const replacementPersistence = replacement ? await replacement.ready : null
+  const persistedReplacement = replacementPersistence === 'persisted' ? replacement : null
   const [database, encryptionKey, order] = await Promise.all([
     openOutboxDatabase(),
     getOutboxEncryptionKey(),
@@ -539,8 +609,13 @@ async function persistPendingMutation(
     )
     const transaction = database.transaction(OUTBOX_MUTATION_STORE, 'readwrite')
     const store = transaction.objectStore(OUTBOX_MUTATION_STORE)
-    const current = await requestResult<StoredPendingMutation | undefined>(store.get(mutationId))
-    if (current && current.order > order) {
+    const [current, replaced] = await Promise.all([
+      requestResult<StoredPendingMutation | undefined>(store.get(mutationId)),
+      persistedReplacement
+        ? requestResult<StoredPendingMutation | undefined>(store.get(persistedReplacement.mutationId))
+        : Promise.resolve(undefined),
+    ])
+    if (current) {
       await transactionDone(transaction)
       return 'superseded'
     }
@@ -549,6 +624,7 @@ async function persistPendingMutation(
       semanticKey,
       sequence,
       order,
+      dispatchStarted: false,
       ownerWriterSessionId: scope.writerSessionId,
       writerEpoch: scope.writerEpoch,
       databaseLineage: scope.databaseLineage,
@@ -556,11 +632,106 @@ async function persistPendingMutation(
       iv: iv.buffer,
       ciphertext,
     } satisfies StoredPendingMutation)
+    if (
+      persistedReplacement &&
+      storedMutationMatchesHandle(replaced, persistedReplacement) &&
+      replaced?.dispatchStarted !== true
+    ) {
+      store.delete(persistedReplacement.mutationId)
+    }
     await transactionDone(transaction)
     return 'persisted'
   } catch (error) {
     reportPersistenceWarning('Unable to persist a pending server mutation', error)
     return 'unavailable'
+  }
+}
+
+type ExactPendingMutationIntentReplacementResult =
+  | { status: 'replaced'; handle: PendingMutationHandle }
+  | { status: 'started' | 'superseded' | 'unavailable' }
+
+async function replacePendingMutationIntentExact(
+  handle: PendingMutationHandle,
+  intent: DurableMutationIntent,
+): Promise<ExactPendingMutationIntentReplacementResult> {
+  const persistence = await handle.ready
+  if (persistence !== 'persisted') return { status: persistence }
+  const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
+  if (!database || !encryptionKey) return { status: 'unavailable' }
+
+  try {
+    const readTransaction = database.transaction(OUTBOX_MUTATION_STORE, 'readonly')
+    const candidate = await requestResult<StoredPendingMutation | undefined>(
+      readTransaction.objectStore(OUTBOX_MUTATION_STORE).get(handle.mutationId),
+    )
+    await transactionDone(readTransaction)
+    if (!candidate || !storedMutationMatchesHandle(candidate, handle)) return { status: 'superseded' }
+    if (candidate.dispatchStarted === true) return { status: 'started' }
+
+    const sequence = nextMutationSequence()
+    const payload = new TextEncoder().encode(JSON.stringify({ intent } satisfies EncryptedPendingMutationPayload))
+    if (payload.byteLength > MAX_DURABLE_MUTATION_PAYLOAD_BYTES) {
+      throw new RangeError('Pending mutation payload is too large')
+    }
+    const iv = globalThis.crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12)))
+    const scope: PendingMutationScope = {
+      writerSessionId: candidate.ownerWriterSessionId,
+      writerEpoch: candidate.writerEpoch,
+      databaseLineage: candidate.databaseLineage,
+    }
+    const ciphertext = await globalThis.crypto.subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv,
+        additionalData: mutationAdditionalData(
+          candidate.semanticKey,
+          candidate.mutationId,
+          sequence,
+          candidate.order,
+          scope,
+        ),
+      },
+      encryptionKey,
+      payload,
+    )
+
+    const transaction = database.transaction(OUTBOX_MUTATION_STORE, 'readwrite')
+    const store = transaction.objectStore(OUTBOX_MUTATION_STORE)
+    const current = await requestResult<StoredPendingMutation | undefined>(store.get(handle.mutationId))
+    if (!current || !storedMutationMatchesHandle(current, handle)) {
+      await transactionDone(transaction)
+      return { status: 'superseded' }
+    }
+    if (current.dispatchStarted === true) {
+      await transactionDone(transaction)
+      return { status: 'started' }
+    }
+    store.put({
+      ...current,
+      sequence,
+      dispatchStarted: false,
+      updatedAt: Date.now(),
+      iv: iv.buffer,
+      ciphertext,
+    } satisfies StoredPendingMutation)
+    await transactionDone(transaction)
+    return {
+      status: 'replaced',
+      handle: {
+        key: current.semanticKey,
+        mutationId: current.mutationId,
+        sequence,
+        ownerWriterSessionId: current.ownerWriterSessionId,
+        writerEpoch: current.writerEpoch,
+        databaseLineage: current.databaseLineage,
+        phase: 'staged',
+        ready: Promise.resolve('persisted'),
+      },
+    }
+  } catch (error) {
+    reportPersistenceWarning('Unable to replace a staged pending server mutation', error)
+    return { status: 'unavailable' }
   }
 }
 
@@ -652,6 +823,14 @@ function normalizeScope(writerSessionId: string, writerEpoch: number, databaseLi
     throw new TypeError('Pending mutation ownership scope is invalid')
   }
   return { writerSessionId: writer, writerEpoch, databaseLineage: lineage }
+}
+
+function pendingMutationScopeMatchesHandle(scope: PendingMutationScope, handle: PendingMutationHandle): boolean {
+  return (
+    handle.ownerWriterSessionId === scope.writerSessionId &&
+    handle.writerEpoch === scope.writerEpoch &&
+    handle.databaseLineage === scope.databaseLineage
+  )
 }
 
 function nextMutationSequence(): number {
