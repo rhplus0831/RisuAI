@@ -311,6 +311,16 @@
     return `${selectedIndex}:${selectedId ?? ''}`
   }
 
+  function resetPromptTemplateUiState(): void {
+    openedItemIndices = new Set<number>()
+    draggedIndex = -1
+    dragOverIndex = -1
+  }
+
+  function promptTemplateStructureSignature(items: PromptItem[]): string {
+    return items.map((item, index) => item.id?.trim() || `index:${index}`).join('\u0000')
+  }
+
   function resetPromptTemplateDraftFromProjection(): void {
     resetPromptTemplateSelectionDirtyState()
     adoptPromptTemplateDraftFromProjection()
@@ -980,6 +990,7 @@
     if (selection === previousPromptTemplatePresetSelection) return
     previousPromptTemplatePresetSelection = selection
     untrack(() => {
+      resetPromptTemplateUiState()
       void hydrateCurrentPromptTemplateOwner({ resetSelectionDirtyState: true })
     })
   })
@@ -997,6 +1008,9 @@
     )
     previousPromptTemplateRevision = revision
     if (nextDraft) {
+      if (promptTemplateStructureSignature(nextDraft) !== promptTemplateStructureSignature(promptTemplateDraft.value)) {
+        resetPromptTemplateUiState()
+      }
       promptTemplateDraft.value = nextDraft
       syncSelectedPromptPresetTemplateProjection(nextDraft)
       promptTemplateDraftRenderEpoch += 1
@@ -1020,12 +1034,19 @@
   }
 
   function getReorderedTemplate() {
-    if (draggedIndex === -1 || dragOverIndex === -1 || draggedIndex === dragOverIndex) {
+    if (
+      draggedIndex < 0 ||
+      draggedIndex >= promptTemplateDraft.value.length ||
+      dragOverIndex < 0 ||
+      dragOverIndex > promptTemplateDraft.value.length ||
+      draggedIndex === dragOverIndex
+    ) {
       return getDisplayTemplate()
     }
 
     const items = getDisplayTemplate()
     const [movedItem] = items.splice(draggedIndex, 1)
+    if (!movedItem) return getDisplayTemplate()
 
     const adjustedDropIndex = draggedIndex < dragOverIndex ? dragOverIndex - 1 : dragOverIndex
     items.splice(adjustedDropIndex, 0, movedItem)
@@ -1037,7 +1058,14 @@
   }
 
   function handlePromptDrop() {
-    if (draggedIndex === -1 || dragOverIndex === -1 || draggedIndex === dragOverIndex) {
+    if (
+      draggedIndex < 0 ||
+      draggedIndex >= promptTemplateDraft.value.length ||
+      dragOverIndex < 0 ||
+      dragOverIndex > promptTemplateDraft.value.length ||
+      draggedIndex === dragOverIndex
+    ) {
+      resetPromptTemplateUiState()
       return
     }
 
@@ -1046,6 +1074,10 @@
     const previous = currentPromptTemplateSnapshot()
     const projectionFence = capturePromptTemplateOwnerMutationFence()
     const [movedItem] = templates.splice(draggedIndex, 1)
+    if (!movedItem) {
+      resetPromptTemplateUiState()
+      return
+    }
 
     const adjustedDropIndex = draggedIndex < dragOverIndex ? dragOverIndex - 1 : dragOverIndex
     templates.splice(adjustedDropIndex, 0, movedItem)

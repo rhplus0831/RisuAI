@@ -2143,6 +2143,12 @@ describe('flushPendingPromptTemplatePatches', () => {
       await tick()
 
       expect(target.textContent).toContain('Old preset row')
+      const oldRowToggle = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim() === 'Old preset row',
+      )
+      oldRowToggle?.click()
+      await tick()
+      expect(oldRowToggle?.getAttribute('aria-expanded')).toBe('true')
 
       getResourceDatabase().promptPresetsId = 1
       getResourceDatabase().promptTemplate = [
@@ -2156,6 +2162,10 @@ describe('flushPendingPromptTemplatePatches', () => {
       expect(target.textContent).toContain('New preset row')
       expect(target.textContent).not.toContain('Old preset row')
       expect(target.textContent).not.toContain('Stale top-level row')
+      const newRowToggle = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim() === 'New preset row',
+      )
+      expect(newRowToggle?.getAttribute('aria-expanded')).toBe('false')
       expect(getResourceDatabase().promptTemplate).toEqual([
         promptItemFixture({ ...item('new-row', 'new text'), name: 'New preset row' }),
       ])

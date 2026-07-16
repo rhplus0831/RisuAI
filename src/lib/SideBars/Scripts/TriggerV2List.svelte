@@ -17,7 +17,7 @@
     requestAllowList,
     type triggerV2IfAdvanced,
   } from 'src/ts/process/triggers'
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, untrack } from 'svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import { alertError } from 'src/ts/alert'
   import { parseTriggerV2Import } from './triggerV2Import'
@@ -25,6 +25,7 @@
   interface Props {
     value?: triggerscript[]
     lowLevelAble?: boolean
+    ownerKey?: string
   }
 
   type EffectDisplayColor = 'gray' | 'blue' | 'green' | 'yellow' | 'cyan'
@@ -161,7 +162,7 @@
   }
 
   let lastClickTime = 0
-  let { value = $bindable([]), lowLevelAble = false }: Props = $props()
+  let { value = $bindable([]), lowLevelAble = false, ownerKey = '' }: Props = $props()
   let selectedIndex = $state(0)
   let selectedEffectIndex = $state(-1)
   let selectedTriggerIndices = $state<number[]>([])
@@ -185,6 +186,8 @@
   let previousMenuMode = $state(0)
   let menu0Container = $state<HTMLDivElement | null>(null)
   let triggerScrollRef = $state<HTMLDivElement | null>(null)
+  let previousOwnerKey: string | undefined
+  let ownerKeyInitialized = false
 
   let isRestoringMode = $state(false)
   let previousSelectedTriggerIndex = $state(-1)
@@ -362,6 +365,48 @@
         value: triggerEffect[]
       }
   let clipboard: VirtualClipboard = $state(null)
+
+  function resetOwnerRelativeState(): void {
+    scrollManager.stopAutoScroll()
+    scrollManager.mode0ScrollPosition = { menu0: 0, trigger: 0 }
+    scrollManager.otherModeScrollPositions = new Map([
+      [1, { menu0: 0, trigger: 0 }],
+      [2, { menu0: 0, trigger: 0 }],
+      [3, { menu0: 0, trigger: 0 }],
+    ])
+    selectedIndex = 0
+    selectedEffectIndex = -1
+    selectedTriggerIndices = []
+    lastSelectedTriggerIndex = -1
+    menuMode = 0
+    isDragging = false
+    dragOverIndex = -1
+    isEffectDragging = false
+    effectDragOverIndex = -1
+    editTrigger = null as triggerEffectV2
+    addElse = false
+    selectMode = 0
+    contextMenu = false
+    selectedTriggerIndex = 0
+    selectedEffectIndexSaved = -1
+    effectElements = []
+    guideLineKey += 1
+    previousMenuMode = 0
+    isRestoringMode = false
+    previousSelectedTriggerIndex = -1
+  }
+
+  $effect(() => {
+    const nextOwnerKey = ownerKey
+    if (!ownerKeyInitialized) {
+      ownerKeyInitialized = true
+      previousOwnerKey = nextOwnerKey
+      return
+    }
+    if (nextOwnerKey === previousOwnerKey) return
+    previousOwnerKey = nextOwnerKey
+    untrack(resetOwnerRelativeState)
+  })
 
   $effect(() => {
     if (!value || value.length === 0) {
@@ -1795,7 +1840,13 @@
   }
 
   const moveMultipleTriggers = (toIndex: number) => {
-    const sortedIndices = [...selectedTriggerIndices].sort((a, b) => a - b)
+    const sortedIndices = Array.from(
+      new Set(selectedTriggerIndices.filter((index) => index > 0 && index < value.length && !!value[index])),
+    ).sort((a, b) => a - b)
+    if (sortedIndices.length === 0) {
+      clearTriggerSelection()
+      return
+    }
     const triggersToMove = sortedIndices.map((index) => value[index])
 
     let triggers = [...value]

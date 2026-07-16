@@ -10,6 +10,10 @@ vi.mock('src/ts/process/triggers', () => ({
   requestAllowList: [],
 }))
 
+vi.mock('src/ts/alert', () => ({
+  alertError: vi.fn(),
+}))
+
 vi.mock('src/lib/UI/GUI/TextAreaInput.svelte', async () => {
   const mock = await import('../AuthorNoteEditor.testTextArea.svelte')
   return { default: mock.default }
@@ -20,12 +24,18 @@ vi.mock('src/lib/Others/Help.svelte', async () => {
   return { default: mock.default }
 })
 
+vi.mock('src/lib/UI/GUI/Portal.svelte', async () => {
+  const mock = await import('./TriggerV2List.testPortal.svelte')
+  return { default: mock.default }
+})
+
 import TriggerV2ListHarness from './TriggerV2List.testHarness.svelte'
 import type { triggerscript } from 'src/ts/process/triggers'
 import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0] & {
   setEffectField: (triggerIndex: number, effectIndex: number, field: string, nextValue: string) => void
+  replaceOwner: (ownerKey: string, value: triggerscript[]) => void
 }
 type XssTestGlobal = typeof globalThis & { triggerV2Xss?: boolean }
 
@@ -165,6 +175,45 @@ describe('TriggerV2List effect display', () => {
 
     expect(document.querySelector(`[aria-label="${language.goback}"]`)).toBeTruthy()
     expect(buttonByText(language.triggerCategories.Control)?.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('clears a multi-selection when the trigger owner changes', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { comment: 'Header A', type: 'manual', conditions: [], effect: [] },
+          { comment: 'Alpha A', type: 'manual', conditions: [], effect: [] },
+          { comment: 'Beta A', type: 'manual', conditions: [], effect: [] },
+        ],
+      },
+    }) as MountedComponent
+    await settle()
+    target.querySelector<HTMLButtonElement>('button')?.click()
+    await settle()
+
+    const buttonByText = (text: string) =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim() === text,
+      )
+    buttonByText('Alpha A')?.click()
+    buttonByText('Beta A')?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    await settle()
+    expect(buttonByText('Alpha A')?.getAttribute('aria-pressed')).toBe('true')
+    expect(buttonByText('Beta A')?.getAttribute('aria-pressed')).toBe('true')
+
+    component.replaceOwner('owner-b', [
+      { comment: 'Header B', type: 'manual', conditions: [], effect: [] },
+      { comment: 'Alpha B', type: 'manual', conditions: [], effect: [] },
+      { comment: 'Beta B', type: 'manual', conditions: [], effect: [] },
+    ])
+    await settle()
+
+    expect(buttonByText('Alpha A')).toBeUndefined()
+    expect(buttonByText('Beta A')).toBeUndefined()
+    expect(buttonByText('Alpha B')).toBeUndefined()
+    expect(buttonByText('Beta B')).toBeUndefined()
+    expect(target.textContent).toContain(language.edit)
   })
 
   it('renders array insertion fields without null or malformed placeholders', async () => {

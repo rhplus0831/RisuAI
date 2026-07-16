@@ -11,9 +11,10 @@
   interface Props {
     value?: triggerscript[]
     lowLevelAble?: boolean
+    ownerKey?: string
   }
 
-  let { value = $bindable([]), lowLevelAble = false }: Props = $props()
+  let { value = $bindable([]), lowLevelAble = false, ownerKey = '' }: Props = $props()
   let v1Enabled = $derived(
     value?.[0]?.effect?.[0]?.type !== 'triggercode' &&
       value?.[0]?.effect?.[0]?.type !== 'triggerlua' &&
@@ -115,7 +116,7 @@
       openURL(hubURL + '/redirect/docs/lua')
     }}>{language.helpBlock}</Button>
 {:else if value?.[0]?.effect?.[0]?.type === 'v2Header'}
-  <TriggerV2List bind:value {lowLevelAble} />
+  <TriggerV2List bind:value {lowLevelAble} {ownerKey} />
 {:else}
   {#await loadTriggerV1List() then TriggerV1List}
     <TriggerV1List bind:value {lowLevelAble} />

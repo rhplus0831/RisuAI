@@ -4,11 +4,14 @@
 
   interface Props {
     initialValue: triggerscript[]
+    initialOwnerKey?: string
   }
 
-  let { initialValue }: Props = $props()
+  let { initialValue, initialOwnerKey = 'owner-a' }: Props = $props()
   // svelte-ignore state_referenced_locally
   let value = $state(initialValue)
+  // svelte-ignore state_referenced_locally
+  let ownerKey = $state(initialOwnerKey)
 
   export function setEffectField(triggerIndex: number, effectIndex: number, field: string, nextValue: string): void {
     const effect = value[triggerIndex]?.effect[effectIndex]
@@ -16,6 +19,11 @@
     const effectRecord = effect as unknown as Record<string, unknown>
     effectRecord[field] = nextValue
   }
+
+  export function replaceOwner(nextOwnerKey: string, nextValue: triggerscript[]): void {
+    ownerKey = nextOwnerKey
+    value = nextValue
+  }
 </script>
 
-<TriggerV2List bind:value />
+<TriggerV2List bind:value {ownerKey} />

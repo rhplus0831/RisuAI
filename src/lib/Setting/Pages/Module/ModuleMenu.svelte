@@ -698,7 +698,10 @@
 {/if}
 
 {#if submenu === 3 && Array.isArray(currentModule.trigger)}
-  <TriggerList bind:value={currentModule.trigger} lowLevelAble={currentModule.lowLevelAccess} />
+  <TriggerList
+    bind:value={currentModule.trigger}
+    ownerKey={currentModule.id}
+    lowLevelAble={currentModule.lowLevelAccess} />
 
   <div class="flex items-center mt-4">
     <Check bind:check={currentModule.lowLevelAccess} name={language.lowLevelAccess} />

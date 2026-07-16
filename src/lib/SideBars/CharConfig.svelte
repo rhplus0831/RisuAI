@@ -1664,6 +1664,7 @@
     <span class="text-textcolor mt-4">{language.triggerScript} <Help key="triggerScript" /></span>
     <TriggerList
       bind:value={characterTriggersDraft}
+      ownerKey={scriptDraftCharacterId ?? ''}
       lowLevelAble={getDatabase().characters[$selectedCharID].lowLevelAccess} />
 
     {#if characterDraft.value.virtualscript || getDatabase().showUnrecommended}
