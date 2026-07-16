@@ -98,6 +98,7 @@ import {
   reorderGlobalLorebookEntriesCommand,
   reorderModuleLorebookEntriesCommand,
   reorderPluginsCommand,
+  runServerCommandWithoutMutationReceipt,
   reorderPromptItemsCommand,
   reorderAgentPresetsCommand,
   reorderAgentPresetStepsCommand,
@@ -881,6 +882,33 @@ describe('server command API adapter', () => {
         mutationId: 'pending-replay-a.1',
       },
     ])
+  })
+
+  it('suppresses durable receipt headers when browser persistence is unavailable', async () => {
+    let capturedHeaders: Record<string, string> | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        capturedHeaders = init.headers as Record<string, string>
+        return jsonResponse({
+          revision: 22,
+          event: { type: 'settings.updated', revision: 22, resource: 'settings' },
+        })
+      }) as unknown as typeof fetch,
+    )
+    setCachedServerCommandRevision(21)
+
+    await expect(
+      runServerCommand({
+        mutationId: 'unavailable-browser-storage',
+        databaseLineage: 'database-a',
+        executionWrapper: (execute) => runServerCommandWithoutMutationReceipt(execute),
+        command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxContext: 7_000 } }),
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 22 })
+
+    expect(capturedHeaders?.['risu-mutation-id']).toBeUndefined()
+    expect(capturedHeaders?.['risu-database-lineage']).toBeUndefined()
   })
 
   it('retries a durable conflict with live revisions while preserving receipt ids', async () => {

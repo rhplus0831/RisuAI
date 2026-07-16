@@ -1,6 +1,7 @@
 import {
   acknowledgeServerMutationReceipts,
   replayDurableMutationRequests,
+  runServerCommandWithoutMutationReceipt,
   type DurableMutationReplayResult,
   type ServerCommandExecutionWrapper,
   type ServerCommandResult,
@@ -41,7 +42,8 @@ export function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
       if (persistence === 'persisted' && !(await isPendingMutationCurrent(handle))) {
         return { status: 'unavailable' }
       }
-      const result = await execute()
+      const result =
+        persistence === 'unavailable' ? await runServerCommandWithoutMutationReceipt(execute) : await execute()
       await settleDurableMutation(handle, intent, result)
       return result
     })

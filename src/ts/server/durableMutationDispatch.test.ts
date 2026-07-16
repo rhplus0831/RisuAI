@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const commandApi = vi.hoisted(() => ({
   acknowledge: vi.fn(),
   replay: vi.fn(),
+  withoutReceipt: vi.fn(<T>(execute: () => Promise<T>) => execute()),
 }))
 
 vi.mock('./commands', () => ({
   acknowledgeServerMutationReceipts: commandApi.acknowledge,
   replayDurableMutationRequests: commandApi.replay,
+  runServerCommandWithoutMutationReceipt: commandApi.withoutReceipt,
 }))
 
 import { dispatchDurableMutation } from './durableMutationDispatch'
@@ -32,6 +34,7 @@ beforeEach(async () => {
   resetPendingMutationOutboxForTests()
   commandApi.acknowledge.mockReset()
   commandApi.acknowledge.mockResolvedValue(true)
+  commandApi.withoutReceipt.mockClear()
   await preparePendingMutationOutbox({
     writerSessionId: 'writer-a',
     writerEpoch: 1,
@@ -133,6 +136,7 @@ describe('durable mutation dispatch', () => {
       status: 'ok',
     })
     expect(request).toHaveBeenCalledOnce()
+    expect(commandApi.withoutReceipt).toHaveBeenCalledOnce()
   })
 
   it('keeps an accepted receipt acknowledgement durable when its network cleanup fails', async () => {

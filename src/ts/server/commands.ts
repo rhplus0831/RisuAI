@@ -1653,6 +1653,22 @@ function nextQueuedCommandMutationRequest(): { mutationId: string; databaseLinea
   }
 }
 
+/**
+ * Execute a command without durable receipt headers while preserving its queue
+ * and destructive-refresh context. This is used only when browser durability
+ * is unavailable: the ordinary save should still run, but the server must not
+ * retain a receipt that the browser can never acknowledge.
+ */
+export async function runServerCommandWithoutMutationReceipt<T>(execute: () => Promise<T>): Promise<T> {
+  const previousMutation = activeQueuedCommandMutation
+  activeQueuedCommandMutation = null
+  try {
+    return await execute()
+  } finally {
+    activeQueuedCommandMutation = previousMutation
+  }
+}
+
 function enqueueServerCommandExecution<T>(task: (batch: ServerCommandReconciliationBatch) => Promise<T>): Promise<T> {
   const batch = getOrCreateServerCommandReconciliationBatch()
   queuedServerCommandExecutionCount += 1
