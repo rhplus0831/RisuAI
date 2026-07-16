@@ -66,9 +66,14 @@
     const summaryIndex = currentSummaryIndex()
     const summary = hypaV3Data.summaries[summaryIndex]
     if (!summary) return
-    if (summary.tags && tagManagerState.editingTagIndex < summary.tags.length) {
-      summary.tags[tagManagerState.editingTagIndex] = tagManagerState.editingTag.trim()
-      void onSummaryChanged?.(summaryIndex, 'tags')
+    const editingIndex = tagManagerState.editingTagIndex
+    const nextTag = tagManagerState.editingTag.trim()
+    if (summary.tags && editingIndex < summary.tags.length) {
+      if (summary.tags.some((tag, index) => index !== editingIndex && tag === nextTag)) return
+      if (summary.tags[editingIndex] !== nextTag) {
+        summary.tags[editingIndex] = nextTag
+        void onSummaryChanged?.(summaryIndex, 'tags')
+      }
     }
 
     tagManagerState.editingTag = ''
