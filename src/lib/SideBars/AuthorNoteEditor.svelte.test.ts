@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const authorNoteMocks = vi.hoisted(() => ({
   setChatNoteValue: vi.fn(() => true),
+  syncServerBackedChatMetadataBaselines: vi.fn(),
   tokenizeAccurate: vi.fn(async () => 0),
 }))
 
@@ -19,6 +20,10 @@ vi.mock('src/lang', () => ({
 
 vi.mock('src/ts/chatCommands', () => ({
   setChatNoteValue: authorNoteMocks.setChatNoteValue,
+}))
+
+vi.mock('src/ts/server/chatBridge.svelte', () => ({
+  syncServerBackedChatMetadataBaselines: authorNoteMocks.syncServerBackedChatMetadataBaselines,
 }))
 
 vi.mock('src/ts/tokenizer', () => ({
@@ -118,6 +123,7 @@ describe('AuthorNoteEditor debounce persistence', () => {
 
     expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledTimes(1)
     expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'draft before close', {})
+    expect(authorNoteMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
 
     vi.advanceTimersByTime(300)
     expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledTimes(1)
@@ -160,7 +166,6 @@ describe('AuthorNoteEditor debounce persistence', () => {
     const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="author-note-input"]')!
     textarea.value = 'draft before pagehide'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    await tick()
 
     flushRegisteredPendingBridgePatches({ keepalive: true })
 
@@ -168,6 +173,7 @@ describe('AuthorNoteEditor debounce persistence', () => {
     expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'draft before pagehide', {
       keepalive: true,
     })
+    expect(authorNoteMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
 
     vi.advanceTimersByTime(300)
     expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()

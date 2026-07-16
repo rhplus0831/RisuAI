@@ -82,7 +82,7 @@
     }
 
     value = popUpEditorStore.value
-    onInput()
+    onInput(value)
     onchange()
     scheduleHighlight(value)
   }
@@ -373,16 +373,16 @@
       oninput={(e) => {
         if (optimaizedInput) {
           value = e.currentTarget.value
-          onInput()
+          onInput(value)
         } else {
           value = e.currentTarget.value
-          onInput()
+          onInput(value)
         }
       }}
       onchange={(e) => {
         if (optimaizedInput) {
           value = e.currentTarget.value
-          onInput()
+          onInput(value)
         }
         onchange()
       }}
@@ -419,7 +419,7 @@
       tabindex="0"
       oninput={(e) => {
         value = e.currentTarget.textContent ?? ''
-        onInput()
+        onInput(value)
         autoComplete()
       }}
       onchange={(e) => {

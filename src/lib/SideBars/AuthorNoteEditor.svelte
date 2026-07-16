@@ -12,6 +12,7 @@
   import { getAuthorNoteDefaultText } from 'src/ts/util'
   import type { ServerCommandTransportOptions } from 'src/ts/server/commands'
   import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
+  import { syncServerBackedChatMetadataBaselines } from 'src/ts/server/chatBridge.svelte'
 
   import Help from '../Others/Help.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
@@ -68,13 +69,24 @@
     pendingAuthorNoteSave = null
     if (pending.note === authorNoteLastSubmitted) return
     authorNoteLastSubmitted = pending.note
-    setChatNoteValue(pending.chatId, pending.note, options)
+    if (setChatNoteValue(pending.chatId, pending.note, options)) {
+      syncServerBackedChatMetadataBaselines()
+    }
   }
 
   function scheduleAuthorNoteSave(chatId: string, note: string): void {
     clearAuthorNoteSaveTimer()
     pendingAuthorNoteSave = { chatId, note }
     authorNoteSaveTimer = setTimeout(flushPendingAuthorNoteSave, 250)
+  }
+
+  function handleAuthorNoteInput(note: string): void {
+    const chatId = authorNoteChatId
+    if (!chatId || note === authorNoteLastSubmitted) {
+      clearPendingAuthorNoteSave()
+      return
+    }
+    scheduleAuthorNoteSave(chatId, note)
   }
 
   $effect.pre(() => {
@@ -103,21 +115,6 @@
     }
   })
 
-  $effect(() => {
-    const chatId = authorNoteChatId
-    const note = authorNoteDraft
-    if (!chatId || note === authorNoteLastSubmitted) {
-      clearPendingAuthorNoteSave()
-      return
-    }
-
-    scheduleAuthorNoteSave(chatId, note)
-
-    return () => {
-      clearAuthorNoteSaveTimer()
-    }
-  })
-
   const unregisterPendingAuthorNoteFlush = registerPendingBridgePatchFlusher(
     `author-note-editor:${nextAuthorNoteEditorFlushId++}`,
     flushPendingAuthorNoteSave,
@@ -136,6 +133,7 @@
     autocomplete="off"
     ariaLabel={language.authorNote}
     bind:value={authorNoteDraft}
+    onInput={handleAuthorNoteInput}
     highlight
     placeholder={getAuthorNoteDefaultText()} />
   <span class="text-textcolor2 mb-6 text-sm">{tokenCount} {language.tokens}</span>
