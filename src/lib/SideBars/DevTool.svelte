@@ -27,6 +27,7 @@
   } from 'src/ts/chatCommands'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
   import { language } from 'src/lang'
+  import { parseDevToolAutopilotImport } from './devToolAutopilotImport'
 
   let previewMode = $state('chat')
   let previewJoin = $state('yes')
@@ -214,24 +215,17 @@
       class="text-textcolor2 hover:text-textcolor"
       aria-label={`${language.import}: Autopilot`}
       onclick={async () => {
-        const selected = await selectSingleFile(['txt', 'csv', 'json'])
-        if (!selected) {
-          return
-        }
-        const file = new TextDecoder().decode(selected.data)
-        if (selected.name.endsWith('.json')) {
-          const parsed = JSON.parse(file)
-          if (Array.isArray(parsed)) {
-            autopilot = parsed
+        try {
+          const selected = await selectSingleFile(['txt', 'csv', 'json'])
+          if (!selected) return
+          const imported = parseDevToolAutopilotImport(selected.name, selected.data)
+          if (!imported) {
+            alertError(language.errors.noData)
+            return
           }
-        }
-        if (selected.name.endsWith('.csv')) {
-          autopilot = file.split('\n').map((x) => {
-            return x.replace(/\r/g, '').replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r')
-          })
-        }
-        if (selected.name.endsWith('.txt')) {
-          autopilot = file.split('\n')
+          autopilot = imported
+        } catch {
+          alertError(language.errors.noData)
         }
       }}>
       <HardDriveUploadIcon />

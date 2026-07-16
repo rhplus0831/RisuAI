@@ -19,6 +19,8 @@
   } from 'src/ts/process/triggers'
   import { onDestroy, onMount } from 'svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { alertError } from 'src/ts/alert'
+  import { parseTriggerV2Import } from './triggerV2Import'
 
   interface Props {
     value?: triggerscript[]
@@ -543,30 +545,17 @@
 
       try {
         const text = await file.text()
-        const importedTriggers = JSON.parse(text)
-
-        if (!Array.isArray(importedTriggers)) {
+        const importedTriggers = parseTriggerV2Import(text)
+        if (!importedTriggers) {
+          alertError(language.errors.noData)
           return
-        }
-
-        for (const trigger of importedTriggers) {
-          if (
-            !trigger.hasOwnProperty('comment') ||
-            !trigger.hasOwnProperty('type') ||
-            !trigger.hasOwnProperty('conditions') ||
-            !trigger.hasOwnProperty('effect') ||
-            !Array.isArray(trigger.conditions) ||
-            !Array.isArray(trigger.effect)
-          ) {
-            return
-          }
         }
 
         for (const trigger of importedTriggers) {
           value.push(trigger)
         }
-      } catch (error) {
-        console.error('Import error:', error)
+      } catch {
+        alertError(language.errors.noData)
       }
     }
 
