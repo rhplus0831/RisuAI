@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'loadout-command-token',
 }))
 
-import { clearCachedServerCommandRevision, setServerCommandSuccessReconciler } from './server/commands'
+import {
+  clearCachedServerCommandRevision,
+  setCachedServerCommandRevision,
+  setServerCommandSuccessReconciler,
+} from './server/commands'
 import { isCanonicalLoadout } from './server/loadoutCanonical'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
@@ -18,6 +23,21 @@ import { selectedCharID } from './stores.svelte'
 import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from './loadout'
 import { currentPersonaStateSnapshot, isPersonaSettingsWatcherSuppressed, queueSelectedPersonaUpdate } from './persona'
 import { MODEL_ROLES } from './model/modelRoles'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+  stagePendingMutation,
+  type DurableMutationIntent,
+} from './server/pendingMutationOutbox'
+import { SETTINGS_BRIDGE_MUTATION_KEY } from './server/settingsMutationKey'
+import { chatResourceOwnerMutationKey, moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
+import { markPromptTemplateProjectionApplied, resetPromptTemplateHydration } from './server/promptTemplateHydration'
+import {
+  queuePromptItemProjectionUpdate,
+  resetPromptTemplateSelectionDirtyState,
+} from './server/promptTemplateBridge.svelte'
 
 const testDatabaseState = {
   get db() {
@@ -33,6 +53,10 @@ interface CapturedFetch {
   method: string
   authHeader: string | null
   body: unknown
+}
+
+interface DurableCapturedFetch extends CapturedFetch {
+  mutationId: string | null
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -432,6 +456,44 @@ function stubApplyLoadoutFetch(
   return calls
 }
 
+function stubDurableApplyLoadoutFetch(
+  onCommand?: (call: DurableCapturedFetch, commandNumber: number) => Response | null,
+): DurableCapturedFetch[] {
+  const calls: DurableCapturedFetch[] = []
+  let revision = 10
+  let commandNumber = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(input)
+      const call: DurableCapturedFetch = {
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        mutationId: headers?.['risu-mutation-id'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      }
+      calls.push(call)
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision })
+      if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+      if (url.startsWith('/api/v1/commands/')) {
+        commandNumber += 1
+        const response = onCommand?.(call, commandNumber)
+        if (response) return response
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: { type: 'test.command', revision, resource: 'test' },
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
 async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {
   for (let attempt = 0; attempt < 20 && calls.length < expected; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -803,6 +865,333 @@ describe('loadout projection command helpers', () => {
         },
       },
     ])
+  })
+
+  it('orders retained settings, legacy selection, and global variables under distinct durable receipts', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-loadout-settings-order',
+      writerEpoch: 6,
+      databaseLineage: 'lineage-loadout-settings-order',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      const loadout = seedApplyLoadoutState()
+      setCachedServerCommandRevision(10)
+      const predecessorIntent: DurableMutationIntent = {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/settings/model',
+            body: { patch: { temperature: 55 } },
+          },
+        ],
+      }
+      const predecessor = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, predecessorIntent)
+      await predecessor.ready
+      const calls = stubDurableApplyLoadoutFetch()
+      setResourceWriteGuardEnabled(true)
+
+      await expect(applyLoadout(loadout, ['preset', 'globalVariables'])).resolves.toBe('applied')
+
+      const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
+      expect(commands.map(({ method, url }) => `${method} ${url}`)).toEqual([
+        'PATCH /api/v1/commands/settings/model',
+        'POST /api/v1/commands/presets/select',
+        'PATCH /api/v1/commands/settings/sidebar',
+        'POST /api/v1/commands/loadouts/loadout-a/touch',
+      ])
+      expect(commands.slice(0, 3).map(({ body }) => body)).toEqual([
+        { baseRevision: 10, patch: { temperature: 55 } },
+        { baseRevision: 11, presetId: 'preset-b', apply: true, saveCurrent: true },
+        {
+          baseRevision: 12,
+          patch: { globalChatVariables: { mood: 'focused', scene: 'night' } },
+        },
+      ])
+      expect(new Set(commands.slice(0, 3).map(({ mutationId }) => mutationId)).size).toBe(3)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps a split prompt selection behind a transient flushed edit from the outgoing owner', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-loadout-prompt-owner-order',
+      writerEpoch: 7,
+      databaseLineage: 'lineage-loadout-prompt-owner-order',
+      requestedWriterWasActive: true,
+    })
+    resetPromptTemplateHydration()
+    resetPromptTemplateSelectionDirtyState()
+
+    try {
+      const loadout = seedSplitPresetLoadoutState()
+      loadout.modelPresetId = ''
+      loadout.modelPresetName = ''
+      const previousItem = { id: 'prompt-a-row', type: 'plain', text: 'before loadout' } as any
+      let draftItems = [{ ...previousItem, text: 'edited before loadout' }]
+      testDatabaseState.db.promptPresets[0].promptTemplate = [cloneJsonValue(previousItem)]
+      testDatabaseState.db.promptPresets[1].promptTemplate = [
+        { id: 'prompt-b-row', type: 'plain', text: 'target row' },
+      ] as any
+      testDatabaseState.db.promptTemplate = [cloneJsonValue(previousItem)]
+      markPromptTemplateProjectionApplied('prompt-a', 10)
+      setCachedServerCommandRevision(10)
+
+      queuePromptItemProjectionUpdate(
+        {
+          getItems: () => draftItems,
+          setItems: (items) => {
+            draftItems = items as typeof draftItems
+          },
+        },
+        'prompt-a-row',
+        previousItem,
+        60_000,
+        'prompt-a',
+      )
+      const calls = stubDurableApplyLoadoutFetch((call) =>
+        call.url === '/api/v1/commands/prompt-items/prompt-a-row'
+          ? jsonResponse({ error: 'prompt row temporarily unavailable' }, 500)
+          : null,
+      )
+      setResourceWriteGuardEnabled(true)
+
+      await expect(applyLoadout(loadout, ['preset'])).resolves.toBe('persistence-failed')
+
+      const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
+      expect(commands.map(({ method, url }) => `${method} ${url}`)).toEqual([
+        'PATCH /api/v1/commands/prompt-items/prompt-a-row',
+        'PATCH /api/v1/commands/prompt-items/prompt-a-row',
+      ])
+      expect(commands.some((call) => call.url === '/api/v1/commands/prompt-presets/select')).toBe(false)
+      expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+        {
+          version: 1,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/prompt-items/prompt-a-row',
+              body: { promptPresetId: 'prompt-a', patch: { text: 'edited before loadout' } },
+            },
+          ],
+        },
+        {
+          version: 1,
+          dependencyKeys: ['prompt-template-owner:prompt-a', 'prompt-template-owner:prompt-b'],
+          requests: [
+            {
+              method: 'POST',
+              path: '/prompt-presets/select',
+              body: { promptPresetId: 'prompt-b' },
+            },
+          ],
+        },
+      ])
+      expect(testDatabaseState.db.promptPresetsId).toBe(0)
+    } finally {
+      resetPromptTemplateSelectionDirtyState()
+      resetPromptTemplateHydration()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('discards durable steps skipped after an intervening module failure', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-loadout-skipped-steps',
+      writerEpoch: 7,
+      databaseLineage: 'lineage-loadout-skipped-steps',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      const loadout = seedApplyLoadoutState()
+      setCachedServerCommandRevision(20)
+      const calls = stubDurableApplyLoadoutFetch((call) =>
+        call.url === '/api/v1/commands/modules/enable' ? jsonResponse({ error: 'forced module failure' }, 500) : null,
+      )
+      setResourceWriteGuardEnabled(true)
+
+      await expect(applyLoadout(loadout, ['preset', 'modules', 'globalVariables'])).resolves.toBe('persistence-failed')
+
+      const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
+      expect(commands.map((call) => call.url)).toEqual([
+        '/api/v1/commands/presets/select',
+        '/api/v1/commands/modules/enable',
+      ])
+      expect(commands.some((call) => call.url === '/api/v1/commands/settings/sidebar')).toBe(false)
+      const pending = await listPendingMutations()
+      expect(pending).toHaveLength(1)
+      expect(pending[0]).toMatchObject({
+        handle: { key: moduleOwnerMutationKey('module-a') },
+        intent: {
+          requests: [
+            {
+              method: 'POST',
+              path: '/modules/enable',
+              body: { moduleId: 'module-a', enabled: true },
+            },
+          ],
+        },
+      })
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('orders a retained chat generation save before the loadout Agent Preset correction', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-loadout-agent-preset',
+      writerEpoch: 8,
+      databaseLineage: 'lineage-loadout-agent-preset',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      const loadout = makeLoadout({
+        id: 'agent-loadout',
+        name: 'Agent Loadout',
+        characterIds: [],
+        modules: [],
+        globalVariables: {},
+        presetName: '',
+        agentPresetId: 'agent-b',
+        agentPresetName: 'Agent B',
+        personaId: '',
+      })
+      const generationSettings = {
+        configured: true,
+        agentPresetId: 'agent-a',
+        jailbreakToggle: false,
+        sidebarToggles: {},
+      }
+      selectedCharID.set(0)
+      testDatabaseState.db = {
+        loadouts: [cloneJsonValue(loadout)],
+        lastLoadedLoadoutName: 'Before Loadout',
+        characters: [
+          {
+            chaId: 'char-a',
+            chatPage: 0,
+            chats: [{ id: 'chat-a', message: [], generationSettings: cloneJsonValue(generationSettings) }],
+          },
+        ],
+        agentPresets: [
+          { id: 'agent-a', name: 'Agent A', enabled: true, version: 1, steps: [] },
+          { id: 'agent-b', name: 'Agent B', enabled: true, version: 1, steps: [] },
+        ],
+        botPresets: [],
+        botPresetsId: -1,
+        modelPresets: [],
+        modelPresetsId: -1,
+        promptPresets: [],
+        promptPresetsId: -1,
+        enabledModules: [],
+        globalChatVariables: {},
+      } as any
+      setCachedServerCommandRevision(10)
+      const predecessorIntent: DurableMutationIntent = {
+        version: 1,
+        requests: [
+          {
+            method: 'PUT',
+            path: '/chats/chat-a/generation-settings',
+            body: { generationSettings: cloneJsonValue(generationSettings) },
+          },
+        ],
+      }
+      const predecessor = stagePendingMutation(chatResourceOwnerMutationKey('chat-a', 'char-a'), predecessorIntent)
+      await predecessor.ready
+      const calls = stubDurableApplyLoadoutFetch()
+      setResourceWriteGuardEnabled(true)
+
+      await expect(applyLoadout(loadout, ['preset'])).resolves.toBe('applied')
+
+      const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
+      expect(commands.slice(0, 2).map(({ method, url }) => `${method} ${url}`)).toEqual([
+        'PUT /api/v1/commands/chats/chat-a/generation-settings',
+        'PUT /api/v1/commands/chats/chat-a/generation-settings',
+      ])
+      expect(commands[0].body).toEqual({ baseRevision: 10, generationSettings })
+      expect(commands[1].body).toEqual({
+        baseRevision: 11,
+        generationSettings: { ...generationSettings, agentPresetId: 'agent-b' },
+      })
+      expect(new Set(commands.slice(0, 2).map(({ mutationId }) => mutationId)).size).toBe(2)
+      expect(testDatabaseState.db.characters[0].chats[0].generationSettings.agentPresetId).toBe('agent-b')
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('drains a retained module toggle before applying the loadout absolute target', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-loadout-module-order',
+      writerEpoch: 9,
+      databaseLineage: 'lineage-loadout-module-order',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      const loadout = seedApplyLoadoutState()
+      loadout.modules = ['module-stay']
+      testDatabaseState.db.enabledModules = ['module-a', 'module-stay']
+      setCachedServerCommandRevision(10)
+      const predecessorIntent: DurableMutationIntent = {
+        version: 1,
+        requests: [
+          {
+            method: 'POST',
+            path: '/modules/enable',
+            body: { moduleId: 'module-a', enabled: true },
+          },
+        ],
+      }
+      const predecessor = stagePendingMutation(moduleOwnerMutationKey('module-a'), predecessorIntent)
+      await predecessor.ready
+      const calls = stubDurableApplyLoadoutFetch()
+      setResourceWriteGuardEnabled(true)
+
+      await expect(applyLoadout(loadout, ['modules'])).resolves.toBe('applied')
+
+      const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
+      expect(commands.slice(0, 2).map(({ method, url, body }) => ({ method, url, body }))).toEqual([
+        {
+          method: 'POST',
+          url: '/api/v1/commands/modules/enable',
+          body: { baseRevision: 10, moduleId: 'module-a', enabled: true },
+        },
+        {
+          method: 'POST',
+          url: '/api/v1/commands/modules/enable',
+          body: { baseRevision: 11, moduleId: 'module-a', enabled: false },
+        },
+      ])
+      expect(new Set(commands.slice(0, 2).map(({ mutationId }) => mutationId)).size).toBe(2)
+      expect(testDatabaseState.db.enabledModules).toEqual(['module-stay'])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('keeps apply pending until the complete command sequence is accepted', async () => {

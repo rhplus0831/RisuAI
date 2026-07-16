@@ -24,7 +24,9 @@ import {
   touchLoadoutCommand,
   type LoadoutSnapshot,
   type PersonaMutationOptimisticAcknowledgement,
+  type ServerCommandExecutionWrapper,
   type ServerCommandResult,
+  type ServerCommandSequenceEntry,
 } from './server/commands'
 import { isCanonicalLoadout, isCanonicalLoadoutCollection } from './server/loadoutCanonical'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
@@ -42,15 +44,29 @@ import {
   beginLegacyPresetSelectionIntent,
   botPresetHasHydratedSettings,
   ensureBotPresetHydratedById,
+  flushPendingSplitPresetPatches,
   getCurrentCharacter,
   getDatabase,
   isLegacyPresetSelectionIntentCurrent,
   setPreset,
+  splitPresetMutationKey,
   type Database,
   type ModelPreset,
   type PromptPreset,
   type botPreset,
 } from './storage/database.svelte'
+import { executePreparedDurableMutationWithinQueue } from './server/durableMutationDispatch'
+import {
+  discardPendingMutation,
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from './server/pendingMutationOutbox'
+import { SETTINGS_BRIDGE_MUTATION_KEY } from './server/settingsMutationKey'
+import { flushRegisteredPendingBridgePatch } from './server/pendingBridgeFlushRegistry'
+import { flushPendingPromptTemplatePatches, promptTemplateOwnerMutationKey } from './server/promptTemplateBridge.svelte'
+import { chatResourceOwnerMutationKey, moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
+import { PERSONA_SELECTION_MUTATION_KEY, personaOwnerMutationKey } from './server/personaMutationKeys'
 
 export type Loadout = {
   name: string
@@ -195,6 +211,20 @@ interface LoadoutApplyStep {
   succeeded: boolean
   command: ServerCommandFactory
   rollback: () => void
+  executionWrapper?: ServerCommandExecutionWrapper
+  durability?: PreparedLoadoutDurableStep
+}
+
+interface PreparedLoadoutDurableStep {
+  handle: PendingMutationHandle
+  intent: DurableMutationIntent
+  wrapperStarted: boolean
+}
+
+interface LoadoutModulePlan {
+  moduleId: string
+  enabled: boolean
+  durability: PreparedLoadoutDurableStep | null
 }
 
 const SET_PRESET_ROLLBACK_KEYS = [
@@ -706,7 +736,35 @@ function rollbackAgentPresetSelection(rollback: AgentPresetSelectionRollback): v
   })
 }
 
-function createLoadoutApplyStep(command: ServerCommandFactory, rollback: () => void): LoadoutApplyStep {
+function prepareLoadoutDurableStep(key: string, intent: DurableMutationIntent): PreparedLoadoutDurableStep | null {
+  if (!canUseServerCommands()) return null
+  return {
+    handle: stagePendingMutation(key, intent),
+    intent,
+    wrapperStarted: false,
+  }
+}
+
+function preparedLoadoutExecutionWrapper(prepared: PreparedLoadoutDurableStep): ServerCommandExecutionWrapper {
+  return async <T extends Record<string, unknown>>(
+    execute: () => Promise<ServerCommandResult<T>>,
+  ): Promise<ServerCommandResult<T>> => {
+    prepared.wrapperStarted = true
+    const outcome = await executePreparedDurableMutationWithinQueue<T>(
+      { handle: prepared.handle, intent: prepared.intent },
+      execute,
+    )
+    prepared.handle = outcome.handle
+    prepared.intent = outcome.intent
+    return outcome.disposition === 'sent' ? outcome.result : { status: 'unavailable' }
+  }
+}
+
+function createLoadoutApplyStep(
+  command: ServerCommandFactory,
+  rollback: () => void,
+  durability: PreparedLoadoutDurableStep | null = null,
+): LoadoutApplyStep {
   const step: LoadoutApplyStep = {
     succeeded: false,
     command: async (baseRevision) => {
@@ -717,6 +775,12 @@ function createLoadoutApplyStep(command: ServerCommandFactory, rollback: () => v
       return result
     },
     rollback,
+    ...(durability
+      ? {
+          executionWrapper: preparedLoadoutExecutionWrapper(durability),
+          durability,
+        }
+      : {}),
   }
   return step
 }
@@ -728,6 +792,18 @@ function rollbackUnacceptedLoadoutApplySteps(steps: LoadoutApplyStep[]): void {
       step.rollback()
     }
   }
+}
+
+async function discardSkippedLoadoutDurableSteps(steps: readonly LoadoutApplyStep[]): Promise<void> {
+  await Promise.all(
+    steps
+      .map((step) => step.durability)
+      .filter(
+        (durability): durability is PreparedLoadoutDurableStep =>
+          durability !== undefined && !durability.wrapperStarted,
+      )
+      .map((durability) => discardPendingMutation(durability.handle)),
+  )
 }
 
 async function runLoadoutCommandAsync<T extends Record<string, unknown>>(
@@ -1031,7 +1107,7 @@ function presetHasHydratedSettings(preset: botPreset | undefined): preset is bot
   return botPresetHasHydratedSettings(preset)
 }
 
-function changedModuleSteps(previousModules: string[], nextModules: string[]): LoadoutApplyStep[] {
+function changedModulePlans(previousModules: string[], nextModules: string[]): LoadoutModulePlan[] {
   const previousSet = new Set(previousModules)
   const nextSet = new Set(nextModules)
   const enabled = Array.from(nextSet)
@@ -1044,7 +1120,25 @@ function changedModuleSteps(previousModules: string[], nextModules: string[]): L
   return [
     ...enabled.map((moduleId) => ({ moduleId, enabled: true })),
     ...disabled.map((moduleId) => ({ moduleId, enabled: false })),
-  ].map(({ moduleId, enabled }) =>
+  ].map(({ moduleId, enabled }) => ({
+    moduleId,
+    enabled,
+    durability: prepareLoadoutDurableStep(moduleOwnerMutationKey(moduleId), {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/modules/enable',
+          body: { moduleId, enabled },
+        },
+      ],
+    }),
+  }))
+}
+
+function changedModuleSteps(previousModules: string[], plans: readonly LoadoutModulePlan[]): LoadoutApplyStep[] {
+  const previousSet = new Set(previousModules)
+  return plans.map(({ moduleId, enabled, durability }) =>
     createLoadoutApplyStep(
       (baseRevision) =>
         enableModuleCommand({
@@ -1059,6 +1153,7 @@ function changedModuleSteps(previousModules: string[], nextModules: string[]): L
           attemptedEnabled: enabled,
           previousModules,
         }),
+      durability,
     ),
   )
 }
@@ -1153,6 +1248,150 @@ async function applyLoadoutNow(
   const previousGlobalChatVariables = cloneJsonValue(getDatabase().globalChatVariables ?? {})
   const nextGlobalChatVariables = cloneJsonValue(loadout.globalVariables ?? {})
   const globalVariablesChanged = snapshotJson(previousGlobalChatVariables) !== snapshotJson(nextGlobalChatVariables)
+  const resolvedLegacyPresetId =
+    presetIndex >= 0 && presetHasHydratedSettings(getDatabase().botPresets[presetIndex])
+      ? nonBlankId(getDatabase().botPresets[presetIndex]?.id)
+      : null
+  const previousPersona = personaSelection ? currentPersonaStateSnapshot() : null
+  const previousPersonaId = previousPersona
+    ? nonBlankId(previousPersona.personas?.[previousPersona.selectedPersona]?.id)
+    : null
+  const previousModelPresetId = modelPresetSelection
+    ? nonBlankId(getDatabase().modelPresets?.[getDatabase().modelPresetsId]?.id)
+    : null
+  const previousPromptPresetId = promptPresetSelection
+    ? nonBlankId(getDatabase().promptPresets?.[getDatabase().promptPresetsId]?.id)
+    : null
+  const preparedAgentGenerationSettings =
+    activeChatAgentPresetTarget && resolvedAgentPresetId !== undefined
+      ? createGenerationSettingsWithAgentPreset(
+          activeChatAgentPresetTarget.chat.generationSettings,
+          resolvedAgentPresetId,
+        )
+      : null
+  const agentPresetChanged =
+    !!activeChatAgentPresetTarget &&
+    !!preparedAgentGenerationSettings &&
+    snapshotJson(activeChatAgentPresetTarget.chat.generationSettings) !== snapshotJson(preparedAgentGenerationSettings)
+
+  // Flush projection-owned timers while their outgoing owner is still live,
+  // then reserve every exact structural correction before optimistic state
+  // changes can make a later apply appear to be a no-op.
+  if (personaSelection) void flushPendingSelectedPersonaUpdate()
+  if (promptPresetSelection) flushPendingPromptTemplatePatches()
+  if (modelPresetSelection || promptPresetSelection) flushPendingSplitPresetPatches()
+  if (
+    resolvedLegacyPresetId ||
+    modelPresetSelection ||
+    promptPresetSelection ||
+    (requested.has('globalVariables') && globalVariablesChanged)
+  ) {
+    flushRegisteredPendingBridgePatch('settings', {})
+  }
+
+  const personaDurability = personaSelection
+    ? prepareLoadoutDurableStep(PERSONA_SELECTION_MUTATION_KEY, {
+        version: 1,
+        dependencyKeys: Array.from(
+          new Set(
+            [previousPersonaId, personaSelection.personaId]
+              .filter((personaId): personaId is string => personaId !== null)
+              .map(personaOwnerMutationKey),
+          ),
+        ),
+        requests: [
+          {
+            method: 'POST',
+            path: '/personas/select',
+            body: {
+              personaId: personaSelection.personaId,
+              mirrorLegacyProfile: true,
+              saveCurrent: true,
+            },
+          },
+        ],
+      })
+    : null
+  const legacyPresetDurability = resolvedLegacyPresetId
+    ? prepareLoadoutDurableStep(SETTINGS_BRIDGE_MUTATION_KEY, {
+        version: 1,
+        requests: [
+          {
+            method: 'POST',
+            path: '/presets/select',
+            body: { presetId: resolvedLegacyPresetId, apply: true, saveCurrent: true },
+          },
+        ],
+      })
+    : null
+  const modelPresetDurability = modelPresetSelection
+    ? prepareLoadoutDurableStep(SETTINGS_BRIDGE_MUTATION_KEY, {
+        version: 1,
+        dependencyKeys: Array.from(
+          new Set(
+            [previousModelPresetId, modelPresetSelection.presetId]
+              .filter((presetId): presetId is string => presetId !== null)
+              .map((presetId) => splitPresetMutationKey('model', presetId)),
+          ),
+        ),
+        requests: [
+          {
+            method: 'POST',
+            path: '/model-presets/select',
+            body: { modelPresetId: modelPresetSelection.presetId },
+          },
+        ],
+      })
+    : null
+  const promptPresetDurability = promptPresetSelection
+    ? prepareLoadoutDurableStep(SETTINGS_BRIDGE_MUTATION_KEY, {
+        version: 1,
+        dependencyKeys: Array.from(
+          new Set(
+            [previousPromptPresetId, promptPresetSelection.presetId]
+              .filter((presetId): presetId is string => presetId !== null)
+              .map(promptTemplateOwnerMutationKey),
+          ),
+        ),
+        requests: [
+          {
+            method: 'POST',
+            path: '/prompt-presets/select',
+            body: { promptPresetId: promptPresetSelection.presetId },
+          },
+        ],
+      })
+    : null
+  const agentPresetDurability =
+    activeChatAgentPresetTarget && agentPresetChanged && preparedAgentGenerationSettings
+      ? prepareLoadoutDurableStep(
+          chatResourceOwnerMutationKey(activeChatAgentPresetTarget.chatId, activeChatAgentPresetTarget.characterId),
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PUT',
+                path: `/chats/${encodeURIComponent(activeChatAgentPresetTarget.chatId)}/generation-settings`,
+                body: { generationSettings: cloneJsonValue(preparedAgentGenerationSettings) },
+              },
+            ],
+          },
+        )
+      : null
+  const modulePlans = requested.has('modules') ? changedModulePlans(previousModules, nextModules) : []
+  const globalVariablesDurability =
+    requested.has('globalVariables') && globalVariablesChanged
+      ? prepareLoadoutDurableStep(SETTINGS_BRIDGE_MUTATION_KEY, {
+          version: 1,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/settings/sidebar',
+              body: { patch: { globalChatVariables: cloneJsonValue(nextGlobalChatVariables) } },
+            },
+          ],
+        })
+      : null
   const lastUsed = Date.now()
   const previousLoadout = getDatabase().loadouts?.find((item) => item.id === loadout.id)
   const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
@@ -1183,8 +1422,7 @@ async function applyLoadoutNow(
   let promptPresetRollback: SplitPresetSelectionRollback | null = null
   let agentPresetRollback: AgentPresetSelectionRollback | null = null
 
-  if (personaSelection) {
-    const previousPersona = currentPersonaStateSnapshot()
+  if (personaSelection && previousPersona) {
     selectUserPersonaLocally(personaSelection.index, 'save')
     const attemptedPersona = currentPersonaStateSnapshot()
     personaRollback = personaSelectionRollback(previousPersona, attemptedPersona)
@@ -1274,10 +1512,7 @@ async function applyLoadoutNow(
       if (targetChat) {
         const hadGenerationSettings = Object.hasOwn(targetChat, 'generationSettings')
         const previousGenerationSettings = cloneJsonValue(targetChat.generationSettings)
-        const nextGenerationSettings = createGenerationSettingsWithAgentPreset(
-          targetChat.generationSettings,
-          resolvedAgentPresetId,
-        )
+        const nextGenerationSettings = preparedAgentGenerationSettings
         if (
           nextGenerationSettings &&
           snapshotJson(previousGenerationSettings) !== snapshotJson(nextGenerationSettings)
@@ -1318,6 +1553,7 @@ async function applyLoadoutNow(
             optimisticAcknowledgement: personaOptimisticAcknowledgement,
           }),
         () => rollbackPersonaSelection(personaRollback),
+        personaDurability,
       ),
     )
   }
@@ -1332,6 +1568,7 @@ async function applyLoadoutNow(
             saveCurrent: true,
           }),
         () => rollbackLegacyPresetSelection(legacyPresetRollback),
+        legacyPresetDurability,
       ),
     )
   }
@@ -1344,6 +1581,7 @@ async function applyLoadoutNow(
             modelPresetId: selectedModelPresetId,
           }),
         () => rollbackSplitPresetSelection(modelPresetRollback),
+        modelPresetDurability,
       ),
     )
   }
@@ -1356,6 +1594,7 @@ async function applyLoadoutNow(
             promptPresetId: selectedPromptPresetId,
           }),
         () => rollbackSplitPresetSelection(promptPresetRollback),
+        promptPresetDurability,
       ),
     )
   }
@@ -1370,11 +1609,12 @@ async function applyLoadoutNow(
             generationSettings: rollback.attemptedGenerationSettings,
           }),
         () => rollbackAgentPresetSelection(rollback),
+        agentPresetDurability,
       ),
     )
   }
   if (requested.has('modules')) {
-    steps.push(...changedModuleSteps(previousModules, nextModules))
+    steps.push(...changedModuleSteps(previousModules, modulePlans))
   }
   if (requested.has('globalVariables') && globalVariablesChanged) {
     const group = settingsGroupForKey('globalChatVariables')
@@ -1396,6 +1636,7 @@ async function applyLoadoutNow(
               previous: previousGlobalChatVariables,
               attempted: nextGlobalChatVariables,
             }),
+          globalVariablesDurability,
         ),
       )
     }
@@ -1417,13 +1658,13 @@ async function applyLoadoutNow(
     ),
   )
 
-  if (personaSelection && personaRollback) {
-    void flushPendingSelectedPersonaUpdate()
-  }
-  const failure = await runOptimisticCommandSequenceAsync(
-    steps.map((step) => step.command),
-    () => rollbackUnacceptedLoadoutApplySteps(steps),
+  const sequenceEntries: ServerCommandSequenceEntry[] = steps.map((step) =>
+    step.executionWrapper ? { command: step.command, executionWrapper: step.executionWrapper } : step.command,
   )
+  const failure = await runOptimisticCommandSequenceAsync(sequenceEntries, () =>
+    rollbackUnacceptedLoadoutApplySteps(steps),
+  )
+  if (failure !== null) await discardSkippedLoadoutDurableSteps(steps)
   return failure === null ? 'applied' : 'persistence-failed'
 }
 

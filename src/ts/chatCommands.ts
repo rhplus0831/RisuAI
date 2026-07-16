@@ -28,6 +28,7 @@ import {
   type ChatSnapshot,
   type MessageSnapshot,
   type ServerCommandResult,
+  type ServerCommandSequenceEntry,
   type ServerCommandTransportOptions,
   type SaveChatGenerationSettingsCommandInput,
 } from './server/commands'
@@ -1427,23 +1428,20 @@ export function runMessageCommand<T extends Record<string, unknown>>(
 // sequence as one unit, advances the base revision after each accepted step,
 // and reconciles the accumulated events once after the sequence settles.
 export function runOptimisticCommandSequence(
-  commands: Array<(baseRevision: number) => Promise<ServerCommandResult>>,
+  commands: readonly ServerCommandSequenceEntry[],
   rollback: () => void,
 ): void {
   void runServerCommandSequence(commands, rollback)
 }
 
 export async function runOptimisticCommandSequenceAsync(
-  commands: Array<(baseRevision: number) => Promise<ServerCommandResult>>,
+  commands: readonly ServerCommandSequenceEntry[],
   rollback: () => void,
 ): Promise<ServerCommandResult | null> {
   return runServerCommandSequence(commands, rollback)
 }
 
-function runChatCommandSequence(
-  commands: Array<(baseRevision: number) => Promise<ServerCommandResult>>,
-  rollback: () => void,
-): void {
+function runChatCommandSequence(commands: readonly ServerCommandSequenceEntry[], rollback: () => void): void {
   runOptimisticCommandSequence(commands, rollback)
 }
 
