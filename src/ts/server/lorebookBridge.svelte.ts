@@ -1006,20 +1006,34 @@ export function dispatchCreateGlobalLorebook(lorebook: GlobalLorebook, previous:
     attempted,
     previousIndex: previous.loreBook.length,
   }
-  void runServerCommand({
-    command: (baseRevision) =>
-      createGlobalLorebookCommand({
-        baseRevision,
-        lorebook: cloneJsonValue(attempted) as GlobalLorebookSnapshot,
-        acknowledgeOptimistic: true,
-        optimisticCollectionEpoch: collectionProjectionEpoch,
-      }),
-    rollback: () => {
-      if (!hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)) {
-        rollbackGlobalLorebookListEntry(rollbackEntry)
-      }
-    },
-  })
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: '/lorebooks',
+        body: { lorebook: cloneJsonValue(attempted) },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(globalLorebookOwnerMutationKey(attempted.id as string), intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        createGlobalLorebookCommand({
+          baseRevision,
+          lorebook: cloneJsonValue(attempted) as GlobalLorebookSnapshot,
+          acknowledgeOptimistic: true,
+          optimisticCollectionEpoch: collectionProjectionEpoch,
+        }),
+      rollback: () => {
+        if (!hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)) {
+          rollbackGlobalLorebookListEntry(rollbackEntry)
+        }
+      },
+      ...transport,
+    }),
+  )
 }
 
 export function dispatchUpdateGlobalLorebook(
@@ -1031,21 +1045,35 @@ export function dispatchUpdateGlobalLorebook(
   const collectionProjectionEpoch = captureCollectionProjectionEpoch('loreBook')
   const attempted = cloneJsonValue(patch)
   const rollback = globalLorebookNameRollbackFromSnapshot(lorebookId, previous, attempted)
-  void runServerCommand({
-    command: (baseRevision) =>
-      updateGlobalLorebookCommand({
-        baseRevision,
-        lorebookId,
-        patch: cloneJsonValue(attempted),
-        acknowledgeOptimistic: true,
-        optimisticCollectionEpoch: collectionProjectionEpoch,
-      }),
-    rollback: () => {
-      if (!hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)) {
-        rollbackGlobalLorebookName(rollback)
-      }
-    },
-  })
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/lorebooks/${encodeURIComponent(lorebookId)}`,
+        body: { patch: cloneJsonValue(attempted) },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(globalLorebookOwnerMutationKey(lorebookId), intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        updateGlobalLorebookCommand({
+          baseRevision,
+          lorebookId,
+          patch: cloneJsonValue(attempted),
+          acknowledgeOptimistic: true,
+          optimisticCollectionEpoch: collectionProjectionEpoch,
+        }),
+      rollback: () => {
+        if (!hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)) {
+          rollbackGlobalLorebookName(rollback)
+        }
+      },
+      ...transport,
+    }),
+  )
 }
 
 export function dispatchDeleteGlobalLorebook(lorebookId: string, previous: GlobalLorebookStateSnapshot): void {
@@ -1139,25 +1167,40 @@ export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot):
     attemptedIds: lorebookIds as string[],
   }
   const selectionRollback = globalLorebookSelectionRollbackFromSnapshot(previous)
-  void runServerCommand({
-    command: (baseRevision) =>
-      reorderGlobalLorebooksCommand({
-        baseRevision,
-        lorebookIds: cloneJsonValue(rollback.attemptedIds),
-        acknowledgeOptimistic,
-        optimisticCollectionEpoch: collectionProjectionEpoch,
-        optimisticPageEpoch: pageProjectionEpoch,
-        optimisticSelectedLorebookId: acknowledgeOptimistic ? selectedLorebookId : undefined,
-      }),
-    rollback: () => {
-      if (!hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)) {
-        rollbackGlobalLorebookOrder(rollback)
-      }
-      if (!hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)) {
-        rollbackGlobalLorebookSelection(selectionRollback)
-      }
-    },
-  })
+  const intent: DurableMutationIntent = {
+    version: 1,
+    dependencyKeys: (lorebookIds as string[]).map(globalLorebookOwnerMutationKey),
+    requests: [
+      {
+        method: 'POST',
+        path: '/lorebooks/reorder',
+        body: { lorebookIds: cloneJsonValue(rollback.attemptedIds) },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY, intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        reorderGlobalLorebooksCommand({
+          baseRevision,
+          lorebookIds: cloneJsonValue(rollback.attemptedIds),
+          acknowledgeOptimistic,
+          optimisticCollectionEpoch: collectionProjectionEpoch,
+          optimisticPageEpoch: pageProjectionEpoch,
+          optimisticSelectedLorebookId: acknowledgeOptimistic ? selectedLorebookId : undefined,
+        }),
+      rollback: () => {
+        if (!hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)) {
+          rollbackGlobalLorebookOrder(rollback)
+        }
+        if (!hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)) {
+          rollbackGlobalLorebookSelection(selectionRollback)
+        }
+      },
+      ...transport,
+    }),
+  )
 }
 
 export function dispatchSelectGlobalLorebook(lorebookId: string, previous: GlobalLorebookStateSnapshot): void {
@@ -1167,6 +1210,7 @@ export function dispatchSelectGlobalLorebook(lorebookId: string, previous: Globa
   const rollback = globalLorebookSelectionRollbackFromSnapshot(previous, lorebookId)
   const intent: DurableMutationIntent = {
     version: 1,
+    dependencyKeys: [globalLorebookOwnerMutationKey(lorebookId)],
     requests: [
       {
         method: 'POST',

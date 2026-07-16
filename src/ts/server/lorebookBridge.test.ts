@@ -19,7 +19,9 @@ import {
   currentLorebookCollectionScopedSnapshot,
   currentLorebookStateSnapshot,
   deleteGlobalLorebookById,
+  dispatchCreateGlobalLorebook,
   dispatchSelectGlobalLorebook,
+  dispatchUpdateGlobalLorebook,
   ensureGlobalLorebookListIds,
   globalLorebookListIdsNeedNormalization,
   markCharacterLorebookHydrated,
@@ -53,6 +55,14 @@ interface CapturedFetch {
   url: string
   method: string
   body: unknown
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }
 
 async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {
@@ -945,6 +955,151 @@ describe('lorebook durable generation ordering', () => {
     }
   })
 
+  it('keeps a new lorebook rename and selection behind its transient create', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-global-lorebook-create-followups',
+      writerEpoch: 10,
+      databaseLineage: 'lineage-global-lorebook-create-followups',
+      requestedWriterWasActive: true,
+    })
+    setDatabaseLite({
+      characters: [],
+      modules: [],
+      loreBookPage: 0,
+      loreBook: [{ id: 'book-existing', name: 'Existing', data: [] }],
+    } as any)
+    setCachedServerCommandRevision(90)
+
+    const firstCreate = deferred<Response>()
+    let recover = false
+    let revision = 90
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return new Response(JSON.stringify({ acknowledged: true }), {
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method: init.method ?? 'GET', body })
+        if (calls.length === 1) return firstCreate.promise
+        if (!recover) {
+          return new Response(JSON.stringify({ error: 'temporarily unavailable' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+
+        revision += 1
+        if (url === '/api/v1/commands/lorebooks' && init.method === 'POST') {
+          return new Response(
+            JSON.stringify({
+              revision,
+              event: {
+                type: 'lorebook.created',
+                revision,
+                resource: 'globalLorebook',
+                id: 'book-new',
+              },
+              lorebookId: 'book-new',
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        }
+        if (url === '/api/v1/commands/lorebooks/book-new' && init.method === 'PATCH') {
+          return new Response(
+            JSON.stringify({
+              revision,
+              event: {
+                type: 'lorebook.updated',
+                revision,
+                resource: 'globalLorebook',
+                id: 'book-new',
+              },
+              lorebookId: 'book-new',
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        }
+        if (url === '/api/v1/commands/lorebooks/book-new/select') {
+          return new Response(
+            JSON.stringify({
+              revision,
+              event: {
+                type: 'lorebook.selected',
+                revision,
+                resource: 'globalLorebook',
+                id: 'book-new',
+              },
+              selectedLorebookId: 'book-new',
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          )
+        }
+        return new Response(JSON.stringify({ error: `unexpected ${url}` }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    const created = { id: 'book-new', name: 'New', data: [] }
+    try {
+      const beforeCreate = currentGlobalLorebookStateSnapshot()
+      getDatabase().loreBook.push(created as any)
+      dispatchCreateGlobalLorebook(created, beforeCreate)
+      await waitForCallCount(calls, 1)
+
+      const beforeRename = currentLorebookStateSnapshot()
+      created.name = 'Renamed before recovery'
+      dispatchUpdateGlobalLorebook('book-new', { name: created.name }, beforeRename)
+      expect(selectGlobalLorebook(1)).toBe(true)
+      firstCreate.resolve(
+        new Response(JSON.stringify({ error: 'temporarily unavailable' }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(3))
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => entry.handle.key)).toEqual([
+        globalLorebookOwnerMutationKey('book-new'),
+        globalLorebookOwnerMutationKey('book-new'),
+        GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY,
+      ])
+      expect(retained[2].intent.dependencyKeys).toEqual([globalLorebookOwnerMutationKey('book-new')])
+      expect(calls.some((call) => call.url.endsWith('/book-new/select'))).toBe(false)
+      expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 3 })
+      expect(calls.slice(recoveryStart).map((call) => `${call.method} ${call.url}`)).toEqual([
+        'POST /api/v1/commands/lorebooks',
+        'PATCH /api/v1/commands/lorebooks/book-new',
+        'POST /api/v1/commands/lorebooks/book-new/select',
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      firstCreate.resolve(
+        new Response(JSON.stringify({ error: 'temporarily unavailable' }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+      resetServerBackedLorebookBridgeForTests()
+      await Promise.resolve()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('replays a retained lorebook delete before a newer explicit selection', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -1065,7 +1220,7 @@ describe('lorebook durable generation ordering', () => {
         },
         {
           key: GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY,
-          dependencies: [],
+          dependencies: [globalLorebookOwnerMutationKey('book-select-c')],
           request: {
             method: 'POST',
             path: '/lorebooks/book-select-c/select',
