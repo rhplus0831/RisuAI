@@ -101,20 +101,13 @@
     dispatchUpdateMessageScoped,
     ensureMessageId,
   } from 'src/ts/chatCommands'
-  import {
-    canUseServerCommands,
-    getServerCommandBaseRevision,
-    runServerCommand,
-    translateMessageCommand,
-    updateMessageCommand,
-  } from 'src/ts/server/commands'
+  import { canUseServerCommands, getServerCommandBaseRevision, translateMessageCommand } from 'src/ts/server/commands'
   import { activeMessageTranslations } from 'src/ts/server/messageTranslationJobs'
   import {
     rollbackServerBackedChatRowMetadata,
     syncServerBackedChatMetadataBaselines,
   } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-  import { captureChatBodyProjectionEpoch } from 'src/ts/server/resourceState.svelte'
   import {
     captureChatButtonTriggerFreshness,
     chatButtonTriggerChatSignature,
@@ -755,6 +748,25 @@
     return matches.length === 1 ? matches[0] : null
   }
 
+  function translationScopedSnapshot(target: TranslationMessageTarget): ReturnType<typeof currentChatScopedSnapshot> {
+    const matches: Array<ReturnType<typeof currentChatScopedSnapshot>> = []
+    for (const [characterIndex, character] of (getDatabase().characters ?? []).entries()) {
+      for (const chat of character.chats ?? []) {
+        if (target.chatId && chat.id !== target.chatId) continue
+        if (!(chat.message ?? []).some((candidate) => candidate.chatId === target.messageId)) continue
+        matches.push({
+          selectedCharID: characterIndex,
+          characterId: character.chaId,
+          chatId: chat.id,
+          chat: cloneJsonValue(chat),
+        })
+      }
+    }
+    return matches.length === 1
+      ? matches[0]
+      : { selectedCharID: $selectedCharID, characterId: undefined, chatId: undefined, chat: undefined }
+  }
+
   function isSameTranslation(left: MessageTranslation | null | undefined, right: MessageTranslation | null): boolean {
     if (!left || !right) return left == null && right === null
     return (
@@ -870,29 +882,20 @@
       text: editTranslationText,
       updatedAt: Date.now(),
     }
+    const previous = translationScopedSnapshot(target)
+    if (!previous.chat) return
     applyLocalTranslation(target, nextTranslation)
     editTranslationMode = false
     editTranslationTarget = null
-    const optimisticChatBodyProjectionEpoch = target.chatId ? captureChatBodyProjectionEpoch(target.chatId) : undefined
-    await runServerCommand({
-      command: (baseRevision) =>
-        updateMessageCommand({
-          baseRevision,
-          messageId: target.messageId,
-          patch: { translation: nextTranslation },
-          optimisticChatId: target.chatId,
-          optimisticChatBodyProjectionEpoch,
-        }),
-      rollback: () => {
-        applyLocalTranslation(target, existing, {
-          expectedCurrentTranslation: nextTranslation,
-        })
-        if (isRenderingTranslationMessageTarget(target)) {
-          editTranslationMode = true
-          editTranslationTarget = target
-        }
-      },
+    const result = await dispatchUpdateMessageScoped(target.messageId, { translation: nextTranslation }, previous, {
+      optimisticPatchAlreadyApplied: true,
     })
+    if (result && !isSameTranslation(findLiveMessageByTarget(target)?.translation, nextTranslation)) {
+      if (isRenderingTranslationMessageTarget(target)) {
+        editTranslationMode = true
+        editTranslationTarget = target
+      }
+    }
   }
 
   async function rm(e: MouseEvent, rec?: boolean) {

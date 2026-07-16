@@ -514,6 +514,7 @@ beforeEach(() => {
   customHtmlMocks.sleep.mockResolvedValue(undefined)
   customHtmlMocks.getFileSrc.mockResolvedValue('')
   customHtmlMocks.canUseServerCommands.mockReturnValue(false)
+  vi.mocked(dispatchUpdateMessageScoped).mockReturnValue(null)
   customHtmlMocks.runServerCommand.mockImplementation(
     async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
       try {
@@ -1365,7 +1366,7 @@ describe('server raw translation controls', () => {
     expect(target.textContent).not.toContain('translated original chat')
   })
 
-  it('rolls back a failed translation edit on the captured message after the active chat switches', async () => {
+  it('routes a failed translation edit through the durable captured-message dispatcher', async () => {
     const existingTranslation = {
       source: 'raw' as const,
       text: 'original raw translation',
@@ -1381,14 +1382,18 @@ describe('server raw translation controls', () => {
       text: 'other chat raw translation',
       updatedAt: 456,
     }
-    const pendingUpdate = deferred<never>()
+    const pendingUpdate = deferred<{ status: 'error'; error: string }>()
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
-    customHtmlMocks.updateMessageCommand.mockReturnValue(pendingUpdate.promise)
     seedDatabase(1, null as unknown as string)
     testDatabaseState.db.translator = 'configured'
     testDatabaseState.db.translatorType = 'llm'
     testDatabaseState.db.characters[0].chats[0].message[0].translation = existingTranslation
     testDatabaseState.db.characters[0].chats[1].message[0].translation = otherTranslation
+    vi.mocked(dispatchUpdateMessageScoped).mockImplementationOnce(async (_messageId, _patch, previous) => {
+      const result = await pendingUpdate.promise
+      testDatabaseState.db.characters[0].chats[0].message[0].translation = previous.chat.message[0].translation
+      return result
+    })
     mountCustomHtmlRows(1)
     await settle()
 
@@ -1405,21 +1410,24 @@ describe('server raw translation controls', () => {
 
     buttonByText('editTranslationSave')?.click()
     await settle()
-    expect(customHtmlMocks.updateMessageCommand).toHaveBeenCalledWith({
-      baseRevision: 1,
-      messageId: 'message-0',
-      optimisticChatId: 'custom-html-chat',
-      optimisticChatBodyProjectionEpoch: expect.any(Number),
-      patch: {
+    expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith(
+      'message-0',
+      {
         translation: expect.objectContaining({
           text: 'attempted raw translation',
         }),
       },
-    })
+      expect.objectContaining({
+        characterId: 'custom-html-character',
+        chatId: 'custom-html-chat',
+        chat: expect.objectContaining({ id: 'custom-html-chat' }),
+      }),
+      { optimisticPatchAlreadyApplied: true },
+    )
     expect(testDatabaseState.db.characters[0].chats[0].message[0].translation?.text).toBe('attempted raw translation')
 
     testDatabaseState.db.characters[0].chatPage = 1
-    pendingUpdate.reject(new Error('update failed'))
+    pendingUpdate.resolve({ status: 'error', error: 'update failed' })
     await settle()
 
     expect(testDatabaseState.db.characters[0].chats[0].message[0].translation).toEqual(existingTranslation)
