@@ -21,6 +21,7 @@
   const previewLoadRuns = new Map<string, number>()
   let assetLoadRun = 0
   let destroyed = false
+  let deletionBusy = $state(false)
 
   const displayedAssets = $derived(allAssets.slice(0, displayCount))
   const hasMore = $derived(displayCount < allAssets.length)
@@ -67,14 +68,16 @@
   }
 
   const deleteAsset = async (id: string, name: string) => {
-    if (!(await alertConfirm(language.playground.inlayDeleteConfirm.replace('{name}', name)))) {
-      return
-    }
+    if (deletionBusy) return
+    deletionBusy = true
     try {
+      if (!(await alertConfirm(language.playground.inlayDeleteConfirm.replace('{name}', name)))) return
       await removeInlayAsset(id)
     } catch (error) {
       alertError(error)
       return
+    } finally {
+      deletionBusy = false
     }
     releasePreview(id)
     selection.delete(id)
@@ -82,30 +85,35 @@
   }
 
   const deleteSelected = async () => {
-    if (selection.size === 0) return
-    if (
-      !(await alertConfirm(
-        language.playground.inlayDeleteMultipleConfirm.replace('{count}', selection.size.toString()),
-      ))
-    ) {
-      return
-    }
-    const selectedIds = [...selection]
-    const results = await Promise.allSettled(selectedIds.map((id) => removeInlayAsset(id)))
-    const deletedIds = new Set<string>()
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        const id = selectedIds[index]
-        deletedIds.add(id)
-        releasePreview(id)
-        selection.delete(id)
+    if (selection.size === 0 || deletionBusy) return
+    deletionBusy = true
+    try {
+      if (
+        !(await alertConfirm(
+          language.playground.inlayDeleteMultipleConfirm.replace('{count}', selection.size.toString()),
+        ))
+      ) {
+        return
       }
-    })
-    allAssets = allAssets.filter(([assetId]) => !deletedIds.has(assetId))
+      const selectedIds = [...selection]
+      const results = await Promise.allSettled(selectedIds.map((id) => removeInlayAsset(id)))
+      const deletedIds = new Set<string>()
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          const id = selectedIds[index]
+          deletedIds.add(id)
+          releasePreview(id)
+          selection.delete(id)
+        }
+      })
+      allAssets = allAssets.filter(([assetId]) => !deletedIds.has(assetId))
 
-    const failedResult = results.find((result) => result.status === 'rejected')
-    if (failedResult?.status === 'rejected') {
-      alertError(failedResult.reason)
+      const failedResult = results.find((result) => result.status === 'rejected')
+      if (failedResult?.status === 'rejected') {
+        alertError(failedResult.reason)
+      }
+    } finally {
+      deletionBusy = false
     }
   }
 
@@ -202,11 +210,13 @@
   {#if allAssets.length > 0}
     <div class="ml-auto flex max-w-full flex-wrap justify-end gap-2">
       {#if hasSelection}
-        <Button onclick={deleteSelected} styled="danger" size="sm">{language.playground.inlayDeleteSelected}</Button>
-        <Button onclick={deselectAll} styled="primary" size="sm"
+        <Button onclick={deleteSelected} disabled={deletionBusy} styled="danger" size="sm"
+          >{language.playground.inlayDeleteSelected}</Button>
+        <Button onclick={deselectAll} disabled={deletionBusy} styled="primary" size="sm"
           >{language.playground.inlayDeselectAll} ({selection.size})</Button>
       {:else}
-        <Button onclick={selectAll} styled="primary" size="sm">{language.playground.inlaySelectAll}</Button>
+        <Button onclick={selectAll} disabled={deletionBusy} styled="primary" size="sm"
+          >{language.playground.inlaySelectAll}</Button>
       {/if}
     </div>
   {/if}
@@ -295,7 +305,7 @@
             <span>{getAssetSize(asset)}</span>
           </div>
 
-          <Button onclick={() => deleteAsset(id, asset.name)} styled="danger" size="sm"
+          <Button onclick={() => deleteAsset(id, asset.name)} disabled={deletionBusy} styled="danger" size="sm"
             >{language.playground.inlayDelete}</Button>
         </div>
       {/key}

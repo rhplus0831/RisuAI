@@ -260,4 +260,33 @@ describe('PlaygroundInlayExplorer', () => {
     await vi.waitFor(() => expect(alertMocks.alertError).toHaveBeenCalledWith(deleteError))
     expect(target.textContent).toContain('Asset 1')
   })
+
+  it('prevents repeated deletion while the confirmation or request is pending', async () => {
+    inlayMocks.listInlayAssets.mockResolvedValue([
+      ['asset-1', { data: '', ext: 'json', name: 'Asset 1', type: 'signature' }],
+    ])
+    const confirmation = deferred<boolean>()
+    const removal = deferred<void>()
+    alertMocks.alertConfirm.mockReturnValue(confirmation.promise)
+    inlayMocks.removeInlayAsset.mockReturnValue(removal.promise)
+    component = mount(PlaygroundInlayExplorer, { target })
+    await vi.waitFor(() => expect(target.textContent).toContain('Asset 1'))
+    const deleteButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.textContent === language.playground.inlayDelete,
+    )
+    if (!deleteButton) throw new Error('Inlay delete control not found')
+
+    deleteButton.click()
+    await vi.waitFor(() => expect(alertMocks.alertConfirm).toHaveBeenCalledOnce())
+    expect(deleteButton.disabled).toBe(true)
+    deleteButton.click()
+    expect(alertMocks.alertConfirm).toHaveBeenCalledOnce()
+
+    confirmation.resolve(true)
+    await vi.waitFor(() => expect(inlayMocks.removeInlayAsset).toHaveBeenCalledOnce())
+    deleteButton.click()
+    expect(inlayMocks.removeInlayAsset).toHaveBeenCalledOnce()
+    removal.resolve()
+    await vi.waitFor(() => expect(target.textContent).not.toContain('Asset 1'))
+  })
 })
