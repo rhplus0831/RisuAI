@@ -102,10 +102,12 @@
   let fontFamily = $state('Arial')
   let modeEpoch = 0
   let imageEpoch = 0
+  let imageSelectionEpoch = 0
 
   async function selectFile(): Promise<boolean> {
+    const selectionEpoch = ++imageSelectionEpoch
     const file = await selectSingleFile(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif'])
-    if (!file) {
+    if (!file || selectionEpoch !== imageSelectionEpoch) {
       return false
     }
 
@@ -119,6 +121,9 @@
     const img = new Image()
     //@ts-expect-error Uint8Array buffer type (ArrayBufferLike) is incompatible with BlobPart's ArrayBuffer
     await decodeImageBlob(img, new Blob([file.data]))
+    // Decoding is asynchronous. A later selection must retain ownership even
+    // when an older, larger image happens to finish last.
+    if (selectionEpoch !== imageSelectionEpoch) return false
     inputImage = img
     imageEpoch += 1
     aspectRatio = img.width / img.height
@@ -137,6 +142,7 @@
     if (nextMode === mode) return
     mode = nextMode
     modeEpoch += 1
+    imageSelectionEpoch += 1
   }
 
   async function imageTranslate(type: number = 0) {

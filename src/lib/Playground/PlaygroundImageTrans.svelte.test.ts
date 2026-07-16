@@ -58,6 +58,23 @@ function deferred<T>() {
 
 let component: MountedComponent | undefined
 let target: HTMLElement
+let deferredImageDecodePromises: Promise<void>[] = []
+let deferredImages: DeferredTestImage[] = []
+
+class DeferredTestImage extends EventTarget {
+  src = ''
+  width: number
+  height = 100
+  decode: ReturnType<typeof vi.fn>
+
+  constructor() {
+    super()
+    const index = deferredImages.length
+    this.width = index === 0 ? 100 : 200
+    this.decode = vi.fn(() => deferredImageDecodePromises[index])
+    deferredImages.push(this)
+  }
+}
 
 beforeEach(() => {
   target = document.createElement('div')
@@ -65,6 +82,8 @@ beforeEach(() => {
   imageMocks.alertError.mockReset()
   imageMocks.requestChatData.mockReset()
   imageMocks.selectSingleFile.mockReset()
+  deferredImageDecodePromises = []
+  deferredImages = []
 })
 
 afterEach(() => {
@@ -289,6 +308,48 @@ describe('PlaygroundImageTrans request ownership', () => {
     await waitForTranslationIdle()
     expect(target.querySelectorAll('textarea')).toHaveLength(1)
     expect(imageMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('keeps the newest manual image when an older decode finishes last', async () => {
+    const decodeA = deferred<void>()
+    const decodeB = deferred<void>()
+    deferredImageDecodePromises = [decodeA.promise, decodeB.promise]
+    const canvasContext = {
+      clearRect: vi.fn(),
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      fillText: vi.fn(),
+      measureText: vi.fn(() => ({ width: 10 })),
+      fillStyle: '',
+      font: '',
+    }
+    vi.stubGlobal('Image', DeferredTestImage)
+    vi.spyOn(URL, 'createObjectURL').mockReturnValueOnce('blob:image-a').mockReturnValueOnce('blob:image-b')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(canvasContext as never)
+    imageMocks.selectSingleFile
+      .mockResolvedValueOnce({ name: 'image-a.png', data: new Uint8Array([1]) })
+      .mockResolvedValueOnce({ name: 'image-b.png', data: new Uint8Array([2]) })
+    component = mount(PlaygroundImageTrans, { target })
+    await setMode('manual')
+    const imageButton = Array.from(target.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim() === language.image,
+    )
+    if (!(imageButton instanceof HTMLButtonElement)) throw new Error('Image selection button not found')
+
+    imageButton.click()
+    await vi.waitFor(() => expect(deferredImages).toHaveLength(1))
+    imageButton.click()
+    await vi.waitFor(() => expect(deferredImages).toHaveLength(2))
+    decodeB.resolve()
+    await vi.waitFor(() => expect(canvasContext.drawImage).toHaveBeenCalledOnce())
+    decodeA.resolve()
+    await Promise.resolve()
+    await tick()
+
+    expect(canvasContext.drawImage).toHaveBeenCalledOnce()
+    expect(canvasContext.drawImage).toHaveBeenCalledWith(deferredImages[1], 0, 0, 200, 100)
+    expect(target.querySelector('canvas')?.getAttribute('width')).toBe('200')
   })
 
   it('drops a response after the destination language changes', async () => {

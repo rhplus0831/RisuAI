@@ -165,6 +165,13 @@ export function getUserIconProtrait() {
 export function selectFileByDom(allowedExtensions: string[], multiple: 'multiple' | 'single' = 'single') {
   return new Promise<null | File[]>((resolve) => {
     const fileInput = document.createElement('input')
+    let settled = false
+    const finish = (files: File[]) => {
+      if (settled) return
+      settled = true
+      fileInput.remove()
+      resolve(files)
+    }
     fileInput.type = 'file'
     fileInput.multiple = multiple === 'multiple'
     const acceptAll = getDatabase().allowAllExtentionFiles || isIOS() || allowedExtensions[0] === '*'
@@ -176,9 +183,9 @@ export function selectFileByDom(allowedExtensions: string[], multiple: 'multiple
       fileInput.accept = '*'
     }
 
-    fileInput.addEventListener('change', (event) => {
+    fileInput.addEventListener('change', () => {
       if (fileInput.files.length === 0) {
-        resolve([])
+        finish([])
         return
       }
 
@@ -189,9 +196,12 @@ export function selectFileByDom(allowedExtensions: string[], multiple: 'multiple
             return !allowedExtensions || allowedExtensions.includes(fileExtension)
           })
 
-      fileInput.remove()
-      resolve(files)
+      finish(files)
     })
+    // Native file inputs do not emit `change` when the chooser is cancelled.
+    // Settle explicitly so callers can release their loading state and the
+    // hidden input does not accumulate in the document.
+    fileInput.addEventListener('cancel', () => finish([]))
 
     document.body.appendChild(fileInput)
     fileInput.click()
