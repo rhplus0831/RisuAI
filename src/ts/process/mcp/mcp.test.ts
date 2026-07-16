@@ -61,6 +61,8 @@ import {
   callMCPTool,
   callMCPToolFrom,
   callOnlyMCPs,
+  decodeToolCall,
+  encodeToolCall,
   getTools,
   initializeMCPs,
   importMCPModule,
@@ -286,6 +288,19 @@ beforeEach(() => {
 afterEach(() => {
   clearMCPRuntimeState()
   setResourceWriteGuardEnabled(false)
+})
+
+describe('MCP remembered tool calls', () => {
+  it('round-trips the complete encoded wrapper as well as its inner payload', async () => {
+    const toolCall = {
+      call: { id: 'remembered-call', name: 'remembered_tool', arg: { value: 3 } },
+      response: [{ type: 'text' as const, text: 'remembered result' }],
+    }
+
+    const encoded = await encodeToolCall(toolCall)
+    await expect(decodeToolCall(encoded)).resolves.toEqual(toolCall)
+    await expect(decodeToolCall(encoded.match(/<tool_call>(.*?)<\/tool_call>/s)?.[1] ?? '')).resolves.toEqual(toolCall)
+  })
 })
 
 describe('MCP request discovery', () => {
