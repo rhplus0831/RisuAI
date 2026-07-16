@@ -509,7 +509,26 @@ function hasEveryServerCollection(names: readonly string[]): boolean {
 }
 
 function isValidCollectionValue(name: ServerCollectionName, value: unknown): boolean {
-  return name === 'pluginCustomStorage' ? isPlainRecord(value) : Array.isArray(value)
+  if (name === 'pluginCustomStorage') return isPlainRecord(value)
+  if (name === 'loreBook') return isValidGlobalLorebookCollection(value)
+  return Array.isArray(value)
+}
+
+function isValidGlobalLorebookCollection(value: unknown): boolean {
+  if (!Array.isArray(value)) return false
+  const lorebookIds = new Set<string>()
+  for (const lorebook of value) {
+    if (!isPlainRecord(lorebook) || !nonEmptyString(lorebook.id) || !Array.isArray(lorebook.data)) return false
+    if (lorebookIds.has(lorebook.id)) return false
+    lorebookIds.add(lorebook.id)
+
+    const entryIds = new Set<string>()
+    for (const entry of lorebook.data) {
+      if (!isPlainRecord(entry) || !nonEmptyString(entry.id) || entryIds.has(entry.id)) return false
+      entryIds.add(entry.id)
+    }
+  }
+  return true
 }
 
 function isMessageFreeCharacter(value: unknown): value is Record<string, unknown> & { chaId: string } {

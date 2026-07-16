@@ -645,9 +645,9 @@ function normalizeCustomTextTheme(database: JsonRecord): void {
 function normalizeLorebooks(database: JsonRecord): void {
   if (isNullish(database.loreBook)) {
     database.loreBookPage = 0
-    database.loreBook = [{ name: 'My First LoreBook', data: [] }]
+    database.loreBook = [{ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }]
   } else if (!Array.isArray(database.loreBook)) {
-    database.loreBook = [{ name: 'My First LoreBook', data: [] }]
+    database.loreBook = [{ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }]
     database.loreBookPage = 0
   }
 

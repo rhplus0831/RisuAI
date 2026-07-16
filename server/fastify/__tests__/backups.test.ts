@@ -6,6 +6,7 @@ import { createHash, webcrypto } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
+import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
 import { assetsDir, getAllAssetMetadata, loadPersistedWithMessages } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
@@ -297,6 +298,100 @@ describe('Phase 2D backups', () => {
       pluginCustomStorage: {},
     })
     expect(afterRestore.json().revision).toBe(revisionAfter)
+  })
+
+  it('repairs stable lorebook ids while restoring a pre-v23 SQLite backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const legacyEntry = {
+      id: 'entry-before-backup',
+      key: 'legacy',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Legacy entry',
+      content: 'before backup',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    await importDb(harness.app, assertion, {
+      tag: 'pre-v23',
+      loreBook: [{ id: 'book-before-backup', name: 'Legacy book', data: [legacyEntry] }],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'pre-v23 lorebook' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      const row = backupDb.prepare('SELECT data_json FROM lore_books WHERE position = 0').get() as {
+        data_json: string
+      }
+      const idlessLorebook = JSON.parse(row.data_json) as {
+        id?: string
+        data: Array<{ id?: string }>
+      }
+      delete idlessLorebook.id
+      delete idlessLorebook.data[0].id
+      backupDb.prepare('UPDATE lore_books SET data_json = ? WHERE position = 0').run(JSON.stringify(idlessLorebook))
+      backupDb.prepare('UPDATE schema_version SET version = 22 WHERE id = 1').run()
+    } finally {
+      backupDb.close()
+    }
+
+    await importDb(harness.app, assertion, { tag: 'live-after-backup' })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const restoredLorebook = bootstrap.json().database.loreBook[0] as {
+      id: string
+      data: Array<{ id: string }>
+    }
+    expect(restoredLorebook.id).toEqual(expect.any(String))
+    expect(restoredLorebook.data[0].id).toEqual(expect.any(String))
+
+    const liveDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(
+        (liveDb.prepare('SELECT version FROM schema_version WHERE id = 1').get() as { version: number }).version,
+      ).toBe(CURRENT_SCHEMA_VERSION)
+    } finally {
+      liveDb.close()
+    }
+
+    const addedEntry = { ...legacyEntry, id: 'entry-after-restore', content: 'after restore' }
+    const added = await harness.app.inject({
+      method: 'PUT',
+      url: `/api/v1/commands/lorebooks/${encodeURIComponent(restoredLorebook.id)}/entries/${addedEntry.id}`,
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: bootstrap.json().revision, entry: addedEntry },
+    })
+    expect(added.statusCode).toBe(200)
+
+    const reloaded = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(reloaded.json().database.loreBook[0]).toMatchObject({
+      id: restoredLorebook.id,
+      data: [
+        expect.objectContaining({ id: restoredLorebook.data[0].id }),
+        expect.objectContaining({ id: addedEntry.id }),
+      ],
+    })
   })
 
   it('round-trips split model and prompt preset tables with backup/restore', async () => {

@@ -9,9 +9,10 @@ import {
   createCharacterTables,
   createCollectionTables,
   createSettingsTable,
+  repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 22
+export const CURRENT_SCHEMA_VERSION = 23
 
 export interface MigrationStep {
   version: number
@@ -210,6 +211,15 @@ export const MIGRATIONS: readonly MigrationStep[] = [
         DROP TABLE IF EXISTS collection_body_revisions;
         DROP TABLE IF EXISTS projection_body_cache_state;
       `)
+    },
+  },
+  {
+    version: 23,
+    name: 'stable-global-lorebook-ids',
+    up: (db) => {
+      createCollectionTables(db)
+      createSettingsTable(db)
+      repairPersistedGlobalLorebookIdsInSqlite(db)
     },
   },
 ]

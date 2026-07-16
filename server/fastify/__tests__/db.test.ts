@@ -205,6 +205,73 @@ describe('schema migrations', () => {
     }
   })
 
+  it('persists stable ids for legacy global lorebooks and entries', () => {
+    const dataDir = makeDataDir()
+    seedSchemaVersion(dataDir, 22, 8)
+    const before = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      before.exec(`
+        CREATE TABLE lore_books (
+          position INTEGER PRIMARY KEY,
+          data_json TEXT NOT NULL CHECK (json_valid(data_json))
+        )
+      `)
+      const insert = before.prepare('INSERT INTO lore_books (position, data_json) VALUES (?, ?)')
+      const entry = {
+        key: 'legacy',
+        secondkey: '',
+        insertorder: 100,
+        comment: 'Legacy entry',
+        content: 'content',
+        mode: 'normal',
+        alwaysActive: false,
+        selective: false,
+      }
+      insert.run(0, JSON.stringify({ name: 'Missing ids', data: [entry] }))
+      insert.run(
+        1,
+        JSON.stringify({
+          id: 'duplicate-book',
+          name: 'Duplicate entry ids',
+          data: [
+            { ...entry, id: 'duplicate-entry' },
+            { ...entry, id: 'duplicate-entry' },
+          ],
+        }),
+      )
+      insert.run(2, JSON.stringify({ id: 'duplicate-book', name: 'Duplicate book id', data: [] }))
+    } finally {
+      before.close()
+    }
+
+    const first = openDatabase(dataDir)
+    let firstLorebooks: Array<{ id?: string; data?: Array<{ id?: string }> }>
+    try {
+      firstLorebooks = (
+        first.prepare('SELECT data_json FROM lore_books ORDER BY position').all() as Array<{ data_json: string }>
+      ).map((row) => JSON.parse(row.data_json) as { id?: string; data?: Array<{ id?: string }> })
+      expect(getSchemaState(first)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 8 })
+      expect(firstLorebooks.map((lorebook) => lorebook.id)).toHaveLength(3)
+      expect(firstLorebooks.every((lorebook) => typeof lorebook.id === 'string' && lorebook.id.length > 0)).toBe(true)
+      expect(new Set(firstLorebooks.map((lorebook) => lorebook.id)).size).toBe(3)
+      expect(firstLorebooks[0].data?.[0]?.id).toEqual(expect.any(String))
+      expect(new Set(firstLorebooks[1].data?.map((entry) => entry.id)).size).toBe(2)
+    } finally {
+      first.close()
+    }
+
+    const reopened = openDatabase(dataDir)
+    try {
+      const reopenedLorebooks = (
+        reopened.prepare('SELECT data_json FROM lore_books ORDER BY position').all() as Array<{ data_json: string }>
+      ).map((row) => JSON.parse(row.data_json))
+      expect(reopenedLorebooks).toEqual(firstLorebooks)
+      expect(getSchemaState(reopened)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 8 })
+    } finally {
+      reopened.close()
+    }
+  })
+
   it('L15: opens Fastify databases with WAL synchronous NORMAL', () => {
     const db = openDatabase(makeDataDir())
     try {

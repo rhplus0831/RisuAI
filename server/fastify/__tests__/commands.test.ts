@@ -719,6 +719,36 @@ describe('first-run database seed', () => {
       promptPresets: [expect.objectContaining({ id: 'default-prompt-preset' })],
       personas: [expect.objectContaining({ id: 'default-persona' })],
     })
+
+    const defaultLorebookId = bootstrap.json().database.loreBook[0]?.id as string
+    expect(defaultLorebookId).toBe('default-global-lorebook')
+    const entry = {
+      id: 'first-default-entry',
+      key: 'first',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'First entry',
+      content: 'Persisted content',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    const added = await harness.app.inject({
+      method: 'PUT',
+      url: `/api/v1/commands/lorebooks/${encodeURIComponent(defaultLorebookId)}/entries/${entry.id}`,
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 2, entry },
+    })
+    expect(added.statusCode).toBe(200)
+
+    const reloaded = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(reloaded.json().database.loreBook).toEqual([
+      expect.objectContaining({ id: defaultLorebookId, data: [expect.objectContaining({ id: entry.id })] }),
+    ])
   })
 
   it('does not seed database or bump revision when initialization event persistence fails', async () => {

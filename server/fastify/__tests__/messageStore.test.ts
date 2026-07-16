@@ -516,6 +516,12 @@ describe('repository message-aware load/write', () => {
       contentType: 'image/png',
     }
     const database = {
+      loreBook: [
+        {
+          name: 'Legacy lorebook',
+          data: [{ key: 'legacy', comment: 'Legacy entry', content: '' }],
+        },
+      ],
       characters: [
         {
           chaId: 'c',
@@ -533,6 +539,11 @@ describe('repository message-aware load/write', () => {
     }
     expect(hydrated.characters[0].chats[0].id).toBe('chat-1')
     expect(hydrated.characters[0].chats[0].message).toEqual([msg('m1', 'user', 'hi')])
+    const migratedLorebook = (
+      loadPersisted(db, dataDir).database as { loreBook: Array<{ id?: unknown; data: Array<{ id?: unknown }> }> }
+    ).loreBook[0]
+    expect(migratedLorebook.id).toEqual(expect.any(String))
+    expect(migratedLorebook.data[0].id).toEqual(expect.any(String))
     expect(loadPersisted(db, dataDir).assets).toEqual([legacyAsset])
   })
 

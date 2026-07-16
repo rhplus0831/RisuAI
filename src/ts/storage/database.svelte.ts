@@ -1842,6 +1842,7 @@ export function setDatabase(data: Database) {
     data.loreBookPage = 0
     data.loreBook = [
       {
+        id: 'default-global-lorebook',
         name: 'My First LoreBook',
         data: [],
       },
@@ -2570,6 +2571,7 @@ export interface Database {
   agentContextMaxToolRounds?: number
   cipherChat: boolean
   loreBook: {
+    id?: string
     name: string
     data: loreBook[]
   }[]

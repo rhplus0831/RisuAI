@@ -130,6 +130,75 @@ export function createCollectionTables(db: DatabaseSync): void {
   `)
 }
 
+/**
+ * Persisted global lorebook ids are API identities. Repair them before a row
+ * reaches a resource response or command baseline; otherwise the browser and
+ * server can independently mint different ids for the same legacy row.
+ */
+export function repairPersistedGlobalLorebookIds(database: unknown): boolean {
+  if (!isRecord(database) || !Array.isArray(database.loreBook)) return false
+
+  let changed = false
+  const lorebookIds = new Set<string>()
+  for (const rawLorebook of database.loreBook) {
+    if (!isRecord(rawLorebook)) continue
+
+    let lorebookId = typeof rawLorebook.id === 'string' && rawLorebook.id.trim() ? rawLorebook.id : ''
+    if (!lorebookId || lorebookIds.has(lorebookId)) {
+      lorebookId = randomUUID()
+      rawLorebook.id = lorebookId
+      changed = true
+    }
+    lorebookIds.add(lorebookId)
+
+    if (!Array.isArray(rawLorebook.data)) continue
+    const entryIds = new Set<string>()
+    for (const rawEntry of rawLorebook.data) {
+      if (!isRecord(rawEntry)) continue
+      let entryId = typeof rawEntry.id === 'string' && rawEntry.id.trim() ? rawEntry.id : ''
+      if (!entryId || entryIds.has(entryId)) {
+        entryId = randomUUID()
+        rawEntry.id = entryId
+        changed = true
+      }
+      entryIds.add(entryId)
+    }
+  }
+  return changed
+}
+
+export function repairPersistedGlobalLorebookIdsInSqlite(db: DatabaseSync): boolean {
+  let changed = false
+  const rows = db.prepare('SELECT position, data_json FROM lore_books ORDER BY position').all() as Array<{
+    position: number
+    data_json: string
+  }>
+  if (rows.length > 0) {
+    const projected = { loreBook: rows.map((row) => JSON.parse(row.data_json)) }
+    if (repairPersistedGlobalLorebookIds(projected)) {
+      const update = db.prepare('UPDATE lore_books SET data_json = ? WHERE position = ?')
+      projected.loreBook.forEach((lorebook, index) => {
+        update.run(JSON.stringify(lorebook), rows[index].position)
+      })
+      changed = true
+    }
+  }
+
+  // Defensive fallback for stores that still carry an embedded collection in
+  // settings because collection extraction never completed.
+  const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+    | { data_json: string }
+    | undefined
+  if (settingsRow) {
+    const settings = JSON.parse(settingsRow.data_json)
+    if (repairPersistedGlobalLorebookIds(settings)) {
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      changed = true
+    }
+  }
+  return changed
+}
+
 function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, unknown>): Record<string, unknown> {
   const merged = { ...database }
   for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
@@ -1455,6 +1524,7 @@ export function ensureDbJsonImported(db: DatabaseSync, dataDir: string): void {
   const database = parsed.database
 
   if (isRecord(database)) {
+    repairPersistedGlobalLorebookIds(database)
     replaceAllSettingsInTable(db, database)
     replaceAllCharactersInTable(db, database)
     replaceAllCollectionsInTable(db, database)
@@ -1885,6 +1955,7 @@ export function initializeDefaultDatabase(
       return { revision, initialized: false }
     }
     const database = createInitialDatabase()
+    repairPersistedGlobalLorebookIds(database)
     replaceAllCharactersInTable(db, database)
     replaceAllCollectionsInTable(db, database)
     replaceAllSettingsInTable(db, database)
@@ -2276,13 +2347,17 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string, beforeC
         // memory tables.
         const exists = db.prepare(`SELECT name FROM bak.sqlite_master WHERE type = 'table' AND name = ?`).get(table)
         if (table === 'schema_version') {
-          // Special-case: schema_version has the PK row (id=1). Update in
-          // place from the backup rather than DELETE+INSERT to avoid
-          // re-triggering INSERT OR IGNORE seed.
+          // The live schema stays current because restore swaps table data, not
+          // table definitions. Restore only the backup revision; copying an old
+          // version would bypass migrations until the next process restart.
           if (exists) {
             db.exec(
-              `INSERT OR REPLACE INTO main.schema_version (id, version, revision)
-               SELECT id, version, revision FROM bak.schema_version`,
+              `UPDATE main.schema_version
+               SET revision = COALESCE(
+                 (SELECT revision FROM bak.schema_version WHERE id = 1),
+                 revision
+               )
+               WHERE id = 1`,
             )
           }
           continue
@@ -2292,6 +2367,7 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string, beforeC
           db.exec(`INSERT INTO main.${table} SELECT * FROM bak.${table}`)
         }
       }
+      repairPersistedGlobalLorebookIdsInSqlite(db)
       beforeCommit?.()
       db.exec('COMMIT')
     } catch (err) {

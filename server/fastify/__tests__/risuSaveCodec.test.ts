@@ -231,6 +231,9 @@ describe('server .risu fixture harness', () => {
     expect(chat.id).toEqual(expect.any(String))
     expect(chat.id).not.toBe('')
     expect(chat.message).toEqual([])
+    expect(decoded.database.loreBook).toEqual([
+      expect.objectContaining({ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }),
+    ])
   })
 
   it('assembles and normalizes RISUSAVE block envelopes into import snapshots', () => {

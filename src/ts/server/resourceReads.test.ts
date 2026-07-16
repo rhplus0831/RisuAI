@@ -237,6 +237,41 @@ describe('server resource read clients', () => {
     expect(calls.map((call) => call.url)).toEqual(['/api/v1/collections', '/api/v1/collections/modules'])
   })
 
+  it('rejects global lorebook projections without stable unique ids', async () => {
+    const responses = [
+      { revision: 8, collections: { loreBook: [{ name: 'Missing id', data: [] }] } },
+      {
+        revision: 9,
+        collections: {
+          loreBook: [
+            {
+              id: 'book-a',
+              name: 'Duplicate entries',
+              data: [{ id: 'entry-a' }, { id: 'entry-a' }],
+            },
+          ],
+        },
+      },
+      {
+        revision: 10,
+        collections: {
+          loreBook: [{ id: 'book-a', name: 'Valid', data: [{ id: 'entry-a' }] }],
+        },
+      },
+    ]
+    stubResourceFetch(() => responses.shift())
+
+    await expect(fetchServerCollection('loreBook')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid loreBook collection response',
+    })
+    await expect(fetchServerCollection('loreBook')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid loreBook collection response',
+    })
+    await expect(fetchServerCollection('loreBook')).resolves.toMatchObject({ status: 'ok', revision: 10 })
+  })
+
   it('reconstructs collection hits while preserving a literal hash-shaped miss', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     await clearResourceCache()

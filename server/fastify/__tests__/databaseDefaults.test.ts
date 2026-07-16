@@ -15,6 +15,9 @@ describe('database defaults', () => {
     expect(database.modelRuntimeDefaults).toEqual({})
     expect(database.agentPresets).toEqual([])
     expect(database.agentPresetDefaultId).toBeUndefined()
+    expect(database.loreBook).toEqual([
+      expect.objectContaining({ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }),
+    ])
     expect(database.strictScriptCheck).toBe(false)
     expect(database.seperateModels).toMatchObject({
       memory: '',

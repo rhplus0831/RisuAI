@@ -196,13 +196,15 @@ function normalizeImportDatabaseShape(database: unknown): JsonRecord {
   ensurePluginRecords(target)
   if (typeof target.currentPluginProvider !== 'string') target.currentPluginProvider = ''
   ensurePluginCustomStorage(target)
-  if ('loreBook' in target) {
-    ensureGlobalLorebookCollection(target)
-  }
   ensureAllChildLorebooks(target)
   normalizeScriptDefinitionCollection(target)
 
-  return normalizeDatabaseDefaults(target, { providerDefaults: false })
+  const normalized = normalizeDatabaseDefaults(target, { providerDefaults: false })
+  // Defaults may create the first global lorebook after the earlier import
+  // repair passes. Run the authoritative repair after defaults so imported
+  // rows always reach SQLite with stable book and entry ids.
+  ensureGlobalLorebookCollection(normalized)
+  return normalized
 }
 
 function normalizeImportedChatGenerationSettings(database: JsonRecord): number {
