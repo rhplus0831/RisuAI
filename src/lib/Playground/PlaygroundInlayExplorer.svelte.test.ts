@@ -182,6 +182,31 @@ describe('PlaygroundInlayExplorer', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:newer-preview')
   })
 
+  it('does not retain a preview that finishes after its asset is deleted', async () => {
+    const preview = deferred<{ data: Blob }>()
+    inlayMocks.listInlayAssets.mockResolvedValue([
+      ['asset-1', { data: '', ext: 'png', name: 'Asset 1', type: 'image' }],
+    ])
+    inlayMocks.getInlayAssetBlob.mockReturnValue(preview.promise)
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:deleted-preview')
+
+    component = mount(PlaygroundInlayExplorer, { target })
+    await vi.waitFor(() => expect(inlayMocks.getInlayAssetBlob).toHaveBeenCalledWith('asset-1'))
+
+    const deleteButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.textContent === language.playground.inlayDelete,
+    )
+    deleteButton!.click()
+    await vi.waitFor(() => expect(inlayMocks.removeInlayAsset).toHaveBeenCalledWith('asset-1'))
+    await vi.waitFor(() => expect(target.textContent).not.toContain('Asset 1'))
+
+    preview.resolve({ data: new Blob(['preview'], { type: 'image/png' }) })
+    await preview.promise
+    await tick()
+
+    expect(createObjectURL).not.toHaveBeenCalled()
+  })
+
   it('keeps successful bulk deletions when one selected asset fails', async () => {
     inlayMocks.listInlayAssets.mockResolvedValue(
       Array.from({ length: 3 }, (_, index) => [

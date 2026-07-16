@@ -59,6 +59,13 @@
     selection.clear()
   }
 
+  const releasePreview = (id: string) => {
+    previewLoadRuns.set(id, (previewLoadRuns.get(id) ?? 0) + 1)
+    const url = previewURLs.get(id)
+    if (url) URL.revokeObjectURL(url)
+    previewURLs.delete(id)
+  }
+
   const deleteAsset = async (id: string, name: string) => {
     if (!(await alertConfirm(language.playground.inlayDeleteConfirm.replace('{name}', name)))) {
       return
@@ -69,10 +76,7 @@
       alertError(error)
       return
     }
-    if (previewURLs.has(id)) {
-      URL.revokeObjectURL(previewURLs.get(id)!)
-      previewURLs.delete(id)
-    }
+    releasePreview(id)
     selection.delete(id)
     allAssets = allAssets.filter(([assetId]) => assetId !== id)
   }
@@ -93,10 +97,7 @@
       if (result.status === 'fulfilled') {
         const id = selectedIds[index]
         deletedIds.add(id)
-        if (previewURLs.has(id)) {
-          URL.revokeObjectURL(previewURLs.get(id)!)
-          previewURLs.delete(id)
-        }
+        releasePreview(id)
         selection.delete(id)
       }
     })
