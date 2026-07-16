@@ -408,7 +408,11 @@ describe('pending mutation outbox', () => {
     ['DELETE', '/model-presets/model-a'],
     ['PATCH', '/prompt-presets/prompt-a'],
     ['DELETE', '/prompt-presets/prompt-a'],
+    ['POST', '/prompt-items'],
+    ['POST', '/prompt-items/reorder'],
     ['DELETE', '/prompt-items/item-a'],
+    ['POST', '/prompt-items/enable'],
+    ['DELETE', '/personas/persona-a'],
     ['PATCH', '/translator-presets/translator-a'],
     ['DELETE', '/translator-presets/translator-a'],
     ['DELETE', '/characters/character-a'],
@@ -421,6 +425,7 @@ describe('pending mutation outbox', () => {
     ['PATCH', '/characters/character-a/triggers'],
     ['PUT', '/modules/module-a/scripts'],
     ['PATCH', '/modules/module-a/triggers'],
+    ['DELETE', '/lorebooks/lorebook-a'],
     ['PUT', '/lorebooks/lorebook-a/entries'],
     ['PUT', '/lorebooks/lorebook-a/entries/entry-a'],
     ['DELETE', '/lorebooks/lorebook-a/entries/entry-a'],
@@ -450,6 +455,21 @@ describe('pending mutation outbox', () => {
             body: { scriptIds: ['script-a'] },
           },
         ],
+      }),
+    ).toThrow('not allowlisted')
+  })
+
+  it.each([
+    ['POST', '/prompt-items/item-a'],
+    ['POST', '/prompt-items/enable/extra'],
+    ['POST', '/prompt-items/reorder/extra'],
+    ['DELETE', '/personas/persona-a/extra'],
+    ['DELETE', '/lorebooks/lorebook-a/entries'],
+  ] as const)('rejects the near-miss durable route %s %s', (method, path) => {
+    expect(() =>
+      stagePendingMutation(`near-miss:${method}:${path}`, {
+        version: 1,
+        requests: [{ method, path, body: { value: true } }],
       }),
     ).toThrow('not allowlisted')
   })

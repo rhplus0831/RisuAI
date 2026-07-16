@@ -10,6 +10,7 @@ import {
   clearCachedServerCommandRevision,
   notifyServerCommandLocalEffectApplied,
   runServerCommand,
+  setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   type ServerCommandLocalEffect,
 } from './server/commands'
@@ -17,10 +18,13 @@ import { serializePersonaCollectionDigestInput, serializePersonaProfileDigestInp
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
 import {
+  beginPendingMutationDispatch,
   clearPendingMutationOutbox,
+  listPendingMutations,
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
 } from './server/pendingMutationOutbox'
+import { replayPendingMutations } from './server/pendingMutationReplay'
 import {
   applyCollectionsResource,
   applySettingsResource,
@@ -649,27 +653,360 @@ describe('persona ID read and command preparation', () => {
     expect(getDatabase().personas[1].personaPrompt).toBe('Server A prompt')
   })
 
-  it('drops a coalesced persona edit that returns to its baseline before dispatch', async () => {
+  it('holds persona DELETE behind a transient profile PATCH and recovers without a late request', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-delete',
+      writerEpoch: 6,
+      databaseLineage: 'lineage-persona-delete',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    const personaA = makePersona({
+      id: 'persona-transient-delete-a',
+      name: 'Persona A',
+      icon: 'a.png',
+      personaPrompt: 'A prompt',
+      note: 'A note',
+    })
+    const personaB = makePersona({
+      id: 'persona-transient-delete-b',
+      name: 'Persona B',
+      icon: 'b.png',
+      personaPrompt: 'B prompt',
+      note: 'B note',
+    })
+    seedPersonaState([personaA, personaB], 0)
+    getDatabase().username = 'Persona A'
+    getDatabase().userIcon = 'a.png'
+    getDatabase().personaPrompt = 'A prompt'
+    getDatabase().userNote = 'A note'
+
+    const baseline = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('personaPrompt', 'Latest optimistic A prompt')
+    queueSelectedPersonaUpdate(baseline, currentPersonaStateSnapshot())
+
+    const collectionDigest = sha256Hex(serializePersonaCollectionDigestInput([personaB]))
+    const legacyProfileDigest = sha256Hex(
+      serializePersonaProfileDigestInput({
+        name: 'Persona B',
+        icon: 'b.png',
+        personaPrompt: 'B prompt',
+        note: 'B note',
+      }),
+    )
+    let recover = false
+    let revision = 10
+    const transientPatch = deferred<Response>()
+    const commands: Array<{ method: string; body: Record<string, unknown> }> = []
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+      if (url === '/api/v1/commands/personas/persona-transient-delete-a') {
+        const method = init?.method ?? 'GET'
+        const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
+        commands.push({ method, body })
+        if (!recover && method === 'PATCH') return transientPatch.promise
+        if (!recover) throw new Error('DELETE overtook its profile predecessor')
+        revision += 1
+        if (method === 'PATCH') {
+          return jsonResponse({
+            revision,
+            event: {
+              type: 'persona.updated',
+              revision,
+              resource: 'persona',
+              id: 'persona-transient-delete-a',
+            },
+            personaId: 'persona-transient-delete-a',
+            acknowledgedKeys: ['personaPrompt'],
+            legacyProfileProjectionApplied: true,
+          })
+        }
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.deleted',
+            revision,
+            resource: 'persona',
+            id: 'persona-transient-delete-a',
+          },
+          personaId: 'persona-transient-delete-a',
+          personaMutationCertificate: 'persona-mutation-v1',
+          operation: 'delete',
+          personaProjectionDigest: collectionDigest,
+          selectedPersonaId: 'persona-transient-delete-b',
+          collectionWritten: true,
+          settingsWritten: true,
+          legacyProfileProjectionApplied: true,
+          legacyProfileDigest,
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    })
+
+    try {
+      expect(deleteSelectedUserPersona()).toBe(true)
+      await vi.waitFor(() => expect(commands.map(({ method }) => method)).toEqual(['PATCH']))
+      const pendingPatchResult = flushPendingSelectedPersonaUpdate()
+      transientPatch.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
+      await expect(pendingPatchResult).resolves.toMatchObject({ status: 'error' })
+      expect(
+        (await listPendingMutations()).map((entry) => ({
+          key: entry.handle.key,
+          method: entry.intent.requests[0].method,
+        })),
+      ).toEqual([
+        { key: 'persona-profile:persona-transient-delete-a', method: 'PATCH' },
+        { key: 'persona-profile:persona-transient-delete-a', method: 'DELETE' },
+      ])
+      expect((await listPendingMutations())[1].intent.requests[0].body).toEqual({
+        selectPersonaId: 'persona-transient-delete-b',
+        mirrorLegacyProfile: true,
+        saveCurrent: true,
+      })
+
+      recover = true
+      const recoveryStart = commands.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(commands.slice(recoveryStart).map(({ method }) => method)).toEqual(['PATCH', 'DELETE'])
+      expect(await listPendingMutations()).toEqual([])
+
+      const commandCount = commands.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 0 })
+      await expect(flushPendingSelectedPersonaUpdate()).resolves.toBeNull()
+      expect(commands).toHaveLength(commandCount)
+      expect(getDatabase()).toMatchObject({
+        selectedPersona: 0,
+        username: 'Persona B',
+        userIcon: 'b.png',
+        personaPrompt: 'B prompt',
+        userNote: 'B note',
+      })
+      expect(getDatabase().personas).toEqual([personaB])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps reverted fields in a partially reverted persona PATCH closure', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-partial-revert',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-persona-partial-revert',
+      requestedWriterWasActive: true,
+    })
     seedPersonaState(
       [
         makePersona({
-          id: 'persona-a',
+          id: 'persona-partial-revert',
+          name: 'Persona A',
+          personaPrompt: 'Baseline prompt',
+          note: 'Baseline note',
+        }),
+      ],
+      0,
+    )
+    getDatabase().personaPrompt = 'Baseline prompt'
+    getDatabase().userNote = 'Baseline note'
+    const previous = currentPersonaStateSnapshot()
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 1 })
+      if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+      if (url === '/api/v1/commands/personas/persona-partial-revert') {
+        return jsonResponse({
+          revision: 2,
+          event: {
+            type: 'persona.updated',
+            revision: 2,
+            resource: 'persona',
+            id: 'persona-partial-revert',
+          },
+          personaId: 'persona-partial-revert',
+          acknowledgedKeys: ['personaPrompt', 'note'],
+          legacyProfileProjectionApplied: true,
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    })
+
+    updateSelectedPersonaField('personaPrompt', 'Temporary prompt')
+    updateSelectedPersonaField('userNote', 'Temporary note')
+    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+    const priorDurableAttempt = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('userNote', 'Baseline note')
+    queueSelectedPersonaUpdate(priorDurableAttempt, currentPersonaStateSnapshot())
+
+    try {
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
+      expect((await listPendingMutations())[0].intent.requests[0].body).toEqual({
+        patch: {
+          personaPrompt: 'Temporary prompt',
+          note: 'Baseline note',
+        },
+        mirrorLegacyProfile: true,
+      })
+      await expect(flushPendingSelectedPersonaUpdate()).resolves.toMatchObject({ status: 'ok' })
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('treats a selected-persona identity change as terminal invalidation', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-identity-change',
+      writerEpoch: 5,
+      databaseLineage: 'lineage-persona-identity-change',
+      requestedWriterWasActive: true,
+    })
+    seedPersonaState(
+      [
+        makePersona({ id: 'persona-identity-a', name: 'Persona A', personaPrompt: 'A prompt' }),
+        makePersona({ id: 'persona-identity-b', name: 'Persona B', personaPrompt: 'B prompt' }),
+      ],
+      0,
+    )
+    getDatabase().username = 'Persona A'
+    getDatabase().personaPrompt = 'A prompt'
+    const baseline = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('personaPrompt', 'Queued A prompt')
+    queueSelectedPersonaUpdate(baseline, currentPersonaStateSnapshot())
+
+    try {
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
+      getDatabase().selectedPersona = 1
+      getDatabase().username = 'Persona B'
+      getDatabase().userIcon = ''
+      getDatabase().personaPrompt = 'B prompt'
+      getDatabase().userNote = ''
+      const selectedB = currentPersonaStateSnapshot()
+      queueSelectedPersonaUpdate(selectedB, selectedB)
+
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+      expect(fetch).not.toHaveBeenCalled()
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('persists and immediately dispatches an absolute persona correction after a remote marker wins', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-total-revert',
+      writerEpoch: 5,
+      databaseLineage: 'lineage-persona-total-revert',
+      requestedWriterWasActive: true,
+    })
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-total-revert',
           name: 'Persona A',
           personaPrompt: 'Baseline prompt',
         }),
       ],
       0,
     )
+    getDatabase().username = 'Persona A'
     getDatabase().personaPrompt = 'Baseline prompt'
-    const previous = currentPersonaStateSnapshot()
+    const baseline = currentPersonaStateSnapshot()
 
     updateSelectedPersonaField('personaPrompt', 'Temporary prompt')
-    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
-    updateSelectedPersonaField('personaPrompt', 'Baseline prompt')
-    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+    queueSelectedPersonaUpdate(baseline, currentPersonaStateSnapshot())
+    await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
+    const remoteHandle = (await listPendingMutations())[0].handle
+    await expect(beginPendingMutationDispatch(remoteHandle)).resolves.toBe('persisted')
 
-    await flushPendingSelectedPersonaUpdate()
-    expect(fetch).not.toHaveBeenCalled()
+    const firstPatch = deferred<Response>()
+    let revision = 1
+    const patchBodies: Array<Record<string, unknown>> = []
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision })
+      if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+      if (url === '/api/v1/commands/personas/persona-total-revert' && init?.method === 'PATCH') {
+        patchBodies.push(JSON.parse(String(init.body)))
+        if (patchBodies.length === 1) return firstPatch.promise
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.updated',
+            revision,
+            resource: 'persona',
+            id: 'persona-total-revert',
+          },
+          personaId: 'persona-total-revert',
+          acknowledgedKeys: ['personaPrompt'],
+          legacyProfileProjectionApplied: true,
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    })
+
+    const priorDurableAttempt = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('personaPrompt', 'Baseline prompt')
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout')
+    try {
+      queueSelectedPersonaUpdate(priorDurableAttempt, currentPersonaStateSnapshot())
+      expect(timeoutSpy.mock.calls.some(([, delay]) => delay === 250)).toBe(false)
+    } finally {
+      timeoutSpy.mockRestore()
+    }
+
+    try {
+      await vi.waitFor(() => expect(patchBodies).toHaveLength(1))
+      expect(
+        (await listPendingMutations()).map((entry) => ({
+          key: entry.handle.key,
+          body: entry.intent.requests[0].body,
+        })),
+      ).toEqual([
+        {
+          key: 'persona-profile:persona-total-revert',
+          body: { patch: { personaPrompt: 'Temporary prompt' }, mirrorLegacyProfile: true },
+        },
+        {
+          key: 'persona-profile:persona-total-revert',
+          body: { patch: { personaPrompt: 'Baseline prompt' }, mirrorLegacyProfile: true },
+        },
+      ])
+
+      revision += 1
+      firstPatch.resolve(
+        jsonResponse({
+          revision,
+          event: {
+            type: 'persona.updated',
+            revision,
+            resource: 'persona',
+            id: 'persona-total-revert',
+          },
+          personaId: 'persona-total-revert',
+          acknowledgedKeys: ['personaPrompt'],
+          legacyProfileProjectionApplied: true,
+        }),
+      )
+      await expect(flushPendingSelectedPersonaUpdate()).resolves.toMatchObject({ status: 'ok' })
+      expect(patchBodies.map((body) => body.patch)).toEqual([
+        { personaPrompt: 'Temporary prompt' },
+        { personaPrompt: 'Baseline prompt' },
+      ])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('retains the first debounce projection epochs when an authoritative apply races the flush', async () => {
@@ -1323,6 +1660,11 @@ describe('persona collection rollback guards', () => {
     getDatabase().userIcon = 'b.png'
     getDatabase().personaPrompt = 'Prompt B'
     getDatabase().userNote = 'Note B'
+    updateSelectedPersonaField('username', 'Latest optimistic Persona B')
+    updateSelectedPersonaField('personaPrompt', 'Latest optimistic Prompt B')
+    updateSelectedPersonaField('userNote', 'Latest optimistic Note B')
+    getDatabase().userIcon = 'latest-b.png'
+    getDatabase().personas[1].icon = 'latest-b.png'
     mockNextCommandFailure()
 
     expect(deleteSelectedUserPersona()).toBe(true)
@@ -1349,7 +1691,10 @@ describe('persona collection rollback guards', () => {
     ])
     expect(getDatabase().personas[1]).toMatchObject({
       id: 'persona-b',
-      name: 'Persona B',
+      name: 'Latest optimistic Persona B',
+      icon: 'latest-b.png',
+      personaPrompt: 'Latest optimistic Prompt B',
+      note: 'Latest optimistic Note B',
     })
     expect(getDatabase().personas[2]).toMatchObject({
       id: 'persona-c',
@@ -1361,10 +1706,10 @@ describe('persona collection rollback guards', () => {
     })
     expect(getDatabase()).toMatchObject({
       selectedPersona: 1,
-      username: 'Persona B',
-      userIcon: 'b.png',
-      personaPrompt: 'Prompt B',
-      userNote: 'Note B',
+      username: 'Latest optimistic Persona B',
+      userIcon: 'latest-b.png',
+      personaPrompt: 'Latest optimistic Prompt B',
+      userNote: 'Latest optimistic Note B',
     })
   })
 

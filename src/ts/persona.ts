@@ -92,6 +92,7 @@ interface PersonaProfileMirrorRollbackMatches {
 const pendingPersonaUpdate = {
   timer: null as ReturnType<typeof setTimeout> | null,
   previous: null as PersonaStateSnapshot | null,
+  durableAttempted: null as PersonaStateSnapshot | null,
   attempted: null as PersonaStateSnapshot | null,
   personaId: null as string | null,
   patch: null as PersonaSnapshot | null,
@@ -1003,6 +1004,7 @@ function clearPendingSelectedPersonaUpdate(): void {
   }
   pendingPersonaUpdate.timer = null
   pendingPersonaUpdate.previous = null
+  pendingPersonaUpdate.durableAttempted = null
   pendingPersonaUpdate.attempted = null
   pendingPersonaUpdate.personaId = null
   pendingPersonaUpdate.patch = null
@@ -1094,26 +1096,44 @@ function dispatchDeletePersona(
     saveCurrent: true,
   })
   void flushPendingSelectedPersonaUpdate()
-  void runServerCommand({
-    command: (baseRevision) =>
-      deletePersonaCommand({
-        baseRevision,
-        personaId,
-        selectPersonaId,
-        mirrorLegacyProfile: true,
-        saveCurrent: true,
-        optimisticAcknowledgement,
-      }),
-    rollback: personaCommandRollback({ personas: true, settings: true }, () =>
-      applyDeletePersonaRollback({
-        deletedPersonaId: personaId,
-        previousIndex,
-        previousPersona,
-        previousProfile,
-        attemptedProfile,
-      }),
-    ),
-  })
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'DELETE',
+        path: `/personas/${encodeURIComponent(personaId)}`,
+        body: {
+          ...(selectPersonaId ? { selectPersonaId } : {}),
+          mirrorLegacyProfile: true,
+          saveCurrent: true,
+        },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(`persona-profile:${personaId}`, intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        deletePersonaCommand({
+          baseRevision,
+          personaId,
+          selectPersonaId,
+          mirrorLegacyProfile: true,
+          saveCurrent: true,
+          optimisticAcknowledgement,
+        }),
+      rollback: personaCommandRollback({ personas: true, settings: true }, () =>
+        applyDeletePersonaRollback({
+          deletedPersonaId: personaId,
+          previousIndex,
+          previousPersona,
+          previousProfile,
+          attemptedProfile,
+        }),
+      ),
+      ...transport,
+    }),
+  )
 }
 
 function dispatchReorderPersonas(previous: PersonaStateSnapshot): void {
@@ -1157,11 +1177,14 @@ export function queueSelectedPersonaUpdate(previous: PersonaStateSnapshot, attem
     clearPendingSelectedPersonaUpdate()
   }
   pendingPersonaUpdate.personaId = personaId
-  pendingPersonaUpdate.previous ??= previous
+  pendingPersonaUpdate.previous ??= cloneJsonValue(previous)
   pendingPersonaUpdate.collectionProjectionEpoch ??= captureCollectionProjectionEpoch('personas')
   pendingPersonaUpdate.settingsProjectionEpoch ??= captureSettingsProjectionEpoch()
-  pendingPersonaUpdate.attempted = attempted
-  pendingPersonaUpdate.patch = changedSelectedPersonaPatch(personaId, pendingPersonaUpdate.previous, attempted)
+  const priorDurableAttempted = pendingPersonaUpdate.durableAttempted ?? pendingPersonaUpdate.previous
+  const netPatch = changedSelectedPersonaPatch(personaId, pendingPersonaUpdate.previous, attempted)
+  const correctionPatch = changedSelectedPersonaPatch(personaId, priorDurableAttempted, attempted)
+  pendingPersonaUpdate.attempted = cloneJsonValue(attempted)
+  pendingPersonaUpdate.patch = { ...netPatch, ...correctionPatch }
   if (pendingPersonaUpdate.timer) clearTimeout(pendingPersonaUpdate.timer)
   if (Object.keys(pendingPersonaUpdate.patch).length === 0) {
     clearPendingSelectedPersonaUpdate()
@@ -1174,9 +1197,15 @@ export function queueSelectedPersonaUpdate(previous: PersonaStateSnapshot, attem
     intent,
     pendingPersonaUpdate.outbox,
   )
-  pendingPersonaUpdate.timer = setTimeout(() => {
+  pendingPersonaUpdate.durableAttempted = cloneJsonValue(attempted)
+  const correctionOnly = Object.keys(netPatch).length === 0 && Object.keys(correctionPatch).length > 0
+  if (correctionOnly) {
     void flushPendingSelectedPersonaUpdate()
-  }, 250)
+  } else {
+    pendingPersonaUpdate.timer = setTimeout(() => {
+      void flushPendingSelectedPersonaUpdate()
+    }, 250)
+  }
 }
 
 function takePendingSelectedPersonaUpdate(): {
@@ -1204,6 +1233,7 @@ function takePendingSelectedPersonaUpdate(): {
 
   pendingPersonaUpdate.timer = null
   pendingPersonaUpdate.previous = null
+  pendingPersonaUpdate.durableAttempted = null
   pendingPersonaUpdate.attempted = null
   pendingPersonaUpdate.personaId = null
   pendingPersonaUpdate.patch = null
@@ -1398,8 +1428,8 @@ export function deleteSelectedUserPersona(expectedPersonaId?: string): boolean {
   if (!personaCommandIdList()) return false
   const personaId = selectedPersonaId()
   if (!personaId || (expectedPersonaId !== undefined && personaId !== expectedPersonaId)) return false
-  const previous = currentPersonaStateSnapshot()
   saveUserPersona({ dispatch: false })
+  const previous = currentPersonaStateSnapshot()
 
   const personas = [...getDatabase().personas]
   personas.splice(getDatabase().selectedPersona, 1)
