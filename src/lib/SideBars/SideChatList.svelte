@@ -312,9 +312,10 @@
     if (!confirmed || !chat.id) return
 
     const previous = currentChatStateSnapshot()
+    const deletedSelectedChat = chara.chats[chara.chatPage]?.id === chat.id
     if (canUseServerCommands()) {
       const result = applyOptimisticDeletedChat(chara.chaId, chat.id, previous)
-      if (result.applied && chara.chaId && result.selectedChatId) {
+      if (deletedSelectedChat && result.applied && chara.chaId && result.selectedChatId) {
         navigate(characterRoutePath(chara.chaId, result.selectedChatId), { replace: true })
       }
     } else {

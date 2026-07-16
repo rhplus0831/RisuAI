@@ -1441,6 +1441,30 @@ describe('SideChatList DOM contract harness', () => {
     await flushCommandWork()
   })
 
+  it('keeps the chat-list route when deleting a non-selected chat', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chatPage = 0
+    sidebarMocks.setServerCommandsEnabled(true)
+    sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
+    const command = sidebarMocks.createDeferredDeleteCommand()
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expectRowSelected('chat-root-a', true)
+    deleteButtonForRow(rowByChatId('chat-root-b')).click()
+    await flushCommandWork()
+
+    expect(command.settled).toBe(false)
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Root Chat A', 'Foldered Chat'])
+    expect(selectedCharacter().chatPage).toBe(0)
+    expectRowSelected('chat-root-a', true)
+    expect(sidebarMocks.navigate).not.toHaveBeenCalled()
+
+    command.resolve({ revision: 12, status: 'ok' })
+    await flushCommandWork()
+  })
+
   it('restores a failed optimistic foldered sidebar chat delete in state and DOM', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
