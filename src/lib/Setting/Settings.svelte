@@ -16,6 +16,8 @@
     SparkleIcon,
     ArrowLeftIcon,
     WorkflowIcon,
+    BookOpen,
+    Regex,
   } from '@lucide/svelte'
   import { language } from 'src/lang'
   import DisplaySettings from './Pages/DisplaySettings.svelte'
@@ -233,6 +235,24 @@
             <HardDrive size={20} />
             <span>{language.settingsNavBackups}</span>
           </button>
+          {#if !$isLite}
+            <button
+              class={navButtonClass($SettingsMenuIndex === 8)}
+              onclick={() => {
+                navigate('/settings/global-lorebook')
+              }}>
+              <BookOpen size={20} />
+              <span>{language.globalLoreBook}</span>
+            </button>
+            <button
+              class={navButtonClass($SettingsMenuIndex === 9)}
+              onclick={() => {
+                navigate('/settings/global-regex')
+              }}>
+              <Regex size={20} />
+              <span>{language.globalRegexScript}</span>
+            </button>
+          {/if}
         </div>
 
         {#if !$isLite}

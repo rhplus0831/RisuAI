@@ -263,6 +263,38 @@ describe('Settings supporter tab', () => {
     expect(target.textContent).toContain(language.agentPresets.emptyState)
   })
 
+  it.each([
+    {
+      label: language.globalLoreBook,
+      path: '/settings/global-lorebook',
+      section: 'global-lorebook',
+      index: 8,
+    },
+    {
+      label: language.globalRegexScript,
+      path: '/settings/global-regex',
+      section: 'global-regex',
+      index: 9,
+    },
+  ])('opens $label from the settings nav', async ({ label, path, section, index }) => {
+    expect(settingsButton(label)).toBeTruthy()
+
+    await resizeViewport(800)
+
+    const button = settingsButton(label)
+    expect(button).toBeTruthy()
+
+    button?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path,
+      section,
+      index,
+    })
+  })
+
   it('returns from a selected mobile settings page to the settings menu', async () => {
     const backupsButton = settingsButton(language.settingsNavBackups)
     expect(backupsButton).toBeTruthy()
