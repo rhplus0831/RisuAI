@@ -1756,10 +1756,13 @@ describe('character order command helpers', () => {
       currentChar: 0,
     } as any
     const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
-    const expectedOrder = [{ id: 'folder-new', name: 'New Folder', color: '', data: ['char-a', 'char-b'] }, 'char-c']
+    const expectedOrder = [
+      { id: 'folder-new', name: 'Localized Folder', color: '', data: ['char-a', 'char-b'] },
+      'char-c',
+    ]
     setResourceWriteGuardEnabled(true)
 
-    expect(createCharacterOrderFolder({ index: 0 }, { index: 1 }, () => 'folder-new')).toBe(true)
+    expect(createCharacterOrderFolder({ index: 0 }, { index: 1 }, () => 'folder-new', 'Localized Folder')).toBe(true)
 
     expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
     await waitForCallCount(calls, 2)

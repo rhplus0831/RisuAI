@@ -1698,6 +1698,7 @@ export function createCharacterOrderFolder(
   mainIndex: CharacterOrderDragPosition,
   targetIndex: CharacterOrderDragPosition,
   createFolderId: () => string = v4,
+  folderName = 'New Folder',
 ): boolean {
   if (isSameCharacterOrderPosition(mainIndex, targetIndex)) return false
 
@@ -1727,7 +1728,7 @@ export function createCharacterOrderFolder(
     if (typeof target === 'string') {
       dependencyCharacterIds.push(target)
       const newFolder: folder = {
-        name: 'New Folder',
+        name: folderName,
         data: [main, target],
         color: '',
         id: createFolderId(),
