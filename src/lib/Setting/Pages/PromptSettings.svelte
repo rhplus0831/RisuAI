@@ -63,6 +63,8 @@
     type PromptPresetSnapshot,
     type SettingsPatch,
   } from 'src/ts/server/commands'
+  import { dispatchDurableMutation } from 'src/ts/server/durableMutationDispatch'
+  import { stagePendingMutation, type DurableMutationIntent } from 'src/ts/server/pendingMutationOutbox'
   import { mirrorTopLevelPresetField } from 'src/ts/presetFieldMirror'
   import {
     currentPromptPresetModelOverrideValue,
@@ -559,16 +561,31 @@
         .map((item) => [item.id, snapshotJson(item)]),
     )
     const patch = { promptTemplate }
-    const completion = runServerCommand({
-      command: (baseRevision) =>
-        runPromptTemplateOwnerCommand(ownerId, () =>
-          updatePromptPresetCommand({
-            baseRevision,
-            promptPresetId,
-            patch: cloneJsonValue({ ...patch, id: promptPresetId }) as PromptPresetSnapshot,
-          }),
-        ),
-    })
+    const commandPatch = cloneJsonValue({ ...patch, id: promptPresetId }) as PromptPresetSnapshot
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: `/prompt-presets/${encodeURIComponent(promptPresetId)}`,
+          body: { patch: cloneJsonValue(commandPatch) },
+        },
+      ],
+    }
+    const outbox = stagePendingMutation(`prompt-template-id-sync:${promptPresetId}`, intent)
+    const completion = dispatchDurableMutation(outbox, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          runPromptTemplateOwnerCommand(ownerId, () =>
+            updatePromptPresetCommand({
+              baseRevision,
+              promptPresetId,
+              patch: commandPatch,
+            }),
+          ),
+        ...transport,
+      }),
+    )
       .then((result) => {
         if (result.status === 'ok') {
           promptPresetTemplateIdsPendingServerSync.delete(ownerId)

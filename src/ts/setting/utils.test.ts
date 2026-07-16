@@ -1,6 +1,43 @@
 import { flushSync, mount, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const durableSettingState = vi.hoisted(() => ({
+  nextId: 0,
+  stages: [] as Array<{ key: string; intent: Record<string, unknown>; handle: Record<string, any> }>,
+  dispatches: [] as Array<{ handle: Record<string, any>; intent: Record<string, unknown> }>,
+  acknowledgements: [] as Array<Record<string, any>>,
+}))
+
+vi.mock('../server/pendingMutationOutbox', () => ({
+  stagePendingMutation: (key: string, intent: Record<string, unknown>, previous?: Record<string, any> | null) => {
+    const reuse = previous?.phase === 'staged' && previous.key === key
+    if (reuse) previous.phase = 'superseded'
+    const handle = {
+      key,
+      mutationId: reuse ? previous!.mutationId : `renderer-mutation-${++durableSettingState.nextId}`,
+      phase: 'staged',
+    }
+    durableSettingState.stages.push({ key, intent: JSON.parse(JSON.stringify(intent)), handle })
+    return handle
+  },
+  acknowledgePendingMutation: async (handle: Record<string, any>) => {
+    durableSettingState.acknowledgements.push(handle)
+    return 'deleted'
+  },
+}))
+
+vi.mock('../server/durableMutationDispatch', () => ({
+  dispatchDurableMutation: async (
+    handle: Record<string, any>,
+    intent: Record<string, unknown>,
+    dispatch: (transport: { mutationId: string; databaseLineage: string }) => Promise<unknown>,
+  ) => {
+    handle.phase = 'dispatching'
+    durableSettingState.dispatches.push({ handle, intent: JSON.parse(JSON.stringify(intent)) })
+    return dispatch({ mutationId: handle.mutationId, databaseLineage: 'renderer-test-lineage' })
+  },
+}))
+
 vi.mock('../platform', async (importActual) => {
   const actual = await importActual<typeof import('../platform')>()
   return {
@@ -160,6 +197,10 @@ function serverCommandKeyForSetting(item: SettingItem): string | null {
 }
 
 beforeEach(() => {
+  durableSettingState.nextId = 0
+  durableSettingState.stages.length = 0
+  durableSettingState.dispatches.length = 0
+  durableSettingState.acknowledgements.length = 0
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
@@ -649,6 +690,95 @@ describe('server-backed data-driven settings', () => {
     })
   })
 
+  it('stages the exact deferred root-settings request before its debounce fires', async () => {
+    vi.useFakeTimers()
+    stubSuccessfulSettingsFetch()
+    replaceResourceDatabase({
+      guiHTML: 'before',
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const item: SettingItem = {
+      id: 'display.guiHTML',
+      type: 'textarea',
+      bindKey: 'guiHTML' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setDeferredSettingValue(item, 'crash-durable draft', ctx)
+
+    expect(durableSettingState.stages).toHaveLength(1)
+    expect(durableSettingState.stages[0]).toMatchObject({
+      key: 'setting-renderer:settings:guiHTML',
+      intent: {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/settings/display',
+            body: { patch: { guiHTML: 'crash-durable draft' } },
+          },
+        ],
+      },
+    })
+    expect(durableSettingState.dispatches).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    await Promise.resolve()
+
+    expect(durableSettingState.dispatches).toEqual([
+      {
+        handle: durableSettingState.stages[0].handle,
+        intent: durableSettingState.stages[0].intent,
+      },
+    ])
+  })
+
+  it('rebases a queued deferred root rollback after the older save fails', async () => {
+    const firstResponse = deferredResponse()
+    const secondResponse = deferredResponse()
+    let patchRequest = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 4 })
+        if (url === '/api/v1/commands/settings/display') {
+          patchRequest += 1
+          return patchRequest === 1 ? firstResponse.promise : secondResponse.promise
+        }
+        return jsonResponse({ error: `unexpected ${url} ${init.method ?? 'GET'}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    replaceResourceDatabase({
+      guiHTML: 'server baseline',
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const item: SettingItem = {
+      id: 'display.guiHTML',
+      type: 'textarea',
+      bindKey: 'guiHTML' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setDeferredSettingValue(item, 'first attempted value', ctx)
+    flushDeferredSettingWrites()
+    await vi.waitFor(() => expect(patchRequest).toBe(1))
+
+    setDeferredSettingValue(item, 'second attempted value', ctx)
+    flushDeferredSettingWrites()
+    firstResponse.resolve(jsonResponse({ error: 'first failed' }, 500))
+    await vi.waitFor(() => expect(patchRequest).toBe(2))
+
+    secondResponse.resolve(jsonResponse({ error: 'second failed' }, 500))
+    await vi.waitFor(() => expect(getResourceDatabase().guiHTML).toBe('server baseline'))
+  })
+
   it('flushes the final deferred input with keepalive before its timer fires', async () => {
     vi.useFakeTimers()
     const calls = stubSuccessfulSettingsFetch()
@@ -699,6 +829,17 @@ describe('server-backed data-driven settings', () => {
     const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
 
     setDeferredSettingValue(item, 0.8, ctx)
+    const presetStage = durableSettingState.stages.find(({ key }) => key === 'split-preset:model:model-a')
+    expect(presetStage?.intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/model-presets/model-a',
+          body: { patch: { temperature: 0.8 } },
+        },
+      ],
+    })
     flushDeferredSettingWrites({ keepalive: true })
     await vi.advanceTimersByTimeAsync(0)
 

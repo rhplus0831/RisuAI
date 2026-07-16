@@ -1674,6 +1674,20 @@ describe('flushPendingPromptTemplatePatches', () => {
         expect.objectContaining({ id: expect.any(String), text: 'row A dirty' }),
         expect.objectContaining({ id: expect.any(String), text: 'row B old' }),
       ])
+      const idSyncStage = durableState.stages.find(({ key }) => key === 'prompt-template-id-sync:preset-a')
+      expect(idSyncStage?.intent).toEqual({
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/prompt-presets/preset-a',
+            body: { patch: presetSyncArgs.patch },
+          },
+        ],
+      })
+      expect(durableState.dispatches.find(({ handle }) => handle === idSyncStage?.handle)?.intent).toEqual(
+        idSyncStage?.intent,
+      )
       expect(commandState.commands).toHaveLength(0)
 
       await editPromptSettingsTextarea(target, 'row B dirty', 1)

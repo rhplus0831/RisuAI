@@ -43,6 +43,13 @@ import {
   splitPresetSettingDraftOwnerKey,
   type SplitPresetDraftProjection,
 } from '../server/settingsDraftAcknowledgement'
+import { dispatchDurableMutation } from '../server/durableMutationDispatch'
+import {
+  acknowledgePendingMutation,
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from '../server/pendingMutationOutbox'
 
 /**
  * Sentinel value representing an uninitialized local state in wrapper components.
@@ -98,13 +105,24 @@ interface DeferredSettingEdit {
 interface PendingDeferredSettingWrite {
   desiredRoot: unknown
   edits: Map<string, DeferredSettingEdit>
+  intent?: DurableMutationIntent
+  outbox?: PendingMutationHandle
   optimisticProjectionEpochs?: SettingsGroupProjectionEpochs
   previousRoot: unknown
   target: DeferredSettingTarget
   timer: ReturnType<typeof setTimeout>
 }
 
+interface PendingDeferredServerSettingAttempt {
+  sequence: number
+  ownerKey: string
+  previousRoot: unknown
+  attemptedRoot: unknown
+}
+
 const pendingDeferredSettingWrites = new Map<string, PendingDeferredSettingWrite>()
+const pendingDeferredServerSettingAttempts: PendingDeferredServerSettingAttempt[] = []
+let nextDeferredServerSettingAttemptSequence = 0
 registerPendingBridgePatchFlusher('setting-renderer-inputs', flushDeferredSettingWrites)
 
 export function getLabel(item: SettingItem): string {
@@ -216,6 +234,7 @@ export function flushDeferredSettingWrites(options: ServerCommandTransportOption
 export function clearDeferredSettingWrites(): void {
   for (const pending of pendingDeferredSettingWrites.values()) {
     clearTimeout(pending.timer)
+    if (pending.outbox) void acknowledgePendingMutation(pending.outbox)
   }
   pendingDeferredSettingWrites.clear()
 }
@@ -306,23 +325,69 @@ function queueDeferredSettingWrite(
   const baseline = existing?.previousRoot ?? cloneJsonValue(previousRoot)
   if (snapshotJson(desiredRoot) === snapshotJson(baseline)) {
     pendingDeferredSettingWrites.delete(target.ownerKey)
+    if (existing?.outbox) void acknowledgePendingMutation(existing.outbox)
     return false
   }
+
+  // Preset-owned renderer inputs already have a purpose-built delayed queue.
+  // Enter it now (rather than after this queue's timer) so its exact split-row
+  // intent is crash durable from the first keystroke.
+  if (target.kind === 'preset') {
+    if (!mirrorTopLevelPresetFieldToTarget(target.target, desiredRoot)) return false
+    pendingDeferredSettingWrites.set(target.ownerKey, {
+      desiredRoot: cloneJsonValue(desiredRoot),
+      edits,
+      previousRoot: baseline,
+      target,
+      timer: setTimeout(() => dispatchDeferredSettingWrite(target.ownerKey), delayMs),
+    })
+    return true
+  }
+  if (target.kind === 'promptOverride') {
+    if (!mirrorPromptPresetModelOverrideFieldToTarget(target.target, desiredRoot)) return false
+    pendingDeferredSettingWrites.set(target.ownerKey, {
+      desiredRoot: cloneJsonValue(desiredRoot),
+      edits,
+      previousRoot: baseline,
+      target,
+      timer: setTimeout(() => dispatchDeferredSettingWrite(target.ownerKey), delayMs),
+    })
+    return true
+  }
+
+  const intent = deferredServerSettingDurableIntent(target, desiredRoot)
+  const outbox = stagePendingMutation(`setting-renderer:${target.ownerKey}`, intent, existing?.outbox)
 
   const pending: PendingDeferredSettingWrite = {
     desiredRoot: cloneJsonValue(desiredRoot),
     edits,
-    ...(target.kind === 'server'
-      ? {
-          optimisticProjectionEpochs: existing?.optimisticProjectionEpochs ?? optimisticProjectionEpochs,
-        }
-      : {}),
+    intent,
+    outbox,
+    optimisticProjectionEpochs: existing?.optimisticProjectionEpochs ?? optimisticProjectionEpochs,
     previousRoot: baseline,
     target,
     timer: setTimeout(() => dispatchDeferredSettingWrite(target.ownerKey), delayMs),
   }
   pendingDeferredSettingWrites.set(target.ownerKey, pending)
   return true
+}
+
+function deferredServerSettingDurableIntent(
+  target: DeferredServerSettingTarget,
+  desiredRoot: unknown,
+): DurableMutationIntent {
+  const group = settingsGroupForKey(target.rootKey)
+  if (!group) throw new Error(`Deferred server setting has no command group: ${target.rootKey}`)
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/settings/${group}`,
+        body: { patch: { [target.rootKey]: cloneJsonValue(desiredRoot) } },
+      },
+    ],
+  }
 }
 
 function applyDeferredSettingEdit(root: unknown, edit: DeferredSettingEdit): unknown {
@@ -347,31 +412,81 @@ function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTr
 
   const attemptedRoot = cloneJsonValue(pending.desiredRoot)
   if (pending.target.kind === 'preset') {
-    if (mirrorTopLevelPresetFieldToTarget(pending.target.target, attemptedRoot)) {
-      flushPendingSplitPresetPatch(pending.target.target.kind, pending.target.target.presetId, options)
-    }
+    flushPendingSplitPresetPatch(pending.target.target.kind, pending.target.target.presetId, options)
     return
   }
   if (pending.target.kind === 'promptOverride') {
-    if (mirrorPromptPresetModelOverrideFieldToTarget(pending.target.target, attemptedRoot)) {
-      flushPendingSplitPresetPatch('prompt', pending.target.target.presetId, options)
-    }
+    flushPendingSplitPresetPatch('prompt', pending.target.target.presetId, options)
     return
   }
   const serverTarget = pending.target
   if (attemptedRoot === undefined) {
+    if (pending.outbox) void acknowledgePendingMutation(pending.outbox)
     rollbackDeferredServerSetting(serverTarget, attemptedRoot, pending.previousRoot, pending.edits)
     return
   }
 
-  void patchServerBackedSettings({
-    patch: { [serverTarget.rootKey]: attemptedRoot },
-    acknowledgeOptimistic: true,
-    optimisticProjectionEpochs: pending.optimisticProjectionEpochs,
-    keepalive: options.keepalive,
-    signal: options.signal,
-    rollback: () => rollbackDeferredServerSetting(serverTarget, attemptedRoot, pending.previousRoot, pending.edits),
+  if (!pending.intent || !pending.outbox) {
+    rollbackDeferredServerSetting(serverTarget, attemptedRoot, pending.previousRoot, pending.edits)
+    return
+  }
+
+  const attempt = registerDeferredServerSettingAttempt(serverTarget.ownerKey, pending.previousRoot, attemptedRoot)
+
+  void dispatchDurableMutation(pending.outbox, pending.intent, (transport) => {
+    const result = patchServerBackedSettings({
+      patch: { [serverTarget.rootKey]: attemptedRoot },
+      acknowledgeOptimistic: true,
+      optimisticProjectionEpochs: pending.optimisticProjectionEpochs,
+      keepalive: options.keepalive,
+      signal: options.signal,
+      rollback: () => {
+        rollbackDeferredServerSetting(serverTarget, attemptedRoot, attempt.previousRoot, pending.edits)
+        rebaseLaterDeferredServerSettingAttempt(attempt)
+        clearDeferredServerSettingAttempt(attempt)
+      },
+      ...transport,
+    })
+    void result.then(
+      () => clearDeferredServerSettingAttempt(attempt),
+      () => clearDeferredServerSettingAttempt(attempt),
+    )
+    return result
   })
+}
+
+function registerDeferredServerSettingAttempt(
+  ownerKey: string,
+  previousRoot: unknown,
+  attemptedRoot: unknown,
+): PendingDeferredServerSettingAttempt {
+  const attempt = {
+    sequence: ++nextDeferredServerSettingAttemptSequence,
+    ownerKey,
+    previousRoot: cloneJsonValue(previousRoot),
+    attemptedRoot: cloneJsonValue(attemptedRoot),
+  }
+  pendingDeferredServerSettingAttempts.push(attempt)
+  return attempt
+}
+
+function rebaseLaterDeferredServerSettingAttempt(failed: PendingDeferredServerSettingAttempt): void {
+  for (const later of pendingDeferredServerSettingAttempts) {
+    if (later.sequence <= failed.sequence || later.ownerKey !== failed.ownerKey) continue
+    if (snapshotJson(later.previousRoot) !== snapshotJson(failed.attemptedRoot)) continue
+    later.previousRoot = cloneJsonValue(failed.previousRoot)
+    return
+  }
+
+  const pending = pendingDeferredSettingWrites.get(failed.ownerKey)
+  if (!pending || pending.target.kind !== 'server') return
+  if (snapshotJson(pending.previousRoot) !== snapshotJson(failed.attemptedRoot)) return
+  pending.previousRoot = cloneJsonValue(failed.previousRoot)
+}
+
+function clearDeferredServerSettingAttempt(attempt: PendingDeferredServerSettingAttempt): void {
+  const index = pendingDeferredServerSettingAttempts.findIndex((candidate) => candidate.sequence === attempt.sequence)
+  if (index !== -1) pendingDeferredServerSettingAttempts.splice(index, 1)
 }
 
 function rollbackDeferredServerSetting(
