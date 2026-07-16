@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 vi.mock('./fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'preset-rollback-token',
@@ -58,6 +59,12 @@ import {
   type PromptPreset,
 } from './database.svelte'
 import { flushRegisteredPendingBridgePatches } from '../server/pendingBridgeFlushRegistry'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from '../server/pendingMutationOutbox'
 import { markPromptTemplateProjectionApplied, resetPromptTemplateHydration } from '../server/promptTemplateHydration'
 import {
   queuePromptItemProjectionUpdate,
@@ -1768,6 +1775,77 @@ describe('preset command rollback (L21)', () => {
       expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')).toHaveLength(1)
       expect(getDatabase().modelPresets[0].name).toBe('Alp')
     })
+  })
+
+  it('persists the exact split-preset PATCH before dispatch and binds it to the database lineage', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-split-preset',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-split-preset',
+      requestedWriterWasActive: true,
+    })
+    seedPresetDatabase({
+      modelPresets: [makePreset('model-durable', 'Before', { temperature: 11 }) as unknown as ModelPreset],
+      modelPresetsId: 0,
+      temperature: 11,
+    })
+    setCachedServerCommandRevision(100)
+    const calls: Array<CapturedFetch & { headers: Record<string, string> }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          headers: init.headers as Record<string, string>,
+        })
+        if (url === '/api/v1/commands/model-presets/model-durable') {
+          return jsonResponse({
+            revision: 101,
+            event: { type: 'modelPreset.updated', revision: 101, resource: 'preset', id: 'model-durable' },
+            modelPresetId: 'model-durable',
+          })
+        }
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      updateModelPreset(0, { name: 'Crash-safe', temperature: 22 })
+      await vi.waitFor(async () => {
+        expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/model-presets/model-durable',
+                body: { patch: { name: 'Crash-safe', temperature: 22 } },
+              },
+            ],
+          },
+        ])
+      })
+
+      flushPendingSplitPresetPatch('model', 'model-durable')
+      await waitForState(() => expect(calls.some((call) => call.url.endsWith('/mutation-receipts/ack'))).toBe(true))
+
+      const command = calls.find((call) => call.url === '/api/v1/commands/model-presets/model-durable')
+      expect(command?.headers['risu-mutation-id']).toMatch(/^[a-zA-Z0-9._:-]+$/)
+      expect(command?.headers['risu-database-lineage']).toBe('lineage-split-preset')
+      expect(command?.body).toEqual({
+        baseRevision: 100,
+        patch: { name: 'Crash-safe', temperature: 22 },
+      })
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('suppresses baseline reverts and omits undefined values from local and server patches', async () => {

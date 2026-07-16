@@ -115,6 +115,13 @@ import { fetchServerLegacyPreset } from '../server/hydrationReads'
 import { canUseServerResourceReads } from '../server/resourceReads'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from '../server/chatGenerationSettingsResourceGuard'
 import { registerPendingBridgePatchFlusher } from '../server/pendingBridgeFlushRegistry'
+import { dispatchDurableMutation } from '../server/durableMutationDispatch'
+import {
+  acknowledgePendingMutation,
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from '../server/pendingMutationOutbox'
 import {
   createExtractedModelPreset,
   createExtractedPromptPreset,
@@ -529,6 +536,8 @@ interface PendingSplitPresetPatch {
   selectedPromptPresetId: string | null
   promptOwnerProjectionEpoch: number | null
   promptOwnerRevision: number | null
+  intent: DurableMutationIntent | null
+  outbox: PendingMutationHandle | null
   timer: ReturnType<typeof setTimeout> | null
 }
 
@@ -632,6 +641,8 @@ function queueSplitPresetPatch(
       selectedPromptPresetId,
       promptOwnerProjectionEpoch: capturesPromptOwner ? capturePromptTemplateOwnerProjectionEpoch(presetId) : null,
       promptOwnerRevision: capturesPromptOwner ? peekPromptTemplateOwnerRevision(presetId) : null,
+      intent: null,
+      outbox: null,
       timer: null,
     }
     pendingSplitPresetPatches.set(pendingKey, pending)
@@ -652,9 +663,11 @@ function queueSplitPresetPatch(
   }
 
   if (pending.fields.size === 0) {
+    if (pending.outbox) void acknowledgePendingMutation(pending.outbox)
     pendingSplitPresetPatches.delete(pendingKey)
     return null
   }
+  refreshPendingSplitPresetDurability(pending)
   if (pending.timer) clearTimeout(pending.timer)
   pending.timer = setTimeout(() => flushPendingSplitPresetPatch(kind, presetId), SPLIT_PRESET_PATCH_DELAY_MS)
   return pending
@@ -759,15 +772,54 @@ export function flushPendingSplitPresetPatches(options: ServerCommandTransportOp
 
 registerPendingBridgePatchFlusher('split-preset-fields', flushPendingSplitPresetPatches)
 
-function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: ServerCommandTransportOptions): void {
-  const fields = new Map<string, SplitPresetPatchFieldAttempt>()
+function splitPresetPatchPayload(fields: Map<string, SplitPresetPatchFieldAttempt>): Record<string, unknown> {
   const patch: Record<string, unknown> = {}
+  for (const [fieldName, field] of fields) {
+    if (!splitPresetPatchFieldIsNetChange(field)) continue
+    patch[fieldName] = safeStructuredClone(field.attemptedValue)
+  }
+  return patch
+}
+
+function splitPresetPatchDurableIntent(
+  kind: SplitPresetKind,
+  presetId: string,
+  patch: Record<string, unknown>,
+): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/${kind === 'model' ? 'model-presets' : 'prompt-presets'}/${encodeURIComponent(presetId)}`,
+        body: { patch: safeStructuredClone(patch) },
+      },
+    ],
+  }
+}
+
+function refreshPendingSplitPresetDurability(pending: PendingSplitPresetPatch): void {
+  const patch = splitPresetPatchPayload(pending.fields)
+  if (Object.keys(patch).length === 0) {
+    if (pending.outbox) void acknowledgePendingMutation(pending.outbox)
+    pending.intent = null
+    pending.outbox = null
+    return
+  }
+  const intent = splitPresetPatchDurableIntent(pending.kind, pending.presetId, patch)
+  pending.intent = intent
+  pending.outbox = stagePendingMutation(`split-preset:${pending.kind}:${pending.presetId}`, intent, pending.outbox)
+}
+
+function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: ServerCommandTransportOptions): void {
+  refreshPendingSplitPresetDurability(pending)
+  const fields = new Map<string, SplitPresetPatchFieldAttempt>()
+  const patch = splitPresetPatchPayload(pending.fields)
   for (const [fieldName, field] of pending.fields) {
     if (!splitPresetPatchFieldIsNetChange(field)) continue
     fields.set(fieldName, cloneSplitPresetPatchFieldAttempt(field))
-    patch[fieldName] = safeStructuredClone(field.attemptedValue)
   }
-  if (fields.size === 0) return
+  if (fields.size === 0 || !pending.intent || !pending.outbox) return
 
   const projectionFields = new Map<string, SplitPresetPatchFieldAttempt>()
   for (const [fieldName, field] of pending.projectionFields) {
@@ -827,46 +879,49 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
   unsettled.push(attempt)
   unsettledSplitPresetPatches.set(pendingKey, unsettled)
 
-  void runServerCommand({
-    command: async (baseRevision) => {
-      try {
-        const result =
-          attempt.kind === 'model'
-            ? await updateModelPresetCommand(
-                {
-                  baseRevision,
-                  modelPresetId: attempt.presetId,
-                  patch: safeStructuredClone(patch) as ModelPresetSnapshot,
-                  optimisticAcknowledgement,
-                },
-                options.signal,
-                options.keepalive,
-              )
-            : await updatePromptPresetCommand(
-                {
-                  baseRevision,
-                  promptPresetId: attempt.presetId,
-                  patch: safeStructuredClone(patch) as PromptPresetSnapshot,
-                  optimisticAcknowledgement,
-                },
-                options.signal,
-                options.keepalive,
-              )
-        settleSplitPresetPatchAttempt(attempt, result.status === 'ok')
-        return result
-      } catch (error) {
+  void dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
+    runServerCommand({
+      command: async (baseRevision) => {
+        try {
+          const result =
+            attempt.kind === 'model'
+              ? await updateModelPresetCommand(
+                  {
+                    baseRevision,
+                    modelPresetId: attempt.presetId,
+                    patch: safeStructuredClone(patch) as ModelPresetSnapshot,
+                    optimisticAcknowledgement,
+                  },
+                  options.signal,
+                  options.keepalive,
+                )
+              : await updatePromptPresetCommand(
+                  {
+                    baseRevision,
+                    promptPresetId: attempt.presetId,
+                    patch: safeStructuredClone(patch) as PromptPresetSnapshot,
+                    optimisticAcknowledgement,
+                  },
+                  options.signal,
+                  options.keepalive,
+                )
+          settleSplitPresetPatchAttempt(attempt, result.status === 'ok')
+          return result
+        } catch (error) {
+          settleSplitPresetPatchAttempt(attempt, false)
+          throw error
+        }
+      },
+      rollback: () => {
+        taintSplitPresetPatchAttempt(attempt)
         settleSplitPresetPatchAttempt(attempt, false)
-        throw error
-      }
-    },
-    rollback: () => {
-      taintSplitPresetPatchAttempt(attempt)
-      settleSplitPresetPatchAttempt(attempt, false)
-      rollbackSplitPresetPatchAttempt(attempt)
-    },
-    signal: options.signal,
-    keepalive: options.keepalive,
-  })
+        rollbackSplitPresetPatchAttempt(attempt)
+      },
+      signal: options.signal,
+      keepalive: options.keepalive,
+      ...transport,
+    }),
+  )
 }
 
 function taintSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): void {
@@ -896,6 +951,7 @@ function settleSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch, acce
   if (pending) {
     rebaseSplitPresetPatchFields(pending.fields, attempt.fields, accepted)
     rebaseSplitPresetPatchFields(pending.projectionFields, attempt.projectionFields, accepted)
+    refreshPendingSplitPresetDurability(pending)
   }
 
   if (attemptIndex >= 0) unsettled.splice(attemptIndex, 1)
