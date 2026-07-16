@@ -44,6 +44,7 @@ import {
   dispatchCreateCharacter,
   dispatchDeleteCharacter,
   dispatchSelectCharacter,
+  dispatchUpdateCharacterScoped,
   moveCharacterOrderItem,
   normalizeCharacterOrder,
   prepareCompatibleCharacterUpdate,
@@ -938,6 +939,127 @@ describe('character list create/delete rollback', () => {
       await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 0 })
       expect(commands).toHaveLength(commandCount)
       expect(testDatabaseState.db.characters.some((character) => character.chaId === 'char-b')).toBe(false)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('holds a restored trash-row PATCH behind its retained permanent DELETE', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-delete-restore',
+      writerEpoch: 13,
+      databaseLineage: 'lineage-character-delete-restore',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(20)
+    testDatabaseState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-trash', name: 'Trashed', chats: [], trashTime: 123 },
+      ],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    setResourceWriteGuardEnabled(true)
+
+    let recover = false
+    let revision = 20
+    let serverHasCharacter = true
+    const commands: Array<{ method: string; body: Record<string, unknown> }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/characters/char-trash') {
+          const method = init.method ?? 'GET'
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          commands.push({ method, body })
+          if (!recover) {
+            if (method === 'PATCH') throw new Error('trash restore overtook its retained permanent DELETE')
+            return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          }
+          if (method === 'DELETE') {
+            serverHasCharacter = false
+            revision += 1
+            return jsonResponse({
+              revision,
+              event: {
+                type: 'character.deleted',
+                revision,
+                resource: 'character',
+                id: 'char-trash',
+              },
+              characterId: 'char-trash',
+            })
+          }
+          if (!serverHasCharacter) return jsonResponse({ error: 'character not found' }, 404)
+          throw new Error('unexpected successful trash restore')
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    const beforeDelete = currentCharacterStateSnapshot()
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters.splice(1, 1)
+    })
+
+    try {
+      dispatchDeleteCharacter('char-trash', beforeDelete)
+      await vi.waitFor(() => expect(commands.map(({ method }) => method)).toEqual(['DELETE']))
+      await vi.waitFor(() => {
+        expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a', 'char-trash'])
+      })
+
+      const trashIndex = testDatabaseState.db.characters.findIndex((character) => character.chaId === 'char-trash')
+      const beforeRestore = currentCharacterRowSnapshot(trashIndex)
+      withTrustedResourceWrite(() => {
+        testDatabaseState.db.characters[trashIndex].trashTime = null
+      })
+      dispatchUpdateCharacterScoped('char-trash', { trashTime: null }, beforeRestore)
+
+      await vi.waitFor(() => expect(commands.map(({ method }) => method)).toEqual(['DELETE', 'DELETE']))
+      await vi.waitFor(() => expect(testDatabaseState.db.characters[trashIndex].trashTime).toBe(123))
+      const retained = await listPendingMutations()
+      expect(
+        retained.map((entry) => ({
+          key: entry.handle.key,
+          method: entry.intent.requests[0].method,
+          dependencies: entry.intent.dependencyKeys ?? [],
+          body: entry.intent.requests[0].body,
+        })),
+      ).toEqual([
+        {
+          key: 'character-selection',
+          method: 'DELETE',
+          dependencies: ['character-owner:char-trash'],
+          body: {},
+        },
+        {
+          key: 'character-owner:char-trash',
+          method: 'PATCH',
+          dependencies: ['character-selection'],
+          body: { patch: { trashTime: null } },
+        },
+      ])
+
+      recover = true
+      const recoveryStart = commands.length
+      await expect(replayPendingMutations()).resolves.toEqual({
+        attempted: 2,
+        discarded: 1,
+        retained: 0,
+        succeeded: 1,
+      })
+      expect(commands.slice(recoveryStart).map(({ method }) => method)).toEqual(['DELETE', 'PATCH'])
+      expect(commands.at(-1)?.body).toMatchObject({ patch: { trashTime: null } })
+      expect(serverHasCharacter).toBe(false)
+      expect(await listPendingMutations()).toEqual([])
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

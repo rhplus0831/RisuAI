@@ -834,7 +834,29 @@ export function dispatchUpdateCharacterScoped(
 ): void {
   const attempted = sanitizeCharacterPatch(patch)
   if (Object.keys(attempted).length === 0) return
-  dispatchUpdateCharacterWith(characterId, attempted, () => restoreCharacterRow({ ...previous, attempted }))
+  const intent: DurableMutationIntent = {
+    version: 1,
+    dependencyKeys: [CHARACTER_SELECTION_MUTATION_KEY],
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/characters/${encodeURIComponent(characterId)}`,
+        body: { patch: cloneJsonValue(attempted) },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(characterOwnerMutationKey(characterId), intent)
+  void dispatchDurableMutation(
+    outbox,
+    intent,
+    (transport) =>
+      dispatchUpdateCharacterWith(
+        characterId,
+        attempted,
+        () => restoreCharacterRow({ ...previous, attempted }),
+        transport,
+      ) ?? Promise.resolve({ status: 'unavailable' as const }),
+  )
 }
 
 export function dispatchUpdateCharacterTrashTime(
