@@ -128,6 +128,7 @@ export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
   'chaId',
   'chats',
   'chatFolders',
+  'lastInteraction',
   'globalLore',
   'customscript',
   'triggerscript',
@@ -992,14 +993,34 @@ export function dispatchSelectCharacter(
   lastInteraction?: number,
 ): void {
   const attempted = currentCharacterSelectionAttempt(characterId, lastInteraction)
-  runCharacterCommand(
-    (baseRevision) =>
-      selectCharacterCommand({
-        baseRevision,
-        characterId,
-        lastInteraction,
-      }),
-    () => restoreCharacterSelectionAttempt(previous, attempted),
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: '/characters/select',
+        body: {
+          characterId,
+          ...(lastInteraction === undefined ? {} : { lastInteraction }),
+        },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(characterOwnerMutationKey(characterId), intent)
+  void dispatchDurableMutation(
+    outbox,
+    intent,
+    (transport) =>
+      runCharacterCommand(
+        (baseRevision) =>
+          selectCharacterCommand({
+            baseRevision,
+            characterId,
+            lastInteraction,
+          }),
+        () => restoreCharacterSelectionAttempt(previous, attempted),
+        transport,
+      ) ?? Promise.resolve({ status: 'unavailable' as const }),
   )
 }
 

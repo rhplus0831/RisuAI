@@ -111,6 +111,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/settings\/[a-z][a-z-]*\/objects\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/characters\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/characters\/[^/?#]+$/ },
+  { method: 'POST', path: /^\/characters\/select$/ },
   { method: 'PATCH', path: /^\/chats\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/chats\/[^/?#]+$/ },
   { method: 'PUT', path: /^\/chats\/[^/?#]+\/generation-settings$/ },

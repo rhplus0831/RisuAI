@@ -67,6 +67,7 @@ vi.mock('../characterCommands', () => {
     'chaId',
     'chats',
     'chatFolders',
+    'lastInteraction',
     'globalLore',
     'customscript',
     'triggerscript',
@@ -444,6 +445,20 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     expect(recorded.characterUpdates[0].patch).not.toHaveProperty('chaId')
     stop()
     stopWatcher()
+  })
+
+  it('leaves lastInteraction to the purpose-built character commands', async () => {
+    setupCharacters([characterRow('char-1', 'Initial', { lastInteraction: 100 })])
+    const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })
+    flushSync()
+
+    getDatabase().characters[0].lastInteraction = 200
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.characterUpdates).toEqual([])
+    expect(durableState.stages).toEqual([])
+    stop()
   })
 
   it('does not roll back a profile field after a newer same-row edit', () => {

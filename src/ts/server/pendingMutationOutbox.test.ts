@@ -416,6 +416,7 @@ describe('pending mutation outbox', () => {
     ['PATCH', '/translator-presets/translator-a'],
     ['DELETE', '/translator-presets/translator-a'],
     ['DELETE', '/characters/character-a'],
+    ['POST', '/characters/select'],
     ['DELETE', '/chat-folders/folder-a'],
     ['DELETE', '/modules/module-a'],
     ['PUT', '/chats/chat-a/generation-settings'],

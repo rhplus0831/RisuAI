@@ -869,6 +869,103 @@ describe('character select command rollback', () => {
     setResourceWriteGuardEnabled(true)
   })
 
+  it('orders a durable selection correction after an older character-owner patch', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-select',
+      writerEpoch: 13,
+      databaseLineage: 'lineage-character-select',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(20)
+
+    const predecessorIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/characters/char-b',
+          body: { patch: { lastInteraction: 1_000 } },
+        },
+      ],
+    }
+    const predecessor = stagePendingMutation('character-owner:char-b', predecessorIntent)
+    await expect(predecessor.ready).resolves.toBe('persisted')
+
+    let recover = false
+    let revision = 20
+    const commands: Array<{ method: string; url: string; body: Record<string, unknown> }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const method = init.method ?? 'GET'
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/characters/char-b' || url === '/api/v1/commands/characters/select') {
+          commands.push({
+            method,
+            url,
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : {},
+          })
+          if (!recover && url.endsWith('/characters/char-b')) {
+            return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          }
+          if (!recover) throw new Error('character selection overtook its owner predecessor')
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: url.endsWith('/characters/select') ? 'character.selected' : 'character.updated',
+              revision,
+              resource: 'character',
+              id: 'char-b',
+            },
+            characterId: 'char-b',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    const previous = currentCharacterSelectionSnapshot('char-b')
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters[1].lastInteraction = 2_000
+      ;(testDatabaseState.db as any).currentChar = 1
+      selectedCharID.set(1)
+    })
+
+    try {
+      dispatchSelectCharacter('char-b', previous, 2_000)
+      await vi.waitFor(() => expect(commands.map((command) => command.method)).toEqual(['PATCH']))
+      expect(
+        (await listPendingMutations()).map((entry) => ({
+          key: entry.handle.key,
+          method: entry.intent.requests[0].method,
+        })),
+      ).toEqual([
+        { key: 'character-owner:char-b', method: 'PATCH' },
+        { key: 'character-owner:char-b', method: 'POST' },
+      ])
+
+      recover = true
+      const recoveryStart = commands.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(commands.slice(recoveryStart).map(({ method, url }) => ({ method, url }))).toEqual([
+        { method: 'PATCH', url: '/api/v1/commands/characters/char-b' },
+        { method: 'POST', url: '/api/v1/commands/characters/select' },
+      ])
+      expect(commands.at(-1)?.body).toMatchObject({
+        characterId: 'char-b',
+        lastInteraction: 2_000,
+      })
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('restores the previous selection when the failed attempted selection is still live', async () => {
     const selectResponse = deferredResponse()
     const calls = stubDelayedSelectCommandFetch(selectResponse.promise)
@@ -1989,6 +2086,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
       chaId: 'char-a',
       name: 'Old name',
       desc: 'same',
+      lastInteraction: 100,
       nested: { a: 1, b: [1, 2] },
       removed: 'gone after',
       chats: [{ id: 'chat-1', message: [{ role: 'user', data: 'x' }] }],
@@ -1998,6 +2096,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
       chaId: 'char-a',
       name: 'New name',
       desc: 'same',
+      lastInteraction: 200,
       nested: { a: 1, b: [1, 2, 3] },
       added: 'new field',
       chats: [{ id: 'chat-1', message: [] }], // excluded key change must be ignored
@@ -2022,6 +2121,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     // excluded keys never enter the patch, changed or not
     expect('chats' in patch).toBe(false)
     expect('scriptstate' in patch).toBe(false)
+    expect('lastInteraction' in patch).toBe(false)
     expect('chaId' in patch).toBe(false)
     expect('desc' in patch).toBe(false)
   })
