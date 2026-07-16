@@ -961,7 +961,227 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
   }
 }
 
-export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, assertActive?: () => void) => {
+type PluginRuntimeCleanupRegistrar = (cleanup: () => void) => void
+
+interface TrackedPluginEventListener {
+  target: EventTarget
+  type: string
+  listener: EventListenerOrEventListenerObject
+  wrapped: EventListener
+  options?: boolean | AddEventListenerOptions
+  capture: boolean
+  unregister: () => void
+}
+
+/**
+ * Revokes callbacks created through the supported legacy surface when its load
+ * generation ends. V2.1 remains trusted main-realm code, but ordinary timers,
+ * listeners, and API closures must not keep operating after disable/reload.
+ */
+class PluginRuntimeLifecycle {
+  private readonly timeouts = new Set<ReturnType<typeof globalThis.setTimeout>>()
+  private readonly intervals = new Set<ReturnType<typeof globalThis.setInterval>>()
+  private readonly eventListeners = new Set<TrackedPluginEventListener>()
+
+  constructor(private readonly assertActive?: () => void) {}
+
+  assertCurrent = (): void => {
+    this.assertActive?.()
+  }
+
+  private isCurrent(): boolean {
+    try {
+      this.assertCurrent()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  setTimeout = (
+    handler: TimerHandler,
+    timeout?: number,
+    ...args: unknown[]
+  ): ReturnType<typeof globalThis.setTimeout> => {
+    this.assertCurrent()
+    if (typeof handler !== 'function') {
+      throw new TypeError('Plugin timer handlers must be functions.')
+    }
+
+    let handle: ReturnType<typeof globalThis.setTimeout>
+    handle = globalThis.setTimeout(() => {
+      this.timeouts.delete(handle)
+      if (!this.isCurrent()) return
+      handler.apply(globalThis, args)
+    }, timeout)
+    this.timeouts.add(handle)
+    return handle
+  }
+
+  setInterval = (
+    handler: TimerHandler,
+    timeout?: number,
+    ...args: unknown[]
+  ): ReturnType<typeof globalThis.setInterval> => {
+    this.assertCurrent()
+    if (typeof handler !== 'function') {
+      throw new TypeError('Plugin timer handlers must be functions.')
+    }
+
+    let handle: ReturnType<typeof globalThis.setInterval>
+    handle = globalThis.setInterval(() => {
+      if (!this.isCurrent()) {
+        globalThis.clearInterval(handle)
+        this.intervals.delete(handle)
+        return
+      }
+      handler.apply(globalThis, args)
+    }, timeout)
+    this.intervals.add(handle)
+    return handle
+  }
+
+  clearTimeout = (handle?: ReturnType<typeof globalThis.setTimeout>): void => {
+    if (handle === undefined) return
+    this.timeouts.delete(handle)
+    globalThis.clearTimeout(handle)
+  }
+
+  clearInterval = (handle?: ReturnType<typeof globalThis.setInterval>): void => {
+    if (handle === undefined) return
+    this.intervals.delete(handle)
+    globalThis.clearInterval(handle)
+  }
+
+  addEventListener = (
+    target: EventTarget,
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | AddEventListenerOptions,
+    register?: (wrapped: EventListener) => void,
+    unregister?: (wrapped: EventListener) => void,
+  ): void => {
+    this.assertCurrent()
+    if (!listener) return
+
+    const capture = typeof options === 'boolean' ? options : (options?.capture ?? false)
+    const existing = Array.from(this.eventListeners).find(
+      (entry) =>
+        entry.target === target && entry.type === type && entry.listener === listener && entry.capture === capture,
+    )
+    if (existing) return
+
+    const entry = {} as TrackedPluginEventListener
+    const wrapped: EventListener = (event) => {
+      if (!this.isCurrent()) {
+        this.removeTrackedEventListener(entry)
+        return
+      }
+      if (typeof options === 'object' && options.once) {
+        this.eventListeners.delete(entry)
+      }
+      if (typeof listener === 'function') {
+        listener.call(target, event)
+      } else {
+        listener.handleEvent(event)
+      }
+    }
+    Object.assign(entry, {
+      target,
+      type,
+      listener,
+      wrapped,
+      options,
+      capture,
+      unregister: () => (unregister ? unregister(wrapped) : target.removeEventListener(type, wrapped, options)),
+    })
+    if (register) register(wrapped)
+    else target.addEventListener(type, wrapped, options)
+    this.eventListeners.add(entry)
+  }
+
+  removeEventListener = (
+    target: EventTarget,
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | EventListenerOptions,
+  ): void => {
+    if (!listener) return
+    const capture = typeof options === 'boolean' ? options : (options?.capture ?? false)
+    const entry = Array.from(this.eventListeners).find(
+      (candidate) =>
+        candidate.target === target &&
+        candidate.type === type &&
+        candidate.listener === listener &&
+        candidate.capture === capture,
+    )
+    if (entry) this.removeTrackedEventListener(entry)
+  }
+
+  private removeTrackedEventListener(entry: TrackedPluginEventListener): void {
+    this.eventListeners.delete(entry)
+    entry.unregister()
+  }
+
+  dispose = (): void => {
+    for (const handle of this.timeouts) globalThis.clearTimeout(handle)
+    for (const handle of this.intervals) globalThis.clearInterval(handle)
+    for (const entry of Array.from(this.eventListeners)) this.removeTrackedEventListener(entry)
+    this.timeouts.clear()
+    this.intervals.clear()
+  }
+}
+
+function mergeInstalledPluginsWithApprovedCandidates(
+  installedPlugins: readonly RisuPlugin[],
+  approvedCandidates: readonly RisuPlugin[],
+): RisuPlugin[] {
+  // `handlePluginInstallViaPlugin` returns only candidates that needed consent.
+  // Treat them as an upsert set, never as the complete desired collection.
+  const merged = [...installedPlugins]
+  const indexByName = new Map(merged.map((plugin, index) => [plugin.name, index]))
+
+  for (const candidate of approvedCandidates) {
+    const existingIndex = indexByName.get(candidate.name)
+    if (existingIndex === undefined) {
+      indexByName.set(candidate.name, merged.length)
+      merged.push(candidate)
+    } else {
+      merged[existingIndex] = candidate
+    }
+  }
+
+  return merged
+}
+
+export const getV2PluginAPIs = (
+  plugin?: Pick<RisuPlugin, 'name' | 'script'>,
+  assertActive?: () => void,
+  registerCleanup?: PluginRuntimeCleanupRegistrar,
+) => {
+  const lifecycle = new PluginRuntimeLifecycle(assertActive)
+  registerCleanup?.(lifecycle.dispose)
+  const guardedSafeDocument = {
+    ...SafeDocument,
+    addEventListener: (
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ) =>
+      lifecycle.addEventListener(
+        document,
+        type,
+        listener,
+        options,
+        (wrapped) => SafeDocument.addEventListener(type, wrapped, options),
+        (wrapped) => SafeDocument.removeEventListener(type, wrapped, options),
+      ),
+    removeEventListener: (
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ) => lifecycle.removeEventListener(document, type, listener, options),
+  }
   const networkAccess = createPluginNetworkAccess(
     plugin,
     {
@@ -993,6 +1213,7 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       return getCurrentCharacter({ snapshot: true })
     },
     setChar: (char: any) => {
+      lifecycle.assertCurrent()
       const charid = get(selectedCharID)
       if (!canUseServerCommands()) {
         withTrustedResourceWrite(() => {
@@ -1021,11 +1242,13 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       ) => Promise<{ success: boolean; content: string }>,
       options?: PluginV2ProviderOptions,
     ) => {
+      lifecycle.assertCurrent()
       pluginV2.providers.set(name, func)
       pluginV2.providerOptions.set(name, options ?? {})
       customProviderStore.set(Array.from(pluginV2.providers.keys()))
     },
     addRisuScriptHandler: (name: ScriptMode, func: EditFunction) => {
+      lifecycle.assertCurrent()
       if (pluginV2['edit' + name]) {
         pluginV2['edit' + name].add(func)
       } else {
@@ -1033,6 +1256,7 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       }
     },
     removeRisuScriptHandler: (name: ScriptMode, func: EditFunction) => {
+      lifecycle.assertCurrent()
       if (pluginV2['edit' + name]) {
         pluginV2['edit' + name].delete(func)
       } else {
@@ -1040,6 +1264,7 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       }
     },
     addRisuReplacer: (name: string, func: ReplacerFunction) => {
+      lifecycle.assertCurrent()
       if (pluginV2['replacer' + name]) {
         pluginV2['replacer' + name].add(func)
       } else {
@@ -1047,6 +1272,7 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       }
     },
     removeRisuReplacer: (name: string, func: ReplacerFunction) => {
+      lifecycle.assertCurrent()
       if (pluginV2['replacer' + name]) {
         pluginV2['replacer' + name].delete(func)
       } else {
@@ -1054,9 +1280,11 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       }
     },
     onUnload: (func: () => void | Promise<void>) => {
+      lifecycle.assertCurrent()
       pluginV2.unload.add(func)
     },
     setArg: (arg: string, value: string | number) => {
+      lifecycle.assertCurrent()
       const [name, realArg] = arg.split('::')
       const previous = currentPluginStateSnapshot()
       let matched = false
@@ -1095,22 +1323,10 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       //from PBV2
       safeGlobal.showDirectoryPicker = window.showDirectoryPicker
 
-      safeGlobal.setInterval = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into setInterval params causes type mismatch with TimerHandler signature
-        return globalThis.setInterval(...args)
-      }
-      safeGlobal.setTimeout = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into setTimeout params causes type mismatch with TimerHandler signature
-        return globalThis.setTimeout(...args)
-      }
-      safeGlobal.clearInterval = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into clearInterval - first arg should be number | undefined
-        return globalThis.clearInterval(...args)
-      }
-      safeGlobal.clearTimeout = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into clearTimeout - first arg should be number | undefined
-        return globalThis.clearTimeout(...args)
-      }
+      safeGlobal.setInterval = lifecycle.setInterval
+      safeGlobal.setTimeout = lifecycle.setTimeout
+      safeGlobal.clearInterval = lifecycle.clearInterval
+      safeGlobal.clearTimeout = lifecycle.clearTimeout
       safeGlobal.alert = globalThis.alert
       safeGlobal.confirm = globalThis.confirm
       safeGlobal.prompt = globalThis.prompt
@@ -1133,25 +1349,28 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       safeGlobal.Error = Error
       safeGlobal.Function = pluginApis.SafeFunction
       safeGlobal.document = pluginApis.safeDocument
-      safeGlobal.addEventListener = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into addEventListener - expects (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions)
-        window.addEventListener(...args)
-      }
-      safeGlobal.removeEventListener = (...args: any[]) => {
-        //@ts-expect-error spreading any[] into removeEventListener - expects (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions)
-        window.removeEventListener(...args)
-      }
+      safeGlobal.addEventListener = (
+        type: string,
+        listener: EventListenerOrEventListenerObject | null,
+        options?: boolean | AddEventListenerOptions,
+      ) => lifecycle.addEventListener(window, type, listener, options)
+      safeGlobal.removeEventListener = (
+        type: string,
+        listener: EventListenerOrEventListenerObject | null,
+        options?: boolean | EventListenerOptions,
+      ) => lifecycle.removeEventListener(window, type, listener, options)
       return safeGlobal
     },
     safeLocalStorage: new SafeLocalStorage(),
     safeIdbFactory: SafeIdbFactory,
-    safeDocument: SafeDocument,
+    safeDocument: guardedSafeDocument,
     alertStore: {
       set: (msg: string) => {},
     },
     apiVersion: '2.1',
     apiVersionCompatibleWith: ['2.0', '2.1'],
     getDatabase: () => {
+      lifecycle.assertCurrent()
       const db = getDatabase()
       return new Proxy(db, {
         get(target, prop) {
@@ -1165,6 +1384,7 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
           return undefined
         },
         set(target, prop, value) {
+          lifecycle.assertCurrent()
           if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
             if (canUseServerCommands()) {
               void applyPluginDatabasePatch({ [prop]: value }, { full: false }).catch((error) => {
@@ -1235,12 +1455,15 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
         return value == null ? null : safeStructuredClone(value)
       },
       setItem: (key: string, value: string) => {
+        lifecycle.assertCurrent()
         return setPluginStorageValue(key, value)
       },
       removeItem: (key: string) => {
+        lifecycle.assertCurrent()
         return deletePluginStorageValue(key)
       },
       clear: () => {
+        lifecycle.assertCurrent()
         return replacePluginStorage({})
       },
       key: (index: number) => {
@@ -1262,6 +1485,7 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
     },
     isDeviceLocalPluginStorageEnabled,
     setDatabaseLite: (newDb: any) => {
+      lifecycle.assertCurrent()
       const pending = applyPluginDatabasePatch(newDb, { full: false })
       // Legacy V2.1 scripts commonly ignored this historically synchronous
       // return value. Keep those calls from becoming unhandled rejections while
@@ -1270,15 +1494,23 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       return pending
     },
     setDatabase: async (newDb: any) => {
+      lifecycle.assertCurrent()
+      let databasePatch = newDb
       for (const key of Object.keys(newDb)) {
         if (key === 'plugins') {
           console.warn(
             '[WARN] Plugin attempted to access plugin directly. this would be blocked in future versions. Instead, use the provided APIs to manage plugins. Attempting to handle plugin installation via plugin for new plugins in the provided database object.',
           )
-          newDb[key] = await handlePluginInstallViaPlugin(newDb.plugins)
+          const approvedCandidates = await handlePluginInstallViaPlugin(newDb.plugins, lifecycle.assertCurrent)
+          lifecycle.assertCurrent()
+          databasePatch = {
+            ...newDb,
+            plugins: mergeInstalledPluginsWithApprovedCandidates(getDatabase().plugins ?? [], approvedCandidates),
+          }
         }
       }
-      await applyPluginDatabasePatch(newDb, { full: true })
+      lifecycle.assertCurrent()
+      await applyPluginDatabasePatch(databasePatch, { full: true })
     },
     SafeFunction: new Proxy(Function, {
       construct(target, args) {
@@ -1292,7 +1524,10 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
         }
       },
     }),
-    loadPlugins: loadPlugins,
+    loadPlugins: () => {
+      lifecycle.assertCurrent()
+      return loadPlugins()
+    },
     readImage: (path: string) => {
       if (path.startsWith('assets/')) {
         // Normalize the supported `assets/` prefix before validating the asset id.
@@ -1305,6 +1540,7 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
       return readImage('assets/' + path)
     },
     saveAsset: (data: Uint8Array) => {
+      lifecycle.assertCurrent()
       // plugin V2 bridge API has no extension hint;
       // plugins that need an honest extension should use the V3 API which
       // accepts a filename.
@@ -1391,6 +1627,13 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
                             const safeIdbFactory = __pluginApi.safeIdbFactory
                             const alertStore = __pluginApi.alertStore
                             const safeDocument = __pluginApi.safeDocument
+                            const document = safeDocument
+                            const setTimeout = safeGlobalThis.setTimeout
+                            const setInterval = safeGlobalThis.setInterval
+                            const clearTimeout = safeGlobalThis.clearTimeout
+                            const clearInterval = safeGlobalThis.clearInterval
+                            const addEventListener = safeGlobalThis.addEventListener
+                            const removeEventListener = safeGlobalThis.removeEventListener
                             const getDatabase = __pluginApi.getDatabase
                             const setDatabaseLite = __pluginApi.setDatabaseLite
                             const setDatabase = __pluginApi.setDatabase
@@ -1423,11 +1666,15 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
       try {
         // Each script captures an API object whose network grant is bound to
         // this exact plugin name and script, never the ambient last-loaded API.
-        globalThis.__pluginApis__ = getV2PluginAPIs(plugin, () => {
-          if (loadGeneration !== v2PluginLoadGeneration) {
-            throw new Error('Legacy plugin instance is no longer active.')
-          }
-        })
+        globalThis.__pluginApis__ = getV2PluginAPIs(
+          plugin,
+          () => {
+            if (loadGeneration !== v2PluginLoadGeneration) {
+              throw new Error('Legacy plugin instance is no longer active.')
+            }
+          },
+          (cleanup) => pluginV2.unload.add(cleanup),
+        )
         new Function(createRealScript(data))()
       } catch (error) {
         console.error(error)
@@ -1467,9 +1714,10 @@ export async function pluginProcess(
   }
 }
 
-export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[]) {
+export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[], assertActive?: () => void) {
   const trimmedPlugins: RisuPlugin[] = []
   for (const plugin of plugins) {
+    assertActive?.()
     if (!getDatabase().plugins.find((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)) {
       if (plugin.version !== '3.0') {
         console.warn(
@@ -1478,6 +1726,7 @@ export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[]) {
         continue
       }
       const confirmation = await alertConfirm(language.confirmInstallPluginViaPlugin.replace('{plugin}', plugin.name))
+      assertActive?.()
       if (confirmation) {
         trimmedPlugins.push(plugin)
       }

