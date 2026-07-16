@@ -319,6 +319,34 @@ describe('IrisModal model availability', () => {
     ])
   })
 
+  it.each(['', '<think>private reasoning</think>', '(private direction) {{hidden state}}'])(
+    'keeps the submitted line when Iris returns no visible dialogue: %j',
+    async (result) => {
+      irisMocks.requestChatData.mockResolvedValueOnce({ type: 'success', result })
+      component = mount(IrisModal, { target })
+      await settle()
+
+      await submitMessage('Question with an empty reply')
+      await vi.waitFor(() => expect(irisMocks.alertError).toHaveBeenCalledWith(language.errors.irisEmptyResponse))
+
+      const persistedDialogue = irisMocks.forageSetItem.mock.calls.at(-1)?.[1] as DialogueLineForTest[]
+      expect(persistedDialogue.at(-1)).toEqual({ speaker: 'You', text: 'Question with an empty reply' })
+      expect(persistedDialogue).toHaveLength(2)
+    },
+  )
+
+  it('does not submit input that contains only hidden dialogue metadata', async () => {
+    component = mount(IrisModal, { target })
+    await settle()
+
+    await submitMessage('(private direction) {{hidden state}}')
+
+    expect(irisMocks.requestChatData).not.toHaveBeenCalled()
+    expect(irisMocks.alertError).toHaveBeenCalledWith(language.errors.emptyText)
+    const input = target.querySelector<HTMLInputElement>('input[type="text"]')
+    expect(input?.value).toBe('(private direction) {{hidden state}}')
+  })
+
   it('ignores a successful response after the dialogue is reset', async () => {
     const response = deferred<{ type: 'success'; result: string }>()
     irisMocks.requestChatData.mockReturnValue(response.promise)

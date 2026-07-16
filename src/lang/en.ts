@@ -58,6 +58,7 @@ export const languageEnglish = {
     anthropicToolCallLimit: 'Anthropic tool call limit reached',
     irisToolCallLimit: (limit: number) => `Iris stopped after ${limit} consecutive tool rounds.`,
     irisToolRequestInvalid: (error: string) => `Iris received an invalid tool request: ${error}`,
+    irisEmptyResponse: 'Iris returned an empty response. Your message was kept so you can try again.',
     claudeBatchResultMissing: 'No results URL returned from Claude batch request',
     claudeBatchTimedOut: 'Claude batch request timed out after 24 hours',
     claudeBatchExpired: 'Claude batch request expired',

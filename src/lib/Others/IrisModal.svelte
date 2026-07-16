@@ -185,9 +185,10 @@
 
   /** Push a new line and immediately advance to it.
    *  Iris lines are split into individual sentences. */
-  export function pushDialogue(line: DialogueLine) {
-    line.text = trimDialogueMeta(line.text)
-    const sentences = line.speaker !== 'You' ? splitSentences(line.text) : [line.text]
+  export function pushDialogue(line: DialogueLine): boolean {
+    const textWithoutMeta = trimDialogueMeta(line.text)
+    const sentences = line.speaker !== 'You' ? splitSentences(textWithoutMeta) : [textWithoutMeta].filter(Boolean)
+    if (sentences.length === 0) return false
 
     const wasAtEnd = currentIndex === dialogue.length - 1
 
@@ -201,6 +202,7 @@
     }
 
     saveDialogue()
+    return true
   }
 
   function saveDialogue() {
@@ -213,7 +215,10 @@
     const trimmed = userInput.trim()
     if (!trimmed) return
     if (isUnsupportedModel) return
-    pushDialogue({ speaker: 'You', text: trimmed })
+    if (!pushDialogue({ speaker: 'You', text: trimmed })) {
+      alertError(language.errors.emptyText)
+      return
+    }
     const submittedLine = dialogue.at(-1)
     const submittedEpoch = dialogueEpoch
     userInput = ''
@@ -389,7 +394,9 @@
       }
 
       if (!res.toolCalls?.length) {
-        pushDialogue({ speaker: 'Iris', text: res.result })
+        if (!pushDialogue({ speaker: 'Iris', text: res.result })) {
+          alertError(language.errors.irisEmptyResponse)
+        }
         return
       }
       if (toolRounds.length >= SERVER_TOOL_MAX_ROUNDS) {
