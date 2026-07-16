@@ -596,7 +596,7 @@ describe('module imports', () => {
     expect(alertNormal).not.toHaveBeenCalled()
   })
 
-  it('rejects MCP .risum modules before asset upload or module creation', async () => {
+  it('imports a validated MCP .risum module through the durable module flow', async () => {
     selectedFileState.file = {
       name: 'module.risum',
       data: buildRisum(
@@ -614,7 +614,39 @@ describe('module imports', () => {
 
     await importModule()
 
-    expect(alertError).toHaveBeenCalledWith('MCP module import is not supported in Fastify server-backed mode yet')
+    expect(alertError).not.toHaveBeenCalled()
+    expect(alertConfirm).toHaveBeenCalled()
+    expect(saveAssets).toHaveBeenCalledWith([
+      { data: Buffer.from(new Uint8Array([7, 8, 9])), fileName: 'portrait.webp' },
+    ])
+    expect(createGlobalModule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'MCP module',
+        mcp: { url: 'https://example.test/mcp' },
+        assets: [['portrait', 'asset-0', 'portrait.webp']],
+      }),
+    )
+  })
+
+  it('rejects invalid MCP metadata before confirmation, asset upload, or module creation', async () => {
+    selectedFileState.file = {
+      name: 'module.risum',
+      data: buildRisum(
+        {
+          id: 'old-id',
+          name: 'Invalid MCP module',
+          description: 'Imported',
+          lowLevelAccess: true,
+          mcp: { url: 'http://public.example/mcp' },
+          assets: [['portrait', '', 'portrait.webp']],
+        },
+        [new Uint8Array([7, 8, 9])],
+      ),
+    }
+
+    await importModule()
+
+    expect(alertError).toHaveBeenCalledWith(language.moduleImport.mcpInvalidUrl)
     expect(alertConfirm).not.toHaveBeenCalled()
     expect(saveAssets).not.toHaveBeenCalled()
     expect(createGlobalModule).not.toHaveBeenCalled()

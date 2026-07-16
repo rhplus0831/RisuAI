@@ -25,6 +25,7 @@ import {
 import { applyAttemptedFieldRollback } from '../../server/staleStateGuards'
 import { isMaskedProviderSecret } from '../../providerSecretMask'
 import { requestStoredMcpOAuthRefresh } from '../../server/mcpOAuthRefresh'
+import { isImportableMCPIdentifier } from './mcpIdentifier'
 
 export type MCPToolWithURL = MCPTool & {
   mcpURL: string
@@ -592,19 +593,6 @@ function mcpModuleImportError(result: Exclude<Awaited<ReturnType<typeof createGl
   if (result.status === 'unavailable') return language.moduleImport.commandUnavailable
   if (result.status === 'error') return language.moduleImport.commandError(result.error)
   return ''
-}
-
-function isImportableMCPIdentifier(value: string): boolean {
-  if (/^(internal|stdio|plugin):\S+$/.test(value)) return true
-  if (!value.startsWith('https://') && !value.startsWith('http://')) return false
-  try {
-    const url = new URL(value)
-    if (url.protocol === 'https:') return true
-    if (url.protocol !== 'http:') return false
-    return url.hostname === 'localhost' || url.hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(url.hostname)
-  } catch {
-    return false
-  }
 }
 
 export async function importMCPModule(): Promise<MCPModuleImportOutcome> {

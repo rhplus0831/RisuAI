@@ -55,6 +55,7 @@ import {
   pendingMutationCharacterTriggersProjectionTarget,
 } from '../server/pendingMutationOutbox'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
+import { isImportableMCPIdentifier } from './mcp/mcpIdentifier'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
 
 export interface MCPModule {
@@ -77,8 +78,6 @@ export interface RisuModule {
   customModuleToggle?: string
   mcp?: MCPModule
 }
-
-const MCP_MODULE_IMPORT_UNSUPPORTED = 'MCP module import is not supported in Fastify server-backed mode yet'
 
 export interface ReadModuleOptions {
   beforeSaveAssets?: (module: RisuModule) => boolean | void | Promise<boolean | void>
@@ -220,8 +219,13 @@ function uploadFileNameForModuleAsset(fileName: string, data: Uint8Array): strin
 
 async function guardImportableRisuModule(module: RisuModule): Promise<boolean> {
   if (hasMcpModuleMetadata(module)) {
-    alertError(MCP_MODULE_IMPORT_UNSUPPORTED)
-    return false
+    const mcp = module.mcp as unknown
+    const url = isRecord(mcp) && typeof mcp.url === 'string' ? mcp.url.trim() : ''
+    if (!isImportableMCPIdentifier(url)) {
+      alertError(language.moduleImport.mcpInvalidUrl)
+      return false
+    }
+    module.mcp = { url }
   }
   if (module.lowLevelAccess) {
     const conf = await alertConfirm(language.lowLevelAccessConfirm)
