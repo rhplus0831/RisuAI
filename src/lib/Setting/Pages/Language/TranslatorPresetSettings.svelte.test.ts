@@ -223,6 +223,10 @@ const commandSpies = vi.hoisted(() => {
   return spies
 })
 
+const translatorPresetFileSpies = vi.hoisted(() => ({
+  decodeTranslatorPresetFile: vi.fn(),
+}))
+
 vi.mock('src/ts/server/commands', () => ({
   acknowledgeServerMutationReceipts: commandSpies.acknowledgeServerMutationReceipts,
   canUseServerCommands: commandSpies.canUseServerCommands,
@@ -269,9 +273,17 @@ vi.mock('src/ts/util', async (importActual) => {
   }
 })
 
+vi.mock('src/ts/translator/presets', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/translator/presets')>()
+  return {
+    ...actual,
+    decodeTranslatorPresetFile: translatorPresetFileSpies.decodeTranslatorPresetFile,
+  }
+})
+
 import TranslatorPresetSettings from './TranslatorPresetSettings.svelte'
 import { language } from 'src/lang'
-import { alertConfirm, alertInput } from 'src/ts/alert'
+import { alertConfirm, alertError, alertInput, alertNormal } from 'src/ts/alert'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import {
   applyCollectionsResource,
@@ -294,6 +306,8 @@ import {
   resetPendingMutationOutboxForTests,
 } from 'src/ts/server/pendingMutationOutbox'
 import { dispatchDurableMutationReplay } from 'src/ts/server/durableMutationDispatch'
+import type { TranslatorPreset } from 'src/ts/translator/presets'
+import { selectSingleFile } from 'src/ts/util'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -366,6 +380,14 @@ async function clickCreatePreset(): Promise<void> {
   await tick()
   await flushMicrotasks()
   await tick()
+}
+
+async function selectTranslatorPresetImportFile(preset: TranslatorPreset): Promise<void> {
+  translatorPresetFileSpies.decodeTranslatorPresetFile.mockResolvedValueOnce(preset)
+  vi.mocked(selectSingleFile).mockResolvedValueOnce({
+    name: 'imported.risu-translator-preset',
+    data: new Uint8Array([1, 2, 3]),
+  })
 }
 
 async function clickDeletePreset(): Promise<void> {
@@ -534,8 +556,13 @@ beforeEach(() => {
   commandSpies.replayDurableMutationRequestsInline.mockClear()
   commandSpies.runServerCommandWithoutMutationReceipt.mockClear()
   commandSpies.runServerCommandWithMutationReceipt.mockClear()
+  translatorPresetFileSpies.decodeTranslatorPresetFile.mockReset()
   vi.mocked(alertConfirm).mockClear()
+  vi.mocked(alertError).mockClear()
   vi.mocked(alertInput).mockClear()
+  vi.mocked(alertNormal).mockClear()
+  vi.mocked(selectSingleFile).mockReset()
+  vi.mocked(selectSingleFile).mockResolvedValue(null)
 
   setResourceWriteGuardEnabled(false)
   resetServerResourceState()
@@ -1123,6 +1150,81 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(commandSpies.updateInputs.some((input) => input.presetId === createdPresetId)).toBe(false)
   })
 
+  it('waits for an imported translator preset to be accepted before reporting success', async () => {
+    commandSpies.deferNextCreate = true
+    await selectTranslatorPresetImportFile({
+      name: 'Imported Preset',
+      prompt: 'Imported prompt',
+      maxResponse: 321,
+    })
+
+    toolbarButton(4).click()
+    await tick()
+    await flushMicrotasks()
+
+    expect(commandSpies.createInputs).toHaveLength(1)
+    expect(alertNormal).not.toHaveBeenCalled()
+    commandSpies.deferredCreateResults.shift()!.resolve({ status: 'ok' })
+
+    await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.successImport))
+    expect(alertError).not.toHaveBeenCalled()
+  })
+
+  it('keeps a retryable translator import visible and reports that it is queued', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-import',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-translator-import',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.failNextCreate = true
+    commandSpies.skipNextRollback = true
+    await selectTranslatorPresetImportFile({
+      name: 'Queued Preset',
+      prompt: 'Queued prompt',
+      maxResponse: 654,
+    })
+
+    try {
+      toolbarButton(4).click()
+
+      await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.translatorPresetImportQueued))
+      expect(alertNormal).not.toHaveBeenCalledWith(language.successImport)
+      expect(alertError).not.toHaveBeenCalled()
+      expect(getDatabase().translatorPresets.at(-1)).toMatchObject({
+        name: 'Queued Preset',
+        prompt: 'Queued prompt',
+        maxResponse: 654,
+      })
+      expect(await listPendingMutations()).toHaveLength(1)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
+  it('reports a rejected translator import as failed instead of successful', async () => {
+    commandSpies.deferNextCreate = true
+    await selectTranslatorPresetImportFile({
+      name: 'Rejected Preset',
+      prompt: 'Rejected prompt',
+      maxResponse: 987,
+    })
+
+    toolbarButton(4).click()
+    await tick()
+    await flushMicrotasks()
+    commandSpies.deferredCreateResults.shift()!.resolve({ status: 'error', error: 'invalid import' })
+
+    await vi.waitFor(() => expect(alertError).toHaveBeenCalledWith(language.translatorPresetImportFailed))
+    expect(alertNormal).not.toHaveBeenCalledWith(language.successImport)
+    expect(getDatabase().translatorPresets.map((preset) => preset.name)).not.toContain('Rejected Preset')
+  })
+
   it('replays a retained create before an edit to its new translator preset owner', async () => {
     vi.useRealTimers()
     vi.stubGlobal('indexedDB', new IDBFactory())
@@ -1144,8 +1246,11 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
       await failDeferredCommand(commandSpies.deferredCreateResults, 'transient create failure')
       await vi.waitFor(() => {
-        expect(getDatabase().translatorPresets.some((preset) => preset.id === createdPresetId)).toBe(false)
+        expect(getDatabase().translatorPresets.some((preset) => preset.id === createdPresetId)).toBe(true)
       })
+      expect(getDatabase().translatorPresets.find((preset) => preset.id === createdPresetId)?.prompt).toBe(
+        'draft after retained create',
+      )
 
       const retained = await listPendingMutations()
       expect(retained.map((entry) => entry.handle.key)).toEqual([
@@ -1478,6 +1583,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
       await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
       expect(commandSpies.selectInputs).toEqual([])
+      expect(currentSelectedPresetId()).toBe('preset-b')
       const retained = await listPendingMutations()
       expect(retained.map((entry) => entry.handle.key)).toEqual([
         'translator-preset:preset-a',
@@ -1541,11 +1647,11 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     try {
       await clickDeletePreset()
       await vi.waitFor(() => {
-        expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+        expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-c'])
       })
       await tick()
       commandSpies.inlineReplayResults.push({ status: 'error', error: 'delete fallback still offline' })
-      await selectTranslatorPreset(2)
+      await selectTranslatorPreset(1)
 
       await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
       expect(commandSpies.selectInputs).toEqual([])
@@ -1555,7 +1661,8 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         ['translator-preset:selection', 'POST'],
       ])
       expect(retained[0].intent.dependencyKeys).toEqual(['translator-preset:preset-a'])
-      expect(retained[1].intent.dependencyKeys).toEqual(['translator-preset:preset-a', 'translator-preset:preset-c'])
+      expect(retained[1].intent.dependencyKeys).toEqual(['translator-preset:preset-b', 'translator-preset:preset-c'])
+      expect(currentSelectedPresetId()).toBe('preset-c')
 
       for (const entry of retained) {
         await expect(dispatchDurableMutationReplay(entry.handle, entry.intent)).resolves.toMatchObject({
@@ -1587,7 +1694,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     }
   })
 
-  it('retains PATCH then DELETE order after a transient predecessor and restores the latest optimistic row', async () => {
+  it('retains PATCH then DELETE order without resurrecting the optimistically deleted row', async () => {
     vi.useRealTimers()
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -1631,9 +1738,9 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         ])
       })
       expect(commandSpies.deleteInputs).toEqual([])
-      expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
-      expect(getDatabase().translatorPresets[0].prompt).toBe('latest optimistic prompt A')
-      expect(getDatabase().translatorPrompt).toBe('latest optimistic prompt A')
+      expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+      expect(currentSelectedPresetId()).toBe('preset-b')
+      expect(getDatabase().translatorPrompt).toBe('old prompt B')
 
       const retained = await listPendingMutations()
       for (const entry of retained) {
@@ -1667,7 +1774,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     }
   })
 
-  it('restores and reasserts the pre-flush optimistic row when PATCH retry succeeds but DELETE fails', async () => {
+  it('reasserts a retryable optimistic delete after an authoritative collection projection', async () => {
     vi.useRealTimers()
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -1696,11 +1803,8 @@ describe('TranslatorPresetSettings server-backed edits', () => {
           body: { patch: { prompt: 'pre-flush optimistic prompt A' } },
         },
       ])
-      expect(getDatabase().translatorPresets[0]).toMatchObject({
-        id: 'preset-a',
-        prompt: 'pre-flush optimistic prompt A',
-      })
-      expect(getDatabase().translatorPrompt).toBe('pre-flush optimistic prompt A')
+      expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+      expect(getDatabase().translatorPrompt).toBe('old prompt B')
 
       await applyTranslatorPresetProjection({
         presets: [
@@ -1709,8 +1813,8 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         ],
         selectedIndex: 0,
       })
-      expect(getDatabase().translatorPresets[0].prompt).toBe('pre-flush optimistic prompt A')
-      expect(getDatabase().translatorPrompt).toBe('pre-flush optimistic prompt A')
+      expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+      expect(getDatabase().translatorPrompt).toBe('old prompt B')
 
       const retainedDelete = await listPendingMutations()
       expect(retainedDelete.map((entry) => entry.intent)).toEqual([
