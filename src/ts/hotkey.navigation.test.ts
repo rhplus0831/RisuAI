@@ -150,6 +150,49 @@ describe('global hotkey route ownership', () => {
     sendButton.remove()
   })
 
+  it('leaves native modal editing and focus-navigation keys untouched', async () => {
+    alertStore.set({ type: 'input', msg: 'Name' })
+    const modalRoot = document.createElement('div')
+    modalRoot.dataset.modalRoot = ''
+    const input = document.createElement('input')
+    const button = document.createElement('button')
+    modalRoot.append(input, button)
+    document.body.appendChild(modalRoot)
+
+    input.focus()
+    const shiftedCharacter = new KeyboardEvent('keydown', {
+      key: 'A',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    input.dispatchEvent(shiftedCharacter)
+
+    const paste = new KeyboardEvent('keydown', {
+      key: 'v',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    input.dispatchEvent(paste)
+
+    button.focus()
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    button.dispatchEvent(tab)
+    const activate = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    button.dispatchEvent(activate)
+
+    expect(shiftedCharacter.defaultPrevented).toBe(false)
+    expect(paste.defaultPrevented).toBe(false)
+    expect(tab.defaultPrevented).toBe(false)
+    expect(activate.defaultPrevented).toBe(false)
+    expect(hotkeyNavigationMocks.openSettingsRoute).not.toHaveBeenCalled()
+    expect(hotkeyNavigationMocks.navigate).not.toHaveBeenCalled()
+
+    alertStore.set({ type: 'none', msg: '' })
+    modalRoot.remove()
+  })
+
   it('leaves Escape from an editable select to its owning control', async () => {
     settingsOpen.set(true)
     const select = document.createElement('select')

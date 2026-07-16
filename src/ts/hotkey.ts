@@ -37,9 +37,6 @@ import { closeSettingsRoute, navigate, openSettingsRoute } from './router'
 export function initHotkey() {
   const handleHotkeyKeydown = async (ev: KeyboardEvent): Promise<void> => {
     if (ev.defaultPrevented) return
-    if (!ev.ctrlKey && !ev.altKey && !ev.shiftKey && isEditableHotkeyTarget(ev)) {
-      return
-    }
 
     const activeAlert = get(alertStore)
     if (activeAlert.type !== 'none' && activeAlert.type !== 'toast') {
@@ -56,21 +53,56 @@ export function initHotkey() {
         return
       }
 
+      // The modal boundary already prevents app shortcuts from reaching the
+      // page behind it. Keep native editing, composition, and control
+      // activation available inside the modal regardless of modifiers.
+      if (isEditableHotkeyTarget(ev)) return
+
       if (ev.key === 'Enter') {
         const target = ev.target
         if (target instanceof Element && target.closest('[data-modal-root] button')) return
 
+        let handled = true
         if (activeAlert.type === 'ask' || activeAlert.type === 'pluginconfirm') {
           resolveAlertConfirmation(activeAlert.dialogOwner, true)
         } else if (activeAlert.type === 'normal' || activeAlert.type === 'error') {
           alertStore.set({ type: 'none', msg: 'yes' })
+        } else {
+          handled = false
+        }
+
+        if (handled) {
+          ev.preventDefault()
+          ev.stopPropagation()
+          return
         }
       }
 
-      // A modal owns keyboard input. Modifier shortcuts must not navigate or
-      // mutate the inert page behind it.
-      ev.preventDefault()
-      ev.stopPropagation()
+      if (ev.key === 'Tab') return
+
+      const target = ev.target
+      if (
+        (ev.key === ' ' || ev.key === 'Enter') &&
+        target instanceof Element &&
+        target.closest('[data-modal-root] button, [data-modal-root] a[href]')
+      ) {
+        return
+      }
+
+      // Suppress only shortcuts that would otherwise run a global app action.
+      // Cancelling every modal keydown also cancels native Tab, text selection,
+      // and shifted characters.
+      const modalHotkeys = getDatabase()?.hotkeys ?? defaultHotkeys
+      const matchesConfiguredHotkey = modalHotkeys.some((hotkey) => hotkeyMatches(hotkey, ev))
+      const matchesPresetHotkey = ev.ctrlKey && /^[1-9]$/.test(ev.key)
+      if (matchesConfiguredHotkey || matchesPresetHotkey) {
+        ev.preventDefault()
+        ev.stopPropagation()
+      }
+      return
+    }
+
+    if (!ev.ctrlKey && !ev.altKey && !ev.shiftKey && isEditableHotkeyTarget(ev)) {
       return
     }
 
