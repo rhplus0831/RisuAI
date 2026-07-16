@@ -525,6 +525,9 @@ type SplitPresetRow = ModelPreset | PromptPreset
 interface SplitPresetPatchFieldAttempt {
   previousPresent: boolean
   previousValue: unknown
+  durableAttemptedPresent: boolean
+  durableAttemptedValue: unknown
+  attemptedPresent: boolean
   attemptedValue: unknown
 }
 
@@ -539,6 +542,9 @@ interface PendingSplitPresetPatch {
   selectedPromptPresetId: string | null
   promptOwnerProjectionEpoch: number | null
   promptOwnerRevision: number | null
+  durableFieldNames: Set<string>
+  durableProjectionFieldNames: Set<string>
+  correctionOnly: boolean
   intent: DurableMutationIntent | null
   outbox: PendingMutationHandle | null
   timer: ReturnType<typeof setTimeout> | null
@@ -611,10 +617,17 @@ function splitPresetPatchKey(kind: SplitPresetKind, presetId: string): string {
   return `${kind}:${presetId}`
 }
 
+function splitPresetMutationKey(kind: SplitPresetKind, presetId: string): string {
+  return kind === 'prompt' ? promptTemplateOwnerMutationKey(presetId) : `split-preset:model:${presetId}`
+}
+
 function cloneSplitPresetPatchFieldAttempt(field: SplitPresetPatchFieldAttempt): SplitPresetPatchFieldAttempt {
   return {
     previousPresent: field.previousPresent,
     previousValue: safeStructuredClone(field.previousValue),
+    durableAttemptedPresent: field.durableAttemptedPresent,
+    durableAttemptedValue: safeStructuredClone(field.durableAttemptedValue),
+    attemptedPresent: field.attemptedPresent,
     attemptedValue: safeStructuredClone(field.attemptedValue),
   }
 }
@@ -629,6 +642,7 @@ function queueSplitPresetPatch(
 
   const pendingKey = splitPresetPatchKey(kind, presetId)
   let pending = pendingSplitPresetPatches.get(pendingKey)
+  let createdPending = false
   if (!pending) {
     const selectedPresetId = currentSplitPresetSelectedId(kind)
     const selectedPromptPresetId = currentSplitPresetSelectedId('prompt')
@@ -644,35 +658,50 @@ function queueSplitPresetPatch(
       selectedPromptPresetId,
       promptOwnerProjectionEpoch: capturesPromptOwner ? capturePromptTemplateOwnerProjectionEpoch(presetId) : null,
       promptOwnerRevision: capturesPromptOwner ? peekPromptTemplateOwnerRevision(presetId) : null,
+      durableFieldNames: new Set(),
+      durableProjectionFieldNames: new Set(),
+      correctionOnly: false,
       intent: null,
       outbox: null,
       timer: null,
     }
     pendingSplitPresetPatches.set(pendingKey, pending)
+    createdPending = true
   }
 
+  let desiredChanged = false
   for (const [fieldName, attemptedValue] of Object.entries(patch)) {
     if (fieldName === 'id') continue
     const existing = pending.fields.get(fieldName)
     if (existing) {
+      if (
+        !splitPresetPatchFieldValuesDiffer(existing.attemptedPresent, existing.attemptedValue, true, attemptedValue)
+      ) {
+        continue
+      }
+      desiredChanged = true
+      existing.attemptedPresent = true
       existing.attemptedValue = safeStructuredClone(attemptedValue)
       continue
     }
+    const previousPresent = Object.prototype.hasOwnProperty.call(preset, fieldName)
+    const previousValue = safeStructuredClone(preset[fieldName])
+    if (!splitPresetPatchFieldValuesDiffer(previousPresent, previousValue, true, attemptedValue)) continue
+    desiredChanged = true
     pending.fields.set(fieldName, {
-      previousPresent: Object.prototype.hasOwnProperty.call(preset, fieldName),
-      previousValue: safeStructuredClone(preset[fieldName]),
+      previousPresent,
+      previousValue,
+      durableAttemptedPresent: previousPresent,
+      durableAttemptedValue: safeStructuredClone(previousValue),
+      attemptedPresent: true,
       attemptedValue: safeStructuredClone(attemptedValue),
     })
   }
 
-  if (pending.fields.size === 0) {
-    if (pending.outbox) void acknowledgePendingMutation(pending.outbox)
-    pendingSplitPresetPatches.delete(pendingKey)
+  if (!desiredChanged) {
+    if (createdPending) pendingSplitPresetPatches.delete(pendingKey)
     return null
   }
-  refreshPendingSplitPresetDurability(pending)
-  if (pending.timer) clearTimeout(pending.timer)
-  pending.timer = setTimeout(() => flushPendingSplitPresetPatch(kind, presetId), SPLIT_PRESET_PATCH_DELAY_MS)
   return pending
 }
 
@@ -683,9 +712,14 @@ function captureSplitPresetProjectionFields(
   const projectionFields = new Map<string, SplitPresetPatchFieldAttempt>()
   const database = getDatabase() as unknown as Record<string, unknown>
   for (const fieldName of splitPresetProjectionFieldNames(kind, patch)) {
+    const previousPresent = Object.prototype.hasOwnProperty.call(database, fieldName)
+    const previousValue = safeStructuredClone(database[fieldName])
     projectionFields.set(fieldName, {
-      previousPresent: Object.prototype.hasOwnProperty.call(database, fieldName),
-      previousValue: safeStructuredClone(database[fieldName]),
+      previousPresent,
+      previousValue,
+      durableAttemptedPresent: previousPresent,
+      durableAttemptedValue: safeStructuredClone(previousValue),
+      attemptedPresent: false,
       attemptedValue: undefined,
     })
   }
@@ -728,17 +762,44 @@ function recordSplitPresetProjectionFields(
   if (!pending) return
   const database = getDatabase() as unknown as Record<string, unknown>
   for (const [fieldName, previousField] of previousFields) {
+    const attemptedPresent = Object.prototype.hasOwnProperty.call(database, fieldName)
     const existing = pending.projectionFields.get(fieldName)
     if (existing) {
+      existing.attemptedPresent = attemptedPresent
       existing.attemptedValue = safeStructuredClone(database[fieldName])
       continue
     }
     pending.projectionFields.set(fieldName, {
       previousPresent: previousField.previousPresent,
       previousValue: previousField.previousValue,
+      durableAttemptedPresent: previousField.previousPresent,
+      durableAttemptedValue: safeStructuredClone(previousField.previousValue),
+      attemptedPresent,
       attemptedValue: safeStructuredClone(database[fieldName]),
     })
   }
+}
+
+function schedulePendingSplitPresetPatch(pending: PendingSplitPresetPatch): void {
+  const pendingKey = splitPresetPatchKey(pending.kind, pending.presetId)
+  const durability = refreshPendingSplitPresetDurability(pending)
+  if (pending.timer) clearTimeout(pending.timer)
+  pending.timer = null
+
+  if (durability === 'none') {
+    if (pendingSplitPresetPatches.get(pendingKey) === pending) {
+      pendingSplitPresetPatches.delete(pendingKey)
+    }
+    return
+  }
+  if (durability === 'correction') {
+    flushPendingSplitPresetPatch(pending.kind, pending.presetId)
+    return
+  }
+  pending.timer = setTimeout(
+    () => flushPendingSplitPresetPatch(pending.kind, pending.presetId),
+    SPLIT_PRESET_PATCH_DELAY_MS,
+  )
 }
 
 export function flushPendingSplitPresetPatch(
@@ -775,13 +836,31 @@ export function flushPendingSplitPresetPatches(options: ServerCommandTransportOp
 
 registerPendingBridgePatchFlusher('split-preset-fields', flushPendingSplitPresetPatches)
 
-function splitPresetPatchPayload(fields: Map<string, SplitPresetPatchFieldAttempt>): Record<string, unknown> {
+function splitPresetPatchPayload(
+  fields: Map<string, SplitPresetPatchFieldAttempt>,
+  include: (field: SplitPresetPatchFieldAttempt) => boolean = splitPresetPatchFieldIsNetChange,
+): Record<string, unknown> {
   const patch: Record<string, unknown> = {}
   for (const [fieldName, field] of fields) {
-    if (!splitPresetPatchFieldIsNetChange(field)) continue
+    if (!include(field) || !field.attemptedPresent) continue
     patch[fieldName] = safeStructuredClone(field.attemptedValue)
   }
   return patch
+}
+
+function splitPresetPatchDurableClosureFieldNames(fields: Map<string, SplitPresetPatchFieldAttempt>): Set<string> {
+  const fieldNames = new Set<string>()
+  for (const [fieldName, field] of fields) {
+    if (splitPresetPatchFieldIsDurableClosure(field)) fieldNames.add(fieldName)
+  }
+  return fieldNames
+}
+
+function markSplitPresetPatchFieldsDurablyAttempted(fields: Map<string, SplitPresetPatchFieldAttempt>): void {
+  for (const field of fields.values()) {
+    field.durableAttemptedPresent = field.attemptedPresent
+    field.durableAttemptedValue = safeStructuredClone(field.attemptedValue)
+  }
 }
 
 function splitPresetPatchDurableIntent(
@@ -801,42 +880,51 @@ function splitPresetPatchDurableIntent(
   }
 }
 
-function refreshPendingSplitPresetDurability(pending: PendingSplitPresetPatch): void {
-  const patch = splitPresetPatchPayload(pending.fields)
+function refreshPendingSplitPresetDurability(pending: PendingSplitPresetPatch): 'none' | 'correction' | 'net' {
+  const netPatch = splitPresetPatchPayload(pending.fields)
+  const patch = splitPresetPatchPayload(pending.fields, splitPresetPatchFieldIsDurableClosure)
   if (Object.keys(patch).length === 0) {
     if (pending.outbox) void acknowledgePendingMutation(pending.outbox)
+    pending.durableFieldNames.clear()
+    pending.durableProjectionFieldNames.clear()
+    pending.correctionOnly = false
     pending.intent = null
     pending.outbox = null
-    return
+    return 'none'
   }
   const intent = splitPresetPatchDurableIntent(pending.kind, pending.presetId, patch)
   pending.intent = intent
-  const mutationKey =
-    pending.kind === 'prompt'
-      ? promptTemplateOwnerMutationKey(pending.presetId)
-      : `split-preset:${pending.kind}:${pending.presetId}`
-  pending.outbox = stagePendingMutation(mutationKey, intent, pending.outbox)
+  pending.outbox = stagePendingMutation(splitPresetMutationKey(pending.kind, pending.presetId), intent, pending.outbox)
+  pending.durableFieldNames = splitPresetPatchDurableClosureFieldNames(pending.fields)
+  pending.durableProjectionFieldNames = splitPresetPatchDurableClosureFieldNames(pending.projectionFields)
+  pending.correctionOnly = Object.keys(netPatch).length === 0
+  markSplitPresetPatchFieldsDurablyAttempted(pending.fields)
+  markSplitPresetPatchFieldsDurablyAttempted(pending.projectionFields)
+  return pending.correctionOnly ? 'correction' : 'net'
 }
 
 function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: ServerCommandTransportOptions): void {
-  refreshPendingSplitPresetDurability(pending)
   const fields = new Map<string, SplitPresetPatchFieldAttempt>()
-  const patch = splitPresetPatchPayload(pending.fields)
+  const patch: Record<string, unknown> = {}
   for (const [fieldName, field] of pending.fields) {
-    if (!splitPresetPatchFieldIsNetChange(field)) continue
+    if (!pending.durableFieldNames.has(fieldName) || !field.attemptedPresent) continue
     fields.set(fieldName, cloneSplitPresetPatchFieldAttempt(field))
+    patch[fieldName] = safeStructuredClone(field.attemptedValue)
   }
   if (fields.size === 0 || !pending.intent || !pending.outbox) return
 
   const projectionFields = new Map<string, SplitPresetPatchFieldAttempt>()
   for (const [fieldName, field] of pending.projectionFields) {
-    if (!splitPresetPatchFieldIsNetChange(field)) continue
+    if (!pending.durableProjectionFieldNames.has(fieldName)) continue
     projectionFields.set(fieldName, cloneSplitPresetPatchFieldAttempt(field))
   }
 
   const attemptedSettings = Object.fromEntries(
     Array.from(projectionFields.entries())
-      .filter(([fieldName]) => !(pending.kind === 'prompt' && fieldName === 'promptTemplate'))
+      .filter(
+        ([fieldName, field]) =>
+          field.attemptedPresent && !(pending.kind === 'prompt' && fieldName === 'promptTemplate'),
+      )
       .map(([fieldName, field]) => [fieldName, safeStructuredClone(field.attemptedValue)]),
   )
   const selectedProjectionExpected =
@@ -844,11 +932,14 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
   const livePreset = splitPresetList(pending.kind).find((preset) => preset?.id === pending.presetId) as
     | Record<string, unknown>
     | undefined
+  if (!livePreset) {
+    void acknowledgePendingMutation(pending.outbox)
+    return
+  }
   const ownerProjectionExpected =
     pending.kind === 'prompt' &&
     pending.selectedPresetId === pending.presetId &&
     Object.prototype.hasOwnProperty.call(patch, 'promptTemplate') &&
-    !!livePreset &&
     Object.prototype.hasOwnProperty.call(livePreset, 'promptTemplate')
 
   const attempt: DispatchedSplitPresetPatch = {
@@ -938,8 +1029,35 @@ function taintSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): void
 }
 
 function splitPresetPatchFieldIsNetChange(field: SplitPresetPatchFieldAttempt): boolean {
-  if (!field.previousPresent && field.attemptedValue === undefined) return false
-  return !field.previousPresent || jsonSnapshot(field.previousValue) !== jsonSnapshot(field.attemptedValue)
+  return splitPresetPatchFieldValuesDiffer(
+    field.previousPresent,
+    field.previousValue,
+    field.attemptedPresent,
+    field.attemptedValue,
+  )
+}
+
+function splitPresetPatchFieldIsDurableClosure(field: SplitPresetPatchFieldAttempt): boolean {
+  return (
+    splitPresetPatchFieldIsNetChange(field) ||
+    splitPresetPatchFieldValuesDiffer(
+      field.durableAttemptedPresent,
+      field.durableAttemptedValue,
+      field.attemptedPresent,
+      field.attemptedValue,
+    )
+  )
+}
+
+function splitPresetPatchFieldValuesDiffer(
+  leftPresent: boolean,
+  leftValue: unknown,
+  rightPresent: boolean,
+  rightValue: unknown,
+): boolean {
+  if (leftPresent !== rightPresent) return true
+  if (!leftPresent) return false
+  return jsonSnapshot(leftValue) !== jsonSnapshot(rightValue)
 }
 
 function settleSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch, accepted: boolean): void {
@@ -958,7 +1076,7 @@ function settleSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch, acce
   if (pending) {
     rebaseSplitPresetPatchFields(pending.fields, attempt.fields, accepted)
     rebaseSplitPresetPatchFields(pending.projectionFields, attempt.projectionFields, accepted)
-    refreshPendingSplitPresetDurability(pending)
+    schedulePendingSplitPresetPatch(pending)
   }
 
   if (attemptIndex >= 0) unsettled.splice(attemptIndex, 1)
@@ -989,8 +1107,17 @@ function rollbackSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): v
       if (index >= 0) {
         const preset = presets[index] as Record<string, unknown>
         for (const [fieldName, field] of attempt.fields) {
-          if (!Object.prototype.hasOwnProperty.call(preset, fieldName)) continue
-          if (jsonSnapshot(preset[fieldName]) !== jsonSnapshot(field.attemptedValue)) continue
+          const livePresent = Object.prototype.hasOwnProperty.call(preset, fieldName)
+          if (
+            splitPresetPatchFieldValuesDiffer(
+              livePresent,
+              preset[fieldName],
+              field.attemptedPresent,
+              field.attemptedValue,
+            )
+          ) {
+            continue
+          }
           if (field.previousPresent) {
             preset[fieldName] = safeStructuredClone(field.previousValue)
           } else {
@@ -1013,8 +1140,17 @@ function rollbackSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): v
       ) {
         continue
       }
-      if (!Object.prototype.hasOwnProperty.call(database, fieldName)) continue
-      if (jsonSnapshot(database[fieldName]) !== jsonSnapshot(field.attemptedValue)) continue
+      const livePresent = Object.prototype.hasOwnProperty.call(database, fieldName)
+      if (
+        splitPresetPatchFieldValuesDiffer(
+          livePresent,
+          database[fieldName],
+          field.attemptedPresent,
+          field.attemptedValue,
+        )
+      ) {
+        continue
+      }
       if (field.previousPresent) {
         database[fieldName] = safeStructuredClone(field.previousValue)
       } else {
@@ -4375,6 +4511,7 @@ export function updateModelPreset(id: number, patch: Partial<ModelPreset>) {
       applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
     }
     recordSplitPresetProjectionFields(pending, previousProjectionFields)
+    if (pending) schedulePendingSplitPresetPatch(pending)
   })
 }
 
@@ -4394,6 +4531,17 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
     const selectModelPresetId = nextSelectedPreset?.id
     if (!modelPresetId || !previousPreset) return
     flushPendingSplitPresetPatches()
+    const deleteIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'DELETE',
+          path: `/model-presets/${encodeURIComponent(modelPresetId)}`,
+          body: { modelPresetId: selectModelPresetId },
+        },
+      ],
+    }
+    const deleteOutbox = stagePendingMutation(splitPresetMutationKey('model', modelPresetId), deleteIntent)
     db.modelPresets.splice(id, 1)
     db.modelPresets = db.modelPresets
     const selectedIndex = selectModelPresetId
@@ -4408,19 +4556,20 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
+    void dispatchDurableMutation(deleteOutbox, deleteIntent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
           deleteModelPresetCommand({
             baseRevision,
             modelPresetId,
             selectModelPresetId,
           }),
-      ],
-      () => {
-        rollbackSplitPresetDelete('model', previousPreset, id)
-        rollbackSplitPresetSelection(selectionRollback)
-      },
+        rollback: () => {
+          rollbackSplitPresetDelete('model', previousPreset, id)
+          rollbackSplitPresetSelection(selectionRollback)
+        },
+        ...transport,
+      }),
     )
   })
 }
@@ -4623,6 +4772,7 @@ export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
       applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
     }
     recordSplitPresetProjectionFields(pending, previousProjectionFields)
+    if (pending) schedulePendingSplitPresetPatch(pending)
   })
 }
 

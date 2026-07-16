@@ -120,6 +120,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'DELETE', path: /^\/prompt-items\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/personas\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/model-presets\/[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/model-presets\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/prompt-presets\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/prompt-presets\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/translator-presets\/[^/?#]+$/ },

@@ -61,6 +61,7 @@ import {
 } from './database.svelte'
 import { flushRegisteredPendingBridgePatches } from '../server/pendingBridgeFlushRegistry'
 import {
+  beginPendingMutationDispatch,
   clearPendingMutationOutbox,
   listPendingMutations,
   preparePendingMutationOutbox,
@@ -1850,14 +1851,142 @@ describe('preset command rollback (L21)', () => {
     }
   })
 
-  it('suppresses baseline reverts and omits undefined values from local and server patches', async () => {
+  it.each([
+    { kind: 'model' as const, revert: 'total' as const, mutationKey: 'split-preset:model:model-marker' },
+    { kind: 'model' as const, revert: 'partial' as const, mutationKey: 'split-preset:model:model-marker' },
+    { kind: 'prompt' as const, revert: 'total' as const, mutationKey: 'prompt-template-owner:prompt-marker' },
+    { kind: 'prompt' as const, revert: 'partial' as const, mutationKey: 'prompt-template-owner:prompt-marker' },
+  ])('keeps a marked $kind predecessor ahead of its $revert-revert absolute closure', async (testCase) => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: `writer-${testCase.kind}-${testCase.revert}-revert`,
+      writerEpoch: 5,
+      databaseLineage: `lineage-${testCase.kind}-${testCase.revert}-revert`,
+      requestedWriterWasActive: true,
+    })
+
+    const presetId = `${testCase.kind}-marker`
+    const baselineName = `${testCase.kind} baseline`
+    const preset = {
+      ...(makePreset(presetId, baselineName, { temperature: 11 }) as unknown as ModelPreset & PromptPreset),
+      ...(testCase.kind === 'prompt' ? { overrideModelParameters: true } : {}),
+    }
+    seedPresetDatabase({
+      ...(testCase.kind === 'model'
+        ? {
+            modelPresets: [preset as ModelPreset],
+            modelPresetsId: 0,
+          }
+        : {
+            promptPresets: [preset as PromptPreset],
+            promptPresetsId: 0,
+            promptTemplate: clonePlain(preset.promptTemplate),
+          }),
+      temperature: 11,
+    })
+    setCachedServerCommandRevision(100)
+
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout')
+
+    const firstResponse = deferred<Response>()
+    const calls: CapturedFetch[] = []
+    let revision = 100
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        const commandUrl = `/api/v1/commands/${testCase.kind}-presets/${presetId}`
+        if (url !== commandUrl) return jsonResponse({ error: `unexpected ${url}` }, 404)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        revision += 1
+        if (calls.length === 1) return firstResponse.promise
+        return jsonResponse({
+          revision,
+          event: {
+            type: `${testCase.kind}Preset.updated`,
+            revision,
+            resource: 'preset',
+            id: presetId,
+          },
+          [`${testCase.kind}PresetId`]: presetId,
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    const update = (patch: Partial<ModelPreset & PromptPreset>) => {
+      if (testCase.kind === 'model') updateModelPreset(0, patch as Partial<ModelPreset>)
+      else updatePromptPreset(0, patch as Partial<PromptPreset>)
+    }
+
+    try {
+      update({ name: `${testCase.kind} predecessor`, temperature: 22 })
+      let entries: Awaited<ReturnType<typeof listPendingMutations>> = []
+      await vi.waitFor(async () => {
+        entries = await listPendingMutations()
+        expect(entries).toHaveLength(1)
+      })
+      const predecessor = entries[0]!
+      await expect(beginPendingMutationDispatch(predecessor.handle)).resolves.toBe('persisted')
+
+      const finalName = testCase.revert === 'total' ? baselineName : `${testCase.kind} final`
+      const debouncesBeforeFinal = timeoutSpy.mock.calls.filter(([, delay]) => delay === 250).length
+      update({ name: finalName, temperature: 11 })
+      const debouncesAfterFinal = timeoutSpy.mock.calls.filter(([, delay]) => delay === 250).length
+      expect(debouncesAfterFinal - debouncesBeforeFinal).toBe(testCase.revert === 'total' ? 0 : 1)
+      if (testCase.revert === 'partial') flushPendingSplitPresetPatch(testCase.kind, presetId)
+
+      await waitForState(() => expect(calls).toHaveLength(1))
+      entries = await listPendingMutations()
+      expect(entries.map((entry) => entry.handle.key)).toEqual([testCase.mutationKey, testCase.mutationKey])
+      expect(entries[0]?.handle.mutationId).toBe(predecessor.handle.mutationId)
+      expect(entries[1]?.handle.mutationId).not.toBe(predecessor.handle.mutationId)
+      expect(entries.map((entry) => entry.intent.requests[0]?.body)).toEqual([
+        { patch: { name: `${testCase.kind} predecessor`, temperature: 22 } },
+        { patch: { name: finalName, temperature: 11 } },
+      ])
+
+      firstResponse.resolve(
+        jsonResponse({
+          revision: 101,
+          event: {
+            type: `${testCase.kind}Preset.updated`,
+            revision: 101,
+            resource: 'preset',
+            id: presetId,
+          },
+          [`${testCase.kind}PresetId`]: presetId,
+        }),
+      )
+      await waitForState(() => expect(calls).toHaveLength(2))
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+
+      expect(calls.map((call) => call.body.patch)).toEqual([
+        { name: `${testCase.kind} predecessor`, temperature: 22 },
+        { name: finalName, temperature: 11 },
+      ])
+      const livePreset = testCase.kind === 'model' ? getDatabase().modelPresets[0] : getDatabase().promptPresets[0]
+      expect(livePreset).toMatchObject({ name: finalName, temperature: 11 })
+      expect(getDatabase().temperature).toBe(11)
+    } finally {
+      firstResponse.resolve(jsonResponse({ error: 'test cleanup' }, 500))
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('dispatches a baseline correction immediately and omits undefined values from patches', async () => {
     seedPresetDatabase({
       modelPresets: [makePreset('model-a', 'Alpha') as unknown as ModelPreset],
       modelPresetsId: 0,
     })
     setCachedServerCommandRevision(100)
-    const fetchSpy = vi.fn()
-    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+    const calls = stubSuccessfulSplitPresetCommands()
 
     updateModelPreset(0, { name: 'Alph' })
     updateModelPreset(0, { name: 'Alpha' })
@@ -1865,13 +1994,14 @@ describe('preset command rollback (L21)', () => {
       optionalUnsetField: undefined,
       temperature: undefined,
     } as unknown as Partial<ModelPreset>)
-    flushPendingSplitPresetPatches()
-    await Promise.resolve()
+
+    const command = await waitForPresetCommand(calls, '/model-presets/model-a')
 
     expect(getDatabase().modelPresets[0].name).toBe('Alpha')
     expect(getDatabase().modelPresets[0].temperature).toBe(30)
     expect(getDatabase().modelPresets[0]).not.toHaveProperty('optionalUnsetField')
-    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(command.body.patch).toEqual({ name: 'Alpha' })
+    expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')).toHaveLength(1)
   })
 
   it('drops a reverted projected field while retaining a metadata-only collection patch', async () => {
@@ -1888,7 +2018,7 @@ describe('preset command rollback (L21)', () => {
     flushPendingSplitPresetPatches()
 
     const command = await waitForPresetCommand(calls, '/model-presets/model-a')
-    expect(command.body.patch).toEqual({ name: 'Alpha renamed' })
+    expect(command.body.patch).toEqual({ temperature: 11, name: 'Alpha renamed' })
     expect(getDatabase().temperature).toBe(11)
   })
 
@@ -2132,6 +2262,171 @@ describe('preset command rollback (L21)', () => {
     }
   })
 
+  it('keeps model-preset DELETE behind a transient row PATCH and replays both in order', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-model-delete-order',
+      writerEpoch: 2,
+      databaseLineage: 'lineage-model-delete-order',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase({
+        modelPresets: [
+          makePreset('model-a', 'Model A', { temperature: 11 }) as unknown as ModelPreset,
+          makePreset('model-b', 'Model B', { temperature: 22 }) as unknown as ModelPreset,
+        ],
+        modelPresetsId: 0,
+        temperature: 11,
+      })
+      setCachedServerCommandRevision(100)
+
+      let recover = false
+      let revision = 100
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          const method = init.method ?? 'GET'
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          if (url !== '/api/v1/commands/model-presets/model-a') {
+            return jsonResponse({ error: `unexpected ${url}` }, 404)
+          }
+          calls.push({
+            url,
+            method,
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          })
+          if (!recover) return jsonResponse({ error: 'model preset temporarily unavailable' }, 500)
+          revision += 1
+          if (method === 'PATCH') {
+            return jsonResponse({
+              revision,
+              event: { type: 'modelPreset.updated', revision, resource: 'preset', id: 'model-a' },
+              modelPresetId: 'model-a',
+            })
+          }
+          return jsonResponse({
+            revision,
+            event: { type: 'modelPreset.deleted', revision, resource: 'preset', id: 'model-a' },
+            modelPresetId: 'model-a',
+            selectedModelPresetId: 'model-b',
+          })
+        }) as unknown as typeof fetch,
+      )
+
+      updateModelPreset(0, { name: 'Model A edited before delete', temperature: 44 })
+      deleteModelPreset(0, 1)
+
+      await waitForState(() => {
+        expect(calls.filter((call) => call.method === 'PATCH')).toHaveLength(2)
+      })
+      expect(calls.some((call) => call.method === 'DELETE')).toBe(false)
+      expect(
+        (await listPendingMutations()).map((entry) => ({ key: entry.handle.key, request: entry.intent.requests[0] })),
+      ).toEqual([
+        {
+          key: 'split-preset:model:model-a',
+          request: {
+            method: 'PATCH',
+            path: '/model-presets/model-a',
+            body: { patch: { name: 'Model A edited before delete', temperature: 44 } },
+          },
+        },
+        {
+          key: 'split-preset:model:model-a',
+          request: {
+            method: 'DELETE',
+            path: '/model-presets/model-a',
+            body: { modelPresetId: 'model-b' },
+          },
+        },
+      ])
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+
+      expect(calls.slice(recoveryStart).map((call) => `${call.method} ${call.url}`)).toEqual([
+        'PATCH /api/v1/commands/model-presets/model-a',
+        'DELETE /api/v1/commands/model-presets/model-a',
+      ])
+      expect(await listPendingMutations()).toEqual([])
+      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-b'])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('restores the latest optimistic model preset and settings when its durable delete fails', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-model-delete-rollback',
+      writerEpoch: 3,
+      databaseLineage: 'lineage-model-delete-rollback',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase({
+        modelPresets: [
+          makePreset('model-a', 'Model A', { temperature: 11 }) as unknown as ModelPreset,
+          makePreset('model-b', 'Model B', { temperature: 22 }) as unknown as ModelPreset,
+        ],
+        modelPresetsId: 0,
+        temperature: 11,
+      })
+      setCachedServerCommandRevision(100)
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          const method = init.method ?? 'GET'
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          calls.push({
+            url,
+            method,
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          })
+          if (method === 'DELETE') return jsonResponse({ error: 'forced model delete failure' }, 500)
+          return jsonResponse({
+            revision: 101,
+            event: { type: 'modelPreset.updated', revision: 101, resource: 'preset', id: 'model-a' },
+            modelPresetId: 'model-a',
+          })
+        }) as unknown as typeof fetch,
+      )
+
+      updateModelPreset(0, { name: 'Model A latest optimistic', temperature: 44 })
+      deleteModelPreset(0, 1)
+
+      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-b'])
+      expect(getDatabase().temperature).toBe(22)
+      await waitForState(() => {
+        expect(calls.map((call) => call.method)).toEqual(['PATCH', 'DELETE'])
+        expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b'])
+      })
+
+      expect(getDatabase().modelPresetsId).toBe(0)
+      expect(getDatabase().modelPresets[0]).toMatchObject({
+        id: 'model-a',
+        name: 'Model A latest optimistic',
+        temperature: 44,
+      })
+      expect(getDatabase().temperature).toBe(44)
+      expect((await listPendingMutations()).map((entry) => entry.intent.requests[0]?.method)).toEqual(['DELETE'])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('keeps prompt-preset DELETE behind a transient row PATCH and replays both in order', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -2344,6 +2639,54 @@ describe('preset command rollback (L21)', () => {
       }
 
       expect(calls).toHaveLength(2)
+      expect(getDatabase().modelPresets[0].temperature).toBe(30)
+      expect(getDatabase().temperature).toBe(30)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('immediately preserves a change away and back to an in-flight attempt when its predecessor fails', async () => {
+    vi.useFakeTimers()
+    try {
+      seedPresetDatabase({
+        modelPresets: [makePreset('model-a', 'Alpha', { temperature: 30 }) as unknown as ModelPreset],
+        modelPresetsId: 0,
+        temperature: 30,
+      })
+      setCachedServerCommandRevision(100)
+      const firstResponse = deferred<Response>()
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          calls.push({
+            url: String(input),
+            method: init.method ?? 'GET',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          })
+          if (calls.length === 1) return firstResponse.promise
+          return jsonResponse({ error: 'forced correction failure' }, 500)
+        }) as unknown as typeof fetch,
+      )
+
+      updateModelPreset(0, { temperature: 40 })
+      await vi.advanceTimersByTimeAsync(250)
+      expect(calls).toHaveLength(1)
+
+      updateModelPreset(0, { temperature: 50 })
+      expect(vi.getTimerCount()).toBe(1)
+      updateModelPreset(0, { temperature: 40 })
+
+      expect(vi.getTimerCount()).toBe(0)
+      expect(calls).toHaveLength(1)
+      firstResponse.resolve(jsonResponse({ error: 'forced predecessor failure' }, 500))
+      for (let attempt = 0; attempt < 20 && calls.length < 2; attempt += 1) {
+        await Promise.resolve()
+      }
+
+      expect(calls).toHaveLength(2)
+      expect(calls[1]?.body.patch).toEqual({ temperature: 40 })
       expect(getDatabase().modelPresets[0].temperature).toBe(30)
       expect(getDatabase().temperature).toBe(30)
     } finally {
