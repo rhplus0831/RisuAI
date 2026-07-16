@@ -2245,6 +2245,8 @@ export const languageEnglish = {
     apiKeyLabel: 'API Key',
     apiKeyOptionalLabel: 'API Key (optional)',
     savedSecretPlaceholder: 'Saved secret',
+    providerChangeClearedCredential:
+      "The previous provider's saved credential was cleared. Enter a credential for the new provider if required.",
     vertexProjectId: 'Project ID',
     vertexRegion: 'Region',
     vertexClientEmail: 'Client Email',

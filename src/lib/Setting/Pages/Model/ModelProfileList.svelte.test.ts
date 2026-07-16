@@ -158,6 +158,49 @@ describe('ModelProfileList', () => {
     expect(commandSpies.updateModelProfileDurably).not.toHaveBeenCalled()
   })
 
+  it.each(['custom-api', 'anthropic'] as const)(
+    'does not carry an OpenAI credential when the provider changes to %s',
+    async (nextProviderId) => {
+      getDatabase().modelProfiles[0] = {
+        id: 'profile-1',
+        name: 'OpenAI profile',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        providerOptions: { apiKey: 'openai-secret' },
+      }
+      component = mount(ModelProfileList, { target })
+      await tick()
+
+      const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+      if (!profileEditButton) throw new Error('Profile edit button not found')
+      profileEditButton.click()
+      await tick()
+
+      const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+      const providerSelect = dialog?.querySelector<HTMLSelectElement>('select')
+      expect(providerSelect).toBeTruthy()
+      expect(dialog?.querySelector('[data-secret-saved-state]')).not.toBeNull()
+
+      providerSelect!.value = nextProviderId
+      providerSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+      await tick()
+
+      expect(dialog?.querySelector('[data-secret-saved-state]')).toBeNull()
+      expect(dialog?.querySelector('[data-model-profile-provider-secret-reset]')?.textContent).toContain(
+        language.modelProfiles.providerChangeClearedCredential,
+      )
+
+      buttonByText(language.modelProfiles.save).click()
+      await flushAsync()
+
+      expect(commandSpies.updateModelProfileDurably).toHaveBeenCalledOnce()
+      const submitted = commandSpies.updateModelProfileDurably.mock.calls[0][1]
+      expect(submitted.providerId).toBe(nextProviderId)
+      expect(submitted.providerOptions?.apiKey).toBeUndefined()
+      expect(JSON.stringify(submitted)).not.toContain('__RISU_SECRET_MASKED__')
+    },
+  )
+
   it('sends the frozen profile baseline and keeps a conflicting draft after an authoritative refresh', async () => {
     getDatabase().modelProfiles = [
       {

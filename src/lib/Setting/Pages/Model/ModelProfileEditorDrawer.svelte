@@ -94,6 +94,7 @@
   let runtimeOptions = $state<ModelProfileRecordRuntimeOptions>(cloneJsonValue(initialProfile?.runtimeOptions ?? {}))
   let fallbacks = $state<ModelProfileRecordFallbackRef[]>(cloneJsonValue(initialProfile?.fallbacks ?? []))
   let initialSnapshot = $state('')
+  let providerCredentialReset = $state(false)
 
   let canEditProviderFields = $derived(
     mode === 'create' || (!!initialProfile?.providerId && firstClassProviderIds.has(initialProfile.providerId)),
@@ -168,6 +169,13 @@
   }
 
   function setProviderId(nextProviderId: string): void {
+    if (nextProviderId === providerId) return
+
+    const clearedCredential = secretDraftHasCredential(apiKeyDraft) || secretDraftHasCredential(vertexPrivateKeyDraft)
+    apiKeyDraft = clearedSecretDraft()
+    vertexPrivateKeyDraft = clearedSecretDraft()
+    if (clearedCredential) providerCredentialReset = true
+
     providerId = nextProviderId
     if (fixedModelProviderIds.has(nextProviderId)) {
       modelId = nextProviderId
@@ -177,6 +185,15 @@
     if (nextProviderId === 'ollama' && !modelId) {
       modelId = 'ollama-hosted'
     }
+  }
+
+  function secretDraftHasCredential(draft: ModelProfileSecretDraft): boolean {
+    if (draft.disposition === 'preserve') return draft.hasExistingSecret
+    return draft.disposition === 'replace' && draft.value.trim().length > 0
+  }
+
+  function clearedSecretDraft(): ModelProfileSecretDraft {
+    return { value: '', disposition: 'clear', hasExistingSecret: false }
   }
 
   function secretValue(draft: ModelProfileSecretDraft): string | undefined {
@@ -425,6 +442,14 @@
         <div class="mb-3 flex flex-col gap-1">
           <h4 class="text-base font-semibold">{language.modelProfiles.providerConfiguration}</h4>
         </div>
+        {#if providerCredentialReset}
+          <div
+            class="mb-3 rounded-md border border-yellow-600 p-2 text-sm text-yellow-300"
+            role="status"
+            data-model-profile-provider-secret-reset>
+            {language.modelProfiles.providerChangeClearedCredential}
+          </div>
+        {/if}
         <ModelProviderPanel
           bind:providerId
           bind:modelId
