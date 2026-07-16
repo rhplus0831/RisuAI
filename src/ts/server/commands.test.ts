@@ -1987,6 +1987,7 @@ describe('server command API adapter', () => {
       baseRevision: 2,
       profileId: 'profile-a',
       profile: { id: 'profile-a', name: 'Updated', modelId: 'gpt-4o' },
+      expectedProfile: { id: 'profile-a', name: 'Original', modelId: 'gpt-4' },
     })
     await duplicateModelProfileCommand({
       baseRevision: 3,
@@ -2031,6 +2032,7 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 2,
           profile: { id: 'profile-a', name: 'Updated', modelId: 'gpt-4o' },
+          expectedProfile: { id: 'profile-a', name: 'Original', modelId: 'gpt-4' },
         },
       },
       {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
+import { isDeepStrictEqual } from 'node:util'
 import type { FirstClassModelProfileProviderId } from '../../../../src/ts/model/modelProfileResolver.js'
 import {
   MODEL_ROLES,
@@ -27,7 +28,13 @@ import { GoogleModels } from '../../../../src/ts/model/providers/google.js'
 import { OpenAIModels } from '../../../../src/ts/model/providers/openai.js'
 import { LLMFormat } from '../../../../src/ts/model/types.js'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
-import { EntityNotFoundError, extractSettings, ValidationError, writeSettingsOnly } from '../repository.js'
+import {
+  EntityNotFoundError,
+  extractSettings,
+  RevisionMismatchError,
+  ValidationError,
+  writeSettingsOnly,
+} from '../repository.js'
 import { applyTargetedCommandMutation, TARGETED_MUTATION_PATHS, type JsonCommandMutationResult } from './mutations.js'
 import {
   COMMAND_EVENT_CATALOG,
@@ -151,10 +158,15 @@ export function updateModelProfileCommand(
   const profileId = readNonEmptyString(args.profileId, 'profileId')
   const body = readObject(args.body, 'request body')
   const requestedProfile = readUpdateProfileBody(body, profileId)
+  const expectedProfile = readExpectedProfileBody(body, profileId)
   return applyModelProfileMutation(args, (target) => {
     const profiles = currentProfiles(target)
     const index = profiles.findIndex((profile) => profile.id === profileId)
     if (index < 0) throw new EntityNotFoundError(`Model profile not found: ${profileId}`)
+    const resolvedExpectedProfile = readProfilesForWrite([expectedProfile], target)[0]
+    if (!isDeepStrictEqual(profiles[index], resolvedExpectedProfile)) {
+      throw new RevisionMismatchError(args.baseRevision, `Model profile changed since editing began: ${profileId}`)
+    }
     const nextRows = [...profiles]
     nextRows[index] = requestedProfile
     target.modelProfiles = readProfilesForWrite(nextRows, target)
@@ -448,6 +460,14 @@ function readUpdateProfileBody(body: Record<string, unknown>, profileId: string)
   const profile = readObject(body.profile, 'profile')
   if (Object.prototype.hasOwnProperty.call(profile, 'id') && profile.id !== profileId) {
     throw new ValidationError('profile.id must match profileId')
+  }
+  return readProfileRow({ ...profile, id: profileId })
+}
+
+function readExpectedProfileBody(body: Record<string, unknown>, profileId: string): ModelProfileRecord {
+  const profile = readObject(body.expectedProfile, 'expectedProfile')
+  if (Object.prototype.hasOwnProperty.call(profile, 'id') && profile.id !== profileId) {
+    throw new ValidationError('expectedProfile.id must match profileId')
   }
   return readProfileRow({ ...profile, id: profileId })
 }

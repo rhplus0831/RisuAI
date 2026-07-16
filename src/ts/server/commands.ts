@@ -885,6 +885,7 @@ export interface CreateModelProfileCommandInput extends ModelProfileCommandInput
 export interface UpdateModelProfileCommandInput extends ModelProfileCommandInput {
   profileId: string
   profile: ModelProfileSnapshot
+  expectedProfile: ModelProfileSnapshot
 }
 
 export interface DuplicateModelProfileCommandInput extends ModelProfileCommandInput {
@@ -2571,6 +2572,7 @@ export async function updateModelProfileCommand(
     body: {
       baseRevision: input.baseRevision,
       profile: input.profile,
+      expectedProfile: input.expectedProfile,
     },
     signal,
   })

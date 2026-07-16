@@ -1772,6 +1772,22 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: revision,
+        expectedProfile: {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerId: 'vertex',
+          modelId: 'gemini-2.5-pro-vertex',
+          providerOptions: {
+            apiKey: MASKED_PROVIDER_SECRET,
+            requestModel: 'old-wire',
+            vertex: {
+              projectId: 'project-a',
+              region: 'us-central1',
+              clientEmail: 'svc@example.com',
+              privateKey: MASKED_PROVIDER_SECRET,
+            },
+          },
+        },
         profile: {
           id: 'profile-a',
           name: 'Profile A renamed',
@@ -1814,6 +1830,22 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: preserved.json().revision,
+        expectedProfile: {
+          id: 'profile-a',
+          name: 'Profile A renamed',
+          providerId: 'vertex',
+          modelId: 'gemini-2.5-pro-vertex',
+          providerOptions: {
+            apiKey: MASKED_PROVIDER_SECRET,
+            requestModel: 'new-wire',
+            vertex: {
+              projectId: 'project-a',
+              region: 'europe-west1',
+              clientEmail: 'svc@example.com',
+              privateKey: MASKED_PROVIDER_SECRET,
+            },
+          },
+        },
         profile: {
           name: 'Profile A cleared',
           providerId: 'vertex',
@@ -1841,6 +1873,102 @@ describe('Phase 9-2a scalar settings groups', () => {
         clientEmail: 'svc@example.com',
       },
     })
+  })
+
+  it('rejects stale model profile rows even when the caller has the latest global revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerId: 'openai',
+          modelId: 'gpt-5',
+          providerOptions: { apiKey: 'profile-key', requestModel: 'wire-v1' },
+          runtimeOptions: { temperature: 50 },
+        },
+      ],
+    })
+    const originalMaskedProfile = {
+      id: 'profile-a',
+      name: 'Profile A',
+      providerId: 'openai',
+      modelId: 'gpt-5',
+      providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'wire-v1' },
+      runtimeOptions: { temperature: 50 },
+    }
+    const concurrentMaskedProfile = {
+      ...originalMaskedProfile,
+      providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'wire-v2' },
+      runtimeOptions: { temperature: 70 },
+    }
+
+    const concurrent = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-profiles/profile-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        expectedProfile: originalMaskedProfile,
+        profile: concurrentMaskedProfile,
+      },
+    })
+    expect(concurrent.statusCode, concurrent.body).toBe(200)
+    const concurrentRevision = concurrent.json().revision as number
+
+    const stale = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-profiles/profile-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: concurrentRevision,
+        expectedProfile: originalMaskedProfile,
+        profile: { ...originalMaskedProfile, name: 'Locally renamed' },
+      },
+    })
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: concurrentRevision })
+    expect(
+      (loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, any>> })
+        .modelProfiles[0],
+    ).toMatchObject({
+      name: 'Profile A',
+      providerOptions: { apiKey: 'profile-key', requestModel: 'wire-v2' },
+      runtimeOptions: { temperature: 70 },
+    })
+
+    const cleared = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-profiles/profile-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: concurrentRevision,
+        expectedProfile: concurrentMaskedProfile,
+        profile: {
+          ...concurrentMaskedProfile,
+          providerOptions: { requestModel: 'wire-v2' },
+        },
+      },
+    })
+    expect(cleared.statusCode, cleared.body).toBe(200)
+    const clearedRevision = cleared.json().revision as number
+
+    const staleMaskedSecret = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-profiles/profile-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: clearedRevision,
+        expectedProfile: concurrentMaskedProfile,
+        profile: { ...concurrentMaskedProfile, name: 'Stale secret edit' },
+      },
+    })
+    expect(staleMaskedSecret.statusCode, staleMaskedSecret.body).toBe(409)
+    const persistedAfterClear = (
+      loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, any>> }
+    ).modelProfiles[0]
+    expect(persistedAfterClear.name).toBe('Profile A')
+    expect(persistedAfterClear.providerOptions).toEqual({ requestModel: 'wire-v2' })
   })
 
   it('duplicates model profiles without secrets by default and includes them when requested', async () => {

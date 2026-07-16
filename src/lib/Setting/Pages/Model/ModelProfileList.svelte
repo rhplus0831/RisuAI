@@ -29,6 +29,7 @@
 
   let editorMode = $state<EditorMode>(null)
   let editingProfileId = $state<string | null>(null)
+  let editingProfileBaseline = $state<ModelProfileRecord | null>(null)
   let editorKey = $state(0)
   let busy = $state(false)
   let commandError = $state('')
@@ -90,6 +91,7 @@
   function openCreateEditor(): void {
     editorMode = 'create'
     editingProfileId = null
+    editingProfileBaseline = null
     editorKey += 1
     commandError = ''
   }
@@ -97,6 +99,7 @@
   function openEditEditor(profile: ModelProfileRecord): void {
     editorMode = 'edit'
     editingProfileId = profile.id
+    editingProfileBaseline = cloneJsonValue(profile)
     editorKey += 1
     commandError = ''
   }
@@ -104,7 +107,12 @@
   function closeEditor(): void {
     editorMode = null
     editingProfileId = null
+    editingProfileBaseline = null
     commandError = ''
+  }
+
+  function cloneJsonValue<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T
   }
 
   async function saveEditor(profile: ModelProfileSnapshot): Promise<void> {
@@ -113,13 +121,15 @@
     if (!modeAtSave || busy) return
     commandError = ''
     let profileIdForUpdate = ''
+    let expectedProfileForUpdate: ModelProfileSnapshot | null = null
     if (modeAtSave === 'edit') {
       const existing = profileIdAtSave ? profiles.find((candidate) => candidate.id === profileIdAtSave) : undefined
-      if (!existing) {
+      if (!existing || !editingProfileBaseline || editingProfileBaseline.id !== profileIdAtSave) {
         commandError = language.modelProfiles.editTargetMissing
         return
       }
       profileIdForUpdate = profileIdAtSave
+      expectedProfileForUpdate = cloneJsonValue(editingProfileBaseline)
     }
 
     busy = true
@@ -138,6 +148,7 @@
                 baseRevision,
                 profileId: profileIdForUpdate,
                 profile,
+                expectedProfile: expectedProfileForUpdate!,
               }),
           })
 
@@ -292,7 +303,7 @@
     {#key editorKey}
       <ModelProfileEditorDrawer
         mode={editorMode}
-        profile={editingProfile}
+        profile={editingProfileBaseline ?? editingProfile}
         {profiles}
         usedByRoles={editingProfile ? rolesUsingProfile(editingProfile.id) : []}
         statusText={editingProfile ? statusLabel(editingProfile) : language.modelProfiles.statusBuckets.incomplete}

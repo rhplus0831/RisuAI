@@ -151,6 +151,73 @@ describe('ModelProfileList', () => {
     expect(commandSpies.runServerCommand).not.toHaveBeenCalled()
   })
 
+  it('sends the frozen profile baseline and keeps a conflicting draft after an authoritative refresh', async () => {
+    getDatabase().modelProfiles = [
+      {
+        id: 'profile-1',
+        name: 'Profile 1',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        providerOptions: { requestModel: 'wire-v1' },
+        runtimeOptions: { temperature: 50 },
+      },
+    ]
+    commandSpies.updateModelProfileCommand.mockResolvedValue({ status: 'conflict', currentRevision: 124 })
+
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    if (!profileEditButton) throw new Error('Profile edit button not found')
+    profileEditButton.click()
+    await tick()
+
+    const nameInput = target.querySelector<HTMLInputElement>('input')
+    if (!nameInput) throw new Error('Profile name input not found')
+    nameInput.value = 'Locally renamed'
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    getDatabase().modelProfiles = [
+      {
+        id: 'profile-1',
+        name: 'Profile 1',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        providerOptions: { requestModel: 'wire-v2' },
+        runtimeOptions: { temperature: 70 },
+      },
+    ]
+    await tick()
+
+    buttonByText(language.modelProfiles.save).click()
+    await flushAsync()
+
+    expect(commandSpies.updateModelProfileCommand).toHaveBeenCalledWith({
+      baseRevision: 123,
+      profileId: 'profile-1',
+      profile: {
+        id: 'profile-1',
+        name: 'Locally renamed',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        providerOptions: { requestModel: 'wire-v1' },
+        runtimeOptions: { temperature: 50 },
+      },
+      expectedProfile: {
+        id: 'profile-1',
+        name: 'Profile 1',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        providerOptions: { requestModel: 'wire-v1' },
+        runtimeOptions: { temperature: 50 },
+      },
+    })
+    expect(target.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(nameInput.value).toBe('Locally renamed')
+    expect(target.textContent).toContain(language.modelProfiles.commandConflict)
+  })
+
   it('does not create a replacement when an edited profile disappears before save', async () => {
     component = mount(ModelProfileList, { target })
     await tick()
