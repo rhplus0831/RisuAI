@@ -1349,6 +1349,7 @@ export function flushPendingSelectedPersonaUpdate(
 function selectedPersonaUpdateDurableIntent(personaId: string, patch: PersonaSnapshot): DurableMutationIntent {
   return {
     version: 1,
+    dependencyKeys: [PERSONA_SELECTION_MUTATION_KEY],
     requests: [
       {
         method: 'PATCH',

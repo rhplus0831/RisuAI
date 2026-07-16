@@ -793,6 +793,94 @@ describe('persona ID read and command preparation', () => {
     }
   })
 
+  it('holds a new persona edit behind its transient create', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-create-edit',
+      writerEpoch: 7,
+      databaseLineage: 'lineage-persona-create-edit',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(40)
+    seedPersonaState([makePersona({ id: 'persona-create-edit-a', name: 'Persona A' })], 0)
+
+    const transientCreate = deferred<Response>()
+    let revision = 40
+    let createdPersonaId = ''
+    const requests: Array<{ method: string; url: string }> = []
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+      if (url === '/api/v1/commands/personas' && method === 'POST') {
+        requests.push({ method, url })
+        const body = JSON.parse(String(init?.body)) as { persona: { id: string } }
+        createdPersonaId = body.persona.id
+        if (requests.length === 1) return transientCreate.promise
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.created',
+            revision,
+            resource: 'persona',
+            id: createdPersonaId,
+          },
+          personaId: createdPersonaId,
+        })
+      }
+      if (url === `/api/v1/commands/personas/${createdPersonaId}` && method === 'PATCH') {
+        requests.push({ method, url })
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.updated',
+            revision,
+            resource: 'persona',
+            id: createdPersonaId,
+          },
+          personaId: createdPersonaId,
+          acknowledgedKeys: ['personaPrompt'],
+          legacyProfileProjectionApplied: true,
+        })
+      }
+      return jsonResponse({ error: `unexpected ${method} ${url}` }, 404)
+    })
+
+    try {
+      const created = createNewUserPersona()
+      await vi.waitFor(() => expect(requests).toEqual([{ method: 'POST', url: '/api/v1/commands/personas' }]))
+
+      const baseline = currentPersonaStateSnapshot()
+      updateSelectedPersonaField('personaPrompt', 'Edited before create recovered')
+      queueSelectedPersonaUpdate(baseline, currentPersonaStateSnapshot())
+      const editResult = flushPendingSelectedPersonaUpdate()
+
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => entry.handle.key)).toEqual(['persona:selection', `persona-profile:${created.id}`])
+      expect(retained[1].intent.dependencyKeys).toEqual(['persona:selection'])
+
+      transientCreate.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
+      await expect(editResult).resolves.toMatchObject({ status: 'ok' })
+      expect(requests).toEqual([
+        { method: 'POST', url: '/api/v1/commands/personas' },
+        { method: 'POST', url: '/api/v1/commands/personas' },
+        { method: 'PATCH', url: `/api/v1/commands/personas/${created.id}` },
+      ])
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+      expect(getDatabase().personas.find((persona) => persona.id === created.id)?.personaPrompt).toBe(
+        'Edited before create recovered',
+      )
+    } finally {
+      transientCreate.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('holds persona selection behind retained outgoing and target row owners', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
