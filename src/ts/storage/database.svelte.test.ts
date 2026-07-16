@@ -25,6 +25,7 @@ import {
   botPresetIdsNeedNormalization,
   changeToPreset,
   copyPreset,
+  createModelPreset,
   createPreset,
   createPromptPreset,
   deleteModelPreset,
@@ -1781,6 +1782,167 @@ describe('preset command rollback (L21)', () => {
       expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')).toHaveLength(1)
       expect(getDatabase().modelPresets[0].name).toBe('Alp')
     })
+  })
+
+  it.each([
+    {
+      kind: 'model' as const,
+      presetId: 'model-created-durable',
+      ownerKey: 'split-preset:model:model-created-durable',
+      createPath: '/model-presets',
+      updatePath: '/model-presets/model-created-durable',
+    },
+    {
+      kind: 'prompt' as const,
+      presetId: 'prompt-created-durable',
+      ownerKey: 'prompt-template-owner:prompt-created-durable',
+      createPath: '/prompt-presets',
+      updatePath: '/prompt-presets/prompt-created-durable',
+    },
+  ])('keeps an immediate $kind preset edit behind its retained durable create', async (testCase) => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: `writer-${testCase.kind}-create-edit`,
+      writerEpoch: 6,
+      databaseLineage: `lineage-${testCase.kind}-create-edit`,
+      requestedWriterWasActive: true,
+    })
+    seedPresetDatabase(
+      testCase.kind === 'model'
+        ? {
+            modelPresets: [makePreset('model-existing', 'Existing Model') as unknown as ModelPreset],
+            modelPresetsId: 0,
+          }
+        : {
+            promptPresets: [makePreset('prompt-existing', 'Existing Prompt') as unknown as PromptPreset],
+            promptPresetsId: 0,
+          },
+    )
+    setCachedServerCommandRevision(100)
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValueOnce(
+      testCase.presetId as `${string}-${string}-${string}-${string}-${string}`,
+    )
+
+    const firstCreate = deferred<Response>()
+    let createAttempts = 0
+    let recover = false
+    let revision = 100
+    let serverPreset: Record<string, unknown> | null = null
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const method = init.method ?? 'GET'
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method, body })
+        if (url === `/api/v1/commands${testCase.createPath}` && method === 'POST') {
+          createAttempts += 1
+          if (createAttempts === 1) return firstCreate.promise
+          if (!recover) return jsonResponse({ error: 'create temporarily unavailable' }, 500)
+          serverPreset = clonePlain(body.preset)
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: `${testCase.kind}Preset.created`,
+              revision,
+              resource: 'preset',
+              id: testCase.presetId,
+            },
+            [`${testCase.kind}PresetId`]: testCase.presetId,
+          })
+        }
+        if (url === `/api/v1/commands${testCase.updatePath}` && method === 'PATCH') {
+          if (!recover) throw new Error(`${testCase.kind} edit overtook its retained create`)
+          if (!serverPreset) return jsonResponse({ error: 'preset does not exist' }, 404)
+          Object.assign(serverPreset, clonePlain(body.patch))
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: `${testCase.kind}Preset.updated`,
+              revision,
+              resource: 'preset',
+              id: testCase.presetId,
+            },
+            [`${testCase.kind}PresetId`]: testCase.presetId,
+          })
+        }
+        return jsonResponse({ error: `unexpected ${method} ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const initialPreset = makePreset(testCase.presetId, `${testCase.kind} initial`) as unknown as
+        | ModelPreset
+        | PromptPreset
+      delete initialPreset.id
+      if (testCase.kind === 'model') {
+        createModelPreset(initialPreset as ModelPreset)
+        updateModelPreset(1, { name: 'Renamed immediately' })
+      } else {
+        createPromptPreset(initialPreset as PromptPreset)
+        updatePromptPreset(1, { name: 'Renamed immediately' })
+      }
+      flushPendingSplitPresetPatch(testCase.kind, testCase.presetId)
+
+      const livePresets = testCase.kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets
+      expect(livePresets[1]).toMatchObject({ id: testCase.presetId, name: 'Renamed immediately' })
+      await waitForState(() => expect(calls).toHaveLength(1))
+      await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(2))
+
+      firstCreate.resolve(jsonResponse({ error: 'create temporarily unavailable' }, 500))
+      await waitForState(() => expect(calls).toHaveLength(2))
+      expect(calls.map(({ method, url }) => `${method} ${url}`)).toEqual([
+        `POST /api/v1/commands${testCase.createPath}`,
+        `POST /api/v1/commands${testCase.createPath}`,
+      ])
+
+      const retained = await listPendingMutations()
+      expect(retained.map((entry) => entry.handle.key)).toEqual([testCase.ownerKey, testCase.ownerKey])
+      expect(retained[0]?.intent).toMatchObject({
+        version: 1,
+        requests: [
+          {
+            method: 'POST',
+            path: testCase.createPath,
+            body: {
+              preset: {
+                id: testCase.presetId,
+                name: `${testCase.kind} initial`,
+              },
+            },
+          },
+        ],
+      })
+      expect(retained[1]?.intent).toEqual({
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: testCase.updatePath,
+            body: { patch: { name: 'Renamed immediately' } },
+          },
+        ],
+      })
+
+      recover = true
+      const recoveryStart = calls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(calls.slice(recoveryStart).map(({ method, url }) => `${method} ${url}`)).toEqual([
+        `POST /api/v1/commands${testCase.createPath}`,
+        `PATCH /api/v1/commands${testCase.updatePath}`,
+      ])
+      expect(serverPreset).toMatchObject({ id: testCase.presetId, name: 'Renamed immediately' })
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      firstCreate.resolve(jsonResponse({ error: 'test cleanup' }, 500))
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('persists the exact split-preset PATCH before dispatch and binds it to the database lineage', async () => {

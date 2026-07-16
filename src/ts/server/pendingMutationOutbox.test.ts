@@ -466,9 +466,11 @@ describe('pending mutation outbox', () => {
   })
 
   it.each([
+    ['POST', '/model-presets'],
     ['PATCH', '/model-presets/model-a'],
     ['DELETE', '/model-presets/model-a'],
     ['POST', '/model-presets/select'],
+    ['POST', '/prompt-presets'],
     ['PATCH', '/prompt-presets/prompt-a'],
     ['DELETE', '/prompt-presets/prompt-a'],
     ['POST', '/prompt-presets/select'],

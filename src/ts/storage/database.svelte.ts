@@ -638,6 +638,69 @@ function splitPresetMutationDependencyKeys(
   )
 }
 
+interface StagedSplitPresetCreate {
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
+}
+
+function stageSplitPresetCreate(
+  kind: SplitPresetKind,
+  attemptedPreset: SplitPresetRow,
+): StagedSplitPresetCreate | null {
+  const presetId = attemptedPreset.id
+  if (!presetId || !canUseServerCommands()) return null
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: kind === 'model' ? '/model-presets' : '/prompt-presets',
+        body: { preset: safeStructuredClone(attemptedPreset) },
+      },
+    ],
+  }
+  return {
+    intent,
+    outbox: stagePendingMutation(splitPresetMutationKey(kind, presetId), intent),
+  }
+}
+
+function dispatchSplitPresetCreate(
+  kind: SplitPresetKind,
+  attemptedPreset: SplitPresetRow,
+  staged: StagedSplitPresetCreate | null,
+): void {
+  if (!staged) return
+  const presetId = attemptedPreset.id
+  if (!presetId) return
+  const rollback = () => rollbackSplitPresetCreate(kind, attemptedPreset)
+  if (kind === 'model') {
+    void dispatchDurableMutation(staged.outbox, staged.intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          createModelPresetCommand({
+            baseRevision,
+            preset: safeStructuredClone(attemptedPreset) as unknown as ModelPresetSnapshot,
+          }),
+        rollback,
+        ...transport,
+      }),
+    )
+    return
+  }
+  void dispatchDurableMutation(staged.outbox, staged.intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        createPromptPresetCommand({
+          baseRevision,
+          preset: safeStructuredClone(attemptedPreset) as unknown as PromptPresetSnapshot,
+        }),
+      rollback,
+      ...transport,
+    }),
+  )
+}
+
 function cloneSplitPresetPatchFieldAttempt(field: SplitPresetPatchFieldAttempt): SplitPresetPatchFieldAttempt {
   return {
     previousPresent: field.previousPresent,
@@ -4544,19 +4607,11 @@ export function createModelPreset(preset: ModelPreset) {
     flushPendingSplitPresetPatchesForKind('model')
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
+    const attemptedPreset = safeStructuredClone(newPreset)
+    const stagedCreate = stageSplitPresetCreate('model', attemptedPreset)
     db.modelPresets.push(newPreset)
     db.modelPresets = db.modelPresets
-    const attemptedPreset = safeStructuredClone(newPreset)
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          createModelPresetCommand({
-            baseRevision,
-            preset: safeStructuredClone(attemptedPreset) as unknown as ModelPresetSnapshot,
-          }),
-      ],
-      () => rollbackSplitPresetCreate('model', attemptedPreset),
-    )
+    dispatchSplitPresetCreate('model', attemptedPreset, stagedCreate)
   })
 }
 
@@ -4752,19 +4807,11 @@ export function createPromptPreset(preset: PromptPreset) {
     flushPendingSplitPresetPatchesForKind('prompt')
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
+    const attemptedPreset = safeStructuredClone(newPreset)
+    const stagedCreate = stageSplitPresetCreate('prompt', attemptedPreset)
     db.promptPresets.push(newPreset)
     db.promptPresets = db.promptPresets
-    const attemptedPreset = safeStructuredClone(newPreset)
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          createPromptPresetCommand({
-            baseRevision,
-            preset: safeStructuredClone(attemptedPreset) as unknown as PromptPresetSnapshot,
-          }),
-      ],
-      () => rollbackSplitPresetCreate('prompt', attemptedPreset),
-    )
+    dispatchSplitPresetCreate('prompt', attemptedPreset, stagedCreate)
   })
 }
 
