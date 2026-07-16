@@ -22,6 +22,7 @@ import {
 import { loadV3Plugins } from './apiV3/v3.svelte'
 import { pluginCodeTranspiler } from './apiV3/transpiler'
 import {
+  acceptedPluginRuntimeProjection,
   currentPluginStorageSnapshot,
   currentPluginStateSnapshot,
   currentPluginSettingsPatchRollbackSnapshot,
@@ -529,7 +530,7 @@ export async function importPlugin(
 
     if (persistenceResult) {
       const result = await persistenceResult
-      if (result.status !== 'ok') {
+      if (result.status !== 'accepted') {
         return false
       }
     }
@@ -607,10 +608,12 @@ function deferPluginRuntimeSync(): () => void {
  */
 export function startPluginRuntimeSync(): void {
   if (stopPluginRuntimeSyncEffect) return
-  pluginRuntimeSyncState.targetSignature ??= pluginRuntimeSignature(getDatabase().plugins)
+  pluginRuntimeSyncState.targetSignature ??= pluginRuntimeSignature(
+    acceptedPluginRuntimeProjection(getDatabase().plugins ?? []),
+  )
   stopPluginRuntimeSyncEffect = $effect.root(() => {
     $effect(() => {
-      const signature = pluginRuntimeSignature(getDatabase().plugins)
+      const signature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(getDatabase().plugins ?? []))
       const suppressionDepth = pluginRuntimeSyncState.suppressionDepth
       const targetSignature = pluginRuntimeSyncState.targetSignature
       if (suppressionDepth > 0 || targetSignature === signature) return
@@ -638,7 +641,7 @@ async function runQueuedPluginLoads() {
     console.log('Loading plugins...')
     const db = getDatabase()
 
-    const enabledPlugins = safeStructuredClone(db.plugins ?? []).filter((p: RisuPlugin) => p.enabled)
+    const enabledPlugins = acceptedPluginRuntimeProjection(db.plugins ?? []).filter((p: RisuPlugin) => p.enabled)
     const pluginV2 = enabledPlugins.filter((a: RisuPlugin) => a.version === 2 || a.version === '2.1')
     const pluginV3 = enabledPlugins.filter((a: RisuPlugin) => a.version === '3.0')
 
@@ -648,7 +651,9 @@ async function runQueuedPluginLoads() {
 }
 
 export function loadPlugins(): Promise<void> {
-  pluginRuntimeSyncState.targetSignature = pluginRuntimeSignature(getDatabase().plugins)
+  pluginRuntimeSyncState.targetSignature = pluginRuntimeSignature(
+    acceptedPluginRuntimeProjection(getDatabase().plugins ?? []),
+  )
   pluginLoadQueued = true
   pluginLoadQueue ??= runQueuedPluginLoads().finally(() => {
     pluginLoadQueue = null
@@ -807,37 +812,51 @@ function pluginCustomStorage(): Record<string, unknown> {
   return db.pluginCustomStorage as Record<string, unknown>
 }
 
-function setPluginStorageValue(key: string, value: unknown): void {
+async function setPluginStorageValue(key: string, value: unknown): Promise<void> {
   const previous = currentPluginStorageSnapshot()
   withTrustedResourceWrite(() => {
     pluginCustomStorage()[key] = cloneJsonValue(value)
   })
   if (canUseServerCommands()) {
-    dispatchPutPluginStorage(key, value, previous)
+    await requirePluginMutation(dispatchPutPluginStorage(key, value, previous), 'set plugin storage')
   }
 }
 
-function deletePluginStorageValue(key: string): void {
+async function deletePluginStorageValue(key: string): Promise<void> {
   const previous = currentPluginStorageSnapshot()
   withTrustedResourceWrite(() => {
     delete pluginCustomStorage()[key]
   })
   if (canUseServerCommands()) {
-    dispatchDeletePluginStorage(key, previous)
+    await requirePluginMutation(dispatchDeletePluginStorage(key, previous), 'delete plugin storage')
   }
 }
 
-function replacePluginStorage(values: Record<string, unknown>): void {
+async function replacePluginStorage(values: Record<string, unknown>): Promise<void> {
   const previous = currentPluginStorageSnapshot()
   withTrustedResourceWrite(() => {
     getDatabase().pluginCustomStorage = cloneJsonValue(values)
   })
   if (canUseServerCommands()) {
-    dispatchBulkPluginStorage({ values, clear: true }, previous)
+    await requirePluginMutation(dispatchBulkPluginStorage({ values, clear: true }, previous), 'replace plugin storage')
   }
 }
 
-function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { full: boolean }): void {
+async function requirePluginMutation(
+  pending:
+    | ReturnType<typeof dispatchPutPluginStorage>
+    | ReturnType<typeof dispatchDeletePluginStorage>
+    | ReturnType<typeof dispatchBulkPluginStorage>,
+  action: string,
+): Promise<void> {
+  if (!pending) return
+  const outcome = await pending
+  if (outcome.status === 'failed') {
+    throw new Error(`Failed to ${action}.`)
+  }
+}
+
+async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { full: boolean }): Promise<void> {
   const previous = currentPluginStateSnapshot()
   const previousModules = 'modules' in newDb || 'enabledModules' in newDb ? currentGlobalModuleStateSnapshot() : null
   const settingsRollback = currentPluginSettingsPatchRollbackSnapshot(newDb)
@@ -845,6 +864,7 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
   const settingsPatch: Record<string, unknown> = {}
   const storageValues: Record<string, unknown> = {}
   const blockedKeys: string[] = []
+  const persistence: Array<Promise<{ status: 'accepted' | 'queued' | 'failed' }>> = []
   let replacedStorage: Record<string, unknown> | null = null
 
   for (const [key, value] of Object.entries(newDb)) {
@@ -872,14 +892,31 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
         ;(getDatabase() as any)[key] = cloneJsonValue(value)
       })
       if (key === 'currentPluginProvider' && typeof value === 'string') {
-        dispatchSelectPluginProvider(value, previous)
+        const pending = dispatchSelectPluginProvider(value, previous)
+        if (pending) persistence.push(pending)
       } else if (key === 'plugins' && Array.isArray(value)) {
-        dispatchPluginCollectionPatch(value as RisuPlugin[], previous)
+        persistence.push(dispatchPluginCollectionPatch(value as RisuPlugin[], previous))
       } else if (key === 'modules' && Array.isArray(value) && previousModules) {
-        dispatchModuleCollectionPatch(value as RisuModule[], previousModules)
+        const pending = dispatchModuleCollectionPatch(value as RisuModule[], previousModules)
+        if (pending) {
+          persistence.push(
+            pending.then((outcome) => ({
+              status:
+                outcome.status === 'ok' ? ('accepted' as const) : outcome.status === 'retained' ? 'queued' : 'failed',
+            })),
+          )
+        }
       } else if (key === 'enabledModules' && Array.isArray(value) && previousModules) {
         const moduleSource = Array.isArray(newDb.modules) ? (newDb.modules as RisuModule[]) : getDatabase().modules
-        dispatchEnabledModulesPatch(value, previousModules, moduleSource ?? [])
+        const pending = dispatchEnabledModulesPatch(value, previousModules, moduleSource ?? [])
+        if (pending) {
+          persistence.push(
+            pending.then((outcome) => ({
+              status:
+                outcome.status === 'ok' ? ('accepted' as const) : outcome.status === 'retained' ? 'queued' : 'failed',
+            })),
+          )
+        }
       } else {
         settingsPatch[key] = value
       }
@@ -894,13 +931,18 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
 
   if (replacedStorage) {
     const storagePrevious = previous.pluginCustomStorage
-    dispatchBulkPluginStorage({ values: replacedStorage, clear: true }, storagePrevious)
+    const pending = dispatchBulkPluginStorage(
+      { values: { ...replacedStorage, ...storageValues }, clear: true },
+      storagePrevious,
+    )
+    if (pending) persistence.push(pending)
   } else if (Object.keys(storageValues).length > 0) {
-    dispatchBulkPluginStorage({ values: storageValues }, previous.pluginCustomStorage)
+    const pending = dispatchBulkPluginStorage({ values: storageValues }, previous.pluginCustomStorage)
+    if (pending) persistence.push(pending)
   }
 
   if (Object.keys(settingsPatch).length > 0) {
-    dispatchPluginSettingsPatch(settingsPatch, settingsRollback)
+    persistence.push(dispatchPluginSettingsPatch(settingsPatch, settingsRollback))
   }
 
   if (blockedKeys.length > 0) {
@@ -912,6 +954,11 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
 
   if (!serverMode && options.full) {
     setDatabase(getDatabase({ snapshot: true }))
+  }
+
+  const outcomes = await Promise.all(persistence)
+  if (outcomes.some((outcome) => outcome.status === 'failed')) {
+    throw new Error('One or more plugin database changes could not be saved.')
   }
 }
 
@@ -1124,7 +1171,9 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
         set(target, prop, value) {
           if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
             if (canUseServerCommands()) {
-              applyPluginDatabasePatch({ [prop]: value }, { full: false })
+              void applyPluginDatabasePatch({ [prop]: value }, { full: false }).catch((error) => {
+                console.error('Plugin database property save failed:', error)
+              })
             } else {
               ;(target as any)[prop] = value
             }
@@ -1133,10 +1182,14 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
             // Recognized resource family with no bridge command: route through
             // applyPluginDatabasePatch so it is blocked + warned instead of
             // being silently shadowed in plugin storage.
-            applyPluginDatabasePatch({ [prop]: value }, { full: false })
+            void applyPluginDatabasePatch({ [prop]: value }, { full: false }).catch((error) => {
+              console.error('Plugin database property save failed:', error)
+            })
             return true
           } else {
-            setPluginStorageValue(prop.toString(), value)
+            void setPluginStorageValue(prop.toString(), value).catch((error) => {
+              console.error('Plugin storage property save failed:', error)
+            })
             return true
           }
         },
@@ -1186,13 +1239,13 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
         return value == null ? null : safeStructuredClone(value)
       },
       setItem: (key: string, value: string) => {
-        setPluginStorageValue(key, value)
+        return setPluginStorageValue(key, value)
       },
       removeItem: (key: string) => {
-        deletePluginStorageValue(key)
+        return deletePluginStorageValue(key)
       },
       clear: () => {
-        replacePluginStorage({})
+        return replacePluginStorage({})
       },
       key: (index: number) => {
         const db = getDatabase()
@@ -1213,7 +1266,12 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
     },
     isDeviceLocalPluginStorageEnabled,
     setDatabaseLite: (newDb: any) => {
-      applyPluginDatabasePatch(newDb, { full: false })
+      const pending = applyPluginDatabasePatch(newDb, { full: false })
+      // Legacy V2.1 scripts commonly ignored this historically synchronous
+      // return value. Keep those calls from becoming unhandled rejections while
+      // still returning the rejecting Promise to callers that correctly await.
+      void pending.catch(() => undefined)
+      return pending
     },
     setDatabase: async (newDb: any) => {
       for (const key of Object.keys(newDb)) {
@@ -1224,7 +1282,7 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
           newDb[key] = await handlePluginInstallViaPlugin(newDb.plugins)
         }
       }
-      applyPluginDatabasePatch(newDb, { full: true })
+      await applyPluginDatabasePatch(newDb, { full: true })
     },
     SafeFunction: new Proxy(Function, {
       construct(target, args) {

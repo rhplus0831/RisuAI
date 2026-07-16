@@ -189,6 +189,16 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/modules\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/modules\/[^/?#]+$/ },
   { method: 'POST', path: /^\/modules\/enable$/ },
+  { method: 'POST', path: /^\/modules\/reorder$/ },
+  { method: 'POST', path: /^\/plugins$/ },
+  { method: 'PATCH', path: /^\/plugins\/[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/plugins\/[^/?#]+$/ },
+  { method: 'POST', path: /^\/plugins\/[^/?#]+\/enable$/ },
+  { method: 'POST', path: /^\/plugins\/provider$/ },
+  { method: 'POST', path: /^\/plugins\/reorder$/ },
+  { method: 'PUT', path: /^\/plugin-storage\/[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/plugin-storage\/[^/?#]+$/ },
+  { method: 'POST', path: /^\/plugin-storage\/bulk$/ },
   { method: 'POST', path: /^\/loadouts$/ },
   { method: 'DELETE', path: /^\/loadouts\/[^/?#]+$/ },
   { method: 'POST', path: /^\/loadouts\/[^/?#]+\/favorite$/ },
@@ -226,6 +236,22 @@ export function pendingMutationSettingsFieldProjectionTarget(field: string): str
 
 export function pendingMutationModuleEnabledProjectionTarget(moduleId: string): string {
   return `module-enabled:${encodeProjectionTargetPart(moduleId)}`
+}
+
+export function pendingMutationPluginRowProjectionTarget(pluginId: string): string {
+  return `plugin-row:${encodeProjectionTargetPart(pluginId)}`
+}
+
+export function pendingMutationPluginProviderProjectionTarget(): string {
+  return 'plugin-provider:current'
+}
+
+export function pendingMutationPluginOrderProjectionTarget(): string {
+  return 'plugin-order:current'
+}
+
+export function pendingMutationPluginStorageProjectionTarget(key: string): string {
+  return `plugin-storage:${encodeProjectionTargetPart(key)}`
 }
 
 export function pendingMutationLoadoutRowProjectionTarget(loadoutId: string): string {
@@ -1177,6 +1203,54 @@ function pendingMutationRequestProjectionTargets(request: DurableMutationRequest
 
   if (request.method === 'POST' && request.path === '/characters/reorder') {
     return [pendingMutationCharacterOrderProjectionTarget()]
+  }
+
+  if (request.method === 'POST' && request.path === '/plugins') {
+    const plugin = request.body.plugin
+    const pluginId =
+      plugin && typeof plugin === 'object' && !Array.isArray(plugin)
+        ? (plugin as Record<string, unknown>).name
+        : undefined
+    return typeof pluginId === 'string' ? [pendingMutationPluginRowProjectionTarget(pluginId)] : []
+  }
+
+  if (request.method === 'POST' && request.path === '/plugins/provider') {
+    return [pendingMutationPluginProviderProjectionTarget()]
+  }
+  if (request.method === 'POST' && request.path === '/plugins/reorder') {
+    return [pendingMutationPluginOrderProjectionTarget()]
+  }
+
+  const pluginEnable = request.method === 'POST' ? /^\/plugins\/([^/]+)\/enable$/.exec(request.path) : null
+  if (pluginEnable) {
+    return [pendingMutationPluginRowProjectionTarget(decodeProjectionTargetPart(pluginEnable[1]!))]
+  }
+
+  const pluginRow =
+    request.method === 'PATCH' || request.method === 'DELETE' ? /^\/plugins\/([^/]+)$/.exec(request.path) : null
+  if (pluginRow) {
+    const targets = [pendingMutationPluginRowProjectionTarget(decodeProjectionTargetPart(pluginRow[1]!))]
+    if (request.method === 'DELETE') targets.push(pendingMutationPluginProviderProjectionTarget())
+    return targets
+  }
+
+  const pluginStorageKey =
+    request.method === 'PUT' || request.method === 'DELETE' ? /^\/plugin-storage\/([^/]+)$/.exec(request.path) : null
+  if (pluginStorageKey) {
+    return [pendingMutationPluginStorageProjectionTarget(decodeProjectionTargetPart(pluginStorageKey[1]!))]
+  }
+
+  if (request.method === 'POST' && request.path === '/plugin-storage/bulk') {
+    const keys = new Set<string>()
+    const values = request.body.values
+    if (values && typeof values === 'object' && !Array.isArray(values)) {
+      for (const key of Object.keys(values as Record<string, unknown>)) keys.add(key)
+    }
+    const deleteKeys = request.body.deleteKeys
+    if (Array.isArray(deleteKeys)) {
+      for (const key of deleteKeys) if (typeof key === 'string') keys.add(key)
+    }
+    return keys.size > 0 ? [...keys].map(pendingMutationPluginStorageProjectionTarget) : ['plugin-storage:collection']
   }
 
   const deletedModule = request.method === 'DELETE' ? /^\/modules\/([^/]+)$/.exec(request.path) : null

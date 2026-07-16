@@ -1908,6 +1908,11 @@ export const languageEnglish = {
   pluginInstallingUpdate: 'Installing plugin update…',
   pluginUpdateInstallFailed: 'Could not install plugin update. Try again.',
   pluginUpdateInstalled: 'Plugin update installed.',
+  pluginMutation: {
+    saving: 'Saving plugin changes…',
+    queued: 'Plugin changes are saved on this device and will retry automatically.',
+    failed: 'Plugin changes could not be saved. Try again.',
+  },
   goToChat: 'Go to Chat',
   bookmark: 'Bookmark',
   translate: 'Translate',

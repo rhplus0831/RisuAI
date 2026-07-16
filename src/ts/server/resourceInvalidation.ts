@@ -62,6 +62,10 @@ export type ServerResourceRefreshResult =
   | { status: 'unavailable' }
 
 export interface ServerResourceInvalidationHooks {
+  mergePendingPluginCollection(
+    value: NonNullable<ServerCollectionsResourcePayload['collections']['plugins']>,
+  ): NonNullable<ServerCollectionsResourcePayload['collections']['plugins']>
+  mergePendingPluginProvider(value: unknown): string
   mergePendingPluginStorage(value: Record<string, unknown>): Record<string, unknown>
   applyChatMessages(
     chatId: string,
@@ -184,9 +188,10 @@ export async function refreshAllServerResources(
     // before touching the first slice so partial failures also fail closed.
     createDestructiveRefreshToken('full-server-resource-refresh')
     try {
-      const mergedCollections = withPendingPluginStorage(collections, options.hooks?.mergePendingPluginStorage)
+      const mergedSettings = withPendingPluginProvider(settings, options.hooks?.mergePendingPluginProvider)
+      const mergedCollections = withPendingPluginCollections(collections, options.hooks)
       const { settingsApplied, collectionsApplied, charactersApplied } = withServerResourceApply(() => ({
-        settingsApplied: applySettingsResource(settings),
+        settingsApplied: applySettingsResource(mergedSettings),
         collectionsApplied: applyCollectionsResource(mergedCollections),
         // A complete refresh is used for startup, revision gaps, restores, and
         // unknown resources. Character reads intentionally omit transcripts,
@@ -956,23 +961,26 @@ function applyTargetedRead(
   hooks: Partial<ServerResourceInvalidationHooks> | undefined,
 ): boolean {
   switch (entry.kind) {
-    case 'settings':
+    case 'settings': {
+      const payload = withPendingPluginProvider(entry.result, hooks?.mergePendingPluginProvider)
+      return payload.status !== 'ok' || applySettingsResource(payload) || settingsFullAlreadyAtLeast(payload.revision)
+    }
+    case 'settingsGroup': {
+      const payload =
+        entry.group === 'providers'
+          ? withPendingPluginProvider(entry.result, hooks?.mergePendingPluginProvider)
+          : entry.result
       return (
-        entry.result.status !== 'ok' ||
-        applySettingsResource(entry.result) ||
-        settingsFullAlreadyAtLeast(entry.result.revision)
+        payload.status !== 'ok' ||
+        applySettingsGroupResource(payload, SERVER_SETTINGS_KEYS_BY_GROUP[entry.group]) ||
+        settingsGroupAlreadyAtLeast(entry.group, payload.revision)
       )
-    case 'settingsGroup':
-      return (
-        entry.result.status !== 'ok' ||
-        applySettingsGroupResource(entry.result, SERVER_SETTINGS_KEYS_BY_GROUP[entry.group]) ||
-        settingsGroupAlreadyAtLeast(entry.group, entry.result.revision)
-      )
+    }
     case 'collection': {
       if (entry.result.status !== 'ok') return true
       const payload =
-        entry.name === 'pluginCustomStorage'
-          ? withPendingPluginStorage(entry.result, hooks?.mergePendingPluginStorage)
+        entry.name === 'pluginCustomStorage' || entry.name === 'plugins'
+          ? withPendingPluginCollections(entry.result, hooks)
           : entry.result
       const applied = applyCollectionsResource(payload, entry.name)
       if (applied && entry.name === 'promptPresets') resetPromptTemplateHydration()
@@ -1120,20 +1128,51 @@ function characterIdForChat(chatId: string): string | undefined {
   return undefined
 }
 
-function withPendingPluginStorage<T extends ServerCollectionsResourcePayload>(
+function withPendingPluginCollections<T extends ServerCollectionsResourcePayload>(
   payload: T,
-  mergePendingPluginStorage: ServerResourceInvalidationHooks['mergePendingPluginStorage'] | undefined,
+  hooks: Partial<ServerResourceInvalidationHooks> | undefined,
 ): T {
-  if (!Object.prototype.hasOwnProperty.call(payload.collections, 'pluginCustomStorage')) return payload
-  const current = payload.collections.pluginCustomStorage
-  const authoritative = current && typeof current === 'object' && !Array.isArray(current) ? current : {}
+  const collections = { ...payload.collections }
+  let changed = false
+  if (Object.prototype.hasOwnProperty.call(collections, 'pluginCustomStorage')) {
+    const current = collections.pluginCustomStorage
+    const authoritative = current && typeof current === 'object' && !Array.isArray(current) ? current : {}
+    collections.pluginCustomStorage = hooks?.mergePendingPluginStorage
+      ? hooks.mergePendingPluginStorage(authoritative)
+      : authoritative
+    changed = true
+  }
+  if (Object.prototype.hasOwnProperty.call(collections, 'plugins')) {
+    const authoritative = Array.isArray(collections.plugins) ? collections.plugins : []
+    collections.plugins = hooks?.mergePendingPluginCollection
+      ? hooks.mergePendingPluginCollection(authoritative)
+      : authoritative
+    changed = true
+  }
+  if (!changed) return payload
   return {
     ...payload,
-    collections: {
-      ...payload.collections,
-      pluginCustomStorage: mergePendingPluginStorage ? mergePendingPluginStorage(authoritative) : authoritative,
-    },
+    collections,
   }
+}
+
+function withPendingPluginProvider<T>(
+  payload: T,
+  mergePendingPluginProvider: ServerResourceInvalidationHooks['mergePendingPluginProvider'] | undefined,
+): T {
+  const settingsValue = (payload as { settings?: unknown }).settings
+  if (!settingsValue || typeof settingsValue !== 'object' || Array.isArray(settingsValue)) return payload
+  const settings = settingsValue as Record<string, unknown>
+  if (!Object.prototype.hasOwnProperty.call(settings, 'currentPluginProvider')) return payload
+  return {
+    ...payload,
+    settings: {
+      ...settings,
+      currentPluginProvider: mergePendingPluginProvider
+        ? mergePendingPluginProvider(settings.currentPluginProvider)
+        : settings.currentPluginProvider,
+    },
+  } as T
 }
 
 function missingRequiredHook(

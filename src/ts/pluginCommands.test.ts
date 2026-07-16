@@ -219,7 +219,7 @@ describe('plugin projection command helpers', () => {
       getDatabase().plugins[0].realArg.mode = 'raw'
     }).toThrow(/resource database compatibility view is read-only/)
 
-    expect(setPluginArgument('plugin-a', 'mode', 'slow')).toBe(true)
+    expect(setPluginArgument('plugin-a', 'mode', 'slow')).toBeTruthy()
     expect(getDatabase().plugins[0].realArg).toEqual({ mode: 'slow', token: 'abc' })
 
     await waitForCallCount(calls, 2)
@@ -253,7 +253,7 @@ describe('plugin projection command helpers', () => {
     const calls = stubCommandFetch({ failCommands: true })
     setResourceWriteGuardEnabled(true)
 
-    expect(setPluginArgument('plugin-a', 'mode', 'slow')).toBe(true)
+    expect(setPluginArgument('plugin-a', 'mode', 'slow')).toBeTruthy()
     withTrustedResourceWrite(() => {
       getDatabase().plugins[1] = {
         ...getDatabase().plugins[1],
@@ -288,10 +288,10 @@ describe('plugin projection command helpers', () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
     setResourceWriteGuardEnabled(true)
 
-    expect(setPluginArgument('plugin-a', 'mode', 'first')).toBe(true)
+    expect(setPluginArgument('plugin-a', 'mode', 'first')).toBeTruthy()
     await waitForCallCount(calls, 2)
 
-    expect(setPluginArgument('plugin-a', 'mode', 'second')).toBe(true)
+    expect(setPluginArgument('plugin-a', 'mode', 'second')).toBeTruthy()
     expect(calls).toHaveLength(2)
 
     expect(calls[1]).toMatchObject({
@@ -332,7 +332,7 @@ describe('plugin projection command helpers', () => {
     const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
     setResourceWriteGuardEnabled(true)
 
-    expect(togglePluginEnabled('plugin-a')).toBe(true)
+    expect(togglePluginEnabled('plugin-a')).toBeTruthy()
     expect(getDatabase().plugins[0].enabled).toBe(false)
 
     await waitForCallCount(calls, 2)
@@ -364,7 +364,7 @@ describe('plugin projection command helpers', () => {
     const calls = stubCommandFetch({ failCommands: true })
     setResourceWriteGuardEnabled(true)
 
-    expect(togglePluginEnabled('plugin-a')).toBe(true)
+    expect(togglePluginEnabled('plugin-a')).toBeTruthy()
     withTrustedResourceWrite(() => {
       getDatabase().plugins[0] = {
         ...getDatabase().plugins[0],
@@ -405,7 +405,7 @@ describe('plugin projection command helpers', () => {
     const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
     setResourceWriteGuardEnabled(true)
 
-    expect(deletePlugin('plugin-a')).toBe(true)
+    expect(deletePlugin('plugin-a')).toBeTruthy()
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-b'])
     expect(getDatabase().currentPluginProvider).toBe('')
 
@@ -437,7 +437,7 @@ describe('plugin projection command helpers', () => {
     const calls = stubCommandFetch({ failCommands: true })
     setResourceWriteGuardEnabled(true)
 
-    expect(deletePlugin('plugin-a')).toBe(true)
+    expect(deletePlugin('plugin-a')).toBeTruthy()
     withTrustedResourceWrite(() => {
       getDatabase().plugins.push(
         seedPlugin('plugin-c', {
@@ -884,9 +884,9 @@ describe('plugin projection command helpers', () => {
     const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
     setResourceWriteGuardEnabled(true)
 
-    expect(setPluginArgument('missing-plugin', 'mode', 'slow')).toBe(false)
-    expect(togglePluginEnabled('missing-plugin')).toBe(false)
-    expect(deletePlugin('missing-plugin')).toBe(false)
+    expect(setPluginArgument('missing-plugin', 'mode', 'slow')).toBeNull()
+    expect(togglePluginEnabled('missing-plugin')).toBeNull()
+    expect(deletePlugin('missing-plugin')).toBeNull()
 
     expect(calls).toHaveLength(0)
     expect(getDatabase().plugins).toEqual(previousPlugins)

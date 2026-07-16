@@ -19,6 +19,10 @@ import {
   pendingMutationCharacterScriptsProjectionTarget,
   pendingMutationCharacterTriggersProjectionTarget,
   pendingMutationLocalProjectionFence,
+  pendingMutationPluginOrderProjectionTarget,
+  pendingMutationPluginProviderProjectionTarget,
+  pendingMutationPluginRowProjectionTarget,
+  pendingMutationPluginStorageProjectionTarget,
   pendingMutationProjectionFence,
   pendingMutationProjectionGenerationCountForTests,
   pendingMutationProjectionTargets,
@@ -490,6 +494,36 @@ describe('pending mutation outbox', () => {
     ])
   })
 
+  it('maps plugin rows, provider, ordering, and storage keys to concrete projections', () => {
+    const targetsFor = (
+      method: 'DELETE' | 'PATCH' | 'POST' | 'PUT',
+      path: string,
+      body: Record<string, unknown> = {},
+    ) => pendingMutationProjectionTargets({ version: 1, requests: [{ method, path, body }] })
+
+    const row = pendingMutationPluginRowProjectionTarget('plugin a')
+    expect(targetsFor('POST', '/plugins', { plugin: { name: 'plugin a' } })).toEqual([row])
+    expect(targetsFor('PATCH', '/plugins/plugin%20a')).toEqual([row])
+    expect(targetsFor('POST', '/plugins/plugin%20a/enable')).toEqual([row])
+    expect(targetsFor('DELETE', '/plugins/plugin%20a')).toEqual(
+      [row, pendingMutationPluginProviderProjectionTarget()].sort(),
+    )
+    expect(targetsFor('POST', '/plugins/provider')).toEqual([pendingMutationPluginProviderProjectionTarget()])
+    expect(targetsFor('POST', '/plugins/reorder')).toEqual([pendingMutationPluginOrderProjectionTarget()])
+    expect(targetsFor('PUT', '/plugin-storage/key%20a')).toEqual([
+      pendingMutationPluginStorageProjectionTarget('key a'),
+    ])
+    expect(
+      targetsFor('POST', '/plugin-storage/bulk', {
+        values: { alpha: true },
+        deleteKeys: ['beta'],
+      }),
+    ).toEqual([
+      pendingMutationPluginStorageProjectionTarget('alpha'),
+      pendingMutationPluginStorageProjectionTarget('beta'),
+    ])
+  })
+
   it('fences concrete fields independently even when writers share a semantic key', async () => {
     const openAIKeyTarget = pendingMutationSettingsFieldProjectionTarget('openAIKey')
     const temperatureTarget = pendingMutationSettingsFieldProjectionTarget('temperature')
@@ -721,6 +755,16 @@ describe('pending mutation outbox', () => {
     ['PATCH', '/modules/module-a'],
     ['DELETE', '/modules/module-a'],
     ['POST', '/modules/enable'],
+    ['POST', '/modules/reorder'],
+    ['POST', '/plugins'],
+    ['PATCH', '/plugins/plugin-a'],
+    ['DELETE', '/plugins/plugin-a'],
+    ['POST', '/plugins/plugin-a/enable'],
+    ['POST', '/plugins/provider'],
+    ['POST', '/plugins/reorder'],
+    ['PUT', '/plugin-storage/key-a'],
+    ['DELETE', '/plugin-storage/key-a'],
+    ['POST', '/plugin-storage/bulk'],
     ['POST', '/loadouts'],
     ['DELETE', '/loadouts/loadout-a'],
     ['POST', '/loadouts/loadout-a/favorite'],

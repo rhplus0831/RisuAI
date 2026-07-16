@@ -19,6 +19,8 @@ const api = vi.hoisted(() => ({
 }))
 
 const sideEffects = vi.hoisted(() => ({
+  mergePluginCollection: vi.fn((value: any[]) => value),
+  mergePluginProvider: vi.fn((value: unknown) => (typeof value === 'string' ? value : '')),
   mergePluginStorage: vi.fn((value: Record<string, unknown>) => value),
   reattach: vi.fn(),
   clearTranslation: vi.fn(),
@@ -98,6 +100,8 @@ import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
 
 const hooks: ServerResourceInvalidationHooks = {
+  mergePendingPluginCollection: sideEffects.mergePluginCollection,
+  mergePendingPluginProvider: sideEffects.mergePluginProvider,
   mergePendingPluginStorage: sideEffects.mergePluginStorage,
   applyChatMessages: sideEffects.applyChat,
   applyCharacterLorebook: sideEffects.applyLorebook,
@@ -187,6 +191,8 @@ beforeEach(() => {
     mock.mockClear()
   }
   promptHydration.currentOwner = null
+  sideEffects.mergePluginCollection.mockImplementation((value: any[]) => value)
+  sideEffects.mergePluginProvider.mockImplementation((value: unknown) => (typeof value === 'string' ? value : ''))
   sideEffects.mergePluginStorage.mockImplementation((value: Record<string, unknown>) => value)
   promptHydration.ensure.mockResolvedValue(true)
 })
@@ -1498,6 +1504,11 @@ describe('API-backed resource invalidation', () => {
       group: 'providers',
       settings: { currentPluginProvider: 'plugin-a' },
     })
+    sideEffects.mergePluginCollection.mockImplementation((value) => [
+      ...value,
+      { name: 'plugin-pending', script: 'optimistic' },
+    ])
+    sideEffects.mergePluginProvider.mockReturnValue('plugin-pending')
 
     await expect(
       refreshInvalidatedServerResources(
@@ -1517,8 +1528,11 @@ describe('API-backed resource invalidation', () => {
     expect(api.settings).not.toHaveBeenCalled()
     expect(api.collections).not.toHaveBeenCalled()
     expect(getResourceDatabase()).toMatchObject({
-      currentPluginProvider: 'plugin-a',
-      plugins: [{ name: 'plugin-a', script: 'authoritative' }],
+      currentPluginProvider: 'plugin-pending',
+      plugins: [
+        { name: 'plugin-a', script: 'authoritative' },
+        { name: 'plugin-pending', script: 'optimistic' },
+      ],
     })
   })
 

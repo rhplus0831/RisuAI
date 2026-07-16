@@ -11,7 +11,9 @@ const pluginSettingsMocks = vi.hoisted(() => ({
   alertSelect: vi.fn(),
   checkPluginUpdate: vi.fn<() => Promise<MockPluginUpdateCheckResult>>(async () => ({ status: 'up-to-date' })),
   installPluginUpdate: vi.fn<() => Promise<MockPluginUpdateInstallResult>>(async () => 'installed'),
-  setPluginArgument: vi.fn(),
+  setPluginArgument: vi.fn(async () => ({ status: 'accepted', result: { status: 'ok' } })),
+  togglePluginEnabled: vi.fn(async () => ({ status: 'accepted', result: { status: 'ok' } })),
+  deletePlugin: vi.fn(async () => ({ status: 'accepted', result: { status: 'ok' } })),
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -36,15 +38,26 @@ vi.mock('src/ts/plugins/plugins.svelte', () => ({
 }))
 
 vi.mock('src/ts/pluginCommands', () => ({
-  deletePlugin: vi.fn(),
+  acceptedPluginRuntimeProjection: vi.fn((value) => value),
+  deletePlugin: pluginSettingsMocks.deletePlugin,
+  mergePendingPluginCollectionResource: vi.fn((value) => value),
+  mergePendingPluginProviderResource: vi.fn((value) => value),
   mergePendingPluginStorageResource: vi.fn((value) => value),
   setPluginArgument: pluginSettingsMocks.setPluginArgument,
-  togglePluginEnabled: vi.fn(),
+  togglePluginEnabled: pluginSettingsMocks.togglePluginEnabled,
 }))
 
 import PluginSettings from './PluginSettings.svelte'
 import { language } from 'src/lang'
 import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
 
 describe('PluginSettings', () => {
   let target: HTMLElement
@@ -59,6 +72,11 @@ describe('PluginSettings', () => {
     pluginSettingsMocks.installPluginUpdate.mockReset()
     pluginSettingsMocks.installPluginUpdate.mockResolvedValue('installed')
     pluginSettingsMocks.setPluginArgument.mockReset()
+    pluginSettingsMocks.setPluginArgument.mockResolvedValue({ status: 'accepted', result: { status: 'ok' } })
+    pluginSettingsMocks.togglePluginEnabled.mockReset()
+    pluginSettingsMocks.togglePluginEnabled.mockResolvedValue({ status: 'accepted', result: { status: 'ok' } })
+    pluginSettingsMocks.deletePlugin.mockReset()
+    pluginSettingsMocks.deletePlugin.mockResolvedValue({ status: 'accepted', result: { status: 'ok' } })
     target = document.createElement('div')
     document.body.appendChild(target)
     setDatabaseLite({
@@ -147,6 +165,52 @@ describe('PluginSettings', () => {
     expect(removeButton?.type).toBe('button')
     expect(importButton?.type).toBe('button')
     expect(developButton?.type).toBe('button')
+  })
+
+  it('keeps a plugin action busy until its durable outcome and reports a queued retry', async () => {
+    const mutation = deferred<any>()
+    pluginSettingsMocks.togglePluginEnabled.mockReturnValueOnce(mutation.promise)
+    component = mount(PluginSettings, { target })
+
+    const enableButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.enable}: Plugin C"]`)
+    enableButton?.click()
+    await tick()
+
+    expect(enableButton?.disabled).toBe(true)
+    expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.saving)
+
+    mutation.resolve({ status: 'queued', result: { status: 'unavailable' } })
+    await vi.waitFor(() =>
+      expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.queued),
+    )
+    expect(enableButton?.disabled).toBe(false)
+  })
+
+  it('does not let an older failed argument save replace a newer accepted status', async () => {
+    const older = deferred<any>()
+    const newer = deferred<any>()
+    pluginSettingsMocks.setPluginArgument.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise)
+    component = mount(PluginSettings, { target })
+
+    const pluginRow = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Plugin C'),
+    )
+    pluginRow?.click()
+    await tick()
+    const select = target.querySelector<HTMLSelectElement>('select')
+    if (!select) throw new Error('Expected plugin argument select')
+    select.value = 'slow'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    select.value = 'fast'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+
+    older.resolve({ status: 'failed', result: { status: 'error', error: 'rejected' } })
+    await tick()
+    expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.saving)
+
+    newer.resolve({ status: 'accepted', result: { status: 'ok' } })
+    await vi.waitFor(() => expect(target.textContent).not.toContain(language.pluginMutation.saving))
+    expect(target.textContent).not.toContain(language.pluginMutation.failed)
   })
 
   it('renders numeric integer checkboxes and persists numeric toggle values', async () => {

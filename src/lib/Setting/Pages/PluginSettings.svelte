@@ -13,7 +13,12 @@
     installPluginUpdate,
     type RisuPlugin,
   } from 'src/ts/plugins/plugins.svelte'
-  import { deletePlugin, setPluginArgument, togglePluginEnabled } from 'src/ts/pluginCommands'
+  import {
+    deletePlugin,
+    setPluginArgument,
+    togglePluginEnabled,
+    type PluginMutationOutcome,
+  } from 'src/ts/pluginCommands'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
@@ -24,6 +29,14 @@
   import { hotReloadPluginFiles } from 'src/ts/plugins/apiV3/developMode'
 
   let expandedPluginNames = $state<string[]>([])
+  let nextPluginMutationSequence = 0
+
+  interface PluginMutationUiState {
+    sequence: number
+    status: 'saving' | 'queued' | 'failed'
+  }
+
+  let pluginMutationStates = $state<Record<string, PluginMutationUiState>>({})
 
   type PluginUpdateUiStatus =
     | 'idle'
@@ -75,8 +88,35 @@
     return findPluginByName(pluginName)?.plugin.realArg?.[arg] ?? ''
   }
 
-  function setPluginArg(pluginName: string, arg: string, value: number | string) {
-    setPluginArgument(pluginName, arg, value)
+  function setPluginArg(pluginName: string, arg: string, value: number | string): void {
+    trackPluginMutation(pluginName, setPluginArgument(pluginName, arg, value))
+  }
+
+  function trackPluginMutation(pluginName: string, pending: Promise<PluginMutationOutcome> | null): void {
+    if (!pending) return
+    const sequence = ++nextPluginMutationSequence
+    pluginMutationStates[pluginName] = { sequence, status: 'saving' }
+    void pending.then((outcome) => {
+      if (pluginMutationStates[pluginName]?.sequence !== sequence) return
+      if (outcome.status === 'accepted') {
+        delete pluginMutationStates[pluginName]
+      } else {
+        pluginMutationStates[pluginName] = { sequence, status: outcome.status }
+      }
+    })
+  }
+
+  function pluginMutationStatusText(pluginName: string): string {
+    switch (pluginMutationStates[pluginName]?.status) {
+      case 'saving':
+        return language.pluginMutation.saving
+      case 'queued':
+        return language.pluginMutation.queued
+      case 'failed':
+        return language.pluginMutation.failed
+      default:
+        return ''
+    }
   }
 
   function pluginUpdateStateKey(pluginName: string): string {
@@ -220,7 +260,7 @@
     {#if i !== 0}
       <div class="border-darkborderc mt-2 mb-2 w-full border-solid border-b-1 seperator"></div>
     {/if}
-    <div class="flex gap-2 items-center">
+    <div class="flex gap-2 items-center" aria-busy={pluginMutationStates[plugin.name]?.status === 'saving'}>
       <button
         type="button"
         class="font-bold grow text-left"
@@ -291,11 +331,14 @@
         type="button"
         aria-label={`${language.enable}: ${plugin.displayName ?? plugin.name}`}
         aria-pressed={plugin.enabled}
+        disabled={pluginMutationStates[plugin.name]?.status === 'saving'}
         class="textcolor2 hover:gray-200 cursor-pointer"
         onclick={async (e) => {
           e.stopPropagation()
-          if (togglePluginEnabled(plugin.name)) {
+          const pending = togglePluginEnabled(plugin.name)
+          if (pending) {
             e.preventDefault()
+            trackPluginMutation(plugin.name, pending)
           }
         }}>
         {#if plugin.enabled}
@@ -309,12 +352,15 @@
         type="button"
         aria-label={`${language.remove}: ${plugin.displayName ?? plugin.name}`}
         class="textcolor2 hover:gray-200 cursor-pointer"
+        disabled={pluginMutationStates[plugin.name]?.status === 'saving'}
         onclick={async (e) => {
           e.stopPropagation()
           const v = await alertConfirm(language.removeConfirm + (plugin.displayName ?? plugin.name))
           if (v) {
-            if (deletePlugin(plugin.name)) {
+            const pending = deletePlugin(plugin.name)
+            if (pending) {
               expandedPluginNames = expandedPluginNames.filter((name) => name !== plugin.name)
+              trackPluginMutation(plugin.name, pending)
             }
           }
         }}>
@@ -328,6 +374,11 @@
           {pluginUpdateStatusText(updateStatus)}
         </span>
       {/if}
+    {/if}
+    {#if pluginMutationStates[plugin.name]}
+      <span class="text-textcolor2 mt-1 block w-full break-words text-xs" role="status" aria-live="polite">
+        {pluginMutationStatusText(plugin.name)}
+      </span>
     {/if}
     {#if plugin.version === 1}
       <span class="text-draculared text-xs">

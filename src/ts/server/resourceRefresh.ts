@@ -1,5 +1,9 @@
 import { selectedCharID } from '../stores.svelte'
-import { mergePendingPluginStorageResource } from '../pluginCommands'
+import {
+  mergePendingPluginCollectionResource,
+  mergePendingPluginProviderResource,
+  mergePendingPluginStorageResource,
+} from '../pluginCommands'
 import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
 import { applyServerChatMessagesResource, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
 import {
@@ -39,6 +43,8 @@ let serverResourceRefreshPromise: Promise<ServerResourceRefreshResult> | null = 
 let serverResourceRefreshPending = false
 
 export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = {
+  mergePendingPluginCollection: mergePendingPluginCollectionResource,
+  mergePendingPluginProvider: mergePendingPluginProviderResource,
   mergePendingPluginStorage: mergePendingPluginStorageResource,
   applyChatMessages: applyServerChatMessagesResource,
   applyCharacterLorebook: applyServerCharacterLorebookResource,

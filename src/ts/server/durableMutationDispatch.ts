@@ -71,7 +71,18 @@ export function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
   dispatch: (options: ServerCommandTransportOptions) => Promise<ServerCommandResult<T>>,
   options: DurableMutationDispatchOptions<T> = {},
 ): Promise<ServerCommandResult<T>> {
-  if (!handle.databaseLineage) return dispatch({})
+  if (!handle.databaseLineage) {
+    const executionWrapper: ServerCommandExecutionWrapper = (execute) =>
+      withLocalPendingMutationLock(`risu:durable-mutation-unavailable:${handle.key}`, async () => {
+        const shortCircuitResult = options.beforeExecuteResult?.()
+        if (shortCircuitResult) return shortCircuitResult
+        return runServerCommandWithoutMutationReceipt(execute)
+      })
+    return dispatch({
+      executionWrapper,
+      failureRollbackDisposition: () => 'rollback',
+    })
+  }
   // Freeze synchronously before the caller can stage a successor, and enqueue
   // the command synchronously so later structural actions cannot overtake it.
   const readiness = beginPendingMutationDispatch(handle)

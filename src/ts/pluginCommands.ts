@@ -10,16 +10,24 @@ import {
   putPluginStorageCommand,
   reorderPluginsCommand,
   runServerCommand,
-  runServerCommandSequence,
   selectPluginProviderCommand,
   settingsGroupForKey,
   updatePluginCommand,
   type PluginSnapshot,
   type ServerCommandResult,
+  type ServerCommandTransportOptions,
   type SettingsGroup,
 } from './server/commands'
+import { dispatchDurableMutation } from './server/durableMutationDispatch'
+import { PLUGIN_COLLECTION_MUTATION_KEY, PLUGIN_STORAGE_MUTATION_KEY } from './server/pluginMutationKeys'
+import {
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type DurableMutationRequest,
+} from './server/pendingMutationOutbox'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { captureSettingsPatchProjectionEpochs, getResourceDatabase as getDatabase } from './server/resourceState.svelte'
+import { SETTINGS_BRIDGE_MUTATION_KEY } from './server/settingsMutationKey'
 import type { SettingsGroupProjectionEpochs } from './server/settingsGroups'
 import { applyAttemptedFieldRollback } from './server/staleStateGuards'
 
@@ -38,8 +46,20 @@ export interface PluginSettingsPatchRollbackSnapshot {
 
 interface PluginSettingsPatchRollbackStep {
   patch: Record<string, unknown>
+  group: SettingsGroup
   optimisticProjectionEpochs: SettingsGroupProjectionEpochs
   rollbackSnapshot: PluginSettingsPatchRollbackSnapshot
+}
+
+export type PluginMutationOutcome =
+  | { status: 'accepted'; result: Extract<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+
+export interface PluginMutationBatchOutcome {
+  status: 'accepted' | 'queued' | 'failed'
+  acceptedCount: number
+  outcomes: PluginMutationOutcome[]
 }
 
 const PLUGIN_PATCH_EXCLUDED_KEYS = new Set(['name'])
@@ -56,6 +76,9 @@ let nextPluginStorageOperationSequence = 0
 const pendingPluginStorageOperationsByKey = new Map<string, PluginStorageOperationRecord[]>()
 let nextPluginNonStorageOperationSequence = 0
 const pendingPluginNonStorageOperationsByTarget = new Map<string, PluginNonStorageOperationRecord[]>()
+let acceptedPluginRuntimeBaseline: RisuPlugin[] | null = null
+
+const PLUGIN_RUNTIME_FIELDS = new Set(['script', 'enabled', 'version', 'allowedIPC'])
 
 interface PluginStorageOperationToken {
   sequence: number
@@ -142,8 +165,14 @@ interface PluginOrderRollbackEntry {
 }
 
 interface PluginCollectionPatchStep {
-  factory: (baseRevision: number) => Promise<ServerCommandResult>
+  request: DurableMutationRequest
+  factory: (baseRevision: number, signal?: AbortSignal | null) => Promise<ServerCommandResult>
   rollbackEntries: PluginNonStorageRollbackEntry[]
+}
+
+interface PendingPluginMutationExecution {
+  promise: Promise<ServerCommandResult>
+  disposition: () => 'retain' | 'rollback'
 }
 
 export function cloneJsonValue<T>(value: T): T {
@@ -183,116 +212,283 @@ export function currentPluginSettingsPatchRollbackSnapshot(
 export function runPluginCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
+  options: ServerCommandTransportOptions = {},
 ): Promise<ServerCommandResult<T>> | null {
   if (!canUseServerCommands()) return null
-  return runServerCommand({ command, rollback })
+  return runServerCommand({ command, rollback, ...options })
 }
 
-export function dispatchCreatePlugin(plugin: RisuPlugin, previous: PluginStateSnapshot): void {
-  void runCreatePluginCommand(plugin, previous)
+function dispatchPluginDurableMutation<T extends Record<string, unknown>>(
+  key: string,
+  intent: DurableMutationIntent,
+  command: (baseRevision: number, signal?: AbortSignal | null) => Promise<ServerCommandResult<T>>,
+  rollback: () => void,
+  options: PluginDurableTransportOptions<T> = {},
+): PendingPluginMutationExecution {
+  return dispatchPluginDurableTransport(
+    key,
+    intent,
+    (transport) => {
+      return (
+        runPluginCommand((baseRevision) => command(baseRevision, transport.signal), rollback, transport) ??
+        Promise.resolve({ status: 'unavailable' as const })
+      )
+    },
+    options,
+  )
+}
+
+function dispatchPluginDurableTransport<T extends Record<string, unknown>>(
+  key: string,
+  intent: DurableMutationIntent,
+  dispatch: (transport: ServerCommandTransportOptions) => Promise<ServerCommandResult<T>>,
+  options: PluginDurableTransportOptions<T> = {},
+): PendingPluginMutationExecution {
+  const outbox = stagePendingMutation(key, intent)
+  let disposition: 'retain' | 'rollback' = 'rollback'
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const promise = dispatchDurableMutation(
+    outbox,
+    intent,
+    (transport) => {
+      failureRollbackDisposition = transport.failureRollbackDisposition
+      const executionWrapper = transport.executionWrapper
+      if (!options.observeExecutionResult || !executionWrapper) return dispatch(transport)
+      return dispatch({
+        ...transport,
+        executionWrapper: (execute) =>
+          executionWrapper(async () => {
+            const result = await execute()
+            options.observeExecutionResult?.(result)
+            return result
+          }),
+      })
+    },
+    options,
+  ).then(
+    (result) => {
+      // The durable dispatcher settles the outbox before the public command
+      // promise resolves, so this resolver now reports the final retain/rollback
+      // decision for the exact attempted body.
+      disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? disposition)
+      return result
+    },
+    (error) => {
+      // Transport exceptions retain a persisted row just like retryable error
+      // results. Preserve that decision for the public queued/failed outcome.
+      disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? disposition
+      throw error
+    },
+  )
+  return { promise, disposition: () => disposition }
+}
+
+interface PluginDurableTransportOptions<T extends Record<string, unknown>> {
+  beforeExecuteResult?: () => Exclude<ServerCommandResult<T>, { status: 'ok' }> | undefined
+  observeExecutionResult?: (result: ServerCommandResult<T>) => void
+}
+
+async function pluginMutationOutcome(execution: PendingPluginMutationExecution): Promise<PluginMutationOutcome> {
+  let result: ServerCommandResult
+  try {
+    result = await execution.promise
+  } catch (error) {
+    console.error('Plugin mutation command rejected:', error)
+    result = { status: 'unavailable' }
+  }
+  if (result.status === 'ok') return { status: 'accepted', result }
+  return execution.disposition() === 'retain' ? { status: 'queued', result } : { status: 'failed', result }
+}
+
+function pluginMutationBatchOutcome(outcomes: PluginMutationOutcome[]): PluginMutationBatchOutcome {
+  const lastAcceptedIndex = outcomes.findLastIndex((outcome) => outcome.status === 'accepted')
+  const lastQueuedIndex = outcomes.findLastIndex((outcome) => outcome.status === 'queued')
+  const failed = outcomes.some((outcome) => outcome.status === 'failed')
+  // An accepted successor on the same semantic lane first replays every
+  // retained predecessor. Treat that accepted suffix as proof that the queued
+  // prefix also reached the server before this batch promise completed.
+  const acceptedCount = failed
+    ? outcomes.filter((outcome) => outcome.status === 'accepted').length
+    : lastAcceptedIndex >= lastQueuedIndex
+      ? outcomes.length
+      : lastAcceptedIndex + 1
+  return {
+    status: failed ? 'failed' : lastQueuedIndex > lastAcceptedIndex ? 'queued' : 'accepted',
+    acceptedCount,
+    outcomes,
+  }
+}
+
+export function dispatchCreatePlugin(
+  plugin: RisuPlugin,
+  previous: PluginStateSnapshot,
+): Promise<PluginMutationOutcome> | null {
+  return runCreatePluginCommand(plugin, previous)
 }
 
 export function runCreatePluginCommand(
   plugin: RisuPlugin,
   previous: PluginStateSnapshot,
-): Promise<ServerCommandResult<{ pluginId: string }>> | null {
+): Promise<PluginMutationOutcome> | null {
   if (!canUseServerCommands()) return null
   const pluginSnapshot = toPluginSnapshot(plugin)
   const rollbackEntry = pluginCreateRollbackEntry(plugin)
-  const operation = issuePluginNonStorageOperation([rollbackEntry])
-  return runPluginCommand(
-    async (baseRevision) => {
-      const result = await createPluginCommand({
-        baseRevision,
-        plugin: pluginSnapshot,
-      })
-      if (result.status === 'ok') {
-        clearPluginNonStorageOperation(operation)
-      }
-      return result
-    },
-    () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
+  const operation = issuePluginNonStorageOperation([rollbackEntry], previous.plugins)
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [{ method: 'POST', path: '/plugins', body: { plugin: cloneJsonValue(pluginSnapshot) } }],
+  }
+  return pluginMutationOutcome(
+    dispatchPluginDurableMutation(
+      PLUGIN_COLLECTION_MUTATION_KEY,
+      intent,
+      async (baseRevision, signal) => {
+        const result = await createPluginCommand(
+          {
+            baseRevision,
+            plugin: cloneJsonValue(pluginSnapshot),
+          },
+          signal,
+        )
+        if (result.status === 'ok') {
+          clearPluginNonStorageOperation(operation)
+        }
+        return result
+      },
+      () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
+    ),
   )
 }
 
-export function dispatchUpdatePlugin(pluginId: string, patch: PluginSnapshot, previous: PluginStateSnapshot): void {
-  void runUpdatePluginCommand(pluginId, patch, previous)
+export function dispatchUpdatePlugin(
+  pluginId: string,
+  patch: PluginSnapshot,
+  previous: PluginStateSnapshot,
+): Promise<PluginMutationOutcome> | null {
+  return runUpdatePluginCommand(pluginId, patch, previous)
 }
 
 export function runUpdatePluginCommand(
   pluginId: string,
   patch: PluginSnapshot,
   previous: PluginStateSnapshot,
-): Promise<ServerCommandResult<{ pluginId: string }>> | null {
+): Promise<PluginMutationOutcome> | null {
   const commandPatch = changedPluginPatch(pluginId, patch, previous)
   if (Object.keys(commandPatch).length === 0) return null
   if (!canUseServerCommands()) return null
   const rollbackEntries = pluginFieldRollbackEntries(pluginId, commandPatch, previous)
-  const operation = rollbackEntries.length > 0 ? issuePluginNonStorageOperation(rollbackEntries) : null
-  return runPluginCommand(
-    async (baseRevision) => {
-      const result = await updatePluginCommand({
-        baseRevision,
-        pluginId,
-        patch: commandPatch,
-      })
-      if (operation && result.status === 'ok') {
-        clearPluginNonStorageOperation(operation)
-      }
-      return result
-    },
-    () => {
-      if (operation) {
-        rollbackPluginNonStorageEntries(rollbackEntries, operation)
-      }
-    },
+  const operation =
+    rollbackEntries.length > 0 ? issuePluginNonStorageOperation(rollbackEntries, previous.plugins) : null
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/plugins/${encodeURIComponent(pluginId)}`,
+        body: { patch: cloneJsonValue(commandPatch) },
+      },
+    ],
+  }
+  return pluginMutationOutcome(
+    dispatchPluginDurableMutation(
+      PLUGIN_COLLECTION_MUTATION_KEY,
+      intent,
+      async (baseRevision, signal) => {
+        const result = await updatePluginCommand(
+          {
+            baseRevision,
+            pluginId,
+            patch: cloneJsonValue(commandPatch),
+          },
+          signal,
+        )
+        if (operation && result.status === 'ok') {
+          clearPluginNonStorageOperation(operation)
+        }
+        return result
+      },
+      () => {
+        if (operation) {
+          rollbackPluginNonStorageEntries(rollbackEntries, operation)
+        }
+      },
+    ),
   )
 }
 
-export function dispatchDeletePlugin(pluginId: string, previous: PluginStateSnapshot): void {
-  if (!canUseServerCommands()) return
+export function dispatchDeletePlugin(
+  pluginId: string,
+  previous: PluginStateSnapshot,
+): Promise<PluginMutationOutcome> | null {
+  if (!canUseServerCommands()) return null
   const rollbackEntry = deletePluginRollbackEntry(pluginId, previous)
-  const operation = rollbackEntry ? issuePluginNonStorageOperation([rollbackEntry]) : null
-  runPluginCommand(
-    async (baseRevision) => {
-      const result = await deletePluginCommand({
-        baseRevision,
-        pluginId,
-      })
-      if (operation && result.status === 'ok') {
-        clearPluginNonStorageOperation(operation)
-      }
-      return result
-    },
-    () => {
-      if (rollbackEntry && operation) {
-        rollbackPluginNonStorageEntries([rollbackEntry], operation)
-      }
-    },
+  const operation = rollbackEntry ? issuePluginNonStorageOperation([rollbackEntry], previous.plugins) : null
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [{ method: 'DELETE', path: `/plugins/${encodeURIComponent(pluginId)}`, body: {} }],
+  }
+  return pluginMutationOutcome(
+    dispatchPluginDurableMutation(
+      PLUGIN_COLLECTION_MUTATION_KEY,
+      intent,
+      async (baseRevision, signal) => {
+        const result = await deletePluginCommand(
+          {
+            baseRevision,
+            pluginId,
+          },
+          signal,
+        )
+        if (operation && result.status === 'ok') {
+          clearPluginNonStorageOperation(operation)
+        }
+        return result
+      },
+      () => {
+        if (rollbackEntry && operation) {
+          rollbackPluginNonStorageEntries([rollbackEntry], operation)
+        }
+      },
+    ),
   )
 }
 
-export function dispatchEnablePlugin(pluginId: string, enabled: boolean, previous: PluginStateSnapshot): void {
-  if (!canUseServerCommands()) return
+export function dispatchEnablePlugin(
+  pluginId: string,
+  enabled: boolean,
+  previous: PluginStateSnapshot,
+): Promise<PluginMutationOutcome> | null {
+  if (!canUseServerCommands()) return null
   const rollbackEntry = pluginFieldRollbackEntry(pluginId, 'enabled', previous, true, enabled)
-  const operation = rollbackEntry ? issuePluginNonStorageOperation([rollbackEntry]) : null
-  runPluginCommand(
-    async (baseRevision) => {
-      const result = await enablePluginCommand({
-        baseRevision,
-        pluginId,
-        enabled,
-      })
-      if (operation && result.status === 'ok') {
-        clearPluginNonStorageOperation(operation)
-      }
-      return result
-    },
-    () => {
-      if (rollbackEntry && operation) {
-        rollbackPluginNonStorageEntries([rollbackEntry], operation)
-      }
-    },
+  const operation = rollbackEntry ? issuePluginNonStorageOperation([rollbackEntry], previous.plugins) : null
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [{ method: 'POST', path: `/plugins/${encodeURIComponent(pluginId)}/enable`, body: { enabled } }],
+  }
+  return pluginMutationOutcome(
+    dispatchPluginDurableMutation(
+      PLUGIN_COLLECTION_MUTATION_KEY,
+      intent,
+      async (baseRevision, signal) => {
+        const result = await enablePluginCommand(
+          {
+            baseRevision,
+            pluginId,
+            enabled,
+          },
+          signal,
+        )
+        if (operation && result.status === 'ok') {
+          clearPluginNonStorageOperation(operation)
+        }
+        return result
+      },
+      () => {
+        if (rollbackEntry && operation) {
+          rollbackPluginNonStorageEntries([rollbackEntry], operation)
+        }
+      },
+    ),
   )
 }
 
@@ -303,9 +499,13 @@ function findPluginByName(pluginName: string): { plugin: RisuPlugin; index: numb
   return { plugin: plugins[index], index }
 }
 
-export function setPluginArgument(pluginName: string, arg: string, value: number | string): boolean {
+export function setPluginArgument(
+  pluginName: string,
+  arg: string,
+  value: number | string,
+): Promise<PluginMutationOutcome> | null {
   const current = findPluginByName(pluginName)
-  if (!current) return false
+  if (!current) return null
 
   const { plugin } = current
   const previous = currentPluginStateSnapshot()
@@ -322,13 +522,12 @@ export function setPluginArgument(pluginName: string, arg: string, value: number
       realArg: nextRealArg,
     }
   })
-  dispatchUpdatePlugin(plugin.name, { realArg: nextRealArg }, previous)
-  return true
+  return dispatchUpdatePlugin(plugin.name, { realArg: nextRealArg }, previous)
 }
 
-export function togglePluginEnabled(pluginName: string): boolean {
+export function togglePluginEnabled(pluginName: string): Promise<PluginMutationOutcome> | null {
   const current = findPluginByName(pluginName)
-  if (!current) return false
+  if (!current) return null
 
   const { plugin } = current
   const previous = currentPluginStateSnapshot()
@@ -342,13 +541,12 @@ export function togglePluginEnabled(pluginName: string): boolean {
       enabled,
     }
   })
-  dispatchEnablePlugin(plugin.name, enabled, previous)
-  return true
+  return dispatchEnablePlugin(plugin.name, enabled, previous)
 }
 
-export function deletePlugin(pluginName: string): boolean {
+export function deletePlugin(pluginName: string): Promise<PluginMutationOutcome> | null {
   const current = findPluginByName(pluginName)
-  if (!current) return false
+  if (!current) return null
 
   const { plugin } = current
   const previous = currentPluginStateSnapshot()
@@ -359,51 +557,66 @@ export function deletePlugin(pluginName: string): boolean {
     }
     getDatabase().plugins = (getDatabase().plugins ?? []).filter((candidate) => candidate.name !== plugin.name)
   })
-  dispatchDeletePlugin(plugin.name, previous)
-  return true
+  return dispatchDeletePlugin(plugin.name, previous)
 }
 
-export function dispatchSelectPluginProvider(provider: string, previous: PluginStateSnapshot): void {
-  if (!canUseServerCommands()) return
+export function dispatchSelectPluginProvider(
+  provider: string,
+  previous: PluginStateSnapshot,
+): Promise<PluginMutationOutcome> | null {
+  if (!canUseServerCommands()) return null
   const rollbackEntry = pluginProviderRollbackEntry(provider, previous)
-  const operation = issuePluginNonStorageOperation([rollbackEntry])
-  runPluginCommand(
-    async (baseRevision) => {
-      const result = await selectPluginProviderCommand({
-        baseRevision,
-        provider,
-      })
-      if (result.status === 'ok') {
-        clearPluginNonStorageOperation(operation)
-      }
-      return result
-    },
-    () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
+  const operation = issuePluginNonStorageOperation([rollbackEntry], previous.plugins)
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [{ method: 'POST', path: '/plugins/provider', body: { provider } }],
+  }
+  return pluginMutationOutcome(
+    dispatchPluginDurableMutation(
+      PLUGIN_COLLECTION_MUTATION_KEY,
+      intent,
+      async (baseRevision, signal) => {
+        const result = await selectPluginProviderCommand({ baseRevision, provider }, signal)
+        if (result.status === 'ok') {
+          clearPluginNonStorageOperation(operation)
+        }
+        return result
+      },
+      () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
+    ),
   )
 }
 
-export function dispatchReorderPlugins(previous: PluginStateSnapshot): void {
-  if (!canUseServerCommands()) return
+export function dispatchReorderPlugins(previous: PluginStateSnapshot): Promise<PluginMutationOutcome> | null {
+  if (!canUseServerCommands()) return null
   const attemptedPluginIds = (getDatabase().plugins ?? []).map((plugin) => plugin.name)
   const rollbackEntry = pluginOrderRollbackEntry(previous, attemptedPluginIds)
-  const operation = issuePluginNonStorageOperation([rollbackEntry])
-  runPluginCommand(
-    async (baseRevision) => {
-      const result = await reorderPluginsCommand({
-        baseRevision,
-        pluginIds: attemptedPluginIds,
-      })
-      if (result.status === 'ok') {
-        clearPluginNonStorageOperation(operation)
-      }
-      return result
-    },
-    () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
+  const operation = issuePluginNonStorageOperation([rollbackEntry], previous.plugins)
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [{ method: 'POST', path: '/plugins/reorder', body: { pluginIds: [...attemptedPluginIds] } }],
+  }
+  return pluginMutationOutcome(
+    dispatchPluginDurableMutation(
+      PLUGIN_COLLECTION_MUTATION_KEY,
+      intent,
+      async (baseRevision, signal) => {
+        const result = await reorderPluginsCommand({ baseRevision, pluginIds: attemptedPluginIds }, signal)
+        if (result.status === 'ok') {
+          clearPluginNonStorageOperation(operation)
+        }
+        return result
+      },
+      () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
+    ),
   )
 }
 
-export function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: PluginStateSnapshot): void {
-  if (!canUseServerCommands()) return
+export function dispatchPluginCollectionPatch(
+  plugins: RisuPlugin[],
+  previous: PluginStateSnapshot,
+): Promise<PluginMutationBatchOutcome> {
+  if (!canUseServerCommands()) return Promise.resolve(pluginMutationBatchOutcome([]))
 
   const beforePlugins = new Map(previous.plugins.map((plugin) => [plugin.name, plugin]))
   const nextPlugins = new Map(plugins.map((plugin) => [plugin.name, plugin]))
@@ -415,7 +628,9 @@ export function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: P
     if (!before) {
       const pluginSnapshot = toPluginSnapshot(plugin)
       steps.push({
-        factory: (baseRevision) => createPluginCommand({ baseRevision, plugin: pluginSnapshot }),
+        request: { method: 'POST', path: '/plugins', body: { plugin: cloneJsonValue(pluginSnapshot) } },
+        factory: (baseRevision, signal) =>
+          createPluginCommand({ baseRevision, plugin: cloneJsonValue(pluginSnapshot) }, signal),
         rollbackEntries: [pluginCreateRollbackEntry(plugin)],
       })
       continue
@@ -426,7 +641,13 @@ export function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: P
     const rollbackEntries = pluginFieldRollbackEntries(pluginId, commandPatch, previous)
     if (rollbackEntries.length === 0) continue
     steps.push({
-      factory: (baseRevision) => updatePluginCommand({ baseRevision, pluginId, patch: commandPatch }),
+      request: {
+        method: 'PATCH',
+        path: `/plugins/${encodeURIComponent(pluginId)}`,
+        body: { patch: cloneJsonValue(commandPatch) },
+      },
+      factory: (baseRevision, signal) =>
+        updatePluginCommand({ baseRevision, pluginId, patch: cloneJsonValue(commandPatch) }, signal),
       rollbackEntries,
     })
   }
@@ -437,7 +658,8 @@ export function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: P
       const rollbackEntry = deletePluginRollbackEntry(pluginId, previous)
       if (rollbackEntry) {
         steps.push({
-          factory: (baseRevision) => deletePluginCommand({ baseRevision, pluginId }),
+          request: { method: 'DELETE', path: `/plugins/${encodeURIComponent(pluginId)}`, body: {} },
+          factory: (baseRevision, signal) => deletePluginCommand({ baseRevision, pluginId }, signal),
           rollbackEntries: [rollbackEntry],
         })
       }
@@ -455,49 +677,62 @@ export function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: P
   }
   if (!isStringArrayEqual(expectedOrderAfterCreateDelete, attemptedPluginIds)) {
     steps.push({
-      factory: (baseRevision) => reorderPluginsCommand({ baseRevision, pluginIds: attemptedPluginIds }),
+      request: { method: 'POST', path: '/plugins/reorder', body: { pluginIds: [...attemptedPluginIds] } },
+      factory: (baseRevision, signal) => reorderPluginsCommand({ baseRevision, pluginIds: attemptedPluginIds }, signal),
       rollbackEntries: [pluginOrderRollbackEntry(previous, attemptedPluginIds)],
     })
   }
 
-  if (steps.length === 0) return
+  if (steps.length === 0) return Promise.resolve(pluginMutationBatchOutcome([]))
 
   const operationSteps = steps.map((step) => ({
     ...step,
-    operation: issuePluginNonStorageOperation(step.rollbackEntries),
+    operation: issuePluginNonStorageOperation(step.rollbackEntries, previous.plugins),
+    rollbackRequested: false,
   }))
 
-  void (async () => {
-    let currentStepIndex = 0
-    try {
-      await runServerCommandSequence(
-        operationSteps.map((step, index) => async (baseRevision) => {
-          currentStepIndex = index
-          const result = await step.factory(baseRevision)
-          if (result.status === 'ok') {
-            clearPluginNonStorageOperation(step.operation)
+  // Stage and reserve every exact row synchronously. A later row shares the
+  // plugin collection lane, so it must drain a retained prefix before it can
+  // reach the server; accepted receipt indices remain idempotent on replay.
+  let firstFailure: Exclude<ServerCommandResult, { status: 'ok' }> | undefined
+  const outcomes = operationSteps.map((step) => {
+    const intent: DurableMutationIntent = { version: 1, requests: [cloneJsonValue(step.request)] }
+    return pluginMutationOutcome(
+      dispatchPluginDurableMutation(
+        PLUGIN_COLLECTION_MUTATION_KEY,
+        intent,
+        async (baseRevision, signal) => {
+          let result: ServerCommandResult
+          try {
+            result = await step.factory(baseRevision, signal)
+          } catch (error) {
+            firstFailure ??= { status: 'unavailable' }
+            throw error
           }
+          if (result.status === 'ok') clearPluginNonStorageOperation(step.operation)
+          else firstFailure ??= result
           return result
-        }),
-        () => {
-          rollbackPluginCollectionPatchSteps(operationSteps, currentStepIndex)
         },
-      )
-    } catch (error) {
-      console.error('Plugin collection command sequence rejected:', error)
-      rollbackPluginCollectionPatchSteps(operationSteps, currentStepIndex)
+        () => {
+          // Collection rows affect one shared projection (especially create,
+          // delete, and reorder), so restore a failed suffix in reverse order
+          // after every reserved row has settled. Rolling back forward here
+          // can make the reorder guard miss the still-optimistic collection.
+          step.rollbackRequested = true
+        },
+        { beforeExecuteResult: () => firstFailure },
+      ),
+    )
+  })
+  return Promise.all(outcomes).then((settledOutcomes) => {
+    for (let index = operationSteps.length - 1; index >= 0; index -= 1) {
+      const step = operationSteps[index]
+      if (step.rollbackRequested) {
+        rollbackPluginNonStorageEntries(step.rollbackEntries, step.operation)
+      }
     }
-  })()
-}
-
-function rollbackPluginCollectionPatchSteps(
-  steps: Array<PluginCollectionPatchStep & { operation: PluginNonStorageOperationToken }>,
-  failedStepIndex: number,
-): void {
-  for (let index = steps.length - 1; index >= failedStepIndex; index -= 1) {
-    const step = steps[index]
-    rollbackPluginNonStorageEntries(step.rollbackEntries, step.operation)
-  }
+    return pluginMutationBatchOutcome(settledOutcomes)
+  })
 }
 
 function pluginCreateRollbackEntry(plugin: RisuPlugin): PluginCreateRollbackEntry {
@@ -581,7 +816,13 @@ function pluginOrderRollbackEntry(
   }
 }
 
-function issuePluginNonStorageOperation(entries: PluginNonStorageRollbackEntry[]): PluginNonStorageOperationToken {
+function issuePluginNonStorageOperation(
+  entries: PluginNonStorageRollbackEntry[],
+  acceptedPlugins: readonly RisuPlugin[],
+): PluginNonStorageOperationToken {
+  if (acceptedPluginRuntimeBaseline === null && entries.some(pluginNonStorageEntryChangesRuntime)) {
+    acceptedPluginRuntimeBaseline = acceptedPlugins.map((plugin) => cloneJsonValue(plugin))
+  }
   const targets = [...new Set(entries.flatMap((entry) => pluginNonStorageRollbackTargets(entry)))]
   const token = {
     sequence: ++nextPluginNonStorageOperationSequence,
@@ -631,6 +872,7 @@ function rollbackPluginNonStorageEntries(
     if (changed) {
       pluginWatchSuppressionVersion += 1
     }
+    releaseAcceptedPluginRuntimeBaselineIfSettled()
   })
 }
 
@@ -771,23 +1013,44 @@ function rollbackPluginOrderIfLiveMatches(entry: PluginOrderRollbackEntry): bool
 }
 
 function clearPluginNonStorageOperation(operation: PluginNonStorageOperationToken): void {
-  for (const target of operation.targets) {
+  const acceptedEntries = pendingPluginNonStorageEntries().filter((record) => record.sequence <= operation.sequence)
+  if (acceptedPluginRuntimeBaseline) {
+    for (const record of acceptedEntries) {
+      acceptedPluginRuntimeBaseline = applyPluginCollectionEntry(acceptedPluginRuntimeBaseline, record.entry)
+    }
+  }
+
+  for (const target of [...pendingPluginNonStorageOperationsByTarget.keys()]) {
     const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(target)
     if (!pendingOperations) continue
 
-    const operationIndex = pendingOperations.findIndex((record) => record.sequence === operation.sequence)
-    if (operationIndex === -1) continue
-
-    const nextPendingOperations = pendingOperations.filter(
-      (record, index) =>
-        record.sequence !== operation.sequence && !(index < operationIndex && record.status === 'failed'),
-    )
+    const nextPendingOperations = pendingOperations.filter((record) => record.sequence > operation.sequence)
     if (nextPendingOperations.length > 0) {
       pendingPluginNonStorageOperationsByTarget.set(target, nextPendingOperations)
     } else {
       pendingPluginNonStorageOperationsByTarget.delete(target)
     }
   }
+  releaseAcceptedPluginRuntimeBaselineIfSettled()
+}
+
+function pluginNonStorageEntryChangesRuntime(entry: PluginNonStorageRollbackEntry): boolean {
+  return (
+    entry.kind === 'plugin-create' ||
+    entry.kind === 'plugin-delete' ||
+    (entry.kind === 'plugin-field' && PLUGIN_RUNTIME_FIELDS.has(entry.field))
+  )
+}
+
+function releaseAcceptedPluginRuntimeBaselineIfSettled(): void {
+  if (!pendingPluginNonStorageEntries().some((record) => pluginNonStorageEntryChangesRuntime(record.entry))) {
+    acceptedPluginRuntimeBaseline = null
+  }
+}
+
+/** Runtime code executes only server-accepted plugin records, never a retained optimistic script. */
+export function acceptedPluginRuntimeProjection(plugins: readonly RisuPlugin[]): RisuPlugin[] {
+  return (acceptedPluginRuntimeBaseline ?? plugins).map((plugin) => cloneJsonValue(plugin))
 }
 
 function pluginFieldRollbackTarget(pluginId: string, field: string): string {
@@ -833,38 +1096,69 @@ export function restorePluginStorage(snapshot: PluginStorageSnapshot): void {
   })
 }
 
-export function dispatchPutPluginStorage(key: string, value: unknown, previous: PluginStorageSnapshot): void {
+export function dispatchPutPluginStorage(
+  key: string,
+  value: unknown,
+  previous: PluginStorageSnapshot,
+): Promise<PluginMutationOutcome> | null {
+  if (!canUseServerCommands()) return null
   const attemptedValue = cloneJsonValue(value)
   const rollbackEntry = pluginStorageRollbackEntryForKey(previous, key, true, attemptedValue)
   const operation = issuePluginStorageOperation([rollbackEntry])
-  const pending = runPluginCommand(
-    (baseRevision) =>
-      putPluginStorageCommand({
-        baseRevision,
-        key,
-        value: attemptedValue,
-      }),
-    () => rollbackPluginStorageEntries([rollbackEntry], operation),
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'PUT',
+        path: `/plugin-storage/${encodeURIComponent(key)}`,
+        body: { value: cloneJsonValue(attemptedValue) },
+      },
+    ],
+  }
+  return pluginMutationOutcome(
+    dispatchPluginDurableMutation(
+      PLUGIN_STORAGE_MUTATION_KEY,
+      intent,
+      async (baseRevision, signal) => {
+        const result = await putPluginStorageCommand(
+          {
+            baseRevision,
+            key,
+            value: cloneJsonValue(attemptedValue),
+          },
+          signal,
+        )
+        if (result.status === 'ok') clearPluginStorageOperation(operation)
+        return result
+      },
+      () => rollbackPluginStorageEntries([rollbackEntry], operation),
+    ),
   )
-  void pending?.then((result) => {
-    if (result.status === 'ok') clearPluginStorageOperation(operation)
-  })
 }
 
-export function dispatchDeletePluginStorage(key: string, previous: PluginStorageSnapshot): void {
+export function dispatchDeletePluginStorage(
+  key: string,
+  previous: PluginStorageSnapshot,
+): Promise<PluginMutationOutcome> | null {
+  if (!canUseServerCommands()) return null
   const rollbackEntry = pluginStorageRollbackEntryForKey(previous, key, false, undefined)
   const operation = issuePluginStorageOperation([rollbackEntry])
-  const pending = runPluginCommand(
-    (baseRevision) =>
-      deletePluginStorageCommand({
-        baseRevision,
-        key,
-      }),
-    () => rollbackPluginStorageEntries([rollbackEntry], operation),
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [{ method: 'DELETE', path: `/plugin-storage/${encodeURIComponent(key)}`, body: {} }],
+  }
+  return pluginMutationOutcome(
+    dispatchPluginDurableMutation(
+      PLUGIN_STORAGE_MUTATION_KEY,
+      intent,
+      async (baseRevision, signal) => {
+        const result = await deletePluginStorageCommand({ baseRevision, key }, signal)
+        if (result.status === 'ok') clearPluginStorageOperation(operation)
+        return result
+      },
+      () => rollbackPluginStorageEntries([rollbackEntry], operation),
+    ),
   )
-  void pending?.then((result) => {
-    if (result.status === 'ok') clearPluginStorageOperation(operation)
-  })
 }
 
 export function dispatchBulkPluginStorage(
@@ -874,11 +1168,12 @@ export function dispatchBulkPluginStorage(
     clear?: boolean
   },
   previous: PluginStorageSnapshot,
-): void {
+): Promise<PluginMutationOutcome> | null {
+  if (!canUseServerCommands()) return null
   const minimized = minimizePluginStoragePatch(input, previous)
   const values = minimized.values
   const deleteKeys = minimized.deleteKeys
-  if (Object.keys(values).length === 0 && deleteKeys.length === 0) return
+  if (Object.keys(values).length === 0 && deleteKeys.length === 0) return null
   const rollbackEntries = buildBulkPluginStorageRollbackEntries(
     {
       values,
@@ -888,19 +1183,36 @@ export function dispatchBulkPluginStorage(
     previous,
   )
   const operation = issuePluginStorageOperation(rollbackEntries)
-  const pending = runPluginCommand(
-    (baseRevision) =>
-      bulkPluginStorageCommand({
-        baseRevision,
-        values,
-        deleteKeys,
-        clear: false,
-      }),
-    () => rollbackPluginStorageEntries(rollbackEntries, operation),
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: '/plugin-storage/bulk',
+        body: { values: cloneJsonValue(values), deleteKeys: [...deleteKeys], clear: false },
+      },
+    ],
+  }
+  return pluginMutationOutcome(
+    dispatchPluginDurableMutation(
+      PLUGIN_STORAGE_MUTATION_KEY,
+      intent,
+      async (baseRevision, signal) => {
+        const result = await bulkPluginStorageCommand(
+          {
+            baseRevision,
+            values: cloneJsonValue(values),
+            deleteKeys: [...deleteKeys],
+            clear: false,
+          },
+          signal,
+        )
+        if (result.status === 'ok') clearPluginStorageOperation(operation)
+        return result
+      },
+      () => rollbackPluginStorageEntries(rollbackEntries, operation),
+    ),
   )
-  void pending?.then((result) => {
-    if (result.status === 'ok') clearPluginStorageOperation(operation)
-  })
 }
 
 function minimizePluginStoragePatch(
@@ -963,6 +1275,77 @@ export function preservePendingPluginStorageInDatabase<T extends { pluginCustomS
       : {}
   database.pluginCustomStorage = mergePendingPluginStorageResource(serverStorage)
   return database
+}
+
+/** Overlay retained plugin record/order intents on an authoritative collection read. */
+export function mergePendingPluginCollectionResource(resource: RisuPlugin[] | null | undefined): RisuPlugin[] {
+  let plugins = cloneJsonValue(resource ?? [])
+  for (const operation of pendingPluginNonStorageEntries()) {
+    plugins = applyPluginCollectionEntry(plugins, operation.entry)
+  }
+  return plugins
+}
+
+/** Overlay retained provider selections (including active-plugin deletes). */
+export function mergePendingPluginProviderResource(provider: unknown): string {
+  let merged = typeof provider === 'string' ? provider : ''
+  for (const operation of pendingPluginNonStorageEntries()) {
+    const entry = operation.entry
+    if (entry.kind === 'plugin-provider') merged = entry.attemptedProvider
+    else if (entry.kind === 'plugin-delete' && entry.providerChanged) merged = entry.attemptedProvider
+  }
+  return merged
+}
+
+function pendingPluginNonStorageEntries(): PluginNonStorageOperationRecord[] {
+  const entries = new Map<string, PluginNonStorageOperationRecord>()
+  for (const operations of pendingPluginNonStorageOperationsByTarget.values()) {
+    for (const operation of operations) {
+      entries.set(`${operation.sequence}:${operation.entry.kind}:${operation.entry.target}`, operation)
+    }
+  }
+  return [...entries.values()].sort((left, right) => left.sequence - right.sequence)
+}
+
+function reorderPluginRows(plugins: RisuPlugin[], pluginIds: readonly string[]): RisuPlugin[] {
+  const byId = new Map(plugins.map((plugin) => [plugin.name, plugin]))
+  const used = new Set<string>()
+  const reordered: RisuPlugin[] = []
+  for (const pluginId of pluginIds) {
+    const plugin = byId.get(pluginId)
+    if (!plugin || used.has(pluginId)) continue
+    reordered.push(plugin)
+    used.add(pluginId)
+  }
+  for (const plugin of plugins) {
+    if (!used.has(plugin.name)) reordered.push(plugin)
+  }
+  return reordered
+}
+
+function applyPluginCollectionEntry(plugins: RisuPlugin[], entry: PluginNonStorageRollbackEntry): RisuPlugin[] {
+  if (entry.kind === 'plugin-create') {
+    const next = [...plugins]
+    const index = next.findIndex((plugin) => plugin.name === entry.pluginId)
+    if (index === -1) next.push(cloneJsonValue(entry.attemptedPlugin))
+    else next[index] = cloneJsonValue(entry.attemptedPlugin)
+    return next
+  }
+  if (entry.kind === 'plugin-field') {
+    const index = plugins.findIndex((plugin) => plugin.name === entry.pluginId)
+    if (index === -1) return plugins
+    const next = [...plugins]
+    const plugin = { ...next[index] } as RisuPlugin & Record<string, unknown>
+    if (entry.attemptedExists) plugin[entry.field] = cloneJsonValue(entry.attemptedValue)
+    else delete plugin[entry.field]
+    next[index] = plugin
+    return next
+  }
+  if (entry.kind === 'plugin-delete') {
+    return plugins.filter((plugin) => plugin.name !== entry.pluginId)
+  }
+  if (entry.kind === 'plugin-order') return reorderPluginRows(plugins, entry.attemptedPluginIds)
+  return plugins
 }
 
 function pluginStorageRollbackEntryForKey(
@@ -1119,17 +1502,14 @@ function rollbackPluginStorageEntryIfLiveMatches(
 }
 
 function clearPluginStorageOperation(operation: PluginStorageOperationToken): void {
-  for (const key of operation.keys) {
+  for (const key of [...pendingPluginStorageOperationsByKey.keys()]) {
     const pendingOperations = pendingPluginStorageOperationsByKey.get(key)
     if (!pendingOperations) continue
 
-    const operationIndex = pendingOperations.findIndex((record) => record.sequence === operation.sequence)
-    if (operationIndex === -1) continue
-
-    const nextPendingOperations = pendingOperations.filter(
-      (record, index) =>
-        record.sequence !== operation.sequence && !(index < operationIndex && record.status === 'failed'),
-    )
+    // Every storage mutation uses one durable semantic lane. Acceptance of a
+    // successor proves any retained predecessor was replayed first, even when
+    // the predecessor touched a different key in a bulk request.
+    const nextPendingOperations = pendingOperations.filter((record) => record.sequence > operation.sequence)
     if (nextPendingOperations.length > 0) {
       pendingPluginStorageOperationsByKey.set(key, nextPendingOperations)
     } else {
@@ -1157,8 +1537,8 @@ function isStringArrayEqual(left: string[], right: string[]): boolean {
 export function dispatchPluginSettingsPatch(
   patch: Record<string, unknown>,
   rollbackSnapshot: PluginSettingsPatchRollbackSnapshot,
-): void {
-  if (!canUseServerCommands()) return
+): Promise<PluginMutationBatchOutcome> {
+  if (!canUseServerCommands()) return Promise.resolve(pluginMutationBatchOutcome([]))
   const stepsByGroup = new Map<SettingsGroup, PluginSettingsPatchRollbackStep>()
 
   for (const [key, value] of Object.entries(patch)) {
@@ -1167,6 +1547,7 @@ export function dispatchPluginSettingsPatch(
       let step = stepsByGroup.get(group)
       if (!step) {
         step = {
+          group,
           patch: {},
           optimisticProjectionEpochs: {},
           rollbackSnapshot: emptyPluginSettingsPatchRollbackSnapshot(),
@@ -1184,30 +1565,42 @@ export function dispatchPluginSettingsPatch(
   for (const step of steps) {
     step.optimisticProjectionEpochs = captureSettingsPatchProjectionEpochs(step.patch)
   }
-  if (steps.length === 0) return
-  void dispatchPluginSettingsPatchSteps(steps)
+  if (steps.length === 0) return Promise.resolve(pluginMutationBatchOutcome([]))
+  return dispatchPluginSettingsPatchSteps(steps)
 }
 
-async function dispatchPluginSettingsPatchSteps(steps: PluginSettingsPatchRollbackStep[]): Promise<void> {
-  let acceptedStepCount = 0
-
-  for (const step of steps) {
-    const result = await patchServerBackedSettings({
-      patch: step.patch,
-      acknowledgeOptimistic: true,
-      optimisticProjectionEpochs: step.optimisticProjectionEpochs,
-      rollback: () => rollbackPluginSettingsPatchSteps(steps, acceptedStepCount),
-    })
-
-    if (result.status !== 'ok') return
-    acceptedStepCount += 1
-  }
-}
-
-function rollbackPluginSettingsPatchSteps(steps: PluginSettingsPatchRollbackStep[], startIndex: number): void {
-  for (let index = startIndex; index < steps.length; index += 1) {
-    rollbackPluginSettingsPatch(steps[index].rollbackSnapshot)
-  }
+async function dispatchPluginSettingsPatchSteps(
+  steps: PluginSettingsPatchRollbackStep[],
+): Promise<PluginMutationBatchOutcome> {
+  let firstFailure: Exclude<ServerCommandResult, { status: 'ok' }> | undefined
+  const outcomes = steps.map((step) => {
+    const frozenPatch = cloneJsonValue(step.patch)
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: `/settings/${step.group}`, body: { patch: frozenPatch } }],
+    }
+    return pluginMutationOutcome(
+      dispatchPluginDurableTransport<Record<string, unknown>>(
+        SETTINGS_BRIDGE_MUTATION_KEY,
+        intent,
+        (transport) =>
+          patchServerBackedSettings({
+            patch: cloneJsonValue(frozenPatch),
+            acknowledgeOptimistic: true,
+            optimisticProjectionEpochs: step.optimisticProjectionEpochs,
+            rollback: () => rollbackPluginSettingsPatch(step.rollbackSnapshot),
+            ...transport,
+          }),
+        {
+          beforeExecuteResult: () => firstFailure,
+          observeExecutionResult: (result) => {
+            if (result.status !== 'ok') firstFailure ??= result
+          },
+        },
+      ),
+    )
+  })
+  return pluginMutationBatchOutcome(await Promise.all(outcomes))
 }
 
 function emptyPluginSettingsPatchRollbackSnapshot(): PluginSettingsPatchRollbackSnapshot {

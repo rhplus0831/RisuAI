@@ -43,6 +43,8 @@ vi.mock('./lorebookBridge.svelte', () => ({
   resetLorebookHydration: sideEffects.resetLorebooks,
 }))
 vi.mock('../pluginCommands', () => ({
+  mergePendingPluginCollectionResource: vi.fn((value) => value),
+  mergePendingPluginProviderResource: vi.fn((value) => value),
   mergePendingPluginStorageResource: vi.fn((value) => value),
 }))
 vi.mock('../process/reattach', () => ({
