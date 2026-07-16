@@ -142,6 +142,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/characters\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/characters\/[^/?#]+$/ },
   { method: 'POST', path: /^\/characters\/select$/ },
+  { method: 'POST', path: /^\/characters\/reorder$/ },
   { method: 'POST', path: /^\/characters\/[^/?#]+\/chats$/ },
   { method: 'POST', path: /^\/characters\/[^/?#]+\/chats\/reorder$/ },
   { method: 'POST', path: /^\/characters\/[^/?#]+\/chat-folders$/ },
@@ -245,6 +246,10 @@ export function pendingMutationCharacterScriptsProjectionTarget(characterId: str
 
 export function pendingMutationCharacterTriggersProjectionTarget(characterId: string): string {
   return `character-triggers:${encodeProjectionTargetPart(characterId)}`
+}
+
+export function pendingMutationCharacterOrderProjectionTarget(): string {
+  return 'character-order'
 }
 
 export function pendingMutationPersonaRowProjectionTarget(personaId: string): string {
@@ -1168,6 +1173,10 @@ function pendingMutationRequestProjectionTargets(request: DurableMutationRequest
     return typeof request.body.moduleId === 'string'
       ? [pendingMutationModuleEnabledProjectionTarget(request.body.moduleId)]
       : []
+  }
+
+  if (request.method === 'POST' && request.path === '/characters/reorder') {
+    return [pendingMutationCharacterOrderProjectionTarget()]
   }
 
   const deletedModule = request.method === 'DELETE' ? /^\/modules\/([^/]+)$/.exec(request.path) : null

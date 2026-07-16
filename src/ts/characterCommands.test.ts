@@ -1888,6 +1888,228 @@ describe('character order command helpers', () => {
       ],
     })
   })
+
+  describe('durable character order dispatch', () => {
+    beforeEach(async () => {
+      vi.stubGlobal('indexedDB', new IDBFactory())
+      resetPendingMutationOutboxForTests()
+      await preparePendingMutationOutbox({
+        writerSessionId: 'writer-character-order',
+        writerEpoch: 21,
+        databaseLineage: 'lineage-character-order',
+        requestedWriterWasActive: true,
+      })
+      setCachedServerCommandRevision(30)
+    })
+
+    afterEach(async () => {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    })
+
+    it('persists and applies one exact reorder without duplicate dispatch', async () => {
+      testDatabaseState.db = {
+        characters: [
+          { chaId: 'char-a', name: 'A', chats: [] },
+          { chaId: 'char-b', name: 'B', chats: [] },
+          { chaId: 'char-c', name: 'C', chats: [] },
+        ],
+        characterOrder: ['char-a', 'char-b', 'char-c'],
+      } as any
+      setResourceWriteGuardEnabled(true)
+      const reorderRequests: Array<{ body: Record<string, unknown>; mutationId: string | null }> = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          if (url !== '/api/v1/commands/characters/reorder') {
+            return jsonResponse({ error: `unexpected ${url}` }, 404)
+          }
+          const headers = init.headers as Record<string, string> | undefined
+          reorderRequests.push({
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : {},
+            mutationId: headers?.['risu-mutation-id'] ?? null,
+          })
+          return jsonResponse({
+            revision: 31,
+            event: { type: 'character.reordered', revision: 31, resource: 'character' },
+            selectedCharacterId: 'char-a',
+          })
+        }) as unknown as typeof fetch,
+      )
+
+      expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
+
+      await vi.waitFor(() => expect(reorderRequests).toHaveLength(1))
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+      expect(reorderRequests[0]).toEqual({
+        body: {
+          baseRevision: 30,
+          characterOrder: ['char-c', 'char-a', 'char-b'],
+        },
+        mutationId: expect.any(String),
+      })
+      expect(testDatabaseState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
+      await flushAsyncWork()
+      expect(reorderRequests).toHaveLength(1)
+    })
+
+    it('retains and reasserts a queued reorder after a retryable failure, then replays it', async () => {
+      const previousOrder = ['char-a', 'char-b', 'char-c']
+      const attemptedOrder = ['char-c', 'char-a', 'char-b']
+      testDatabaseState.db = {
+        characters: [
+          { chaId: 'char-a', name: 'A', chats: [] },
+          { chaId: 'char-b', name: 'B', chats: [] },
+          { chaId: 'char-c', name: 'C', chats: [] },
+        ],
+        characterOrder: cloneForExpect(previousOrder),
+      } as any
+      setResourceWriteGuardEnabled(true)
+      let recover = false
+      let reorderRequests = 0
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          if (url !== '/api/v1/commands/characters/reorder') {
+            return jsonResponse({ error: `unexpected ${url}` }, 404)
+          }
+          reorderRequests += 1
+          if (!recover) {
+            withTrustedResourceWrite(() => {
+              testDatabaseState.db.characterOrder = cloneForExpect(previousOrder)
+            })
+            return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          }
+          return jsonResponse({
+            revision: 31,
+            event: { type: 'character.reordered', revision: 31, resource: 'character' },
+            selectedCharacterId: 'char-a',
+          })
+        }) as unknown as typeof fetch,
+      )
+
+      expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
+
+      await vi.waitFor(() => expect(reorderRequests).toBe(1))
+      await vi.waitFor(() => expect(testDatabaseState.db.characterOrder).toEqual(attemptedOrder))
+      const retained = await listPendingMutations()
+      expect(retained).toHaveLength(1)
+      expect(retained[0]).toMatchObject({
+        handle: { key: 'character-selection' },
+        intent: {
+          dependencyKeys: ['character-owner:char-c'],
+          requests: [
+            {
+              method: 'POST',
+              path: '/characters/reorder',
+              body: { characterOrder: attemptedOrder },
+            },
+          ],
+        },
+      })
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      expect(reorderRequests).toBe(2)
+      expect(testDatabaseState.db.characterOrder).toEqual(attemptedOrder)
+      expect(await listPendingMutations()).toEqual([])
+    })
+
+    it('rolls back a terminal reorder rejection and removes its durable row', async () => {
+      const previousOrder = ['char-a', 'char-b', 'char-c']
+      testDatabaseState.db = {
+        characters: [
+          { chaId: 'char-a', name: 'A', chats: [] },
+          { chaId: 'char-b', name: 'B', chats: [] },
+          { chaId: 'char-c', name: 'C', chats: [] },
+        ],
+        characterOrder: cloneForExpect(previousOrder),
+      } as any
+      setResourceWriteGuardEnabled(true)
+      let reorderRequests = 0
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input)
+          if (url !== '/api/v1/commands/characters/reorder') {
+            return jsonResponse({ error: `unexpected ${url}` }, 404)
+          }
+          reorderRequests += 1
+          return jsonResponse({ error: 'invalid character order' }, 400)
+        }) as unknown as typeof fetch,
+      )
+
+      expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
+      expect(testDatabaseState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
+
+      await vi.waitFor(() => expect(testDatabaseState.db.characterOrder).toEqual(previousOrder))
+      expect(reorderRequests).toBe(1)
+      expect(await listPendingMutations()).toEqual([])
+    })
+
+    it('keeps rapid later folder metadata and reorder projections when an older reorder rejects', async () => {
+      const firstResponse = deferredResponse()
+      testDatabaseState.db = {
+        characters: [
+          { chaId: 'char-a', name: 'A', chats: [] },
+          { chaId: 'char-b', name: 'B', chats: [] },
+          { chaId: 'char-c', name: 'C', chats: [] },
+        ],
+        characterOrder: ['char-a', { id: 'folder-1', name: 'Folder', color: 'blue', data: ['char-b'] }, 'char-c'],
+      } as any
+      setResourceWriteGuardEnabled(true)
+      let revision = 30
+      const reorderRequests: Array<{ body: Record<string, unknown>; mutationId: string | null }> = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          if (url !== '/api/v1/commands/characters/reorder') {
+            return jsonResponse({ error: `unexpected ${url}` }, 404)
+          }
+          const headers = init.headers as Record<string, string> | undefined
+          reorderRequests.push({
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : {},
+            mutationId: headers?.['risu-mutation-id'] ?? null,
+          })
+          if (reorderRequests.length === 1) return firstResponse.promise
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: { type: 'character.reordered', revision, resource: 'character' },
+            selectedCharacterId: 'char-a',
+          })
+        }) as unknown as typeof fetch,
+      )
+
+      expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-1', index: 1 })).toBe(true)
+      await vi.waitFor(() => expect(reorderRequests).toHaveLength(1))
+      expect(updateCharacterOrderFolder('folder-1', { name: 'Later Folder' })).toBe(true)
+      expect(moveCharacterOrderItem({ index: 1 }, { index: 0 })).toBe(true)
+
+      const expectedOrder = [
+        'char-c',
+        { id: 'folder-1', name: 'Later Folder', color: 'blue', data: ['char-b', 'char-a'] },
+      ]
+      expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
+      firstResponse.resolve(jsonResponse({ error: 'invalid character order' }, 400))
+
+      await vi.waitFor(() => expect(reorderRequests).toHaveLength(3))
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+      expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
+      expect(reorderRequests.map(({ body }) => body.characterOrder)).toEqual([
+        [{ id: 'folder-1', name: 'Folder', color: 'blue', data: ['char-b', 'char-a'] }, 'char-c'],
+        [{ id: 'folder-1', name: 'Later Folder', color: 'blue', data: ['char-b', 'char-a'] }, 'char-c'],
+        expectedOrder,
+      ])
+      expect(new Set(reorderRequests.map(({ mutationId }) => mutationId)).size).toBe(3)
+    })
+  })
 })
 
 describe('character command projection helpers', () => {
