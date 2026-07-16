@@ -1,3 +1,4 @@
+import { tick } from 'svelte'
 import { get, writable } from 'svelte/store'
 import { changeChar } from './characters'
 import { changeChatTo } from './globalApi.svelte'
@@ -10,6 +11,7 @@ import {
   CustomGUISettingMenuStore,
   OpenRealmStore,
   PlaygroundStore,
+  ScrollToMessageStore,
   SettingsMenuIndex,
   botMakerMode,
   selectedCharID,
@@ -187,6 +189,13 @@ let routeApplicationEpoch = 0
 let gridHistoryTraversalPending = false
 let settingsHistoryTraversalPending = false
 
+interface PendingChatMessageJump {
+  messageIndex: number
+  routeKey: string
+}
+
+let pendingChatMessageJump: PendingChatMessageJump | null = null
+
 export const currentRoute = writable<AppRoute>(initialRoute)
 
 export function installRouter(): void {
@@ -232,6 +241,30 @@ export function navigate(path: string, options: { replace?: boolean } = {}): voi
     replace: options.replace ?? false,
     stateDriven: false,
   })
+}
+
+export function navigateToCharacterChatMessage(characterId: string, chatId: string, messageIndex: number): void {
+  if (!characterId || !chatId || !Number.isInteger(messageIndex) || messageIndex < 0) return
+
+  const path = characterRoutePath(characterId, chatId)
+  const targetRoute = parseRoute(path)
+  if (targetRoute.kind !== 'character') return
+
+  const request: PendingChatMessageJump = {
+    messageIndex,
+    routeKey: routeKey(targetRoute),
+  }
+  pendingChatMessageJump = request
+  navigate(path)
+
+  if (routeKey(get(currentRoute)) !== request.routeKey) {
+    if (pendingChatMessageJump === request) pendingChatMessageJump = null
+    return
+  }
+
+  if (!routeApplicationPending && !applyingRoute) {
+    void deliverPendingChatMessageJump(targetRoute, () => routeKey(get(currentRoute)) === request.routeKey)
+  }
 }
 
 export function openSettingsRoute(path = '/settings'): void {
@@ -406,6 +439,7 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
       case 'character': {
         await openCharacterRoute(route.chaId, route.chatId, isFreshRouteApplication)
         restoreCharacterSidebarViewMode(route, isFreshRouteApplication)
+        await deliverPendingChatMessageJump(route, isFreshRouteApplication)
         break
       }
       case 'not-found': {
@@ -419,10 +453,26 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
   } finally {
     queueMicrotask(() => {
       if (!isFreshRouteApplication()) return
+      if (pendingChatMessageJump && pendingChatMessageJump.routeKey !== routeKey(get(currentRoute))) {
+        pendingChatMessageJump = null
+      }
       applyingRoute = false
       routeApplicationPending = false
     })
   }
+}
+
+async function deliverPendingChatMessageJump(route: AppRoute, isFresh: () => boolean): Promise<void> {
+  const request = pendingChatMessageJump
+  if (!request || request.routeKey !== routeKey(route)) return
+
+  await tick()
+  if (pendingChatMessageJump !== request || !isFresh() || request.routeKey !== routeKey(get(currentRoute))) {
+    return
+  }
+
+  pendingChatMessageJump = null
+  ScrollToMessageStore.value = request.messageIndex
 }
 
 export function parseRoute(pathname: string): AppRoute {

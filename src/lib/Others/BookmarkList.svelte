@@ -1,9 +1,10 @@
 <script lang="ts">
   import { XIcon, TrashIcon, PencilIcon, BookOpenCheckIcon, BookLockIcon, ArrowRightIcon } from '@lucide/svelte'
+  import { onMount } from 'svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
   import { getUserDisplayName, getUserIcon } from 'src/ts/util'
-  import { createSimpleCharacter, bookmarkListOpen, selectedCharID, ScrollToMessageStore } from 'src/ts/stores.svelte'
+  import { createSimpleCharacter, bookmarkListOpen, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import { alertInput } from 'src/ts/alert'
   import {
@@ -21,10 +22,51 @@
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
+  import { navigateToCharacterChatMessage } from 'src/ts/router'
 
   const close = () => ($bookmarkListOpen = false)
   let chara = $derived(getDatabase().characters[$selectedCharID])
   const simpleChar = $derived(createSimpleCharacter(chara))
+  let bookmarkHydrationState = $state<'loading' | 'ready' | 'error'>('loading')
+  let bookmarkHydrationRun = 0
+
+  function activeBookmarkChat() {
+    return chara?.chats?.[chara.chatPage]
+  }
+
+  function hasNonresidentBookmarks(): boolean {
+    const chat = activeBookmarkChat()
+    if (!chat) return false
+    const residentMessageIds = new Set(chat.message.map((message) => message.chatId))
+    return (chat.bookmarks ?? []).some((bookmarkId) => !residentMessageIds.has(bookmarkId))
+  }
+
+  async function prepareBookmarkMessages(force = false): Promise<void> {
+    const run = ++bookmarkHydrationRun
+    const chat = activeBookmarkChat()
+    if (!chat || (!force && !hasNonresidentBookmarks()) || !chat.id) {
+      bookmarkHydrationState = 'ready'
+      return
+    }
+
+    bookmarkHydrationState = 'loading'
+    try {
+      await hydrateChatMessages(chat.id, { strict: true })
+      if (run !== bookmarkHydrationRun) return
+      bookmarkHydrationState = 'ready'
+    } catch {
+      if (run !== bookmarkHydrationRun) return
+      bookmarkHydrationState = 'error'
+    }
+  }
+
+  onMount(() => {
+    void prepareBookmarkMessages()
+    return () => {
+      bookmarkHydrationRun += 1
+    }
+  })
 
   const messageMap = $derived.by(() => {
     if (!chara) return new Map()
@@ -183,7 +225,9 @@
   }
 
   function goToChat(index: number) {
-    ScrollToMessageStore.value = index
+    const chat = activeBookmarkChat()
+    if (!chara?.chaId || !chat?.id) return
+    navigateToCharacterChatMessage(chara.chaId, chat.id, index)
     close()
   }
 </script>
@@ -204,6 +248,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="risu-bookmark-list-title"
+    aria-busy={bookmarkHydrationState === 'loading'}
     tabindex="-1"
     onkeydown={handleDialogKeydown}>
     <div class="flex items-center text-textcolor mb-4">
@@ -230,7 +275,17 @@
       </div>
     </div>
 
-    {#if bookmarkedMessages.length === 0}
+    {#if bookmarkHydrationState === 'loading'}
+      <p class="text-textcolor2" role="status">{language.loading}</p>
+    {:else if bookmarkHydrationState === 'error'}
+      <div class="flex flex-col items-start gap-2 text-textcolor2" role="alert">
+        <p>{language.chatDataLoadFailed}</p>
+        <button
+          type="button"
+          class="rounded-md border border-darkborderc px-3 py-2 text-textcolor hover:bg-selected"
+          onclick={() => void prepareBookmarkMessages(true)}>{language.retry}</button>
+      </div>
+    {:else if bookmarkedMessages.length === 0}
       <p class="text-textcolor2" role="status">{language.noBookmarks}</p>
     {:else}
       <div class="flex flex-col gap-2">

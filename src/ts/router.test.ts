@@ -40,6 +40,7 @@ vi.mock('./stores.svelte', async () => {
     CustomGUISettingMenuStore: writable(false),
     OpenRealmStore: writable(false),
     PlaygroundStore: writable(0),
+    ScrollToMessageStore: { value: -1 },
     SettingsMenuIndex: writable(1),
     botMakerMode: writable(false),
     selectedCharID: writable(-1),
@@ -322,6 +323,39 @@ describe('router settings history', () => {
 })
 
 describe('router character route freshness', () => {
+  it('delivers a queued message jump once after applying its chat route', async () => {
+    const router = await importRouterAt('/character/char-a')
+    const stores = await import('./stores.svelte')
+    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+        },
+      ],
+    } as any)
+    stores.selectedCharID.set(0)
+    stores.ScrollToMessageStore.value = -1
+    routerMocks.findCharacterIndexbyId.mockImplementation(
+      (characterId: string) =>
+        getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+    )
+
+    router.navigateToCharacterChatMessage('char-a', 'chat-a', 12)
+
+    expect(window.location.pathname).toBe('/character/char-a/chat-a')
+    expect(stores.ScrollToMessageStore.value).toBe(-1)
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    expect(stores.ScrollToMessageStore.value).toBe(12)
+
+    stores.ScrollToMessageStore.value = -1
+    await router.applyRouteToStores(get(router.currentRoute))
+    expect(stores.ScrollToMessageStore.value).toBe(-1)
+  })
+
   it('restores a same-entry character sidebar view without carrying it into same-character route navigation', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const stores = await import('./stores.svelte')
