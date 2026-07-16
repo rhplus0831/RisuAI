@@ -82,6 +82,8 @@ import { language } from 'src/lang'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import type { Database } from 'src/ts/storage/database.svelte'
+import { defaultAutoSuggestPrompt } from 'src/ts/storage/defaultPrompts'
+import { replacePlaceholders } from 'src/ts/util'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -458,6 +460,41 @@ describe('Suggestion component persistence', () => {
         { role: 'system', content: 'Suggest next lines for Character A' },
         { role: 'assistant', content: 'Hello' },
       ])
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('uses the default prompt for local suggestion models when the saved prompt is empty', async () => {
+    seedSuggestionDatabase([])
+    getResourceDatabase().seperateModelsForAxModels = true
+    getResourceDatabase().seperateModels = {
+      otherAx: 'local_test',
+    } as Database['seperateModels']
+    suggestionMocks.requestChatData.mockResolvedValue({ type: 'success', result: '- Try the local branch' })
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: {
+          send: vi.fn(),
+          messageInput: vi.fn(),
+        },
+      })
+
+      await waitFor(() => {
+        expect(suggestionMocks.requestChatData).toHaveBeenCalled()
+      })
+
+      const [requestArg] = suggestionMocks.requestChatData.mock.calls[0]
+      expect(requestArg.formated[0]).toEqual({
+        role: 'system',
+        content: replacePlaceholders(defaultAutoSuggestPrompt, 'Character A'),
+      })
     } finally {
       if (component) unmount(component)
       target.remove()

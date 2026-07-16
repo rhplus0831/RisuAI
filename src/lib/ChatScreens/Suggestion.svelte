@@ -381,7 +381,7 @@
         promptbody = [
           {
             role: 'system',
-            content: replacePlaceholders(database.autoSuggestPrompt, currentChar.name),
+            content: replacePlaceholders(prompt, currentChar.name),
           },
           ...lastMessages.map(({ role, data }) => ({
             role: role === 'user' ? ('user' as const) : ('assistant' as const),
