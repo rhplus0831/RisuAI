@@ -16,6 +16,43 @@ const recorded = vi.hoisted(() => ({
   commandResults: [] as Array<Promise<{ status: string; error?: string; revision?: number }>>,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const durableRecorded = vi.hoisted(() => ({
+  nextId: 0,
+  staged: [] as Array<{ key: string; intent: Record<string, unknown>; mutationId: string }>,
+  dispatched: [] as Array<{ intent: Record<string, unknown>; mutationId: string }>,
+  acknowledged: [] as string[],
+}))
+
+vi.mock('./pendingMutationOutbox', () => ({
+  stagePendingMutation: (
+    key: string,
+    intent: Record<string, unknown>,
+    previous?: { phase: string; mutationId: string },
+  ) => {
+    const mutationId = previous?.phase === 'staged' ? previous.mutationId : `lore-mutation-${++durableRecorded.nextId}`
+    if (previous?.phase === 'staged') previous.phase = 'superseded'
+    const handle = { key, mutationId, phase: 'staged' }
+    durableRecorded.staged.push({ key, intent, mutationId })
+    return handle
+  },
+  acknowledgePendingMutation: async (handle: { mutationId: string }) => {
+    durableRecorded.acknowledged.push(handle.mutationId)
+    return 'deleted'
+  },
+}))
+
+vi.mock('./durableMutationDispatch', () => ({
+  dispatchDurableMutation: async (
+    handle: { mutationId: string; phase: string },
+    intent: Record<string, unknown>,
+    dispatch: (options: Record<string, unknown>) => Promise<unknown>,
+  ) => {
+    handle.phase = 'dispatching'
+    durableRecorded.dispatched.push({ intent, mutationId: handle.mutationId })
+    return dispatch({ mutationId: handle.mutationId, databaseLineage: 'test-lineage' })
+  },
+}))
+
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
   runServerCommand: vi.fn(
@@ -244,6 +281,10 @@ beforeEach(() => {
   resetLorebookHydration()
   recorded.commands.length = 0
   recorded.commandResults.length = 0
+  durableRecorded.nextId = 0
+  durableRecorded.staged.length = 0
+  durableRecorded.dispatched.length = 0
+  durableRecorded.acknowledged.length = 0
 })
 
 afterEach(() => {
@@ -1608,6 +1649,30 @@ describe('K4 lorebook editor entry draft scope', () => {
       sparseUpdate: { patch: { content: 'final draft' } },
     })
     expect(characterReplaceCommands()).toHaveLength(0)
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/c-k4/lorebooks/entries/entry-5',
+          body: { patch: { content: 'final draft' } },
+        },
+      ],
+    })
+  })
+
+  it('discards a staged entry mutation when the draft returns to its queue-time baseline', async () => {
+    setupK4EditorDb()
+    const scope = { kind: 'character', characterId: 'c-k4' } as const
+    const original = cloneEntries([(getDatabase().characters[0].globalLore as Entry[])[5]])[0]
+
+    applyLorebookEntryDraftEdit(scope, 5, { ...original, content: 'temporary' } as any, DELAY)
+    applyLorebookEntryDraftEdit(scope, 5, original as any, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(characterEntryCommands()).toEqual([])
+    expect(durableRecorded.dispatched).toEqual([])
+    expect(durableRecorded.acknowledged).toEqual(['lore-mutation-1'])
   })
 
   it('K4: coalesces sparse fields against the original entry and distinguishes deletion from null', async () => {
@@ -1639,6 +1704,19 @@ describe('K4 lorebook editor entry draft scope', () => {
     })
     expect(command.sparseUpdate.patch).not.toHaveProperty('comment')
     expect(command.sparseUpdate.patch).not.toHaveProperty('id')
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/c-k4/lorebooks/entries/entry-5',
+          body: {
+            patch: { content: 'final content', nullableExtension: null },
+            deleteKeys: ['activationPercent'],
+          },
+        },
+      ],
+    })
   })
 
   it('K4: flushing a draft sends the final entry before the debounce delay', async () => {
@@ -1666,7 +1744,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(characterEntryCommands()).toHaveLength(1)
   })
 
-  it('rolls back a failed field while a later different-field save remains visible and sparse', async () => {
+  it('keeps an in-flight save and its durable full-entry successor as separate generations', async () => {
     const firstResult = createDeferred<{ status: string; error?: string }>()
     recorded.commandResults.push(firstResult.promise)
     setupK4EditorDb()
@@ -1696,8 +1774,23 @@ describe('K4 lorebook editor entry draft scope', () => {
 
     const commands = characterEntryCommands()
     expect(commands).toHaveLength(2)
-    expect((commands[1].a as Record<string, unknown>).sparseUpdate).toEqual({
-      patch: { content: 'accepted newer content' },
+    expect(commands[1].a).toMatchObject({
+      entry: { comment: 'failed comment', content: 'accepted newer content' },
+    })
+    expect((commands[1].a as Record<string, unknown>).sparseUpdate).toBeUndefined()
+    expect(durableRecorded.dispatched.map((dispatch) => dispatch.mutationId)).toEqual([
+      'lore-mutation-1',
+      'lore-mutation-2',
+    ])
+    expect(durableRecorded.dispatched[1].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/c-k4/lorebooks/entries/entry-2',
+          body: { entry: expect.objectContaining({ content: 'accepted newer content' }) },
+        },
+      ],
     })
 
     firstResult.resolve({ status: 'error', error: 'first save failed' })
@@ -1763,6 +1856,18 @@ describe('K4 lorebook editor entry draft scope', () => {
       { ...(getDatabase().characters[0].globalLore as Entry[])[4], content: 'unload final' } as any,
       DELAY * 10,
     )
+    expect(recorded.commands).toEqual([])
+    expect(durableRecorded.staged).toHaveLength(1)
+    expect(durableRecorded.staged[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/c-k4/lorebooks/entries/entry-4',
+          body: { patch: { content: 'unload final' } },
+        },
+      ],
+    })
     flushPendingServerBackedLorebookPatches({ keepalive: true })
     await vi.advanceTimersByTimeAsync(0)
 
@@ -1775,6 +1880,7 @@ describe('K4 lorebook editor entry draft scope', () => {
       entry: { id: 'entry-4', content: 'unload final' },
       sparseUpdate: { patch: { content: 'unload final' } },
     })
+    expect(durableRecorded.dispatched[0].mutationId).toBe(durableRecorded.staged[0].mutationId)
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(characterEntryCommands()).toHaveLength(1)
@@ -2260,7 +2366,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     })
   })
 
-  it('captures projection epochs when queued and skips rollback after authoritative lorebook replacement', async () => {
+  it('discards the staged mutation after an authoritative lorebook replacement', async () => {
     setupK4EditorDb()
     const scope = { kind: 'character', characterId: 'c-k4' } as const
     const queuedLorebookEpoch = captureCharacterLorebookProjectionEpoch('c-k4')
@@ -2272,12 +2378,9 @@ describe('K4 lorebook editor entry draft scope', () => {
     markCharacterLorebookProjectionApplied('c-k4')
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    const command = characterEntryCommands()[0]
-    expect(command.a).toMatchObject({
-      optimisticLorebookEpoch: queuedLorebookEpoch,
-      entry: { content: 'attempted edit' },
-    })
-    command.rollback?.()
+    expect(queuedLorebookEpoch).toBeGreaterThanOrEqual(0)
+    expect(characterEntryCommands()).toEqual([])
+    expect(durableRecorded.acknowledged).toEqual(['lore-mutation-1'])
     expect((getDatabase().characters[0].globalLore as Entry[])[2].content).toBe('attempted edit')
   })
 
@@ -2455,6 +2558,16 @@ describe('K4 lorebook editor entry draft scope', () => {
       acknowledgeOptimistic: true,
       optimisticEntries: expect.not.arrayContaining([expect.objectContaining({ id: 'entry-3' })]),
     })
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'DELETE',
+          path: '/characters/c-k4/lorebooks/entries/entry-3',
+          body: {},
+        },
+      ],
+    })
 
     recorded.commands.length = 0
     const reorderPrevious = currentLorebookCollectionScopedSnapshot({
@@ -2474,11 +2587,93 @@ describe('K4 lorebook editor entry draft scope', () => {
       acknowledgeOptimistic: true,
       optimisticEntries: entries,
     })
+    expect(durableRecorded.dispatched[1].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/characters/c-k4/lorebooks/entries/reorder',
+          body: { entryIds: entries.map((entry) => entry.id) },
+        },
+      ],
+    })
+  })
+
+  it('stages every full-collection scope with the exact command method, path, and body', async () => {
+    const scenarios: Array<{
+      path: string
+      setup: () => { entries: Entry[]; dispatch: (previous: ReturnType<typeof currentLorebookStateSnapshot>) => void }
+    }> = [
+      {
+        path: '/characters/c0/lorebooks',
+        setup: () => {
+          setupMultiCollectionDb()
+          const entries = getDatabase().characters[0].globalLore as Entry[]
+          return {
+            entries,
+            dispatch: (previous) => dispatchReplaceCharacterLorebooks('c0', entries as any, previous, 0),
+          }
+        },
+      },
+      {
+        path: '/chats/c0chat/lorebooks',
+        setup: () => {
+          setupMultiCollectionDb()
+          const entries = getDatabase().characters[0].chats[0].localLore as Entry[]
+          return {
+            entries,
+            dispatch: (previous) => dispatchReplaceChatLorebooks('c0chat', entries as any, previous, 0),
+          }
+        },
+      },
+      {
+        path: '/lorebooks/g1/entries',
+        setup: () => {
+          setupMultiCollectionDb()
+          const entries = getDatabase().loreBook[0].data as Entry[]
+          return {
+            entries,
+            dispatch: (previous) => dispatchReplaceGlobalLorebookEntries('g1', entries as any, previous, 0),
+          }
+        },
+      },
+      {
+        path: '/modules/m0/lorebooks',
+        setup: () => {
+          setupMultiCollectionDb()
+          const entries = getDatabase().modules[0].lorebook as Entry[]
+          return { entries, dispatch: (previous) => dispatchReplaceModuleLorebooks('m0', entries as any, previous, 0) }
+        },
+      },
+    ]
+
+    for (const scenario of scenarios) {
+      const { entries, dispatch } = scenario.setup()
+      const previous = currentLorebookCollectionScopedSnapshot(
+        scenario.path.startsWith('/characters/')
+          ? { kind: 'character', characterId: 'c0' }
+          : scenario.path.startsWith('/chats/')
+            ? { kind: 'chat', chatId: 'c0chat' }
+            : scenario.path.startsWith('/lorebooks/')
+              ? { kind: 'global', lorebookId: 'g1' }
+              : { kind: 'module', moduleId: 'm0' },
+      )
+      entries[0].content = 'compound update'
+      entries.push({ id: `${scenario.path.replace(/\W/g, '')}-new`, key: 'new', content: 'compound create' })
+      dispatch(previous)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(durableRecorded.dispatched.at(-1)?.intent).toEqual({
+        version: 1,
+        requests: [{ method: 'PUT', path: scenario.path, body: { entries: cloneEntries(entries) } }],
+      })
+    }
   })
 
   it('Phase 5: stale failed creates remove only unchanged attempted entries across scoped collections', async () => {
     const cases: Array<{
       label: string
+      path: string
       setup: () => {
         entries: Entry[]
         attemptedId: string
@@ -2487,6 +2682,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     }> = [
       {
         label: 'character',
+        path: '/characters/c0/lorebooks/entries/character-created-entry',
         setup: () => {
           setupMultiCollectionDb()
           const entries = getDatabase().characters[0].globalLore as Entry[]
@@ -2499,6 +2695,7 @@ describe('K4 lorebook editor entry draft scope', () => {
       },
       {
         label: 'chat',
+        path: '/chats/c0chat/lorebooks/entries/chat-created-entry',
         setup: () => {
           setupMultiCollectionDb()
           const entries = getDatabase().characters[0].chats[0].localLore as Entry[]
@@ -2511,6 +2708,7 @@ describe('K4 lorebook editor entry draft scope', () => {
       },
       {
         label: 'global',
+        path: '/lorebooks/g1/entries/global-created-entry',
         setup: () => {
           setupMultiCollectionDb()
           const entries = getDatabase().loreBook[0].data as Entry[]
@@ -2523,6 +2721,7 @@ describe('K4 lorebook editor entry draft scope', () => {
       },
       {
         label: 'module',
+        path: '/modules/m0/lorebooks/entries/module-created-entry',
         setup: () => {
           setupMultiCollectionDb()
           const module = getDatabase().modules[0] as unknown as { lorebook: Entry[] }
@@ -2543,6 +2742,16 @@ describe('K4 lorebook editor entry draft scope', () => {
       await vi.advanceTimersByTimeAsync(DELAY)
       const queued = command()
       expect(queued?.rollback).toEqual(expect.any(Function))
+      expect(durableRecorded.dispatched.at(-1)?.intent).toEqual({
+        version: 1,
+        requests: [
+          {
+            method: 'PUT',
+            path: scenario.path,
+            body: { entry: entries.find((entry) => entry.id === attemptedId) },
+          },
+        ],
+      })
 
       entries[0].content = `${scenario.label} newer sibling edit`
       entries.push({

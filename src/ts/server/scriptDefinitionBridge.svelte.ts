@@ -32,7 +32,18 @@ import {
   hasSettingsGroupProjectionEpochChanged,
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
-import { classifyScriptDefinitionMutation, type ScriptDefinitionCollectionMutation } from './scriptDefinitionMutations'
+import {
+  classifyScriptDefinitionMutation,
+  type ScriptDefinitionCollectionMutation,
+  type ScriptDefinitionMutationPlan,
+} from './scriptDefinitionMutations'
+import { dispatchDurableMutation } from './durableMutationDispatch'
+import {
+  acknowledgePendingMutation,
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from './pendingMutationOutbox'
 
 export interface ScriptDefinitionStateSnapshot {
   characters: character[]
@@ -79,8 +90,20 @@ interface PendingCollectionReplacement {
   // the first baseline (see `queueReplacement`), not the intermediate one.
   command: (
     rollback: ScriptDefinitionRollback,
+    plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>,
     options?: ServerCommandTransportOptions,
   ) => Promise<ServerCommandResult<Record<string, unknown>>>
+  plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
+  validateCurrent?: () => boolean
+}
+
+interface QueuedScriptDefinitionMutation {
+  kind: ScopedScriptDefinitionRollback['kind']
+  targetId: string
+  finalDefinitions: readonly unknown[]
+  validateCurrent?: () => boolean
 }
 
 type ScriptDefinitionProjectionFence =
@@ -350,17 +373,21 @@ export function dispatchReplaceCharacterScripts(
   queueReplacement(
     `characterScripts:${characterId}`,
     previous,
-    (rollback, options = {}) =>
+    (rollback, plan, options = {}) =>
       runCharacterScriptsDefinitionCommand(
         characterId,
         scriptPayload,
         attemptedScripts,
         rollback,
         optimisticRowEpoch,
+        plan,
         options,
       ),
     delayMs,
     { characterId, epoch: optimisticRowEpoch },
+    undefined,
+    undefined,
+    { kind: 'characterScripts', targetId: characterId, finalDefinitions: scriptPayload },
   )
 }
 
@@ -378,17 +405,21 @@ export function dispatchReplaceCharacterTriggers(
   queueReplacement(
     `characterTriggers:${characterId}`,
     previous,
-    (rollback, options = {}) =>
+    (rollback, plan, options = {}) =>
       runCharacterTriggersDefinitionCommand(
         characterId,
         triggerPayload,
         attemptedTriggers,
         rollback,
         optimisticRowEpoch,
+        plan,
         options,
       ),
     delayMs,
     { characterId, epoch: optimisticRowEpoch },
+    undefined,
+    undefined,
+    { kind: 'characterTriggers', targetId: characterId, finalDefinitions: triggerPayload },
   )
 }
 
@@ -406,18 +437,21 @@ export function dispatchReplaceModuleScripts(
   queueReplacement(
     `moduleScripts:${moduleId}`,
     previous,
-    (rollback, options = {}) =>
+    (rollback, plan, options = {}) =>
       runModuleScriptsDefinitionCommand(
         moduleId,
         scriptPayload,
         attemptedScripts,
         rollback,
         optimisticCollectionEpoch,
+        plan,
         options,
       ),
     delayMs,
     undefined,
     optimisticCollectionEpoch,
+    undefined,
+    { kind: 'moduleScripts', targetId: moduleId, finalDefinitions: scriptPayload },
   )
 }
 
@@ -435,18 +469,21 @@ export function dispatchReplaceModuleTriggers(
   queueReplacement(
     `moduleTriggers:${moduleId}`,
     previous,
-    (rollback, options = {}) =>
+    (rollback, plan, options = {}) =>
       runModuleTriggersDefinitionCommand(
         moduleId,
         triggerPayload,
         attemptedTriggers,
         rollback,
         optimisticCollectionEpoch,
+        plan,
         options,
       ),
     delayMs,
     undefined,
     optimisticCollectionEpoch,
+    undefined,
+    { kind: 'moduleTriggers', targetId: moduleId, finalDefinitions: triggerPayload },
   )
 }
 
@@ -878,13 +915,16 @@ function queueReplacement(
   previous: ScriptDefinitionRollback,
   command: (
     rollback: ScriptDefinitionRollback,
+    plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>,
     options?: ServerCommandTransportOptions,
   ) => Promise<ServerCommandResult<Record<string, unknown>>>,
   delay: number,
   characterRowProjection?: { characterId: string; epoch: number },
   moduleCollectionProjectionEpoch?: number,
   settingsGroupProjectionEpoch?: number,
+  mutation?: QueuedScriptDefinitionMutation,
 ): void {
+  if (!mutation) throw new TypeError('A queued script-definition mutation is required')
   const existing = pendingReplacements.get(key)
   if (existing?.timer) clearTimeout(existing.timer)
 
@@ -908,22 +948,136 @@ function queueReplacement(
   // intermediate edit that was never durably committed. An authoritative row
   // replacement starts a new ownership epoch, so the next edit must also start
   // a new rollback baseline.
+  const effectivePrevious = existing && sameProjection ? existing.previous : previous
+  const fence = scriptDefinitionProjectionFence(
+    characterRowProjection,
+    moduleCollectionProjectionEpoch,
+    settingsGroupProjectionEpoch,
+  )
+  if (!fence) throw new TypeError('A queued script-definition projection fence is required')
+  const plan = planScriptDefinitionMutation(key, mutation, effectivePrevious, fence)
+  if (plan.kind === 'none') {
+    if (existing) void acknowledgePendingMutation(existing.outbox)
+    pendingReplacements.delete(key)
+    return
+  }
+
+  if (existing && !sameProjection) void acknowledgePendingMutation(existing.outbox)
+  const intent = scriptDefinitionDurableIntent(mutation, plan)
+  const outbox = stagePendingMutation(
+    `script-definition:${key}`,
+    intent,
+    existing && sameProjection ? existing.outbox : undefined,
+  )
   const pending: PendingCollectionReplacement = {
     key,
-    previous: existing && sameProjection ? existing.previous : previous,
+    previous: effectivePrevious,
     ...(characterRowProjection ? { characterRowProjection } : {}),
     ...(moduleCollectionProjectionEpoch !== undefined ? { moduleCollectionProjectionEpoch } : {}),
     ...(settingsGroupProjectionEpoch !== undefined ? { settingsGroupProjectionEpoch } : {}),
     command,
+    plan,
+    intent,
+    outbox,
+    ...(mutation.validateCurrent ? { validateCurrent: mutation.validateCurrent } : {}),
     timer: null,
   }
   pending.timer = setTimeout(() => runPendingScriptDefinitionReplacement(key), delay)
   pendingReplacements.set(key, pending)
 }
 
+function scriptDefinitionProjectionFence(
+  characterRowProjection?: { characterId: string; epoch: number },
+  moduleCollectionProjectionEpoch?: number,
+  settingsGroupProjectionEpoch?: number,
+): ScriptDefinitionProjectionFence | null {
+  if (characterRowProjection) {
+    return {
+      kind: 'character',
+      characterId: characterRowProjection.characterId,
+      epoch: characterRowProjection.epoch,
+    }
+  }
+  if (moduleCollectionProjectionEpoch !== undefined) {
+    return { kind: 'modules', epoch: moduleCollectionProjectionEpoch }
+  }
+  if (settingsGroupProjectionEpoch !== undefined) {
+    return { kind: 'settings', group: 'advanced', epoch: settingsGroupProjectionEpoch }
+  }
+  return null
+}
+
+function planScriptDefinitionMutation(
+  key: string,
+  mutation: QueuedScriptDefinitionMutation,
+  rollback: ScriptDefinitionRollback,
+  fence: ScriptDefinitionProjectionFence,
+): ScriptDefinitionMutationPlan {
+  const safety = mutationSafetyState(key, fence)
+  const baseline = readRollbackDefinitionBaseline(rollback, mutation.kind, mutation.targetId)
+  if (safety.forceReplacement || safety.unsettled.length > 0 || baseline === null) return { kind: 'replace' }
+  const plan = classifyScriptDefinitionMutation(baseline.rows, mutation.finalDefinitions)
+  if (plan.kind === 'none') deleteCleanMutationSafetyState(key, safety)
+  return plan
+}
+
+function scriptDefinitionDurableIntent(
+  mutation: QueuedScriptDefinitionMutation,
+  plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>,
+): DurableMutationIntent {
+  const targetId = encodeURIComponent(mutation.targetId)
+  let path: string
+  let replaceBodyKey: 'patch' | 'scripts' | 'triggers'
+
+  switch (mutation.kind) {
+    case 'globalScripts':
+      path = plan.kind === 'replace' ? '/settings/advanced' : '/settings/advanced/global-scripts'
+      replaceBodyKey = 'patch'
+      break
+    case 'characterScripts':
+      path = `/characters/${targetId}/scripts`
+      replaceBodyKey = 'scripts'
+      break
+    case 'characterTriggers':
+      path = `/characters/${targetId}/triggers`
+      replaceBodyKey = 'triggers'
+      break
+    case 'moduleScripts':
+      path = `/modules/${targetId}/scripts`
+      replaceBodyKey = 'scripts'
+      break
+    case 'moduleTriggers':
+      path = `/modules/${targetId}/triggers`
+      replaceBodyKey = 'triggers'
+      break
+  }
+
+  const body =
+    plan.kind === 'mutation'
+      ? { mutation: cloneJsonValue(plan.mutation) }
+      : replaceBodyKey === 'patch'
+        ? { patch: { globalscript: cloneJsonValue(mutation.finalDefinitions) } }
+        : { [replaceBodyKey]: cloneJsonValue(mutation.finalDefinitions) }
+
+  return {
+    version: 1,
+    requests: [
+      {
+        method: plan.kind === 'replace' && mutation.kind !== 'globalScripts' ? 'PUT' : 'PATCH',
+        path,
+        body,
+      },
+    ],
+  }
+}
+
 function queueWatchedGlobalScripts(previousSnapshot: string, delayMs: number): void {
   const optimisticProjectionEpoch = captureSettingsGroupProjectionEpoch('advanced')
   const previousScripts = parseSnapshotArray<customscript>(previousSnapshot)
+  const scripts = currentGlobalScriptsForWatchedCommand()
+  if (!scripts) return
+  const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
+  const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
   queueReplacement(
     'globalScripts',
     {
@@ -931,28 +1085,34 @@ function queueWatchedGlobalScripts(previousSnapshot: string, delayMs: number): v
       scripts: previousScripts,
       hadScriptsField: Object.prototype.hasOwnProperty.call(getDatabase(), 'globalscript'),
     },
-    (rollback, options = {}) => {
-      const scripts = currentGlobalScriptsForWatchedCommand()
-      if (!scripts) return Promise.resolve({ status: 'unavailable' })
-      const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
-      const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
-      return runGlobalScriptsDefinitionCommand(
+    (rollback, plan, options = {}) =>
+      runGlobalScriptsDefinitionCommand(
         scriptPayload,
         attemptedScripts,
         rollback,
         optimisticProjectionEpoch,
+        plan,
         options,
-      )
-    },
+      ),
     delayMs,
     undefined,
     undefined,
     optimisticProjectionEpoch,
+    {
+      kind: 'globalScripts',
+      targetId: 'globalscript',
+      finalDefinitions: scriptPayload,
+      validateCurrent: () => currentGlobalScriptsForWatchedCommand() !== null,
+    },
   )
 }
 
 function queueWatchedCharacterScripts(characterId: string, previousSnapshot: string, delayMs: number): void {
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
+  const scripts = currentCharacterScriptsForWatchedCommand(characterId)
+  if (!scripts) return
+  const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
+  const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
   queueReplacement(
     `characterScripts:${characterId}`,
     {
@@ -960,27 +1120,35 @@ function queueWatchedCharacterScripts(characterId: string, previousSnapshot: str
       characterId,
       scripts: parseSnapshotArray<customscript>(previousSnapshot),
     },
-    (rollback, options = {}) => {
-      const scripts = currentCharacterScriptsForWatchedCommand(characterId)
-      if (!scripts) return Promise.resolve({ status: 'unavailable' })
-      const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
-      const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
-      return runCharacterScriptsDefinitionCommand(
+    (rollback, plan, options = {}) =>
+      runCharacterScriptsDefinitionCommand(
         characterId,
         scriptPayload,
         attemptedScripts,
         rollback,
         optimisticRowEpoch,
+        plan,
         options,
-      )
-    },
+      ),
     delayMs,
     { characterId, epoch: optimisticRowEpoch },
+    undefined,
+    undefined,
+    {
+      kind: 'characterScripts',
+      targetId: characterId,
+      finalDefinitions: scriptPayload,
+      validateCurrent: () => currentCharacterScriptsForWatchedCommand(characterId) !== null,
+    },
   )
 }
 
 function queueWatchedCharacterTriggers(characterId: string, previousSnapshot: string, delayMs: number): void {
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
+  const triggers = currentCharacterTriggersForWatchedCommand(characterId)
+  if (!triggers) return
+  const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
+  const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
   queueReplacement(
     `characterTriggers:${characterId}`,
     {
@@ -988,27 +1156,35 @@ function queueWatchedCharacterTriggers(characterId: string, previousSnapshot: st
       characterId,
       triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
     },
-    (rollback, options = {}) => {
-      const triggers = currentCharacterTriggersForWatchedCommand(characterId)
-      if (!triggers) return Promise.resolve({ status: 'unavailable' })
-      const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
-      const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
-      return runCharacterTriggersDefinitionCommand(
+    (rollback, plan, options = {}) =>
+      runCharacterTriggersDefinitionCommand(
         characterId,
         triggerPayload,
         attemptedTriggers,
         rollback,
         optimisticRowEpoch,
+        plan,
         options,
-      )
-    },
+      ),
     delayMs,
     { characterId, epoch: optimisticRowEpoch },
+    undefined,
+    undefined,
+    {
+      kind: 'characterTriggers',
+      targetId: characterId,
+      finalDefinitions: triggerPayload,
+      validateCurrent: () => currentCharacterTriggersForWatchedCommand(characterId) !== null,
+    },
   )
 }
 
 function queueWatchedModuleScripts(moduleId: string, previousSnapshot: string, delayMs: number): void {
   const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
+  const scripts = currentModuleScriptsForWatchedCommand(moduleId)
+  if (!scripts) return
+  const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
+  const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
   queueReplacement(
     `moduleScripts:${moduleId}`,
     {
@@ -1016,28 +1192,35 @@ function queueWatchedModuleScripts(moduleId: string, previousSnapshot: string, d
       moduleId,
       scripts: parseSnapshotArray<customscript>(previousSnapshot),
     },
-    (rollback, options = {}) => {
-      const scripts = currentModuleScriptsForWatchedCommand(moduleId)
-      if (!scripts) return Promise.resolve({ status: 'unavailable' })
-      const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
-      const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
-      return runModuleScriptsDefinitionCommand(
+    (rollback, plan, options = {}) =>
+      runModuleScriptsDefinitionCommand(
         moduleId,
         scriptPayload,
         attemptedScripts,
         rollback,
         optimisticCollectionEpoch,
+        plan,
         options,
-      )
-    },
+      ),
     delayMs,
     undefined,
     optimisticCollectionEpoch,
+    undefined,
+    {
+      kind: 'moduleScripts',
+      targetId: moduleId,
+      finalDefinitions: scriptPayload,
+      validateCurrent: () => currentModuleScriptsForWatchedCommand(moduleId) !== null,
+    },
   )
 }
 
 function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, delayMs: number): void {
   const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
+  const triggers = currentModuleTriggersForWatchedCommand(moduleId)
+  if (!triggers) return
+  const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
+  const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
   queueReplacement(
     `moduleTriggers:${moduleId}`,
     {
@@ -1045,23 +1228,26 @@ function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, 
       moduleId,
       triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
     },
-    (rollback, options = {}) => {
-      const triggers = currentModuleTriggersForWatchedCommand(moduleId)
-      if (!triggers) return Promise.resolve({ status: 'unavailable' })
-      const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
-      const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
-      return runModuleTriggersDefinitionCommand(
+    (rollback, plan, options = {}) =>
+      runModuleTriggersDefinitionCommand(
         moduleId,
         triggerPayload,
         attemptedTriggers,
         rollback,
         optimisticCollectionEpoch,
+        plan,
         options,
-      )
-    },
+      ),
     delayMs,
     undefined,
     optimisticCollectionEpoch,
+    undefined,
+    {
+      kind: 'moduleTriggers',
+      targetId: moduleId,
+      finalDefinitions: triggerPayload,
+      validateCurrent: () => currentModuleTriggersForWatchedCommand(moduleId) !== null,
+    },
   )
 }
 
@@ -1070,6 +1256,7 @@ function runGlobalScriptsDefinitionCommand(
   attemptedScripts: customscript[],
   rollback: ScriptDefinitionRollback,
   optimisticProjectionEpoch: number,
+  plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>,
   options: ServerCommandTransportOptions,
 ): Promise<ServerCommandResult<Record<string, unknown>>> {
   return runDefinitionCollectionCommand({
@@ -1079,6 +1266,7 @@ function runGlobalScriptsDefinitionCommand(
     fence: { kind: 'settings', group: 'advanced', epoch: optimisticProjectionEpoch },
     rollbackState: rollback,
     finalDefinitions: scripts,
+    plan,
     replaceCommand: (baseRevision) =>
       patchSettingsGroup(
         {
@@ -1114,6 +1302,7 @@ function runCharacterScriptsDefinitionCommand(
   attemptedScripts: customscript[],
   rollback: ScriptDefinitionRollback,
   optimisticRowEpoch: number,
+  plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>,
   options: ServerCommandTransportOptions,
 ): Promise<ServerCommandResult<{ characterId: string }>> {
   return runDefinitionCollectionCommand({
@@ -1123,6 +1312,7 @@ function runCharacterScriptsDefinitionCommand(
     fence: { kind: 'character', characterId, epoch: optimisticRowEpoch },
     rollbackState: rollback,
     finalDefinitions: scripts,
+    plan,
     replaceCommand: (baseRevision) =>
       replaceCharacterScriptsCommand(
         { baseRevision, characterId, scripts, optimisticRowEpoch },
@@ -1155,6 +1345,7 @@ function runCharacterTriggersDefinitionCommand(
   attemptedTriggers: triggerscript[],
   rollback: ScriptDefinitionRollback,
   optimisticRowEpoch: number,
+  plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>,
   options: ServerCommandTransportOptions,
 ): Promise<ServerCommandResult<{ characterId: string }>> {
   return runDefinitionCollectionCommand({
@@ -1164,6 +1355,7 @@ function runCharacterTriggersDefinitionCommand(
     fence: { kind: 'character', characterId, epoch: optimisticRowEpoch },
     rollbackState: rollback,
     finalDefinitions: triggers,
+    plan,
     replaceCommand: (baseRevision) =>
       replaceCharacterTriggersCommand(
         { baseRevision, characterId, triggers, optimisticRowEpoch },
@@ -1196,6 +1388,7 @@ function runModuleScriptsDefinitionCommand(
   attemptedScripts: customscript[],
   rollback: ScriptDefinitionRollback,
   optimisticCollectionEpoch: number,
+  plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>,
   options: ServerCommandTransportOptions,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return runDefinitionCollectionCommand({
@@ -1205,6 +1398,7 @@ function runModuleScriptsDefinitionCommand(
     fence: { kind: 'modules', epoch: optimisticCollectionEpoch },
     rollbackState: rollback,
     finalDefinitions: scripts,
+    plan,
     replaceCommand: (baseRevision) =>
       replaceModuleScriptsCommand(
         { baseRevision, moduleId, scripts, optimisticCollectionEpoch },
@@ -1237,6 +1431,7 @@ function runModuleTriggersDefinitionCommand(
   attemptedTriggers: triggerscript[],
   rollback: ScriptDefinitionRollback,
   optimisticCollectionEpoch: number,
+  plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>,
   options: ServerCommandTransportOptions,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return runDefinitionCollectionCommand({
@@ -1246,6 +1441,7 @@ function runModuleTriggersDefinitionCommand(
     fence: { kind: 'modules', epoch: optimisticCollectionEpoch },
     rollbackState: rollback,
     finalDefinitions: triggers,
+    plan,
     replaceCommand: (baseRevision) =>
       replaceModuleTriggersCommand(
         { baseRevision, moduleId, triggers, optimisticCollectionEpoch },
@@ -1279,6 +1475,7 @@ async function runDefinitionCollectionCommand<T extends Record<string, unknown>>
   fence: ScriptDefinitionProjectionFence
   rollbackState: ScriptDefinitionRollback
   finalDefinitions: readonly unknown[]
+  plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>
   replaceCommand: (baseRevision: number) => Promise<ServerCommandResult<T>>
   mutateCommand: (baseRevision: number, mutation: ScriptDefinitionCollectionMutation) => Promise<ServerCommandResult<T>>
   rollback: () => void
@@ -1302,21 +1499,12 @@ async function runDefinitionCollectionCommand<T extends Record<string, unknown>>
     return { status: 'unavailable' }
   }
 
-  const baseline = readRollbackDefinitionBaseline(input.rollbackState, input.kind, input.targetId)
-  const hasOtherUnsettledAttempt = safety.unsettled.some((candidate) => candidate !== attempt)
-  const plan =
-    safety.forceReplacement || hasOtherUnsettledAttempt || baseline === null
-      ? ({ kind: 'replace' } as const)
-      : classifyScriptDefinitionMutation(baseline.rows, input.finalDefinitions)
-  if (plan.kind === 'none') {
-    discardScriptDefinitionAttempt(attempt)
-    return { status: 'unavailable' }
-  }
-
+  const plan = input.plan
   const fullReplacement = plan.kind === 'replace'
   attempt.fullReplacement = fullReplacement
   try {
     const result = await runServerCommand<T>({
+      ...input.options,
       command: async (baseRevision) => {
         try {
           const result = fullReplacement
@@ -1338,8 +1526,6 @@ async function runDefinitionCollectionCommand<T extends Record<string, unknown>>
         settleScriptDefinitionAttempt(attempt, false)
         input.rollback()
       },
-      signal: input.options.signal,
-      keepalive: input.options.keepalive,
     })
     if (!attempt.settled) settleScriptDefinitionAttempt(attempt, result.status === 'ok')
     return result
@@ -1615,21 +1801,39 @@ function runPendingScriptDefinitionReplacement(key: string, options: ServerComma
       pending.characterRowProjection.epoch,
     )
   ) {
+    void acknowledgePendingMutation(pending.outbox)
+    discardQueuedScriptDefinitionSafetyState(key)
     return
   }
   if (
     pending.moduleCollectionProjectionEpoch !== undefined &&
     hasCollectionProjectionEpochChanged('modules', pending.moduleCollectionProjectionEpoch)
   ) {
+    void acknowledgePendingMutation(pending.outbox)
+    discardQueuedScriptDefinitionSafetyState(key)
     return
   }
   if (
     pending.settingsGroupProjectionEpoch !== undefined &&
     hasSettingsGroupProjectionEpochChanged('advanced', pending.settingsGroupProjectionEpoch)
   ) {
+    void acknowledgePendingMutation(pending.outbox)
+    discardQueuedScriptDefinitionSafetyState(key)
     return
   }
-  void pending.command(pending.previous, options)
+  if (pending.validateCurrent && !pending.validateCurrent()) {
+    void acknowledgePendingMutation(pending.outbox)
+    discardQueuedScriptDefinitionSafetyState(key)
+    return
+  }
+  void dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
+    pending.command(pending.previous, pending.plan, { ...options, ...transport }),
+  )
+}
+
+function discardQueuedScriptDefinitionSafetyState(key: string): void {
+  const state = mutationSafetyByKey.get(key)
+  if (state) deleteCleanMutationSafetyState(key, state)
 }
 
 function rollbackServerBackedScriptDefinitions(

@@ -42,6 +42,43 @@ const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const characterRowProjectionState = vi.hoisted(() => ({ epoch: 0 }))
 const moduleCollectionProjectionState = vi.hoisted(() => ({ epoch: 0 }))
 const settingsGroupProjectionState = vi.hoisted(() => ({ epoch: 0 }))
+const durableRecorded = vi.hoisted(() => ({
+  nextId: 0,
+  staged: [] as Array<{ key: string; intent: Record<string, unknown>; mutationId: string }>,
+  dispatched: [] as Array<{ intent: Record<string, unknown>; mutationId: string }>,
+  acknowledged: [] as string[],
+}))
+
+vi.mock('./pendingMutationOutbox', () => ({
+  stagePendingMutation: (
+    key: string,
+    intent: Record<string, unknown>,
+    previous?: { phase: string; mutationId: string },
+  ) => {
+    const mutationId =
+      previous?.phase === 'staged' ? previous.mutationId : `script-mutation-${++durableRecorded.nextId}`
+    if (previous?.phase === 'staged') previous.phase = 'superseded'
+    const handle = { key, mutationId, phase: 'staged' }
+    durableRecorded.staged.push({ key, intent, mutationId })
+    return handle
+  },
+  acknowledgePendingMutation: async (handle: { mutationId: string }) => {
+    durableRecorded.acknowledged.push(handle.mutationId)
+    return 'deleted'
+  },
+}))
+
+vi.mock('./durableMutationDispatch', () => ({
+  dispatchDurableMutation: async (
+    handle: { mutationId: string; phase: string },
+    intent: Record<string, unknown>,
+    dispatch: (options: Record<string, unknown>) => Promise<unknown>,
+  ) => {
+    handle.phase = 'dispatching'
+    durableRecorded.dispatched.push({ intent, mutationId: handle.mutationId })
+    return dispatch({ mutationId: handle.mutationId, databaseLineage: 'test-lineage' })
+  },
+}))
 
 vi.mock('../stores.svelte', async () => {
   const { writable } = await import('svelte/store')
@@ -573,6 +610,10 @@ beforeEach(() => {
   recorded.compactDefinitionCalls.length = 0
   recorded.fullDefinitionCalls.length = 0
   recorded.commandResults.length = 0
+  durableRecorded.nextId = 0
+  durableRecorded.staged.length = 0
+  durableRecorded.dispatched.length = 0
+  durableRecorded.acknowledged.length = 0
 })
 
 afterEach(async () => {
@@ -1165,6 +1206,23 @@ describe('compact script definition mutations', () => {
       },
     ])
     expect(recorded.fullDefinitionCalls).toEqual([])
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/settings/advanced/global-scripts',
+          body: {
+            mutation: {
+              op: 'update',
+              id: 'global-script-1',
+              patch: { out: 'edited global' },
+              deleteKeys: [],
+            },
+          },
+        },
+      ],
+    })
     stop()
   })
 
@@ -1188,6 +1246,16 @@ describe('compact script definition mutations', () => {
       kind: 'replaceGlobalScripts',
       group: 'advanced',
       patch: { globalscript: [script('normalized-global', 'edited legacy')] },
+    })
+    expect(durableRecorded.dispatched[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/settings/advanced',
+          body: { patch: { globalscript: [script('normalized-global', 'edited legacy')] } },
+        },
+      ],
     })
     stop()
   })
@@ -1318,6 +1386,54 @@ describe('compact script definition mutations', () => {
       },
     ])
     expect(recorded.fullDefinitionCalls).toEqual([])
+    expect(durableRecorded.dispatched.map(({ intent }) => intent)).toEqual([
+      {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/characters/char-1/scripts',
+            body: { mutation: { op: 'update', id: 'script-1', patch: { out: 'edited' }, deleteKeys: [] } },
+          },
+        ],
+      },
+      {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/characters/char-1/triggers',
+            body: { mutation: { op: 'delete', id: 'trigger-1' } },
+          },
+        ],
+      },
+      {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/modules/module-1/scripts',
+            body: {
+              mutation: {
+                op: 'create',
+                row: script('module-script-2', 'created module script'),
+                index: 1,
+              },
+            },
+          },
+        ],
+      },
+      {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path: '/modules/module-1/triggers',
+            body: { mutation: { op: 'reorder', ids: ['module-trigger-2', 'module-trigger-1'] } },
+          },
+        ],
+      },
+    ])
   })
 
   it('coalesces create then edit into one final create mutation', async () => {
@@ -1377,6 +1493,7 @@ describe('compact script definition mutations', () => {
     await vi.advanceTimersByTimeAsync(DELAY)
     await drainDefinitionCommandMicrotasks()
     expect(recorded.commands).toEqual([])
+    expect(durableRecorded.acknowledged).toEqual(['script-mutation-1'])
 
     const twoRowBaseline = [script('script-1', 'initial'), script('script-2', 'second')]
     const compoundFinal = [script('script-1', 'changed one'), script('script-2', 'changed two')]
@@ -1392,6 +1509,16 @@ describe('compact script definition mutations', () => {
 
     expect(recorded.compactDefinitionCalls).toEqual([])
     expect(recorded.fullDefinitionCalls).toEqual([{ scope: 'character', kind: 'scripts', targetId: 'char-1' }])
+    expect(durableRecorded.dispatched.at(-1)?.intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PUT',
+          path: '/characters/char-1/scripts',
+          body: { scripts: compoundFinal },
+        },
+      ],
+    })
   })
 
   it('forces an unsettled successor to PUT and rebases its rollback after both requests fail', async () => {
@@ -1756,6 +1883,25 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
 
     getDatabase().characters[0].customscript = [script('script-1', 'unload local')]
     flushSync()
+    expect(recorded.commands).toEqual([])
+    expect(durableRecorded.staged).toHaveLength(1)
+    expect(durableRecorded.staged[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/characters/char-1/scripts',
+          body: {
+            mutation: {
+              op: 'update',
+              id: 'script-1',
+              patch: { out: 'unload local' },
+              deleteKeys: [],
+            },
+          },
+        },
+      ],
+    })
     flushPendingServerBackedScriptDefinitionPatches({ keepalive: true })
     await drainDefinitionCommandMicrotasks()
 
@@ -1767,6 +1913,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
       characterId: 'char-1',
       scripts: [script('script-1', 'unload local')],
     })
+    expect(durableRecorded.dispatched[0].mutationId).toBe(durableRecorded.staged[0].mutationId)
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(recorded.commands).toHaveLength(1)

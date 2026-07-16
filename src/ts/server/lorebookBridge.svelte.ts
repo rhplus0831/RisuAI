@@ -56,6 +56,13 @@ import {
   applyAttemptedKeyedListRollback,
   mergeProjectionIntoDirtyDraft,
 } from './staleStateGuards'
+import { dispatchDurableMutation } from './durableMutationDispatch'
+import {
+  acknowledgePendingMutation,
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from './pendingMutationOutbox'
 
 type GlobalLorebook = { id?: string; name: string; data: loreBook[] }
 
@@ -94,6 +101,8 @@ interface PendingCollectionReplacement {
   source: LorebookReplacementSource
   projectionEpochs: LorebookProjectionEpochs
   timer: ReturnType<typeof setTimeout> | null
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
   command: (options?: ServerCommandTransportOptions) => Promise<ServerCommandResult<Record<string, unknown>>>
 }
 
@@ -142,6 +151,7 @@ const stubbedCharacterLorebooks = new SvelteSet<string>()
 export function resetServerBackedLorebookBridgeForTests(): void {
   for (const pending of pendingReplacements.values()) {
     if (pending.timer) clearTimeout(pending.timer)
+    void acknowledgePendingMutation(pending.outbox)
   }
   pendingReplacements.clear()
   pendingLorebookEntryAttempts.length = 0
@@ -1164,92 +1174,16 @@ function queueScopedLorebookReplacement(
   queueReplacement(
     key,
     previous,
-    (rollbackSnapshot, effectiveProjectionEpochs, options = {}) => {
-      const isWatchedCollection = source === 'watchedCollection'
-      if (isWatchedCollection) {
-        const liveEntries = resolveLorebookCollection(scope)?.entries
-        if (!hasStableUniqueLorebookEntryIds(liveEntries)) {
-          return Promise.resolve({ status: 'unavailable' })
-        }
-      }
-
-      const entrySnapshots = isWatchedCollection
-        ? (cloneJsonValue(attemptedEntries ?? []) as LorebookEntrySnapshot[])
-        : cloneLorebookEntriesForCommand(attemptedEntries)
-      const optimisticMetadata = lorebookOptimisticCommandMetadata(scope, effectiveProjectionEpochs, entrySnapshots)
+    (rollbackSnapshot, effectiveProjectionEpochs, plan, options = {}) => {
+      const optimisticEntries =
+        plan.kind === 'replace' ? plan.entries : (cloneJsonValue(attemptedEntries ?? []) as LorebookEntrySnapshot[])
+      const optimisticMetadata = lorebookOptimisticCommandMetadata(scope, effectiveProjectionEpochs, optimisticEntries)
       const entryAttempt = registerLorebookEntryAttempt(rollbackSnapshot, attemptedEntries)
 
       const result = runServerCommand({
-        command: (baseRevision): Promise<ServerCommandResult<Record<string, unknown>>> => {
-          if (source === 'entry' && isLorebookEntryStateSnapshot(rollbackSnapshot)) {
-            const entryCommand = lorebookEntryUpsertCommand(
-              scope,
-              attemptedEntries,
-              rollbackSnapshot,
-              baseRevision,
-              options,
-              optimisticMetadata,
-            )
-            if (entryCommand) return entryCommand
-          }
-          if (isLorebookCollectionReplacementSource(source) && !isLorebookEntryStateSnapshot(rollbackSnapshot)) {
-            const collectionCommand = lorebookCollectionDeltaCommand(
-              scope,
-              attemptedEntries,
-              rollbackSnapshot,
-              baseRevision,
-              options,
-              optimisticMetadata,
-            )
-            if (collectionCommand) return collectionCommand
-          }
-          switch (scope.kind) {
-            case 'character':
-              return replaceCharacterLorebooksCommand(
-                {
-                  baseRevision,
-                  characterId: scope.characterId,
-                  entries: entrySnapshots,
-                  ...optimisticMetadata,
-                },
-                options.signal,
-                options.keepalive,
-              ) as Promise<ServerCommandResult<Record<string, unknown>>>
-            case 'chat':
-              return replaceChatLorebooksCommand(
-                {
-                  baseRevision,
-                  chatId: scope.chatId,
-                  entries: entrySnapshots,
-                  ...optimisticMetadata,
-                },
-                options.signal,
-                options.keepalive,
-              ) as Promise<ServerCommandResult<Record<string, unknown>>>
-            case 'global':
-              return replaceGlobalLorebookEntriesCommand(
-                {
-                  baseRevision,
-                  lorebookId: scope.lorebookId,
-                  entries: entrySnapshots,
-                  ...optimisticMetadata,
-                },
-                options.signal,
-                options.keepalive,
-              ) as Promise<ServerCommandResult<Record<string, unknown>>>
-            case 'module':
-              return replaceModuleLorebooksCommand(
-                {
-                  baseRevision,
-                  moduleId: scope.moduleId,
-                  entries: entrySnapshots,
-                },
-                options.signal,
-                options.keepalive,
-                true,
-              ) as Promise<ServerCommandResult<Record<string, unknown>>>
-          }
-        },
+        ...options,
+        command: (baseRevision): Promise<ServerCommandResult<Record<string, unknown>>> =>
+          dispatchPlannedLorebookCommand(scope, plan, baseRevision, options, optimisticMetadata),
         rollback: () => {
           if (hasLorebookProjectionEpochChanged(effectiveProjectionEpochs)) return
           if (entryAttempt) {
@@ -1258,8 +1192,6 @@ function queueScopedLorebookReplacement(
             rollbackLorebookReplacement(scope, rollbackSnapshot, attemptedEntries)
           }
         },
-        signal: options.signal,
-        keepalive: options.keepalive,
       })
       if (entryAttempt) {
         void result.then(
@@ -1273,6 +1205,7 @@ function queueScopedLorebookReplacement(
     source,
     projectionEpochs,
     attemptedEntries,
+    scope,
   )
 }
 
@@ -1280,6 +1213,19 @@ type LorebookCollectionDelta =
   | { type: 'upsert'; entry: loreBook }
   | { type: 'delete'; entryId: string }
   | { type: 'reorder'; entryIds: string[] }
+
+type PlannedLorebookCommand =
+  | { kind: 'replace'; entries: LorebookEntrySnapshot[] }
+  | {
+      kind: 'upsert'
+      entryId: string
+      entry: LorebookEntrySnapshot
+      sparseUpdate?: SparseLorebookEntryUpdate
+      optimisticEntryIndex: number
+      optimisticEntryCreated: boolean
+    }
+  | { kind: 'delete'; entryId: string; optimisticEntryIndex: number }
+  | { kind: 'reorder'; entryIds: string[] }
 
 type LorebookOptimisticCommandMetadata = {
   acknowledgeOptimistic?: boolean
@@ -1329,14 +1275,10 @@ function lorebookOptimisticCommandMetadata(
   return {}
 }
 
-function lorebookCollectionDeltaCommand(
-  scope: DiscreteLorebookEditScope,
+function planLorebookCollectionDelta(
   entries: loreBook[],
   rollbackSnapshot: LorebookStateSnapshot,
-  baseRevision: number,
-  options: ServerCommandTransportOptions,
-  optimisticMetadata: LorebookOptimisticCommandMetadata,
-): Promise<ServerCommandResult<Record<string, unknown>>> | null {
+): PlannedLorebookCommand | null {
   const delta = detectLorebookCollectionDelta(rollbackSnapshot.scopedValue, entries)
   if (!delta) return null
 
@@ -1349,39 +1291,22 @@ function lorebookCollectionDeltaCommand(
       const optimisticEntryIndex = entries.findIndex((entry) => entry.id === entryId)
       const entrySnapshot = cloneJsonValue(delta.entry) as LorebookEntrySnapshot
       const sparseUpdate = previousEntry ? sparseLorebookEntryUpdate(previousEntry, delta.entry) : null
-      return lorebookScopedEntryCommand(
-        scope,
-        'upsert',
-        baseRevision,
-        options,
-        {
-          ...optimisticMetadata,
-          optimisticEntryIndex,
-          optimisticEntryCreated: !previousEntries.some((entry) => entry.id === entryId),
-        },
-        {
-          entryId,
-          entry: entrySnapshot,
-          ...(sparseUpdate ? { sparseUpdate } : {}),
-        },
-      )
+      return {
+        kind: 'upsert',
+        entryId,
+        entry: entrySnapshot,
+        ...(sparseUpdate ? { sparseUpdate } : {}),
+        optimisticEntryIndex,
+        optimisticEntryCreated: !previousEntries.some((entry) => entry.id === entryId),
+      }
     }
     case 'delete': {
       const previousEntries = rollbackSnapshot.scopedValue as loreBook[]
       const optimisticEntryIndex = previousEntries.findIndex((entry) => entry.id === delta.entryId)
-      return lorebookScopedEntryCommand(
-        scope,
-        'delete',
-        baseRevision,
-        options,
-        { ...optimisticMetadata, optimisticEntryIndex },
-        { entryId: delta.entryId },
-      )
+      return { kind: 'delete', entryId: delta.entryId, optimisticEntryIndex }
     }
     case 'reorder':
-      return lorebookScopedEntryCommand(scope, 'reorder', baseRevision, options, optimisticMetadata, {
-        entryIds: delta.entryIds,
-      })
+      return { kind: 'reorder', entryIds: delta.entryIds }
   }
 }
 
@@ -1682,14 +1607,10 @@ function lorebookScopedEntryCommand(
   }
 }
 
-function lorebookEntryUpsertCommand(
-  scope: DiscreteLorebookEditScope,
+function planLorebookEntryUpsert(
   entries: loreBook[],
   rollbackSnapshot: LorebookEntryStateSnapshot,
-  baseRevision: number,
-  options: ServerCommandTransportOptions,
-  optimisticMetadata: LorebookOptimisticCommandMetadata,
-): Promise<ServerCommandResult<Record<string, unknown>>> | null {
+): PlannedLorebookCommand | null {
   const entry = currentEditedLorebookEntry(entries, rollbackSnapshot)
   const entryId = entry?.id
   if (typeof entryId !== 'string' || entryId.trim() === '') return null
@@ -1699,17 +1620,14 @@ function lorebookEntryUpsertCommand(
     : null
   const optimisticEntryIndex = entries.findIndex((candidate) => candidate.id === entryId)
   if (optimisticEntryIndex < 0) return null
-  const entryOptimisticMetadata: LorebookOptimisticCommandMetadata = {
-    ...optimisticMetadata,
-    optimisticEntryIndex,
-    optimisticEntryCreated: rollbackSnapshot.previousEntry === null,
-  }
-
-  return lorebookScopedEntryCommand(scope, 'upsert', baseRevision, options, entryOptimisticMetadata, {
+  return {
+    kind: 'upsert',
     entryId,
     entry: entrySnapshot,
     ...(sparseUpdate ? { sparseUpdate } : {}),
-  })
+    optimisticEntryIndex,
+    optimisticEntryCreated: rollbackSnapshot.previousEntry === null,
+  }
 }
 
 function currentEditedLorebookEntry(
@@ -1721,6 +1639,180 @@ function currentEditedLorebookEntry(
     if (byId) return byId
   }
   return entries[rollbackSnapshot.index]
+}
+
+function planLorebookCommand(
+  scopeKey: string,
+  entries: loreBook[],
+  rollbackSnapshot: LorebookReplacementSnapshot,
+  source: LorebookReplacementSource,
+): PlannedLorebookCommand | null {
+  const hasEarlierEntryAttempt = pendingLorebookEntryAttempts.some((attempt) => attempt.scopeKey === scopeKey)
+  if (
+    !isLorebookEntryStateSnapshot(rollbackSnapshot) &&
+    Array.isArray(rollbackSnapshot.scopedValue) &&
+    snapshotJson(rollbackSnapshot.scopedValue) === snapshotJson(entries)
+  ) {
+    return null
+  }
+
+  if (source === 'entry' && isLorebookEntryStateSnapshot(rollbackSnapshot)) {
+    const attemptedEntry = currentEditedLorebookEntry(entries, rollbackSnapshot)
+    if (
+      (rollbackSnapshot.previousEntry === null && !attemptedEntry) ||
+      (rollbackSnapshot.previousEntry &&
+        attemptedEntry &&
+        snapshotJson(rollbackSnapshot.previousEntry) === snapshotJson(attemptedEntry))
+    ) {
+      return null
+    }
+    const entryPlan = planLorebookEntryUpsert(entries, rollbackSnapshot)
+    if (entryPlan) {
+      if (hasEarlierEntryAttempt && entryPlan.kind === 'upsert') {
+        const { sparseUpdate: _sparseUpdate, ...fullEntryPlan } = entryPlan
+        return fullEntryPlan
+      }
+      return entryPlan
+    }
+  }
+
+  if (isLorebookCollectionReplacementSource(source) && !isLorebookEntryStateSnapshot(rollbackSnapshot)) {
+    if (!hasEarlierEntryAttempt) {
+      const deltaPlan = planLorebookCollectionDelta(entries, rollbackSnapshot)
+      if (deltaPlan) return deltaPlan
+    }
+  }
+
+  return {
+    kind: 'replace',
+    entries:
+      source === 'watchedCollection'
+        ? (cloneJsonValue(entries ?? []) as LorebookEntrySnapshot[])
+        : cloneLorebookEntriesForCommand(entries),
+  }
+}
+
+function lorebookDurableIntent(scope: DiscreteLorebookEditScope, plan: PlannedLorebookCommand): DurableMutationIntent {
+  const collectionPath = lorebookCollectionCommandPath(scope)
+  const entryCollectionPath = scope.kind === 'global' ? collectionPath : `${collectionPath}/entries`
+  let method: 'DELETE' | 'POST' | 'PUT'
+  let path: string
+  let body: Record<string, unknown>
+
+  switch (plan.kind) {
+    case 'replace':
+      method = 'PUT'
+      path = collectionPath
+      body = { entries: cloneJsonValue(plan.entries) }
+      break
+    case 'upsert':
+      method = 'PUT'
+      path = `${entryCollectionPath}/${encodeURIComponent(plan.entryId)}`
+      body = plan.sparseUpdate
+        ? {
+            patch: cloneJsonValue(plan.sparseUpdate.patch),
+            ...(plan.sparseUpdate.deleteKeys?.length
+              ? { deleteKeys: cloneJsonValue(plan.sparseUpdate.deleteKeys) }
+              : {}),
+          }
+        : { entry: cloneJsonValue(plan.entry) }
+      break
+    case 'delete':
+      method = 'DELETE'
+      path = `${entryCollectionPath}/${encodeURIComponent(plan.entryId)}`
+      body = {}
+      break
+    case 'reorder':
+      method = 'POST'
+      path = `${entryCollectionPath}/reorder`
+      body = { entryIds: cloneJsonValue(plan.entryIds) }
+      break
+  }
+
+  return { version: 1, requests: [{ method, path, body }] }
+}
+
+function lorebookCollectionCommandPath(scope: DiscreteLorebookEditScope): string {
+  switch (scope.kind) {
+    case 'global':
+      return `/lorebooks/${encodeURIComponent(scope.lorebookId)}/entries`
+    case 'character':
+      return `/characters/${encodeURIComponent(scope.characterId)}/lorebooks`
+    case 'chat':
+      return `/chats/${encodeURIComponent(scope.chatId)}/lorebooks`
+    case 'module':
+      return `/modules/${encodeURIComponent(scope.moduleId)}/lorebooks`
+  }
+}
+
+function dispatchPlannedLorebookCommand(
+  scope: DiscreteLorebookEditScope,
+  plan: PlannedLorebookCommand,
+  baseRevision: number,
+  options: ServerCommandTransportOptions,
+  optimisticMetadata: LorebookOptimisticCommandMetadata,
+): Promise<ServerCommandResult<Record<string, unknown>>> {
+  if (plan.kind === 'upsert') {
+    return lorebookScopedEntryCommand(
+      scope,
+      'upsert',
+      baseRevision,
+      options,
+      {
+        ...optimisticMetadata,
+        optimisticEntryIndex: plan.optimisticEntryIndex,
+        optimisticEntryCreated: plan.optimisticEntryCreated,
+      },
+      {
+        entryId: plan.entryId,
+        entry: plan.entry,
+        ...(plan.sparseUpdate ? { sparseUpdate: plan.sparseUpdate } : {}),
+      },
+    )
+  }
+  if (plan.kind === 'delete') {
+    return lorebookScopedEntryCommand(
+      scope,
+      'delete',
+      baseRevision,
+      options,
+      { ...optimisticMetadata, optimisticEntryIndex: plan.optimisticEntryIndex },
+      { entryId: plan.entryId },
+    )
+  }
+  if (plan.kind === 'reorder') {
+    return lorebookScopedEntryCommand(scope, 'reorder', baseRevision, options, optimisticMetadata, {
+      entryIds: plan.entryIds,
+    })
+  }
+
+  switch (scope.kind) {
+    case 'character':
+      return replaceCharacterLorebooksCommand(
+        { baseRevision, characterId: scope.characterId, entries: plan.entries, ...optimisticMetadata },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+    case 'chat':
+      return replaceChatLorebooksCommand(
+        { baseRevision, chatId: scope.chatId, entries: plan.entries, ...optimisticMetadata },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+    case 'global':
+      return replaceGlobalLorebookEntriesCommand(
+        { baseRevision, lorebookId: scope.lorebookId, entries: plan.entries, ...optimisticMetadata },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+    case 'module':
+      return replaceModuleLorebooksCommand(
+        { baseRevision, moduleId: scope.moduleId, entries: plan.entries },
+        options.signal,
+        options.keepalive,
+        true,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+  }
 }
 
 export function dispatchReplaceModuleLorebooks(
@@ -2155,12 +2247,14 @@ function queueReplacement(
   command: (
     previous: LorebookReplacementSnapshot,
     projectionEpochs: LorebookProjectionEpochs,
+    plan: PlannedLorebookCommand,
     options?: ServerCommandTransportOptions,
   ) => Promise<ServerCommandResult<Record<string, unknown>>>,
   delay: number,
   source: LorebookReplacementSource,
   projectionEpochs: LorebookProjectionEpochs,
   attemptedEntries: loreBook[],
+  scope: DiscreteLorebookEditScope,
 ): void {
   const existing = pendingReplacements.get(key)
   if (existing?.timer) clearTimeout(existing.timer)
@@ -2173,6 +2267,23 @@ function queueReplacement(
   const effectivePrevious = useExisting ? existing.previous : previous
   const effectiveSource = useExisting && existing?.source === 'collection' ? 'collection' : source
   const effectiveProjectionEpochs = useExisting ? existing.projectionEpochs : projectionEpochs
+  const plan = planLorebookCommand(key, attemptedEntries, effectivePrevious, effectiveSource)
+  if (!plan) {
+    if (existing) void acknowledgePendingMutation(existing.outbox)
+    pendingReplacements.delete(key)
+    pendingEntryEditKeys.delete(key)
+    flushedEntryEditSnapshots.delete(key)
+    flushedEntryEditClearSnapshots.delete(key)
+    return
+  }
+
+  if (existing && !existingProjectionIsCurrent) void acknowledgePendingMutation(existing.outbox)
+  const intent = lorebookDurableIntent(scope, plan)
+  const outbox = stagePendingMutation(
+    `lorebook:${key}`,
+    intent,
+    existingProjectionIsCurrent ? existing?.outbox : undefined,
+  )
 
   const pending: PendingCollectionReplacement = {
     key,
@@ -2180,7 +2291,9 @@ function queueReplacement(
     attemptedEntries,
     source: effectiveSource,
     projectionEpochs: effectiveProjectionEpochs,
-    command: (options = {}) => command(effectivePrevious, effectiveProjectionEpochs, options),
+    intent,
+    outbox,
+    command: (options = {}) => command(effectivePrevious, effectiveProjectionEpochs, plan, options),
     timer: null,
   }
   if (effectiveSource === 'entry') {
@@ -2213,6 +2326,16 @@ function runPendingReplacement(key: string, options: ServerCommandTransportOptio
   if (!pending) return
   if (pending.timer) clearTimeout(pending.timer)
   pendingReplacements.delete(key)
+  const watchedEntries =
+    pending.source === 'watchedCollection' ? resolveLorebookCollectionFromKey(key)?.entries : undefined
+  if (
+    hasLorebookProjectionEpochChanged(pending.projectionEpochs) ||
+    (pending.source === 'watchedCollection' && !hasStableUniqueLorebookEntryIds(watchedEntries))
+  ) {
+    pendingEntryEditKeys.delete(key)
+    void acknowledgePendingMutation(pending.outbox)
+    return
+  }
   if (pending.source === 'entry') {
     pendingEntryEditKeys.delete(key)
     const snapshot = currentLorebookCollectionSnapshotForKey(key)
@@ -2230,7 +2353,9 @@ function runPendingReplacement(key: string, options: ServerCommandTransportOptio
       }
     }
   }
-  void pending.command(options)
+  void dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
+    pending.command({ ...options, ...transport }),
+  )
 }
 
 function registerLorebookEntryAttempt(
