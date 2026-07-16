@@ -189,6 +189,36 @@
   let previousOwnerKey: string | undefined
   let ownerKeyInitialized = false
 
+  interface TriggerIdentity {
+    id: string | null
+    reference: triggerscript
+  }
+
+  interface TriggerDragState {
+    source: TriggerIdentity
+    selected: TriggerIdentity[]
+    primarySelected: TriggerIdentity | null
+    selectionAnchor: TriggerIdentity | null
+    movesSelection: boolean
+  }
+
+  type TriggerDropTarget = { edge: 'before' | 'after'; trigger: TriggerIdentity } | { edge: 'end' }
+
+  interface EffectDragState {
+    owner: triggerscript
+    effects: triggerEffect[]
+    effect: triggerEffect
+    selectedEffect: triggerEffect | null
+  }
+
+  type EffectDropTarget = {
+    owner: triggerscript
+    effects: triggerEffect[]
+  } & ({ edge: 'before' | 'after'; effect: triggerEffect } | { edge: 'end' })
+
+  let triggerDrag: TriggerDragState | null = null
+  let effectDrag: EffectDragState | null = null
+
   let isRestoringMode = $state(false)
   let previousSelectedTriggerIndex = $state(-1)
 
@@ -381,8 +411,10 @@
     menuMode = 0
     isDragging = false
     dragOverIndex = -1
+    triggerDrag = null
     isEffectDragging = false
     effectDragOverIndex = -1
+    effectDrag = null
     editTrigger = null as triggerEffectV2
     addElse = false
     selectMode = 0
@@ -1908,14 +1940,105 @@
     value = triggers
   }
 
-  const handleTriggerDrop = (targetIndex: number, e) => {
+  const triggerStableId = (trigger: triggerscript): string | null => {
+    return typeof trigger.id === 'string' && trigger.id.length > 0 ? trigger.id : null
+  }
+
+  const captureTriggerIdentity = (trigger: triggerscript): TriggerIdentity => {
+    return {
+      id: triggerStableId(trigger),
+      reference: trigger,
+    }
+  }
+
+  const resolveTriggerIdentity = (identity: TriggerIdentity): number | null => {
+    const matchingIndices: number[] = []
+    for (let index = 1; index < value.length; index += 1) {
+      const candidate = value[index]
+      if (!candidate) continue
+      const matches =
+        identity.id === null ? candidate === identity.reference : triggerStableId(candidate) === identity.id
+      if (matches) matchingIndices.push(index)
+    }
+    return matchingIndices.length === 1 ? matchingIndices[0] : null
+  }
+
+  const resolveTriggerIdentities = (identities: TriggerIdentity[]): number[] | null => {
+    const resolvedIndices: number[] = []
+    for (const identity of identities) {
+      const index = resolveTriggerIdentity(identity)
+      if (index === null || resolvedIndices.includes(index)) return null
+      resolvedIndices.push(index)
+    }
+    return resolvedIndices
+  }
+
+  const beginTriggerDrag = (trigger: triggerscript, index: number, e: DragEvent): boolean => {
+    if (index <= 0 || value[index] !== trigger) {
+      e.preventDefault()
+      return false
+    }
+
+    const selectedIndices = Array.from(
+      new Set(selectedTriggerIndices.filter((selected) => selected > 0 && selected < value.length)),
+    )
+    triggerDrag = {
+      source: captureTriggerIdentity(trigger),
+      selected: selectedIndices.map((selected) => captureTriggerIdentity(value[selected])),
+      primarySelected:
+        selectedIndex > 0 && selectedIndex < value.length ? captureTriggerIdentity(value[selectedIndex]) : null,
+      selectionAnchor:
+        lastSelectedTriggerIndex > 0 && lastSelectedTriggerIndex < value.length
+          ? captureTriggerIdentity(value[lastSelectedTriggerIndex])
+          : null,
+      movesSelection: selectedIndices.includes(index),
+    }
+
+    isDragging = true
+    e.dataTransfer?.setData('text', 'trigger')
+    if (triggerDrag.source.id !== null) {
+      e.dataTransfer?.setData('triggerId', triggerDrag.source.id)
+    }
+    return true
+  }
+
+  const resolveTriggerDropTarget = (target: TriggerDropTarget): number | null => {
+    if (target.edge === 'end') return value.length
+    const targetIndex = resolveTriggerIdentity(target.trigger)
+    if (targetIndex === null) return null
+    return target.edge === 'after' ? targetIndex + 1 : targetIndex
+  }
+
+  const rebaseTriggerSelection = (drag: TriggerDragState, sourceIndex: number): boolean => {
+    const resolvedSelected = resolveTriggerIdentities(drag.selected)
+    if (drag.movesSelection && resolvedSelected === null) return false
+    selectedTriggerIndices = resolvedSelected ?? []
+
+    const primaryIndex = drag.primarySelected ? resolveTriggerIdentity(drag.primarySelected) : null
+    selectedIndex = primaryIndex ?? sourceIndex
+    selectedTriggerIndex = selectedIndex
+
+    const anchorIndex = drag.selectionAnchor ? resolveTriggerIdentity(drag.selectionAnchor) : null
+    lastSelectedTriggerIndex = anchorIndex ?? -1
+    return true
+  }
+
+  const handleTriggerDrop = (target: TriggerDropTarget | null, e: DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     const data = e.dataTransfer?.getData('text')
-    if (data === 'trigger') {
-      const sourceIndex = parseInt(e.dataTransfer?.getData('triggerIndex') || '0')
-      moveTrigger(sourceIndex, targetIndex)
-    }
+    if (data !== 'trigger' || !target || !triggerDrag) return
+
+    const drag = triggerDrag
+    triggerDrag = null
+    const transferredId = e.dataTransfer?.getData('triggerId') ?? ''
+    if (drag.source.id !== null && transferredId !== drag.source.id) return
+    if (drag.source.id === null && transferredId !== '') return
+
+    const sourceIndex = resolveTriggerIdentity(drag.source)
+    const targetIndex = resolveTriggerDropTarget(target)
+    if (sourceIndex === null || targetIndex === null || !rebaseTriggerSelection(drag, sourceIndex)) return
+    moveTrigger(sourceIndex, targetIndex)
   }
 
   const getBlockRange = (startIndex: number): { start: number; end: number } => {
@@ -2149,14 +2272,83 @@
     return formatEffectDisplay(effect).plainText || `${language.effect} ${index + 1}`
   }
 
-  const handleEffectDrop = (targetIndex: number, e) => {
+  const beginEffectDrag = (effect: triggerEffect, index: number, e: DragEvent): boolean => {
+    const owner = value[selectedIndex]
+    const effects = owner?.effect
+    if (!owner || !effects || effects[index] !== effect) {
+      e.preventDefault()
+      return false
+    }
+
+    effectDrag = {
+      owner,
+      effects,
+      effect,
+      selectedEffect:
+        selectedEffectIndex >= 0 && selectedEffectIndex < effects.length ? effects[selectedEffectIndex] : null,
+    }
+    isEffectDragging = true
+    e.dataTransfer?.setData('text', 'effect')
+    return true
+  }
+
+  const captureEffectDropTarget = (edge: 'before' | 'after', effect: triggerEffect): EffectDropTarget | null => {
+    const owner = value[selectedIndex]
+    const effects = owner?.effect
+    if (!owner || !effects) return null
+    return { owner, effects, edge, effect }
+  }
+
+  const captureEffectEndDropTarget = (): EffectDropTarget | null => {
+    const owner = value[selectedIndex]
+    const effects = owner?.effect
+    if (!owner || !effects) return null
+    return { owner, effects, edge: 'end' }
+  }
+
+  const resolveEffectOwnerIndex = (owner: triggerscript): number | null => {
+    const matchingIndices: number[] = []
+    for (let index = 1; index < value.length; index += 1) {
+      if (value[index] === owner) matchingIndices.push(index)
+    }
+    return matchingIndices.length === 1 ? matchingIndices[0] : null
+  }
+
+  const resolveEffectIndex = (effects: triggerEffect[], effect: triggerEffect): number | null => {
+    const matchingIndices: number[] = []
+    for (let index = 0; index < effects.length; index += 1) {
+      if (effects[index] === effect) matchingIndices.push(index)
+    }
+    return matchingIndices.length === 1 ? matchingIndices[0] : null
+  }
+
+  const resolveEffectDropTarget = (drag: EffectDragState, target: EffectDropTarget): number | null => {
+    if (target.owner !== drag.owner || target.effects !== drag.effects) return null
+    if (target.edge === 'end') return drag.effects.length
+    const targetIndex = resolveEffectIndex(drag.effects, target.effect)
+    if (targetIndex === null) return null
+    return target.edge === 'after' ? targetIndex + 1 : targetIndex
+  }
+
+  const handleEffectDrop = (target: EffectDropTarget | null, e: DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     const data = e.dataTransfer?.getData('text')
-    if (data === 'effect') {
-      const sourceIndex = parseInt(e.dataTransfer?.getData('effectIndex') || '0')
-      moveEffect(sourceIndex, targetIndex)
-    }
+    if (data !== 'effect' || !target || !effectDrag) return
+
+    const drag = effectDrag
+    effectDrag = null
+    const ownerIndex = resolveEffectOwnerIndex(drag.owner)
+    if (ownerIndex === null || drag.owner.effect !== drag.effects) return
+
+    const sourceIndex = resolveEffectIndex(drag.effects, drag.effect)
+    const targetIndex = resolveEffectDropTarget(drag, target)
+    if (sourceIndex === null || targetIndex === null) return
+
+    selectedIndex = ownerIndex
+    selectedTriggerIndex = ownerIndex
+    selectedEffectIndex = drag.selectedEffect ? (resolveEffectIndex(drag.effects, drag.selectedEffect) ?? -1) : -1
+    moveEffect(sourceIndex, targetIndex)
   }
 
   const handleKeydown = (e: KeyboardEvent) => {
@@ -2664,7 +2856,7 @@
                     }}
                     ondrop={(e) => {
                       if (!isMobileScreen) {
-                        handleTriggerDrop(i, e)
+                        handleTriggerDrop({ edge: 'before', trigger: captureTriggerIdentity(trigger) }, e)
                         dragOverIndex = -1
                       }
                     }}>
@@ -2688,9 +2880,7 @@
                           e.preventDefault()
                           return
                         }
-                        isDragging = true
-                        e.dataTransfer?.setData('text', 'trigger')
-                        e.dataTransfer?.setData('triggerIndex', i.toString())
+                        if (!beginTriggerDrag(trigger, i, e)) return
 
                         const dragElement = document.createElement('div')
                         if (isMultipleSelected() && isTriggerSelected(i)) {
@@ -2704,12 +2894,13 @@
                         e.dataTransfer?.setDragImage(dragElement, 10, 10)
 
                         setTimeout(() => {
-                          document.body.removeChild(dragElement)
+                          dragElement.remove()
                         }, 0)
                       }}
                       ondragend={(e) => {
                         isDragging = false
                         dragOverIndex = -1
+                        triggerDrag = null
                         scrollManager.stopAutoScroll()
                       }}
                       ondragover={(e) => {
@@ -2739,7 +2930,14 @@
                       }}
                       ondrop={(e) => {
                         if (!isMobileScreen) {
-                          handleTriggerDrop(dragOverIndex, e)
+                          handleTriggerDrop(
+                            dragOverIndex === i
+                              ? { edge: 'before', trigger: captureTriggerIdentity(trigger) }
+                              : dragOverIndex === i + 1
+                                ? { edge: 'after', trigger: captureTriggerIdentity(trigger) }
+                                : null,
+                            e,
+                          )
                           dragOverIndex = -1
                         }
                       }}
@@ -2798,7 +2996,7 @@
                 }}
                 ondrop={(e) => {
                   if (!isMobileScreen) {
-                    handleTriggerDrop(value.length, e)
+                    handleTriggerDrop({ edge: 'end' }, e)
                     dragOverIndex = -1
                   }
                 }}>
@@ -2985,7 +3183,7 @@
                   }}
                   ondrop={(e) => {
                     if (!isMobileScreen && isEffectDragging) {
-                      handleEffectDrop(i, e)
+                      handleEffectDrop(captureEffectDropTarget('before', effect), e)
                       effectDragOverIndex = -1
                     }
                   }}>
@@ -3022,7 +3220,14 @@
                   }}
                   ondrop={(e) => {
                     if (!isMobileScreen && isEffectDragging) {
-                      handleEffectDrop(effectDragOverIndex, e)
+                      handleEffectDrop(
+                        effectDragOverIndex === i
+                          ? captureEffectDropTarget('before', effect)
+                          : effectDragOverIndex === i + 1
+                            ? captureEffectDropTarget('after', effect)
+                            : null,
+                        e,
+                      )
                       effectDragOverIndex = -1
                     }
                   }}>
@@ -3111,9 +3316,7 @@
                           e.preventDefault()
                         }}
                         ondragstart={(e) => {
-                          isEffectDragging = true
-                          e.dataTransfer?.setData('text', 'effect')
-                          e.dataTransfer?.setData('effectIndex', i.toString())
+                          if (!beginEffectDrag(effect, i, e)) return
 
                           const dragElement = document.createElement('div')
                           dragElement.textContent = effectDisplayName(effect, i)
@@ -3123,12 +3326,13 @@
                           e.dataTransfer?.setDragImage(dragElement, 10, 10)
 
                           setTimeout(() => {
-                            document.body.removeChild(dragElement)
+                            dragElement.remove()
                           }, 0)
                         }}
                         ondragend={(e) => {
                           isEffectDragging = false
                           effectDragOverIndex = -1
+                          effectDrag = null
                           scrollManager.stopAutoScroll()
                         }}>
                         <div class="text-textcolor2 text-xs select-none">⋮⋮</div>
@@ -3173,12 +3377,7 @@
                 }}
                 ondrop={(e) => {
                   if (!isMobileScreen && isEffectDragging) {
-                    handleEffectDrop(
-                      value && value[selectedIndex] && value[selectedIndex].effect
-                        ? value[selectedIndex].effect.length
-                        : 0,
-                      e,
-                    )
+                    handleEffectDrop(captureEffectEndDropTarget(), e)
                     effectDragOverIndex = -1
                   }
                 }}>

@@ -37,6 +37,10 @@ type MountedComponent = Parameters<typeof unmount>[0] & {
   getValue: () => triggerscript[]
   setEffectField: (triggerIndex: number, effectIndex: number, field: string, nextValue: string) => void
   replaceOwner: (ownerKey: string, value: triggerscript[]) => void
+  replaceValue: (value: triggerscript[]) => void
+  replaceTrigger: (triggerIndex: number, trigger: triggerscript) => void
+  replaceEffects: (triggerIndex: number, effects: triggerscript['effect']) => void
+  replaceEffect: (triggerIndex: number, effectIndex: number, effect: triggerscript['effect'][number]) => void
 }
 type XssTestGlobal = typeof globalThis & { triggerV2Xss?: boolean }
 
@@ -62,6 +66,46 @@ function triggerButton(name: string): HTMLButtonElement {
   )
   if (!button) throw new Error(`Trigger button not found: ${name}`)
   return button
+}
+
+function triggerDropTarget(name: string, edge: 'before' | 'after'): HTMLElement {
+  const row = triggerButton(name).parentElement
+  const target = edge === 'before' ? row?.previousElementSibling : row?.nextElementSibling
+  if (!(target instanceof HTMLElement) || target.getAttribute('role') !== 'listitem') {
+    throw new Error(`Trigger ${edge} drop target not found: ${name}`)
+  }
+  return target
+}
+
+function effectDisplay(value: string): HTMLElement {
+  const display = Array.from(target.querySelectorAll<HTMLElement>('[data-risu-trigger-effect-display="true"]')).find(
+    (candidate) => candidate.textContent?.trim() === `// ${value}`,
+  )
+  if (!display) throw new Error(`Effect display not found: ${value}`)
+  return display
+}
+
+function effectDragHandle(value: string): HTMLElement {
+  const row = effectDisplay(value).closest('button')?.parentElement
+  const handle = row?.querySelector<HTMLElement>('[draggable="true"]')
+  if (!handle) throw new Error(`Effect drag handle not found: ${value}`)
+  return handle
+}
+
+function effectEndDropTarget(value: string): HTMLElement {
+  const row = effectDisplay(value).closest('button')?.parentElement
+  const container = row?.parentElement
+  const dropTargets = Array.from(container?.children ?? []).filter(
+    (candidate): candidate is HTMLElement =>
+      candidate instanceof HTMLElement && candidate.getAttribute('role') === 'listitem',
+  )
+  const dropTarget = dropTargets.at(-1)
+  if (!dropTarget) throw new Error('Effect end drop target not found')
+  return dropTarget
+}
+
+function effectValues(trigger: triggerscript): Array<string | undefined> {
+  return trigger.effect.map((effect) => (effect as { value?: string }).value)
 }
 
 function createDragDataTransfer(): DataTransfer {
@@ -425,6 +469,228 @@ describe('TriggerV2List effect display', () => {
     expect(triggerButton('Alpha').getAttribute('aria-pressed')).toBe('true')
     expect(triggerButton('Beta').getAttribute('aria-pressed')).toBe('true')
     expect(triggerButton('Delta').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('moves the dragged trigger by stable ID after a live list reorder replaces every row', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { id: 'header', comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          { id: 'alpha', comment: 'Alpha', type: 'manual', conditions: [], effect: [] },
+          { id: 'beta', comment: 'Beta', type: 'manual', conditions: [], effect: [] },
+          { id: 'gamma', comment: 'Gamma', type: 'manual', conditions: [], effect: [] },
+        ],
+      },
+    }) as MountedComponent
+    await settle()
+    await openEditor()
+
+    const dataTransfer = createDragDataTransfer()
+    dispatchDragEvent(triggerButton('Gamma'), 'dragstart', dataTransfer)
+    component.replaceValue([
+      { id: 'header', comment: 'Header', type: 'manual', conditions: [], effect: [] },
+      { id: 'gamma', comment: 'Gamma', type: 'manual', conditions: [], effect: [] },
+      { id: 'alpha', comment: 'Alpha', type: 'manual', conditions: [], effect: [] },
+      { id: 'beta', comment: 'Beta', type: 'manual', conditions: [], effect: [] },
+    ])
+    await settle()
+
+    dispatchDragEvent(triggerDropTarget('Beta', 'after'), 'drop', dataTransfer)
+    await settle()
+
+    expect(component.getValue().map((trigger) => trigger.comment)).toEqual(['Header', 'Alpha', 'Beta', 'Gamma'])
+  })
+
+  it('rebases every selected trigger before a multi-row drop after a live list reorder', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { id: 'header', comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          { id: 'alpha', comment: 'Alpha', type: 'manual', conditions: [], effect: [] },
+          { id: 'beta', comment: 'Beta', type: 'manual', conditions: [], effect: [] },
+          { id: 'gamma', comment: 'Gamma', type: 'manual', conditions: [], effect: [] },
+          { id: 'delta', comment: 'Delta', type: 'manual', conditions: [], effect: [] },
+        ],
+      },
+    }) as MountedComponent
+    await settle()
+    await openEditor()
+
+    triggerButton('Alpha').click()
+    triggerButton('Beta').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    const dataTransfer = createDragDataTransfer()
+    dispatchDragEvent(triggerButton('Beta'), 'dragstart', dataTransfer)
+    component.replaceValue([
+      { id: 'header', comment: 'Header', type: 'manual', conditions: [], effect: [] },
+      { id: 'gamma', comment: 'Gamma', type: 'manual', conditions: [], effect: [] },
+      { id: 'delta', comment: 'Delta', type: 'manual', conditions: [], effect: [] },
+      { id: 'alpha', comment: 'Alpha', type: 'manual', conditions: [], effect: [] },
+      { id: 'beta', comment: 'Beta', type: 'manual', conditions: [], effect: [] },
+    ])
+    await settle()
+
+    dispatchDragEvent(triggerDropTarget('Gamma', 'before'), 'drop', dataTransfer)
+    await settle()
+
+    expect(component.getValue().map((trigger) => trigger.comment)).toEqual([
+      'Header',
+      'Alpha',
+      'Beta',
+      'Gamma',
+      'Delta',
+    ])
+    expect(triggerButton('Alpha').getAttribute('aria-pressed')).toBe('true')
+    expect(triggerButton('Beta').getAttribute('aria-pressed')).toBe('true')
+    expect(triggerButton('Gamma').getAttribute('aria-pressed')).toBe('false')
+    expect(triggerButton('Delta').getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('cancels a trigger drop when the originally dragged trigger disappeared', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { id: 'header', comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          { id: 'alpha', comment: 'Alpha', type: 'manual', conditions: [], effect: [] },
+          { id: 'beta', comment: 'Beta', type: 'manual', conditions: [], effect: [] },
+          { id: 'gamma', comment: 'Gamma', type: 'manual', conditions: [], effect: [] },
+          { id: 'delta', comment: 'Delta', type: 'manual', conditions: [], effect: [] },
+        ],
+      },
+    }) as MountedComponent
+    await settle()
+    await openEditor()
+
+    const dataTransfer = createDragDataTransfer()
+    dispatchDragEvent(triggerButton('Beta'), 'dragstart', dataTransfer)
+    component.replaceValue([
+      { id: 'header', comment: 'Header', type: 'manual', conditions: [], effect: [] },
+      { id: 'alpha', comment: 'Alpha', type: 'manual', conditions: [], effect: [] },
+      { id: 'gamma', comment: 'Gamma', type: 'manual', conditions: [], effect: [] },
+      { id: 'delta', comment: 'Delta', type: 'manual', conditions: [], effect: [] },
+    ])
+    await settle()
+
+    dispatchDragEvent(triggerDropTarget('Alpha', 'before'), 'drop', dataTransfer)
+    await settle()
+
+    expect(component.getValue().map((trigger) => trigger.comment)).toEqual(['Header', 'Alpha', 'Gamma', 'Delta'])
+  })
+
+  it('cancels an effect drop when its owning trigger was replaced', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { id: 'header', comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          {
+            id: 'alpha',
+            comment: 'Alpha',
+            type: 'manual',
+            conditions: [],
+            effect: [
+              { type: 'v2Comment', value: 'One', indent: 0 },
+              { type: 'v2Comment', value: 'Two', indent: 0 },
+              { type: 'v2Comment', value: 'Three', indent: 0 },
+            ],
+          },
+        ],
+      },
+    }) as MountedComponent
+    await settle()
+    await openEditor()
+
+    const dataTransfer = createDragDataTransfer()
+    dispatchDragEvent(effectDragHandle('Two'), 'dragstart', dataTransfer)
+    component.replaceTrigger(1, {
+      id: 'alpha',
+      comment: 'Alpha',
+      type: 'manual',
+      conditions: [],
+      effect: [
+        { type: 'v2Comment', value: 'One', indent: 0 },
+        { type: 'v2Comment', value: 'Two', indent: 0 },
+        { type: 'v2Comment', value: 'Three', indent: 0 },
+      ],
+    })
+    await settle()
+
+    dispatchDragEvent(effectEndDropTarget('Three'), 'drop', dataTransfer)
+    await settle()
+
+    expect(effectValues(component.getValue()[1])).toEqual(['One', 'Two', 'Three'])
+  })
+
+  it('cancels an effect drop when the effect array generation was replaced', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          {
+            comment: 'Alpha',
+            type: 'manual',
+            conditions: [],
+            effect: [
+              { type: 'v2Comment', value: 'One', indent: 0 },
+              { type: 'v2Comment', value: 'Two', indent: 0 },
+              { type: 'v2Comment', value: 'Three', indent: 0 },
+            ],
+          },
+        ],
+      },
+    }) as MountedComponent
+    await settle()
+    await openEditor()
+
+    const dataTransfer = createDragDataTransfer()
+    dispatchDragEvent(effectDragHandle('Two'), 'dragstart', dataTransfer)
+    component.replaceEffects(1, [
+      { type: 'v2Comment', value: 'One', indent: 0 },
+      { type: 'v2Comment', value: 'Two', indent: 0 },
+      { type: 'v2Comment', value: 'Three', indent: 0 },
+    ])
+    await settle()
+
+    dispatchDragEvent(effectEndDropTarget('Three'), 'drop', dataTransfer)
+    await settle()
+
+    expect(effectValues(component.getValue()[1])).toEqual(['One', 'Two', 'Three'])
+  })
+
+  it('cancels an effect drop when the originally dragged effect object was replaced', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          {
+            comment: 'Alpha',
+            type: 'manual',
+            conditions: [],
+            effect: [
+              { type: 'v2Comment', value: 'One', indent: 0 },
+              { type: 'v2Comment', value: 'Two', indent: 0 },
+              { type: 'v2Comment', value: 'Three', indent: 0 },
+            ],
+          },
+        ],
+      },
+    }) as MountedComponent
+    await settle()
+    await openEditor()
+
+    const dataTransfer = createDragDataTransfer()
+    dispatchDragEvent(effectDragHandle('Two'), 'dragstart', dataTransfer)
+    component.replaceEffect(1, 1, { type: 'v2Comment', value: 'Two', indent: 0 })
+    await settle()
+
+    dispatchDragEvent(effectEndDropTarget('Three'), 'drop', dataTransfer)
+    await settle()
+
+    expect(effectValues(component.getValue()[1])).toEqual(['One', 'Two', 'Three'])
   })
 
   it('provides operable mobile move controls for triggers and their effects', async () => {

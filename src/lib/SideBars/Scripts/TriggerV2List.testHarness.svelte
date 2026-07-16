@@ -25,6 +25,31 @@
     value = nextValue
   }
 
+  export function replaceValue(nextValue: triggerscript[]): void {
+    value = nextValue
+  }
+
+  export function replaceTrigger(triggerIndex: number, nextTrigger: triggerscript): void {
+    if (triggerIndex < 0 || triggerIndex >= value.length) return
+    value[triggerIndex] = nextTrigger
+  }
+
+  export function replaceEffects(triggerIndex: number, nextEffects: triggerscript['effect']): void {
+    const trigger = value[triggerIndex]
+    if (!trigger) return
+    trigger.effect = nextEffects
+  }
+
+  export function replaceEffect(
+    triggerIndex: number,
+    effectIndex: number,
+    nextEffect: triggerscript['effect'][number],
+  ): void {
+    const effects = value[triggerIndex]?.effect
+    if (!effects || effectIndex < 0 || effectIndex >= effects.length) return
+    effects[effectIndex] = nextEffect
+  }
+
   export function getValue(): triggerscript[] {
     return value
   }
