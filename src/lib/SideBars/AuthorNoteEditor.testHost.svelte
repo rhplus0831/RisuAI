@@ -13,6 +13,11 @@
   export function switchChat(chatPage: number) {
     chara.chatPage = chatPage
   }
+
+  export function setCurrentChatNote(note: string) {
+    const chat = chara.chats[chara.chatPage]
+    if (chat) chat.note = note
+  }
 </script>
 
 <AuthorNoteEditor {chara} />

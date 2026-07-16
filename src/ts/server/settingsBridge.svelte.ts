@@ -42,6 +42,13 @@ import {
   serverSettingDraftOwnerKey,
   splitPresetSettingDraftOwnerKey,
 } from './settingsDraftAcknowledgement'
+import { dispatchDurableMutation } from './durableMutationDispatch'
+import {
+  acknowledgePendingMutation,
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from './pendingMutationOutbox'
 
 interface PendingSettingsPatch {
   patch: SettingsPatch
@@ -49,6 +56,7 @@ interface PendingSettingsPatch {
   attempted: SettingsPatch
   projectionEpochs: SettingsGroupProjectionEpochs
   timer: ReturnType<typeof setTimeout> | null
+  outbox: PendingMutationHandle | null
 }
 
 interface PendingSettingsAttempt {
@@ -68,6 +76,7 @@ const pendingSettingsPatch: PendingSettingsPatch = {
   attempted: {},
   projectionEpochs: {},
   timer: null,
+  outbox: null,
 }
 const pendingSettingsAttempts: PendingSettingsAttempt[] = []
 let nextSettingsAttemptSequence = 0
@@ -81,6 +90,7 @@ interface SparseObjectSettingQueue {
   timer: ReturnType<typeof setTimeout> | null
   running: boolean
   superseded: boolean
+  outbox: PendingMutationHandle | null
 }
 
 const SPARSE_OBJECT_SETTING_KEYS = new Set(['NAIImgConfig', 'wavespeedImage', 'seperateParameters'])
@@ -433,8 +443,12 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
   if (pendingSettingsPatch.timer) clearTimeout(pendingSettingsPatch.timer)
   if (Object.keys(pendingSettingsPatch.patch).length === 0) {
     pendingSettingsPatch.timer = null
+    if (pendingSettingsPatch.outbox) void acknowledgePendingMutation(pendingSettingsPatch.outbox)
+    pendingSettingsPatch.outbox = null
     return
   }
+  const intent = settingsPatchDurableIntent(pendingSettingsPatch.patch)
+  pendingSettingsPatch.outbox = stagePendingMutation('settings:bridge', intent, pendingSettingsPatch.outbox)
   pendingSettingsPatch.timer = setTimeout(() => {
     dispatchPendingSettingsPatch()
   }, delay)
@@ -461,6 +475,13 @@ function dropPendingSettingsPatchKeys(keys: readonly string[]): void {
     clearTimeout(pendingSettingsPatch.timer)
     pendingSettingsPatch.timer = null
   }
+  if (Object.keys(pendingSettingsPatch.patch).length === 0 && pendingSettingsPatch.outbox) {
+    void acknowledgePendingMutation(pendingSettingsPatch.outbox)
+    pendingSettingsPatch.outbox = null
+  } else if (dropped) {
+    const intent = settingsPatchDurableIntent(pendingSettingsPatch.patch)
+    pendingSettingsPatch.outbox = stagePendingMutation('settings:bridge', intent, pendingSettingsPatch.outbox)
+  }
 }
 
 export function flushPendingServerBackedSettingsPatch(options: ServerCommandTransportOptions = {}): void {
@@ -483,21 +504,32 @@ function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {
   const commandPrevious = pendingSettingsPatch.previous
   const commandAttempted = pendingSettingsPatch.attempted
   const optimisticProjectionEpochs = pendingSettingsPatch.projectionEpochs
+  const stagedOutbox = pendingSettingsPatch.outbox
   pendingSettingsPatch.patch = {}
   pendingSettingsPatch.previous = {}
   pendingSettingsPatch.attempted = {}
   pendingSettingsPatch.projectionEpochs = {}
+  pendingSettingsPatch.outbox = null
 
-  if (Object.keys(commandPatch).length === 0) return
+  if (Object.keys(commandPatch).length === 0) {
+    if (stagedOutbox) void acknowledgePendingMutation(stagedOutbox)
+    return
+  }
 
-  dispatchTrackedServerBackedSettingsPatch({
-    patch: commandPatch,
-    optimisticProjectionEpochs,
-    keepalive: options.keepalive,
-    signal: options.signal,
-    previous: commandPrevious,
-    attempted: commandAttempted,
-  })
+  const intent = settingsPatchDurableIntent(commandPatch)
+  const outbox = stagedOutbox ?? stagePendingMutation('settings:bridge', intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    dispatchTrackedServerBackedSettingsPatch({
+      patch: commandPatch,
+      optimisticProjectionEpochs,
+      keepalive: options.keepalive,
+      signal: options.signal,
+      mutationId: transport.mutationId,
+      databaseLineage: transport.databaseLineage,
+      previous: commandPrevious,
+      attempted: commandAttempted,
+    }),
+  )
 }
 
 function dispatchTrackedServerBackedSettingsPatch(input: {
@@ -507,6 +539,8 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
   attempted: SettingsPatch
   keepalive?: boolean
   signal?: AbortSignal | null
+  mutationId?: string
+  databaseLineage?: string
 }): Promise<ServerCommandResult> {
   const attempt = registerSettingsAttempt(input.previous, input.attempted)
   const reportFailure = createSettingsSaveFailureReporter()
@@ -516,6 +550,8 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
     optimisticProjectionEpochs: input.optimisticProjectionEpochs,
     keepalive: input.keepalive,
     signal: input.signal,
+    mutationId: input.mutationId,
+    databaseLineage: input.databaseLineage,
     rollback: () => {
       rollbackSettingsAttempt(attempt)
       reportFailure()
@@ -621,6 +657,7 @@ function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted
       timer: null,
       running: false,
       superseded: false,
+      outbox: null,
     }
     sparseObjectSettingQueues.set(key, state)
   } else if (intent) {
@@ -634,11 +671,20 @@ function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted
     if (!state.queued) {
       state.queuedProjectionEpoch = null
       if (state.timer) clearTimeout(state.timer)
+      if (state.outbox) void acknowledgePendingMutation(state.outbox)
       sparseObjectSettingQueues.delete(key)
       return true
     }
   }
 
+  if (state.queued) {
+    const attemptedObject = applySparseObjectSettingUpdate(state.baseline, state.queued)
+    const update = diffSparseObjectSetting(state.baseline, attemptedObject)
+    if (update) {
+      const intent = sparseObjectSettingDurableIntent(state.group, state.key, update)
+      state.outbox = stagePendingMutation(`settings-object:${state.group}:${state.key}`, intent, state.outbox)
+    }
+  }
   if (state.timer) clearTimeout(state.timer)
   state.timer = setTimeout(() => {
     state!.timer = null
@@ -653,6 +699,8 @@ function supersedeSparseObjectSettingQueue(key: string): void {
   state.superseded = true
   state.queued = null
   state.queuedProjectionEpoch = null
+  if (state.outbox) void acknowledgePendingMutation(state.outbox)
+  state.outbox = null
   if (state.timer) clearTimeout(state.timer)
   state.timer = null
   if (!state.running) sparseObjectSettingQueues.delete(key)
@@ -666,9 +714,15 @@ async function dispatchSparseObjectSettingQueue(
   const attemptedObject = applySparseObjectSettingUpdate(state.baseline, state.queued)
   const update = diffSparseObjectSetting(state.baseline, attemptedObject)
   const projectionEpoch = state.queuedProjectionEpoch
+  const intent = update ? sparseObjectSettingDurableIntent(state.group, state.key, update) : null
+  const outbox = intent
+    ? (state.outbox ?? stagePendingMutation(`settings-object:${state.group}:${state.key}`, intent))
+    : null
+  state.outbox = null
   state.queued = null
   state.queuedProjectionEpoch = null
   if (!update || projectionEpoch === null) {
+    if (outbox) void acknowledgePendingMutation(outbox)
     sparseObjectSettingQueues.delete(state.key)
     return
   }
@@ -676,28 +730,32 @@ async function dispatchSparseObjectSettingQueue(
   state.running = true
   let failed = false
   const reportFailure = createSettingsSaveFailureReporter()
-  const result = await runServerCommand({
-    signal: options.signal,
-    keepalive: options.keepalive,
-    command: (baseRevision) =>
-      patchSettingsObjectFieldsCommand(
-        {
-          baseRevision,
-          group: state.group,
-          key: state.key,
-          update,
-          attemptedObject,
-          optimisticProjectionEpoch: projectionEpoch,
-        },
-        options.signal,
-        options.keepalive,
-      ),
-    rollback: () => {
-      failed = true
-      markSettingsGroupAcknowledgementTainted(state.group)
-      reportFailure()
-    },
-  })
+  const result = await dispatchDurableMutation(outbox!, intent!, (transport) =>
+    runServerCommand({
+      signal: options.signal,
+      keepalive: options.keepalive,
+      mutationId: transport.mutationId,
+      databaseLineage: transport.databaseLineage,
+      command: (baseRevision) =>
+        patchSettingsObjectFieldsCommand(
+          {
+            baseRevision,
+            group: state.group,
+            key: state.key,
+            update,
+            attemptedObject,
+            optimisticProjectionEpoch: projectionEpoch,
+          },
+          options.signal,
+          options.keepalive,
+        ),
+      rollback: () => {
+        failed = true
+        markSettingsGroupAcknowledgementTainted(state.group)
+        reportFailure()
+      },
+    }),
+  )
   if (result.status !== 'ok') reportFailure()
 
   await Promise.resolve()
@@ -1207,6 +1265,45 @@ function diffServerBackedSettingsSnapshot(
   }
 
   return { patch, previous, attempted }
+}
+
+function settingsPatchDurableIntent(patch: SettingsPatch): DurableMutationIntent {
+  const groups = new Map<SettingsGroup, SettingsPatch>()
+  for (const [key, value] of Object.entries(patch)) {
+    const group = settingsGroupForKey(key)
+    if (!group || value === undefined) continue
+    const groupPatch = groups.get(group) ?? {}
+    groupPatch[key] = cloneJsonValue(value)
+    groups.set(group, groupPatch)
+  }
+  return {
+    version: 1,
+    requests: Array.from(groups, ([group, groupPatch]) => ({
+      method: 'PATCH' as const,
+      path: `/settings/${encodeURIComponent(group)}`,
+      body: { patch: groupPatch },
+    })),
+  }
+}
+
+function sparseObjectSettingDurableIntent(
+  group: SettingsGroup,
+  key: string,
+  update: SparseSettingsObjectUpdate,
+): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/settings/${encodeURIComponent(group)}/objects/${encodeURIComponent(key)}`,
+        body: {
+          patch: cloneJsonValue(update.patch),
+          ...(update.deleteKeys?.length ? { deleteKeys: [...update.deleteKeys] } : {}),
+        },
+      },
+    ],
+  }
 }
 
 function snapshotJson(value: unknown): string {

@@ -4206,8 +4206,8 @@ export function dispatchUpdateChatNoteScoped(
   note: string,
   previous: ChatScriptstateSnapshot,
   options: ServerCommandTransportOptions = {},
-): void {
-  runChatCommand(
+): Promise<ServerCommandResult> | null {
+  return runChatCommandAsync(
     (baseRevision) =>
       updateChatCommand(
         {
@@ -4224,19 +4224,15 @@ export function dispatchUpdateChatNoteScoped(
   )
 }
 
-export function setChatNoteValue(
-  chatId: string | undefined,
-  note: string,
-  options: ServerCommandTransportOptions = {},
-): boolean {
-  if (!chatId) return false
+/** Apply an author-note edit optimistically without starting its transport. */
+export function applyChatNoteValueLocally(chatId: string | undefined, note: string): ChatScriptstateSnapshot | null {
+  if (!chatId) return null
 
   const location = locateChatById(chatId)
-  if (!location) return false
-  if ((location.chat.note ?? '') === note) return false
+  if (!location || (location.chat.note ?? '') === note) return null
 
   const previous = currentChatScriptstateSnapshotForChat(chatId, true)
-  if (!previous) return false
+  if (!previous) return null
 
   let applied = false
   withTrustedResourceWrite(() => {
@@ -4245,9 +4241,23 @@ export function setChatNoteValue(
     liveLocation.chat.note = note
     applied = true
   })
-  if (!applied) return false
+  return applied ? previous : null
+}
 
-  dispatchUpdateChatNoteScoped(chatId, note, previous, options)
+interface SetChatNoteValueOptions extends ServerCommandTransportOptions {
+  onResult?: (result: ServerCommandResult) => void
+}
+
+export function setChatNoteValue(
+  chatId: string | undefined,
+  note: string,
+  options: SetChatNoteValueOptions = {},
+): boolean {
+  const previous = applyChatNoteValueLocally(chatId, note)
+  if (!previous) return false
+
+  const result = dispatchUpdateChatNoteScoped(chatId!, note, previous, options)
+  if (result && options.onResult) void result.then(options.onResult)
   return true
 }
 

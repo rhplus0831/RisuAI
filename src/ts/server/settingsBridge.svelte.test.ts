@@ -25,6 +25,12 @@ const recorded = vi.hoisted(() => ({
 const alertMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
 }))
+const durabilityMocks = vi.hoisted(() => ({
+  acknowledged: [] as Array<{ mutationId: string }>,
+  dispatched: [] as Array<{ key: string; mutationId: string; intent: unknown }>,
+  nextId: 1,
+  staged: [] as Array<{ key: string; mutationId: string; intent: unknown }>,
+}))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const presetMocks = vi.hoisted(() => ({
   OAI: {
@@ -134,6 +140,46 @@ vi.mock('./commands', () => ({
       ? 'test'
       : null
   },
+}))
+
+vi.mock('./pendingMutationOutbox', () => ({
+  acknowledgePendingMutation: vi.fn(async (handle: { mutationId: string }) => {
+    durabilityMocks.acknowledged.push(handle)
+    return 'deleted'
+  }),
+  stagePendingMutation: vi.fn(
+    (key: string, intent: unknown, previous?: { mutationId: string; phase: string } | null) => {
+      const mutationId =
+        previous?.phase === 'staged' ? previous.mutationId : `settings-mutation-${durabilityMocks.nextId++}`
+      if (previous?.phase === 'staged') previous.phase = 'superseded'
+      const handle = {
+        key,
+        mutationId,
+        sequence: durabilityMocks.nextId,
+        ownerWriterSessionId: 'writer-a',
+        writerEpoch: 1,
+        databaseLineage: 'database-a',
+        phase: 'staged',
+        ready: Promise.resolve('persisted'),
+      }
+      durabilityMocks.staged.push({ key, mutationId, intent })
+      return handle
+    },
+  ),
+}))
+
+vi.mock('./durableMutationDispatch', () => ({
+  dispatchDurableMutation: vi.fn(
+    async (
+      handle: { key: string; mutationId: string; phase: string },
+      intent: unknown,
+      dispatch: (options: Record<string, unknown>) => Promise<unknown>,
+    ) => {
+      handle.phase = 'dispatching'
+      durabilityMocks.dispatched.push({ key: handle.key, mutationId: handle.mutationId, intent })
+      return dispatch({ mutationId: handle.mutationId, databaseLineage: 'database-a' })
+    },
+  ),
 }))
 
 vi.mock('./resourceReads', () => ({
@@ -257,6 +303,10 @@ beforeEach(() => {
   recorded.groupReads.length = 0
   resourceGuardState.epoch = 0
   alertMocks.alertError.mockClear()
+  durabilityMocks.acknowledged.length = 0
+  durabilityMocks.dispatched.length = 0
+  durabilityMocks.nextId = 1
+  durabilityMocks.staged.length = 0
   presetMocks.setPreset.mockClear()
 })
 
@@ -993,6 +1043,17 @@ describe('settingsBridge coalescing', () => {
         keepalive: entry.keepalive,
       })),
     ).toEqual([{ patch: { notification: true }, keepalive: true }])
+    expect(durabilityMocks.staged).toContainEqual({
+      key: 'settings:bridge',
+      mutationId: expect.any(String),
+      intent: {
+        version: 1,
+        requests: [{ method: 'PATCH', path: '/settings/display', body: { patch: { notification: true } } }],
+      },
+    })
+    expect(durabilityMocks.dispatched).toEqual([
+      expect.objectContaining({ key: 'settings:bridge', intent: durabilityMocks.staged.at(-1)?.intent }),
+    ])
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(recorded.patches).toHaveLength(1)

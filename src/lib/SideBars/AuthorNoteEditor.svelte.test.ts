@@ -2,7 +2,29 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const authorNoteMocks = vi.hoisted(() => ({
-  setChatNoteValue: vi.fn(() => true),
+  acknowledgePendingMutation: vi.fn(async () => 'deleted'),
+  applyChatNoteValueLocally: vi.fn(() => ({ chatId: 'chat-a', hadNote: true, note: 'initial note' })),
+  dispatchUpdateChatNoteScoped: vi.fn(async () => ({ status: 'ok', revision: 2, event: {} })),
+  dispatchDurableMutation: vi.fn(
+    async (
+      handle: { mutationId: string; databaseLineage: string },
+      _intent: unknown,
+      dispatch: (options: Record<string, unknown>) => Promise<unknown>,
+    ) => dispatch({ mutationId: handle.mutationId, databaseLineage: handle.databaseLineage }),
+  ),
+  stagePendingMutation: vi.fn(
+    (_key: string, _intent: unknown, previous?: { mutationId: string } | null) =>
+      previous ?? {
+        key: 'chat-note:chat-a',
+        mutationId: 'author-note-mutation',
+        sequence: 1,
+        ownerWriterSessionId: 'writer-a',
+        writerEpoch: 1,
+        databaseLineage: 'database-a',
+        phase: 'staged',
+        ready: Promise.resolve('persisted'),
+      },
+  ),
   syncServerBackedChatMetadataBaselines: vi.fn(),
   tokenizeAccurate: vi.fn(async () => 0),
 }))
@@ -19,11 +41,21 @@ vi.mock('src/lang', () => ({
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
-  setChatNoteValue: authorNoteMocks.setChatNoteValue,
+  applyChatNoteValueLocally: authorNoteMocks.applyChatNoteValueLocally,
+  dispatchUpdateChatNoteScoped: authorNoteMocks.dispatchUpdateChatNoteScoped,
 }))
 
 vi.mock('src/ts/server/chatBridge.svelte', () => ({
   syncServerBackedChatMetadataBaselines: authorNoteMocks.syncServerBackedChatMetadataBaselines,
+}))
+
+vi.mock('src/ts/server/durableMutationDispatch', () => ({
+  dispatchDurableMutation: authorNoteMocks.dispatchDurableMutation,
+}))
+
+vi.mock('src/ts/server/pendingMutationOutbox', () => ({
+  acknowledgePendingMutation: authorNoteMocks.acknowledgePendingMutation,
+  stagePendingMutation: authorNoteMocks.stagePendingMutation,
 }))
 
 vi.mock('src/ts/tokenizer', () => ({
@@ -116,17 +148,22 @@ describe('AuthorNoteEditor debounce persistence', () => {
     textarea!.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
 
-    expect(authorNoteMocks.setChatNoteValue).not.toHaveBeenCalled()
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).not.toHaveBeenCalled()
 
     unmount(component)
     component = undefined
 
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledTimes(1)
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'draft before close', {})
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledTimes(1)
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledWith(
+      'chat-a',
+      'draft before close',
+      expect.any(Object),
+      expect.objectContaining({ mutationId: 'author-note-mutation', databaseLineage: 'database-a' }),
+    )
     expect(authorNoteMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
 
     vi.advanceTimersByTime(300)
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledTimes(1)
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledTimes(1)
   })
 
   it('flushes the old chat draft before switching owners', async () => {
@@ -142,16 +179,21 @@ describe('AuthorNoteEditor debounce persistence', () => {
     textarea.value = 'unsaved first-chat draft'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
-    expect(authorNoteMocks.setChatNoteValue).not.toHaveBeenCalled()
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).not.toHaveBeenCalled()
     ;(component as unknown as { switchChat: (chatPage: number) => void }).switchChat(1)
     await tick()
 
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'unsaved first-chat draft', {})
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledWith(
+      'chat-a',
+      'unsaved first-chat draft',
+      expect.any(Object),
+      expect.objectContaining({ mutationId: 'author-note-mutation', databaseLineage: 'database-a' }),
+    )
     expect(textarea.value).toBe('second note')
 
     vi.advanceTimersByTime(300)
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledOnce()
   })
 
   it('flushes a pending author-note edit with keepalive through the lifecycle registry', async () => {
@@ -169,13 +211,45 @@ describe('AuthorNoteEditor debounce persistence', () => {
 
     flushRegisteredPendingBridgePatches({ keepalive: true })
 
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'draft before pagehide', {
-      keepalive: true,
-    })
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledWith(
+      'chat-a',
+      'draft before pagehide',
+      expect.any(Object),
+      {
+        keepalive: true,
+        mutationId: 'author-note-mutation',
+        databaseLineage: 'database-a',
+      },
+    )
     expect(authorNoteMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
 
     vi.advanceTimersByTime(300)
-    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).toHaveBeenCalledOnce()
+  })
+
+  it('deletes a staged row when an authoritative update makes the pending draft a no-op', async () => {
+    component = mount(AuthorNoteEditorTestHost, {
+      target,
+      props: {
+        initialCharacter: makeCharacter(),
+      },
+    })
+    await tick()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="author-note-input"]')!
+    textarea.value = 'already accepted elsewhere'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    ;(component as unknown as { setCurrentChatNote: (note: string) => void }).setCurrentChatNote(
+      'already accepted elsewhere',
+    )
+    await tick()
+    flushRegisteredPendingBridgePatches({ keepalive: true })
+
+    expect(authorNoteMocks.dispatchUpdateChatNoteScoped).not.toHaveBeenCalled()
+    expect(authorNoteMocks.acknowledgePendingMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ mutationId: 'author-note-mutation' }),
+    )
   })
 })
