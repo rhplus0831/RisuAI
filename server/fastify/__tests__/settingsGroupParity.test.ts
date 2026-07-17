@@ -72,4 +72,9 @@ describe('settings group parity', () => {
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('localNetworkMode')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('localNetworkTimeoutSec')
   })
+
+  it('does not accept the retired Google Cloud tokenizer setting', () => {
+    expect(SETTINGS_GROUP_KEYS.runtime).not.toContain('googleClaudeTokenizing')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('googleClaudeTokenizing')
+  })
 })

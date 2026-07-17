@@ -31,19 +31,9 @@ function getHash(
 }
 
 export const tokenizerList = [
-  ['tik', 'Tiktoken (OpenAI)'],
-  ['mistral', 'Mistral'],
-  ['novelai', 'NovelAI'],
-  ['claude', 'Claude'],
-  ['llama', 'Llama'],
-  ['llama3', 'Llama3'],
-  ['novellist', 'Novellist'],
-  ['gemma', 'Gemma'],
-  ['cohere', 'Cohere'],
-  ['deepseek', 'DeepSeek'],
-  ['deepseek-v4', 'DeepSeek V4'],
-  ['glm4', 'GLM4'],
-  ['glm5', 'GLM5'],
+  ['tik', 'Tiktoken (Automatic)'],
+  ['cl100k_base', 'Tiktoken (cl100k_base)'],
+  ['o200k_base', 'Tiktoken (o200k_base)'],
 ] as const
 
 export async function encodeWithTokenizer(
@@ -53,6 +43,10 @@ export async function encodeWithTokenizer(
   switch (tokenizerType) {
     case 'tik':
       return await tikJS(data, 'cl100k_base')
+    case 'cl100k_base':
+      return await tikJS(data, 'cl100k_base')
+    case 'o200k_base':
+      return await tikJS(data, 'o200k_base')
     case 'mistral':
       return await tokenizeWebTokenizers(data, 'mistral')
     case 'novelai':
@@ -108,6 +102,12 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
 
   if (db.aiModel === 'openrouter' || db.aiModel === 'reverse_proxy') {
     switch (db.customTokenizer) {
+      case 'cl100k_base':
+        result = await tikJS(data, 'cl100k_base')
+        break
+      case 'o200k_base':
+        result = await tikJS(data, 'o200k_base')
+        break
       case 'mistral':
         result = await tokenizeWebTokenizers(data, 'mistral')
         break

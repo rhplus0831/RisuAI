@@ -131,7 +131,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   goCharacterOnImport: 'sidebar',
   google: 'providers',
   globalChatVariables: 'sidebar',
-  googleClaudeTokenizing: 'runtime',
   gptVisionQuality: 'media',
   guiHTML: 'display',
   globalscript: 'advanced',

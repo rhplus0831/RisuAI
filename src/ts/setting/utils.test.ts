@@ -259,6 +259,10 @@ describe('server-backed data-driven settings', () => {
     expect(advancedSettingsItems.some((item) => item.bindKey === 'localNetworkTimeoutSec')).toBe(false)
   })
 
+  it('does not expose unsupported Google Cloud token counting', () => {
+    expect(advancedSettingsItems.some((item) => item.bindKey === 'googleClaudeTokenizing')).toBe(false)
+  })
+
   it('exposes the app-owned reduced-motion toggle under Accessibility', () => {
     expect(accessibilitySettingsItems.find((item) => item.id === 'acc.reducedMotion')).toMatchObject({
       type: 'check',

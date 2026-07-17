@@ -299,15 +299,6 @@ export const advancedSettingsItems: SettingItem[] = [
 
   // Experimental Section (visible when useExperimental is true)
   {
-    id: 'adv.exp.googleToken',
-    type: 'check',
-    labelKey: 'googleCloudTokenization',
-    bindKey: 'googleClaudeTokenizing',
-    condition: (ctx) => ctx.db.useExperimental,
-    showExperimental: true,
-    classes: 'mt-4',
-  },
-  {
     id: 'adv.exp.cachePoint',
     type: 'check',
     labelKey: 'automaticCachePoint',

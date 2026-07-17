@@ -19,7 +19,7 @@ import {
 } from '../src/routes/generationChat.js'
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
 import { saveSelectedPersonaSnapshot } from '../src/commands/personas.js'
-import { LLMFlags, LLMFormat } from '../../../src/ts/model/types'
+import { LLMFlags, LLMFormat, LLMTokenizer } from '../../../src/ts/model/types'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { expectNoSuccessDoneAfterAbort, parseEvents, type PromptChatFrame } from './helpers/terminalFrameAssertions.js'
 import { getChatMessageDiffInstrumentation, resetChatMessageDiffInstrumentation } from '../src/messageStore.js'
@@ -4899,6 +4899,47 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(res.json()).toEqual({ error: 'characterId is required' })
   })
 
+  it('uses the configured tiktoken encoding for authoritative prompt counts', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const promptText = '你好世界 🚀🌕✨ '.repeat(40)
+
+    async function previewTokens(customTokenizer: 'cl100k_base' | 'o200k_base'): Promise<number> {
+      const database = structuredClone(fixtureDatabase)
+      ;(database as typeof database & { customTokenizer: string }).customTokenizer = customTokenizer
+      database.mainPrompt = promptText
+      await seedDatabase(harness.app, assertion, database)
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/preview-prompt',
+        headers: { 'risu-auth': assertion },
+        payload: previewPayload,
+      })
+      expect(response.statusCode).toBe(200)
+      const tokens = response.json().promptInfo?.inputTokens
+      expect(typeof tokens).toBe('number')
+      return tokens as number
+    }
+
+    const cl100kTokens = await previewTokens('cl100k_base')
+    const o200kTokens = await previewTokens('o200k_base')
+    expect(cl100kTokens).toBeGreaterThan(o200kTokens)
+  })
+
+  it('rejects an imported unsupported tokenizer instead of silently falling back', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, { ...fixtureDatabase, customTokenizer: 'claude' })
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: previewPayload,
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toContain('Tokenizer "claude" is not supported by Fastify prompt budgeting')
+  })
+
   it('returns the assembled prompt as JSON for a seeded database', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)
@@ -5326,6 +5367,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
               providerOptions: {
                 baseUrl: 'https://profile-runtime.example.com/v1',
                 requestModel: 'profile-runtime-wire-model',
+                customApi: { tokenizer: LLMTokenizer.tiktokenO200Base },
               },
               runtimeOptions: {
                 maxContext: 2222,
@@ -5390,6 +5432,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       modelTools: ['search'],
       enableCustomFlags: true,
       customFlags: [LLMFlags.hasImageInput],
+      customTokenizer: String(LLMTokenizer.tiktokenO200Base),
     })
     const info = parseEvents(res.body).find((event) => event.type === 'info')
     expect(info?.data.generationInfo).toMatchObject({

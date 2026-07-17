@@ -56,7 +56,6 @@
     { key: 'deepseekReasoningEffort', label: language.modelProfiles.runtimeFields.deepseekReasoningEffort },
     { key: 'extractJson', label: language.modelProfiles.runtimeFields.extractJson, multiline: true },
     { key: 'jsonSchema', label: language.modelProfiles.runtimeFields.jsonSchema, multiline: true },
-    { key: 'customTokenizer', label: language.modelProfiles.runtimeFields.customTokenizer },
   ]
 
   const booleanFields: RuntimeBooleanField[] = [
@@ -242,6 +241,20 @@
           {/if}
         </label>
       {/each}
+
+      <label class="flex flex-col gap-1">
+        <span class="text-sm text-textcolor2">{language.modelProfiles.runtimeFields.customTokenizer}</span>
+        <select
+          class="w-full rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+          value={stringValue('customTokenizer')}
+          onchange={(event) => {
+            setString('customTokenizer', event.currentTarget.value)
+          }}>
+          <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
+          <option value="cl100k_base" class="bg-darkbg">Tiktoken (cl100k_base)</option>
+          <option value="o200k_base" class="bg-darkbg">Tiktoken (o200k_base)</option>
+        </select>
+      </label>
 
       <label class="flex flex-col gap-1">
         <span class="text-sm text-textcolor2">{language.modelProfiles.runtimeFields.modelTools}</span>

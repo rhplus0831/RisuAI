@@ -17,6 +17,8 @@ import {
   resolveModelProfile,
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
+import type { ModelProfileRecord } from '../../../../src/ts/model/modelProfileRecords.js'
+import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
 
 type JsonRecord = Record<string, unknown>
 type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
@@ -158,6 +160,13 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   // Prompt preset model overrides are the final user-facing layer for a chat, so
   // reapply them after profile runtime defaults/profile-local options.
   applyPromptPresetModelOverrides(effectiveDatabase as unknown as JsonRecord, effectivePromptPreset)
+  if (profile.source.kind === 'durable-profile') {
+    effectiveDatabase.customTokenizer = durableProfileTokenizerSelection(effectiveDatabase, profile)
+  }
+  const tokenizerBlockReason = serverTokenizerUnsupportedReason(effectiveDatabase)
+  if (tokenizerBlockReason) {
+    throw new ModelProfileGenerationGuardAssemblyError(tokenizerBlockReason)
+  }
 
   const effectiveCurrentChar = effectiveDatabase.characters[input.selectedCharID]
   const effectiveStoredChat = effectiveCurrentChar?.chats?.[input.chatPage]
@@ -170,6 +179,20 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     currentChar: effectiveCurrentChar,
     currentChat: structuredClone(effectiveStoredChat) as Chat,
   }
+}
+
+function durableProfileTokenizerSelection(database: Database, profile: ResolvedModelProfile): string {
+  const profileRecord = ((database.modelProfiles ?? []) as ModelProfileRecord[]).find(
+    (candidate) => candidate.id === profile.source.profileId,
+  )
+  const profileRuntimeTokenizer = profileRecord?.runtimeOptions?.customTokenizer?.trim()
+  if (profileRuntimeTokenizer) return profileRuntimeTokenizer
+
+  const defaultRuntimeTokenizer = database.modelRuntimeDefaults?.customTokenizer?.trim()
+  if (defaultRuntimeTokenizer) return defaultRuntimeTokenizer
+
+  const providerTokenizer = profileRecord?.providerOptions?.customApi?.tokenizer
+  return providerTokenizer === undefined ? 'tik' : String(providerTokenizer)
 }
 
 export function applyProfileBoundGenerationFields(database: Database, profile: ResolvedModelProfile): void {

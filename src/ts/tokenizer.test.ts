@@ -160,3 +160,14 @@ describe('Google Cloud tokenizer cache', () => {
     expect(moduleState.requestProviderOperationMock).not.toHaveBeenCalled()
   })
 })
+
+describe('server-backed tokenizer choices', () => {
+  it('exposes only tokenizer identities Fastify prompt budgeting supports', async () => {
+    const { tokenizerList } = await loadTokenizer()
+    expect(tokenizerList).toEqual([
+      ['tik', 'Tiktoken (Automatic)'],
+      ['cl100k_base', 'Tiktoken (cl100k_base)'],
+      ['o200k_base', 'Tiktoken (o200k_base)'],
+    ])
+  })
+})

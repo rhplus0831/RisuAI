@@ -76,10 +76,10 @@
       fullName: `${model.fullName ?? model.name} Vertex`,
     })),
   )
-  const tokenizerOptions = Object.entries(LLMTokenizer).map(([label, tokenizer]) => ({
-    label,
-    value: String(tokenizer),
-  }))
+  const tokenizerOptions = [
+    { label: 'Tiktoken (cl100k_base)', value: String(LLMTokenizer.tiktokenCl100kBase) },
+    { label: 'Tiktoken (o200k_base)', value: String(LLMTokenizer.tiktokenO200Base) },
+  ]
   const flagOptions = Object.entries(LLMFlags).map(([label, flag]) => ({
     label,
     flag: flag as LLMFlagValue,
