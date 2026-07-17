@@ -16,11 +16,20 @@ vi.mock('./modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
+const inlayMock = vi.hoisted(() => ({
+  run: vi.fn((_character: unknown, data: string) => ({ text: data }) as { text: string; promise?: Promise<string> }),
+}))
+
+vi.mock('./inlayScreen', () => ({
+  runInlayScreen: inlayMock.run,
+}))
+
 import { applyServerBackedTerminal, findGeneratedAssistantMessage } from './serverBackedSendChat'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'
 import type { ServerChatMessagePatch, ServerChatRestoration } from './request/serverChatEvents'
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
+import { markChatMessageMutationIntent } from '../server/chatMessageMutationIntent'
 
 const testDatabaseState = {
   get db() {
@@ -33,6 +42,14 @@ const testDatabaseState = {
 
 function chatWith(messages: Partial<Message>[]): Chat {
   return { id: 'chat-1', message: messages as Message[] } as unknown as Chat
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
 }
 
 function trapIterator(chat: Chat): void {
@@ -182,6 +199,8 @@ describe('server-backed terminal stable chat target (R-02)', () => {
   beforeEach(() => {
     originalDb = testDatabaseState.db
     resetRerollNavigation()
+    inlayMock.run.mockReset()
+    inlayMock.run.mockImplementation((_character: unknown, data: string) => ({ text: data }))
   })
 
   afterEach(() => {
@@ -211,6 +230,81 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(result.currentChat.id).toBe('chat-target')
     expect(target.message[0].data).toBe('stable final text')
     expect(staleIndexChat.message[0].data).toBe('stale original')
+  })
+
+  it('discards a late inlay completion after a newer message edit intent', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    const completion = deferred<string>()
+    inlayMock.run.mockReturnValueOnce({ text: '[Generating...]', promise: completion.promise })
+
+    const applying = applyServerBackedTerminal({
+      terminal: { status: 'done', done: { postGeneration: { finalText: '<ImgGen="cat">' } } },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+    await Promise.resolve()
+    expect(target.message[0].data).toBe('[Generating...]')
+
+    markChatMessageMutationIntent('chat-target')
+    target.message[0].data = 'newer saved edit'
+    completion.resolve('{{inlay::asset-stale}}')
+    await applying
+
+    expect(target.message[0].data).toBe('newer saved edit')
+  })
+
+  it('uses the intent epoch to reject edit-away-then-back inlay races', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    const completion = deferred<string>()
+    inlayMock.run.mockReturnValueOnce({ text: '[Generating...]', promise: completion.promise })
+
+    const applying = applyServerBackedTerminal({
+      terminal: { status: 'done', done: { postGeneration: { finalText: '<ImgGen="cat">' } } },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+    await Promise.resolve()
+
+    markChatMessageMutationIntent('chat-target')
+    target.message[0].data = 'temporary edit'
+    target.message[0].data = '[Generating...]'
+    completion.resolve('{{inlay::asset-stale}}')
+    await applying
+
+    expect(target.message[0].data).toBe('[Generating...]')
+  })
+
+  it('applies an unchanged inlay completion exactly once', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    const completion = deferred<string>()
+    inlayMock.run.mockReturnValueOnce({ text: '[Generating...]', promise: completion.promise })
+
+    const applying = applyServerBackedTerminal({
+      terminal: { status: 'done', done: { postGeneration: { finalText: '<ImgGen="cat">' } } },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+    await Promise.resolve()
+
+    completion.resolve('{{inlay::asset-current}}')
+    await applying
+
+    expect(target.message[0].data).toBe('{{inlay::asset-current}}')
   })
 
   it('seeds live reroll navigation from terminal multi-generation choices', async () => {

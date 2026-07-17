@@ -57,6 +57,7 @@ import {
   clearPendingChatGenerationSettingsSave,
   registerPendingChatGenerationSettingsSave,
 } from './server/chatGenerationSettingsResourceGuard'
+import { markChatMessageMutationIntent } from './server/chatMessageMutationIntent'
 import { reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
 import {
@@ -4526,6 +4527,7 @@ function dispatchSanitizedUpdateMessageWith(
   optimisticProjection?: ChatBodyProjectionFence,
 ): Promise<ServerCommandResult> | null {
   if (Object.keys(commandPatch).length === 0) return null
+  if (optimisticProjection) markChatMessageMutationIntent(optimisticProjection.chatId)
   const body = freezeDurableChatRequestBody({ patch: commandPatch })
   const intent = durableChatMutationIntent('PATCH', `/messages/${encodeURIComponent(messageId)}`, body)
   return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
@@ -4667,6 +4669,7 @@ function dispatchDeleteMessageWith(
   rollback: () => void,
   optimisticProjection?: ChatBodyProjectionFence,
 ): Promise<ServerCommandResult> | null {
+  if (optimisticProjection) markChatMessageMutationIntent(optimisticProjection.chatId)
   const body = freezeDurableChatRequestBody({})
   const intent = durableChatMutationIntent('DELETE', `/messages/${encodeURIComponent(messageId)}`, body)
   return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
@@ -4727,6 +4730,7 @@ function dispatchTruncateMessagesWith(
   options: TruncateMessagesOptions = {},
 ): Promise<ServerCommandResult | null> {
   if (!canUseServerCommands()) return Promise.resolve(null)
+  markChatMessageMutationIntent(chatId)
   const body = freezeDurableChatRequestBody({
     afterMessageId,
     ...(options.preserveRemovedAsAlternates ? { preserveRemovedAsAlternates: true } : {}),
@@ -4802,6 +4806,7 @@ function dispatchReplaceTailMessagesWith(
   optimisticChatBodyProjectionEpoch: number,
 ): Promise<ServerCommandResult> | null {
   if (!prepareReplaceTailMessages(messages)) return null
+  markChatMessageMutationIntent(chatId)
   const body = freezeDurableChatRequestBody({
     afterMessageId,
     messages: messages.map(toMessageSnapshot),
@@ -4877,6 +4882,7 @@ function dispatchReplaceMessagesWith(
   optimisticChatBodyProjectionEpoch: number,
 ): Promise<ServerCommandResult> | null {
   if (!prepareReplaceMessages(messages)) return null
+  markChatMessageMutationIntent(chatId)
   const body = freezeDurableChatRequestBody({ messages: messages.map(toMessageSnapshot) })
   const intent = durableChatMutationIntent('PUT', `/chats/${encodeURIComponent(chatId)}/messages`, body)
   return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
