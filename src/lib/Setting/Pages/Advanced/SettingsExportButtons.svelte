@@ -98,20 +98,6 @@
   {language.ShowLog}
 </Button>
 
-<Button
-  className="mt-4"
-  onclick={async () => {
-    let mdTable = '| Type | Value |\n| --- | --- |\n'
-    const s = getDatabase().statics
-    for (const key in s) {
-      mdTable += `| ${key} | ${s[key]} |\n`
-    }
-    mdTable += `\n\n<small>${language.staticsDisclaimer}</small>`
-    alertMd(mdTable)
-  }}>
-  Show Statistics
-</Button>
-
 <Button className="mt-4" disabled={bugReportExportBusy} onclick={exportSettingsForBugReport}>
   Export Settings for Bug Report
 </Button>

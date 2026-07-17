@@ -71,6 +71,12 @@ afterEach(() => {
 })
 
 describe('SettingsExportButtons bug-report export', () => {
+  it('does not expose the retired usage-statistics dialog', () => {
+    component = mount(SettingsExportButtons, { target })
+
+    expect(target.textContent).not.toContain('Show Statistics')
+  })
+
   it('redacts optimistic top-level, nested, and row-owned provider secrets before download and clipboard copy', async () => {
     exportMocks.database = {
       statics: {},
