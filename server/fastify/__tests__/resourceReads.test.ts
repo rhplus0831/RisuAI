@@ -240,7 +240,8 @@ describe('authenticated resource read routes', () => {
       headers: authHeaders(),
     })
     expect(runtime.statusCode).toBe(200)
-    expect(runtime.json().settings).toMatchObject({ localNetworkMode: true, localNetworkTimeoutSec: 45 })
+    expect(runtime.json().settings).not.toHaveProperty('localNetworkMode')
+    expect(runtime.json().settings).not.toHaveProperty('localNetworkTimeoutSec')
     expect(runtime.json().settings).not.toHaveProperty('fallbackModels')
     expect(runtime.json().settings).not.toHaveProperty('fallbackWhenBlankResponse')
     expect(runtime.json().settings).not.toHaveProperty('doNotChangeFallbackModels')

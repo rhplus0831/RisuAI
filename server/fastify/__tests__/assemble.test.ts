@@ -2414,7 +2414,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
           {
             name: 'Test',
             settings: {
-              summarizationModel: 'summary-model',
+              summarizationModel: 'memory',
               memoryTokensRatio: 0.2,
               recentMemoryRatio: 0,
               similarMemoryRatio: 1,
@@ -2466,7 +2466,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         status: 'pending',
         payload: {
           chunkId: chunks[0].id,
-          model: 'summary-model',
+          model: 'memory',
           rangeStartSeq: 0,
           rangeEndSeq: 1,
           messageIndexes: [0, 1],
