@@ -5,6 +5,7 @@
     resolveAlertConfirmation,
     resolveAlertInput,
     resolveAlertSelection,
+    resolveAlertWorkflow,
     type alertData,
   } from '../../ts/alert'
 
@@ -292,11 +293,8 @@
     return data.submsg
   }
 
-  function cancelCardExport() {
-    alertStore.set({
-      type: 'none',
-      msg: cardExportCancelMessage(cardExportType2),
-    })
+  function cancelCardExport(owner: alertData['dialogOwner']) {
+    resolveAlertWorkflow(owner, cardExportCancelMessage(cardExportType2))
   }
 
   function closeInputAlert(owner: alertData['dialogOwner'], value: string) {
@@ -328,10 +326,7 @@
   onmessage={async (e) => {
     if (isTrustedLoginMessageOrigin(e.origin, window.location.origin)) {
       if (e.data.msg?.data?.vaild && $alertStore.type === 'login') {
-        $alertStore = {
-          type: 'none',
-          msg: JSON.stringify(e.data.msg),
-        }
+        resolveAlertWorkflow($alertStore.dialogOwner, JSON.stringify(e.data.msg))
       }
     }
   }} />
@@ -499,23 +494,18 @@
             }}>NO</Button>
         </div>
       {:else if $alertStore.type === 'tos' && import.meta.env.VITE_RISU_LEGAL_CONFIGURED}
+        {@const tosOwner = $alertStore.dialogOwner}
         <div class="flex gap-2 w-full">
           <Button
             className="mt-4 grow"
             onclick={() => {
-              alertStore.set({
-                type: 'none',
-                msg: 'yes',
-              })
+              resolveAlertWorkflow(tosOwner, 'yes')
             }}>Accept</Button>
           <Button
             styled={'outlined'}
             className="mt-4 grow"
             onclick={() => {
-              alertStore.set({
-                type: 'none',
-                msg: 'no',
-              })
+              resolveAlertWorkflow(tosOwner, 'no')
             }}>Do not Accept</Button>
         </div>
       {:else if $alertStore.type === 'select'}
@@ -586,6 +576,7 @@
           <iframe src={hubURL + '/hub/login'} title="login" class="w-full h-full"> </iframe>
         </div>
       {:else if $alertStore.type === 'selectChar'}
+        {@const selectCharacterOwner = $alertStore.dialogOwner}
         <div class="flex w-full items-start flex-wrap gap-2 justify-start">
           {#each getDatabase().characters as char}
             {#if char.image}
@@ -593,7 +584,7 @@
                 <BarIcon
                   ariaLabel={char.name || language.character}
                   onClick={() => {
-                    alertStore.set({ type: 'none', msg: char.chaId })
+                    resolveAlertWorkflow(selectCharacterOwner, char.chaId)
                   }}>
                   <User />
                 </BarIcon>
@@ -601,7 +592,7 @@
                 <BarIcon
                   ariaLabel={char.name || language.character}
                   onClick={() => {
-                    alertStore.set({ type: 'none', msg: char.chaId })
+                    resolveAlertWorkflow(selectCharacterOwner, char.chaId)
                   }}
                   additionalStyle={im} />
               {/await}
@@ -609,7 +600,7 @@
               <BarIcon
                 ariaLabel={char.name || language.character}
                 onClick={() => {
-                  alertStore.set({ type: 'none', msg: char.chaId })
+                  resolveAlertWorkflow(selectCharacterOwner, char.chaId)
                 }}>
                 <User />
               </BarIcon>
@@ -800,16 +791,14 @@
           {/if}
         {/if}
       {:else if $alertStore.type === 'addchar'}
+        {@const addCharacterOwner = $alertStore.dialogOwner}
         <div class="w-2xl flex flex-col max-w-full">
           <button
             class="border-darkborderc border py-12 px-8 flex rounded-md hover:ring-2 justify-center items-center"
             onclick={(e) => {
               e.stopPropagation()
               e.preventDefault()
-              alertStore.set({
-                type: 'none',
-                msg: 'importFromRealm',
-              })
+              resolveAlertWorkflow(addCharacterOwner, 'importFromRealm')
             }}>
             <div class="flex flex-col justify-start items-start">
               <span class="text-2xl font-bold">{language.importFromRealm}</span>
@@ -824,10 +813,7 @@
             onclick={(e) => {
               e.stopPropagation()
               e.preventDefault()
-              alertStore.set({
-                type: 'none',
-                msg: 'importCharacter',
-              })
+              resolveAlertWorkflow(addCharacterOwner, 'importCharacter')
             }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.importCharacter}</span>
@@ -841,10 +827,7 @@
             onclick={(e) => {
               e.stopPropagation()
               e.preventDefault()
-              alertStore.set({
-                type: 'none',
-                msg: 'createfromScratch',
-              })
+              resolveAlertWorkflow(addCharacterOwner, 'createfromScratch')
             }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.createfromScratch}</span>
@@ -858,10 +841,7 @@
             onclick={(e) => {
               e.stopPropagation()
               e.preventDefault()
-              alertStore.set({
-                type: 'none',
-                msg: 'cancel',
-              })
+              resolveAlertWorkflow(addCharacterOwner, 'cancel')
             }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.cancel}</span>
@@ -869,6 +849,7 @@
           </button>
         </div>
       {:else if $alertStore.type === 'chatOptions'}
+        {@const chatOptionsOwner = $alertStore.dialogOwner}
         <div class="w-2xl flex flex-col max-w-full">
           <h1 class="text-xl mb-4 font-bold">
             {language.chatOptions}
@@ -876,10 +857,7 @@
           <button
             class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2"
             onclick={() => {
-              alertStore.set({
-                type: 'none',
-                msg: '0',
-              })
+              resolveAlertWorkflow(chatOptionsOwner, '0')
             }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.createCopy}</span>
@@ -891,10 +869,7 @@
           <button
             class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2"
             onclick={() => {
-              alertStore.set({
-                type: 'none',
-                msg: '1',
-              })
+              resolveAlertWorkflow(chatOptionsOwner, '1')
             }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.bindPersona}</span>
@@ -906,10 +881,7 @@
           <button
             class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2"
             onclick={() => {
-              alertStore.set({
-                type: 'none',
-                msg: 'cancel',
-              })
+              resolveAlertWorkflow(chatOptionsOwner, 'cancel')
             }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.cancel}</span>
@@ -920,12 +892,13 @@
     </div>
   </div>
 {:else if $alertStore.type === 'cardexport'}
+  {@const cardExportOwner = $alertStore.dialogOwner}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     data-modal-root
     class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-[100] items-center justify-center"
-    onclick={cancelCardExport}>
+    onclick={() => cancelCardExport(cardExportOwner)}>
     <div
       use:modalFocusTrap
       class="bg-darkbg rounded-md p-4 max-w-full flex flex-col w-2xl"
@@ -937,7 +910,7 @@
         e.stopPropagation()
       }}
       onkeydown={(e) => {
-        if (e.key === 'Escape') cancelCardExport()
+        if (e.key === 'Escape') cancelCardExport(cardExportOwner)
       }}>
       <h1 id="risu-card-export-title" class="font-bold text-2xl w-full">
         <span>
@@ -946,7 +919,7 @@
         <button
           class="float-right text-textcolor2 hover:text-green-500"
           aria-label={language.close}
-          onclick={cancelCardExport}>
+          onclick={() => cancelCardExport(cardExportOwner)}>
           <XIcon />
         </button>
       </h1>
@@ -1018,13 +991,13 @@
       <Button
         className="mt-4"
         onclick={() => {
-          alertStore.set({
-            type: 'none',
-            msg: JSON.stringify({
+          resolveAlertWorkflow(
+            cardExportOwner,
+            JSON.stringify({
               type: cardExportType,
               type2: cardExportType2,
             }),
-          })
+          )
         }}>{language.export}</Button>
     </div>
   </div>
@@ -1042,13 +1015,11 @@
     {$alertStore.msg}
   </div>
 {:else if $alertStore.type === 'selectModule'}
+  {@const moduleSelectOwner = $alertStore.dialogOwner}
   <ModuleChatMenu
     alertMode
     close={(d) => {
-      alertStore.set({
-        type: 'none',
-        msg: d,
-      })
+      resolveAlertWorkflow(moduleSelectOwner, d)
     }} />
 {:else if $alertStore.type === 'pukmakkurit'}
   <!-- Log Generator by dootaang, GPL3 -->

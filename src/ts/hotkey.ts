@@ -8,6 +8,9 @@ import {
   alertRequestLogs,
   cardExportCancelMessage,
   resolveAlertConfirmation,
+  resolveAlertInput,
+  resolveAlertSelection,
+  resolveAlertWorkflow,
 } from './alert'
 import { getDatabase, selectModelPreset, type Database } from './storage/database.svelte'
 import {
@@ -44,7 +47,13 @@ export function initHotkey() {
         if (activeAlert.type === 'ask' || activeAlert.type === 'pluginconfirm') {
           resolveAlertConfirmation(activeAlert.dialogOwner, false)
         } else if (activeAlert.type === 'cardexport') {
-          alertStore.set({ type: 'none', msg: cardExportCancelMessage() })
+          resolveAlertWorkflow(activeAlert.dialogOwner, cardExportCancelMessage())
+        } else if (activeAlert.type === 'input') {
+          resolveAlertInput(activeAlert.dialogOwner, null)
+        } else if (activeAlert.type === 'select') {
+          resolveAlertSelection(activeAlert.dialogOwner, null)
+        } else if (['addchar', 'chatOptions', 'selectChar', 'selectModule'].includes(activeAlert.type)) {
+          resolveAlertWorkflow(activeAlert.dialogOwner, activeAlert.type === 'addchar' ? 'cancel' : '')
         } else if (!['wait', 'wait2', 'progress', 'login', 'tos'].includes(activeAlert.type)) {
           alertStore.set({ type: 'none', msg: '' })
         }

@@ -11,7 +11,7 @@ vi.mock('src/ts/process/modules', async (importActual) => {
 })
 
 import AlertComp from './AlertComp.svelte'
-import { alertConfirm, alertInput, alertSelect } from 'src/ts/alert'
+import { alertAddCharacter, alertConfirm, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
 import { language } from 'src/lang'
 import { alertStore } from 'src/ts/stores.svelte'
 
@@ -121,6 +121,40 @@ describe('AlertComp input dialog', () => {
       cancel?.click()
       expect(get(alertStore)).toMatchObject({ type: 'none', msg: '' })
       await expect(cancelled).resolves.toBe('')
+    } finally {
+      unmount(component)
+      target.remove()
+      alertStore.set({ type: 'none', msg: '' })
+    }
+  })
+})
+
+describe('AlertComp workflow dialogs', () => {
+  beforeEach(() => {
+    translateStackTrace.mockReset()
+    alertStore.set({ type: 'none', msg: '' })
+  })
+
+  it('keeps Add Character active through a background notice and resolves its owned action', async () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(AlertComp, { target })
+
+    try {
+      const result = alertAddCharacter()
+      await tick()
+      alertNormal('Background import notice')
+      await tick()
+
+      expect(get(alertStore)).toMatchObject({ type: 'addchar' })
+      const create = Array.from(target.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Create from Scratch'),
+      )
+      expect(create).toBeTruthy()
+      create?.click()
+
+      await expect(result).resolves.toBe('createfromScratch')
+      await vi.waitFor(() => expect(get(alertStore)).toMatchObject({ type: 'normal', msg: 'Background import notice' }))
     } finally {
       unmount(component)
       target.remove()

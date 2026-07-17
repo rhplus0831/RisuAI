@@ -57,13 +57,20 @@ vi.mock('src/lang', () => ({
 
 import {
   alertClear,
+  alertAddCharacter,
+  alertCardExport,
+  alertChatOptions,
   alertConfirm,
   alertError,
   alertInput,
+  alertLogin,
+  alertMd,
+  alertModuleSelect,
   alertNormal,
   alertPluginConfirm,
   alertProgress,
   alertSelect,
+  alertSelectChar,
   alertToast,
   alertTOS,
   alertWait,
@@ -74,6 +81,7 @@ import {
   resolveAlertConfirmation,
   resolveAlertInput,
   resolveAlertSelection,
+  resolveAlertWorkflow,
   alertStore,
   updateAlertWait,
 } from './alert'
@@ -123,11 +131,12 @@ describe('confirmation queue', () => {
     await expect(secondResult).resolves.toBe(true)
   })
 
-  it('treats a programmatic close as cancellation before advancing the queue', async () => {
+  it('advances the queue after owner-scoped cancellation', async () => {
     const firstResult = alertConfirm('Close this confirmation')
     const secondResult = alertConfirm('Show this after close')
+    const firstOwner = alertTestState.alertStoreValue.dialogOwner as symbol
 
-    alertClear()
+    resolveAlertConfirmation(firstOwner, false)
 
     await expect(firstResult).resolves.toBe(false)
     expect(alertTestState.alertStoreValue).toMatchObject({ type: 'ask', msg: 'Show this after close' })
@@ -315,6 +324,88 @@ describe('passive alerts around response dialogs', () => {
   })
 })
 
+describe('owned workflow dialogs', () => {
+  it.each([
+    {
+      name: 'add character',
+      open: () => alertAddCharacter(),
+      type: 'addchar',
+      response: 'importCharacter',
+      expected: 'importCharacter',
+    },
+    {
+      name: 'chat options',
+      open: () => alertChatOptions(),
+      type: 'chatOptions',
+      response: '1',
+      expected: 1,
+    },
+    { name: 'login', open: () => alertLogin(), type: 'login', response: 'login-result', expected: 'login-result' },
+    {
+      name: 'character selection',
+      open: () => alertSelectChar(),
+      type: 'selectChar',
+      response: 'character-a',
+      expected: 'character-a',
+    },
+    {
+      name: 'card export',
+      open: () => alertCardExport('module'),
+      type: 'cardexport',
+      response: '{"type":"","type2":"module"}',
+      expected: { type: '', type2: 'module' },
+    },
+    {
+      name: 'module selection',
+      open: () => alertModuleSelect(),
+      type: 'selectModule',
+      response: 'module-a',
+      expected: 'module-a',
+    },
+  ])(
+    'keeps the $name workflow active while passive status changes arrive',
+    async ({ open, type, response, expected }) => {
+      let settled = false
+      const result = open().then((value) => {
+        settled = true
+        return value
+      })
+      const owner = alertTestState.alertStoreValue.dialogOwner as symbol
+
+      alertNormal('Deferred workflow notice')
+      alertWait('Deferred workflow wait')
+      alertProgress('Deferred workflow progress', 50)
+      alertMd('Deferred workflow markdown')
+      alertClear()
+      alertStore.set({ type: 'progress', msg: 'Direct deferred progress', progress: 75 })
+      alertStore.set({ type: 'none', msg: '' })
+      alertClear()
+
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      expect(alertTestState.alertStoreValue).toMatchObject({ type, dialogOwner: owner })
+
+      expect(resolveAlertWorkflow(owner, response)).toBe(true)
+      await expect(result).resolves.toEqual(expected)
+    },
+  )
+
+  it('queues workflow dialogs with inputs and rejects stale workflow owners', async () => {
+    const workflow = alertAddCharacter()
+    const input = alertInput('Name after character action')
+    const workflowOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+
+    resolveAlertWorkflow(workflowOwner, 'createfromScratch')
+    await expect(workflow).resolves.toBe('createfromScratch')
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'input', msg: 'Name after character action' })
+    const inputOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    expect(resolveAlertWorkflow(workflowOwner, 'cancel')).toBe(false)
+    resolveAlertInput(inputOwner, 'Character name')
+    await expect(input).resolves.toBe('Character name')
+  })
+})
+
 describe('input results', () => {
   it('queues concurrent inputs in FIFO order and never shares a submission', async () => {
     let secondSettled = false
@@ -367,7 +458,8 @@ describe('select results', () => {
     await expect(selected).resolves.toBe('1')
 
     const cancelled = alertSelect(['First', 'Second'])
-    alertClear()
+    const cancelledOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertSelection(cancelledOwner, null)
     await expect(cancelled).resolves.toBeNull()
   })
 
@@ -523,5 +615,24 @@ describe('alertTOS', () => {
 
     expect(alertTestState.alertStoreSet).not.toHaveBeenCalled()
     expect(localStorage.getItem('tos4')).toBeNull()
+  })
+
+  it('does not let an unrelated notice resolve the acceptance workflow', async () => {
+    vi.stubEnv('VITE_RISU_AGENT_DEV_IGNORE_TOS', 'FALSE')
+    let settled = false
+    const result = alertTOS().then((accepted) => {
+      settled = true
+      return accepted
+    })
+    const owner = alertTestState.alertStoreValue.dialogOwner as symbol
+
+    alertNormal('Deferred startup notice')
+    await Promise.resolve()
+
+    expect(settled).toBe(false)
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'tos', dialogOwner: owner })
+    resolveAlertWorkflow(owner, 'yes')
+    await expect(result).resolves.toBe(true)
+    expect(localStorage.getItem('tos4')).toBe('true')
   })
 })

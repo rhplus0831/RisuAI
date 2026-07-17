@@ -19,7 +19,7 @@ vi.mock('./process/modules', async (importActual) => {
 })
 
 import { initHotkey } from './hotkey'
-import { alertConfirm, alertPluginConfirm, cardExportCancelMessage } from './alert'
+import { alertCardExport, alertConfirm, alertPluginConfirm, cardExportCancelMessage } from './alert'
 import { alertStore, PlaygroundStore, selectedCharID, settingsOpen } from './stores.svelte'
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
 
@@ -119,11 +119,12 @@ describe('global hotkey route ownership', () => {
 
   it('cancels card export on Escape without closing the route behind it', async () => {
     settingsOpen.set(true)
-    alertStore.set({ type: 'cardexport', msg: 'export' })
+    const exportResult = alertCardExport()
 
     await press('Escape')
 
-    expect(get(alertStore)).toEqual({ type: 'none', msg: cardExportCancelMessage() })
+    expect(get(alertStore)).toMatchObject({ type: 'none', msg: cardExportCancelMessage() })
+    await expect(exportResult).resolves.toEqual({ type: 'cancel', type2: '' })
     expect(hotkeyNavigationMocks.closeSettingsRoute).not.toHaveBeenCalled()
   })
 

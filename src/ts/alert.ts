@@ -68,7 +68,18 @@ interface InputRequest {
   resolve: (value: string) => void
 }
 
-type ResultDialogRequest = ConfirmationRequest | SelectionRequest | InputRequest
+type WorkflowAlertType = 'addchar' | 'chatOptions' | 'login' | 'selectChar' | 'cardexport' | 'tos' | 'selectModule'
+
+interface WorkflowRequest {
+  kind: 'workflow'
+  owner: AlertDialogHandle
+  type: WorkflowAlertType
+  msg: string
+  submsg?: string
+  resolve: (value: string) => void
+}
+
+type ResultDialogRequest = ConfirmationRequest | SelectionRequest | InputRequest | WorkflowRequest
 
 type AlertGenerationInfoStoreData = {
   genInfo: MessageGenerationInfo
@@ -77,6 +88,16 @@ type AlertGenerationInfoStoreData = {
 export const alertGenerationInfoStore = writable<AlertGenerationInfoStoreData | undefined>(undefined)
 export const alertStore = {
   set: (d: alertData) => {
+    if (passivePresentationTypes.has(d.type)) {
+      setPassiveAlert(d)
+      return
+    }
+    if (activeResultDialog) {
+      if (d.type === 'none' && d.dialogOwner === activeResultDialog.owner) {
+        alertStoreImported.set(d)
+      }
+      return
+    }
     alertStoreImported.set(d)
   },
 }
@@ -87,7 +108,28 @@ let resultDialogQueueBlocked = false
 let resultDialogResumeTimer: ReturnType<typeof setTimeout> | undefined
 let resultDialogStoreSubscribed = false
 
-const responseDialogTypes = new Set<alertData['type']>(['ask', 'pluginconfirm', 'input', 'select'])
+const responseDialogTypes = new Set<alertData['type']>([
+  'ask',
+  'pluginconfirm',
+  'input',
+  'select',
+  'addchar',
+  'chatOptions',
+  'login',
+  'selectChar',
+  'cardexport',
+  'tos',
+  'selectModule',
+])
+const passivePresentationTypes = new Set<alertData['type']>([
+  'error',
+  'normal',
+  'wait',
+  'wait2',
+  'toast',
+  'markdown',
+  'progress',
+])
 let deferredPassiveAlert: alertData | undefined
 let passiveAlertResumeTimer: ReturnType<typeof setTimeout> | undefined
 let passiveAlertStoreSubscribed = false
@@ -157,7 +199,8 @@ function normalizeSelectionResult(request: SelectionRequest, value: string): str
 
 function resultDialogType(request: ResultDialogRequest): alertData['type'] {
   if (request.kind === 'confirmation') return request.type
-  return request.kind === 'selection' ? 'select' : 'input'
+  if (request.kind === 'selection') return 'select'
+  return request.kind === 'input' ? 'input' : request.type
 }
 
 function displayResultDialog(request: ResultDialogRequest): void {
@@ -169,11 +212,20 @@ function displayResultDialog(request: ResultDialogRequest): void {
     alertStoreImported.set({ type: 'select', msg: selectionMessage(request), dialogOwner: request.owner })
     return
   }
+  if (request.kind === 'input') {
+    alertStoreImported.set({
+      type: 'input',
+      msg: request.msg,
+      datalist: request.datalist,
+      defaultValue: request.defaultValue,
+      dialogOwner: request.owner,
+    })
+    return
+  }
   alertStoreImported.set({
-    type: 'input',
+    type: request.type,
     msg: request.msg,
-    datalist: request.datalist,
-    defaultValue: request.defaultValue,
+    submsg: request.submsg,
     dialogOwner: request.owner,
   })
 }
@@ -199,6 +251,8 @@ function settleResultDialog(request: ResultDialogRequest, ownedResult: boolean, 
     request.resolve(ownedResult && message === 'yes')
   } else if (request.kind === 'selection') {
     request.resolve(ownedResult ? normalizeSelectionResult(request, message) : null)
+  } else if (request.kind === 'input') {
+    request.resolve(ownedResult ? message : '')
   } else {
     request.resolve(ownedResult ? message : '')
   }
@@ -263,6 +317,17 @@ function queueInput(msg: string, datalist?: [string, string][], defaultValue?: s
     msg,
     datalist: datalist ? [...datalist] : [],
     defaultValue: defaultValue ?? '',
+    resolve,
+  }))
+}
+
+function queueWorkflow(type: WorkflowAlertType, msg: string, submsg?: string): Promise<string> {
+  return queueResultDialog<string>((resolve) => ({
+    kind: 'workflow',
+    owner: Symbol('alert-dialog'),
+    type,
+    msg,
+    submsg,
     resolve,
   }))
 }
@@ -339,6 +404,23 @@ export function resolveAlertInput(owner: AlertDialogHandle | undefined, value: s
   return true
 }
 
+/** Resolves only the workflow dialog that owns the supplied handle. */
+export function resolveAlertWorkflow(owner: AlertDialogHandle | undefined, value: string): boolean {
+  const request = activeResultDialog
+  const current = get(alertStoreImported)
+  if (
+    request?.kind !== 'workflow' ||
+    owner !== request.owner ||
+    current.dialogOwner !== request.owner ||
+    current.type !== request.type
+  ) {
+    return false
+  }
+
+  alertStoreImported.set({ type: 'none', msg: value, dialogOwner: request.owner })
+  return true
+}
+
 export function alertError(msg: unknown) {
   console.error(msg)
   const db = getDatabase()
@@ -407,7 +489,7 @@ export function alertNormal(msg: string) {
 }
 
 export async function alertNormalWait(msg: string) {
-  alertStoreImported.set({
+  setPassiveAlert({
     type: 'normal',
     msg: msg,
   })
@@ -415,27 +497,15 @@ export async function alertNormalWait(msg: string) {
 }
 
 export async function alertAddCharacter() {
-  alertStoreImported.set({
-    type: 'addchar',
-    msg: language.addCharacter,
-  })
-  return (await waitAlert()).msg
+  return queueWorkflow('addchar', language.addCharacter)
 }
 
 export async function alertChatOptions() {
-  alertStoreImported.set({
-    type: 'chatOptions',
-    msg: language.chatOptions,
-  })
-  return parseInt((await waitAlert()).msg)
+  return parseInt(await queueWorkflow('chatOptions', language.chatOptions))
 }
 
 export async function alertLogin() {
-  alertStoreImported.set({
-    type: 'login',
-    msg: 'login',
-  })
-  return (await waitAlert()).msg
+  return queueWorkflow('login', 'login')
 }
 
 export async function alertSelect(msg: string[], display?: string): Promise<string | null> {
@@ -443,7 +513,7 @@ export async function alertSelect(msg: string[], display?: string): Promise<stri
 }
 
 export async function alertErrorWait(msg: string) {
-  alertStoreImported.set({
+  setPassiveAlert({
     type: 'wait2',
     msg: msg,
   })
@@ -451,7 +521,7 @@ export async function alertErrorWait(msg: string) {
 }
 
 export function alertMd(msg: string) {
-  alertStoreImported.set({
+  setPassiveAlert({
     type: 'markdown',
     msg: msg,
   })
@@ -481,7 +551,7 @@ export function alertWait(msg: string) {
 
 export function beginAlertWait(msg: string): AlertWaitHandle {
   const waitOwner = Symbol('alert-wait')
-  alertStoreImported.set({
+  setPassiveAlert({
     type: 'wait',
     msg,
     waitOwner,
@@ -490,6 +560,10 @@ export function beginAlertWait(msg: string): AlertWaitHandle {
 }
 
 export function updateAlertWait(waitOwner: AlertWaitHandle, msg: string): boolean {
+  if (deferredPassiveAlert?.type === 'wait' && deferredPassiveAlert.waitOwner === waitOwner) {
+    deferredPassiveAlert = { type: 'wait', msg, waitOwner }
+    return true
+  }
   const current = get(alertStoreImported)
   if (current.type !== 'wait' || current.waitOwner !== waitOwner) return false
 
@@ -502,6 +576,10 @@ export function updateAlertWait(waitOwner: AlertWaitHandle, msg: string): boolea
 }
 
 export function clearAlertWait(waitOwner: AlertWaitHandle): boolean {
+  if (deferredPassiveAlert?.type === 'wait' && deferredPassiveAlert.waitOwner === waitOwner) {
+    deferredPassiveAlert = undefined
+    return true
+  }
   const current = get(alertStoreImported)
   if (current.type !== 'wait' || current.waitOwner !== waitOwner) return false
 
@@ -531,7 +609,7 @@ export function alertProgress(msg: string, progress: number | null, submsg?: str
     data.submsg = submsg
   }
 
-  alertStoreImported.set(data)
+  setPassiveAlert(data)
 }
 
 export function alertClear() {
@@ -540,8 +618,10 @@ export function alertClear() {
     // A background operation may finish while its wait alert is deferred. Its
     // cleanup belongs to that pending status, not to the user's active dialog.
     deferredPassiveAlert = undefined
-    if (isResponseDialog(current) || current.type === 'none') return
+    if (activeResultDialog || isResponseDialog(current) || current.type === 'none') return
   }
+
+  if (activeResultDialog || isResponseDialog(current)) return
 
   alertStoreImported.set({
     type: 'none',
@@ -550,12 +630,7 @@ export function alertClear() {
 }
 
 export async function alertSelectChar() {
-  alertStoreImported.set({
-    type: 'selectChar',
-    msg: '',
-  })
-
-  return (await waitAlert()).msg
+  return queueWorkflow('selectChar', '')
 }
 
 export function alertConfirm(msg: string) {
@@ -588,13 +663,7 @@ export function parseCardExportResult(message: string): CardExportResult {
 }
 
 export async function alertCardExport(type: string = ''): Promise<CardExportResult> {
-  alertStoreImported.set({
-    type: 'cardexport',
-    msg: '',
-    submsg: type,
-  })
-
-  return parseCardExportResult((await waitAlert()).msg)
+  return parseCardExportResult(await queueWorkflow('cardexport', '', type))
 }
 
 export async function alertTOS() {
@@ -606,14 +675,9 @@ export async function alertTOS() {
     return true
   }
 
-  alertStoreImported.set({
-    type: 'tos',
-    msg: 'tos',
-  })
+  const result = await queueWorkflow('tos', 'tos')
 
-  const result = await waitAlert()
-
-  if (result.msg === 'yes') {
+  if (result === 'yes') {
     localStorage.setItem('tos4', 'true')
     return true
   }
@@ -631,12 +695,7 @@ export async function alertInput(msg: string, datalist?: [string, string][], def
 }
 
 export async function alertModuleSelect() {
-  alertStoreImported.set({
-    type: 'selectModule',
-    msg: '',
-  })
-
-  return (await waitAlert()).msg
+  return queueWorkflow('selectModule', '')
 }
 
 export function alertRequestData(info: AlertGenerationInfoStoreData) {
