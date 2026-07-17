@@ -7,6 +7,14 @@ const durableSettingState = vi.hoisted(() => ({
   dispatches: [] as Array<{ handle: Record<string, any>; intent: Record<string, unknown> }>,
   acknowledgements: [] as Array<Record<string, any>>,
 }))
+const settingAlertMocks = vi.hoisted(() => ({
+  alertError: vi.fn(),
+}))
+
+vi.mock('../alert', async (importActual) => {
+  const actual = await importActual<typeof import('../alert')>()
+  return { ...actual, alertError: settingAlertMocks.alertError }
+})
 
 vi.mock('../server/pendingMutationOutbox', () => ({
   stagePendingMutation: (key: string, intent: Record<string, unknown>, previous?: Record<string, any> | null) => {
@@ -72,6 +80,7 @@ import {
 import { setResourceWriteGuardEnabled, withServerResourceApply } from '../server/resourceWriteGuard.svelte'
 import { notifyServerCommandLocalEffectApplied } from '../server/commandLocalEffectEvents'
 import { createDestructiveRefreshToken } from '../server/staleStateGuards'
+import { language } from 'src/lang'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
 import { advancedSettingsItems } from './advancedSettingsData'
 import {
@@ -202,6 +211,7 @@ beforeEach(() => {
   durableSettingState.stages.length = 0
   durableSettingState.dispatches.length = 0
   durableSettingState.acknowledgements.length = 0
+  settingAlertMocks.alertError.mockReset()
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
@@ -312,6 +322,8 @@ describe('server-backed data-driven settings', () => {
         body: { baseRevision: 4, patch: { notification: true } },
       },
     ])
+    expect(settingAlertMocks.alertError).toHaveBeenCalledOnce()
+    expect(settingAlertMocks.alertError).toHaveBeenCalledWith(language.errors.settingsSaveFailed)
   })
 
   it('reapplies runtime side effects when an immediate setting patch rolls back', async () => {
@@ -382,6 +394,8 @@ describe('server-backed data-driven settings', () => {
         body: { baseRevision: 4, patch: { animationSpeed: 0.25 } },
       },
     ])
+    expect(settingAlertMocks.alertError).toHaveBeenCalledOnce()
+    expect(settingAlertMocks.alertError).toHaveBeenCalledWith(language.errors.settingsSaveFailed)
   })
 
   it('patches one custom quote as an array field and restores it when persistence fails', async () => {

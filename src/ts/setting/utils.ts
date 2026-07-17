@@ -1,6 +1,7 @@
 import type { SettingItem, SettingContext } from './types'
 import { flushPendingSplitPresetPatch, getDatabase } from '../storage/database.svelte'
 import { language } from 'src/lang'
+import { alertError } from '../alert'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
 import { advancedSettingsItems } from './advancedSettingsData'
 import {
@@ -126,6 +127,15 @@ const pendingDeferredSettingWrites = new Map<string, PendingDeferredSettingWrite
 const pendingDeferredServerSettingAttempts: PendingDeferredServerSettingAttempt[] = []
 let nextDeferredServerSettingAttemptSequence = 0
 registerPendingBridgePatchFlusher('setting-renderer-inputs', flushDeferredSettingWrites)
+
+function createSettingSaveFailureReporter(): () => void {
+  let reported = false
+  return () => {
+    if (reported) return
+    reported = true
+    alertError(language.errors.settingsSaveFailed)
+  }
+}
 
 export function getLabel(item: SettingItem): string {
   if (item.labelKey && (language as any)[item.labelKey]) {
@@ -447,6 +457,7 @@ function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTr
   if (!pending) return
   clearTimeout(pending.timer)
   pendingDeferredSettingWrites.delete(ownerKey)
+  const reportFailure = createSettingSaveFailureReporter()
 
   const attemptedRoot = cloneJsonValue(pending.desiredRoot)
   if (pending.target.kind === 'preset') {
@@ -461,11 +472,13 @@ function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTr
   if (attemptedRoot === undefined) {
     if (pending.outbox) void acknowledgePendingMutation(pending.outbox)
     rollbackDeferredServerSetting(serverTarget, attemptedRoot, pending.previousRoot, pending.edits)
+    reportFailure()
     return
   }
 
   if (!pending.intent || !pending.outbox) {
     rollbackDeferredServerSetting(serverTarget, attemptedRoot, pending.previousRoot, pending.edits)
+    reportFailure()
     return
   }
 
@@ -482,15 +495,27 @@ function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTr
         rollbackDeferredServerSetting(serverTarget, attemptedRoot, attempt.previousRoot, pending.edits)
         rebaseLaterDeferredServerSettingAttempt(attempt)
         clearDeferredServerSettingAttempt(attempt)
+        reportFailure()
       },
       ...transport,
     })
     void result.then(
-      () => clearDeferredServerSettingAttempt(attempt),
-      () => clearDeferredServerSettingAttempt(attempt),
+      (settled) => {
+        clearDeferredServerSettingAttempt(attempt)
+        if (
+          settled.status !== 'ok' &&
+          (!transport.failureRollbackDisposition || transport.failureRollbackDisposition(settled) !== 'retain')
+        ) {
+          reportFailure()
+        }
+      },
+      () => {
+        clearDeferredServerSettingAttempt(attempt)
+        reportFailure()
+      },
     )
     return result
-  })
+  }).catch(() => reportFailure())
 }
 
 function registerDeferredServerSettingAttempt(
