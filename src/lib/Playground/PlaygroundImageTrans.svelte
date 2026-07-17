@@ -103,6 +103,7 @@
   let modeEpoch = 0
   let imageEpoch = 0
   let imageSelectionEpoch = 0
+  let selectionEpoch = 0
 
   async function selectFile(): Promise<boolean> {
     const selectionEpoch = ++imageSelectionEpoch
@@ -153,11 +154,13 @@
     const runModeEpoch = modeEpoch
     const runPrompt = prompt
     const runLanguage = selLang
+    const runSelectionEpoch = selectionEpoch
     let runImageEpoch = imageEpoch
     const isCurrentRun = () =>
       mode === runMode &&
       modeEpoch === runModeEpoch &&
       imageEpoch === runImageEpoch &&
+      selectionEpoch === runSelectionEpoch &&
       prompt === runPrompt &&
       selLang === runLanguage
     loading = true
@@ -499,6 +502,7 @@
     class:blur-effect={loading && mode === 'auto'}
     onpointerdown={(e) => {
       if (mode === 'manual') {
+        selectionEpoch += 1
         canvas.setPointerCapture(e.pointerId)
         selection.classList.remove('hidden')
         const rect = canvas.getBoundingClientRect()

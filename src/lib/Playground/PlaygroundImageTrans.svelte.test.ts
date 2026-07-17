@@ -310,6 +310,40 @@ describe('PlaygroundImageTrans request ownership', () => {
     expect(imageMocks.alertError).not.toHaveBeenCalled()
   })
 
+  it('drops a response after the manual selection rectangle changes', async () => {
+    const canvasContext = installImageBrowserMocks()
+    imageMocks.selectSingleFile.mockResolvedValue({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })
+    const response = deferred<{ type: 'success'; result: string }>()
+    imageMocks.requestChatData.mockReturnValue(response.promise)
+    component = mount(PlaygroundImageTrans, { target })
+    await setMode('manual')
+
+    const imageButton = Array.from(target.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim() === language.image,
+    )
+    if (!(imageButton instanceof HTMLButtonElement)) throw new Error('Image selection button not found')
+    imageButton.click()
+    await vi.waitFor(() => expect(canvasContext.clearRect).toHaveBeenCalledOnce())
+
+    translationButton().click()
+    await vi.waitFor(() => expect(imageMocks.requestChatData).toHaveBeenCalledOnce())
+
+    const canvas = target.querySelector('canvas')
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error('Image canvas not found')
+    canvas.setPointerCapture = vi.fn()
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10, pointerId: 1 }))
+    canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }))
+
+    response.resolve({
+      type: 'success',
+      result: '{"bg_hex_color":"#fff","text_hex_color":"#000","content":"old crop","translation":"stale"}',
+    })
+
+    await waitForTranslationIdle()
+    expect(target.querySelectorAll('textarea')).toHaveLength(1)
+    expect(imageMocks.alertError).not.toHaveBeenCalled()
+  })
+
   it('keeps the newest manual image when an older decode finishes last', async () => {
     const decodeA = deferred<void>()
     const decodeB = deferred<void>()
