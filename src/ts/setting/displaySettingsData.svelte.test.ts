@@ -54,4 +54,8 @@ describe('display theme settings data', () => {
     expect(globalApiSpies.toggleFullscreen).toHaveBeenNthCalledWith(1, true)
     expect(globalApiSpies.toggleFullscreen).toHaveBeenNthCalledWith(2, false)
   })
+
+  it('does not advertise the unavailable prompt comparison workflow', () => {
+    expect(displayOtherSettingsItems.some((item) => item.bindKey === 'showPromptComparison')).toBe(false)
+  })
 })

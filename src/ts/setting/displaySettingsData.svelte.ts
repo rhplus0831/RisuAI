@@ -368,13 +368,6 @@ export const displayOtherSettingsItems: SettingItem[] = [
     keywords: ['saving', 'icon'],
   },
   {
-    id: 'display.showPromptComparison',
-    type: 'check',
-    labelKey: 'showPromptComparison',
-    bindKey: 'showPromptComparison',
-    keywords: ['prompt', 'comparison'],
-  },
-  {
     id: 'display.textScreenBorder',
     type: 'custom',
     componentId: 'NullableTextColorToggle',
