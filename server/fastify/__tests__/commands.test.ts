@@ -9290,6 +9290,8 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
               name: 'A',
               note: '',
               localLore: [],
+              bookmarks: ['msg-a1', 'msg-a2', 'msg-a3'],
+              bookmarkNames: { 'msg-a1': 'One', 'msg-a2': 'Two', 'msg-a3': 'Three' },
               message: [
                 { role: 'user', data: 'a1', chatId: 'msg-a1' },
                 { role: 'char', data: 'a2', chatId: 'msg-a2' },
@@ -9344,6 +9346,10 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
       'msg-a1',
       'msg-a3',
     ])
+    expect(readJsonRow('chats', 'chat-a')).toMatchObject({
+      bookmarks: ['msg-a1', 'msg-a3'],
+      bookmarkNames: { 'msg-a1': 'One', 'msg-a3': 'Three' },
+    })
 
     const appended = await harness.app.inject({
       method: 'POST',
@@ -9369,6 +9375,10 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
     expect(messageRowids(harness.dataDir, 'chat-b')).toEqual(chatBBefore)
     const afterTruncate = messageRowids(harness.dataDir, 'chat-a')
     expect(afterTruncate).toEqual([beforeTruncate[0]])
+    expect(readJsonRow('chats', 'chat-a')).toMatchObject({
+      bookmarks: ['msg-a1'],
+      bookmarkNames: { 'msg-a1': 'One' },
+    })
 
     const replaced = await harness.app.inject({
       method: 'PUT',
@@ -9394,6 +9404,10 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
       'msg-a5',
       'msg-a6',
     ])
+    expect(readJsonRow('chats', 'chat-a')).toMatchObject({
+      bookmarks: ['msg-a1'],
+      bookmarkNames: { 'msg-a1': 'One' },
+    })
   })
 
   it('a non-message command writes nothing to the messages table', async () => {

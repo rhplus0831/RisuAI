@@ -4315,17 +4315,24 @@ function applyScopedMessagePatchAttempt(
 function restoreScopedMessageListAttempt(previous: ChatScopedSnapshot, attemptedMessages: Message[] | null): void {
   if (!previous.chat || !attemptedMessages) return
   const previousMessages = cloneJsonValue(previous.chat.message ?? [])
+  const previousBookmarks = chatBookmarkMetadata(previous.chat)
+  const attemptedBookmarks = prunedChatBookmarkMetadata(previous.chat, attemptedMessages)
   withTrustedResourceWrite(() => {
     const liveChat = locateChatScopedSnapshot(previous)
     if (!liveChat) return
     if (snapshotJson(liveChat.message ?? []) !== snapshotJson(attemptedMessages)) return
     liveChat.message = previousMessages
+    if (sameChatBookmarkMetadata(chatBookmarkMetadata(liveChat), attemptedBookmarks)) {
+      applyChatBookmarkMetadata(liveChat, previousBookmarks)
+    }
   })
 }
 
 function applyScopedMessageListAttempt(previous: ChatScopedSnapshot, attemptedMessages: Message[] | null): void {
   if (!previous.chat || !attemptedMessages) return
   const previousMessages = previous.chat.message ?? []
+  const previousBookmarks = chatBookmarkMetadata(previous.chat)
+  const attemptedBookmarks = prunedChatBookmarkMetadata(previous.chat, attemptedMessages)
   withTrustedResourceWrite(() => {
     const liveChat = locateChatScopedSnapshot(previous)
     if (!liveChat) return
@@ -4335,11 +4342,64 @@ function applyScopedMessageListAttempt(previous: ChatScopedSnapshot, attemptedMe
     // and a newer concurrent transcript is never replaced.
     const liveMessages = liveChat.message ?? []
     const liveSnapshot = snapshotJson(liveMessages)
-    if (liveSnapshot === snapshotJson(attemptedMessages)) return
+    if (liveSnapshot === snapshotJson(attemptedMessages)) {
+      if (sameChatBookmarkMetadata(chatBookmarkMetadata(liveChat), previousBookmarks)) {
+        applyChatBookmarkMetadata(liveChat, attemptedBookmarks)
+      }
+      return
+    }
     if (liveSnapshot !== snapshotJson(previousMessages)) return
 
     liveChat.message = cloneJsonValue(attemptedMessages)
+    if (sameChatBookmarkMetadata(chatBookmarkMetadata(liveChat), previousBookmarks)) {
+      applyChatBookmarkMetadata(liveChat, attemptedBookmarks)
+    }
   })
+}
+
+interface ChatBookmarkMetadata {
+  bookmarks?: string[]
+  bookmarkNames?: Record<string, string>
+}
+
+function chatBookmarkMetadata(chat: Chat): ChatBookmarkMetadata {
+  return {
+    ...(Array.isArray(chat.bookmarks) ? { bookmarks: cloneJsonValue(chat.bookmarks) } : {}),
+    ...(chat.bookmarkNames && typeof chat.bookmarkNames === 'object'
+      ? { bookmarkNames: cloneJsonValue(chat.bookmarkNames) }
+      : {}),
+  }
+}
+
+function prunedChatBookmarkMetadata(chat: Chat, messages: readonly Message[]): ChatBookmarkMetadata {
+  const retainedIds = new Set(messages.map((message) => message.chatId).filter((id): id is string => !!id))
+  const metadata = chatBookmarkMetadata(chat)
+  if (metadata.bookmarks) {
+    metadata.bookmarks = metadata.bookmarks.filter((messageId) => retainedIds.has(messageId))
+  }
+  if (metadata.bookmarkNames) {
+    metadata.bookmarkNames = Object.fromEntries(
+      Object.entries(metadata.bookmarkNames).filter(([messageId]) => retainedIds.has(messageId)),
+    )
+  }
+  return metadata
+}
+
+function sameChatBookmarkMetadata(left: ChatBookmarkMetadata, right: ChatBookmarkMetadata): boolean {
+  return snapshotJson(left) === snapshotJson(right)
+}
+
+function applyChatBookmarkMetadata(chat: Chat, metadata: ChatBookmarkMetadata): void {
+  if (metadata.bookmarks === undefined) {
+    delete chat.bookmarks
+  } else {
+    chat.bookmarks = cloneJsonValue(metadata.bookmarks)
+  }
+  if (metadata.bookmarkNames === undefined) {
+    delete chat.bookmarkNames
+  } else {
+    chat.bookmarkNames = cloneJsonValue(metadata.bookmarkNames)
+  }
 }
 
 function registerScopedTranscriptAttempt(

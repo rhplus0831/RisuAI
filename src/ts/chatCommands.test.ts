@@ -5752,16 +5752,22 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'two', chatId: 'm-2' },
     ]
     seedActiveMessages(previousMessages)
+    getDatabase().characters[0].chats[0].bookmarks = ['m-1', 'm-2']
+    getDatabase().characters[0].chats[0].bookmarkNames = { 'm-1': 'One', 'm-2': 'Two' }
     const previous = currentChatScopedSnapshot()
     setResourceWriteGuardEnabled(true)
 
     dispatchDeleteMessageScoped('m-1', previous)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
+    expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-2'])
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'm-2': 'Two' })
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
       expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
     })
+    expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-2'])
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'm-2': 'Two' })
   })
 
   it('keeps an accepted scoped message update optimistically applied under the resource guard', async () => {
@@ -5886,13 +5892,19 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'two', chatId: 'm-2' },
     ]
     seedActiveMessages(previousMessages)
+    getDatabase().characters[0].chats[0].bookmarks = ['m-1', 'm-2']
+    getDatabase().characters[0].chats[0].bookmarkNames = { 'm-1': 'One', 'm-2': 'Two' }
     const previous = currentChatScopedSnapshot()
 
     dispatchDeleteMessageScoped('m-1', previous)
     expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
+    expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-2'])
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'm-2': 'Two' })
     await waitForCallCount(calls, 2)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
+    expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-1', 'm-2'])
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'm-1': 'One', 'm-2': 'Two' })
   })
 
   it('failed scoped delete preserves a newer live message list when it changes again before rollback', async () => {
@@ -5931,14 +5943,43 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
       { role: 'user', data: 'three', chatId: 'm-3' },
     ]
     seedActiveMessages(previousMessages)
+    getDatabase().characters[0].chats[0].bookmarks = ['m-1', 'm-2', 'm-3']
+    getDatabase().characters[0].chats[0].bookmarkNames = { 'm-1': 'One', 'm-2': 'Two', 'm-3': 'Three' }
     const previous = currentChatScopedSnapshot()
 
     const command = dispatchTruncateMessagesScoped('chat-a', 'm-1', previous)
     expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[0]])
+    expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-1'])
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'm-1': 'One' })
     await command
     await waitForCallCount(calls, 2)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
+    expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-1', 'm-2', 'm-3'])
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({
+      'm-1': 'One',
+      'm-2': 'Two',
+      'm-3': 'Three',
+    })
+  })
+
+  it('keeps only retained bookmarks after an accepted scoped truncation', async () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+      { role: 'user', data: 'three', chatId: 'm-3' },
+    ]
+    seedActiveMessages(previousMessages)
+    getDatabase().characters[0].chats[0].bookmarks = ['m-1', 'm-2', 'm-3']
+    getDatabase().characters[0].chats[0].bookmarkNames = { 'm-1': 'One', 'm-2': 'Two', 'm-3': 'Three' }
+
+    await dispatchTruncateMessagesScoped('chat-a', 'm-1', currentChatScopedSnapshot())
+    await waitForCallCount(calls, 2)
+
+    expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[0]])
+    expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-1'])
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'm-1': 'One' })
   })
 
   it('failed scoped truncate skips rollback when live messages diverge from the attempted truncation', async () => {

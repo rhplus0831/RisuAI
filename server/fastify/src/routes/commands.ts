@@ -1001,6 +1001,36 @@ function readOptionalMessageCondition(value: unknown, label: string, allowEmpty 
   return value
 }
 
+function pruneChatBookmarkMetadata(
+  targetDb: DatabaseSync,
+  chat: ChatRecord,
+  retainedMessages: ReadonlyArray<{ chatId?: unknown }>,
+): void {
+  const retainedIds = new Set(
+    retainedMessages
+      .map((message) => message.chatId)
+      .filter((messageId): messageId is string => typeof messageId === 'string' && messageId.length > 0),
+  )
+  const previousBookmarks = Array.isArray(chat.bookmarks) ? chat.bookmarks : undefined
+  const previousBookmarkNames =
+    chat.bookmarkNames && typeof chat.bookmarkNames === 'object' && !Array.isArray(chat.bookmarkNames)
+      ? chat.bookmarkNames
+      : undefined
+  const bookmarks = previousBookmarks?.filter((messageId) => retainedIds.has(messageId))
+  const bookmarkNames = previousBookmarkNames
+    ? Object.fromEntries(Object.entries(previousBookmarkNames).filter(([messageId]) => retainedIds.has(messageId)))
+    : undefined
+
+  if (isDeepStrictEqual(previousBookmarks, bookmarks) && isDeepStrictEqual(previousBookmarkNames, bookmarkNames)) {
+    return
+  }
+  if (bookmarks === undefined) delete chat.bookmarks
+  else chat.bookmarks = bookmarks
+  if (bookmarkNames === undefined) delete chat.bookmarkNames
+  else chat.bookmarkNames = bookmarkNames
+  writeSingleChatRow(targetDb, chat.id, chat)
+}
+
 function readOptionalBooleanFlag(value: unknown, label: string): boolean {
   if (value === undefined || value === null) return false
   if (typeof value !== 'boolean') {
@@ -6071,7 +6101,7 @@ export function registerCommandRoutes(
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
           const { location } = resolved
-          requireChatLocation(characters, location.chatId)
+          const { chat } = requireChatLocation(characters, location.chatId)
           const deleted = deleteActiveMessageById(targetDb, messageId)
           if (deleted.ok === false) {
             if (deleted.reason === 'ambiguous') {
@@ -6079,6 +6109,7 @@ export function registerCommandRoutes(
             }
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
+          pruneChatBookmarkMetadata(targetDb, chat, getChatMessages(targetDb, deleted.chatId))
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.messageDeleted,
@@ -6126,7 +6157,7 @@ export function registerCommandRoutes(
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
-          requireChatLocation(characters, chatId)
+          const { chat } = requireChatLocation(characters, chatId)
           const removedAlternates: unknown[] = []
           if (preserveRemovedAsAlternates) {
             const base = getChatMessages(targetDb, chatId)
@@ -6144,6 +6175,7 @@ export function registerCommandRoutes(
           for (const message of removedAlternates) {
             addAlternateMessage(targetDb, chatId, message)
           }
+          pruneChatBookmarkMetadata(targetDb, chat, getChatMessages(targetDb, chatId))
           return {
             event: { ...COMMAND_EVENT_CATALOG.messageTruncated, parentId: chatId },
             extra: { chatId, afterMessageId, removedCount: truncated.removedCount },
@@ -6184,7 +6216,7 @@ export function registerCommandRoutes(
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
-          requireChatLocation(characters, chatId)
+          const { chat } = requireChatLocation(characters, chatId)
           const base = getChatMessages(targetDb, chatId)
           const keepCount =
             afterMessageId === null ? 0 : base.findIndex((message) => message.chatId === afterMessageId) + 1
@@ -6199,6 +6231,7 @@ export function registerCommandRoutes(
             }
           }
           replaceActiveChatMessages(targetDb, chatId, next)
+          pruneChatBookmarkMetadata(targetDb, chat, next)
           return {
             event: { ...COMMAND_EVENT_CATALOG.messagesReplaced, parentId: chatId },
             extra: {
@@ -6238,7 +6271,7 @@ export function registerCommandRoutes(
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
-          requireChatLocation(characters, chatId)
+          const { chat } = requireChatLocation(characters, chatId)
           validateUniqueMessageIds(replacement)
           for (const message of replacement) {
             if (activeMessageIdExistsOutsideChat(targetDb, message.chatId, chatId)) {
@@ -6246,6 +6279,7 @@ export function registerCommandRoutes(
             }
           }
           replaceActiveChatMessages(targetDb, chatId, replacement)
+          pruneChatBookmarkMetadata(targetDb, chat, replacement)
           return {
             event: { ...COMMAND_EVENT_CATALOG.messagesReplaced, parentId: chatId },
             extra: { chatId },
