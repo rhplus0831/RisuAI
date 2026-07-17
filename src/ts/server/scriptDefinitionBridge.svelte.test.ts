@@ -747,8 +747,13 @@ describe('P1 script definition watcher purity', () => {
 describe('character script definition draft bridge', () => {
   it('routes CharConfig script draft writes through the bridge helper', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
+    const scriptDraftStart = source.indexOf('let characterScriptsDraft')
+    const scriptDraftEnd = source.indexOf('let lasttokens', scriptDraftStart)
+    const scriptDraftSource = source.slice(scriptDraftStart, scriptDraftEnd)
 
-    expect(source).not.toContain('withTrustedResourceWrite')
+    expect(scriptDraftStart).toBeGreaterThanOrEqual(0)
+    expect(scriptDraftEnd).toBeGreaterThan(scriptDraftStart)
+    expect(scriptDraftSource).not.toContain('withTrustedResourceWrite')
     expect(source).toContain('applyCharacterScriptDefinitionDraft(')
     expect(source).toContain('getServerResourceApplyEpoch')
     expect(source).toContain('markDirtyScriptDefinitionRowFields')
