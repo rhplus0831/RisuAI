@@ -129,8 +129,12 @@ export function readModuleEnabled(input: unknown): boolean {
   return input
 }
 
-export function requireModuleIndex(modules: readonly ModuleRecord[], moduleId: string): number {
-  const index = modules.findIndex((module) => module.id === moduleId && !module.mcp)
+export function requireModuleIndex(
+  modules: readonly ModuleRecord[],
+  moduleId: string,
+  options: { allowMcp?: boolean } = {},
+): number {
+  const index = modules.findIndex((module) => module.id === moduleId && (options.allowMcp || !module.mcp))
   if (index === -1) {
     throw new EntityNotFoundError(`Module not found: ${moduleId}`)
   }

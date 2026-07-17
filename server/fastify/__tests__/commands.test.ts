@@ -12815,6 +12815,36 @@ describe('Phase 9-4c module record and enablement commands', () => {
     expect(database.loadouts[0].modules).toEqual([])
   })
 
+  it('globally enables an MCP module', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      enabledModules: [],
+      modules: [{ id: 'mcp-a', name: 'MCP', description: 'Bridge', mcp: { url: 'internal:risuai' } }],
+    })
+
+    const enabled = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/enable',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, moduleId: 'mcp-a', enabled: true },
+    })
+
+    expect(enabled.statusCode).toBe(200)
+    expect(enabled.json()).toMatchObject({
+      revision: revision + 1,
+      moduleId: 'mcp-a',
+      enabled: true,
+      event: { type: 'module.enabled', id: 'mcp-a' },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.enabledModules).toEqual(['mcp-a'])
+  })
+
   it('adds and removes character module links, not only reorders', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -13004,7 +13034,7 @@ describe('Phase 9-4c module record and enablement commands', () => {
     expect(bootstrap.json().database.modules).toEqual([{ id: 'mod-a', name: 'A', description: '' }])
   })
 
-  it('returns 404 for MCP module rows and 409 for stale module revisions', async () => {
+  it('returns 404 for MCP module patches and 409 for stale module revisions', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       modules: [{ id: 'mcp-a', name: 'MCP', description: '', mcp: { url: 'internal:risuai' } }],

@@ -7258,7 +7258,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.settings,
         mutate(database, innerDb) {
           const target = ensureModuleCommandDatabase(database)
-          requireModuleIndex(ensureModuleRecords(target), moduleId)
+          requireModuleIndex(ensureModuleRecords(target), moduleId, { allowMcp: true })
           const enabledModules = new Set(ensureEnabledModules(target))
           if (enabled) {
             enabledModules.add(moduleId)
