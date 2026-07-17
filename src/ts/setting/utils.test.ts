@@ -242,6 +242,10 @@ describe('server-backed data-driven settings', () => {
     expect(advancedSettingsItems.some((item) => item.bindKey === 'claudeRetrivalCaching')).toBe(false)
   })
 
+  it('does not expose the redundant force-proxy-format setting', () => {
+    expect(advancedSettingsItems.some((item) => item.bindKey === 'forceProxyAsOpenAI')).toBe(false)
+  })
+
   it('exposes the app-owned reduced-motion toggle under Accessibility', () => {
     expect(accessibilitySettingsItems.find((item) => item.id === 'acc.reducedMotion')).toMatchObject({
       type: 'check',

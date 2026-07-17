@@ -124,7 +124,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   fishSpeechKey: 'media',
   fixedChatTextarea: 'sidebar',
   font: 'display',
-  forceProxyAsOpenAI: 'advanced',
   forceReplaceUrl: 'providers',
   frequencyPenalty: 'runtime',
   fullScreen: 'display',

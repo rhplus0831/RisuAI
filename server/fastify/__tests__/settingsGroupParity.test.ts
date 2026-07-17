@@ -50,4 +50,9 @@ describe('settings group parity', () => {
     expect(SETTINGS_GROUP_KEYS.providers).not.toContain('claudeRetrivalCaching')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).not.toContain('claudeRetrivalCaching')
   })
+
+  it('does not accept the retired force-proxy-format setting', () => {
+    expect(SETTINGS_GROUP_KEYS.advanced).not.toContain('forceProxyAsOpenAI')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.advanced).not.toContain('forceProxyAsOpenAI')
+  })
 })

@@ -224,14 +224,6 @@ export const advancedSettingsItems: SettingItem[] = [
     showExperimental: true,
   },
   {
-    id: 'adv.forceProxy',
-    type: 'check',
-    labelKey: 'forceProxyAsOpenAI',
-    bindKey: 'forceProxyAsOpenAI',
-    helpKey: 'forceProxyAsOpenAI',
-    classes: 'mt-4',
-  },
-  {
     id: 'adv.legacyMedia',
     type: 'check',
     labelKey: 'legacyMediaFindings',
