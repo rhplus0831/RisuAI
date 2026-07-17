@@ -288,15 +288,6 @@ export const advancedSettingsItems: SettingItem[] = [
     bindKey: 'disableSeperateParameterChangeOnPresetChange',
     classes: 'mt-4',
   },
-  {
-    id: 'adv.coldstorage',
-    type: 'check',
-    labelKey: 'coldStorage',
-    bindKey: 'coldstorage',
-    classes: 'mt-4',
-    helpKey: 'coldstorage',
-  },
-
   // Experimental Section (visible when useExperimental is true)
   {
     id: 'adv.exp.cachePoint',
