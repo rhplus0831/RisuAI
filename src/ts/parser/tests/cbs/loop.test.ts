@@ -73,7 +73,7 @@ describe('#each', () => {
     ).toBe('1\n2\n3\n4\n')
   })
 
-  test('can loop over a 2D array literal', () => {
+  test('can loop over a 2D array in a variable', () => {
     setChatVar(
       'arr',
       JSON.stringify([
@@ -96,7 +96,7 @@ describe('#each', () => {
     expect(quickParse('#each [1][2] as n', '{{slot::n}} ')).toBe('[1][2]')
   })
 
-  test('trimes whitespaces of its body', () => {
+  test('trims whitespaces from its body', () => {
     expect(quickParse('#each [1, 2, 3] as n', ' \n - {{slot::n}}\n  ')).toBe(`- 1- 2- 3`)
   })
 
@@ -124,7 +124,8 @@ describe('#each', () => {
 
   test('can omit "as"', () => {
     expect(quickParse('#each [1, 2, 3] n', '{{slot::n}} ')).toBe('123')
-    expect(quickParse('#each [1, 2, 3] n', '{{slot::n}} ')).toBe('123')
+    setChatVar('arr', JSON.stringify([1, 2, 3]))
+    expect(quickParse('#each {{getvar::arr}} n', '{{slot::n}} ')).toBe('123')
   })
 
   describe('Operators: whitespaces', () => {

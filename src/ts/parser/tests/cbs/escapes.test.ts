@@ -88,7 +88,8 @@ test(';', () => {
 })
 
 test(':', () => {
-  expect(parse('{{;}}')).toBe(';')
+  expect(parse('{{dec}}')).toBe(':')
+  expect(parse('{{displayescapedcolon}}')).toBe(':')
 })
 
 test('()', () => {
