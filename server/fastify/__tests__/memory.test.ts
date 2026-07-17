@@ -14,7 +14,10 @@ function row(content: string, memo?: string): OpenAIChat {
 }
 
 function makeChat(): Chat {
-  return { id: 'chat-1', message: [] } as unknown as Chat
+  return {
+    id: 'chat-1',
+    message: ['m1', 'm2', 'm3'].map((chatId) => ({ role: 'user', data: chatId, chatId })),
+  } as unknown as Chat
 }
 
 describe('Phase 7-11e buildMemoryWindow (non-Hypa)', () => {
@@ -39,7 +42,7 @@ describe('Phase 7-11e buildMemoryWindow (non-Hypa)', () => {
     expect(unformated.chats.every((r) => r.removable === true)).toBe(true)
   })
 
-  it('records the lowest surviving memo on currentChat.lastMemory', () => {
+  it('leaves the cutoff empty when every stable message survives', () => {
     const currentChat = makeChat()
     buildMemoryWindow({
       chats: [row('one', 'm1'), row('two', 'm2')],
@@ -51,7 +54,24 @@ describe('Phase 7-11e buildMemoryWindow (non-Hypa)', () => {
       unformated: createEmptyUnformatedSlots(),
       db,
     })
-    expect(currentChat.lastMemory).toBe('m1')
+    expect(currentChat.lastMemory).toBeUndefined()
+  })
+
+  it('skips synthetic prompt memos and records the first surviving message id after trimming', () => {
+    const currentChat = makeChat()
+    const chats = [row('[Start a new chat]', 'NewChat'), row('one', 'm1'), row('two', 'm2')]
+    const { encoding, options } = tokenizerOptionsFromDb(db)
+    buildMemoryWindow({
+      chats,
+      currentTokens: 1000 + tokenizeChat(chats[0], encoding, options) + tokenizeChat(chats[1], encoding, options),
+      maxContextTokens: 1000,
+      currentChat,
+      memoryCardUsed: false,
+      promptTemplate: [{ type: 'chat' }] as unknown as PromptItem[],
+      unformated: createEmptyUnformatedSlots(),
+      db,
+    })
+    expect(currentChat.lastMemory).toBe('m2')
   })
 
   it('does not promote lastChat when a prompt template is in use', () => {

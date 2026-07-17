@@ -325,6 +325,12 @@ export interface AssembleAdditionalSystemPromptMutation {
   row: OpenAIChat
 }
 
+export interface AssembleChatMetadataMutation {
+  key: 'lastMemory'
+  before: string | null
+  after: string | null
+}
+
 export interface AssembleMutationPayload {
   chatId: string
   characterId: string
@@ -333,6 +339,7 @@ export interface AssembleMutationPayload {
   varChanged: boolean
   messageMutations: AssembleMessageMutation[]
   chatVarMutations: AssembleChatVarMutation[]
+  chatMetadataMutations?: AssembleChatMetadataMutation[]
   additionalSystemPrompt: AssembleAdditionalSystemPromptMutation[]
 }
 
@@ -508,6 +515,7 @@ export interface AssemblyState {
   initialMessages?: Message[]
   messageMutationCheckpoint?: Message[]
   initialScriptstate?: Record<string, string | number | boolean>
+  initialLastMemory?: string
   /** The submit-time input trigger rewrote the transcript. */
   inputTriggerRewroteTranscript?: boolean
   /** `editinput` transformed the submitted user message. */
@@ -653,6 +661,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     initialMessages,
     messageMutationCheckpoint: initialMessages,
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
+    initialLastMemory: currentChat.lastMemory,
     messageMutations: [],
     additionalSystemPromptMutations: [],
     memoryDatabase: deps.loadMemoryDatabase?.() ?? null,
@@ -1101,7 +1110,21 @@ function buildChatVarMutations(state: AssemblyState): AssembleChatVarMutation[] 
     }))
 }
 
+function buildChatMetadataMutations(state: AssemblyState): AssembleChatMetadataMutation[] {
+  const before =
+    typeof state.initialLastMemory === 'string' && state.initialLastMemory.length > 0 ? state.initialLastMemory : null
+  const initialMessageIds = new Set(
+    (state.initialMessages ?? [])
+      .map((message) => message.chatId)
+      .filter((messageId): messageId is string => typeof messageId === 'string' && messageId.length > 0),
+  )
+  const candidate = state.currentChat.lastMemory
+  const after = typeof candidate === 'string' && initialMessageIds.has(candidate) ? candidate : null
+  return before === after ? [] : [{ key: 'lastMemory', before, after }]
+}
+
 function buildMutationPayload(state: AssemblyState): AssembleMutationPayload {
+  const chatMetadataMutations = buildChatMetadataMutations(state)
   return {
     chatId: state.input.chatId,
     characterId: state.input.characterId,
@@ -1110,6 +1133,7 @@ function buildMutationPayload(state: AssemblyState): AssembleMutationPayload {
     varChanged: !!state.varChanged,
     messageMutations: state.messageMutations ?? [],
     chatVarMutations: buildChatVarMutations(state),
+    ...(chatMetadataMutations.length > 0 ? { chatMetadataMutations } : {}),
     additionalSystemPrompt: state.additionalSystemPromptMutations ?? [],
   }
 }
@@ -2573,6 +2597,7 @@ export async function runServerPostGeneration(
   // already persisted the assembly-time delta), and clear the assembly-time
   // mutation accumulators so the payload carries only post-gen writes.
   state.initialScriptstate = cloneScriptstate(currentPersistedChat(state)?.scriptstate)
+  state.initialLastMemory = state.currentChat.lastMemory
   state.varChanged = false
   state.messageMutations = []
   state.additionalSystemPromptMutations = []

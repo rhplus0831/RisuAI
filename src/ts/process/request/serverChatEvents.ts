@@ -87,6 +87,12 @@ export interface ServerChatVarMutation {
   after: ServerChatVarMutationValue
 }
 
+export interface ServerChatMetadataMutation {
+  key: 'lastMemory'
+  before: string | null
+  after: string | null
+}
+
 export type ServerChatMessageMutation =
   | {
       type: 'append'
@@ -120,6 +126,7 @@ export interface ServerChatMessagePatch {
   varChanged: boolean
   messageMutations: ServerChatMessageMutation[]
   chatVarMutations: ServerChatVarMutation[]
+  chatMetadataMutations?: ServerChatMetadataMutation[]
   additionalSystemPrompt: ServerChatAdditionalSystemPromptMutation[]
 }
 

@@ -54,17 +54,31 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
   const chats = input.chats
   let currentTokens = input.currentTokens
   const currentChat = input.currentChat
+  const stableMessageIds = new Set(
+    (currentChat.message ?? [])
+      .map((message) => message.chatId)
+      .filter((messageId): messageId is string => typeof messageId === 'string' && messageId.length > 0),
+  )
+  let trimmedStableMessage = false
 
   // Non-Hypa budget trim (SPA `buildMemoryWindow.ts`).
   while (currentTokens > maxContextTokens) {
     if (chats.length <= 1) {
       return { stopSending: true }
     }
+    if (typeof chats[0].memo === 'string' && stableMessageIds.has(chats[0].memo)) {
+      trimmedStableMessage = true
+    }
     currentTokens -= tokenizeChat(chats[0], encoding, options)
     chats.splice(0, 1)
   }
-  if (chats.length > 0) {
-    currentChat.lastMemory = chats[0].memo
+  const survivingMessageId = chats.find(
+    (chat): chat is OpenAIChat & { memo: string } => typeof chat.memo === 'string' && stableMessageIds.has(chat.memo),
+  )?.memo
+  if (trimmedStableMessage && survivingMessageId) {
+    currentChat.lastMemory = survivingMessageId
+  } else {
+    delete currentChat.lastMemory
   }
 
   const memories: OpenAIChat[] = []

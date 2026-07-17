@@ -237,6 +237,13 @@ export function activeMessageIdExists(db: DatabaseSync, messageId: string): bool
   return !!row
 }
 
+export function activeMessageIdExistsInChat(db: DatabaseSync, messageId: string, chatId: string): boolean {
+  const row = db
+    .prepare('SELECT 1 AS found FROM messages WHERE uid = ? AND chat_id = ? AND alternate = 0 LIMIT 1')
+    .get(messageId, chatId) as { found: number } | undefined
+  return !!row
+}
+
 export function activeMessageIdExistsOutsideChat(db: DatabaseSync, messageId: string, chatId: string): boolean {
   const row = db
     .prepare('SELECT 1 AS found FROM messages WHERE uid = ? AND chat_id != ? AND alternate = 0 LIMIT 1')

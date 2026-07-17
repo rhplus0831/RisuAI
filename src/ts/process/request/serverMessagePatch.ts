@@ -46,14 +46,20 @@ export function applyServerMessagePatch(chat: Chat, patch: ServerChatMessagePatc
     applyMessageMutation(chat, mutation)
   }
 
-  if (patch.chatVarMutations.length === 0) return
-  chat.scriptstate ??= {}
-  for (const mutation of patch.chatVarMutations) {
-    if (mutation.after === null) {
-      delete chat.scriptstate[mutation.key]
-    } else {
-      chat.scriptstate[mutation.key] = mutation.after
+  if (patch.chatVarMutations.length > 0) {
+    chat.scriptstate ??= {}
+    for (const mutation of patch.chatVarMutations) {
+      if (mutation.after === null) {
+        delete chat.scriptstate[mutation.key]
+      } else {
+        chat.scriptstate[mutation.key] = mutation.after
+      }
     }
+  }
+
+  for (const mutation of patch.chatMetadataMutations ?? []) {
+    if (mutation.after === null) delete chat.lastMemory
+    else chat.lastMemory = mutation.after
   }
 }
 

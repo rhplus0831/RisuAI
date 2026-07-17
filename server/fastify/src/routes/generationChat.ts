@@ -46,6 +46,7 @@ import { applyTargetedCommandMutation } from '../commands/mutations.js'
 import {
   addAlternateMessage,
   activeMessageIdExists,
+  activeMessageIdExistsInChat,
   activeMessageIdExistsOutsideChat,
   appendActiveChatMessageTail,
   clearAlternateMessages,
@@ -1241,8 +1242,8 @@ function canAppendAssemblyReplacement(
 }
 
 /**
- * Persist the assembly-time chat-var delta the assembler computed
- * (`mutations.chatVarMutations`) and, when a submit-time input trigger,
+ * Persist the assembly-time chat-var and chat-metadata deltas the assembler
+ * computed and, when a submit-time input trigger,
  * `editinput`, or before-main Agent Preset rewrote the transcript — the
  * authoritative submit transcript (`submitMessages`), through a targeted command mutation:
  * one revision bump, one event, rollback on failure. The route owns these writes
@@ -1274,8 +1275,10 @@ function persistAssemblyMutations(args: {
     }
   }
   const hasVarWrite = Object.keys(patch).length > 0 || deleteKeys.length > 0
+  const lastMemoryMutation = args.mutations.chatMetadataMutations?.find((mutation) => mutation.key === 'lastMemory')
+  const hasMetadataWrite = lastMemoryMutation !== undefined
   const persistMessages = !!args.submitTranscriptChanged && Array.isArray(args.submitMessages)
-  if (!hasVarWrite && !persistMessages) {
+  if (!hasVarWrite && !hasMetadataWrite && !persistMessages) {
     emitProtocolMetric('generation_assembly_persistence', {
       status: 'skipped',
       chatId: args.input.chatId,
@@ -1283,6 +1286,7 @@ function persistAssemblyMutations(args: {
       chatVarMutationCount: args.mutations.chatVarMutations.length,
       persistMessages,
       hasVarWrite,
+      hasMetadataWrite,
       durationMs: 0,
     })
     return undefined
@@ -1332,12 +1336,23 @@ function persistAssemblyMutations(args: {
             replaceActiveChatMessages(targetDb, args.input.chatId, replacement)
           }
         }
-        if (hasVarWrite) {
+        if (lastMemoryMutation) {
+          if (lastMemoryMutation.after === null) {
+            delete chat.lastMemory
+          } else {
+            if (!activeMessageIdExistsInChat(targetDb, lastMemoryMutation.after, args.input.chatId)) {
+              throw new ValidationError('lastMemory must reference an active message owned by the target chat')
+            }
+            chat.lastMemory = lastMemoryMutation.after
+          }
+        }
+        if (hasVarWrite || hasMetadataWrite) {
           writeSingleChatRow(targetDb, args.input.chatId, chat)
         }
-        const eventTemplate = persistMessages
-          ? COMMAND_EVENT_CATALOG.generationAssemblyPersisted
-          : COMMAND_EVENT_CATALOG.chatScriptstateUpdated
+        const eventTemplate =
+          persistMessages || hasMetadataWrite
+            ? COMMAND_EVENT_CATALOG.generationAssemblyPersisted
+            : COMMAND_EVENT_CATALOG.chatScriptstateUpdated
         eventType = eventTemplate.type
         return {
           event: {
@@ -1358,6 +1373,7 @@ function persistAssemblyMutations(args: {
       chatVarMutationCount: args.mutations.chatVarMutations.length,
       persistMessages,
       hasVarWrite,
+      hasMetadataWrite,
       durationMs: protocolDurationMs(persistStartedAt),
     })
     return result.revision
@@ -1370,6 +1386,7 @@ function persistAssemblyMutations(args: {
       chatVarMutationCount: args.mutations.chatVarMutations.length,
       persistMessages,
       hasVarWrite,
+      hasMetadataWrite,
       durationMs: protocolDurationMs(persistStartedAt),
       error: errorMessage(err, 'failed to persist assembly mutations'),
     })

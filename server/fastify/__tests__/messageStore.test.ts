@@ -6,6 +6,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { openDatabase } from '../src/db.js'
 import {
   addAlternateMessage,
+  activeMessageIdExistsInChat,
   appendActiveChatMessageTail,
   applyChatMessageDiff,
   clearAlternateMessages,
@@ -77,6 +78,8 @@ describe('messageStore CRUD', () => {
     expect(getChatMessagesRange(db, 'chat-1', 1, 10)).toEqual([messages[1], messages[2]])
     expect(countChatMessages(db, 'chat-1')).toBe(3)
     expect(getAllChatIdsWithMessages(db)).toEqual(['chat-1'])
+    expect(activeMessageIdExistsInChat(db, 'm2', 'chat-1')).toBe(true)
+    expect(activeMessageIdExistsInChat(db, 'm2', 'chat-other')).toBe(false)
   })
 
   it('reads ranges by logical row offset even when stored seq values are sparse', () => {

@@ -179,6 +179,25 @@ describe('applyServerMessagePatch', () => {
     expect(chat.scriptstate).toEqual({ $old: '2' })
   })
 
+  it('applies the persisted memory cutoff to the live chat projection', () => {
+    const chat = {
+      message: [{ role: 'user', data: 'first', chatId: 'message-1' }],
+      note: '',
+      name: '',
+      localLore: [],
+      lastMemory: 'old-message',
+    } satisfies Chat
+
+    applyServerMessagePatch(
+      chat,
+      patch({
+        chatMetadataMutations: [{ key: 'lastMemory', before: 'old-message', after: 'message-1' }],
+      }),
+    )
+
+    expect(chat.lastMemory).toBe('message-1')
+  })
+
   it('applies compact replace-all suffix mutations from firstChangedIndex', () => {
     const chat = {
       message: [

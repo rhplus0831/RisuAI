@@ -2581,6 +2581,55 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(String(error?.data.error)).toContain('context limit 1')
   })
 
+  it('persists the oldest surviving message id as the chat memory cutoff', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase)
+    db.maxContext = 150
+    db.maxResponse = 10
+    ;(
+      db.characters[0].chats[0] as unknown as {
+        message: Array<{ role: 'user' | 'char'; data: string; chatId: string }>
+      }
+    ).message = [
+      { role: 'user', data: 'oldest '.repeat(80), chatId: 'message-1' },
+      { role: 'char', data: 'older '.repeat(80), chatId: 'message-2' },
+      { role: 'user', data: 'recent '.repeat(80), chatId: 'message-3' },
+      { role: 'char', data: 'newest '.repeat(20), chatId: 'message-4' },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'continue',
+        clientCapabilities: { compactPromptEvent: true },
+      },
+    })
+    expect(response.statusCode).toBe(200)
+
+    const events = parseEvents(response.body)
+    const messageIds = new Set(['message-1', 'message-2', 'message-3', 'message-4'])
+    const patch = events.find((event) => event.type === 'message_patch')?.data.patch as
+      | { chatMetadataMutations?: Array<{ key: string; after: string | null }> }
+      | undefined
+    const firstSurvivingMessageId = patch?.chatMetadataMutations?.[0]?.after
+    expect(typeof firstSurvivingMessageId === 'string' && messageIds.has(firstSurvivingMessageId)).toBe(true)
+    expect(firstSurvivingMessageId).not.toBe('message-1')
+    expect(patch?.chatMetadataMutations).toEqual([{ key: 'lastMemory', before: null, after: firstSurvivingMessageId }])
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().database.characters[0].chats[0].lastMemory).toBe(firstSurvivingMessageId)
+  })
+
   it('emits a final prompt overflow error when pinned rows exceed the context window', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = dbWithEditRequestLua(`
