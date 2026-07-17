@@ -344,6 +344,48 @@ describe('PlaygroundImageTrans request ownership', () => {
     expect(imageMocks.alertError).not.toHaveBeenCalled()
   })
 
+  it('preserves a newer invalid JSON draft when a manual response arrives', async () => {
+    const canvasContext = installImageBrowserMocks()
+    imageMocks.selectSingleFile.mockResolvedValue({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })
+    const secondResponse = deferred<{ type: 'success'; result: string }>()
+    imageMocks.requestChatData
+      .mockResolvedValueOnce({
+        type: 'success',
+        result: '{"bg_hex_color":"#fff","text_hex_color":"#000","content":"first","translation":"first translated"}',
+      })
+      .mockReturnValueOnce(secondResponse.promise)
+    component = mount(PlaygroundImageTrans, { target })
+    await setMode('manual')
+
+    const imageButton = Array.from(target.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim() === language.image,
+    )
+    if (!(imageButton instanceof HTMLButtonElement)) throw new Error('Image selection button not found')
+    imageButton.click()
+    await vi.waitFor(() => expect(canvasContext.clearRect).toHaveBeenCalledOnce())
+
+    translationButton().click()
+    await vi.waitFor(() => expect(imageMocks.requestChatData).toHaveBeenCalledOnce())
+    await waitForTranslationIdle()
+
+    translationButton().click()
+    await vi.waitFor(() => expect(imageMocks.requestChatData).toHaveBeenCalledTimes(2))
+    const outputDraft = target.querySelectorAll<HTMLTextAreaElement>('textarea')[1]
+    if (!outputDraft) throw new Error('Image translation JSON output not found')
+    outputDraft.value = '[{"translation":"my newer edit"}'
+    outputDraft.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    secondResponse.resolve({
+      type: 'success',
+      result: '{"bg_hex_color":"#fff","text_hex_color":"#000","content":"second","translation":"stale"}',
+    })
+
+    await waitForTranslationIdle()
+    expect(outputDraft.value).toBe('[{"translation":"my newer edit"}')
+    expect(imageMocks.alertError).not.toHaveBeenCalled()
+  })
+
   it('keeps the newest manual image when an older decode finishes last', async () => {
     const decodeA = deferred<void>()
     const decodeB = deferred<void>()

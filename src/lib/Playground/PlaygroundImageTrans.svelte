@@ -154,6 +154,7 @@
     const runModeEpoch = modeEpoch
     const runPrompt = prompt
     const runLanguage = selLang
+    const runOutput = output
     const runSelectionEpoch = selectionEpoch
     let runImageEpoch = imageEpoch
     const isCurrentRun = () =>
@@ -162,7 +163,8 @@
       imageEpoch === runImageEpoch &&
       selectionEpoch === runSelectionEpoch &&
       prompt === runPrompt &&
-      selLang === runLanguage
+      selLang === runLanguage &&
+      (runMode !== 'manual' || output === runOutput)
     loading = true
     try {
       if (runMode === 'auto') {
@@ -305,13 +307,11 @@
       }
 
       if (runMode === 'manual') {
-        let outputObj: any[] = []
-        const resultParsed = JSON.parse(jsonOutputTrimmer(d.result))
-        if (output) {
-          try {
-            outputObj = JSON.parse(output)
-          } catch (error) {}
+        const outputObj: any[] = runOutput ? JSON.parse(runOutput) : []
+        if (!Array.isArray(outputObj)) {
+          throw new TypeError('Image translation output must be a JSON array')
         }
+        const resultParsed = JSON.parse(jsonOutputTrimmer(d.result))
         outputObj.push({
           x_min: x_min,
           y_min: y_min,
