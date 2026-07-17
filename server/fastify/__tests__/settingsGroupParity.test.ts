@@ -40,4 +40,9 @@ describe('settings group parity', () => {
       expect(clientGroups.providers).toContain(key)
     }
   })
+
+  it('does not accept the retired Claude batching setting', () => {
+    expect(SETTINGS_GROUP_KEYS.providers).not.toContain('claudeBatching')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).not.toContain('claudeBatching')
+  })
 })

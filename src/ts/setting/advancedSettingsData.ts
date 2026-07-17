@@ -443,14 +443,6 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'mt-4',
   },
   {
-    id: 'adv.claudeBatch',
-    type: 'check',
-    labelKey: 'claudeBatching',
-    bindKey: 'claudeBatching',
-    showExperimental: true,
-    classes: 'mt-4',
-  },
-  {
     id: 'adv.toolUsage',
     type: 'check',
     labelKey: 'rememberToolUsage',

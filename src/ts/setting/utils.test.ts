@@ -234,6 +234,10 @@ describe('server-backed data-driven settings', () => {
     expect(displayItems.some((item) => item.bindKey === 'hideApiKey')).toBe(false)
   })
 
+  it('does not expose unsupported Claude batching', () => {
+    expect(advancedSettingsItems.some((item) => item.bindKey === 'claudeBatching')).toBe(false)
+  })
+
   it('exposes the app-owned reduced-motion toggle under Accessibility', () => {
     expect(accessibilitySettingsItems.find((item) => item.id === 'acc.reducedMotion')).toMatchObject({
       type: 'check',
