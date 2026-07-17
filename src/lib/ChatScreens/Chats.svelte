@@ -10,6 +10,7 @@
   import { chatProcessStage } from 'src/ts/process/index.svelte'
   import { didChatOwnerChange } from './ChatsUnread'
   import { scrollElementToContainerStart } from './chatScroll'
+  import { isMemoryLimitMessage } from './memoryLimitMarker'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -53,6 +54,8 @@
     const charImage = getCharImage(currentCharacter.image, 'css')
     const userImage = getCharImage(userIcon, 'css')
     const simpleChar = createSimpleCharacter(currentCharacter)
+    const database = getDatabase()
+    const lastMemoryId = currentCharacter.chats?.[currentCharacter.chatPage]?.lastMemory
     const { loadStart, loadEnd } = getTranscriptWindowRange({
       messageCount: messages.length,
       loadPages,
@@ -68,6 +71,7 @@
       largePortrait: boolean
       name: string
       character: ReturnType<typeof createSimpleCharacter>
+      isLastMemory: boolean
     }[] = []
 
     for (let i = loadStart; i >= loadEnd; i--) {
@@ -84,6 +88,7 @@
         largePortrait: messageLargePortrait,
         name: message.role === 'user' ? currentUsername : getCharacterDisplayName(currentCharacter),
         character: simpleChar,
+        isLastMemory: isMemoryLimitMessage(database.showMemoryLimit, lastMemoryId, message.chatId),
       })
     }
 
@@ -154,7 +159,7 @@
       <Chat
         message={row.message.data}
         translation={row.message.translation ?? null}
-        isLastMemory={false}
+        isLastMemory={row.isLastMemory}
         idx={row.idx}
         totalLength={messages.length}
         img={row.img}
