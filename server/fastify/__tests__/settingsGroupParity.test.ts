@@ -65,4 +65,11 @@ describe('settings group parity', () => {
     expect(SETTINGS_GROUP_KEYS.runtime).not.toContain('antiServerOverloads')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('antiServerOverloads')
   })
+
+  it('does not accept the retired local-network routing settings', () => {
+    expect(SETTINGS_GROUP_KEYS.runtime).not.toContain('localNetworkMode')
+    expect(SETTINGS_GROUP_KEYS.runtime).not.toContain('localNetworkTimeoutSec')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('localNetworkMode')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('localNetworkTimeoutSec')
+  })
 })

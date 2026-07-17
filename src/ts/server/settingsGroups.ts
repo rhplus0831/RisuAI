@@ -173,8 +173,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   legacyTranslation: 'language',
   lineHeight: 'display',
   localActivationInGlobalLorebook: 'sidebar',
-  localNetworkMode: 'runtime',
-  localNetworkTimeoutSec: 'runtime',
   localStopStrings: 'runtime',
   longPressToPopupEditor: 'sidebar',
   loreBookDepth: 'advanced',

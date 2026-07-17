@@ -254,6 +254,11 @@ describe('server-backed data-driven settings', () => {
     expect(advancedSettingsItems.some((item) => item.bindKey === 'antiServerOverloads')).toBe(false)
   })
 
+  it('does not expose browser-only local-network routing settings', () => {
+    expect(advancedSettingsItems.some((item) => item.bindKey === 'localNetworkMode')).toBe(false)
+    expect(advancedSettingsItems.some((item) => item.bindKey === 'localNetworkTimeoutSec')).toBe(false)
+  })
+
   it('exposes the app-owned reduced-motion toggle under Accessibility', () => {
     expect(accessibilitySettingsItems.find((item) => item.id === 'acc.reducedMotion')).toMatchObject({
       type: 'check',
