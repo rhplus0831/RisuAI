@@ -72,6 +72,7 @@ import {
   clearAlertWait,
   parseCardExportResult,
   resolveAlertConfirmation,
+  resolveAlertInput,
   resolveAlertSelection,
   alertStore,
   updateAlertWait,
@@ -203,8 +204,9 @@ describe('confirmation queue', () => {
   it('preserves an unrelated dialog result before displaying a queued confirmation', async () => {
     const inputResult = alertInput('Name')
     const confirmationResult = alertConfirm('Continue after input')
+    const inputOwner = alertTestState.alertStoreValue.dialogOwner as symbol
 
-    alertStore.set({ type: 'none', msg: 'Risu' })
+    resolveAlertInput(inputOwner, 'Risu')
 
     await expect(inputResult).resolves.toBe('Risu')
     await vi.waitFor(() =>
@@ -252,7 +254,8 @@ describe('passive alerts around response dialogs', () => {
         defaultValue: 'default name',
       })
 
-      alertStore.set({ type: 'none', msg: 'Risu' })
+      const owner = alertTestState.alertStoreValue.dialogOwner as symbol
+      resolveAlertInput(owner, 'Risu')
       await expect(inputResult).resolves.toBe('Risu')
       await vi.waitFor(() => expect(alertTestState.alertStoreValue).toMatchObject(expected))
     } finally {
@@ -290,23 +293,69 @@ describe('passive alerts around response dialogs', () => {
 
     expect(alertTestState.alertStoreValue).toMatchObject({ type: 'input', msg: 'Keep editing' })
 
-    alertStore.set({ type: 'none', msg: 'finished input' })
+    const owner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertInput(owner, 'finished input')
     await expect(inputResult).resolves.toBe('finished input')
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(alertTestState.alertStoreValue).toEqual({ type: 'none', msg: 'finished input' })
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'none', msg: 'finished input', dialogOwner: owner })
   })
 
   it('can clear a deferred status after the input result but before that status is displayed', async () => {
     const inputResult = alertInput('Finish before cleanup')
 
     alertWait('Nearly finished background task')
-    alertStore.set({ type: 'none', msg: 'saved input' })
+    const owner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertInput(owner, 'saved input')
     await expect(inputResult).resolves.toBe('saved input')
 
     alertClear()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(alertTestState.alertStoreValue).toEqual({ type: 'none', msg: 'saved input' })
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'none', msg: 'saved input', dialogOwner: owner })
+  })
+})
+
+describe('input results', () => {
+  it('queues concurrent inputs in FIFO order and never shares a submission', async () => {
+    let secondSettled = false
+    const first = alertInput('First input')
+    const second = alertInput('Second input').then((value) => {
+      secondSettled = true
+      return value
+    })
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'input', msg: 'First input' })
+    const firstOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    expect(resolveAlertInput(firstOwner, 'first value')).toBe(true)
+    await expect(first).resolves.toBe('first value')
+    expect(secondSettled).toBe(false)
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'input', msg: 'Second input' })
+    const secondOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    expect(secondOwner).not.toBe(firstOwner)
+    expect(resolveAlertInput(firstOwner, 'stale value')).toBe(false)
+    expect(resolveAlertInput(secondOwner, 'second value')).toBe(true)
+    await expect(second).resolves.toBe('second value')
+  })
+
+  it('shares one FIFO scheduler with confirmations and selections', async () => {
+    const input = alertInput('Input first')
+    const confirmation = alertConfirm('Confirm second')
+    const selection = alertSelect(['Select third'])
+
+    const inputOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertInput(inputOwner, 'input result')
+    await expect(input).resolves.toBe('input result')
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'ask', msg: 'Confirm second' })
+    const confirmationOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertConfirmation(confirmationOwner, true)
+    await expect(confirmation).resolves.toBe(true)
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'select', msg: 'Select third' })
+    const selectionOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertSelection(selectionOwner, 0)
+    await expect(selection).resolves.toBe('0')
   })
 })
 

@@ -11,7 +11,7 @@ vi.mock('src/ts/process/modules', async (importActual) => {
 })
 
 import AlertComp from './AlertComp.svelte'
-import { alertConfirm, alertSelect } from 'src/ts/alert'
+import { alertConfirm, alertInput, alertSelect } from 'src/ts/alert'
 import { language } from 'src/lang'
 import { alertStore } from 'src/ts/stores.svelte'
 
@@ -79,7 +79,7 @@ describe('AlertComp input dialog', () => {
     const component = mount(AlertComp, { target })
 
     try {
-      alertStore.set({ type: 'input', msg: 'Character name', defaultValue: 'Risu' })
+      const result = alertInput('Character name', undefined, 'Risu')
       await tick()
 
       const input = target.querySelector<HTMLInputElement>('#alert-input')
@@ -91,6 +91,7 @@ describe('AlertComp input dialog', () => {
       input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
 
       expect(get(alertStore)).toMatchObject({ type: 'none', msg: 'Risu AI' })
+      await expect(result).resolves.toBe('Risu AI')
     } finally {
       unmount(component)
       target.remove()
@@ -103,14 +104,15 @@ describe('AlertComp input dialog', () => {
     const component = mount(AlertComp, { target })
 
     try {
-      alertStore.set({ type: 'input', msg: 'First prompt', defaultValue: 'keep me' })
+      const escaped = alertInput('First prompt', undefined, 'keep me')
       await tick()
       target
         .querySelector<HTMLInputElement>('#alert-input')
         ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       expect(get(alertStore)).toMatchObject({ type: 'none', msg: '' })
+      await expect(escaped).resolves.toBe('')
 
-      alertStore.set({ type: 'input', msg: 'Second prompt', defaultValue: 'keep me' })
+      const cancelled = alertInput('Second prompt', undefined, 'keep me')
       await tick()
       const cancel = Array.from(target.querySelectorAll('button')).find((button) =>
         button.textContent?.includes('Cancel'),
@@ -118,6 +120,7 @@ describe('AlertComp input dialog', () => {
       expect(cancel).toBeTruthy()
       cancel?.click()
       expect(get(alertStore)).toMatchObject({ type: 'none', msg: '' })
+      await expect(cancelled).resolves.toBe('')
     } finally {
       unmount(component)
       target.remove()

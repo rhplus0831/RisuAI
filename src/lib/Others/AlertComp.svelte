@@ -3,6 +3,7 @@
     alertGenerationInfoStore,
     cardExportCancelMessage,
     resolveAlertConfirmation,
+    resolveAlertInput,
     resolveAlertSelection,
     type alertData,
   } from '../../ts/alert'
@@ -298,15 +299,12 @@
     })
   }
 
-  function closeInputAlert(value: string) {
-    alertStore.set({
-      type: 'none',
-      msg: value,
-    })
+  function closeInputAlert(owner: alertData['dialogOwner'], value: string) {
+    resolveAlertInput(owner, value)
   }
 
-  function submitInputAlert() {
-    closeInputAlert(alertInputElement?.value ?? $alertStore.defaultValue ?? '')
+  function submitInputAlert(owner: alertData['dialogOwner']) {
+    closeInputAlert(owner, alertInputElement?.value ?? $alertStore.defaultValue ?? '')
   }
 
   function cancelSelectAlert() {
@@ -553,6 +551,7 @@
             })
           }}>OK</Button>
       {:else if $alertStore.type === 'input'}
+        {@const inputOwner = $alertStore.dialogOwner}
         <TextInput
           bind:inputRef={alertInputElement}
           value={$alertStore.defaultValue}
@@ -564,15 +563,16 @@
           onkeydown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault()
-              submitInputAlert()
+              submitInputAlert(inputOwner)
             } else if (event.key === 'Escape') {
               event.preventDefault()
-              closeInputAlert('')
+              closeInputAlert(inputOwner, '')
             }
           }} />
         <div class="flex gap-2 w-full mt-4">
-          <Button className="grow" onclick={submitInputAlert}>OK</Button>
-          <Button className="grow" styled="outlined" onclick={() => closeInputAlert('')}>{language.cancel}</Button>
+          <Button className="grow" onclick={() => submitInputAlert(inputOwner)}>OK</Button>
+          <Button className="grow" styled="outlined" onclick={() => closeInputAlert(inputOwner, '')}
+            >{language.cancel}</Button>
         </div>
         {#if $alertStore.datalist}
           <datalist id="alert-input-list">

@@ -44,6 +44,7 @@ export type AlertDialogHandle = symbol
 type ConfirmationAlertType = 'ask' | 'pluginconfirm'
 
 interface ConfirmationRequest {
+  kind: 'confirmation'
   owner: AlertDialogHandle
   type: ConfirmationAlertType
   msg: string
@@ -51,11 +52,23 @@ interface ConfirmationRequest {
 }
 
 interface SelectionRequest {
+  kind: 'selection'
   owner: AlertDialogHandle
   options: string[]
   display?: string
   resolve: (selection: string | null) => void
 }
+
+interface InputRequest {
+  kind: 'input'
+  owner: AlertDialogHandle
+  msg: string
+  datalist: [string, string][]
+  defaultValue: string
+  resolve: (value: string) => void
+}
+
+type ResultDialogRequest = ConfirmationRequest | SelectionRequest | InputRequest
 
 type AlertGenerationInfoStoreData = {
   genInfo: MessageGenerationInfo
@@ -68,15 +81,11 @@ export const alertStore = {
   },
 }
 
-const confirmationQueue: ConfirmationRequest[] = []
-let activeConfirmation: ConfirmationRequest | undefined
-let confirmationQueueBlocked = false
-let confirmationResumeTimer: ReturnType<typeof setTimeout> | undefined
-
-const selectionQueue: SelectionRequest[] = []
-let activeSelection: SelectionRequest | undefined
-let selectionQueueBlocked = false
-let selectionResumeTimer: ReturnType<typeof setTimeout> | undefined
+const resultDialogQueue: ResultDialogRequest[] = []
+let activeResultDialog: ResultDialogRequest | undefined
+let resultDialogQueueBlocked = false
+let resultDialogResumeTimer: ReturnType<typeof setTimeout> | undefined
+let resultDialogStoreSubscribed = false
 
 const responseDialogTypes = new Set<alertData['type']>(['ask', 'pluginconfirm', 'input', 'select'])
 let deferredPassiveAlert: alertData | undefined
@@ -118,7 +127,7 @@ function ensurePassiveAlertStoreSubscription() {
 
 function setPassiveAlert(data: alertData) {
   const current = get(alertStoreImported)
-  if (deferredPassiveAlert || isResponseDialog(current)) {
+  if (deferredPassiveAlert || activeResultDialog || isResponseDialog(current)) {
     // Passive alerts have historically shared last-write-wins semantics. Keep
     // that behavior while preserving the result-bearing dialog already shown.
     deferredPassiveAlert = data
@@ -130,118 +139,10 @@ function setPassiveAlert(data: alertData) {
   alertStoreImported.set(data)
 }
 
-function displayConfirmation(request: ConfirmationRequest) {
-  alertStoreImported.set({
-    type: request.type,
-    msg: request.msg,
-    dialogOwner: request.owner,
-  })
-}
-
-function showNextConfirmation() {
-  if (activeConfirmation || confirmationQueue.length === 0 || confirmationQueueBlocked) return
-  if (get(alertStoreImported).type !== 'none') return
-
-  activeConfirmation = confirmationQueue.shift()
-  if (activeConfirmation) displayConfirmation(activeConfirmation)
-}
-
-function resumeConfirmationQueueAfterCurrentCallers() {
-  if (confirmationResumeTimer !== undefined) return
-
-  confirmationResumeTimer = setTimeout(() => {
-    confirmationResumeTimer = undefined
-    showNextConfirmation()
-  }, 0)
-}
-
-function settleActiveConfirmation(confirmed: boolean) {
-  const request = activeConfirmation
-  if (!request) return
-
-  activeConfirmation = undefined
-  request.resolve(confirmed)
-}
-
-function handleConfirmationStoreValue(value: alertData) {
-  const request = activeConfirmation
-  if (request) {
-    const isOwnedDialog = value.type === request.type && value.dialogOwner === request.owner
-    if (isOwnedDialog) return
-
-    const isOwnedResult = value.type === 'none' && value.dialogOwner === request.owner
-    settleActiveConfirmation(isOwnedResult && value.msg === 'yes')
-    confirmationQueueBlocked = value.type !== 'none'
-  }
-
-  if (value.type === 'none') {
-    confirmationQueueBlocked = false
-    if (request) {
-      showNextConfirmation()
-    } else {
-      // An unrelated modal owns its result until its awaiting caller resumes.
-      // Starting a queued confirmation in this same store notification would
-      // replace that result before the caller can read it.
-      resumeConfirmationQueueAfterCurrentCallers()
-    }
-  }
-}
-
-let confirmationStoreSubscribed = false
-
-function ensureConfirmationStoreSubscription() {
-  if (confirmationStoreSubscribed) return
-  confirmationStoreSubscribed = true
-  alertStoreImported.subscribe(handleConfirmationStoreValue)
-}
-
-function queueConfirmation(type: ConfirmationAlertType, msg: string): Promise<boolean> {
-  // Keep confirmation bookkeeping lazy. Several non-UI consumers import
-  // alert helpers with a deliberately partial stores mock, and importing this
-  // module must not subscribe to UI state until a confirmation is requested.
-  ensureConfirmationStoreSubscription()
-  const promise = new Promise<boolean>((resolve) => {
-    confirmationQueue.push({
-      owner: Symbol('alert-dialog'),
-      type,
-      msg,
-      resolve,
-    })
-  })
-
-  showNextConfirmation()
-  return promise
-}
-
 function selectionMessage(request: SelectionRequest): string {
   return request.display !== undefined
     ? `__DISPLAY__${request.display}||${request.options.join('||')}`
     : request.options.join('||')
-}
-
-function displaySelection(request: SelectionRequest): void {
-  alertStoreImported.set({
-    type: 'select',
-    msg: selectionMessage(request),
-    dialogOwner: request.owner,
-  })
-}
-
-function showNextSelection(): void {
-  if (activeSelection || selectionQueue.length === 0 || selectionQueueBlocked) return
-  if (get(alertStoreImported).type !== 'none') return
-
-  activeSelection = selectionQueue.shift()
-  if (activeSelection) displaySelection(activeSelection)
-}
-
-function resumeSelectionQueueAfterCurrentCallers(): void {
-  if (selectionResumeTimer !== undefined) return
-
-  selectionResumeTimer = setTimeout(() => {
-    selectionResumeTimer = undefined
-    showNextSelection()
-  }, 0)
 }
 
 function normalizeSelectionResult(request: SelectionRequest, value: string): string | null {
@@ -254,57 +155,116 @@ function normalizeSelectionResult(request: SelectionRequest, value: string): str
   return selectedIndex.toString()
 }
 
-function settleActiveSelection(selection: string | null): void {
-  const request = activeSelection
-  if (!request) return
-
-  activeSelection = undefined
-  request.resolve(selection)
+function resultDialogType(request: ResultDialogRequest): alertData['type'] {
+  if (request.kind === 'confirmation') return request.type
+  return request.kind === 'selection' ? 'select' : 'input'
 }
 
-function handleSelectionStoreValue(value: alertData): void {
-  const request = activeSelection
+function displayResultDialog(request: ResultDialogRequest): void {
+  if (request.kind === 'confirmation') {
+    alertStoreImported.set({ type: request.type, msg: request.msg, dialogOwner: request.owner })
+    return
+  }
+  if (request.kind === 'selection') {
+    alertStoreImported.set({ type: 'select', msg: selectionMessage(request), dialogOwner: request.owner })
+    return
+  }
+  alertStoreImported.set({
+    type: 'input',
+    msg: request.msg,
+    datalist: request.datalist,
+    defaultValue: request.defaultValue,
+    dialogOwner: request.owner,
+  })
+}
+
+function showNextResultDialog(): void {
+  if (activeResultDialog || resultDialogQueue.length === 0 || resultDialogQueueBlocked) return
+  if (get(alertStoreImported).type !== 'none') return
+
+  activeResultDialog = resultDialogQueue.shift()
+  if (activeResultDialog) displayResultDialog(activeResultDialog)
+}
+
+function resumeResultDialogQueueAfterCurrentCallers(): void {
+  if (resultDialogResumeTimer !== undefined) return
+  resultDialogResumeTimer = setTimeout(() => {
+    resultDialogResumeTimer = undefined
+    showNextResultDialog()
+  }, 0)
+}
+
+function settleResultDialog(request: ResultDialogRequest, ownedResult: boolean, message: string): void {
+  if (request.kind === 'confirmation') {
+    request.resolve(ownedResult && message === 'yes')
+  } else if (request.kind === 'selection') {
+    request.resolve(ownedResult ? normalizeSelectionResult(request, message) : null)
+  } else {
+    request.resolve(ownedResult ? message : '')
+  }
+}
+
+function handleResultDialogStoreValue(value: alertData): void {
+  const request = activeResultDialog
   if (request) {
-    const isOwnedDialog = value.type === 'select' && value.dialogOwner === request.owner
+    const isOwnedDialog = value.type === resultDialogType(request) && value.dialogOwner === request.owner
     if (isOwnedDialog) return
 
     const isOwnedResult = value.type === 'none' && value.dialogOwner === request.owner
-    settleActiveSelection(isOwnedResult ? normalizeSelectionResult(request, value.msg) : null)
-    selectionQueueBlocked = value.type !== 'none'
+    activeResultDialog = undefined
+    settleResultDialog(request, isOwnedResult, value.msg)
+    resultDialogQueueBlocked = value.type !== 'none'
   }
 
   if (value.type === 'none') {
-    selectionQueueBlocked = false
-    if (request) {
-      showNextSelection()
-    } else {
-      // Preserve an unrelated dialog result until its awaiting caller resumes.
-      resumeSelectionQueueAfterCurrentCallers()
-    }
+    resultDialogQueueBlocked = false
+    if (request) showNextResultDialog()
+    else resumeResultDialogQueueAfterCurrentCallers()
   }
 }
 
-let selectionStoreSubscribed = false
+function ensureResultDialogStoreSubscription(): void {
+  if (resultDialogStoreSubscribed) return
+  resultDialogStoreSubscribed = true
+  alertStoreImported.subscribe(handleResultDialogStoreValue)
+}
 
-function ensureSelectionStoreSubscription(): void {
-  if (selectionStoreSubscribed) return
-  selectionStoreSubscribed = true
-  alertStoreImported.subscribe(handleSelectionStoreValue)
+function queueResultDialog<T>(createRequest: (resolve: (value: T) => void) => ResultDialogRequest): Promise<T> {
+  ensureResultDialogStoreSubscription()
+  const promise = new Promise<T>((resolve) => resultDialogQueue.push(createRequest(resolve)))
+  showNextResultDialog()
+  return promise
+}
+
+function queueConfirmation(type: ConfirmationAlertType, msg: string): Promise<boolean> {
+  return queueResultDialog<boolean>((resolve) => ({
+    kind: 'confirmation',
+    owner: Symbol('alert-dialog'),
+    type,
+    msg,
+    resolve,
+  }))
 }
 
 function queueSelection(options: string[], display?: string): Promise<string | null> {
-  ensureSelectionStoreSubscription()
-  const promise = new Promise<string | null>((resolve) => {
-    selectionQueue.push({
-      owner: Symbol('alert-dialog'),
-      options: [...options],
-      display,
-      resolve,
-    })
-  })
+  return queueResultDialog<string | null>((resolve) => ({
+    kind: 'selection',
+    owner: Symbol('alert-dialog'),
+    options: [...options],
+    display,
+    resolve,
+  }))
+}
 
-  showNextSelection()
-  return promise
+function queueInput(msg: string, datalist?: [string, string][], defaultValue?: string): Promise<string> {
+  return queueResultDialog<string>((resolve) => ({
+    kind: 'input',
+    owner: Symbol('alert-dialog'),
+    msg,
+    datalist: datalist ? [...datalist] : [],
+    defaultValue: defaultValue ?? '',
+    resolve,
+  }))
 }
 
 /**
@@ -312,9 +272,14 @@ function queueSelection(options: string[], display?: string): Promise<string | n
  * button or callback from an older dialog cannot settle the next queued prompt.
  */
 export function resolveAlertConfirmation(owner: AlertDialogHandle | undefined, confirmed: boolean): boolean {
-  const request = activeConfirmation
+  const request = activeResultDialog
   const current = get(alertStoreImported)
-  if (!request || owner !== request.owner || current.dialogOwner !== request.owner || current.type !== request.type) {
+  if (
+    request?.kind !== 'confirmation' ||
+    owner !== request.owner ||
+    current.dialogOwner !== request.owner ||
+    current.type !== request.type
+  ) {
     return false
   }
 
@@ -328,9 +293,14 @@ export function resolveAlertConfirmation(owner: AlertDialogHandle | undefined, c
 
 /** Resolves only the select dialog that owns the supplied handle. */
 export function resolveAlertSelection(owner: AlertDialogHandle | undefined, selectedIndex: number | null): boolean {
-  const request = activeSelection
+  const request = activeResultDialog
   const current = get(alertStoreImported)
-  if (!request || owner !== request.owner || current.dialogOwner !== request.owner || current.type !== 'select') {
+  if (
+    request?.kind !== 'selection' ||
+    owner !== request.owner ||
+    current.dialogOwner !== request.owner ||
+    current.type !== 'select'
+  ) {
     return false
   }
   if (
@@ -343,6 +313,27 @@ export function resolveAlertSelection(owner: AlertDialogHandle | undefined, sele
   alertStoreImported.set({
     type: 'none',
     msg: selectedIndex === null ? '' : selectedIndex.toString(),
+    dialogOwner: request.owner,
+  })
+  return true
+}
+
+/** Resolves only the input dialog that owns the supplied handle. */
+export function resolveAlertInput(owner: AlertDialogHandle | undefined, value: string | null): boolean {
+  const request = activeResultDialog
+  const current = get(alertStoreImported)
+  if (
+    request?.kind !== 'input' ||
+    owner !== request.owner ||
+    current.dialogOwner !== request.owner ||
+    current.type !== 'input'
+  ) {
+    return false
+  }
+
+  alertStoreImported.set({
+    type: 'none',
+    msg: value ?? '',
     dialogOwner: request.owner,
   })
   return true
@@ -636,14 +627,7 @@ export async function alertTOS() {
 }
 
 export async function alertInput(msg: string, datalist?: [string, string][], defaultValue?: string) {
-  alertStoreImported.set({
-    type: 'input',
-    msg: msg,
-    datalist: datalist ?? [],
-    defaultValue: defaultValue ?? '',
-  })
-
-  return (await waitAlert()).msg
+  return queueInput(msg, datalist, defaultValue)
 }
 
 export async function alertModuleSelect() {
