@@ -23,7 +23,11 @@
   import { alertError, alertInput, alertConfirm, alertNormal } from 'src/ts/alert'
   import { createHypaV3Preset, type HypaV3Preset } from 'src/ts/process/memory/hypav3'
   import { onDestroy } from 'svelte'
-  import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import {
+    createServerBackedSettingDraft,
+    persistServerBackedSettingsPatch,
+    watchServerBackedSettings,
+  } from 'src/ts/server/settingsBridge.svelte'
   import { ensurePromptTemplateHydrated } from 'src/ts/server/promptTemplateHydration'
   import { providerOperationCredential, requestProviderOperation } from 'src/ts/server/providerOperations'
   import { createLatestOperationGuard, type LatestOperationToken } from 'src/ts/server/staleStateGuards'
@@ -52,6 +56,10 @@
 
   const stopServerSettingsWatch = watchServerBackedSettings(['useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
+  let componentAlive = true
+  onDestroy(() => {
+    componentAlive = false
+  })
 
   const sdProviderDraft = createServerBackedSettingDraft<string>('sdProvider', '')
   const webUiUrlDraft = createServerBackedSettingDraft<string>('webUiUrl', '')
@@ -98,6 +106,7 @@
     model: '',
   })
   const voyageApiKeyDraft = createServerBackedSettingDraft<string>('voyageApiKey', '')
+  let hypaPresetImportPending = $state(false)
 
   interface HypaV3PresetTarget {
     collection: HypaV3Preset[]
@@ -123,6 +132,31 @@
       hypaV3PresetIdDraft.value === target.selection &&
       currentCollection[target.selection] === target.preset
     )
+  }
+
+  async function importHypaV3Preset(): Promise<void> {
+    if (hypaPresetImportPending) return
+    hypaPresetImportPending = true
+    try {
+      const selectedFile = await selectSingleFile(['json'])
+      if (!componentAlive || !selectedFile?.data) return
+
+      const objImport = JSON.parse(Buffer.from(selectedFile.data).toString('utf-8'))
+      if (objImport.type !== 'risu' || !objImport.data) return
+
+      const newPreset = createHypaV3Preset(objImport.data.name || 'Imported Preset', objImport.data.settings || {})
+      const presets = [...hypaV3PresetsDraft.value, newPreset]
+      const persisted = await persistServerBackedSettingsPatch({
+        hypaV3Presets: presets,
+        hypaV3PresetId: presets.length - 1,
+      })
+      if (!componentAlive) return
+      if (persisted) alertNormal(language.successImport)
+    } catch (error) {
+      if (componentAlive) alertError(`${error}`)
+    } finally {
+      if (componentAlive) hypaPresetImportPending = false
+    }
   }
 
   const NAI_CHARACTER_REFERENCE_UPLOAD_FIELDS = {
@@ -1447,35 +1481,9 @@
         <button
           type="button"
           aria-label={`${language.import}: ${language.presets}`}
+          disabled={hypaPresetImportPending}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
-          onclick={async () => {
-            try {
-              const selectedFile = await selectSingleFile(['json'])
-              if (!selectedFile) return
-
-              const bytesImport = selectedFile.data
-
-              if (!bytesImport) return
-
-              const objImport = JSON.parse(Buffer.from(bytesImport).toString('utf-8'))
-
-              if (objImport.type !== 'risu' || !objImport.data) return
-
-              const newPreset = createHypaV3Preset(
-                objImport.data.name || 'Imported Preset',
-                objImport.data.settings || {},
-              )
-              const presets = [...hypaV3PresetsDraft.value]
-
-              presets.push(newPreset)
-              hypaV3PresetsDraft.value = presets
-              hypaV3PresetIdDraft.value = presets.length - 1
-
-              alertNormal(language.successImport)
-            } catch (error) {
-              alertError(`${error}`)
-            }
-          }}>
+          onclick={importHypaV3Preset}>
           <HardDriveUploadIcon size={24} />
         </button>
       </div>

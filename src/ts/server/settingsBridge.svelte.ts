@@ -545,7 +545,13 @@ function settingDraftMapNode(map: ReadonlyMap<string, unknown>, key: string): Se
   return map.has(key) ? { present: true, value: map.get(key), ambiguous: false } : missingSettingDraftNode
 }
 
-export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
+interface PreparedServerBackedSettingsPatch {
+  commandPatch: SettingsPatch
+  previous: SettingsPatch
+  attempted: SettingsPatch
+}
+
+function prepareServerBackedSettingsPatch(patch: SettingsPatch): PreparedServerBackedSettingsPatch | null {
   const commandPatch: SettingsPatch = {}
   const previous: SettingsPatch = {}
   const attempted: SettingsPatch = {}
@@ -560,8 +566,11 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
     commandPatch[key] = cloneJsonValue(value)
   }
 
-  if (Object.keys(commandPatch).length === 0) return
+  if (Object.keys(commandPatch).length === 0) return null
+  return { commandPatch, previous, attempted }
+}
 
+function applyOptimisticServerBackedSettingsPatch(commandPatch: SettingsPatch): void {
   withSuppressedSettingsWatcher(() => {
     withTrustedResourceWrite(() => {
       const target = getDatabase() as unknown as Record<string, unknown>
@@ -570,12 +579,69 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
       }
     })
   })
+}
+
+export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
+  const prepared = prepareServerBackedSettingsPatch(patch)
+  if (!prepared) return
+  applyOptimisticServerBackedSettingsPatch(prepared.commandPatch)
 
   // Fold an immediate write into any same-field debounce. This stages one
   // absolute successor before reserving the command queue, so a remotely
   // started predecessor cannot land after the immediate value.
-  queueSettingsPatch(commandPatch, previous, 0)
+  queueSettingsPatch(prepared.commandPatch, prepared.previous, 0)
   flushPendingServerBackedSettingsPatch()
+}
+
+/**
+ * Optimistically apply and durably persist one exact settings operation. The
+ * returned promise settles only with this patch's command receipt.
+ */
+export async function persistServerBackedSettingsPatch(patch: SettingsPatch): Promise<boolean> {
+  const prepared = prepareServerBackedSettingsPatch(patch)
+  if (!prepared) return true
+  const projectionEpochs = captureSettingsPatchProjectionEpochs(prepared.commandPatch)
+  applyOptimisticServerBackedSettingsPatch(prepared.commandPatch)
+
+  const reportFailure = createSettingsSaveFailureReporter()
+  const intent = settingsPatchDurableIntent(prepared.commandPatch)
+  if (intent.requests.length === 0) {
+    rollbackServerBackedSettings(prepared.previous, prepared.attempted)
+    reportFailure()
+    return false
+  }
+
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, intent)
+  } catch (error) {
+    console.error('Durable settings patch could not be staged:', error)
+    rollbackServerBackedSettings(prepared.previous, prepared.attempted)
+    reportFailure()
+    return false
+  }
+
+  try {
+    const result = await dispatchDurableMutation(outbox, intent, (transport) =>
+      dispatchTrackedServerBackedSettingsPatch({
+        patch: prepared.commandPatch,
+        optimisticProjectionEpochs: projectionEpochs,
+        previous: prepared.previous,
+        attempted: prepared.attempted,
+        mutationId: transport.mutationId,
+        databaseLineage: transport.databaseLineage,
+        executionWrapper: transport.executionWrapper,
+        failureRollbackDisposition: transport.failureRollbackDisposition,
+        reportFailure,
+      }),
+    )
+    if (result.status !== 'ok') reportFailure()
+    return result.status === 'ok'
+  } catch (error) {
+    console.error('Durable settings patch rejected:', error)
+    reportFailure()
+    return false
+  }
 }
 
 /**
@@ -864,9 +930,10 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
   databaseLineage?: string
   executionWrapper?: ServerCommandTransportOptions['executionWrapper']
   failureRollbackDisposition?: ServerCommandTransportOptions['failureRollbackDisposition']
+  reportFailure?: () => void
 }): Promise<ServerCommandResult> {
   const attempt = registerSettingsAttempt(input.previous, input.attempted)
-  const reportFailure = createSettingsSaveFailureReporter()
+  const reportFailure = input.reportFailure ?? createSettingsSaveFailureReporter()
   const result = patchServerBackedSettings({
     patch: input.patch,
     acknowledgeOptimistic: true,

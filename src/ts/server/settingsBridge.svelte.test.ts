@@ -95,11 +95,18 @@ vi.mock('./commands', () => ({
       optimisticProjectionEpochs?: Record<string, number>
       rollback?: () => void
       keepalive?: boolean
+      failureRollbackDisposition?: (result: { status: string }) => 'retain' | 'rollback'
     }) => {
       recorded.patches.push(args)
       const queued = recorded.patchResults.shift()
       const result = queued ? await queued : { status: 'ok', revision: 1 }
-      if ((result as { status?: string }).status !== 'ok') args.rollback?.()
+      if (
+        (result as { status?: string }).status !== 'ok' &&
+        (!args.failureRollbackDisposition ||
+          args.failureRollbackDisposition(result as { status: string }) === 'rollback')
+      ) {
+        args.rollback?.()
+      }
       return result
     },
   ),
@@ -240,6 +247,7 @@ import {
   applyServerBackedSettingsPatch,
   createServerBackedSettingDraft,
   flushPendingServerBackedSettingsPatch,
+  persistServerBackedSettingsPatch,
   type ServerBackedSettingDraft,
   watchServerBackedSettings,
 } from './settingsBridge.svelte'
@@ -695,6 +703,75 @@ describe('settingsBridge coalescing', () => {
 
     expect(Object.hasOwn(testDatabaseState.db, 'textTheme')).toBe(true)
     expect(testDatabaseState.db.textTheme).toBeUndefined()
+  })
+
+  it('awaits the exact durable Hypa import patch before resolving success', async () => {
+    const persistence = createDeferred<unknown>()
+    recorded.patchResults.push(persistence.promise)
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha')],
+      hypaV3PresetId: 0,
+    })
+
+    let settled = false
+    const result = persistServerBackedSettingsPatch({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+      hypaV3PresetId: 1,
+    }).then((accepted) => {
+      settled = true
+      return accepted
+    })
+    await flushAndSettle()
+
+    expect(settled).toBe(false)
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Imported')])
+    expect(testDatabaseState.db.hypaV3PresetId).toBe(1)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
+      {
+        hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+        hypaV3PresetId: 1,
+      },
+    ])
+
+    persistence.resolve({ status: 'ok', revision: 1 })
+    expect(await result).toBe(true)
+  })
+
+  it('rolls back and rejects a terminal durable Hypa import', async () => {
+    recorded.patchResults.push({ status: 'error', error: 'failed' })
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha')],
+      hypaV3PresetId: 0,
+    })
+
+    const accepted = await persistServerBackedSettingsPatch({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+      hypaV3PresetId: 1,
+    })
+
+    expect(accepted).toBe(false)
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha')])
+    expect(testDatabaseState.db.hypaV3PresetId).toBe(0)
+    expect(alertMocks.alertError).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not claim a retained durable Hypa import was accepted or roll back its pending projection', async () => {
+    durabilityMocks.retainFailures = true
+    recorded.patchResults.push({ status: 'error', error: 'temporarily unavailable' })
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha')],
+      hypaV3PresetId: 0,
+    })
+
+    const accepted = await persistServerBackedSettingsPatch({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+      hypaV3PresetId: 1,
+    })
+
+    expect(accepted).toBe(false)
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Imported')])
+    expect(testDatabaseState.db.hypaV3PresetId).toBe(1)
+    expect(alertMocks.alertError).toHaveBeenCalledTimes(1)
   })
 
   it('removes only the failed Hypa V3 appended preset while preserving sibling edits and later appends', async () => {

@@ -16,6 +16,7 @@ const otherBotMocks = vi.hoisted(() => ({
   getCharToken: vi.fn(),
   providerOperation: vi.fn(),
   providerOperationCredential: vi.fn((apiKey: string) => ({ source: 'provided', apiKey })),
+  persistServerBackedSettingsPatch: vi.fn(),
   saveAsset: vi.fn(),
   selectSingleFile: vi.fn(),
   tokenizePreset: vi.fn(),
@@ -101,6 +102,7 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
       otherBotMocks.drafts.set(key, draft)
       return draft
     },
+    persistServerBackedSettingsPatch: otherBotMocks.persistServerBackedSettingsPatch,
     watchServerBackedSettings: vi.fn(() => vi.fn()),
   }
 })
@@ -136,7 +138,7 @@ vi.mock('src/ts/tokenizer', () => ({
 }))
 
 vi.mock('src/ts/process/memory/hypav3', () => ({
-  createHypaV3Preset: vi.fn(() => ({ name: 'Default', settings: {} })),
+  createHypaV3Preset: vi.fn((name = 'Default', settings = {}) => ({ name, settings })),
 }))
 
 vi.mock('src/ts/server/promptTemplateHydration', () => ({
@@ -182,6 +184,15 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+function projectSettingsPatch(patch: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(patch)) {
+    const draft = otherBotMocks.drafts.get(key)
+    if (!draft) continue
+    if (draft.project) draft.project(value)
+    else draft.value = structuredClone(value)
+  }
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -195,6 +206,10 @@ beforeEach(() => {
   otherBotMocks.loraWrites.length = 0
   otherBotMocks.ensurePromptTemplateHydrated.mockReset().mockResolvedValue(true)
   otherBotMocks.getCharToken.mockReset().mockResolvedValue({ dynamic: 0, persistant: 0 })
+  otherBotMocks.persistServerBackedSettingsPatch.mockReset().mockImplementation(async (patch) => {
+    projectSettingsPatch(patch as Record<string, unknown>)
+    return true
+  })
   otherBotMocks.saveAsset.mockReset()
   otherBotMocks.selectSingleFile.mockReset()
   otherBotMocks.tokenizePreset.mockReset().mockResolvedValue(0)
@@ -546,6 +561,86 @@ describe('OtherBotSettings Hypa preset import', () => {
     await vi.waitFor(() => expect(otherBotMocks.selectSingleFile).toHaveBeenCalledWith(['json']))
     expect(otherBotMocks.alertError).not.toHaveBeenCalled()
     expect(otherBotMocks.drafts.get('hypaV3Presets')?.value).toEqual(presetsBeforeCancel)
+  })
+
+  it('announces import success only after the exact settings patch is acknowledged', async () => {
+    const persistence = deferred<boolean>()
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]
+    otherBotMocks.selectSingleFile.mockResolvedValue({
+      name: 'import.json',
+      data: Buffer.from(JSON.stringify({ type: 'risu', data: { name: 'Imported', settings: { queryChatCount: 5 } } })),
+    })
+    otherBotMocks.persistServerBackedSettingsPatch.mockImplementationOnce((patch) => {
+      projectSettingsPatch(patch as Record<string, unknown>)
+      return persistence.promise
+    })
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const uploadButton = target.querySelector<SVGElement>('svg.lucide-hard-drive-upload')?.closest('button')
+    uploadButton?.click()
+    await vi.waitFor(() => expect(otherBotMocks.persistServerBackedSettingsPatch).toHaveBeenCalledOnce())
+
+    const importPatch = otherBotMocks.persistServerBackedSettingsPatch.mock.calls[0][0] as Record<string, any>
+    expect(Object.keys(importPatch).sort()).toEqual(['hypaV3PresetId', 'hypaV3Presets'])
+    expect(importPatch).toMatchObject({
+      hypaV3Presets: [{ name: 'Existing' }, { name: 'Imported', settings: { queryChatCount: 5 } }],
+      hypaV3PresetId: 1,
+    })
+    expect(uploadButton?.disabled).toBe(true)
+    expect(otherBotMocks.alertNormal).not.toHaveBeenCalled()
+
+    uploadButton?.click()
+    expect(otherBotMocks.selectSingleFile).toHaveBeenCalledTimes(1)
+
+    persistence.resolve(true)
+    await vi.waitFor(() => expect(otherBotMocks.alertNormal).toHaveBeenCalledWith(language.successImport))
+    expect(uploadButton?.disabled).toBe(false)
+  })
+
+  it('does not announce success when preset persistence fails', async () => {
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]
+    otherBotMocks.selectSingleFile.mockResolvedValue({
+      name: 'import.json',
+      data: Buffer.from(JSON.stringify({ type: 'risu', data: { name: 'Imported', settings: {} } })),
+    })
+    otherBotMocks.persistServerBackedSettingsPatch.mockResolvedValue(false)
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    target.querySelector<SVGElement>('svg.lucide-hard-drive-upload')?.closest('button')?.click()
+    await vi.waitFor(() => expect(otherBotMocks.persistServerBackedSettingsPatch).toHaveBeenCalledOnce())
+    await tick()
+
+    expect(otherBotMocks.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('drops a file-picker continuation after the settings page unmounts', async () => {
+    const selectedFile = deferred<{ name: string; data: Uint8Array } | null>()
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]
+    otherBotMocks.selectSingleFile.mockReturnValue(selectedFile.promise)
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const originalPresets = structuredClone(otherBotMocks.drafts.get('hypaV3Presets')?.value)
+    target.querySelector<SVGElement>('svg.lucide-hard-drive-upload')?.closest('button')?.click()
+    await vi.waitFor(() => expect(otherBotMocks.selectSingleFile).toHaveBeenCalledOnce())
+    unmount(component)
+    component = undefined
+
+    selectedFile.resolve({
+      name: 'import.json',
+      data: Buffer.from(JSON.stringify({ type: 'risu', data: { name: 'Imported', settings: {} } })),
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(otherBotMocks.persistServerBackedSettingsPatch).not.toHaveBeenCalled()
+    expect(otherBotMocks.drafts.get('hypaV3Presets')?.value).toEqual(originalPresets)
+    expect(otherBotMocks.alertNormal).not.toHaveBeenCalled()
   })
 })
 
