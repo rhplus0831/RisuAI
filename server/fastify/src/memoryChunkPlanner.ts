@@ -63,6 +63,9 @@ export function planHypaV3ChunkJobs(input: PlanHypaV3ChunkJobsInput): PlanHypaV3
   if (typeof model !== 'string' || model.length === 0) {
     throw new ValidationError('summarization model must be a non-empty string')
   }
+  if (model !== 'subModel' && model !== 'memory') {
+    throw new ValidationError('server-side memory summarization supports only subModel or memory')
+  }
 
   return withTransaction(input.db, () => {
     const planned: PlannedHypaV3ChunkJob[] = []

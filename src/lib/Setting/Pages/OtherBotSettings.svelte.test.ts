@@ -535,6 +535,20 @@ describe('OtherBotSettings Hypa preset import', () => {
 })
 
 describe('OtherBotSettings Hypa memory ratio', () => {
+  it('does not advertise client GPU summarizers in server-backed mode', async () => {
+    Object.defineProperty(navigator, 'gpu', { configurable: true, value: {} })
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [{ name: 'Default', settings: { summarizationModel: 'subModel' } }]
+
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const values = [...target.querySelectorAll<HTMLOptionElement>('option')].map((option) => option.value)
+    expect(values).toContain('subModel')
+    expect(values.some((value) => value.startsWith('Qwen3-'))).toBe(false)
+    Reflect.deleteProperty(navigator, 'gpu')
+  })
+
   it('recomputes the displayed maximum when its context inputs change', async () => {
     otherBotMocks.hypaEnabled = true
     otherBotMocks.hypaPresets = [

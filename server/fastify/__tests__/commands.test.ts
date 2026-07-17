@@ -3225,6 +3225,32 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('rejects Hypa presets with client-only summary models', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, { hypaV3Presets: [] })
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          hypaV3Presets: [
+            {
+              name: 'Unsupported GPU preset',
+              settings: { summarizationModel: 'Qwen3-4B-q4f32_1-MLC' },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('hypaV3Presets[0].settings.summarizationModel must be subModel or memory')
+    expect(JSON.stringify(loadPersistedFromDir(harness.dataDir).database)).not.toContain('Qwen3-4B-q4f32_1-MLC')
+  })
+
   it('applies strict prompt settings with sparse normalized acknowledgements', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

@@ -8415,6 +8415,7 @@ function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<st
 }
 
 function validateSettingValue(key: string, value: unknown): void {
+  if (key === 'hypaV3Presets') validateHypaV3PresetSummaryModels(value)
   if (key === 'complexRegexCompatibilityMode' && value !== 'strict' && value !== 'worker') {
     throw new ValidationError('complexRegexCompatibilityMode must be strict or worker')
   }
@@ -8451,6 +8452,17 @@ function validateSettingValue(key: string, value: unknown): void {
     throw new ValidationError(`${key} must be an array or null`)
   }
   validateJsonValue(key, value)
+}
+
+function validateHypaV3PresetSummaryModels(value: unknown): void {
+  if (!Array.isArray(value)) return
+  for (const [index, preset] of value.entries()) {
+    if (!isPlainObject(preset) || !isPlainObject(preset.settings)) continue
+    const model = preset.settings.summarizationModel
+    if (model !== undefined && model !== 'subModel' && model !== 'memory') {
+      throw new ValidationError(`hypaV3Presets[${index}].settings.summarizationModel must be subModel or memory`)
+    }
+  }
 }
 
 function sanitizeSettingValue(key: string, value: unknown): unknown {

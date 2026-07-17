@@ -47,7 +47,7 @@ describe('Hypa V3 chunk/job planning bridge', () => {
         settings: {
           maxChatsPerSummary: 2,
           queryChatCount: 1,
-          summarizationModel: 'model-a',
+          summarizationModel: 'subModel',
         },
         tokenizeChat: fixedTokenizer({ m0: 10, m1: 10, m2: 10, m3: 10, tail: 10 }),
       })
@@ -67,7 +67,7 @@ describe('Hypa V3 chunk/job planning bridge', () => {
         {
           schemaVersion: 1,
           chunkId: result.planned[0].chunk.id,
-          model: 'model-a',
+          model: 'subModel',
           rangeStartSeq: 0,
           rangeEndSeq: 1,
           messageIndexes: [0, 1],
@@ -76,7 +76,7 @@ describe('Hypa V3 chunk/job planning bridge', () => {
         {
           schemaVersion: 1,
           chunkId: result.planned[1].chunk.id,
-          model: 'model-a',
+          model: 'subModel',
           rangeStartSeq: 2,
           rangeEndSeq: 3,
           messageIndexes: [2, 3],
@@ -106,7 +106,7 @@ describe('Hypa V3 chunk/job planning bridge', () => {
         settings: {
           maxChatsPerSummary: 2,
           queryChatCount: 1,
-          summarizationModel: 'model-a',
+          summarizationModel: 'subModel',
         },
         tokenizeChat: fixedTokenizer({ m0: 10, m1: 10, m2: 10, tail: 10 }),
       })
@@ -138,7 +138,7 @@ describe('Hypa V3 chunk/job planning bridge', () => {
         settings: {
           maxChatsPerSummary: 2,
           queryChatCount: 1,
-          summarizationModel: 'model-a',
+          summarizationModel: 'subModel',
         },
         tokenizeChat: fixedTokenizer({ m0: 10, m1: 10, m2: 10, tail: 10 }),
       })
@@ -176,7 +176,7 @@ describe('Hypa V3 chunk/job planning bridge', () => {
           doNotSummarizeUserMessage: true,
           maxChatsPerSummary: 5,
           queryChatCount: 1,
-          summarizationModel: 'model-a',
+          summarizationModel: 'subModel',
         },
         tokenizeChat: fixedTokenizer({
           e0: 10,
@@ -234,6 +234,35 @@ describe('Hypa V3 chunk/job planning bridge', () => {
         chunksCreated: 0,
         jobsCreated: 0,
       })
+      expect(listMemoryChunks(db, { chatId: 'chat-1' })).toEqual([])
+      expect(listMemoryJobs(db, { chatId: 'chat-1' })).toEqual([])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('rejects unsupported client-only summarizers before creating jobs', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      const chats = ['m0', 'm1', 'm2', 'm3', 'tail'].map((memo) => chat(memo))
+      const plan = planStandardHypaV3Memory({
+        chats,
+        currentTokens: 120,
+        maxContextTokens: 100,
+        maxResponseTokens: 0,
+        settings: {
+          maxChatsPerSummary: 2,
+          queryChatCount: 1,
+          summarizationModel: 'Qwen3-4B-q4f32_1-MLC',
+        },
+        tokenizeChat: fixedTokenizer({ m0: 10, m1: 10, m2: 10, m3: 10, tail: 10 }),
+      })
+
+      expect(plan.plannedWindows.length).toBeGreaterThan(0)
+
+      expect(() => planHypaV3ChunkJobs({ db, chatId: 'chat-1', chats, plan })).toThrow(
+        'server-side memory summarization supports only subModel or memory',
+      )
       expect(listMemoryChunks(db, { chatId: 'chat-1' })).toEqual([])
       expect(listMemoryJobs(db, { chatId: 'chat-1' })).toEqual([])
     } finally {
