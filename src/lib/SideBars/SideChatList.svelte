@@ -82,7 +82,7 @@
   let branchGraphHydrationRun = 0
 
   // Preserve source order and each chat's original array index within folder buckets.
-  let validChatFolderIds = $derived(new Set(chara.chatFolders.map((folder) => folder.id)))
+  let validChatFolderIds = $derived(new Set((chara.chatFolders ?? []).map((folder) => folder.id)))
   let chatsByFolderId = $derived(groupChatsByFolderId(chara.chats, validChatFolderIds))
   let organizerIdsStable = $derived(hasStableOrganizationIds())
 

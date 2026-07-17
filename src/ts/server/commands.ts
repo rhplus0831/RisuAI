@@ -21,6 +21,7 @@ import {
   type AgentPresetStepRecord,
 } from '../agentPresetRecords'
 import type { MessageTranslation } from '../storage/database.svelte'
+import type { AlternateGreetingMutation, ChatGreetingIndex } from '../alternateGreetingMutation'
 import type { ModelRole } from '../model/modelRoles'
 import type {
   ModelProfileRecord,
@@ -1119,6 +1120,13 @@ export interface CreateAndSelectCharacterCommandInput extends CreateCharacterCom
 export interface UpdateCharacterCommandInput extends CharacterCommandInput {
   characterId: string
   patch: CharacterSnapshot
+}
+
+export interface MutateAlternateGreetingsCommandInput extends CharacterCommandInput {
+  characterId: string
+  alternateGreetings: string[]
+  operation: AlternateGreetingMutation
+  chatGreetingIndices: ChatGreetingIndex[]
 }
 
 export interface DeleteCharacterCommandInput extends CharacterCommandInput {
@@ -3351,6 +3359,22 @@ export async function updateCharacterCommand(
     signal,
     keepalive,
     readLocalEffect: (body, event) => readCharacterPatchLocalEffect(body, event, input.characterId, input.patch),
+  })
+}
+
+export async function mutateAlternateGreetingsCommand(
+  input: MutateAlternateGreetingsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string; chatGreetingIndices: ChatGreetingIndex[] }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/alternate-greetings`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      alternateGreetings: input.alternateGreetings,
+      operation: input.operation,
+    },
+    signal,
+    readLocalEffect: (body, event) => readAlternateGreetingMutationLocalEffect(body, event, input),
   })
 }
 
@@ -8101,6 +8125,31 @@ function readCharacterPatchLocalEffect(
     kind: 'characterPatch',
     characterId,
     patch: cloneJsonValue(patch),
+  }
+}
+
+function readAlternateGreetingMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input: MutateAlternateGreetingsCommandInput,
+): CharacterPatchLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  if (
+    record.characterId !== input.characterId ||
+    record.certificate !== 'alternate-greeting-index-cascade-v1' ||
+    event.type !== 'character.alternateGreetings.updated' ||
+    event.resource !== 'characterRow' ||
+    event.id !== input.characterId ||
+    event.parentId !== undefined ||
+    !isJsonValueEqual(record.chatGreetingIndices, input.chatGreetingIndices)
+  ) {
+    return undefined
+  }
+  return {
+    kind: 'characterPatch',
+    characterId: input.characterId,
+    patch: { alternateGreetings: cloneJsonValue(input.alternateGreetings) },
   }
 }
 

@@ -448,6 +448,10 @@ export const COMMAND_EVENT_CATALOG = {
     // just that character.
     resource: 'characterRow',
   },
+  alternateGreetingsUpdated: {
+    type: 'character.alternateGreetings.updated',
+    resource: 'characterRow',
+  },
   characterTrashUpdated: {
     type: 'character.updated',
     // Trashing/restoring also rewrites settings-level characterOrder, so the

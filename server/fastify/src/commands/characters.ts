@@ -31,6 +31,15 @@ export interface CharacterFolderRecord extends JsonRecord {
 
 export type CharacterOrderEntry = string | CharacterFolderRecord
 
+export type AlternateGreetingMutation =
+  | { type: 'delete'; index: number }
+  | { type: 'swap'; firstIndex: number; secondIndex: number }
+
+export interface AlternateGreetingMutationInput {
+  alternateGreetings: string[]
+  operation: AlternateGreetingMutation
+}
+
 const EXCLUDED_CHARACTER_PATCH_KEYS = new Set([
   'chaId',
   'chats',
@@ -165,6 +174,69 @@ export function readCharacterPatch(input: unknown, options: { assetDb?: Database
   }
   validateCharacterPatch(patch, 'patch', options)
   return patch
+}
+
+export function readAlternateGreetingMutation(
+  input: unknown,
+  currentGreetingCount: number,
+): AlternateGreetingMutationInput {
+  const body = readJsonObject(input, 'body')
+  if (!Array.isArray(body.alternateGreetings) || !body.alternateGreetings.every((value) => typeof value === 'string')) {
+    throw new ValidationError('alternateGreetings must be an array of strings')
+  }
+  const operation = readJsonObject(body.operation, 'operation')
+  if (operation.type === 'delete') {
+    if (
+      !Number.isInteger(operation.index) ||
+      (operation.index as number) < 0 ||
+      (operation.index as number) >= currentGreetingCount ||
+      body.alternateGreetings.length !== currentGreetingCount - 1
+    ) {
+      throw new ValidationError('alternate greeting delete does not match the current collection')
+    }
+    return {
+      alternateGreetings: [...body.alternateGreetings] as string[],
+      operation: { type: 'delete', index: operation.index as number },
+    }
+  }
+  if (operation.type === 'swap') {
+    const firstIndex = operation.firstIndex
+    const secondIndex = operation.secondIndex
+    if (
+      !Number.isInteger(firstIndex) ||
+      !Number.isInteger(secondIndex) ||
+      (firstIndex as number) < 0 ||
+      (secondIndex as number) < 0 ||
+      (firstIndex as number) >= currentGreetingCount ||
+      (secondIndex as number) >= currentGreetingCount ||
+      Math.abs((firstIndex as number) - (secondIndex as number)) !== 1 ||
+      body.alternateGreetings.length !== currentGreetingCount
+    ) {
+      throw new ValidationError('alternate greeting swap does not match the current collection')
+    }
+    return {
+      alternateGreetings: [...body.alternateGreetings] as string[],
+      operation: { type: 'swap', firstIndex: firstIndex as number, secondIndex: secondIndex as number },
+    }
+  }
+  throw new ValidationError('operation.type must be delete or swap')
+}
+
+export function remapAlternateGreetingIndex(
+  value: unknown,
+  greetingCount: number,
+  operation: AlternateGreetingMutation,
+): number {
+  if (!Number.isInteger(value) || (value as number) < -1 || (value as number) >= greetingCount) return -1
+  const index = value as number
+  if (index === -1) return -1
+  if (operation.type === 'delete') {
+    if (index === operation.index) return -1
+    return index > operation.index ? index - 1 : index
+  }
+  if (index === operation.firstIndex) return operation.secondIndex
+  if (index === operation.secondIndex) return operation.firstIndex
+  return index
 }
 
 export function readCharacterId(value: unknown, label = 'characterId'): string {

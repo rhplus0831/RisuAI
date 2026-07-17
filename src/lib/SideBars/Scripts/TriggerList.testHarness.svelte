@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { triggerscript } from 'src/ts/storage/database.svelte'
   import TriggerList from './TriggerList.svelte'
 
@@ -7,9 +8,10 @@
   }
 
   let { initialMode }: Props = $props()
+  const startingMode = untrack(() => initialMode)
   let ownerKey = $state('character:a')
   let value = $state<triggerscript[]>(
-    initialMode === 'v2'
+    startingMode === 'v2'
       ? [
           {
             id: 'original',

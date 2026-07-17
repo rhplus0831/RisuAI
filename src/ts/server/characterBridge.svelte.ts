@@ -49,6 +49,7 @@ const pendingPatches = new Map<string, PendingCharacterPatch>()
 const pendingCharacterAttempts: PendingCharacterAttempt[] = []
 let nextCharacterAttemptSequence = 0
 let suppressRollbackDispatch = false
+const activeCharacterProfileBaselineResetters = new Set<() => void>()
 
 export interface WatchServerBackedCharacterProfileOptions {
   delayMs?: number
@@ -267,6 +268,19 @@ export function watchServerBackedCharacterProfile(options: WatchServerBackedChar
   let previousSelected = -1
   let previousProfileSnapshot = ''
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
+  const resetProfileBaseline = () => {
+    const index = get(selectedCharID)
+    const character = getDatabase().characters?.[index]
+    const currentProfile =
+      character && !isServerCharacterShell(character)
+        ? scalarCharacterProfile(character as unknown as Record<string, unknown>)
+        : {}
+    initialized = true
+    previousSelected = index
+    previousProfileSnapshot = snapshotJson(currentProfile)
+    previousResourceApplyEpoch = getServerResourceApplyEpoch()
+  }
+  activeCharacterProfileBaselineResetters.add(resetProfileBaseline)
 
   const stop = $effect.root(() => {
     $effect(() => {
@@ -312,8 +326,14 @@ export function watchServerBackedCharacterProfile(options: WatchServerBackedChar
 
   return () => {
     flushPendingServerBackedCharacterPatches()
+    activeCharacterProfileBaselineResetters.delete(resetProfileBaseline)
     stop()
   }
+}
+
+/** Advance profile watchers after a dedicated command persists its own projection. */
+export function syncServerBackedCharacterProfileBaselines(): void {
+  for (const reset of activeCharacterProfileBaselineResetters) reset()
 }
 
 function queueCharacterPatch(

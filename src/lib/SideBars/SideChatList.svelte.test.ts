@@ -639,6 +639,17 @@ describe('SideChatList DOM contract harness', () => {
     expect(selectButtonForRow(rowByChatId('chat-orphan')).textContent).toContain('Recovered Chat')
   })
 
+  it('renders legacy chat rows when the character has no chatFolders array', async () => {
+    const chara = seedSidebarDatabase()
+    delete (chara as unknown as { chatFolders?: unknown[] }).chatFolders
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-root-a', 'chat-foldered', 'chat-root-b'])
+    expect(selectButtonForRow(rowByChatId('chat-foldered')).textContent).toContain('Foldered Chat')
+  })
+
   it('keeps sortable sidebar lists outside transcript custom-style hooks', async () => {
     seedSidebarDatabase()
     component = mount(SideChatListHarness, { target })

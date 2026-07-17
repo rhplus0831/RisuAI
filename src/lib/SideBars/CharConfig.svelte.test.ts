@@ -46,6 +46,7 @@ const ttsCatalogMocks = vi.hoisted(() => ({
 const serverCommandState = vi.hoisted(() => ({
   enabled: false,
   updateCharacterCalls: [] as Record<string, unknown>[],
+  alternateGreetingCalls: [] as Record<string, unknown>[],
 }))
 
 const regexImportMocks = vi.hoisted(() => ({
@@ -83,6 +84,10 @@ vi.mock('src/ts/server/commands', () => {
     replaceModuleScriptsCommand: command('replaceModuleScripts'),
     replaceModuleTriggersCommand: command('replaceModuleTriggers'),
     replaceTailMessagesCommand: command('replaceTailMessages'),
+    mutateAlternateGreetingsCommand: vi.fn(async (args: Record<string, unknown> = {}) => {
+      serverCommandState.alternateGreetingCalls.push(structuredClone(args))
+      return { status: 'ok', kind: 'mutateAlternateGreetings', ...args }
+    }),
     runServerCommand: vi.fn(async ({ command: buildCommand }: { command?: (baseRevision: number) => unknown }) => {
       if (buildCommand) await buildCommand(1)
       return { status: 'ok', revision: 1 }
@@ -442,6 +447,7 @@ beforeEach(() => {
   ttsCatalogMocks.getFishSpeechModels.mockReset().mockResolvedValue([])
   serverCommandState.enabled = false
   serverCommandState.updateCharacterCalls.length = 0
+  serverCommandState.alternateGreetingCalls.length = 0
   regexImportMocks.importRegexRows.mockReset().mockResolvedValue(null)
   assetMocks.saveAsset.mockReset().mockResolvedValue('asset-id')
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
@@ -1108,12 +1114,39 @@ describe('CharConfig draft-type-less character actions', () => {
     buttons()[4].click()
     await settleComponent()
 
-    expect(chatCommandMocks.setCurrentChatGreetingIndex).toHaveBeenCalledWith(-1, {
-      selectedChar: 0,
-      dispatch: false,
-    })
+    expect(chatCommandMocks.setCurrentChatGreetingIndex).not.toHaveBeenCalled()
     expect(getDatabase().characters[0].chats[0].fmIndex).toBe(-1)
     expect(getDatabase().characters[0].alternateGreetings).toEqual([''])
+  })
+
+  it('cascades a deleted alternate greeting through every chat in one server command', async () => {
+    serverCommandState.enabled = true
+    await mountCharConfig(2, {
+      alternateGreetings: ['Zero', 'One', 'Two'],
+      chats: [
+        { id: 'chat-before', name: 'Before', message: [], note: '', localLore: [], fmIndex: 0 },
+        { id: 'chat-deleted', name: 'Deleted', message: [], note: '', localLore: [], fmIndex: 1 },
+        { id: 'chat-after', name: 'After', message: [], note: '', localLore: [], fmIndex: 2 },
+      ],
+    })
+
+    buttonByAccessibleName(`${language.remove}: ${language.altGreet} 2`).click()
+    await settleComponent()
+
+    expect(getDatabase().characters[0].alternateGreetings).toEqual(['Zero', 'Two'])
+    expect(getDatabase().characters[0].chats.map((chat) => chat.fmIndex)).toEqual([0, -1, 1])
+    expect(serverCommandState.alternateGreetingCalls).toEqual([
+      expect.objectContaining({
+        characterId: 'char-1',
+        alternateGreetings: ['Zero', 'Two'],
+        operation: { type: 'delete', index: 1 },
+        chatGreetingIndices: [
+          { chatId: 'chat-before', fmIndex: 0 },
+          { chatId: 'chat-deleted', fmIndex: -1 },
+          { chatId: 'chat-after', fmIndex: 1 },
+        ],
+      }),
+    ])
   })
 
   it('adds a regex script row when the script draft still targets the selected character', async () => {

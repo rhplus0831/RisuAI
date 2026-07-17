@@ -63,6 +63,8 @@
   import SliderInput from '../UI/GUI/SliderInput.svelte'
   import {
     createServerBackedCharacterDraft,
+    flushPendingServerBackedCharacterPatches,
+    syncServerBackedCharacterProfileBaselines,
     watchServerBackedCharacterProfile,
   } from 'src/ts/server/characterBridge.svelte'
   import {
@@ -102,7 +104,11 @@
     isFreshCharacterNotificationImageUpload,
     type CharacterNotificationImageUploadOperation,
   } from 'src/ts/server/characterNotificationImageUpload'
-  import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
+  import {
+    flushPendingServerBackedChatPatches,
+    syncServerBackedChatMetadataBaselines,
+    watchServerBackedChatMetadata,
+  } from 'src/ts/server/chatBridge.svelte'
   import {
     applyCharacterScriptDefinitionDraft,
     clearDirtyScriptDefinitionFieldsMatchingAttempt,
@@ -110,12 +116,17 @@
     mergeScriptDefinitionProjectionRows,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
-  import { subscribeServerCommandLocalEffectApplied } from 'src/ts/server/commands'
-  import { getServerResourceApplyEpoch } from 'src/ts/server/resourceWriteGuard.svelte'
-  import { setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
+  import {
+    canUseServerCommands,
+    mutateAlternateGreetingsCommand,
+    runServerCommand,
+    subscribeServerCommandLocalEffectApplied,
+  } from 'src/ts/server/commands'
+  import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { applyCharacterRowMutationScoped } from 'src/ts/characterCommands'
   import { assetListRenderKey } from 'src/ts/media/assetList'
+  import { mutateAlternateGreetings, type AlternateGreetingMutation } from 'src/ts/alternateGreetingMutation'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -546,26 +557,84 @@
 
   function moveAlternateGreetingUp(index: number) {
     if (index === 0) return
-    if (!currentRealCharacterDraftTarget()) return
-
-    let alternateGreetings = characterDraft.value.alternateGreetings
-    let temp = alternateGreetings[index]
-    alternateGreetings[index] = alternateGreetings[index - 1]
-    alternateGreetings[index - 1] = temp
-    characterDraft.value.alternateGreetings = alternateGreetings
-    characterDraft.value = { ...characterDraft.value }
+    applyAlternateGreetingMutation({ type: 'swap', firstIndex: index, secondIndex: index - 1 })
   }
 
   function moveAlternateGreetingDown(index: number) {
     if (index === characterDraft.value.alternateGreetings.length - 1) return
-    if (!currentRealCharacterDraftTarget()) return
+    applyAlternateGreetingMutation({ type: 'swap', firstIndex: index, secondIndex: index + 1 })
+  }
 
-    let alternateGreetings = characterDraft.value.alternateGreetings
-    let temp = alternateGreetings[index]
-    alternateGreetings[index] = alternateGreetings[index + 1]
-    alternateGreetings[index + 1] = temp
-    characterDraft.value.alternateGreetings = alternateGreetings
+  function applyAlternateGreetingMutation(operation: AlternateGreetingMutation): void {
+    const target = currentRealCharacterDraftTarget()
+    if (!target) return
+    const characterId = target.character.chaId
+    const previousGreetings = cloneJsonValue(characterDraft.value.alternateGreetings)
+    const previousGreetingIndices = target.character.chats.map((chat) => ({
+      chatId: chat.id,
+      fmIndex: chat.fmIndex ?? -1,
+    }))
+    const mutation = mutateAlternateGreetings(previousGreetings, target.character.chats, operation)
+    if (!mutation) return
+
+    const serverBacked = canUseServerCommands()
+    if (serverBacked) {
+      // Older debounced edits must enter the shared command queue first so this
+      // collection-wide mutation remains the final atomic write.
+      flushPendingServerBackedCharacterPatches()
+      flushPendingServerBackedChatPatches()
+    }
+
+    characterDraft.value.alternateGreetings = cloneJsonValue(mutation.alternateGreetings)
     characterDraft.value = { ...characterDraft.value }
+    withTrustedResourceWrite(() => {
+      const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
+      if (!character) return
+      character.alternateGreetings = cloneJsonValue(mutation.alternateGreetings)
+      const nextByChatId = new Map(mutation.chatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
+      for (const chat of character.chats) {
+        const fmIndex = nextByChatId.get(chat.id)
+        if (fmIndex !== undefined) chat.fmIndex = fmIndex
+      }
+    })
+    syncServerBackedCharacterProfileBaselines()
+    syncServerBackedChatMetadataBaselines()
+
+    if (!serverBacked) return
+    void runServerCommand({
+      command: (baseRevision) =>
+        mutateAlternateGreetingsCommand({
+          baseRevision,
+          characterId,
+          alternateGreetings: cloneJsonValue(mutation.alternateGreetings),
+          operation,
+          chatGreetingIndices: cloneJsonValue(mutation.chatGreetingIndices),
+        }),
+      rollback: () => {
+        const attemptedGreetings = snapshotJson(mutation.alternateGreetings)
+        if (
+          characterDraft.characterId === characterId &&
+          snapshotJson(characterDraft.value.alternateGreetings) === attemptedGreetings
+        ) {
+          characterDraft.value.alternateGreetings = cloneJsonValue(previousGreetings)
+          characterDraft.value = { ...characterDraft.value }
+        }
+        withTrustedResourceWrite(() => {
+          const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
+          if (!character) return
+          if (snapshotJson(character.alternateGreetings) === attemptedGreetings) {
+            character.alternateGreetings = cloneJsonValue(previousGreetings)
+          }
+          const attemptedByChatId = new Map(mutation.chatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
+          for (const previous of previousGreetingIndices) {
+            const chat = character.chats.find((candidate) => candidate.id === previous.chatId)
+            if (chat && chat.fmIndex === attemptedByChatId.get(previous.chatId)) chat.fmIndex = previous.fmIndex
+          }
+        })
+        syncServerBackedCharacterProfileBaselines()
+        syncServerBackedChatMetadataBaselines()
+      },
+    })
   }
 
   function cloneJsonValue<T>(value: T): T {
@@ -2311,17 +2380,7 @@
                   class="hover:text-red-500 p-1"
                   aria-label={`${language.remove}: ${language.altGreet} ${i + 1}`}
                   onclick={() => {
-                    const target = currentRealCharacterDraftTarget()
-                    if (target) {
-                      setCurrentChatGreetingIndex(-1, {
-                        selectedChar: target.selectedIndex,
-                        dispatch: false,
-                      })
-                      let alternateGreetings = characterDraft.value.alternateGreetings
-                      alternateGreetings.splice(i, 1)
-                      characterDraft.value.alternateGreetings = alternateGreetings
-                      characterDraft.value = { ...characterDraft.value }
-                    }
+                    applyAlternateGreetingMutation({ type: 'delete', index: i })
                   }}>
                   <TrashIcon size={16} />
                 </button>

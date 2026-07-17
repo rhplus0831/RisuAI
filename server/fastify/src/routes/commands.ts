@@ -150,10 +150,12 @@ import {
   ensureCharacterCollection,
   ensureDatabaseObject as ensureCharacterDatabaseObject,
   findCharacterIndex,
+  readAlternateGreetingMutation,
   readCharacterId,
   readCharacterOrder,
   readCharacterPatch,
   requireCharacterIndex,
+  remapAlternateGreetingIndex,
   selectedCharacterId,
   validateCharacterOrderAssetRefs,
   validateFullCharacterOrder,
@@ -5026,6 +5028,62 @@ export function registerCommandRoutes(
               id: characterId,
             },
             extra: { characterId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/characters/:characterId/alternate-greetings', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as CharacterCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation<{
+        characterId: string
+        certificate: 'alternate-greeting-index-cascade-v1'
+        chatGreetingIndices: Array<{ chatId: string; fmIndex: number }>
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
+          const target = ensureCharacterDatabaseObject(database)
+          const characters = normalizeAllCharacterChats(target)
+          const character = characters[requireCharacterIndex(characters, characterId)]
+          const currentGreetings = Array.isArray(character.alternateGreetings)
+            ? character.alternateGreetings.filter((value): value is string => typeof value === 'string')
+            : []
+          const mutation = readAlternateGreetingMutation(body, currentGreetings.length)
+          character.alternateGreetings = mutation.alternateGreetings
+          const chats = ensureCharacterChats(character)
+          const chatGreetingIndices = chats.map((chat) => {
+            const fmIndex = remapAlternateGreetingIndex(chat.fmIndex, currentGreetings.length, mutation.operation)
+            chat.fmIndex = fmIndex
+            return { chatId: chat.id, fmIndex }
+          })
+
+          writeCharacterChatRows(innerDb, characterId, chats as Record<string, unknown>[])
+          writeSingleCharacterRow(innerDb, characterId, character)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.alternateGreetingsUpdated, id: characterId },
+            extra: {
+              characterId,
+              certificate: 'alternate-greeting-index-cascade-v1' as const,
+              chatGreetingIndices,
+            },
           }
         },
       })

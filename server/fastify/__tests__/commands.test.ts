@@ -6671,6 +6671,80 @@ describe('Phase 9-3a character commands', () => {
     })
   })
 
+  it('atomically cascades alternate greeting deletion and reordering through every child chat', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          alternateGreetings: ['zero', 'one', 'two'],
+          chats: [
+            { id: 'chat-primary', name: 'Primary', message: [], fmIndex: -1 },
+            { id: 'chat-before', name: 'Before', message: [], fmIndex: 0 },
+            { id: 'chat-deleted', name: 'Deleted', message: [], fmIndex: 1 },
+            { id: 'chat-after', name: 'After', message: [], fmIndex: 2 },
+            { id: 'chat-fractional', name: 'Fractional', message: [], fmIndex: 1.5 },
+            { id: 'chat-invalid', name: 'Invalid', message: [], fmIndex: 9 },
+          ],
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a/alternate-greetings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        alternateGreetings: ['zero', 'two'],
+        operation: { type: 'delete', index: 1 },
+      },
+    })
+
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toMatchObject({
+      event: {
+        type: 'character.alternateGreetings.updated',
+        resource: 'characterRow',
+        id: 'char-a',
+      },
+      characterId: 'char-a',
+      certificate: 'alternate-greeting-index-cascade-v1',
+      chatGreetingIndices: [
+        { chatId: 'chat-primary', fmIndex: -1 },
+        { chatId: 'chat-before', fmIndex: 0 },
+        { chatId: 'chat-deleted', fmIndex: -1 },
+        { chatId: 'chat-after', fmIndex: 1 },
+        { chatId: 'chat-fractional', fmIndex: -1 },
+        { chatId: 'chat-invalid', fmIndex: -1 },
+      ],
+    })
+    expect(readJsonRow('characters', 'char-a').alternateGreetings).toEqual(['zero', 'two'])
+    expect(
+      ['chat-primary', 'chat-before', 'chat-deleted', 'chat-after', 'chat-fractional', 'chat-invalid'].map(
+        (chatId) => readJsonRow('chats', chatId).fmIndex,
+      ),
+    ).toEqual([-1, 0, -1, 1, -1, -1])
+
+    const swapped = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a/alternate-greetings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: deleted.json().revision,
+        alternateGreetings: ['two', 'zero'],
+        operation: { type: 'swap', firstIndex: 0, secondIndex: 1 },
+      },
+    })
+
+    expect(swapped.statusCode).toBe(200)
+    expect(readJsonRow('characters', 'char-a').alternateGreetings).toEqual(['two', 'zero'])
+    expect(readJsonRow('chats', 'chat-before').fmIndex).toBe(1)
+    expect(readJsonRow('chats', 'chat-after').fmIndex).toBe(0)
+  })
+
   it('creates, updates, selects, reorders, and deletes characters by chaId', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
