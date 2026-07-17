@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 const globalApiSpies = vi.hoisted(() => ({
   downloadFile: vi.fn(),
   saveAsset: vi.fn(),
-  toggleFullscreen: vi.fn(),
 }))
 
 vi.mock('../globalApi.svelte', () => globalApiSpies)
@@ -45,14 +44,11 @@ describe('display theme settings data', () => {
     expect(guiHtmlEditor?.condition?.(contextForTheme('customHTML'))).toBe(true)
   })
 
-  it('passes the requested fullscreen state to the browser helper', () => {
+  it('renders fullscreen as browser-session state instead of a persisted setting', () => {
     const fullscreen = displayOtherSettingsItems.find((item) => item.id === 'display.fullScreen')
 
-    fullscreen?.onChange?.(true, contextForTheme('fastify'))
-    fullscreen?.onChange?.(false, contextForTheme('fastify'))
-
-    expect(globalApiSpies.toggleFullscreen).toHaveBeenNthCalledWith(1, true)
-    expect(globalApiSpies.toggleFullscreen).toHaveBeenNthCalledWith(2, false)
+    expect(fullscreen).toMatchObject({ type: 'custom', componentId: 'FullscreenToggle' })
+    expect(fullscreen?.bindKey).toBeUndefined()
   })
 
   it('does not advertise the unavailable prompt comparison workflow', () => {

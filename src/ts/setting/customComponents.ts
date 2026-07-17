@@ -24,6 +24,7 @@ import CustomTextThemeEditor from 'src/lib/Setting/Pages/Display/CustomTextTheme
 import CustomBackgroundToggle from 'src/lib/Setting/Pages/Display/CustomBackgroundToggle.svelte'
 import NullableTextColorToggle from 'src/lib/Setting/Pages/Display/NullableTextColorToggle.svelte'
 import NotificationToggle from 'src/lib/Setting/Pages/Display/NotificationToggle.svelte'
+import FullscreenToggle from 'src/lib/Setting/Pages/Display/FullscreenToggle.svelte'
 
 /**
  * Registry of custom components.
@@ -42,6 +43,7 @@ export const customComponents: Record<string, Component<any>> = {
   CustomBackgroundToggle: CustomBackgroundToggle,
   NullableTextColorToggle: NullableTextColorToggle,
   NotificationToggle: NotificationToggle,
+  FullscreenToggle: FullscreenToggle,
   // Registry for custom setting renderers.
 } as const
 
