@@ -653,6 +653,61 @@ describe('Durable generation (Milestone 1)', () => {
     expect((await chatMessages(boot)).filter((m) => m.role === 'char')).toHaveLength(1)
   })
 
+  it('persists the prompt preset name and active toggle snapshot on the assistant row', async () => {
+    await seedDatabase({
+      ...fixtureDatabase,
+      promptInfoInsideChat: true,
+      promptTextInfoInsideChat: false,
+      promptPresets: [
+        {
+          ...fixtureDatabase.promptPresets[0],
+          customPromptTemplateToggle: 'flag=Flag\ntone=Tone=select=warm,formal\nnote=Note=text',
+        },
+      ],
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              ...durableChat(),
+              generationSettings: {
+                ...durableGenerationSettings(),
+                sidebarToggles: {
+                  flag: '1',
+                  tone: '1',
+                  note: 'remember this',
+                },
+              },
+            },
+          ],
+        },
+      ],
+    })
+    providerImpl = () => {
+      async function* g(): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'metadata reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      }
+      return g()
+    }
+
+    const controller = newController()
+    const res = await postDurable({}, { signal: controller.signal })
+    const events = await readSse(res, (event) => event.type === 'done')
+    expect(events.some((event) => event.type === 'done')).toBe(true)
+
+    const assistant = await waitForAssistantMessage()
+    expect(assistant.promptInfo).toMatchObject({
+      promptName: 'Durable Prompt Preset',
+      promptToggles: [
+        { key: 'Flag', value: 'ON' },
+        { key: 'Tone', value: 'formal' },
+        { key: 'Note', value: 'remember this' },
+      ],
+    })
+    controller.abort()
+  })
+
   it('streams and atomically persists every multi-generation choice as a reroll candidate', async () => {
     providerImpl = () => {
       async function* g(): AsyncGenerator<CompletionStreamFrame> {

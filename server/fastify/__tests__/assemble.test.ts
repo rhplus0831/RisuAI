@@ -3308,6 +3308,10 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     const result = await assemblePrompt(baseInput(), depsFor(db))
     const promptText = result.prompt?.promptInfo?.promptText as OpenAIChat[] | undefined
 
+    expect(result.prompt?.promptInfo).toMatchObject({
+      promptName: 'Chat',
+      promptToggles: [{ key: 'Mode', value: 'ON' }],
+    })
     expect(promptText?.map((row) => row.content)).toEqual(
       expect.arrayContaining(['CHAT PLAIN CHAT TOGGLE', 'persona for Chat User: {{slot}}']),
     )

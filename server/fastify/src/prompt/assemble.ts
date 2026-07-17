@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { performance } from 'node:perf_hooks'
-import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
+import type { Chat, Database, Message, MessagePresetInfo, character } from '../../../../src/ts/storage/database.svelte'
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
@@ -413,6 +413,8 @@ export interface AssemblyState {
   database: Database
   currentChar: character
   currentChat: Chat
+  /** Prompt preset name and active toggle snapshot for the generated assistant row. */
+  promptInfo: MessagePresetInfo
   /** Index into `database.characters`. */
   selectedCharID: number
   /** Index into `currentChar.chats`. */
@@ -561,6 +563,7 @@ interface ResolvedScope {
   database: Database
   currentChar: character
   currentChat: Chat
+  promptInfo: MessagePresetInfo
   selectedCharID: number
   chatPage: number
 }
@@ -603,6 +606,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
     database: effective.database,
     currentChar: effective.currentChar,
     currentChat: effective.currentChat,
+    promptInfo: effective.promptInfo,
     selectedCharID,
     chatPage,
   }
@@ -613,7 +617,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
  * `ExpandContext` + empty slots, and run the pure template helpers.
  */
 export function beginAssembly(input: AssembleInput, deps: AssembleDeps): AssemblyState {
-  const { database, currentChar, currentChat, selectedCharID, chatPage } = resolveScope(input, deps)
+  const { database, currentChar, currentChat, promptInfo, selectedCharID, chatPage } = resolveScope(input, deps)
 
   const cbsCallbackMemo = createAssemblyCbsCallbackMemo()
   const luaExecBudget = createLuaExecBudget()
@@ -641,6 +645,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     database,
     currentChar,
     currentChat,
+    promptInfo,
     selectedCharID,
     chatPage,
     ctx,
@@ -2103,7 +2108,8 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     prompt: {
       messages: formated.map((row) => ({ role: row.role, content: row.content })),
       promptInfo: {
-        promptText: state.promptText,
+        ...state.promptInfo,
+        ...(state.promptText !== undefined ? { promptText: state.promptText } : {}),
         inputTokens: state.inputTokens,
         outputTokens: state.outputTokens,
       },

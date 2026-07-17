@@ -1,4 +1,4 @@
-import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
+import type { Chat, Database, MessagePresetInfo, character } from '../../../../src/ts/storage/database.svelte'
 import {
   createChatGenerationSettingsIncompleteError,
   resolveChatGenerationSettingsReadiness,
@@ -19,6 +19,7 @@ import {
 } from '../../../../src/ts/model/modelProfileResolver.js'
 import type { ModelProfileRecord } from '../../../../src/ts/model/modelProfileRecords.js'
 import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
+import { createPromptInfoSnapshot } from '../../../../src/ts/promptInfo.js'
 
 type JsonRecord = Record<string, unknown>
 type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
@@ -70,6 +71,7 @@ export interface EffectiveGenerationConfigResult {
   database: Database
   currentChar: character
   currentChat: Chat
+  promptInfo: MessagePresetInfo
 }
 
 export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigInput): EffectiveGenerationConfigResult {
@@ -103,6 +105,13 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   if (!persona || !modelPreset || !promptPreset) {
     throw new ChatGenerationSettingsIncompleteAssemblyError(readiness, input.currentChat.id)
   }
+
+  const promptInfo = createPromptInfoSnapshot({
+    enabled: input.database.promptInfoInsideChat === true,
+    promptPreset,
+    requiredSidebarToggles: readiness.requirements.sidebarToggles,
+    sidebarToggles: settings?.sidebarToggles,
+  })
 
   const effectiveDatabase = structuredClone(input.database) as Database
   const effectiveModelPresets = (effectiveDatabase.modelPresets ?? []) as unknown as ModelPresetRecord[]
@@ -178,6 +187,7 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     database: effectiveDatabase,
     currentChar: effectiveCurrentChar,
     currentChat: structuredClone(effectiveStoredChat) as Chat,
+    promptInfo,
   }
 }
 

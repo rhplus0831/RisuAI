@@ -17,7 +17,7 @@ import {
   type CharacterOwnedDurableBatchResult,
 } from '../chatCommands'
 import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
-import type { ChatGenerationRequiredSidebarToggle } from '../chatGenerationSettings'
+import { createPromptInfoSnapshot } from '../promptInfo'
 import { canUseServerCommands, replaceTailMessagesCommand, updateCharacterCommand } from '../server/commands'
 import { isServerChatMessagePlaceholder } from '../server/chatMessagePlaceholders'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
@@ -319,31 +319,12 @@ function createInitialPromptInfo(serverBacked: boolean): MessagePresetInfo {
 
 function createServerBackedPromptInfo(): MessagePresetInfo {
   const activeSettings = resolveActiveChatGenerationSettings()
-  return {
-    promptName: stringProperty(activeSettings.promptPreset, 'name'),
-    promptToggles: activeSettings.requiredSidebarToggles.flatMap((toggle) =>
-      formatChatScopedPromptToggle(toggle, activeSettings.settings?.sidebarToggles?.[toggle.key]),
-    ),
-  }
-}
-
-function formatChatScopedPromptToggle(
-  toggle: ChatGenerationRequiredSidebarToggle,
-  raw: string | undefined,
-): { key: string; value: string }[] {
-  if (toggle.kind === 'select') {
-    if (typeof raw !== 'string') return []
-    const optionIndex = Number(raw)
-    const selectedOption = Number.isInteger(optionIndex) ? toggle.options[optionIndex] : undefined
-    return [{ key: toggle.label, value: selectedOption ?? raw }]
-  }
-  if (toggle.kind === 'text' || toggle.kind === 'textarea') {
-    return typeof raw === 'string' ? [{ key: toggle.label, value: raw }] : []
-  }
-  if (raw === '1') {
-    return [{ key: toggle.label, value: 'ON' }]
-  }
-  return []
+  return createPromptInfoSnapshot({
+    enabled: true,
+    promptPreset: activeSettings.promptPreset,
+    requiredSidebarToggles: activeSettings.requiredSidebarToggles,
+    sidebarToggles: activeSettings.settings?.sidebarToggles,
+  })
 }
 
 function createLegacyPromptInfo(): MessagePresetInfo {
@@ -366,10 +347,4 @@ function createLegacyPromptInfo(): MessagePresetInfo {
     promptName: initialPresetName,
     promptToggles: initialPromptToggles,
   }
-}
-
-function stringProperty(value: unknown, key: string): string {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
-  const raw = (value as Record<string, unknown>)[key]
-  return typeof raw === 'string' ? raw : ''
 }
