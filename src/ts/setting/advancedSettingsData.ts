@@ -63,15 +63,6 @@ export const advancedSettingsItems: SettingItem[] = [
     bindKey: 'keiServerURL',
     options: { placeholder: 'Leave it blank to use default' },
   },
-  {
-    id: 'adv.presetChain',
-    type: 'text',
-    labelKey: 'presetChain',
-    bindKey: 'presetChain',
-    helpKey: 'presetChain',
-    options: { placeholder: 'Leave it blank to not use' },
-  },
-
   // Request Settings
   {
     id: 'adv.retries',
