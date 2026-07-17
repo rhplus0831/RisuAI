@@ -9,6 +9,7 @@
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { chatProcessStage } from 'src/ts/process/index.svelte'
   import { didChatOwnerChange } from './ChatsUnread'
+  import { scrollElementToContainerStart } from './chatScroll'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -104,7 +105,7 @@
     hasNewUnreadMessage = false
     const element = chatBody.firstElementChild
     if (element) {
-      element.scrollIntoView({ behavior: 'instant', block: 'start' })
+      scrollElementToContainerStart(element, chatBody.parentElement)
     }
   }
 
@@ -134,7 +135,7 @@
           const element = chatBody.firstElementChild
           if (element) {
             setTimeout(() => {
-              element.scrollIntoView({ behavior: 'instant', block: 'start' })
+              scrollElementToContainerStart(element, chatBody.parentElement)
             }, 700)
           }
         } else {
