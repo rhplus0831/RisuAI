@@ -1574,10 +1574,6 @@
                     aria-label={`${language.remove}: ${assets[0] || `${language.additionalAssets} ${i + 1}`}`}
                     onclick={() => {
                       if (currentRealCharacterDraftTarget()) {
-                        setCurrentChatGreetingIndex(-1, {
-                          selectedChar: $selectedCharID,
-                          dispatch: false,
-                        })
                         let additionalAssets = characterDraft.value.additionalAssets
                         additionalAssets.splice(i, 1)
                         characterDraft.value.additionalAssets = additionalAssets

@@ -1066,6 +1066,24 @@ describe('CharConfig character draft target guards', () => {
 })
 
 describe('CharConfig draft-type-less character actions', () => {
+  it('removes an additional asset without changing the active chat greeting', async () => {
+    await mountCharConfig(1, {
+      additionalAssets: [
+        ['portrait', 'asset-1', 'png'],
+        ['sticker', 'asset-2', 'png'],
+      ],
+    })
+
+    buttonByText(language.additionalAssets).click()
+    await settleComponent()
+    buttonByAccessibleName(`${language.remove}: portrait`).click()
+    await settleComponent()
+
+    expect(chatCommandMocks.setCurrentChatGreetingIndex).not.toHaveBeenCalled()
+    expect(getDatabase().characters[0].chats[0].fmIndex).toBe(2)
+    expect(getDatabase().characters[0].additionalAssets).toEqual([['sticker', 'asset-2', 'png']])
+  })
+
   it('adds a bias row when the live selected row is a real character', async () => {
     await mountCharConfig(2)
 
