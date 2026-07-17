@@ -298,7 +298,7 @@ vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
 import { customProviderStore, pluginV2 } from '../plugins.svelte'
 import { alertConfirm } from 'src/ts/alert'
 import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
-import { additionalFloatingActionButtons } from 'src/ts/stores.svelte'
+import { additionalFloatingActionButtons, additionalSettingsMenu } from 'src/ts/stores.svelte'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
 import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
@@ -1157,6 +1157,37 @@ describe('V3 plugin lifecycle cleanup', () => {
     await __v3PluginLifecycleTestHooks.unloadInstance(newRuntime.instance)
 
     expect(additionalFloatingActionButtons).toHaveLength(0)
+  })
+
+  it('scopes shared UI ids to each plugin owner', async () => {
+    const pluginA = __v3PluginLifecycleTestHooks.createTrackedApi(seedV3Plugin('plugin-a'))
+    const pluginB = __v3PluginLifecycleTestHooks.createTrackedApi(seedV3Plugin('plugin-b'))
+    const apiA = pluginA.api as any
+    const apiB = pluginB.api as any
+
+    apiA.registerSetting('Settings A', vi.fn(), '', 'none', 'settings')
+    apiB.registerSetting('Settings B', vi.fn(), '', 'none', 'settings')
+    apiA.registerButton(
+      { name: 'Action A', icon: '', iconType: 'none', location: 'action', id: 'main-action' },
+      vi.fn(),
+    )
+    apiB.registerButton(
+      { name: 'Action B', icon: '', iconType: 'none', location: 'action', id: 'main-action' },
+      vi.fn(),
+    )
+
+    expect(additionalSettingsMenu.map((menu) => menu.name)).toEqual(['Settings A', 'Settings B'])
+    expect(additionalFloatingActionButtons.map((button) => button.name)).toEqual(['Action A', 'Action B'])
+
+    apiA.unregisterUIPart('settings')
+    apiA.unregisterUIPart('main-action')
+
+    expect(additionalSettingsMenu.map((menu) => menu.name)).toEqual(['Settings B'])
+    expect(additionalFloatingActionButtons.map((button) => button.name)).toEqual(['Action B'])
+
+    await __v3PluginLifecycleTestHooks.unloadInstance(pluginA.instance)
+    expect(additionalSettingsMenu.map((menu) => menu.name)).toEqual(['Settings B'])
+    expect(additionalFloatingActionButtons.map((button) => button.name)).toEqual(['Action B'])
   })
 
   it('cleans up each plugin MCP with its registration identity across reload and unload', async () => {

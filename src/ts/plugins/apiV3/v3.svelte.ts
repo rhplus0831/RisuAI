@@ -664,12 +664,16 @@ const addPluginUnloadCallback = (pluginName: string, callback: Function, generat
 }
 
 type V3OwnedMenuDef = MenuDef & {
+  __v3OwnerGeneration: number
+  __v3OwnerName: string
   __v3OwnerToken: string
 }
 
-const ownMenuDef = (menuDef: MenuDef): V3OwnedMenuDef => {
+const ownMenuDef = (menuDef: MenuDef, instance: V3PluginInstance): V3OwnedMenuDef => {
   return {
     ...menuDef,
+    __v3OwnerGeneration: instance.generation,
+    __v3OwnerName: instance.name,
     __v3OwnerToken: v4(),
   }
 }
@@ -1349,14 +1353,19 @@ const makeRisuaiAPIV3 = (
         throw new Error('name must be a non-empty string')
       }
       const menuId = id || v4()
-      const menuDef = ownMenuDef({
-        id: menuId,
-        name,
-        icon: normalizePluginIcon(icon, iconType),
-        iconType,
-        callback,
-      })
-      const existingIndex = additionalSettingsMenu.findIndex((item) => item.id === menuId)
+      const menuDef = ownMenuDef(
+        {
+          id: menuId,
+          name,
+          icon: normalizePluginIcon(icon, iconType),
+          iconType,
+          callback,
+        },
+        instance,
+      )
+      const existingIndex = additionalSettingsMenu.findIndex(
+        (item) => item.id === menuId && (item as V3OwnedMenuDef).__v3OwnerName === plugin.name,
+      )
       if (existingIndex !== -1) {
         additionalSettingsMenu[existingIndex] = menuDef
         addPluginUnloadCallback(
@@ -1423,17 +1432,22 @@ const makeRisuaiAPIV3 = (
         throw new Error('icon must be a string')
       }
       const id = providedId || v4()
-      const menuDef = ownMenuDef({
-        name,
-        icon: normalizePluginIcon(icon, iconType),
-        iconType,
-        callback,
-        id,
-      })
+      const menuDef = ownMenuDef(
+        {
+          name,
+          icon: normalizePluginIcon(icon, iconType),
+          iconType,
+          callback,
+          id,
+        },
+        instance,
+      )
 
       const buttonStores = [additionalFloatingActionButtons, additionalHamburgerMenu, additionalChatMenu]
       for (const store of buttonStores) {
-        const existingIndex = store.findIndex((item) => item.id === id)
+        const existingIndex = store.findIndex(
+          (item) => item.id === id && (item as V3OwnedMenuDef).__v3OwnerName === plugin.name,
+        )
         if (existingIndex !== -1) {
           store[existingIndex] = menuDef
           addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef, store), instance.generation)
@@ -1475,7 +1489,12 @@ const makeRisuaiAPIV3 = (
     unregisterMCP: (identifier: string) => unregisterMCPModule(identifier),
     unregisterUIPart: (id: string) => {
       const removeFromMenuStore = (menuStore: MenuDef[]) => {
-        const index = menuStore.findIndex((item) => item.id === id)
+        const index = menuStore.findIndex((item) => {
+          const owned = item as V3OwnedMenuDef
+          return (
+            item.id === id && owned.__v3OwnerName === plugin.name && owned.__v3OwnerGeneration === instance.generation
+          )
+        })
         if (index !== -1) {
           menuStore.splice(index, 1)
         }
