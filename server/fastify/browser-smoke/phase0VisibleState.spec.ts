@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Response } from '@playwright/test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -14,9 +14,9 @@ import { setupBrowserSmokeAuth } from './auth.js'
 //     repaints the newly active chat's prompt preset id.
 //   - Journey 2 (settle): toggle a sidebar checkbox -> the flip survives the
 //     command + resource refresh (not just the optimistic paint).
-//   - Journey 3 (GATE): open the "character" sidebar tab, then import a full
-//     state replacement. The same route/history entry must retain the user's
-//     sidebar view through authoritative refresh and any lineage-recovery reload.
+//   - Journey 3 (GATE): hold an old-lineage command, open the "character"
+//     sidebar tab, then import a full state replacement. The same route/history
+//     entry must retain the user's sidebar view through the recovery reload.
 
 interface Harness {
   app: FastifyInstance
@@ -24,11 +24,23 @@ interface Harness {
   dataDir: string
 }
 
+interface BrowserFetchResult {
+  status: number
+  body: unknown
+}
+
+interface RevisionedResponseBody {
+  revision: number
+  databaseLineage?: string
+}
+
 declare global {
   interface Window {
     __RISU_FASTIFY_BROWSER_SMOKE__?: {
       activeWriterHeaders: () => Promise<Record<string, string>>
+      getAppliedServerResourceRevision: () => number | null
       getDatabaseSnapshot: () => Record<string, unknown>
+      patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<unknown>
       selectCharacter: (index: number) => void
       waitForLoaded: () => Promise<void>
     }
@@ -86,13 +98,19 @@ test('Journey 2 (settle): a sidebar toggle flip survives the command + resource 
   // Drive a real click on the rendered toggle, then let the save + SSE resource
   // refresh settle. CheckInput hides the real <input>; the <label>
   // is the click target.
+  const commandResponsePromise = page.waitForResponse(isFlagToggleOffCommandResponse, { timeout: 15_000 })
   await flagControl.locator('label').first().click()
   await expect
     .poll(() => flagControl.getAttribute('data-risu-selected'), { timeout: 15_000, message: diagnostics })
     .toBe('false')
 
-  // Settle window: the resource refresh must not revert the painted flip.
-  await page.waitForTimeout(750)
+  const commandResponse = await commandResponsePromise
+  expect(commandResponse.status(), diagnostics()).toBe(200)
+  const command = await readRevisionedResponse(commandResponse, 'chat generation-settings command')
+  await waitForAppliedResourceRevision(page, command.revision, diagnostics)
+
+  // The accepted command revision is now applied, so this is the settled paint
+  // rather than only the immediate optimistic state.
   await expect(flagControl).toHaveAttribute('data-risu-selected', 'false')
 
   const stored = await page.evaluate(() => {
@@ -104,7 +122,9 @@ test('Journey 2 (settle): a sidebar toggle flip survives the command + resource 
   expect(stored, diagnostics()).toBe('0')
 })
 
-test('Journey 3 (GATE): the same-character sidebar view survives an authoritative import refresh', async ({ page }) => {
+test('Journey 3 (GATE): the same-character sidebar view survives old-lineage recovery after import', async ({
+  page,
+}) => {
   const diagnostics = attachDiagnostics(page)
   await boot(page)
   await openCharacter(page)
@@ -120,14 +140,58 @@ test('Journey 3 (GATE): the same-character sidebar view survives an authoritativ
   await expect.poll(() => sidebarTabActive(page, 'character'), { timeout: 10_000, message: diagnostics }).toBe(true)
   await expect(page.locator('[data-risu-sidebar-panel="character"]').first()).toBeVisible()
 
-  // Trigger a full state replacement. Character settings can still have
-  // mount-time writes in flight, so the replacement lineage may also cause the
-  // recovery path to reload this exact history entry after the resource refresh.
-  const importStatus = await importStateForResync(page)
-  expect(importStatus, diagnostics()).toBe(200)
+  // Hold a real command at the network boundary so the import deterministically
+  // leaves old-lineage work in flight. Releasing it after the lineage rotates
+  // must produce the ownership conflict and reload this exact history entry.
+  const heldCommand = await holdNextRuntimeSettingsCommand(page)
+  const previousDocumentTimeOrigin = await page.evaluate(() => performance.timeOrigin)
+  const lineageConflictResponsePromise = page.waitForResponse(isDatabaseLineageConflictResponse, {
+    timeout: 15_000,
+  })
+  const recoveryNavigationResponsePromise = page.waitForResponse(isRecoveryNavigationResponse(page), {
+    timeout: 15_000,
+  })
+  await page.evaluate(() => {
+    void window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({ streamGeminiThoughts: true })
+  })
+  await heldCommand.started
 
-  // Store/logic side stays correct on both trees: resource state still holds the
-  // selected character and its chats after the refresh.
+  let importedResponse: BrowserFetchResult
+  try {
+    importedResponse = await importStateForResync(page)
+  } finally {
+    heldCommand.release()
+  }
+  expect(importedResponse.status, diagnostics()).toBe(200)
+  const imported = requireRevisionedResponseBody(importedResponse.body, 'RisuSave import')
+  expect(imported.databaseLineage, diagnostics()).toEqual(expect.stringMatching(/\S/))
+
+  const lineageConflictResponse = await lineageConflictResponsePromise
+  expect(await lineageConflictResponse.json(), diagnostics()).toMatchObject({
+    error: 'database_lineage_conflict',
+    databaseLineage: imported.databaseLineage,
+  })
+
+  const recoveryNavigationResponse = await recoveryNavigationResponsePromise
+  expect(recoveryNavigationResponse.status(), diagnostics()).toBe(200)
+  await expect
+    .poll(
+      async () => {
+        try {
+          return await page.evaluate((previous) => performance.timeOrigin !== previous, previousDocumentTimeOrigin)
+        } catch {
+          return false
+        }
+      },
+      { timeout: 15_000, message: diagnostics },
+    )
+    .toBe(true)
+  await waitForBrowserLoaded(page)
+  await waitForAppliedResourceRevision(page, imported.revision, diagnostics)
+
+  // Store and DOM oracles now run after the new document has loaded the imported
+  // revision. The sidebar must retain the user's "character" view through that
+  // authoritative recovery.
   await expect
     .poll(
       () =>
@@ -136,14 +200,9 @@ test('Journey 3 (GATE): the same-character sidebar view survives an authoritativ
           const character = (snap.characters as Array<Record<string, any>>)[0]
           return character?.chats?.length ?? 0
         }),
-      { timeout: 15_000 },
+      { timeout: 15_000, message: diagnostics },
     )
     .toBe(2)
-
-  // DOM oracle: the rendered sidebar tab must remain on "character". On the
-  // buggy tree the lineage-recovery reload recreates botMakerMode as false and
-  // flips to the "chat" tab. Allow time for that recovery path to settle.
-  await page.waitForTimeout(1000)
   await expect(page).toHaveURL(/\/character\/char-1\/chat-a$/)
   expect(await sidebarTabActive(page, 'character'), diagnostics()).toBe(true)
   await expect(page.locator('[data-risu-sidebar-panel="character"]').first()).toBeVisible()
@@ -163,6 +222,10 @@ async function boot(page: Page): Promise<void> {
   // (The smoke build renders the TOS modal; agent dev mode skips it via env.)
   await page.addInitScript(() => localStorage.setItem('tos4', 'true'))
   await page.goto(harness.baseUrl)
+  await waitForBrowserLoaded(page)
+}
+
+async function waitForBrowserLoaded(page: Page): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__)), { timeout: 15_000 })
     .toBe(true)
@@ -195,7 +258,115 @@ function sidebarTabActive(page: Page, tab: 'chat' | 'character'): Promise<boolea
     .then((value) => value === 'true')
 }
 
-async function importStateForResync(page: Page): Promise<number> {
+function isFlagToggleOffCommandResponse(response: Response): boolean {
+  const request = response.request()
+  if (
+    request.method() !== 'PUT' ||
+    new URL(response.url()).pathname !== '/api/v1/commands/chats/chat-a/generation-settings'
+  ) {
+    return false
+  }
+  try {
+    const body = request.postDataJSON() as {
+      generationSettings?: { sidebarToggles?: Record<string, unknown> }
+      patch?: { sidebarToggles?: Record<string, unknown> }
+    }
+    return body.generationSettings?.sidebarToggles?.flag === '0' || body.patch?.sidebarToggles?.flag === '0'
+  } catch {
+    return false
+  }
+}
+
+async function isDatabaseLineageConflictResponse(response: Response): Promise<boolean> {
+  if (response.status() !== 409 || !new URL(response.url()).pathname.startsWith('/api/v1/commands/')) {
+    return false
+  }
+  try {
+    const body = (await response.json()) as { error?: unknown }
+    return body?.error === 'database_lineage_conflict'
+  } catch {
+    return false
+  }
+}
+
+function isRecoveryNavigationResponse(page: Page): (response: Response) => boolean {
+  return (response) => {
+    const request = response.request()
+    return (
+      request.isNavigationRequest() &&
+      request.frame() === page.mainFrame() &&
+      request.method() === 'GET' &&
+      new URL(response.url()).pathname === '/character/char-1/chat-a'
+    )
+  }
+}
+
+async function holdNextRuntimeSettingsCommand(page: Page): Promise<{
+  started: Promise<void>
+  release: () => void
+}> {
+  let markStarted!: () => void
+  let release!: () => void
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve
+  })
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+
+  await page.route(
+    '**/api/v1/commands/settings/runtime',
+    async (route) => {
+      markStarted()
+      await released
+      await route.continue()
+    },
+    { times: 1 },
+  )
+  return { started, release }
+}
+
+function requireRevisionedResponseBody(value: unknown, label: string): RevisionedResponseBody {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} returned a non-object body`)
+  }
+  const record = value as Record<string, unknown>
+  if (!Number.isSafeInteger(record.revision) || (record.revision as number) < 0) {
+    throw new Error(`${label} returned an invalid revision`)
+  }
+  if (record.databaseLineage !== undefined && typeof record.databaseLineage !== 'string') {
+    throw new Error(`${label} returned an invalid database lineage`)
+  }
+  return {
+    revision: record.revision as number,
+    ...(typeof record.databaseLineage === 'string' ? { databaseLineage: record.databaseLineage } : {}),
+  }
+}
+
+async function readRevisionedResponse(response: Response, label: string): Promise<RevisionedResponseBody> {
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    throw new Error(`${label} returned a non-JSON body (HTTP ${response.status()})`)
+  }
+  return requireRevisionedResponseBody(body, label)
+}
+
+async function waitForAppliedResourceRevision(
+  page: Page,
+  minimumRevision: number,
+  diagnostics: () => string,
+): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getAppliedServerResourceRevision()), {
+      timeout: 15_000,
+      message: diagnostics,
+    })
+    .toBeGreaterThanOrEqual(minimumRevision)
+}
+
+async function importStateForResync(page: Page): Promise<BrowserFetchResult> {
   const database = phase0FixtureDatabase()
   return page.evaluate(async (database) => {
     const headers = await window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders()
@@ -204,7 +375,8 @@ async function importStateForResync(page: Page): Promise<number> {
       headers: { ...headers, 'content-type': 'application/json' },
       body: JSON.stringify({ database }),
     })
-    return res.status
+    const body: unknown = await res.json().catch(() => null)
+    return { status: res.status, body }
   }, database)
 }
 

@@ -4,7 +4,12 @@ import { getDatabase, type Database } from '../storage/database.svelte'
 import { getRerollBuffer, reroll, unReroll } from '../process/rerollNavigation.svelte'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { hydrateActiveChatFully } from './chatMessageHydration.svelte'
-import { patchRuntimeSettings, runServerCommand, type ServerCommandResult } from './commands'
+import {
+  patchRuntimeSettings,
+  peekAppliedServerResourceRevision,
+  runServerCommand,
+  type ServerCommandResult,
+} from './commands'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { alertNormal } from '../alert'
 
@@ -13,6 +18,7 @@ declare global {
     __RISU_FASTIFY_BROWSER_SMOKE__?: {
       assertDirectProjectionWriteRejected: () => boolean
       activeWriterHeaders: () => Promise<Record<string, string>>
+      getAppliedServerResourceRevision: () => number | null
       getDatabaseSnapshot: () => Database
       isLoaded: () => boolean
       patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<ServerCommandResult<Record<string, unknown>>>
@@ -43,6 +49,7 @@ export function installFastifyBrowserSmokeHook() {
       }
       return false
     },
+    getAppliedServerResourceRevision: peekAppliedServerResourceRevision,
     getDatabaseSnapshot: () => getDatabase({ snapshot: true }),
     isLoaded: () => get(loadedStore),
     patchRuntimeSettings: (patch) =>
