@@ -1202,14 +1202,14 @@ describe('DefaultChatScreen transcript window state', () => {
 
   it('keeps a legacy group composer and transcript unchanged when preflight rejects generation', async () => {
     seedDatabase([1])
-    getResourceDatabase().characters[0].type = 'group'
+    ;(getResourceDatabase().characters[0] as unknown as { type: string }).type = 'group'
     const originalHistory = JSON.parse(
       JSON.stringify(getResourceDatabase().characters[0].chats[0].message),
     ) as unknown[]
     loadPageMocks.preflightChatSendBeforeMutation.mockReturnValueOnce({
       type: 'unsupported',
       reason: 'Group chats are not supported by server prompt assembly.',
-    })
+    } as never)
     mountScreen()
 
     await waitFor(() => {

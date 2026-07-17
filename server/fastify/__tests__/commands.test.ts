@@ -10004,7 +10004,16 @@ describe('Phase 9-3c message history commands', () => {
     })
     expect(after.statusCode).toBe(200)
     expect(after.json().revision).toBe(edited.json().revision)
-    expect(after.json().activeMessageTranslations).toEqual([])
+    expect(after.json().activeMessageTranslations).toEqual([
+      expect.objectContaining({
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        jobId: expect.any(String),
+        status: 'failed',
+        error: 'Message changed before translation could be saved: msg-a',
+        completedAt: expect.any(Number),
+      }),
+    ])
   })
 
   it('continues server raw translation after the requesting client disconnects', async () => {
@@ -10025,10 +10034,14 @@ describe('Phase 9-3c message history commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(during.statusCode).toBe(200)
-    expect(during.json().activeMessageTranslations).toContainEqual({
-      chatId: 'chat-a',
-      messageId: 'msg-a',
-    })
+    expect(during.json().activeMessageTranslations).toEqual([
+      expect.objectContaining({
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        jobId: expect.any(String),
+        status: 'running',
+      }),
+    ])
 
     const message = await waitForPersistedTranslation(harness.app, assertion, 'chat-a', 'translated after disconnect')
     expect(message.translation).toMatchObject({
@@ -10045,7 +10058,15 @@ describe('Phase 9-3c message history commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(after.statusCode).toBe(200)
-    expect(after.json().activeMessageTranslations).toEqual([])
+    expect(after.json().activeMessageTranslations).toEqual([
+      expect.objectContaining({
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        jobId: expect.any(String),
+        status: 'succeeded',
+        completedAt: expect.any(Number),
+      }),
+    ])
   })
 
   it('normalizes missing message ids and rejects malformed message commands without bumping revision', async () => {

@@ -341,7 +341,7 @@ import {
 } from '../repository.js'
 import { createDetachedAbort } from '../requestAbort.js'
 import { translateRawMessageData, type RawMessageTranslation } from '../translation/rawMessageTranslation.js'
-import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
+import type { MessageTranslationJobHandle, MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
   const writerSessionId = readActiveWriterSessionId(req)
@@ -5968,7 +5968,7 @@ export function registerCommandRoutes(
     // Translation is a server-side command mutation and should finish even if
     // the browser tab that started it disconnects before the provider returns.
     const { signal, cleanup } = createDetachedAbort()
-    let clearActiveTranslation: (() => void) | undefined
+    let translationJob: MessageTranslationJobHandle | undefined
     try {
       const messageId = readMessageId((req.params as { messageId?: unknown }).messageId)
       const body = (req.body ?? {}) as MessageCommandBody
@@ -5978,7 +5978,7 @@ export function registerCommandRoutes(
       // unrelated edit made while translation is running.
       readBaseRevision(body)
       const source = readLiveMessageSource(db, messageId)
-      clearActiveTranslation = messageTranslationJobs?.register({ chatId: source.chatId, messageId })
+      translationJob = messageTranslationJobs?.register({ chatId: source.chatId, messageId })
       const settings = loadSettingsFromSqlite(db)
       if (settings === null) {
         throw new ValidationError('database is not initialized')
@@ -6040,12 +6040,14 @@ export function registerCommandRoutes(
         },
       })
 
+      translationJob?.succeed()
       return {
         revision: result.revision,
         event: result.event,
         ...result.extra,
       }
     } catch (err) {
+      translationJob?.fail(err)
       if (
         err instanceof RevisionMismatchError ||
         err instanceof ValidationError ||
@@ -6056,7 +6058,6 @@ export function registerCommandRoutes(
       const message = err instanceof Error && err.message.length > 0 ? err.message : String(err)
       return sendCommandError(reply, new ValidationError(message || 'Message translation failed'))
     } finally {
-      clearActiveTranslation?.()
       cleanup()
     }
   })

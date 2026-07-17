@@ -32,7 +32,7 @@ describe('rekeyClonedChat', () => {
       hypaV3Data: {
         summaries: [{ chatMemos: ['message-a', 'message-b', 'message-tail'] }],
       },
-    } as Chat
+    } as unknown as Chat
 
     const messageIdMap = rekeyClonedChat(chat, {
       createId: idSequence('fork-chat', 'fork-message-a', 'fork-message-b'),

@@ -21,6 +21,10 @@ export function clearActiveMessageTranslation(messageId: string): void {
   activeMessageTranslations.update((jobs) => jobs.filter((job) => job.messageId !== messageId))
 }
 
+export function clearMessageTranslationJob(jobId: string): void {
+  activeMessageTranslations.update((jobs) => jobs.filter((job) => job.jobId !== jobId))
+}
+
 export function startActiveMessageTranslationRefresh(): void {
   if (refreshWired) return
   refreshWired = true
@@ -28,7 +32,7 @@ export function startActiveMessageTranslationRefresh(): void {
 }
 
 function scheduleActiveMessageTranslationRefresh(jobs: readonly ActiveMessageTranslation[]): void {
-  if (jobs.length === 0 || refreshTimer) return
+  if (!jobs.some((job) => job.status === 'running') || refreshTimer) return
   refreshTimer = setTimeout(() => {
     refreshTimer = null
     void refreshActiveMessageTranslations()
@@ -36,7 +40,7 @@ function scheduleActiveMessageTranslationRefresh(jobs: readonly ActiveMessageTra
 }
 
 async function refreshActiveMessageTranslations(): Promise<void> {
-  if (get(activeMessageTranslations).length === 0) return
+  if (!get(activeMessageTranslations).some((job) => job.status === 'running')) return
   try {
     const { fetchServerBootstrapReadOnly } = await import('./bootstrap')
     const bootstrap = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })

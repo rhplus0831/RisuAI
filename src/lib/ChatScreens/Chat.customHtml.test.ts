@@ -27,7 +27,7 @@ const customHtmlMocks = vi.hoisted(() => {
     foldChatToMessage: vi.fn(),
     getDatabase: vi.fn(),
     getServerCommandBaseRevision: vi.fn(async () => 1),
-    hydrateChatMessages: vi.fn(async (_chatId: string, _options?: { strict?: boolean }) => undefined),
+    hydrateChatMessages: vi.fn(async (_chatId: string, _options?: { strict?: boolean; force?: boolean }) => undefined),
     runServerCommand: vi.fn(
       async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
         try {
@@ -128,7 +128,10 @@ vi.mock('../../lang', () => ({
   language: new Proxy(
     {},
     {
-      get: (_target, property) => String(property),
+      get: (_target, property) =>
+        property === 'playground'
+          ? { translationRunFailed: (detail: string) => `Translation failed: ${detail}` }
+          : String(property),
     },
   ),
 }))
@@ -308,7 +311,7 @@ import {
   dispatchUpdateChatScoped,
   dispatchUpdateMessageScoped,
 } from 'src/ts/chatCommands'
-import { setActiveMessageTranslations } from 'src/ts/server/messageTranslationJobs'
+import { activeMessageTranslations, setActiveMessageTranslations } from 'src/ts/server/messageTranslationJobs'
 
 const testDatabaseState = {
   get db() {
@@ -1333,7 +1336,11 @@ describe('server raw translation controls', () => {
     testDatabaseState.db.characters[0].chats[0].message[0].translation = translation
     vi.mocked(dispatchUpdateMessageScoped).mockImplementationOnce(async (_messageId, patch) => {
       Object.assign(testDatabaseState.db.characters[0].chats[0].message[0], patch)
-      return { status: 'ok', revision: 2 }
+      return {
+        status: 'ok',
+        revision: 2,
+        event: { type: 'message.updated', revision: 2, resource: 'message', id: 'message-0' },
+      }
     })
     mountCustomHtmlRows(1)
     await settle()
@@ -1604,7 +1611,14 @@ describe('server raw translation controls', () => {
     seedDatabase(1, null as unknown as string)
     testDatabaseState.db.translator = 'configured'
     testDatabaseState.db.translatorType = 'llm'
-    setActiveMessageTranslations([{ chatId: 'custom-html-chat', messageId: 'message-0' }])
+    setActiveMessageTranslations([
+      {
+        chatId: 'custom-html-chat',
+        messageId: 'message-0',
+        jobId: 'translation-running',
+        status: 'running',
+      },
+    ])
     mountCustomHtmlRows(1, 'char', { rerollIcon: true })
     await settle()
 
@@ -1632,5 +1646,68 @@ describe('server raw translation controls', () => {
     expect(deleteButton?.disabled).toBe(false)
     expect(rerollButton?.disabled).toBe(false)
     expect(target.textContent).toContain('translated after refresh')
+  })
+
+  it('shows the retained failure when a detached translation finishes after refresh', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    setActiveMessageTranslations([
+      {
+        chatId: 'custom-html-chat',
+        messageId: 'message-0',
+        jobId: 'translation-failed',
+        status: 'failed',
+        error: 'provider rejected the request',
+        completedAt: 456,
+      },
+    ])
+
+    mountCustomHtmlRows(1, 'char', { rerollIcon: true })
+    await settle()
+
+    expect(target.textContent).toContain('Translation failed: provider rejected the request')
+    expect(target.querySelector<HTMLButtonElement>('.button-icon-translate')?.disabled).toBe(false)
+    expect(get(activeMessageTranslations)).toEqual([])
+  })
+
+  it('force-rehydrates a retained successful translation after refresh', async () => {
+    const translation = {
+      source: 'raw' as const,
+      text: 'translated after terminal reattach',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 789,
+    }
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    customHtmlMocks.hydrateChatMessages.mockImplementationOnce(async () => {
+      testDatabaseState.db.characters[0].chats[0].message[0].translation = translation
+    })
+    setActiveMessageTranslations([
+      {
+        chatId: 'custom-html-chat',
+        messageId: 'message-0',
+        jobId: 'translation-succeeded',
+        status: 'succeeded',
+        completedAt: 789,
+      },
+    ])
+
+    mountCustomHtmlRows(1, 'char', { rerollIcon: true })
+    await settle()
+
+    expect(customHtmlMocks.hydrateChatMessages).toHaveBeenCalledWith('custom-html-chat', {
+      force: true,
+      strict: true,
+    })
+    expect(target.textContent).toContain('translated after terminal reattach')
+    expect(get(activeMessageTranslations)).toEqual([])
   })
 })

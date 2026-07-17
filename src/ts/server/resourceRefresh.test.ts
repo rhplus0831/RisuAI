@@ -119,7 +119,9 @@ beforeEach(() => {
       initialized: true,
       revision: 5,
       activeGenerationJobs: [{ chatId: 'chat-b', jobId: 'job-b' }],
-      activeMessageTranslations: [{ chatId: 'chat-b', messageId: 'message-b' }],
+      activeMessageTranslations: [
+        { chatId: 'chat-b', messageId: 'message-b', jobId: 'translation-b', status: 'running' },
+      ],
     },
   })
 })
@@ -205,7 +207,9 @@ describe('complete server resource refresh', () => {
     expect(sideEffects.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
     expect(sideEffects.hydratePromptTemplate).toHaveBeenCalledWith({ force: true, minimumRevision: 5 })
     expect(sideEffects.setGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-b', jobId: 'job-b' }])
-    expect(sideEffects.setTranslations).toHaveBeenCalledWith([{ chatId: 'chat-b', messageId: 'message-b' }])
+    expect(sideEffects.setTranslations).toHaveBeenCalledWith([
+      { chatId: 'chat-b', messageId: 'message-b', jobId: 'translation-b', status: 'running' },
+    ])
     expect(sideEffects.recordRefresh).toHaveBeenCalledWith('backup-restore', undefined)
   })
 

@@ -60,7 +60,9 @@ describe('server runtime bootstrap helper', () => {
       databaseLineage: 'database-a',
       writerEpoch: 3,
       activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a', mode: 'continue' }],
-      activeMessageTranslations: [{ chatId: 'chat-a', messageId: 'message-a' }],
+      activeMessageTranslations: [
+        { chatId: 'chat-a', messageId: 'message-a', jobId: 'translation-a', status: 'running' },
+      ],
     })
 
     await expect(fetchServerBootstrap()).resolves.toEqual({
@@ -74,7 +76,9 @@ describe('server runtime bootstrap helper', () => {
         databaseLineage: 'database-a',
         writerEpoch: 3,
         activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a', mode: 'continue' }],
-        activeMessageTranslations: [{ chatId: 'chat-a', messageId: 'message-a' }],
+        activeMessageTranslations: [
+          { chatId: 'chat-a', messageId: 'message-a', jobId: 'translation-a', status: 'running' },
+        ],
       },
     })
     expect(peekCachedServerCommandRevision()).toBe(12)
@@ -132,7 +136,14 @@ describe('server runtime bootstrap helper', () => {
     expect(result.bootstrap.activeGenerationJobs).toEqual([
       { chatId: 'chat-a', jobId: 'job-a', mode: 'regenerate', regenerateMessageId: 'message-a' },
     ])
-    expect(result.bootstrap.activeMessageTranslations).toEqual([{ chatId: 'chat-a', messageId: 'message-a' }])
+    expect(result.bootstrap.activeMessageTranslations).toEqual([
+      {
+        chatId: 'chat-a',
+        messageId: 'message-a',
+        jobId: 'legacy:chat-a:message-a',
+        status: 'running',
+      },
+    ])
   })
 
   it('maps HTTP failures and network failures to status:error', async () => {

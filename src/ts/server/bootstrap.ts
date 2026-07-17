@@ -20,6 +20,10 @@ export interface ActiveGenerationJob {
 export interface ActiveMessageTranslation {
   chatId: string
   messageId: string
+  jobId: string
+  status: 'running' | 'succeeded' | 'failed'
+  error?: string
+  completedAt?: number
 }
 
 export interface ServerBootstrapRuntime {
@@ -153,9 +157,25 @@ function parseActiveMessageTranslations(value: unknown): ActiveMessageTranslatio
   for (const entry of value) {
     if (!entry || typeof entry !== 'object') continue
     const record = entry as Record<string, unknown>
-    if (typeof record.chatId === 'string' && typeof record.messageId === 'string') {
-      jobs.push({ chatId: record.chatId, messageId: record.messageId })
+    if (typeof record.chatId !== 'string' || typeof record.messageId !== 'string') continue
+    const status =
+      record.status === 'succeeded' || record.status === 'failed' || record.status === 'running'
+        ? record.status
+        : 'running'
+    const job: ActiveMessageTranslation = {
+      chatId: record.chatId,
+      messageId: record.messageId,
+      jobId:
+        typeof record.jobId === 'string' && record.jobId.length > 0
+          ? record.jobId
+          : `legacy:${record.chatId}:${record.messageId}`,
+      status,
     }
+    if (status === 'failed' && typeof record.error === 'string') job.error = record.error
+    if (status !== 'running' && typeof record.completedAt === 'number' && Number.isFinite(record.completedAt)) {
+      job.completedAt = record.completedAt
+    }
+    jobs.push(job)
   }
   return jobs
 }

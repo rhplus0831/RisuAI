@@ -106,7 +106,7 @@
     ensureMessageId,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands, getServerCommandBaseRevision, translateMessageCommand } from 'src/ts/server/commands'
-  import { activeMessageTranslations } from 'src/ts/server/messageTranslationJobs'
+  import { activeMessageTranslations, clearMessageTranslationJob } from 'src/ts/server/messageTranslationJobs'
   import {
     rollbackServerBackedChatRowMetadata,
     syncServerBackedChatMetadataBaselines,
@@ -1125,10 +1125,11 @@
     return character.chats?.[chatPage]?.id ?? ''
   })
   let hasActiveAgentPresetProgress = $derived($agentPresetProgress?.chatId === currentChatId)
-  let serverTranslationInProgress = $derived.by(() => {
-    if (!messageRowId) return false
-    return $activeMessageTranslations.some((job) => job.messageId === messageRowId)
+  let serverTranslationJob = $derived.by(() => {
+    if (!messageRowId || !currentChatId) return undefined
+    return $activeMessageTranslations.find((job) => job.messageId === messageRowId && job.chatId === currentChatId)
   })
+  let serverTranslationInProgress = $derived(serverTranslationJob?.status === 'running')
   let translationInProgress = $derived(translating || serverTranslationInProgress)
   let sawServerTranslationInProgress = $state(false)
   let displayMessage = $derived.by(() => {
@@ -1140,8 +1141,33 @@
   let generationLoadingProgress = $derived(getChatGenerationLoadingProgress(normalizedGenerationStage))
 
   $effect(() => {
+    const job = serverTranslationJob
     if (serverTranslationInProgress) {
       sawServerTranslationInProgress = true
+      return
+    }
+    if (job?.status === 'failed') {
+      translated = false
+      setStatusMessage(language.playground.translationRunFailed(job.error ?? 'Message translation failed'), 5000)
+      clearMessageTranslationJob(job.jobId)
+      sawServerTranslationInProgress = false
+      return
+    }
+    if (job?.status === 'succeeded') {
+      const expectedChatId = currentChatId
+      const expectedMessageId = messageRowId
+      clearMessageTranslationJob(job.jobId)
+      void hydrateChatMessages(expectedChatId, { force: true, strict: true })
+        .then(() => {
+          if (currentChatId !== expectedChatId || messageRowId !== expectedMessageId) return
+          if (activeRawTranslation()) translated = true
+        })
+        .catch((error: unknown) => {
+          if (currentChatId !== expectedChatId || messageRowId !== expectedMessageId) return
+          const detail = error instanceof Error ? error.message : String(error)
+          setStatusMessage(language.playground.translationRunFailed(detail), 5000)
+        })
+      sawServerTranslationInProgress = false
       return
     }
     if (sawServerTranslationInProgress && activeRawTranslation()) {

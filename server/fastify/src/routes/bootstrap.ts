@@ -39,9 +39,10 @@ export function registerBootstrapRoutes(
       // Transient running generations so a returning client, even after a full
       // reload, can discover and reattach. Server-memory only.
       activeGenerationJobs: generationJobs?.activeJobs() ?? [],
-      // Detached message translations still running server-side. Server-memory
-      // only, used by the client to preserve row-level busy controls after reload.
-      activeMessageTranslations: messageTranslationJobs?.activeTranslations() ?? [],
+      // Detached message translations and their short-lived terminal outcomes.
+      // This lets a returning browser preserve busy controls, report failures,
+      // and rehydrate successful translations after reload.
+      activeMessageTranslations: messageTranslationJobs?.translations() ?? [],
     }
     emitProtocolMetric(
       'bootstrap_projection',
