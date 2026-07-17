@@ -20,8 +20,32 @@
       value?.[0]?.effect?.[0]?.type !== 'triggerlua' &&
       value?.[0]?.effect?.[0]?.type !== 'v2Header',
   )
+  let modeReplacementAttempt = 0
 
   const loadTriggerV1List = () => import('./TriggerV1List.svelte').then((m) => m.default)
+
+  async function confirmTriggerModeReplacement(
+    replacement: triggerscript[],
+    needsConfirmation: boolean,
+  ): Promise<void> {
+    const attempt = ++modeReplacementAttempt
+    const expectedOwnerKey = ownerKey
+    const expectedValue = value
+    const expectedSnapshot = JSON.stringify(value ?? [])
+
+    if (needsConfirmation && !(await alertConfirm(language.triggerSwitchWarn))) {
+      return
+    }
+    if (
+      attempt !== modeReplacementAttempt ||
+      ownerKey !== expectedOwnerKey ||
+      value !== expectedValue ||
+      JSON.stringify(value ?? []) !== expectedSnapshot
+    ) {
+      return
+    }
+    value = replacement
+  }
 </script>
 
 <div class="flex items-start mt-2 gap-2">
@@ -34,11 +58,7 @@
         e.stopPropagation()
         const codeType = value?.[0]?.effect?.[0]?.type
         if (codeType === 'triggercode' || codeType === 'triggerlua' || codeType === 'v2Header') {
-          const t = await alertConfirm(language.triggerSwitchWarn)
-          if (!t) {
-            return
-          }
-          value = []
+          await confirmTriggerModeReplacement([], true)
         }
       }}>V1</button>
   {/if}
@@ -50,30 +70,29 @@
       e.stopPropagation()
       const codeType = value?.[0]?.effect?.[0]?.type
       if (codeType !== 'v2Header') {
-        const t = await alertConfirm(language.triggerSwitchWarn)
-        if (!t) {
-          return
-        }
-        value = [
-          {
-            comment: '',
-            type: 'manual',
-            conditions: [],
-            effect: [
-              {
-                type: 'v2Header',
-                code: '',
-                indent: 0,
-              },
-            ],
-          },
-          {
-            comment: 'New Event',
-            type: 'manual',
-            conditions: [],
-            effect: [],
-          },
-        ]
+        await confirmTriggerModeReplacement(
+          [
+            {
+              comment: '',
+              type: 'manual',
+              conditions: [],
+              effect: [
+                {
+                  type: 'v2Header',
+                  code: '',
+                  indent: 0,
+                },
+              ],
+            },
+            {
+              comment: 'New Event',
+              type: 'manual',
+              conditions: [],
+              effect: [],
+            },
+          ],
+          true,
+        )
       }
     }}>V2</button>
   <button
@@ -83,25 +102,22 @@
     onclick={async (e) => {
       e.stopPropagation()
       if (value?.[0]?.effect?.[0]?.type !== 'triggerlua') {
-        if (value && value.length > 0) {
-          const t = await alertConfirm(language.triggerSwitchWarn)
-          if (!t) {
-            return
-          }
-        }
-        value = [
-          {
-            comment: '',
-            type: 'start',
-            conditions: [],
-            effect: [
-              {
-                type: 'triggerlua',
-                code: '',
-              },
-            ],
-          },
-        ]
+        await confirmTriggerModeReplacement(
+          [
+            {
+              comment: '',
+              type: 'start',
+              conditions: [],
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: '',
+                },
+              ],
+            },
+          ],
+          Boolean(value?.length),
+        )
       }
     }}>Lua</button>
 </div>
