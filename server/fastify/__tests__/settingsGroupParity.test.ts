@@ -55,4 +55,9 @@ describe('settings group parity', () => {
     expect(SETTINGS_GROUP_KEYS.advanced).not.toContain('forceProxyAsOpenAI')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.advanced).not.toContain('forceProxyAsOpenAI')
   })
+
+  it('does not accept the retired Hypa punctuation setting', () => {
+    expect(SETTINGS_GROUP_KEYS.memory).not.toContain('removePunctuationHypa')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.memory).not.toContain('removePunctuationHypa')
+  })
 })

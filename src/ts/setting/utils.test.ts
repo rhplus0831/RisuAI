@@ -246,6 +246,10 @@ describe('server-backed data-driven settings', () => {
     expect(advancedSettingsItems.some((item) => item.bindKey === 'forceProxyAsOpenAI')).toBe(false)
   })
 
+  it('does not expose legacy punctuation normalization for Hypa V3', () => {
+    expect(advancedSettingsItems.some((item) => item.bindKey === 'removePunctuationHypa')).toBe(false)
+  })
+
   it('exposes the app-owned reduced-motion toggle under Accessibility', () => {
     expect(accessibilitySettingsItems.find((item) => item.id === 'acc.reducedMotion')).toMatchObject({
       type: 'check',

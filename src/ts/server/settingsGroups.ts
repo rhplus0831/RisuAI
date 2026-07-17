@@ -256,7 +256,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   reasoningEffort: 'runtime',
   rememberToolUsage: 'runtime',
   removeIncompleteResponse: 'runtime',
-  removePunctuationHypa: 'memory',
   repetition_penalty: 'runtime',
   requestInfoInsideChat: 'sidebar',
   requestLocation: 'runtime',
