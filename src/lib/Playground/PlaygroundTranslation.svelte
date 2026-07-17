@@ -20,6 +20,19 @@
   let keepContext = $state(false)
   let bulkProgressText = $state('')
   let failureMessages = $state<string[]>([])
+  let inputEpoch = 0
+  let trackedInputSignature = ''
+
+  $effect(() => {
+    const inputSignature = JSON.stringify([r, sourceLang, outputLang, bulk, keepContext])
+    if (inputSignature === trackedInputSignature) return
+
+    trackedInputSignature = inputSignature
+    inputEpoch += 1
+    output = ''
+    failureMessages = []
+    bulkProgressText = ''
+  })
 
   function translationErrorMessage(error: unknown): string {
     if (error instanceof Error && error.message) return error.message
@@ -34,7 +47,9 @@
     const outputLanguageSnapshot = outputLang
     const bulkSnapshot = bulk
     const keepContextSnapshot = keepContext
+    const runInputEpoch = inputEpoch
     const isCurrentRun = () =>
+      inputEpoch === runInputEpoch &&
       r === sourceSnapshot &&
       sourceLang === sourceLanguageSnapshot &&
       outputLang === outputLanguageSnapshot &&

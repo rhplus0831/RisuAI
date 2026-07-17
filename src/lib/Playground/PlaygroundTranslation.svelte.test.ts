@@ -289,6 +289,44 @@ describe('PlaygroundTranslation run ownership and failures', () => {
     expect(textareas()[1]?.value).toBe('')
   })
 
+  it('clears a completed result as soon as its source changes', async () => {
+    translationMocks.runTranslator.mockResolvedValueOnce('translated result')
+    component = mount(PlaygroundTranslation, { target })
+    await setSource('first source')
+
+    translateButton().click()
+    await vi.waitFor(() => expect(textareas()[1]?.value).toBe('translated result'))
+
+    await setSource('new source')
+
+    expect(textareas()[1]?.value).toBe('')
+    expect(target.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('clears published bulk output before a later stale chunk settles', async () => {
+    const firstTranslation = deferred<string>()
+    const secondTranslation = deferred<string>()
+    translationMocks.runTranslator
+      .mockReturnValueOnce(firstTranslation.promise)
+      .mockReturnValueOnce(secondTranslation.promise)
+    component = mount(PlaygroundTranslation, { target })
+    await setSource('first\n\nsecond')
+    await enableBulk()
+
+    translateButton().click()
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledOnce())
+    firstTranslation.resolve('first translated')
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledTimes(2))
+    expect(textareas()[1]?.value).toBe('first translated')
+
+    await setSource('replacement source')
+
+    expect(textareas()[1]?.value).toBe('')
+    secondTranslation.resolve('stale second translation')
+    await waitForIdle()
+    expect(textareas()[1]?.value).toBe('')
+  })
+
   it('uses the captured context settings consistently across chunks', async () => {
     translationMocks.runTranslator.mockResolvedValueOnce('first translated').mockResolvedValueOnce('second translated')
     translationMocks.tokenize.mockResolvedValue(7)
