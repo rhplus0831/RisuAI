@@ -319,6 +319,27 @@ describe('IrisModal model availability', () => {
     ])
   })
 
+  it('keeps a reset made before dialogue hydration finishes', async () => {
+    const restore = deferred<Array<{ speaker: string; text: string }> | null>()
+    irisMocks.forageGetItem.mockReturnValueOnce(restore.promise)
+    component = mount(IrisModal, { target })
+    await settle()
+
+    await resetFromBacklog()
+    const resetDialogue = irisMocks.forageSetItem.mock.calls.at(-1)?.[1] as DialogueLineForTest[]
+    expect(resetDialogue).toHaveLength(1)
+    expect(resetDialogue[0]?.text).toBe("Hello there. I've been waiting for you.")
+
+    restore.resolve([{ speaker: 'Iris', text: 'Old saved conversation' }])
+    await settle()
+    await vi.runAllTimersAsync()
+    await settle()
+
+    expect(target.textContent).toContain("Hello there. I've been waiting for you.")
+    expect(target.textContent).not.toContain('Old saved conversation')
+    expect(irisMocks.forageSetItem.mock.calls.at(-1)?.[1]).toEqual(resetDialogue)
+  })
+
   it.each(['', '<think>private reasoning</think>', '(private direction) {{hidden state}}'])(
     'keeps the submitted line when Iris returns no visible dialogue: %j',
     async (result) => {

@@ -425,11 +425,12 @@
 
   onMount(() => {
     let mounted = true
+    const hydrationEpoch = dialogueEpoch
     // Restore this device's saved dialogue, falling back to the localized intro.
     forageInstance
       .getItem<DialogueLine[]>('current_dialogue')
       .then((saved) => {
-        if (!mounted) return
+        if (!mounted || dialogueEpoch !== hydrationEpoch) return
         if (saved && saved.length > 0) {
           dialogue = saved
           currentIndex = dialogue.length - 1
@@ -440,7 +441,7 @@
         startTyping(dialogue[currentIndex].text)
       })
       .catch(() => {
-        if (!mounted) return
+        if (!mounted || dialogueEpoch !== hydrationEpoch) return
         dialogue = introDialogue[getDatabase().language] ?? introDialogue.en
         currentIndex = 0
         startTyping(dialogue[currentIndex].text)
