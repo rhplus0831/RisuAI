@@ -117,6 +117,16 @@
     return (legacyHypaV3Data.categories ?? []).map((category) => ({ ...category }))
   }
 
+  function sameCategories(
+    left: SerializableHypaV3Data['categories'],
+    right: SerializableHypaV3Data['categories'],
+  ): boolean {
+    return (
+      left.length === right.length &&
+      left.every((category, index) => category.id === right[index]?.id && category.name === right[index]?.name)
+    )
+  }
+
   async function refreshServerSummaries(
     chatId: string,
     categoriesSnapshot: SerializableHypaV3Data['categories'] = cloneLegacyCategories(),
@@ -345,6 +355,14 @@
     const controller = new AbortController()
     void refreshServerSummaries(chatId, categoriesSnapshot, controller.signal)
     return () => controller.abort()
+  })
+
+  $effect(() => {
+    if (!serverBackedMemoryMode || currentChatId.length === 0) return
+    const categories = cloneLegacyCategories()
+    const current = untrack(() => serverHypaV3Data)
+    if (sameCategories(current.categories ?? [], categories)) return
+    serverHypaV3Data = { ...current, categories }
   })
 
   $effect(() => {

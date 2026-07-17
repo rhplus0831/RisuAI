@@ -552,6 +552,12 @@
   function isSelected(): boolean {
     return bulkEditState?.selectedSummaries?.has(summaryIndex) ?? false
   }
+
+  const categoryOptions = $derived.by(() => {
+    const selectedId = summary.categoryId
+    if (!selectedId || categories.some((category) => category.id === selectedId)) return categories
+    return [...categories, { id: selectedId, name: selectedId }]
+  })
 </script>
 
 <div
@@ -595,7 +601,7 @@
               summary.categoryId = event.currentTarget.value || undefined
               void onSummaryChanged?.(summaryIndex, 'categoryId')
             }}>
-            {#each categories as category}
+            {#each categoryOptions as category}
               <option value={category.id}>{category.name}</option>
             {/each}
           </select>

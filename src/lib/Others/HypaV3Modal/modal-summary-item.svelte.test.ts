@@ -154,6 +154,23 @@ afterEach(() => {
 })
 
 describe('HypaV3 summary item keyboard navigation', () => {
+  it('preserves an unmatched server category as a selectable fallback', () => {
+    const summary: SerializableSummary = {
+      text: 'Summary text',
+      chatMemos: [],
+      isImportant: false,
+      categoryId: 'story',
+    }
+    mountSummary(summary)
+
+    const select = target.querySelector<HTMLSelectElement>('select')
+    expect(select?.value).toBe('story')
+    expect(Array.from(select?.options ?? []).map((option) => [option.value, option.text])).toContainEqual([
+      'story',
+      'story',
+    ])
+  })
+
   it('keeps available summary controls in the appropriate tab order', async () => {
     const summary: SerializableSummary = {
       text: 'Summary text',

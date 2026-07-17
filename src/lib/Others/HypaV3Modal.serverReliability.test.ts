@@ -56,7 +56,7 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-function seedDatabase(): void {
+function seedDatabase(categories = [{ id: '', name: 'Unclassified' }]): void {
   selectedCharID.set(0)
   setDatabaseLite({
     hypaV3PresetId: 0,
@@ -76,7 +76,7 @@ function seedDatabase(): void {
             localLore: [],
             hypaV3Data: {
               summaries: [],
-              categories: [{ id: '', name: 'Unclassified' }],
+              categories,
               lastSelectedSummaries: [],
             },
           },
@@ -185,5 +185,39 @@ describe('Hypa V3 server summary close reliability', () => {
     patch.resolve({ status: 'error', error: 'PATCH rejected' })
     await settle()
     expect(get(hypaV3ModalOpen)).toBe(true)
+  })
+
+  it('reconciles categories that hydrate after summaries without refetching or patching', async () => {
+    serverMocks.listServerMemorySummaries.mockResolvedValue({
+      status: 'ok',
+      summaries: [
+        {
+          ...serverSummary(),
+          metadata: { chatMemos: ['message-a'], isImportant: true, categoryId: 'story' },
+        },
+      ],
+    })
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const initialSelect = target.querySelector<HTMLSelectElement>(
+      `select[aria-label="${language.hypaV3Modal.summaryCategoryLabel.replace('{0}', '1')}"]`,
+    )
+    expect(initialSelect?.value).toBe('story')
+    expect(Array.from(initialSelect?.options ?? []).find((option) => option.value === 'story')?.text).toBe('story')
+
+    seedDatabase([
+      { id: '', name: 'Unclassified' },
+      { id: 'story', name: 'Story' },
+    ])
+    await settle()
+
+    const hydratedSelect = target.querySelector<HTMLSelectElement>(
+      `select[aria-label="${language.hypaV3Modal.summaryCategoryLabel.replace('{0}', '1')}"]`,
+    )
+    expect(hydratedSelect?.value).toBe('story')
+    expect(Array.from(hydratedSelect?.options ?? []).find((option) => option.value === 'story')?.text).toBe('Story')
+    expect(serverMocks.listServerMemorySummaries).toHaveBeenCalledTimes(1)
+    expect(serverMocks.patchServerMemorySummary).not.toHaveBeenCalled()
   })
 })
