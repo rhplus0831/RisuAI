@@ -703,6 +703,7 @@ describe('runGeminiStream', () => {
       model: 'gemini-thinking',
       messages: [{ role: 'user', content: 'hi' }],
       apiKey: 'k',
+      streamThoughts: true,
       signal: new AbortController().signal,
     })!
     const frames: unknown[] = []
@@ -712,6 +713,30 @@ describe('runGeminiStream', () => {
       { kind: 'token', content: '<Thoughts>\nfirst' },
       { kind: 'token', content: ' second' },
       { kind: 'token', content: '</Thoughts>\n\nanswer' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('buffers reasoning events until answer text when thought streaming is disabled', async () => {
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream([
+        geminiPartsFrame([{ thought: true, text: 'first' }]),
+        geminiPartsFrame([{ thought: true, text: ' second' }]),
+        geminiPartsFrame([{ text: 'answer' }], 'STOP'),
+      ]),
+    )
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-thinking',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      streamThoughts: false,
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const frame of runGeminiStream(resolved)) frames.push(frame)
+
+    expect(frames).toEqual([
+      { kind: 'token', content: '<Thoughts>\nfirst second</Thoughts>\n\nanswer' },
       { kind: 'done', finishReason: 'stop' },
     ])
   })

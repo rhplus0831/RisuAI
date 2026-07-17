@@ -1218,6 +1218,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       presencePenalty: parameters.presencePenalty,
       frequencyPenalty: parameters.frequencyPenalty,
       thinkingTokens: parameters.thinkingTokens,
+      streamThoughts: db.streamGeminiThoughts === true,
       signal,
       trace,
       tools: args.tools,

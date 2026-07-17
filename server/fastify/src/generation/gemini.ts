@@ -48,6 +48,8 @@ export interface GeminiRequest {
   presencePenalty?: number
   frequencyPenalty?: number
   thinkingTokens?: number
+  /** Reveal reasoning deltas as they arrive instead of buffering them until answer text. */
+  streamThoughts?: boolean
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
   signal: AbortSignal
@@ -76,6 +78,7 @@ interface GeminiResolveInput {
   presencePenalty?: unknown
   frequencyPenalty?: unknown
   thinkingTokens?: unknown
+  streamThoughts?: unknown
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
   toolRounds?: ServerToolRound[]
@@ -226,6 +229,7 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     presencePenalty,
     frequencyPenalty,
     thinkingTokens,
+    streamThoughts: input.streamThoughts === true,
     trace: input.trace,
     tools: input.tools,
     signal: input.signal,
@@ -361,6 +365,14 @@ interface GeminiErrorResponse {
 
 interface GeminiTextExtractionState {
   thinkingOpen: boolean
+}
+
+function hasAnswerText(body: GeminiResponse): boolean {
+  const candidates = Array.isArray(body.candidates) ? body.candidates : []
+  return candidates.some((candidate) => {
+    const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []
+    return parts.some((part) => part.thought !== true && typeof part.text === 'string')
+  })
 }
 
 function extractText(
@@ -587,6 +599,7 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   const extractionState: GeminiTextExtractionState = { thinkingOpen: false }
+  let bufferedText = ''
 
   try {
     while (true) {
@@ -627,7 +640,13 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
         }
         const text = extractText(frame, extractionState, false)
         if (text.length > 0) {
-          yield { kind: 'token', content: text }
+          if (req.streamThoughts || hasAnswerText(frame)) {
+            const content = bufferedText + text
+            bufferedText = ''
+            yield { kind: 'token', content }
+          } else {
+            bufferedText += text
+          }
         }
         const fr = Array.isArray(frame.candidates) ? frame.candidates[0]?.finishReason : undefined
         if (fr !== undefined) {
@@ -653,7 +672,8 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
       yield { kind: 'error', error: 'truncated upstream stream event' }
       return
     }
-    if (extractionState.thinkingOpen) yield { kind: 'token', content: '</Thoughts>\n\n' }
+    if (extractionState.thinkingOpen) bufferedText += '</Thoughts>\n\n'
+    if (bufferedText.length > 0) yield { kind: 'token', content: bufferedText }
     yield { kind: 'done', finishReason }
   }
 }
