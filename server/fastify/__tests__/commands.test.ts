@@ -1782,7 +1782,10 @@ describe('Phase 9-2a scalar settings groups', () => {
         id: 'model-a',
       },
     })
-    const persisted = loadPersistedFromDir(harness.dataDir).database
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      modelRoleProfiles: Record<string, unknown>
+      modelPresets: unknown[]
+    }
     expect(persisted.modelRoleProfiles).toMatchObject({
       chatMain: { mode: 'profile', profileId: 'profile-a' },
     })
@@ -1807,7 +1810,9 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
     })
     expect(missingPreset.statusCode).toBe(404)
-    const afterRejectedMirror = loadPersistedFromDir(harness.dataDir).database
+    const afterRejectedMirror = loadPersistedFromDir(harness.dataDir).database as {
+      modelRoleProfiles: Record<string, unknown>
+    }
     expect(afterRejectedMirror.modelRoleProfiles).toMatchObject({
       chatAux: { mode: 'legacy' },
     })
