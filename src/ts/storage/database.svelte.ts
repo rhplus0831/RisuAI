@@ -3961,12 +3961,12 @@ export interface Database {
 
 export interface CustomSideBarItem {
   id: string
-  type: 'model' | 'databaseKey' | 'loadout' | 'setting'
+  type: 'model' | 'loadout' | 'setting'
   subType: string
   label: string
 }
 
-const CUSTOM_SIDEBAR_ITEM_TYPES = new Set(['model', 'databaseKey', 'loadout', 'setting'])
+const CUSTOM_SIDEBAR_ITEM_TYPES = new Set(['model', 'loadout', 'setting'])
 
 function normalizeCustomSidebarItems(value: unknown): CustomSideBarItem[] {
   if (!Array.isArray(value)) return []

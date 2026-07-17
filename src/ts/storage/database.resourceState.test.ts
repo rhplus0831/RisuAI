@@ -97,4 +97,33 @@ describe('database compatibility accessors over resource state', () => {
     expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(beforeFacadeEpoch)
     expect(getServerResourceApplyEpoch()).toBeGreaterThan(beforeApplyEpoch)
   })
+
+  it('removes unsupported legacy database-key sidebar rows during resource normalization', () => {
+    const database = databaseFixture()
+    database.customSidebarItems = [
+      {
+        id: 'legacy-database-key',
+        type: 'databaseKey',
+        subType: 'temperature',
+        label: 'Temperature',
+      },
+      {
+        id: 'loadout',
+        type: 'loadout',
+        subType: 'none',
+        label: 'Loadouts',
+      },
+    ] as Database['customSidebarItems']
+
+    applyServerResourceDatabase(database)
+
+    expect(getDatabase().customSidebarItems).toEqual([
+      {
+        id: 'loadout',
+        type: 'loadout',
+        subType: 'none',
+        label: 'Loadouts',
+      },
+    ])
+  })
 })

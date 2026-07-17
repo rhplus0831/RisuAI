@@ -8518,7 +8518,7 @@ function throwModelProfileValidationError(error: unknown): never {
   throw error
 }
 
-const CUSTOM_SIDEBAR_ITEM_TYPES = new Set(['model', 'databaseKey', 'loadout', 'setting'])
+const CUSTOM_SIDEBAR_ITEM_TYPES = new Set(['model', 'loadout', 'setting'])
 
 function readCustomSidebarItems(value: unknown): Array<{
   id: string

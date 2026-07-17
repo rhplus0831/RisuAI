@@ -15,7 +15,7 @@
     return Array.isArray(items)
       ? items.filter((item): item is CustomSideBarItem => {
           if (!item || typeof item !== 'object' || Array.isArray(item)) return false
-          if (!['model', 'databaseKey', 'loadout', 'setting'].includes(item.type)) return false
+          if (!['model', 'loadout', 'setting'].includes(item.type)) return false
           if (typeof item.id !== 'string' || typeof item.subType !== 'string' || typeof item.label !== 'string') {
             return false
           }

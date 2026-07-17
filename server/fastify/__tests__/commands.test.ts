@@ -1370,6 +1370,35 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('rejects unsupported legacy database-key sidebar rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, { customSidebarItems: [] })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/sidebar',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          customSidebarItems: [
+            {
+              id: 'legacy-database-key',
+              type: 'databaseKey',
+              subType: 'temperature',
+              label: 'Temperature',
+            },
+          ],
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({
+      error: 'customSidebarItems[0].type is unsupported',
+    })
+  })
+
   it('sanitizes custom sidebar rows to the supported persisted shape', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, { customSidebarItems: [] })
