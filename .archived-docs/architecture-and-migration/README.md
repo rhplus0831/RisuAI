@@ -7,6 +7,7 @@ transfer of chat-process ownership from the browser to the server.
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`fastify-migration/`](fastify-migration/README.md)               | Original Fastify migration phases, server-projection invariants, provider references, and the Phase-9-era client-thinning contract.               |
 | [`client-thinning-closeout/`](client-thinning-closeout/README.md) | Later rewritten client-thinning workstream: server prompt assembly, provider capability routing, Lua/A2 processing, and final ownership closeout. |
+| [`risuai-fastify-behavior-differences.md`](risuai-fastify-behavior-differences.md) | Dated 2026-07-11 comparison with the original RisuAI and the remediation state recorded after that audit. |
 
 The `fastify-migration/client-thinning/` subtree and the later
 `client-thinning-closeout/` record overlap in subject but are not duplicates.

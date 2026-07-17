@@ -9,6 +9,7 @@ migrations.
 | [`sqlite-migration.md`](sqlite-migration.md)                      | Migration of remaining `db.json` state to SQLite.                                                                                 |
 | [`lazy-projection/`](lazy-projection/README.md)                   | Chat-shell bootstrap, on-demand hydration, server-owned generation writes, and related projection work.                           |
 | [`mutation-range-narrowing/`](mutation-range-narrowing/README.md) | Command mutation-range narrowing and verification budgets.                                                                        |
+| [`remove-projection-final-review.md`](remove-projection-final-review.md) | Branch-specific 2026-07-14 review of the projection-removal work before merge.                                                   |
 
 ## Protocol Source Audits
 

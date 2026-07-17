@@ -1,6 +1,6 @@
 # Providers And Models
 
-Last audited: 2026-07-16.
+Last audited: 2026-07-17.
 
 Provider/model behavior is split between browser model metadata, Fastify
 provider dispatch, and the shared capability table that decides whether a
@@ -42,23 +42,47 @@ metadata, dynamic Google/Anthropic model registration, and prefixed ids such as
 pass the capability table. The server reconstructs narrow dispatch metadata from
 persisted settings, profile-owned options, string prefixes, and the OpenAI model
 allowlist; it does not import the full browser UI registry.
+
+## Server-Owned Provider And Media Operations
+
 Dynamic NanoGPT account/model fetching lives in `src/ts/model/nanogpt.ts`.
 OpenRouter, NanoGPT, Ollama, and Horde helpers carry richer browser catalog
 metadata for picker/filter UI than the server needs for dispatch. NanoGPT,
-OpenRouter, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish Speech catalog/account calls
-use the fixed allowlist in `server/fastify/src/providerOperations.ts` through
-`src/ts/server/providerOperations.ts`; callers cannot supply an upstream URL,
-method, or arbitrary headers. Stored and profile-local masked credentials are
-resolved only by Fastify and never projected back to the browser. A user-edited
-draft key is a one-shot override for the selected fixed provider operation.
+OpenRouter, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish
+Speech catalog/account calls use the fixed allowlist in
+`server/fastify/src/providerOperations.ts` through
+`src/ts/server/providerOperations.ts`. The same boundary owns Google token
+counting and DeepL/DeepLX translation; use
+`src/ts/server/providerOperationsProtocol.ts` as the operation source of truth.
 
-Credentialed browser TTS playback uses the bounded binary operation in
-`server/fastify/src/tts.ts` through `src/ts/server/tts.ts`. ElevenLabs, Fish
-Speech, Hugging Face, and NovelAI targets are fixed. OpenAI-compatible playback
-loads a masked per-character key, its persisted endpoint, and its options
-together by stable character id; an intentional caller-owned draft key may use
-only a validated explicit endpoint/config. Upstream errors are sanitized, audio
-is size- and time-bounded, and browser cancellation is propagated.
+Credentialed provider and media features use authenticated, no-store Fastify
+operations rather than exposing raw stored keys to browser provider code. The
+routes do not mutate local durable state and therefore do not require the active
+writer. Each accepts a fixed operation/provider discriminator and bounded typed
+input; contracts that permit custom endpoints validate them explicitly instead
+of accepting a generic URL/method/header proxy. Upstream response sizes,
+deadlines, error details, and disconnect cancellation are bounded.
+
+| Route / browser adapter | Fixed boundary | Result / rate limit |
+| --- | --- | --- |
+| `POST /api/v1/provider-operations` / `src/ts/server/providerOperations.ts` | NanoGPT account/catalog operations; OpenRouter, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish catalogs; Google token counting; DeepL/DeepLX translation. | JSON, `60/min` |
+| `POST /api/v1/embedding-operations` / `src/ts/server/embeddingOperations.ts` | Remote `ada`, OpenAI v3, Voyage contextual, or custom embeddings. Stored secrets cannot be paired with a changed one-shot custom endpoint. | JSON vectors, `60/min` |
+| `POST /api/v1/tts/synthesize` / `src/ts/server/tts.ts` | ElevenLabs, Fish, Hugging Face, NovelAI, or OpenAI-compatible synthesis. Stored-character OpenAI credentials, endpoint, and options resolve together by character id. | Audio bytes, `60/min` |
+| `POST /api/v1/image-generation` / `src/ts/server/imageGeneration.ts` | NovelAI, DALL-E, Stability, Fal, Imagen, OpenAI-compatible, WaveSpeed, or Kei generation with provider-specific request validation. | JPEG/PNG/WebP bytes, `10/min` |
+| `POST /api/v1/media/openai/transcriptions` / `src/ts/server/openAITranscription.ts` | One bounded audio/video upload to OpenAI `whisper-1`, using the server-stored OpenAI key and a fixed VTT response format. | VTT text, `10/min` |
+| `POST /api/v1/mcp/oauth/refresh` / `src/ts/server/mcpOAuthRefresh.ts` | A stable MCP URL selects its matching stored refresh credential; the browser cannot submit the raw refresh token or client secret. | JSON access token, `30/min` |
+
+The server implementations are `providerOperations.ts`,
+`embeddingOperations.ts`, `tts.ts`, `imageGeneration.ts`,
+`openAITranscription.ts`, and `mcpOAuthRefresh.ts` under
+`server/fastify/src/`; their route registrars live under
+`server/fastify/src/routes/`. Request discriminators and browser/server shared
+types live in the corresponding `src/ts/server/*Protocol.ts` files, except that
+OpenAI transcription validates its fixed contract directly in its adapter and
+route. Raw stored/profile credentials resolve only inside Fastify; resource
+reads project a masked sentinel so the browser can refer to a stored secret
+without receiving it. A user-edited draft key is a one-shot override only for
+operations whose protocol permits `credential.source: "provided"`.
 
 OpenRouter model/provider and NanoGPT model/provider catalog requests are keyed
 by their full credential/model context and share an in-flight promise. Public
@@ -272,6 +296,7 @@ Routing notes that matter when debugging provider drift:
 | NanoGPT                  | Message, legacy, and responses formats route to Anthropic-compatible, legacy instruct, or Responses-style adapters as selected by format. |
 | Ollama local             | Native Ollama routes when an Ollama URL is configured.                                                                                    |
 | Ollama Cloud             | `ollama-cloud` remaps by `ollamaRequestFormat` to native Ollama, OpenAI-compatible, Responses, or Anthropic-compatible dispatch.          |
+| Ollama Cloud tools       | The browser owns the native Ollama MCP loop; `ollamaCloudToolProxy.ts` forwards only its credential-safe upstream chat request.           |
 | Bedrock                  | Uses Bedrock/SigV4 model metadata and wire-model prefix handling.                                                                         |
 | Horde                    | Requires an instruct chat template in the shared capability table; dispatch is buffered, not incremental.                                 |
 | Logit bias               | OpenAI Chat-family dispatch tokenizes assembled prompt bias rows, including direct token ids and strong-ban variants.                      |
@@ -312,11 +337,21 @@ adapters.
 
 `modelTools` are copied into the effective DB. Fastify OpenAI Responses dispatch
 adds `web_search_preview` when the resolved profile runtime enables `search`.
-Arbitrary browser MCP/function-tool round trips are still not executed by the
-server-owned chat path; browser legacy `requestOpenAI()` and
-`requestOpenAIResponseAPI()` retain those client tool loops.
-Ollama server-intent completion takes a browser-local dispatch path when MCP
-tools are present so native `/api/chat` tool calls can execute client MCP tools.
+The lower-level server-intent completion protocol also accepts bounded
+`tools` definitions and completed `toolRounds`. Tool-bearing requests must be
+buffered; Fastify validates definitions, call names, arguments, prior results,
+round counts, and total payload sizes, then translates the definitions/history
+for OpenAI, OpenRouter, NanoGPT, Anthropic, or Gemini. A provider-requested call
+comes back as validated `toolCalls`.
+
+This transport support does not make Fastify an MCP executor. The browser maps
+the returned call to an available MCP/function tool, executes it, and sends the
+result in a later `toolRounds` request. `/generate/chat` and Agent Preset
+execution do not run arbitrary browser MCP tools; the legacy browser OpenAI
+loops retain their own orchestration. Ollama with tools likewise stays on its
+native browser loop so the browser can execute MCP calls. Ollama Cloud can use
+the authenticated `ollamaCloudToolProxy.ts` transport to keep its stored key on
+the server, but the tool loop and execution remain browser-owned.
 Memory summaries use memory-role profile resolution and profile-owned provider
 options. Memory embeddings intentionally remain outside
 chat profiles on the separate Hypa/Voyage/custom embedding contract in
@@ -330,6 +365,7 @@ chat profiles on the separate Hypa/Voyage/custom embedding contract in
 | `src/ts/process/index.svelte.ts`                 | `sendChat()` coordinator and visible generation state.         |
 | `src/ts/process/request/serverPromptAssembly.ts` | Browser preflight for server prompt assembly support and mode. |
 | `src/ts/process/request/serverCompletion.ts`     | Server-intent completion route adapter.                        |
+| `src/ts/process/request/serverToolProtocol.ts`   | Shared bounded tool definition, returned-call, result, and round validation. |
 | `src/ts/process/serverBackedSendChat.ts`         | Chat send/preview bridge from UI inputs to Fastify routes.     |
 | `src/ts/process/request/serverChat.ts`           | Chat SSE parser and request adapter.                           |
 | `src/ts/process/request/serverChatEvents.ts`     | Client-side chat SSE frame/message-patch contract types.       |
@@ -338,6 +374,8 @@ chat profiles on the separate Hypa/Voyage/custom embedding contract in
 | `server/fastify/src/routes/generation.ts`        | Completion route boundary.                                     |
 | `server/fastify/src/routes/generationChat.ts`    | Server-assembled chat generation, preview prompt, durable job lifecycle, and chat-settings/profile guards. |
 | `server/fastify/src/prompt/chatDispatch.ts`      | Shared server provider dispatch after profile/setting resolution. |
+| `server/fastify/src/generation/serverTools.ts`   | OpenAI/Anthropic/Gemini tool wire translation and returned-call validation. |
+| `server/fastify/src/ollamaCloudToolProxy.ts`     | Credential-safe Ollama Cloud upstream transport for the browser-owned tool loop. |
 | `server/fastify/src/prompt/effectiveGenerationConfig.ts` | Chat-scoped model/prompt preset and runtime overlay application. |
 | `server/fastify/src/prompt/sseEvents.ts`         | Server-side chat SSE frame contract helpers.                   |
 
@@ -407,7 +445,9 @@ SSE headers; chat SSE assembly failures become terminal `error` frames.
 `/api/v1/generate/completion` is lower-level. Normal browser traffic sends
 already-shaped messages and sampling intent as `kind: "server-intent"`; the
 server rejects provider/model/options/secrets in that envelope and resolves them
-from persisted settings before calling the same dispatch core. A legacy
+from persisted settings before calling the same dispatch core. Optional
+`tools`/`toolRounds` carry the bounded buffered tool protocol described above;
+the response may carry validated `toolCalls` for browser execution. A legacy
 direct-provider envelope remains for compatibility tests/tools, routed through
 the current provider adapters and their direct completion streaming rules.
 

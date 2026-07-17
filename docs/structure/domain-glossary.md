@@ -1,101 +1,94 @@
 # Domain Glossary
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-17.
 
-`Database` in `src/ts/storage/database.svelte.ts` remains the canonical
-serialized/compatibility TypeScript shape used by browser code and many server
-helpers. It is not one central mutable browser state tree: the live browser view
-is composed from API-backed settings, collections, and characters resources.
-Persisted backing storage is SQLite; `server/fastify/src/repository.ts`
-reconstructs and stores the domain shape across table families.
+`Database` in `src/ts/storage/database.svelte.ts` is the canonical serialized
+compatibility shape used by browser code and server helpers. It is not one
+mutable browser database: live state is composed from API-backed settings,
+collections, and characters, while SQLite is authoritative.
+
+This file defines names and points to owners. Detailed behavior belongs in the
+focused document linked from [`README.md`](README.md).
 
 ## Core Records
 
-| Term                | Meaning                                                                                                          | Primary places                                                          |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Character           | Bot/persona-like participant keyed by `chaId`, with prompts, chats, lorebooks, scripts, modules, emotion images, and settings. `Message.role === "char"` means assistant/character speaker, not another record type. | `database.svelte.ts`, `commands/characters.ts`, `repository.ts`         |
-| Chat                | Conversation under a character with metadata, messages, script state, lorebook state, and memory metadata.       | `commands/chats.ts`, `messageStore.ts`                                  |
-| Chat generation settings | Chat-scoped overrides for persona, preset, jailbreak, and sidebar toggles used by send/preview/continue/regenerate. Browser saves are serialized per chat, can send sparse field/delete patches, and consume the server's canonical normalized value. | `chatGenerationSettings.ts`, `activeChatGenerationSettings.ts`, `chatCommands.ts`, `commands/chats.ts` |
-| Message             | Chat row stored in SQLite `messages`; commands append, update, truncate, replace, or persist generation results. | `messageStore.ts`, `commands/messages.ts`, `routes/commands.ts`         |
-| Reroll alternate    | Preserved reroll candidate stored as alternate message rows and hydrated with active chat messages.              | `messageStore.ts`, `routes/resourceReads.ts`, `rerollNavigation.svelte.ts` |
-| Chat folder         | Character-level chat grouping metadata; command paths normalize/validate ids.                                    | `commands/chats.ts`, `chatCommands.ts`                                  |
-| Settings group      | Named REST/resource slice for persisted settings. Most groups are writable through generic settings commands; `agents` and `models` are read-only slices with dedicated mutation commands, and prompt fields use the isolated `prompt` group. | `routes/commands.ts`, `src/ts/server/settingsGroups.ts`, `src/ts/promptSettings.ts` |
-| Language pack       | UI string collection. `src/lang/en.ts` is the complete shape; other packs are partial overlays merged over English, and setting rows should use `labelKey`/`helpKey` plus fallback labels instead of hard-coded visible strings. | `src/lang/`, `src/ts/setting/`, `src/lib/Setting/Wrappers/`             |
-| Theme / custom CSS  | Runtime style state. Theme fields drive `--risu-theme-*` variables, GUI size/animation use CSS variables, and the settings resource's `customCSS` is applied through `CustomCSSStore` unless safe mode suppresses it. | `src/styles.css`, `src/ts/gui/`, `src/ts/stores.svelte.ts`              |
-| Preset / bot preset | Provider and generation settings selected for a conversation.                                                    | `commands/presets.ts`, `src/ts/server/commands.ts`                      |
-| Prompt template     | Ordered prompt items such as description, persona, author note, lorebook, memory, history, and custom sections.  | `commands/prompts.ts`, `server/fastify/src/prompt/`                     |
-| Persona             | User profile/persona state mirrored into legacy fields where needed.                                             | `commands/personas.ts`, `src/ts/persona.ts`                             |
-| Loadout             | Saved selection bundle tying character, preset, persona, and module choices.                                     | `commands/loadouts.ts`, `src/ts/loadout.ts`                             |
-| Lorebook            | Stable-id world-info entries attached globally (`loreBook`/`loreBookPage`), to characters (`globalLore`), chats (`localLore`), or modules (`lorebook`). | `commands/lorebooks.ts`, `prompt/lorebook.ts`                           |
-| Module              | Reusable package of lorebooks, scripts, triggers, config, and optional MCP URL.                                  | `commands/modules.ts`, `moduleCommands.ts`, `process/modules.ts`        |
-| Script definition   | Regex/replacer script domain row: character `customscript` or module `regex`, exposed through script-definition commands. | `commands/scriptDefinitions.ts`, `routes/commands.ts`, `scriptDefinitionBridge.svelte.ts` |
-| Trigger definition  | Lua/trigger script domain row: character `triggerscript` or module `trigger`, exposed through trigger-definition commands. | `commands/scriptDefinitions.ts`, `routes/commands.ts`, `scriptDefinitionBridge.svelte.ts` |
-| Plugin              | Browser-executed extension record. Server stores records/storage but does not execute plugin code.               | `src/ts/plugins/`, `commands/plugins.ts`                                |
-| Plugin storage      | Plugin key/value JSON storage in SQLite `plugin_custom_storage`.                                                 | `commands/pluginStorage.ts`, `src/ts/pluginCommands.ts`                 |
-| Legacy storage byte store | Compatibility byte store exposed at `/api/v1/storage/*` and backed by `data/save/<hex-key>`; distinct from SQLite domain persistence and used by `FastifyStorage`. | `routes/legacyStorage.ts`, `src/ts/storage/fastifyStorage.ts`           |
-| Translator preset   | Saved translation provider/settings profile, including `.risutl` import/export helpers.                          | `commands/translatorPresets.ts`, `src/ts/translator/presets.ts`         |
-| Model profile       | Durable reusable provider/model/options/runtime/fallback record selected by role bindings.                       | `modelProfileRecords.ts`, `commands/modelProfiles.ts`, `providers-and-models.md` |
-| Model role profile  | Durable role binding for `chatMain`, `chatAux`, `memory`, `emotion`, `translate`, `otherAx`, `scriptMain`, or `scriptAux`; can bind a profile, inherit, or use legacy data. | `modelProfileRecords.ts`, `modelProfileResolver.ts`                     |
-| Model runtime defaults | Shared runtime-option defaults applied before profile runtime overrides.                                      | `modelProfileRecords.ts`, `ModelRuntimeDefaultsEditor.svelte`           |
-| Agent Preset        | Reusable auxiliary-agent pipeline selected per chat. Presets contain before-main and after-main prepared-input steps, named step outputs keyed by `outputKey`, model selection, failure policy, and hidden diagnostics. | `agentPresetRecords.ts`, `agentPresetReferences.ts`, `agentPresetResolver.ts`, `commands/agentPresets.ts`, `AgentPresetSettings.svelte`, `prompt/agentPresetExecution.ts` |
-| Hypa V3 preset      | Saved memory preset collection persisted in SQLite and exposed through the collections REST resource.            | `repository.ts`, `routes/resourceReads.ts`, `src/lib/Others/HypaV3Modal/` |
-| Asset               | Content-addressed binary with SQLite metadata and bytes under `data/assets/`. Direct asset-route uploads are active-writer guarded but remain outside the domain revision/event stream. | `repository.ts`, `routes/assets.ts`, `risuSave/assetReferences.ts`      |
-| Image-reference setting | NovelAI and WaveSpeed image-generation settings store a server asset id for new uploads; provider request construction materializes base64 lazily. Imported legacy inline-base64 fields remain fallback compatibility data. | `settingsMediaAssetUpload.ts`, `process/stableDiff.ts`                  |
-| Push subscription   | Operational Web Push subscription row stored outside the application resources; VAPID keys come from env or `data/__web_push_vapid_keys.json`, the browser registers `public/service-worker.js` for chat-completion notifications, and generation completion dispatch is best-effort. | `pushNotifications.ts`, `routes/pushNotifications.ts`, `src/ts/server/pushNotifications.ts`, `routes/generationChat.ts` |
-| `.risu` save        | Portable import/export envelope: current `risusave-blocks`, legacy envelopes, JSON import compatibility, bundle `.risu.zip`, and original local-backup `.bin` flows. | `routes/save.ts`, `server/fastify/src/risuSave/`                        |
-| RisuRealm character | Realm-hosted card imported server-side from dynamic JSON or `charx`, with progress SSE, low-level-access confirmation, content-addressed assets, and a `character.created` commit whose returned event drives a targeted character-list refresh when revisions are contiguous. | `routes/realmImport.ts`, `realmImport/`, `src/ts/server/realmImport.ts`, `resourceRefresh.ts` |
+| Term | Meaning |
+| --- | --- |
+| Character | Bot/character participant keyed by `chaId`, with prompts, chats, lorebooks, scripts, modules, media, and settings. `Message.role === "char"` means the assistant speaker. |
+| Chat | Conversation owned by one character, with metadata, script/lorebook state, memory metadata, and separately stored messages. |
+| Message | Ordered row in SQLite `messages`; commands append, update, truncate, delete, replace a tail, or persist generation output. |
+| Reroll alternate | Displaced or candidate message stored as an alternate row and hydrated with its active chat. |
+| Chat folder | Character-owned grouping metadata for chats. |
+| Chat generation settings | Per-chat persona, preset, Agent Preset, jailbreak, and sidebar overrides used by send, preview, continue, and regenerate. |
+| Settings group | Named settings resource/command slice. `agents` and `models` are read-only slices with dedicated commands; prompt fields use `prompt`. |
+| Model profile | Reusable provider/model/options/runtime/fallback record. |
+| Model role profile | Binding for `chatMain`, `chatAux`, `memory`, `emotion`, `translate`, `otherAx`, `scriptMain`, or `scriptAux`; it may select a profile, inherit, or use compatibility data. |
+| Model runtime defaults | Shared runtime options applied before profile-specific overrides. |
+| Agent Preset | Reusable before-main/after-main auxiliary-agent pipeline selected per chat, with named outputs, dependencies, concurrency, and failure policy. |
+| Model preset / legacy bot preset | Provider and generation-settings compatibility records. Modern model profiles are the normal authoring path. |
+| Prompt preset / template | A modern prompt preset owns an ordered template of description, persona, lorebook, memory, history, author-note, and custom items. |
+| Persona | User profile selected globally or per chat and mirrored into legacy fields where required. |
+| Loadout | Saved bundle of character, preset/profile, persona, module, and chat-generation selections. |
+| Lorebook | Stable-id world-info entries attached globally or to a character, chat, or module. |
+| Module | Reusable package of lorebooks, scripts, triggers, configuration, assets, and optionally an MCP identifier. |
+| MCP module | Special module row for a browser-executed MCP endpoint. Direct and `.risum` creation is supported. Patch/enable/link exclude these rows; generic delete is a revisioned no-op that leaves the row. |
+| Script / trigger definition | Regex/replacer script or Lua/trigger row owned globally, by a character, or by a module. |
+| Plugin | Browser-executed extension record. Fastify persists plugin records/storage but never executes plugin code; script-bound permission grants are browser-local localforage state. |
+| Plugin storage | Plugin key/value JSON map persisted in SQLite `plugin_custom_storage`. |
+| Translator preset | Saved translation provider/settings profile, including `.risutl` import/export. |
+| Hypa V3 preset/data | Memory preset collection plus per-chat compatibility metadata; maintained chunks, summaries, embeddings, and jobs live in separate SQLite tables. |
+| Asset | Content-addressed binary with SQLite metadata and bytes under `data/assets/`. Static app assets under `public/` and `src/etc/` are a separate domain. |
+| Image-reference setting | Image-generation setting that stores a server asset id; request construction materializes base64 only when required. |
+| Push subscription | Operational Web Push row. VAPID keys come from environment or `data/__web_push_vapid_keys.json`; the browser worker handles chat-completion notifications. |
+| `.risu` save | Portable save envelope covering current block saves, legacy envelopes, bundles, and local-backup compatibility. |
+| RisuRealm character | Realm-hosted dynamic card or `charx` imported server-side with bounded conversion, progress, assets, and one revisioned character commit. |
+| Legacy storage byte store | Compatibility `/api/v1/storage/*` bytes under `data/save/`; distinct from SQLite domain state. |
 
-## Feature Domain Map
+## Cross-Layer Ownership
 
-Use this table when a change crosses UI, client runtime, server commands, and
-storage. The focused docs linked from `STRUCTURE.md` still own the deeper
-behavior contracts.
-
-| Feature                      | UI surface                                        | Client command/runtime                                   | Fastify command/routes                                  | Persistence owner                                  | Notes                                                                 |
-| ---------------------------- | ------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------- |
-| Characters / bots            | `SideBars/`, `GridCatalog`, `MobileCharacters`    | `characterCommands.ts`, `characters.ts`, `characterCards.ts` | `commands/characters.ts`, `routes/commands.ts`          | `characters`; chats/messages split separately      | The list endpoint returns message-free rows; individual shell rows can be fetched by id. |
-| Chats / messages             | `ChatScreens/`, `SideChatList.svelte`             | `chatCommands.ts`, chat hydration/bridge helpers         | `commands/chats.ts`, `commands/messages.ts`             | `chats`, `messages`, `chat_hypa_v3`               | Messages are not stored inside character JSON; chat fork is a command-backed copy flow, not a client-only duplicate. |
-| Lorebooks / world info       | `SideBars/LoreBook/`, global lorebook settings    | `lorebookBridge.svelte.ts`, prompt lorebook helpers      | `commands/lorebooks.ts`, `prompt/lorebook.ts`           | Global lore tables plus owner-nested lorebooks     | Global, character, chat, and module lorebooks use owner-scoped routes. |
-| Presets / prompts / profiles | Bot, prompt, and model settings pages             | `presetSplit.ts`, `src/ts/model/`, prompt hydration      | `commands/presets.ts`, `splitPresets.ts`, `prompts.ts`, `modelProfiles.ts` | `model_presets`, `prompt_presets`, `bot_presets`, settings JSON | Modern prompt presets own their prompt templates.                     |
-| Agent Presets                 | Settings -> Agent Presets, chat generation controls | `agentPresets.ts`, `agentPresetReferences.ts`, `agentPresetResolver.ts`, `ChatGenerationSettingsControls.svelte` | `commands/agentPresets.ts`, `prompt/agentPresetExecution.ts`, `prompt/assemble.ts` | settings JSON fields `agentPresets` / `agentPresetDefaultId`, chat/loadout selections | Prepared inputs appear only at matching `{{scope}}` placeholders. Every successful output can feed eligible later steps through `{{agent::outputKey}}`; `promptOutput` can feed the main prompt, before-main `userInput` can replace the latest user message, and after-main `finalOutput` can replace generated text. Provider tool-calling is not part of this path. |
-| Assets / media               | `AssetInput`, upload/editor flows                 | `src/ts/server/assets.ts`, `settingsMediaAssetUpload.ts`, media helpers | `routes/assets.ts`, `commands/assets.ts`, `assetGc.ts`  | `assets`, `data/assets/<sha>.<ext>`               | Runtime assets are content-addressed; new image settings retain asset ids instead of duplicate inline bytes, while static app assets are separate. |
-| Plugins / modules / MCP      | Plugin settings, module settings, Playground MCP  | `src/ts/plugins/`, `process/modules.ts`, `process/mcp/`  | `commands/plugins.ts`, `commands/modules.ts`, plugin storage commands | `plugins`, `modules`, `plugin_custom_storage`     | Browser executes plugins and hosts MCP client/tool orchestration; remote MCP servers remain remote, and Fastify stores records without dispatching MCP tools. |
-| Settings / personas / backups | Settings pages and user settings flows           | `src/ts/setting/`, `persona.ts`, backup adapters         | settings/persona commands, `routes/backups.ts`, `routes/save.ts` | `settings`, `personas`, `loadouts`, backup dirs   | Data-driven settings should use language keys plus fallback labels.   |
+| Domain | Browser/UI owners | Fastify/storage owners |
+| --- | --- | --- |
+| Characters, chats, and messages | `src/lib/ChatScreens/`, `src/lib/SideBars/`, `src/ts/characterCommands.ts`, `src/ts/chatCommands.ts`, `src/ts/server/chatMessageHydration.svelte.ts` | `server/fastify/src/commands/characters.ts`, `server/fastify/src/commands/chats.ts`, `server/fastify/src/commands/messages.ts`, `server/fastify/src/messageStore.ts` |
+| Settings, personas, and loadouts | `src/lib/Setting/`, `src/ts/setting/`, `src/ts/persona.ts`, `src/ts/loadout.ts`, `src/ts/server/settingsBridge.svelte.ts` | `server/fastify/src/databaseDefaults.ts`, `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/personas.ts`, `server/fastify/src/commands/loadouts.ts` |
+| Presets and prompts | `src/lib/Setting/Pages/Model/`, `src/ts/model/modelProfileRecords.ts`, `src/ts/server/promptTemplateBridge.svelte.ts` | `server/fastify/src/commands/modelProfiles.ts`, `server/fastify/src/commands/presets.ts`, `server/fastify/src/commands/prompts.ts`, `server/fastify/src/prompt/` |
+| Agent Presets and generation | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/process/` | `server/fastify/src/commands/agentPresets.ts`, `server/fastify/src/prompt/agentPresetExecution.ts`, `server/fastify/src/routes/generationChat.ts` |
+| Lorebooks, scripts, and triggers | `src/lib/SideBars/LoreBook/`, `src/lib/SideBars/Scripts/`, `src/ts/server/lorebookBridge.svelte.ts`, `src/ts/server/scriptDefinitionBridge.svelte.ts` | `server/fastify/src/commands/lorebooks.ts`, `server/fastify/src/commands/scriptDefinitions.ts`, `server/fastify/src/prompt/lorebook.ts` |
+| Modules, plugins, and MCP | `src/lib/Setting/Pages/Module/`, `src/ts/moduleCommands.ts`, `src/ts/plugins/`, `src/ts/process/modules.ts`, `src/ts/process/mcp/` | `server/fastify/src/commands/modules.ts`, `server/fastify/src/commands/plugins.ts`, `server/fastify/src/commands/pluginStorage.ts`, `server/fastify/src/pluginNetwork.ts` |
+| Assets, saves, and Realm | `src/ts/server/assets.ts`, `src/ts/server/backups.ts`, `src/ts/server/realmImport.ts`, `src/ts/storage/backup.ts` | `server/fastify/src/routes/assets.ts`, `server/fastify/src/routes/save.ts`, `server/fastify/src/routes/backups.ts`, `server/fastify/src/routes/realmImport.ts`, `server/fastify/src/risuSave/`, `server/fastify/src/realmImport/` |
+| Memory | `src/lib/Others/HypaV3Modal/`, `src/ts/server/memoryJobEvents.ts` | `server/fastify/src/memoryRepository.ts`, `server/fastify/src/memoryEvents.ts`, `server/fastify/src/memoryWorker.ts`, `server/fastify/src/routes/memory*.ts` |
+| Language and presentation | `src/lang/`, `src/styles.css`, `src/ts/gui/`, `src/ts/setting/`, `src/lib/Setting/Wrappers/` | Persisted presentation fields are settings; visible labels belong in language packs. |
 
 ## Runtime Contracts
 
-| Term                                | Meaning                                                                                                       | Primary places                                                                                                                                                     |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Revision                            | Global domain revision stored in SQLite `schema_version`; normal command mutations require `baseRevision`, bump once, and persist/emit one command event. Server-owned paths are explicit exceptions. | `db.ts`, `commands/mutations.ts`, `data-and-events.md`                                                                                                             |
-| Command mutation                    | Revision-checked server write that updates SQLite-backed domain state and usually persists one command event. | `commands/mutations.ts`, `routes/commands.ts`, `src/ts/server/commands.ts`                                                                                         |
-| Command event / resource invalidation | Revisioned event with `type`, `revision`, `resource`, optional `id`/`parentId`/origin, stored in `command_events` when replayable and mapped to one or more concrete REST reads. Resource names are protocol invalidation keys rather than endpoint names; unknown, broad, or underspecified events trigger a complete settings/collections/characters refresh. | `server/fastify/src/commands/events.ts`, `src/ts/server/events.ts`, `src/ts/server/resourceInvalidation.ts` |
-| API-backed resource state           | Browser-owned Svelte state split into settings, collections, and characters, each with revision/status/error metadata. The compatibility database view composes those slices, while application code reads the owning slice or `getDatabase()` adapter rather than retaining a second durable state tree. | `src/ts/server/resourceState.svelte.ts`, `src/ts/storage/database.svelte.ts` |
-| Resource read / hydration           | Authenticated REST read of settings, collections, characters, chat bodies, character lorebooks, legacy preset bodies, or prompt-preset templates. Initial reads establish the lightweight shell; lazy reads fill bodies needed by the active UI or an explicit workflow. | `routes/resourceReads.ts`, `src/ts/server/resourceReads.ts`, `src/ts/server/hydrationReads.ts` |
-| Canonical command receipt / local effect | Compact command-response proof describing the accepted, server-normalized write. The browser validates its certificate/keys or canonical overrides, response-event ownership, revision continuity, and captured client fences; a safe local effect acknowledges already-visible optimistic state without a GET, while an unsafe or stale receipt falls back to authoritative invalidation. | `routes/commands.ts`, `src/ts/server/commands.ts`, `src/ts/server/commandLocalEffectEvents.ts` |
-| Projection epoch (internal name)    | Client-only monotonic fence for settings groups, collections, character rows/lorebooks, and related resource applies. The name survives in helpers but does not mean the removed `/projection` API; captured epochs stop overtaken command receipts or async responses from overwriting newer resource state. | `src/ts/server/resourceState.svelte.ts`, `src/ts/server/resourceWriteGuard.svelte.ts`, `src/ts/server/staleStateGuards.ts` |
-| Active writer                       | Single-writer mutation lease carried by `risu-writer-session`; writer-intent bootstrap durably latches the newest session and advances `writerEpoch` on ownership changes, active-writer routes reject stale sessions with `423 active_writer_stale` across restarts, and read-only bootstrap/resource reads/events do not require writer ownership. | `server/fastify/src/databaseLineage.ts`, `server/fastify/src/activeWriter.ts`, `src/ts/server/activeWriterSession.ts` |
-| Provider secret                     | API-key/token fields masked in resource responses and resolved back on writes.                              | `providerSecrets.ts`, `routes/resourceReads.ts`                                                                                                                    |
-| Model / `LLMModel`                  | Browser model-registry entry with provider, format, tokenizer, flags, and model id metadata.                  | `src/ts/model/`, `providers-and-models.md`                                                                                                                         |
-| Provider capability table           | Shared pure routing table that returns a server provider name or unsupported reason category.                 | `src/ts/process/request/providerCapability.ts`                                                                                                                     |
-| Keyed provider catalog cache        | Bounded browser request cache that shares in-flight work by the complete provider context, briefly reuses successful results, and never retains failures. TTS voice/model catalogs use 30-second entries keyed by credential or normalized URL; model-provider catalogs use the same helper with their own keys/TTLs. | `src/ts/model/keyedRequestCache.ts`, `src/ts/process/tts.ts`, `src/ts/model/openrouter.ts`, `src/ts/model/ollama.ts`, `src/ts/model/nanogpt.ts` |
-| Server prompt assembly              | Fastify assembles prompts. Live verdicts are `server` or `unsupported`; no user-selectable local fallback.    | `src/ts/process/request/serverPromptAssembly.ts`, `server/fastify/src/prompt/assemble.ts`                                                                          |
-| Agent Preset generation             | Selected chat-scoped Agent Preset execution. Before-main steps run after submit transforms; after-main steps run after `editOutput` and before `onOutput`. `{{agent::outputKey}}` can consume an eligible completed output from an earlier dependency level; after-main steps can also consume completed before-main outputs. Missing, disabled, self, same-level, or future references make the preset `incomplete` and block generation. Dependency levels honor `maxConcurrency`, and diagnostics are stored on generation metadata. | `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetReferences.ts`, `src/ts/agentPresetResolver.ts`, `server/fastify/src/prompt/agentPresetExecution.ts`, `server/fastify/src/prompt/assemble.ts` |
-| Server Lua VM                       | wasmoon VM running supported non-interactive Lua hooks during assembly/post-generation.                       | `prompt/luaRuntime.ts`                                                                                                                                             |
-| Post-generation pass                | Server run-var/output trigger/editoutput derivation that persists final text and scriptstate deltas and can emit live Lua progress frames. | `prompt/assemble.ts`, `routes/generationChat.ts`, `prompt/luaPostGenerationProgress.ts`                                                                             |
-| Durable generation                  | Detached server job for send/continue/regenerate that survives browser disconnect and persists the result.    | `src/ts/process/request/durableGeneration.ts`, `src/ts/process/reattach.ts`, `server/fastify/src/generationJobs.ts`, `server/fastify/src/routes/generationChat.ts` |
-| `activeGenerationJobs`              | Transient bootstrap metadata for running durable jobs, used for reload/open-chat reattach and including job mode and regenerate target when present. | `routes/bootstrap.ts`, `generationJobs.ts`, `process/reattach.ts`                                                                                                  |
-| `activeMessageTranslations`         | Transient bootstrap metadata for detached raw-message translation jobs so reloads can keep message rows busy while server-side translation finishes. | `routes/bootstrap.ts`, `messageTranslationJobs.ts`, `src/ts/server/messageTranslationJobs.ts`                                                                       |
-| Memory                              | Maintained Hypa V3 chunks, summaries, embeddings, and jobs in SQLite. Server-side embeddings dispatch only through supported server providers/custom endpoints; browser-local embedding models such as MiniLM are not server memory embedding backends. | `server/fastify/src/memory*.ts`, `server/fastify/src/routes/memory*.ts`                                                                                            |
-| Memory job/event                    | Durable memory jobs of kind `chunk`, `embed`, or `summarize`; live `memory.job` SSE events, including optional `hypav3_progress` side effects, are not command events and do not bump domain revision. | `memoryRepository.ts`, `memoryEvents.ts`, `memoryJobEvents.ts`                                                                                                      |
-| Hypa V3 data                        | Per-chat legacy-compatible memory metadata stored in `chat_hypa_v3` and hydrated with messages.               | `messageStore.ts`, `routes/resourceReads.ts`, `chatMessageHydration.svelte.ts`                                                                                     |
-| MCP module                          | Module-linked tool endpoint using `internal:`, `plugin:`, remote HTTP(S), or URL-wrapped `stdio:` forms. Fastify server-backed mode blocks MCP module import/update, and command-based stdio MCPs are unsupported. | `src/ts/process/mcp/`, `PlaygroundMCP.svelte`, `ModuleSettings.svelte`                                                                                             |
+| Term | Contract and primary owner |
+| --- | --- |
+| Revision | Global optimistic-concurrency counter in `server/fastify/src/db.ts`; ordinary command transactions check a base, write domain state/event, and bump it once. |
+| Command mutation | Revision-checked SQLite write implemented by `server/fastify/src/commands/mutations.ts` and route/domain helpers. |
+| Durable mutation intent / outbox | Browser recovery journal staged by `src/ts/server/pendingMutationOutbox.ts` and `src/ts/server/durableMutationDispatch.ts`. Intent payloads are AES-GCM encrypted; scope/order indexes and receipt-ACK rows are plaintext. It is replayed before resource hydration; unavailable IndexedDB/Web Crypto falls back to non-durable dispatch. |
+| Server mutation receipt | Lineage-scoped SQLite idempotency record in `server/fastify/src/commandMutationReceipts.ts`, committed with the original revision/event/result and acknowledged only after browser intent removal. |
+| Compact local-effect acknowledgement | Response proof checked by `src/ts/server/commands.ts`, `src/ts/server/commandLocalEffectEvents.ts`, and resource fences. It may accept already-visible optimistic state without a GET; it is neither an outbox row nor a server receipt. |
+| Command event / invalidation | Replayable `command_events` row emitted by `server/fastify/src/commands/events.ts` and mapped to REST reads by `src/ts/server/resourceInvalidation.ts`. Unknown, broad, or underspecified events trigger a complete root refresh. |
+| API-backed resource state | Browser settings, collections, and characters owners in `src/ts/server/resourceState.svelte.ts`; `getDatabase()` composes their compatibility view. |
+| Resource read / hydration | Authenticated root/slice/body reads wrapped by `src/ts/server/resourceReads.ts` and `src/ts/server/hydrationReads.ts`. Shell resources omit large owner bodies until a workflow needs them. |
+| Disposable resource cache | SHA-256 value/manifest IndexedDB in `src/ts/server/resourceCache.ts`, reused only after an authenticated server hash match. Safe to discard and never offline state. |
+| Projection epoch | Client-only monotonic fence in `src/ts/server/resourceState.svelte.ts`; the historical name does not imply a live `/projection` API. |
+| Active writer | Durable single-writer lease in `server/fastify/src/activeWriter.ts` and `server/fastify/src/databaseLineage.ts`, carried as `risu-writer-session`. Read-only bootstrap/resources/events do not require it. |
+| Provider secret | Credential masked by `server/fastify/src/providerSecrets.ts` on reads and resolved server-side for fixed provider/media operations. A masked placeholder is never a usable credential. |
+| Provider capability table | Pure supported/unsupported routing verdict in `src/ts/process/request/providerCapability.ts`. |
+| Server prompt assembly | Supported chat path through `src/ts/process/request/serverPromptAssembly.ts` and `server/fastify/src/prompt/assemble.ts`; unsupported shapes hard-fail. |
+| Durable generation | Detached send/continue/regenerate job in `server/fastify/src/generationJobs.ts`, called through `src/ts/process/request/durableGeneration.ts` and reattached from bootstrap metadata. |
+| `activeGenerationJobs` | Runtime-only bootstrap list of running durable jobs, including mode and regenerate target where relevant. |
+| `activeMessageTranslations` | Runtime-only bootstrap list of detached raw-message translation work managed by `server/fastify/src/messageTranslationJobs.ts`. |
+| Memory job/event | Durable `chunk`, `embed`, or `summarize` job with live, non-replayable `memory.job` progress events; it does not bump the domain revision. |
+| Server Lua VM | Wasmoon runtime under `server/fastify/src/prompt/luaRuntime.ts` for supported non-interactive hooks. |
+| Post-generation pass | Output triggers, `editOutput`, script-state derivation, and progress under `server/fastify/src/prompt/` and `server/fastify/src/routes/generationChat.ts`. |
 
 ## Identity And No-Port Rules
 
-Public command APIs should use stable ids, not array indexes. Reordering
-commands should validate complete id lists for the resource they reorder.
+Public command APIs use stable ids rather than array indexes; reorder commands
+validate complete owner-scoped id lists.
 
-For the full no-port list, use `generated-and-legacy.md`. In particular,
-standalone SupaMemory/Hypa V2/Hanurai engines are no-port; `HypaProcessorV2`
-remains an active helper inside maintained Hypa V3 logic, and `supaMemory`
-field/key/memo names remain active compatibility names for that maintained path.
+For the no-port inventory, use [Generated Files And Legacy Caveats](generated-and-legacy.md).
+Standalone SupaMemory, Hypa V2, and Hanurai engines are not live.
+`HypaProcessorV2` remains an internal helper within maintained Hypa V3 logic,
+and legacy `supaMemory` field/key names remain compatibility data for that path.

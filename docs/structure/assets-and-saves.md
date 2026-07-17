@@ -1,6 +1,6 @@
 # Assets And Saves
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-17.
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -14,14 +14,14 @@ data. Save/import/export and user-upload flows should use server asset ids and
 
 ## Assets
 
-| Path                                                    | Role                                                                                                                          |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `server/fastify/src/routes/assets.ts`                   | `/api/v1/assets`, `/api/v1/assets/bulk`, immutable `GET`/`HEAD`, existence probe.                                             |
-| `server/fastify/src/repository.ts`                      | Asset id validation, sha256 dedupe, SQLite metadata, file paths, missing-asset checks.                                        |
-| `server/fastify/src/assetGc.ts`                         | Reference-counted asset garbage collection over a minimal SQLite reference shape.                                              |
-| `server/fastify/src/risuSave/assetReferences.ts`        | Known-field asset-reference walker for import/export/GC reports.                                                              |
-| `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts` | Browser upload/read adapters, asset URL normalization, and private bulk-upload existence probing. |
-| `src/ts/server/settingsMediaAssetUpload.ts`, `src/ts/process/stableDiff.ts` | Durable image-setting asset references and lazy provider-request base64 materialization. |
+| Path                                                                        | Role                                                                                              |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `server/fastify/src/routes/assets.ts`                                       | `/api/v1/assets`, `/api/v1/assets/bulk`, immutable `GET`/`HEAD`, existence probe.                 |
+| `server/fastify/src/repository.ts`                                          | Asset id validation, sha256 dedupe, SQLite metadata, file paths, missing-asset checks.            |
+| `server/fastify/src/assetGc.ts`                                             | Reference-counted asset garbage collection over a minimal SQLite reference shape.                 |
+| `server/fastify/src/risuSave/assetReferences.ts`                            | Known-field asset-reference walker for import/export/GC reports.                                  |
+| `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`                     | Browser upload/read adapters, asset URL normalization, and private bulk-upload existence probing. |
+| `src/ts/server/settingsMediaAssetUpload.ts`, `src/ts/process/stableDiff.ts` | Durable image-setting asset references and lazy provider-request base64 materialization.          |
 
 Asset ids are lowercase sha256 hex strings. Metadata lives in SQLite `assets`;
 bytes live at `data/assets/<sha256>.<ext>`. Supported content types are defined
@@ -151,12 +151,12 @@ store.
 
 ## Backups
 
-| Path                                   | Role                                                                   |
-| -------------------------------------- | ---------------------------------------------------------------------- |
-| `server/fastify/src/routes/backups.ts` | Create/list/restore/delete backup routes.                              |
-| `server/fastify/src/repository.ts`     | Snapshot creation, manifest writing, SQLite table restore, file swaps. |
-| `src/ts/server/backups.ts`             | Browser adapter for backup/import/export routes and progress headers.  |
-| `src/ts/storage/backup.ts`, `src/ts/globalApi.svelte.ts`, `src/lib/Setting/Pages/UserSettings.svelte` | UI-facing backup/import/export wrappers and settings flows. |
+| Path                                                                                                  | Role                                                                   |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `server/fastify/src/routes/backups.ts`                                                                | Create/list/restore/delete backup routes.                              |
+| `server/fastify/src/repository.ts`                                                                    | Snapshot creation, manifest writing, SQLite table restore, file swaps. |
+| `src/ts/server/backups.ts`                                                                            | Browser adapter for backup/import/export routes and progress headers.  |
+| `src/ts/storage/backup.ts`, `src/ts/globalApi.svelte.ts`, `src/lib/Setting/Pages/UserSettings.svelte` | UI-facing backup/import/export wrappers and settings flows.            |
 
 Backups live under `data/backups/<id>/`. Current backups contain
 `manifest.json`, a file copy of the whole `risu.db`, assets when present, and
@@ -171,18 +171,28 @@ Restore swaps asset/save directories and restores SQLite tables through the
 restore swaps tables from the copied backup DB with `ATTACH`, operational tables
 can be present in the backup file but ignored on restore if they are not allowlisted.
 Keep that allowlist in sync when adding durable tables; split model/prompt
-preset rows are included, while operational rows and Web Push subscription/key
-state are currently outside the restore contract. Older backups containing
-`db.json` are restored by copying the file into the data dir and running
-`ensureDbJsonImported()`.
+preset rows are included. `database_metadata`, `command_mutation_receipts`,
+`generation_finalization_retries`, `push_subscriptions`, and
+`memory_legacy_summary_tombstones` may be present in the physical copy but are
+not restored, and Web Push key files are outside the snapshot contract.
+Destructive import and restore rotate the live database lineage and clear server
+mutation receipts, so a browser outbox scoped to the previous lineage cannot
+replay across that boundary. Older backups containing `db.json` are restored by
+copying the file into the data dir and running `ensureDbJsonImported()`.
 
-Ordinary module `.risum` import is supported in Fastify-backed browser mode
-through the browser codec in `src/ts/process/modules.ts`: the client decodes the
-module envelope, rejects MCP module metadata, asks for low-level-access
-confirmation before asset writes, uploads embedded assets through the server
-asset adapter, and creates the global module through command-backed module
-helpers. The module asset tuple retains its declared filename. For upload
-classification, supported source extensions are reused; non-empty unsupported
-legacy filename tokens are normalized by sniffing PNG/JPEG/WebP/GIF/AVIF bytes
-and fall back to PNG. A blank filename passes through and defaults to PNG in the
-asset saver.
+Both ordinary and MCP module `.risum` imports are supported in Fastify-backed
+browser mode through the codec in `src/ts/process/modules.ts`. The client decodes
+the envelope, applies the shared import predicate to any embedded MCP
+identifier, and asks for low-level-access confirmation before asset writes only
+when `module.lowLevelAccess` is requested. It uploads embedded assets through
+the server asset adapter and creates the global module through the
+command-backed module route. Stored MCP rows remain special: normal patch and
+enable reject them, generic delete is a revisioned no-op, and
+character/chat/loadout links exclude them. The module
+asset tuple retains its declared filename. For upload classification, supported
+source extensions are reused; non-empty unsupported legacy filename tokens are
+normalized by sniffing PNG/JPEG/WebP/GIF/AVIF bytes and fall back to PNG. A blank
+filename passes through and defaults to PNG in the asset saver.
+
+See [Plugins And MCP](plugins-and-mcp.md) for the canonical identifier,
+transport, and stored-row lifecycle rules.

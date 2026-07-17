@@ -10,8 +10,8 @@ codebase whenever an archived line number or contract has drifted.
 
 | Topic                                                              | Contents                                                                                                                          |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| [Architecture and migration](architecture-and-migration/README.md) | Fastify migration history and the later client-thinning closeout.                                                                 |
-| [Protocol and persistence](protocol-and-persistence/README.md)     | Server/client ownership and protocol audits, SQLite migration, lazy projection, protocol hardening, and mutation-range narrowing. |
+| [Architecture and migration](architecture-and-migration/README.md) | Fastify migration history, client-thinning closeout, and dated original-versus-Fastify behavior audit.                            |
+| [Protocol and persistence](protocol-and-persistence/README.md)     | Server/client protocol audits, SQLite migration, lazy projection, projection-removal review, and mutation-range narrowing.        |
 | [Performance and stability](performance-and-stability/README.md)   | Frontend clone narrowing and the four chronological stability/performance audits.                                                 |
 | [Generation and models](generation-and-models/README.md)           | Durable generation, chat-scoped settings, Agent Presets, model profiles, prompt-template ownership, and generation observability. |
 | [UI and user input](ui-and-user-input/README.md)                   | Visible-state contracts and audits, persistence audits, stale-state reviews, and user-input hardening.                            |

@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-07-16.
+Last audited: 2026-07-17.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -8,20 +8,20 @@ does not execute browser plugin code.
 
 ## Plugin Runtime
 
-| Path                                                         | Purpose                                                                                       |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `src/ts/plugins/plugins.svelte.ts`                           | Plugin import/update/load, V2 compatibility, custom providers, command-backed state dispatch. |
-| `src/ts/plugins/apiV3/v3.svelte.ts`                          | Plugin API V3 surface exposed to sandboxed plugins.                                           |
-| `src/ts/plugins/apiV3/factory.ts`                            | `SandboxHost` iframe/RPC bridge between app and plugin guest code.                            |
-| `src/ts/plugins/apiV3/transpiler.ts`, `developMode.ts`       | Plugin V3 transpilation and development-mode loading.                                         |
-| `src/ts/plugins/apiV3/risuai.d.ts`                           | Plugin V3 TypeScript declarations for plugin authors.                                         |
-| `src/ts/plugins/pluginPermissions.ts`, `pluginNetworkAccess.ts` | Exact-script capability grants and the public-only plugin network adapters.                 |
-| `src/ts/plugins/pluginSafeClass.ts`, `pluginSafety.ts`       | Safe wrappers, static safety rewrite/checks, device-local storage gates.                      |
-| `src/ts/plugins/unsupportedServerWriteGuard.ts`              | Blocks Plugin API direct writes to fields unsupported in server-backed mode.                  |
-| `src/ts/pluginCommands.ts`                                   | Browser command wrappers for plugin records, provider selection, plugin storage, and settings-adjacent compatibility writes. |
-| `src/ts/server/pluginImport.ts`                              | Server-backed plugin import/update helper with stale import guards.                           |
-| `server/fastify/src/commands/plugins.ts`, `pluginStorage.ts` | Server validation for plugin records and plugin key/value JSON storage.                       |
-| `server/fastify/src/pluginNetwork.ts`, `routes/proxy.ts`     | DNS-pinned public-target validation and the dedicated plugin fetch proxy.                      |
+| Path                                                            | Purpose                                                                                                                      |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `src/ts/plugins/plugins.svelte.ts`                              | Plugin import/update/load, V2 compatibility, custom providers, command-backed state dispatch.                                |
+| `src/ts/plugins/apiV3/v3.svelte.ts`                             | Plugin API V3 surface exposed to sandboxed plugins.                                                                          |
+| `src/ts/plugins/apiV3/factory.ts`                               | `SandboxHost` iframe/RPC bridge between app and plugin guest code.                                                           |
+| `src/ts/plugins/apiV3/transpiler.ts`, `developMode.ts`          | Plugin V3 transpilation and development-mode loading.                                                                        |
+| `src/ts/plugins/apiV3/risuai.d.ts`                              | Plugin V3 TypeScript declarations for plugin authors.                                                                        |
+| `src/ts/plugins/pluginPermissions.ts`, `pluginNetworkAccess.ts` | Exact-script capability grants and the public-only plugin network adapters.                                                  |
+| `src/ts/plugins/pluginSafeClass.ts`, `pluginSafety.ts`          | Safe wrappers, static safety rewrite/checks, device-local storage gates.                                                     |
+| `src/ts/plugins/unsupportedServerWriteGuard.ts`                 | Blocks Plugin API direct writes to fields unsupported in server-backed mode.                                                 |
+| `src/ts/pluginCommands.ts`                                      | Browser command wrappers for plugin records, provider selection, plugin storage, and settings-adjacent compatibility writes. |
+| `src/ts/server/pluginImport.ts`                                 | Server-backed plugin import/update helper with stale import guards.                                                          |
+| `server/fastify/src/commands/plugins.ts`, `pluginStorage.ts`    | Server validation for plugin records and plugin key/value JSON storage.                                                      |
+| `server/fastify/src/pluginNetwork.ts`, `routes/proxy.ts`        | DNS-pinned public-target validation and the dedicated plugin fetch proxy.                                                    |
 
 Plugin records live in `Database.plugins` and use the plugin `name` as the
 stable id. `currentPluginProvider` selects a plugin-defined provider when one is
@@ -149,8 +149,10 @@ Plugin record `PATCH` requests contain only changed fields. Because JSON omits
 `undefined`, `null` is reserved as a deletion sentinel for optional plugin
 metadata; it is rejected for required fields and full plugin creation records.
 Module record patches use the same compact contract for optional module
-metadata, including CJS and asset references; omitted fields in partial MCP
-updates remain untouched.
+metadata, including CJS and asset references. `POST /api/v1/commands/modules`
+independently applies the shared MCP import predicate at creation. Stored MCP
+rows cannot be patched, enabled, or linked; generic delete is the acknowledged
+no-op described below.
 
 - `POST /api/v1/commands/plugins`
 - `PATCH /api/v1/commands/plugins/:pluginId`
@@ -175,8 +177,9 @@ enable, and reorder commands. Those fan-outs run through
 `runServerCommandSequence()` as one unit in the browser's global revision queue:
 each accepted step supplies the next base revision, unrelated commands cannot
 interleave, and the accumulated response events reconcile once after the
-sequence. A failed step rolls back the remaining optimistic sequence before its
-earlier accepted events are released.
+sequence. A retryable durable step remains staged for replay; terminal rejection
+rolls back the still-owned optimistic remainder before earlier accepted events
+are released.
 
 ## MCP Runtime
 
@@ -200,21 +203,31 @@ server provider boundary.
 | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `src/ts/process/mcp/mcp.ts`                                                                                | Runtime registry, URL parsing, tool discovery/calls, OAuth refresh persistence, module import helper. |
 | `src/ts/process/mcp/mcplib.ts`                                                                             | Remote Streamable HTTP MCP client with legacy SSE fallback.                                           |
-| `src/ts/server/mcpOAuthRefresh.ts`, `server/fastify/src/routes/mcpOAuthRefresh.ts`                          | Authenticated stable-identity bridge for server-owned persisted OAuth refresh credentials.            |
+| `src/ts/server/mcpOAuthRefresh.ts`, `server/fastify/src/routes/mcpOAuthRefresh.ts`                         | Authenticated stable-identity bridge for server-owned persisted OAuth refresh credentials.            |
 | `src/ts/process/mcp/internalmcp.ts`                                                                        | Base class for internal MCP-like clients.                                                             |
 | `src/ts/process/mcp/pluginmcp.ts`                                                                          | Plugin-registered MCP modules using `plugin:` identifiers.                                            |
 | `src/ts/process/mcp/risuaccess/`                                                                           | Internal Risu access tools for characters, read-only chat history, and modules.                       |
 | `src/ts/process/mcp/aiaccess.ts`, `googlesearchclient.ts`, `graphmem.ts`, `dice.ts`, `filesystemclient.ts` | Internal tool clients.                                                                                |
 
-Supported MCP URL forms:
+Runtime MCP identifier forms:
 
 - `internal:*` for bundled clients such as Risu access, AI access, filesystem,
   Google search, graph memory, and dice.
 - `plugin:*` for MCP modules registered by Plugin V3 code.
-- `http://` or `https://` for remote MCP servers using Streamable HTTP first
-  and legacy SSE fallback.
-- `stdio:{...}` only when the JSON wrapper contains a URL. Command-based stdio
-  MCPs are rejected in the browser runtime.
+- Raw `http://` or `https://` identifiers for remote MCP servers using
+  Streamable HTTP first and legacy SSE fallback.
+- `stdio:{...}` wrappers. Runtime parsing requires a JSON `url`; command/args
+  process launch is not supported. The wrapped URL is then handled like any
+  other HTTP(S) runtime URL.
+
+Creation validation is intentionally shallower than runtime parsing.
+`isImportableMCPIdentifier()` accepts raw HTTPS and loopback HTTP, plus any
+non-whitespace `internal:`, `plugin:`, or `stdio:` payload. It does not parse a
+`stdio:` wrapper. The direct import UI performs a handshake before creation, but
+`.risum` and the server create route use only that shared syntactic predicate;
+they can therefore persist a malformed/command-based wrapper or a wrapper whose
+URL is remote plaintext HTTP. Runtime initialization may reject such a row. Do
+not treat the import predicate as a complete transport or egress policy.
 
 Plugin V3 exposes `risuai.registerMCP` and `risuai.unregisterMCP`, which add or
 remove `plugin:` MCP clients in the browser registry. Registration alone does
@@ -232,25 +245,37 @@ response.
 
 ## Fastify-Mode Limits
 
-MCP module import is currently blocked in Fastify server-backed mode, and
-command-based stdio MCPs are not supported in the browser runtime. This does not
-block ordinary `.risum` module import: non-MCP `.risum` files are decoded in the
-browser, have embedded assets uploaded through server asset helpers, and are
-created through command-backed module helpers. Supported source filename
-extensions are retained for upload; non-empty unsupported legacy filename
-tokens are normalized by sniffing PNG/JPEG/WebP/GIF/AVIF signatures, with PNG
-as fallback, while the original module asset tuple filename remains unchanged.
-Blank filenames pass through and default to PNG in the asset saver. The
-`.risum` path rejects module metadata containing `mcp` before asset upload or
-optimistic module creation, and server validators still intentionally disallow
-`mcp` records in generic module commands. Adding MCP import/update back needs a
-dedicated command-backed module route rather than a direct browser mutation.
+Fastify-backed mode supports MCP module creation through both the direct MCP
+import UI and `.risum` files. Direct import applies the shared predicate,
+performs the MCP handshake/metadata lookup, creates the module metadata and info
+lorebook, and dispatches command-backed module creation. `.risum` import
+normalizes `mcp.url`, applies the same syntactic predicate, asks for
+low-level-access confirmation only when requested, uploads embedded assets, and
+uses the same command-backed create path. The server repeats the predicate on
+creation; the `stdio:` limitation above still applies.
+
+Stored MCP rows remain a special module kind, not generally editable modules.
+Normal module patch/enable, script/lorebook/trigger definition, and
+character/chat/loadout link operations target non-MCP rows. Patch and enable
+therefore return not-found for an MCP id. Generic delete reports a revisioned
+success but deliberately leaves the MCP row in place. The module UI displays
+imported MCP rows and hides edit/export; its generic enable/delete controls are
+not working MCP lifecycle support.
+Command-based stdio MCPs remain unsupported by the browser runtime; only a
+parseable URL-wrapped `stdio:{...}` row can initialize.
+
+For both MCP and non-MCP `.risum` imports, supported source filename extensions
+are retained for upload. Non-empty unsupported legacy filename tokens are
+normalized by sniffing PNG/JPEG/WebP/GIF/AVIF signatures, with PNG as fallback,
+while the original module asset tuple filename remains unchanged. Blank
+filenames pass through and default to PNG in the asset saver.
 
 OAuth refresh token persistence for remote MCP servers writes
 `Database.authRefreshes` through optimistic patches to the `providers` settings
-group via `/api/v1/commands/settings/providers`, upserting by exact MCP URL with
-rollback on command failure. Server projections mask the refresh token and
-client secret. A masked row is refreshed through authenticated
+group via `/api/v1/commands/settings/providers`, upserting by exact MCP URL.
+Retryable failures retain the durable intent; terminal rejection rolls back the
+attempted row only when it still owns that URL. Server projections mask the
+refresh token and client secret. A masked row is refreshed through authenticated
 `POST /api/v1/mcp/oauth/refresh` using only that stable MCP identity; Fastify
 loads the matching raw row and never returns refresh credentials to the
 browser. Newly authorized, not-yet-projected raw rows retain a bounded direct
@@ -266,6 +291,6 @@ command stores them.
   plugin arguments.
 - `src/lib/Playground/PlaygroundMCP.svelte` lists MCP metadata/tools and can run
   tool calls for debugging.
-- `src/lib/Setting/Pages/Module/ModuleSettings.svelte` can display existing MCP
-  module records and exposes the import UI, but Fastify mode still lacks
-  command-backed MCP module create/update support.
+- `src/lib/Setting/Pages/Module/ModuleSettings.svelte` exposes validated direct
+  MCP import and displays stored MCP rows. Edit/export is disabled, while the
+  generic enable/delete controls cannot enable or remove an MCP row.

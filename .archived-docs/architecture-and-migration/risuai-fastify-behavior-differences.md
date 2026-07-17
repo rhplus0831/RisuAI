@@ -1,5 +1,8 @@
 # Original RisuAI vs Fastify Variant: shared-feature behavior divergence audit
 
+> Archived comparison. Its findings and remediation notes describe the audited
+> commits, not the current source of truth.
+
 Audit date: 2026-07-11
 
 ## Scope

@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-07-15.
+Last audited: 2026-07-17.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -29,8 +29,8 @@ pnpm through Corepack.
 | `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                         |
 | `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                              |
 | `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                       |
-| `pnpm test:all`                    | Run default frontend tests, explicit gates, and server tests, preserving a failing exit code if any lane fails. |
-| `pnpm coverage:ui-map`             | Run the opt-in focused UI coverage map and write reports to `coverage/ui-map`.                                |
+| `pnpm test:all`                    | Run format check, Svelte/TypeScript check, frontend tests, explicit gates, the UI coverage gate, server tests, and browser smoke; preserve any failing lane. |
+| `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write reports to `coverage/ui-map`.                                      |
 | `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                  |
 | `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                        |
 | `pnpm analyze:db <path>`           | Analyze `.risu`, JSON, raw database JSON, or data dirs containing `db.json`; SQLite sidecars are copied when present. Add `--json` for machine-readable output. |
@@ -79,6 +79,9 @@ respect `RISU_AGENT_DEV_HOST` / `RISU_AGENT_DEV_PORT` /
 `dev:agent` and `FALSE` for `dev:human` unless overridden, default
 `RISU_API_STATIC_ROOT=none`, default `VITE_RISU_LEGAL_CONFIGURED=TRUE` and
 `VITE_RISU_AGENT_DEV_IGNORE_TOS=TRUE`, and proxy `/api` to the spawned API port.
+The shared runner host defaults to `127.0.0.1`, not the network-visible Fastify
+default, because agent mode bypasses authentication; set `RISU_AGENT_DEV_HOST`
+explicitly only when a wider bind is intentional.
 The spawned API uses `tsx watch`, so API source edits restart it; use
 `pnpm api:dev:flag` when you need edit-triggered restarts to be manual.
 
@@ -142,6 +145,9 @@ source helper, not generated output.
 
 Pick the smallest command that covers the changed area. On a fresh machine, run
 `pnpm exec playwright install chromium` before browser smoke.
+`server/fastify/__tests__/README.md` is the maintained topical map for the flat
+Fastify test directory; use it to find command/persistence, generation, memory,
+provider, job, asset/import, and platform/route coverage.
 
 Config details: root Vitest uses `happy-dom`, browser resolve conditions, the
 `src` alias, and `vitest.setup.ts` to mock `katex` and define
@@ -158,11 +164,17 @@ failure.
 coverage analysis. `pnpm coverage:all` runs both sides and still executes backend
 coverage when frontend tests fail, then exits non-zero if either side failed.
 
-`pnpm coverage:ui-map` is an opt-in map for Phase 5/6 UI state coverage, not a
-default test gate. It uses `@vitest/coverage-v8`, runs the focused ChatScreens,
-Others, and SideBars UI test files, and emits `text`, `json-summary`, and `html`
+`pnpm coverage:ui-map` is the focused UI state coverage gate included in
+`pnpm test:all`. It uses `@vitest/coverage-v8`, runs the focused ChatScreens,
+Others, and SideBars UI test files, enforces line `8%`, statement `7%`, function
+`5%`, and branch `4%` thresholds, and emits `text`, `json-summary`, and `html`
 reports under `coverage/ui-map`. The repository ignores `coverage/`; keep all
 coverage reports local unless a plan slice explicitly asks for extracted results.
+
+Browser smoke also owns tracked desktop/mobile screenshot baselines under
+`server/fastify/browser-smoke/*-snapshots/`. The core-chat and blocking-alert
+assertions are part of `pnpm test:smoke`, so update those PNGs only for an
+intentional visible change.
 
 Prompt/generation fixtures live in `src/ts/process/__fixtures__/`; set
 `UPDATE_FIXTURES=1` to rewrite expected fixtures. Server `.risu` fixture helpers
@@ -278,7 +290,7 @@ Local/dev:
 | Variable                         | Default             | Notes                                                                                 |
 | -------------------------------- | ------------------- | ------------------------------------------------------------------------------------- |
 | `RISU_API_RESTART_FLAG`          | `.risu-api-restart` | Flag file watched by `pnpm api:dev:flag`.                                             |
-| `RISU_AGENT_DEV_HOST`            | `0.0.0.0`           | Host used by `pnpm dev:agent` / `pnpm dev:human` for both spawned processes.          |
+| `RISU_AGENT_DEV_HOST`            | `127.0.0.1`         | Host used by `pnpm dev:agent` / `pnpm dev:human` for both spawned processes.          |
 | `RISU_AGENT_DEV_PORT`            | `6418`              | Frontend port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6002`.               |
 | `RISU_AGENT_API_PORT`            | `6419`              | Fastify port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6001`.                |
 | `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE` for `dev:agent`, `FALSE` for `dev:human` | Protected API routes ignore password auth when enabled. |
@@ -305,10 +317,11 @@ Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
 
 ## CI And Docker
 
-`.github/workflows/` contains CodeQL scanning (`codeql.yml`), Docker image
-build/publish (`docker-build.yml`), and issue/comment moderation (`mod.yml`).
-No workflow for the local `pnpm check` / Vitest / Playwright matrix was found
-in this audit.
+`.github/workflows/quality.yml` is the only current workflow. Pull requests and
+pushes to `main` use Node 24 and pnpm 10, install Chromium with Playwright
+dependencies, and run `pnpm test:all`; that single command covers formatting,
+Svelte/TypeScript checking, frontend tests, explicit gates, UI coverage, server
+tests, and browser smoke.
 
 `Dockerfile` uses Node 24 slim, installs pnpm through Corepack, builds the web
 client with plain `pnpm build` rather than `build:site`, copies `server/` and

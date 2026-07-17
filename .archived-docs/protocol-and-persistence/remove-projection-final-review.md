@@ -1,5 +1,8 @@
 # Remove Projection Final Review
 
+> Archived branch review. This records the named commits at the review date and
+> does not describe the current mutation/resource contract.
+
 Review date: 2026-07-14
 
 Reviewed branch: `remove-projection` at `3fdfbf01adb21c2a315a5859ca5432fe2a2db689`

@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-07-16.
+Last audited: 2026-07-17.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
@@ -14,7 +14,7 @@ events, and fetches large bodies such as chat messages on demand.
 
 | Path                                                                                                                                                                           | Runtime ownership                                                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: runtime bootstrap, REST resource reads, resource state/invalidation, commands, hydration, events, active writer, assets, backups, Realm import, memory job events, message translation refresh, bridge watchers, push notifications, stale-operation guards, protocol diagnostics, smoke hooks. |
+| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: runtime bootstrap, encrypted pending-mutation outbox/replay, REST resource reads, resource state/invalidation, commands, hydration, events, active writer, provider/media operations, assets, backups, Realm import, bridge watchers, push notifications, stale-operation guards, diagnostics, smoke hooks. |
 | `src/ts/storage/`                                                                                                                                                              | Server-backed auth/storage compatibility, resource-database accessors, `.risu` helpers, backup helpers, and auto-storage selection.                                                                            |
 | `src/ts/process/`                                                                                                                                                              | `sendChat`, server-backed generation bridge, durable reattach, files/MCP/memory/embedding/post-generation helpers, retained parity helpers.                                                                  |
 | `src/ts/process/request/`                                                                                                                                                      | Provider/server-routing classifiers, chat/completion/memory request adapters, SSE parsing, message patch helpers.                                                                                            |
@@ -28,19 +28,25 @@ Retained compatibility and parity helpers still exist under `src/ts/process/`,
 but they are not a selectable browser-local runtime. `src/ts/platform.ts`
 hard-codes Fastify mode.
 
-`src/ts/server/providerOperations.ts` is the browser adapter for provider
-catalog and account metadata. It sends operation ids and credential references
-to the authenticated Fastify endpoint rather than making cross-origin catalog
-requests with stored secrets. Fastify owns the fixed upstream URL, method, and
-headers; masked global/profile secrets remain server-side, while an intentional
-draft key is scoped to that one fixed operation.
+### Server-owned operation adapters
 
-`src/ts/server/tts.ts` posts fixed synthesis operation ids to the authenticated
-binary TTS endpoint. Persisted global secrets stay server-side. Masked advanced
-OpenAI-compatible character settings use a stable character id so Fastify loads
-the raw key and its configured endpoint together; caller-owned draft keys keep
-their existing one-shot behavior. `src/ts/process/tts.ts` cancels superseded or
-stopped requests and ignores late audio before playback.
+Browser code must use the fixed authenticated Fastify adapters when an operation
+needs stored credentials or a server-owned upstream contract:
+
+| Adapter | Endpoint and ownership |
+| ------- | ---------------------- |
+| `src/ts/server/providerOperations.ts` | `/api/v1/provider-operations`; provider catalog/account operations send an operation id and credential reference. |
+| `src/ts/server/embeddingOperations.ts` | `/api/v1/embedding-operations`; memory/embedding callers use bounded, validated operation payloads. |
+| `src/ts/server/imageGeneration.ts` | `/api/v1/image-generation`; validates returned image type and size before producing a data URL. |
+| `src/ts/server/openAITranscription.ts` | `/api/v1/media/openai/transcriptions`; bounds the upload and validates the returned WebVTT. |
+| `src/ts/server/tts.ts` | `/api/v1/tts/synthesize`; posts fixed synthesis operations and validates bounded audio. |
+| `src/ts/server/mcpOAuthRefresh.ts` | `/api/v1/mcp/oauth/refresh`; exchanges a stable MCP identity for a bounded stored-token refresh result. |
+
+Fastify owns the fixed upstream URL, method, and headers. Raw persisted secrets
+stay server-side; resource reads expose only a masked sentinel that lets an
+adapter select the stored credential. An intentional caller-owned draft key is
+scoped to the requested operation. For TTS, `src/ts/process/tts.ts` also cancels
+superseded/stopped requests and ignores late audio before playback.
 
 ## Startup Sequence
 
@@ -50,26 +56,31 @@ the preloading element.
 
 `loadData()` in `src/ts/bootstrap.ts` performs the visible startup work:
 
-1. Fetch `/api/v1/bootstrap` for runtime metadata: initialization status,
-   current revision, schema/asset information, active generation jobs, and
-   active message translations.
-2. If SQLite is uninitialized, issue the initialization command and refetch the
-   runtime metadata.
-3. Fetch `/api/v1/settings`, `/api/v1/collections`, and `/api/v1/characters` in
+1. Adopt the sole pending-mutation writer identity, if one exists, then fetch
+   `/api/v1/bootstrap` for initialization, revision, database-lineage/writer
+   metadata, active generation jobs, and active message translations.
+2. If SQLite is uninitialized, issue the initialization command. The winning
+   client reuses the returned revision; only a client that lost the
+   initialization race refetches read-only bootstrap metadata.
+3. Prepare the encrypted pending-mutation outbox for the authenticated writer
+   epoch and database lineage, flush saved receipt acknowledgements, and replay
+   its dependency-ordered commands. Startup stops if retryable rows remain.
+4. Fetch `/api/v1/settings`, `/api/v1/collections`, and `/api/v1/characters` in
    parallel through hash-aware POSTs when IndexedDB/Web Crypto are available,
    otherwise use their full GET forms. Retry the complete set when revisions do
    not match, then apply the consistent set to reactive resource state.
-4. Seed selected-character state, reset body hydration, record already-resident
-   lorebook coverage, and cache the common resource revision.
-5. Enable guarded resource writes and command-event reconciliation.
-6. Seed active generation jobs and active message translations, then start
+5. Seed selected-character state, reset body hydration, record already-resident
+   lorebook coverage, and hydrate the selected prompt-template owner before
+   caching the common resource revision.
+6. Enable guarded resource writes and command-event reconciliation.
+7. Seed active generation jobs and active message translations, then start
    translation refresh and durable generation reattach.
-7. Start chat-message hydration and fetch the active chat body.
-8. Start bridge patch lifecycle flushing and subscribe to server events.
+8. Start chat-message hydration, fetch the active chat body, start bridge patch
+   lifecycle flushing, and subscribe to server events.
 9. If the loaded `notification` setting is true, enable chat-completion push
    notifications.
-10. Load plugins.
-11. Update color scheme, text theme, animation speed, height mode, error
+10. Load plugins and start plugin runtime synchronization.
+11. Update color scheme, text theme, reduced-motion/animation state, height mode, error
     handling, and GUI size CSS variables.
 12. Apply startup UI state such as `botSettingAtStart`.
 13. Set `loadedStore`, select the persisted character, start DOM observers,
@@ -78,6 +89,38 @@ the preloading element.
 Visible startup bugs often sit at the boundary between `loadedStore`,
 `selectedCharID`, resource application, route application, lazy body reads, and
 CSS variable updates.
+
+### Durable mutation outbox
+
+`src/ts/server/pendingMutationOutbox.ts` stores an eligible command payload
+AES-GCM encrypted in IndexedDB before it is sent. Scope/order indexes and
+receipt-ACK rows remain plaintext. The intent is scoped to the active writer
+session, writer epoch, and database lineage; semantic dependency lanes prevent
+related mutations from overtaking an earlier retained mutation.
+`durableMutationDispatch.ts` freezes and dispatches the staged intent, while
+`pendingMutationReplay.ts` drains retained rows before initial resource
+hydration. If IndexedDB or Web Crypto is unavailable, the ordinary command
+still runs without durable receipt headers.
+
+Keep these three acknowledgements distinct when debugging a save:
+
+- **Persisted intent:** encrypted client-side command input that survives a
+  crash or reload until it is accepted, terminally rejected, or superseded.
+- **Server receipt:** lineage-bound replay metadata that deduplicates an
+  accepted command. Acceptance converts the client outbox row into durable
+  receipt-ACK work; cleanup is retried at bootstrap.
+- **Local-effect acknowledgement:** response-owned keys, digests,
+  certificates, and any canonical differences checked against the optimistic
+  resource projection. It can advance the local resource fence without a GET,
+  but it is neither the outbox record nor the server replay receipt.
+
+Transient transport/conflict failures retain the intent and its optimistic
+projection. Exact invalid/missing requests are terminal and are discarded;
+authoritative hydration or guarded rollback then removes rejected state. The
+disposable resource cache described below never stores optimistic mutation
+state. See
+[`server-resources-and-bridges.md`](../../docs/structure/server-resources-and-bridges.md)
+for the canonical resource and reconciliation contract.
 
 ## Resource State, Invalidation, And Hydration
 
@@ -145,24 +188,18 @@ If a component shows stale or missing data, confirm whether the data is:
   endpoint;
 - hidden by a route/store condition;
 - optimistically changed but awaiting command confirmation;
-- rolled back after command failure;
+- retained for replay after a retryable command failure, or rolled back after a
+  terminal/non-durable failure;
 - superseded by an SSE-triggered targeted read or full resource refresh.
 
 Hash-aware reads are an authenticated transfer optimization, not an offline or
-authoritative browser database. Protocol-v2 POST bodies are limited to 1 MiB,
-and the client sends only hashes for entries present in a verified current
-manifest. For arrays, Fastify returns `{hash: sha256}` for an unchanged position
-and `{value: json}` for a miss; these explicit tags keep ordinary JSON strings
-unambiguous. Whole-value resources use a hash string for a hit and the complete
-JSON value for a miss. The transport adapter reconstructs the ordinary full
-payload at the current revision before any resource-state or hydration caller
-sees it. A missing/corrupt cache value, unsupported POST route, malformed cache
-response, quota/privacy failure, or unavailable crypto causes a compatible full
-GET. Optimistic command state is never written to this cache. The browser keeps
-at most 512 current resource manifests with 8,192 hashes per manifest and
-32,768 unique content-addressed entries. It prunes unreferenced values, skips an
-individual value above 32 MiB, and caps retained UTF-8 serialized JSON at 64 MiB
-globally. IndexedDB metadata and engine overhead are outside those byte counts.
+authoritative browser database. The transport adapter verifies cached bytes and
+reconstructs an ordinary full payload at the current revision before resource
+or hydration callers see it. Missing/corrupt data, unsupported cache POSTs,
+malformed responses, quota/privacy failures, or unavailable crypto fall back to
+the compatible GET. Optimistic command state is never written to this cache.
+The exact tagged-response protocol and storage/request caps are canonical in
+[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#read-and-hydration-endpoints).
 
 The root settings value, every split collection (including modules, plugins,
 prompt presets, personas, loadouts, lorebooks, and plugin custom storage), and
@@ -225,9 +262,9 @@ Model profile resource notes:
   the same runtime option schema as profile `runtimeOptions`.
 - Preset, split-preset, loadout, import, and resource-read paths preserve these
   durable fields while still accepting legacy flat data.
-- Provider secret masking covers profile-local `apiKey` values by stable
-  profile id. Masked placeholders are resolved server-side during settings
-  writes.
+- Provider secret masking covers profile-local `apiKey` values and Vertex
+  `providerOptions.vertex.privateKey` values by stable profile id. Masked
+  placeholders are resolved server-side during settings writes.
 - Settings -> Model has a live command-backed authoring UI. The shell edits role
   bindings, profile rows, runtime defaults, first-class provider fields,
   fallbacks, and profile-local secret placeholders through dedicated model
@@ -252,7 +289,8 @@ surfaces:
 - `nanoGPTDashboardFetch.ts` prevents stale NanoGPT balance/subscription fetches
   from persisting subscription state after the API key changes.
 - `characterAdditionalAssetUpload.ts`, `characterEmotionUpload.ts`,
-  `characterFolderImageUpload.ts`, `characterTtsAssetUpload.ts`,
+  `characterFolderImageUpload.ts`, `characterNotificationImageUpload.ts`,
+  `characterTtsAssetUpload.ts`,
   `moduleAssetUpload.ts`, `personaIconUpload.ts`, `promptPresetIconUpload.ts`,
   and `settingsMediaAssetUpload.ts` apply uploaded asset ids only if the current
   owner and field snapshots still match.
@@ -273,17 +311,26 @@ Important files:
   active abort controller state, and the high-level `sendChat` coordinator used
   by `DefaultChatScreen.svelte`.
 - `src/ts/process/request/providerCapability.ts` and
-  `resolveServerPromptAssembly()` decide whether the selected request can run on
-  the server.
+  `src/ts/process/request/serverPromptAssembly.ts` decide whether the selected
+  request can run on the server.
 - `src/ts/process/serverBackedSendChat.ts` builds server requests, maps legacy
   inlay ids to server asset refs, calls `/api/v1/generate/chat` or the preview
   route, applies server message patches, and returns terminal data.
 - `src/ts/process/request/serverChat.ts` parses chat SSE frames:
   `job_accepted`, stage, prompt, patch, info, token, side-effect,
-  post-generation progress, warning, error, and done.
+  `agent_preset_progress`, `post_generation_progress`, warning, error, and
+  done. It updates the scoped progress stores consumed by
+  `AgentPresetProgress.svelte` and `PostGenerationScriptProgress.svelte`.
 - `src/ts/process/reattach.ts` uses bootstrap `activeGenerationJobs`, including
   job mode and regenerate target when present, to reattach the current chat to
   durable server jobs.
+
+Before prompt assembly or provider fetch, `sendChat` awaits the character-owned
+maintenance batch from `sendChatContext.ts`, the pending chat generation-settings
+save, and the pending selected-persona update. A rejected/retained persistence
+gate aborts the send before server assembly. For “send never reached fetch,”
+inspect `setupSendChatContext`, `waitForPendingChatGenerationSettingsSave`, and
+`flushPendingSelectedPersonaUpdate` before debugging the provider adapter.
 
 Durable sends such as send, continue, and regenerate set `durable: true` when
 allowed. Disconnect detaches from durable jobs; abort/cancel uses the durable
@@ -372,23 +419,38 @@ Push notifications:
 - The worker is scoped to Web Push chat-completion notifications; it is not the
   old offline/share/file-handler service worker surface.
 
-Plugins:
+Plugins and modules:
 
 - Browser plugin code executes only in the browser runtime under
   `src/ts/plugins/`.
 - Fastify stores plugin records/storage but does not execute plugin code.
 - Plugin UI can register extra settings/menu/chat/floating controls through
   stores in `src/ts/stores.svelte.ts`.
-- Ordinary non-MCP module `.risum` import is supported in Fastify-backed browser
-  mode: the browser decodes the module envelope, uploads embedded assets through
-  server asset helpers, and creates the module through command helpers.
+- Ordinary and MCP-bearing module `.risum` imports are supported in
+  Fastify-backed browser mode. The browser decodes the module envelope, uploads
+  embedded assets through server asset helpers, normalizes and applies the
+  shared syntactic import predicate to any MCP identifier, and creates the
+  module through command helpers.
   Supported source filename extensions are retained for upload. Non-empty
   unsupported legacy filename tokens are classified from
   PNG/JPEG/WebP/GIF/AVIF signatures, with PNG as the fallback upload type, while
   the original tuple filename stays in module metadata. A blank filename is
-  passed through and defaults to PNG in the asset saver. `.risum` files
-  containing MCP metadata are rejected; MCP module import/update remains blocked
-  until it has a dedicated command-backed route.
+  passed through and defaults to PNG in the asset saver.
+- `src/ts/process/mcp/mcp.ts#importMCPModule` also supports direct interactive
+  import of predicate-checked internal/remote MCP identifiers. It performs a handshake,
+  records server metadata, and creates the module through the same durable
+  command flow.
+- Stored MCP rows remain outside ordinary patch, enable, and
+  character/chat/loadout link commands. Patch/enable reject an MCP id; generic
+  delete reports success but leaves the row in place. The module page hides
+  edit/export, and its generic enable/delete controls cannot enable or remove an
+  MCP row. Command-based stdio MCP processes are not supported at runtime.
+
+The shared import predicate does not parse `stdio:` payloads. Direct import
+handshakes before creation, but `.risum` and the server create route can persist
+an unusable/malformed or command-based wrapper that runtime initialization later
+rejects. The canonical identifier and transport distinctions are in
+[Plugins And MCP](../../docs/structure/plugins-and-mcp.md#mcp-runtime).
 
 MCP:
 
@@ -414,7 +476,9 @@ MCP:
 
 ## Verification Pointers
 
-Use the smallest command that covers the touched area:
+Use the smallest command that covers the touched area. The lane semantics and
+full matrix are in
+[Testing And Operations](../../docs/structure/testing-and-operations.md#tests-and-checks).
 
 ```sh
 pnpm check

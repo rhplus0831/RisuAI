@@ -1,6 +1,6 @@
 # Backend Map
 
-Last audited: 2026-07-16.
+Last audited: 2026-07-17.
 
 The backend is the Fastify server under `server/fastify`. It owns SQLite state,
 auth, provider secrets, prompt assembly, provider dispatch, Hypa V3 memory,
@@ -13,11 +13,11 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/index.ts`                                                 | Process entrypoint: load config, call `buildApp()`, listen, handle shutdown signals.                     |
 | `server/fastify/src/app.ts`                                                   | Composition root for plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA. |
 | `server/fastify/src/config.ts`                                                | Parses `RISU_API_*`, `TRUST_PROXY`, hub/Realm URLs, static root, trace mode, and agent auth bypass.      |
-| `server/fastify/src/db.ts`, `databaseLineage.ts`                              | SQLite schema v25, migrations, `schema_version`, global revision; v24 adds durable command-mutation receipts and v25 adds database lineage, receipt acknowledgements, and durable writer ownership/epochs. |
+| `server/fastify/src/db.ts`, `databaseLineage.ts`, `commandMutationReceipts.ts` | SQLite schema v25, migrations, `schema_version`, global revision, durable command-mutation receipts, database lineage, receipt acknowledgements, and durable writer ownership/epochs. |
+| `server/fastify/src/databaseDefaults.ts`                                     | Canonical first-run and import-normalization defaults; keep persisted setting groups aligned with the browser ownership map and parity test. |
 | `server/fastify/src/repository.ts`                                            | Broad/scoped/exact domain loaders, REST resource/hydration readers, targeted row/table writers, legacy `db.json` import, `applyImport`, assets, backups. |
 | `server/fastify/src/messageStore.ts`                                          | Chat `messages`, reroll alternates, and per-chat `chat_hypa_v3` rows.                                    |
 | `server/fastify/src/chatGenerationSettingsStorage.ts`                         | Normalizes persisted chat-scoped generation settings on import/load.                                      |
-| `server/fastify/src/databaseDefaults.ts`                                      | Server-owned first-run defaults and import normalization defaults.                                       |
 | `server/fastify/src/routes/resourceReads.ts`                                  | Authenticated settings/collection/character REST resources plus lazy chat, lorebook, legacy-preset, and prompt-template hydration reads. |
 | `server/fastify/src/commands/mutations.ts`, `commands/events.ts`               | Revision-checked transaction lanes, durable command-event catalog/history, and live event fanout.        |
 | `server/fastify/src/auth.ts`, `http.ts`, `activeWriter.ts`, `providerSecrets.ts` | Single-user auth/session helpers, route auth assertion, active-writer guard, secret masking/resolution. |
@@ -31,6 +31,9 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/assetGc.ts`                                               | Periodic reference-counted asset garbage collection.                                                     |
 | `server/fastify/src/streamJobs.ts`, `streamBackpressure.ts`                   | Process-local proxy stream jobs and bounded stream writes for slow clients.                              |
 | `server/fastify/src/requestAbort.ts`, `server/fastify/src/requestTimeouts.ts` | Generation abort propagation and proxy/stream-job timeout constants.                                      |
+| `server/fastify/src/providerOperations.ts`, `embeddingOperations.ts`, `tts.ts` | Fixed, validated provider catalog/account/translation, remote embedding, and TTS operation boundaries with server-side credential resolution. |
+| `server/fastify/src/imageGeneration.ts`, `openAITranscription.ts`, `mcpOAuthRefresh.ts` | Bounded image generation, stored-key OpenAI transcription, and stored-credential MCP OAuth refresh operations. |
+| `server/fastify/src/generation/serverTools.ts`, `ollamaCloudToolProxy.ts`      | Bounded server-intent tool protocol translation and credential-safe Ollama Cloud transport for browser-owned tool loops. |
 | `server/fastify/src/risuSave/`                                                | `.risu`, bundle, local-backup, bounded-inflate, and asset-report codecs wired by save routes.            |
 | `server/fastify/src/realmImport/`                                             | Realm dynamic-card/`charx` conversion helpers used by Realm import routes.                               |
 | `server/fastify/src/prompt/agentPresetExecution.ts`, `src/ts/agentPresetReferences.ts` | Prepared-input and named-output-CBS Agent Preset prompting, shared reference expansion, provider dispatch, phase execution, failure handling, and diagnostics. |
@@ -39,10 +42,11 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 
 `buildApp()` is test-friendly. `BuildAppOptions` can inject generation chat
 behavior, including provider dispatch, push notification service, viewer
-heartbeat cadence, and finalization retry options; Realm import limits; memory
-worker behavior; command/memory event sinks; and asset-GC behavior. Config
-parsing also includes streamed device-backup import limits and generation trace
-sidecar controls.
+heartbeat cadence, and finalization retry options; MCP OAuth refresh, OpenAI
+transcription, provider-operation, embedding, TTS, and image-generation
+execution; Realm import limits; memory worker behavior; command/memory event
+sinks; and asset-GC behavior. Config parsing also includes streamed
+device-backup import limits and generation trace sidecar controls.
 
 ## App Wiring
 
@@ -88,9 +92,11 @@ bootstrap latches ownership, stale or missing writer sessions receive
 `database_metadata`, so a server restart does not make an older tab active.
 
 Rate limits are opt-in per route. Current presets are setup `5/min`, login
-`10/min`, auth crypto `60/min`, proxy fetch `120/min`, proxy stream-job create
-`30/min`, imports `10/min`, asset upload `120/min`, bulk asset upload `30/min`,
-and generation submit `60/min`.
+`10/min`, auth crypto `60/min`, provider and embedding operations `60/min`,
+OpenAI transcription `10/min`, image generation `10/min`, MCP OAuth refresh
+`30/min`, TTS synthesis `60/min`, proxy fetch `120/min`, proxy stream-job create
+`30/min`, imports `10/min`, asset upload and existence checks `120/min`, bulk
+asset upload `30/min`, and generation submit `60/min`.
 
 ## Route Families
 
@@ -101,7 +107,8 @@ and generation submit `60/min`.
 | Commands              | `commands.ts` plus `commands/`                            | First-run initialization plus revision-checked domain mutations for settings, profiles/presets, personas/loadouts, characters/chats/messages, lorebooks, modules/plugins, definitions, and generation results. Hot paths accept sparse object/row/definition patches and return compact canonical or digest-backed receipts when the browser can acknowledge its optimistic state safely. |
 | Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`    | Content-addressed assets, `.risu`/bundle/local-backup import/export, Realm import, snapshots.                                                                                        |
 | Push notifications    | `pushNotifications.ts`                                    | Web Push VAPID public-key lookup plus authenticated subscription create/delete routes; durable subscriptions live in SQLite while generated VAPID keys live in `data/__web_push_vapid_keys.json`. |
-| Provider/runtime ops  | `providerOperations.ts`, `tts.ts`, `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts` | Fixed authenticated provider metadata and bounded TTS synthesis, generic proxy/stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility bytes, and the public auth crypto helper. |
+| Provider/media ops    | `providerOperations.ts`, `embeddingOperations.ts`, `tts.ts`, `imageGeneration.ts`, `openAITranscription.ts`, `mcpOAuthRefresh.ts` | Authenticated, bounded server-owned provider catalogs/translations, remote embeddings, TTS, image generation, OpenAI transcription, and stored-credential MCP OAuth refresh. |
+| Proxy/compatibility   | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts` | Generic proxy/stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility bytes, and the public auth crypto helper. |
 | Generation            | `generation.ts`, `generationChat.ts`                      | Completion route, server-assembled chat generation, preview prompt, internal chat generation settings/profile/Agent Preset readiness preflight, durable reattach/cancel.             |
 | Memory                | `memoryJobs.ts`, `memoryReads.ts`                         | Queue/cancel/list jobs plus chunk/summary reads and active-writer summary edit/delete routes.                                                                                         |
 
@@ -114,6 +121,21 @@ There is no generated OpenAPI/Swagger artifact or generated browser API client;
 request/response contracts live in route handlers, TypeScript types, and the
 hand-written browser adapters under `src/ts/server/` and
 `src/ts/process/request/`.
+
+### Server-Owned Provider And Media Boundary
+
+These authenticated routes perform upstream work without mutating local durable
+application state, so they do not require active-writer ownership. They accept
+fixed operation discriminators and bounded, provider-specific inputs rather
+than arbitrary upstream URLs, methods, or headers. Stored credentials resolve
+inside Fastify, while request/result limits, deadlines, rate limits, sanitized
+errors, and disconnect cancellation stay at the route/service boundary.
+
+The family currently covers provider operations, embeddings, TTS, image
+generation, OpenAI transcription, and MCP OAuth refresh. It is distinct from
+the generic proxy family and does not persist returned media/provider data.
+[Providers And Models](providers-and-models.md#server-owned-provider-and-media-operations)
+owns the operation/provider/result matrix and browser adapter map.
 
 Handlers call `requireAuth()` unless intentionally public. Public exceptions are
 health, auth status/setup/login, `/api/v1/auth/crypto`, immutable asset reads,

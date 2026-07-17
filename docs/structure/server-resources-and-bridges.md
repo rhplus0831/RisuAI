@@ -1,6 +1,6 @@
 # Server Resources And Bridges
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-17.
 
 Fastify owns durable state. The browser reads concrete REST resources into
 Svelte-owned settings, collections, and characters state, fetches large bodies
@@ -11,6 +11,9 @@ explicit server-owned mutation routes.
 
 `src/ts/bootstrap.ts` coordinates startup:
 
+- Before writer-intent bootstrap, startup reads any single unambiguous pending
+  mutation owner and can adopt that writer session so recoverable local work is
+  not orphaned by a new browser session.
 - `fetchServerBootstrap()` sends writer intent to `GET /api/v1/bootstrap`.
   Bootstrap is deliberately runtime-only metadata: initialization state,
   revision/schema version, database lineage, durable writer epoch, the
@@ -20,6 +23,12 @@ explicit server-owned mutation routes.
   client reuses the runtime metadata and accepted revision it already has; a
   read-only bootstrap retry is needed only when another client won the
   initialization race.
+- After bootstrap/initialization, startup prepares the mutation outbox
+  against the writer session, writer epoch, and database lineage, flushes its
+  durable server-receipt acknowledgements, and replays pending intents. Transient
+  failures retain their encrypted intents; terminal ownership, lineage, or
+  receipt-id failures discard them. Any retained or unreadable raw row blocks
+  root-resource hydration so unresolved local work is not hidden by fresh reads.
 - `loadInitialServerResources()` concurrently reads settings, collections, and
   characters through their hash-aware POST resources (with compatible full GET
   fallback). All three responses must report one common revision. Concurrent
@@ -42,28 +51,54 @@ explicit server-owned mutation routes.
   effects can advance their resource fences without a read; authoritative reads
   still apply in command-event order for every other event.
 
-| Path                                           | Role                                                                                     |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `src/ts/server/bootstrap.ts`                   | Validates the small runtime bootstrap and exposes writer-intent/read-only variants.      |
-| `src/ts/server/resourceReads.ts`               | Browser wrappers and response validation for settings, collections, and character reads. |
-| `src/ts/server/resourceCache.ts`               | Bounded SHA-256 manifests, verified IndexedDB values, protocol-v2 tagged-response reconstruction, and cache fallback. |
-| `src/ts/server/resourceState.svelte.ts`        | Svelte resource owners, per-slice revisions/status/errors, and the aggregate compatibility view. |
-| `src/ts/server/resourceInvalidation.ts`        | Initial/full reads, event-to-endpoint planning, targeted reads, revision checks, and applies. |
-| `src/ts/server/resourceRefresh.ts`             | Coalesced complete refresh for replay gaps, restores, and other broad recovery paths.    |
-| `src/ts/server/commands.ts`                    | One global browser mutation queue, command response decoding, local-effect capture, and reconciliation batching. |
-| `src/ts/server/hydrationReads.ts`              | Browser wrappers for chat, lorebook, legacy-preset, and prompt-template bodies.          |
-| `src/ts/server/chatMessageHydration.svelte.ts` | Active/ranged/bulk chat hydration and character-lorebook hydration.                      |
-| `src/ts/server/characterShellHydration.svelte.ts` | Fetches a full character row when a consumer encounters a shell row.                   |
-| `src/ts/server/promptTemplateHydration.ts`     | Fetches the template owned by a selected or explicitly requested prompt preset.          |
-| `src/ts/server/messageTranslationJobs.ts`      | Tracks detached raw-message translation rows from bootstrap and refresh polling.         |
-| `src/ts/process/reattach.ts`                   | Reattaches running durable generation jobs reported by bootstrap.                        |
+| Path                                              | Role                                                                                                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/ts/server/bootstrap.ts`                      | Validates the small runtime bootstrap and exposes writer-intent/read-only variants.                                                  |
+| `src/ts/server/resourceReads.ts`                  | Browser wrappers and response validation for settings, collections, and character reads.                                             |
+| `src/ts/server/resourceCache.ts`                  | Disposable, non-authoritative SHA-256 manifests and verified IndexedDB values used only after authenticated hash confirmation.       |
+| `src/ts/server/pendingMutationOutbox.ts`          | AES-GCM-encrypted intent payloads plus plaintext scope/order indexes and durable receipt-acknowledgement rows.                       |
+| `src/ts/server/durableMutationDispatch.ts`        | Persists an intent before dispatch, classifies replay outcomes, and completes accepted intents before acknowledging server receipts. |
+| `src/ts/server/pendingMutationReplay.ts`          | Replays staged mutations after authenticated bootstrap and before resource hydration.                                                |
+| `src/ts/server/resourceState.svelte.ts`           | Svelte resource owners, per-slice revisions/status/errors, and the aggregate compatibility view.                                     |
+| `src/ts/server/resourceInvalidation.ts`           | Initial/full reads, event-to-endpoint planning, targeted reads, revision checks, and applies.                                        |
+| `src/ts/server/resourceRefresh.ts`                | Coalesced complete refresh for replay gaps, restores, and other broad recovery paths.                                                |
+| `src/ts/server/commands.ts`                       | One global browser mutation queue, command response decoding, local-effect capture, and reconciliation batching.                     |
+| `src/ts/server/hydrationReads.ts`                 | Browser wrappers for chat, lorebook, legacy-preset, and prompt-template bodies.                                                      |
+| `src/ts/server/chatMessageHydration.svelte.ts`    | Active/ranged/bulk chat hydration and character-lorebook hydration.                                                                  |
+| `src/ts/server/characterShellHydration.svelte.ts` | Fetches a full character row when a consumer encounters a shell row.                                                                 |
+| `src/ts/server/promptTemplateHydration.ts`        | Fetches the template owned by a selected or explicitly requested prompt preset.                                                      |
+| `src/ts/server/messageTranslationJobs.ts`         | Tracks detached raw-message translation rows from bootstrap and refresh polling.                                                     |
+| `src/ts/process/reattach.ts`                      | Reattaches running durable generation jobs reported by bootstrap.                                                                    |
 
 `getResourceDatabase()` and the `getDatabase()` adapter compose the three
 resource owners into a transitional aggregate `Database` view. This view is not
 a second persistence layer. New code should read or update the owning resource
 slice whenever practical, and all durable writes still go through API commands.
 
-## Command Queue And Local Acknowledgements
+## Durable Mutation Recovery, Command Queue, And Local Acknowledgements
+
+Three related artifacts have separate jobs:
+
+- The browser durable mutation intent is an IndexedDB recovery record staged
+  before dispatch: its command payload is encrypted, while scope/order indexes
+  are plaintext. It is non-authoritative and is retained across transient
+  failures so bootstrap can replay it in dependency order.
+- The server mutation receipt is an SQLite idempotency record keyed by mutation
+  id within the current database lineage. Replaying that id returns the original
+  revision/event/extras without repeating side effects; the browser acknowledges
+  it only after durably deleting the accepted intent.
+- The compact local-effect acknowledgement is response-supplied canonical
+  keys/digests/certificates plus event ownership and client fences. It can
+  acknowledge already-visible optimistic state without a GET, but it is neither
+  the durable intent nor the server receipt.
+
+Durable helpers stage before network dispatch (and before a debounced control
+waits to send). Semantic owner keys and explicit dependency keys preserve
+predecessor order across commands; Web Locks coordinate tabs when available and
+same-tab locks provide the local fallback. Only the allowlisted command shapes
+in `pendingMutationOutbox.ts` are eligible. If IndexedDB or Web Crypto is
+unavailable, the command still uses the ordinary unreceipted transport path,
+but it cannot rely on crash recovery.
 
 Every ordinary browser command domain shares the same server revision, so
 `src/ts/server/commands.ts` serializes high-level mutations through one global
@@ -168,25 +203,27 @@ the hash string for a hit and the complete JSON value for a miss. The browser
 accepts a hit only when that hash's IndexedDB bytes re-hash correctly.
 Missing/corrupt entries, unsupported POSTs, malformed cache responses,
 unavailable IndexedDB, or unavailable Web Crypto fall back to the full GET.
-Cached data is never used offline or without an authenticated server response
-confirming its hash.
+The `risu-resource-cache-v1` database is disposable and non-authoritative;
+cached data is never used offline or without an authenticated server response
+confirming its hash. It is separate from the mutation outbox, whose retained
+encrypted intents represent unsent local work and must not be cleared as a cache.
 
-| Data                                      | Endpoint                                                       | Browser owner                                               |
-| ----------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
-| Persisted settings fields                 | Cache `POST /api/v1/settings`; full `GET` fallback              | `resourceReads.ts`, `settingsResourceState`                 |
-| One settings group                        | Cache `POST /api/v1/settings/:group`; full `GET` fallback       | Event-driven targeted invalidation                          |
-| Every split collection                    | Cache `POST /api/v1/collections`; full `GET` fallback           | `resourceReads.ts`, `collectionsResourceState`              |
-| One split collection                      | Cache `POST /api/v1/collections/:name`; full `GET` fallback     | Event-driven targeted invalidation                          |
-| Message-free character list/order/current | Cache `POST /api/v1/characters`; full `GET` fallback            | `resourceReads.ts`, `charactersResourceState`               |
-| Character order only                      | `GET /api/v1/characters/order`                                 | Character-order invalidation                                |
-| Character selection/interaction           | `GET /api/v1/characters/:id/selection`                         | Character-selection invalidation                            |
-| One character row                         | `GET /api/v1/characters/:id`                                   | Targeted invalidation and character-shell hydration         |
-| Full, tail, ranged, or generation-suffix chat body | `GET /api/v1/chats/:id/messages` with optional `tail`, `start`/`limit`, or `generationMessageId` | `hydrateActiveChat*()` and event invalidation |
-| Many chat bodies                          | `POST /api/v1/chats/messages/bulk`                              | `ensureAllChatsHydrated()`                                  |
-| One character lorebook                    | Cache `POST /api/v1/characters/:id/lorebook`; full `GET` fallback | `hydrateActiveCharacterLorebook()` and invalidation       |
-| Many character lorebooks                  | `POST /api/v1/characters/lorebooks/bulk`                        | `ensureAllCharacterLorebooksHydrated()`                     |
-| One legacy bot-preset body                | Cache `POST /api/v1/legacy-presets/:id`; full `GET` fallback    | `ensureBotPresetHydrated()`                                 |
-| One prompt-preset template                | Cache `POST /api/v1/prompt-presets/:id/template`; full `GET` fallback | `ensurePromptTemplateHydrated()`                       |
+| Data                                               | Endpoint                                                                                         | Browser owner                                       |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| Persisted settings fields                          | Cache `POST /api/v1/settings`; full `GET` fallback                                               | `resourceReads.ts`, `settingsResourceState`         |
+| One settings group                                 | Cache `POST /api/v1/settings/:group`; full `GET` fallback                                        | Event-driven targeted invalidation                  |
+| Every split collection                             | Cache `POST /api/v1/collections`; full `GET` fallback                                            | `resourceReads.ts`, `collectionsResourceState`      |
+| One split collection                               | Cache `POST /api/v1/collections/:name`; full `GET` fallback                                      | Event-driven targeted invalidation                  |
+| Message-free character list/order/current          | Cache `POST /api/v1/characters`; full `GET` fallback                                             | `resourceReads.ts`, `charactersResourceState`       |
+| Character order only                               | `GET /api/v1/characters/order`                                                                   | Character-order invalidation                        |
+| Character selection/interaction                    | `GET /api/v1/characters/:id/selection`                                                           | Character-selection invalidation                    |
+| One character row                                  | `GET /api/v1/characters/:id`                                                                     | Targeted invalidation and character-shell hydration |
+| Full, tail, ranged, or generation-suffix chat body | `GET /api/v1/chats/:id/messages` with optional `tail`, `start`/`limit`, or `generationMessageId` | `hydrateActiveChat*()` and event invalidation       |
+| Many chat bodies                                   | `POST /api/v1/chats/messages/bulk`                                                               | `ensureAllChatsHydrated()`                          |
+| One character lorebook                             | Cache `POST /api/v1/characters/:id/lorebook`; full `GET` fallback                                | `hydrateActiveCharacterLorebook()` and invalidation |
+| Many character lorebooks                           | `POST /api/v1/characters/lorebooks/bulk`                                                         | `ensureAllCharacterLorebooksHydrated()`             |
+| One legacy bot-preset body                         | Cache `POST /api/v1/legacy-presets/:id`; full `GET` fallback                                     | `ensureBotPresetHydrated()`                         |
+| One prompt-preset template                         | Cache `POST /api/v1/prompt-presets/:id/template`; full `GET` fallback                            | `ensurePromptTemplateHydrated()`                    |
 
 The collection names are `modules`, `plugins`, `modelPresets`,
 `promptPresets`, `botPresets`, `promptTemplate`, `personas`, `loadouts`,
@@ -274,22 +311,27 @@ that affect rendered state should follow the visible-state policy in
 
 ## Bridge Watchers
 
-| File                               | Role                                                                               |
-| ---------------------------------- | ---------------------------------------------------------------------------------- |
-| `bridgeFlush.ts`                   | Flushes pending bridge patches on `pagehide` / hidden visibility with `keepalive`. |
-| `settingsBridge.svelte.ts`         | Debounced settings groups through `PATCH /commands/settings/:group`, equality-noop suppression, rollback-aware patches. |
-| `characterBridge.svelte.ts`        | Character profile/draft bridging through `PATCH /commands/characters/:id`.         |
-| `chatBridge.svelte.ts`             | Chat metadata and chat-folder bridging through `PATCH /commands/chats/:id` and chat-folder routes. |
-| `lorebookBridge.svelte.ts`         | Global/character/chat/module lorebook replacement routes with hydrated-lorebook guards. |
-| `promptTemplateBridge.svelte.ts`   | Prompt item/settings routes, selected-prompt-preset ownership, optimistic writes, rollback, and hydration/revision-aware reconciliation. |
+| File                               | Role                                                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `bridgeFlush.ts`                   | Flushes pending bridge patches on `pagehide` / hidden visibility with `keepalive`.                                                                                                   |
+| `pendingBridgeFlushRegistry.ts`    | Registers lazily loaded/component-owned pending writes for page-exit and owner-targeted flushes without importing every feature at bootstrap.                                      |
+| `settingsBridge.svelte.ts`         | Debounced settings groups through `PATCH /commands/settings/:group`, equality-noop suppression, rollback-aware patches.                                                              |
+| `characterBridge.svelte.ts`        | Character profile/draft bridging through `PATCH /commands/characters/:id`.                                                                                                           |
+| `chatBridge.svelte.ts`             | Chat metadata and chat-folder bridging through `PATCH /commands/chats/:id` and chat-folder routes.                                                                                   |
+| `lorebookBridge.svelte.ts`         | Global/character/chat/module lorebook replacement routes with hydrated-lorebook guards.                                                                                              |
+| `promptTemplateBridge.svelte.ts`   | Prompt item/settings routes, selected-prompt-preset ownership, optimistic writes, rollback, and hydration/revision-aware reconciliation.                                             |
 | `scriptDefinitionBridge.svelte.ts` | Global/character/module script and trigger watchers; compact create/update/delete/reorder classification, response-digest checks, projection fencing, and full-replacement fallback. |
 
 Common requirements are to capture snapshots, suppress no-op updates, respect
-the appropriate resource epoch or revision gate, debounce noisy edits, roll
-back on failure/conflict, send the narrowest field/row mutation available, and
-use trusted optimistic writes only in helpers that intentionally update local
-resource state before the server response. Multi-command watcher fan-outs still
-enter the shared command queue and reconcile their accepted event batch once.
+the appropriate resource epoch or revision gate, debounce noisy edits, stage
+durable intent before dispatch, send the narrowest field/row mutation available,
+and use trusted optimistic writes only in helpers that intentionally update
+local resource state before the server response. Retryable failures retain the
+encrypted intent and its optimistic projection for replay. Terminal rejection
+rolls back only when the attempted value still owns the target; the
+non-durable fallback uses the ordinary rollback path. Multi-command watcher
+fan-outs still enter the shared command queue and reconcile their accepted event
+batch once.
 
 ## Active Writer And Diagnostics
 

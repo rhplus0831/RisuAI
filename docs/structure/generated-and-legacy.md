@@ -1,6 +1,6 @@
 # Generated Files And Legacy Caveats
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-17.
 
 These notes help avoid spending time in files that look important but are
 generated, local-only, historical, vendored, or intentionally no-port.
@@ -25,6 +25,7 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `src/ts/process/__fixtures__/expected/`         | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`.                                                                                |
 | `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                                                    |
 | `*.snap` under test fixtures                    | Vitest snapshots; update through the relevant test workflow.                                                                                           |
+| `server/fastify/browser-smoke/*-snapshots/*.png` | Tracked Playwright visual baselines, not scratch output. Update only for an intentional visible change through the smoke workflow.                    |
 
 `.archived-docs/` files are historical documentation. They may contain
 present-tense statements, commands, and gate references that were true at
@@ -36,16 +37,11 @@ test fixture.
 pointer for older links. Add current frontend guidance to
 `src/docs/svelte-ui.md` or `src/docs/client-runtime.md`.
 
-Other ignored local/legacy paths include root `save/`, `dist-web/`, `dist-ssr`,
-`xplugin/`, `src-others/`, `src-tauri/target/`, `src-tauri/gen/`, `build/`,
-`.wrangler/`, `.qoder/`, `.tauri/`, `.codex-note/`, `.env`,
-`.risu-api-restart`, `dist.zip`,
-`Cargo.lock`, logs/debug logs, `package-lock.json`, `*.local`, editor temp
-files, Python caches, Vite timestamp files, `raise.code-workspace`, `recc.md`,
-`server/node/ssl/certificate`, and scratch files such as `memo.txt`,
-`test/test.ts`, or `test.ts`. Treat them as historical, local build/runtime, or
-agent scratch state unless a new plan explicitly reopens them. This paragraph is
-an orientation summary, not a replacement for `.gitignore`.
+Other ignored paths fall into four groups: retired build/runtime trees, local
+environment and editor state, logs/caches, and agent scratch files. Treat them
+as non-source unless a new plan explicitly reopens one. `.gitignore` is the
+source of truth for the exact list; `.ignore` is the source of truth for broad
+search exclusions.
 
 Prettier also skips Markdown/docs/handoff docs, `pnpm-lock.yaml`,
 tracked static/vendor payloads, media/binary assets, and generated/local
