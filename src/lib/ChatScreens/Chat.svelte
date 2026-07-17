@@ -848,6 +848,20 @@
       : null
   }
 
+  function sourceEditPatch(liveMessage: Message, nextData: string): Pick<Message, 'data' | 'translation'> {
+    if (liveMessage.data !== nextData && liveMessage.translation?.source === 'raw') {
+      return { data: nextData, translation: null }
+    }
+    return { data: nextData }
+  }
+
+  function invalidateTranslationUiForSourceEdit(patch: Pick<Message, 'data' | 'translation'>): void {
+    if (!Object.prototype.hasOwnProperty.call(patch, 'translation')) return
+    translated = false
+    editTranslationMode = false
+    editTranslationTarget = null
+  }
+
   function liveRawTranslationForTarget(target: TranslationMessageTarget): MessageTranslation | null {
     const currentTranslation = findLiveMessageByTarget(target)?.translation
     return currentTranslation?.source === 'raw' && typeof currentTranslation.text === 'string'
@@ -973,13 +987,15 @@
     if (!liveMessage || liveMessage.data === message) return
 
     const messageId = liveMessage.chatId
+    const patch = sourceEditPatch(liveMessage, message)
+    invalidateTranslationUiForSourceEdit(patch)
     if (canUseServerCommands()) {
       if (messageId) {
-        dispatchUpdateMessageScoped(messageId, { data: message }, previous)
+        dispatchUpdateMessageScoped(messageId, patch, previous)
       } else {
         const nextMessages = cloneMessagesWithIds(chat)
         if (nextMessages[idx]) {
-          nextMessages[idx].data = message
+          Object.assign(nextMessages[idx], patch)
           dispatchReplaceMessagesForChat(chat, nextMessages, previous)
         }
       }
@@ -987,8 +1003,8 @@
     }
 
     const localMessageId = ensureMessageId(chat.message[idx])
-    chat.message[idx].data = message
-    dispatchUpdateMessageScoped(localMessageId, { data: message }, previous)
+    Object.assign(chat.message[idx], patch)
+    dispatchUpdateMessageScoped(localMessageId, patch, previous)
   }
 
   function handlePartialEditSave(e: CustomEvent<PartialEditSaveDetail>) {
@@ -1015,20 +1031,22 @@
       const nextData = freshness.detail.newData
       message = nextData
       const messageId = liveMessage.chatId
+      const patch = sourceEditPatch(liveMessage, nextData)
+      invalidateTranslationUiForSourceEdit(patch)
       if (canUseServerCommands()) {
         if (messageId) {
-          dispatchUpdateMessageScoped(messageId, { data: nextData }, previous)
+          dispatchUpdateMessageScoped(messageId, patch, previous)
         } else {
           const nextMessages = cloneMessagesWithIds(chat)
           if (nextMessages[idx]) {
-            nextMessages[idx].data = nextData
+            Object.assign(nextMessages[idx], patch)
             dispatchReplaceMessagesForChat(chat, nextMessages, previous)
           }
         }
       } else {
         const localMessageId = ensureMessageId(liveMessage)
-        liveMessage.data = nextData
-        dispatchUpdateMessageScoped(localMessageId, { data: nextData }, previous)
+        Object.assign(liveMessage, patch)
+        dispatchUpdateMessageScoped(localMessageId, patch, previous)
       }
       displaya(nextData)
     }

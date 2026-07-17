@@ -1296,6 +1296,58 @@ describe('message action target freshness', () => {
 })
 
 describe('server raw translation controls', () => {
+  it('clears a cached raw translation when the source message is edited', async () => {
+    const translation = {
+      source: 'raw' as const,
+      text: 'obsolete translated text',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].message[0].translation = translation
+    vi.mocked(dispatchUpdateMessageScoped).mockImplementationOnce(async (_messageId, patch) => {
+      Object.assign(testDatabaseState.db.characters[0].chats[0].message[0], patch)
+      return { status: 'ok', revision: 2 }
+    })
+    mountCustomHtmlRows(1)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).toContain('obsolete translated text')
+
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    const textarea = target.querySelector<HTMLTextAreaElement>('.message-edit-area')
+    expect(textarea?.value).toBe('visible message 0')
+    textarea!.value = 'edited source text'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+
+    expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith(
+      'message-0',
+      { data: 'edited source text', translation: null },
+      expect.anything(),
+    )
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation).toBeNull()
+    expect(target.textContent).toContain('edited source text')
+    expect(target.textContent).not.toContain('obsolete translated text')
+
+    customHtmlMocks.translateMessageCommand.mockClear()
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
+  })
+
   it('keeps translate pending state separate from completed translation UI', async () => {
     const translation = {
       source: 'raw',
