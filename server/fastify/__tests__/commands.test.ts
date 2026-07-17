@@ -12769,6 +12769,52 @@ describe('Phase 9-4c module record and enablement commands', () => {
     ])
   })
 
+  it('deletes an MCP module and all of its references', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      enabledModules: ['mcp-a'],
+      modules: [{ id: 'mcp-a', name: 'MCP', description: 'Bridge', mcp: { url: 'internal:risuai' } }],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          modules: ['mcp-a'],
+          chats: [{ id: 'chat-a', name: 'Chat', note: '', message: [], localLore: [], modules: ['mcp-a'] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+      loadouts: [{ id: 'loadout-a', name: 'L', modules: ['mcp-a'] }],
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/modules/mcp-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toMatchObject({
+      revision: revision + 1,
+      moduleId: 'mcp-a',
+      event: { type: 'module.deleted', id: 'mcp-a' },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const database = bootstrap.json().database
+    expect(database.modules).toEqual([])
+    expect(database.enabledModules).toEqual([])
+    expect(database.characters[0].modules).toEqual([])
+    expect(database.characters[0].chats[0].modules).toEqual([])
+    expect(database.loadouts[0].modules).toEqual([])
+  })
+
   it('adds and removes character module links, not only reorders', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

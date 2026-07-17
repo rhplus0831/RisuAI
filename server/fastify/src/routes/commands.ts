@@ -7216,7 +7216,7 @@ export function registerCommandRoutes(
         mutate(database) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
-          const index = modules.findIndex((module) => module.id === moduleId && !module.mcp)
+          const index = modules.findIndex((module) => module.id === moduleId)
           if (index === -1) {
             return {
               event: { ...COMMAND_EVENT_CATALOG.moduleDeleted, id: moduleId },
