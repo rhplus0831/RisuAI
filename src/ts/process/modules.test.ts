@@ -186,7 +186,7 @@ import {
   moduleUpdate,
   refreshModules,
 } from './modules'
-import { moduleBackgroundEmbedding } from '../stores.svelte'
+import { moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
 import type { character, customscript, loreBook, triggerscript } from '../storage/database.svelte'
 import { language } from 'src/lang'
 
@@ -406,6 +406,7 @@ describe('module imports', () => {
     rejectCharacterScriptDefinitionStructuralWrite.mockReset()
     installAttemptAwareRollbackMocks()
     vi.mocked(moduleBackgroundEmbedding.set).mockClear()
+    vi.mocked(reloadGuiAfterDefinitionChange).mockClear()
     dispatchReplaceCharacterLorebooks.mockClear()
     dispatchReplaceCharacterScripts.mockClear()
     dispatchReplaceCharacterTriggers.mockClear()
@@ -1239,6 +1240,23 @@ describe('module imports', () => {
     db.enabledModules = ['a', 'b-c']
 
     expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['second-a', 'second-b-c'])
+  })
+
+  it('reparses the UI when hyphenated active module ids have a colliding joined form', () => {
+    const db = {
+      enabledModules: ['a-b', 'c'],
+      moduleIntergration: '',
+      modules: [{ id: 'a-b' }, { id: 'c' }, { id: 'a' }, { id: 'b-c' }],
+    }
+    getDatabase.mockReturnValue(db)
+
+    moduleUpdate()
+    vi.mocked(reloadGuiAfterDefinitionChange).mockClear()
+
+    db.enabledModules = ['a', 'b-c']
+    moduleUpdate()
+
+    expect(reloadGuiAfterDefinitionChange).toHaveBeenCalledOnce()
   })
 
   it('does not mutate module trigger rows when attaching low-level access metadata', () => {

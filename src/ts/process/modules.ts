@@ -1089,7 +1089,7 @@ let lastModuleIds: string = ''
 export function moduleUpdate() {
   const m = getModules()
 
-  const ids = m.map((m) => m.id).join('-')
+  const ids = JSON.stringify(m.map((module) => module.id))
 
   let moduleHideIcon = false
   let backgroundEmbedding = ''
