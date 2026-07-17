@@ -153,6 +153,7 @@ export function createServerBackedSettingDraft<T>(
   let previousOwnerKey = currentServerBackedSettingDraftOwnerKey(key, options.dispatch)
   let dirty = false
   let dirtyOwnerKey: string | null = null
+  let dirtyBaseline = cloneDraftValue(initialValue)
 
   $effect(() => {
     const resourceApplyEpoch = getServerResourceApplyEpoch()
@@ -166,6 +167,7 @@ export function createServerBackedSettingDraft<T>(
     if (ownerChanged) {
       dirty = false
       dirtyOwnerKey = null
+      dirtyBaseline = cloneDraftValue(serverValue)
       if (serverSnapshot !== draftSnapshot) {
         suppressDraftDispatch = true
         draft.value = cloneDraftValue(serverValue)
@@ -177,10 +179,29 @@ export function createServerBackedSettingDraft<T>(
       if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
         suppressDraftDispatch = true
         if (resourceApplyChanged && dirty) {
-          reassertDirtySettingDraftValue(key, draft.value)
+          const normalizedServerValue = cloneDraftValue(serverValue)
+          if (snapshotJson(dirtyBaseline) === snapshotJson(normalizedServerValue)) {
+            reassertDirtySettingDraftValue(key, draft.value)
+          } else {
+            const rebased = mergeSettingDraftValues(dirtyBaseline, draft.value, normalizedServerValue)
+            if (rebased.ambiguous && discardPendingSettingsPatchKey(key, delayMs)) {
+              dirty = false
+              dirtyOwnerKey = null
+              dirtyBaseline = cloneDraftValue(normalizedServerValue)
+              draft.value = cloneDraftValue(normalizedServerValue)
+              alertError(language.errors.settingsSaveFailed)
+            } else {
+              const rebasedValue = cloneDraftValue(rebased.value)
+              dirtyBaseline = cloneDraftValue(normalizedServerValue)
+              draft.value = rebasedValue
+              reassertDirtySettingDraftValue(key, rebasedValue)
+              rebasePendingSettingsPatchKey(key, normalizedServerValue, rebasedValue, delayMs)
+            }
+          }
         } else {
           dirty = false
           dirtyOwnerKey = null
+          dirtyBaseline = cloneDraftValue(serverValue)
           draft.value = cloneDraftValue(serverValue)
         }
         queueMicrotask(() => {
@@ -211,6 +232,7 @@ export function createServerBackedSettingDraft<T>(
       }
       dirty = false
       dirtyOwnerKey = null
+      dirtyBaseline = cloneDraftValue(currentSettingValue(key, fallback))
     }),
   )
 
@@ -228,6 +250,7 @@ export function createServerBackedSettingDraft<T>(
     }
     if (snapshot === previousDraftDispatchSnapshot) return
 
+    const wasDirty = dirty
     dirty = true
     previousDraftDispatchSnapshot = snapshot
 
@@ -238,6 +261,7 @@ export function createServerBackedSettingDraft<T>(
       }
       const attempted = cloneDraftValue(draft.value)
       const previous = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[key])
+      if (!wasDirty) dirtyBaseline = cloneDraftValue(currentSettingValue(key, fallback))
       const presetTarget = resolveTopLevelPresetFieldMirrorTarget(key)
       withTrustedResourceWrite(() => {
         // Re-read the resource database inside the callback: the trusted write opens a
@@ -283,6 +307,242 @@ function reassertDirtySettingDraftValue<T>(key: string, value: T): void {
       target[key] = cloneJsonValue(value)
     })
   })
+}
+
+interface SettingDraftMergeResult<T> {
+  value: T
+  ambiguous: boolean
+}
+
+interface SettingDraftMergeNode {
+  present: boolean
+  value?: unknown
+  ambiguous: boolean
+}
+
+const missingSettingDraftNode: SettingDraftMergeNode = { present: false, ambiguous: false }
+
+/**
+ * Reapply only the locally changed portions of a draft to a newer authoritative
+ * value. Stable record arrays are merged by ID (or name for legacy rows),
+ * primitive arrays use add/remove semantics, and objects recurse by field.
+ */
+function mergeSettingDraftValues<T>(baseline: T, local: T, authoritative: T): SettingDraftMergeResult<T> {
+  const merged = mergeSettingDraftNode(
+    { present: true, value: baseline, ambiguous: false },
+    { present: true, value: local, ambiguous: false },
+    { present: true, value: authoritative, ambiguous: false },
+  )
+  return {
+    value: cloneJsonValue((merged.present ? merged.value : authoritative) as T),
+    ambiguous: merged.ambiguous,
+  }
+}
+
+function mergeSettingDraftNode(
+  baseline: SettingDraftMergeNode,
+  local: SettingDraftMergeNode,
+  authoritative: SettingDraftMergeNode,
+): SettingDraftMergeNode {
+  if (settingDraftNodesEqual(local, baseline)) return cloneSettingDraftNode(authoritative)
+  if (settingDraftNodesEqual(authoritative, baseline)) return cloneSettingDraftNode(local)
+  if (settingDraftNodesEqual(local, authoritative)) return cloneSettingDraftNode(local)
+
+  if (local.present && authoritative.present) {
+    if (isPlainJsonObject(local.value) && isPlainJsonObject(authoritative.value)) {
+      const baselineObject = baseline.present && isPlainJsonObject(baseline.value) ? baseline.value : {}
+      return mergeSettingDraftObjects(baselineObject, local.value, authoritative.value)
+    }
+    if (Array.isArray(local.value) && Array.isArray(authoritative.value)) {
+      const baselineArray = baseline.present && Array.isArray(baseline.value) ? baseline.value : []
+      return mergeSettingDraftArrays(baselineArray, local.value, authoritative.value)
+    }
+  }
+
+  if (local.present !== authoritative.present) {
+    return {
+      ...cloneSettingDraftNode(local),
+      ambiguous: true,
+    }
+  }
+
+  // Concurrent scalar changes target the same leaf. Preserve the user's later
+  // local value; the structural cases above still retain authoritative siblings.
+  return cloneSettingDraftNode(local)
+}
+
+function mergeSettingDraftObjects(
+  baseline: Record<string, unknown>,
+  local: Record<string, unknown>,
+  authoritative: Record<string, unknown>,
+): SettingDraftMergeNode {
+  const value: Record<string, unknown> = {}
+  let ambiguous = false
+  for (const key of new Set([...Object.keys(baseline), ...Object.keys(local), ...Object.keys(authoritative)])) {
+    const merged = mergeSettingDraftNode(
+      settingDraftObjectNode(baseline, key),
+      settingDraftObjectNode(local, key),
+      settingDraftObjectNode(authoritative, key),
+    )
+    ambiguous ||= merged.ambiguous
+    if (merged.present) value[key] = cloneJsonValue(merged.value)
+  }
+  return { present: true, value, ambiguous }
+}
+
+function mergeSettingDraftArrays(
+  baseline: unknown[],
+  local: unknown[],
+  authoritative: unknown[],
+): SettingDraftMergeNode {
+  const rowKey = stableSettingDraftRowKey(baseline, local, authoritative)
+  if (rowKey) return mergeKeyedSettingDraftArrays(baseline, local, authoritative, rowKey)
+
+  if (settingDraftArrayHasUniqueValues(baseline, local, authoritative)) {
+    const baselineSnapshots = new Set(baseline.map(snapshotJson))
+    const localSnapshots = new Set(local.map(snapshotJson))
+    const locallyRemoved = new Set([...baselineSnapshots].filter((snapshot) => !localSnapshots.has(snapshot)))
+    const value = authoritative
+      .filter((entry) => !locallyRemoved.has(snapshotJson(entry)))
+      .map((entry) => cloneJsonValue(entry))
+    const valueSnapshots = new Set(value.map(snapshotJson))
+    for (const entry of local) {
+      const snapshot = snapshotJson(entry)
+      if (baselineSnapshots.has(snapshot) || valueSnapshots.has(snapshot)) continue
+      value.push(cloneJsonValue(entry))
+      valueSnapshots.add(snapshot)
+    }
+    return { present: true, value, ambiguous: false }
+  }
+
+  if (baseline.length === local.length && baseline.length === authoritative.length) {
+    const value: unknown[] = []
+    let ambiguous = false
+    for (let index = 0; index < baseline.length; index += 1) {
+      const merged = mergeSettingDraftNode(
+        { present: true, value: baseline[index], ambiguous: false },
+        { present: true, value: local[index], ambiguous: false },
+        { present: true, value: authoritative[index], ambiguous: false },
+      )
+      ambiguous ||= merged.ambiguous
+      if (merged.present) value.push(cloneJsonValue(merged.value))
+    }
+    return { present: true, value, ambiguous }
+  }
+
+  return { present: true, value: cloneJsonValue(local), ambiguous: true }
+}
+
+function mergeKeyedSettingDraftArrays(
+  baseline: unknown[],
+  local: unknown[],
+  authoritative: unknown[],
+  rowKey: string,
+): SettingDraftMergeNode {
+  const baselineRows = keyedSettingDraftRows(baseline, rowKey)
+  const localRows = keyedSettingDraftRows(local, rowKey)
+  const authoritativeRows = keyedSettingDraftRows(authoritative, rowKey)
+  const localReordered = settingDraftRowsReordered(baselineRows.order, localRows.order)
+  const authoritativeReordered = settingDraftRowsReordered(baselineRows.order, authoritativeRows.order)
+  let ambiguous =
+    localReordered &&
+    authoritativeReordered &&
+    snapshotJson(localRows.order.filter((id) => baselineRows.values.has(id))) !==
+      snapshotJson(authoritativeRows.order.filter((id) => baselineRows.values.has(id)))
+
+  const mergedRows = new Map<string, unknown>()
+  const allRowIds = new Set([...baselineRows.order, ...localRows.order, ...authoritativeRows.order])
+  for (const id of allRowIds) {
+    const merged = mergeSettingDraftNode(
+      settingDraftMapNode(baselineRows.values, id),
+      settingDraftMapNode(localRows.values, id),
+      settingDraftMapNode(authoritativeRows.values, id),
+    )
+    ambiguous ||= merged.ambiguous
+    if (merged.present) mergedRows.set(id, cloneJsonValue(merged.value))
+  }
+
+  const preferredOrder = localReordered && !authoritativeReordered ? localRows.order : authoritativeRows.order
+  const order = [...preferredOrder, ...localRows.order, ...authoritativeRows.order]
+  const seen = new Set<string>()
+  const value: unknown[] = []
+  for (const id of order) {
+    if (seen.has(id) || !mergedRows.has(id)) continue
+    seen.add(id)
+    value.push(cloneJsonValue(mergedRows.get(id)))
+  }
+  return { present: true, value, ambiguous }
+}
+
+function stableSettingDraftRowKey(...arrays: unknown[][]): string | null {
+  for (const key of ['id', 'name']) {
+    let foundRow = false
+    let valid = true
+    for (const rows of arrays) {
+      const seen = new Set<string>()
+      for (const row of rows) {
+        if (!isPlainJsonObject(row) || (typeof row[key] !== 'string' && typeof row[key] !== 'number')) {
+          valid = false
+          break
+        }
+        foundRow = true
+        const id = `${typeof row[key]}:${String(row[key])}`
+        if (seen.has(id)) {
+          valid = false
+          break
+        }
+        seen.add(id)
+      }
+      if (!valid) break
+    }
+    if (valid && foundRow) return key
+  }
+  return null
+}
+
+function keyedSettingDraftRows(rows: unknown[], key: string): { order: string[]; values: Map<string, unknown> } {
+  const order: string[] = []
+  const values = new Map<string, unknown>()
+  for (const row of rows) {
+    const rowValue = row as Record<string, unknown>
+    const id = `${typeof rowValue[key]}:${String(rowValue[key])}`
+    order.push(id)
+    values.set(id, row)
+  }
+  return { order, values }
+}
+
+function settingDraftRowsReordered(baselineOrder: string[], order: string[]): boolean {
+  const present = new Set(order)
+  const baselineCommonOrder = baselineOrder.filter((id) => present.has(id))
+  const baselineIds = new Set(baselineOrder)
+  const currentCommonOrder = order.filter((id) => baselineIds.has(id))
+  return snapshotJson(baselineCommonOrder) !== snapshotJson(currentCommonOrder)
+}
+
+function settingDraftArrayHasUniqueValues(...arrays: unknown[][]): boolean {
+  return arrays.every((array) => {
+    const snapshots = array.map(snapshotJson)
+    return new Set(snapshots).size === snapshots.length
+  })
+}
+
+function settingDraftNodesEqual(left: SettingDraftMergeNode, right: SettingDraftMergeNode): boolean {
+  return left.present === right.present && (!left.present || isJsonSnapshotEqual(left.value, right.value))
+}
+
+function cloneSettingDraftNode(node: SettingDraftMergeNode): SettingDraftMergeNode {
+  return node.present
+    ? { present: true, value: cloneJsonValue(node.value), ambiguous: node.ambiguous }
+    : { ...missingSettingDraftNode, ambiguous: node.ambiguous }
+}
+
+function settingDraftObjectNode(object: Record<string, unknown>, key: string): SettingDraftMergeNode {
+  return hasOwnKey(object, key) ? { present: true, value: object[key], ambiguous: false } : missingSettingDraftNode
+}
+
+function settingDraftMapNode(map: ReadonlyMap<string, unknown>, key: string): SettingDraftMergeNode {
+  return map.has(key) ? { present: true, value: map.get(key), ambiguous: false } : missingSettingDraftNode
 }
 
 export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
@@ -455,6 +715,37 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
     }
     pendingSettingsPatch.attempted[key] = cloneJsonValue(value)
   }
+  refreshPendingSettingsPatch(delay)
+}
+
+function rebasePendingSettingsPatchKey(key: string, authoritative: unknown, rebased: unknown, delay: number): boolean {
+  if (!hasOwnKey(pendingSettingsPatch.attempted, key)) return false
+  pendingSettingsPatch.previous[key] = cloneJsonValue(authoritative)
+  pendingSettingsPatch.attempted[key] = cloneJsonValue(rebased)
+  const group = settingsGroupForKey(key)
+  if (group) pendingSettingsPatch.projectionEpochs[group] = captureSettingsGroupProjectionEpoch(group)
+  refreshPendingSettingsPatch(delay)
+  return true
+}
+
+function discardPendingSettingsPatchKey(key: string, delay: number): boolean {
+  if (!hasOwnKey(pendingSettingsPatch.attempted, key)) return false
+  if (pendingSettingsPatch.timer) {
+    clearTimeout(pendingSettingsPatch.timer)
+    pendingSettingsPatch.timer = null
+  }
+  const stagedOutbox = pendingSettingsPatch.outbox
+  delete pendingSettingsPatch.patch[key]
+  delete pendingSettingsPatch.previous[key]
+  delete pendingSettingsPatch.attempted[key]
+  pendingSettingsPatch.durableAttempted = {}
+  pendingSettingsPatch.outbox = null
+  if (stagedOutbox) void acknowledgePendingMutation(stagedOutbox)
+  refreshPendingSettingsPatch(delay)
+  return true
+}
+
+function refreshPendingSettingsPatch(delay: number): void {
   const netChangedKeys = changedSettingsPatchKeys(pendingSettingsPatch.previous, pendingSettingsPatch.attempted)
   pendingSettingsPatch.patch = pendingSettingsDurableClosure(netChangedKeys)
   prunePendingSettingsPatchProjectionEpochs()

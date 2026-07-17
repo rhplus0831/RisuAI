@@ -129,7 +129,9 @@ vi.mock('./commands', () => ({
       'aiModel',
       'apiType',
       'autoTranslate',
+      'banCharacterset',
       'claudeCachingExperimental',
+      'customModels',
       'didFirstSetup',
       'globalscript',
       'hypaV3PresetId',
@@ -1450,6 +1452,100 @@ describe('settingsBridge coalescing', () => {
     await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'stale server', out: '', type: 'editinput' }])
 
     expect(draft.value).toEqual([{ id: 'script-a', in: 'local dirty', out: '', type: 'editinput' }])
+    await vi.advanceTimersByTimeAsync(DELAY)
+    stop()
+  })
+
+  it('rebases an ID-addressable draft and its staged patch over an authoritative sibling edit', async () => {
+    const baseline = [
+      { id: 'model-a', name: 'Model A', url: 'https://old-a.example' },
+      { id: 'model-b', name: 'Model B', url: 'https://old-b.example' },
+    ]
+    setupSettings({ customModels: baseline })
+    const { draft, stop } = await createSettingDraft('customModels', [] as Array<Record<string, string>>)
+
+    draft.value = [{ ...baseline[0], url: 'https://local-a.example' }, baseline[1]]
+    await flushAndSettle()
+    await applyProjectionSetting('customModels', [
+      baseline[0],
+      { ...baseline[1], url: 'https://authoritative-b.example' },
+    ])
+
+    const rebased = [
+      { ...baseline[0], url: 'https://local-a.example' },
+      { ...baseline[1], url: 'https://authoritative-b.example' },
+    ]
+    expect(draft.value).toEqual(rebased)
+    expect(testDatabaseState.db.customModels).toEqual(rebased)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ customModels: rebased }])
+    expect(durabilityMocks.dispatched.at(-1)?.intent).toMatchObject({
+      requests: [{ body: { patch: { customModels: rebased } } }],
+    })
+    stop()
+  })
+
+  it('rebases independent set additions before dispatch', async () => {
+    setupSettings({ banCharacterset: ['baseline'] })
+    const { draft, stop } = await createSettingDraft('banCharacterset', [] as string[])
+
+    draft.value = ['baseline', 'local addition']
+    await flushAndSettle()
+    await applyProjectionSetting('banCharacterset', ['baseline', 'authoritative addition'])
+
+    expect(draft.value).toEqual(['baseline', 'authoritative addition', 'local addition'])
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
+      { banCharacterset: ['baseline', 'authoritative addition', 'local addition'] },
+    ])
+    stop()
+  })
+
+  it('rebases a nested object field over authoritative sibling changes', async () => {
+    const baseline = {
+      provider: { endpoint: 'old endpoint', timeout: 30 },
+      output: { width: 512, height: 768 },
+    }
+    setupSettings({ sdConfig: baseline })
+    const { draft, stop } = await createSettingDraft('sdConfig', {} as Record<string, unknown>)
+
+    draft.value = {
+      ...baseline,
+      provider: { ...baseline.provider, endpoint: 'local endpoint' },
+    }
+    await flushAndSettle()
+    await applyProjectionSetting('sdConfig', {
+      ...baseline,
+      output: { width: 1024, height: 768 },
+    })
+
+    const rebased = {
+      provider: { endpoint: 'local endpoint', timeout: 30 },
+      output: { width: 1024, height: 768 },
+    }
+    expect(draft.value).toEqual(rebased)
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ sdConfig: rebased }])
+    stop()
+  })
+
+  it('rejects ambiguous concurrent row reorders before dispatch', async () => {
+    const rowA = { id: 'a', name: 'A' }
+    const rowB = { id: 'b', name: 'B' }
+    const rowC = { id: 'c', name: 'C' }
+    setupSettings({ customModels: [rowA, rowB, rowC] })
+    const { draft, stop } = await createSettingDraft('customModels', [] as Array<Record<string, string>>)
+
+    draft.value = [rowB, rowA, rowC]
+    await flushAndSettle()
+    await applyProjectionSetting('customModels', [rowA, rowC, rowB])
+
+    expect(draft.value).toEqual([rowA, rowC, rowB])
+    expect(testDatabaseState.db.customModels).toEqual([rowA, rowC, rowB])
+    expect(alertMocks.alertError).toHaveBeenCalledWith(language.errors.settingsSaveFailed)
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches).toHaveLength(0)
     stop()
   })
 
