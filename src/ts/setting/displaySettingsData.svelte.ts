@@ -361,13 +361,6 @@ export const displayOtherSettingsItems: SettingItem[] = [
     keywords: ['text', 'round'],
   },
   {
-    id: 'display.showSavingIcon',
-    type: 'check',
-    labelKey: 'showSavingIcon',
-    bindKey: 'showSavingIcon',
-    keywords: ['saving', 'icon'],
-  },
-  {
     id: 'display.textScreenBorder',
     type: 'custom',
     componentId: 'NullableTextColorToggle',

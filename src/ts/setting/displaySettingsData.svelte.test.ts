@@ -58,4 +58,8 @@ describe('display theme settings data', () => {
   it('does not advertise the unavailable prompt comparison workflow', () => {
     expect(displayOtherSettingsItems.some((item) => item.bindKey === 'showPromptComparison')).toBe(false)
   })
+
+  it('does not advertise the disconnected legacy saving indicator', () => {
+    expect(displayOtherSettingsItems.some((item) => item.bindKey === 'showSavingIcon')).toBe(false)
+  })
 })
