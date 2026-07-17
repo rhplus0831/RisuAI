@@ -807,6 +807,52 @@ describe('DefaultChatScreen transcript window state', () => {
     })
   })
 
+  it('resizes the mounted transcript when the configured tail count changes', async () => {
+    seedDatabase([80])
+    mountScreen()
+    await waitFor(() => expect(messageRowIndexes()).toHaveLength(30))
+
+    getResourceDatabase().chatDisplayTailCount = 10
+    await waitFor(() => {
+      const indexes = messageRowIndexes()
+      expect(indexes).toHaveLength(10)
+      expect(indexes).toContain(79)
+      expect(indexes).not.toContain(69)
+    })
+
+    getResourceDatabase().chatDisplayTailCount = 60
+    await waitFor(() => {
+      expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledWith(60)
+      const indexes = messageRowIndexes()
+      expect(indexes).toHaveLength(60)
+      expect(indexes).toContain(20)
+      expect(indexes).toContain(79)
+      expect(indexes).not.toContain(19)
+    })
+  })
+
+  it('discards an older tail-count hydration after the active chat and setting change', async () => {
+    seedDatabase([80, 70])
+    const hydration = createDeferred<boolean>()
+    loadPageMocks.hydrateActiveChatWindow.mockReturnValueOnce(hydration.promise)
+    mountScreen()
+    await waitFor(() => expect(messageRowIndexes()).toHaveLength(30))
+
+    getResourceDatabase().chatDisplayTailCount = 60
+    await waitFor(() => expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledWith(60))
+
+    switchToCharacterChat(1)
+    getResourceDatabase().chatDisplayTailCount = 10
+    await waitFor(() => expect(messageRowIndexes()).toHaveLength(10))
+
+    hydration.resolve(true)
+    await settle()
+
+    expect(messageRowIndexes()).toHaveLength(10)
+    expect(messageRowIndexes()).toContain(69)
+    expect(messageRowIndexes()).not.toContain(9)
+  })
+
   it('expands the current chat window enough for a deep jump target', async () => {
     seedDatabase([120])
     mountScreen()

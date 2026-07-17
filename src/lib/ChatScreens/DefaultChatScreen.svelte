@@ -188,6 +188,8 @@
   let messageInputMutationVersion = 0
   let messageInputTranslateMutationVersion = 0
   let activeTranscriptWindowIdentity: string | null = $state(null)
+  let activeTranscriptWindowConfiguredPages: number | null = $state(null)
+  let transcriptWindowConfigurationRun = 0
   let activeBgmObserverIdentity: string | null = $state(null)
   let lastInputTranslationRollback: InputTranslationRollback | null = $state(null)
   let activeScreenshotOperation: ScreenshotOperation | null = null
@@ -648,6 +650,8 @@
       untrack(() => storeComposerDraft(previousIdentity))
     }
     activeTranscriptWindowIdentity = nextIdentity
+    activeTranscriptWindowConfiguredPages = configuredChatLoadPages
+    transcriptWindowConfigurationRun += 1
     loadPages = configuredChatLoadPages
     untrack(() => restoreComposerDraft(nextIdentity))
 
@@ -657,6 +661,40 @@
     if (previousIdentity !== nextIdentity) {
       lastInputTranslationRollback = null
     }
+  })
+
+  $effect(() => {
+    const targetIdentity = getActiveTranscriptWindowIdentity()
+    const nextLoadPages = configuredChatLoadPages
+    if (!targetIdentity || activeTranscriptWindowIdentity !== targetIdentity) return
+    if (activeTranscriptWindowConfiguredPages === nextLoadPages) return
+
+    activeTranscriptWindowConfiguredPages = nextLoadPages
+    const run = ++transcriptWindowConfigurationRun
+    scrollToMessageRunId += 1
+    isScrollingToMessage = false
+
+    if (activeScreenshotOperation?.transcriptIdentity === targetIdentity) {
+      activeScreenshotOperation.previousLoadPages = nextLoadPages
+      return
+    }
+    if (nextLoadPages <= loadPages) {
+      loadPages = nextLoadPages
+      return
+    }
+
+    void hydrateActiveChatWindow(nextLoadPages).then((hydrated) => {
+      if (
+        !hydrated ||
+        run !== transcriptWindowConfigurationRun ||
+        activeTranscriptWindowIdentity !== targetIdentity ||
+        getActiveTranscriptWindowIdentity() !== targetIdentity ||
+        configuredChatLoadPages !== nextLoadPages
+      ) {
+        return
+      }
+      loadPages = nextLoadPages
+    })
   })
 
   $effect.pre(() => {
