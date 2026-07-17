@@ -145,6 +145,8 @@ type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
 export type LoadoutApplyStatus = 'applied' | 'queued' | 'superseded' | 'preset-hydration-failed' | 'persistence-failed'
 
+export type LoadoutMutationStatus = 'accepted' | 'queued' | 'superseded' | 'failed' | 'not-found'
+
 type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
 
 interface LoadoutListRollbackEntry {
@@ -1323,37 +1325,40 @@ function dispatchDeleteLoadout(
   previousIndex: number,
   acknowledgeOptimistic: boolean,
   loadoutsProjectionEpoch: number,
-): void {
-  if (!canUseServerCommands()) return
+): Promise<Exclude<LoadoutMutationStatus, 'not-found'>> {
+  if (!canUseServerCommands()) return Promise.resolve('accepted')
   const intent: DurableMutationIntent = {
     version: 1,
     requests: [{ method: 'DELETE', path: `/loadouts/${encodeURIComponent(loadoutId)}`, body: {} }],
   }
   const handle = stagePendingMutation(loadoutOwnerMutationKey(loadoutId), intent)
-  void dispatchDurableMutation(handle, intent, (transport) =>
-    runServerCommand({
-      command: (baseRevision) =>
-        deleteLoadoutCommand(
-          {
-            baseRevision,
-            loadoutId,
-            acknowledgeOptimistic,
-            loadoutsProjectionEpoch,
-          },
-          transport.signal,
-        ),
-      rollback: () => rollbackDeletedLoadout(previousLoadout, previousIndex, loadoutsProjectionEpoch),
-      ...transport,
-    }),
-  ).then((result) => {
-    if (result.status !== 'ok' && isPendingLoadoutProjectionCurrent(handle, loadoutId)) {
-      reapplyRetainedDeletedLoadout(loadoutId)
-    }
-  })
+  return settleLoadoutMutation(
+    handle,
+    loadoutId,
+    dispatchDurableMutation(handle, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          deleteLoadoutCommand(
+            {
+              baseRevision,
+              loadoutId,
+              acknowledgeOptimistic,
+              loadoutsProjectionEpoch,
+            },
+            transport.signal,
+          ),
+        rollback: () => rollbackDeletedLoadout(previousLoadout, previousIndex, loadoutsProjectionEpoch),
+        ...transport,
+      }),
+    ),
+    () => reapplyRetainedDeletedLoadout(loadoutId),
+  )
 }
 
-function dispatchFavoriteLoadout(rollback: LoadoutFavoriteRollback): void {
-  if (!canUseServerCommands()) return
+function dispatchFavoriteLoadout(
+  rollback: LoadoutFavoriteRollback,
+): Promise<Exclude<LoadoutMutationStatus, 'not-found'>> {
+  if (!canUseServerCommands()) return Promise.resolve('accepted')
   const intent: DurableMutationIntent = {
     version: 1,
     requests: [
@@ -1365,33 +1370,60 @@ function dispatchFavoriteLoadout(rollback: LoadoutFavoriteRollback): void {
     ],
   }
   const handle = stagePendingMutation(loadoutOwnerMutationKey(rollback.loadoutId), intent)
-  void dispatchDurableMutation(handle, intent, (transport) =>
-    runServerCommand({
-      command: (baseRevision) =>
-        favoriteLoadoutCommand(
-          {
-            baseRevision,
-            loadoutId: rollback.loadoutId,
-            favorite: rollback.attemptedFavorite,
-            acknowledgeOptimistic: true,
-            loadoutsProjectionEpoch: rollback.loadoutsProjectionEpoch,
-          },
-          transport.signal,
-        ),
-      rollback: () => rollbackLoadoutFavorite(rollback),
-      ...transport,
-    }),
-  ).then((result) => {
-    if (result.status !== 'ok' && isPendingLoadoutProjectionCurrent(handle, rollback.loadoutId)) {
-      reapplyRetainedFavoriteLoadout(rollback)
-    }
-  })
+  return settleLoadoutMutation(
+    handle,
+    rollback.loadoutId,
+    dispatchDurableMutation(handle, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          favoriteLoadoutCommand(
+            {
+              baseRevision,
+              loadoutId: rollback.loadoutId,
+              favorite: rollback.attemptedFavorite,
+              acknowledgeOptimistic: true,
+              loadoutsProjectionEpoch: rollback.loadoutsProjectionEpoch,
+            },
+            transport.signal,
+          ),
+        rollback: () => rollbackLoadoutFavorite(rollback),
+        ...transport,
+      }),
+    ),
+    () => reapplyRetainedFavoriteLoadout(rollback),
+  )
 }
 
-export function toggleLoadoutFavorite(loadoutId: string): boolean {
+async function settleLoadoutMutation(
+  handle: PendingMutationHandle,
+  loadoutId: string,
+  request: Promise<ServerCommandResult>,
+  reapplyRetainedProjection: () => void,
+): Promise<Exclude<LoadoutMutationStatus, 'not-found'>> {
+  try {
+    const result = await request
+    if (result.status === 'ok') return 'accepted'
+
+    const persistence = await handle.ready
+    if (persistence === 'persisted' && isPendingLoadoutProjectionCurrent(handle, loadoutId)) {
+      reapplyRetainedProjection()
+      return 'queued'
+    }
+    return persistence === 'superseded' ? 'superseded' : 'failed'
+  } catch {
+    const persistence = await handle.ready
+    if (persistence === 'persisted' && isPendingLoadoutProjectionCurrent(handle, loadoutId)) {
+      reapplyRetainedProjection()
+      return 'queued'
+    }
+    return persistence === 'superseded' ? 'superseded' : 'failed'
+  }
+}
+
+export function toggleLoadoutFavorite(loadoutId: string): Promise<LoadoutMutationStatus> {
   const previousIndex = getDatabase().loadouts?.findIndex((item) => item.id === loadoutId) ?? -1
   const loadout = previousIndex === -1 ? undefined : getDatabase().loadouts[previousIndex]
-  if (!loadout) return false
+  if (!loadout) return Promise.resolve('not-found')
 
   const previousFavorite = loadout.favorite
   const favorite = !loadout.favorite
@@ -1401,7 +1433,7 @@ export function toggleLoadoutFavorite(loadoutId: string): boolean {
     if (!targetLoadout) return
     targetLoadout.favorite = favorite
   })
-  dispatchFavoriteLoadout({
+  return dispatchFavoriteLoadout({
     loadoutId,
     previousFavorite,
     attemptedFavorite: favorite,
@@ -1409,12 +1441,11 @@ export function toggleLoadoutFavorite(loadoutId: string): boolean {
     previousIndex,
     loadoutsProjectionEpoch,
   })
-  return true
 }
 
-export function deleteLoadout(loadoutId: string): boolean {
+export function deleteLoadout(loadoutId: string): Promise<LoadoutMutationStatus> {
   const index = getDatabase().loadouts?.findIndex((loadout) => loadout.id === loadoutId) ?? -1
-  if (index === -1) return false
+  if (index === -1) return Promise.resolve('not-found')
 
   const acknowledgeOptimistic = isCanonicalLoadoutCollection(getDatabase().loadouts)
   const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
@@ -1425,8 +1456,7 @@ export function deleteLoadout(loadoutId: string): boolean {
       getDatabase().loadouts.splice(targetIndex, 1)
     }
   })
-  dispatchDeleteLoadout(loadoutId, previousLoadout, index, acknowledgeOptimistic, loadoutsProjectionEpoch)
-  return true
+  return dispatchDeleteLoadout(loadoutId, previousLoadout, index, acknowledgeOptimistic, loadoutsProjectionEpoch)
 }
 
 function nonBlankId(value: unknown): string | null {

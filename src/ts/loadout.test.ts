@@ -2236,7 +2236,7 @@ describe('loadout projection command helpers', () => {
       testDatabaseState.db.loadouts[0].favorite = true
     }).toThrow()
 
-    expect(toggleLoadoutFavorite('loadout-a')).toBe(true)
+    const favoriteMutation = toggleLoadoutFavorite('loadout-a')
     expect(testDatabaseState.db.loadouts[0].favorite).toBe(true)
     withTrustedResourceWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Newer Loadout A'
@@ -2247,6 +2247,7 @@ describe('loadout projection command helpers', () => {
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
+    await expect(favoriteMutation).resolves.toBe('failed')
 
     expect(calls).toEqual([
       {
@@ -2287,7 +2288,7 @@ describe('loadout projection command helpers', () => {
     const failure = stubDeferredCommandFailure()
     setResourceWriteGuardEnabled(true)
 
-    expect(toggleLoadoutFavorite('loadout-a')).toBe(true)
+    const favoriteMutation = toggleLoadoutFavorite('loadout-a')
     await waitForCallCount(failure.calls, 2)
     applyCollectionsResource(
       {
@@ -2303,6 +2304,7 @@ describe('loadout projection command helpers', () => {
     )
     failure.reject()
     await flushCommandEffects()
+    await expect(favoriteMutation).resolves.toBe('failed')
 
     expect(testDatabaseState.db.loadouts[0]).toMatchObject({
       id: 'loadout-a',
@@ -2338,7 +2340,7 @@ describe('loadout projection command helpers', () => {
     const failure = stubDeferredCommandFailure()
     setResourceWriteGuardEnabled(true)
 
-    expect(deleteLoadout('loadout-b')).toBe(true)
+    const deleteMutation = deleteLoadout('loadout-b')
     await waitForCallCount(failure.calls, 2)
     const authoritativeLoadouts = [
       makeLoadout({ id: 'loadout-a', name: 'Authoritative A' }),
@@ -2353,6 +2355,7 @@ describe('loadout projection command helpers', () => {
     )
     failure.reject()
     await flushCommandEffects()
+    await expect(deleteMutation).resolves.toBe('failed')
 
     expect(testDatabaseState.db.loadouts).toEqual(authoritativeLoadouts)
   })
@@ -2407,7 +2410,7 @@ describe('loadout projection command helpers', () => {
       const failure = stubDeferredCommandFailure()
       setResourceWriteGuardEnabled(true)
 
-      expect(toggleLoadoutFavorite('loadout-a')).toBe(true)
+      const favoriteMutation = toggleLoadoutFavorite('loadout-a')
       await waitForCallCount(failure.calls, 2)
       applyCollectionsResource(
         {
@@ -2423,6 +2426,7 @@ describe('loadout projection command helpers', () => {
       )
       failure.reject()
       await flushCommandEffects()
+      await expect(favoriteMutation).resolves.toBe('queued')
 
       expect(testDatabaseState.db.loadouts.find((loadout) => loadout.id === 'loadout-a')?.favorite).toBe(true)
     } finally {
@@ -2444,7 +2448,7 @@ describe('loadout projection command helpers', () => {
       const failure = stubDeferredCommandFailure()
       setResourceWriteGuardEnabled(true)
 
-      expect(deleteLoadout('loadout-b')).toBe(true)
+      const deleteMutation = deleteLoadout('loadout-b')
       await waitForCallCount(failure.calls, 2)
       applyCollectionsResource(
         {
@@ -2460,6 +2464,7 @@ describe('loadout projection command helpers', () => {
       )
       failure.reject()
       await flushCommandEffects()
+      await expect(deleteMutation).resolves.toBe('queued')
 
       expect(testDatabaseState.db.loadouts.some((loadout) => loadout.id === 'loadout-b')).toBe(false)
     } finally {
@@ -2490,7 +2495,7 @@ describe('loadout projection command helpers', () => {
       const creation = saveCurrentLoadout('Composed Create')
       const created = cloneJsonValue(testDatabaseState.db.loadouts.at(-1) as Loadout)
       await expect(creation).resolves.toEqual(created)
-      expect(toggleLoadoutFavorite(created.id)).toBe(true)
+      const favoriteMutation = toggleLoadoutFavorite(created.id)
       await waitForCallCount(calls, 3)
       applyCollectionsResource(
         {
@@ -2501,6 +2506,7 @@ describe('loadout projection command helpers', () => {
       )
       replayFailure.resolve(jsonResponse({ error: 'create still unavailable' }, 500))
       await flushCommandEffects()
+      await expect(favoriteMutation).resolves.toBe('queued')
 
       expect(testDatabaseState.db.loadouts.find((loadout) => loadout.id === created.id)).toEqual({
         ...created,
@@ -2612,7 +2618,7 @@ describe('loadout projection command helpers', () => {
     const deletedLoadout = cloneJsonValue(testDatabaseState.db.loadouts[1])
     setResourceWriteGuardEnabled(true)
 
-    expect(deleteLoadout('loadout-b')).toBe(true)
+    const deleteMutation = deleteLoadout('loadout-b')
     expect(testDatabaseState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a'])
     withTrustedResourceWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Edited Loadout A'
@@ -2621,6 +2627,7 @@ describe('loadout projection command helpers', () => {
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
+    await expect(deleteMutation).resolves.toBe('failed')
 
     expect(calls).toEqual([
       {
@@ -2659,9 +2666,10 @@ describe('loadout projection command helpers', () => {
       ;(testDatabaseState.db.loadouts[0] as Loadout & { legacyMetadata?: string }).legacyMetadata = 'discarded'
     })
 
-    expect(deleteLoadout('loadout-b')).toBe(true)
+    const deleteMutation = deleteLoadout('loadout-b')
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
+    await expect(deleteMutation).resolves.toBe('accepted')
 
     expect(calls[1]).toEqual({
       url: '/api/v1/commands/loadouts/loadout-b',
@@ -2676,7 +2684,7 @@ describe('loadout projection command helpers', () => {
     const calls = stubCommandFetch({ failCommands: true })
     setResourceWriteGuardEnabled(true)
 
-    expect(deleteLoadout('loadout-b')).toBe(true)
+    const deleteMutation = deleteLoadout('loadout-b')
     withTrustedResourceWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Edited Loadout A'
       testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-b', name: 'Recreated Loadout B', lastUsed: 999 }))
@@ -2684,6 +2692,7 @@ describe('loadout projection command helpers', () => {
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
+    await expect(deleteMutation).resolves.toBe('failed')
 
     expect(testDatabaseState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a', 'loadout-b'])
     expect(testDatabaseState.db.loadouts[0].name).toBe('Edited Loadout A')
@@ -2695,13 +2704,13 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Loadout A')
   })
 
-  it('returns false for missing ids without dispatching commands or mutating loadouts', () => {
+  it('returns not-found for missing ids without dispatching commands or mutating loadouts', async () => {
     const calls = stubCommandFetch()
     const previousLoadouts = cloneJsonValue(testDatabaseState.db.loadouts)
     setResourceWriteGuardEnabled(true)
 
-    expect(toggleLoadoutFavorite('missing-loadout')).toBe(false)
-    expect(deleteLoadout('missing-loadout')).toBe(false)
+    await expect(toggleLoadoutFavorite('missing-loadout')).resolves.toBe('not-found')
+    await expect(deleteLoadout('missing-loadout')).resolves.toBe('not-found')
 
     expect(calls).toHaveLength(0)
     expect(testDatabaseState.db.loadouts).toEqual(previousLoadouts)

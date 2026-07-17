@@ -27,9 +27,13 @@
   let saveName = $state('')
   let applyingLoadoutId: string | null = $state(null)
   let savingLoadout = $state(false)
+  let favoritingLoadoutId: string | null = $state(null)
   let deletingLoadoutId: string | null = $state(null)
+  let deletingLoadout: Loadout | null = $state(null)
   let applyError = $state('')
-  let operationBusy = $derived(applyingLoadoutId !== null || savingLoadout || deletingLoadoutId !== null)
+  let operationBusy = $derived(
+    applyingLoadoutId !== null || savingLoadout || favoritingLoadoutId !== null || deletingLoadoutId !== null,
+  )
 
   function close() {
     if (operationBusy) return
@@ -46,7 +50,11 @@
   const RECENT_LIMIT = 3
 
   function getSortedLoadouts(): Loadout[] {
-    return [...(getDatabase().loadouts ?? [])].sort((a, b) => b.lastUsed - a.lastUsed)
+    const loadouts = [...(getDatabase().loadouts ?? [])]
+    if (deletingLoadout && !loadouts.some((loadout) => loadout.id === deletingLoadout?.id)) {
+      loadouts.push(deletingLoadout)
+    }
+    return loadouts.sort((a, b) => b.lastUsed - a.lastUsed)
   }
 
   function getRecentLoadouts(): Loadout[] {
@@ -112,9 +120,24 @@
     }
   }
 
-  function toggleFavorite(loadout: Loadout, e: MouseEvent) {
+  async function toggleFavorite(loadout: Loadout, e: MouseEvent): Promise<void> {
     e.stopPropagation()
-    toggleLoadoutFavorite(loadout.id)
+    if (operationBusy) return
+
+    favoritingLoadoutId = loadout.id
+    applyError = ''
+    try {
+      const status = await toggleLoadoutFavorite(loadout.id)
+      if (status === 'queued') {
+        alertNormal(language.loadoutFavoriteQueued(loadout.name))
+      } else if (status === 'failed' || status === 'not-found') {
+        applyError = language.loadoutFavoriteFailed(loadout.name)
+      }
+    } catch {
+      applyError = language.loadoutFavoriteFailed(loadout.name)
+    } finally {
+      favoritingLoadoutId = null
+    }
   }
 
   function formatDate(ts: number): string {
@@ -131,17 +154,31 @@
     event.stopPropagation()
     if (operationBusy) return
     deletingLoadoutId = loadout.id
+    deletingLoadout = loadout
+    applyError = ''
     try {
       if (!(await alertConfirm(language.loadoutModal.removeConfirm(loadout.name)))) return
-      deleteLoadout(loadout.id)
+      const status = await deleteLoadout(loadout.id)
+      if (status === 'queued') {
+        alertNormal(language.loadoutDeleteQueued(loadout.name))
+      } else if (status === 'failed' || status === 'not-found') {
+        applyError = language.loadoutDeleteFailed(loadout.name)
+      }
+    } catch {
+      applyError = language.loadoutDeleteFailed(loadout.name)
     } finally {
       deletingLoadoutId = null
+      deletingLoadout = null
     }
   }
 </script>
 
 {#snippet loadoutCard(loadout: Loadout)}
-  <div class="flex items-center gap-1 rounded-md bg-textcolor/5 hover:bg-textcolor/10 transition-colors">
+  {@const mutationPending = favoritingLoadoutId === loadout.id || deletingLoadoutId === loadout.id}
+  <div
+    class="flex items-center gap-1 rounded-md bg-textcolor/5 hover:bg-textcolor/10 transition-colors"
+    aria-busy={mutationPending}
+    data-risu-loadout-pending={mutationPending ? '' : undefined}>
     <button
       class="flex-1 min-w-0 text-left flex flex-col px-3 py-2.5 disabled:opacity-50"
       disabled={operationBusy}
@@ -154,6 +191,9 @@
           <span>{language.loadoutModal.presetName(loadout.presetName)}</span>
         {/if}
         <span>{formatDate(loadout.lastUsed)}</span>
+        {#if mutationPending}
+          <span class="text-textcolor/60" role="status">{language.loading}...</span>
+        {/if}
       </span>
     </button>
     <button

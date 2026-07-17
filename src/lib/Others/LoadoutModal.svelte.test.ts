@@ -49,9 +49,9 @@ beforeEach(() => {
   loadoutStore.open = true
   loadoutDatabase.loadouts = []
   loadoutMocks.applyLoadout.mockReset().mockResolvedValue('applied')
-  loadoutMocks.deleteLoadout.mockReset()
+  loadoutMocks.deleteLoadout.mockReset().mockResolvedValue('accepted')
   loadoutMocks.saveCurrentLoadout.mockReset().mockResolvedValue({ id: 'saved-loadout' })
-  loadoutMocks.toggleLoadoutFavorite.mockReset()
+  loadoutMocks.toggleLoadoutFavorite.mockReset().mockResolvedValue('accepted')
   alertMocks.confirm.mockReset().mockResolvedValue(true)
   alertMocks.normal.mockReset()
   opener = document.createElement('button')
@@ -296,7 +296,12 @@ describe('LoadoutModal operations', () => {
   it('confirms removal once and disables repeated destructive actions while the prompt is open', async () => {
     loadoutDatabase.loadouts = [savedLoadout]
     const confirmation = deferred<boolean>()
+    const deletion = deferred<'accepted'>()
     alertMocks.confirm.mockReturnValue(confirmation.promise)
+    loadoutMocks.deleteLoadout.mockImplementation(() => {
+      loadoutDatabase.loadouts = []
+      return deletion.promise
+    })
     component = mount(LoadoutModal, { target })
     await settle()
     const remove = target.querySelector<HTMLButtonElement>('[aria-label="Remove loadout"]')
@@ -314,5 +319,56 @@ describe('LoadoutModal operations', () => {
     await settle()
     expect(loadoutMocks.deleteLoadout).toHaveBeenCalledOnce()
     expect(loadoutMocks.deleteLoadout).toHaveBeenCalledWith('loadout-a')
+    expect(target.querySelector('[data-risu-loadout-pending]')?.getAttribute('aria-busy')).toBe('true')
+    expect(target.querySelector('[data-risu-loadout-id="loadout-a"]')).not.toBeNull()
+
+    deletion.resolve('accepted')
+    await settle()
+
+    expect(target.querySelector('[data-risu-loadout-id="loadout-a"]')).toBeNull()
+    expect(target.querySelector<HTMLElement>('[role="dialog"]')?.getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('keeps a favorite mutation pending and reports a terminal failure', async () => {
+    loadoutDatabase.loadouts = [savedLoadout]
+    const favorite = deferred<'failed'>()
+    loadoutMocks.toggleLoadoutFavorite.mockReturnValue(favorite.promise)
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    const star = target.querySelector<HTMLButtonElement>('[aria-label="Add to favorites"]')
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    if (!star || !dialog) throw new Error('Loadout favorite controls not found')
+
+    star.click()
+    await settle()
+
+    expect(dialog.getAttribute('aria-busy')).toBe('true')
+    expect(target.querySelector('[data-risu-loadout-pending]')?.textContent).toContain('Loading')
+    expect(star.disabled).toBe(true)
+
+    favorite.resolve('failed')
+    await settle()
+
+    expect(dialog.getAttribute('aria-busy')).toBe('false')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain('Could not update favorites for “Loadout A”')
+  })
+
+  it('labels a retained delete as queued after settlement', async () => {
+    loadoutDatabase.loadouts = [savedLoadout]
+    loadoutMocks.deleteLoadout.mockImplementation(async () => {
+      loadoutDatabase.loadouts = []
+      return 'queued'
+    })
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    const remove = target.querySelector<HTMLButtonElement>('[aria-label="Remove loadout"]')
+    if (!remove) throw new Error('Loadout remove control not found')
+    remove.click()
+    await settle()
+
+    expect(alertMocks.normal).toHaveBeenCalledWith('Removal of “Loadout A” is saved locally and queued.')
+    expect(target.querySelector('[data-risu-loadout-id="loadout-a"]')).toBeNull()
   })
 })
