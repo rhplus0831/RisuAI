@@ -152,7 +152,7 @@ vi.mock('src/ts/gui/highlight', () => ({
 
 import OtherBotSettings from './OtherBotSettings.svelte'
 import { language } from 'src/lang'
-import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase, replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -257,6 +257,21 @@ describe('OtherBotSettings navigation semantics', () => {
 
     expect(memory.getAttribute('aria-pressed')).toBe('false')
     expect(image.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('switches mounted layouts when the authoritative legacy-GUI setting changes', async () => {
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
+
+    setDatabaseLite({ ...getResourceDatabase({ snapshot: true }), useLegacyGUI: true } as any)
+    await tick()
+    expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeNull()
+
+    setDatabaseLite({ ...getResourceDatabase({ snapshot: true }), useLegacyGUI: false } as any)
+    await tick()
+    expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
   })
 })
 

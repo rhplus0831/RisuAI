@@ -10,8 +10,13 @@
   } from 'src/ts/setting/displaySettingsData.svelte'
   import { onDestroy } from 'svelte'
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import { reconcileLegacyGuiSubmenu } from 'src/ts/setting/legacyGuiLayout'
 
   let submenu = $state(getDatabase().useLegacyGUI ? -1 : 0)
+
+  $effect(() => {
+    submenu = reconcileLegacyGuiSubmenu(Boolean(getDatabase().useLegacyGUI), submenu)
+  })
 
   const stopServerSettingsWatch = watchServerBackedSettings(displayNonRendererServerSettingKeys)
   onDestroy(stopServerSettingsWatch)

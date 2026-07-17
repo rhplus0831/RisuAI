@@ -43,6 +43,7 @@
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
   import { allBasicParameterItems } from 'src/ts/setting/botSettingsParamsData'
+  import { reconcileLegacyGuiSubmenu } from 'src/ts/setting/legacyGuiLayout'
   import SeparateParametersSection from './SeparateParametersSection.svelte'
   import ModelRoleList from './Model/ModelRoleList.svelte'
   import ModelSettingsShell from './Model/ModelSettingsShell.svelte'
@@ -436,6 +437,11 @@
       : allBasicParameterItems,
   )
   let previousPromptTemplateOwnerHydrationSelection = promptTemplatePresetSelectionSignature()
+
+  $effect(() => {
+    if (settingsKind !== 'legacy') return
+    submenu = reconcileLegacyGuiSubmenu(Boolean(getDatabase().useLegacyGUI), submenu)
+  })
 
   $effect(() => {
     if (!availableSubmenus.includes(submenu)) {
@@ -1202,7 +1208,7 @@
   {/if}
 
   {#if showSubmenuSwitcher}
-    <div class="flex w-full rounded-md border border-darkborderc mb-4">
+    <div data-risu-bot-settings-tabs class="flex w-full rounded-md border border-darkborderc mb-4">
       {#if hasSubmenu(0)}
         <button
           aria-pressed={submenu === 0}

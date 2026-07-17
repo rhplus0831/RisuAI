@@ -1,6 +1,10 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const displaySettingsMocks = vi.hoisted(() => ({
+  setLegacyGUI: (_value: boolean) => {},
+}))
+
 vi.mock('src/ts/setting/displaySettingsData.svelte', () => ({
   displayNonRendererServerSettingKeys: [],
   displayOtherSettingsItems: [],
@@ -12,9 +16,15 @@ vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   watchServerBackedSettings: () => () => {},
 }))
 
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => ({ useLegacyGUI: false }),
-}))
+vi.mock('src/ts/storage/database.svelte', async () => {
+  const { fromStore, writable } = await import('svelte/store')
+  const database = writable({ useLegacyGUI: false })
+  displaySettingsMocks.setLegacyGUI = (useLegacyGUI) => database.set({ useLegacyGUI })
+
+  return {
+    getDatabase: () => fromStore(database).current,
+  }
+})
 
 vi.mock('../SettingRenderer.svelte', async () => {
   const { default: SettingRendererPropsProbe } =
@@ -39,6 +49,7 @@ function buttonNamed(name: string): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  displaySettingsMocks.setLegacyGUI(false)
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -71,5 +82,20 @@ describe('DisplaySettings navigation semantics', () => {
     expect(theme.getAttribute('aria-pressed')).toBe('false')
     expect(size.getAttribute('aria-pressed')).toBe('true')
     expect(others.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('switches mounted layouts when the authoritative legacy-GUI setting changes', async () => {
+    component = mount(DisplaySettings, { target })
+    await tick()
+
+    expect(target.querySelectorAll('button')).toHaveLength(3)
+
+    displaySettingsMocks.setLegacyGUI(true)
+    await tick()
+    expect(target.querySelectorAll('button')).toHaveLength(0)
+
+    displaySettingsMocks.setLegacyGUI(false)
+    await tick()
+    expect(target.querySelectorAll('button')).toHaveLength(3)
   })
 })

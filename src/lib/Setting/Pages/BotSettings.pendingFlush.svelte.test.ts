@@ -280,6 +280,25 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+describe('BotSettings legacy layout synchronization', () => {
+  it('switches a mounted legacy page with authoritative useLegacyGUI updates', async () => {
+    if (component) unmount(component)
+    setDatabaseLite({ ...getDatabase({ snapshot: true }), useLegacyGUI: false } as any)
+    component = mount(BotSettings, { target, props: { settingsKind: 'legacy' } })
+    await tick()
+
+    expect(target.querySelector('[data-risu-bot-settings-tabs]')).toBeTruthy()
+
+    setDatabaseLite({ ...getDatabase({ snapshot: true }), useLegacyGUI: true } as any)
+    await tick()
+    expect(target.querySelector('[data-risu-bot-settings-tabs]')).toBeNull()
+
+    setDatabaseLite({ ...getDatabase({ snapshot: true }), useLegacyGUI: false } as any)
+    await tick()
+    expect(target.querySelector('[data-risu-bot-settings-tabs]')).toBeTruthy()
+  })
+})
+
 describe('BotSettings pending prompt persistence', () => {
   async function editPromptTextarea(label: string, value: string): Promise<void> {
     await tick()

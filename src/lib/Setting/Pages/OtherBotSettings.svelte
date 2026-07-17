@@ -48,6 +48,7 @@
     type NaiVibeImportFreshness,
     type NaiVibeImportOperation,
   } from 'src/ts/server/naiVibeImport'
+  import { reconcileLegacyGuiSubmenu } from 'src/ts/setting/legacyGuiLayout'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -138,6 +139,10 @@
   } satisfies SettingsMediaAssetUploadFieldKeys
 
   let submenu = $state(getDatabase().useLegacyGUI ? -1 : 0)
+
+  $effect(() => {
+    submenu = reconcileLegacyGuiSubmenu(Boolean(getDatabase().useLegacyGUI), submenu)
+  })
 
   // HypaV3
   $effect(() => {
