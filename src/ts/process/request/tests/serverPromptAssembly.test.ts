@@ -34,6 +34,7 @@ import {
   type ServerPromptAssemblyInput,
   type ServerPromptAssemblyRoute,
 } from '../serverPromptAssembly'
+import { preflightChatSendBeforeMutation } from '../../sendChatPreflight'
 
 function seedDb(overrides: Partial<Database> = {}): void {
   setDatabase({
@@ -520,5 +521,33 @@ describe('resolveServerPromptAssembly', () => {
       const reason = expectUnsupported(resolveServerPromptAssembly(input))
       expect(reason).toMatch(/interactive/i)
     })
+  })
+})
+
+describe('preflightChatSendBeforeMutation', () => {
+  it('classifies the prospective transcript without appending to the live chat', () => {
+    const currentChat = makeChat([{ role: 'char', data: 'previous reply' }])
+    const route = preflightChatSendBeforeMutation({
+      currentChar: makeChar(),
+      currentChat,
+      pendingUserMessage: { role: 'user', data: 'prospective turn', name: null },
+    })
+
+    expect(route).toEqual({ type: 'server' })
+    expect(currentChat.message).toEqual([{ role: 'char', data: 'previous reply' }])
+  })
+
+  it('rejects a legacy group before its prospective user turn mutates the transcript', () => {
+    const currentChat = makeChat([{ role: 'char', data: 'previous reply' }])
+    const reason = expectUnsupported(
+      preflightChatSendBeforeMutation({
+        currentChar: makeChar({ type: 'group' } as never),
+        currentChat,
+        pendingUserMessage: { role: 'user', data: 'blocked group turn', name: null },
+      }),
+    )
+
+    expect(reason).toMatch(/group chats/i)
+    expect(currentChat.message).toEqual([{ role: 'char', data: 'previous reply' }])
   })
 })

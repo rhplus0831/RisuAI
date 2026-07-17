@@ -23,6 +23,7 @@ const loadPageMocks = vi.hoisted(() => ({
   getCharImage: vi.fn(() => ''),
   getInlayAsset: vi.fn(async () => null),
   postChatFile: vi.fn(async () => []),
+  preflightChatSendBeforeMutation: vi.fn(() => ({ type: 'server' as const })),
   processMultiCommand: vi.fn(async () => false),
   sendChat: vi.fn(async () => true),
   sleep: vi.fn(async () => undefined),
@@ -159,6 +160,10 @@ vi.mock('src/ts/process/files/inlays', () => ({
 
 vi.mock('src/ts/process/sendChatCompletion', () => ({
   applySuccessfulSendChatEffects: loadPageMocks.applySuccessfulSendChatEffects,
+}))
+
+vi.mock('src/ts/process/sendChatPreflight', () => ({
+  preflightChatSendBeforeMutation: loadPageMocks.preflightChatSendBeforeMutation,
 }))
 
 vi.mock('src/ts/process/coldstorage.svelte', () => ({
@@ -516,6 +521,7 @@ beforeEach(() => {
   loadPageMocks.hydrateActiveChatFully.mockClear()
   loadPageMocks.hydrateActiveChatWindow.mockClear()
   loadPageMocks.guardActiveChatGenerationSettingsForSend.mockReturnValue({ status: 'ok' })
+  loadPageMocks.preflightChatSendBeforeMutation.mockReturnValue({ type: 'server' })
 })
 
 afterEach(() => {
@@ -1191,6 +1197,47 @@ describe('DefaultChatScreen transcript window state', () => {
     )
     expect(textarea.value).toBe('Retry with file')
     expect(target.textContent).toContain('Missing file')
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('keeps a legacy group composer and transcript unchanged when preflight rejects generation', async () => {
+    seedDatabase([1])
+    getResourceDatabase().characters[0].type = 'group'
+    const originalHistory = JSON.parse(
+      JSON.stringify(getResourceDatabase().characters[0].chats[0].message),
+    ) as unknown[]
+    loadPageMocks.preflightChatSendBeforeMutation.mockReturnValueOnce({
+      type: 'unsupported',
+      reason: 'Group chats are not supported by server prompt assembly.',
+    })
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Keep this legacy group draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => {
+      expect(loadPageMocks.alertError).toHaveBeenCalledWith('Group chats are not supported by server prompt assembly.')
+    })
+
+    expect(loadPageMocks.preflightChatSendBeforeMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentChar: expect.objectContaining({ type: 'group' }),
+        pendingUserMessage: expect.objectContaining({
+          role: 'user',
+          data: 'Keep this legacy group draft',
+        }),
+      }),
+    )
+    expect(textarea.value).toBe('Keep this legacy group draft')
+    expect(getResourceDatabase().characters[0].chats[0].message).toEqual(originalHistory)
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 

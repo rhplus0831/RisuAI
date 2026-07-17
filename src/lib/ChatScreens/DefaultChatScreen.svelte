@@ -113,6 +113,7 @@
   import { guardActiveChatGenerationSettingsForSend } from 'src/ts/activeChatGenerationSettings'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
   import { createLatestOperationGuard } from 'src/ts/server/staleStateGuards'
+  import { preflightChatSendBeforeMutation } from 'src/ts/process/sendChatPreflight'
   import PostGenerationScriptProgress from './PostGenerationScriptProgress.svelte'
   import AgentPresetProgress from './AgentPresetProgress.svelte'
   import {
@@ -969,16 +970,6 @@
       const fileSuffix = appendInlayMarkers(filesBeforeSend)
       let messageForSend = composerBeforeSend + fileSuffix
 
-      if (shouldRunInputTranslationHook(continueResponse, getDatabase().characters[selectedChar], composerBeforeSend)) {
-        await runInputTranslationHookForSend({
-          composerOperation,
-          activeTarget,
-          sourceText: composerBeforeSend,
-          fileSuffix,
-        })
-        return
-      }
-
       if (!continueResponse) {
         if (messageForSend === '') {
           const messages = currentChatRecord.message ?? []
@@ -1001,6 +992,30 @@
           }
         }
       }
+
+      const preflight = preflightChatSendBeforeMutation({
+        currentChar: getDatabase().characters[selectedChar],
+        currentChat: currentChatRecord,
+        continue: continueResponse,
+        pendingUserMessage: userMessage,
+      })
+      if (preflight.type === 'unsupported') {
+        alertError(preflight.reason)
+        await sleep(10)
+        updateInputSizeAll()
+        return
+      }
+
+      if (shouldRunInputTranslationHook(continueResponse, getDatabase().characters[selectedChar], composerBeforeSend)) {
+        await runInputTranslationHookForSend({
+          composerOperation,
+          activeTarget,
+          sourceText: composerBeforeSend,
+          fileSuffix,
+        })
+        return
+      }
+
       if (userMessage) {
         const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: activeTarget })
         if (!isActiveChatTargetFresh(activeTarget)) {
