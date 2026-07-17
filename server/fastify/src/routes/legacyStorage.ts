@@ -21,6 +21,23 @@ function ensureSaveDir(dataDir: string): string {
   return savePath
 }
 
+/**
+ * Read one value from the pre-Fastify key/value store without going through an
+ * HTTP round trip. Internal migrations use this after the request has already
+ * passed the normal auth gate. Keys are encoded exactly like FastifyStorage's
+ * `file-path` header, so legacy sidecars remain byte-for-byte untouched.
+ */
+export async function readLegacyStorageValue(dataDir: string, storageKey: string): Promise<Buffer | null> {
+  const savePath = ensureSaveDir(dataDir)
+  const filePath = Buffer.from(storageKey, 'utf8').toString('hex')
+  try {
+    return await fs.promises.readFile(path.join(savePath, filePath))
+  } catch (err) {
+    if (errorCode(err) === 'ENOENT') return null
+    throw err
+  }
+}
+
 function legacyStorageTempPath(savePath: string): string {
   return path.join(savePath, `${LEGACY_STORAGE_TEMP_PREFIX}${process.pid}-${randomUUID()}.tmp`)
 }

@@ -1749,8 +1749,15 @@
           <div class="w-full flex justify-center text-textcolor2 italic mb-12">
             {language.loadingChatData}
           </div>
-        {:then a}
-          <div></div>
+        {:then recovered}
+          {#if !recovered}
+            <div class="w-full flex justify-center text-red-400 italic mb-12" role="alert">
+              {language.errors.coldStorageRecoveryFailed}
+              ({getDatabase().characters[$selectedCharID].chats[
+                getDatabase().characters[$selectedCharID].chatPage
+              ].message[0].data.slice(coldStorageHeader.length)})
+            </div>
+          {/if}
         {/await}
       {:else}
         {#if chatFoldedStateMessageIndex.index !== -1}

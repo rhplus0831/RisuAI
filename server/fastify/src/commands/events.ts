@@ -452,6 +452,13 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'character.alternateGreetings.updated',
     resource: 'characterRow',
   },
+  coldStorageCharacterRecovered: {
+    type: 'coldStorage.characterRecovered',
+    // Recovery replaces one character row and its chat rows. Message bodies
+    // remain lazily hydrated by chat id, so foreign clients need only refresh
+    // the recovered character metadata.
+    resource: 'characterRow',
+  },
   characterTrashUpdated: {
     type: 'character.updated',
     // Trashing/restoring also rewrites settings-level characterOrder, so the
@@ -478,6 +485,10 @@ export const COMMAND_EVENT_CATALOG = {
   },
   chatCreatedWithTranscript: {
     type: 'chat.created',
+    resource: 'chatTranscript',
+  },
+  coldStorageChatRecovered: {
+    type: 'coldStorage.chatRecovered',
     resource: 'chatTranscript',
   },
   chatUpdated: {

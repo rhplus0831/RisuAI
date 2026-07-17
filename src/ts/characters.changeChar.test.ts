@@ -23,7 +23,7 @@ vi.mock('./alert', async () => {
 })
 
 vi.mock('./process/coldstorage.svelte', () => ({
-  getColdStorageItem: vi.fn(),
+  recoverColdStorageCharacter: vi.fn(async () => true),
 }))
 
 vi.mock('./characterCards', () => ({

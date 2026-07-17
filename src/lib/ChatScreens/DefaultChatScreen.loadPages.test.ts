@@ -168,7 +168,7 @@ vi.mock('src/ts/process/sendChatPreflight', () => ({
 
 vi.mock('src/ts/process/coldstorage.svelte', () => ({
   coldStorageHeader: 'cold-storage:',
-  preLoadChat: vi.fn(async () => undefined),
+  preLoadChat: vi.fn(async () => true),
 }))
 
 vi.mock('src/ts/process/tts', () => ({

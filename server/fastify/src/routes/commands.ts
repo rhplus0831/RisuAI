@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
+import { decompress as fflateDecompress } from 'fflate'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import {
@@ -154,6 +155,7 @@ import {
   readCharacterId,
   readCharacterOrder,
   readCharacterPatch,
+  repairCharacterCollectionRow,
   requireCharacterIndex,
   remapAlternateGreetingIndex,
   selectedCharacterId,
@@ -192,6 +194,7 @@ import {
 } from '../commands/chats.js'
 import {
   createMessageRecord,
+  ensureChatMessages,
   readGenerationResult,
   readMessageId,
   readMessagePatch,
@@ -344,6 +347,7 @@ import {
   writeSingleCollectionTable,
 } from '../repository.js'
 import { createDetachedAbort } from '../requestAbort.js'
+import { readLegacyStorageValue } from './legacyStorage.js'
 import { translateRawMessageData, type RawMessageTranslation } from '../translation/rawMessageTranslation.js'
 import type { MessageTranslationJobHandle, MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 
@@ -948,6 +952,91 @@ interface CharacterCommandBody {
   characterIds?: unknown
   characterOrder?: unknown
   lastInteraction?: unknown
+}
+
+interface ColdStorageRecoveryCommandBody {
+  baseRevision?: unknown
+  key?: unknown
+}
+
+const LEGACY_COLD_STORAGE_HEADER = '\uEF01COLDSTORAGE\uEF01'
+const LEGACY_COLD_STORAGE_KEY_RE = /^[A-Za-z0-9_-]{1,200}$/
+
+function readColdStorageKey(value: unknown): string {
+  if (typeof value !== 'string' || !LEGACY_COLD_STORAGE_KEY_RE.test(value)) {
+    throw new ValidationError('key must be a valid cold-storage archive key')
+  }
+  return value
+}
+
+async function readColdStorageArchive(dataDir: string, key: string): Promise<unknown> {
+  const compressed = await readLegacyStorageValue(dataDir, `coldstorage/${key}`)
+  if (!compressed || compressed.length === 0) {
+    throw new ValidationError(`Cold-storage archive not found for key: ${key}`)
+  }
+
+  try {
+    const decompressed = await new Promise<Uint8Array>((resolve, reject) => {
+      fflateDecompress(compressed, (err, result) => {
+        if (err) reject(err)
+        else resolve(result)
+      })
+    })
+    return JSON.parse(Buffer.from(decompressed).toString('utf8')) as unknown
+  } catch {
+    throw new ValidationError(`Cold-storage archive is corrupt for key: ${key}`)
+  }
+}
+
+function readRecoveredCharacterArchive(archive: unknown, characterId: string): CharacterRecord {
+  const envelope = readJsonObject(archive, 'archive')
+  const rawCharacter = readJsonObject(envelope.character, 'archive.character')
+  const archiveCharacterId = readCharacterId(rawCharacter.chaId, 'archive.character.chaId')
+  if (archiveCharacterId !== characterId) {
+    throw new ValidationError(`Cold-storage archive belongs to another character: ${archiveCharacterId}`)
+  }
+
+  const recovered = repairCharacterCollectionRow(rawCharacter)
+  delete recovered.coldstorage
+  delete recovered.coldStoragedChats
+  for (const chat of ensureCharacterChats(recovered)) {
+    ensureChatMessages(chat)
+    if (chat.scriptstate !== undefined) {
+      chat.scriptstate = readChatScriptstatePatch(chat.scriptstate)
+    }
+  }
+  return recovered
+}
+
+function readRecoveredChatArchive(current: ChatRecord, archive: unknown): ChatRecord {
+  const isLegacyMessageArray = Array.isArray(archive)
+  const envelope = isLegacyMessageArray ? null : readJsonObject(archive, 'archive')
+  const messages = isLegacyMessageArray ? archive : envelope!.message
+  if (!Array.isArray(messages)) {
+    throw new ValidationError('archive.message must be an array')
+  }
+  if (envelope?.localLore !== undefined && !Array.isArray(envelope.localLore)) {
+    throw new ValidationError('archive.localLore must be an array when provided')
+  }
+
+  const recovered = createChatRecord(
+    {
+      ...current,
+      message: messages,
+      lastDate: Date.now(),
+      ...(envelope
+        ? {
+            hypaV2Data: envelope.hypaV2Data,
+            hypaV3Data: envelope.hypaV3Data,
+            scriptstate: readChatScriptstatePatch(envelope.scriptstate),
+            localLore: envelope.localLore ?? [],
+          }
+        : {}),
+    },
+    'archive.chat',
+  )
+  ensureChatMessages(recovered)
+  return recovered
 }
 
 interface ChatCommandBody {
@@ -5098,6 +5187,86 @@ export function registerCommandRoutes(
     }
   })
 
+  app.post('/api/v1/commands/characters/:characterId/recover-cold-storage', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as ColdStorageRecoveryCommandBody
+      const baseRevision = readBaseRevision(body)
+      const key = readColdStorageKey(body.key)
+      const archive = await readColdStorageArchive(dataDir, key)
+      const recoveredCharacter = readRecoveredCharacterArchive(archive, characterId)
+      const result = applyTargetedCommandMutation<{
+        characterId: string
+        character: CharacterRecord
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
+          const target = ensureCharacterDatabaseObject(database)
+          const characters = normalizeAllCharacterChats(target)
+          const characterIndex = requireCharacterIndex(characters, characterId)
+          const current = characters[characterIndex]
+          if (current.coldstorage !== key) {
+            throw new ValidationError(`Cold-storage pointer no longer matches key: ${key}`)
+          }
+
+          const otherChatIds = new Set<string>()
+          for (const character of characters) {
+            if (character.chaId === characterId) continue
+            for (const chat of ensureCharacterChats(character)) otherChatIds.add(chat.id)
+          }
+          const recoveredChats = ensureCharacterChats(recoveredCharacter)
+          for (const chat of recoveredChats) {
+            if (otherChatIds.has(chat.id)) {
+              throw new ValidationError(`Duplicate chat id outside recovered character: ${chat.id}`)
+            }
+          }
+
+          for (const chat of ensureCharacterChats(current)) {
+            deleteCharacterChatRow(innerDb, chat.id, characterId)
+            deleteChatMessages(innerDb, chat.id)
+            deleteChatHypaV3(innerDb, chat.id)
+          }
+
+          characters[characterIndex] = recoveredCharacter
+          writeSingleCharacterRow(innerDb, characterId, recoveredCharacter)
+          for (let index = 0; index < recoveredChats.length; index++) {
+            const chat = recoveredChats[index]
+            const messages = ensureChatMessages(chat)
+            for (const message of messages) {
+              if (activeMessageIdExists(innerDb, message.chatId)) {
+                throw new ValidationError(`Duplicate message id outside recovered character: ${message.chatId}`)
+              }
+            }
+            insertCharacterChatRow(innerDb, characterId, index, chat)
+            replaceActiveChatMessages(innerDb, chat.id, messages)
+            if (chat.hypaV3Data !== undefined && chat.hypaV3Data !== null) {
+              setChatHypaV3(innerDb, chat.id, chat.hypaV3Data)
+            }
+          }
+
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.coldStorageCharacterRecovered, id: characterId },
+            extra: { characterId, character: recoveredCharacter },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.delete('/api/v1/commands/characters/:characterId', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
@@ -5376,6 +5545,73 @@ export function registerCommandRoutes(
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatUpdated, id: chatId, parentId: character.chaId },
             extra: { chatId, selectedChatId: selectedChatId(character) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/chats/:chatId/recover-cold-storage', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as ColdStorageRecoveryCommandBody
+      const baseRevision = readBaseRevision(body)
+      const key = readColdStorageKey(body.key)
+      const archive = await readColdStorageArchive(dataDir, key)
+      const result = applyTargetedCommandMutation<{
+        chatId: string
+        characterId: string
+        chat: ChatRecord
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        chatScopedRead: { chatId },
+        mutate(database, innerDb) {
+          const target = ensureCharacterDatabaseObject(database)
+          const characters = normalizeAllCharacterChats(target)
+          const { character, chat } = requireChatLocation(characters, chatId)
+          const currentMessages = getChatMessages(innerDb, chatId)
+          if (currentMessages[0]?.data !== `${LEGACY_COLD_STORAGE_HEADER}${key}`) {
+            throw new ValidationError(`Cold-storage pointer no longer matches key: ${key}`)
+          }
+
+          const recoveredChat = readRecoveredChatArchive(chat, archive)
+          const messages = ensureChatMessages(recoveredChat)
+          for (const message of messages) {
+            if (activeMessageIdExistsOutsideChat(innerDb, message.chatId, chatId)) {
+              throw new ValidationError(`Duplicate message id outside recovered chat: ${message.chatId}`)
+            }
+          }
+
+          writeSingleChatRow(innerDb, chatId, recoveredChat)
+          replaceActiveChatMessages(innerDb, chatId, messages)
+          if (recoveredChat.hypaV3Data !== undefined && recoveredChat.hypaV3Data !== null) {
+            setChatHypaV3(innerDb, chatId, recoveredChat.hypaV3Data)
+          } else {
+            deleteChatHypaV3(innerDb, chatId)
+          }
+
+          const characterId = character.chaId as string
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.coldStorageChatRecovered,
+              id: chatId,
+              parentId: characterId,
+            },
+            extra: { chatId, characterId, chat: recoveredChat },
           }
         },
       })

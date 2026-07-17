@@ -3,6 +3,14 @@ import { alertClear, alertError, alertWait } from '../alert'
 import { language } from 'src/lang'
 import { getDatabase, type character } from '../storage/database.svelte'
 import { createNonSecurityUuid } from '../nonSecurityUuid'
+import { forageStorage } from '../globalApi.svelte'
+import {
+  getServerCommandBaseRevision,
+  recoverColdStorageCharacterCommand,
+  recoverColdStorageChatCommand,
+  type ServerCommandResult,
+} from '../server/commands'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 
 export const coldStorageHeader = '\uEF01COLDSTORAGE\uEF01'
 
@@ -17,17 +25,46 @@ async function decompress(data: Uint8Array) {
   })
 }
 
-export async function getColdStorageItem(key: string) {
-  return null
+export async function getColdStorageItem(key: string): Promise<any> {
+  try {
+    const stored = await forageStorage.getItem(`coldstorage/${key}`)
+    if (!stored || stored.length === 0) return null
+    const text = new TextDecoder().decode(await decompress(new Uint8Array(stored)))
+    return JSON.parse(text) as unknown
+  } catch (error) {
+    console.error(`Cold storage read failed for key: ${key}`, error)
+    return null
+  }
 }
 
 export async function setColdStorageItem(key: string, value: any): Promise<boolean> {
-  return false
+  try {
+    const encoded = new TextEncoder().encode(JSON.stringify(value))
+    const compressed = await new Promise<Uint8Array>((resolve, reject) => {
+      fflateCompress(encoded, (err, result) => {
+        if (err) reject(err)
+        else resolve(result)
+      })
+    })
+    await forageStorage.setItem(`coldstorage/${key}`, compressed)
+    return true
+  } catch (error) {
+    console.error(`Cold storage write failed for key: ${key}`, error)
+    return false
+  }
 }
 
 export async function listColdStorageItems(): Promise<{ items: string[] }> {
-  return {
-    items: [],
+  try {
+    const prefix = 'coldstorage/'
+    return {
+      items: (await forageStorage.keys())
+        .filter((key) => key.startsWith(prefix))
+        .map((key) => key.slice(prefix.length)),
+    }
+  } catch (error) {
+    console.error('Cold storage list failed', error)
+    return { items: [] }
   }
 }
 
@@ -197,15 +234,113 @@ export async function makeColdData() {
   return
 }
 
-export async function preLoadChat(characterIndex: number, chatIndex: number) {
-  const chat = getDatabase().characters?.[characterIndex]?.chats?.[chatIndex]
+const characterRecoveryJobs = new Map<string, Promise<boolean>>()
+const chatRecoveryJobs = new Map<string, Promise<boolean>>()
 
-  if (!chat) {
-    return
+function recoveryFailureMessage(key: string): string {
+  return `${language.errors.coldStorageRecoveryFailed} (${key})`
+}
+
+function reportRecoveryFailure(key: string, detail: unknown): false {
+  console.error(`Cold storage recovery failed for key: ${key}`, detail)
+  alertError(recoveryFailureMessage(key))
+  return false
+}
+
+function commandFailureDetail(result: Exclude<ServerCommandResult, { status: 'ok' }>): string {
+  if (result.status === 'error') return result.error
+  if (result.status === 'conflict') return `revision conflict at ${result.currentRevision}`
+  return 'server command unavailable'
+}
+
+async function runCharacterRecovery(characterId: string, key: string): Promise<boolean> {
+  try {
+    alertWait(language.loadingChatData)
+    const baseRevision = await getServerCommandBaseRevision()
+    if (baseRevision === null) return reportRecoveryFailure(key, 'server revision unavailable')
+
+    const result = await recoverColdStorageCharacterCommand({ baseRevision, characterId, key })
+    if (result.status !== 'ok') return reportRecoveryFailure(key, commandFailureDetail(result))
+    if (result.character.chaId !== characterId || result.character.coldstorage !== undefined) {
+      return reportRecoveryFailure(key, 'server returned an invalid recovered character')
+    }
+
+    withTrustedResourceWrite(() => {
+      const index = getDatabase().characters.findIndex((candidate) => candidate.chaId === characterId)
+      const current = getDatabase().characters[index]
+      if (index >= 0 && (!current.coldstorage || current.coldstorage === key)) {
+        getDatabase().characters[index] = result.character as unknown as character
+      }
+    })
+    alertClear()
+    return true
+  } catch (error) {
+    return reportRecoveryFailure(key, error)
+  }
+}
+
+export function recoverColdStorageCharacter(characterIndex: number): Promise<boolean> {
+  const current = getDatabase().characters?.[characterIndex]
+  if (!current) return Promise.resolve(false)
+  if (!current.coldstorage) return Promise.resolve(true)
+  if (!current.chaId) return Promise.resolve(reportRecoveryFailure(current.coldstorage, 'character id is missing'))
+
+  const key = current.coldstorage
+  const jobKey = `${current.chaId}:${key}`
+  const active = characterRecoveryJobs.get(jobKey)
+  if (active) return active
+  const job = runCharacterRecovery(current.chaId, key).finally(() => characterRecoveryJobs.delete(jobKey))
+  characterRecoveryJobs.set(jobKey, job)
+  return job
+}
+
+async function runChatRecovery(characterId: string, chatId: string, key: string): Promise<boolean> {
+  try {
+    const baseRevision = await getServerCommandBaseRevision()
+    if (baseRevision === null) return reportRecoveryFailure(key, 'server revision unavailable')
+
+    const result = await recoverColdStorageChatCommand({ baseRevision, chatId, key })
+    if (result.status !== 'ok') return reportRecoveryFailure(key, commandFailureDetail(result))
+    if (result.characterId !== characterId || result.chat.id !== chatId) {
+      return reportRecoveryFailure(key, 'server returned an invalid recovered chat')
+    }
+
+    withTrustedResourceWrite(() => {
+      const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
+      const chatIndex = character?.chats.findIndex((candidate) => candidate.id === chatId) ?? -1
+      const current = character?.chats[chatIndex]
+      const pointer = current?.message?.[0]?.data
+      if (
+        character &&
+        chatIndex >= 0 &&
+        (!pointer?.startsWith(coldStorageHeader) || pointer === `${coldStorageHeader}${key}`)
+      ) {
+        character.chats[chatIndex] = result.chat as (typeof character.chats)[number]
+      }
+    })
+    return true
+  } catch (error) {
+    return reportRecoveryFailure(key, error)
+  }
+}
+
+export function preLoadChat(characterIndex: number, chatIndex: number): Promise<boolean> {
+  const character = getDatabase().characters?.[characterIndex]
+  const chat = character?.chats?.[chatIndex]
+
+  if (!character || !chat) return Promise.resolve(false)
+
+  const pointer = chat.message?.[0]?.data
+  if (!pointer?.startsWith(coldStorageHeader)) return Promise.resolve(true)
+  const key = pointer.slice(coldStorageHeader.length)
+  if (!character.chaId || !chat.id || !key) {
+    return Promise.resolve(reportRecoveryFailure(key || 'unknown', 'archive pointer is incomplete'))
   }
 
-  if (chat.message?.[0]?.data?.startsWith(coldStorageHeader)) {
-    alertError('Cold-storage chat hydration is not supported in server-backed web mode')
-    return
-  }
+  const jobKey = `${character.chaId}:${chat.id}:${key}`
+  const active = chatRecoveryJobs.get(jobKey)
+  if (active) return active
+  const job = runChatRecovery(character.chaId, chat.id, key).finally(() => chatRecoveryJobs.delete(jobKey))
+  chatRecoveryJobs.set(jobKey, job)
+  return job
 }

@@ -1129,6 +1129,11 @@ export interface MutateAlternateGreetingsCommandInput extends CharacterCommandIn
   chatGreetingIndices: ChatGreetingIndex[]
 }
 
+export interface RecoverColdStorageCharacterCommandInput extends CharacterCommandInput {
+  characterId: string
+  key: string
+}
+
 export interface DeleteCharacterCommandInput extends CharacterCommandInput {
   characterId: string
 }
@@ -1159,6 +1164,11 @@ export interface UpdateChatCommandInput extends ChatCommandInput {
   chatId: string
   patch: ChatSnapshot
   select?: boolean
+}
+
+export interface RecoverColdStorageChatCommandInput extends ChatCommandInput {
+  chatId: string
+  key: string
 }
 
 export interface SaveChatGenerationSettingsCommandInput extends ChatCommandInput {
@@ -3378,6 +3388,20 @@ export async function mutateAlternateGreetingsCommand(
   })
 }
 
+export async function recoverColdStorageCharacterCommand(
+  input: RecoverColdStorageCharacterCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ characterId: string; character: CharacterSnapshot }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/recover-cold-storage`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      key: input.key,
+    },
+    signal,
+  })
+}
+
 export async function deleteCharacterCommand(
   input: DeleteCharacterCommandInput,
   signal?: AbortSignal | null,
@@ -3473,6 +3497,20 @@ export async function updateChatCommand(
     signal,
     keepalive,
     readLocalEffect: (body, event) => readChatPatchLocalEffect(body, event, input),
+  })
+}
+
+export async function recoverColdStorageChatCommand(
+  input: RecoverColdStorageChatCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; characterId: string; chat: ChatSnapshot }>> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/recover-cold-storage`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      key: input.key,
+    },
+    signal,
   })
 }
 

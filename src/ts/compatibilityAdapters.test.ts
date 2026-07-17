@@ -19,7 +19,7 @@ vi.mock('./alert', () => ({
 }))
 
 vi.mock('./process/coldstorage.svelte', () => ({
-  getColdStorageItem: vi.fn(),
+  recoverColdStorageCharacter: vi.fn(),
 }))
 
 import { clearCachedServerCommandRevision, type CommandEvent } from './server/commands'
@@ -43,7 +43,7 @@ import { selectedCharID } from './stores.svelte'
 import { isServerCharacterShell, type Chat, type character, type Database } from './storage/database.svelte'
 import { changeChar, changeCharImage, createNewCharacter, rmCharEmotion } from './characters'
 import { alertError } from './alert'
-import { getColdStorageItem } from './process/coldstorage.svelte'
+import { recoverColdStorageCharacter } from './process/coldstorage.svelte'
 import { isCharacterLorebookMutationReady, resetLorebookHydration } from './server/lorebookBridge.svelte'
 
 const testDatabaseState = {
@@ -610,19 +610,21 @@ describe('Phase 9-3f compatibility adapters', () => {
     expect(testDatabaseState.db.characters[1].name).toBe('Char B')
   })
 
-  it('rejects cold-storage character hydration in server-backed web mode', async () => {
+  it('recovers a cold-storage character before selecting it', async () => {
     const calls = stubCommandFetch()
     testDatabaseState.db.characters[0].coldstorage = 'cold-char-a'
     selectedCharID.set(-1)
+    setResourceWriteGuardEnabled(true)
+    vi.mocked(recoverColdStorageCharacter).mockResolvedValueOnce(true)
 
     await changeChar(0)
 
-    expect(getColdStorageItem).not.toHaveBeenCalled()
-    expect(alertError).toHaveBeenCalledWith(
-      'Cold-storage character hydration is not supported in server-backed web mode yet',
-    )
-    expect(get(selectedCharID)).toBe(-1)
-    expect(calls).toEqual([])
+    expect(recoverColdStorageCharacter).toHaveBeenCalledWith(0)
+    expect(alertError).not.toHaveBeenCalled()
+    expect(get(selectedCharID)).toBe(0)
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/select')).toBe(true)
+    })
   })
 
   it('routes MCP character lorebook writes through lorebook commands in server-backed web mode', async () => {

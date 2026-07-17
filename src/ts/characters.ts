@@ -30,7 +30,7 @@ import {
   dispatchCreateImportedChats,
 } from './chatCommands'
 import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from './chatGenerationSettings'
-import { getColdStorageItem } from './process/coldstorage.svelte'
+import { recoverColdStorageCharacter } from './process/coldstorage.svelte'
 import {
   currentCharacterRowSnapshot,
   currentCharacterSelectionSnapshot,
@@ -1414,8 +1414,8 @@ export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
   reseter()
   botMakerMode.set(false)
   if (getDatabase().characters?.[index]?.coldstorage) {
-    alertError('Cold-storage character hydration is not supported in server-backed web mode yet')
-    return
+    const recovered = await recoverColdStorageCharacter(index)
+    if (!isFreshSelectionAttempt() || !recovered) return
   }
   const characterId = getDatabase().characters?.[index]?.chaId
   if (!characterId) return

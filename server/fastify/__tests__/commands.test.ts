@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
+import { compressSync } from 'fflate'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
@@ -102,6 +103,21 @@ function loadPersistedFromDir(dataDir: string) {
   } finally {
     db.close()
   }
+}
+
+const LEGACY_COLD_STORAGE_HEADER = '\uEF01COLDSTORAGE\uEF01'
+
+function coldStorageSidecarPath(dataDir: string, key: string): string {
+  const saveDir = path.join(dataDir, 'save')
+  mkdirSync(saveDir, { recursive: true })
+  const storageKey = `coldstorage/${key}`
+  return path.join(saveDir, Buffer.from(storageKey, 'utf8').toString('hex'))
+}
+
+function writeColdStorageSidecar(dataDir: string, key: string, value: unknown): string {
+  const sidecarPath = coldStorageSidecarPath(dataDir, key)
+  writeFileSync(sidecarPath, Buffer.from(compressSync(new TextEncoder().encode(JSON.stringify(value)))))
+  return sidecarPath
 }
 
 async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
@@ -14125,5 +14141,219 @@ describe('Phase 9-4d asset reference commands', () => {
         ref_audio_data: { fileName: 'ref.wav', assetId: '-' },
       },
     })
+  })
+})
+
+describe('legacy cold-storage recovery commands', () => {
+  it('recovers an archived character and all of its chats in one revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-cold',
+          name: 'Archived shell',
+          coldstorage: 'character-archive',
+          coldStoragedChats: ['chat-archive'],
+          chats: [
+            {
+              id: 'shell-chat',
+              name: 'Shell',
+              note: '',
+              localLore: [],
+              message: [{ role: 'char', data: '', chatId: 'shell-message' }],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-cold'],
+    })
+    const sidecarPath = writeColdStorageSidecar(harness.dataDir, 'character-archive', {
+      character: {
+        chaId: 'char-cold',
+        name: 'Recovered character',
+        chats: [
+          {
+            id: 'recovered-chat',
+            name: 'Recovered chat',
+            note: 'legacy note',
+            localLore: [{ key: 'legacy lore' }],
+            scriptstate: { score: 7 },
+            hypaV3Data: { summaries: [{ text: 'memory' }] },
+            message: [
+              { role: 'user', data: 'Are you still there?', chatId: 'recovered-message-a' },
+              { role: 'char', data: 'Always.', chatId: 'recovered-message-b' },
+            ],
+          },
+        ],
+        chatFolders: [],
+        chatPage: 0,
+      },
+    })
+
+    const recovered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-cold/recover-cold-storage',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, key: 'character-archive' },
+    })
+
+    expect(recovered.statusCode).toBe(200)
+    expect(recovered.json()).toMatchObject({
+      revision: revision + 1,
+      event: {
+        type: 'coldStorage.characterRecovered',
+        resource: 'characterRow',
+        id: 'char-cold',
+      },
+      characterId: 'char-cold',
+      character: {
+        chaId: 'char-cold',
+        name: 'Recovered character',
+        chats: [{ id: 'recovered-chat' }],
+      },
+    })
+    expect(readJsonRow('characters', 'char-cold')).toMatchObject({
+      chaId: 'char-cold',
+      name: 'Recovered character',
+    })
+    expect(readJsonRow('characters', 'char-cold').coldstorage).toBeUndefined()
+    expect(readJsonRow('chats', 'recovered-chat')).toMatchObject({
+      id: 'recovered-chat',
+      scriptstate: { score: 7 },
+      localLore: [{ key: 'legacy lore' }],
+    })
+    expect(await persistedChatMessages(harness.app, assertion, 'recovered-chat')).toEqual([
+      expect.objectContaining({ data: 'Are you still there?', chatId: 'recovered-message-a' }),
+      expect.objectContaining({ data: 'Always.', chatId: 'recovered-message-b' }),
+    ])
+    expect(existsSync(sidecarPath)).toBe(true)
+    expect(() => readJsonRow('chats', 'shell-chat')).toThrow()
+  })
+
+  it('recovers an archived chat transcript and metadata without deleting its sidecar', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-cold',
+              name: 'Archived chat',
+              note: '',
+              localLore: [],
+              message: [
+                {
+                  role: 'char',
+                  data: `${LEGACY_COLD_STORAGE_HEADER}chat-archive`,
+                  chatId: 'pointer-message',
+                },
+              ],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const sidecarPath = writeColdStorageSidecar(harness.dataDir, 'chat-archive', {
+      message: [
+        { role: 'user', data: 'Recovered question', chatId: 'message-a' },
+        { role: 'char', data: 'Recovered answer', chatId: 'message-b' },
+      ],
+      hypaV2Data: { legacy: true },
+      hypaV3Data: { summaries: [{ text: 'remember this' }] },
+      scriptstate: { route: 'recovered' },
+      localLore: [{ key: 'archive lore' }],
+    })
+
+    const recovered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-cold/recover-cold-storage',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, key: 'chat-archive' },
+    })
+
+    expect(recovered.statusCode).toBe(200)
+    expect(recovered.json()).toMatchObject({
+      revision: revision + 1,
+      event: {
+        type: 'coldStorage.chatRecovered',
+        resource: 'chatTranscript',
+        id: 'chat-cold',
+        parentId: 'char-a',
+      },
+      chat: {
+        id: 'chat-cold',
+        scriptstate: { route: 'recovered' },
+        localLore: [{ key: 'archive lore' }],
+      },
+    })
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-cold')).toEqual([
+      expect.objectContaining({ data: 'Recovered question', chatId: 'message-a' }),
+      expect.objectContaining({ data: 'Recovered answer', chatId: 'message-b' }),
+    ])
+    expect(readJsonRow('chats', 'chat-cold')).toMatchObject({
+      hypaV2Data: { legacy: true },
+      scriptstate: { route: 'recovered' },
+      localLore: [{ key: 'archive lore' }],
+    })
+    expect(existsSync(sidecarPath)).toBe(true)
+  })
+
+  it('keeps an authoritative chat pointer when its archive is missing or corrupt', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const pointer = `${LEGACY_COLD_STORAGE_HEADER}missing-archive`
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-cold',
+              name: 'Archived chat',
+              note: '',
+              localLore: [],
+              message: [{ role: 'char', data: pointer, chatId: 'pointer-message' }],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const missing = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-cold/recover-cold-storage',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, key: 'missing-archive' },
+    })
+    expect(missing.statusCode).toBe(400)
+    expect(missing.json().error).toContain('missing-archive')
+    expect((await persistedChatMessages(harness.app, assertion, 'chat-cold'))[0].data).toBe(pointer)
+
+    writeFileSync(coldStorageSidecarPath(harness.dataDir, 'missing-archive'), Buffer.from('not compressed json'))
+    const corrupt = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-cold/recover-cold-storage',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, key: 'missing-archive' },
+    })
+    expect(corrupt.statusCode).toBe(400)
+    expect(corrupt.json().error).toContain('corrupt')
+    expect((await persistedChatMessages(harness.app, assertion, 'chat-cold'))[0].data).toBe(pointer)
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+    } finally {
+      db.close()
+    }
   })
 })
