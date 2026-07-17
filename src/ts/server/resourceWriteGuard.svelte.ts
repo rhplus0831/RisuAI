@@ -6,6 +6,7 @@ import {
 
 let serverResourceWriteGuardEnabled = false
 let serverResourceApplyEpoch = $state(0)
+let localCharacterProjectionMutationEpoch = $state(0)
 
 /**
  * @deprecated The client is migrating away from aggregate database state. This
@@ -43,4 +44,12 @@ export function withServerResourceApply<T>(callback: () => T): T {
 
 export function getServerResourceApplyEpoch(): number {
   return serverResourceApplyEpoch
+}
+
+export function markLocalCharacterProjectionMutation(): void {
+  localCharacterProjectionMutationEpoch += 1
+}
+
+export function getLocalCharacterProjectionMutationEpoch(): number {
+  return localCharacterProjectionMutationEpoch
 }

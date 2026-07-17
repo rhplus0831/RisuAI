@@ -73,6 +73,7 @@ import { currentCharacterRowSnapshot, dispatchCompatibleCharacterUpdateScoped } 
 import { currentChatScopedSnapshot, dispatchCompatibleChatUpdateScoped } from '../chatCommands'
 import {
   isResourceWriteGuardEnabled,
+  markLocalCharacterProjectionMutation,
   setResourceWriteGuardEnabled,
   withServerResourceApply,
   withTrustedResourceWrite,
@@ -3418,6 +3419,7 @@ export function setCurrentCharacter(char: character, options: { dispatchServerCo
       getDatabase().characters = []
     }
     getDatabase().characters[index] = char
+    markLocalCharacterProjectionMutation()
     if (previousState) {
       dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
     }
@@ -3443,6 +3445,7 @@ export function setCharacterByIndex(index: number, char: character) {
       getDatabase().characters = []
     }
     getDatabase().characters[index] = char
+    markLocalCharacterProjectionMutation()
     if (previousState) {
       dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
     }

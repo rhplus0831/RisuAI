@@ -10,7 +10,7 @@ const recorded = vi.hoisted(() => ({
   characterResults: [] as Array<Promise<{ status: string; error?: string }>>,
   characterTransports: [] as Array<{ mutationId?: string; databaseLineage?: string }>,
 }))
-const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const resourceGuardState = vi.hoisted(() => ({ epoch: 0, localCharacterEpoch: 0 }))
 const durableState = vi.hoisted(() => ({
   nextId: 0,
   stages: [] as Array<{ key: string; intent: Record<string, unknown>; handle: Record<string, any> }>,
@@ -23,7 +23,11 @@ vi.mock('./commands', () => ({
 }))
 
 vi.mock('./resourceWriteGuard.svelte', () => ({
+  getLocalCharacterProjectionMutationEpoch: () => resourceGuardState.localCharacterEpoch,
   getServerResourceApplyEpoch: () => resourceGuardState.epoch,
+  markLocalCharacterProjectionMutation: () => {
+    resourceGuardState.localCharacterEpoch += 1
+  },
   withServerResourceApply: (fn: () => unknown) => {
     const result = fn()
     resourceGuardState.epoch += 1
@@ -127,6 +131,7 @@ import {
 } from './characterBridge.svelte'
 import { watchServerBackedChatMetadata } from './chatBridge.svelte'
 import { watchServerBackedScriptDefinitions } from './scriptDefinitionBridge.svelte'
+import { markLocalCharacterProjectionMutation, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 
 const DELAY = 50
 
@@ -204,6 +209,7 @@ async function flushAndSettle(): Promise<void> {
 beforeEach(() => {
   vi.useFakeTimers()
   resourceGuardState.epoch = 0
+  resourceGuardState.localCharacterEpoch = 0
   recorded.characterUpdates.length = 0
   recorded.characterResults.length = 0
   recorded.characterTransports.length = 0
@@ -383,6 +389,42 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     expect(draft.value.desc).toBe('Fresh server description')
     expect(getDatabase().characters[0].alternateGreetings).toEqual(['Local alternate greeting'])
     expect(getDatabase().characters[0].desc).toBe('Fresh server description')
+    stop()
+  })
+
+  it('merges a same-owner quick-added asset into a clean draft field', async () => {
+    setupCharacters([
+      characterRow('char-1', 'Initial', {
+        additionalAssets: [['portrait', 'asset-a', 'png']],
+      }),
+    ])
+    const { draft, stop } = await createDraft(['name', 'additionalAssets'])
+
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0] = {
+        ...getDatabase().characters[0],
+        additionalAssets: [
+          ['portrait', 'asset-a', 'png'],
+          ['sticker', 'asset-b', 'png'],
+        ],
+      }
+      markLocalCharacterProjectionMutation()
+    })
+    await flushAndSettle()
+
+    expect(draft.value.additionalAssets).toEqual([
+      ['portrait', 'asset-a', 'png'],
+      ['sticker', 'asset-b', 'png'],
+    ])
+
+    draft.value.name = 'Edited after quick add'
+    await flushAndSettle()
+
+    expect(getDatabase().characters[0].name).toBe('Edited after quick add')
+    expect(getDatabase().characters[0].additionalAssets).toEqual([
+      ['portrait', 'asset-a', 'png'],
+      ['sticker', 'asset-b', 'png'],
+    ])
     stop()
   })
 

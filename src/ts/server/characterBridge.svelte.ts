@@ -10,7 +10,11 @@ import {
 } from '../characterCommands'
 import { canUseServerCommands, type CharacterSnapshot, type ServerCommandTransportOptions } from './commands'
 import { selectedCharID } from '../stores.svelte'
-import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
+import {
+  getLocalCharacterProjectionMutationEpoch,
+  getServerResourceApplyEpoch,
+  withTrustedResourceWrite,
+} from './resourceWriteGuard.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER } from '../storage/database.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from './staleStateGuards'
@@ -67,6 +71,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
   let previousSeedSelected = Number.NaN
   let previousSeedCharacterId: string | null = null
   let previousSeedResourceApplyEpoch = -1
+  let previousSeedLocalMutationEpoch = -1
   const dirtyFields = new Set<keyof CharacterDraftValue & string>()
   const selectedCharMirror = $state({ value: get(selectedCharID) })
 
@@ -85,12 +90,15 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
       selectedCharacter && !isServerCharacterShell(selectedCharacter) ? (selectedCharacter.chaId ?? null) : null
     const identityChanged = !initialized || selected !== previousSeedSelected || characterId !== previousSeedCharacterId
     const resourceApplyChanged = resourceApplyEpoch !== previousSeedResourceApplyEpoch
+    const localMutationEpoch = getLocalCharacterProjectionMutationEpoch()
+    const localProjectionChanged = localMutationEpoch !== previousSeedLocalMutationEpoch
 
-    if (!identityChanged && !resourceApplyChanged) return
+    if (!identityChanged && !resourceApplyChanged && !localProjectionChanged) return
 
     previousSeedSelected = selected
     previousSeedCharacterId = characterId
     previousSeedResourceApplyEpoch = resourceApplyEpoch
+    previousSeedLocalMutationEpoch = localMutationEpoch
 
     const { serverSnapshot, serverValue } = untrack(() => currentCharacterDraftSeed(selected, characterId, keys))
 
@@ -102,6 +110,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
     const shouldSeedDraft =
       identityChanged ||
+      localProjectionChanged ||
       untrack(() => {
         const draftSnapshot = snapshotJson({
           characterId: draft.characterId,
@@ -112,7 +121,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
     if (shouldSeedDraft) {
       suppressDraftDispatch = true
-      if (!identityChanged && resourceApplyChanged && dirtyFields.size > 0) {
+      if (!identityChanged && (resourceApplyChanged || localProjectionChanged) && dirtyFields.size > 0) {
         draft.characterId = characterId
         mergeProjectionIntoDirtyDraft({
           draft: draft.value,
@@ -150,13 +159,18 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
     }
     if (draftSnapshot === previousDraftDispatchSnapshot) return
     const previousDraftValue = parseDraftSnapshot(previousDraftDispatchSnapshot)
-    for (const key of changedTopLevelDraftFields(previousDraftValue, draft.value)) {
+    const changedFields = changedTopLevelDraftFields(previousDraftValue, draft.value)
+    for (const key of changedFields) {
       dirtyFields.add(key)
     }
     previousDraftDispatchSnapshot = draftSnapshot
 
     untrack(() => {
-      const patch = sanitizeCharacterPatch(cloneJsonValue(draft.value))
+      const changedPatch: CharacterSnapshot = {}
+      for (const key of changedFields) {
+        changedPatch[key] = cloneJsonValue(draft.value[key])
+      }
+      const patch = sanitizeCharacterPatch(changedPatch)
       withTrustedResourceWrite(() => {
         const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
         if (!character) return
