@@ -19,7 +19,7 @@ vi.mock('./process/modules', async (importActual) => {
 })
 
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
-import { saveAssets } from './globalApi.svelte'
+import { saveAsset, saveAssets } from './globalApi.svelte'
 
 interface CapturedFetch {
   input: RequestInfo | URL
@@ -88,6 +88,9 @@ beforeEach(() => {
           assetIds: [missingId, otherMissingId],
         })
       }
+      if (input === '/api/v1/assets') {
+        return responseJson({ assetId: 'uploaded-asset' })
+      }
       throw new Error(`Unexpected fetch: ${String(input)}`)
     }) as unknown as typeof fetch,
   )
@@ -144,5 +147,23 @@ describe('saveAssets server bulk upload', () => {
     const second = (await readRequestJson(fetchCalls[1].init)) as { ids: string[] }
     expect(first.ids).toHaveLength(1024)
     expect(second.ids).toHaveLength(1)
+  })
+})
+
+describe('saveAsset media type', () => {
+  it.each([
+    ['reference.jpeg', 'image/jpeg'],
+    ['reference.webp', 'image/webp'],
+    ['reference.gif', 'image/gif'],
+    ['reference.wav', 'audio/wav'],
+    ['reference.ogg', 'audio/ogg'],
+    ['reference.mp3', 'audio/mpeg'],
+    ['reference.aac', 'audio/aac'],
+  ])('uses the filename extension for %s', async (fileName, expectedContentType) => {
+    await expect(saveAsset(new Uint8Array([1, 2, 3]), '', fileName)).resolves.toBe('uploaded-asset')
+
+    expect(fetchCalls).toHaveLength(1)
+    expect(fetchCalls[0].input).toBe('/api/v1/assets')
+    expect(fetchCalls[0].init?.headers).toMatchObject({ 'content-type': expectedContentType })
   })
 })

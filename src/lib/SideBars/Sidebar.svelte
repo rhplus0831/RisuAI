@@ -198,7 +198,7 @@
         return
       }
 
-      const folderImageData = await saveAsset(folderImage.data)
+      const folderImageData = await saveAsset(folderImage.data, '', folderImage.name)
 
       if (
         !isFreshCharacterFolderImageUpload({

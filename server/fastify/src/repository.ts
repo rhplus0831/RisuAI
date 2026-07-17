@@ -39,6 +39,7 @@ export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   'image/gif': 'gif',
   'image/avif': 'avif',
   'audio/mpeg': 'mp3',
+  'audio/aac': 'aac',
   'audio/wav': 'wav',
   'audio/ogg': 'ogg',
   'audio/flac': 'flac',
@@ -57,6 +58,45 @@ export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
 export const SUPPORTED_ASSET_CONTENT_TYPES = Object.keys(CONTENT_TYPE_EXTENSIONS)
 
 const SHA256_RE = /^[a-f0-9]{64}$/
+
+function startsWithBytes(bytes: Uint8Array, signature: readonly number[]): boolean {
+  return signature.every((value, index) => bytes[index] === value)
+}
+
+function asciiAt(bytes: Uint8Array, offset: number, value: string): boolean {
+  if (bytes.byteLength < offset + value.length) return false
+  return [...value].every((character, index) => bytes[offset + index] === character.charCodeAt(0))
+}
+
+/** Detect media types whose picker-facing formats have stable magic bytes. */
+export function detectAssetContentType(bytes: Uint8Array): string | null {
+  if (startsWithBytes(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png'
+  if (startsWithBytes(bytes, [0xff, 0xd8, 0xff])) return 'image/jpeg'
+  if (asciiAt(bytes, 0, 'GIF87a') || asciiAt(bytes, 0, 'GIF89a')) return 'image/gif'
+  if (asciiAt(bytes, 0, 'RIFF') && asciiAt(bytes, 8, 'WEBP')) return 'image/webp'
+  if (asciiAt(bytes, 0, 'RIFF') && asciiAt(bytes, 8, 'WAVE')) return 'audio/wav'
+  if (asciiAt(bytes, 0, 'OggS')) return 'audio/ogg'
+  if (asciiAt(bytes, 0, 'fLaC')) return 'audio/flac'
+  if (asciiAt(bytes, 0, 'ID3')) return 'audio/mpeg'
+  if (bytes[0] === 0xff && bytes.byteLength >= 2 && (bytes[1] & 0xf0) === 0xf0) {
+    return (bytes[1] & 0x06) === 0 ? 'audio/aac' : 'audio/mpeg'
+  }
+  if (asciiAt(bytes, 4, 'ftyp')) {
+    const brand = String.fromCharCode(...bytes.subarray(8, 12))
+    if (brand === 'avif' || brand === 'avis') return 'image/avif'
+    if (['isom', 'iso2', 'mp41', 'mp42', 'M4V ', 'qt  '].includes(brand)) return 'video/mp4'
+  }
+  return null
+}
+
+function validateDeclaredAssetContentType(asset: AddAssetInput): void {
+  const detectedContentType = detectAssetContentType(asset.bytes)
+  if (detectedContentType && detectedContentType !== asset.contentType) {
+    throw new ValidationError(
+      `Asset content-type mismatch: declared ${asset.contentType}, detected ${detectedContentType}`,
+    )
+  }
+}
 
 export function isValidAssetId(id: string): boolean {
   return SHA256_RE.test(id)
@@ -2024,6 +2064,7 @@ export function addAssets(db: DatabaseSync, dataDir: string, assets: readonly Ad
     if (!CONTENT_TYPE_EXTENSIONS[asset.contentType]) {
       throw new ValidationError(`Unsupported content-type: ${asset.contentType}`)
     }
+    validateDeclaredAssetContentType(asset)
   }
 
   const createdResults: AddAssetResult[] = []
@@ -2037,6 +2078,11 @@ export function addAssets(db: DatabaseSync, dataDir: string, assets: readonly Ad
       const sha256 = createHash('sha256').update(asset.bytes).digest('hex')
       const existing = getAssetMetadataById(db, sha256)
       if (existing) {
+        if (existing.contentType !== asset.contentType) {
+          throw new ValidationError(
+            `Asset content-type conflict: existing ${existing.contentType}, uploaded ${asset.contentType}`,
+          )
+        }
         const file = assetPath(dataDir, existing)
         if (!fs.existsSync(file)) {
           fs.mkdirSync(assetsDir(dataDir), { recursive: true })

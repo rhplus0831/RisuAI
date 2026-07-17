@@ -474,7 +474,7 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
     await tick()
     uploadButton!.click()
     await vi.waitFor(() => expect(otherBotMocks.saveAsset).toHaveBeenCalledTimes(1))
-    expect(otherBotMocks.saveAsset).toHaveBeenCalledWith(newerFile.data)
+    expect(otherBotMocks.saveAsset).toHaveBeenCalledWith(newerFile.data, '', newerFile.name)
 
     olderRead.resolve(olderFile)
     await tick()

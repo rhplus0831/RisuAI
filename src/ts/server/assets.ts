@@ -15,6 +15,7 @@ export const SERVER_ASSET_CONTENT_TYPES: Record<string, string> = {
   gif: 'image/gif',
   avif: 'image/avif',
   mp3: 'audio/mpeg',
+  aac: 'audio/aac',
   wav: 'audio/wav',
   ogg: 'audio/ogg',
   flac: 'audio/flac',

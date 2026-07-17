@@ -665,7 +665,7 @@ describe('CharConfig character media callback freshness contracts', () => {
       body.indexOf('if (!audio || !operation) return'),
     )
     expect(body).toContain('if (!isCurrentEditorTtsAssetUpload(activeOperation)) return')
-    expect(body).toContain('const saveId = await saveAsset(audio.data)')
+    expect(body).toContain("const saveId = await saveAsset(audio.data, '', audio.name)")
     expect(body).toContain('applyFreshCharacterGptSoVitsReferenceAudioUpload({')
     expect(body).toContain('character.gptSoVitsConfig.ref_audio_data = nextRefAudioData')
     expect(body).toContain('clearCharacterTtsAssetUpload(operation)')
@@ -988,6 +988,7 @@ describe('CharConfig draft-backed avatar and emotion controls', () => {
     emotionAddButton().click()
     await settleComponent()
 
+    expect(assetMocks.saveAsset).toHaveBeenCalledWith(expect.any(Uint8Array), '', 'happy.webp')
     expect(target.querySelector('img[src="happy-upload"]')).toBeTruthy()
     expect(
       Array.from(target.querySelectorAll<HTMLInputElement>('input')).some((input) => input.value === 'happy'),

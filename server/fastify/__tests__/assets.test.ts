@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
-import { getAllAssetMetadata, loadPersisted } from '../src/repository.js'
+import { getAllAssetMetadata, insertAssetMetadataBatch, loadPersisted } from '../src/repository.js'
 import { ASSET_BULK_BINARY_CONTENT_TYPE } from '../src/routes/assets.js'
 import type { FastifyInstance } from 'fastify'
 
@@ -116,6 +116,10 @@ const PNG_BYTES = Buffer.from(
   'hex',
 )
 const PNG_SHA = createHash('sha256').update(PNG_BYTES).digest('hex')
+const JPEG_BYTES = Buffer.from('ffd8ffe000104a4649460001ffd9', 'hex')
+const JPEG_SHA = createHash('sha256').update(JPEG_BYTES).digest('hex')
+const AAC_BYTES = Buffer.from('fff15080001ffc0000', 'hex')
+const AAC_SHA = createHash('sha256').update(AAC_BYTES).digest('hex')
 const OTHER_PNG_BYTES = Buffer.from('other-png-bytes')
 const OTHER_PNG_SHA = createHash('sha256').update(OTHER_PNG_BYTES).digest('hex')
 
@@ -252,6 +256,75 @@ describe('Phase 2C assets', () => {
     const onDisk = path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`)
     expect(existsSync(onDisk)).toBe(true)
     expect(Buffer.from(readFileSync(onDisk))).toEqual(PNG_BYTES)
+  })
+
+  it('rejects a recognizable JPEG body declared as PNG before persistence', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: JPEG_BYTES,
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({
+      error: 'Asset content-type mismatch: declared image/png, detected image/jpeg',
+    })
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${JPEG_SHA}.png`))).toBe(false)
+  })
+
+  it('persists JPEG and AAC uploads with their detected media metadata', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const jpeg = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/jpeg', 'risu-auth': assertion },
+      payload: JPEG_BYTES,
+    })
+    const aac = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'audio/aac', 'risu-auth': assertion },
+      payload: AAC_BYTES,
+    })
+
+    expect(jpeg.statusCode).toBe(201)
+    expect(jpeg.json()).toMatchObject({ assetId: JPEG_SHA, contentType: 'image/jpeg' })
+    expect(aac.statusCode).toBe(201)
+    expect(aac.json()).toMatchObject({ assetId: AAC_SHA, contentType: 'audio/aac' })
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${JPEG_SHA}.jpg`))).toBe(true)
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${AAC_SHA}.aac`))).toBe(true)
+
+    const readAac = await harness.app.inject({ method: 'GET', url: `/api/v1/assets/${AAC_SHA}` })
+    expect(readAac.headers['content-type']).toBe('audio/aac')
+  })
+
+  it('reports a conflict when a correct reupload finds corrupt metadata for the same hash', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const seedDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      insertAssetMetadataBatch(seedDb, [
+        { id: JPEG_SHA, ext: 'png', size: JPEG_BYTES.byteLength, contentType: 'image/png' },
+      ])
+    } finally {
+      seedDb.close()
+    }
+    const corruptFile = path.join(harness.dataDir, 'assets', `${JPEG_SHA}.png`)
+    fs.mkdirSync(path.dirname(corruptFile), { recursive: true })
+    fs.writeFileSync(corruptFile, JPEG_BYTES)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/jpeg', 'risu-auth': assertion },
+      payload: JPEG_BYTES,
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({
+      error: 'Asset content-type conflict: existing image/png, uploaded image/jpeg',
+    })
   })
 
   it('returns a compact single-upload acknowledgement when requested', async () => {

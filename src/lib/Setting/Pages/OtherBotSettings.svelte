@@ -482,7 +482,7 @@
       if (!isCurrentSettingsMediaAssetUpload(activeOperation)) return
 
       const imageData = img.data
-      const saveId = await saveAsset(imageData)
+      const saveId = await saveAsset(imageData, '', img.name)
       if (!isCurrentSettingsMediaAssetUpload(activeOperation)) return
 
       const nextConfig = applyFreshSettingsMediaAssetUpload({

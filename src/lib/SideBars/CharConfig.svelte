@@ -724,7 +724,7 @@
       for (const file of files) {
         if (!isCurrentEditorEmotionUpload(activeOperation)) return
 
-        const image = await saveAsset(file.data)
+        const image = await saveAsset(file.data, '', file.name)
         if (!isCurrentEditorEmotionUpload(activeOperation)) return
 
         entries.push([file.name.replace(/\.(png|webp|gif)$/i, ''), image])
@@ -1012,7 +1012,7 @@
       const activeOperation = operation
       if (!isCurrentEditorTtsAssetUpload(activeOperation)) return
 
-      const saveId = await saveAsset(audio.data)
+      const saveId = await saveAsset(audio.data, '', audio.name)
       if (!isCurrentEditorTtsAssetUpload(activeOperation)) return
 
       const nextRefAudioData = applyFreshCharacterGptSoVitsReferenceAudioUpload({
