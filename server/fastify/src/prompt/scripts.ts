@@ -24,8 +24,8 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  * Regex script processor ported from `src/ts/process/scripts.ts`
  * `processScript` + `executeScript`.
  *
- * Walks `db.presetRegex ?? []`, then `char.customscript ?? []`, then
- * the regex scripts from the active modules.
+ * Walks `db.globalscript ?? []`, then `db.presetRegex ?? []`, then
+ * `char.customscript ?? []`, then the regex scripts from the active modules.
  * Parses each entry through the `ableFlag` `<order N, action…>` DSL,
  * stable sorts by `order desc` when any script declared one, then
  * runs each script where `script.type === mode`.
@@ -558,6 +558,7 @@ interface PreparedScriptsMemoEntry {
    *  request loads a fresh `Database`, so within one assembly these refs are
    *  stable across the whole per-message walk. */
   charRef: character
+  globalscriptRef: customscript[] | undefined
   presetRegexRef: customscript[] | undefined
   customscriptRef: customscript[] | undefined
   activeModulesRef: RisuModule[]
@@ -583,6 +584,7 @@ function getPreparedScripts(
   if (
     memo &&
     memo.charRef === char &&
+    memo.globalscriptRef === db.globalscript &&
     memo.presetRegexRef === db.presetRegex &&
     memo.customscriptRef === char.customscript &&
     memo.activeModulesRef === activeModules &&
@@ -592,7 +594,10 @@ function getPreparedScripts(
     return memo.prepared
   }
 
-  const rawScripts = (db.presetRegex ?? []).concat(char.customscript ?? []).concat(getModuleRegexScripts(activeModules))
+  const rawScripts = (db.globalscript ?? [])
+    .concat(db.presetRegex ?? [])
+    .concat(char.customscript ?? [])
+    .concat(getModuleRegexScripts(activeModules))
   const { parsed, orderChanged } = parseScripts(rawScripts)
   if (orderChanged) {
     parsed.sort((a, b) => b.order - a.order)
@@ -600,6 +605,7 @@ function getPreparedScripts(
   const prepared = parsed.map((script) => prepareOne(script, options?.enabled ? options : undefined))
   preparedScriptsMemo.set(db, {
     charRef: char,
+    globalscriptRef: db.globalscript,
     presetRegexRef: db.presetRegex,
     customscriptRef: char.customscript,
     activeModulesRef: activeModules,

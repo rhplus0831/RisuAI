@@ -163,6 +163,9 @@ function resetDatabase() {
     noWaitForTranslate: true,
     combineTranslation: false,
     htmlTranslation: false,
+    globalscript: [],
+    presetRegex: [],
+    promptPresets: [],
     playMessageOnTranslateEnd: false,
     deeplOptions: { freeApi: true, key: '' },
     deeplXOptions: { url: '', token: '' },
@@ -380,6 +383,26 @@ describe('translateHTML streaming guards', () => {
       'translated:ko:Invalid two',
     )
     expect(__translatorTestHooks.getInvalidEdittransRegexCacheSize()).toBe(1)
+  })
+
+  it('applies global edit-translation regexes', async () => {
+    const fetchMock = stubGoogleFetch()
+    testState.db.globalscript = [
+      {
+        id: 'global-edittrans',
+        comment: '',
+        in: 'Hello',
+        out: 'Global hello',
+        type: 'edittrans',
+        flag: '',
+        ableFlag: false,
+      },
+    ]
+
+    const translated = await translateHTML('<p>Hello world</p>', false, 'char-a', 0)
+
+    expect(translated).toContain('translated:ko:Global hello world')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('v4-L27: caps deeplX delimiter-mismatch one-by-one fallback fanout', async () => {

@@ -1362,8 +1362,11 @@ function applyEdittransRegex(
 ): string {
   if (charArg === '') return text
 
-  let scripts: customscript[] = []
-  scripts = (getModuleRegexScripts() ?? []).concat(alwaysExistChar?.customscript ?? [])
+  const db = getDatabase()
+  const scripts = (db.globalscript ?? [])
+    .concat(getActivePromptPresetRegexScripts(db))
+    .concat(alwaysExistChar?.customscript ?? [])
+    .concat(getModuleRegexScripts() ?? [])
 
   for (const [index, script] of scripts.entries()) {
     if (script.type === 'edittrans') {

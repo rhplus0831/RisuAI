@@ -340,6 +340,42 @@ describe('editdisplay render path logging (L38)', () => {
     expect(result.data).toBe('chat GLOBAL')
   })
 
+  it('runs global regex in addition to the active prompt preset', async () => {
+    const char = seedDb()
+    ;(testDatabaseState.db as any).globalscript = [
+      {
+        comment: 'global-regex',
+        type: 'editdisplay',
+        in: 'GLOBAL',
+        out: 'global',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ]
+    ;(testDatabaseState.db as any).promptPresets = [
+      {
+        id: 'chat-preset',
+        presetRegex: [
+          {
+            comment: 'chat-preset-regex',
+            type: 'editdisplay',
+            in: 'CHAT',
+            out: 'chat',
+            flag: 'g',
+            ableFlag: true,
+          },
+        ],
+      },
+    ]
+    ;(testDatabaseState.db.characters[0].chats[0] as any).generationSettings = {
+      promptPresetId: 'chat-preset',
+    }
+
+    const result = await processScriptFull(char, 'CHAT GLOBAL', 'editdisplay', 0)
+
+    expect(result.data).toBe('chat global')
+  })
+
   it('does not fall back to global regex when the active chat selected prompt has none', async () => {
     const char = seedDb()
     ;(testDatabaseState.db as any).presetRegex = [

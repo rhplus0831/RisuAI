@@ -357,7 +357,8 @@ export async function processScriptFull(
   }
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions })
-  const scripts = getProcessableCustomScripts(getActivePromptPresetRegexScripts(db))
+  const scripts = getProcessableCustomScripts(db.globalscript)
+    .concat(getProcessableCustomScripts(getActivePromptPresetRegexScripts(db)))
     .concat(getProcessableCustomScripts((char as { customscript?: unknown }).customscript))
     .concat(getProcessableCustomScripts(getModuleRegexScripts()))
   const hash = generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions, currentScriptCacheScope(mode))

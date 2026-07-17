@@ -459,6 +459,35 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(memoModule.getChatBodyParseMemoKey(input)).not.toBe(selectedPromptKey)
   })
 
+  it('invalidates parser settings when global regex changes', async () => {
+    const char = seedDb()
+    const globalScript = {
+      id: 'global-regex',
+      comment: '',
+      in: 'GLOBAL',
+      out: 'global one',
+      type: 'editdisplay',
+      flag: 'g',
+      ableFlag: true,
+    }
+    getResourceDatabase().globalscript = [globalScript] as any
+
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'global regex memo body',
+      charArg: char.chaId,
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+
+    const firstKey = memoModule.getChatBodyParseMemoKey(input)
+    getResourceDatabase().globalscript[0].out = 'global two'
+
+    expect(memoModule.getChatBodyParseMemoKey(input)).not.toBe(firstKey)
+  })
+
   it('keys parser output by active chat scriptstate for synthetic greeting variables', async () => {
     const char = seedDb()
     char.chats.push({

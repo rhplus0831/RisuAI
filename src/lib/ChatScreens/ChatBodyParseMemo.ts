@@ -397,6 +397,7 @@ function parseSettingsSignature(modules = safeGetModules()) {
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
+    globalRegex: scriptListSignature(db.globalscript),
     presetRegex: scriptListSignature(safeGetActivePromptPresetRegexScripts()),
     moduleRegex: moduleRegexSignature(modules),
     moduleAssets: moduleAssetsSignature(modules),
@@ -419,6 +420,7 @@ function settingsSignatureToken(modules = safeGetModules()) {
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
+    globalRegex: scriptListSignature(db.globalscript),
     presetRegex: scriptListSignature(safeGetActivePromptPresetRegexScripts()),
     moduleRegex: moduleRegexSignature(modules),
     moduleAssets: tupleListSignature(moduleAssetsSignature(modules)),

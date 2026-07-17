@@ -120,6 +120,19 @@ describe('Phase 7-6a processScript', () => {
     expect(out).toBe('C')
   })
 
+  it('runs global regex before prompt and character scripts', () => {
+    const char = makeCharacter({
+      customscript: [regex('C', 'D', 'editprocess')],
+    })
+    const db = makeDatabase({
+      globalscript: [regex('A', 'B', 'editprocess')],
+      presetRegex: [regex('B', 'C', 'editprocess')],
+      characters: [char],
+    })
+
+    expect(processScript(ctxFor(db), char, 'A', 'editprocess')).toBe('D')
+  })
+
   it('respects the `g` flag for global replacement', () => {
     const db = makeDatabase({
       presetRegex: [regex('a', 'z', 'editprocess', 'g')],
@@ -698,6 +711,18 @@ describe('M2 per-assembly prepared-script memo', () => {
     // A replaced presetRegex array (new reference) must recompute the prep.
     db.presetRegex = [regex('m2-stale-a', 'TWO', 'editprocess')]
     expect(processScript(ctx, char, 'm2-stale-a', 'editprocess')).toBe('TWO')
+  })
+
+  it('M2: replacing global scripts invalidates the prepared-script memo', () => {
+    const db = makeDatabase({
+      globalscript: [regex('m2-global', 'ONE', 'editprocess')],
+    })
+    const ctx = ctxFor(db)
+    const char = db.characters[0]
+    expect(processScript(ctx, char, 'm2-global', 'editprocess')).toBe('ONE')
+
+    db.globalscript = [regex('m2-global', 'TWO', 'editprocess')]
+    expect(processScript(ctx, char, 'm2-global', 'editprocess')).toBe('TWO')
   })
 
   it('M2: an invalid precompiled regex stays a per-script no-op and the chain continues', () => {
