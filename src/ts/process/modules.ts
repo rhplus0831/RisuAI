@@ -39,6 +39,7 @@ import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import {
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
+  captureCollectionProjectionEpoch,
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
 } from '../server/resourceState.svelte'
@@ -1085,11 +1086,13 @@ async function applyModuleOnce() {
 }
 
 let lastModuleIds: string = ''
+let lastModuleProjectionEpoch = -1
 
 export function moduleUpdate() {
   const m = getModules()
 
   const ids = JSON.stringify(m.map((module) => module.id))
+  const projectionEpoch = captureCollectionProjectionEpoch('modules')
 
   let moduleHideIcon = false
   let backgroundEmbedding = ''
@@ -1109,9 +1112,10 @@ export function moduleUpdate() {
   moduleBackgroundEmbedding.set(backgroundEmbedding)
   HideIconStore.set(getCurrentCharacter()?.hideChatIcon || moduleHideIcon)
 
-  if (lastModuleIds !== ids) {
+  if (lastModuleIds !== ids || lastModuleProjectionEpoch !== projectionEpoch) {
     reloadGuiAfterDefinitionChange()
     lastModuleIds = ids
+    lastModuleProjectionEpoch = projectionEpoch
   }
 }
 
@@ -1119,4 +1123,5 @@ export function refreshModules() {
   lastModules = ''
   lastModuleData = []
   lastModuleSource = undefined
+  lastModuleProjectionEpoch = -1
 }

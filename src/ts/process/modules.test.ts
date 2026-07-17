@@ -47,6 +47,7 @@ const replaceCharacterTriggersCommand = vi.hoisted(() => vi.fn(async () => ({ st
 const dispatchCharacterOwnedDurableBatch = vi.hoisted(() => vi.fn())
 const characterRowEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const characterLorebookEpochState = vi.hoisted(() => ({ epoch: 0 }))
+const moduleCollectionEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const destructiveRefreshEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const ensureCharacterLorebookHydrated = vi.hoisted(() => vi.fn(async () => true))
 const testDatabaseState: { db: Record<string, any> } = {
@@ -76,6 +77,7 @@ vi.mock('../storage/database.svelte', () => ({
 }))
 
 vi.mock('../server/resourceState.svelte', () => ({
+  captureCollectionProjectionEpoch: (name: string) => (name === 'modules' ? moduleCollectionEpochState.epoch : 0),
   captureCharacterLorebookProjectionEpoch: () => characterLorebookEpochState.epoch,
   captureCharacterRowProjectionEpoch: () => characterRowEpochState.epoch,
   hasCharacterLorebookProjectionEpochChanged: (_characterId: string, epoch: number) =>
@@ -340,6 +342,7 @@ describe('module imports', () => {
   beforeEach(() => {
     characterRowEpochState.epoch = 0
     characterLorebookEpochState.epoch = 0
+    moduleCollectionEpochState.epoch = 0
     destructiveRefreshEpochState.epoch = 0
     ensureCharacterLorebookHydrated.mockReset()
     ensureCharacterLorebookHydrated.mockResolvedValue(true)
@@ -1122,6 +1125,24 @@ describe('module imports', () => {
     expect(moduleBackgroundEmbedding.set).toHaveBeenLastCalledWith(
       '\n<style>.chattext .name { color: blue; }</style>\n',
     )
+  })
+
+  it('reparses the UI after an authoritative active module definition refresh', () => {
+    const db = {
+      enabledModules: ['module-a'],
+      moduleIntergration: '',
+      modules: [{ id: 'module-a', name: 'Module A', namespace: 'old-namespace' }],
+    }
+    getDatabase.mockReturnValue(db)
+
+    moduleUpdate()
+    vi.mocked(reloadGuiAfterDefinitionChange).mockClear()
+
+    db.modules = [{ id: 'module-a', name: 'Module A', namespace: 'new-namespace' }]
+    moduleCollectionEpochState.epoch += 1
+    moduleUpdate()
+
+    expect(reloadGuiAfterDefinitionChange).toHaveBeenCalledOnce()
   })
 
   it('clears module background embedding when active modules no longer provide one', () => {
