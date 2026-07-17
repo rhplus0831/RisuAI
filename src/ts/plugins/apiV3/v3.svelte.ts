@@ -36,7 +36,7 @@ import { sleep } from 'src/ts/util'
 import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
 import { language } from 'src/lang'
 import { checkCharOrder, getFetchLogs } from 'src/ts/globalApi.svelte'
-import { changeColorScheme, updateColorScheme, updateTextThemeAndCSS, type ColorScheme } from 'src/ts/gui/colorscheme'
+import { builtInColorSchemes, updateColorScheme, updateTextThemeAndCSS, type ColorScheme } from 'src/ts/gui/colorscheme'
 import { get } from 'svelte/store'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
 import { getLLMCache, searchLLMCache } from 'src/ts/translator/translator'
@@ -74,11 +74,14 @@ function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function dispatchPluginApiSettingsPatch(patch: Record<string, unknown>, previous: Record<string, unknown>): void {
+async function dispatchPluginApiSettingsPatch(
+  patch: Record<string, unknown>,
+  previous: Record<string, unknown>,
+): Promise<void> {
   if (!canUseServerCommands()) return
   const attempted = cloneJsonValue(patch)
   const rollbackPrevious = cloneJsonValue(previous)
-  void dispatchDurableServerBackedSettingsPatch({
+  const result = await dispatchDurableServerBackedSettingsPatch({
     patch: attempted,
     acknowledgeOptimistic: true,
     optimisticProjectionEpochs: captureSettingsPatchProjectionEpochs(attempted),
@@ -98,6 +101,9 @@ function dispatchPluginApiSettingsPatch(patch: Record<string, unknown>, previous
       })
     },
   })
+  if (result.status === 'ok' || result.status === 'unavailable') return
+  if (result.status === 'error') throw new Error(result.error)
+  throw new Error(language.errors.settingsSaveFailed)
 }
 
 /*
@@ -1049,7 +1055,23 @@ const makeRisuaiAPIV3 = (
 
     // --- Color Scheme APIs ---
     changeColorScheme: (name: string) => {
-      return changeColorScheme(name)
+      const colorScheme = name === 'custom' ? undefined : builtInColorSchemes[name as keyof typeof builtInColorSchemes]
+      if (name !== 'custom' && !colorScheme) {
+        throw new Error(`Invalid color scheme: ${name}`)
+      }
+      const previous = {
+        colorScheme: cloneJsonValue(getDatabase().colorScheme),
+        colorSchemeName: getDatabase().colorSchemeName,
+      }
+      const patch = {
+        colorSchemeName: name,
+        ...(colorScheme ? { colorScheme: cloneJsonValue(colorScheme) } : {}),
+      }
+      withTrustedResourceWrite(() => {
+        Object.assign(getDatabase(), patch)
+      })
+      updateColorScheme()
+      return dispatchPluginApiSettingsPatch(patch, previous)
     },
     setColorScheme: (scheme: ColorScheme) => {
       const requiredKeys = [
@@ -1081,7 +1103,7 @@ const makeRisuaiAPIV3 = (
         getDatabase().colorScheme = scheme
       })
       updateColorScheme()
-      dispatchPluginApiSettingsPatch(
+      return dispatchPluginApiSettingsPatch(
         {
           colorScheme: cloneJsonValue(getDatabase().colorScheme),
           colorSchemeName: getDatabase().colorSchemeName,
@@ -1109,7 +1131,7 @@ const makeRisuaiAPIV3 = (
         getDatabase().textTheme = name
       })
       updateTextThemeAndCSS()
-      dispatchPluginApiSettingsPatch({ textTheme: getDatabase().textTheme }, previous)
+      return dispatchPluginApiSettingsPatch({ textTheme: getDatabase().textTheme }, previous)
     },
     setCustomTextTheme: (theme: {
       FontColorStandard: string
@@ -1141,7 +1163,7 @@ const makeRisuaiAPIV3 = (
         getDatabase().customTextTheme = theme
       })
       updateTextThemeAndCSS()
-      dispatchPluginApiSettingsPatch(
+      return dispatchPluginApiSettingsPatch(
         {
           textTheme: getDatabase().textTheme,
           customTextTheme: cloneJsonValue(getDatabase().customTextTheme),

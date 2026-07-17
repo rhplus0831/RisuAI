@@ -216,6 +216,7 @@ vi.mock('src/ts/alert', () => ({
 
 vi.mock('src/lang', () => ({
   language: {
+    errors: { settingsSaveFailed: 'Settings save failed' },
     fetchLogConsent: '{}',
     getFullDatabaseConsent: '{}',
     mainDomAccessConsent: '{}',
@@ -235,7 +236,20 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 }))
 
 vi.mock('src/ts/gui/colorscheme', () => ({
-  changeColorScheme: vi.fn(),
+  builtInColorSchemes: {
+    dracula: {
+      bgcolor: '#1',
+      darkbg: '#2',
+      borderc: '#3',
+      selected: '#4',
+      draculared: '#5',
+      textcolor: '#6',
+      textcolor2: '#7',
+      darkBorderc: '#8',
+      darkbutton: '#9',
+      type: 'dark',
+    },
+  },
   updateColorScheme: vi.fn(),
   updateTextThemeAndCSS: vi.fn(),
 }))
@@ -286,7 +300,7 @@ import { alertConfirm } from 'src/ts/alert'
 import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import { additionalFloatingActionButtons } from 'src/ts/stores.svelte'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
-import { changeColorScheme, updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
+import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
 import { appendCurrentChatUserMessageForSend, prepareCompatibleChatUpdateScoped } from 'src/ts/chatCommands'
 import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
@@ -336,7 +350,11 @@ beforeEach(async () => {
   vi.mocked(appendCurrentChatUserMessageForSend).mockReset()
   vi.mocked(processSendChat).mockReset()
   vi.mocked(dispatchDurableServerBackedSettingsPatch).mockReset()
-  vi.mocked(changeColorScheme).mockReset()
+  vi.mocked(dispatchDurableServerBackedSettingsPatch).mockResolvedValue({
+    status: 'ok',
+    revision: 1,
+    event: { type: 'settings.updated', revision: 1, resource: 'settings' },
+  })
   vi.mocked(updateColorScheme).mockReset()
   vi.mocked(updateTextThemeAndCSS).mockReset()
   vi.mocked(registerMCPModule).mockReset()
@@ -611,11 +629,53 @@ describe('V3 plugin settings rollback', () => {
     mockServerCommands.canUse = true
     const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
 
-    api.changeColorScheme('dracula')
+    void api.changeColorScheme('dracula')
 
-    expect(changeColorScheme).toHaveBeenCalledOnce()
-    expect(changeColorScheme).toHaveBeenCalledWith('dracula')
-    expect(dispatchDurableServerBackedSettingsPatch).not.toHaveBeenCalled()
+    expect(dispatchDurableServerBackedSettingsPatch).toHaveBeenCalledOnce()
+    expect(dispatchDurableServerBackedSettingsPatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        patch: expect.objectContaining({ colorSchemeName: 'dracula' }),
+      }),
+    )
+  })
+
+  it('does not resolve a theme mutation before its durable command settles', async () => {
+    mockServerCommands.canUse = true
+    ;(mockDbState.db as any).textTheme = 'standard'
+    let resolveCommand!: (value: any) => void
+    vi.mocked(dispatchDurableServerBackedSettingsPatch).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCommand = resolve
+      }),
+    )
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+    let settled = false
+
+    const mutation = api.changeTextTheme('highcontrast').then(() => {
+      settled = true
+    })
+    await Promise.resolve()
+
+    expect(settled).toBe(false)
+    resolveCommand({
+      status: 'ok',
+      revision: 2,
+      event: { type: 'settings.updated', revision: 2, resource: 'settings' },
+    })
+    await mutation
+    expect(settled).toBe(true)
+  })
+
+  it('rejects a theme mutation after a terminal settings failure', async () => {
+    mockServerCommands.canUse = true
+    ;(mockDbState.db as any).textTheme = 'standard'
+    vi.mocked(dispatchDurableServerBackedSettingsPatch).mockResolvedValueOnce({
+      status: 'error',
+      error: 'theme rejected',
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    await expect(api.changeTextTheme('highcontrast')).rejects.toThrow('theme rejected')
   })
 
   it('I-12: keeps a newer theme value when a failed plugin settings rollback is stale', () => {
