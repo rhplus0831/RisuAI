@@ -6372,6 +6372,9 @@ describe('server command API adapter', () => {
         baseRevision: 1,
         messageId: 'msg-a',
         patch: { data: 'edited', disabled: true },
+        expectedData: 'hello',
+        expectedChatId: 'chat-a',
+        expectedGenerationId: 'gen-a',
         optimisticChatId: 'chat-a',
         optimisticChatBodyProjectionEpoch: 11,
       }),
@@ -6473,6 +6476,9 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 1,
           patch: { data: 'edited', disabled: true },
+          expectedData: 'hello',
+          expectedChatId: 'chat-a',
+          expectedGenerationId: 'gen-a',
         },
       },
       {

@@ -9203,6 +9203,80 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
     expect(chatAAfter).toHaveLength(chatABefore.length + 1)
   })
 
+  it('conditionally finalizes a generated message only while its owner, generation, and text still match', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A',
+              note: '',
+              localLore: [],
+              message: [
+                {
+                  role: 'char',
+                  data: '<ImgGen="cat">',
+                  chatId: 'message-a',
+                  generationInfo: { generationId: 'generation-a' },
+                },
+              ],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const wrongCondition = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/message-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { data: '{{inlay::asset-a}}' },
+        expectedData: 'different source',
+        expectedChatId: 'chat-a',
+        expectedGenerationId: 'generation-a',
+      },
+    })
+    expect(wrongCondition.statusCode).toBe(400)
+
+    const finalized = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/message-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { data: '{{inlay::asset-a}}' },
+        expectedData: '<ImgGen="cat">',
+        expectedChatId: 'chat-a',
+        expectedGenerationId: 'generation-a',
+      },
+    })
+    expect(finalized.statusCode).toBe(200)
+
+    const staleFinalization = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/message-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: finalized.json().revision,
+        patch: { data: '{{inlay::asset-stale}}' },
+        expectedData: '<ImgGen="cat">',
+        expectedChatId: 'chat-a',
+        expectedGenerationId: 'generation-a',
+      },
+    })
+    expect(staleFinalization.statusCode).toBe(400)
+    expect((await persistedChatMessages(harness.app, assertion, 'chat-a'))[0].data).toBe('{{inlay::asset-a}}')
+  })
+
   it('updates, deletes, truncates, and replaces target chat rows without touching unrelated chats', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     let revision = await importDatabase(harness.app, assertion, {

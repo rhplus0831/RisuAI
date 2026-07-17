@@ -988,6 +988,17 @@ interface MessageCommandBody {
   afterMessageId?: unknown
   preserveRemovedAsAlternates?: unknown
   generationResult?: unknown
+  expectedData?: unknown
+  expectedChatId?: unknown
+  expectedGenerationId?: unknown
+}
+
+function readOptionalMessageCondition(value: unknown, label: string, allowEmpty = false): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || (!allowEmpty && value.trim() === '')) {
+    throw new ValidationError(`${label} must be ${allowEmpty ? 'a string' : 'a non-empty string'} when provided`)
+  }
+  return value
 }
 
 function readOptionalBooleanFlag(value: unknown, label: string): boolean {
@@ -5873,6 +5884,9 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readMessagePatch(body.patch)
+      const expectedData = readOptionalMessageCondition(body.expectedData, 'expectedData', true)
+      const expectedChatId = readOptionalMessageCondition(body.expectedChatId, 'expectedChatId')
+      const expectedGenerationId = readOptionalMessageCondition(body.expectedGenerationId, 'expectedGenerationId')
       const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
         db,
         dataDir,
@@ -5893,6 +5907,18 @@ export function registerCommandRoutes(
           }
           const { location } = resolved
           requireChatLocation(characters, location.chatId)
+          const liveGenerationInfo = location.message.generationInfo
+          const liveGenerationId =
+            liveGenerationInfo && typeof liveGenerationInfo === 'object' && !Array.isArray(liveGenerationInfo)
+              ? (liveGenerationInfo as Record<string, unknown>).generationId
+              : undefined
+          if (
+            (expectedData !== undefined && location.message.data !== expectedData) ||
+            (expectedChatId !== undefined && location.chatId !== expectedChatId) ||
+            (expectedGenerationId !== undefined && liveGenerationId !== expectedGenerationId)
+          ) {
+            throw new ValidationError('message finalization precondition no longer matches')
+          }
           const updated = updateActiveMessageById(targetDb, messageId, patch)
           if (updated.ok === false) {
             if (updated.reason === 'ambiguous') {

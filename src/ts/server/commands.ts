@@ -1505,6 +1505,9 @@ export interface AppendMessageCommandInput extends ChatCommandInput {
 export interface UpdateMessageCommandInput extends ChatCommandInput {
   messageId: string
   patch: MessageSnapshot
+  expectedData?: string
+  expectedChatId?: string
+  expectedGenerationId?: string
   optimisticChatId?: string
   optimisticChatBodyProjectionEpoch?: number
 }
@@ -4861,6 +4864,9 @@ export async function updateMessageCommand(
     body: {
       baseRevision: input.baseRevision,
       patch: input.patch,
+      ...(input.expectedData !== undefined ? { expectedData: input.expectedData } : {}),
+      ...(input.expectedChatId !== undefined ? { expectedChatId: input.expectedChatId } : {}),
+      ...(input.expectedGenerationId !== undefined ? { expectedGenerationId: input.expectedGenerationId } : {}),
     },
     signal,
     readLocalEffect: (body, event) =>

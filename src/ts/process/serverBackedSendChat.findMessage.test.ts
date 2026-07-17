@@ -19,9 +19,16 @@ vi.mock('./modules', async (importActual) => {
 const inlayMock = vi.hoisted(() => ({
   run: vi.fn((_character: unknown, data: string) => ({ text: data }) as { text: string; promise?: Promise<string> }),
 }))
+const inlayFinalizationMock = vi.hoisted(() => ({
+  finalize: vi.fn(async () => true),
+}))
 
 vi.mock('./inlayScreen', () => ({
   runInlayScreen: inlayMock.run,
+}))
+
+vi.mock('./inlayFinalization', () => ({
+  finalizeServerBackedInlayMessage: inlayFinalizationMock.finalize,
 }))
 
 import { applyServerBackedTerminal, findGeneratedAssistantMessage } from './serverBackedSendChat'
@@ -201,6 +208,8 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     resetRerollNavigation()
     inlayMock.run.mockReset()
     inlayMock.run.mockImplementation((_character: unknown, data: string) => ({ text: data }))
+    inlayFinalizationMock.finalize.mockReset()
+    inlayFinalizationMock.finalize.mockResolvedValue(true)
   })
 
   afterEach(() => {
@@ -256,6 +265,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     await applying
 
     expect(target.message[0].data).toBe('newer saved edit')
+    expect(inlayFinalizationMock.finalize).not.toHaveBeenCalled()
   })
 
   it('uses the intent epoch to reject edit-away-then-back inlay races', async () => {
@@ -282,6 +292,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     await applying
 
     expect(target.message[0].data).toBe('[Generating...]')
+    expect(inlayFinalizationMock.finalize).not.toHaveBeenCalled()
   })
 
   it('applies an unchanged inlay completion exactly once', async () => {
@@ -305,6 +316,57 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     await applying
 
     expect(target.message[0].data).toBe('{{inlay::asset-current}}')
+    expect(inlayFinalizationMock.finalize).toHaveBeenCalledWith({
+      chatId: 'chat-target',
+      messageId: 'gen-stable',
+      generationId: 'gen-stable',
+      expectedData: '<ImgGen="cat">',
+      finalData: '{{inlay::asset-current}}',
+    })
+  })
+
+  it('persists an immediate emotion transformation before keeping it visible', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    inlayMock.run.mockReturnValueOnce({ text: 'reply {{emotion::happy}}' })
+
+    await applyServerBackedTerminal({
+      terminal: { status: 'done', done: { postGeneration: { finalText: 'reply <Emotion="happy">' } } },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(inlayFinalizationMock.finalize).toHaveBeenCalledWith({
+      chatId: 'chat-target',
+      messageId: 'gen-stable',
+      generationId: 'gen-stable',
+      expectedData: 'reply <Emotion="happy">',
+      finalData: 'reply {{emotion::happy}}',
+    })
+    expect(target.message[0].data).toBe('reply {{emotion::happy}}')
+  })
+
+  it('restores authoritative model text when an inlay finalization fails', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    inlayMock.run.mockReturnValueOnce({ text: 'reply {{emotion::happy}}' })
+    inlayFinalizationMock.finalize.mockResolvedValueOnce(false)
+
+    await applyServerBackedTerminal({
+      terminal: { status: 'done', done: { postGeneration: { finalText: 'reply <Emotion="happy">' } } },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(target.message[0].data).toBe('reply <Emotion="happy">')
   })
 
   it('seeds live reroll navigation from terminal multi-generation choices', async () => {

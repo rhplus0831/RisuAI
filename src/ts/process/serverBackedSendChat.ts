@@ -25,6 +25,7 @@ import { seedRerollBufferFromAlternates } from './rerollNavigation.svelte'
 import { sayTTS } from './tts'
 import { captureChatBodyProjectionEpoch, hasChatBodyProjectionEpochChanged } from '../server/resourceState.svelte'
 import { captureChatMessageMutationIntentEpoch } from '../server/chatMessageMutationIntent'
+import { finalizeServerBackedInlayMessage } from './inlayFinalization'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -552,15 +553,15 @@ export async function applyServerBackedTerminal(args: {
   const resendChat = !!postGen?.resendChat
   const generationId = args.generationInfo.generationId ?? ''
   const terminalTarget = targetFromPayloadOrContext(postGen?.messagePatch, contextTarget)
-  let pendingInlay:
-    | {
-        promise: Promise<string>
-        messageId: string
-        expectedData: string
-        mutationIntentEpoch: number
-        projectionEpoch: number
-      }
-    | undefined
+  type InlayFinalizationState = {
+    messageId: string
+    expectedServerData: string
+    expectedProjectionData: string
+    mutationIntentEpoch: number
+    projectionEpoch: number
+  }
+  let immediateInlay: InlayFinalizationState | undefined
+  let pendingInlay: (InlayFinalizationState & { promise: Promise<string> }) | undefined
   withTrustedResourceWrite(() => {
     const resolution = resolveServerBackedLiveChat({
       selectedChar: args.selectedChar,
@@ -583,24 +584,70 @@ export async function applyServerBackedTerminal(args: {
       const inlay = runInlayScreen(resolution.character, baseText)
       assistant.data = inlay.text
       const messageId = assistant.chatId ?? args.targetMessageId ?? generationId
-      if (inlay.promise && messageId) {
-        pendingInlay = {
-          promise: inlay.promise,
+      if (inlay.text !== baseText && messageId && generationId) {
+        const finalization = {
           messageId,
-          expectedData: inlay.text,
+          expectedServerData: baseText,
+          expectedProjectionData: inlay.text,
           mutationIntentEpoch: captureChatMessageMutationIntentEpoch(terminalTarget.chatId),
           projectionEpoch: captureChatBodyProjectionEpoch(terminalTarget.chatId),
+        }
+        if (inlay.promise) {
+          pendingInlay = { ...finalization, promise: inlay.promise }
+        } else {
+          immediateInlay = finalization
         }
       }
     }
   })
+
+  const settleInlayProjection = (finalization: InlayFinalizationState, finalData: string, persisted: boolean): void => {
+    withTrustedResourceWrite(() => {
+      if (captureChatMessageMutationIntentEpoch(terminalTarget.chatId) !== finalization.mutationIntentEpoch) {
+        return
+      }
+      const resolution = resolveServerBackedLiveChat({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        characterId: terminalTarget.characterId,
+        chatId: terminalTarget.chatId,
+      })
+      const assistant = resolution?.chat.message.find(
+        (message) => message.chatId === finalization.messageId && message.role === 'char',
+      )
+      if (!assistant) return
+      if (assistant.data !== finalization.expectedProjectionData && assistant.data !== finalData) return
+      assistant.data = persisted ? finalData : finalization.expectedServerData
+    })
+  }
+
+  if (immediateInlay) {
+    const persisted = await finalizeServerBackedInlayMessage({
+      chatId: terminalTarget.chatId,
+      messageId: immediateInlay.messageId,
+      generationId,
+      expectedData: immediateInlay.expectedServerData,
+      finalData: immediateInlay.expectedProjectionData,
+    })
+    settleInlayProjection(immediateInlay, immediateInlay.expectedProjectionData, persisted)
+  }
+
   if (pendingInlay) {
-    const resolved = await pendingInlay.promise
+    let resolved = ''
+    let promiseFailed = false
+    try {
+      resolved = await pendingInlay.promise
+    } catch {
+      settleInlayProjection(pendingInlay, pendingInlay.expectedServerData, false)
+      promiseFailed = true
+    }
+    let canFinalize = !promiseFailed
     withTrustedResourceWrite(() => {
       if (
         captureChatMessageMutationIntentEpoch(terminalTarget.chatId) !== pendingInlay!.mutationIntentEpoch ||
         hasChatBodyProjectionEpochChanged(terminalTarget.chatId, pendingInlay!.projectionEpoch)
       ) {
+        canFinalize = false
         return
       }
       const resolution = resolveServerBackedLiveChat({
@@ -613,10 +660,18 @@ export async function applyServerBackedTerminal(args: {
       const assistant = liveChat
         ? liveChat.message.find((message) => message.chatId === pendingInlay!.messageId && message.role === 'char')
         : undefined
-      if (assistant && assistant.data === pendingInlay!.expectedData) {
-        assistant.data = resolved
-      }
+      if (!assistant || assistant.data !== pendingInlay!.expectedProjectionData) canFinalize = false
     })
+    if (canFinalize) {
+      const persisted = await finalizeServerBackedInlayMessage({
+        chatId: terminalTarget.chatId,
+        messageId: pendingInlay.messageId,
+        generationId,
+        expectedData: pendingInlay.expectedServerData,
+        finalData: resolved,
+      })
+      settleInlayProjection(pendingInlay, resolved, persisted)
+    }
   }
 
   const providerAlternates = args.terminal.done?.alternates
