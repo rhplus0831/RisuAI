@@ -81,7 +81,8 @@
   let branchGraphHydrationRun = 0
 
   // Preserve source order and each chat's original array index within folder buckets.
-  let chatsByFolderId = $derived(groupChatsByFolderId(chara.chats))
+  let validChatFolderIds = $derived(new Set(chara.chatFolders.map((folder) => folder.id)))
+  let chatsByFolderId = $derived(groupChatsByFolderId(chara.chats, validChatFolderIds))
   let organizerIdsStable = $derived(hasStableOrganizationIds())
 
   let chatRouteOpen = $derived(
@@ -1117,116 +1118,114 @@
           {/each}
         </div>
         <div data-risu-sidebar-chat-sortable-list class="flex flex-col">
-          {#each chara.chats as chat, i}
-            {#if chat.folderId == null}
-              <!-- svelte-ignore a11y_click_events_have_key_events -->
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div
-                data-risu-chat-idx={i}
-                data-risu-chat-id={chat.id ?? ''}
-                data-risu-chat-folder-id={chat.folderId ?? ''}
-                data-risu-chat-selected={i === chara.chatPage ? 'true' : 'false'}
-                class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
-                class:bg-selected={i === chara.chatPage}
-                onclick={() => activateChatRow(i)}>
-                {#if editMode}
-                  <TextInput
-                    bind:value={() => chat.name, (value) => updateChatName(chat, value)}
-                    className="grow min-w-0"
-                    ariaLabel={`${language.edit}: ${chat.name}`}
-                    padding={false} />
-                {:else}
+          {#each chatsByFolderId.get('') ?? [] as { chat, index }}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              data-risu-chat-idx={index}
+              data-risu-chat-id={chat.id ?? ''}
+              data-risu-chat-folder-id={chat.folderId ?? ''}
+              data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
+              class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
+              class:bg-selected={index === chara.chatPage}
+              onclick={() => activateChatRow(index)}>
+              {#if editMode}
+                <TextInput
+                  bind:value={() => chat.name, (value) => updateChatName(chat, value)}
+                  className="grow min-w-0"
+                  ariaLabel={`${language.edit}: ${chat.name}`}
+                  padding={false} />
+              {:else}
+                <button
+                  type="button"
+                  data-risu-chat-action="select"
+                  aria-current={index === chara.chatPage ? 'page' : undefined}
+                  class="min-w-0 grow cursor-pointer text-left"
+                  onclick={(event) => {
+                    event.stopPropagation()
+                    activateChatRow(index)
+                  }}>
+                  <span>{chat.name}</span>
+                </button>
+              {/if}
+              <div class="ml-auto flex shrink-0 justify-end">
+                {#if editMode && chat.id && organizerIdsStable}
                   <button
                     type="button"
-                    data-risu-chat-action="select"
-                    aria-current={i === chara.chatPage ? 'page' : undefined}
-                    class="min-w-0 grow cursor-pointer text-left"
+                    data-risu-chat-action="organize"
+                    data-risu-chat-organizer-action={chat.id}
+                    aria-label={`${language.options}: ${chat.name}`}
+                    class="sr-only"
                     onclick={(event) => {
                       event.stopPropagation()
-                      activateChatRow(i)
+                      void openChatOrganizerActions(chat, event.currentTarget)
                     }}>
-                    <span>{chat.name}</span>
+                    {language.options}
                   </button>
                 {/if}
-                <div class="ml-auto flex shrink-0 justify-end">
-                  {#if editMode && chat.id && organizerIdsStable}
-                    <button
-                      type="button"
-                      data-risu-chat-action="organize"
-                      data-risu-chat-organizer-action={chat.id}
-                      aria-label={`${language.options}: ${chat.name}`}
-                      class="sr-only"
-                      onclick={(event) => {
-                        event.stopPropagation()
-                        void openChatOrganizerActions(chat, event.currentTarget)
-                      }}>
-                      {language.options}
-                    </button>
-                  {/if}
-                  <button
-                    type="button"
-                    data-risu-chat-action="options"
-                    aria-label={`${language.chatOptions}: ${chat.name}`}
-                    aria-busy={pendingPersonaBindings[chat.id ?? ''] ?? false}
-                    aria-disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
-                    disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
-                    class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                    class:opacity-50={pendingPersonaBindings[chat.id ?? '']}
-                    onclick={async (e) => {
-                      e.stopPropagation()
-                      if (pendingPersonaBindings[chat.id ?? '']) return
-                      const option = await alertChatOptions()
-                      switch (option) {
-                        case 0: {
-                          await forkChat(chat)
-                          break
-                        }
-                        case 1: {
-                          await togglePersonaBinding(chat.id)
-                          break
-                        }
+                <button
+                  type="button"
+                  data-risu-chat-action="options"
+                  aria-label={`${language.chatOptions}: ${chat.name}`}
+                  aria-busy={pendingPersonaBindings[chat.id ?? ''] ?? false}
+                  aria-disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
+                  disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
+                  class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
+                  class:opacity-50={pendingPersonaBindings[chat.id ?? '']}
+                  onclick={async (e) => {
+                    e.stopPropagation()
+                    if (pendingPersonaBindings[chat.id ?? '']) return
+                    const option = await alertChatOptions()
+                    switch (option) {
+                      case 0: {
+                        await forkChat(chat)
+                        break
                       }
-                    }}>
-                    <MenuIcon size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    data-risu-chat-action="edit"
-                    aria-label={`${language.edit}: ${chat.name}`}
-                    class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                    onclick={(e) => {
-                      e.stopPropagation()
-                      editMode = !editMode
-                    }}>
-                    <PencilIcon size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    data-risu-chat-action="export"
-                    aria-label={`${language.export}: ${chat.name}`}
-                    class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                    onclick={async (e) => {
-                      e.stopPropagation()
-                      if (chara.chaId && chat.id) {
-                        exportChat({ characterId: chara.chaId, chatId: chat.id })
+                      case 1: {
+                        await togglePersonaBinding(chat.id)
+                        break
                       }
-                    }}>
-                    <DownloadIcon size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    data-risu-chat-action="delete"
-                    aria-label={`${language.remove}: ${chat.name}`}
-                    class="text-textcolor2 hover:text-green-500 cursor-pointer"
-                    onclick={async (e) => {
-                      e.stopPropagation()
-                      await deleteChat(chat, i)
-                    }}>
-                    <TrashIcon size={18} />
-                  </button>
-                </div>
+                    }
+                  }}>
+                  <MenuIcon size={18} />
+                </button>
+                <button
+                  type="button"
+                  data-risu-chat-action="edit"
+                  aria-label={`${language.edit}: ${chat.name}`}
+                  class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
+                  onclick={(e) => {
+                    e.stopPropagation()
+                    editMode = !editMode
+                  }}>
+                  <PencilIcon size={18} />
+                </button>
+                <button
+                  type="button"
+                  data-risu-chat-action="export"
+                  aria-label={`${language.export}: ${chat.name}`}
+                  class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
+                  onclick={async (e) => {
+                    e.stopPropagation()
+                    if (chara.chaId && chat.id) {
+                      exportChat({ characterId: chara.chaId, chatId: chat.id })
+                    }
+                  }}>
+                  <DownloadIcon size={18} />
+                </button>
+                <button
+                  type="button"
+                  data-risu-chat-action="delete"
+                  aria-label={`${language.remove}: ${chat.name}`}
+                  class="text-textcolor2 hover:text-green-500 cursor-pointer"
+                  onclick={async (e) => {
+                    e.stopPropagation()
+                    await deleteChat(chat, index)
+                  }}>
+                  <TrashIcon size={18} />
+                </button>
               </div>
-            {/if}
+            </div>
           {/each}
         </div>
       </div>

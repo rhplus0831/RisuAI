@@ -54,6 +54,23 @@ describe('groupChatsByFolderId', () => {
     expect(groups.get('')).toHaveLength(2)
   })
 
+  it('classifies chats with unknown folder references as ungrouped', () => {
+    const chats: TestChat[] = [
+      { id: 'valid', folderId: 'f1' },
+      { id: 'orphan', folderId: 'missing' },
+      { id: 'root', folderId: null },
+    ]
+
+    const groups = groupChatsByFolderId(chats, new Set(['f1']))
+
+    expect(groups.get('f1')).toEqual([{ chat: chats[0], index: 0 }])
+    expect(groups.get('missing')).toBeUndefined()
+    expect(groups.get('')).toEqual([
+      { chat: chats[1], index: 1 },
+      { chat: chats[2], index: 2 },
+    ])
+  })
+
   it('returns an empty map for no chats', () => {
     expect(groupChatsByFolderId([]).size).toBe(0)
   })

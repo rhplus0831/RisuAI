@@ -622,6 +622,23 @@ describe('SideChatList DOM contract harness', () => {
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
   })
 
+  it('renders a chat with an orphaned folder reference in the root list', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chats.push(makeChat('chat-orphan', 'Recovered Chat', 'missing-folder'))
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual([
+      'chat-foldered',
+      'chat-root-a',
+      'chat-root-b',
+      'chat-orphan',
+    ])
+    expect(rowByChatId('chat-orphan').dataset.risuChatIdx).toBe('3')
+    expect(selectButtonForRow(rowByChatId('chat-orphan')).textContent).toContain('Recovered Chat')
+  })
+
   it('keeps sortable sidebar lists outside transcript custom-style hooks', async () => {
     seedSidebarDatabase()
     component = mount(SideChatListHarness, { target })
