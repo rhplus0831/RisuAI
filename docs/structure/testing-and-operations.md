@@ -151,15 +151,17 @@ Fastify test directory; use it to find command/persistence, generation, memory,
 provider, job, asset/import, and platform/route coverage.
 
 Config details: root Vitest uses `happy-dom`, browser resolve conditions, the
-`src` alias, and `vitest.setup.ts` to mock `katex` and define
-`safeStructuredClone`. It excludes explicit gate tests unless
+`src` alias, and `vitest.setup.ts` to mock `katex` and install the shared
+production `safeStructuredClone` helper. `vitest.setup.test.ts` protects its
+native, fallback, and global-restoration semantics. Root Vitest excludes
+explicit gate tests unless
 `RISU_TEST_INCLUDE_GATES=true` is set. `pnpm test:gates`, the
 `pnpm test:gates:*` sub-lanes, `pnpm test:frontend:all`, and
 `pnpm coverage:frontend` set that variable for the lanes that intentionally
 include those files. Server Vitest uses Node, forks, a 15s test timeout, and
 sets `RISU_DIRECT_REALM_IMPORT_TEST` only when the Realm import test is directly
 selected. Playwright smoke is serial, one-worker Chromium with trace retained on
-failure.
+failure, and rejects focused tests when CI is truthy.
 
 `pnpm coverage:frontend` and `pnpm coverage:backend` are broad coverage views for
 coverage analysis. `pnpm coverage:all` runs both sides and still executes backend
@@ -320,8 +322,9 @@ Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
 `.github/workflows/quality.yml` is the only current workflow. Pull requests and
 pushes to `main` use Node 24 and pnpm 10, install Chromium with Playwright
 dependencies, and run `pnpm test:all`; that single command covers formatting,
-Svelte/TypeScript checking, frontend tests, explicit gates, UI coverage, server
-tests, and browser smoke.
+Svelte/browser checking, client-library declaration emission, strict Fastify
+TypeScript checking, frontend tests, explicit gates, UI coverage, server tests,
+and browser smoke.
 
 `Dockerfile` uses Node 24 slim, installs pnpm through Corepack, builds the web
 client with plain `pnpm build` rather than `build:site`, copies `server/` and
