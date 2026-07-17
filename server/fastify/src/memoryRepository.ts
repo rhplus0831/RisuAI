@@ -108,6 +108,8 @@ export interface MemoryJobListItem {
   status: MemoryJobStatus
   attemptCount: number
   maxAttempts: number
+  error: string | null
+  updatedAt: string
 }
 
 export interface CreateMemoryJobInput {
@@ -439,7 +441,10 @@ export function mapMemoryJobRow(row: MemoryJobRow): MemoryJob {
 }
 
 function mapMemoryJobListItemRow(
-  row: Pick<MemoryJobRow, 'id' | 'chat_id' | 'kind' | 'status' | 'attempt_count' | 'max_attempts'>,
+  row: Pick<
+    MemoryJobRow,
+    'id' | 'chat_id' | 'kind' | 'status' | 'attempt_count' | 'max_attempts' | 'error' | 'updated_at'
+  >,
 ): MemoryJobListItem {
   return {
     id: row.id,
@@ -448,6 +453,8 @@ function mapMemoryJobListItemRow(
     status: requireJobStatus(row.status),
     attemptCount: row.attempt_count,
     maxAttempts: row.max_attempts,
+    error: row.error,
+    updatedAt: row.updated_at,
   }
 }
 
@@ -1016,9 +1023,11 @@ export function listMemoryJobItems(
     values.push(...statuses)
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-  const rows = allRows<Pick<MemoryJobRow, 'id' | 'chat_id' | 'kind' | 'status' | 'attempt_count' | 'max_attempts'>>(
+  const rows = allRows<
+    Pick<MemoryJobRow, 'id' | 'chat_id' | 'kind' | 'status' | 'attempt_count' | 'max_attempts' | 'error' | 'updated_at'>
+  >(
     db.prepare(`
-        SELECT id, chat_id, kind, status, attempt_count, max_attempts
+        SELECT id, chat_id, kind, status, attempt_count, max_attempts, error, updated_at
         FROM memory_jobs
         ${where}
         ORDER BY created_at, id

@@ -74,4 +74,33 @@ describe('Server memory job keyboard navigation', () => {
     expect(refreshButton?.title).toBe(language.hypaV3Modal.refreshMemoryJobsAction)
     expect(cancelButton?.tabIndex).toBe(0)
   })
+
+  it('keeps failed jobs visible with their error and no cancel action', async () => {
+    if (component) unmount(component)
+    component = undefined
+    target.replaceChildren()
+    jobMocks.listJobs.mockReset()
+    jobMocks.listJobs.mockResolvedValue({
+      status: 'ok',
+      jobs: [
+        {
+          id: 'job-failed',
+          chatId: 'chat-1',
+          kind: 'summarize',
+          status: 'failed',
+          attemptCount: 3,
+          maxAttempts: 3,
+          error: 'provider authentication failed',
+          updatedAt: '2026-06-01T00:00:00.000Z',
+        },
+      ],
+    })
+    component = mount(ServerMemoryJobs, { target, props: { chatId: 'chat-1' } })
+
+    await vi.waitFor(() => {
+      expect(target.querySelector('[data-memory-job-error]')?.textContent).toContain('provider authentication failed')
+    })
+    expect(target.querySelector('button[title="Cancel job"]')).toBeNull()
+    expect(target.textContent).not.toContain('No pending or running memory jobs.')
+  })
 })

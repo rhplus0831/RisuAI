@@ -205,6 +205,12 @@ function parseMemoryEvent(data: string): ServerMemoryEvent | null {
       status: jobRecord.status,
       attemptCount: jobRecord.attemptCount as number,
       maxAttempts: jobRecord.maxAttempts as number,
+      ...(jobRecord.error === null
+        ? { error: null }
+        : typeof jobRecord.error === 'string'
+          ? { error: jobRecord.error }
+          : {}),
+      ...(typeof jobRecord.updatedAt === 'string' ? { updatedAt: jobRecord.updatedAt } : {}),
     },
   }
 

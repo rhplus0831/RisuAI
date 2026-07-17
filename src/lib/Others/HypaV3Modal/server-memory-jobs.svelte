@@ -24,8 +24,6 @@
   let refreshController: MemoryJobRefreshController | null = null
   let unsubscribeMemoryEvents: (() => void) | null = null
 
-  const activeJobs = $derived(jobs.filter((job) => job.status === 'pending' || job.status === 'running'))
-
   function kindLabel(kind: ServerMemoryJob['kind']): string {
     switch (kind) {
       case 'chunk':
@@ -40,6 +38,8 @@
   function statusClass(status: ServerMemoryJob['status']): string {
     if (status === 'running') return 'text-emerald-300 bg-emerald-950/60 border-emerald-800'
     if (status === 'pending') return 'text-sky-300 bg-sky-950/60 border-sky-800'
+    if (status === 'failed') return 'text-rose-300 bg-rose-950/60 border-rose-800'
+    if (status === 'completed') return 'text-emerald-300 bg-emerald-950/60 border-emerald-800'
     return 'text-zinc-300 bg-zinc-950/60 border-zinc-700'
   }
 
@@ -164,13 +164,13 @@
     <div class="mt-3 rounded-sm border border-rose-900/70 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
       {error}
     </div>
-  {:else if activeJobs.length === 0}
+  {:else if jobs.length === 0}
     <div class="mt-3 rounded-sm border border-zinc-700 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-400">
       No pending or running memory jobs.
     </div>
   {:else}
     <div class="mt-3 flex flex-col gap-2">
-      {#each activeJobs as job (job.id)}
+      {#each jobs as job (job.id)}
         <div
           class="flex flex-col gap-3 rounded-sm border border-zinc-700 bg-zinc-900/70 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
@@ -186,16 +186,23 @@
             <div class="mt-1 truncate text-xs text-zinc-500" title={job.id}>
               {job.id}
             </div>
+            {#if job.status === 'failed' && job.error}
+              <div class="mt-2 whitespace-pre-wrap break-words text-xs text-rose-300" data-memory-job-error>
+                {job.error}
+              </div>
+            {/if}
           </div>
 
-          <button
-            class="inline-flex items-center justify-center gap-2 rounded-sm border border-rose-900/80 px-3 py-2 text-sm text-rose-200 transition-colors hover:bg-rose-950/60 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={cancellingJobIds.has(job.id)}
-            onclick={() => void cancelJob(job.id)}
-            title="Cancel job">
-            <XIcon class="h-4 w-4" />
-            {cancellingJobIds.has(job.id) ? 'Cancelling' : 'Cancel'}
-          </button>
+          {#if job.status === 'pending' || job.status === 'running'}
+            <button
+              class="inline-flex items-center justify-center gap-2 rounded-sm border border-rose-900/80 px-3 py-2 text-sm text-rose-200 transition-colors hover:bg-rose-950/60 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={cancellingJobIds.has(job.id)}
+              onclick={() => void cancelJob(job.id)}
+              title="Cancel job">
+              <XIcon class="h-4 w-4" />
+              {cancellingJobIds.has(job.id) ? 'Cancelling' : 'Cancel'}
+            </button>
+          {/if}
         </div>
       {/each}
     </div>

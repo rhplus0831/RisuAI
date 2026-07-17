@@ -159,7 +159,7 @@ describe('memory job refresh controller', () => {
     pendingList.resolve({ status: 'ok', jobs: [job('running', 'job-1')] })
     await refresh
 
-    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([[], []])
+    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], ['job-1']])
     controller.dispose()
   })
 
@@ -184,7 +184,7 @@ describe('memory job refresh controller', () => {
     await controller.refresh()
 
     expect(listJobs).toHaveBeenNthCalledWith(2, 'chat-1', expect.any(AbortSignal), '"jobs-a"')
-    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], [], []])
+    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], ['job-1'], ['job-1']])
     controller.dispose()
   })
 
@@ -205,7 +205,29 @@ describe('memory job refresh controller', () => {
     expect(controller.applyJobUpdate(job('cancelled', 'job-1'))).toBe(true)
     expect(controller.applyJobUpdate(job('running', 'job-1'))).toBe(false)
 
-    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], []])
+    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], ['job-1']])
+    controller.dispose()
+  })
+
+  it('retains a failed job and its server error', () => {
+    const seenJobs: ServerMemoryJob[][] = []
+    const controller = createMemoryJobRefreshController({
+      chatId: 'chat-1',
+      listJobs: vi.fn(),
+      onJobs: (jobs) => seenJobs.push(jobs),
+      onError: vi.fn(),
+      onClear: vi.fn(),
+      onLoading: vi.fn(),
+      now: () => NOW,
+    })
+    const failed = {
+      ...job('failed', 'job-1'),
+      error: 'provider authentication failed',
+      updatedAt: NOW.toISOString(),
+    }
+
+    expect(controller.applyJobUpdate(failed)).toBe(true)
+    expect(seenJobs.at(-1)).toEqual([failed])
     controller.dispose()
   })
 
@@ -253,7 +275,10 @@ describe('memory job refresh controller', () => {
     expect(controller.applyJobUpdate(job('running', 'job-1', 'chat-1'))).toBe(false)
     expect(controller.applyJobUpdate(job('running', 'job-1', 'chat-2'))).toBe(true)
 
-    expect(seenJobs.map((jobs) => jobs.map((entry) => `${entry.chatId}:${entry.id}`))).toEqual([[], ['chat-2:job-1']])
+    expect(seenJobs.map((jobs) => jobs.map((entry) => `${entry.chatId}:${entry.id}`))).toEqual([
+      ['chat-1:job-1'],
+      ['chat-2:job-1'],
+    ])
     controller.dispose()
   })
 

@@ -163,6 +163,8 @@ describe('memory worker lifecycle and dispatch', () => {
             status: 'completed',
             attemptCount: 1,
             maxAttempts: 3,
+            error: null,
+            updatedAt: expect.any(String),
           },
           sideEffect: {
             kind: 'hypav3_progress',

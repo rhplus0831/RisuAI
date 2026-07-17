@@ -17,7 +17,8 @@ export interface MemoryHypaV3ProgressSideEffect {
 export interface MemoryJobEvent {
   type: 'memory.job'
   chatId: string
-  job: Omit<MemoryJobListItem, 'chatId'>
+  job: Omit<MemoryJobListItem, 'chatId' | 'error' | 'updatedAt'> &
+    Partial<Pick<MemoryJobListItem, 'error' | 'updatedAt'>>
   sideEffect?: MemoryHypaV3ProgressSideEffect
 }
 
@@ -72,10 +73,22 @@ export function buildMemoryJobEvent(
       maxAttempts: job.maxAttempts,
     },
   }
+  if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+    event.job.error = sanitizeMemoryJobError(job.error)
+    event.job.updatedAt = job.updatedAt
+  }
   if (options.includeHypaV3Progress) {
     event.sideEffect = buildHypaV3ProgressSideEffect(job, options.queuedCount)
   }
   return event
+}
+
+export function sanitizeMemoryJobError(error: string | null): string | null {
+  if (!error) return null
+  return error
+    .slice(0, 1000)
+    .replace(/([?&](?:key|api[_-]?key|token|secret)=)[^&\s]+/giu, '$1[redacted]')
+    .replace(/((?:authorization|api[_ -]?key|token|secret)\s*[:=]\s*)(?:bearer\s+)?\S+/giu, '$1[redacted]')
 }
 
 export function buildHypaV3ProgressSideEffect(job: MemoryJob, queuedCount?: number): MemoryHypaV3ProgressSideEffect {

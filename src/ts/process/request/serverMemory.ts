@@ -54,6 +54,8 @@ export interface ServerMemoryJob {
   status: ServerMemoryJobStatus
   attemptCount: number
   maxAttempts: number
+  error?: string | null
+  updatedAt?: string
 }
 
 export interface ListServerMemoryJobsInput {
@@ -159,7 +161,9 @@ function isServerMemoryJob(value: unknown): value is ServerMemoryJob {
     ['chunk', 'embed', 'summarize'].includes(value.kind as string) &&
     ['pending', 'running', 'completed', 'failed', 'cancelled'].includes(value.status as string) &&
     isNonNegativeInteger(value.attemptCount) &&
-    isNonNegativeInteger(value.maxAttempts)
+    isNonNegativeInteger(value.maxAttempts) &&
+    (value.error === undefined || value.error === null || typeof value.error === 'string') &&
+    (value.updatedAt === undefined || typeof value.updatedAt === 'string')
   )
 }
 

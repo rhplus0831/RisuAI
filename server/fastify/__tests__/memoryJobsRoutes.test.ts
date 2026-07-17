@@ -211,7 +211,7 @@ describe('Phase 8-2e memory job routes', () => {
     ])
   })
 
-  it('lists active jobs by default and supports chat, kind, and status filters', async () => {
+  it('lists active and recent terminal jobs by default and supports filters', async () => {
     const chunkJob = await enqueue(harness.app, {
       chatId: 'chat-1',
       kind: 'chunk',
@@ -241,9 +241,10 @@ describe('Phase 8-2e memory job routes', () => {
     })
     expect(active.statusCode).toBe(200)
     const activeJobs = (active.json() as { jobs: MemoryJob[] }).jobs
-    expect(activeJobs).toHaveLength(2)
+    expect(activeJobs).toHaveLength(3)
     expect(activeJobs).toContainEqual(expect.objectContaining({ id: embedJob.id }))
     expect(activeJobs).toContainEqual(expect.objectContaining({ chatId: 'chat-1', kind: 'summarize' }))
+    expect(activeJobs).toContainEqual(expect.objectContaining({ id: chunkJob.id, status: 'cancelled' }))
     expect(activeJobs[0]).not.toHaveProperty('payload')
     expect(active.headers.etag).toEqual(expect.any(String))
 
@@ -255,6 +256,7 @@ describe('Phase 8-2e memory job routes', () => {
     expect(chatFiltered.statusCode).toBe(200)
     expect((chatFiltered.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
       { chatId: 'chat-1', kind: 'summarize', status: 'pending' },
+      { id: chunkJob.id, chatId: 'chat-1', kind: 'chunk', status: 'cancelled' },
     ])
 
     const kindFiltered = await harness.app.inject({
@@ -282,6 +284,40 @@ describe('Phase 8-2e memory job routes', () => {
     })
     expect(unchanged.statusCode).toBe(304)
     expect(unchanged.body).toBe('')
+  })
+
+  it('returns a failed job with a bounded, redacted error and completion time', async () => {
+    const db = openDatabase(harness.dataDir)
+    try {
+      createMemoryJob(db, {
+        id: 'failed-job',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        payload: {},
+        status: 'failed',
+        error: 'upstream failed at https://provider.test?key=provider-secret',
+        attemptCount: 3,
+        maxAttempts: 3,
+      })
+    } finally {
+      db.close()
+    }
+
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/jobs?chatId=chat-1',
+      headers: { 'risu-auth': assertion },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect((response.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
+      {
+        id: 'failed-job',
+        status: 'failed',
+        error: 'upstream failed at https://provider.test?key=[redacted]',
+        updatedAt: expect.any(String),
+      },
+    ])
   })
 
   it('L17: lists retained memory jobs after startup retention prunes old terminal rows', async () => {
@@ -353,6 +389,12 @@ describe('Phase 8-2e memory job routes', () => {
         kind: 'chunk',
         status: 'pending',
       },
+      {
+        id: 'recent-completed',
+        chatId: 'chat-1',
+        kind: 'chunk',
+        status: 'completed',
+      },
     ])
 
     const completed = await harness.app.inject({
@@ -404,6 +446,8 @@ describe('Phase 8-2e memory job routes', () => {
           status: 'cancelled',
           attemptCount: 0,
           maxAttempts: 3,
+          error: null,
+          updatedAt: expect.any(String),
         },
         sideEffect: {
           kind: 'hypav3_progress',

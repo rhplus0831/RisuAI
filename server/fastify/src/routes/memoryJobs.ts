@@ -14,7 +14,12 @@ import {
   type MemoryJobKind,
   type MemoryJobStatus,
 } from '../memoryRepository.js'
-import { buildMemoryJobEvent, emitMemoryEventSafely, type MemoryEventSink } from '../memoryEvents.js'
+import {
+  buildMemoryJobEvent,
+  emitMemoryEventSafely,
+  sanitizeMemoryJobError,
+  type MemoryEventSink,
+} from '../memoryEvents.js'
 import { ValidationError } from '../repository.js'
 
 interface CreateMemoryJobBody {
@@ -70,6 +75,19 @@ function badRequest(error: string): { error: string } {
 
 function memoryJobsEtag(jobs: unknown): string {
   return `"${createHash('sha256').update(JSON.stringify(jobs)).digest('base64url')}"`
+}
+
+const TERMINAL_JOB_HISTORY_LIMIT = 50
+
+function presentMemoryJobs(jobs: ReturnType<typeof listMemoryJobItems>, explicitStatus: boolean) {
+  const presented = jobs.map((job) => ({ ...job, error: sanitizeMemoryJobError(job.error) }))
+  if (explicitStatus) return presented
+  const active = presented.filter((job) => job.status === 'pending' || job.status === 'running')
+  const terminal = presented
+    .filter((job) => job.status !== 'pending' && job.status !== 'running')
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .slice(0, TERMINAL_JOB_HISTORY_LIMIT)
+  return [...active, ...terminal]
 }
 
 export function registerMemoryJobRoutes(
@@ -145,12 +163,14 @@ export function registerMemoryJobRoutes(
       return badRequest('status must be one of: pending, running, completed, failed, cancelled')
     }
 
-    const jobs = listMemoryJobItems(db, {
-      chatId: typeof query.chatId === 'string' ? query.chatId : undefined,
-      kind: isMemoryJobKind(query.kind) ? query.kind : undefined,
-      status: isMemoryJobStatus(query.status) ? query.status : undefined,
-      statuses: query.status === undefined ? ['pending', 'running'] : undefined,
-    })
+    const jobs = presentMemoryJobs(
+      listMemoryJobItems(db, {
+        chatId: typeof query.chatId === 'string' ? query.chatId : undefined,
+        kind: isMemoryJobKind(query.kind) ? query.kind : undefined,
+        status: isMemoryJobStatus(query.status) ? query.status : undefined,
+      }),
+      query.status !== undefined,
+    )
     const etag = memoryJobsEtag(jobs)
     reply.header('etag', etag)
     if (req.headers['if-none-match'] === etag) {
@@ -176,6 +196,8 @@ export function registerMemoryJobRoutes(
         status: job.status,
         attemptCount: job.attemptCount,
         maxAttempts: job.maxAttempts,
+        error: sanitizeMemoryJobError(job.error),
+        updatedAt: job.updatedAt,
       },
     }
   })

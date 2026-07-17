@@ -2,6 +2,7 @@ import type { ServerMemoryJob, ServerMemoryResult } from '../process/request/ser
 import { isTerminalMemoryJobStatus, recordTerminalMemoryJobUpdate } from './memoryJobOrdering'
 
 const DEFAULT_REFRESH_INTERVAL_MS = 5000
+const TERMINAL_JOB_HISTORY_LIMIT = 50
 
 type TimerHandle = ReturnType<typeof setInterval>
 
@@ -70,16 +71,28 @@ export function createMemoryJobRefreshController(
   }
 
   function normalizeJobs(jobs: readonly ServerMemoryJob[]): ServerMemoryJob[] {
-    const nextJobs: ServerMemoryJob[] = []
+    const nextJobs = new Map(
+      lastJobs.filter((job) => isTerminalMemoryJobStatus(job.status)).map((job) => [job.id, job]),
+    )
     for (const job of jobs) {
       if (job.chatId !== chatId) continue
       if (isTerminalMemoryJobStatus(job.status)) {
         recordTerminalJob(job)
+        nextJobs.set(job.id, job)
       } else if (!terminalJobIds.has(job.id)) {
-        nextJobs.push(job)
+        nextJobs.set(job.id, job)
       }
     }
-    return nextJobs
+    return boundTerminalHistory([...nextJobs.values()])
+  }
+
+  function boundTerminalHistory(jobs: readonly ServerMemoryJob[]): ServerMemoryJob[] {
+    const active = jobs.filter((job) => !isTerminalMemoryJobStatus(job.status))
+    const terminal = jobs
+      .filter((job) => isTerminalMemoryJobStatus(job.status))
+      .sort((left, right) => (right.updatedAt ?? '').localeCompare(left.updatedAt ?? ''))
+      .slice(0, TERMINAL_JOB_HISTORY_LIMIT)
+    return [...active, ...terminal]
   }
 
   function clearChatState(): void {
@@ -105,10 +118,8 @@ export function createMemoryJobRefreshController(
     }
 
     const nextJobs = lastJobs.filter((current) => current.id !== job.id)
-    if (hasActiveMemoryJobs([job])) {
-      nextJobs.push(job)
-    }
-    publishJobs(nextJobs)
+    nextJobs.push(job)
+    publishJobs(boundTerminalHistory(nextJobs))
     return true
   }
 
