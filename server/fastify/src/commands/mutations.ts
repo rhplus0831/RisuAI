@@ -162,6 +162,7 @@ export const TARGETED_MUTATION_PATHS = {
   chatRow: 'targeted-chat-row',
   collection: 'targeted-collection',
   pluginStorage: 'targeted-plugin-storage',
+  inlayCatalog: 'targeted-inlay-catalog',
 } as const
 
 export type TargetedMutationPath = (typeof TARGETED_MUTATION_PATHS)[keyof typeof TARGETED_MUTATION_PATHS]

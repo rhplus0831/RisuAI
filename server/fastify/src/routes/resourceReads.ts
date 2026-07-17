@@ -17,6 +17,7 @@ import {
   loadChatHydrationRange,
   loadChatHydrations,
   loadGenerationChatHydration,
+  listInlayCatalogEntries,
   loadPersistedDatabaseFields,
   loadPresetHydration,
   loadSettingsFromSqlite,
@@ -92,6 +93,15 @@ export function registerResourceReadRoutes(
     return metricResourceResponse(req.log, 'settings', revision, {
       revision,
       settings: maskProviderSecretsInPlace(settings ?? {}),
+    })
+  })
+
+  app.get('/api/v1/inlay-assets', { exposeHeadRoute: false }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    const { revision } = getSchemaState(db)
+    return metricResourceResponse(req.log, 'inlayCatalog', revision, {
+      revision,
+      assets: listInlayCatalogEntries(db),
     })
   })
 

@@ -1,5 +1,4 @@
 import localforage from 'localforage'
-import { v4 } from 'uuid'
 import { getImageType } from 'src/ts/media'
 import { getDatabase } from '../../storage/database.svelte'
 import { getModelInfo, LLMFlags, LLMFormat } from 'src/ts/model/modellist'
@@ -10,6 +9,20 @@ import {
   SERVER_INLAY_SIGNATURE_CONTENT_TYPE,
   uploadServerAssetBytes,
 } from '../../server/assets'
+import {
+  deleteServerInlayCatalogCommand,
+  runServerCommand,
+  upsertServerInlayCatalogCommand,
+} from '../../server/commands'
+import {
+  applyServerInlayCatalogDeletionReceipt,
+  applyServerInlayCatalogEntryReceipt,
+  applyServerInlayCatalogResource,
+  findServerInlayCatalogEntry,
+  getServerInlayCatalogResource,
+  type ServerInlayCatalogEntry,
+} from '../../server/inlayCatalog'
+import { fetchServerInlayCatalog } from '../../server/resourceReads'
 
 export type InlayAsset = {
   data?: string | Blob
@@ -17,8 +30,12 @@ export type InlayAsset = {
   ext: string
   height?: number
   name: string
+  /** Immutable server byte size. */
+  size?: number
   /** Fastify server asset id for browser-local legacy inlay ids. */
   serverAssetId?: string
+  /** Browser compatibility cache marker; never an authoritative catalog row. */
+  serverCatalogCache?: true
   type: 'image' | 'video' | 'audio' | 'signature'
   width?: number
 }
@@ -90,8 +107,53 @@ async function uploadInlayAssetToServer(img: InlayAsset): Promise<string> {
   return uploadServerAssetBytes(bytes, contentType || inlayContentType(img.type, img.ext))
 }
 
-async function rememberServerInlayAsset(id: string, img: InlayAsset): Promise<void> {
-  await inlayStorage.setItem(id, { ...img, data: undefined })
+async function rememberServerInlayAsset(
+  id: string,
+  img: InlayAsset & { serverAssetId: string },
+  aliases: readonly string[] = [],
+): Promise<void> {
+  const allAliases = Array.from(new Set([...(id !== img.serverAssetId ? [id] : []), ...aliases])).filter(
+    (alias) => alias !== img.serverAssetId,
+  )
+  const result = await runServerCommand({
+    command: (baseRevision) =>
+      upsertServerInlayCatalogCommand({
+        assetId: img.serverAssetId,
+        aliases: allAliases,
+        baseRevision,
+        name: img.name,
+        ...(typeof img.width === 'number' && img.width > 0 ? { width: img.width } : {}),
+        ...(typeof img.height === 'number' && img.height > 0 ? { height: img.height } : {}),
+      }),
+  })
+  if (result.status !== 'ok') {
+    if (result.status === 'error' && result.reason === 'not-found') {
+      throw new MissingServerInlayAssetError(img.serverAssetId)
+    }
+    throw new Error(
+      result.status === 'conflict'
+        ? `Inlay catalog changed on another client (revision ${result.currentRevision})`
+        : result.status === 'error'
+          ? result.error
+          : 'Inlay catalog is unavailable',
+    )
+  }
+  applyServerInlayCatalogEntryReceipt(result.asset, result.revision)
+  const cached = { ...img, data: undefined, serverCatalogCache: true as const }
+  try {
+    await Promise.all(
+      Array.from(new Set([id, img.serverAssetId, ...allAliases])).map((key) => inlayStorage.setItem(key, cached)),
+    )
+  } catch (error) {
+    console.warn('Unable to update the browser inlay compatibility cache', error)
+  }
+}
+
+class MissingServerInlayAssetError extends Error {
+  constructor(readonly assetId: string) {
+    super(`Server inlay asset does not exist: ${assetId}`)
+    this.name = 'MissingServerInlayAssetError'
+  }
 }
 
 function getLoadedImageDimensions(imgObj: HTMLImageElement) {
@@ -239,27 +301,19 @@ export async function writeInlayImage(
   ctx.drawImage(imgObj, 0, 0, drawWidth, drawHeight)
   const imageBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
 
-  const imgid = arg.id ?? v4()
-
   const assetId = await uploadServerAssetBytes(await blobToBytes(imageBlob as Blob), 'image/png')
-  await rememberServerInlayAsset(assetId, {
-    name: arg.name ?? assetId,
-    ext: 'png',
-    height: drawHeight,
-    width: drawWidth,
-    type: 'image',
-    serverAssetId: assetId,
-  })
-  if (arg.id && arg.id !== assetId) {
-    await rememberServerInlayAsset(arg.id, {
-      name: arg.name ?? arg.id,
+  await rememberServerInlayAsset(
+    assetId,
+    {
+      name: arg.name ?? assetId,
       ext: 'png',
       height: drawHeight,
       width: drawWidth,
       type: 'image',
       serverAssetId: assetId,
-    })
-  }
+    },
+    arg.id && arg.id !== assetId ? [arg.id] : [],
+  )
   return assetId
 }
 
@@ -275,20 +329,16 @@ export type InlaySignature = {
 export async function saveInlayedSignature(sigid: string, signature: InlaySignature) {
   const data = JSON.stringify(signature)
   const assetId = await uploadServerAssetBytes(new TextEncoder().encode(data), SERVER_INLAY_SIGNATURE_CONTENT_TYPE)
-  await rememberServerInlayAsset(assetId, {
-    name: sigid,
-    ext: 'json',
-    type: 'signature',
-    serverAssetId: assetId,
-  })
-  if (sigid !== assetId) {
-    await rememberServerInlayAsset(sigid, {
+  await rememberServerInlayAsset(
+    assetId,
+    {
       name: sigid,
       ext: 'json',
       type: 'signature',
       serverAssetId: assetId,
-    })
-  }
+    },
+    sigid !== assetId ? [sigid] : [],
+  )
   return assetId
 }
 
@@ -317,11 +367,87 @@ function blobToBase64(blob: Blob): Promise<string> {
   })
 }
 
+function catalogEntryToInlayAsset(entry: ServerInlayCatalogEntry): InlayAsset {
+  return {
+    ext: entry.ext,
+    ...(entry.height !== undefined ? { height: entry.height } : {}),
+    name: entry.name,
+    serverAssetId: entry.assetId,
+    size: entry.size,
+    type: entry.type,
+    ...(entry.width !== undefined ? { width: entry.width } : {}),
+  }
+}
+
+async function ensureServerInlayCatalog(): Promise<void> {
+  if (getServerInlayCatalogResource()) return
+  const result = await fetchServerInlayCatalog()
+  if (result.status !== 'ok') {
+    throw new Error(result.status === 'error' ? result.error : 'Inlay catalog is unavailable')
+  }
+  if (!applyServerInlayCatalogResource(result)) throw new Error('Unable to apply the server inlay catalog')
+}
+
+let legacyCatalogMigration: Promise<void> | null = null
+
+async function migrateLegacyInlayCatalog(): Promise<void> {
+  if (legacyCatalogMigration) return legacyCatalogMigration
+  const migration = (async () => {
+    await ensureServerInlayCatalog()
+    const localEntries: Array<[string, InlayAsset]> = []
+    await inlayStorage.iterate<InlayAsset, void>((value, key) => {
+      localEntries.push([key, value])
+    })
+
+    const grouped = new Map<string, { aliases: Set<string>; asset: InlayAsset & { serverAssetId: string } }>()
+    for (const [key, local] of localEntries) {
+      if (local.serverCatalogCache) {
+        const cachedAssetId = local.serverAssetId ?? serverAssetIdFromReference(key)
+        if (!cachedAssetId || !findServerInlayCatalogEntry(cachedAssetId)) await inlayStorage.removeItem(key)
+        continue
+      }
+      let assetId = local.serverAssetId ?? serverAssetIdFromReference(key)
+      if (!assetId && local.data !== undefined) assetId = await uploadInlayAssetToServer(local)
+      if (!assetId) {
+        // Metadata without either durable bytes or a server id is a stale
+        // browser-only ghost, not an authoritative catalog row.
+        await inlayStorage.removeItem(key)
+        continue
+      }
+      const group = grouped.get(assetId) ?? {
+        aliases: new Set<string>(),
+        asset: { ...local, serverAssetId: assetId },
+      }
+      if (key !== assetId) group.aliases.add(key)
+      grouped.set(assetId, group)
+    }
+
+    for (const [assetId, group] of grouped) {
+      const existing = findServerInlayCatalogEntry(assetId)
+      const aliases = [...group.aliases]
+      if (existing && aliases.every((alias) => existing.aliases.includes(alias))) continue
+      try {
+        await rememberServerInlayAsset(assetId, group.asset, aliases)
+      } catch (error) {
+        if (!(error instanceof MissingServerInlayAssetError)) throw error
+        await Promise.all([assetId, ...aliases].map((key) => inlayStorage.removeItem(key)))
+      }
+    }
+  })()
+  legacyCatalogMigration = migration
+  try {
+    await migration
+  } finally {
+    if (legacyCatalogMigration === migration) legacyCatalogMigration = null
+  }
+}
+
 // Returns with base64 data URI
 export async function getInlayAsset(id: string) {
   const serverAsset = await getServerInlayAssetId(id)
   if (serverAsset) {
-    const meta = await inlayStorage.getItem<InlayAsset | null>(id)
+    const meta = findServerInlayCatalogEntry(id) ?? findServerInlayCatalogEntry(serverAsset)
+    const localMeta = await inlayStorage.getItem<InlayAsset | null>(id)
     try {
       const stored = await readServerAsset(serverAsset)
       const type = inlayTypeFromContentType(stored.contentType)
@@ -331,10 +457,10 @@ export async function getInlayAsset(id: string) {
             ? new TextDecoder().decode(stored.bytes)
             : `data:${stored.contentType};base64,${Buffer.from(stored.bytes).toString('base64')}`
         return {
-          name: meta?.name ?? serverAsset,
-          ext: meta?.ext ?? stored.extension,
-          height: meta?.height,
-          width: meta?.width,
+          name: meta?.name ?? localMeta?.name ?? serverAsset,
+          ext: meta?.ext ?? localMeta?.ext ?? stored.extension,
+          height: meta?.height ?? localMeta?.height,
+          width: meta?.width ?? localMeta?.width,
           type,
           serverAssetId: serverAsset,
           data,
@@ -365,16 +491,17 @@ export async function getInlayAsset(id: string) {
 export async function getInlayAssetBlob(id: string) {
   const serverAsset = await getServerInlayAssetId(id)
   if (serverAsset) {
-    const meta = await inlayStorage.getItem<InlayAsset | null>(id)
+    const meta = findServerInlayCatalogEntry(id) ?? findServerInlayCatalogEntry(serverAsset)
+    const localMeta = await inlayStorage.getItem<InlayAsset | null>(id)
     try {
       const stored = await readServerAsset(serverAsset)
       const type = inlayTypeFromContentType(stored.contentType)
       if (type) {
         return {
-          name: meta?.name ?? serverAsset,
-          ext: meta?.ext ?? stored.extension,
-          height: meta?.height,
-          width: meta?.width,
+          name: meta?.name ?? localMeta?.name ?? serverAsset,
+          ext: meta?.ext ?? localMeta?.ext ?? stored.extension,
+          height: meta?.height ?? localMeta?.height,
+          width: meta?.width ?? localMeta?.width,
           type,
           serverAssetId: serverAsset,
           data: new Blob([asBuffer(stored.bytes)], { type: stored.contentType }),
@@ -404,41 +531,44 @@ export async function getInlayAssetBlob(id: string) {
 }
 
 export async function listInlayAssets(): Promise<[id: string, InlayAsset][]> {
-  const assetsByServerId = new Map<string, [id: string, InlayAsset]>()
-  await inlayStorage.iterate<InlayAsset, void>((value, key) => {
-    const logicalId = value.serverAssetId ?? key
-    const existing = assetsByServerId.get(logicalId)
-    // Server-backed values are stored under both their content hash and any
-    // legacy/custom id that callers still use. Prefer the readable alias while
-    // exposing only one logical asset in the explorer.
-    if (!existing || (existing[0] === logicalId && key !== logicalId)) {
-      assetsByServerId.set(logicalId, [key, value])
-    }
-  })
-
-  return Array.from(assetsByServerId.values())
+  await migrateLegacyInlayCatalog()
+  return (getServerInlayCatalogResource()?.assets ?? []).map((entry) => [
+    entry.assetId,
+    catalogEntryToInlayAsset(entry),
+  ])
 }
 
 export async function setInlayAsset(id: string, img: InlayAsset) {
   const assetId = await uploadInlayAssetToServer(img)
   await rememberServerInlayAsset(id, { ...img, serverAssetId: assetId })
-  if (id !== assetId) {
-    await rememberServerInlayAsset(assetId, { ...img, serverAssetId: assetId })
-  }
   return assetId
 }
 
 export async function removeInlayAsset(id: string) {
-  const target = await inlayStorage.getItem<InlayAsset | null>(id)
-  const serverAssetId = target?.serverAssetId
-  if (!serverAssetId) {
+  await ensureServerInlayCatalog()
+  const catalogEntry = findServerInlayCatalogEntry(id)
+  if (!catalogEntry) {
     await inlayStorage.removeItem(id)
     return
   }
 
+  const result = await runServerCommand({
+    command: (baseRevision) => deleteServerInlayCatalogCommand({ assetId: catalogEntry.assetId, baseRevision }),
+  })
+  if (result.status !== 'ok') {
+    throw new Error(
+      result.status === 'conflict'
+        ? `Inlay catalog changed on another client (revision ${result.currentRevision})`
+        : result.status === 'error'
+          ? result.error
+          : 'Inlay catalog is unavailable',
+    )
+  }
+  applyServerInlayCatalogDeletionReceipt(catalogEntry.assetId, result.revision)
+
   const aliases: string[] = []
   await inlayStorage.iterate<InlayAsset, void>((value, key) => {
-    if (key === id || value.serverAssetId === serverAssetId) {
+    if (key === id || value.serverAssetId === catalogEntry.assetId) {
       aliases.push(key)
     }
   })
@@ -454,21 +584,42 @@ export async function getServerInlayAssetId(id: string): Promise<string | null> 
   const direct = serverAssetIdFromReference(id)
   if (direct) return direct
 
+  await ensureServerInlayCatalog()
+  const catalogEntry = findServerInlayCatalogEntry(id)
+  if (catalogEntry) return catalogEntry.assetId
+
   const img = await inlayStorage.getItem<InlayAsset | null>(id)
   if (!img) return null
+  if (img.serverCatalogCache) {
+    await inlayStorage.removeItem(id)
+    return null
+  }
   if (img.serverAssetId) return img.serverAssetId
 
   const assetId = await uploadInlayAssetToServer(img)
   await rememberServerInlayAsset(id, { ...img, serverAssetId: assetId })
-  await rememberServerInlayAsset(assetId, { ...img, serverAssetId: assetId })
   return assetId
 }
 
 export async function getInlayAssetMetadata(
   id: string,
 ): Promise<Pick<InlayAsset, 'height' | 'name' | 'type' | 'width'> | null> {
+  await ensureServerInlayCatalog()
+  const catalogEntry = findServerInlayCatalogEntry(id)
+  if (catalogEntry) {
+    return {
+      name: catalogEntry.name,
+      type: catalogEntry.type,
+      ...(catalogEntry.height !== undefined ? { height: catalogEntry.height } : {}),
+      ...(catalogEntry.width !== undefined ? { width: catalogEntry.width } : {}),
+    }
+  }
   const img = await inlayStorage.getItem<InlayAsset | null>(id)
   if (!img) return null
+  if (img.serverCatalogCache) {
+    await inlayStorage.removeItem(id)
+    return null
+  }
   return {
     name: img.name,
     type: img.type,

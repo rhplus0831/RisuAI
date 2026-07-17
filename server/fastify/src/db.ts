@@ -11,13 +11,14 @@ import {
 import { createDatabaseMetadataTable } from './databaseLineage.js'
 import {
   createAssetMetadataTable,
+  createInlayCatalogTable,
   createCharacterTables,
   createCollectionTables,
   createSettingsTable,
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 25
+export const CURRENT_SCHEMA_VERSION = 26
 
 export interface MigrationStep {
   version: number
@@ -242,6 +243,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       migrateCommandMutationReceiptsToDatabaseLineage(db)
     },
   },
+  {
+    version: 26,
+    name: 'inlay-catalog',
+    up: (db) => {
+      createInlayCatalogTable(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -282,6 +290,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       createCommandMutationReceiptTable(db)
       createGenerationFinalizationRetryTable(db)
       createAssetMetadataTable(db)
+      createInlayCatalogTable(db)
       createCharacterTables(db)
       createCollectionTables(db)
       createSettingsTable(db)

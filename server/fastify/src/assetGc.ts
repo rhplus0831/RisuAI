@@ -11,6 +11,7 @@ import {
 } from './repository.js'
 import {
   type RisuSaveAssetReport,
+  type RisuSaveAssetReferenceSource,
   buildRisuSaveAssetReport,
   collectMessageInlayReferences,
 } from './risuSave/assetReferences.js'
@@ -218,8 +219,21 @@ export function buildAssetGcRisuSaveAssetReport(
   db: DatabaseSync,
   assets: readonly PersistedAsset[],
 ): RisuSaveAssetReport {
-  const database = loadAssetGcReferenceDatabase(db)
-  return buildRisuSaveAssetReport(database, assets, collectMessageInlayReferences(db, database))
+  // Extra references (including catalog membership) must still participate on
+  // a freshly initialized database whose settings row has not been created.
+  const database = loadAssetGcReferenceDatabase(db) ?? {}
+  return buildRisuSaveAssetReport(database, assets, [
+    ...collectMessageInlayReferences(db, database),
+    ...collectInlayCatalogReferences(db),
+  ])
+}
+
+function collectInlayCatalogReferences(db: DatabaseSync): RisuSaveAssetReferenceSource[] {
+  const rows = db.prepare('SELECT asset_id FROM inlay_catalog ORDER BY asset_id').all() as Array<{ asset_id: string }>
+  return rows.map((row, index) => ({
+    value: row.asset_id,
+    path: `inlayCatalog[${index}].assetId`,
+  }))
 }
 
 /**

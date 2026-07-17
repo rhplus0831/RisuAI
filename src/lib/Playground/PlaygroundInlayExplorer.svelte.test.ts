@@ -12,6 +12,11 @@ const alertMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
 }))
 
+const catalogMocks = vi.hoisted(() => ({
+  listener: null as (() => void) | null,
+  unsubscribe: vi.fn(),
+}))
+
 vi.mock('src/ts/process/files/inlays', () => ({
   getInlayAssetBlob: inlayMocks.getInlayAssetBlob,
   listInlayAssets: inlayMocks.listInlayAssets,
@@ -21,6 +26,13 @@ vi.mock('src/ts/process/files/inlays', () => ({
 vi.mock('src/ts/alert', () => ({
   alertConfirm: alertMocks.alertConfirm,
   alertError: alertMocks.alertError,
+}))
+
+vi.mock('src/ts/server/inlayCatalog', () => ({
+  subscribeServerInlayCatalog: vi.fn((listener: () => void) => {
+    catalogMocks.listener = listener
+    return catalogMocks.unsubscribe
+  }),
 }))
 
 import PlaygroundInlayExplorer from './PlaygroundInlayExplorer.svelte'
@@ -48,6 +60,8 @@ beforeEach(() => {
   alertMocks.alertConfirm.mockReset()
   alertMocks.alertConfirm.mockResolvedValue(true)
   alertMocks.alertError.mockReset()
+  catalogMocks.listener = null
+  catalogMocks.unsubscribe.mockReset()
   inlayMocks.listInlayAssets.mockResolvedValue(
     Array.from({ length: 40 }, (_, index) => [
       `asset-${index}`,
@@ -75,6 +89,21 @@ afterEach(() => {
 })
 
 describe('PlaygroundInlayExplorer', () => {
+  it('reloads a mounted explorer when another client changes the server catalog', async () => {
+    inlayMocks.listInlayAssets
+      .mockResolvedValueOnce([['asset-a', { ext: 'png', name: 'Asset A', size: 10, type: 'image' }]])
+      .mockResolvedValueOnce([['asset-b', { ext: 'png', name: 'Asset B', size: 20, type: 'image' }]])
+    inlayMocks.getInlayAssetBlob.mockResolvedValue(null)
+
+    component = mount(PlaygroundInlayExplorer, { target })
+    await vi.waitFor(() => expect(target.textContent).toContain('Asset A'))
+    catalogMocks.listener?.()
+    await vi.waitFor(() => expect(target.textContent).toContain('Asset B'))
+
+    expect(target.textContent).not.toContain('Asset A')
+    expect(inlayMocks.listInlayAssets).toHaveBeenCalledTimes(2)
+  })
+
   it('shows a recoverable error when the initial asset list fails', async () => {
     inlayMocks.listInlayAssets.mockRejectedValueOnce(new Error('IndexedDB unavailable')).mockResolvedValueOnce([])
 

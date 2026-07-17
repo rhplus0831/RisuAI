@@ -18,6 +18,8 @@ import { getImageType } from 'src/ts/media'
 
 /** Server asset upload stub: returns a deterministic asset id from content bytes. */
 const serverAssetStore = new Map<string, { bytes: Uint8Array; contentType: string }>()
+const catalogStore = new Map<string, any>()
+let catalogRevision = 0
 
 function fakeAssetId(bytes: Uint8Array): string {
   // Deterministic 64-hex-char id based on byte length for test reproducibility.
@@ -26,7 +28,7 @@ function fakeAssetId(bytes: Uint8Array): string {
 
 vi.mock('src/ts/server/assets', () => ({
   SERVER_INLAY_SIGNATURE_CONTENT_TYPE: 'application/x-risu-inlay-signature+json',
-  serverAssetIdFromReference: vi.fn((_id: string) => null),
+  serverAssetIdFromReference: vi.fn((id: string) => (/^[a-f0-9]{64}$/.test(id) ? id : null)),
   uploadServerAssetBytes: vi.fn(async (data: Uint8Array, contentType: string) => {
     const id = fakeAssetId(data)
     serverAssetStore.set(id, { bytes: data, contentType })
@@ -41,6 +43,84 @@ vi.mock('src/ts/server/assets', () => ({
       extension: 'png',
     }
   }),
+}))
+
+vi.mock('src/ts/server/commands', () => ({
+  runServerCommand: vi.fn(async ({ command }: { command: (revision: number) => Promise<unknown> }) =>
+    command(catalogRevision),
+  ),
+  upsertServerInlayCatalogCommand: vi.fn(async (input: any) => {
+    const stored = serverAssetStore.get(input.assetId)
+    if (!stored) return { status: 'error', error: 'Asset not found' }
+    catalogRevision += 1
+    const type = stored.contentType.startsWith('image/')
+      ? 'image'
+      : stored.contentType.startsWith('audio/')
+        ? 'audio'
+        : stored.contentType.startsWith('video/')
+          ? 'video'
+          : 'signature'
+    const existing = catalogStore.get(input.assetId)
+    const asset = {
+      assetId: input.assetId,
+      aliases: Array.from(new Set([...(existing?.aliases ?? []), ...(input.aliases ?? [])])),
+      ext: input.name.split('.').at(-1) || (type === 'signature' ? 'json' : 'png'),
+      name: input.name,
+      size: stored.bytes.byteLength,
+      type,
+      ...(input.width !== undefined ? { width: input.width } : {}),
+      ...(input.height !== undefined ? { height: input.height } : {}),
+    }
+    catalogStore.set(input.assetId, asset)
+    return {
+      status: 'ok',
+      revision: catalogRevision,
+      event: { type: 'inlayCatalog.upserted', resource: 'inlayCatalog', id: input.assetId, revision: catalogRevision },
+      asset,
+    }
+  }),
+  deleteServerInlayCatalogCommand: vi.fn(async (input: any) => {
+    if (!catalogStore.delete(input.assetId)) return { status: 'error', error: 'Inlay catalog asset not found' }
+    catalogRevision += 1
+    return {
+      status: 'ok',
+      revision: catalogRevision,
+      event: { type: 'inlayCatalog.deleted', resource: 'inlayCatalog', id: input.assetId, revision: catalogRevision },
+      assetId: input.assetId,
+    }
+  }),
+}))
+
+vi.mock('src/ts/server/inlayCatalog', () => ({
+  applyServerInlayCatalogDeletionReceipt: vi.fn(() => true),
+  applyServerInlayCatalogEntryReceipt: vi.fn(() => true),
+  applyServerInlayCatalogResource: vi.fn((resource: any) => {
+    catalogRevision = resource.revision
+    catalogStore.clear()
+    for (const asset of resource.assets) catalogStore.set(asset.assetId, asset)
+    return true
+  }),
+  fetchServerInlayCatalog: vi.fn(async () => ({
+    status: 'ok',
+    revision: catalogRevision,
+    assets: [...catalogStore.values()],
+  })),
+  findServerInlayCatalogEntry: vi.fn(
+    (id: string) =>
+      [...catalogStore.values()].find((entry) => entry.assetId === id || entry.aliases.includes(id)) ?? null,
+  ),
+  getServerInlayCatalogResource: vi.fn(() => ({
+    revision: catalogRevision,
+    assets: [...catalogStore.values()],
+  })),
+}))
+
+vi.mock('src/ts/server/resourceReads', () => ({
+  fetchServerInlayCatalog: vi.fn(async () => ({
+    status: 'ok',
+    revision: catalogRevision,
+    assets: [...catalogStore.values()],
+  })),
 }))
 
 // happy-dom canvas getContext returns null
@@ -158,6 +238,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   store.clear()
   serverAssetStore.clear()
+  catalogStore.clear()
+  catalogRevision = 0
 })
 
 describe('setInlayAsset', () => {
@@ -346,7 +428,7 @@ describe('listInlayAssets', () => {
       type: 'image',
     }
     const asset2: InlayAsset = {
-      data: new Blob(['b']),
+      data: new Blob(['bb']),
       ext: 'mp3',
       height: 0,
       width: 0,
@@ -357,10 +439,8 @@ describe('listInlayAssets', () => {
     store.set('id-b', asset2)
 
     const result = await listInlayAssets()
-    expect(result).toMatchObject([
-      ['id-a', { name: 'a.png' }],
-      ['id-b', { name: 'b.mp3' }],
-    ])
+    expect(result.map(([, asset]) => asset.name).sort()).toEqual(['a.png', 'b.mp3'])
+    expect(result.every(([id]) => /^[a-f0-9]{64}$/.test(id))).toBe(true)
   })
 
   test('collapses a server asset hash and its custom id into one logical row', async () => {
@@ -374,7 +454,7 @@ describe('listInlayAssets', () => {
     expect(store.has(assetId)).toBe(true)
     expect(store.has('friendly-id')).toBe(true)
     await expect(listInlayAssets()).resolves.toMatchObject([
-      ['friendly-id', { name: 'friendly.png', serverAssetId: assetId }],
+      [assetId, { name: 'friendly.png', serverAssetId: assetId }],
     ])
   })
 })

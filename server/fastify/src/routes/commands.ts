@@ -319,6 +319,7 @@ import {
   deleteCharacterChatRow,
   deleteCharacterRow,
   deletePluginStorageKey,
+  deleteInlayCatalogEntry,
   EntityNotFoundError,
   extractSettings,
   initializeDefaultDatabase,
@@ -328,6 +329,7 @@ import {
   replacePluginStorage,
   RevisionMismatchError,
   ValidationError,
+  upsertInlayCatalogEntry,
   writeCharacterChatRows,
   writePluginStorageKey,
   writePromptTemplateRow,
@@ -1085,6 +1087,51 @@ interface PluginStorageCommandBody {
   values?: unknown
   deleteKeys?: unknown
   clear?: unknown
+}
+
+interface InlayCatalogCommandBody {
+  aliases?: unknown
+  assetId?: unknown
+  baseRevision?: unknown
+  height?: unknown
+  name?: unknown
+  width?: unknown
+}
+
+function readInlayCatalogAssetId(value: unknown): string {
+  if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) {
+    throw new ValidationError('assetId must be a sha256 hex string')
+  }
+  return value
+}
+
+function readInlayCatalogName(value: unknown): string {
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > 512) {
+    throw new ValidationError('name must be a non-empty string no longer than 512 characters')
+  }
+  return value
+}
+
+function readInlayCatalogDimension(value: unknown, label: 'width' | 'height'): number | undefined {
+  if (value === undefined || value === null) return undefined
+  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+    throw new ValidationError(`${label} must be a positive safe integer when provided`)
+  }
+  return value as number
+}
+
+function readInlayCatalogAliases(value: unknown): string[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value) || value.length > 100) {
+    throw new ValidationError('aliases must be an array containing at most 100 strings')
+  }
+  const aliases = value.map((alias) => {
+    if (typeof alias !== 'string' || alias.length === 0 || alias.length > 512) {
+      throw new ValidationError('aliases must contain non-empty strings no longer than 512 characters')
+    }
+    return alias
+  })
+  return Array.from(new Set(aliases))
 }
 
 export const SETTINGS_GROUPS = [
@@ -7645,6 +7692,78 @@ export function registerCommandRoutes(
           writeSingleCollectionTable(innerDb, 'plugins', reordered)
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginReordered },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/inlay-assets/:assetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const assetId = readInlayCatalogAssetId((req.params as { assetId?: unknown }).assetId)
+      const body = (req.body ?? {}) as InlayCatalogCommandBody
+      const baseRevision = readBaseRevision(body)
+      const name = readInlayCatalogName(body.name)
+      const aliases = readInlayCatalogAliases(body.aliases)
+      const width = readInlayCatalogDimension(body.width, 'width')
+      const height = readInlayCatalogDimension(body.height, 'height')
+      const result = applyTargetedCommandMutation<{ asset: ReturnType<typeof upsertInlayCatalogEntry> }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.inlayCatalog,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const asset = upsertInlayCatalogEntry(innerDb, { assetId, aliases, name, width, height })
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.inlayCatalogUpserted, id: assetId },
+            extra: { asset },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/inlay-assets/:assetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const assetId = readInlayCatalogAssetId((req.params as { assetId?: unknown }).assetId)
+      const body = (req.body ?? {}) as InlayCatalogCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation<{ assetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.inlayCatalog,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          if (!deleteInlayCatalogEntry(innerDb, assetId)) {
+            throw new EntityNotFoundError(`Inlay catalog asset not found: ${assetId}`)
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.inlayCatalogDeleted, id: assetId },
+            extra: { assetId },
           }
         },
       })

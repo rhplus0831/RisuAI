@@ -48,6 +48,7 @@ import {
   subscribeServerCommandLocalEffectApplied,
 } from './commandLocalEffectEvents'
 import type { DurableMutationRequest } from './pendingMutationOutbox'
+import type { ServerInlayCatalogEntry } from './inlayCatalog'
 
 export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffectApplied }
 
@@ -514,6 +515,20 @@ export type ServerCommandResult<T extends Record<string, unknown> = {}> =
       reason?: ServerCommandErrorReason
     }
   | { status: 'unavailable' }
+
+export interface UpsertServerInlayCatalogInput {
+  aliases?: string[]
+  assetId: string
+  baseRevision: number
+  height?: number
+  name: string
+  width?: number
+}
+
+export interface DeleteServerInlayCatalogInput {
+  assetId: string
+  baseRevision: number
+}
 
 export type SettingsPatch = Record<string, unknown>
 
@@ -4994,6 +5009,34 @@ export async function persistGenerationResultCommand(
       baseRevision: input.baseRevision,
       generationResult: input.generationResult,
     },
+    signal,
+  })
+}
+
+export async function upsertServerInlayCatalogCommand(
+  input: UpsertServerInlayCatalogInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ asset: ServerInlayCatalogEntry }>> {
+  return requestCommandJson(`/inlay-assets/${encodeURIComponent(input.assetId)}`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      name: input.name,
+      aliases: input.aliases ?? [],
+      ...(input.width !== undefined ? { width: input.width } : {}),
+      ...(input.height !== undefined ? { height: input.height } : {}),
+    },
+    signal,
+  })
+}
+
+export async function deleteServerInlayCatalogCommand(
+  input: DeleteServerInlayCatalogInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ assetId: string }>> {
+  return requestCommandJson(`/inlay-assets/${encodeURIComponent(input.assetId)}`, {
+    method: 'DELETE',
+    body: { baseRevision: input.baseRevision },
     signal,
   })
 }

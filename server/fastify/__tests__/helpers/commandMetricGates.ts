@@ -135,6 +135,12 @@ export const COMMAND_METRIC_REVIEW_GATES = {
     dbJsonWriteMs: 0,
     expectedTables: ['plugin_custom_storage'],
   },
+  'targeted-inlay-catalog': {
+    reviewGate: 'inlay catalog commands touch only the catalog row set and never immutable asset bytes',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    expectedTables: ['inlay_catalog'],
+  },
 } satisfies Record<string, CommandMetricGate>
 
 export type CommandMutationPath = keyof typeof COMMAND_METRIC_REVIEW_GATES

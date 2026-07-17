@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   legacyPreset: vi.fn(),
   lorebook: vi.fn(),
   lorebooks: vi.fn(),
+  inlay: vi.fn(),
 }))
 
 const sideEffects = vi.hoisted(() => ({
@@ -45,6 +46,10 @@ const languageSideEffects = vi.hoisted(() => ({
   change: vi.fn(),
 }))
 
+const inlayState = vi.hoisted(() => ({
+  resource: null as { revision: number; assets: any[] } | null,
+}))
+
 vi.mock('../../lang', () => ({
   changeLanguage: languageSideEffects.change,
 }))
@@ -58,6 +63,7 @@ vi.mock('./resourceReads', () => ({
   fetchServerCharacter: api.character,
   fetchServerCharacterOrder: api.characterOrder,
   fetchServerCharacterSelection: api.characterSelection,
+  fetchServerInlayCatalog: api.inlay,
 }))
 
 vi.mock('./hydrationReads', () => ({
@@ -66,6 +72,18 @@ vi.mock('./hydrationReads', () => ({
   fetchServerLegacyPreset: api.legacyPreset,
   fetchServerCharacterLorebook: api.lorebook,
   fetchServerBulkCharacterLorebooks: api.lorebooks,
+}))
+
+vi.mock('./inlayCatalog', () => ({
+  applyServerInlayCatalogResource: (resource: { revision: number; assets: any[] }, options?: { force?: boolean }) => {
+    if (!options?.force && inlayState.resource && resource.revision < inlayState.resource.revision) return false
+    inlayState.resource = structuredClone(resource)
+    return true
+  },
+  getServerInlayCatalogResource: () => structuredClone(inlayState.resource),
+  resetServerInlayCatalogResource: () => {
+    inlayState.resource = null
+  },
 }))
 
 vi.mock('./promptTemplateHydration', () => ({
@@ -102,6 +120,11 @@ import {
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
+import {
+  applyServerInlayCatalogResource,
+  getServerInlayCatalogResource,
+  resetServerInlayCatalogResource,
+} from './inlayCatalog'
 
 const hooks: ServerResourceInvalidationHooks = {
   reapplyPendingPresetProjections: sideEffects.reapplyPendingPresets,
@@ -187,7 +210,16 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 beforeEach(() => {
   resetServerResourceState()
+  resetServerInlayCatalogResource()
   for (const mock of Object.values(api)) mock.mockReset()
+  api.inlay.mockImplementation(async () => {
+    const settingsResult = await api.settings.mock.results.at(-1)?.value
+    return {
+      status: 'ok',
+      revision: settingsResult?.revision ?? 0,
+      assets: [],
+    }
+  })
   for (const mock of Object.values(sideEffects)) mock.mockClear()
   languageSideEffects.change.mockClear()
   for (const mock of [
@@ -235,6 +267,59 @@ describe('API-backed resource invalidation', () => {
     expect(sideEffects.reapplyPendingPresets).toHaveBeenCalledTimes(1)
     expect(promptHydration.reset).toHaveBeenCalledTimes(1)
     expect(languageSideEffects.change).toHaveBeenLastCalledWith('ko')
+  })
+
+  it('refreshes the server-owned inlay catalog for another client event', async () => {
+    const assetId = 'a'.repeat(64)
+    api.inlay.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      assets: [
+        {
+          assetId,
+          aliases: ['friendly-id'],
+          ext: 'png',
+          name: 'shared.png',
+          size: 12,
+          type: 'image',
+          width: 4,
+          height: 3,
+        },
+      ],
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'inlayCatalog.upserted', resource: 'inlayCatalog', id: assetId, revision: 2 },
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(getServerInlayCatalogResource()).toMatchObject({
+      revision: 2,
+      assets: [{ assetId, aliases: ['friendly-id'], name: 'shared.png' }],
+    })
+    expect(api.settings).not.toHaveBeenCalled()
+  })
+
+  it('replaces a newer browser catalog with a restored full snapshot', async () => {
+    const newerId = 'b'.repeat(64)
+    const restoredId = 'c'.repeat(64)
+    applyServerInlayCatalogResource({
+      revision: 9,
+      assets: [{ assetId: newerId, aliases: [], ext: 'png', name: 'newer.png', size: 9, type: 'image' }],
+    })
+    fullReadMocks(3)
+    api.inlay.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      assets: [{ assetId: restoredId, aliases: [], ext: 'png', name: 'restored.png', size: 3, type: 'image' }],
+    })
+
+    await expect(refreshAllServerResources({ hooks })).resolves.toEqual({ status: 'ok', revision: 3, scope: 'full' })
+    expect(getServerInlayCatalogResource()).toMatchObject({
+      revision: 3,
+      assets: [{ assetId: restoredId, name: 'restored.png' }],
+    })
   })
 
   it('preserves pending Agent Preset settings and deletion cascades during a full refresh', async () => {

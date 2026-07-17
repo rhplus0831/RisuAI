@@ -190,6 +190,14 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'settings.updated',
     resource: 'settings',
   },
+  inlayCatalogUpserted: {
+    type: 'inlayCatalog.upserted',
+    resource: 'inlayCatalog',
+  },
+  inlayCatalogDeleted: {
+    type: 'inlayCatalog.deleted',
+    resource: 'inlayCatalog',
+  },
   presetCreated: {
     type: 'preset.created',
     resource: 'presetCollection',

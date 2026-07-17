@@ -111,6 +111,19 @@ export interface PersistedAsset {
   contentType: string
 }
 
+export type PersistedInlayCatalogAssetType = 'image' | 'video' | 'audio' | 'signature'
+
+export interface PersistedInlayCatalogEntry {
+  assetId: string
+  aliases: string[]
+  ext: string
+  height?: number
+  name: string
+  size: number
+  type: PersistedInlayCatalogAssetType
+  width?: number
+}
+
 interface AssetMetadataRow {
   id: string
   ext: string
@@ -828,6 +841,139 @@ export function createAssetMetadataTable(db: DatabaseSync): void {
       content_type TEXT NOT NULL
     )
   `)
+}
+
+export function createInlayCatalogTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inlay_catalog (
+      asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      width INTEGER CHECK (width IS NULL OR width > 0),
+      height INTEGER CHECK (height IS NULL OR height > 0),
+      aliases_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(aliases_json))
+    )
+  `)
+}
+
+function inlayTypeFromContentType(contentType: string): PersistedInlayCatalogAssetType | null {
+  if (contentType === 'application/x-risu-inlay-signature+json') return 'signature'
+  if (contentType.startsWith('image/')) return 'image'
+  if (contentType.startsWith('audio/')) return 'audio'
+  if (contentType.startsWith('video/')) return 'video'
+  return null
+}
+
+interface InlayCatalogRow {
+  asset_id: string
+  aliases_json: string
+  content_type: string
+  ext: string
+  height: number | null
+  name: string
+  size: number
+  width: number | null
+}
+
+function inlayCatalogEntryFromRow(row: InlayCatalogRow): PersistedInlayCatalogEntry | null {
+  const type = inlayTypeFromContentType(row.content_type)
+  if (!type) return null
+  let aliases: unknown
+  try {
+    aliases = JSON.parse(row.aliases_json)
+  } catch {
+    aliases = []
+  }
+  return {
+    assetId: row.asset_id,
+    aliases: Array.isArray(aliases) ? aliases.filter((alias): alias is string => typeof alias === 'string') : [],
+    ext: row.ext,
+    ...(row.height !== null ? { height: row.height } : {}),
+    name: row.name,
+    size: row.size,
+    type,
+    ...(row.width !== null ? { width: row.width } : {}),
+  }
+}
+
+export function listInlayCatalogEntries(db: DatabaseSync): PersistedInlayCatalogEntry[] {
+  const rows = db
+    .prepare(
+      `
+        SELECT catalog.asset_id, catalog.name, catalog.width, catalog.height, catalog.aliases_json,
+               assets.ext, assets.size, assets.content_type
+        FROM inlay_catalog AS catalog
+        INNER JOIN assets ON assets.id = catalog.asset_id
+        ORDER BY catalog.name COLLATE NOCASE, catalog.asset_id
+      `,
+    )
+    .all() as unknown as InlayCatalogRow[]
+  return rows.flatMap((row) => {
+    const entry = inlayCatalogEntryFromRow(row)
+    return entry ? [entry] : []
+  })
+}
+
+export function upsertInlayCatalogEntry(
+  db: DatabaseSync,
+  input: { assetId: string; aliases: readonly string[]; height?: number; name: string; width?: number },
+): PersistedInlayCatalogEntry {
+  const asset = getAssetMetadataById(db, input.assetId)
+  if (!asset) throw new EntityNotFoundError(`Asset not found: ${input.assetId}`)
+  if (!inlayTypeFromContentType(asset.contentType)) {
+    throw new ValidationError(`Asset is not a supported inlay type: ${input.assetId}`)
+  }
+
+  const existing = db.prepare('SELECT aliases_json FROM inlay_catalog WHERE asset_id = ?').get(input.assetId) as
+    | { aliases_json: string }
+    | undefined
+  const priorAliases = existing ? (JSON.parse(existing.aliases_json) as unknown) : []
+  const aliases = Array.from(
+    new Set([
+      ...(Array.isArray(priorAliases)
+        ? priorAliases.filter((alias): alias is string => typeof alias === 'string')
+        : []),
+      ...input.aliases,
+    ]),
+  ).filter((alias) => alias !== input.assetId)
+
+  if (input.aliases.length > 0) {
+    const incomingAliases = new Set(input.aliases)
+    const otherRows = db
+      .prepare('SELECT asset_id, aliases_json FROM inlay_catalog WHERE asset_id != ?')
+      .all(input.assetId) as unknown as Array<{ asset_id: string; aliases_json: string }>
+    const rewriteAliases = db.prepare('UPDATE inlay_catalog SET aliases_json = ? WHERE asset_id = ?')
+    for (const row of otherRows) {
+      const parsed = JSON.parse(row.aliases_json) as unknown
+      if (!Array.isArray(parsed)) continue
+      const filtered = parsed.filter(
+        (alias): alias is string => typeof alias === 'string' && !incomingAliases.has(alias),
+      )
+      if (filtered.length !== parsed.length) rewriteAliases.run(JSON.stringify(filtered), row.asset_id)
+    }
+  }
+
+  db.prepare(
+    `
+      INSERT INTO inlay_catalog (asset_id, name, width, height, aliases_json)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(asset_id) DO UPDATE SET
+        name = excluded.name,
+        width = excluded.width,
+        height = excluded.height,
+        aliases_json = excluded.aliases_json
+    `,
+  ).run(input.assetId, input.name, input.width ?? null, input.height ?? null, JSON.stringify(aliases))
+  recordTableWrite('inlay_catalog')
+
+  const entry = listInlayCatalogEntries(db).find((candidate) => candidate.assetId === input.assetId)
+  if (!entry) throw new Error(`Failed to read inlay catalog entry after upsert: ${input.assetId}`)
+  return entry
+}
+
+export function deleteInlayCatalogEntry(db: DatabaseSync, assetId: string): boolean {
+  const result = db.prepare('DELETE FROM inlay_catalog WHERE asset_id = ?').run(assetId)
+  if (result.changes > 0) recordTableWrite('inlay_catalog')
+  return result.changes > 0
 }
 
 export function getAllAssetMetadata(db: DatabaseSync): PersistedAsset[] {
@@ -2275,6 +2421,7 @@ const SQLITE_BACKUP_TABLES = [
   'messages',
   'chat_hypa_v3',
   'assets',
+  'inlay_catalog',
   'characters',
   'chats',
   'modules',

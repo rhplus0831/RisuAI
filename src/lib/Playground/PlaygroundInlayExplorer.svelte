@@ -5,6 +5,7 @@
   import { language } from 'src/lang'
   import { alertConfirm, alertError } from 'src/ts/alert'
   import { getInlayAssetBlob, listInlayAssets, removeInlayAsset, type InlayAsset } from 'src/ts/process/files/inlays'
+  import { subscribeServerInlayCatalog } from 'src/ts/server/inlayCatalog'
   import Button from '../UI/GUI/Button.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
 
@@ -22,6 +23,7 @@
   let assetLoadRun = 0
   let destroyed = false
   let deletionBusy = $state(false)
+  let unsubscribeCatalog = () => {}
 
   const displayedAssets = $derived(allAssets.slice(0, displayCount))
   const hasMore = $derived(displayCount < allAssets.length)
@@ -124,10 +126,12 @@
   }
 
   const getAssetSize = (asset: InlayAsset) => {
+    if (typeof asset.size === 'number') return formatSize(asset.size)
     if (asset.data instanceof Blob) {
       return formatSize(asset.data.size)
     }
-    return formatSize(asset.data.length * 0.75) // base64 estimate
+    if (typeof asset.data === 'string') return formatSize(asset.data.length * 0.75) // base64 estimate
+    return formatSize(0)
   }
 
   let observer: IntersectionObserver | null = null
@@ -150,6 +154,7 @@
     }
 
     observer?.disconnect()
+    unsubscribeCatalog()
     observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
@@ -185,6 +190,10 @@
     try {
       const assets = await listInlayAssets()
       if (destroyed || run !== assetLoadRun) return
+      const nextIds = new Set(assets.map(([id]) => id))
+      for (const id of previewURLs.keys()) {
+        if (!nextIds.has(id)) releasePreview(id)
+      }
       allAssets = assets
       selection.clear()
       displayCount = PAGE_SIZE
@@ -197,6 +206,9 @@
       }
     }
   }
+  unsubscribeCatalog = subscribeServerInlayCatalog(() => {
+    if (!destroyed) void loadAssets()
+  })
   void loadAssets()
 </script>
 

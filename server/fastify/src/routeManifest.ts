@@ -144,6 +144,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'inlay-catalog-read',
+    methods: GET_ONLY,
+    path: '/api/v1/inlay-assets',
+    auth: {
+      decision: 'required',
+      reason: 'The inlay catalog contains private user asset metadata.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only inlay catalog route.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'settings-cache-read',
     methods: ['POST'],
     path: '/api/v1/settings',

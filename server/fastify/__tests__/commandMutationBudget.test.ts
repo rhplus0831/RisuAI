@@ -92,7 +92,7 @@ describe('command mutation-range budgets', () => {
   })
 
   it('no table budget escapes the known physical-table universe', () => {
-    const universe = new Set<string>([...BROAD_WRITE_TABLES, 'chat_hypa_v3', 'messages'])
+    const universe = new Set<string>([...BROAD_WRITE_TABLES, 'chat_hypa_v3', 'inlay_catalog', 'messages'])
     for (const [key, gate] of GATE_ENTRIES) {
       for (const field of ['expectedTables', 'maxTables', 'forbiddenTables'] as const) {
         for (const table of gate[field] ?? []) {

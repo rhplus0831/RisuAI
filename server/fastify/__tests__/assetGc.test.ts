@@ -7,9 +7,11 @@ import { buildAssetGcRisuSaveAssetReport, runAssetGc } from '../src/assetGc.js'
 import {
   assetsDir,
   getAllAssetMetadata,
+  deleteInlayCatalogEntry,
   insertAssetMetadataBatch,
   loadPersistedWithMessages,
   writePersistedWithMessages,
+  upsertInlayCatalogEntry,
   type PersistedAsset,
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
@@ -116,6 +118,25 @@ describe('runAssetGc', () => {
     expect(result.skippedByGrace).toBe(1)
     expect(existsSync(freshFile)).toBe(true)
     expect(getAllAssetMetadata(db).map((a) => a.id)).toEqual([ORPHAN_FRESH])
+  })
+
+  it('keeps cataloged inlay bytes until catalog deletion makes them collectible', () => {
+    insertAssetMetadataBatch(db, [asset(ORPHAN_OLD)])
+    const file = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
+    upsertInlayCatalogEntry(db, {
+      assetId: ORPHAN_OLD,
+      aliases: ['friendly-inlay'],
+      name: 'cataloged.png',
+      width: 1,
+      height: 1,
+    })
+
+    expect(runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW }).deletedAssetIds).toEqual([])
+    expect(existsSync(file)).toBe(true)
+
+    expect(deleteInlayCatalogEntry(db, ORPHAN_OLD)).toBe(true)
+    expect(runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW }).deletedAssetIds).toEqual([ORPHAN_OLD])
+    expect(existsSync(file)).toBe(false)
   })
 
   it('drops a metadata entry whose backing file is already gone', () => {

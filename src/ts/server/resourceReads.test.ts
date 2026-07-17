@@ -14,6 +14,7 @@ import {
   fetchServerCharacters,
   fetchServerCollection,
   fetchServerCollections,
+  fetchServerInlayCatalog,
   fetchServerSettings,
   fetchServerSettingsGroup,
 } from './resourceReads'
@@ -63,6 +64,29 @@ afterEach(() => {
 })
 
 describe('server resource read clients', () => {
+  it('reads and validates the revisioned inlay catalog', async () => {
+    const assetId = 'a'.repeat(64)
+    const responses = [
+      {
+        revision: 6,
+        assets: [{ assetId, aliases: ['friendly-id'], ext: 'png', name: 'shared.png', size: 12, type: 'image' }],
+      },
+      { revision: 7, assets: [{ assetId, aliases: [], ext: 'png', name: 'broken.png', size: -1, type: 'image' }] },
+    ]
+    const calls = stubResourceFetch(() => responses.shift())
+
+    await expect(fetchServerInlayCatalog()).resolves.toMatchObject({
+      status: 'ok',
+      revision: 6,
+      assets: [{ assetId, aliases: ['friendly-id'], name: 'shared.png' }],
+    })
+    await expect(fetchServerInlayCatalog()).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid inlay catalog response',
+    })
+    expect(calls.map((call) => call.url)).toEqual(['/api/v1/inlay-assets', '/api/v1/inlay-assets'])
+  })
+
   it('reads settings with auth and preserves the request signal', async () => {
     const controller = new AbortController()
     const calls = stubResourceFetch(() => ({

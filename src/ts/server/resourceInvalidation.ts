@@ -21,6 +21,7 @@ import {
   fetchServerCharacters,
   fetchServerCollection,
   fetchServerCollections,
+  fetchServerInlayCatalog,
   fetchServerSettings,
   fetchServerSettingsGroup,
 } from './resourceReads'
@@ -54,6 +55,7 @@ import {
 } from './resourceState.svelte'
 import { withServerResourceApply } from './resourceWriteGuard.svelte'
 import { createDestructiveRefreshToken } from './staleStateGuards'
+import { applyServerInlayCatalogResource, getServerInlayCatalogResource } from './inlayCatalog'
 
 export const FULL_RESOURCE_REFRESH_MAX_ATTEMPTS = 3
 
@@ -99,6 +101,7 @@ export interface ServerResourceInvalidationOptions extends ServerResourceRefresh
 }
 
 interface RefreshPlan {
+  inlayCatalog: boolean
   settings: boolean
   settingsGroups: Set<SettingsGroup>
   collections: Set<ServerCollectionName>
@@ -137,8 +140,10 @@ type LegacyPresetCollectionReadResult =
     }
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
+type InlayCatalogReadResult = Awaited<ReturnType<typeof fetchServerInlayCatalog>>
 
 type CompletedTargetedRead =
+  | { kind: 'inlayCatalog'; result: InlayCatalogReadResult }
   | { kind: 'settings'; result: SettingsReadResult }
   | { kind: 'settingsGroup'; group: SettingsGroup; result: SettingsGroupReadResult }
   | { kind: 'collection'; name: ServerCollectionName; result: CollectionReadResult }
@@ -178,17 +183,19 @@ export async function refreshAllServerResources(
   options: ServerResourceRefreshOptions = {},
 ): Promise<ServerResourceRefreshResult> {
   for (let attempt = 0; attempt < FULL_RESOURCE_REFRESH_MAX_ATTEMPTS; attempt += 1) {
-    const [settings, collections, characters] = await Promise.all([
+    const [settings, collections, characters, inlayCatalog] = await Promise.all([
       fetchServerSettings(options.signal),
       fetchServerCollections(options.signal),
       fetchServerCharacters(options.signal),
+      fetchServerInlayCatalog(options.signal),
     ])
 
     if (settings.status !== 'ok') return failedRead(settings)
     if (collections.status !== 'ok') return failedRead(collections)
     if (characters.status !== 'ok') return failedRead(characters)
+    if (inlayCatalog.status !== 'ok') return failedRead(inlayCatalog)
 
-    const revisions = new Set([settings.revision, collections.revision, characters.revision])
+    const revisions = new Set([settings.revision, collections.revision, characters.revision, inlayCatalog.revision])
     if (revisions.size !== 1) continue
 
     const revision = settings.revision
@@ -203,24 +210,28 @@ export async function refreshAllServerResources(
       )
       const mergedCollections = withPendingCollections(collections, options.hooks)
       const mergedCharacters = withPendingAgentPresetCharacters(characters, options.hooks)
-      const { settingsApplied, collectionsApplied, charactersApplied } = withServerResourceApply(() => {
-        const applied = {
-          settingsApplied: applySettingsResource(mergedSettings),
-          collectionsApplied: applyCollectionsResource(mergedCollections),
-          // A complete refresh is used for startup, revision gaps, restores, and
-          // unknown resources. Character reads intentionally omit transcripts,
-          // so retaining same-id resident bodies here could preserve stale chat
-          // data across a restore. Leave the chats as API-hydration stubs.
-          charactersApplied: applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false }),
-        }
-        options.hooks?.reapplyPendingPresetProjections?.()
-        return applied
-      })
+      const { settingsApplied, collectionsApplied, charactersApplied, inlayCatalogApplied } = withServerResourceApply(
+        () => {
+          const applied = {
+            settingsApplied: applySettingsResource(mergedSettings),
+            collectionsApplied: applyCollectionsResource(mergedCollections),
+            // A complete refresh is used for startup, revision gaps, restores, and
+            // unknown resources. Character reads intentionally omit transcripts,
+            // so retaining same-id resident bodies here could preserve stale chat
+            // data across a restore. Leave the chats as API-hydration stubs.
+            charactersApplied: applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false }),
+            inlayCatalogApplied: applyServerInlayCatalogResource(inlayCatalog, { force: true }),
+          }
+          options.hooks?.reapplyPendingPresetProjections?.()
+          return applied
+        },
+      )
       if (collectionsApplied) resetPromptTemplateHydration()
       if (
         (!settingsApplied && !settingsFullAlreadyAtLeast(revision)) ||
         (!collectionsApplied && !collectionsAlreadyAtLeast(revision)) ||
-        (!charactersApplied && !charactersAlreadyAtLeast(revision))
+        (!charactersApplied && !charactersAlreadyAtLeast(revision)) ||
+        !inlayCatalogApplied
       ) {
         return { status: 'error', error: 'Failed to apply a complete server resource refresh' }
       }
@@ -321,6 +332,7 @@ export async function refreshInvalidatedServerResources(
 
 function createRefreshPlan(): RefreshPlan {
   return {
+    inlayCatalog: false,
     settings: false,
     settingsGroups: new Set(),
     collections: new Set(),
@@ -420,6 +432,9 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
   switch (event.resource) {
     case 'asset':
     case 'revisionOnly':
+      return
+    case 'inlayCatalog':
+      plan.inlayCatalog = true
       return
     case 'settings':
       if (!isSettingsGroup(event.id)) {
@@ -766,6 +781,9 @@ async function runTargetedReads(
   signal: AbortSignal | null | undefined,
 ): Promise<CompletedTargetedRead[]> {
   const reads: Array<Promise<CompletedTargetedRead>> = []
+  if (plan.inlayCatalog) {
+    reads.push(fetchServerInlayCatalog(signal).then((result) => ({ kind: 'inlayCatalog' as const, result })))
+  }
   if (plan.settings) {
     reads.push(fetchServerSettings(signal).then((result) => ({ kind: 'settings' as const, result })))
   }
@@ -982,6 +1000,12 @@ function applyTargetedRead(
   hooks: Partial<ServerResourceInvalidationHooks> | undefined,
 ): boolean {
   switch (entry.kind) {
+    case 'inlayCatalog':
+      return (
+        entry.result.status !== 'ok' ||
+        applyServerInlayCatalogResource(entry.result) ||
+        (getServerInlayCatalogResource()?.revision ?? -1) >= entry.result.revision
+      )
     case 'settings': {
       const payload = withPendingAgentPresetSettings(
         withPendingPluginProvider(entry.result, hooks?.mergePendingPluginProvider),
@@ -1291,6 +1315,8 @@ function failedRead(
 
 function targetedReadLabel(entry: CompletedTargetedRead): string {
   switch (entry.kind) {
+    case 'inlayCatalog':
+      return 'inlay catalog'
     case 'settings':
       return 'settings'
     case 'settingsGroup':

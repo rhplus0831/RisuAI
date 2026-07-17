@@ -23,10 +23,12 @@ import {
   type ServerSettingsGroupResourcePayload,
   type ServerSettingsValues,
 } from './resourceState.svelte'
+import { isServerInlayCatalogPayload, type ServerInlayCatalogResourcePayload } from './inlayCatalog'
 
 const SETTINGS_ENDPOINT = '/api/v1/settings'
 const COLLECTIONS_ENDPOINT = '/api/v1/collections'
 const CHARACTERS_ENDPOINT = '/api/v1/characters'
+const INLAY_CATALOG_ENDPOINT = '/api/v1/inlay-assets'
 const CHARACTER_ORDER_ENDPOINT = `${CHARACTERS_ENDPOINT}/order`
 const SETTINGS_CACHE_KEY = 'settings:all'
 const CHARACTERS_CACHE_KEY = 'characters'
@@ -43,6 +45,21 @@ export type ServerResourceReadResult<T extends { revision: number }> =
 
 export function canUseServerResourceReads(): boolean {
   return true
+}
+
+export async function fetchServerInlayCatalog(
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<ServerInlayCatalogResourcePayload>> {
+  const result = await requestServerResourceJson(INLAY_CATALOG_ENDPOINT, signal)
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (!isServerInlayCatalogPayload(result.body)) {
+    return { status: 'error', error: 'Invalid inlay catalog response' }
+  }
+  return {
+    status: 'ok',
+    revision: result.body.revision,
+    assets: result.body.assets.map((entry) => ({ ...entry, aliases: [...entry.aliases] })),
+  }
 }
 
 export async function fetchServerSettings(
