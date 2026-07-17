@@ -107,6 +107,8 @@
                 </button>
               {:else if getResourceDatabase().enabledModules.includes(rmodule.id)}
                 <span class="mr-2" aria-hidden="true"></span>
+              {:else if rmodule.mcp}
+                <span class="mr-2" aria-hidden="true"></span>
               {:else}
                 <button
                   aria-label={`${language.module}: ${rmodule.name}`}

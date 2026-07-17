@@ -101,6 +101,17 @@ describe('ModuleChatMenu modal behavior', () => {
     expect(target.querySelector('button[aria-label="Module: Module A"]')).toBeNull()
   })
 
+  it('does not expose unsupported chat or character toggles for MCP modules', async () => {
+    moduleMenuDatabase.modules = [{ id: 'mcp-a', name: 'MCP A', mcp: { url: 'internal:risuai' } }]
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    expect(target.textContent).toContain('MCP A')
+    expect(target.querySelector('button[aria-label="Module: MCP A"]')).toBeNull()
+    expect(moduleMenuMocks.toggleSelectedChatModule).not.toHaveBeenCalled()
+    expect(moduleMenuMocks.toggleSelectedCharacterModule).not.toHaveBeenCalled()
+  })
+
   it('contains focus, owns Escape, and restores the opener', async () => {
     const close = vi.fn()
     opener.focus()
