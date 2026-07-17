@@ -1049,18 +1049,7 @@ const makeRisuaiAPIV3 = (
 
     // --- Color Scheme APIs ---
     changeColorScheme: (name: string) => {
-      const previous = {
-        colorScheme: cloneJsonValue(getDatabase().colorScheme),
-        colorSchemeName: getDatabase().colorSchemeName,
-      }
-      changeColorScheme(name)
-      dispatchPluginApiSettingsPatch(
-        {
-          colorScheme: cloneJsonValue(getDatabase().colorScheme),
-          colorSchemeName: getDatabase().colorSchemeName,
-        },
-        previous,
-      )
+      return changeColorScheme(name)
     },
     setColorScheme: (scheme: ColorScheme) => {
       const requiredKeys = [

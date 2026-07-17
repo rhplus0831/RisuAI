@@ -286,7 +286,7 @@ import { alertConfirm } from 'src/ts/alert'
 import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import { additionalFloatingActionButtons } from 'src/ts/stores.svelte'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
-import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
+import { changeColorScheme, updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
 import { appendCurrentChatUserMessageForSend, prepareCompatibleChatUpdateScoped } from 'src/ts/chatCommands'
 import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
@@ -336,6 +336,7 @@ beforeEach(async () => {
   vi.mocked(appendCurrentChatUserMessageForSend).mockReset()
   vi.mocked(processSendChat).mockReset()
   vi.mocked(dispatchDurableServerBackedSettingsPatch).mockReset()
+  vi.mocked(changeColorScheme).mockReset()
   vi.mocked(updateColorScheme).mockReset()
   vi.mocked(updateTextThemeAndCSS).mockReset()
   vi.mocked(registerMCPModule).mockReset()
@@ -606,6 +607,17 @@ describe('V3 chat command bridge', () => {
 })
 
 describe('V3 plugin settings rollback', () => {
+  it('delegates a named color scheme change to its single persistence owner', () => {
+    mockServerCommands.canUse = true
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    api.changeColorScheme('dracula')
+
+    expect(changeColorScheme).toHaveBeenCalledOnce()
+    expect(changeColorScheme).toHaveBeenCalledWith('dracula')
+    expect(dispatchDurableServerBackedSettingsPatch).not.toHaveBeenCalled()
+  })
+
   it('I-12: keeps a newer theme value when a failed plugin settings rollback is stale', () => {
     mockServerCommands.canUse = true
     ;(mockDbState.db as any).textTheme = 'standard'
