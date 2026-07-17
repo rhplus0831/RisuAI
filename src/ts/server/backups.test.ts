@@ -89,7 +89,6 @@ const backupManifest = {
 const replacementOwnership = { databaseLineage: 'database-restored', writerEpoch: 4 }
 
 beforeEach(() => {
-  vi.stubGlobal('safeStructuredClone', (value: unknown) => JSON.parse(JSON.stringify(value)))
   clearCachedServerCommandRevision()
   resourceRefreshSpies.forceServerResourceRefresh.mockReset()
   resourceRefreshSpies.forceServerResourceRefresh.mockResolvedValue({ status: 'ok', revision: 12 })

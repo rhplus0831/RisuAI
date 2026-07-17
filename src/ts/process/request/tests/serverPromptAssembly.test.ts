@@ -80,8 +80,6 @@ function expectUnsupported(route: ServerPromptAssemblyRoute): string {
 }
 
 beforeEach(() => {
-  ;(globalThis as Record<string, unknown>).safeStructuredClone = (v: unknown) =>
-    v === undefined ? undefined : JSON.parse(JSON.stringify(v))
   seedDb()
 })
 

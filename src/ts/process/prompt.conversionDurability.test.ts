@@ -48,7 +48,6 @@ function stChatFile() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.stubGlobal('safeStructuredClone', (value: unknown) => JSON.parse(JSON.stringify(value)))
 })
 
 afterEach(() => {

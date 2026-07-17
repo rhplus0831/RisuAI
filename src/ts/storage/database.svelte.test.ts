@@ -793,7 +793,6 @@ function seedPresetDatabase(patch: Partial<Database> = {}): void {
 }
 
 beforeEach(() => {
-  vi.stubGlobal('safeStructuredClone', (value: unknown) => JSON.parse(JSON.stringify(value)))
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)

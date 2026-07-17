@@ -154,9 +154,6 @@ async function previewLegacy(arg: RequestDataArgumentExtended): Promise<PreviewP
 }
 
 beforeEach(() => {
-  vi.stubGlobal('safeStructuredClone', (value: unknown) =>
-    value === undefined ? undefined : JSON.parse(JSON.stringify(value)),
-  )
   globalFetchMock.mockReset()
   vi.spyOn(console, 'log').mockImplementation(() => {})
 })

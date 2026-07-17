@@ -432,7 +432,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   })
 
   beforeEach(() => {
-    vi.stubGlobal('safeStructuredClone', (v: unknown) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v))))
     resetProviderState()
     resetSideEffectCalls()
     resetServerCompletionCalls()
@@ -985,7 +984,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   })
 
   beforeEach(() => {
-    vi.stubGlobal('safeStructuredClone', (v: unknown) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v))))
     resetProviderState()
     resetSideEffectCalls()
     resetServerChatState()

@@ -51,9 +51,6 @@ function installSuccessFetch(): ReturnType<typeof vi.fn> {
 }
 
 beforeEach(() => {
-  vi.stubGlobal('safeStructuredClone', (value: unknown) =>
-    value === undefined ? undefined : JSON.parse(JSON.stringify(value)),
-  )
   vi.mocked(resolveModelProfile).mockClear()
   seedDb()
 })

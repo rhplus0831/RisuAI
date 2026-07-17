@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 describe('Vitest structured clone baseline', () => {
   it('preserves the values supported by the production structured clone path', () => {
@@ -37,5 +37,14 @@ describe('Vitest structured clone baseline', () => {
     expect(cloned.callback).toBe(callback)
     expect(cloned.nested).toEqual({ value: 1 })
     expect(cloned.nested).not.toBe(source.nested)
+  })
+
+  it('survives restoring per-test global stubs', () => {
+    const baseline = globalThis.safeStructuredClone
+
+    vi.stubGlobal('safeStructuredClone', vi.fn())
+    vi.unstubAllGlobals()
+
+    expect(globalThis.safeStructuredClone).toBe(baseline)
   })
 })

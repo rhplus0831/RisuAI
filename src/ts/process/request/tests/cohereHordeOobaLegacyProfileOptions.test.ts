@@ -261,9 +261,6 @@ async function waitForFakeWebSocket(): Promise<FakeWebSocket> {
 
 beforeEach(() => {
   selectedCharID.set(0)
-  vi.stubGlobal('safeStructuredClone', (value: unknown) =>
-    value === undefined ? undefined : JSON.parse(JSON.stringify(value)),
-  )
   vi.stubGlobal('fetch', fetchMock)
   vi.spyOn(console, 'log').mockImplementation(() => {})
   globalFetchMock.mockReset()

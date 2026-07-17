@@ -117,9 +117,6 @@ async function preview(arg: RequestDataArgumentExtended): Promise<PreviewPayload
 }
 
 beforeEach(() => {
-  vi.stubGlobal('safeStructuredClone', (value: unknown) =>
-    value === undefined ? undefined : JSON.parse(JSON.stringify(value)),
-  )
   vi.spyOn(console, 'log').mockImplementation(() => {})
   providerOperations.credential.mockClear()
   providerOperations.request.mockReset()

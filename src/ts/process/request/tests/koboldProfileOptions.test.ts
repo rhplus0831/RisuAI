@@ -97,9 +97,6 @@ async function preview(): Promise<PreviewPayload> {
 
 beforeEach(() => {
   selectedCharID.set(0)
-  vi.stubGlobal('safeStructuredClone', (value: unknown) =>
-    value === undefined ? undefined : JSON.parse(JSON.stringify(value)),
-  )
   globalFetchMock.mockReset()
   resolveServerCompletionRouteMock.mockReset()
   resolveServerCompletionRouteMock.mockReturnValue({ type: 'local' })

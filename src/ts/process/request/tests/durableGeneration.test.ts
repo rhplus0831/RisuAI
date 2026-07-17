@@ -74,8 +74,6 @@ function expectNonDurable(route: DurableGenerationRoute): string {
 
 beforeEach(() => {
   moduleState.triggers = []
-  ;(globalThis as Record<string, unknown>).safeStructuredClone = (v: unknown) =>
-    v === undefined ? undefined : JSON.parse(JSON.stringify(v))
   seedDb()
 })
 
