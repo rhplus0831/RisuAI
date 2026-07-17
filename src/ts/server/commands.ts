@@ -432,6 +432,7 @@ export interface CharacterDefinitionMutationLocalEffect {
   operation: 'scripts' | 'triggers'
   characterId: string
   optimisticRowEpoch: number
+  definitions: Array<ScriptDefinitionSnapshot | TriggerDefinitionSnapshot>
 }
 
 export interface MessageTranslationLocalEffect {
@@ -7571,6 +7572,9 @@ function readCharacterDefinitionMutationLocalEffect(
     operation: options.operation,
     characterId: options.expectedCharacterId,
     optimisticRowEpoch: options.optimisticRowEpoch,
+    definitions: cloneJsonValue(options.expectedDefinitions) as Array<
+      ScriptDefinitionSnapshot | TriggerDefinitionSnapshot
+    >,
   }
 }
 

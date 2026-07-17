@@ -27,6 +27,7 @@ import {
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
 import { characterOwnerMutationKey } from './resourceOwnerMutationKeys'
+import { subscribeServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
 
 interface PendingCharacterPatch {
   characterId: string
@@ -104,8 +105,6 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
     if (identityChanged || !characterId) {
       dirtyFields.clear()
-    } else if (resourceApplyChanged) {
-      clearDirtyFieldsMatchingProjection(dirtyFields, draft.value, serverValue)
     }
 
     const shouldSeedDraft =
@@ -142,6 +141,21 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
     previousServerSnapshot = dirtyFields.size > 0 ? snapshotJson({ characterId, value: draft.value }) : serverSnapshot
   })
+
+  $effect(() =>
+    subscribeServerCommandLocalEffectApplied((_event, localEffect) => {
+      if (localEffect.kind !== 'characterPatch' || localEffect.characterId !== draft.characterId) return
+
+      for (const key of Array.from(dirtyFields)) {
+        if (
+          Object.prototype.hasOwnProperty.call(localEffect.patch, key) &&
+          snapshotJson(draft.value[key]) === snapshotJson(localEffect.patch[key])
+        ) {
+          dirtyFields.delete(key)
+        }
+      }
+    }),
+  )
 
   let draftInitialized = false
   let previousDraftDispatchSnapshot = ''
@@ -200,18 +214,6 @@ function changedTopLevelDraftFields(
     }
   }
   return changed
-}
-
-function clearDirtyFieldsMatchingProjection(
-  dirtyFields: Set<keyof CharacterDraftValue & string>,
-  draft: CharacterDraftValue,
-  projection: CharacterDraftValue,
-): void {
-  for (const key of Array.from(dirtyFields)) {
-    if (snapshotJson(draft[key]) === snapshotJson(projection[key])) {
-      dirtyFields.delete(key)
-    }
-  }
 }
 
 function reassertDirtyDraftFields(

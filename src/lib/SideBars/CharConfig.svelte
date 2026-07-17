@@ -105,11 +105,12 @@
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import {
     applyCharacterScriptDefinitionDraft,
-    clearDirtyScriptDefinitionFieldsMatchingProjection,
+    clearDirtyScriptDefinitionFieldsMatchingAttempt,
     markDirtyScriptDefinitionRowFields,
     mergeScriptDefinitionProjectionRows,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  import { subscribeServerCommandLocalEffectApplied } from 'src/ts/server/commands'
   import { getServerResourceApplyEpoch } from 'src/ts/server/resourceWriteGuard.svelte'
   import { setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
@@ -259,6 +260,28 @@
     }
   })
 
+  $effect(() =>
+    subscribeServerCommandLocalEffectApplied((_event, localEffect) => {
+      if (localEffect.kind !== 'characterDefinitionMutation' || localEffect.characterId !== scriptDraftCharacterId) {
+        return
+      }
+
+      if (localEffect.operation === 'scripts') {
+        clearDirtyScriptDefinitionFieldsMatchingAttempt(
+          scriptDirtyFieldsById,
+          characterScriptsDraft,
+          localEffect.definitions as customscript[],
+        )
+      } else {
+        clearDirtyScriptDefinitionFieldsMatchingAttempt(
+          triggerDirtyFieldsById,
+          characterTriggersDraft,
+          localEffect.definitions as triggerscript[],
+        )
+      }
+    }),
+  )
+
   $effect(() => {
     const resourceApplyEpoch = getServerResourceApplyEpoch()
     const resourceApplyChanged = resourceApplyEpoch !== previousScriptDraftResourceApplyEpoch
@@ -274,19 +297,6 @@
 
     if (targetChanged) {
       clearScriptDraftDirtyState()
-    }
-
-    if (!targetChanged && resourceApplyChanged && hasDirtyScriptDefinitionDraftFields()) {
-      clearDirtyScriptDefinitionFieldsMatchingProjection(
-        scriptDirtyFieldsById,
-        characterScriptsDraft,
-        character?.customscript ?? [],
-      )
-      clearDirtyScriptDefinitionFieldsMatchingProjection(
-        triggerDirtyFieldsById,
-        characterTriggersDraft,
-        character?.triggerscript ?? [],
-      )
     }
 
     if (targetChanged || snapshot !== scriptDraftSnapshot) {

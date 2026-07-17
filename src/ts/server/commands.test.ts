@@ -8192,12 +8192,14 @@ describe('server command API adapter', () => {
         operation: 'scripts',
         characterId: 'char-a',
         optimisticRowEpoch: 4,
+        definitions: [{ id: 'script-a', body: largeClientOnlyBody }],
       },
       {
         kind: 'characterDefinitionMutation',
         operation: 'triggers',
         characterId: 'char-a',
         optimisticRowEpoch: 4,
+        definitions: [{ id: 'trigger-b', body: largeClientOnlyBody }],
       },
       {
         kind: 'moduleCollectionMutation',
@@ -8309,12 +8311,14 @@ describe('server command API adapter', () => {
         operation: 'scripts',
         characterId: 'char-a',
         optimisticRowEpoch: 4,
+        definitions: [{ id: 'script-a' }],
       },
       {
         kind: 'characterDefinitionMutation',
         operation: 'triggers',
         characterId: 'char-a',
         optimisticRowEpoch: 4,
+        definitions: [{ id: 'trigger-a' }],
       },
     ])
   })

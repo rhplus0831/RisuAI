@@ -132,6 +132,7 @@ import {
 import { watchServerBackedChatMetadata } from './chatBridge.svelte'
 import { watchServerBackedScriptDefinitions } from './scriptDefinitionBridge.svelte'
 import { markLocalCharacterProjectionMutation, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
+import { notifyServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
 
 const DELAY = 50
 
@@ -428,22 +429,59 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     stop()
   })
 
-  it('clears a dirty scalar once a matching projection arrives', async () => {
+  it('keeps a newer dirty scalar through older and unrelated effects, then settles its exact attempt', async () => {
     setupCharacter()
     const { draft, stop } = await createDraft(['name', 'desc'])
 
-    draft.value.name = 'Accepted local name'
+    draft.value.name = 'First attempted name'
+    await flushAndSettle()
+    draft.value.name = 'Newer attempted name'
     await flushAndSettle()
 
-    const matchingApplied = mergeServerResourceCharacterRow({
-      ...characterRow('char-1', 'Accepted local name'),
-      desc: 'Accepted server description',
+    resourceGuardState.epoch += 1
+    notifyServerCommandLocalEffectApplied(
+      { type: 'character.updated', revision: 2, resource: 'characterRow', id: 'char-1' },
+      { kind: 'characterPatch', characterId: 'char-1', patch: { name: 'First attempted name' } },
+    )
+    await flushAndSettle()
+
+    const olderApplied = mergeServerResourceCharacterRow({
+      ...characterRow('char-1', 'First attempted name'),
+      desc: 'Fresh description after older acknowledgement',
     })
-    expect(matchingApplied).toBe(true)
+    expect(olderApplied).toBe(true)
     await flushAndSettle()
 
-    expect(draft.value.name).toBe('Accepted local name')
-    expect(draft.value.desc).toBe('Accepted server description')
+    expect(draft.value.name).toBe('Newer attempted name')
+    expect(draft.value.desc).toBe('Fresh description after older acknowledgement')
+
+    resourceGuardState.epoch += 1
+    notifyServerCommandLocalEffectApplied(
+      { type: 'chat.updated', revision: 3, resource: 'chat', id: 'chat-1', parentId: 'char-1' },
+      {
+        kind: 'chatPatch',
+        characterId: 'char-1',
+        chatId: 'chat-1',
+        patch: { name: 'Unrelated chat name' },
+        select: false,
+      },
+    )
+    await flushAndSettle()
+
+    const staleAfterUnrelatedApply = mergeServerResourceCharacterRow({
+      ...characterRow('char-1', 'First attempted name'),
+      desc: 'Fresh description after unrelated acknowledgement',
+    })
+    expect(staleAfterUnrelatedApply).toBe(true)
+    await flushAndSettle()
+
+    expect(draft.value.name).toBe('Newer attempted name')
+    expect(draft.value.desc).toBe('Fresh description after unrelated acknowledgement')
+
+    notifyServerCommandLocalEffectApplied(
+      { type: 'character.updated', revision: 4, resource: 'characterRow', id: 'char-1' },
+      { kind: 'characterPatch', characterId: 'char-1', patch: { name: 'Newer attempted name' } },
+    )
 
     const laterApplied = mergeServerResourceCharacterRow({
       ...characterRow('char-1', 'Later server name'),

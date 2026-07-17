@@ -290,7 +290,7 @@ import {
   applyModuleScriptDefinitionDraft,
   applyCharacterScriptDefinitionDraft,
   beginCharacterScriptDefinitionStructuralWrite,
-  clearDirtyScriptDefinitionFieldsMatchingProjection,
+  clearDirtyScriptDefinitionFieldsMatchingAttempt,
   collectScriptDefinitionCollectionSnapshots,
   currentScriptDefinitionStateSnapshot,
   dispatchReplaceCharacterScripts,
@@ -451,7 +451,7 @@ describe('Phase 2 script definition dirty projection merge', () => {
     const dirtyFieldsById = new Map<string, Set<string>>()
 
     markDirtyScriptDefinitionRowFields(dirtyFieldsById, previousScripts, draftScripts)
-    clearDirtyScriptDefinitionFieldsMatchingProjection(dirtyFieldsById, draftScripts, projectionScripts)
+    clearDirtyScriptDefinitionFieldsMatchingAttempt(dirtyFieldsById, draftScripts, projectionScripts)
     const merged = mergeScriptDefinitionProjectionRows(draftScripts, projectionScripts, dirtyFieldsById)
 
     expect(dirtyFieldsById.get('script-1')).toEqual(new Set(['out']))
@@ -463,7 +463,7 @@ describe('Phase 2 script definition dirty projection merge', () => {
       projectionScripts[1],
     ])
 
-    clearDirtyScriptDefinitionFieldsMatchingProjection(dirtyFieldsById, merged!, caughtUpProjectionScripts)
+    clearDirtyScriptDefinitionFieldsMatchingAttempt(dirtyFieldsById, merged!, caughtUpProjectionScripts)
     const laterMerged = mergeScriptDefinitionProjectionRows(merged!, laterCleanProjectionScripts, dirtyFieldsById)
 
     expect(dirtyFieldsById.size).toBe(0)
@@ -489,7 +489,7 @@ describe('Phase 2 script definition dirty projection merge', () => {
     expect(staleMerged?.[0].comment).toBe('local trigger')
     expect(staleMerged?.[1].comment).toBe('projected sibling trigger')
 
-    clearDirtyScriptDefinitionFieldsMatchingProjection(dirtyFieldsById, staleMerged!, caughtUpProjection)
+    clearDirtyScriptDefinitionFieldsMatchingAttempt(dirtyFieldsById, staleMerged!, caughtUpProjection)
     const laterMerged = mergeScriptDefinitionProjectionRows(staleMerged!, laterCleanProjection, dirtyFieldsById)
 
     expect(dirtyFieldsById.size).toBe(0)
@@ -752,27 +752,25 @@ describe('character script definition draft bridge', () => {
     expect(source).toContain('applyCharacterScriptDefinitionDraft(')
     expect(source).toContain('getServerResourceApplyEpoch')
     expect(source).toContain('markDirtyScriptDefinitionRowFields')
-    expect(source).toContain('clearDirtyScriptDefinitionFieldsMatchingProjection')
+    expect(source).toContain('subscribeServerCommandLocalEffectApplied')
+    expect(source).toContain('clearDirtyScriptDefinitionFieldsMatchingAttempt')
     expect(source).toContain('mergeScriptDefinitionProjectionRows')
     expect(source).toContain('clearScriptDraftDirtyState()')
   })
 
-  it('clears matching script dirty fields before the snapshot mismatch branch', () => {
+  it('does not settle script dirty fields from a broad resource apply', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
     const projectionChangedIndex = source.indexOf('const resourceApplyChanged')
     const mismatchBranchIndex = source.indexOf(
       'if (targetChanged || snapshot !== scriptDraftSnapshot)',
       projectionChangedIndex,
     )
-    const clearIndex = source.indexOf('clearDirtyScriptDefinitionFieldsMatchingProjection', projectionChangedIndex)
     const preMismatchSource = source.slice(projectionChangedIndex, mismatchBranchIndex)
 
     expect(projectionChangedIndex).toBeGreaterThanOrEqual(0)
     expect(mismatchBranchIndex).toBeGreaterThan(projectionChangedIndex)
-    expect(clearIndex).toBeGreaterThan(projectionChangedIndex)
-    expect(clearIndex).toBeLessThan(mismatchBranchIndex)
     expect(preMismatchSource).toContain('resourceApplyChanged')
-    expect(preMismatchSource).toContain('!targetChanged')
+    expect(preMismatchSource).not.toContain('clearDirtyScriptDefinitionFieldsMatchingAttempt')
   })
 
   it('applies cloned drafts, dispatches replacements, and preserves newer definitions on stale rollback', async () => {

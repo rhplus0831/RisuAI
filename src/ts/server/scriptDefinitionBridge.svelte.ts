@@ -767,27 +767,24 @@ export function markDirtyScriptDefinitionRowFields<T extends ScriptDefinitionRow
   pruneDirtyScriptDefinitionRows(dirtyFieldsById, currentRowIds)
 }
 
-export function clearDirtyScriptDefinitionFieldsMatchingProjection<T extends ScriptDefinitionRow>(
+export function clearDirtyScriptDefinitionFieldsMatchingAttempt<T extends ScriptDefinitionRow>(
   dirtyFieldsById: ScriptDefinitionDirtyFieldsById,
   draftRows: T[],
-  projectionRows: T[],
+  attemptedRows: T[],
 ): void {
   const draftRowsById = scriptDefinitionRowsById(draftRows)
-  const projectionRowsById = scriptDefinitionRowsById(projectionRows)
+  const attemptedRowsById = scriptDefinitionRowsById(attemptedRows)
 
   for (const [rowId, dirtyFields] of Array.from(dirtyFieldsById.entries())) {
     const draftRow = draftRowsById.get(rowId)
-    const projectionRow = projectionRowsById.get(rowId)
+    const attemptedRow = attemptedRowsById.get(rowId)
 
-    if (!draftRow || !projectionRow) {
-      dirtyFieldsById.delete(rowId)
-      continue
-    }
+    if (!draftRow || !attemptedRow) continue
 
     const draftRecord = scriptDefinitionRowAsRecord(draftRow)
-    const projectionRecord = scriptDefinitionRowAsRecord(projectionRow)
+    const attemptedRecord = scriptDefinitionRowAsRecord(attemptedRow)
     for (const field of Array.from(dirtyFields)) {
-      if (snapshotJson(draftRecord[field]) === snapshotJson(projectionRecord[field])) {
+      if (snapshotJson(draftRecord[field]) === snapshotJson(attemptedRecord[field])) {
         dirtyFields.delete(field)
       }
     }
