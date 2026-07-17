@@ -248,6 +248,32 @@ describe('PlaygroundSubtitle run recovery', () => {
     expect(audioConstructor).not.toHaveBeenCalled()
   })
 
+  it('aborts and clears an active run when a request input changes', async () => {
+    subtitleMocks.selectSingleFile.mockResolvedValue({
+      name: 'sample.mp3',
+      data: new Uint8Array([1, 2, 3]),
+    })
+    subtitleMocks.requestChatData.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* intentionally never resolves */
+        }),
+    )
+    component = mount(PlaygroundSubtitle, { target })
+
+    runButton()!.click()
+    await vi.waitFor(() => expect(subtitleMocks.requestChatData).toHaveBeenCalledOnce())
+    const signal = subtitleMocks.requestChatData.mock.calls[0][2] as AbortSignal
+
+    setTextareaValue('A replacement subtitle prompt')
+    await tick()
+
+    expect(signal.aborted).toBe(true)
+    expect(target.textContent).not.toContain('Loading...')
+    expect(runButton()).toBeTruthy()
+    expect(audioConstructor).not.toHaveBeenCalled()
+  })
+
   it('passes teardown cancellation into OpenAI transcription', async () => {
     const file = new File([new Uint8Array([1, 2, 3])], 'sample.mp3', { type: 'audio/mpeg' })
     subtitleMocks.selectFileByDom.mockResolvedValue([file])

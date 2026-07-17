@@ -38,6 +38,7 @@
   let mode: 'llm' | 'whisper' | 'whisperLocal' = $state('llm')
   let sourceLang: string | null = $state(null)
   let running = $state(false)
+  let resultLanguage = $state('')
 
   type SubtitleStreamReader = ReadableStreamDefaultReader<Record<string, string>>
   type DisposablePipeline = {
@@ -58,6 +59,7 @@
 
   let activeRun: SubtitleRun | null = null
   let destroyed = false
+  let trackedInputSignature = ''
   const disposedPipelines = new WeakSet<object>()
 
   function subtitleAbortError(): DOMException {
@@ -137,6 +139,22 @@
     run.pipeline = null
     disposePipeline(pipeline)
   }
+
+  function currentInputSignature(): string {
+    return JSON.stringify([mode, prompt, selLang, sourceLang])
+  }
+
+  $effect(() => {
+    const inputSignature = currentInputSignature()
+    if (inputSignature === trackedInputSignature) return
+    trackedInputSignature = inputSignature
+
+    const run = activeRun
+    activeRun = null
+    if (run) cancelRun(run)
+    running = false
+    resetOutput()
+  })
 
   onDestroy(() => {
     destroyed = true
@@ -529,6 +547,7 @@
   async function runSelectedMode(): Promise<void> {
     if (running) return
 
+    trackedInputSignature = currentInputSignature()
     const runMode = mode
     const promptSnapshot = prompt
     const languageSnapshot = selLang
@@ -550,7 +569,10 @@
         runMode === 'llm'
           ? await runLLMMode(promptSnapshot, languageSnapshot, run)
           : await runWhisperMode(runMode, promptSnapshot, languageSnapshot, sourceLanguageSnapshot, run)
-      if (isCurrentRun(run) && !completed) resetOutput()
+      if (isCurrentRun(run)) {
+        if (completed) resultLanguage = languageSnapshot
+        else resetOutput()
+      }
     } catch (error) {
       if (isCurrentRun(run) && !isAbortError(error)) {
         resetOutput()
@@ -569,6 +591,7 @@
     fileB64 = ''
     vttB64 = ''
     vobj = []
+    resultLanguage = ''
   }
 
   type TranscribeObj = {
@@ -723,7 +746,7 @@
   <div class="mt-4">
     {#key vttB64}
       <video controls src={fileB64} class="w-full">
-        <track default kind="captions" src={vttB64} srclang={selLang || 'en'} />
+        <track default kind="captions" src={vttB64} srclang={resultLanguage || 'en'} />
       </video>
     {/key}
   </div>
