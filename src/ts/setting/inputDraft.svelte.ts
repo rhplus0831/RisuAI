@@ -62,10 +62,9 @@ export function createSettingInputDraft<T>(
       clearDirty()
       if (serverSnapshot !== draftSnapshot) replaceDraftValue(serverValue)
     } else if (serverSnapshot === draftSnapshot) {
-      // A projection carrying the draft is authoritative confirmation. A
-      // non-projection match is the optimistic local/preset mirror catching up.
-      if (resourceApplyChanged && dirty) clearDirty()
-      else dirtyResourceEpoch = null
+      // Equality can come from this draft's own optimistic write. Only the
+      // owner/value-specific local-effect listener can acknowledge it.
+      dirtyResourceEpoch = null
     } else if (resourceApplyChanged && dirty) {
       dirtyResourceEpoch = resourceApplyEpoch
       untrack(() => reassertSettingValue(item, draft.value, context))

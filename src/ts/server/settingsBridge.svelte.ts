@@ -174,11 +174,6 @@ export function createServerBackedSettingDraft<T>(
         })
       }
     } else {
-      if (resourceApplyChanged && dirty && serverSnapshot === draftSnapshot) {
-        dirty = false
-        dirtyOwnerKey = null
-      }
-
       if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
         suppressDraftDispatch = true
         if (resourceApplyChanged && dirty) {

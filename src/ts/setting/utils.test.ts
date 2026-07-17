@@ -520,6 +520,60 @@ describe('server-backed data-driven settings', () => {
     unmount(component)
   })
 
+  it('keeps a newer input dirty after an older acknowledgement advances the resource epoch', () => {
+    vi.useFakeTimers()
+    replaceResourceDatabase({
+      guiHTML: 'A',
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const item: SettingItem = {
+      id: 'display.guiHTML',
+      type: 'textarea',
+      bindKey: 'guiHTML' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+    const target = document.createElement('div')
+    const component = mount(SettingInputDraftHarness, { target, props: { ctx, item, kind: 'text' } })
+    flushSync()
+    const input = target.querySelector<HTMLInputElement>('[data-setting-input-draft]')!
+
+    input.value = 'B'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    flushSync()
+    input.value = 'C'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    flushSync()
+
+    withServerResourceApply(() => {})
+    notifyServerCommandLocalEffectApplied(
+      {
+        type: 'settings.updated',
+        revision: 5,
+        resource: 'settings',
+        id: 'display',
+      },
+      {
+        kind: 'settingsPatch',
+        group: 'display',
+        attemptedPatch: { guiHTML: 'B' },
+        settings: { guiHTML: 'B' },
+        settingsProjectionEpoch: 0,
+      },
+    )
+    flushSync()
+    withServerResourceApply(() => {
+      getResourceDatabase().guiHTML = 'B'
+    })
+    flushSync()
+
+    expect(input.value).toBe('C')
+    expect(getResourceDatabase().guiHTML).toBe('C')
+    unmount(component)
+  })
+
   it('shows a canonical settings receipt in the input that produced the accepted attempt', () => {
     replaceResourceDatabase({
       deeplOptions: { key: 'server initial', freeApi: false },

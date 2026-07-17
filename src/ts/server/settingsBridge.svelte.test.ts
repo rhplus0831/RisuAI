@@ -1565,7 +1565,7 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
-  it('clears dirty state when projection matches the setting draft value', async () => {
+  it('does not clear dirty state from projection equality alone', async () => {
     setupSettings({
       globalscript: [{ id: 'script-a', in: 'server old', out: '', type: 'editinput' }],
     })
@@ -1577,10 +1577,43 @@ describe('settingsBridge coalescing', () => {
     await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'local accepted', out: '', type: 'editinput' }])
     await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'server later', out: '', type: 'editinput' }])
 
-    expect(draft.value).toEqual([{ id: 'script-a', in: 'server later', out: '', type: 'editinput' }])
+    expect(draft.value).toEqual([{ id: 'script-a', in: 'local accepted', out: '', type: 'editinput' }])
     expect(testDatabaseState.db.globalscript).toEqual([
-      { id: 'script-a', in: 'server later', out: '', type: 'editinput' },
+      { id: 'script-a', in: 'local accepted', out: '', type: 'editinput' },
     ])
+    stop()
+  })
+
+  it('keeps a newer dirty draft fenced after an older acknowledgement', async () => {
+    setupSettings({ textTheme: 'A' })
+    const { draft, stop } = await createSettingDraft('textTheme', '')
+
+    draft.value = 'B'
+    await flushAndSettle()
+    draft.value = 'C'
+    await flushAndSettle()
+
+    resourceGuardState.epoch += 1
+    notifyServerCommandLocalEffectApplied(
+      {
+        type: 'settings.updated',
+        revision: 2,
+        resource: 'settings',
+        id: 'test',
+      },
+      {
+        kind: 'settingsPatch',
+        group: 'display',
+        attemptedPatch: { textTheme: 'B' },
+        settings: { textTheme: 'B' },
+        settingsProjectionEpoch: 0,
+      },
+    )
+    await flushAndSettle()
+    await applyProjectionSetting('textTheme', 'B')
+
+    expect(draft.value).toBe('C')
+    expect(testDatabaseState.db.textTheme).toBe('C')
     stop()
   })
 
