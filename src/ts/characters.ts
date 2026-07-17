@@ -57,6 +57,7 @@ import {
   type CharacterEmotionImageEntry,
   type CharacterEmotionUploadOperation,
 } from './server/characterEmotionUpload'
+import { rekeyClonedChat } from './chatFork'
 
 type SelectedSingleFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
 type SelectedMultipleFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>
@@ -714,50 +715,7 @@ function resolveFreshChatImportTarget(
 }
 
 function rekeyImportedChat(chat: Chat): void {
-  chat.id = v4()
-  const messageIdMap = new Map<string, string>()
-  if (Array.isArray(chat.message)) {
-    for (const message of chat.message) {
-      if (!isRecord(message)) continue
-      const previousId = typeof message.chatId === 'string' && message.chatId.trim() ? message.chatId : null
-      const nextId = v4()
-      message.chatId = nextId
-      if (previousId && !messageIdMap.has(previousId)) {
-        messageIdMap.set(previousId, nextId)
-      }
-    }
-
-    for (const message of chat.message) {
-      if (!isRecord(message) || !isRecord(message.generationInfo)) continue
-      const generationId = message.generationInfo.generationId
-      if (typeof generationId !== 'string') continue
-      const nextGenerationId = messageIdMap.get(generationId)
-      if (nextGenerationId) {
-        message.generationInfo.generationId = nextGenerationId
-      }
-    }
-  }
-
-  if (Array.isArray(chat.bookmarks)) {
-    chat.bookmarks = chat.bookmarks.map((messageId) => messageIdMap.get(messageId) ?? messageId)
-  }
-  if (isRecord(chat.bookmarkNames)) {
-    const renamed: Record<string, string> = {}
-    for (const [messageId, name] of Object.entries(chat.bookmarkNames)) {
-      renamed[messageIdMap.get(messageId) ?? messageId] = name
-    }
-    chat.bookmarkNames = renamed
-  }
-
-  const memory = chat.hypaV3Data
-  if (isRecord(memory) && Array.isArray(memory.summaries)) {
-    for (const summary of memory.summaries) {
-      if (!isRecord(summary) || !Array.isArray(summary.chatMemos)) continue
-      summary.chatMemos = summary.chatMemos.map((messageId) =>
-        typeof messageId === 'string' ? (messageIdMap.get(messageId) ?? messageId) : messageId,
-      )
-    }
-  }
+  rekeyClonedChat(chat, { pruneDanglingReferences: false })
 }
 
 function rekeyImportedChatFolders(folders: unknown[]): Map<string, string> {

@@ -1041,8 +1041,18 @@ describe('SideChatList DOM contract harness', () => {
     const chara = seedSidebarDatabase()
     chara.chats[0].message = [
       { chatId: 'root-message-0', data: 'first root message', role: 'user' },
-      { chatId: 'root-message-1', data: 'second root message', role: 'char' },
+      {
+        chatId: 'root-message-1',
+        data: 'second root message',
+        role: 'char',
+        generationInfo: { generationId: 'root-message-1' },
+      },
     ]
+    chara.chats[0].bookmarks = ['root-message-0']
+    chara.chats[0].bookmarkNames = { 'root-message-0': 'Opening' }
+    chara.chats[0].hypaV3Data = {
+      summaries: [{ chatMemos: ['root-message-0', 'root-message-1'] }],
+    } as Chat['hypaV3Data']
     sidebarMocks.setServerCommandsEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(0)
 
@@ -1064,7 +1074,13 @@ describe('SideChatList DOM contract harness', () => {
     expect(payload.chat.message.map((message) => message.chatId)).not.toContain('root-message-0')
     expect(payload.chat.message.map((message) => message.chatId)).not.toContain('root-message-1')
     expect(new Set(payload.chat.message.map((message) => message.chatId)).size).toBe(payload.chat.message.length)
+    const [firstForkedMessageId, secondForkedMessageId] = payload.chat.message.map((message) => message.chatId)
+    expect(payload.chat.bookmarks).toEqual([firstForkedMessageId])
+    expect(payload.chat.bookmarkNames).toEqual({ [firstForkedMessageId!]: 'Opening' })
+    expect(payload.chat.message[1].generationInfo?.generationId).toBe(secondForkedMessageId)
+    expect(payload.chat.hypaV3Data?.summaries?.[0]?.chatMemos).toEqual([firstForkedMessageId, secondForkedMessageId])
     expect(chara.chats[0].message.map((message) => message.chatId)).toEqual(['root-message-0', 'root-message-1'])
+    expect(chara.chats[0].bookmarks).toEqual(['root-message-0'])
   })
 
   it('hydrates an unopened chat before dispatching a server-backed copy', async () => {

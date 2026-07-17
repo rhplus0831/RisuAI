@@ -60,6 +60,7 @@
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { groupChatsByFolderId } from './chatFolderGrouping'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
+  import { rekeyClonedChat } from 'src/ts/chatFork'
 
   interface Props {
     chara: character
@@ -448,10 +449,7 @@
     const previous = currentChatStateSnapshot()
     const newChat = $state.snapshot(liveSourceChat)
     newChat.name = createChatCopyName(newChat.name, 'Copy')
-    newChat.id = v4()
-    for (const message of newChat.message ?? []) {
-      message.chatId = v4()
-    }
+    rekeyClonedChat(newChat)
     if (canUseServerCommands()) {
       dispatchForkChat(sourceChatId, previous, { chat: newChat })
       return

@@ -125,6 +125,7 @@
   import { createBranchComment, parseBranchComment } from './branchComment'
   import { characterRoutePath, navigate } from 'src/ts/router'
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
+  import { rekeyClonedChat } from 'src/ts/chatFork'
 
   let translating = $state(false)
   let editMode = $state(false)
@@ -534,11 +535,8 @@
       newChat.folderId = sourcePatch.folderId
     }
     newChat.name = createChatCopyName(newChat.name, 'Branch')
-    newChat.id = v4()
     newChat.message = newChat.message.slice(0, branchIndex + 1)
-    for (const item of newChat.message) {
-      item.chatId = uuidv4()
-    }
+    rekeyClonedChat(newChat)
     newChat.message.push({
       role: 'char',
       data: createBranchComment({

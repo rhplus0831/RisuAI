@@ -1196,6 +1196,13 @@ describe('message action target freshness', () => {
 
   it('branches from the clicked chat when the active chat switches immediately after the click', async () => {
     seedDatabase(1, null as unknown as string)
+    const sourceChat = testDatabaseState.db.characters[0].chats[0]
+    sourceChat.message[0].generationInfo = { generationId: 'message-0' }
+    sourceChat.bookmarks = ['message-0', 'removed-tail']
+    sourceChat.bookmarkNames = { 'message-0': 'Opening', 'removed-tail': 'Removed' }
+    sourceChat.hypaV3Data = {
+      summaries: [{ chatMemos: ['message-0', 'removed-tail'] }],
+    } as (typeof sourceChat)['hypaV3Data']
     mountPopupList()
     mountCustomHtmlRows(1)
     await settle()
@@ -1237,12 +1244,24 @@ describe('message action target freshness', () => {
       }),
     )
     const forkPayload = vi.mocked(dispatchForkChat).mock.calls.at(-1)?.[2] as
-      | { chat: { message: Array<{ chatId?: string; data: string }> } }
+      | {
+          chat: {
+            message: Array<{ chatId?: string; data: string; generationInfo?: { generationId?: string } }>
+            bookmarks?: string[]
+            bookmarkNames?: Record<string, string>
+            hypaV3Data?: { summaries?: Array<{ chatMemos?: string[] }> }
+          }
+        }
       | undefined
     const forkedMessageIds = forkPayload?.chat.message.map((message) => message.chatId)
     expect(forkedMessageIds?.[0]).toBeTruthy()
     expect(forkedMessageIds).not.toContain('message-0')
     expect(new Set(forkedMessageIds).size).toBe(forkedMessageIds?.length)
+    expect(forkPayload?.chat.bookmarks).toEqual([forkedMessageIds?.[0]])
+    expect(forkPayload?.chat.bookmarkNames).toEqual({ [forkedMessageIds?.[0] ?? '']: 'Opening' })
+    expect(forkPayload?.chat.message[0].generationInfo?.generationId).toBe(forkedMessageIds?.[0])
+    expect(forkPayload?.chat.hypaV3Data?.summaries?.[0]?.chatMemos).toEqual([forkedMessageIds?.[0]])
+    expect(sourceChat.bookmarks).toEqual(['message-0', 'removed-tail'])
     expect(parseBranchComment(forkPayload?.chat.message.at(-1)?.data ?? '')).toEqual({
       sourceChatId: 'custom-html-chat',
       sourceChatName: 'Custom HTML Chat',
