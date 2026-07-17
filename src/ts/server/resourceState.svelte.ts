@@ -12,6 +12,7 @@ import {
 } from './settingsGroups'
 import type { PromptItemMutationOperation, PromptTemplateOwnerStateSnapshot } from './commands'
 import { applySettingsRuntimeProjectionEffects } from './settingsRuntimeProjectionHooks'
+import { applyPendingSettingsProjectionOverlays } from './settingsPendingProjection'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -704,6 +705,7 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
       delete (settingsResourceState.value as Record<string, unknown>).loreBookPage
     }
   }
+  applyPendingSettingsProjectionOverlays(settingsResourceState.value as Record<string, unknown>)
   settingsResourceState.revision =
     preserveEnabledModules || preserveLoreBookPage
       ? maxRevision(settingsResourceState.revision, payload.revision)
@@ -750,6 +752,7 @@ export function applySettingsGroupResource(
       delete target[key]
     }
   }
+  applyPendingSettingsProjectionOverlays(target, new Set(groupKeys))
   settingsResourceState.groupRevisions[payload.group] = payload.revision
   if (payload.group === 'providers') settingsResourceState.groupRevisions.models = payload.revision
   if (payload.group === 'modules') settingsResourceState.enabledModulesRevision = payload.revision

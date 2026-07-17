@@ -52,6 +52,7 @@ import {
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from '../server/pendingMutationOutbox'
+import { registerPendingSettingsProjectionOverlay } from '../server/settingsPendingProjection'
 
 /**
  * Sentinel value representing an uninitialized local state in wrapper components.
@@ -119,6 +120,7 @@ interface PendingDeferredSettingWrite {
 interface PendingDeferredServerSettingAttempt {
   sequence: number
   ownerKey: string
+  rootKey: string
   previousRoot: unknown
   attemptedRoot: unknown
 }
@@ -127,6 +129,17 @@ const pendingDeferredSettingWrites = new Map<string, PendingDeferredSettingWrite
 const pendingDeferredServerSettingAttempts: PendingDeferredServerSettingAttempt[] = []
 let nextDeferredServerSettingAttemptSequence = 0
 registerPendingBridgePatchFlusher('setting-renderer-inputs', flushDeferredSettingWrites)
+registerPendingSettingsProjectionOverlay((target, allowedKeys) => {
+  for (const attempt of pendingDeferredServerSettingAttempts) {
+    if (allowedKeys && !allowedKeys.has(attempt.rootKey)) continue
+    target[attempt.rootKey] = cloneJsonValue(attempt.attemptedRoot)
+  }
+  for (const pending of pendingDeferredSettingWrites.values()) {
+    if (pending.target.kind !== 'server') continue
+    if (allowedKeys && !allowedKeys.has(pending.target.rootKey)) continue
+    target[pending.target.rootKey] = cloneJsonValue(pending.desiredRoot)
+  }
+})
 
 function createSettingSaveFailureReporter(): () => void {
   let reported = false
@@ -482,7 +495,12 @@ function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTr
     return
   }
 
-  const attempt = registerDeferredServerSettingAttempt(serverTarget.ownerKey, pending.previousRoot, attemptedRoot)
+  const attempt = registerDeferredServerSettingAttempt(
+    serverTarget.ownerKey,
+    serverTarget.rootKey,
+    pending.previousRoot,
+    attemptedRoot,
+  )
 
   void dispatchDurableMutation(pending.outbox, pending.intent, (transport) => {
     const result = patchServerBackedSettings({
@@ -520,12 +538,14 @@ function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTr
 
 function registerDeferredServerSettingAttempt(
   ownerKey: string,
+  rootKey: string,
   previousRoot: unknown,
   attemptedRoot: unknown,
 ): PendingDeferredServerSettingAttempt {
   const attempt = {
     sequence: ++nextDeferredServerSettingAttemptSequence,
     ownerKey,
+    rootKey,
     previousRoot: cloneJsonValue(previousRoot),
     attemptedRoot: cloneJsonValue(attemptedRoot),
   }

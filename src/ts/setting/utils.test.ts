@@ -71,6 +71,7 @@ import {
   type ServerCommandLocalEffect,
 } from '../server/commands'
 import {
+  applySettingsResource,
   applySettingsGroupResource,
   captureSettingsGroupProjectionEpoch,
   getResourceDatabase,
@@ -534,6 +535,57 @@ describe('server-backed data-driven settings', () => {
     unmount(component)
   })
 
+  it('overlays an in-flight immediate setting across full and grouped authoritative reads', async () => {
+    const patchResponse = deferredResponse()
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 4 })
+        if (url === '/api/v1/commands/settings/display') return patchResponse.promise
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    replaceResourceDatabase({ notification: false } as any)
+    const item: SettingItem = {
+      id: 'notification',
+      type: 'check',
+      bindKey: 'notification' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setSettingValue(item, true, ctx)
+    await vi.waitFor(() => expect(calls.some((call) => call.url === '/api/v1/commands/settings/display')).toBe(true))
+
+    withServerResourceApply(() => {
+      applySettingsResource({ revision: 4, settings: { notification: false } })
+    })
+    expect(getResourceDatabase().notification).toBe(true)
+
+    withServerResourceApply(() => {
+      applySettingsGroupResource({ revision: 4, group: 'display', settings: { notification: false } }, ['notification'])
+    })
+    expect(getResourceDatabase().notification).toBe(true)
+
+    patchResponse.resolve(
+      jsonResponse({
+        revision: 5,
+        event: {
+          type: 'settings.updated',
+          revision: 5,
+          resource: 'settings',
+          id: 'display',
+        },
+        acknowledgedKeys: ['notification'],
+        settings: {},
+      }),
+    )
+    await vi.waitFor(() => expect(getResourceDatabase().notification).toBe(true))
+  })
+
   it('keeps a newer input dirty after an older acknowledgement advances the resource epoch', () => {
     vi.useFakeTimers()
     replaceResourceDatabase({
@@ -636,7 +688,7 @@ describe('server-backed data-driven settings', () => {
     unmount(component)
   })
 
-  it('keeps a destroyed input intent fenced to its pre-projection group epoch', async () => {
+  it('keeps a destroyed input intent over a newer projection while fencing its acknowledgement', async () => {
     vi.useFakeTimers()
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -705,7 +757,7 @@ describe('server-backed data-driven settings', () => {
       ),
     )
     expect(hasSettingsGroupProjectionEpochChanged('display', intentEpoch)).toBe(true)
-    expect(getResourceDatabase().guiHTML).toBe('server intermediate')
+    expect(getResourceDatabase().guiHTML).toBe('local final')
 
     await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
     await reconciliationFinished
@@ -720,7 +772,7 @@ describe('server-backed data-driven settings', () => {
         settingsProjectionEpoch: intentEpoch,
       },
     ])
-    expect(getResourceDatabase().guiHTML).toBe('server intermediate')
+    expect(getResourceDatabase().guiHTML).toBe('local final')
   })
 
   it('bounds rapid slider persistence to one dispatch with the final value', async () => {
