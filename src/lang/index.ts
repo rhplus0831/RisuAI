@@ -21,25 +21,34 @@ function resolveLanguageCode(lang: string): ResolvedLanguageCode {
   return 'en'
 }
 
+export function getLanguageForCode(lang: string): typeof languageEnglish {
+  const resolvedLanguageCode = resolveLanguageCode(lang)
+
+  if (resolvedLanguageCode === 'cn') {
+    return merge(safeStructuredClone(languageEnglish), languageChinese)
+  }
+  if (resolvedLanguageCode === 'de') {
+    return merge(safeStructuredClone(languageEnglish), languageGerman)
+  }
+  if (resolvedLanguageCode === 'ko') {
+    return merge(safeStructuredClone(languageEnglish), languageKorean)
+  }
+  if (resolvedLanguageCode === 'vi') {
+    return merge(safeStructuredClone(languageEnglish), languageVietnamese)
+  }
+  if (resolvedLanguageCode === 'zh-Hant') {
+    return merge(safeStructuredClone(languageEnglish), languageChineseTraditional)
+  }
+  if (resolvedLanguageCode === 'es') {
+    return merge(safeStructuredClone(languageEnglish), languageSpanish)
+  }
+  return languageEnglish
+}
+
 export function changeLanguage(lang: string) {
   const resolvedLanguageCode = resolveLanguageCode(lang)
   if (lastAppliedLanguageCode === resolvedLanguageCode) return
 
-  if (resolvedLanguageCode === 'cn') {
-    language = merge(safeStructuredClone(languageEnglish), languageChinese)
-  } else if (resolvedLanguageCode === 'de') {
-    language = merge(safeStructuredClone(languageEnglish), languageGerman)
-  } else if (resolvedLanguageCode === 'ko') {
-    language = merge(safeStructuredClone(languageEnglish), languageKorean)
-  } else if (resolvedLanguageCode === 'vi') {
-    language = merge(safeStructuredClone(languageEnglish), languageVietnamese)
-  } else if (resolvedLanguageCode === 'zh-Hant') {
-    language = merge(safeStructuredClone(languageEnglish), languageChineseTraditional)
-  } else if (resolvedLanguageCode === 'es') {
-    language = merge(safeStructuredClone(languageEnglish), languageSpanish)
-  } else {
-    language = languageEnglish
-  }
-
+  language = getLanguageForCode(resolvedLanguageCode)
   lastAppliedLanguageCode = resolvedLanguageCode
 }

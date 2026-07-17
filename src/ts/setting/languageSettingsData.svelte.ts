@@ -6,42 +6,36 @@
  */
 
 import type { SettingItem } from './types'
-import { changeLanguage, language } from 'src/lang'
+import { changeLanguage, getLanguageForCode, language } from 'src/lang'
 import { languageEnglish } from 'src/lang/en'
 import { sleep } from '../util'
 import { alertNormal, alertSelect, alertConfirm, alertError, alertWait } from '../alert'
 import { downloadFile } from '../globalApi.svelte'
 import { selectFileByDom } from '../util'
-import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
 import { exportLLMCacheAsJSON, importLLMCacheFromJSON, clearLLMCache } from '../translator/translator'
 
 export const langState = $state({ changed: false })
 
 export async function downloadLanguageTemplate(): Promise<void> {
-  const activeLanguage = getDatabase().language
   const selection = await alertSelect([language.continueTranslatingLanguage, language.makeNewLanguage])
   if (selection === null) return
   const choice = Number(selection)
 
-  try {
-    if (choice === 0) {
-      const languages = ['de', 'es', 'ko', 'cn', 'vi', 'zh-Hant']
-      const languageSelection = await alertSelect(languages)
-      if (languageSelection === null) return
-      const selectedLanguage = languages[Number(languageSelection)]
-      if (!selectedLanguage) return
-      changeLanguage(selectedLanguage)
-      await downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(language, null, 4)))
-    } else if (choice === 1) {
-      await downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(languageEnglish, null, 4)))
-    } else {
-      return
-    }
-
-    alertNormal(language.translationTemplateDownloaded)
-  } finally {
-    changeLanguage(activeLanguage)
+  if (choice === 0) {
+    const languages = ['de', 'es', 'ko', 'cn', 'vi', 'zh-Hant']
+    const languageSelection = await alertSelect(languages)
+    if (languageSelection === null) return
+    const selectedLanguage = languages[Number(languageSelection)]
+    if (!selectedLanguage) return
+    const selectedLanguageTemplate = getLanguageForCode(selectedLanguage)
+    await downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(selectedLanguageTemplate, null, 4)))
+  } else if (choice === 1) {
+    await downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(languageEnglish, null, 4)))
+  } else {
+    return
   }
+
+  alertNormal(language.translationTemplateDownloaded)
 }
 
 export const languageSettingsItems: SettingItem[] = [

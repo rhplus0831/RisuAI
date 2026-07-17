@@ -34,6 +34,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import { changeLanguage, language } from 'src/lang'
+import { languageKorean } from 'src/lang/ko'
 import { languageSpanish } from 'src/lang/es'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import { downloadLanguageTemplate, languageSettingsItems } from './languageSettingsData.svelte'
@@ -91,5 +92,25 @@ describe('language settings actions', () => {
     expect(languageSettingsMocks.alertNormal).not.toHaveBeenCalled()
     expect(getResourceDatabase().language).toBe('es')
     expect(language.UiLanguage).toBe(languageSpanish.UiLanguage)
+  })
+
+  it('does not restore a stale locale after an authoritative update during export', async () => {
+    let resolveLanguageSelection!: (value: string) => void
+    languageSettingsMocks.alertSelect
+      .mockResolvedValueOnce('0')
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveLanguageSelection = resolve)))
+
+    const exportPromise = downloadLanguageTemplate()
+    await vi.waitFor(() => expect(languageSettingsMocks.alertSelect).toHaveBeenCalledTimes(2))
+
+    replaceResourceDatabase({ language: 'ko' } as any)
+    changeLanguage('ko')
+    resolveLanguageSelection('1')
+    await exportPromise
+
+    expect(getResourceDatabase().language).toBe('ko')
+    expect(language.UiLanguage).toBe(languageKorean.UiLanguage)
+    const [, bytes] = languageSettingsMocks.downloadFile.mock.calls[0]
+    expect(JSON.parse(new TextDecoder().decode(bytes as Uint8Array)).UiLanguage).toBe(languageSpanish.UiLanguage)
   })
 })
