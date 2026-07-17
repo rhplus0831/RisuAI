@@ -334,46 +334,30 @@
     { id: 'openrouter/auto', displayName: 'OpenRouter Auto', providerName: 'OpenRouter' },
   ]
 
-  // Reset model selection and display name when subscription mode toggles
-  let _nanogptSubModeInitialized = false
-  $effect(() => {
-    const _sub = nanogptUseSubscriptionEndpointDraft.value
-    if (!_nanogptSubModeInitialized) {
-      _nanogptSubModeInitialized = true
-      return
-    }
+  function handleNanoGPTSubscriptionModeChange(): void {
     nanogptRequestModelDraft.value = ''
     nanogptRequestModelNameDraft.value = ''
-  })
-
-  // Reset provider selection to Auto when the model or subscription mode changes
-  let _nanogptProviderResetInitialized = false
-  $effect(() => {
-    const _model = nanogptRequestModelDraft.value
-    const _sub = nanogptUseSubscriptionEndpointDraft.value
-    if (!_nanogptProviderResetInitialized) {
-      _nanogptProviderResetInitialized = true
-      return
-    }
     nanogptProviderDraft.value = ''
-  })
+  }
 
-  // Reset subscription mode (and related state) when API key is cleared
-  let _nanogptKeyInitialized = false
-  $effect(() => {
-    const _key = nanogptKeyDraft.value
-    if (!_nanogptKeyInitialized) {
-      _nanogptKeyInitialized = true
-      return
-    }
-    if (!_key) {
-      nanogptUseSubscriptionEndpointDraft.value = false
-      nanogptSubscriptionStateDraft.value = ''
-      nanogptRequestModelDraft.value = ''
-      nanogptRequestModelNameDraft.value = ''
-      nanogptProviderDraft.value = ''
-    }
-  })
+  function handleNanoGPTModelSelection(name: string): void {
+    nanogptRequestModelNameDraft.value = name
+    nanogptProviderDraft.value = ''
+  }
+
+  function handleNanoGPTManualModelInput(): void {
+    nanogptRequestModelNameDraft.value = ''
+    nanogptProviderDraft.value = ''
+  }
+
+  function handleNanoGPTApiKeyInput(): void {
+    if (nanogptKeyDraft.value) return
+    nanogptUseSubscriptionEndpointDraft.value = false
+    nanogptSubscriptionStateDraft.value = ''
+    nanogptRequestModelDraft.value = ''
+    nanogptRequestModelNameDraft.value = ''
+    nanogptProviderDraft.value = ''
+  }
 
   let tokens = $state({
     mainPrompt: 0,
@@ -1183,6 +1167,7 @@
     if (nanogptInputMode !== prevNanogptInputMode) {
       nanogptRequestModelDraft.value = ''
       nanogptRequestModelNameDraft.value = ''
+      nanogptProviderDraft.value = ''
       prevNanogptInputMode = nanogptInputMode
     }
   })
@@ -1503,6 +1488,7 @@
         marginBottom={false}
         size={'sm'}
         ariaLabel={`NanoGPT ${language.apiKey}`}
+        oninput={handleNanoGPTApiKeyInput}
         bind:value={nanogptKeyDraft.value} />
 
       <NanoGPTDashboard apiKey={nanogptCatalogApiKey} currentApiKey={nanogptKeyDraft.value} />
@@ -1511,6 +1497,7 @@
         <div class="flex items-center mt-3">
           <CheckInput
             bind:check={nanogptUseSubscriptionEndpointDraft.value}
+            onChange={handleNanoGPTSubscriptionModeChange}
             name={language.nanoGPTUseSubscriptionEndpoint} />
         </div>
       {/if}
@@ -1531,7 +1518,7 @@
           ariaLabel={`NanoGPT ${language.model}`}
           bind:value={nanogptRequestModelDraft.value}
           placeholder={(language as any).nanoGPTManualModelSelect || 'Manual Model Select'}
-          oninput={() => (nanogptRequestModelNameDraft.value = '')} />
+          oninput={handleNanoGPTManualModelInput} />
       {:else}
         {#await getNanoGPTModelCatalog(nanogptCatalogApiKey, nanogptUseSubscriptionEndpointDraft.value)}
           <ModelGrid bind:value={nanogptRequestModelDraft.value} loading={true} />
@@ -1544,7 +1531,7 @@
               ? nanogptRequestModelDraft.value
               : undefined}
             onselect={(_id, name) => {
-              nanogptRequestModelNameDraft.value = name
+              handleNanoGPTModelSelection(name)
             }} />
           {#if !nanogptUseSubscriptionEndpointDraft.value}
             <NanoGPTProviderPicker

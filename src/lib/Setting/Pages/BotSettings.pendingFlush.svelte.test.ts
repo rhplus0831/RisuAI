@@ -33,6 +33,7 @@ const botSettingsMocks = vi.hoisted(() => {
     runTail: Promise.resolve() as Promise<unknown>,
     settingDraftInitialValues: new Map<string, unknown>(),
     settingDraftWrites: [] as Array<{ key: string; value: unknown }>,
+    settingDrafts: new Map<string, { value: unknown; project?: (value: unknown) => void }>(),
   }
 })
 
@@ -134,22 +135,50 @@ vi.mock('src/ts/server/commands', () => ({
   }),
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
-  createServerBackedSettingDraft: (key: string, fallback: unknown) => {
-    let value = botSettingsMocks.settingDraftInitialValues.has(key)
-      ? botSettingsMocks.settingDraftInitialValues.get(key)
-      : fallback
-    return Object.defineProperty({}, 'value', {
-      enumerable: true,
-      get: () => value,
-      set: (nextValue: unknown) => {
-        value = nextValue
-        botSettingsMocks.settingDraftWrites.push({ key, value: nextValue })
-      },
-    })
-  },
-  watchServerBackedSettings: vi.fn(() => vi.fn()),
-}))
+vi.mock('src/ts/server/settingsBridge.svelte', async () => {
+  const { fromStore, writable } = await import('svelte/store')
+
+  return {
+    applyServerBackedSetting: vi.fn(),
+    createServerBackedSettingDraft: (key: string, fallback: unknown) => {
+      const initialValue = botSettingsMocks.settingDraftInitialValues.has(key)
+        ? botSettingsMocks.settingDraftInitialValues.get(key)
+        : fallback
+
+      if (key.startsWith('nanogpt')) {
+        const valueStore = writable(initialValue)
+        const reactiveValue = fromStore(valueStore)
+        const draft = {
+          get value() {
+            return reactiveValue.current
+          },
+          set value(nextValue: unknown) {
+            valueStore.set(nextValue)
+            botSettingsMocks.settingDraftWrites.push({ key, value: nextValue })
+          },
+          project(nextValue: unknown) {
+            valueStore.set(nextValue)
+          },
+        }
+        botSettingsMocks.settingDrafts.set(key, draft)
+        return draft
+      }
+
+      let value = initialValue
+      const draft = Object.defineProperty({}, 'value', {
+        enumerable: true,
+        get: () => value,
+        set: (nextValue: unknown) => {
+          value = nextValue
+          botSettingsMocks.settingDraftWrites.push({ key, value: nextValue })
+        },
+      }) as { value: unknown }
+      botSettingsMocks.settingDrafts.set(key, draft)
+      return draft
+    },
+    watchServerBackedSettings: vi.fn(() => vi.fn()),
+  }
+})
 
 vi.mock('src/ts/server/commandLocalEffectEvents', () => ({
   subscribeServerCommandLocalEffectApplied: vi.fn(() => vi.fn()),
@@ -190,6 +219,14 @@ vi.mock('src/ts/pluginCommands', async (importActual) => {
 vi.mock('src/ts/tokenizer', () => ({
   tokenizeAccurate: vi.fn(async () => 0),
   tokenizerList: [],
+}))
+
+vi.mock('src/ts/model/nanogpt', () => ({
+  getNanoGPTBalance: vi.fn(async () => null),
+  getNanoGPTModelCatalog: vi.fn(async () => []),
+  getNanoGPTModelProviders: vi.fn(async () => null),
+  getNanoGPTSubscription: vi.fn(async () => null),
+  toModelGridItem: vi.fn((item: unknown) => item),
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -248,6 +285,7 @@ beforeEach(() => {
   botSettingsMocks.settingDraftWrites.length = 0
   vi.mocked(dispatchSelectPluginProvider).mockClear()
   customProviderStore.set([])
+  botSettingsMocks.settingDrafts.clear()
   resetServerResourceState()
   setDatabaseLite({
     aiModel: 'gpt35',
@@ -296,6 +334,38 @@ describe('BotSettings legacy layout synchronization', () => {
     setDatabaseLite({ ...getDatabase({ snapshot: true }), useLegacyGUI: false } as any)
     await tick()
     expect(target.querySelector('[data-risu-bot-settings-tabs]')).toBeTruthy()
+  })
+})
+
+describe('BotSettings NanoGPT authoritative synchronization', () => {
+  it('does not apply local dependency resets to an authoritative model and provider projection', async () => {
+    if (component) unmount(component)
+    botSettingsMocks.settingDraftInitialValues.set('nanogptKey', 'saved-key')
+    botSettingsMocks.settingDraftInitialValues.set('nanogptRequestModel', 'old-model')
+    botSettingsMocks.settingDraftInitialValues.set('nanogptRequestModelName', 'Old model')
+    botSettingsMocks.settingDraftInitialValues.set('nanogptProvider', 'old-provider')
+    setDatabaseLite({
+      ...getDatabase({ snapshot: true }),
+      aiModel: 'nanogpt',
+      nanogptKey: 'saved-key',
+      nanogptRequestModel: 'old-model',
+      nanogptRequestModelName: 'Old model',
+      nanogptProvider: 'old-provider',
+      nanogptUseSubscriptionEndpoint: false,
+    } as any)
+    component = mount(BotSettings, { target, props: { settingsKind: 'legacy' } })
+    await tick()
+
+    botSettingsMocks.settingDraftWrites.length = 0
+    botSettingsMocks.settingDrafts.get('nanogptRequestModel')?.project?.('new-model')
+    botSettingsMocks.settingDrafts.get('nanogptRequestModelName')?.project?.('New model')
+    botSettingsMocks.settingDrafts.get('nanogptProvider')?.project?.('new-provider')
+    await tick()
+
+    expect(botSettingsMocks.settingDrafts.get('nanogptRequestModel')?.value).toBe('new-model')
+    expect(botSettingsMocks.settingDrafts.get('nanogptRequestModelName')?.value).toBe('New model')
+    expect(botSettingsMocks.settingDrafts.get('nanogptProvider')?.value).toBe('new-provider')
+    expect(botSettingsMocks.settingDraftWrites.filter(({ key }) => key.startsWith('nanogpt'))).toEqual([])
   })
 })
 
