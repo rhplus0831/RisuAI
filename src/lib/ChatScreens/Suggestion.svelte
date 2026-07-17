@@ -100,7 +100,7 @@
   import { alertConfirm } from 'src/ts/alert'
   import { language } from 'src/lang'
   import { getUserName, replacePlaceholders } from '../../ts/util'
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { defaultAutoSuggestPrompt } from '../../ts/storage/defaultPrompts.js'
   import { dispatchUpdateChatRow, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
@@ -144,6 +144,8 @@
   let suggestionTarget: SuggestionTargetSnapshot | undefined = $state()
   let activeSuggestionRequest: SuggestionRequestOwnership | undefined
   let destroyed = false
+  let observedTranscriptOwner: string | undefined
+  let observedResidentMessageCount = 0
 
   function copySuggestionMessages(messages: readonly string[] | undefined): string[] {
     return [...(messages ?? [])]
@@ -326,7 +328,7 @@
     })
   }
 
-  const unsub = doingChat.subscribe(async (v) => {
+  async function handleDoingChatChange(v: boolean): Promise<void> {
     if (destroyed) return
     if (v) {
       abandonActiveSuggestionRequest()
@@ -454,7 +456,9 @@
           releaseSuggestionRequestOwnership(ownership)
         })
     }
-  })
+  }
+
+  const unsub = doingChat.subscribe(handleDoingChatChange)
 
   const translateSuggest = async (toggle: boolean, messages: string[] | undefined) => {
     if (destroyed) return
@@ -494,8 +498,27 @@
   $effect.pre(() => {
     $selectedCharID
     // Reads chatPage so suggestions update when the selected chat changes.
-    chatPage = getDatabase().characters[$selectedCharID]?.chatPage
+    const currentCharacter = getDatabase().characters[$selectedCharID]
+    chatPage = currentCharacter?.chatPage
+    const currentChat = currentCharacter?.chats[chatPage]
+    const residentMessageCount = currentChat?.message?.length ?? 0
+    const persistedSuggestionCount = currentChat?.suggestMessages?.length ?? 0
+    const transcriptOwner = currentChat
+      ? JSON.stringify([currentCharacter?.chaId ?? $selectedCharID, currentChat.id ?? chatPage])
+      : undefined
+    const hydrationCompleted =
+      transcriptOwner !== undefined &&
+      transcriptOwner === observedTranscriptOwner &&
+      observedResidentMessageCount === 0 &&
+      residentMessageCount > 0
+    observedTranscriptOwner = transcriptOwner
+    observedResidentMessageCount = residentMessageCount
     updateSuggestions()
+    if (hydrationCompleted && !$doingChat && persistedSuggestionCount === 0) {
+      untrack(() => {
+        void handleDoingChatChange(false)
+      })
+    }
   })
   $effect.pre(() => {
     translateSuggest(toggleTranslate, suggestMessages)

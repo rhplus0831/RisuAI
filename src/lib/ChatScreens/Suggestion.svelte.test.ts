@@ -331,6 +331,43 @@ describe('runSuggestionTranslation', () => {
 })
 
 describe('Suggestion component persistence', () => {
+  it('starts one suggestion request when an empty chat shell hydrates with messages', async () => {
+    seedSuggestionDatabase([])
+    getResourceDatabase().characters[0].chats[0].message = []
+    const request = deferred<{ type: 'success'; result: string }>()
+    suggestionMocks.requestChatData.mockReturnValue(request.promise)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await settle()
+
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+
+      getResourceDatabase().characters[0].chats[0].message = [
+        { role: 'char', data: 'Hydrated hello', chatId: 'hydrated-message' },
+      ]
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce())
+      await settle()
+      expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce()
+
+      request.resolve({ type: 'success', result: '- Hydrated suggestion' })
+      await waitFor(() => {
+        expect(target.textContent).toContain('Hydrated suggestion')
+        expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual(['Hydrated suggestion'])
+        expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledOnce()
+      })
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
   it('aborts an unmounted request and lets only the remounted owner persist', async () => {
     seedSuggestionDatabase([])
     const abandonedRequest = deferred<{ type: 'success'; result: string }>()
