@@ -236,6 +236,29 @@ describe('resolveModelProfileUiState', () => {
     )
   })
 
+  it('marks a generally routable Anthropic memory profile unsupported', () => {
+    const state = resolveModelProfileUiState({
+      database: db({
+        modelProfiles: [
+          {
+            id: 'anthropic-memory',
+            name: 'Anthropic Memory',
+            providerId: 'anthropic',
+            modelId: 'claude-3-5-sonnet-latest',
+            providerOptions: { apiKey: 'profile-key' },
+          },
+        ],
+        modelRoleProfiles: { memory: { mode: 'profile', profileId: 'anthropic-memory' } },
+      } as Partial<Database>),
+    })
+
+    expect(state.resolvedProfiles.memory.status.bucket).toBe('ready')
+    expect(state.roleStatuses.memory).toMatchObject({
+      bucket: 'unsupported',
+      reasons: ['provider-capability-unsupported'],
+    })
+  })
+
   it('reports when every role resolves through durable profiles or profile inheritance', () => {
     const state = resolveModelProfileUiState({
       database: db({

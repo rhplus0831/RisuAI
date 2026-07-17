@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
-import type { FirstClassModelProfileProviderId } from '../../../../src/ts/model/modelProfileResolver.js'
+import {
+  resolveModelProfile,
+  type FirstClassModelProfileProviderId,
+} from '../../../../src/ts/model/modelProfileResolver.js'
+import { resolveMemoryModelCapability } from '../../../../src/ts/model/memoryModelCapability.js'
+import type { Database } from '../../../../src/ts/storage/database.svelte.js'
 import {
   MODEL_ROLES,
   modelRoleProfileInheritSource,
@@ -244,6 +249,7 @@ export function deleteModelProfileCommand(
 
     target.modelProfiles = readProfilesForWrite(remainingProfiles, target)
     target.modelRoleProfiles = nextBindings
+    if (reassignedRoles.includes('memory')) validateMemoryRoleCapability(target)
     return {
       event: { ...COMMAND_EVENT_CATALOG.modelProfileDeleted, id: profileId },
       extra: { profileId, reassignedRoles },
@@ -272,6 +278,7 @@ export function updateModelRoleProfilesCommand(
     }
 
     target.modelRoleProfiles = nextBindings
+    if (roles.includes('memory')) validateMemoryRoleCapability(target)
     return {
       nextBindings,
       roles,
@@ -331,6 +338,7 @@ export function createAndBindModelProfileCommand(
     nextBindings[role] = { mode: 'profile', profileId }
     target.modelProfiles = nextProfiles
     target.modelRoleProfiles = nextBindings
+    if (role === 'memory') validateMemoryRoleCapability(target)
     return {
       event: { ...COMMAND_EVENT_CATALOG.modelProfileCreatedAndBound, id: profileId },
       extra: { profileId, role },
@@ -562,6 +570,14 @@ function validateBindingTarget(
   }
   if (binding.mode === 'inherit' && !modelRoleProfileInheritSource(role)) {
     throw new ValidationError(`${path}.mode does not support inherit`)
+  }
+}
+
+function validateMemoryRoleCapability(target: Record<string, unknown>): void {
+  const profile = resolveModelProfile({ database: target as unknown as Database, role: 'memory' })
+  const capability = resolveMemoryModelCapability(profile)
+  if (capability.ok === false) {
+    throw new ValidationError(`bindings.memory is unsupported: ${capability.error}`)
   }
 }
 

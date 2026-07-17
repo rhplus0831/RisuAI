@@ -1,6 +1,7 @@
-import type { ModelProfileProviderOptions, ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver'
+import type { ModelProfileProviderOptions } from '../../../src/ts/model/modelProfileResolver'
 import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver.js'
 import type { Database } from '../../../src/ts/storage/database.svelte'
+import { resolveMemoryModelCapability } from '../../../src/ts/model/memoryModelCapability.js'
 import { type OpenAICompatibleOptions, type OpenAICompatibleProvider } from './generation/openaiCompatible.js'
 
 export interface MemorySummaryModelRequest {
@@ -22,7 +23,7 @@ export function resolveMemorySummaryModel(db: Database, requestedModel: string):
   }
 
   const profile = resolveModelProfile({ database: db, role: 'memory' })
-  const provider = resolveMemorySummaryProvider(profile)
+  const provider = resolveMemoryModelCapability(profile)
   if (provider.ok === false) return provider
 
   if (!profile.requestModel) {
@@ -36,27 +37,6 @@ export function resolveMemorySummaryModel(db: Database, requestedModel: string):
       model: profile.requestModel,
       options: buildMemorySummaryOptions(provider.provider, profile.providerOptions),
     },
-  }
-}
-
-function resolveMemorySummaryProvider(
-  profile: Pick<ResolvedModelProfile, 'providerCapability' | 'modelInfo'>,
-): { ok: true; provider: OpenAICompatibleProvider } | { ok: false; error: string } {
-  const capability = profile.providerCapability
-  if (capability.routable === false) {
-    return {
-      ok: false,
-      error: `summarization memory provider is not API-backed OpenAI-compatible: ${capability.reason}`,
-    }
-  }
-
-  if (capability.provider === 'openai' || capability.provider === 'openrouter' || capability.provider === 'nanogpt') {
-    return { ok: true, provider: capability.provider }
-  }
-
-  return {
-    ok: false,
-    error: `summarization memory provider is not API-backed OpenAI-compatible: ${capability.provider}`,
   }
 }
 

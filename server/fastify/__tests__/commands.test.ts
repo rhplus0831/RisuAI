@@ -15,6 +15,7 @@ import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
+import type { Database } from '../../../src/ts/storage/database.svelte.js'
 import { LLMFlags, LLMFormat } from '../../../src/ts/model/types.js'
 import {
   serializeChatGenerationSettingsDigestInput,
@@ -1815,6 +1816,40 @@ describe('Phase 9-2a scalar settings groups', () => {
     }
     expect(afterRejectedMirror.modelRoleProfiles).toMatchObject({
       chatAux: { mode: 'legacy' },
+    })
+  })
+
+  it('rejects a memory role binding that the summary worker cannot execute', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [
+        {
+          id: 'anthropic-memory',
+          name: 'Anthropic Memory',
+          providerId: 'anthropic',
+          modelId: 'claude-3-5-sonnet-latest',
+          providerOptions: { apiKey: 'anthropic-secret' },
+        },
+      ],
+    })
+
+    const response = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/model-role-profiles',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        bindings: { memory: { mode: 'profile', profileId: 'anthropic-memory' } },
+      },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe(
+      'bindings.memory is unsupported: summarization memory provider is not API-backed OpenAI-compatible: anthropic',
+    )
+    const persisted = loadPersistedFromDir(harness.dataDir).database as Database
+    expect(persisted.modelRoleProfiles).toMatchObject({
+      memory: { mode: 'legacy' },
     })
   })
 

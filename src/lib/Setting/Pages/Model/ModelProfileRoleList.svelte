@@ -116,9 +116,10 @@
   }
 
   function changedBindingsAreValid(bindings: Partial<Record<ModelRole, ModelRoleProfileBinding>>): boolean {
-    return Object.values(bindings).every(
-      (binding) => !binding || binding.mode !== 'profile' || profileIdSet.has(binding.profileId),
-    )
+    return Object.entries(bindings).every(([role, binding]) => {
+      if (binding?.mode === 'profile' && !profileIdSet.has(binding.profileId)) return false
+      return role !== 'memory' || uiState.roleStatuses.memory.bucket !== 'unsupported'
+    })
   }
 
   function roleLabel(role: ModelRole): string {

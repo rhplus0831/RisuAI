@@ -7,6 +7,7 @@ import {
   type ResolvedModelProfile,
 } from './modelProfileResolver'
 import { MODEL_ROLES, type ModelRole } from './modelRoles'
+import { resolveMemoryModelCapability } from './memoryModelCapability'
 
 export interface ModelProfileUiApiKeyModel {
   keyIdentifier: string
@@ -123,10 +124,22 @@ export function modelProfileRoleHasStatus(
 function resolveRoleStatuses(
   resolvedProfiles: Record<ModelRole, ResolvedModelProfile>,
 ): Record<ModelRole, ModelProfileStatus> {
-  return Object.fromEntries(MODEL_ROLES.map((role) => [role, resolvedProfiles[role].status])) as Record<
-    ModelRole,
-    ModelProfileStatus
-  >
+  return Object.fromEntries(
+    MODEL_ROLES.map((role) => {
+      const status = resolvedProfiles[role].status
+      if (role !== 'memory' || status.bucket !== 'ready' || resolveMemoryModelCapability(resolvedProfiles[role]).ok) {
+        return [role, status]
+      }
+      return [
+        role,
+        {
+          ...status,
+          bucket: 'unsupported',
+          reasons: [...new Set([...status.reasons, 'provider-capability-unsupported' as const])],
+        },
+      ]
+    }),
+  ) as Record<ModelRole, ModelProfileStatus>
 }
 
 function groupRolesByStatus(
