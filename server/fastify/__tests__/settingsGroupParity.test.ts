@@ -45,4 +45,9 @@ describe('settings group parity', () => {
     expect(SETTINGS_GROUP_KEYS.providers).not.toContain('claudeBatching')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).not.toContain('claudeBatching')
   })
+
+  it('does not accept the retired Claude cache-retrieval setting', () => {
+    expect(SETTINGS_GROUP_KEYS.providers).not.toContain('claudeRetrivalCaching')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).not.toContain('claudeRetrivalCaching')
+  })
 })

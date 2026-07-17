@@ -61,7 +61,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   claudeAPIKey: 'providers',
   claudeAws: 'providers',
   claudeCachingExperimental: 'providers',
-  claudeRetrivalCaching: 'providers',
   clickToEdit: 'sidebar',
   coldstorage: 'advanced',
   colorScheme: 'display',

@@ -549,17 +549,6 @@ export const advancedSettingsItems: SettingItem[] = [
     helpUnrecommended: true,
     classes: 'mt-4',
   },
-  {
-    id: 'adv.exp.claudeRet',
-    type: 'check',
-    labelKey: 'claudeCachingRetrival',
-    bindKey: 'claudeRetrivalCaching',
-    condition: (ctx) => ctx.db.useExperimental,
-    helpKey: 'unrecommended',
-    helpUnrecommended: true,
-    classes: 'mt-4',
-  },
-
   // Dynamic Assets Edit (Condition: dynamicAssets)
   {
     id: 'adv.dynAssetsEdit',
