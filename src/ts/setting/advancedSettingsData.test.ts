@@ -16,4 +16,8 @@ describe('advanced settings data', () => {
   it('does not advertise the legacy preset chain in server-backed generation', () => {
     expect(advancedSettingsItems.some((item) => item.bindKey === 'presetChain')).toBe(false)
   })
+
+  it('does not advertise the removed Realm preview direct-open behavior', () => {
+    expect(advancedSettingsItems.some((item) => item.bindKey === 'realmDirectOpen')).toBe(false)
+  })
 })
