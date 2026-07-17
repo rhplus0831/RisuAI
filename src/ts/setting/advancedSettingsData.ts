@@ -413,13 +413,6 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'mt-4',
   },
   {
-    id: 'adv.antiOverload',
-    type: 'check',
-    labelKey: 'antiServerOverload',
-    bindKey: 'antiServerOverloads',
-    classes: 'mt-4',
-  },
-  {
     id: 'adv.claudeCache',
     type: 'check',
     labelKey: 'claude1HourCaching',

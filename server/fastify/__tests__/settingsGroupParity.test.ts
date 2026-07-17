@@ -60,4 +60,9 @@ describe('settings group parity', () => {
     expect(SETTINGS_GROUP_KEYS.memory).not.toContain('removePunctuationHypa')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.memory).not.toContain('removePunctuationHypa')
   })
+
+  it('does not accept the retired overload retry setting', () => {
+    expect(SETTINGS_GROUP_KEYS.runtime).not.toContain('antiServerOverloads')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('antiServerOverloads')
+  })
 })

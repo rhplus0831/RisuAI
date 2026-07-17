@@ -1222,7 +1222,6 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'localNetworkMode',
     'localNetworkTimeoutSec',
     'usePlainFetch',
-    'antiServerOverloads',
     'antiClaudeOverload',
     'autoContinueChat',
     'autoContinueMinTokens',

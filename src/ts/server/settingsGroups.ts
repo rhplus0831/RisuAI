@@ -37,7 +37,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   animationSpeed: 'display',
   reducedMotion: 'display',
   antiClaudeOverload: 'runtime',
-  antiServerOverloads: 'runtime',
   apiType: 'providers',
   askRemoval: 'sidebar',
   assetMaxDifference: 'advanced',
