@@ -420,6 +420,30 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     })
   })
 
+  it('returns the structured unsupported-group report without adopting or refreshing', async () => {
+    const backupFetch = makeBackupFetch(() =>
+      jsonResponse(
+        {
+          code: 'unsupported-group-characters',
+          error: 'This backup contains 1 unsupported group character. The active database was not changed.',
+          unsupportedGroupCount: 1,
+          unsupportedGroups: [{ id: 'legacy-group-a', name: 'Legacy Party' }],
+        },
+        422,
+      ),
+    )
+    vi.stubGlobal('fetch', backupFetch.fetch)
+
+    await expect(importServerBundle({ file: new Blob([BUNDLE_BYTES]) })).resolves.toEqual({
+      status: 'unsupported-groups',
+      count: 1,
+      groups: [{ id: 'legacy-group-a', name: 'Legacy Party' }],
+      error: 'This backup contains 1 unsupported group character. The active database was not changed.',
+    })
+    expect(ownershipSpies.preparePendingMutationOutbox).not.toHaveBeenCalled()
+    expect(resourceRefreshSpies.forceServerResourceRefresh).not.toHaveBeenCalled()
+  })
+
   it('reports upload progress when restoring a device backup with progress enabled', async () => {
     const event = { type: 'state.imported', resource: 'state', revision: 21 }
     class FakeXMLHttpRequest {

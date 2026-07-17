@@ -47,6 +47,31 @@ export interface RisuSaveImportSnapshot {
   unsupportedReferences: RisuSaveImportUnsupportedReference[]
 }
 
+export interface UnsupportedGroupCharacterSummary {
+  id: string | null
+  name: string | null
+}
+
+export class UnsupportedGroupCharactersError extends ValidationError {
+  readonly count: number
+  readonly groups: UnsupportedGroupCharacterSummary[]
+
+  constructor(count: number, groups: UnsupportedGroupCharacterSummary[]) {
+    const described = groups
+      .slice(0, 5)
+      .map((group) => group.name || group.id || 'unnamed group')
+      .join(', ')
+    const suffix = described ? `: ${described}${count > 5 ? ', …' : ''}` : ''
+    super(
+      `This backup contains ${count} unsupported group character${count === 1 ? '' : 's'}${suffix}. ` +
+        'The active database was not changed.',
+    )
+    this.name = 'UnsupportedGroupCharactersError'
+    this.count = count
+    this.groups = groups
+  }
+}
+
 interface RisuSaveImportDatabaseNormalization {
   database: JsonRecord
   incompleteChatCount: number
@@ -170,11 +195,39 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
 }
 
 function normalizeImportDatabase(database: unknown): RisuSaveImportDatabaseNormalization {
+  rejectUnsupportedGroupCharacters(database)
   const target = normalizeImportDatabaseShape(database)
   return {
     database: target,
     incompleteChatCount: normalizeImportedChatGenerationSettings(target),
   }
+}
+
+function rejectUnsupportedGroupCharacters(database: unknown): void {
+  if (!isJsonRecord(database) || !Array.isArray(database.characters)) return
+
+  const groups: UnsupportedGroupCharacterSummary[] = []
+  let count = 0
+  for (const character of database.characters) {
+    if (!isJsonRecord(character) || character.type !== 'group') continue
+    count += 1
+    if (groups.length >= 50) continue
+    groups.push({
+      id:
+        typeof character.chaId === 'string' && character.chaId.trim()
+          ? character.chaId
+          : typeof character.id === 'string' && character.id.trim()
+            ? character.id
+            : null,
+      name:
+        typeof character.name === 'string' && character.name.trim()
+          ? character.name
+          : typeof character.displayName === 'string' && character.displayName.trim()
+            ? character.displayName
+            : null,
+    })
+  }
+  if (count > 0) throw new UnsupportedGroupCharactersError(count, groups)
 }
 
 function normalizeImportDatabaseShape(database: unknown): JsonRecord {

@@ -112,6 +112,45 @@ function persistDatabaseWithAsset(dataDir: string, imageReference = ASSET_ID): v
   writeFileSync(path.join(dir, `${ASSET_ID}.png`), ASSET_BYTES)
 }
 
+function persistDatabaseWithGroup(dataDir: string): void {
+  const db = openDatabase(dataDir)
+  try {
+    writePersistedWithMessages(db, dataDir, {
+      _version: 1,
+      database: {
+        version: 1,
+        selectedCharID: 0,
+        characters: [
+          {
+            type: 'group',
+            chaId: 'legacy-group-a',
+            name: 'Legacy Party',
+            image: '',
+            chats: [
+              {
+                id: 'legacy-group-chat',
+                name: 'Group Chat',
+                note: '',
+                localLore: [],
+                message: [{ role: 'user', data: 'group history', chatId: 'group-message' }],
+              },
+            ],
+          },
+        ],
+        characterOrder: ['legacy-group-a'],
+        botPresets: [],
+        modules: [],
+        loadouts: [],
+        plugins: [],
+        pluginCustomStorage: {},
+      },
+      assets: [],
+    })
+  } finally {
+    db.close()
+  }
+}
+
 /** Build the original app's LocalWriter `.bin` blob: [u32-LE nameLen][name][u32-LE dataLen][data] records. */
 function buildLegacyBin(records: { name: string; data: Uint8Array }[]): Buffer {
   const parts: Buffer[] = []
@@ -311,6 +350,59 @@ describe('repository .risu bundle import route', () => {
       const asset = await fresh.app.inject({ method: 'GET', url: `/api/v1/assets/${ASSET_ID}` })
       expect(asset.statusCode).toBe(200)
       expect(Buffer.from(asset.rawPayload).equals(ASSET_BYTES)).toBe(true)
+    } finally {
+      await stopHarness(fresh)
+    }
+  })
+
+  it('rejects group characters in zip and legacy bin backups without replacing the live database', async () => {
+    persistDatabaseWithGroup(harness.dataDir)
+    const zip = await exportBundleZip()
+    const localBackup = await authedInject({ method: 'GET', url: '/api/v1/export/local-backup' })
+    expect(localBackup.statusCode).toBe(200)
+
+    const fresh = await startHarness()
+    try {
+      const { assertion: freshAssertion } = await setupAuthedClient(fresh.app)
+      const before = await fresh.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': freshAssertion },
+      })
+      expect(before.statusCode).toBe(200)
+
+      for (const [bytes, filename] of [
+        [zip, 'group-backup.risu.zip'],
+        [localBackup.rawPayload, 'group-backup.bin'],
+      ] as const) {
+        const upload = multipartBundle(bytes, filename)
+        const imported = await fresh.app.inject({
+          method: 'POST',
+          url: '/api/v1/import/bundle',
+          headers: { 'risu-auth': freshAssertion, 'content-type': upload.contentType },
+          payload: upload.payload,
+        })
+
+        expect(imported.statusCode).toBe(422)
+        expect(imported.json()).toMatchObject({
+          code: 'unsupported-group-characters',
+          unsupportedGroupCount: 1,
+          unsupportedGroups: [{ id: 'legacy-group-a', name: 'Legacy Party' }],
+          error: expect.stringContaining('active database was not changed'),
+        })
+      }
+
+      const after = await fresh.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': freshAssertion },
+      })
+      expect(after.json()).toMatchObject({
+        revision: before.json().revision,
+        databaseLineage: before.json().databaseLineage,
+        database: before.json().database,
+      })
+      expect(fresh.commandEvents.list().some((event) => event.type === 'state.imported')).toBe(false)
     } finally {
       await stopHarness(fresh)
     }

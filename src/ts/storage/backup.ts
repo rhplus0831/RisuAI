@@ -1,4 +1,5 @@
 import { alertError, alertNormal, alertWait } from '../alert'
+import { language } from '../../lang'
 import {
   createServerBackup,
   exportServerBundle,
@@ -89,6 +90,14 @@ export async function loadBackupFromDevice(options: BackupOperationOptions = {})
   if (result.status === 'ok') {
     alertNormal('Local backup loaded')
     return 'ok'
+  } else if (result.status === 'unsupported-groups') {
+    alertError(
+      language.backupUnsupportedGroups(
+        result.count,
+        result.groups.map((group) => group.name || group.id).filter((value): value is string => !!value),
+      ),
+    )
+    return 'error'
   } else if (result.status === 'error') {
     alertError(result.error)
     return 'error'

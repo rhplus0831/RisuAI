@@ -21,7 +21,11 @@ import {
   type StagedAssetLiveFileCopy,
 } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
-import { decodeRisuSaveImportSnapshot, normalizeRisuSaveImportDatabase } from '../risuSave/importSnapshot.js'
+import {
+  UnsupportedGroupCharactersError,
+  decodeRisuSaveImportSnapshot,
+  normalizeRisuSaveImportDatabase,
+} from '../risuSave/importSnapshot.js'
 import { decodeLocalBackup } from '../risuSave/localBackupImport.js'
 import {
   normalizeLegacyLocalBackupImportDatabase,
@@ -127,6 +131,10 @@ export function registerSaveRoutes(
       eventSink.emit(event)
       return { revision, event, databaseLineage, writerEpoch, assetReport }
     } catch (err) {
+      if (err instanceof UnsupportedGroupCharactersError) {
+        reply.code(422)
+        return unsupportedGroupImportResponse(err)
+      }
       if (err instanceof ValidationError) {
         reply.code(400)
         return { error: err.message }
@@ -191,6 +199,10 @@ export function registerSaveRoutes(
         },
       }
     } catch (err) {
+      if (err instanceof UnsupportedGroupCharactersError) {
+        reply.code(422)
+        return unsupportedGroupImportResponse(err)
+      }
       if (err instanceof ValidationError) {
         reply.code(400)
         return { error: err.message }
@@ -335,6 +347,15 @@ export function registerSaveRoutes(
       throw err
     }
   })
+}
+
+function unsupportedGroupImportResponse(error: UnsupportedGroupCharactersError) {
+  return {
+    error: error.message,
+    code: 'unsupported-group-characters',
+    unsupportedGroupCount: error.count,
+    unsupportedGroups: error.groups,
+  }
 }
 
 function estimateDeviceBackupBytes(dataDir: string, persisted: Persisted): number {

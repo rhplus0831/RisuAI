@@ -30,6 +30,18 @@ export type ServerBackupResult<T> =
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
+export interface UnsupportedBackupGroup {
+  id: string | null
+  name: string | null
+}
+
+export interface UnsupportedBackupGroupsResult {
+  status: 'unsupported-groups'
+  count: number
+  groups: UnsupportedBackupGroup[]
+  error: string
+}
+
 export type ServerBackupProgressPhase =
   | 'prepare'
   | 'request'
@@ -276,7 +288,7 @@ export async function importServerBundle(input: {
   filename?: string
   signal?: AbortSignal | null
   onProgress?: ServerBackupProgressCallback
-}): Promise<ServerBackupResult<{ revision: number; event?: CommandEvent }>> {
+}): Promise<ServerBackupResult<{ revision: number; event?: CommandEvent }> | UnsupportedBackupGroupsResult> {
   if (!canUseServerBackups()) return { status: 'unavailable' }
 
   reportProgress(input.onProgress, {
@@ -327,6 +339,8 @@ export async function importServerBundle(input: {
 
   if (!response.ok) {
     handleActiveWriterStaleResponse(response)
+    const unsupportedGroups = readUnsupportedBackupGroups(body)
+    if (unsupportedGroups) return unsupportedGroups
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
 
@@ -361,6 +375,40 @@ export async function importServerBundle(input: {
     status: 'ok',
     revision: imported.revision,
     ...(imported.event ? { event: imported.event } : {}),
+  }
+}
+
+function readUnsupportedBackupGroups(body: unknown): UnsupportedBackupGroupsResult | null {
+  if (!body || typeof body !== 'object') return null
+  const record = body as {
+    code?: unknown
+    error?: unknown
+    unsupportedGroupCount?: unknown
+    unsupportedGroups?: unknown
+  }
+  if (
+    record.code !== 'unsupported-group-characters' ||
+    typeof record.error !== 'string' ||
+    !Number.isSafeInteger(record.unsupportedGroupCount) ||
+    (record.unsupportedGroupCount as number) < 1 ||
+    !Array.isArray(record.unsupportedGroups)
+  ) {
+    return null
+  }
+  const groups: UnsupportedBackupGroup[] = []
+  for (const group of record.unsupportedGroups) {
+    if (!group || typeof group !== 'object') return null
+    const candidate = group as { id?: unknown; name?: unknown }
+    const id = typeof candidate.id === 'string' ? candidate.id : candidate.id === null ? null : undefined
+    const name = typeof candidate.name === 'string' ? candidate.name : candidate.name === null ? null : undefined
+    if (id === undefined || name === undefined) return null
+    groups.push({ id, name })
+  }
+  return {
+    status: 'unsupported-groups',
+    count: record.unsupportedGroupCount as number,
+    groups,
+    error: record.error,
   }
 }
 

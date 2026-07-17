@@ -368,6 +368,23 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('rejects unsupported group rows instead of silently deleting them', () => {
+    seedPresetDatabase()
+    const before = clonePlain(getDatabase())
+    const data = clonePlain(getDatabase())
+    data.characters = [
+      {
+        type: 'group',
+        chaId: 'legacy-group-a',
+        name: 'Legacy Party',
+        chats: [],
+      } as never,
+    ]
+
+    expect(() => setDatabase(data)).toThrow('refusing to load a lossy database')
+    expect(clonePlain(getDatabase())).toEqual(before)
+  })
+
   it('falls back retired PIP session keepalive to sound through setDatabase', () => {
     seedPresetDatabase({
       keepSessionAlive: 'pip' as any,

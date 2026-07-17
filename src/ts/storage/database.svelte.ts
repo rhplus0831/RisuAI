@@ -2413,7 +2413,9 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.characters)) {
     data.characters = []
   }
-  data.characters = data.characters.filter((c) => (c as { type?: string } | null)?.type !== 'group')
+  if (data.characters.some((character) => (character as { type?: string } | null)?.type === 'group')) {
+    throw new Error('Group characters are not supported; refusing to load a lossy database')
+  }
   if (checkNullish(data.apiType)) {
     data.apiType = 'gemini-3-flash-preview'
   }

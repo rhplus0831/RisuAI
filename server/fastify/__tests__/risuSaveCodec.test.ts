@@ -10,7 +10,7 @@ import {
   RisuSaveBlockType,
 } from '../src/risuSave/blockCodec.js'
 import { decodeLegacyRisuSaveEnvelope, encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
-import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
+import { UnsupportedGroupCharactersError, decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import {
   buildRisuSaveExportBlocks,
   encodeRepositoryRisuSaveBlockExport,
@@ -346,6 +346,31 @@ describe('server .risu fixture harness', () => {
     expect(() => decodeRisuSaveImportSnapshot(invalidRootComponent)).toThrow(
       /bad-component block key must be a non-empty string/,
     )
+  })
+
+  it('rejects group characters before import normalization can remove them', () => {
+    const encoded = encodeLegacyRisuSaveEnvelope({
+      characters: [
+        {
+          type: 'group',
+          chaId: 'legacy-group-a',
+          name: 'Legacy Party',
+          chats: [{ id: 'group-chat-a', message: [{ role: 'user', data: 'keep me' }] }],
+        },
+      ],
+    })
+
+    try {
+      decodeRisuSaveImportSnapshot(encoded)
+      throw new Error('Expected group import rejection')
+    } catch (error) {
+      expect(error).toBeInstanceOf(UnsupportedGroupCharactersError)
+      expect(error).toMatchObject({
+        count: 1,
+        groups: [{ id: 'legacy-group-a', name: 'Legacy Party' }],
+      })
+      expect((error as Error).message).toContain('active database was not changed')
+    }
   })
 
   it('exports repository snapshots as legacy .risu envelopes', () => {

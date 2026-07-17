@@ -993,6 +993,10 @@ export const languageEnglish = {
   loadbackup: 'Load Backup from google',
   files: 'Files',
   backupRestore: 'Backup & Restore',
+  backupUnsupportedGroups: (count: number, groups: string[]) =>
+    `This backup contains ${count} unsupported group character${count === 1 ? '' : 's'}${
+      groups.length > 0 ? ` (${groups.join(', ')})` : ''
+    }. Nothing was imported.`,
   backupConfirm: 'Do you really want to save backup?',
   backupLoadConfirm: 'Do you really want to load backup? All datas will be lost!',
   backupLoadConfirm2: 'Do you really, really want to load backup? All datas will be lost!',
