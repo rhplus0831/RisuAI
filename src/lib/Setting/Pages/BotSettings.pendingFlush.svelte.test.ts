@@ -207,6 +207,8 @@ vi.mock('src/lib/UI/GUI/TextAreaInput.svelte', async () => {
 
 import BotSettings from './BotSettings.svelte'
 import { language } from 'src/lang'
+import { customProviderStore } from 'src/ts/plugins/plugins.svelte'
+import { dispatchSelectPluginProvider } from 'src/ts/pluginCommands'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
 import { resetServerResourceState } from 'src/ts/server/resourceState.svelte'
@@ -244,6 +246,8 @@ beforeEach(() => {
   botSettingsMocks.runTail = Promise.resolve()
   botSettingsMocks.settingDraftInitialValues.clear()
   botSettingsMocks.settingDraftWrites.length = 0
+  vi.mocked(dispatchSelectPluginProvider).mockClear()
+  customProviderStore.set([])
   resetServerResourceState()
   setDatabaseLite({
     aiModel: 'gpt35',
@@ -312,6 +316,61 @@ describe('BotSettings pending prompt persistence', () => {
       (candidate) => candidate.getAttribute('aria-label') === language.usePromptTemplate,
     )
   }
+
+  it('persists a selection that matches the provider from before an authoritative update', async () => {
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+    customProviderStore.set(['provider-a', 'provider-b'])
+    setDatabaseLite({
+      aiModel: 'custom',
+      subModel: 'custom',
+      promptPresets: [],
+      promptPresetsId: -1,
+      botPresets: [],
+      currentPluginProvider: 'provider-a',
+      useLegacyGUI: false,
+      formatingOrder: [],
+    } as any)
+    component = mount(BotSettings, { target, props: { settingsKind: 'legacy' } })
+    await tick()
+
+    const providerSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).find(
+      (candidate) => candidate.getAttribute('aria-label') === language.plugin,
+    )
+    expect(providerSelect?.value).toBe('provider-a')
+
+    getDatabase().currentPluginProvider = 'provider-b'
+    await tick()
+    expect(providerSelect?.value).toBe('provider-b')
+
+    customProviderStore.set(['provider-a', 'provider-b'])
+    await tick()
+    getDatabase().currentPluginProvider = 'provider-b'
+    await tick()
+    vi.mocked(dispatchSelectPluginProvider).mockClear()
+    const liveProviderSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).find(
+      (candidate) => candidate.getAttribute('aria-label') === language.plugin,
+    )
+    expect(Array.from(liveProviderSelect?.options ?? [], (option) => option.value)).toEqual([
+      '',
+      'provider-a',
+      'provider-b',
+    ])
+    liveProviderSelect!.value = 'provider-a'
+    expect(liveProviderSelect!.value).toBe('provider-a')
+    liveProviderSelect!.dispatchEvent(new Event('input', { bubbles: true }))
+    liveProviderSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    expect(dispatchSelectPluginProvider).toHaveBeenCalledOnce()
+    expect(dispatchSelectPluginProvider).toHaveBeenCalledWith(
+      'provider-a',
+      expect.objectContaining({ currentPluginProvider: 'provider-b' }),
+    )
+    expect(getDatabase().currentPluginProvider).toBe('provider-a')
+  })
 
   it('flushes a pending prompt edit with keepalive through the lifecycle registry', async () => {
     await editMainPrompt('draft before pagehide')

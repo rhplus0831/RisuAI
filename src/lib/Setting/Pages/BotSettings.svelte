@@ -295,6 +295,7 @@
     if (provider !== draftProvider) {
       suppressPluginProviderDraftDispatch = true
       currentPluginProviderDraft = provider
+      previousPluginProvider = provider
       queueMicrotask(() => {
         suppressPluginProviderDraftDispatch = false
       })
@@ -1618,7 +1619,13 @@
 
     {#if usesCustomModel}
       <span class="text-textcolor mt-2">{language.plugin}</span>
-      <SelectInput className="mt-2 mb-4" ariaLabel={language.plugin} bind:value={currentPluginProviderDraft}>
+      <SelectInput
+        className="mt-2 mb-4"
+        ariaLabel={language.plugin}
+        value={currentPluginProviderDraft}
+        onchange={(event) => {
+          currentPluginProviderDraft = event.currentTarget.value
+        }}>
         <OptionInput value="">None</OptionInput>
         {#each $customProviderStore as plugin}
           <OptionInput value={plugin}>{plugin}</OptionInput>
