@@ -597,7 +597,6 @@ export async function importMCPModule(): Promise<MCPModuleImportOutcome> {
     ['internal:aiaccess', 'LLM Call Client (internal:aiaccess)'],
     ['internal:risuai', 'Risu Access Client (internal:risuai)'],
     ['internal:fs', 'File System Client (internal:fs)'],
-    ['internal:googlesearch', 'Google Search Client (internal:googlesearch)'],
     ['internal:dice', 'Dice Tool Client (internal:dice)'],
     ['internal:graphmem', 'Graph Memory Client (internal:graphmem)'],
     ['https://mcp.paypal.com/sse', 'PayPal MCP (https://mcp.paypal.com/sse)'],

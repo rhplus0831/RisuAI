@@ -872,6 +872,15 @@ describe('MCP module import', () => {
     expect(alertMocks.alertError).not.toHaveBeenCalled()
   })
 
+  it('does not advertise the unsupported Google Search client', async () => {
+    alertMocks.alertInput.mockResolvedValue('')
+
+    await expect(importMCPModule()).resolves.toBe('cancelled')
+
+    const choices = alertMocks.alertInput.mock.calls[0]?.[1] as Array<[string, string]>
+    expect(choices.map(([identifier]) => identifier)).not.toContain('internal:googlesearch')
+  })
+
   it.each(['https:not-a-url', 'http://127.example/mcp', 'ftp://mcp.example/tools'])(
     'rejects an unsafe or malformed MCP identifier: %s',
     async (identifier) => {
