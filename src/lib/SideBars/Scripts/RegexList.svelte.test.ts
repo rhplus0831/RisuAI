@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const regexListMocks = vi.hoisted(() => ({
   exportRegex: vi.fn(),
   importRegexRows: vi.fn(),
+  resetScriptCache: vi.fn(),
   sortableCreate: vi.fn(() => ({ destroy: vi.fn() })),
 }))
 
 vi.mock('src/ts/process/scripts', () => ({
   exportRegex: regexListMocks.exportRegex,
   importRegexRows: regexListMocks.importRegexRows,
+  resetScriptCache: regexListMocks.resetScriptCache,
 }))
 
 vi.mock('sortablejs', () => ({
