@@ -11,7 +11,7 @@
     "build": "vite build --sourcemap",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "check:server": "tsc -p tsconfig.client-lib.json && tsc -p server/fastify/tsconfig.json --noEmit",
+    "check:server": "tsc -p tsconfig.client-lib.json && tsc -p server/fastify/tsconfig.json --noEmit && tsc -p tsconfig.browser-smoke.json --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm test:frontend",

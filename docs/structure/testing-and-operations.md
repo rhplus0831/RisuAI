@@ -21,7 +21,7 @@ pnpm through Corepack.
 | `pnpm build:site`                  | Production client build with `VITE_RISU_LEGAL_CONFIGURED=TRUE`.                                               |
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                |
-| `pnpm check:server`                | Emit client-library declarations, then run the strict Fastify TypeScript project without emitting server code. |
+| `pnpm check:server`                | Emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects without emitting server code. |
 | `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane without explicit gate tests.        |
 | `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit gate tests.                      |
 | `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit gate tests.                                              |
@@ -30,7 +30,7 @@ pnpm through Corepack.
 | `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                         |
 | `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                              |
 | `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                       |
-| `pnpm test:all`                    | Run format, Svelte, strict server TypeScript, frontend tests, explicit gates, the UI coverage gate, server tests, and browser smoke; preserve any failing lane. |
+| `pnpm test:all`                    | Run format, Svelte, strict server/browser-smoke TypeScript, frontend tests, explicit gates, the UI coverage gate, server tests, and browser smoke; preserve any failing lane. |
 | `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write reports to `coverage/ui-map`.                                      |
 | `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                  |
 | `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                        |
@@ -323,8 +323,8 @@ Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
 pushes to `main` use Node 24 and pnpm 10, install Chromium with Playwright
 dependencies, and run `pnpm test:all`; that single command covers formatting,
 Svelte/browser checking, client-library declaration emission, strict Fastify
-TypeScript checking, frontend tests, explicit gates, UI coverage, server tests,
-and browser smoke.
+and Playwright-source TypeScript checking, frontend tests, explicit gates, UI
+coverage, server tests, and browser smoke.
 
 `Dockerfile` uses Node 24 slim, installs pnpm through Corepack, builds the web
 client with plain `pnpm build` rather than `build:site`, copies `server/` and

@@ -23,15 +23,6 @@ declare global {
     __RISU_FASTIFY_STORAGE_WRITE_AUDIT__?: {
       records: StorageAuditRecord[]
     }
-    __RISU_FASTIFY_BROWSER_SMOKE__?: {
-      assertDirectProjectionWriteRejected: () => boolean
-      activeWriterHeaders: () => Promise<Record<string, string>>
-      getDatabaseSnapshot: () => Record<string, unknown>
-      patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>
-      selectCharacter: (index: number) => void
-      showAlert: (message: string) => void
-      waitForLoaded: () => Promise<void>
-    }
   }
 }
 
@@ -109,7 +100,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     const patchMethod = (target: unknown, method: string, surface: string, operation = method, detailIndex = 0) => {
       const holder = target as Record<string, unknown> | undefined
       const original = holder?.[method]
-      if (typeof original !== 'function') return
+      if (!holder || typeof original !== 'function') return
       holder[method] = function patchedStorageAuditMethod(this: unknown, ...args: unknown[]) {
         record(surface, operation, args[detailIndex])
         return original.apply(this, args)
@@ -150,7 +141,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
 
   await page.goto(harness.baseUrl)
 
-  await expect.poll(() => page.evaluate(() => Boolean(globalThis.__NODE__))).toBe(false)
+  await expect.poll(() => page.evaluate(() => Boolean(Reflect.get(globalThis, '__NODE__')))).toBe(false)
   await expect.poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__))).toBe(true)
 
   try {
@@ -363,6 +354,7 @@ async function startHarness(): Promise<Harness> {
       port: 0,
       dataDir,
       bodyLimit: 1024 * 1024,
+      importMaxBytes: Number.POSITIVE_INFINITY,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
       staticRoot: path.resolve('dist'),

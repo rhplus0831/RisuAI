@@ -13,25 +13,27 @@ import {
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { alertNormal } from '../alert'
 
+export interface FastifyBrowserSmokeHook {
+  assertDirectProjectionWriteRejected: () => boolean
+  activeWriterHeaders: () => Promise<Record<string, string>>
+  getAppliedServerResourceRevision: () => number | null
+  getDatabaseSnapshot: () => Database
+  isLoaded: () => boolean
+  patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<ServerCommandResult<Record<string, unknown>>>
+  waitForLoaded: (timeoutMs?: number) => Promise<void>
+  // Swipe-persistence E2E: open a character (drives chat hydration), read the
+  // reconstructed reroll candidates, and drive the swipe controls.
+  selectCharacter: (index: number) => void
+  getRerollCandidates: () => string[]
+  refreshActiveChatMessages: () => Promise<void>
+  swipeRerollBack: () => Promise<void>
+  swipeRerollForward: () => Promise<void>
+  showAlert: (message: string) => void
+}
+
 declare global {
   interface Window {
-    __RISU_FASTIFY_BROWSER_SMOKE__?: {
-      assertDirectProjectionWriteRejected: () => boolean
-      activeWriterHeaders: () => Promise<Record<string, string>>
-      getAppliedServerResourceRevision: () => number | null
-      getDatabaseSnapshot: () => Database
-      isLoaded: () => boolean
-      patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<ServerCommandResult<Record<string, unknown>>>
-      waitForLoaded: (timeoutMs?: number) => Promise<void>
-      // Swipe-persistence E2E: open a character (drives chat hydration), read the
-      // reconstructed reroll candidates, and drive the swipe controls.
-      selectCharacter: (index: number) => void
-      getRerollCandidates: () => string[]
-      refreshActiveChatMessages: () => Promise<void>
-      swipeRerollBack: () => Promise<void>
-      swipeRerollForward: () => Promise<void>
-      showAlert: (message: string) => void
-    }
+    __RISU_FASTIFY_BROWSER_SMOKE__?: FastifyBrowserSmokeHook
   }
 }
 

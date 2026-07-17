@@ -34,20 +34,8 @@ interface RevisionedResponseBody {
   databaseLineage?: string
 }
 
-declare global {
-  interface Window {
-    __RISU_FASTIFY_BROWSER_SMOKE__?: {
-      activeWriterHeaders: () => Promise<Record<string, string>>
-      getAppliedServerResourceRevision: () => number | null
-      getDatabaseSnapshot: () => Record<string, unknown>
-      patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<unknown>
-      selectCharacter: (index: number) => void
-      waitForLoaded: () => Promise<void>
-    }
-  }
-}
-
 let harness: Harness
+const diagnosticLinesByPage = new WeakMap<Page, string[]>()
 
 test.beforeAll(async () => {
   harness = await startHarness()
@@ -60,6 +48,13 @@ test.afterAll(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return
+  const diagnostics = diagnosticLinesByPage.get(page)?.slice(-20).join('\n')
+  if (!diagnostics) return
+  await testInfo.attach('browser diagnostics', { body: diagnostics, contentType: 'text/plain' })
+})
+
 test('Journey 1: switching chats repaints the active-chat generation picker', async ({ page }) => {
   const diagnostics = attachDiagnostics(page)
   await boot(page)
@@ -67,13 +62,23 @@ test('Journey 1: switching chats repaints the active-chat generation picker', as
 
   // Open chat A from the sidebar list, then confirm the picker shows preset-a.
   await clickChatRow(page, 'chat-a')
-  await expect.poll(() => presetPickerSelectedId(page), { timeout: 15_000, message: diagnostics }).toBe('preset-a')
+  await expect
+    .poll(() => presetPickerSelectedId(page), {
+      timeout: 15_000,
+      message: 'active-chat prompt picker did not settle on preset-a',
+    })
+    .toBe('preset-a')
 
   // Go back to the list and open chat B. The picker must repaint preset-b.
   await page.locator('[data-risu-chat-action="back-to-chat-list"]').first().click()
   await clickChatRow(page, 'chat-b')
 
-  await expect.poll(() => presetPickerSelectedId(page), { timeout: 15_000, message: diagnostics }).toBe('preset-b')
+  await expect
+    .poll(() => presetPickerSelectedId(page), {
+      timeout: 15_000,
+      message: 'active-chat prompt picker did not settle on preset-b',
+    })
+    .toBe('preset-b')
 
   // Classify: the rendered picker id must match the active chat's stored preset.
   const storedPresetId = await page.evaluate(() => {
@@ -101,13 +106,16 @@ test('Journey 2 (settle): a sidebar toggle flip survives the command + resource 
   const commandResponsePromise = page.waitForResponse(isFlagToggleOffCommandResponse, { timeout: 15_000 })
   await flagControl.locator('label').first().click()
   await expect
-    .poll(() => flagControl.getAttribute('data-risu-selected'), { timeout: 15_000, message: diagnostics })
+    .poll(() => flagControl.getAttribute('data-risu-selected'), {
+      timeout: 15_000,
+      message: 'sidebar flag toggle did not paint the command result',
+    })
     .toBe('false')
 
   const commandResponse = await commandResponsePromise
   expect(commandResponse.status(), diagnostics()).toBe(200)
   const command = await readRevisionedResponse(commandResponse, 'chat generation-settings command')
-  await waitForAppliedResourceRevision(page, command.revision, diagnostics)
+  await waitForAppliedResourceRevision(page, command.revision)
 
   // The accepted command revision is now applied, so this is the settled paint
   // rather than only the immediate optimistic state.
@@ -137,7 +145,12 @@ test('Journey 3 (GATE): the same-character sidebar view survives old-lineage rec
   const characterTab = page.locator('[data-risu-sidebar-tab="character"]').first()
   await expect(characterTab).toBeVisible({ timeout: 15_000 })
   await characterTab.click()
-  await expect.poll(() => sidebarTabActive(page, 'character'), { timeout: 10_000, message: diagnostics }).toBe(true)
+  await expect
+    .poll(() => sidebarTabActive(page, 'character'), {
+      timeout: 10_000,
+      message: 'character sidebar tab did not become active',
+    })
+    .toBe(true)
   await expect(page.locator('[data-risu-sidebar-panel="character"]').first()).toBeVisible()
 
   // Hold a real command at the network boundary so the import deterministically
@@ -183,11 +196,11 @@ test('Journey 3 (GATE): the same-character sidebar view survives old-lineage rec
           return false
         }
       },
-      { timeout: 15_000, message: diagnostics },
+      { timeout: 15_000, message: 'recovery navigation did not replace the document' },
     )
     .toBe(true)
   await waitForBrowserLoaded(page)
-  await waitForAppliedResourceRevision(page, imported.revision, diagnostics)
+  await waitForAppliedResourceRevision(page, imported.revision)
 
   // Store and DOM oracles now run after the new document has loaded the imported
   // revision. The sidebar must retain the user's "character" view through that
@@ -200,7 +213,7 @@ test('Journey 3 (GATE): the same-character sidebar view survives old-lineage rec
           const character = (snap.characters as Array<Record<string, any>>)[0]
           return character?.chats?.length ?? 0
         }),
-      { timeout: 15_000, message: diagnostics },
+      { timeout: 15_000, message: 'imported chats did not settle in the recovered document' },
     )
     .toBe(2)
   await expect(page).toHaveURL(/\/character\/char-1\/chat-a$/)
@@ -212,6 +225,7 @@ test('Journey 3 (GATE): the same-character sidebar view survives old-lineage rec
 
 function attachDiagnostics(page: Page): () => string {
   const lines: string[] = []
+  diagnosticLinesByPage.set(page, lines)
   page.on('console', (m) => lines.push(`console.${m.type()}: ${m.text()}`))
   page.on('pageerror', (e) => lines.push(`pageerror: ${e.message}`))
   return () => lines.slice(-20).join('\n')
@@ -353,15 +367,11 @@ async function readRevisionedResponse(response: Response, label: string): Promis
   return requireRevisionedResponseBody(body, label)
 }
 
-async function waitForAppliedResourceRevision(
-  page: Page,
-  minimumRevision: number,
-  diagnostics: () => string,
-): Promise<void> {
+async function waitForAppliedResourceRevision(page: Page, minimumRevision: number): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getAppliedServerResourceRevision()), {
       timeout: 15_000,
-      message: diagnostics,
+      message: `browser did not apply server resource revision ${minimumRevision}`,
     })
     .toBeGreaterThanOrEqual(minimumRevision)
 }
@@ -469,6 +479,7 @@ async function startHarness(): Promise<Harness> {
       port: 0,
       dataDir,
       bodyLimit: 1024 * 1024,
+      importMaxBytes: Number.POSITIVE_INFINITY,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
       staticRoot: path.resolve('dist'),

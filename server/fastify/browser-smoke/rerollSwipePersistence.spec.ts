@@ -16,20 +16,6 @@ interface Harness {
   dataDir: string
 }
 
-declare global {
-  interface Window {
-    __RISU_FASTIFY_BROWSER_SMOKE__?: {
-      activeWriterHeaders: () => Promise<Record<string, string>>
-      getDatabaseSnapshot: () => Record<string, unknown>
-      getRerollCandidates: () => string[]
-      refreshActiveChatMessages: () => Promise<void>
-      selectCharacter: (index: number) => void
-      swipeRerollBack: () => Promise<void>
-      waitForLoaded: () => Promise<void>
-    }
-  }
-}
-
 let harness: Harness
 
 test.beforeAll(async () => {
@@ -277,6 +263,7 @@ async function startHarness(): Promise<Harness> {
       port: 0,
       dataDir,
       bodyLimit: 1024 * 1024,
+      importMaxBytes: Number.POSITIVE_INFINITY,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
       staticRoot: path.resolve('dist'),
