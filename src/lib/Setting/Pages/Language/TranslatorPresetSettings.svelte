@@ -1381,17 +1381,23 @@
     }
     const optimisticAcknowledgement = translatorPresetPatchOptimisticAcknowledgement(pending)
     markTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
+    const feedbackOperationId = nextTranslatorPresetFeedbackOperationId++
+    activeTranslatorPresetFeedbackOperationId = feedbackOperationId
+    translatorPresetPersistenceState = 'saving'
 
     let rollbackRan = false
     const rollback = () => {
+      if (rollbackRan) return
       rollbackRan = true
       markCollectionAcknowledgementTainted('translatorPresets')
       markSettingsGroupAcknowledgementTainted('language')
       restoreTranslatorPresetUpdateState(commandPresetId, commandPrevious, commandAttempted, commandPatch)
     }
+    let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
     const dispatch = () =>
-      dispatchDurableMutation(commandOutbox, commandIntent, (transport) =>
-        runServerCommand({
+      dispatchDurableMutation(commandOutbox, commandIntent, (transport) => {
+        failureRollbackDisposition = transport.failureRollbackDisposition
+        return runServerCommand({
           command: (baseRevision) =>
             updateTranslatorPresetCommand(
               {
@@ -1406,23 +1412,65 @@
           rollback,
           ...options,
           ...transport,
-        }),
-      )
+        })
+      })
+
+    let finalSettlementHandled = false
+    const settleAcceptedFields = () => {
+      if (finalSettlementHandled) return
+      finalSettlementHandled = true
+      advanceTranslatorPresetRollbackBaselines(commandPresetId, commandAttempted, commandFields)
+      clearTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
+    }
+    const settleDiscardedFields = () => {
+      if (finalSettlementHandled) return
+      finalSettlementHandled = true
+      rollback()
+      clearTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
+    }
+    const stopFinalSettlement = trackTranslatorPresetFinalSettlement(commandOutbox, feedbackOperationId, {
+      accepted: settleAcceptedFields,
+      discarded: settleDiscardedFields,
+    })
+    const settleImmediateAccepted = () => {
+      stopFinalSettlement()
+      settleAcceptedFields()
+      if (activeTranslatorPresetFeedbackOperationId === feedbackOperationId) {
+        translatorPresetPersistenceState = 'idle'
+      }
+    }
+    const settleImmediateFailed = () => {
+      const settlementWasHandled = finalSettlementHandled
+      stopFinalSettlement()
+      settleDiscardedFields()
+      if (!settlementWasHandled) settleTranslatorPresetPersistenceFeedback(feedbackOperationId, 'discarded')
+    }
+    const retainForReplay = () => {
+      if (activeTranslatorPresetFeedbackOperationId === feedbackOperationId) {
+        translatorPresetPersistenceState = 'queued'
+      }
+      alertNormal(language.translatorPresetPersistence.queued)
+    }
+
     const dispatchAndSettle = async () => {
-      const result = await dispatch()
+      let result: ServerCommandResult
+      try {
+        result = await dispatch()
+      } catch (error) {
+        console.error('Translator preset update command rejected:', error)
+        result = { status: 'unavailable' }
+      }
       if (result.status === 'ok') {
-        advanceTranslatorPresetRollbackBaselines(commandPresetId, commandAttempted, commandFields)
-      } else if (!rollbackRan) {
-        rollback()
+        settleImmediateAccepted()
+      } else if (failureRollbackDisposition?.(result) === 'retain') {
+        retainForReplay()
+      } else {
+        settleImmediateFailed()
       }
       return result
     }
 
-    translatorPresetUpdateDispatchChain = translatorPresetUpdateDispatchChain
-      .then(dispatchAndSettle, dispatchAndSettle)
-      .finally(() => {
-        clearTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
-      })
+    translatorPresetUpdateDispatchChain = translatorPresetUpdateDispatchChain.then(dispatchAndSettle, dispatchAndSettle)
     return translatorPresetUpdateDispatchChain
   }
 

@@ -968,6 +968,8 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(isCollectionAcknowledgementTainted('translatorPresets')).toBe(true)
     expect(isSettingsGroupAcknowledgementTainted('language')).toBe(true)
+    expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.failed)
+    expect(alertError).toHaveBeenCalledWith(language.translatorPresetPersistence.failed)
   })
 
   it('rolls back a failed coalesced field edit to its first baseline', async () => {
@@ -1311,6 +1313,59 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
       expect(translatorPresetPersistenceStatus()).toBeNull()
       expect(getDatabase().translatorPresets.some((preset) => preset.id === createdPresetId)).toBe(true)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
+  it('keeps a retained field edit visible until replay finally rejects it', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-update-feedback',
+      writerEpoch: 14,
+      databaseLineage: 'lineage-translator-update-feedback',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.failNextUpdate = true
+    commandSpies.skipNextRollback = true
+
+    try {
+      await editPrompt('queued prompt A')
+
+      await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.translatorPresetPersistence.queued))
+      expect(getDatabase().translatorPresets[0].prompt).toBe('queued prompt A')
+      expect(getDatabase().translatorPrompt).toBe('queued prompt A')
+      expect(promptTextarea().value).toBe('queued prompt A')
+      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.queued)
+      expect(alertError).not.toHaveBeenCalled()
+
+      const [retainedUpdate] = await listPendingMutations()
+      expect(retainedUpdate).toBeTruthy()
+      commandSpies.replayResults.push({
+        status: 'error',
+        reason: 'invalid-request',
+        error: 'update is no longer valid',
+      })
+      await expect(dispatchDurableMutationReplay(retainedUpdate.handle, retainedUpdate.intent)).resolves.toMatchObject({
+        disposition: 'discarded',
+      })
+      await tick()
+
+      expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
+      expect(getDatabase().translatorPrompt).toBe('old prompt A')
+      expect(promptTextarea().value).toBe('old prompt A')
+      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.failed)
+      expect(alertError).toHaveBeenCalledWith(language.translatorPresetPersistence.failed)
       expect(await listPendingMutations()).toEqual([])
     } finally {
       if (component) {
