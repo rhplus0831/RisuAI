@@ -7,6 +7,11 @@
     folderKey?: string
     index: number
     snapshot: LoreBookEntry
+    localActivationCleanup?: {
+      chatId: string
+      entryId: string
+      displayScopeKey: string
+    }
   }
 </script>
 
@@ -14,7 +19,7 @@
   import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from '@lucide/svelte'
   import { language } from '../../../lang'
   import { getCurrentCharacter, getCurrentChat, getDatabase, type loreBook } from '../../../ts/storage/database.svelte'
-  import { alertConfirm, alertMd } from '../../../ts/alert'
+  import { alertConfirm, alertError, alertMd, alertNormal } from '../../../ts/alert'
   import Check from '../../UI/GUI/CheckInput.svelte'
   import Help from '../../Others/Help.svelte'
   import TextInput from '../../UI/GUI/TextInput.svelte'
@@ -27,10 +32,18 @@
     changedLorebookEntryDraftFields,
     clearDirtyLorebookEntryFieldsMatchingProjection,
     mergeLorebookEntryProjectionDraft,
-    setActiveChatLorebookLocalActivation,
+    setActiveChatLorebookLocalActivationWithOutcome,
+    setChatLorebookLocalActivationWithOutcome,
     subscribeLorebookEntryDraftRollbacks,
     type LorebookEntryDirtyField,
+    type ScopedLorebookMutationOperation,
   } from 'src/ts/server/lorebookBridge.svelte'
+  import {
+    findScopedLorebookLocalActivationMutationUiState,
+    scopedLorebookMutationUiStates,
+    trackScopedLorebookMutationUiOperation,
+    type ScopedLorebookMutationUiContext,
+  } from 'src/ts/server/scopedLorebookMutationUiState'
   import { onDestroy, onMount } from 'svelte'
 
   const tokenCountCache = new Map<string, number>()
@@ -54,6 +67,7 @@
     onDraftChange?: ((entry: loreBook) => void) | null
     onDraftSettled?: () => void
     entryDraftScopeKey?: string
+    mutationLocked?: boolean
   }
 
   let {
@@ -80,6 +94,7 @@
     onDraftChange = null,
     onDraftSettled = () => {},
     entryDraftScopeKey = undefined,
+    mutationLocked = false,
   }: Props = $props()
 
   let open = $derived(isOpen)
@@ -93,6 +108,46 @@
   let draftNeedsSettlement = false
   let deletionCommitted = false
   let tokenPromise = $state<Promise<number> | null>(null)
+
+  let localActivationScopeKey = $derived.by(() => {
+    const chatId = getCurrentChat()?.id
+    return chatId ? `chat:${chatId}` : null
+  })
+  let localActivationState = $derived(
+    findScopedLorebookLocalActivationMutationUiState(
+      $scopedLorebookMutationUiStates,
+      localActivationScopeKey,
+      draft.id,
+    ),
+  )
+  let localActivationStatus = $derived(localActivationState?.status ?? 'idle')
+
+  function trackLocalActivation(
+    operation: ScopedLorebookMutationOperation | null,
+    entryId: string | undefined,
+    options: { displayScopeKey?: string | null; context?: ScopedLorebookMutationUiContext } = {},
+  ): void {
+    const cleanup = options.context === 'local-activation-cleanup'
+    trackScopedLorebookMutationUiOperation({
+      operation,
+      kind: 'local-activation',
+      entryId,
+      displayScopeKey: options.displayScopeKey ?? entryDraftScopeKey,
+      context: options.context,
+      onQueued: () =>
+        alertNormal(
+          cleanup
+            ? language.scopedLorebookMutation.localActivationCleanupQueued
+            : language.scopedLorebookMutation.queued,
+        ),
+      onFailed: (error) =>
+        alertError(
+          cleanup
+            ? language.scopedLorebookMutation.localActivationCleanupFailed(error)
+            : language.scopedLorebookMutation.failed(error),
+        ),
+    })
+  }
 
   $effect(() => {
     const valueSnapshot = snapshotJson(value)
@@ -233,13 +288,35 @@
   function captureDeletionTarget(): LorebookDeletionTarget {
     const snapshot = cloneJsonValue(draft)
     const id = typeof snapshot.id === 'string' && snapshot.id.trim() ? snapshot.id : undefined
+    const currentChat = getCurrentChat()
+    const localActivationCleanup =
+      id &&
+      entryDraftScopeKey?.startsWith('character:') &&
+      currentChat?.id &&
+      currentChat.localLore?.some((entry) => entry.id === id && entry.mode === 'child')
+        ? { chatId: currentChat.id, entryId: id, displayScopeKey: entryDraftScopeKey }
+        : undefined
     return {
       id,
       mode: snapshot.mode,
       folderKey: snapshot.mode === 'folder' ? (snapshot.key ?? '') : undefined,
       index: idx,
       snapshot,
+      ...(localActivationCleanup ? { localActivationCleanup } : {}),
     }
+  }
+
+  function removeCapturedLocalActivation(target: LorebookDeletionTarget): void {
+    const cleanup = target.localActivationCleanup
+    if (!cleanup) return
+    trackLocalActivation(
+      setChatLorebookLocalActivationWithOutcome(cleanup.chatId, target.snapshot, false),
+      cleanup.entryId,
+      {
+        displayScopeKey: cleanup.displayScopeKey,
+        context: 'local-activation-cleanup',
+      },
+    )
   }
 
   async function getTokens(data: string, cacheId: string) {
@@ -268,11 +345,9 @@
   function isLocallyActivated(book: loreBook) {
     return book.id ? getCurrentChat()?.localLore.some((e) => e.id === book.id) : false
   }
-  function deactivateLocally(book: loreBook) {
-    setActiveChatLorebookLocalActivation(book, false)
-  }
   function toggleLocalActive(check: boolean, book: loreBook) {
-    setActiveChatLorebookLocalActivation(book, check)
+    if (localActivationStatus === 'pending') return
+    trackLocalActivation(setActiveChatLorebookLocalActivationWithOutcome(book, check), book.id)
   }
   function getParentLoreName(book: loreBook) {
     if (book.mode === 'child') {
@@ -336,6 +411,7 @@
         class="mr-1"
         aria-label={`${draft.alwaysActive ? language.disable : language.enable}: ${language.alwaysActive} (${lorebookDisplayName(draft)})`}
         aria-pressed={draft.alwaysActive}
+        disabled={mutationLocked}
         class:text-textcolor2={!draft.alwaysActive}
         class:text-textcolor={draft.alwaysActive}
         onclick={async () => {
@@ -358,6 +434,7 @@
       <button
         class="valuer"
         aria-label={`${language.remove}: ${lorebookDisplayName(draft)}`}
+        disabled={mutationLocked}
         onclick={async () => {
           const target = captureDeletionTarget()
           let shouldRemove = true
@@ -375,7 +452,7 @@
             if (secondConfirm) {
               deletionCommitted = true
               closeOpenRegistration()
-              deactivateLocally(target.snapshot)
+              removeCapturedLocalActivation(target)
               onRemove(target)
             }
           }
@@ -391,6 +468,7 @@
       <button
         class="valuer"
         aria-label={`${language.remove}: ${lorebookDisplayName(draft)}`}
+        disabled={mutationLocked}
         onclick={async () => {
           const target = captureDeletionTarget()
           const d = await alertConfirm(language.removeConfirm + getParentLoreName(target.snapshot))
@@ -415,6 +493,7 @@
           <LoreBookList
             {externalLoreBooks}
             {entryDraftScopeKey}
+            {mutationLocked}
             showFolder={draft.key}
             {onCollectionChange}
             {onEntryChange}
@@ -425,6 +504,7 @@
           <button
             class="text-textcolor2 hover:text-textcolor"
             aria-label={`${language.add}: ${language.loreBook} (${lorebookDisplayName(draft)})`}
+            disabled={mutationLocked}
             onclick={() => {
               updateCollection([
                 ...(externalLoreBooks ?? []),
@@ -499,8 +579,28 @@
             <Check
               check={isLocallyActivated(draft)}
               onChange={(check: boolean) => toggleLocalActive(check, draft)}
+              disabled={mutationLocked || localActivationStatus === 'pending'}
               name={language.alwaysActiveInChat} />
           </div>
+          {#if localActivationStatus !== 'idle'}
+            <p
+              class="m-0 mt-1 text-xs"
+              class:text-red-400={localActivationStatus === 'failed'}
+              class:text-textcolor2={localActivationStatus !== 'failed'}
+              data-risu-lorebook-local-activation={localActivationStatus}
+              role={localActivationStatus === 'failed' ? 'alert' : 'status'}
+              aria-live={localActivationStatus === 'failed' ? 'assertive' : 'polite'}>
+              {localActivationStatus === 'pending'
+                ? language.scopedLorebookMutation.pending
+                : localActivationState?.context === 'local-activation-cleanup'
+                  ? localActivationStatus === 'queued'
+                    ? language.scopedLorebookMutation.localActivationCleanupQueued
+                    : language.scopedLorebookMutation.localActivationCleanupFailed(localActivationState?.error ?? '')
+                  : localActivationStatus === 'queued'
+                    ? language.scopedLorebookMutation.queued
+                    : language.scopedLorebookMutation.failed(localActivationState?.error ?? '')}
+            </p>
+          {/if}
         {/if}
         {#if !lorePlus && !draft.useRegex}
           <div class="flex items-center mt-2">

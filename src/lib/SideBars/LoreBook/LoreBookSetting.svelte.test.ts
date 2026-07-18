@@ -16,6 +16,16 @@ const editorActions = vi.hoisted(() => ({
   importLoreBook: vi.fn(),
 }))
 
+const bridgeActions = vi.hoisted(() => ({
+  replaceCharacterLorebookCollectionWithOutcome: vi.fn(),
+  replaceChatLorebookCollectionWithOutcome: vi.fn(),
+}))
+
+const alertSpies = vi.hoisted(() => ({
+  alertError: vi.fn(),
+  alertNormal: vi.fn(),
+}))
+
 vi.mock('src/lang', () => ({
   language: {
     Chat: 'Chat',
@@ -33,6 +43,14 @@ vi.mock('src/lang', () => ({
     loreBook: 'Lorebook',
     lorebookDataLoadFailed: 'Lorebook data could not be loaded.',
     retry: 'Retry',
+    scopedLorebookMutation: {
+      pending: 'Saving lorebook changes…',
+      queued: 'Lorebook change queued.',
+      failed: (detail: string) => `Lorebook change failed.${detail ? ` ${detail}` : ''}`,
+      localActivationCleanupQueued: 'Local activation cleanup queued.',
+      localActivationCleanupFailed: (detail: string) =>
+        `Local activation cleanup failed and was restored.${detail ? ` ${detail}` : ''}`,
+    },
     settings: 'Settings',
   },
 }))
@@ -54,11 +72,21 @@ vi.mock('../../../lang', () => ({
     loreBook: 'Lorebook',
     lorebookDataLoadFailed: 'Lorebook data could not be loaded.',
     retry: 'Retry',
+    scopedLorebookMutation: {
+      pending: 'Saving lorebook changes…',
+      queued: 'Lorebook change queued.',
+      failed: (detail: string) => `Lorebook change failed.${detail ? ` ${detail}` : ''}`,
+      localActivationCleanupQueued: 'Local activation cleanup queued.',
+      localActivationCleanupFailed: (detail: string) =>
+        `Local activation cleanup failed and was restored.${detail ? ` ${detail}` : ''}`,
+    },
     settings: 'Settings',
   },
 }))
 
 vi.mock('../../../ts/process/lorebook.svelte', () => editorActions)
+
+vi.mock('src/ts/alert', () => alertSpies)
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', async (importActual) => ({
   ...(await importActual<typeof import('src/ts/server/chatMessageHydration.svelte')>()),
@@ -69,8 +97,8 @@ vi.mock('src/ts/server/chatMessageHydration.svelte', async (importActual) => ({
 
 vi.mock('src/ts/server/lorebookBridge.svelte', async (importActual) => ({
   ...(await importActual<typeof import('src/ts/server/lorebookBridge.svelte')>()),
-  replaceCharacterLorebookCollection: vi.fn(),
-  replaceChatLorebookCollection: vi.fn(),
+  replaceCharacterLorebookCollectionWithOutcome: bridgeActions.replaceCharacterLorebookCollectionWithOutcome,
+  replaceChatLorebookCollectionWithOutcome: bridgeActions.replaceChatLorebookCollectionWithOutcome,
   watchServerBackedLorebooks: () => () => {},
 }))
 
@@ -86,17 +114,37 @@ vi.mock('./LoreBookList.svelte', async () => ({
 }))
 
 import LoreBookSetting from './LoreBookSetting.svelte'
+import { resetScopedLorebookMutationUiStateForTests } from 'src/ts/server/scopedLorebookMutationUiState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
 let target: HTMLElement
 let component: MountedComponent | undefined
 
+function deferredOperation(scopeKey: string) {
+  let resolve!: (result: { status: 'accepted' | 'queued' } | { status: 'failed'; error: string }) => void
+  const settlement = new Promise<{ status: 'accepted' | 'queued' } | { status: 'failed'; error: string }>(
+    (resolvePromise) => {
+      resolve = resolvePromise
+    },
+  )
+  return { operation: { scopeKey, settlement }, resolve }
+}
+
+async function flushAsyncWork(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await tick()
+}
+
 beforeEach(() => {
   hydration.failed = false
   hydration.pending = false
   hydration.retry.mockClear()
   for (const action of Object.values(editorActions)) action.mockClear()
+  for (const action of Object.values(bridgeActions)) action.mockReset()
+  for (const alert of Object.values(alertSpies)) alert.mockClear()
+  resetScopedLorebookMutationUiStateForTests()
   setDatabaseLite({
     bulkEnabling: false,
     characters: [
@@ -121,6 +169,7 @@ afterEach(() => {
   }
   target.remove()
   selectedCharID.set(-1)
+  resetScopedLorebookMutationUiStateForTests()
 })
 
 describe('character lorebook hydration UI', () => {
@@ -202,5 +251,139 @@ describe('lorebook editor action accessibility', () => {
     expect(characterToggle?.getAttribute('aria-pressed')).toBe('true')
     expect(chatToggle?.getAttribute('aria-label')).toBe('Enable: Always Active (Chat)')
     expect(chatToggle?.getAttribute('aria-pressed')).toBe('false')
+  })
+})
+
+describe('scoped lorebook persistence outcomes', () => {
+  it('keeps a pending add owned by its character scope and reports a queued settlement', async () => {
+    const deferred = deferredOperation('character:character-a')
+    const chatDeferred = deferredOperation('chat:chat-a')
+    editorActions.addLorebook.mockReturnValueOnce(deferred.operation)
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    const add = target.querySelector<HTMLButtonElement>('[aria-label="Add: Lorebook"]')!
+    add.click()
+    await tick()
+
+    expect(add.disabled).toBe(true)
+    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')?.textContent).toContain(
+      'Saving lorebook changes',
+    )
+
+    const chatTab = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'Chat',
+    )!
+    chatTab.click()
+    await tick()
+    const chatAdd = target.querySelector<HTMLButtonElement>('[aria-label="Add: Lorebook"]')!
+    expect(chatAdd.disabled).toBe(false)
+    expect(
+      target
+        .querySelector('[data-risu-lorebook-scope="character:character-a"]')
+        ?.getAttribute('data-risu-lorebook-persistence'),
+    ).toBe('pending')
+
+    editorActions.addLorebook.mockReturnValueOnce(chatDeferred.operation)
+    chatAdd.click()
+    await tick()
+    expect(editorActions.addLorebook).toHaveBeenLastCalledWith(1)
+    expect(chatAdd.disabled).toBe(true)
+    expect(
+      target.querySelector('[data-risu-lorebook-scope="chat:chat-a"]')?.getAttribute('data-risu-lorebook-persistence'),
+    ).toBe('pending')
+
+    chatDeferred.resolve({ status: 'accepted' })
+    await flushAsyncWork()
+    expect(chatAdd.disabled).toBe(false)
+
+    deferred.resolve({ status: 'queued' })
+    await flushAsyncWork()
+    expect(alertSpies.alertNormal).toHaveBeenCalledWith('Lorebook change queued.')
+    expect(
+      target
+        .querySelector('[data-risu-lorebook-scope="character:character-a"]')
+        ?.getAttribute('data-risu-lorebook-persistence'),
+    ).toBe('queued')
+  })
+
+  it('tracks an imported collection until its exact operation is accepted', async () => {
+    const deferred = deferredOperation('character:character-a')
+    editorActions.importLoreBook.mockResolvedValueOnce(deferred.operation)
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    target.querySelector<HTMLButtonElement>('[aria-label="Import: Lorebook"]')!.click()
+    await flushAsyncWork()
+    expect(editorActions.importLoreBook).toHaveBeenCalledWith('global')
+    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).not.toBeNull()
+
+    deferred.resolve({ status: 'accepted' })
+    await flushAsyncWork()
+    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).toBeNull()
+  })
+
+  it('restores a queued scope label after the lorebook setting remounts', async () => {
+    const deferred = deferredOperation('character:character-a')
+    editorActions.addLorebook.mockReturnValueOnce(deferred.operation)
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    target.querySelector<HTMLButtonElement>('[aria-label="Add: Lorebook"]')!.click()
+    deferred.resolve({ status: 'queued' })
+    await flushAsyncWork()
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')?.textContent).toContain(
+      'Lorebook change queued',
+    )
+
+    unmount(component)
+    component = undefined
+    target.replaceChildren()
+    alertSpies.alertNormal.mockClear()
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')?.textContent).toContain(
+      'Lorebook change queued',
+    )
+    expect(alertSpies.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('disables an exact bulk scope while pending and reports terminal failure', async () => {
+    setDatabaseLite({
+      bulkEnabling: true,
+      characters: [
+        {
+          chaId: 'character-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', localLore: [{ alwaysActive: false }], message: [] }],
+          globalLore: [{ alwaysActive: false }],
+          lorePlus: false,
+        },
+      ],
+    } as any)
+    const deferred = deferredOperation('character:character-a')
+    bridgeActions.replaceCharacterLorebookCollectionWithOutcome.mockReturnValueOnce(deferred.operation)
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    const characterBulk = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'CHAR',
+    )!
+    const chatBulk = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'CHAT',
+    )!
+    characterBulk.click()
+    await tick()
+    expect(characterBulk.disabled).toBe(true)
+    expect(chatBulk.disabled).toBe(false)
+
+    deferred.resolve({ status: 'failed', error: 'invalid bulk update' })
+    await flushAsyncWork()
+    expect(characterBulk.disabled).toBe(false)
+    expect(alertSpies.alertError).toHaveBeenCalledWith('Lorebook change failed. invalid bulk update')
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')?.textContent).toContain(
+      'Lorebook change failed',
+    )
   })
 })

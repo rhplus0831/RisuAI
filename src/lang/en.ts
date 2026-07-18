@@ -1864,6 +1864,15 @@ export const languageEnglish = {
     queued: 'Deletion is queued on this device and will retry automatically.',
     failed: 'This lorebook could not be deleted. Try again.',
   },
+  scopedLorebookMutation: {
+    pending: 'Saving lorebook changes…',
+    queued: 'This lorebook change is queued on this device and will retry automatically.',
+    failed: (detail: string) => `This lorebook change could not be saved.${detail ? ` ${detail}` : ''}`,
+    localActivationCleanupQueued:
+      'Removing this entry from the active chat is queued on this device and will retry automatically.',
+    localActivationCleanupFailed: (detail: string) =>
+      `This entry's chat-local activation could not be removed and was restored.${detail ? ` ${detail}` : ''}`,
+  },
   cachePoint: 'Cache Point',
   all: 'All',
   showFolderNameInIcon: 'Show Folder Name in Icon',

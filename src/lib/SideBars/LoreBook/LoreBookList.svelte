@@ -6,14 +6,23 @@
   import { onDestroy, onMount, tick } from 'svelte'
   import { sleep, sortableOptions } from 'src/ts/util'
   import { v4 } from 'uuid'
-  import { alertError } from 'src/ts/alert'
+  import { alertError, alertNormal } from 'src/ts/alert'
+  import { language } from '../../../lang'
   import {
     applyLorebookEntryDraftEdit,
     flushPendingLorebookEntryDraftEdit,
-    replaceCharacterLorebookCollection,
-    replaceChatLorebookCollection,
-    replaceGlobalLorebookEntryCollection,
+    replaceCharacterLorebookCollectionWithOutcome,
+    replaceChatLorebookCollectionWithOutcome,
+    replaceGlobalLorebookEntryCollectionWithOutcome,
+    type ScopedLorebookMutationOperation,
   } from 'src/ts/server/lorebookBridge.svelte'
+  import {
+    findScopedLorebookCollectionMutationUiState,
+    scopedLorebookMutationUiStates,
+    scopedLorebookMutationUiStatesForDisplayScope,
+    trackScopedLorebookMutationUiOperation,
+    type ScopedLorebookMutationUiState,
+  } from 'src/ts/server/scopedLorebookMutationUiState'
 
   let reinitializeSortable = false
 
@@ -27,6 +36,7 @@
     onEntryChange?: (index: number, entry: loreBook) => void
     onEntrySettled?: (index: number) => void
     entryDraftScopeKey?: string
+    mutationLocked?: boolean
   }
 
   let {
@@ -45,6 +55,7 @@
     },
     onEntrySettled = () => {},
     entryDraftScopeKey = undefined,
+    mutationLocked = false,
   }: Props = $props()
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
@@ -106,6 +117,35 @@
   }
 
   let resolvedEntryDraftScopeKey = $derived(entryDraftScopeKey ?? internalEntryDraftScopeKey())
+  let collectionMutationState = $derived(
+    findScopedLorebookCollectionMutationUiState($scopedLorebookMutationUiStates, resolvedEntryDraftScopeKey),
+  )
+  let collectionMutationStatus = $derived(collectionMutationState?.status ?? 'idle')
+  let displayedMutationStates = $derived(
+    scopedLorebookMutationUiStatesForDisplayScope($scopedLorebookMutationUiStates, resolvedEntryDraftScopeKey),
+  )
+  let collectionMutationBlocked = $derived(mutationLocked || collectionMutationStatus === 'pending')
+
+  function trackCollectionMutation(operation: ScopedLorebookMutationOperation | null): void {
+    trackScopedLorebookMutationUiOperation({
+      operation,
+      kind: 'collection',
+      onQueued: () => alertNormal(language.scopedLorebookMutation.queued),
+      onFailed: (error) => alertError(language.scopedLorebookMutation.failed(error)),
+    })
+  }
+
+  function mutationStatusText(state: ScopedLorebookMutationUiState): string {
+    if (state.status === 'pending') return language.scopedLorebookMutation.pending
+    if (state.context === 'local-activation-cleanup') {
+      return state.status === 'queued'
+        ? language.scopedLorebookMutation.localActivationCleanupQueued
+        : language.scopedLorebookMutation.localActivationCleanupFailed(state.error ?? '')
+    }
+    return state.status === 'queued'
+      ? language.scopedLorebookMutation.queued
+      : language.scopedLorebookMutation.failed(state.error ?? '')
+  }
 
   function cloneLoreBooks(entries: loreBook[]): loreBook[] {
     return JSON.parse(JSON.stringify(entries ?? []))
@@ -249,7 +289,7 @@
   function updateCharacterGlobalLoreCollection(entries: loreBook[]): void {
     const characterId = selectedCharacter()?.chaId
     if (!characterId) return
-    replaceCharacterLorebookCollection(characterId, entries)
+    trackCollectionMutation(replaceCharacterLorebookCollectionWithOutcome(characterId, entries))
   }
 
   function updateChatLoreValue(index: number, value: loreBook): void {
@@ -267,7 +307,7 @@
   function updateChatLoreCollection(entries: loreBook[]): void {
     const chatId = selectedChat()?.id
     if (!chatId) return
-    replaceChatLorebookCollection(chatId, entries)
+    trackCollectionMutation(replaceChatLorebookCollectionWithOutcome(chatId, entries))
   }
 
   function updateGlobalLoreValue(lorebookId: string | null, index: number, value: loreBook): void {
@@ -282,7 +322,7 @@
 
   function updateGlobalLorebookCollection(entries: loreBook[], lorebookId = selectedGlobalLorebookId()): void {
     if (!lorebookId) return
-    replaceGlobalLorebookEntryCollection(lorebookId, entries)
+    trackCollectionMutation(replaceGlobalLorebookEntryCollectionWithOutcome(lorebookId, entries))
   }
 
   const waitForDOMReady = async () => {
@@ -342,7 +382,7 @@
     }
 
     // Drag stays disabled while a lorebook detail is open.
-    if (openedDetails === 0) {
+    if (openedDetails === 0 && !collectionMutationBlocked) {
       try {
         createStb()
       } catch (error) {
@@ -358,7 +398,7 @@
   }
 
   const createStb = () => {
-    if (destroyed || !ele || openedDetails > 0 || stb) return
+    if (destroyed || !ele || openedDetails > 0 || collectionMutationBlocked || stb) return
     stb = Sortable.create(ele, {
       ...sortableOptions,
       group: 'lorebook',
@@ -369,6 +409,10 @@
       ghostClass: 'risu-ghost-item',
 
       onEnd: async (evt) => {
+        if (collectionMutationBlocked) {
+          await recreateStb()
+          return
+        }
         if (!evt.from || !evt.to) {
           alertError("Error: 'evt.from' or 'evt.to' is null")
           await recreateStb()
@@ -497,6 +541,14 @@
   let openedOwnerInitialized = false
 
   $effect(() => {
+    if (collectionMutationBlocked) {
+      destroyStb()
+    } else if (openedDetails === 0) {
+      createStb()
+    }
+  })
+
+  $effect(() => {
     const nextOwner = resolvedEntryDraftScopeKey
     if (!openedOwnerInitialized) {
       openedOwnerInitialized = true
@@ -578,11 +630,28 @@
   })
 </script>
 
+{#each displayedMutationStates as mutationState (mutationState.key)}
+  <p
+    class="m-0 mb-2 text-xs"
+    class:text-red-400={mutationState.status === 'failed'}
+    class:text-textcolor2={mutationState.status !== 'failed'}
+    data-risu-lorebook-persistence={mutationState.status}
+    data-risu-lorebook-mutation-kind={mutationState.kind}
+    data-risu-lorebook-mutation-context={mutationState.context}
+    data-risu-lorebook-mutation-scope={mutationState.scopeKey}
+    data-risu-lorebook-mutation-entry={mutationState.entryId ?? ''}
+    role={mutationState.status === 'failed' ? 'alert' : 'status'}
+    aria-live={mutationState.status === 'failed' ? 'assertive' : 'polite'}>
+    {mutationStatusText(mutationState)}
+  </p>
+{/each}
 {#key sorted}
   <div
     class="border-solid border-selected p-2 flex flex-col border-1 rounded-md"
     bind:this={ele}
-    data-show-folder={showFolder || ''}>
+    data-show-folder={showFolder || ''}
+    data-risu-lorebook-persistence={collectionMutationStatus}
+    aria-busy={collectionMutationBlocked}>
     {#if globalMode}
       {@const lorebookId = selectedGlobalLorebookId()}
       {@const entries = globalLorebookEntries()}
@@ -596,6 +665,7 @@
             <LoreBookData
               {idgroup}
               entryDraftScopeKey={resolvedEntryDraftScopeKey}
+              mutationLocked={collectionMutationBlocked}
               value={entries[i]}
               onDraftChange={(value) => updateGlobalLoreValue(lorebookId, i, value)}
               onDraftSettled={() => flushGlobalLoreValue(lorebookId)}
@@ -632,6 +702,7 @@
             <LoreBookData
               {idgroup}
               entryDraftScopeKey={resolvedEntryDraftScopeKey}
+              mutationLocked={collectionMutationBlocked}
               value={externalLoreBooks[i]}
               onDraftChange={(value) => updateExternalLoreValue(i, value)}
               onDraftSettled={() => onEntrySettled(i)}
@@ -664,6 +735,7 @@
             <LoreBookData
               {idgroup}
               entryDraftScopeKey={resolvedEntryDraftScopeKey}
+              mutationLocked={collectionMutationBlocked}
               value={entries[i]}
               onDraftChange={(value) => updateCharacterGlobalLoreValue(i, value)}
               onDraftSettled={flushCharacterGlobalLoreValue}
@@ -697,6 +769,7 @@
             <LoreBookData
               {idgroup}
               entryDraftScopeKey={resolvedEntryDraftScopeKey}
+              mutationLocked={collectionMutationBlocked}
               value={entries[i]}
               onDraftChange={(value) => updateChatLoreValue(i, value)}
               onDraftSettled={flushChatLoreValue}

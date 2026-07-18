@@ -2,7 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database, loreBook } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 const lorebookListMocks = vi.hoisted(() => {
   type Deferred<T> = {
@@ -99,7 +99,9 @@ const lorebookListMocks = vi.hoisted(() => {
       if (next === undefined) return Promise.resolve(false)
       return isDeferred(next) ? next.promise : Promise.resolve(next)
     }),
+    alertError: vi.fn(),
     alertMd: vi.fn(),
+    alertNormal: vi.fn(),
     applyLorebookEntryDraftEdit,
     createDeferred,
     flushPendingLorebookEntryDraftEdit,
@@ -115,6 +117,7 @@ const lorebookListMocks = vi.hoisted(() => {
     clearDirtyLorebookEntryFieldsMatchingProjection,
     mergeLorebookEntryProjectionDraft,
     setActiveChatLorebookLocalActivation: vi.fn(),
+    setChatLorebookLocalActivationWithOutcome: vi.fn(),
     languageMock: {
       language: {
         SecondaryKeys: 'Secondary keys',
@@ -142,6 +145,14 @@ const lorebookListMocks = vi.hoisted(() => {
         prompt: 'Prompt',
         removeConfirm: 'Remove ',
         selective: 'Selective',
+        scopedLorebookMutation: {
+          pending: 'Saving lorebook changes…',
+          queued: 'Lorebook change queued.',
+          failed: (detail: string) => `Lorebook change failed.${detail ? ` ${detail}` : ''}`,
+          localActivationCleanupQueued: 'Local activation cleanup queued.',
+          localActivationCleanupFailed: (detail: string) =>
+            `Local activation cleanup failed and was restored.${detail ? ` ${detail}` : ''}`,
+        },
         showHelp: 'Show help',
         tokens: 'tokens',
         useRegexLorebook: 'Use regex lorebook',
@@ -159,12 +170,16 @@ vi.mock('src/lang', () => lorebookListMocks.languageMock)
 
 vi.mock('../../../ts/alert', () => ({
   alertConfirm: lorebookListMocks.alertConfirm,
+  alertError: lorebookListMocks.alertError,
   alertMd: lorebookListMocks.alertMd,
+  alertNormal: lorebookListMocks.alertNormal,
 }))
 
 vi.mock('src/ts/alert', () => ({
   alertConfirm: lorebookListMocks.alertConfirm,
+  alertError: lorebookListMocks.alertError,
   alertMd: lorebookListMocks.alertMd,
+  alertNormal: lorebookListMocks.alertNormal,
 }))
 
 vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
@@ -178,10 +193,15 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   mergeLorebookEntryProjectionDraft: lorebookListMocks.mergeLorebookEntryProjectionDraft,
   recordHydratedCharacterLorebooks: vi.fn(),
   replaceCharacterLorebookCollection: lorebookListMocks.replaceCharacterLorebookCollection,
+  replaceCharacterLorebookCollectionWithOutcome: lorebookListMocks.replaceCharacterLorebookCollection,
   replaceChatLorebookCollection: lorebookListMocks.replaceChatLorebookCollection,
+  replaceChatLorebookCollectionWithOutcome: lorebookListMocks.replaceChatLorebookCollection,
   replaceGlobalLorebookEntryCollection: lorebookListMocks.replaceGlobalLorebookEntryCollection,
+  replaceGlobalLorebookEntryCollectionWithOutcome: lorebookListMocks.replaceGlobalLorebookEntryCollection,
   resetLorebookHydration: vi.fn(),
   setActiveChatLorebookLocalActivation: lorebookListMocks.setActiveChatLorebookLocalActivation,
+  setActiveChatLorebookLocalActivationWithOutcome: lorebookListMocks.setActiveChatLorebookLocalActivation,
+  setChatLorebookLocalActivationWithOutcome: lorebookListMocks.setChatLorebookLocalActivationWithOutcome,
   subscribeLorebookEntryDraftRollbacks: vi.fn(() => () => {}),
 }))
 
@@ -191,6 +211,7 @@ vi.mock('src/ts/tokenizer', () => ({
 
 import LoreBookListHarness from './LoreBookList.testHarness.svelte'
 import LoreBookList from './LoreBookList.svelte'
+import { resetScopedLorebookMutationUiStateForTests } from 'src/ts/server/scopedLorebookMutationUiState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 type LoreBookListHarnessComponent = MountedComponent & {
@@ -201,6 +222,16 @@ type LoreBookListHarnessComponent = MountedComponent & {
 let target: HTMLElement
 let component: LoreBookListHarnessComponent | undefined
 let resourceComponent: MountedComponent | undefined
+
+function deferredOperation(scopeKey: string) {
+  let resolve!: (result: { status: 'accepted' | 'queued' } | { status: 'failed'; error: string }) => void
+  const settlement = new Promise<{ status: 'accepted' | 'queued' } | { status: 'failed'; error: string }>(
+    (resolvePromise) => {
+      resolve = resolvePromise
+    },
+  )
+  return { operation: { scopeKey, settlement }, resolve }
+}
 
 function makeLoreBook(overrides: Partial<loreBook>): loreBook {
   return {
@@ -269,6 +300,7 @@ describe('LoreBookList', () => {
     document.body.appendChild(target)
     lorebookListMocks.reset()
     vi.clearAllMocks()
+    resetScopedLorebookMutationUiStateForTests()
     selectedCharID.set(-1)
     setDatabaseLite({
       characters: [],
@@ -290,6 +322,7 @@ describe('LoreBookList', () => {
     document.body.innerHTML = ''
     selectedCharID.set(-1)
     setDatabaseLite({} as Database)
+    resetScopedLorebookMutationUiStateForTests()
   })
 
   it('deletes an id-backed row by latest id after siblings are inserted and reordered during confirm', async () => {
@@ -633,6 +666,229 @@ describe('LoreBookList', () => {
     await flushAsyncWork()
 
     expect(lorebookListMocks.replaceChatLorebookCollection).toHaveBeenCalledWith('chat-resource', [])
+  })
+
+  it('keeps a scoped delete pending until its exact collection operation fails', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'character-delete-outcome',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'delete-outcome-entry', comment: 'Delete Outcome Entry' })],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    const deferred = deferredOperation('character:character-delete-outcome')
+    lorebookListMocks.replaceCharacterLorebookCollection.mockReturnValueOnce(deferred.operation)
+    lorebookListMocks.queueConfirm(true)
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 0 } })
+    await tick()
+
+    deleteButtonForRow(rowByEntryId('delete-outcome-entry')).click()
+    await flushAsyncWork()
+    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')?.textContent).toContain(
+      'Saving lorebook changes',
+    )
+    expect(deleteButtonForRow(rowByEntryId('delete-outcome-entry')).disabled).toBe(true)
+
+    deferred.resolve({ status: 'failed', error: 'delete rejected' })
+    await flushAsyncWork()
+    expect(lorebookListMocks.alertError).toHaveBeenCalledWith('Lorebook change failed. delete rejected')
+    expect(target.querySelector('[data-risu-lorebook-persistence="failed"]')?.textContent).toContain(
+      'Lorebook change failed',
+    )
+  })
+
+  it('tracks a queued local-activation cleanup from character deletion against the captured chat and entry', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'character-delete-local',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'chat-delete-local-a',
+              localLore: [makeLoreBook({ id: 'delete-local-entry', mode: 'child' })],
+              message: [],
+            },
+            { id: 'chat-delete-local-b', localLore: [], message: [] },
+          ],
+          globalLore: [makeLoreBook({ id: 'delete-local-entry', comment: 'Delete Local Entry' })],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    const confirmation = lorebookListMocks.createDeferred<boolean>()
+    const cleanup = deferredOperation('chat:chat-delete-local-a')
+    const parentDelete = deferredOperation('character:character-delete-local')
+    lorebookListMocks.queueConfirm(confirmation)
+    lorebookListMocks.setChatLorebookLocalActivationWithOutcome.mockReturnValueOnce(cleanup.operation)
+    lorebookListMocks.replaceCharacterLorebookCollection.mockReturnValueOnce(parentDelete.operation)
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 0 } })
+    await tick()
+
+    deleteButtonForRow(rowByEntryId('delete-local-entry')).click()
+    await tick()
+    getDatabase().characters[0].chatPage = 1
+    confirmation.resolve(true)
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.setChatLorebookLocalActivationWithOutcome).toHaveBeenCalledWith(
+      'chat-delete-local-a',
+      expect.objectContaining({ id: 'delete-local-entry' }),
+      false,
+    )
+    expect(lorebookListMocks.setActiveChatLorebookLocalActivation).not.toHaveBeenCalled()
+
+    parentDelete.resolve({ status: 'accepted' })
+    cleanup.resolve({ status: 'queued' })
+    await flushAsyncWork()
+    expect(lorebookListMocks.alertNormal).toHaveBeenCalledWith('Local activation cleanup queued.')
+    const cleanupStatus = target.querySelector(
+      '[data-risu-lorebook-mutation-context="local-activation-cleanup"][data-risu-lorebook-persistence="queued"]',
+    )
+    expect(cleanupStatus?.textContent).toContain('Local activation cleanup queued')
+    expect(cleanupStatus?.getAttribute('data-risu-lorebook-mutation-scope')).toBe('chat:chat-delete-local-a')
+    expect(cleanupStatus?.getAttribute('data-risu-lorebook-mutation-entry')).toBe('delete-local-entry')
+  })
+
+  it('explains a failed local-activation cleanup after character deletion restores it', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'character-delete-local-failed',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'chat-delete-local-failed',
+              localLore: [makeLoreBook({ id: 'delete-local-failed-entry', mode: 'child' })],
+              message: [],
+            },
+          ],
+          globalLore: [makeLoreBook({ id: 'delete-local-failed-entry', comment: 'Delete Local Failed Entry' })],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    const cleanup = deferredOperation('chat:chat-delete-local-failed')
+    const parentDelete = deferredOperation('character:character-delete-local-failed')
+    lorebookListMocks.queueConfirm(true)
+    lorebookListMocks.setChatLorebookLocalActivationWithOutcome.mockReturnValueOnce(cleanup.operation)
+    lorebookListMocks.replaceCharacterLorebookCollection.mockReturnValueOnce(parentDelete.operation)
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 0 } })
+    await tick()
+
+    deleteButtonForRow(rowByEntryId('delete-local-failed-entry')).click()
+    await flushAsyncWork()
+    parentDelete.resolve({ status: 'accepted' })
+    cleanup.resolve({ status: 'failed', error: 'cleanup rejected' })
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.alertError).toHaveBeenCalledWith(
+      'Local activation cleanup failed and was restored. cleanup rejected',
+    )
+    expect(
+      target.querySelector(
+        '[data-risu-lorebook-mutation-context="local-activation-cleanup"][data-risu-lorebook-persistence="failed"]',
+      )?.textContent,
+    ).toContain('Local activation cleanup failed and was restored. cleanup rejected')
+  })
+
+  it('tracks a drag reorder as one scoped queued collection operation', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'character-reorder-outcome',
+          chatPage: 0,
+          chats: [],
+          globalLore: [
+            makeLoreBook({ id: 'reorder-a', comment: 'Reorder A' }),
+            makeLoreBook({ id: 'reorder-b', comment: 'Reorder B' }),
+          ],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    const deferred = deferredOperation('character:character-reorder-outcome')
+    lorebookListMocks.replaceCharacterLorebookCollection.mockReturnValueOnce(deferred.operation)
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 0 } })
+    await tick()
+
+    const sortable = lorebookListMocks.SortableMock.create.mock.results.at(-1)?.value as {
+      element: HTMLElement
+      options: { onEnd: (event: Record<string, unknown>) => Promise<void> }
+    }
+    const item = sortable.element.children[0] as HTMLElement
+    await sortable.options.onEnd({
+      from: sortable.element,
+      to: sortable.element,
+      item,
+      oldIndex: 0,
+      newIndex: 1,
+    })
+    await tick()
+
+    expect(lorebookListMocks.replaceCharacterLorebookCollection).toHaveBeenCalledWith('character-reorder-outcome', [
+      expect.objectContaining({ id: 'reorder-b' }),
+      expect.objectContaining({ id: 'reorder-a' }),
+    ])
+    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).not.toBeNull()
+
+    deferred.resolve({ status: 'queued' })
+    await flushAsyncWork()
+    expect(lorebookListMocks.alertNormal).toHaveBeenCalledWith('Lorebook change queued.')
+    expect(target.querySelector('[data-risu-lorebook-persistence="queued"]')?.textContent).toContain(
+      'Lorebook change queued',
+    )
+  })
+
+  it('disables local chat activation until its owner-scoped operation settles', async () => {
+    setDatabaseLite({
+      localActivationInGlobalLorebook: true,
+      characters: [
+        {
+          chaId: 'character-local-activation',
+          chatPage: 0,
+          chats: [{ id: 'chat-local-activation', localLore: [], message: [] }],
+          globalLore: [
+            makeLoreBook({ id: 'local-activation-entry', comment: 'Local Activation Entry', alwaysActive: false }),
+          ],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    const deferred = deferredOperation('chat:chat-local-activation')
+    lorebookListMocks.setActiveChatLorebookLocalActivation.mockReturnValueOnce(deferred.operation)
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 0 } })
+    await tick()
+
+    toggleButtonForRow(rowByEntryId('local-activation-entry')).click()
+    await tick()
+    const activation = rowByEntryId('local-activation-entry').querySelector<HTMLInputElement>(
+      'input[aria-label="Always active in chat"]',
+    )!
+    activation.click()
+    await tick()
+    expect(activation.disabled).toBe(true)
+    expect(target.querySelector('[data-risu-lorebook-local-activation="pending"]')).not.toBeNull()
+
+    deferred.resolve({ status: 'failed', error: 'activation rejected' })
+    await flushAsyncWork()
+    expect(activation.disabled).toBe(false)
+    expect(lorebookListMocks.alertError).toHaveBeenCalledWith('Lorebook change failed. activation rejected')
+    expect(target.querySelector('[data-risu-lorebook-local-activation="failed"]')).not.toBeNull()
   })
 
   it('does not settle a clean draft after its confirmed deletion supersedes the row', async () => {

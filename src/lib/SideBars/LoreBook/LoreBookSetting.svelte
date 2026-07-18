@@ -17,11 +17,18 @@
   import Help from 'src/lib/Others/Help.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import {
-    replaceCharacterLorebookCollection,
-    replaceChatLorebookCollection,
+    replaceCharacterLorebookCollectionWithOutcome,
+    replaceChatLorebookCollectionWithOutcome,
     watchServerBackedLorebooks,
     type LorebookWatchScope,
+    type ScopedLorebookMutationOperation,
   } from 'src/ts/server/lorebookBridge.svelte'
+  import { alertError, alertNormal } from 'src/ts/alert'
+  import {
+    findScopedLorebookCollectionMutationUiState,
+    scopedLorebookMutationUiStates,
+    trackScopedLorebookMutationUiOperation,
+  } from 'src/ts/server/scopedLorebookMutationUiState'
   import { createServerBackedCharacterDraft } from 'src/ts/server/characterBridge.svelte'
   import {
     hasCharacterLorebookHydrationFailed,
@@ -43,6 +50,48 @@
   let characterLorebookFailed = $derived(
     !globalMode && submenu === 0 && hasCharacterLorebookHydrationFailed(selectedCharacterId),
   )
+
+  function characterLorebookScopeKey(): string | null {
+    const characterId = getDatabase().characters?.[$selectedCharID]?.chaId
+    return characterId ? `character:${characterId}` : null
+  }
+
+  function chatLorebookScopeKey(): string | null {
+    const character = getDatabase().characters?.[$selectedCharID]
+    const chatId = character?.chats?.[character.chatPage]?.id
+    return chatId ? `chat:${chatId}` : null
+  }
+
+  function globalLorebookScopeKey(): string | null {
+    const database = getDatabase()
+    const lorebookId = (database.loreBook?.[database.loreBookPage] as { id?: unknown } | undefined)?.id
+    return typeof lorebookId === 'string' && lorebookId.trim() ? `global:${lorebookId}` : null
+  }
+
+  let activeToolbarScopeKey = $derived(
+    globalMode ? globalLorebookScopeKey() : submenu === 0 ? characterLorebookScopeKey() : chatLorebookScopeKey(),
+  )
+  let visibleLorebookMutationScopeKeys = $derived.by(() => {
+    const keys = globalMode ? [globalLorebookScopeKey()] : [characterLorebookScopeKey(), chatLorebookScopeKey()]
+    return [...new Set(keys.filter((key): key is string => Boolean(key)))]
+  })
+
+  function lorebookMutationStatus(scopeKey: string | null): 'pending' | 'queued' | 'failed' | 'idle' {
+    return findScopedLorebookCollectionMutationUiState($scopedLorebookMutationUiStates, scopeKey)?.status ?? 'idle'
+  }
+
+  function lorebookMutationPending(scopeKey: string | null): boolean {
+    return lorebookMutationStatus(scopeKey) === 'pending'
+  }
+
+  function trackLorebookMutation(operation: ScopedLorebookMutationOperation | null): void {
+    trackScopedLorebookMutationUiOperation({
+      operation,
+      kind: 'collection',
+      onQueued: () => alertNormal(language.scopedLorebookMutation.queued),
+      onFailed: (error) => alertError(language.scopedLorebookMutation.failed(error)),
+    })
+  }
 
   async function retryCharacterLorebookHydration() {
     await hydrateActiveCharacterLorebook({ force: true })
@@ -76,7 +125,7 @@
 
     const allActive = globalLore.every((book) => book.alwaysActive)
     const nextLore = globalLore.map((book) => ({ ...book, alwaysActive: !allActive }))
-    replaceCharacterLorebookCollection(character.chaId, nextLore)
+    trackLorebookMutation(replaceCharacterLorebookCollectionWithOutcome(character.chaId, nextLore))
   }
 
   function toggleChatLoreAlwaysActive() {
@@ -88,7 +137,7 @@
 
     const allActive = localLore.every((book) => book.alwaysActive)
     const nextLore = localLore.map((book) => ({ ...book, alwaysActive: !allActive }))
-    replaceChatLorebookCollection(chat.id, nextLore)
+    trackLorebookMutation(replaceChatLorebookCollectionWithOutcome(chat.id, nextLore))
   }
 </script>
 
@@ -218,10 +267,12 @@
   <div class="text-textcolor2 mt-2 flex">
     <button
       aria-label={`${language.add}: ${language.loreBook}`}
+      disabled={lorebookMutationPending(activeToolbarScopeKey)}
       onclick={() => {
-        addLorebook(globalMode ? -1 : submenu)
+        if (lorebookMutationPending(activeToolbarScopeKey)) return
+        trackLorebookMutation(addLorebook(globalMode ? -1 : submenu))
       }}
-      class="hover:text-textcolor cursor-pointer">
+      class="hover:text-textcolor cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
       <PlusIcon />
     </button>
     <button
@@ -234,28 +285,35 @@
     </button>
     <button
       aria-label={`${language.add}: ${language.folderName}`}
+      disabled={lorebookMutationPending(activeToolbarScopeKey)}
       onclick={() => {
-        addLorebookFolder(globalMode ? -1 : submenu)
+        if (lorebookMutationPending(activeToolbarScopeKey)) return
+        trackLorebookMutation(addLorebookFolder(globalMode ? -1 : submenu))
       }}
-      class="hover:text-textcolor ml-2 cursor-pointer">
+      class="hover:text-textcolor ml-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
       <FolderPlusIcon />
     </button>
     <button
       aria-label={`${language.import}: ${language.loreBook}`}
-      onclick={() => {
-        importLoreBook(globalMode ? 'sglobal' : submenu === 0 ? 'global' : 'local')
+      disabled={lorebookMutationPending(activeToolbarScopeKey)}
+      onclick={async () => {
+        if (lorebookMutationPending(activeToolbarScopeKey)) return
+        trackLorebookMutation(await importLoreBook(globalMode ? 'sglobal' : submenu === 0 ? 'global' : 'local'))
       }}
-      class="hover:text-textcolor ml-2 cursor-pointer">
+      class="hover:text-textcolor ml-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
       <HardDriveUploadIcon />
     </button>
     {#if getDatabase().bulkEnabling}
       <button
         aria-label={`${isAllCharacterLoreAlwaysActive() ? language.disable : language.enable}: ${language.alwaysActive} (${language.character})`}
         aria-pressed={Boolean(isAllCharacterLoreAlwaysActive())}
+        disabled={lorebookMutationPending(characterLorebookScopeKey())}
+        data-risu-lorebook-persistence={lorebookMutationStatus(characterLorebookScopeKey())}
         onclick={() => {
+          if (lorebookMutationPending(characterLorebookScopeKey())) return
           toggleCharacterLoreAlwaysActive()
         }}
-        class="hover:text-textcolor ml-2 cursor-pointer flex items-center gap-1">
+        class="hover:text-textcolor ml-2 cursor-pointer flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50">
         {#if isAllCharacterLoreAlwaysActive()}
           <SunIcon />
         {:else}
@@ -266,10 +324,13 @@
       <button
         aria-label={`${isAllChatLoreAlwaysActive() ? language.disable : language.enable}: ${language.alwaysActive} (${language.Chat})`}
         aria-pressed={Boolean(isAllChatLoreAlwaysActive())}
+        disabled={lorebookMutationPending(chatLorebookScopeKey())}
+        data-risu-lorebook-persistence={lorebookMutationStatus(chatLorebookScopeKey())}
         onclick={() => {
+          if (lorebookMutationPending(chatLorebookScopeKey())) return
           toggleChatLoreAlwaysActive()
         }}
-        class="hover:text-textcolor ml-2 cursor-pointer flex items-center gap-1">
+        class="hover:text-textcolor ml-2 cursor-pointer flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50">
         {#if isAllChatLoreAlwaysActive()}
           <SunIcon />
         {:else}
@@ -279,4 +340,24 @@
       </button>
     {/if}
   </div>
+  {#each visibleLorebookMutationScopeKeys as scopeKey}
+    {@const mutationState = findScopedLorebookCollectionMutationUiState($scopedLorebookMutationUiStates, scopeKey)}
+    {@const status = mutationState?.status ?? 'idle'}
+    {#if status !== 'idle'}
+      <p
+        class="m-0 mt-1 text-xs"
+        class:text-red-400={status === 'failed'}
+        class:text-textcolor2={status !== 'failed'}
+        data-risu-lorebook-persistence={status}
+        data-risu-lorebook-scope={scopeKey}
+        role={status === 'failed' ? 'alert' : 'status'}
+        aria-live={status === 'failed' ? 'assertive' : 'polite'}>
+        {status === 'pending'
+          ? language.scopedLorebookMutation.pending
+          : status === 'queued'
+            ? language.scopedLorebookMutation.queued
+            : language.scopedLorebookMutation.failed(mutationState?.error ?? '')}
+      </p>
+    {/if}
+  {/each}
 {/if}

@@ -13,11 +13,14 @@ import path from 'node:path'
 
 const recorded = vi.hoisted(() => ({
   commands: [] as Array<Record<string, unknown> & { rollback?: () => void }>,
-  commandResults: [] as Array<Promise<{ status: string; error?: string; revision?: number }>>,
+  commandResults: [] as Array<
+    Promise<{ status: string; error?: string; reason?: string; revision?: number; currentRevision?: number }>
+  >,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const durableRecorded = vi.hoisted(() => ({
   nextId: 0,
+  stageError: null as Error | null,
   staged: [] as Array<{ key: string; intent: Record<string, unknown>; mutationId: string }>,
   dispatched: [] as Array<{ intent: Record<string, unknown>; mutationId: string }>,
   acknowledged: [] as string[],
@@ -29,6 +32,7 @@ vi.mock('./pendingMutationOutbox', () => ({
     intent: Record<string, unknown>,
     previous?: { phase: string; mutationId: string },
   ) => {
+    if (durableRecorded.stageError) throw durableRecorded.stageError
     const mutationId = previous?.phase === 'staged' ? previous.mutationId : `lore-mutation-${++durableRecorded.nextId}`
     if (previous?.phase === 'staged') previous.phase = 'superseded'
     const handle = { key, mutationId, phase: 'staged' }
@@ -51,7 +55,21 @@ vi.mock('./durableMutationDispatch', () => ({
   ) => {
     handle.phase = 'dispatching'
     durableRecorded.dispatched.push({ intent, mutationId: handle.mutationId })
-    return dispatch({ mutationId: handle.mutationId, databaseLineage: 'test-lineage' })
+    const result = dispatch({ mutationId: handle.mutationId, databaseLineage: 'test-lineage' }) as Promise<{
+      status?: string
+      reason?: string
+    }>
+    void result.then((settlement) => {
+      if (
+        settlement.status !== 'ok' &&
+        ['database-lineage', 'invalid-request', 'mutation-id-conflict', 'not-found', 'stale-writer'].includes(
+          settlement.reason ?? '',
+        )
+      ) {
+        handle.phase = 'superseded'
+      }
+    })
+    return result
   },
 }))
 
@@ -154,6 +172,8 @@ import {
   markCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   replaceCharacterLorebookCollection,
+  replaceCharacterLorebookCollectionWithOutcome,
+  replaceChatLorebookCollectionWithOutcome,
   replaceModuleLorebookCollectionDraft,
   resetLorebookHydration,
   resetServerBackedLorebookBridgeForTests,
@@ -164,6 +184,8 @@ import {
   scopedLorebookStateSnapshot,
   selectGlobalLorebook,
   setActiveChatLorebookLocalActivation,
+  setActiveChatLorebookLocalActivationWithOutcome,
+  setChatLorebookLocalActivationWithOutcome,
   subscribeLorebookEntryDraftRollbacks,
   watchServerBackedLorebooks,
 } from './lorebookBridge.svelte'
@@ -285,6 +307,7 @@ beforeEach(() => {
   recorded.commands.length = 0
   recorded.commandResults.length = 0
   durableRecorded.nextId = 0
+  durableRecorded.stageError = null
   durableRecorded.staged.length = 0
   durableRecorded.dispatched.length = 0
   durableRecorded.acknowledged.length = 0
@@ -2458,6 +2481,122 @@ describe('K4 lorebook editor entry draft scope', () => {
 
     cmds[0].rollback?.()
     expect((getDatabase().characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(originalIds)
+  })
+
+  it('settles every UI operation against the exact durable generation that coalesces it', async () => {
+    setupK4EditorDb()
+    const firstEntries = cloneEntries(getDatabase().characters[0].globalLore as Entry[])
+    firstEntries.push({ id: 'coalesced-entry', key: 'first', content: 'first change' })
+    const first = replaceCharacterLorebookCollectionWithOutcome('c-k4', firstEntries as any, DELAY)
+    expect(first?.scopeKey).toBe('character:c-k4')
+
+    const secondEntries = cloneEntries(getDatabase().characters[0].globalLore as Entry[])
+    const moved = secondEntries.shift()
+    if (moved) secondEntries.push(moved)
+    const second = replaceCharacterLorebookCollectionWithOutcome('c-k4', secondEntries as any, DELAY)
+    expect(second?.scopeKey).toBe('character:c-k4')
+
+    let firstSettled = false
+    void first?.settlement.then(() => {
+      firstSettled = true
+    })
+    await Promise.resolve()
+    expect(firstSettled).toBe(false)
+    expect(durableRecorded.dispatched).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    await expect(first?.settlement).resolves.toEqual({ status: 'accepted' })
+    await expect(second?.settlement).resolves.toEqual({ status: 'accepted' })
+    expect(durableRecorded.dispatched).toHaveLength(1)
+    expect(durableRecorded.staged).toHaveLength(2)
+    expect(durableRecorded.dispatched[0].intent).toEqual(durableRecorded.staged[1].intent)
+  })
+
+  it('classifies retained and terminal character collection generations for their exact UI operations', async () => {
+    setupK4EditorDb()
+    const retainedEntries = cloneEntries(getDatabase().characters[0].globalLore as Entry[])
+    retainedEntries[0].content = 'retained edit'
+    recorded.commandResults.push(Promise.resolve({ status: 'unavailable' }))
+    const retained = replaceCharacterLorebookCollectionWithOutcome('c-k4', retainedEntries as any, DELAY)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await expect(retained?.settlement).resolves.toEqual({ status: 'queued' })
+
+    const rejectedEntries = cloneEntries(getDatabase().characters[0].globalLore as Entry[])
+    rejectedEntries[1].content = 'rejected edit'
+    recorded.commandResults.push(
+      Promise.resolve({ status: 'error', reason: 'invalid-request', error: 'invalid lorebook entry' }),
+    )
+    const rejected = replaceCharacterLorebookCollectionWithOutcome('c-k4', rejectedEntries as any, DELAY)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await expect(rejected?.settlement).resolves.toEqual({
+      status: 'failed',
+      error: 'invalid lorebook entry',
+    })
+  })
+
+  it('rolls back the guarded optimistic collection when durable staging fails', async () => {
+    setupK4EditorDb()
+    const original = cloneEntries(getDatabase().characters[0].globalLore as Entry[])
+    const attempted = cloneEntries(original)
+    attempted.push({ id: 'unstaged-entry', key: 'unstaged', content: 'must roll back' })
+    durableRecorded.stageError = new Error('outbox staging failed')
+
+    const operation = replaceCharacterLorebookCollectionWithOutcome('c-k4', attempted as any, DELAY)
+
+    await expect(operation?.settlement).resolves.toEqual({
+      status: 'failed',
+      error: 'outbox staging failed',
+    })
+    expect(getDatabase().characters[0].globalLore).toEqual(original)
+    expect(durableRecorded.dispatched).toEqual([])
+  })
+
+  it('returns an exact settlement for active-chat local activation', async () => {
+    setupCharacter([])
+    getDatabase().characters[0].chats = [{ id: 'chat-local-outcome', localLore: [], message: [] }] as any
+    getDatabase().characters[0].chatPage = 0
+    const book = { id: 'character-lore', key: 'key', content: 'content', alwaysActive: false } as any
+    recorded.commandResults.push(Promise.resolve({ status: 'unavailable' }))
+
+    const activation = setActiveChatLorebookLocalActivationWithOutcome(book, true, DELAY)
+    expect(activation?.scopeKey).toBe('chat:chat-local-outcome')
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    await expect(activation?.settlement).resolves.toEqual({ status: 'queued' })
+    expect(chatEntryCommands()).toHaveLength(1)
+  })
+
+  it('targets chat-local cleanup by captured chat id after the active chat changes', async () => {
+    setupCharacter([])
+    getDatabase().characters[0].chats = [
+      {
+        id: 'chat-cleanup-captured',
+        localLore: [{ id: 'cleanup-entry', mode: 'child', key: '', content: '' }],
+        message: [],
+      },
+      { id: 'chat-cleanup-new-active', localLore: [], message: [] },
+    ] as any
+    getDatabase().characters[0].chatPage = 1
+
+    const cleanup = setChatLorebookLocalActivationWithOutcome(
+      'chat-cleanup-captured',
+      { id: 'cleanup-entry', key: 'parent', content: 'parent content' } as any,
+      false,
+      DELAY,
+    )
+
+    expect(cleanup?.scopeKey).toBe('chat:chat-cleanup-captured')
+    expect(getDatabase().characters[0].chats[0].localLore).toEqual([])
+    expect(getDatabase().characters[0].chats[1].localLore).toEqual([])
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await expect(cleanup?.settlement).resolves.toEqual({ status: 'accepted' })
+    expect(chatEntryDeleteCommands()[0]?.a).toMatchObject({
+      chatId: 'chat-cleanup-captured',
+      entryId: 'cleanup-entry',
+    })
   })
 
   it('passes queue-time projection epochs through compact and full scoped command paths', async () => {

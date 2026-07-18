@@ -12,14 +12,15 @@ import { CCardLib } from '@risuai/ccardlib'
 import { v4 } from 'uuid'
 import {
   currentLorebookCollectionScopedSnapshot,
-  dispatchReplaceCharacterLorebooks,
-  dispatchReplaceChatLorebooks,
-  dispatchReplaceGlobalLorebookEntries,
+  dispatchReplaceCharacterLorebooksWithOutcome,
+  dispatchReplaceChatLorebooksWithOutcome,
+  dispatchReplaceGlobalLorebookEntriesWithOutcome,
   type DiscreteLorebookEditScope,
   ensureClientLorebookEntryIds,
   ensureGlobalLorebookListIds,
   isCharacterLorebookMutationReady,
   type LorebookStateSnapshot,
+  type ScopedLorebookMutationOperation,
 } from '../server/lorebookBridge.svelte'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
@@ -135,24 +136,21 @@ function dispatchImportedLorebookEntries(
   target: StableLorebookImportTarget,
   entries: loreBook[],
   previous: LorebookStateSnapshot,
-): void {
+): ScopedLorebookMutationOperation {
   switch (target.mode) {
     case 'global':
-      dispatchReplaceCharacterLorebooks(target.characterId, entries, previous)
-      return
+      return dispatchReplaceCharacterLorebooksWithOutcome(target.characterId, entries, previous)
     case 'local':
-      dispatchReplaceChatLorebooks(target.chatId, entries, previous)
-      return
+      return dispatchReplaceChatLorebooksWithOutcome(target.chatId, entries, previous)
     case 'sglobal':
-      dispatchReplaceGlobalLorebookEntries(target.lorebookId, entries, previous)
-      return
+      return dispatchReplaceGlobalLorebookEntriesWithOutcome(target.lorebookId, entries, previous)
   }
 }
 
-export function addLorebook(type: number) {
+export function addLorebook(type: number): ScopedLorebookMutationOperation | null {
   const selectedID = get(selectedCharID)
   const selectedCharacterId = getDatabase().characters?.[selectedID]?.chaId
-  if (type === 0 && (!selectedCharacterId || !isCharacterLorebookMutationReady(selectedCharacterId))) return
+  if (type === 0 && (!selectedCharacterId || !isCharacterLorebookMutationReady(selectedCharacterId))) return null
   const previous = scopedLorebookEditorSnapshot(type, selectedID)
   if (type === 0) {
     withTrustedResourceWrite(() => {
@@ -169,16 +167,17 @@ export function addLorebook(type: number) {
       })
     })
     if (previous) {
-      dispatchReplaceCharacterLorebooks(
+      return dispatchReplaceCharacterLorebooksWithOutcome(
         getDatabase().characters[selectedID].chaId,
         getDatabase().characters[selectedID].globalLore,
         previous,
       )
     }
+    return null
   } else if (type === -1) {
     const lorePage = getDatabase().loreBookPage
     const current = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
-    if (!current) return
+    if (!current) return null
     // Build the next entries from a mutable snapshot and assign it inside the
     // trusted write: pushing into the array read from the projection mutates
     // the read-only projection and throws.
@@ -200,7 +199,10 @@ export function addLorebook(type: number) {
       const lorebook = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] }
       lorebook.data = nextData
     })
-    if (current.id && previous) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
+    if (current.id && previous) {
+      return dispatchReplaceGlobalLorebookEntriesWithOutcome(current.id, nextData, previous)
+    }
+    return null
   } else {
     const page = getDatabase().characters[selectedID].chatPage
     withTrustedResourceWrite(() => {
@@ -217,14 +219,15 @@ export function addLorebook(type: number) {
       })
     })
     const chat = getDatabase().characters[selectedID].chats[page]
-    if (chat.id && previous) dispatchReplaceChatLorebooks(chat.id, chat.localLore, previous)
+    if (chat.id && previous) return dispatchReplaceChatLorebooksWithOutcome(chat.id, chat.localLore, previous)
+    return null
   }
 }
 
-export function addLorebookFolder(type: number) {
+export function addLorebookFolder(type: number): ScopedLorebookMutationOperation | null {
   const selectedID = get(selectedCharID)
   const selectedCharacterId = getDatabase().characters?.[selectedID]?.chaId
-  if (type === 0 && (!selectedCharacterId || !isCharacterLorebookMutationReady(selectedCharacterId))) return
+  if (type === 0 && (!selectedCharacterId || !isCharacterLorebookMutationReady(selectedCharacterId))) return null
   const previous = scopedLorebookEditorSnapshot(type, selectedID)
   const id = v4()
   if (type === 0) {
@@ -242,16 +245,17 @@ export function addLorebookFolder(type: number) {
       })
     })
     if (previous) {
-      dispatchReplaceCharacterLorebooks(
+      return dispatchReplaceCharacterLorebooksWithOutcome(
         getDatabase().characters[selectedID].chaId,
         getDatabase().characters[selectedID].globalLore,
         previous,
       )
     }
+    return null
   } else if (type === -1) {
     const lorePage = getDatabase().loreBookPage
     const current = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
-    if (!current) return
+    if (!current) return null
     // Assign a freshly-built array inside the trusted write; pushing into the
     // array read from the projection mutates the read-only projection.
     const nextData: loreBook[] = [
@@ -272,7 +276,10 @@ export function addLorebookFolder(type: number) {
       const lorebook = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] }
       lorebook.data = nextData
     })
-    if (current.id && previous) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
+    if (current.id && previous) {
+      return dispatchReplaceGlobalLorebookEntriesWithOutcome(current.id, nextData, previous)
+    }
+    return null
   } else {
     const page = getDatabase().characters[selectedID].chatPage
     withTrustedResourceWrite(() => {
@@ -289,7 +296,8 @@ export function addLorebookFolder(type: number) {
       })
     })
     const chat = getDatabase().characters[selectedID].chats[page]
-    if (chat.id && previous) dispatchReplaceChatLorebooks(chat.id, chat.localLore, previous)
+    if (chat.id && previous) return dispatchReplaceChatLorebooksWithOutcome(chat.id, chat.localLore, previous)
+    return null
   }
 }
 
@@ -887,25 +895,27 @@ export async function loadLoreBookV3Prompt() {
   }
 }
 
-export async function importLoreBook(mode: 'global' | 'local' | 'sglobal') {
+export async function importLoreBook(
+  mode: 'global' | 'local' | 'sglobal',
+): Promise<ScopedLorebookMutationOperation | null> {
   const target = captureLorebookImportTarget(mode)
-  if (!target) return
+  if (!target) return null
 
   const lorebook = (await selectSingleFile(['json', 'lorebook']))?.data
   if (!lorebook) {
-    return
+    return null
   }
 
   try {
     const importedlore = JSON.parse(Buffer.from(lorebook).toString('utf-8'))
-    if (!resolveLorebookImportEntries(target)) return
+    if (!resolveLorebookImportEntries(target)) return null
 
     const scope = lorebookImportScope(target)
     const previous = currentLorebookCollectionScopedSnapshot(scope)
     // Build the next entries from the stable target after parsing, so changes
     // made while the picker was open become part of the rollback baseline.
     const current = resolveLorebookImportEntries(target)
-    if (!current) return
+    if (!current) return null
 
     const lore: loreBook[] = safeStructuredClone(current ?? [])
     if (importedlore.type === 'risu' && importedlore.data) {
@@ -919,10 +929,11 @@ export async function importLoreBook(mode: 'global' | 'local' | 'sglobal') {
     }
     ensureClientLorebookEntryIds(lore)
     const applied = withTrustedResourceWrite(() => assignLorebookImportEntries(target, lore))
-    if (applied) dispatchImportedLorebookEntries(target, lore, previous)
+    if (applied) return dispatchImportedLorebookEntries(target, lore, previous)
   } catch (error) {
     alertError(error)
   }
+  return null
 }
 
 export interface CCLorebook {

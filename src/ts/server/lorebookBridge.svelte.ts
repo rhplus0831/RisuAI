@@ -111,6 +111,7 @@ interface PendingCollectionReplacement {
   timer: ReturnType<typeof setTimeout> | null
   intent: DurableMutationIntent
   outbox: PendingMutationHandle
+  operations: PendingScopedLorebookMutationOperation[]
   command: (options?: ServerCommandTransportOptions) => Promise<ServerCommandResult<Record<string, unknown>>>
 }
 
@@ -133,6 +134,37 @@ const flushedEntryEditSnapshots = new Map<string, string>()
 const flushedEntryEditClearSnapshots = new Map<string, string>()
 let suppressRollbackDispatch = false
 
+function settledScopedLorebookMutationOperation(
+  scopeKey: string,
+  settlement: ScopedLorebookMutationSettlement,
+): ScopedLorebookMutationOperation {
+  return { scopeKey, settlement: Promise.resolve(settlement) }
+}
+
+function pendingScopedLorebookMutationOperation(scopeKey: string): PendingScopedLorebookMutationOperation {
+  let resolve!: (settlement: ScopedLorebookMutationSettlement) => void
+  let settled = false
+  const settlement = new Promise<ScopedLorebookMutationSettlement>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return {
+    scopeKey,
+    settlement,
+    settle: (result) => {
+      if (settled) return
+      settled = true
+      resolve(result)
+    },
+  }
+}
+
+function settleScopedLorebookMutationOperations(
+  operations: readonly PendingScopedLorebookMutationOperation[],
+  settlement: ScopedLorebookMutationSettlement,
+): void {
+  for (const operation of operations) operation.settle(settlement)
+}
+
 interface LocalLoreSnapshotCacheEntry {
   entries: loreBook[]
   snapshot: string
@@ -142,6 +174,20 @@ const characterScopeLocalLoreSnapshots = new Map<string, LocalLoreSnapshotCacheE
 
 export type GlobalLorebookDeleteOutcome = 'accepted' | 'queued' | 'failed'
 export type GlobalLorebookDeleteUiStatus = 'deleting' | 'queued' | 'failed'
+
+export type ScopedLorebookMutationSettlement =
+  | { status: 'accepted' }
+  | { status: 'queued' }
+  | { status: 'failed'; error: string }
+
+export interface ScopedLorebookMutationOperation {
+  scopeKey: string
+  settlement: Promise<ScopedLorebookMutationSettlement>
+}
+
+interface PendingScopedLorebookMutationOperation extends ScopedLorebookMutationOperation {
+  settle: (settlement: ScopedLorebookMutationSettlement) => void
+}
 
 export interface GlobalLorebookDeleteState {
   lorebookId: string
@@ -229,6 +275,10 @@ const stubbedCharacterLorebooks = new SvelteSet<string>()
 export function resetServerBackedLorebookBridgeForTests(): void {
   for (const pending of pendingReplacements.values()) {
     if (pending.timer) clearTimeout(pending.timer)
+    settleScopedLorebookMutationOperations(pending.operations, {
+      status: 'failed',
+      error: 'Lorebook mutation was cancelled.',
+    })
     void acknowledgePendingMutation(pending.outbox)
   }
   pendingReplacements.clear()
@@ -668,8 +718,16 @@ export function flushPendingLorebookEntryDraftEdit(
 }
 
 export function replaceCharacterLorebookCollection(characterId: string, entries: loreBook[], delayMs = 250): boolean {
-  if (!characterId || !isCharacterLorebookMutationReady(characterId)) return false
-  return replaceLorebookCollection({ kind: 'character', characterId }, entries, delayMs)
+  return replaceCharacterLorebookCollectionWithOutcome(characterId, entries, delayMs) !== null
+}
+
+export function replaceCharacterLorebookCollectionWithOutcome(
+  characterId: string,
+  entries: loreBook[],
+  delayMs = 250,
+): ScopedLorebookMutationOperation | null {
+  if (!characterId || !isCharacterLorebookMutationReady(characterId)) return null
+  return replaceLorebookCollectionWithOutcome({ kind: 'character', characterId }, entries, delayMs)
 }
 
 export function replaceCharacterLorebookCollectionFull(
@@ -682,8 +740,16 @@ export function replaceCharacterLorebookCollectionFull(
 }
 
 export function replaceChatLorebookCollection(chatId: string, entries: loreBook[], delayMs = 250): boolean {
-  if (!chatId) return false
-  return replaceLorebookCollection({ kind: 'chat', chatId }, entries, delayMs)
+  return replaceChatLorebookCollectionWithOutcome(chatId, entries, delayMs) !== null
+}
+
+export function replaceChatLorebookCollectionWithOutcome(
+  chatId: string,
+  entries: loreBook[],
+  delayMs = 250,
+): ScopedLorebookMutationOperation | null {
+  if (!chatId) return null
+  return replaceLorebookCollectionWithOutcome({ kind: 'chat', chatId }, entries, delayMs)
 }
 
 function getCurrentChatFromResources(): Chat | undefined {
@@ -701,16 +767,34 @@ export function applyServerCharacterLorebookResource(characterId: string, global
 }
 
 export function setActiveChatLorebookLocalActivation(book: loreBook, active: boolean, delayMs = 250): boolean {
+  return setActiveChatLorebookLocalActivationWithOutcome(book, active, delayMs) !== null
+}
+
+export function setActiveChatLorebookLocalActivationWithOutcome(
+  book: loreBook,
+  active: boolean,
+  delayMs = 250,
+): ScopedLorebookMutationOperation | null {
   const chatId = getCurrentChatFromResources()?.id
-  const scope = chatId ? ({ kind: 'chat', chatId } as const) : null
-  if (scope) flushPendingLorebookEntryBeforeCollectionMutation(scope)
-  const previous = scope ? currentLorebookCollectionScopedSnapshot(scope) : null
-  if (!chatId || !previous) return false
+  if (!chatId) return null
+  return setChatLorebookLocalActivationWithOutcome(chatId, book, active, delayMs)
+}
+
+export function setChatLorebookLocalActivationWithOutcome(
+  chatId: string,
+  book: loreBook,
+  active: boolean,
+  delayMs = 250,
+): ScopedLorebookMutationOperation | null {
+  if (!chatId) return null
+  const scope = { kind: 'chat', chatId } as const
+  flushPendingLorebookEntryBeforeCollectionMutation(scope)
+  const previous = currentLorebookCollectionScopedSnapshot(scope)
 
   let entries: loreBook[] | null = null
   const applied = withTrustedResourceWrite(() => {
-    const chat = getCurrentChatFromResources()
-    if (!chat || chat.id !== chatId) return false
+    const chat = findChat(chatId)
+    if (!chat) return false
 
     if (!Array.isArray(chat.localLore)) {
       chat.localLore = []
@@ -744,14 +828,21 @@ export function setActiveChatLorebookLocalActivation(book: loreBook, active: boo
     return true
   })
 
-  if (!applied || !entries) return false
-  dispatchReplaceChatLorebooks(chatId, entries, previous, delayMs)
-  return true
+  if (!applied || !entries) return null
+  return dispatchReplaceChatLorebooksWithOutcome(chatId, entries, previous, delayMs)
 }
 
 export function replaceGlobalLorebookEntryCollection(lorebookId: string, entries: loreBook[], delayMs = 250): boolean {
-  if (!lorebookId) return false
-  return replaceLorebookCollection({ kind: 'global', lorebookId }, entries, delayMs)
+  return replaceGlobalLorebookEntryCollectionWithOutcome(lorebookId, entries, delayMs) !== null
+}
+
+export function replaceGlobalLorebookEntryCollectionWithOutcome(
+  lorebookId: string,
+  entries: loreBook[],
+  delayMs = 250,
+): ScopedLorebookMutationOperation | null {
+  if (!lorebookId) return null
+  return replaceLorebookCollectionWithOutcome({ kind: 'global', lorebookId }, entries, delayMs)
 }
 
 export function replaceModuleLorebookCollectionDraft(
@@ -812,6 +903,28 @@ function replaceLorebookCollection(
     case 'global':
       dispatchReplaceGlobalLorebookEntries(scope.lorebookId, cloned, previous, delayMs)
       return true
+  }
+}
+
+function replaceLorebookCollectionWithOutcome(
+  scope: ReplaceableLorebookCollectionScope,
+  entries: loreBook[],
+  delayMs: number,
+  source: LorebookReplacementSource = 'collection',
+): ScopedLorebookMutationOperation | null {
+  flushPendingLorebookEntryBeforeCollectionMutation(scope)
+  const previous = currentLorebookCollectionScopedSnapshot(scope)
+  const cloned = cloneJsonValue(entries ?? [])
+  const applied = withTrustedResourceWrite(() => assignLorebookCollection(scope, cloned))
+  if (!applied) return null
+
+  switch (scope.kind) {
+    case 'character':
+      return dispatchReplaceCharacterLorebooksWithOutcome(scope.characterId, cloned, previous, delayMs, source)
+    case 'chat':
+      return dispatchReplaceChatLorebooksWithOutcome(scope.chatId, cloned, previous, delayMs, source)
+    case 'global':
+      return dispatchReplaceGlobalLorebookEntriesWithOutcome(scope.lorebookId, cloned, previous, delayMs, source)
   }
 }
 
@@ -1446,9 +1559,25 @@ export function dispatchReplaceGlobalLorebookEntries(
   delayMs = 250,
   source: LorebookReplacementSource = 'collection',
 ): void {
-  if (!canUseServerCommands()) return
+  void dispatchReplaceGlobalLorebookEntriesWithOutcome(lorebookId, entries, previous, delayMs, source)
+}
+
+export function dispatchReplaceGlobalLorebookEntriesWithOutcome(
+  lorebookId: string,
+  entries: loreBook[],
+  previous: LorebookStateSnapshot,
+  delayMs = 250,
+  source: LorebookReplacementSource = 'collection',
+): ScopedLorebookMutationOperation {
+  const scope = { kind: 'global', lorebookId } as const
+  if (!canUseServerCommands()) {
+    return settledScopedLorebookMutationOperation(lorebookCollectionScopeKey(scope), {
+      status: 'failed',
+      error: 'Server commands are unavailable.',
+    })
+  }
   if (source === 'collection' || source === 'fullCollection') ensureClientLorebookEntryIds(entries)
-  queueScopedLorebookReplacement({ kind: 'global', lorebookId }, entries, previous, delayMs, source)
+  return queueScopedLorebookReplacement(scope, entries, previous, delayMs, source, true)!
 }
 
 export function dispatchReplaceCharacterLorebooks(
@@ -1458,13 +1587,34 @@ export function dispatchReplaceCharacterLorebooks(
   delayMs = 250,
   source: LorebookReplacementSource = 'collection',
 ): void {
-  if (!canUseServerCommands()) return
+  void dispatchReplaceCharacterLorebooksWithOutcome(characterId, entries, previous, delayMs, source)
+}
+
+export function dispatchReplaceCharacterLorebooksWithOutcome(
+  characterId: string,
+  entries: loreBook[],
+  previous: LorebookStateSnapshot,
+  delayMs = 250,
+  source: LorebookReplacementSource = 'collection',
+): ScopedLorebookMutationOperation {
+  const scope = { kind: 'character', characterId } as const
+  if (!canUseServerCommands()) {
+    return settledScopedLorebookMutationOperation(lorebookCollectionScopeKey(scope), {
+      status: 'failed',
+      error: 'Server commands are unavailable.',
+    })
+  }
   // Defense in depth: when stubs are on, never persist a non-hydrated character's
   // globalLore. `entries` would be the stub `[]` and delete the real server
   // entries. A real selected-character edit is safe after hydration on open.
-  if (!isCharacterLorebookMutationReady(characterId)) return
+  if (!isCharacterLorebookMutationReady(characterId)) {
+    return settledScopedLorebookMutationOperation(lorebookCollectionScopeKey(scope), {
+      status: 'failed',
+      error: 'Character lorebook data is not ready.',
+    })
+  }
   if (source === 'collection') ensureClientLorebookEntryIds(entries)
-  queueScopedLorebookReplacement({ kind: 'character', characterId }, entries, previous, delayMs, source)
+  return queueScopedLorebookReplacement(scope, entries, previous, delayMs, source, true)!
 }
 
 export function dispatchReplaceChatLorebooks(
@@ -1474,9 +1624,25 @@ export function dispatchReplaceChatLorebooks(
   delayMs = 250,
   source: LorebookReplacementSource = 'collection',
 ): void {
-  if (!canUseServerCommands()) return
+  void dispatchReplaceChatLorebooksWithOutcome(chatId, entries, previous, delayMs, source)
+}
+
+export function dispatchReplaceChatLorebooksWithOutcome(
+  chatId: string,
+  entries: loreBook[],
+  previous: LorebookStateSnapshot,
+  delayMs = 250,
+  source: LorebookReplacementSource = 'collection',
+): ScopedLorebookMutationOperation {
+  const scope = { kind: 'chat', chatId } as const
+  if (!canUseServerCommands()) {
+    return settledScopedLorebookMutationOperation(lorebookCollectionScopeKey(scope), {
+      status: 'failed',
+      error: 'Server commands are unavailable.',
+    })
+  }
   if (source === 'collection') ensureClientLorebookEntryIds(entries)
-  queueScopedLorebookReplacement({ kind: 'chat', chatId }, entries, previous, delayMs, source)
+  return queueScopedLorebookReplacement(scope, entries, previous, delayMs, source, true)!
 }
 
 function queueScopedLorebookReplacement(
@@ -1485,8 +1651,10 @@ function queueScopedLorebookReplacement(
   previous: LorebookReplacementSnapshot,
   delayMs: number,
   source: LorebookReplacementSource,
-): void {
+  trackOutcome = false,
+): ScopedLorebookMutationOperation | null {
   const key = lorebookCollectionScopeKey(scope)
+  const operation = trackOutcome ? pendingScopedLorebookMutationOperation(key) : null
   if (source !== 'entry') flushPendingLorebookEntryBeforeCollectionMutation(scope)
   const attemptedEntries = cloneJsonValue(entries ?? []) as loreBook[]
   const projectionEpochs = captureLorebookProjectionEpochs(scope)
@@ -1525,7 +1693,9 @@ function queueScopedLorebookReplacement(
     projectionEpochs,
     attemptedEntries,
     scope,
+    operation,
   )
+  return operation
 }
 
 type LorebookCollectionDelta =
@@ -2611,11 +2781,22 @@ function queueReplacement(
   projectionEpochs: LorebookProjectionEpochs,
   attemptedEntries: loreBook[],
   scope: DiscreteLorebookEditScope,
+  operation: PendingScopedLorebookMutationOperation | null,
 ): void {
   const existing = pendingReplacements.get(key)
   if (existing?.timer) clearTimeout(existing.timer)
 
   const existingProjectionIsCurrent = !!existing && !hasLorebookProjectionEpochChanged(existing.projectionEpochs)
+  if (existing && !existingProjectionIsCurrent) {
+    settleScopedLorebookMutationOperations(existing.operations, {
+      status: 'failed',
+      error: 'A newer server lorebook projection superseded this change.',
+    })
+  }
+  const operations = [
+    ...(existingProjectionIsCurrent ? (existing?.operations ?? []) : []),
+    ...(operation ? [operation] : []),
+  ]
   const useExisting =
     existingProjectionIsCurrent &&
     (isLorebookCollectionReplacementSource(existing?.source) ||
@@ -2651,16 +2832,34 @@ function queueReplacement(
     pendingEntryEditKeys.delete(key)
     flushedEntryEditSnapshots.delete(key)
     flushedEntryEditClearSnapshots.delete(key)
+    settleScopedLorebookMutationOperations(operations, { status: 'accepted' })
     return
   }
 
   if (existing && !existingProjectionIsCurrent) void acknowledgePendingMutation(existing.outbox)
   const intent = lorebookDurableIntent(scope, plan)
-  const outbox = stagePendingMutation(
-    lorebookOwnerMutationKey(scope),
-    intent,
-    existingProjectionIsCurrent ? existing?.outbox : undefined,
-  )
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(
+      lorebookOwnerMutationKey(scope),
+      intent,
+      existingProjectionIsCurrent ? existing?.outbox : undefined,
+    )
+  } catch (error) {
+    pendingReplacements.delete(key)
+    pendingEntryEditKeys.delete(key)
+    flushedEntryEditSnapshots.delete(key)
+    flushedEntryEditClearSnapshots.delete(key)
+    if (existing) void acknowledgePendingMutation(existing.outbox)
+    if (!hasLorebookProjectionEpochChanged(effectiveProjectionEpochs)) {
+      rollbackLorebookReplacement(scope, effectivePrevious, attemptedEntries)
+    }
+    settleScopedLorebookMutationOperations(operations, {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return
+  }
 
   const pending: PendingCollectionReplacement = {
     key,
@@ -2670,6 +2869,7 @@ function queueReplacement(
     projectionEpochs: effectiveProjectionEpochs,
     intent,
     outbox,
+    operations,
     command: (options = {}) => command(effectivePrevious, effectiveProjectionEpochs, plan, options),
     timer: null,
   }
@@ -2730,6 +2930,10 @@ function runPendingReplacement(key: string, options: ServerCommandTransportOptio
   ) {
     pendingEntryEditKeys.delete(key)
     void acknowledgePendingMutation(pending.outbox)
+    settleScopedLorebookMutationOperations(pending.operations, {
+      status: 'failed',
+      error: 'A newer server lorebook projection superseded this change.',
+    })
     return
   }
   if (pending.source === 'entry') {
@@ -2749,9 +2953,46 @@ function runPendingReplacement(key: string, options: ServerCommandTransportOptio
       }
     }
   }
-  void dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
+  const dispatch = dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
     pending.command({ ...options, ...transport }),
   )
+  void settleDispatchedScopedLorebookReplacement(pending, dispatch)
+}
+
+async function settleDispatchedScopedLorebookReplacement(
+  pending: PendingCollectionReplacement,
+  dispatch: Promise<ServerCommandResult<Record<string, unknown>>>,
+): Promise<void> {
+  try {
+    const result = await dispatch
+    if (result.status === 'ok') {
+      settleScopedLorebookMutationOperations(pending.operations, { status: 'accepted' })
+      return
+    }
+    if (await isPendingMutationCurrent(pending.outbox)) {
+      settleScopedLorebookMutationOperations(pending.operations, { status: 'queued' })
+      return
+    }
+    settleScopedLorebookMutationOperations(pending.operations, {
+      status: 'failed',
+      error: scopedLorebookMutationFailureMessage(result),
+    })
+  } catch (error) {
+    if (await isPendingMutationCurrent(pending.outbox)) {
+      settleScopedLorebookMutationOperations(pending.operations, { status: 'queued' })
+      return
+    }
+    settleScopedLorebookMutationOperations(pending.operations, {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+function scopedLorebookMutationFailureMessage(result: ServerCommandResult): string {
+  if (result.status === 'error') return result.error || 'Lorebook change could not be saved.'
+  if (result.status === 'conflict') return `Server revision conflict (${result.currentRevision}).`
+  return 'Server commands are unavailable.'
 }
 
 function registerLorebookEntryAttempt(
