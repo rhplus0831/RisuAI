@@ -31,6 +31,7 @@
 
   let expandedPluginNames = $state<string[]>([])
   let nextPluginMutationSequence = 0
+  let nextPluginImportSequence = 0
   let developModeRequestSequence = 0
   let destroyed = false
   let hotReloadSession: PluginHotReloadSession | null = null
@@ -41,6 +42,7 @@
   }
 
   let pluginMutationStates = $state<Record<string, PluginMutationUiState>>({})
+  let pluginImportStatus = $state<'idle' | 'saving' | 'queued' | 'failed'>('idle')
 
   type PluginUpdateUiStatus =
     | 'idle'
@@ -50,6 +52,7 @@
     | 'denied'
     | 'failed'
     | 'installing'
+    | 'queued'
     | 'install-failed'
     | 'installed'
 
@@ -178,6 +181,8 @@
         return language.pluginInstallUpdateVersion.replace('{}', state.availableVersion ?? '')
       case 'installing':
         return language.pluginInstallingUpdate
+      case 'queued':
+        return language.pluginMutation.queued
       default:
         return language.pluginCheckForUpdates
     }
@@ -197,6 +202,8 @@
         return language.pluginUpdateCheckFailed
       case 'installing':
         return language.pluginInstallingUpdate
+      case 'queued':
+        return language.pluginMutation.queued
       case 'install-failed':
         return language.pluginUpdateInstallFailed
       case 'installed':
@@ -208,7 +215,7 @@
 
   async function handlePluginUpdateAction(plugin: RisuPlugin): Promise<void> {
     const state = pluginUpdateState(plugin)
-    if (state.status === 'checking' || state.status === 'installing') return
+    if (state.status === 'checking' || state.status === 'installing' || state.status === 'queued') return
 
     if (state.status === 'available') {
       const confirmed = await alertConfirm(language.pluginUpdateFoundInstallIt)
@@ -223,7 +230,38 @@
       setPluginUpdateState(current, 'installing', state.availableVersion)
       const result = await installPluginUpdate(current)
       const latest = findPluginByName(plugin.name)?.plugin
-      if (result === 'installed' && latest) {
+      if (typeof result === 'object' && result.status === 'queued' && latest) {
+        const queuedTarget = { ...latest }
+        setPluginUpdateState(queuedTarget, 'queued')
+        void result.settlement.then((settlement) => {
+          if (destroyed) return
+          const queuedState = pluginUpdateStates[pluginUpdateStateKey(plugin.name)]
+          const settledPlugin = findPluginByName(plugin.name)?.plugin
+          if (
+            queuedState?.status !== 'queued' ||
+            queuedState.script !== queuedTarget.script ||
+            queuedState.updateURL !== (queuedTarget.updateURL ?? '') ||
+            queuedState.versionOfPlugin !== (queuedTarget.versionOfPlugin ?? '')
+          ) {
+            return
+          }
+          if (
+            settlement.status === 'accepted' &&
+            settledPlugin &&
+            isSamePluginUpdateTarget(queuedTarget, settledPlugin)
+          ) {
+            setPluginUpdateState(settledPlugin, 'installed')
+          } else if (
+            settlement.status === 'failed' &&
+            settledPlugin &&
+            isSamePluginUpdateTarget(current, settledPlugin)
+          ) {
+            setPluginUpdateState(settledPlugin, 'install-failed')
+          } else {
+            delete pluginUpdateStates[pluginUpdateStateKey(plugin.name)]
+          }
+        })
+      } else if (result === 'installed' && latest) {
         setPluginUpdateState(latest, 'installed')
       } else if (latest && isSamePluginUpdateTarget(current, latest)) {
         setPluginUpdateState(latest, result === 'denied' ? 'denied' : 'install-failed')
@@ -255,6 +293,37 @@
       case 'failed':
         setPluginUpdateState(current, 'failed')
         break
+    }
+  }
+
+  async function handlePluginImport(): Promise<void> {
+    const sequence = ++nextPluginImportSequence
+    pluginImportStatus = 'saving'
+    const result = await importPlugin()
+    if (destroyed || sequence !== nextPluginImportSequence) return
+
+    if (result.status === 'queued') {
+      pluginImportStatus = 'queued'
+      void result.settlement.then((settlement) => {
+        if (destroyed || sequence !== nextPluginImportSequence) return
+        pluginImportStatus = settlement.status === 'accepted' ? 'idle' : 'failed'
+      })
+      return
+    }
+
+    pluginImportStatus = result.status === 'failed' ? 'failed' : 'idle'
+  }
+
+  function pluginImportStatusText(): string {
+    switch (pluginImportStatus) {
+      case 'saving':
+        return language.pluginMutation.saving
+      case 'queued':
+        return language.pluginMutation.queued
+      case 'failed':
+        return language.pluginMutation.failed
+      default:
+        return ''
     }
   }
 
@@ -291,6 +360,7 @@
 
   onDestroy(() => {
     destroyed = true
+    nextPluginImportSequence++
     developModeRequestSequence++
     const ownedSession = hotReloadSession
     hotReloadSession = null
@@ -365,7 +435,9 @@
           class:text-green-400={updateState.status === 'available'}
           class:textcolor2={updateState.status !== 'available'}
           class="hover:gray-200 cursor-pointer disabled:cursor-wait disabled:opacity-60"
-          disabled={updateState.status === 'checking' || updateState.status === 'installing'}
+          disabled={updateState.status === 'checking' ||
+            updateState.status === 'installing' ||
+            updateState.status === 'queued'}
           aria-label={pluginUpdateActionLabel(updateState)}
           title={pluginUpdateActionLabel(updateState)}
           onclick={(e) => {
@@ -531,11 +603,14 @@
     type="button"
     aria-label={`${language.import}: ${language.plugin}`}
     onclick={() => {
-      importPlugin()
+      void handlePluginImport()
     }}
     class="hover:text-textcolor cursor-pointer">
     <PlusIcon />
   </button>
+  {#if pluginImportStatus !== 'idle'}
+    <span class="text-xs" role="status">{pluginImportStatusText()}</span>
+  {/if}
 
   <button
     type="button"

@@ -36,6 +36,8 @@ import {
   runCreatePluginCommand,
   runUpdatePluginCommand,
   toPluginSnapshot,
+  type PluginMutationFinalSettlement,
+  type PluginMutationOutcome,
 } from '../pluginCommands'
 import {
   currentGlobalModuleStateSnapshot,
@@ -116,7 +118,17 @@ export async function checkPluginUpdate(plugin: RisuPlugin) {
   return checkPluginUpdateRequest(target, () => isCurrentPluginUpdateTarget(target))
 }
 
-export type PluginUpdateInstallResult = 'installed' | 'denied' | 'failed' | 'stale'
+export type PluginImportResult =
+  | { status: 'accepted'; pluginName: string }
+  | { status: 'queued'; pluginName: string; settlement: Promise<PluginMutationFinalSettlement> }
+  | { status: 'cancelled' | 'failed' | 'stale' }
+
+export type PluginUpdateInstallResult =
+  | 'installed'
+  | 'denied'
+  | 'failed'
+  | 'stale'
+  | { status: 'queued'; settlement: Promise<PluginMutationFinalSettlement> }
 
 export async function installPluginUpdate(plugin: RisuPlugin): Promise<PluginUpdateInstallResult> {
   let operation: PluginImportOperation | null = null
@@ -136,7 +148,11 @@ export async function installPluginUpdate(plugin: RisuPlugin): Promise<PluginUpd
       originalPluginName: plugin.name,
       operation,
     })
-    if (imported) return 'installed'
+    if (imported.status === 'accepted') return 'installed'
+    if (imported.status === 'queued') {
+      return { status: 'queued', settlement: imported.settlement }
+    }
+    if (imported.status === 'stale') return 'stale'
     if (!isFreshPluginImport(operation, currentPluginImportFreshness())) {
       return 'stale'
     }
@@ -157,6 +173,30 @@ export async function updatePlugin(plugin: RisuPlugin): Promise<boolean> {
   return (await installPluginUpdate(plugin)) === 'installed'
 }
 
+function completePluginImport(pluginName: string, apiVersion: string, isHotReload: boolean | undefined): void {
+  if (isHotReload && !hotReloading.includes(pluginName)) {
+    hotReloading.push(pluginName)
+  }
+  console.log(`Imported plugin: ${pluginName} (API v${apiVersion})`)
+  void loadPlugins().catch((error) => {
+    console.error(`Failed to load imported plugin "${pluginName}":`, error)
+  })
+}
+
+function reportPluginImportPersistenceFailure(
+  pluginName: string,
+  outcome: Extract<PluginMutationOutcome, { status: 'failed' }>,
+  isHotReload: boolean | undefined,
+): void {
+  const detail = 'error' in outcome.result && typeof outcome.result.error === 'string' ? outcome.result.error : ''
+  const message = detail ? `${language.pluginMutation.failed}\n${detail}` : language.pluginMutation.failed
+  if (isHotReload) {
+    console.error(`Hot-reload plugin "${pluginName}" error: ${message}`)
+  } else {
+    alertError(message)
+  }
+}
+
 export async function importPlugin(
   code: string | null = null,
   argu: {
@@ -166,7 +206,7 @@ export async function importPlugin(
     isTypescript?: boolean
     operation?: PluginImportOperation
   } = {},
-): Promise<boolean> {
+): Promise<PluginImportResult> {
   let operation: PluginImportOperation | null = argu.operation ?? null
   let releasePluginRuntimeSync: (() => void) | null = null
   const beginImport = () => {
@@ -183,11 +223,11 @@ export async function importPlugin(
     if (!code) {
       const f = await selectSingleFile(['js', 'ts'], { onFileSelected: beginImport })
       if (!f) {
-        return false
+        return { status: 'cancelled' }
       }
       beginImport()
       if (!isFreshImport()) {
-        return false
+        return { status: 'stale' }
       }
       if (f.name.endsWith('.ts')) {
         isTypescript = true
@@ -199,7 +239,7 @@ export async function importPlugin(
     } else {
       beginImport()
       if (!isFreshImport()) {
-        return false
+        return { status: 'stale' }
       }
       jsFile = code
     }
@@ -213,7 +253,7 @@ export async function importPlugin(
       }
     }
 
-    const showError = (msg: string): false => {
+    const showError = (msg: string): PluginImportResult => {
       if (isFreshImport()) {
         if (argu.isHotReload) {
           console.error(`Hot-reload plugin "${name}" error: ${msg}`)
@@ -221,7 +261,7 @@ export async function importPlugin(
           alertError(msg)
         }
       }
-      return false
+      return { status: 'failed' }
     }
 
     let displayName: string = undefined
@@ -374,7 +414,7 @@ export async function importPlugin(
 
     if (isTypescript) {
       if (!isFreshImport()) {
-        return false
+        return { status: 'stale' }
       }
       try {
         jsFile = await pluginCodeTranspiler(jsFile)
@@ -383,7 +423,7 @@ export async function importPlugin(
         return showError('Failed to transpile TypeScript code: ' + message)
       }
       if (!isFreshImport()) {
-        return false
+        return { status: 'stale' }
       }
     }
 
@@ -391,11 +431,11 @@ export async function importPlugin(
 
     if (apiVersion === '2.1') {
       if (!isFreshImport()) {
-        return false
+        return { status: 'stale' }
       }
       const safety = await checkCodeSafety(jsFile)
       if (!isFreshImport()) {
-        return false
+        return { status: 'stale' }
       }
       if (!safety.isSafe) {
         pluginAlertModalStore.errors = safety.errors
@@ -406,16 +446,16 @@ export async function importPlugin(
           await sleep(100)
           if (!isFreshImport()) {
             pluginAlertModalStore.open = false
-            return false
+            return { status: 'stale' }
           }
         }
 
         if (!isFreshImport()) {
-          return false
+          return { status: 'stale' }
         }
 
         if (pluginAlertModalStore.errors.length > 0) {
-          return false
+          return { status: 'cancelled' }
         }
       }
       apiInternalVersion = '2.1'
@@ -459,7 +499,7 @@ export async function importPlugin(
       : null
 
     if (!preConfirmTarget) {
-      return false
+      return { status: 'stale' }
     }
 
     if (preConfirmTarget.kind === 'name-mismatch') {
@@ -471,10 +511,10 @@ export async function importPlugin(
     if (!isUpdate && preConfirmTarget.kind === 'update') {
       const c = await alertConfirm(language.duplicatePluginFoundUpdateIt)
       if (!isFreshImport()) {
-        return false
+        return { status: 'stale' }
       }
       if (!c) {
-        return false
+        return { status: 'cancelled' }
       }
     }
 
@@ -490,7 +530,7 @@ export async function importPlugin(
       : null
 
     if (!applyTarget || applyTarget.kind === 'skip') {
-      return false
+      return { status: applyTarget ? 'cancelled' : 'stale' }
     }
 
     if (applyTarget.kind === 'name-mismatch') {
@@ -530,25 +570,35 @@ export async function importPlugin(
 
     if (persistenceResult) {
       const result = await persistenceResult
-      if (result.status !== 'accepted') {
-        return false
+      if (result.status === 'failed') {
+        reportPluginImportPersistenceFailure(pluginData.name, result, argu.isHotReload)
+        return { status: 'failed' }
+      }
+      if (result.status === 'queued') {
+        const releaseQueuedRuntimeSync = releasePluginRuntimeSync
+        releasePluginRuntimeSync = null
+        const settlement = result.settlement
+          .then((finalSettlement) => {
+            if (finalSettlement.status === 'accepted') {
+              completePluginImport(pluginData.name, apiVersion, argu.isHotReload)
+            }
+            return finalSettlement
+          })
+          .finally(() => {
+            releaseQueuedRuntimeSync?.()
+          })
+        return { status: 'queued', pluginName: pluginData.name, settlement }
       }
     }
 
-    if (argu.isHotReload && !hotReloading.includes(pluginData.name)) {
-      hotReloading.push(pluginData.name)
-    }
-
-    console.log(`Imported plugin: ${pluginData.name} (API v${apiVersion})`)
-
-    loadPlugins()
-    return true
+    completePluginImport(pluginData.name, apiVersion, argu.isHotReload)
+    return { status: 'accepted', pluginName: pluginData.name }
   } catch (error) {
     console.error(error)
     if (!operation || isFreshPluginImport(operation, currentPluginImportFreshness())) {
       alertError(language.errors.noData)
     }
-    return false
+    return { status: 'failed' }
   } finally {
     releasePluginRuntimeSync?.()
     if (operation) {

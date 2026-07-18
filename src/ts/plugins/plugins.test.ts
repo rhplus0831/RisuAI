@@ -586,7 +586,7 @@ describe('plugin import/update freshness', () => {
     getDatabase().plugins.push(seedPlugin('plugin-newer'))
     picker.resolve()
 
-    await expect(importPromise).resolves.toBe(false)
+    await expect(importPromise).resolves.toEqual({ status: 'stale' })
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
     expect(calls).toEqual([])
   })
@@ -604,7 +604,7 @@ describe('plugin import/update freshness', () => {
     getDatabase().plugins.push(seedPlugin('plugin-newer'))
     picker.resolve()
 
-    await expect(importPromise).resolves.toBe(false)
+    await expect(importPromise).resolves.toEqual({ status: 'stale' })
     expect(pluginImportMocks.alertError).not.toHaveBeenCalled()
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
   })
@@ -623,7 +623,7 @@ describe('plugin import/update freshness', () => {
     getDatabase().plugins.push(seedPlugin('plugin-newer'))
     confirm.resolve(true)
 
-    await expect(importPromise).resolves.toBe(false)
+    await expect(importPromise).resolves.toEqual({ status: 'stale' })
     expect(getDatabase().plugins[0].script).toBe(originalScript)
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
     expect(calls).toEqual([])
@@ -634,7 +634,7 @@ describe('plugin import/update freshness', () => {
     startPluginRuntimeSync()
     flushSync()
 
-    await expect(importPlugin(pluginSource('plugin-created'))).resolves.toBe(false)
+    await expect(importPlugin(pluginSource('plugin-created'))).resolves.toEqual({ status: 'failed' })
 
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a'])
     expect(calls.find((call) => call.url === '/api/v1/commands/plugins')).toMatchObject({
@@ -646,7 +646,64 @@ describe('plugin import/update freshness', () => {
         }),
       },
     })
+    expect(pluginImportMocks.alertError).toHaveBeenCalledWith(expect.stringContaining('could not be saved'))
     expect(loadV3Plugins).not.toHaveBeenCalled()
+  })
+
+  it('reports a retained plugin import as queued and loads it after replay acceptance', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-plugin-import',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-plugin-import',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    let recover = false
+    const createBodies: unknown[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/plugins') {
+          createBodies.push(typeof init.body === 'string' ? JSON.parse(init.body) : null)
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          return jsonResponse({
+            revision: 11,
+            event: {
+              type: 'plugin.created',
+              revision: 11,
+              resource: 'plugin',
+              id: 'plugin-created',
+            } as CommandEvent,
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    startPluginRuntimeSync()
+    flushSync()
+
+    try {
+      const result = await importPlugin(pluginSource('plugin-created'))
+
+      expect(result).toMatchObject({ status: 'queued', pluginName: 'plugin-created' })
+      expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-created'])
+      expect(loadV3Plugins).not.toHaveBeenCalled()
+      expect(pluginImportMocks.alertError).not.toHaveBeenCalled()
+
+      recover = true
+      const settlement = result.status === 'queued' ? result.settlement : Promise.reject(new Error('not queued'))
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      await expect(settlement).resolves.toEqual({ status: 'accepted' })
+      await vi.waitFor(() => expect(loadV3Plugins).toHaveBeenCalledTimes(1))
+      expect(createBodies).toHaveLength(2)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('loads a fresh server-backed plugin import only after create acceptance', async () => {
@@ -673,7 +730,7 @@ describe('plugin import/update freshness', () => {
       }),
     )
 
-    await expect(importPromise).resolves.toBe(true)
+    await expect(importPromise).resolves.toEqual({ status: 'accepted', pluginName: 'plugin-created' })
     await vi.waitFor(() => {
       expect(loadV3Plugins).toHaveBeenCalledTimes(1)
     })

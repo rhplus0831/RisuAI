@@ -4,12 +4,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 type MockPluginUpdateCheckResult =
   | { status: 'available'; update: { version: string; updateURL: string } }
   | { status: 'up-to-date' | 'denied' | 'failed' }
-type MockPluginUpdateInstallResult = 'installed' | 'denied' | 'failed' | 'stale'
+type MockPluginFinalSettlement = { status: 'accepted' | 'failed' }
+type MockPluginUpdateInstallResult =
+  | 'installed'
+  | 'denied'
+  | 'failed'
+  | 'stale'
+  | { status: 'queued'; settlement: Promise<MockPluginFinalSettlement> }
+type MockPluginImportResult =
+  | { status: 'accepted'; pluginName: string }
+  | { status: 'queued'; pluginName: string; settlement: Promise<MockPluginFinalSettlement> }
+  | { status: 'cancelled' | 'failed' | 'stale' }
 
 const pluginSettingsMocks = vi.hoisted(() => ({
   alertConfirm: vi.fn(async () => false),
   alertSelect: vi.fn(),
   checkPluginUpdate: vi.fn<() => Promise<MockPluginUpdateCheckResult>>(async () => ({ status: 'up-to-date' })),
+  importPlugin: vi.fn<() => Promise<MockPluginImportResult>>(async () => ({
+    status: 'accepted',
+    pluginName: 'plugin-imported',
+  })),
   installPluginUpdate: vi.fn<() => Promise<MockPluginUpdateInstallResult>>(async () => 'installed'),
   setPluginArgument: vi.fn(async () => ({ status: 'accepted', result: { status: 'ok' } })),
   togglePluginEnabled: vi.fn(async () => ({ status: 'accepted', result: { status: 'ok' } })),
@@ -33,7 +47,7 @@ vi.mock('src/ts/alert', () => ({
 vi.mock('src/ts/plugins/plugins.svelte', () => ({
   checkPluginUpdate: pluginSettingsMocks.checkPluginUpdate,
   createBlankPlugin: vi.fn(),
-  importPlugin: vi.fn(),
+  importPlugin: pluginSettingsMocks.importPlugin,
   installPluginUpdate: pluginSettingsMocks.installPluginUpdate,
   loadPlugins: vi.fn(),
 }))
@@ -76,6 +90,8 @@ describe('PluginSettings', () => {
     pluginSettingsMocks.checkPluginUpdate.mockResolvedValue({ status: 'up-to-date' })
     pluginSettingsMocks.installPluginUpdate.mockReset()
     pluginSettingsMocks.installPluginUpdate.mockResolvedValue('installed')
+    pluginSettingsMocks.importPlugin.mockReset()
+    pluginSettingsMocks.importPlugin.mockResolvedValue({ status: 'accepted', pluginName: 'plugin-imported' })
     pluginSettingsMocks.setPluginArgument.mockReset()
     pluginSettingsMocks.setPluginArgument.mockResolvedValue({ status: 'accepted', result: { status: 'ok' } })
     pluginSettingsMocks.togglePluginEnabled.mockReset()
@@ -563,5 +579,76 @@ describe('PluginSettings', () => {
     await vi.waitFor(() => expect(pluginSettingsMocks.installPluginUpdate).toHaveBeenCalledWith(updater))
     expect(pluginSettingsMocks.alertConfirm).toHaveBeenCalledOnce()
     expect(target.querySelector('[role="status"]')?.textContent).toContain('Plugin update installed.')
+  })
+
+  it('shows a queued direct import until its durable settlement succeeds', async () => {
+    const settlement = deferred<MockPluginFinalSettlement>()
+    pluginSettingsMocks.importPlugin.mockResolvedValue({
+      status: 'queued',
+      pluginName: 'plugin-imported',
+      settlement: settlement.promise,
+    })
+    component = mount(PluginSettings, { target })
+
+    target.querySelector<HTMLButtonElement>(`[aria-label="${language.import}: ${language.plugin}"]`)?.click()
+
+    await vi.waitFor(() => {
+      expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.queued)
+    })
+    settlement.resolve({ status: 'accepted' })
+    await vi.waitFor(() => {
+      expect(target.querySelector('[role="status"]')?.textContent ?? '').not.toContain(language.pluginMutation.queued)
+    })
+  })
+
+  it('keeps an update pending until a queued install settles', async () => {
+    const settlement = deferred<MockPluginFinalSettlement>()
+    pluginSettingsMocks.checkPluginUpdate.mockResolvedValue({
+      status: 'available',
+      update: { version: '1.1.0', updateURL: 'https://plugins.example/queued.js' },
+    })
+    pluginSettingsMocks.alertConfirm.mockResolvedValue(true)
+    pluginSettingsMocks.installPluginUpdate.mockResolvedValue({
+      status: 'queued',
+      settlement: settlement.promise,
+    })
+    setDatabaseLite({
+      characters: [],
+      currentPluginProvider: '',
+      enabledModules: [],
+      modules: [],
+      plugins: [
+        {
+          name: 'plugin-queued',
+          displayName: 'Plugin Queued',
+          script: 'Risuai.log("queued")',
+          updateURL: 'https://plugins.example/queued.js',
+          versionOfPlugin: '1.0.0',
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+          version: '3.0',
+          enabled: true,
+        },
+      ],
+    } as any)
+    component = mount(PluginSettings, { target })
+
+    target.querySelector<HTMLButtonElement>('[aria-label="Check for plugin updates"]')?.click()
+    const installButton = await vi.waitFor(() => {
+      const button = target.querySelector<HTMLButtonElement>('[aria-label="Install plugin update 1.1.0"]')
+      expect(button).toBeTruthy()
+      return button
+    })
+    installButton.click()
+
+    await vi.waitFor(() => {
+      expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.queued)
+    })
+    settlement.resolve({ status: 'accepted' })
+    await vi.waitFor(() => {
+      expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginUpdateInstalled)
+    })
   })
 })
