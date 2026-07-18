@@ -27,6 +27,7 @@
     hypaV3Data: any
     readOnly?: boolean
     onResetData?: () => Promise<void>
+    onImportantFilterChanged?: () => void
     onToggleBulkEditMode?: () => void
     onOpenCategoryManager?: () => void
     onRequestClose?: () => boolean | Promise<boolean>
@@ -44,6 +45,7 @@
     hypaV3Data,
     readOnly = false,
     onResetData,
+    onImportantFilterChanged,
     onToggleBulkEditMode,
     onOpenCategoryManager,
     onRequestClose,
@@ -73,6 +75,7 @@
 
   function toggleFilterImportant() {
     filterImportant = !filterImportant
+    onImportantFilterChanged?.()
   }
 
   function openSettings(): void {

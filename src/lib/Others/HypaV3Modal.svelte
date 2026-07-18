@@ -254,6 +254,7 @@
         categories: categoriesSnapshot,
         lastSelectedSummaries: [],
       }
+      applyDefaultFilters(`${currentCharacter?.chaId ?? ''}:${chatId}`, summaries)
       if (serverSummaryLoadedChatId !== chatId) {
         serverSummaryLoadedChatId = chatId
         uiState.collapsedSummaries = new Set(summaries.map((_, index) => index))
@@ -543,12 +544,44 @@
     selectedCategoryFilter: 'all',
     isManualImportantToggle: false,
   })
+  let filterStateOwnerKey: string | null = null
+  let filterDefaultsApplied = false
+  let filterStateManuallyChanged = false
 
   let uiState = $state<UIState>({
     collapsedSummaries: new Set(),
     dropdownOpen: false,
   })
   let summaryViewOwnerKey: string | null = null
+
+  function prepareFilterStateOwner(ownerKey: string): void {
+    if (filterStateOwnerKey === ownerKey) return
+    filterStateOwnerKey = ownerKey
+    filterDefaultsApplied = false
+    filterStateManuallyChanged = false
+    filterState.isManualImportantToggle = false
+  }
+
+  function markFilterStateManuallyChanged(): void {
+    if (!currentCharacter || !currentChat) return
+    prepareFilterStateOwner(`${currentCharacter.chaId}:${currentChat.id ?? currentCharacter.chatPage}`)
+    filterStateManuallyChanged = true
+    filterState.isManualImportantToggle = true
+  }
+
+  function applyDefaultFilters(ownerKey: string, summaries: readonly SerializableSummary[]): void {
+    prepareFilterStateOwner(ownerKey)
+    if (filterDefaultsApplied) return
+    filterDefaultsApplied = true
+    if (filterStateManuallyChanged) return
+
+    const hasImportantSummary = summaries.some((summary) => summary.isImportant)
+    const categoryFilter = hasImportantSummary ? 'all' : ''
+    categoryManagerState.selectedCategoryFilter = categoryFilter
+    filterState.selectedCategoryFilter = categoryFilter
+    filterState.showImportantOnly = hasImportantSummary
+    filterState.isManualImportantToggle = false
+  }
 
   function cancelPendingSearchFocusRestore(): void {
     if (!pendingSearchFocusRestore) return
@@ -650,30 +683,14 @@
       }
       if (summaryViewOwnerKey === ownerKey) return
       summaryViewOwnerKey = ownerKey
+      const filterOwnerKey = `${character.chaId}:${chat.id ?? character.chatPage}`
+      prepareFilterStateOwner(filterOwnerKey)
 
       expandedMessageState = null
       searchState = null
       uiState.collapsedSummaries = new Set(hypaV3Data.summaries.map((_, index) => index))
+      if (!serverBackedMemoryMode) applyDefaultFilters(filterOwnerKey, hypaV3Data.summaries)
     })
-  })
-
-  $effect(() => {
-    if ($hypaV3ModalOpen) {
-      hypaV3Data.summaries.length
-      const currentImportantCount = untrack(() => hypaV3Data.summaries.filter((s) => s.isImportant).length)
-
-      if (currentImportantCount > 0) {
-        categoryManagerState.selectedCategoryFilter = 'all'
-        filterState.selectedCategoryFilter = 'all'
-        filterState.showImportantOnly = true
-      } else {
-        categoryManagerState.selectedCategoryFilter = ''
-        filterState.selectedCategoryFilter = ''
-        filterState.showImportantOnly = false
-      }
-
-      filterState.isManualImportantToggle = false
-    }
   })
 
   function handleToggleSummarySelection(summaryIndex: number) {
@@ -1098,6 +1115,7 @@
   }
 
   function handleCategoryFilter(categoryId: string) {
+    markFilterStateManuallyChanged()
     filterState.selectedCategoryFilter = categoryId
   }
 
@@ -1305,6 +1323,7 @@
         {hypaV3Data}
         readOnly={serverBackedMemoryMode}
         onResetData={handleResetData}
+        onImportantFilterChanged={markFilterStateManuallyChanged}
         onToggleBulkEditMode={handleToggleBulkEditMode}
         onOpenCategoryManager={handleOpenCategoryManager}
         onRequestClose={requestModalClose} />

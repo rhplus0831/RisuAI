@@ -298,6 +298,45 @@ describe('Hypa V3 server summary close reliability', () => {
     ).toBe(true)
   })
 
+  it('preserves a manual important-filter choice across same-chat summary refreshes', async () => {
+    const summaries = [
+      serverSummary({
+        id: 'important-summary',
+        chunkId: 'important-chunk',
+        text: 'Important summary',
+        metadata: { chatMemos: ['message-a'], isImportant: true },
+      }),
+      serverSummary({
+        id: 'ordinary-summary',
+        chunkId: 'ordinary-chunk',
+        text: 'Ordinary summary',
+        metadata: { chatMemos: ['message-b'], isImportant: false },
+      }),
+    ]
+    serverMocks.listServerMemorySummaries.mockResolvedValue({ status: 'ok', summaries })
+
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const visibleSummaryValues = () =>
+      Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea:not([readonly])'), (textarea) => textarea.value)
+    expect(visibleSummaryValues()).toEqual(['Important summary'])
+
+    target
+      .querySelector<HTMLButtonElement>(`button[aria-label="${language.hypaV3Modal.importantFilterAction}"]`)
+      ?.click()
+    await settle()
+    expect(visibleSummaryValues()).toEqual(['Important summary', 'Ordinary summary'])
+
+    for (const listener of serverMocks.memoryJobListeners) {
+      listener({ chatId: 'chat-a', job: { kind: 'summarize', status: 'completed' } })
+    }
+    await vi.waitFor(() => expect(serverMocks.listServerMemorySummaries).toHaveBeenCalledTimes(2))
+    await settle()
+
+    expect(visibleSummaryValues()).toEqual(['Important summary', 'Ordinary summary'])
+  })
+
   it('keeps the modal open when a close-button flush fails', async () => {
     const patch = deferred<{ status: 'error'; error: string }>()
     serverMocks.patchServerMemorySummary.mockReturnValueOnce(patch.promise)
