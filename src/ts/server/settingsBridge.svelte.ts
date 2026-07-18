@@ -7,9 +7,11 @@ import {
   resolveTopLevelPresetFieldMirrorTarget,
   type TopLevelPresetFieldMirrorTarget,
 } from '../presetFieldMirror'
-import { getDatabase, setPreset } from '../storage/database.svelte'
+import { extractModelPresetFields, extractPromptPresetFields } from '../presetSplit'
+import { getDatabase } from '../storage/database.svelte'
 import {
   canUseServerCommands,
+  completeOnboardingCommand,
   patchSettingsObjectFieldsCommand,
   patchServerBackedSettings,
   runServerCommand,
@@ -733,34 +735,40 @@ export function dispatchDurableServerBackedSettingsPatch(
 export async function applyOnboardingServerBackedSettings(
   options: ApplyOnboardingServerBackedSettingsOptions,
 ): Promise<boolean> {
-  const patch = buildOnboardingSettingsPatch(options)
-  const beforeSetup = snapshotServerBackedSettings(getDatabase() as unknown as Record<string, unknown>)
-  let fullPatch: SettingsPatch = {}
-  let previous: SettingsPatch = {}
-  let attempted: SettingsPatch = {}
-
-  withSuppressedSettingsWatcher(() => {
-    withTrustedResourceWrite(() => {
-      setPreset(getDatabase(), prebuiltPresets.OAI2)
-      Object.assign(getDatabase() as unknown as Record<string, unknown>, patch)
-
-      const diff = diffServerBackedSettingsSnapshot(beforeSetup, getDatabase() as unknown as Record<string, unknown>)
-      fullPatch = diff.patch
-      previous = diff.previous
-      attempted = diff.attempted
-    })
-  })
-
-  const result = dispatchServerBackedSettingsPatch(
-    fullPatch,
-    previous,
-    attempted,
-    captureSettingsPatchProjectionEpochs(fullPatch),
-  )
-  if (!result) return true
-
   try {
-    return (await result).status === 'ok'
+    const database = getDatabase()
+    const modelPreset = database.modelPresets?.[database.modelPresetsId]
+    const promptPreset = database.promptPresets?.[database.promptPresetsId]
+    if (!modelPreset?.id || !promptPreset?.id) return false
+
+    const choicePatch = buildOnboardingSettingsPatch(options)
+    const intendedPreset = { ...prebuiltPresets.OAI2, ...choicePatch }
+    const modelPatch = extractModelPresetFields(intendedPreset)
+    // Legacy setPreset intentionally preserves the account's OpenAI key. It is
+    // a model-preset field structurally, but the onboarding template's empty
+    // placeholder must not erase the credential entered one step earlier.
+    delete modelPatch.openAIKey
+    const promptPatch = extractPromptPresetFields(prebuiltPresets.OAI2)
+    const settingsPatch = Object.fromEntries(
+      Object.entries(choicePatch).filter(
+        ([key]) =>
+          !Object.prototype.hasOwnProperty.call(modelPatch, key) &&
+          !Object.prototype.hasOwnProperty.call(promptPatch, key),
+      ),
+    )
+
+    const result = await runServerCommand({
+      command: (baseRevision) =>
+        completeOnboardingCommand({
+          baseRevision,
+          modelPresetId: modelPreset.id,
+          promptPresetId: promptPreset.id,
+          modelPatch,
+          promptPatch,
+          settingsPatch,
+        }),
+    })
+    return result.status === 'ok'
   } catch {
     return false
   }
@@ -1835,50 +1843,6 @@ function onboardingTranslatorForLanguage(language: string): string | null {
     default:
       return null
   }
-}
-
-interface ServerBackedSettingsSnapshotEntry {
-  snapshot: string
-  value: unknown
-}
-
-function snapshotServerBackedSettings(
-  settings: Record<string, unknown>,
-): Map<string, ServerBackedSettingsSnapshotEntry> {
-  const snapshot = new Map<string, ServerBackedSettingsSnapshotEntry>()
-  for (const [key, value] of Object.entries(settings)) {
-    if (!settingsGroupForKey(key) || value === undefined) continue
-    snapshot.set(key, {
-      snapshot: snapshotJson(value),
-      value: cloneJsonValue(value),
-    })
-  }
-  return snapshot
-}
-
-function diffServerBackedSettingsSnapshot(
-  before: Map<string, ServerBackedSettingsSnapshotEntry>,
-  after: Record<string, unknown>,
-): { patch: SettingsPatch; previous: SettingsPatch; attempted: SettingsPatch } {
-  const patch: SettingsPatch = {}
-  const previous: SettingsPatch = {}
-  const attempted: SettingsPatch = {}
-  const keys = new Set([...before.keys(), ...Object.keys(after)])
-
-  for (const key of keys) {
-    if (!settingsGroupForKey(key)) continue
-    const value = after[key]
-    if (value === undefined) continue
-
-    const previousEntry = before.get(key)
-    if (previousEntry?.snapshot === snapshotJson(value)) continue
-
-    patch[key] = cloneJsonValue(value)
-    previous[key] = cloneJsonValue(previousEntry?.value)
-    attempted[key] = cloneJsonValue(value)
-  }
-
-  return { patch, previous, attempted }
 }
 
 function settingsPatchDurableIntent(patch: SettingsPatch): DurableMutationIntent {

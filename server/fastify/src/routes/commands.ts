@@ -851,6 +851,7 @@ const COLLECTION_SCOPED_READS = {
   promptPresets: ['promptPresets'],
   promptTemplate: ['promptTemplate'],
   legacyBotPresetExtraction: ['botPresets', 'modelPresets', 'promptPresets'],
+  onboarding: ['modelPresets', 'promptPresets'],
   presets: ['botPresets'],
   personas: ['personas'],
   translatorPresets: ['translatorPresets'],
@@ -863,6 +864,15 @@ const COLLECTION_SCOPED_READS = {
 interface RuntimeSettingsCommandBody {
   baseRevision?: unknown
   patch?: unknown
+}
+
+interface OnboardingCommandBody {
+  baseRevision?: unknown
+  modelPresetId?: unknown
+  promptPresetId?: unknown
+  modelPatch?: unknown
+  promptPatch?: unknown
+  settingsPatch?: unknown
 }
 
 interface SparseObjectSettingsCommandBody extends RuntimeSettingsCommandBody {
@@ -1922,6 +1932,16 @@ const SETTINGS_GROUP_KEY_SETS = Object.fromEntries(
   SETTINGS_GROUPS.map((group) => [group, new Set(SETTINGS_GROUP_KEYS[group])]),
 ) as Record<SettingsGroup, Set<string>>
 
+const ONBOARDING_SETTINGS_KEYS = new Set([
+  'textTheme',
+  'claudeCachingExperimental',
+  'translator',
+  'autoTranslate',
+  'translatorType',
+  'useAutoTranslateInput',
+  'didFirstSetup',
+])
+
 export function registerCommandRoutes(
   app: FastifyInstance,
   db: DatabaseSync,
@@ -1977,6 +1997,93 @@ export function registerCommandRoutes(
       }
       emitCommandEventForRequest(req, eventSink, result.event)
       return { revision: result.revision, initialized: true, event: result.event }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/onboarding', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = readJsonObject(req.body ?? {}, 'body') as OnboardingCommandBody
+      const baseRevision = readBaseRevision(body)
+      const modelPresetId = readModelPresetId(body.modelPresetId)
+      const promptPresetId = readPromptPresetId(body.promptPresetId)
+      const requestedModelPatch = readJsonObject(body.modelPatch, 'modelPatch')
+      const requestedPromptPatch = readJsonObject(body.promptPatch, 'promptPatch')
+      if (Object.keys(requestedModelPatch).length === 0 || Object.keys(requestedPromptPatch).length === 0) {
+        throw new ValidationError('onboarding preset patches must not be empty')
+      }
+      const modelPatch = readModelPresetPatch(requestedModelPatch)
+      const promptPatch = readPromptPresetPatch(requestedPromptPatch)
+      if (Object.prototype.hasOwnProperty.call(modelPatch, 'id') && modelPatch.id !== modelPresetId) {
+        throw new ValidationError('modelPatch.id must match modelPresetId')
+      }
+      if (Object.prototype.hasOwnProperty.call(promptPatch, 'id') && promptPatch.id !== promptPresetId) {
+        throw new ValidationError('promptPatch.id must match promptPresetId')
+      }
+      const settingsPatch = readOnboardingSettingsPatch(body.settingsPatch)
+      validateSettingsAssetRefs(db, settingsPatch)
+
+      const result = applyTargetedCommandMutation<{ modelPresetId: string; promptPresetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.onboarding,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const modelPresets = ensureModelPresetCollection(target)
+          const promptPresets = ensurePromptPresetCollection(target)
+          if (selectedModelPresetId(target, modelPresets) !== modelPresetId) {
+            throw new ValidationError(`Selected model preset changed before onboarding completed: ${modelPresetId}`)
+          }
+          if (selectedPromptPresetId(target, promptPresets) !== promptPresetId) {
+            throw new ValidationError(`Selected prompt preset changed before onboarding completed: ${promptPresetId}`)
+          }
+
+          const modelIndex = requireModelPresetIndex(modelPresets, modelPresetId)
+          const promptIndex = requirePromptPresetIndex(promptPresets, promptPresetId)
+          const resolvedModelPatch = resolveModelPresetMaskedSecrets(modelPresets[modelIndex], modelPatch)
+          modelPresets[modelIndex] = {
+            ...modelPresets[modelIndex],
+            ...resolvedModelPatch,
+            id: modelPresetId,
+          }
+          promptPresets[promptIndex] = {
+            ...promptPresets[promptIndex],
+            ...promptPatch,
+            id: promptPresetId,
+          }
+
+          applyModelPreset(target, modelPresets[modelIndex])
+          applyPromptPreset(target, promptPresets[promptIndex])
+          // Completion is applied only after both owner rows and their selected
+          // projections have been constructed successfully. All writes below
+          // remain inside applyTargetedCommandMutation's SQLite transaction.
+          applySettingsPatch(target, settingsPatch)
+
+          writeSingleCollectionRow(innerDb, 'modelPresets', modelIndex, modelPresets[modelIndex])
+          writeSingleCollectionRow(innerDb, 'promptPresets', promptIndex, promptPresets[promptIndex])
+          if (promptPresetAppliesPromptTemplate(promptPresets[promptIndex])) {
+            writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
+          }
+          writeSettingsOnly(innerDb, extractSettings(target))
+
+          return {
+            event: COMMAND_EVENT_CATALOG.onboardingCompleted,
+            extra: { modelPresetId, promptPresetId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
     } catch (err) {
       return sendCommandError(reply, err)
     }
@@ -8798,6 +8905,27 @@ function compactSparseObjectSettingReceipt(input: {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function readOnboardingSettingsPatch(patch: unknown): Record<string, unknown> {
+  if (!isPlainObject(patch)) {
+    throw new ValidationError('settingsPatch must be an object')
+  }
+  if (patch.didFirstSetup !== true) {
+    throw new ValidationError('settingsPatch.didFirstSetup must be true')
+  }
+
+  const sanitized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(patch)) {
+    if (!ONBOARDING_SETTINGS_KEYS.has(key)) {
+      throw new ValidationError(`Unsupported onboarding setting: ${key}`)
+    }
+    const group = SETTINGS_GROUPS.find((candidate) => SETTINGS_GROUP_KEY_SETS[candidate].has(key))
+    if (!group) throw new ValidationError(`Unsupported onboarding setting: ${key}`)
+    validateSettingValue(key, value)
+    sanitized[key] = sanitizeSettingValue(key, value)
+  }
+  return sanitized
 }
 
 function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<string, unknown> {

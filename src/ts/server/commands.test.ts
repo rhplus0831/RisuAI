@@ -31,6 +31,7 @@ import {
   createPluginCommand,
   clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
+  completeOnboardingCommand,
   createChatGenerationSettingsCommandDurableBody,
   createPromptItemCommand,
   createPresetCommand,
@@ -360,6 +361,50 @@ describe('server command API adapter', () => {
       event: { type: 'state.initialized', revision: 8, resource: 'state' },
     })
     expect(peekCachedServerCommandRevision()).toBe(8)
+  })
+
+  it('sends onboarding preset owners and settings through one command request', async () => {
+    const event = { type: 'onboarding.completed', revision: 3, resource: 'legacyBotPreset' }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      modelPresetId: 'model-owner',
+      promptPresetId: 'prompt-owner',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await completeOnboardingCommand({
+      baseRevision: 2,
+      modelPresetId: 'model-owner',
+      promptPresetId: 'prompt-owner',
+      modelPatch: { aiModel: 'openrouter' },
+      promptPatch: { mainPrompt: 'onboarding prompt' },
+      settingsPatch: { didFirstSetup: true },
+    })
+
+    expect(result).toEqual({
+      status: 'ok',
+      revision: 3,
+      event,
+      modelPresetId: 'model-owner',
+      promptPresetId: 'prompt-owner',
+    })
+    expect(commandFetch.calls).toEqual([
+      {
+        url: '/api/v1/commands/onboarding',
+        method: 'POST',
+        authHeader: 'test-auth-token',
+        contentType: 'application/json',
+        body: {
+          baseRevision: 2,
+          modelPresetId: 'model-owner',
+          promptPresetId: 'prompt-owner',
+          modelPatch: { aiModel: 'openrouter' },
+          promptPatch: { mainPrompt: 'onboarding prompt' },
+          settingsPatch: { didFirstSetup: true },
+        },
+      },
+    ])
   })
 
   it('patches grouped scalar settings with the auth header and baseRevision', async () => {

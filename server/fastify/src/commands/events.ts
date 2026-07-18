@@ -278,6 +278,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'legacyBotPreset.extracted',
     resource: 'legacyBotPreset',
   },
+  onboardingCompleted: {
+    type: 'onboarding.completed',
+    resource: 'legacyBotPreset',
+  },
   promptSettingsUpdated: {
     type: 'prompt.settings.updated',
     resource: 'prompt',

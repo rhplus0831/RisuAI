@@ -531,6 +531,125 @@ describe('split preset command routes', () => {
     expect(persisted.promptPresets[persisted.settings.promptPresetsId as number].id).toBe('prompt-imported')
   })
 
+  it('commits onboarding settings and both selected preset owners atomically', async () => {
+    const revision = await importPresets({
+      didFirstSetup: false,
+      textTheme: 'default',
+      modelPresetsId: 0,
+      promptPresetsId: 0,
+      apiType: 'old-api',
+      aiModel: 'old-model',
+      maxContext: 4096,
+      mainPrompt: 'old prompt',
+      modelPresets: [
+        {
+          id: 'model-owner',
+          name: 'Model owner',
+          apiType: 'old-api',
+          aiModel: 'old-model',
+          maxContext: 4096,
+        },
+      ],
+      promptPresets: [{ id: 'prompt-owner', name: 'Prompt owner', mainPrompt: 'old prompt' }],
+    })
+
+    const completed = await runCommand('/api/v1/commands/onboarding', revision, {
+      modelPresetId: 'model-owner',
+      promptPresetId: 'prompt-owner',
+      modelPatch: {
+        apiType: 'openai',
+        aiModel: 'gpt4o-chatgpt',
+        maxContext: 12000,
+      },
+      promptPatch: {
+        mainPrompt: 'onboarding prompt',
+        jailbreak: 'onboarding jailbreak',
+        promptTemplate: [{ type: 'plain', text: 'onboarding template' }],
+      },
+      settingsPatch: {
+        textTheme: 'highcontrast',
+        didFirstSetup: true,
+      },
+    })
+
+    expect(completed).toMatchObject({
+      modelPresetId: 'model-owner',
+      promptPresetId: 'prompt-owner',
+      event: { type: 'onboarding.completed', resource: 'legacyBotPreset' },
+    })
+    const persisted = await readPersistedPresetState()
+    expect(persisted.revision).toBe(completed.revision)
+    expect(persisted.modelPresets[0]).toMatchObject({
+      id: 'model-owner',
+      apiType: 'openai',
+      aiModel: 'gpt4o-chatgpt',
+      maxContext: 12000,
+    })
+    expect(persisted.promptPresets[0]).toMatchObject({
+      id: 'prompt-owner',
+      mainPrompt: 'onboarding prompt',
+      jailbreak: 'onboarding jailbreak',
+    })
+    expect(persisted.settings).toMatchObject({
+      didFirstSetup: true,
+      textTheme: 'highcontrast',
+      apiType: 'openai',
+      aiModel: 'gpt4o-chatgpt',
+      maxContext: 12000,
+      mainPrompt: 'onboarding prompt',
+      jailbreak: 'onboarding jailbreak',
+    })
+  })
+
+  it('rolls back the model owner and completion flag when the prompt-owner write fails', async () => {
+    const revision = await importPresets({
+      didFirstSetup: false,
+      modelPresetsId: 0,
+      promptPresetsId: 0,
+      aiModel: 'old-model',
+      mainPrompt: 'old prompt',
+      modelPresets: [{ id: 'model-owner', name: 'Model owner', aiModel: 'old-model' }],
+      promptPresets: [{ id: 'prompt-owner', name: 'Prompt owner', mainPrompt: 'old prompt' }],
+    })
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      db.exec(`
+        CREATE TRIGGER fail_onboarding_prompt_owner
+        BEFORE UPDATE ON prompt_presets
+        BEGIN
+          SELECT RAISE(FAIL, 'injected prompt owner failure');
+        END;
+      `)
+    } finally {
+      db.close()
+    }
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/onboarding',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        modelPresetId: 'model-owner',
+        promptPresetId: 'prompt-owner',
+        modelPatch: { aiModel: 'new-model' },
+        promptPatch: { mainPrompt: 'new prompt' },
+        settingsPatch: { didFirstSetup: true },
+      },
+    })
+    expect(response.statusCode).toBe(500)
+
+    const persisted = await readPersistedPresetState()
+    expect(persisted.revision).toBe(revision)
+    expect(persisted.modelPresets[0]).toMatchObject({ id: 'model-owner', aiModel: 'old-model' })
+    expect(persisted.promptPresets[0]).toMatchObject({ id: 'prompt-owner', mainPrompt: 'old prompt' })
+    expect(persisted.settings).toMatchObject({
+      didFirstSetup: false,
+      aiModel: 'old-model',
+      mainPrompt: 'old prompt',
+    })
+  })
+
   it('omits the model preset reorder receipt when collection normalization repairs a row', async () => {
     const revision = await importPresets({
       modelPresetsId: 0,

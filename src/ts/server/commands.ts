@@ -741,6 +741,15 @@ export interface PresetCommandInput {
   baseRevision: number
 }
 
+export interface CompleteOnboardingCommandInput {
+  baseRevision: number
+  modelPresetId: string
+  promptPresetId: string
+  modelPatch: ModelPresetSnapshot
+  promptPatch: PromptPresetSnapshot
+  settingsPatch: SettingsPatch
+}
+
 export interface CreatePresetCommandInput extends PresetCommandInput {
   preset: PresetSnapshot
 }
@@ -2143,6 +2152,30 @@ export async function initializeServerDatabase(
     // The idempotent already-initialized branch performs no mutation and is the
     // only command route that intentionally returns a revision without an event.
     allowEventlessSuccess: (body) => body.initialized === false && !Object.prototype.hasOwnProperty.call(body, 'event'),
+  })
+}
+
+/**
+ * Commit every first-run settings owner in one server transaction. The
+ * response event deliberately invalidates settings plus both split-preset
+ * collections, so the caller only resolves after their canonical projections
+ * have been applied.
+ */
+export async function completeOnboardingCommand(
+  input: CompleteOnboardingCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ modelPresetId: string; promptPresetId: string }>> {
+  return requestCommandJson('/onboarding', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      modelPresetId: input.modelPresetId,
+      promptPresetId: input.promptPresetId,
+      modelPatch: input.modelPatch,
+      promptPatch: input.promptPatch,
+      settingsPatch: input.settingsPatch,
+    },
+    signal,
   })
 }
 

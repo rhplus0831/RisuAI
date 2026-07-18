@@ -21,6 +21,8 @@ const recorded = vi.hoisted(() => ({
   }>,
   objectResults: [] as Array<unknown | Promise<unknown>>,
   groupReads: [] as unknown[],
+  onboardingInputs: [] as Array<Record<string, unknown>>,
+  onboardingResults: [] as Array<unknown | Promise<unknown>>,
 }))
 const alertMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
@@ -59,6 +61,22 @@ const presetMocks = vi.hoisted(() => ({
 
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
+  completeOnboardingCommand: vi.fn(async (args: Record<string, unknown>) => {
+    recorded.onboardingInputs.push(args)
+    const queued = recorded.onboardingResults.shift()
+    if (queued) return await queued
+    return {
+      status: 'ok',
+      revision: Number(args.baseRevision) + 1,
+      event: {
+        type: 'onboarding.completed',
+        revision: Number(args.baseRevision) + 1,
+        resource: 'legacyBotPreset',
+      },
+      modelPresetId: args.modelPresetId,
+      promptPresetId: args.promptPresetId,
+    }
+  }),
   patchSettingsObjectFieldsCommand: vi.fn(
     async (args: {
       baseRevision: number
@@ -366,6 +384,8 @@ beforeEach(() => {
   recorded.objectPatches.length = 0
   recorded.objectResults.length = 0
   recorded.groupReads.length = 0
+  recorded.onboardingInputs.length = 0
+  recorded.onboardingResults.length = 0
   resourceGuardState.epoch = 0
   alertMocks.alertError.mockClear()
   alertMocks.alertNormal.mockClear()
@@ -391,9 +411,15 @@ afterEach(async () => {
 })
 
 describe('settingsBridge coalescing', () => {
-  it('applies onboarding preset/settings and persists the full changed settings patch', async () => {
-    const persistence = createDeferred<{ status: 'ok'; revision: number }>()
-    recorded.patchResults.push(persistence.promise)
+  it('commits onboarding through the selected split-preset owners in one command', async () => {
+    const persistence = createDeferred<{
+      status: 'ok'
+      revision: number
+      event: { type: string; revision: number; resource: string }
+      modelPresetId: string
+      promptPresetId: string
+    }>()
+    recorded.onboardingResults.push(persistence.promise)
     setupSettings({
       language: 'cn',
       apiType: 'old-api',
@@ -411,6 +437,10 @@ describe('settingsBridge coalescing', () => {
       translatorType: 'deepl',
       useAutoTranslateInput: false,
       didFirstSetup: false,
+      modelPresetsId: 0,
+      promptPresetsId: 0,
+      modelPresets: [{ id: 'model-owner', name: 'Model owner', apiType: 'old-api', temperature: 0.2 }],
+      promptPresets: [{ id: 'prompt-owner', name: 'Prompt owner', mainPrompt: 'old prompt' }],
       NAIsettings: {},
       seperateParameters: {
         emotion: {},
@@ -430,72 +460,52 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    expect(testDatabaseState.db).toMatchObject({
-      apiType: 'preset-api',
-      temperature: 0.75,
-      mainPrompt: 'preset prompt',
-      maxContext: 12000,
-      maxResponse: 800,
-      textTheme: 'highcontrast',
-      claudeCachingExperimental: true,
-      aiModel: 'openrouter',
-      subModel: 'openrouter',
-      openrouterRequestModel: 'risu/free',
-      translator: 'zh',
-      autoTranslate: true,
-      translatorType: 'google',
-      useAutoTranslateInput: true,
-      didFirstSetup: true,
-    })
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
-      {
-        apiType: 'preset-api',
-        temperature: 0.75,
-        maxContext: 12000,
-        maxResponse: 800,
-        textTheme: 'highcontrast',
-        claudeCachingExperimental: true,
-        aiModel: 'openrouter',
-        subModel: 'openrouter',
-        openrouterRequestModel: 'risu/free',
-        translator: 'zh',
-        autoTranslate: true,
-        translatorType: 'google',
-        useAutoTranslateInput: true,
-        didFirstSetup: true,
-        seperateParameters: {
-          emotion: {},
-          memory: {},
-          otherAx: {},
-          overrides: {},
-          scriptAux: {},
-          scriptMain: {},
-          translate: {},
-        },
-      },
-    ])
-    expect(recorded.patches[0].patch).not.toHaveProperty('mainPrompt')
-
-    persistence.resolve({ status: 'ok', revision: 1 })
-    expect(await setupResult).toBe(true)
-
-    recorded.patches[0].rollback?.()
+    // The final screen remains pending while the single owner-aware command is
+    // unresolved; it no longer exposes a settings-only optimistic projection.
     expect(testDatabaseState.db).toMatchObject({
       apiType: 'old-api',
-      temperature: 0.2,
-      maxContext: 4096,
-      maxResponse: 256,
-      textTheme: 'default',
-      claudeCachingExperimental: false,
-      aiModel: 'old-model',
-      subModel: 'old-sub-model',
-      openrouterRequestModel: 'old/openrouter',
-      translator: 'en',
-      autoTranslate: false,
-      translatorType: 'deepl',
-      useAutoTranslateInput: false,
+      mainPrompt: 'old prompt',
       didFirstSetup: false,
     })
+    expect(recorded.patches).toHaveLength(0)
+    expect(recorded.onboardingInputs).toEqual([
+      expect.objectContaining({
+        baseRevision: 1,
+        modelPresetId: 'model-owner',
+        promptPresetId: 'prompt-owner',
+        modelPatch: expect.objectContaining({
+          apiType: 'preset-api',
+          temperature: 0.75,
+          maxContext: 12000,
+          maxResponse: 800,
+          aiModel: 'openrouter',
+          subModel: 'openrouter',
+          openrouterRequestModel: 'risu/free',
+        }),
+        promptPatch: expect.objectContaining({
+          mainPrompt: 'preset prompt',
+        }),
+        settingsPatch: {
+          textTheme: 'highcontrast',
+          claudeCachingExperimental: true,
+          translator: 'zh',
+          autoTranslate: true,
+          translatorType: 'google',
+          useAutoTranslateInput: true,
+          didFirstSetup: true,
+        },
+      }),
+    ])
+    expect(recorded.onboardingInputs[0].modelPatch).not.toHaveProperty('openAIKey')
+
+    persistence.resolve({
+      status: 'ok',
+      revision: 2,
+      event: { type: 'onboarding.completed', revision: 2, resource: 'legacyBotPreset' },
+      modelPresetId: 'model-owner',
+      promptPresetId: 'prompt-owner',
+    })
+    expect(await setupResult).toBe(true)
   })
 
   it('keeps the WelcomeRisu component free of direct trusted projection writes', () => {
