@@ -104,6 +104,44 @@ describe('PlaygroundInlayExplorer', () => {
     expect(inlayMocks.listInlayAssets).toHaveBeenCalledTimes(2)
   })
 
+  it('stays subscribed while a paginated catalog is mounted', async () => {
+    const initialAssets = Array.from({ length: 40 }, (_, index) => [
+      `asset-${index}`,
+      { data: '', ext: 'json', name: `Asset ${index}`, type: 'signature' },
+    ])
+    const refreshedAssets = [
+      ...initialAssets,
+      ['asset-40', { data: '', ext: 'json', name: 'Authoritative Asset', type: 'signature' }],
+    ]
+    inlayMocks.listInlayAssets.mockResolvedValueOnce(initialAssets).mockResolvedValueOnce(refreshedAssets)
+
+    component = mount(PlaygroundInlayExplorer, { target })
+    await vi.waitFor(() => expect(target.textContent).toContain('Total 40 assets'))
+
+    expect(catalogMocks.unsubscribe).not.toHaveBeenCalled()
+    catalogMocks.listener?.()
+    await vi.waitFor(() => expect(target.textContent).toContain('Total 41 assets'))
+    expect(inlayMocks.listInlayAssets).toHaveBeenCalledTimes(2)
+
+    await unmount(component)
+    component = undefined
+    expect(catalogMocks.unsubscribe).toHaveBeenCalledOnce()
+  })
+
+  it('releases a non-paginated catalog subscription exactly once on unmount', async () => {
+    inlayMocks.listInlayAssets.mockResolvedValue([
+      ['asset-a', { data: '', ext: 'json', name: 'Asset A', type: 'signature' }],
+    ])
+
+    component = mount(PlaygroundInlayExplorer, { target })
+    await vi.waitFor(() => expect(target.textContent).toContain('Asset A'))
+
+    expect(catalogMocks.unsubscribe).not.toHaveBeenCalled()
+    await unmount(component)
+    component = undefined
+    expect(catalogMocks.unsubscribe).toHaveBeenCalledOnce()
+  })
+
   it('shows a recoverable error when the initial asset list fails', async () => {
     inlayMocks.listInlayAssets.mockRejectedValueOnce(new Error('IndexedDB unavailable')).mockResolvedValueOnce([])
 

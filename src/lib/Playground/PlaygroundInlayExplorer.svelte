@@ -154,7 +154,6 @@
     }
 
     observer?.disconnect()
-    unsubscribeCatalog()
     observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
@@ -181,6 +180,7 @@
     previewLoadRuns.clear()
     previewURLs.forEach((url) => URL.revokeObjectURL(url))
     observer?.disconnect()
+    unsubscribeCatalog()
   })
 
   const loadAssets = async () => {
