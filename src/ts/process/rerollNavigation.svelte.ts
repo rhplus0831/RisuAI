@@ -6,6 +6,7 @@ import {
   dispatchTruncateMessagesScoped,
   dispatchUpdateMessageScoped,
   ensureMessageId,
+  type ActiveChatTarget,
 } from '../chatCommands'
 import { safeStructuredClone } from '../polyfill'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
@@ -90,8 +91,30 @@ function isCurrentRerollOperation(operation: RerollOperation): boolean {
   return rerollOperationGuard.isLatest(operation.token) && currentRerollScopeTarget() === operation.token.target
 }
 
-function markRerollScope(): void {
-  const scope = currentRerollScope()
+function locateRerollTarget(
+  target: ActiveChatTarget,
+): { chat: Chat; scope: { charId: number; chatKey: string } } | null {
+  const characters = getDatabase().characters ?? []
+  const charId = target.characterId
+    ? characters.findIndex((character) => character.chaId === target.characterId)
+    : target.selectedCharID
+  const character = characters[charId]
+  if (!character) return null
+  const chatPage = target.chatId ? character.chats?.findIndex((chat) => chat.id === target.chatId) : target.chatPage
+  const chat = character.chats?.[chatPage]
+  if (!chat) return null
+  return {
+    chat,
+    scope: {
+      charId,
+      chatKey: typeof chat.id === 'string' && chat.id ? chat.id : `index:${chatPage}`,
+    },
+  }
+}
+
+function markRerollScope(target?: ActiveChatTarget): void {
+  const scope = target ? locateRerollTarget(target)?.scope : currentRerollScope()
+  if (!scope) return
   lastCharId = scope.charId
   lastChatKey = scope.chatKey
 }
@@ -116,8 +139,9 @@ export function clearRerollBuffer(): void {
 }
 
 /** Record the just-generated tail as the newest swipe candidate (post-send). */
-export function recordGeneratedReroll(previousLength: number): void {
-  const message = activeChatRecord().message
+export function recordGeneratedReroll(previousLength: number, target: ActiveChatTarget): void {
+  const message = locateRerollTarget(target)?.chat.message
+  if (!message) return
   if (previousLength < message.length) {
     // Clone only the freshly generated tail. `message.slice(previousLength)` is a
     // cheap shallow array of the 1-2 new rows; deep-cloning that is O(tail) and
@@ -129,8 +153,8 @@ export function recordGeneratedReroll(previousLength: number): void {
 }
 
 /** Mark the character a generation finished on (gates the char-change reset). */
-export function markRerollChar(): void {
-  markRerollScope()
+export function markRerollChar(target: ActiveChatTarget): void {
+  markRerollScope(target)
 }
 
 // ── guard-safe optimistic mutations ─────────────────────────────────────────────

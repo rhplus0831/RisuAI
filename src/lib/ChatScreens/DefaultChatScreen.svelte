@@ -1176,29 +1176,50 @@
     }
   }
 
-  async function runRerollPreflight(action: () => Promise<void>) {
+  async function runRerollPreflight(action: (target: ActiveChatTarget) => Promise<void>) {
     if ($doingChat || preparingSend) return
     const targetIdentity = getActiveTranscriptWindowIdentity()
+    const target = captureActiveChatTarget()
+    if (!target || !isActiveChatTargetFresh(target)) return
     preparingSend = true
     try {
       await hydrateActiveChatFully()
-      if ($doingChat || !preparingSend || getActiveTranscriptWindowIdentity() !== targetIdentity) return
-      await action()
+      if (
+        $doingChat ||
+        !preparingSend ||
+        getActiveTranscriptWindowIdentity() !== targetIdentity ||
+        !isActiveChatTargetFresh(target)
+      ) {
+        return
+      }
+      await action(target)
     } finally {
       preparingSend = false
     }
   }
 
   async function reroll() {
-    await runRerollPreflight(() => rerollNav({ sendChatMain, closeMenu: closeChatMenu }))
+    await runRerollPreflight((target) =>
+      rerollNav({
+        sendChatMain: (continued, regenerateMessageId) =>
+          sendChatMain(continued, regenerateMessageId, false, undefined, target),
+        closeMenu: closeChatMenu,
+      }),
+    )
   }
 
   async function unReroll() {
-    await runRerollPreflight(unRerollNav)
+    await runRerollPreflight(() => unRerollNav())
   }
 
   async function newReroll() {
-    await runRerollPreflight(() => newRerollNav({ sendChatMain, closeMenu: closeChatMenu }))
+    await runRerollPreflight((target) =>
+      newRerollNav({
+        sendChatMain: (continued, regenerateMessageId) =>
+          sendChatMain(continued, regenerateMessageId, false, undefined, target),
+        closeMenu: closeChatMenu,
+      }),
+    )
   }
 
   async function selectRerollCandidate(index: number) {
@@ -1219,11 +1240,12 @@
     composerOperation?: ComposerOperation,
     expectedTarget?: ActiveChatTarget | null,
   ): Promise<boolean> {
-    if (expectedTarget !== undefined && !isActiveChatTargetFresh(expectedTarget)) {
+    const generationTarget = expectedTarget === undefined ? captureActiveChatTarget() : expectedTarget
+    if (!generationTarget || !isActiveChatTargetFresh(generationTarget)) {
       return false
     }
-    const currentCharacter = getDatabase().characters[$selectedCharID]
-    const currentChatRecord = currentCharacter?.chats[currentCharacter.chatPage]
+    const currentCharacter = getDatabase().characters[generationTarget.selectedCharID]
+    const currentChatRecord = currentCharacter?.chats[generationTarget.chatPage]
     if (!currentChatRecord) {
       return false
     }
@@ -1238,18 +1260,20 @@
         signal: abortController.signal,
         continue: continued,
         regenerateMessageId,
-        ...(expectedTarget !== undefined ? { expectedTarget } : {}),
+        expectedTarget: generationTarget,
       })
-      if (expectedTarget !== undefined && !isActiveChatTargetFresh(expectedTarget)) {
-        return false
-      }
+      if (!ok) return false
+      // Durable generation may finish after navigation. Its target chat has
+      // already persisted successfully, but live-selection side effects must
+      // not adopt the newly opened chat as their owner.
+      if (!isActiveChatTargetFresh(generationTarget)) return true
       if (
         !applySuccessfulSendChatEffects(
-          { sendSucceeded: ok, previousLength, confirmBoundary },
+          { sendSucceeded: true, previousLength, confirmBoundary },
           {
             clearRerollBuffer,
-            recordGeneratedReroll,
-            markRerollChar,
+            recordGeneratedReroll: (length) => recordGeneratedReroll(length, generationTarget),
+            markRerollChar: () => markRerollChar(generationTarget),
             playSendSound: playSendSoundIfEnabled,
           },
         )

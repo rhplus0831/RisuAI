@@ -1,3 +1,4 @@
+import { get } from 'svelte/store'
 import {
   getDatabase,
   type character,
@@ -6,6 +7,7 @@ import {
   type MessageGenerationInfo,
   type MessagePresetInfo,
 } from '../storage/database.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { safeStructuredClone } from '../polyfill'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { getInlayAssetMetadata, getServerInlayAssetId } from './files/inlays'
@@ -113,6 +115,11 @@ export function findGeneratedAssistantMessage(chat: Chat, generationId: string):
     }
   }
   return undefined
+}
+
+function activeChatId(): string | undefined {
+  const character = getDatabase().characters?.[get(selectedCharID)]
+  return character?.chats?.[character.chatPage]?.id
 }
 
 /**
@@ -787,7 +794,7 @@ export async function applyServerBackedTerminal(args: {
   }
 
   const providerAlternates = args.terminal.done?.alternates
-  if (Array.isArray(providerAlternates) && providerAlternates.length > 0) {
+  if (Array.isArray(providerAlternates) && providerAlternates.length > 0 && activeChatId() === terminalTarget.chatId) {
     withTrustedResourceWrite(() => {
       const resolution = resolveServerBackedLiveChat({
         selectedChar: args.selectedChar,

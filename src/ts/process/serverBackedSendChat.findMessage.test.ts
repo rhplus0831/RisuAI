@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
+import { selectedCharID } from '../stores.svelte'
 
 // Terminal assistant lookup scans newest-to-oldest without copying the transcript.
 
@@ -236,12 +237,14 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     hydrationMock.hydrate.mockReset()
     hydrationMock.hydrate.mockResolvedValue(undefined)
     queuedGenerationPersistences.set([])
+    selectedCharID.set(0)
   })
 
   afterEach(() => {
     resetRerollNavigation()
     queuedGenerationPersistences.set([])
     testDatabaseState.db = originalDb
+    selectedCharID.set(-1)
   })
 
   it('applies terminal final text without a nested patch to the stable chat id after chat reorder', async () => {
@@ -398,6 +401,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
 
   it('seeds live reroll navigation from terminal multi-generation choices', async () => {
     const { char, target } = seedReorderedTerminalChats()
+    char.chatPage = 1
     target.message[0].data = 'primary reply'
 
     const result = await applyServerBackedTerminal({
@@ -430,6 +434,33 @@ describe('server-backed terminal stable chat target (R-02)', () => {
       'gen-stable:alternate:2',
     ])
     expect(getRerollId()).toBe(0)
+  })
+
+  it('does not seed terminal alternates after another chat becomes active', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message[0].data = 'primary reply'
+
+    await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          result: 'primary reply',
+          generationId: 'gen-stable',
+          alternates: ['other reply'],
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 1,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(char.chats[char.chatPage].id).toBe('chat-stale-index')
+    expect(getRerollBuffer()).toEqual([])
+    expect(getRerollId()).toBe(-1)
   })
 
   it('applies terminal post-generation patches to the stable chat id after chat reorder', async () => {

@@ -1785,6 +1785,32 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(secondTextarea.value).toBe('Visible second chat draft')
   })
 
+  it('does not apply reroll completion effects to a newly opened chat', async () => {
+    seedDatabase([2, 2])
+    getResourceDatabase().sideMenuRerollButton = true
+    const send = createDeferred<boolean>()
+    loadPageMocks.sendChat.mockReturnValueOnce(send.promise)
+    vi.mocked(rerollNavigation.reroll).mockImplementationOnce(async (deps) => {
+      await deps.sendChatMain(false, 'message-1')
+    })
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    await clickSideMenuRerollItem()
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
+    expect(loadPageMocks.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
+    )
+
+    switchToCharacterChat(1)
+    await settle()
+    send.resolve(true)
+    await settle()
+
+    expect(loadPageMocks.applySuccessfulSendChatEffects).not.toHaveBeenCalled()
+  })
+
   it('does not clear newer typed text when continue waits for hydration', async () => {
     seedDatabase([2])
     const hydration = createDeferred<void>()

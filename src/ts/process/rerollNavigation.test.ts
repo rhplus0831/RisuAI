@@ -26,6 +26,7 @@ const prerollSpies = vi.hoisted(() => ({
 vi.mock('./prereroll', () => prerollSpies)
 
 import { selectedCharID } from '../stores.svelte'
+import type { ActiveChatTarget } from '../chatCommands'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import {
@@ -62,6 +63,16 @@ function setupChat(message: Msg[], charIndex = 0): void {
     ],
   }
   selectedCharID.set(charIndex)
+}
+
+function targetFor(charIndex = 0): ActiveChatTarget {
+  const character = testDatabaseState.db.characters[charIndex]
+  return {
+    selectedCharID: charIndex,
+    chatPage: character.chatPage,
+    characterId: character.chaId,
+    chatId: character.chats[character.chatPage].id,
+  }
 }
 
 function tailUids(): string[] {
@@ -410,15 +421,43 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
 describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
   it('records a newly generated tail as the newest candidate', () => {
     setupChat([{ role: 'user', data: 'hi', chatId: 'u1' }])
-    markRerollChar()
+    const target = targetFor()
+    markRerollChar(target)
     testDatabaseState.db.characters[0].chats[0].message.push({
       role: 'char',
       data: 'A1',
       chatId: 'g1',
     } as never)
-    recordGeneratedReroll(1)
+    recordGeneratedReroll(1, target)
     expect(bufferUids()).toEqual([['g1']])
     expect(getRerollId()).toBe(0)
+  })
+
+  it('keeps a cross-chat regenerate buffer owned by its origin chat', async () => {
+    setupChat([
+      { role: 'user', data: 'hi', chatId: 'u1' },
+      { role: 'char', data: 'old reply', chatId: 'g-old' },
+    ])
+    const originTarget = targetFor()
+    const sendChatMain = vi.fn(async () => {
+      selectedCharID.set(1)
+      testDatabaseState.db.characters[0].chats[0].message.push({
+        role: 'char',
+        data: 'new reply',
+        chatId: 'g-new',
+      } as never)
+      recordGeneratedReroll(1, originTarget)
+      markRerollChar(originTarget)
+      return true
+    })
+
+    await reroll({ sendChatMain, closeMenu: vi.fn() })
+
+    expect(bufferUids()).toEqual([['g-old'], ['g-new']])
+    await unReroll()
+    expect(getRerollBuffer()).toEqual([])
+    expect(testDatabaseState.db.characters[1].chats[0].message).toEqual([])
+    expect(commandSpies.dispatchReplaceTailMessagesScoped).not.toHaveBeenCalled()
   })
 
   it('clearRerollBuffer drops the swipe history (send/continue confirm boundary)', () => {
@@ -507,7 +546,7 @@ describe('reroll clone cost (Phase 3 cheap wins)', () => {
     } as never)
     const previousLength = transcript.length
 
-    const instrumented = withCloneInstrumentation(() => recordGeneratedReroll(previousLength))
+    const instrumented = withCloneInstrumentation(() => recordGeneratedReroll(previousLength, targetFor()))
 
     expect(
       getRerollBuffer()
