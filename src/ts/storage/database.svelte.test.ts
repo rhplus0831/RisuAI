@@ -4781,9 +4781,9 @@ describe('durable preset mutation projections', () => {
         throw new Error('mutation id generation failed')
       })
 
-      expect(() =>
+      await expect(
         createModelPreset(makePreset('model-stage-failure', 'Must Roll Back') as unknown as ModelPreset),
-      ).not.toThrow()
+      ).resolves.toEqual({ status: 'failed' })
 
       expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-existing'])
       expect(await listPendingMutations()).toEqual([])

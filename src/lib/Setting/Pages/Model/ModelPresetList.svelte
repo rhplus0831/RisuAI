@@ -15,6 +15,7 @@
     selectModelPreset,
     updateModelPreset,
     type ModelPreset,
+    type PresetMutationOutcome,
     type PromptPreset,
   } from 'src/ts/storage/database.svelte'
 
@@ -29,6 +30,11 @@
   let selectionOperation = 0
   let selectionPendingIndex = $state<number | null>(null)
   let selectionError = $state('')
+  let rowMutationOperation = 0
+  let rowMutationStates = $state<Record<string, { operation: number; status: 'saving' | 'queued' }>>({})
+  let rowMutationErrors = $state<Record<string, string>>({})
+  let latestRowMutationState = $derived(Object.values(rowMutationStates).at(-1))
+  let latestRowMutationError = $derived(Object.values(rowMutationErrors).at(-1) ?? '')
 
   let presets = $derived(getDatabase().modelPresets ?? [])
   let selectedIndex = $derived(getDatabase().modelPresetsId ?? -1)
@@ -56,17 +62,68 @@
     return name
   }
 
+  function presetMutationKey(preset: ModelPreset | undefined, index: number): string {
+    return `model:${preset?.id ?? `index:${index}`}`
+  }
+
+  function observePresetRowMutation(key: string, outcome: Promise<PresetMutationOutcome> | undefined): void {
+    if (!outcome) return
+    const operation = ++rowMutationOperation
+    rowMutationStates[key] = { operation, status: 'saving' }
+    delete rowMutationErrors[key]
+    void outcome.then(
+      (result) => settlePresetRowMutation(key, operation, result),
+      () => showPresetRowMutationFailure(key, operation),
+    )
+  }
+
+  function settlePresetRowMutation(key: string, operation: number, outcome: PresetMutationOutcome): void {
+    if (rowMutationStates[key]?.operation !== operation) return
+    if (outcome.status === 'accepted') {
+      delete rowMutationStates[key]
+      return
+    }
+    if (outcome.status === 'failed') {
+      showPresetRowMutationFailure(key, operation)
+      return
+    }
+
+    rowMutationStates[key] = { operation, status: 'queued' }
+    alertNormal(language.presetMutationQueued)
+    void outcome.settlement.then(
+      (status) => {
+        if (rowMutationStates[key]?.operation !== operation) return
+        if (status === 'accepted') delete rowMutationStates[key]
+        else showPresetRowMutationFailure(key, operation)
+      },
+      () => showPresetRowMutationFailure(key, operation),
+    )
+  }
+
+  function showPresetRowMutationFailure(key: string, operation: number): void {
+    if (rowMutationStates[key]?.operation !== operation) return
+    delete rowMutationStates[key]
+    rowMutationErrors[key] = language.presetMutationFailed
+    alertError(language.presetMutationFailed)
+  }
+
   function createPresetFromCurrent(): void {
     const name = consumeNewPresetName()
-    createModelPreset(createModelRoleBindingPresetSnapshot(getDatabase(), name))
+    observePresetRowMutation(
+      'model:create-current',
+      createModelPreset(createModelRoleBindingPresetSnapshot(getDatabase(), name)),
+    )
   }
 
   function createEmptyPreset(): void {
     const name = consumeNewPresetName()
-    createModelPreset({
-      name,
-      modelRoleProfiles: cloneJsonValue(createEmptyPresetRoleProfiles()),
-    })
+    observePresetRowMutation(
+      'model:create-empty',
+      createModelPreset({
+        name,
+        modelRoleProfiles: cloneJsonValue(createEmptyPresetRoleProfiles()),
+      }),
+    )
   }
 
   function createEmptyPresetRoleProfiles() {
@@ -84,7 +141,7 @@
     if (!preset) return
     const nextName = name.trim() || presetName(preset, index)
     if ((preset.name ?? '') === nextName) return
-    updateModelPreset(index, { name: nextName })
+    observePresetRowMutation(presetMutationKey(preset, index), updateModelPreset(index, { name: nextName }))
   }
 
   function duplicatePreset(index: number): void {
@@ -93,14 +150,14 @@
     const copy = cloneJsonValue(preset)
     delete copy.id
     copy.name = language.modelProfiles.copyName(presetName(preset, index))
-    createModelPreset(copy)
+    observePresetRowMutation(presetMutationKey(preset, index), createModelPreset(copy))
   }
 
   function removePreset(index: number): void {
     const preset = presets[index]
     if (!preset || presets.length <= 1) return
     if (!window.confirm(language.modelProfiles.deleteModelPresetConfirm(presetName(preset, index)))) return
-    deleteModelPreset(index, 0)
+    observePresetRowMutation(presetMutationKey(preset, index), deleteModelPreset(index, 0))
   }
 
   async function applyPreset(index: number): Promise<void> {
@@ -143,12 +200,12 @@
 
   function movePresetUp(index: number): void {
     if (index <= 0) return
-    reorderModelPresets(index, index - 1)
+    observePresetRowMutation(presetMutationKey(presets[index], index), reorderModelPresets(index, index - 1))
   }
 
   function movePresetDown(index: number): void {
     if (index >= presets.length - 1) return
-    reorderModelPresets(index, index + 2)
+    observePresetRowMutation(presetMutationKey(presets[index], index), reorderModelPresets(index, index + 2))
   }
 
   function hasPresetField(preset: ModelPreset | PromptPreset | undefined, field: string): boolean {
@@ -290,6 +347,17 @@
                   onchange={(event) => renamePreset(index, event.currentTarget.value)}
                   fullwidth />
                 <span class="mt-1 block text-xs text-textcolor2">{preset.id ?? language.none}</span>
+                {#if rowMutationStates[presetMutationKey(preset, index)]}
+                  <span data-risu-preset-row-mutation-status role="status" class="mt-1 block text-xs text-textcolor2">
+                    {rowMutationStates[presetMutationKey(preset, index)].status === 'queued'
+                      ? language.presetMutationQueued
+                      : language.presetMutationSaving}
+                  </span>
+                {:else if rowMutationErrors[presetMutationKey(preset, index)]}
+                  <span data-risu-preset-row-mutation-status role="alert" class="mt-1 block text-xs text-draculared">
+                    {rowMutationErrors[presetMutationKey(preset, index)]}
+                  </span>
+                {/if}
               </td>
               <td class="px-3 py-3">{chatRoleSummary(preset)}</td>
               <td class="px-3 py-3 text-textcolor2">{roleBindingSummary(preset)}</td>
@@ -364,5 +432,14 @@
     </span>
   {:else if selectionError}
     <span data-risu-preset-selection-status role="alert" class="text-sm text-draculared">{selectionError}</span>
+  {/if}
+  {#if latestRowMutationState}
+    <span data-risu-preset-mutation-status role="status" class="text-sm text-textcolor2">
+      {latestRowMutationState.status === 'queued' ? language.presetMutationQueued : language.presetMutationSaving}
+    </span>
+  {:else if latestRowMutationError}
+    <span data-risu-preset-mutation-status role="alert" class="text-sm text-draculared">
+      {latestRowMutationError}
+    </span>
   {/if}
 </section>

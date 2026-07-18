@@ -5477,8 +5477,8 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
   })
 }
 
-export function createModelPreset(preset: ModelPreset) {
-  withTrustedResourceWrite(() => {
+export function createModelPreset(preset: ModelPreset): Promise<PresetMutationOutcome> {
+  return withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
     flushPendingSplitPresetPatchesForKind('model')
@@ -5510,7 +5510,7 @@ export function createModelPreset(preset: ModelPreset) {
       [presetRowProjectionTarget(entry)],
       splitPresetMutationKey('model', newPreset.id),
     )
-    dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
+    return dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
       createModelPresetCommand({
         baseRevision,
         preset: safeStructuredClone(attemptedPreset) as unknown as ModelPresetSnapshot,
@@ -5545,11 +5545,11 @@ export function updateModelPreset(id: number, patch: Partial<ModelPreset>): Prom
   })
 }
 
-export function deleteModelPreset(id: number, selectIndex = 0) {
-  withTrustedResourceWrite(() => {
+export function deleteModelPreset(id: number, selectIndex = 0): Promise<PresetMutationOutcome> {
+  return withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
-    if (db.modelPresets.length <= 1) return
+    if (db.modelPresets.length <= 1) return Promise.resolve({ status: 'failed' })
     const modelPresetId = db.modelPresets[id]?.id
     const previousPreset = db.modelPresets[id] ? safeStructuredClone(db.modelPresets[id]) : null
     const previousSelectedId = splitPresetSelectedId(db, 'model')
@@ -5559,7 +5559,7 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
         ? db.modelPresets.find((preset) => preset.id !== modelPresetId)
         : db.modelPresets[selectIndex]
     const selectModelPresetId = nextSelectedPreset?.id
-    if (!modelPresetId || !previousPreset) return
+    if (!modelPresetId || !previousPreset) return Promise.resolve({ status: 'failed' })
     flushPendingSplitPresetPatches()
     flushRegisteredPendingBridgePatch('settings', {})
     const deleteIntent: DurableMutationIntent = {
@@ -5627,7 +5627,7 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
         selectionRollback.attemptedSettings,
       )
     }
-    dispatchPresetRowMutation(
+    return dispatchPresetRowMutation(
       prepared,
       attempt,
       (baseRevision) =>
@@ -5699,13 +5699,13 @@ export function selectModelPreset(id: number): Promise<PresetMutationOutcome> {
   })
 }
 
-export function reorderModelPresets(fromIndex: number, toIndex: number) {
-  withTrustedResourceWrite(() => {
+export function reorderModelPresets(fromIndex: number, toIndex: number): Promise<PresetMutationOutcome> {
+  return withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
-    if (fromIndex === toIndex) return
+    if (fromIndex === toIndex) return Promise.resolve({ status: 'accepted' })
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.modelPresets.length || toIndex > db.modelPresets.length) {
-      return
+      return Promise.resolve({ status: 'failed' })
     }
     flushPendingSplitPresetPatchesForKind('model')
     const dependencyKeys = activeSplitPresetOwnerMutationKeys(['model'])
@@ -5715,7 +5715,7 @@ export function reorderModelPresets(fromIndex: number, toIndex: number) {
     const previousSelectedPresetId = splitPresetSelectedId(db, 'model')
     const modelPresets = [...db.modelPresets]
     const movedItem = modelPresets.splice(fromIndex, 1)[0]
-    if (!movedItem) return
+    if (!movedItem) return Promise.resolve({ status: 'failed' })
     const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
     modelPresets.splice(adjustedToIndex, 0, movedItem)
     db.modelPresetsId = movedSelectedIndex(db.modelPresetsId, fromIndex, adjustedToIndex)
@@ -5743,7 +5743,7 @@ export function reorderModelPresets(fromIndex: number, toIndex: number) {
       ],
     }
     const prepared = preparePresetMutation(durableIntent, [presetOrderProjectionTarget('model')])
-    dispatchPresetReorderMutation(
+    return dispatchPresetReorderMutation(
       prepared,
       attempt,
       (baseRevision) =>
@@ -5760,8 +5760,8 @@ export function reorderModelPresets(fromIndex: number, toIndex: number) {
   })
 }
 
-export function createPromptPreset(preset: PromptPreset) {
-  withTrustedResourceWrite(() => {
+export function createPromptPreset(preset: PromptPreset): Promise<PresetMutationOutcome> {
+  return withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
     flushPendingSplitPresetPatchesForKind('prompt')
@@ -5793,7 +5793,7 @@ export function createPromptPreset(preset: PromptPreset) {
       [presetRowProjectionTarget(entry)],
       splitPresetMutationKey('prompt', newPreset.id),
     )
-    dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
+    return dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
       createPromptPresetCommand({
         baseRevision,
         preset: safeStructuredClone(attemptedPreset) as unknown as PromptPresetSnapshot,
@@ -6059,11 +6059,11 @@ function jsonSnapshot(value: unknown): string {
   return snapshot === undefined ? '__undefined__' : snapshot
 }
 
-export function deletePromptPreset(id: number, selectIndex = 0) {
-  withTrustedResourceWrite(() => {
+export function deletePromptPreset(id: number, selectIndex = 0): Promise<PresetMutationOutcome> {
+  return withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
-    if (db.promptPresets.length <= 1) return
+    if (db.promptPresets.length <= 1) return Promise.resolve({ status: 'failed' })
     const promptPresetId = db.promptPresets[id]?.id
     const previousPreset = db.promptPresets[id] ? safeStructuredClone(db.promptPresets[id]) : null
     const previousSelectedId = splitPresetSelectedId(db, 'prompt')
@@ -6073,7 +6073,7 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
         ? db.promptPresets.find((preset) => preset.id !== promptPresetId)
         : db.promptPresets[selectIndex]
     const selectPromptPresetId = nextSelectedPreset?.id
-    if (!promptPresetId || !previousPreset) return
+    if (!promptPresetId || !previousPreset) return Promise.resolve({ status: 'failed' })
     flushPendingPromptTemplatePatches()
     flushPendingSplitPresetPatches()
     flushRegisteredPendingBridgePatch('settings', {})
@@ -6142,7 +6142,7 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
         selectionRollback.attemptedSettings,
       )
     }
-    dispatchPresetRowMutation(
+    return dispatchPresetRowMutation(
       prepared,
       attempt,
       (baseRevision) =>
@@ -6223,20 +6223,20 @@ export function selectPromptPreset(id: number): Promise<PresetMutationOutcome> {
   })
 }
 
-export function reorderPromptPresets(fromIndex: number, toIndex: number) {
-  withTrustedResourceWrite(() => {
+export function reorderPromptPresets(fromIndex: number, toIndex: number): Promise<PresetMutationOutcome> {
+  return withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
-    if (fromIndex === toIndex) return
+    if (fromIndex === toIndex) return Promise.resolve({ status: 'accepted' })
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.promptPresets.length || toIndex > db.promptPresets.length) {
-      return
+      return Promise.resolve({ status: 'failed' })
     }
     flushPendingSplitPresetPatchesForKind('prompt')
     const dependencyKeys = activeSplitPresetOwnerMutationKeys(['prompt'])
     const previousPresetIds = splitPresetIds(db.promptPresets)
     const promptPresets = [...db.promptPresets]
     const movedItem = promptPresets.splice(fromIndex, 1)[0]
-    if (!movedItem) return
+    if (!movedItem) return Promise.resolve({ status: 'failed' })
     const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
     promptPresets.splice(adjustedToIndex, 0, movedItem)
     db.promptPresetsId = movedSelectedIndex(db.promptPresetsId, fromIndex, adjustedToIndex)
@@ -6255,7 +6255,7 @@ export function reorderPromptPresets(fromIndex: number, toIndex: number) {
       ],
     }
     const prepared = preparePresetMutation(durableIntent, [presetOrderProjectionTarget('prompt')])
-    dispatchPresetReorderMutation(prepared, attempt, (baseRevision) =>
+    return dispatchPresetReorderMutation(prepared, attempt, (baseRevision) =>
       reorderPromptPresetsCommand({
         baseRevision,
         promptPresetIds: [...promptPresetIds],

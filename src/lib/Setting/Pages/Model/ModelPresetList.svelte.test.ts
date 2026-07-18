@@ -10,6 +10,18 @@ const commandSpies = vi.hoisted(() => ({
   reorderModelPresetsCommand: vi.fn(),
 }))
 
+const mutationSpies = vi.hoisted(() => ({
+  createModelPreset: vi.fn(),
+  deleteModelPreset: vi.fn(),
+  reorderModelPresets: vi.fn(),
+  updateModelPreset: vi.fn(),
+}))
+
+const alertSpies = vi.hoisted(() => ({
+  alertError: vi.fn(),
+  alertNormal: vi.fn(),
+}))
+
 vi.mock('src/ts/server/commands', () => ({
   runServerCommand: commandSpies.runServerCommand,
   createModelPresetCommand: commandSpies.createModelPresetCommand,
@@ -30,14 +42,46 @@ vi.mock('src/ts/process/modules', () => ({
   readModule: vi.fn(),
   refreshModules: vi.fn(),
 }))
+vi.mock('src/ts/storage/database.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/storage/database.svelte')>()),
+  ...mutationSpies,
+}))
+vi.mock('src/ts/alert', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/alert')>()),
+  ...alertSpies,
+}))
 
 import ModelPresetList from './ModelPresetList.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
 let target: HTMLElement
 let component: MountedComponent | undefined
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
+async function settle(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await tick()
+}
+
+function buttonWithText(text: string, index = 0): HTMLButtonElement {
+  const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter((button) =>
+    button.textContent?.includes(text),
+  )
+  const button = buttons[index]
+  if (!button) throw new Error(`Button not found: ${text}`)
+  return button
+}
 
 beforeEach(() => {
   target = document.createElement('div')
@@ -65,6 +109,11 @@ beforeEach(() => {
   for (const spy of Object.values(commandSpies)) {
     spy.mockReset()
   }
+  for (const spy of Object.values(mutationSpies)) {
+    spy.mockReset().mockResolvedValue({ status: 'accepted' })
+  }
+  alertSpies.alertError.mockReset()
+  alertSpies.alertNormal.mockReset()
 })
 
 afterEach(() => {
@@ -74,6 +123,7 @@ afterEach(() => {
   }
   target.remove()
   setDatabaseLite({} as any)
+  vi.unstubAllGlobals()
 })
 
 describe('ModelPresetList', () => {
@@ -93,5 +143,72 @@ describe('ModelPresetList', () => {
     expect(afterApply).not.toHaveBeenCalled()
     expect(commandSpies.selectModelPresetCommand).not.toHaveBeenCalled()
     expect(getDatabase().modelPresetsId).toBe(0)
+  })
+
+  it.each([
+    [
+      'rename',
+      () => {
+        mutationSpies.updateModelPreset.mockResolvedValueOnce({ status: 'failed' })
+        const input = target.querySelector<HTMLInputElement>('tbody input')
+        if (!input) throw new Error('Preset name input not found')
+        input.value = 'Rejected rename'
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      },
+    ],
+    [
+      'delete',
+      () => {
+        mutationSpies.deleteModelPreset.mockResolvedValueOnce({ status: 'failed' })
+        vi.stubGlobal(
+          'confirm',
+          vi.fn(() => true),
+        )
+        buttonWithText(language.modelProfiles.delete).click()
+      },
+    ],
+    [
+      'reorder',
+      () => {
+        mutationSpies.reorderModelPresets.mockResolvedValueOnce({ status: 'failed' })
+        buttonWithText(language.modelProfiles.moveDown).click()
+      },
+    ],
+  ])('surfaces a failed model-preset %s', async (_action, runAction) => {
+    component = mount(ModelPresetList, { target })
+    await tick()
+
+    runAction()
+    await settle()
+
+    expect(target.querySelector('[data-risu-preset-mutation-status]')?.textContent).toContain(
+      language.presetMutationFailed,
+    )
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.presetMutationFailed)
+  })
+
+  it('reports a queued create and a later replay discard', async () => {
+    const settlement = deferred<'accepted' | 'failed'>()
+    mutationSpies.createModelPreset.mockResolvedValueOnce({
+      status: 'queued',
+      settlement: settlement.promise,
+    })
+    component = mount(ModelPresetList, { target })
+    await tick()
+
+    buttonWithText(language.modelProfiles.saveCurrentRolesAsPreset).click()
+    await settle()
+
+    expect(target.querySelector('[data-risu-preset-mutation-status]')?.textContent).toContain(
+      language.presetMutationQueued,
+    )
+    expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.presetMutationQueued)
+
+    settlement.resolve('failed')
+    await settle()
+    expect(target.querySelector('[data-risu-preset-mutation-status]')?.textContent).toContain(
+      language.presetMutationFailed,
+    )
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.presetMutationFailed)
   })
 })

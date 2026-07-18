@@ -16,6 +16,7 @@
     updateModelPreset,
     updatePromptPreset,
     type ModelPreset,
+    type PresetMutationOutcome,
     type PromptPreset,
     type botPreset,
   } from '../../ts/storage/database.svelte'
@@ -53,6 +54,11 @@
   let selectionOperation = 0
   let selectionPendingKey = $state<string | null>(null)
   let selectionError = $state('')
+  let rowMutationOperation = 0
+  let rowMutationStates = $state<Record<string, { operation: number; status: 'saving' | 'queued' }>>({})
+  let rowMutationErrors = $state<Record<string, string>>({})
+  let latestRowMutationState = $derived(Object.values(rowMutationStates).at(-1))
+  let latestRowMutationError = $derived(Object.values(rowMutationErrors).at(-1) ?? '')
 
   interface Props {
     close?: () => void
@@ -190,9 +196,53 @@
     return presetKind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets
   }
 
+  function observePresetRowMutation(key: string, outcome: Promise<PresetMutationOutcome> | undefined): void {
+    if (!outcome) return
+    const operation = ++rowMutationOperation
+    rowMutationStates[key] = { operation, status: 'saving' }
+    delete rowMutationErrors[key]
+    void outcome.then(
+      (result) => settlePresetRowMutation(key, operation, result),
+      () => showPresetRowMutationFailure(key, operation),
+    )
+  }
+
+  function settlePresetRowMutation(key: string, operation: number, outcome: PresetMutationOutcome): void {
+    if (rowMutationStates[key]?.operation !== operation) return
+    if (outcome.status === 'accepted') {
+      delete rowMutationStates[key]
+      return
+    }
+    if (outcome.status === 'failed') {
+      showPresetRowMutationFailure(key, operation)
+      return
+    }
+
+    rowMutationStates[key] = { operation, status: 'queued' }
+    alertNormal(language.presetMutationQueued)
+    void outcome.settlement.then(
+      (status) => {
+        if (rowMutationStates[key]?.operation !== operation) return
+        if (status === 'accepted') delete rowMutationStates[key]
+        else showPresetRowMutationFailure(key, operation)
+      },
+      () => showPresetRowMutationFailure(key, operation),
+    )
+  }
+
+  function showPresetRowMutationFailure(key: string, operation: number): void {
+    if (rowMutationStates[key]?.operation !== operation) return
+    delete rowMutationStates[key]
+    rowMutationErrors[key] = language.presetMutationFailed
+    alertError(language.presetMutationFailed)
+  }
+
   function movePreset(presetKind: ModernPresetKind, fromIndex: number, toIndex: number) {
-    if (presetKind === 'prompt') reorderPromptPresets(fromIndex, toIndex)
-    else reorderModelPresets(fromIndex, toIndex)
+    const preset = presetsForKind(presetKind)[fromIndex]
+    const key = `${presetKind}:${nonEmptyId(preset?.id) ?? `index:${fromIndex}`}`
+    const outcome =
+      presetKind === 'prompt' ? reorderPromptPresets(fromIndex, toIndex) : reorderModelPresets(fromIndex, toIndex)
+    observePresetRowMutation(key, outcome)
   }
 
   function handlePresetDrop(targetPresetId: string | null | undefined, e: DragEvent) {
@@ -222,10 +272,10 @@
     const preset = safeStructuredClone(prebuiltPresets.OAI2)
     if (kind === 'prompt') {
       preset.name = 'New Prompt Preset'
-      createPromptPreset(preset)
+      observePresetRowMutation('prompt:create', createPromptPreset(preset))
     } else {
       preset.name = 'New Model Preset'
-      createModelPreset(preset)
+      observePresetRowMutation('model:create', createModelPreset(preset))
     }
   }
 
@@ -244,8 +294,9 @@
     const liveIndex = presetId ? currentPresets.findIndex((candidate) => candidate?.id === presetId) : index
     if (liveIndex < 0 || (!presetId && currentPresets[liveIndex] !== preset)) return
 
-    if (targetKind === 'prompt') deletePromptPreset(liveIndex, 0)
-    else deleteModelPreset(liveIndex, 0)
+    const key = `${targetKind}:${presetId ?? `index:${liveIndex}`}`
+    const outcome = targetKind === 'prompt' ? deletePromptPreset(liveIndex, 0) : deleteModelPreset(liveIndex, 0)
+    observePresetRowMutation(key, outcome)
   }
 
   function extractLegacy(index: number, mode: 'all' | 'model' | 'prompt') {
@@ -454,6 +505,17 @@
             </button>
           </div>
         </div>
+        {#if rowMutationStates[presetDraftKey(preset, i)]}
+          <span data-risu-preset-row-mutation-status role="status" class="block px-2 text-xs text-textcolor2">
+            {rowMutationStates[presetDraftKey(preset, i)].status === 'queued'
+              ? language.presetMutationQueued
+              : language.presetMutationSaving}
+          </span>
+        {:else if rowMutationErrors[presetDraftKey(preset, i)]}
+          <span data-risu-preset-row-mutation-status role="alert" class="block px-2 text-xs text-draculared">
+            {rowMutationErrors[presetDraftKey(preset, i)]}
+          </span>
+        {/if}
       {/each}
 
       <div
@@ -510,6 +572,15 @@
         </span>
       {:else if selectionError}
         <span data-risu-preset-selection-status role="alert" class="text-draculared text-sm">{selectionError}</span>
+      {/if}
+      {#if latestRowMutationState}
+        <span data-risu-preset-mutation-status role="status" class="text-textcolor2 text-sm">
+          {latestRowMutationState.status === 'queued' ? language.presetMutationQueued : language.presetMutationSaving}
+        </span>
+      {:else if latestRowMutationError}
+        <span data-risu-preset-mutation-status role="alert" class="text-draculared text-sm">
+          {latestRowMutationError}
+        </span>
       {/if}
     {/if}
   </div>

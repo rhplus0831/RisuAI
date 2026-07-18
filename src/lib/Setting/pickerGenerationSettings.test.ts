@@ -474,6 +474,8 @@ beforeEach(() => {
   document.body.appendChild(target)
   vi.clearAllMocks()
   alertSpies.alertConfirm.mockReset()
+  presetSpies.reorderModelPresets.mockResolvedValue({ status: 'accepted' })
+  presetSpies.reorderPromptPresets.mockResolvedValue({ status: 'accepted' })
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
   seedDb()
@@ -887,6 +889,28 @@ describe('generation settings picker mode', () => {
     dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
 
     expect(presetSpies.reorderPromptPresets).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a rejected prompt-preset reorder', async () => {
+    const presetC = {
+      ...getDatabase().promptPresets[0],
+      id: 'preset-c',
+      name: 'Preset C',
+    }
+    getDatabase().promptPresets.push(presetC)
+    presetSpies.reorderPromptPresets.mockResolvedValueOnce({ status: 'failed' })
+    mountPresetPicker('global')
+
+    const dataTransfer = createPresetDataTransfer()
+    dispatchPresetDragEvent(pickerRow('prompt', 'preset-a'), 'dragstart', dataTransfer)
+    const dropTargets = pickerRoot('prompt', 'global').querySelectorAll<HTMLElement>('[role="listitem"]')
+    dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
+    await settleModalFocus()
+
+    expect(target.querySelector('[data-risu-preset-mutation-status]')?.textContent).toContain(
+      language.presetMutationFailed,
+    )
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.presetMutationFailed)
   })
 
   it('saves preset rows to the active chat without calling global preset selection', async () => {
