@@ -519,6 +519,26 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
 })
 
 describe('OtherBotSettings Hypa preset import', () => {
+  it('shows and preserves the supported memory summarization model', async () => {
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [{ name: 'Memory summary', settings: { summarizationModel: 'memory' } }]
+
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const summaryModel = target.querySelector<HTMLSelectElement>(
+      `select[aria-label="${language.SuperMemory} ${language.model}"]`,
+    )
+    expect(summaryModel).toBeTruthy()
+    expect(Array.from(summaryModel!.options, (option) => [option.value, option.textContent])).toEqual([
+      ['subModel', language.submodel],
+      ['memory', language.modelRoles.roles.memory],
+    ])
+    expect(summaryModel!.value).toBe('memory')
+    expect(otherBotMocks.drafts.get('hypaV3Presets')?.value[0].settings.summarizationModel).toBe('memory')
+    expect(otherBotMocks.persistServerBackedSettingsPatch).not.toHaveBeenCalled()
+  })
+
   it('names every preset toolbar action for its target', async () => {
     otherBotMocks.hypaEnabled = true
     otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]

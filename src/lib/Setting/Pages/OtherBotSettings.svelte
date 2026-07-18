@@ -1493,8 +1493,12 @@
         {@const settings = hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value].settings}
 
         <span class="text-textcolor">{language.SuperMemory} {language.model}</span>
-        <SelectInput className="mb-4" bind:value={settings.summarizationModel}>
+        <SelectInput
+          className="mb-4"
+          ariaLabel={`${language.SuperMemory} ${language.model}`}
+          bind:value={settings.summarizationModel}>
           <OptionInput value="subModel">{language.submodel}</OptionInput>
+          <OptionInput value="memory">{language.modelRoles.roles.memory}</OptionInput>
         </SelectInput>
         <span class="text-textcolor">{language.summarizationPrompt} <Help key="summarizationPrompt" /></span>
         <div class="mb-4">
