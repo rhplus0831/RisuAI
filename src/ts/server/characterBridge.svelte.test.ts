@@ -527,6 +527,60 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     stopWatcher()
   })
 
+  it('settles a terminally rejected profile edit in both the projection and mounted draft', async () => {
+    const failed = createDeferred<{ status: string; error?: string }>()
+    recorded.characterResults.push(failed.promise)
+    setupCharacter('Server baseline')
+    const stopWatcher = watchServerBackedCharacterProfile({ delayMs: DELAY })
+    flushSync()
+    const { draft, stop } = await createDraft(['name', 'desc'])
+
+    draft.value.name = 'Rejected draft name'
+    await flushAndSettle()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(getDatabase().characters[0].name).toBe('Rejected draft name')
+    expect(draft.value.name).toBe('Rejected draft name')
+
+    failed.resolve({ status: 'error', error: 'invalid profile' })
+    await flushAndSettle()
+    await flushAndSettle()
+
+    expect(getDatabase().characters[0].name).toBe('Server baseline')
+    expect(draft.value.name).toBe('Server baseline')
+    stop()
+    stopWatcher()
+  })
+
+  it('preserves and dispatches a newer draft value when an older profile attempt is rejected', async () => {
+    const first = createDeferred<{ status: string; error?: string }>()
+    recorded.characterResults.push(first.promise, Promise.resolve({ status: 'ok' }))
+    setupCharacter('Server baseline')
+    const stopWatcher = watchServerBackedCharacterProfile({ delayMs: DELAY })
+    flushSync()
+    const { draft, stop } = await createDraft(['name'])
+
+    draft.value.name = 'First attempt'
+    await flushAndSettle()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    draft.value.name = 'Newer attempt'
+    await flushAndSettle()
+
+    first.resolve({ status: 'error', error: 'older attempt rejected' })
+    await flushAndSettle()
+    await flushAndSettle()
+
+    expect(getDatabase().characters[0].name).toBe('Newer attempt')
+    expect(draft.value.name).toBe('Newer attempt')
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.characterUpdates.map((entry) => entry.patch)).toEqual([
+      { name: 'First attempt' },
+      { name: 'Newer attempt' },
+    ])
+    stop()
+    stopWatcher()
+  })
+
   it('leaves lastInteraction to the purpose-built character commands', async () => {
     setupCharacters([characterRow('char-1', 'Initial', { lastInteraction: 100 })])
     const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })

@@ -47,6 +47,7 @@ interface PendingCharacterAttempt {
 
 const pendingPatches = new Map<string, PendingCharacterPatch>()
 const pendingCharacterAttempts: PendingCharacterAttempt[] = []
+const activeCharacterDraftFailureSettlers = new Set<(attempt: PendingCharacterAttempt) => void>()
 let nextCharacterAttemptSequence = 0
 let suppressRollbackDispatch = false
 const activeCharacterProfileBaselineResetters = new Set<() => void>()
@@ -76,6 +77,38 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
   let previousSeedLocalMutationEpoch = -1
   const dirtyFields = new Set<keyof CharacterDraftValue & string>()
   const selectedCharMirror = $state({ value: get(selectedCharID) })
+  let draftInitialized = false
+  let previousDraftDispatchSnapshot = ''
+
+  const settleFailedAttempt = (attempt: PendingCharacterAttempt): void => {
+    if (draft.characterId !== attempt.characterId || dirtyFields.size === 0) return
+    const previousProfile = characterAttemptPreviousProfile(attempt)
+    if (!previousProfile) return
+    const previousValue = normalizeCharacterDraft(pickCharacterFields(previousProfile, keys))
+    let changed = false
+
+    for (const key of Object.keys(attempt.attempted)) {
+      if (!dirtyFields.has(key)) continue
+      if (snapshotJson(draft.value[key]) !== snapshotJson(attempt.attempted[key])) continue
+      draft.value[key] = cloneJsonValue(previousValue[key])
+      dirtyFields.delete(key)
+      changed = true
+    }
+
+    if (!changed) return
+    suppressDraftDispatch = true
+    draft.value = { ...draft.value }
+    previousDraftDispatchSnapshot = snapshotJson(draft.value)
+    previousServerSnapshot = snapshotJson({ characterId: draft.characterId, value: draft.value })
+    queueMicrotask(() => {
+      suppressDraftDispatch = false
+    })
+  }
+
+  $effect(() => {
+    activeCharacterDraftFailureSettlers.add(settleFailedAttempt)
+    return () => activeCharacterDraftFailureSettlers.delete(settleFailedAttempt)
+  })
 
   $effect(() => {
     const unsubscribe = selectedCharID.subscribe((value) => {
@@ -158,8 +191,6 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
     }),
   )
 
-  let draftInitialized = false
-  let previousDraftDispatchSnapshot = ''
   $effect(() => {
     const characterId = draft.characterId
     const draftSnapshot = snapshotJson(draft.value)
@@ -432,7 +463,9 @@ function registerCharacterAttempt(characterId: string, snapshot: CharacterStateS
 
 function rollbackCharacterAttempt(attempt: PendingCharacterAttempt): void {
   rollbackServerBackedCharacterProfile(attempt.previous)
+  for (const settleDraft of activeCharacterDraftFailureSettlers) settleDraft(attempt)
   rebaseLaterCharacterAttempts(attempt)
+  syncServerBackedCharacterProfileBaselines()
   clearCharacterAttempt(attempt)
 }
 
