@@ -1556,6 +1556,7 @@ export interface UpdateMessageCommandInput extends ChatCommandInput {
 
 export interface TranslateMessageCommandInput extends ChatCommandInput {
   messageId: string
+  jobId: string
 }
 
 export interface DeleteMessageCommandInput extends ChatCommandInput {
@@ -4992,11 +4993,12 @@ export async function updateMessageCommand(
 export async function translateMessageCommand(
   input: TranslateMessageCommandInput,
   signal?: AbortSignal | null,
-): Promise<ServerCommandResult<{ chatId: string; messageId: string; translation: MessageTranslation }>> {
+): Promise<ServerCommandResult<{ chatId: string; messageId: string; jobId: string; translation: MessageTranslation }>> {
   return requestCommandJson(`/messages/${encodeURIComponent(input.messageId)}/translate`, {
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
+      jobId: input.jobId,
     },
     signal,
     // Raw translation deliberately runs outside the global mutation queue;

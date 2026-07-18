@@ -1679,7 +1679,11 @@ describe('server command API adapter', () => {
           patch: { maxContext: 8_000 },
         }),
     })
-    const translation = await translateMessageCommand({ baseRevision: 10, messageId: 'message-1' })
+    const translation = await translateMessageCommand({
+      baseRevision: 10,
+      messageId: 'message-1',
+      jobId: 'translation-job-1',
+    })
 
     expect(translation).toMatchObject({ status: 'ok', revision: 11 })
     expect(reconciledRevisions).toEqual([11])
@@ -6139,6 +6143,7 @@ describe('server command API adapter', () => {
       },
       chatId: 'chat-a',
       messageId: 'msg-a',
+      jobId: 'translation-job-a',
       translation,
     }))
     vi.stubGlobal('fetch', commandFetch.fetch)
@@ -6147,6 +6152,7 @@ describe('server command API adapter', () => {
       translateMessageCommand({
         baseRevision: 1,
         messageId: 'msg-a',
+        jobId: 'translation-job-a',
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 2, messageId: 'msg-a', translation })
 
@@ -6165,6 +6171,7 @@ describe('server command API adapter', () => {
         method: 'POST',
         body: {
           baseRevision: 1,
+          jobId: 'translation-job-a',
         },
       },
     ])
@@ -6196,7 +6203,11 @@ describe('server command API adapter', () => {
       reconciled.push({ revision: commandEvent.revision, effects: [...localEffects.values()] })
     })
 
-    const pending = translateMessageCommand({ baseRevision: 1, messageId: 'msg-a' })
+    const pending = translateMessageCommand({
+      baseRevision: 1,
+      messageId: 'msg-a',
+      jobId: 'translation-job-a',
+    })
     await vi.waitFor(() => expect(commandFetch).toHaveBeenCalledTimes(1))
     expect(deferOwnServerCommandReconciliation(event)).toBe(true)
     expect(reconciled).toEqual([])
@@ -6207,6 +6218,7 @@ describe('server command API adapter', () => {
         event,
         chatId: 'chat-a',
         messageId: 'msg-a',
+        jobId: 'translation-job-a',
         translation,
       }),
     )

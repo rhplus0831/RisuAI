@@ -349,7 +349,11 @@ import {
 import { createDetachedAbort } from '../requestAbort.js'
 import { readLegacyStorageValue } from './legacyStorage.js'
 import { translateRawMessageData, type RawMessageTranslation } from '../translation/rawMessageTranslation.js'
-import type { MessageTranslationJobHandle, MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
+import {
+  MessageTranslationAlreadyRunningError,
+  type MessageTranslationJobHandle,
+  type MessageTranslationJobRegistry,
+} from '../messageTranslationJobs.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
   const writerSessionId = readActiveWriterSessionId(req)
@@ -459,6 +463,7 @@ function readLiveMessageSource(
 ): {
   chatId: string
   data: string
+  translation: unknown
 } {
   const resolved = resolveActiveMessageLocationById(db, messageId)
   if (resolved.ok === false) {
@@ -474,6 +479,7 @@ function readLiveMessageSource(
   return {
     chatId: resolved.location.chatId,
     data,
+    translation: structuredClone(resolved.location.message.translation),
   }
 }
 
@@ -1094,6 +1100,15 @@ interface MessageCommandBody {
   expectedData?: unknown
   expectedChatId?: unknown
   expectedGenerationId?: unknown
+  jobId?: unknown
+}
+
+function readOptionalMessageTranslationJobId(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > 128) {
+    throw new ValidationError('jobId must be a non-empty string of at most 128 characters when provided')
+  }
+  return value
 }
 
 function readOptionalMessageCondition(value: unknown, label: string, allowEmpty = false): string | undefined {
@@ -6425,8 +6440,13 @@ export function registerCommandRoutes(
       // revision across a provider request would block or conflict with every
       // unrelated edit made while translation is running.
       readBaseRevision(body)
+      const requestedJobId = readOptionalMessageTranslationJobId(body.jobId)
       const source = readLiveMessageSource(db, messageId)
-      translationJob = messageTranslationJobs?.register({ chatId: source.chatId, messageId })
+      translationJob = messageTranslationJobs?.register({
+        chatId: source.chatId,
+        messageId,
+        ...(requestedJobId ? { jobId: requestedJobId } : {}),
+      })
       const settings = loadSettingsFromSqlite(db)
       if (settings === null) {
         throw new ValidationError('database is not initialized')
@@ -6467,8 +6487,14 @@ export function registerCommandRoutes(
           }
           const { location } = resolved
           requireChatLocation(characters, location.chatId)
+          if (translationJob && !translationJob.isCurrent()) {
+            throw new ValidationError(`Message translation is no longer current: ${messageId}`)
+          }
           if (location.message.data !== source.data) {
             throw new ValidationError(`Message changed before translation could be saved: ${messageId}`)
+          }
+          if (!isDeepStrictEqual(location.message.translation, source.translation)) {
+            throw new ValidationError(`Message translation changed before translation could be saved: ${messageId}`)
           }
           const updated = updateActiveMessageById(targetDb, messageId, { translation })
           if (updated.ok === false) {
@@ -6492,6 +6518,7 @@ export function registerCommandRoutes(
       return {
         revision: result.revision,
         event: result.event,
+        jobId: translationJob?.jobId ?? requestedJobId,
         ...result.extra,
       }
     } catch (err) {
@@ -6499,9 +6526,13 @@ export function registerCommandRoutes(
       if (
         err instanceof RevisionMismatchError ||
         err instanceof ValidationError ||
-        err instanceof EntityNotFoundError
+        err instanceof EntityNotFoundError ||
+        err instanceof MessageTranslationAlreadyRunningError
       ) {
-        return sendCommandError(reply, err)
+        return sendCommandError(
+          reply,
+          err instanceof MessageTranslationAlreadyRunningError ? new ValidationError(err.message) : err,
+        )
       }
       const message = err instanceof Error && err.message.length > 0 ? err.message : String(err)
       return sendCommandError(reply, new ValidationError(message || 'Message translation failed'))

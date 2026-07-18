@@ -10046,6 +10046,47 @@ describe('Phase 9-3c message history commands', () => {
     })
   })
 
+  it('rejects a second raw translation while one operation owns the message', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importMessageTranslationFixture(harness.app, assertion, {
+      echoMessage: 'only translation result',
+      echoDelay: 0.2,
+    })
+
+    const first = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/messages/msg-a/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, jobId: 'translation-job-a' },
+    })
+    await waitForActiveMessageTranslation(harness.app, assertion, {
+      chatId: 'chat-a',
+      messageId: 'msg-a',
+    })
+
+    const duplicate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/messages/msg-a/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, jobId: 'translation-job-b' },
+    })
+    expect(duplicate.statusCode).toBe(400)
+    expect(duplicate.json().error).toBe('Message translation is already running: msg-a')
+
+    const translated = await first
+    expect(translated.statusCode).toBe(200)
+    expect(translated.json()).toMatchObject({
+      jobId: 'translation-job-a',
+      translation: { text: 'only translation result' },
+    })
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
+      expect.objectContaining({
+        chatId: 'msg-a',
+        translation: expect.objectContaining({ text: 'only translation result' }),
+      }),
+    ])
+  })
+
   it('rejects a stale translation when its source message changes during the provider request', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importMessageTranslationFixture(harness.app, assertion, {
@@ -10103,6 +10144,56 @@ describe('Phase 9-3c message history commands', () => {
         error: 'Message changed before translation could be saved: msg-a',
         completedAt: expect.any(Number),
       }),
+    ])
+  })
+
+  it('preserves a manual translation edit made while the provider request is pending', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sourceText = 'original raw text'
+    const revision = await importMessageTranslationFixture(harness.app, assertion, {
+      echoMessage: 'provider translation that must lose',
+      echoDelay: 0.2,
+      sourceText,
+    })
+    const translating = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/messages/msg-a/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, jobId: 'translation-job-a' },
+    })
+    await waitForActiveMessageTranslation(harness.app, assertion, {
+      chatId: 'chat-a',
+      messageId: 'msg-a',
+    })
+
+    const manualTranslation = {
+      text: 'manually edited translation',
+      source: 'raw',
+      sourceHash: createHash('sha256').update(sourceText).digest('hex'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'manual-settings',
+      updatedAt: 123,
+    }
+    const edited = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/msg-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { translation: manualTranslation } },
+    })
+    expect(edited.statusCode).toBe(200)
+
+    const translated = await translating
+    expect(translated.statusCode).toBe(400)
+    expect(translated.json().error).toBe('Message translation changed before translation could be saved: msg-a')
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
+      {
+        role: 'user',
+        data: sourceText,
+        chatId: 'msg-a',
+        translation: manualTranslation,
+      },
     ])
   })
 

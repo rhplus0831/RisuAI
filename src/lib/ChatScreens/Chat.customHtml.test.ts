@@ -45,7 +45,7 @@ const customHtmlMocks = vi.hoisted(() => {
         }
       },
     ),
-    translateMessageCommand: vi.fn(async () => ({
+    translateMessageCommand: vi.fn(async (input: { baseRevision: number; messageId: string; jobId: string }) => ({
       status: 'ok',
       revision: 2,
       event: {
@@ -56,6 +56,7 @@ const customHtmlMocks = vi.hoisted(() => {
       },
       chatId: 'custom-html-chat',
       messageId: 'message-0',
+      jobId: input.jobId,
       translation: {
         source: 'raw',
         text: 'translated raw',
@@ -311,7 +312,11 @@ import {
   dispatchUpdateChatScoped,
   dispatchUpdateMessageScoped,
 } from 'src/ts/chatCommands'
-import { activeMessageTranslations, setActiveMessageTranslations } from 'src/ts/server/messageTranslationJobs'
+import {
+  activeMessageTranslations,
+  clearMessageTranslationJob,
+  setActiveMessageTranslations,
+} from 'src/ts/server/messageTranslationJobs'
 
 const testDatabaseState = {
   get db() {
@@ -537,28 +542,31 @@ beforeEach(() => {
       }
     },
   )
-  customHtmlMocks.translateMessageCommand.mockResolvedValue({
-    status: 'ok',
-    revision: 2,
-    event: {
-      type: 'message.updated',
+  customHtmlMocks.translateMessageCommand.mockImplementation(
+    async (input: { baseRevision: number; messageId: string; jobId: string }) => ({
+      status: 'ok',
       revision: 2,
-      resource: 'message',
-      id: 'message-0',
-    },
-    chatId: 'custom-html-chat',
-    messageId: 'message-0',
-    translation: {
-      source: 'raw',
-      text: 'translated raw',
-      sourceHash: 'a'.repeat(64),
-      targetLanguage: 'ko',
-      inputLanguage: 'en',
-      translatorType: 'llm' as const,
-      settingsHash: 'b'.repeat(64),
-      updatedAt: 123,
-    },
-  })
+      event: {
+        type: 'message.updated',
+        revision: 2,
+        resource: 'message',
+        id: 'message-0',
+      },
+      chatId: 'custom-html-chat',
+      messageId: 'message-0',
+      jobId: input.jobId,
+      translation: {
+        source: 'raw',
+        text: 'translated raw',
+        sourceHash: 'a'.repeat(64),
+        targetLanguage: 'ko',
+        inputLanguage: 'en',
+        translatorType: 'llm' as const,
+        settingsHash: 'b'.repeat(64),
+        updatedAt: 123,
+      },
+    }),
+  )
   customHtmlMocks.updateMessageCommand.mockResolvedValue({
     status: 'ok',
     revision: 3,
@@ -569,6 +577,7 @@ beforeEach(() => {
       id: 'message-0',
     },
   })
+  for (const job of get(activeMessageTranslations)) clearMessageTranslationJob(job.jobId)
   setActiveMessageTranslations([])
   clearCustomHtmlTemplateMemo()
   vi.mocked(getCurrentCharacter).mockImplementation(() => testDatabaseState.db.characters?.[selIdState.selId] ?? null)
@@ -584,6 +593,8 @@ afterEach(() => {
   }
   components = []
   clearCustomHtmlTemplateMemo()
+  for (const job of get(activeMessageTranslations)) clearMessageTranslationJob(job.jobId)
+  setActiveMessageTranslations([])
   vi.unstubAllGlobals()
   testDatabaseState.db = previousDb
   selectedCharID.set(previousSelectedChar)
@@ -1396,6 +1407,7 @@ describe('server raw translation controls', () => {
       }
       chatId: string
       messageId: string
+      jobId: string
       translation: typeof translation
     }>()
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
@@ -1419,9 +1431,11 @@ describe('server raw translation controls', () => {
     editButton = target.querySelector<HTMLButtonElement>('.button-icon-edit')
     deleteButton = target.querySelector<HTMLButtonElement>('.button-icon-remove')
     rerollButton = target.querySelector<HTMLButtonElement>('.button-icon-reroll')
+    const translationRequest = customHtmlMocks.translateMessageCommand.mock.calls[0][0]
     expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledWith({
       baseRevision: 1,
       messageId: 'message-0',
+      jobId: expect.any(String),
     })
     expect(customHtmlMocks.runServerCommand).not.toHaveBeenCalled()
     expect(translateButton?.disabled).toBe(true)
@@ -1446,6 +1460,7 @@ describe('server raw translation controls', () => {
       },
       chatId: 'custom-html-chat',
       messageId: 'message-0',
+      jobId: translationRequest.jobId,
       translation,
     })
     await settle()
@@ -1488,6 +1503,7 @@ describe('server raw translation controls', () => {
       }
       chatId: string
       messageId: string
+      jobId: string
       translation: typeof translation
     }>()
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
@@ -1500,6 +1516,7 @@ describe('server raw translation controls', () => {
 
     target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
     await settle()
+    const translationRequest = customHtmlMocks.translateMessageCommand.mock.calls[0][0]
     testDatabaseState.db.characters[0].chatPage = 1
 
     pendingTranslation.resolve({
@@ -1513,6 +1530,7 @@ describe('server raw translation controls', () => {
       },
       chatId: 'custom-html-chat',
       messageId: 'message-0',
+      jobId: translationRequest.jobId,
       translation,
     })
     await settle()
@@ -1520,6 +1538,7 @@ describe('server raw translation controls', () => {
     expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledWith({
       baseRevision: 1,
       messageId: 'message-0',
+      jobId: expect.any(String),
     })
     expect(testDatabaseState.db.characters[0].chats[0].message[0].translation).toEqual(translation)
     expect(testDatabaseState.db.characters[0].chats[1].message[0].translation).toBeUndefined()

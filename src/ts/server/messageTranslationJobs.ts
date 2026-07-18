@@ -12,16 +12,56 @@ export const activeMessageTranslations = writable<ActiveMessageTranslation[]>([]
 
 let refreshWired = false
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
+const locallyStartedTranslationJobIds = new Set<string>()
 
 export function setActiveMessageTranslations(jobs: readonly ActiveMessageTranslation[]): void {
-  activeMessageTranslations.set([...jobs])
+  const remote = [...jobs]
+  const remoteMessageIds = new Set(remote.map((job) => job.messageId))
+  for (const job of remote) {
+    if (locallyStartedTranslationJobIds.has(job.jobId)) locallyStartedTranslationJobIds.delete(job.jobId)
+  }
+  activeMessageTranslations.update((current) => [
+    ...remote,
+    ...current.filter(
+      (job) =>
+        job.status === 'running' &&
+        locallyStartedTranslationJobIds.has(job.jobId) &&
+        !remoteMessageIds.has(job.messageId),
+    ),
+  ])
+}
+
+/** Atomically publish a locally started request so every mounted row sees it. */
+export function beginActiveMessageTranslation(job: ActiveMessageTranslation & { status: 'running' }): boolean {
+  let started = false
+  activeMessageTranslations.update((jobs) => {
+    if (jobs.some((candidate) => candidate.messageId === job.messageId && candidate.status === 'running')) {
+      return jobs
+    }
+    started = true
+    locallyStartedTranslationJobIds.add(job.jobId)
+    return [...jobs.filter((candidate) => candidate.messageId !== job.messageId), job]
+  })
+  return started
+}
+
+export function isCurrentMessageTranslationJob(messageId: string, jobId: string): boolean {
+  return get(activeMessageTranslations).some(
+    (job) => job.messageId === messageId && job.jobId === jobId && job.status === 'running',
+  )
 }
 
 export function clearActiveMessageTranslation(messageId: string): void {
-  activeMessageTranslations.update((jobs) => jobs.filter((job) => job.messageId !== messageId))
+  activeMessageTranslations.update((jobs) => {
+    for (const job of jobs) {
+      if (job.messageId === messageId) locallyStartedTranslationJobIds.delete(job.jobId)
+    }
+    return jobs.filter((job) => job.messageId !== messageId)
+  })
 }
 
 export function clearMessageTranslationJob(jobId: string): void {
+  locallyStartedTranslationJobIds.delete(jobId)
   activeMessageTranslations.update((jobs) => jobs.filter((job) => job.jobId !== jobId))
 }
 

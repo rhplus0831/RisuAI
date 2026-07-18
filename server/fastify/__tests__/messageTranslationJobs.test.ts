@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { MessageTranslationJobRegistry } from '../src/messageTranslationJobs.js'
+import { MessageTranslationAlreadyRunningError, MessageTranslationJobRegistry } from '../src/messageTranslationJobs.js'
 
 describe('MessageTranslationJobRegistry', () => {
   it('keeps the same job id from running through terminal success', () => {
@@ -47,21 +47,26 @@ describe('MessageTranslationJobRegistry', () => {
     expect(failure.error?.length).toBeLessThanOrEqual(500)
   })
 
-  it('does not let an older attempt complete a newer job for the same message', () => {
+  it('keeps one current operation per message and rejects a duplicate start', () => {
     const registry = new MessageTranslationJobRegistry()
-    const older = registry.register({ chatId: 'chat-a', messageId: 'message-a' })
-    const newer = registry.register({ chatId: 'chat-a', messageId: 'message-a' })
+    const current = registry.register({ chatId: 'chat-a', messageId: 'message-a', jobId: 'job-a' })
 
-    older.fail(new Error('stale failure'))
+    expect(current.isCurrent()).toBe(true)
+    expect(() => registry.register({ chatId: 'chat-a', messageId: 'message-a', jobId: 'job-b' })).toThrow(
+      MessageTranslationAlreadyRunningError,
+    )
 
     expect(registry.translations()).toEqual([
       {
         chatId: 'chat-a',
         messageId: 'message-a',
-        jobId: newer.jobId,
+        jobId: 'job-a',
         status: 'running',
       },
     ])
+
+    current.succeed()
+    expect(current.isCurrent()).toBe(false)
   })
 
   it('expires terminal outcomes after the retention window', () => {

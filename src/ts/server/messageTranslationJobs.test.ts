@@ -11,6 +11,9 @@ vi.mock('./bootstrap', () => ({
 
 import {
   activeMessageTranslations,
+  beginActiveMessageTranslation,
+  clearMessageTranslationJob,
+  isCurrentMessageTranslationJob,
   setActiveMessageTranslations,
   startActiveMessageTranslationRefresh,
 } from './messageTranslationJobs'
@@ -23,8 +26,38 @@ describe('active message translation refresh', () => {
   })
 
   afterEach(() => {
+    for (const job of get(activeMessageTranslations)) clearMessageTranslationJob(job.jobId)
     setActiveMessageTranslations([])
     vi.useRealTimers()
+  })
+
+  it('publishes a local operation before the request and rejects a second mounted starter', () => {
+    expect(
+      beginActiveMessageTranslation({
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        jobId: 'job-a',
+        status: 'running',
+      }),
+    ).toBe(true)
+    expect(
+      beginActiveMessageTranslation({
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        jobId: 'job-b',
+        status: 'running',
+      }),
+    ).toBe(false)
+    expect(isCurrentMessageTranslationJob('msg-a', 'job-a')).toBe(true)
+    expect(isCurrentMessageTranslationJob('msg-a', 'job-b')).toBe(false)
+    expect(get(activeMessageTranslations)).toEqual([
+      { chatId: 'chat-a', messageId: 'msg-a', jobId: 'job-a', status: 'running' },
+    ])
+
+    // A bootstrap refresh racing before server registration must not erase the
+    // local ownership entry.
+    setActiveMessageTranslations([])
+    expect(isCurrentMessageTranslationJob('msg-a', 'job-a')).toBe(true)
   })
 
   it('refreshes bootstrap translations and retains a detached failure for the row', async () => {

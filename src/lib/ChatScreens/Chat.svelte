@@ -106,7 +106,12 @@
     ensureMessageId,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands, getServerCommandBaseRevision, translateMessageCommand } from 'src/ts/server/commands'
-  import { activeMessageTranslations, clearMessageTranslationJob } from 'src/ts/server/messageTranslationJobs'
+  import {
+    activeMessageTranslations,
+    beginActiveMessageTranslation,
+    clearMessageTranslationJob,
+    isCurrentMessageTranslationJob,
+  } from 'src/ts/server/messageTranslationJobs'
   import {
     rollbackServerBackedChatRowMetadata,
     syncServerBackedChatMetadataBaselines,
@@ -872,8 +877,19 @@
   async function requestServerRawTranslation() {
     if (translationInProgress) return
     const target = captureTranslationMessageTarget()
-    if (!target) {
+    if (!target?.chatId) {
       setStatusMessage('Message is not ready to translate yet.', 2500)
+      return
+    }
+    const jobId = uuidv4()
+    if (
+      !beginActiveMessageTranslation({
+        chatId: target.chatId,
+        messageId: target.messageId,
+        jobId,
+        status: 'running',
+      })
+    ) {
       return
     }
     translationEditOperation += 1
@@ -891,8 +907,10 @@
         setStatusMessage('Unable to read server command revision.', 3000)
         return
       }
-      const result = await translateMessageCommand({ baseRevision, messageId: target.messageId })
+      const result = await translateMessageCommand({ baseRevision, messageId: target.messageId, jobId })
+      if (!isCurrentMessageTranslationJob(target.messageId, jobId)) return
       if (result.status === 'ok') {
+        if (result.jobId !== jobId) return
         const resultTarget = resultTranslationMessageTarget(target, result)
         if (resultTarget) {
           applyLocalTranslation(resultTarget, result.translation)
@@ -914,6 +932,7 @@
         setStatusMessage(result.error, 3000)
       }
     } finally {
+      clearMessageTranslationJob(jobId)
       translating = false
     }
   }
