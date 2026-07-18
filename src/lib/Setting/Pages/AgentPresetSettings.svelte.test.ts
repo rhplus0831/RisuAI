@@ -295,6 +295,14 @@ function stepInstructionInput(): HTMLTextAreaElement {
   return element!
 }
 
+function stepNumberInput(label: string): HTMLInputElement {
+  const element = [...target.querySelectorAll<HTMLLabelElement>('[data-risu-agent-preset-step-form] label')]
+    .find((candidate) => candidate.textContent?.includes(label))
+    ?.querySelector<HTMLInputElement>('input[type="number"]')
+  expect(element, `step number input ${label}`).toBeTruthy()
+  return element!
+}
+
 function stepCheckbox(name: string): HTMLInputElement {
   const element = [...target.querySelectorAll<HTMLInputElement>('[data-risu-agent-preset-step-form] input')].find(
     (input) => input.type === 'checkbox' && input.getAttribute('aria-label') === name,
@@ -1021,6 +1029,51 @@ describe('AgentPresetSettings', () => {
 
     expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_a', {
       name: 'Renamed Context Step',
+    })
+  })
+
+  it('preserves unedited runtime fields when changing a rendered runtime value', async () => {
+    seedDb([
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        steps: [
+          baseStep({
+            runtime: {
+              timeoutMs: 120_000,
+              maxInputChars: 100_000,
+              maxOutputChars: 20_000,
+              temperature: 150,
+              structuredOutputStrict: true,
+            },
+          }),
+        ],
+      }),
+    ])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
+    const timeout = stepNumberInput(language.agentPresets.timeoutMsLabel)
+    timeout.value = '90000'
+    timeout.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_a', {
+      runtime: {
+        timeoutMs: 90_000,
+        maxInputChars: 100_000,
+        maxOutputChars: 20_000,
+        temperature: 150,
+        structuredOutputStrict: true,
+      },
     })
   })
 

@@ -304,6 +304,7 @@
 
   function stepSnapshotForSave(): AgentPresetStepSnapshot {
     const runtime: AgentPresetStepRecord['runtime'] = {
+      ...activeStep?.runtime,
       timeoutMs: clampedTimeoutMs(),
       maxInputChars: clampedMaxInputChars(),
       maxOutputChars: clampedMaxOutputChars(),
