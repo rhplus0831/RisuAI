@@ -1839,6 +1839,7 @@ export async function selectUserImg() {
         personas: getDatabase().personas,
       }) === null
     ) {
+      alertError(language.fileSelectionStale)
       return
     }
 
@@ -1849,6 +1850,7 @@ export async function selectUserImg() {
       personas: getDatabase().personas,
     })
     if (personaIndex === null) {
+      alertError(language.fileSelectionStale)
       return
     }
 
@@ -1877,6 +1879,7 @@ export async function selectUserImg() {
     })
 
     if (!applied || !attempted) {
+      alertError(language.fileSelectionStale)
       return
     }
 

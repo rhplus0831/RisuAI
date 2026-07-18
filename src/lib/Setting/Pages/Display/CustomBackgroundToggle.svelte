@@ -31,6 +31,7 @@
     onChange={async (check) => {
       const token = customBackgroundOperationGuard.issue('customBackground')
       const previousBackground = getDatabase().customBackground
+      let fileSelected = false
       const isCurrentUpload = () =>
         customBackgroundOperationGuard.isLatest(token) && getDatabase().customBackground === previousBackground
 
@@ -45,14 +46,24 @@
 
         uploadPending = true
         const d = await selectSingleFile(['png', 'webp', 'gif'])
-        if (!isCurrentUpload()) return
         if (!d) return
+        fileSelected = true
+        if (!isCurrentUpload()) {
+          alertError(language.fileSelectionStale)
+          return
+        }
 
         const img = await saveImage(d.data)
-        if (!isCurrentUpload()) return
+        if (!isCurrentUpload()) {
+          alertError(language.fileSelectionStale)
+          return
+        }
         applyServerBackedSetting('customBackground', img)
       } catch (error) {
-        if (!isCurrentUpload()) return
+        if (!isCurrentUpload()) {
+          if (fileSelected) alertError(language.fileSelectionStale)
+          return
+        }
         alertError(formatUploadError(error))
       } finally {
         if (customBackgroundOperationGuard.isLatest(token)) {

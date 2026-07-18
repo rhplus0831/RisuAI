@@ -16,6 +16,7 @@ import {
   type ColorSchemeImportFreshness,
   type ColorSchemeImportOperation,
 } from '../server/colorSchemeImport'
+import { language } from 'src/lang'
 
 export interface ColorScheme {
   bgcolor: string
@@ -272,9 +273,7 @@ export async function importColorScheme() {
     const string = BufferToText(uarray.data)
     const colorScheme = parseColorSchemeImport(string)
     if (!colorScheme) {
-      if (operation && isFreshColorSchemeImport(operation, currentColorSchemeImportFreshness())) {
-        alertError('Invalid color scheme')
-      }
+      alertError('Invalid color scheme')
       return
     }
 
@@ -288,6 +287,7 @@ export async function importColorScheme() {
       colorScheme,
     })
     if (!patch) {
+      alertError(language.fileSelectionStale)
       return
     }
 

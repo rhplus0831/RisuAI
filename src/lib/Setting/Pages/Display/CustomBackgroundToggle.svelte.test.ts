@@ -41,6 +41,7 @@ vi.mock('src/ts/alert', () => ({
 }))
 
 import CustomBackgroundToggle from './CustomBackgroundToggle.svelte'
+import { language } from 'src/lang'
 import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
@@ -185,7 +186,7 @@ describe('CustomBackgroundToggle local upload state', () => {
 
     expect(backgroundMocks.applyServerBackedSetting).not.toHaveBeenCalled()
     expect(getDatabase().customBackground).toBe('')
-    expect(backgroundMocks.alertError).not.toHaveBeenCalled()
+    expect(backgroundMocks.alertError).toHaveBeenCalledWith(language.fileSelectionStale)
   })
 
   it('does not restore the previous background after a stale picker cancel', async () => {
@@ -211,7 +212,26 @@ describe('CustomBackgroundToggle local upload state', () => {
     expect(backgroundMocks.alertError).not.toHaveBeenCalled()
   })
 
-  it('does not restore or alert after a stale upload error', async () => {
+  it('reports a chosen file when the background changed while the picker was open', async () => {
+    const picker = createDeferred<{ data: Uint8Array; name: string }>()
+    backgroundMocks.selectSingleFile.mockReturnValue(picker.promise)
+
+    component = mount(CustomBackgroundToggle, { target })
+    checkbox().click()
+    await vi.waitFor(() => expect(backgroundMocks.selectSingleFile).toHaveBeenCalledOnce())
+
+    withResourceDatabaseWrite((database) => {
+      database.customBackground = 'newer-background'
+    })
+    picker.resolve({ data: new Uint8Array([1, 2, 3]), name: 'chosen.png' })
+    await flushAsync()
+
+    expect(backgroundMocks.saveImage).not.toHaveBeenCalled()
+    expect(backgroundMocks.applyServerBackedSetting).not.toHaveBeenCalled()
+    expect(backgroundMocks.alertError).toHaveBeenCalledWith(language.fileSelectionStale)
+  })
+
+  it('does not restore and reports after a stale upload error', async () => {
     const selectedData = new Uint8Array([7, 8, 9])
     const upload = createDeferred<string>()
     backgroundMocks.selectSingleFile.mockResolvedValue({
@@ -236,7 +256,7 @@ describe('CustomBackgroundToggle local upload state', () => {
 
     expect(backgroundMocks.applyServerBackedSetting).not.toHaveBeenCalled()
     expect(getDatabase().customBackground).toBe('newer-background')
-    expect(backgroundMocks.alertError).not.toHaveBeenCalled()
+    expect(backgroundMocks.alertError).toHaveBeenCalledWith(language.fileSelectionStale)
   })
 
   it('drops upload completion after the owning component is destroyed', async () => {

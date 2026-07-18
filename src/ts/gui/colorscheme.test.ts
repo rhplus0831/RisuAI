@@ -60,6 +60,7 @@ import {
   updateColorScheme,
   type ColorScheme,
 } from './colorscheme'
+import { language } from 'src/lang'
 
 type SelectedFile = {
   name: string
@@ -149,12 +150,12 @@ describe('importColorScheme freshness', () => {
     await importPromise
 
     expect(colorSchemeMocks.applyServerBackedSettingsPatch).not.toHaveBeenCalled()
-    expect(colorSchemeMocks.alertError).not.toHaveBeenCalled()
+    expect(colorSchemeMocks.alertError).toHaveBeenCalledWith(language.fileSelectionStale)
     expect(colorSchemeMocks.database.colorSchemeName).toBe('light')
     expect(colorSchemeMocks.database.colorScheme).toEqual(scheme('bbb'))
   })
 
-  it('does not alert for an invalid stale file after the scheme changed while selection was pending', async () => {
+  it('reports an invalid stale file after the scheme changed while selection was pending', async () => {
     const picker = createPicker()
     colorSchemeMocks.selectSingleFile.mockImplementation(picker.selectSingleFile)
 
@@ -170,7 +171,7 @@ describe('importColorScheme freshness', () => {
     await importPromise
 
     expect(colorSchemeMocks.applyServerBackedSettingsPatch).not.toHaveBeenCalled()
-    expect(colorSchemeMocks.alertError).not.toHaveBeenCalled()
+    expect(colorSchemeMocks.alertError).toHaveBeenCalledWith('Invalid color scheme')
   })
 
   it('lets a newer selected import win over an older delayed import', async () => {
@@ -201,7 +202,7 @@ describe('importColorScheme freshness', () => {
       ],
     ])
     expect(colorSchemeMocks.database.colorScheme).toEqual(scheme('bbb'))
-    expect(colorSchemeMocks.alertError).not.toHaveBeenCalled()
+    expect(colorSchemeMocks.alertError).toHaveBeenCalledWith(language.fileSelectionStale)
   })
 })
 

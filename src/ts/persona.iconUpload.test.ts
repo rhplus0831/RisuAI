@@ -292,6 +292,7 @@ describe('Phase 3 persona icon upload freshness', () => {
     expect(getDatabase().personas[0].icon).toBe('icon-a')
     expect(getDatabase().personas[1].icon).toBe('icon-b')
     expect(commandCalls(calls)).toHaveLength(0)
+    expect(personaAlertState.current).toEqual({ type: 'error', msg: language.fileSelectionStale })
   })
 
   it('preserves same-persona text edits while applying a fresh icon', async () => {

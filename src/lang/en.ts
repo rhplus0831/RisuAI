@@ -48,6 +48,7 @@ export const languageEnglish = {
   generationPersistenceQueued: 'This reply is waiting to be saved and remains provisional.',
   composerFileResultDiscarded:
     'The uploaded file could not be attached because the active composer changed. Please attach it again.',
+  fileSelectionStale: 'Settings changed while you were choosing the file. Please choose it again to retry.',
   alternateGreetingMutationQueued:
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',
   alternateGreetingMutationFailed:
