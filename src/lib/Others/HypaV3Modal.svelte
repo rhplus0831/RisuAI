@@ -55,6 +55,16 @@
     serverId: string
   }
 
+  interface ServerSummaryMutationOwner {
+    chatId: string
+    epoch: number
+  }
+
+  interface PendingServerSummarySave {
+    owner: ServerSummaryMutationOwner
+    promise: Promise<boolean>
+  }
+
   interface BulkResummaryOwner {
     character: character
     characterId: string
@@ -72,7 +82,9 @@
   let serverMemoryLoading = $state(false)
   let serverMemoryError = $state<string | null>(null)
   let serverSummaryRefreshEpoch = 0
+  let serverSummaryOwnerEpoch = 0
   const serverSummaryMutationQueues = new Map<string, Promise<void>>()
+  const pendingServerSummarySaves = new Set<PendingServerSummarySave>()
   const pendingServerSummaryTextSaves = new Map<string, Promise<boolean>>()
   const dirtyServerSummaryIds = new Set<string>()
   const dirtyServerSummaryTextVersions = new Map<string, number>()
@@ -184,6 +196,14 @@
     return version
   }
 
+  function captureServerSummaryMutationOwner(): ServerSummaryMutationOwner | null {
+    return currentChatId ? { chatId: currentChatId, epoch: serverSummaryOwnerEpoch } : null
+  }
+
+  function isCurrentServerSummaryMutationOwner(owner: ServerSummaryMutationOwner): boolean {
+    return owner.epoch === serverSummaryOwnerEpoch && owner.chatId === currentChatId
+  }
+
   function acknowledgeServerSummaryEdit(summaryId: string, editVersion: number): void {
     if ((serverSummaryEditVersions.get(summaryId) ?? 0) !== editVersion) return
     // The acknowledgement itself is a version boundary: any list request that
@@ -209,8 +229,15 @@
         dirtyServerSummaryIds.size === 0
       ) {
         const chatId = pendingServerSummaryRefreshChatId
+        const mutationError = serverMemoryError
         pendingServerSummaryRefreshChatId = null
-        if (currentChatId === chatId) void refreshServerSummaries(chatId)
+        if (currentChatId === chatId) {
+          void refreshServerSummaries(chatId).finally(() => {
+            if (currentChatId === chatId && mutationError && !serverMemoryError) {
+              serverMemoryError = mutationError
+            }
+          })
+        }
       }
     })
     return next
@@ -221,7 +248,12 @@
     const summary = serverHypaV3Data.summaries[summaryIndex] as ServerSummaryView | undefined
     if (!summary) return Promise.resolve(false)
     const summaryId = summary.serverId
-    const mutation = persistServerSummaryChange(summary, summaryId, field)
+    const owner = captureServerSummaryMutationOwner()
+    if (!owner) return Promise.resolve(false)
+    const mutation = persistServerSummaryChange(summary, summaryId, field, owner)
+    const pendingSave = { owner, promise: mutation }
+    pendingServerSummarySaves.add(pendingSave)
+    void mutation.finally(() => pendingServerSummarySaves.delete(pendingSave))
     if (field === 'text') {
       pendingServerSummaryTextSaves.set(summaryId, mutation)
       void mutation.finally(() => {
@@ -237,6 +269,7 @@
     summary: ServerSummaryView,
     summaryId: string,
     field: ServerSummaryPatchField,
+    owner: ServerSummaryMutationOwner,
   ): Promise<boolean> {
     const editVersion = markServerSummaryEdited(summaryId)
     if (field === 'text') dirtyServerSummaryTextVersions.set(summaryId, editVersion)
@@ -245,6 +278,10 @@
 
     await queueServerSummaryMutation(summaryId, async () => {
       const result = await patchServerMemorySummary(summaryId, patch)
+      if (!isCurrentServerSummaryMutationOwner(owner)) {
+        persisted = result.status === 'ok'
+        return
+      }
       if (result.status === 'ok') {
         acknowledgeServerSummaryEdit(summaryId, editVersion)
         if (field === 'text' && dirtyServerSummaryTextVersions.get(summaryId) === editVersion) {
@@ -335,6 +372,7 @@
   $effect(() => {
     if (!serverBackedMemoryMode || currentChatId.length === 0) return
     const chatId = currentChatId
+    serverSummaryOwnerEpoch += 1
     dirtyServerSummaryIds.clear()
     dirtyServerSummaryTextVersions.clear()
     pendingServerSummaryTextSaves.clear()
@@ -587,8 +625,32 @@
     return true
   }
 
+  async function flushPendingServerSummaryChanges(): Promise<boolean> {
+    if (!(await flushDirtyServerSummaryText())) return false
+    const owner = captureServerSummaryMutationOwner()
+    if (!owner) return false
+    while ([...pendingServerSummarySaves].some((save) => isCurrentServerSummaryMutationOwner(save.owner))) {
+      const results = await Promise.all(
+        [...pendingServerSummarySaves]
+          .filter((save) => save.owner.epoch === owner.epoch && save.owner.chatId === owner.chatId)
+          .map((save) => save.promise),
+      )
+      if (results.some((persisted) => !persisted)) return false
+      if (!isCurrentServerSummaryMutationOwner(owner)) return false
+      if (!(await flushDirtyServerSummaryText())) return false
+    }
+    return true
+  }
+
   function requestModalClose(): boolean | Promise<boolean> {
-    if (!serverBackedMemoryMode || dirtyServerSummaryTextVersions.size === 0) {
+    if (!serverBackedMemoryMode) {
+      $hypaV3ModalOpen = false
+      return true
+    }
+    const hasPendingSave = [...pendingServerSummarySaves].some((save) =>
+      isCurrentServerSummaryMutationOwner(save.owner),
+    )
+    if (dirtyServerSummaryTextVersions.size === 0 && !hasPendingSave) {
       $hypaV3ModalOpen = false
       return true
     }
@@ -596,7 +658,7 @@
 
     let closeRequest: Promise<boolean>
     closeRequest = (async () => {
-      const persisted = await flushDirtyServerSummaryText()
+      const persisted = await flushPendingServerSummaryChanges()
       if (persisted) $hypaV3ModalOpen = false
       return persisted
     })().finally(() => {

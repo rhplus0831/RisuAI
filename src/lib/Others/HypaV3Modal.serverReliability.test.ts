@@ -119,6 +119,14 @@ function editSummary(target: HTMLElement, value: string): HTMLTextAreaElement {
   return textarea
 }
 
+function closeModal(target: HTMLElement): void {
+  const closeButton = target.querySelector<HTMLButtonElement>(
+    `button[aria-label="${language.hypaV3Modal.closeAction}"]`,
+  )
+  if (!closeButton) throw new Error('Missing Hypa V3 close button')
+  closeButton.click()
+}
+
 describe('Hypa V3 server summary close reliability', () => {
   let target: HTMLElement
   let component: MountedComponent | undefined
@@ -173,11 +181,7 @@ describe('Hypa V3 server summary close reliability', () => {
     await settle()
 
     editSummary(target, 'Edit that cannot persist')
-    const closeButton = target.querySelector<HTMLButtonElement>(
-      `button[aria-label="${language.hypaV3Modal.closeAction}"]`,
-    )
-    expect(closeButton).not.toBeNull()
-    closeButton!.click()
+    closeModal(target)
 
     await vi.waitFor(() => expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(1))
     expect(get(hypaV3ModalOpen)).toBe(true)
@@ -185,6 +189,94 @@ describe('Hypa V3 server summary close reliability', () => {
     patch.resolve({ status: 'error', error: 'PATCH rejected' })
     await settle()
     expect(get(hypaV3ModalOpen)).toBe(true)
+  })
+
+  it('waits for an Important metadata PATCH before closing', async () => {
+    const patch = deferred<{ status: 'ok'; summaryId: string }>()
+    serverMocks.patchServerMemorySummary.mockReturnValueOnce(patch.promise)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('button[data-summary-action="important"]')?.click()
+    await vi.waitFor(() =>
+      expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledWith('summary-a', { isImportant: true }),
+    )
+    closeModal(target)
+    expect(get(hypaV3ModalOpen)).toBe(true)
+
+    patch.resolve({ status: 'ok', summaryId: 'summary-a' })
+    await vi.waitFor(() => expect(get(hypaV3ModalOpen)).toBe(false))
+  })
+
+  it('waits for a category metadata PATCH before closing', async () => {
+    seedDatabase([
+      { id: '', name: 'Unclassified' },
+      { id: 'story', name: 'Story' },
+    ])
+    const patch = deferred<{ status: 'ok'; summaryId: string }>()
+    serverMocks.patchServerMemorySummary.mockReturnValueOnce(patch.promise)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const category = target.querySelector<HTMLSelectElement>(
+      `select[aria-label="${language.hypaV3Modal.summaryCategoryLabel.replace('{0}', '1')}"]`,
+    )
+    if (!category) throw new Error('Missing summary category control')
+    category.value = 'story'
+    category.dispatchEvent(new Event('change', { bubbles: true }))
+    await vi.waitFor(() =>
+      expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledWith('summary-a', { categoryId: 'story' }),
+    )
+    closeModal(target)
+    expect(get(hypaV3ModalOpen)).toBe(true)
+
+    patch.resolve({ status: 'ok', summaryId: 'summary-a' })
+    await vi.waitFor(() => expect(get(hypaV3ModalOpen)).toBe(false))
+  })
+
+  it('waits for a tag metadata PATCH before closing', async () => {
+    const patch = deferred<{ status: 'ok'; summaryId: string }>()
+    serverMocks.patchServerMemorySummary.mockReturnValueOnce(patch.promise)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const openTags = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.includes(`+ ${language.hypaV3Modal.tag}`),
+    )
+    if (!openTags) throw new Error('Missing summary tag manager control')
+    openTags.click()
+    await settle()
+    const tagInput = target.querySelector<HTMLInputElement>(`input[aria-label="${language.hypaV3Modal.newTagName}"]`)
+    if (!tagInput) throw new Error('Missing new tag input')
+    tagInput.value = 'new-tag'
+    tagInput.dispatchEvent(new Event('input', { bubbles: true }))
+    tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await vi.waitFor(() =>
+      expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledWith('summary-a', { tags: ['new-tag'] }),
+    )
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.close}"]`)?.click()
+    await settle()
+    closeModal(target)
+    expect(get(hypaV3ModalOpen)).toBe(true)
+
+    patch.resolve({ status: 'ok', summaryId: 'summary-a' })
+    await vi.waitFor(() => expect(get(hypaV3ModalOpen)).toBe(false))
+  })
+
+  it('keeps the modal open when a metadata save fails during close', async () => {
+    const patch = deferred<{ status: 'error'; error: string }>()
+    serverMocks.patchServerMemorySummary.mockReturnValueOnce(patch.promise)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('button[data-summary-action="important"]')?.click()
+    await vi.waitFor(() => expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(1))
+    closeModal(target)
+    patch.resolve({ status: 'error', error: 'metadata PATCH rejected' })
+    await settle()
+
+    expect(get(hypaV3ModalOpen)).toBe(true)
+    await vi.waitFor(() => expect(target.textContent).toContain('metadata PATCH rejected'))
   })
 
   it('reconciles categories that hydrate after summaries without refetching or patching', async () => {
