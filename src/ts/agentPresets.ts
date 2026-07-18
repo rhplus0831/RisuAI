@@ -33,6 +33,7 @@ import {
   stagePendingMutation,
   type DurableMutationIntent,
 } from './server/pendingMutationOutbox'
+import { refreshServerResourceTargets } from './server/resourceInvalidation'
 import {
   captureCharacterRowProjectionEpoch,
   captureCollectionProjectionEpoch,
@@ -1016,7 +1017,12 @@ interface AgentPresetDeleteFieldRollback {
   attempted: Record<string, JsonFieldState>
   resolveTarget: () => DatabaseRecord | undefined
   hasProjectionChanged: () => boolean
+  reconciliationTarget?: AgentPresetDeleteReconciliationTarget
 }
+
+type AgentPresetDeleteReconciliationTarget =
+  | { kind: 'character'; characterId: string }
+  | { kind: 'collection'; name: 'loadouts' }
 
 function optimisticallyPatchAgentPreset(presetId: string, patch: AgentPresetSnapshot): OptimisticAgentPresetFieldPatch {
   const projectionEpoch = captureSettingsGroupProjectionEpoch('agents')
@@ -1063,9 +1069,13 @@ function optimisticallyDeleteAgentPreset(presetId: string): (() => void) | undef
     // superseded by a later edit. The agents taint forces authoritative
     // reconciliation before a later local acknowledgement can fence it.
     if (!uniqueAgentPresetById(presetId)) return
-    withTrustedResourceWrite(() => {
-      for (const rollback of referenceRollbacks) restoreAgentPresetDeleteFields(rollback)
-    })
+    const reconciliationTargets = withTrustedResourceWrite(() =>
+      referenceRollbacks.flatMap((rollback) => {
+        const target = restoreAgentPresetDeleteFields(rollback)
+        return target ? [target] : []
+      }),
+    )
+    scheduleAgentPresetDeleteReferenceReconciliation(reconciliationTargets)
   }
 }
 
@@ -1245,6 +1255,7 @@ function clearChatAgentPresetSelections(presetId: string): AgentPresetDeleteFiel
           keys: ['agentPresetId'],
           mutate: () => delete generationSettings.agentPresetId,
           hasProjectionChanged: () => hasCharacterRowProjectionEpochChanged(characterId, projectionEpoch),
+          reconciliationTarget: { kind: 'character', characterId },
         }),
       )
     }
@@ -1271,6 +1282,7 @@ function clearLoadoutAgentPresetSelections(presetId: string): AgentPresetDeleteF
           delete target.agentPresetName
         },
         hasProjectionChanged: () => hasCollectionProjectionEpochChanged('loadouts', projectionEpoch),
+        reconciliationTarget: { kind: 'collection', name: 'loadouts' },
       }),
     )
   }
@@ -1283,6 +1295,7 @@ function captureAgentPresetDeleteFieldRollback(input: {
   keys: string[]
   mutate: () => void
   hasProjectionChanged: () => boolean
+  reconciliationTarget?: AgentPresetDeleteReconciliationTarget
 }): AgentPresetDeleteFieldRollback {
   const previous = snapshotAgentPresetDeleteFieldStates(input.target, input.keys)
   input.mutate()
@@ -1292,11 +1305,14 @@ function captureAgentPresetDeleteFieldRollback(input: {
     attempted: snapshotAgentPresetDeleteFieldStates(input.target, input.keys),
     resolveTarget: input.resolveTarget,
     hasProjectionChanged: input.hasProjectionChanged,
+    reconciliationTarget: input.reconciliationTarget,
   }
 }
 
-function restoreAgentPresetDeleteFields(rollback: AgentPresetDeleteFieldRollback): void {
-  if (rollback.hasProjectionChanged()) return
+function restoreAgentPresetDeleteFields(
+  rollback: AgentPresetDeleteFieldRollback,
+): AgentPresetDeleteReconciliationTarget | undefined {
+  if (rollback.hasProjectionChanged()) return rollback.reconciliationTarget
   const target = rollback.resolveTarget()
   if (!target) return
   // Treat related loadout id/name fields atomically. A later edit to either
@@ -1307,6 +1323,36 @@ function restoreAgentPresetDeleteFields(rollback: AgentPresetDeleteFieldRollback
     if (previous.present) target[key] = safeStructuredClone(previous.value)
     else delete target[key]
   }
+}
+
+function scheduleAgentPresetDeleteReferenceReconciliation(
+  targets: readonly AgentPresetDeleteReconciliationTarget[],
+): void {
+  if (targets.length === 0) return
+  const characterIds = [
+    ...new Set(targets.flatMap((target) => (target.kind === 'character' ? [target.characterId] : []))),
+  ]
+  const refreshLoadouts = targets.some((target) => target.kind === 'collection' && target.name === 'loadouts')
+  setTimeout(() => {
+    void refreshServerResourceTargets(
+      {
+        characterIds,
+        ...(refreshLoadouts ? { collections: ['loadouts'] as const } : {}),
+      },
+      {
+        hooks: {
+          mergePendingAgentPresetCharacters: mergePendingAgentPresetCharactersResource,
+          mergePendingAgentPresetLoadouts: mergePendingAgentPresetLoadoutsResource,
+        },
+      },
+    )
+      .then((result) => {
+        if (result.status === 'error') console.warn(`Unable to reconcile failed Agent Preset delete: ${result.error}`)
+      })
+      .catch((error) => {
+        console.warn('Unable to reconcile failed Agent Preset delete:', error)
+      })
+  }, 0)
 }
 
 function jsonFieldStateMatches(target: DatabaseRecord, key: string, expected: JsonFieldState): boolean {

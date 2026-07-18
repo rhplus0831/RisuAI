@@ -101,6 +101,11 @@ export interface ServerResourceInvalidationOptions extends ServerResourceRefresh
   appliedRevision?: number | null
 }
 
+export interface ServerResourceTargetRefreshInput {
+  characterIds?: readonly string[]
+  collections?: readonly ServerCollectionName[]
+}
+
 interface RefreshPlan {
   inlayCatalog: boolean
   settings: boolean
@@ -282,6 +287,44 @@ export async function refreshInvalidatedServerResources(
     return { status: 'error', error: `Server resource invalidation requires the ${missingHook} hook` }
   }
 
+  return executeTargetedRefreshPlan(plan, options, normalized.revision, normalized.revision)
+}
+
+/**
+ * Re-read exact resource owners when a conservative optimistic rollback fence
+ * cannot safely restore a field. Unlike command-event invalidation, this path
+ * does not require a synthetic revision because every response is still
+ * guarded by its owning resource revision during apply.
+ */
+export async function refreshServerResourceTargets(
+  input: ServerResourceTargetRefreshInput,
+  options: ServerResourceRefreshOptions = {},
+): Promise<ServerResourceRefreshResult> {
+  const plan = createRefreshPlan()
+  for (const characterId of new Set(input.characterIds ?? [])) {
+    if (!nonEmptyString(characterId)) return { status: 'error', error: 'Character id is required' }
+    plan.characterIds.add(characterId)
+  }
+  for (const name of new Set(input.collections ?? [])) plan.collections.add(name)
+
+  if (plan.characterIds.size === 0 && plan.collections.size === 0) {
+    return { status: 'ok', revision: 0, scope: 'none' }
+  }
+
+  const missingHook = missingRequiredHook(plan, options.hooks)
+  if (missingHook) {
+    return { status: 'error', error: `Server resource invalidation requires the ${missingHook} hook` }
+  }
+
+  return executeTargetedRefreshPlan(plan, options)
+}
+
+async function executeTargetedRefreshPlan(
+  plan: RefreshPlan,
+  options: ServerResourceRefreshOptions,
+  minimumRevision?: number,
+  reportedRevision?: number,
+): Promise<ServerResourceRefreshResult> {
   const completed = await runTargetedReads(plan, options.signal)
   // Snapshot supersession before applying any sibling result. Character-shell
   // applies advance their own projection epochs, but must not make a body read
@@ -292,10 +335,10 @@ export async function refreshInvalidatedServerResources(
 
   for (const entry of completed) {
     if (entry.result.status !== 'ok') continue
-    if (entry.result.revision < normalized.revision) {
+    if (minimumRevision !== undefined && entry.result.revision < minimumRevision) {
       return {
         status: 'error',
-        error: `Server ${targetedReadLabel(entry)} response revision ${entry.result.revision} is older than event revision ${normalized.revision}`,
+        error: `Server ${targetedReadLabel(entry)} response revision ${entry.result.revision} is older than event revision ${minimumRevision}`,
       }
     }
   }
@@ -319,7 +362,13 @@ export async function refreshInvalidatedServerResources(
     }
   }
 
-  const promptTemplateRefreshError = await refreshInvalidatedPromptTemplateOwners(plan, normalized.revision)
+  const responseRevision =
+    reportedRevision ??
+    completed.reduce(
+      (latest, entry) => (entry.result.status === 'ok' ? Math.max(latest, entry.result.revision) : latest),
+      minimumRevision ?? 0,
+    )
+  const promptTemplateRefreshError = await refreshInvalidatedPromptTemplateOwners(plan, responseRevision)
   if (promptTemplateRefreshError) return { status: 'error', error: promptTemplateRefreshError }
   if (plan.promptTemplateOwnerIds.size > 0 || plan.refreshSelectedPromptTemplate) {
     options.hooks?.reapplyPendingPresetProjections?.()
@@ -331,7 +380,7 @@ export async function refreshInvalidatedServerResources(
   }
   for (const messageId of plan.translatedMessageIds) options.hooks?.clearActiveMessageTranslation?.(messageId)
 
-  return { status: 'ok', revision: normalized.revision, scope: 'targeted' }
+  return { status: 'ok', revision: responseRevision, scope: 'targeted' }
 }
 
 function createRefreshPlan(): RefreshPlan {

@@ -43,7 +43,12 @@ import {
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
 } from './server/commands'
-import { isSettingsGroupAcknowledgementTainted, resetServerResourceState } from './server/resourceState.svelte'
+import {
+  applyCharacterResource,
+  applyCollectionsResource,
+  isSettingsGroupAcknowledgementTainted,
+  resetServerResourceState,
+} from './server/resourceState.svelte'
 import {
   MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
   listPendingMutations,
@@ -75,6 +80,10 @@ function response(body: unknown, status: number): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function clonePlain<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 async function prepareDurableAgentPresetOutbox(suffix: string): Promise<void> {
@@ -361,6 +370,59 @@ describe('Agent Preset optimistic field rollback', () => {
       agentPresetName: 'Preset A',
     })
     expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+  })
+
+  it('re-reads delete references whose projection epochs advance before rollback', async () => {
+    seedAgentPresetDeleteReferences()
+    const authoritativeCharacter = clonePlain(getDatabase().characters[0])
+    const authoritativeLoadout = clonePlain(getDatabase().loadouts[0])
+    const pendingResponse = deferred<Response>()
+    const fetchMock = vi.fn((input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      if (url.endsWith('/agent-presets/ap_a') && init.method === 'DELETE') return pendingResponse.promise
+      if (url === '/api/v1/characters/char_a') {
+        return Promise.resolve(response({ revision: 3, character: authoritativeCharacter }, 200))
+      }
+      if (url === '/api/v1/collections/loadouts') {
+        return Promise.resolve(
+          response(
+            {
+              revision: 3,
+              collections: { loadouts: [authoritativeLoadout] },
+            },
+            200,
+          ),
+        )
+      }
+      throw new Error(`Unexpected request: ${init.method ?? 'GET'} ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const resultPromise = deleteAgentPreset('ap_a')
+    const refreshedCharacter = clonePlain(getDatabase().characters[0])
+    refreshedCharacter.name = 'Character refreshed during delete'
+    expect(applyCharacterResource({ revision: 2, character: refreshedCharacter })).toBe(true)
+    expect(
+      applyCollectionsResource(
+        {
+          revision: 2,
+          collections: { loadouts: clonePlain(getDatabase().loadouts) },
+        },
+        'loadouts',
+      ),
+    ).toBe(true)
+    pendingResponse.resolve(response({ error: 'rejected' }, 400))
+
+    await expect(resultPromise).resolves.toMatchObject({ status: 'failed' })
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_a')
+      expect(getDatabase().loadouts[0]).toMatchObject({
+        agentPresetId: 'ap_a',
+        agentPresetName: 'Preset A',
+      })
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/characters/char_a', expect.any(Object))
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/collections/loadouts', expect.any(Object))
   })
 
   it('preserves newer chat and loadout Agent Preset selections when a delete fails', async () => {
