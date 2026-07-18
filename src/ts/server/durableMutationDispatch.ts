@@ -19,6 +19,7 @@ import {
   isPendingMutationCurrent,
   listPendingMutationPredecessors,
   listPendingMutationReceiptAcknowledgements,
+  registerPendingMutationDiscardListener,
   replaceStagedPendingMutationIntent,
   type DurableMutationIntent,
   type PendingMutationHandle,
@@ -56,7 +57,9 @@ function publishDurableMutationFinalSettlement(
   settlement: DurableMutationFinalSettlement,
   details: DurableMutationFinalSettlementDetails = {},
 ): void {
-  for (const listener of durableMutationSettlementListeners.get(mutationId) ?? []) {
+  const listeners = [...(durableMutationSettlementListeners.get(mutationId) ?? [])]
+  durableMutationSettlementListeners.delete(mutationId)
+  for (const listener of listeners) {
     try {
       listener(settlement, details)
     } catch (error) {
@@ -64,6 +67,21 @@ function publishDurableMutationFinalSettlement(
     }
   }
 }
+
+/** Settle listeners whose shared outbox rows may already be gone in another tab. */
+export function discardRegisteredDurableMutationSettlements(): number {
+  const mutationIds = [...durableMutationSettlementListeners.keys()]
+  for (const mutationId of mutationIds) publishDurableMutationFinalSettlement(mutationId, 'discarded')
+  return mutationIds.length
+}
+
+export function countRegisteredDurableMutationSettlements(): number {
+  return durableMutationSettlementListeners.size
+}
+
+registerPendingMutationDiscardListener((mutationId) => {
+  publishDurableMutationFinalSettlement(mutationId, 'discarded')
+})
 
 export interface PreparedDurableMutationExecutionInput {
   handle: PendingMutationHandle

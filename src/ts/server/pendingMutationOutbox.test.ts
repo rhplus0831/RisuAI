@@ -376,12 +376,14 @@ describe('pending mutation outbox', () => {
     const placeholder = stagePendingMutation('settings:runtime', settingsIntent('old-database'))
     await placeholder.ready
     resetPendingMutationOutboxForTests()
-    await preparePendingMutationOutbox({
-      writerSessionId: 'writer-a',
-      writerEpoch: 1,
-      databaseLineage: 'database-b',
-      requestedWriterWasActive: true,
-    })
+    await expect(
+      preparePendingMutationOutbox({
+        writerSessionId: 'writer-a',
+        writerEpoch: 1,
+        databaseLineage: 'database-b',
+        requestedWriterWasActive: true,
+      }),
+    ).resolves.toEqual({ discarded: 1 })
 
     await expect(replaceStagedPendingMutationIntent(placeholder, settingsIntent('must-not-restage'))).resolves.toEqual({
       status: 'superseded',
@@ -466,6 +468,35 @@ describe('pending mutation outbox', () => {
     expect(await listPendingMutations()).toEqual([])
     expect(await listPendingMutationReceiptAcknowledgements()).toEqual([])
     expect(await readRawMutation(pending.mutationId)).toBeUndefined()
+  })
+
+  it('resets changed ownership synchronously once before admitting replacement-lineage writes', async () => {
+    const old = stagePendingMutation('settings:old', settingsIntent('old-database'))
+    await expect(old.ready).resolves.toBe('persisted')
+    const onOwnershipChange = vi.fn()
+
+    const preparation = preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 1,
+      databaseLineage: 'database-b',
+      requestedWriterWasActive: true,
+      onOwnershipChange,
+    })
+    expect(onOwnershipChange).toHaveBeenCalledOnce()
+
+    const replacement = stagePendingMutation('settings:new', settingsIntent('replacement-database'))
+    await expect(replacement.ready).resolves.toBe('persisted')
+    await expect(preparation).resolves.toEqual({ discarded: 1 })
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([replacement.mutationId])
+
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 1,
+      databaseLineage: 'database-b',
+      requestedWriterWasActive: true,
+      onOwnershipChange,
+    })
+    expect(onOwnershipChange).toHaveBeenCalledOnce()
   })
 
   it('deletes an exact no-op row without creating receipt cleanup work', async () => {

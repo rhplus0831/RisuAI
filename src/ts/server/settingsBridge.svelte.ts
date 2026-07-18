@@ -52,7 +52,7 @@ import {
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
-import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
+import { registerPendingBridgeOwnershipResetter, registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import { registerPendingSettingsProjectionOverlay } from './settingsPendingProjection'
 
 interface PendingSettingsPatch {
@@ -91,6 +91,7 @@ const pendingSettingsPatch: PendingSettingsPatch = {
 }
 const pendingSettingsAttempts: PendingSettingsAttempt[] = []
 let nextSettingsAttemptSequence = 0
+let settingsBridgeDatabaseOwnershipEpoch = 0
 
 interface SparseObjectSettingQueue {
   key: string
@@ -108,6 +109,7 @@ interface SparseObjectSettingQueue {
   settlementCleanup?: () => void
   settlementMutationId?: string
   settlementPhase?: 'dispatching' | 'queued' | 'accepted-replay'
+  retired: boolean
 }
 
 const SPARSE_OBJECT_SETTING_KEYS = new Set(['NAIImgConfig', 'wavespeedImage', 'seperateParameters'])
@@ -221,6 +223,7 @@ export function createServerBackedSettingDraft<T>(
   let suppressDraftDispatch = false
   let previousServerSnapshot = snapshotJson(initialValue)
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
+  let previousDatabaseOwnershipEpoch = settingsBridgeDatabaseOwnershipEpoch
   let previousOwnerKey = currentServerBackedSettingDraftOwnerKey(key, options.dispatch)
   let dirty = false
   let dirtyOwnerKey: string | null = null
@@ -229,13 +232,15 @@ export function createServerBackedSettingDraft<T>(
   $effect(() => {
     const resourceApplyEpoch = getServerResourceApplyEpoch()
     const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
+    const databaseOwnershipEpoch = settingsBridgeDatabaseOwnershipEpoch
+    const databaseOwnershipChanged = databaseOwnershipEpoch !== previousDatabaseOwnershipEpoch
     const ownerKey = currentServerBackedSettingDraftOwnerKey(key, options.dispatch)
     const ownerChanged = ownerKey !== previousOwnerKey
     const serverValue = currentSettingValue(key, fallback)
     const serverSnapshot = snapshotJson(serverValue)
     const draftSnapshot = snapshotJson(draft.value)
 
-    if (ownerChanged) {
+    if (databaseOwnershipChanged || ownerChanged) {
       dirty = false
       dirtyOwnerKey = null
       dirtyBaseline = cloneDraftValue(serverValue)
@@ -283,6 +288,7 @@ export function createServerBackedSettingDraft<T>(
 
     previousOwnerKey = ownerKey
     previousResourceApplyEpoch = resourceApplyEpoch
+    previousDatabaseOwnershipEpoch = databaseOwnershipEpoch
     previousServerSnapshot = dirty ? snapshotJson(draft.value) : serverSnapshot
   })
 
@@ -742,12 +748,12 @@ export async function persistServerBackedSettingsPatchWithSettlement(
   const immediateReceipt = (status: ServerBackedSettingsFinalSettlement): ServerBackedSettingsPersistenceReceipt => {
     settlementCleanup()
     finalSettlementListeners.clear()
-    return { status }
+    return { status: finalSettlement ?? status }
   }
 
   let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
   try {
-    const result = await dispatchDurableMutation(outbox, intent, (transport) => {
+    const dispatch = dispatchDurableMutation(outbox, intent, (transport) => {
       failureRollbackDisposition = transport.failureRollbackDisposition
       return dispatchTrackedServerBackedSettingsPatch({
         patch: prepared.commandPatch,
@@ -762,6 +768,12 @@ export async function persistServerBackedSettingsPatchWithSettlement(
         reportQueued: () => {},
       })
     })
+    const outcome = await Promise.race([
+      dispatch.then((result) => ({ type: 'dispatch' as const, result })),
+      finalSettlementPromise.then((settlement) => ({ type: 'settlement' as const, settlement })),
+    ])
+    if (outcome.type === 'settlement') return immediateReceipt(outcome.settlement)
+    const { result } = outcome
     if (result.status === 'ok') return immediateReceipt('accepted')
     return failureRollbackDisposition?.(result) === 'retain' ? queuedReceipt() : immediateReceipt('failed')
   } catch (error) {
@@ -999,6 +1011,7 @@ function changedSettingsPatchKeys(left: SettingsPatch, right: SettingsPatch): Se
 }
 
 function resetPendingSettingsPatch(): void {
+  pendingSettingsPatch.timer = null
   pendingSettingsPatch.patch = {}
   pendingSettingsPatch.previous = {}
   pendingSettingsPatch.attempted = {}
@@ -1019,6 +1032,29 @@ export function flushPendingServerBackedSettingsPatch(options: ServerCommandTran
 }
 
 registerPendingBridgePatchFlusher('settings', flushPendingServerBackedSettingsPatch)
+registerPendingBridgeOwnershipResetter('settings', resetServerBackedSettingsBridgeForDatabaseReplacement)
+
+/** Drop projections, timers, and attempts owned by the database that was replaced. */
+export function resetServerBackedSettingsBridgeForDatabaseReplacement(): void {
+  settingsBridgeDatabaseOwnershipEpoch += 1
+  if (pendingSettingsPatch.timer) clearTimeout(pendingSettingsPatch.timer)
+  resetPendingSettingsPatch()
+
+  for (const attempt of [...pendingSettingsAttempts]) clearSettingsAttempt(attempt)
+
+  for (const state of sparseObjectSettingQueues.values()) {
+    state.retired = true
+    if (state.timer) clearTimeout(state.timer)
+    state.timer = null
+    state.outbox = null
+    state.desired = null
+    state.stagedUpdate = null
+    state.intent = null
+    state.durableAttempted = null
+    clearSparseObjectSettingSettlement(state)
+  }
+  sparseObjectSettingQueues.clear()
+}
 
 function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {}): void {
   if (pendingSettingsPatch.timer) {
@@ -1234,6 +1270,7 @@ function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted
       running: false,
       outbox: null,
       settlementPhase: undefined,
+      retired: false,
     }
     sparseObjectSettingQueues.set(key, state)
   } else {
@@ -1268,7 +1305,7 @@ async function dispatchSparseObjectSettingQueue(
   state: SparseObjectSettingQueue,
   options: ServerCommandTransportOptions = {},
 ): Promise<void> {
-  if (state.running || !state.desired || !state.stagedUpdate || !state.intent || !state.outbox) {
+  if (state.retired || state.running || !state.desired || !state.stagedUpdate || !state.intent || !state.outbox) {
     return
   }
   const previousBaseline = cloneJsonValue(state.baseline)
@@ -1300,7 +1337,7 @@ async function dispatchSparseObjectSettingQueue(
     state.settlementMutationId = outbox.mutationId
     state.settlementPhase = 'dispatching'
     state.settlementCleanup = registerDurableMutationSettlementListener(outbox.mutationId, (settlement) => {
-      if (state.settlementMutationId !== outbox.mutationId) return
+      if (state.retired || state.settlementMutationId !== outbox.mutationId) return
       if (settlement === 'accepted') {
         state.settlementPhase = 'accepted-replay'
         state.outbox = null
@@ -1349,6 +1386,7 @@ async function dispatchSparseObjectSettingQueue(
             options.keepalive,
           ),
         rollback: () => {
+          if (state.retired) return
           failed = true
           markSettingsGroupAcknowledgementTainted(state.group)
           reportFailure()
@@ -1359,6 +1397,7 @@ async function dispatchSparseObjectSettingQueue(
     console.error('Sparse settings command rejected:', error)
     result = { status: 'unavailable' }
   }
+  if (state.retired) return
   if (result.status !== 'ok' && failureRollbackDisposition?.(result) === 'retain') {
     // The exact attempted object is still represented by a durable row. Keep
     // both its visible projection and its queue baseline; a later edit stages
@@ -1377,6 +1416,7 @@ async function dispatchSparseObjectSettingQueue(
   clearSparseObjectSettingSettlement(state)
 
   await Promise.resolve()
+  if (state.retired) return
   let baseline: Record<string, unknown> | null = null
   let usedAuthoritativeBaseline = false
   if (result.status === 'ok') {
@@ -1392,6 +1432,7 @@ async function dispatchSparseObjectSettingQueue(
   }
   if (!baseline) {
     baseline = await refreshSparseObjectSettingBaseline(state.group, state.key, options.signal)
+    if (state.retired) return
     usedAuthoritativeBaseline = baseline !== null
   }
   if (!baseline) baseline = cloneJsonValue(state.baseline)

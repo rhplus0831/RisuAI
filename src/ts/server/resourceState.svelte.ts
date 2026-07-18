@@ -2384,6 +2384,43 @@ export function resetServerResourceState(): void {
   markResourceDatabaseChanged()
 }
 
+/**
+ * Let a full replacement snapshot rewind revisions without briefly deleting
+ * the currently rendered database while its authoritative reads are in flight.
+ */
+export function resetServerResourceRevisionFencesForDatabaseReplacement(): void {
+  settingsResourceState.revision = null
+  settingsResourceState.fullRevision = null
+  settingsResourceState.pointerValueRevisions = {
+    characterOrder: null,
+    currentChar: null,
+  }
+  settingsResourceState.enabledModulesRevision = null
+  settingsResourceState.loreBookPageRevision = null
+  settingsResourceState.groupRevisions = {}
+
+  collectionsResourceState.revision = null
+  collectionsResourceState.fullRevision = null
+  collectionsResourceState.revisions = {}
+
+  charactersResourceState.revision = null
+  charactersResourceState.listRevision = null
+  charactersResourceState.orderRevision = null
+  charactersResourceState.selectionRevision = null
+  charactersResourceState.rowRevisions = {}
+
+  resetCharacterBodyResourceRevisions()
+  advanceAllSettingsProjectionEpochs()
+  advanceSettingsProjectionEpoch({ authoritativeFull: true })
+  advanceLorebookPageProjectionEpoch()
+  advanceAllCollectionProjectionEpochs()
+  advanceAllCharacterRowProjectionEpochs()
+  advanceAllChatBodyProjectionEpochs()
+  advanceAllCharacterLorebookBodyProjectionEpochs()
+  advanceAllCharacterLorebookProjectionEpochs()
+  markResourceDatabaseChanged()
+}
+
 export function replaceResourceDatabase(database: Database, revision?: number): void {
   resetCharacterBodyResourceRevisions()
   const nextRevision = normalizeOptionalRevision(revision)

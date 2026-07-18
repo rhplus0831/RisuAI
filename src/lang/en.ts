@@ -1384,6 +1384,8 @@ export const languageEnglish = {
   saveBackupLocal: 'Save local backup',
   saveBackupLocalZipStyle: 'Save local backup in ZIP style (not recommended).',
   loadBackupLocal: 'Load Backup Locally',
+  backupQueuedChangesDiscarded:
+    'The backup was loaded, but queued changes from the replaced database were discarded. Please review the restored values.',
   topP: 'Top P',
   genTimes: 'Generation Choices',
   cot: 'Chain of Thoughts',

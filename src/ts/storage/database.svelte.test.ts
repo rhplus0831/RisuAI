@@ -4684,6 +4684,57 @@ describe('durable preset mutation projections', () => {
     }
   })
 
+  it('retires a gated imported preset batch when database ownership is replaced', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-imported-prompt-restore',
+      writerEpoch: 10,
+      databaseLineage: 'lineage-imported-prompt-restore',
+      requestedWriterWasActive: true,
+    })
+    const response = deferred<Response>()
+
+    try {
+      const authoritativePrompts = [makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset]
+      seedPresetDatabase({ promptPresets: authoritativePrompts, promptPresetsId: 0 })
+      setCachedServerCommandRevision(100)
+      const calls: string[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          calls.push(url)
+          return response.promise
+        }) as unknown as typeof fetch,
+      )
+
+      const importing = addImportedPromptPreset(
+        makePreset('prompt-imported', 'Imported Prompt') as unknown as PromptPreset,
+      )
+      await vi.waitFor(() => expect(calls).toHaveLength(1))
+
+      resetPendingPresetMutationsForTests()
+      mergeServerResourceFields({
+        promptPresets: clonePlain(authoritativePrompts),
+        promptPresetsId: 0,
+      } as Partial<Database>)
+
+      await expect(importing).resolves.toBe('failed')
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a'])
+
+      response.resolve(jsonResponse({ error: 'old database request failed' }, 500))
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a'])
+    } finally {
+      response.resolve(jsonResponse({ error: 'test cleanup' }, 500))
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it.each([
     { kind: 'legacy' as const, path: '/presets/reorder' },
     { kind: 'model' as const, path: '/model-presets/reorder' },
@@ -4866,6 +4917,101 @@ describe('durable preset mutation projections', () => {
         'POST /api/v1/commands/model-presets/reorder',
       ])
       if (renameOutcome.status === 'queued') await expect(renameOutcome.settlement).resolves.toBe('accepted')
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('retires an in-flight preset selection before a restored database is applied', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-preset-restore-race',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-before-restore',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase({
+        modelPresets: [
+          makePreset('model-a', 'Alpha', { temperature: 11 }) as unknown as ModelPreset,
+          makePreset('model-b', 'Beta', { temperature: 22 }) as unknown as ModelPreset,
+        ],
+        modelPresetsId: 0,
+        temperature: 11,
+      })
+      setCachedServerCommandRevision(100)
+      const response = deferred<Response>()
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          calls.push({
+            url,
+            method: init.method ?? 'GET',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          })
+          return response.promise
+        }) as unknown as typeof fetch,
+      )
+
+      const selection = selectModelPreset(1)
+      await waitForState(() => expect(calls).toHaveLength(1))
+      const restoredDatabase = clonePlain(getDatabase())
+
+      resetPendingPresetMutationsForTests()
+      applyServerResourceDatabase(restoredDatabase, 200)
+      await expect(selection).resolves.toEqual({ status: 'failed' })
+
+      response.resolve(jsonResponse({ error: 'old database request failed' }, 500))
+      await waitForState(() => {
+        expect(getDatabase()).toMatchObject({ modelPresetsId: 1, temperature: 22 })
+      })
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('settles a queued preset row mutation when database ownership is replaced', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-preset-queued-restore',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-before-restore',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      seedPresetDatabase({
+        modelPresets: [
+          makePreset('model-a', 'Alpha') as unknown as ModelPreset,
+          makePreset('model-b', 'Beta') as unknown as ModelPreset,
+        ],
+        modelPresetsId: 0,
+      })
+      setCachedServerCommandRevision(100)
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) =>
+          String(input) === '/api/v1/commands/mutation-receipts/ack'
+            ? jsonResponse({ acknowledged: true })
+            : jsonResponse({ error: 'temporarily unavailable' }, 500),
+        ) as unknown as typeof fetch,
+      )
+
+      const outcome = await selectModelPreset(1)
+      expect(outcome.status).toBe('queued')
+      if (outcome.status !== 'queued') throw new Error('Expected a retained preset mutation')
+
+      resetPendingPresetMutationsForTests()
+
+      await expect(outcome.settlement).resolves.toBe('failed')
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

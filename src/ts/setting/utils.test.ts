@@ -564,6 +564,44 @@ describe('server-backed data-driven settings', () => {
     unmount(component)
   })
 
+  it('renders the restored value after database replacement clears a deferred input draft', async () => {
+    vi.useFakeTimers()
+    replaceResourceDatabase({
+      guiHTML: 'before',
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const item: SettingItem = {
+      id: 'display.guiHTML',
+      type: 'textarea',
+      bindKey: 'guiHTML' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+    const target = document.createElement('div')
+    const component = mount(SettingInputDraftHarness, { target, props: { ctx, item, kind: 'text' } })
+    flushSync()
+    const input = target.querySelector<HTMLInputElement>('[data-setting-input-draft]')!
+
+    input.value = 'queued'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    flushSync()
+    expect(getResourceDatabase().guiHTML).toBe('queued')
+
+    clearDeferredSettingWrites()
+    withServerResourceApply(() => {
+      applySettingsResource({ revision: 1, settings: { guiHTML: 'restored' } })
+    })
+    flushSync()
+
+    expect(input.value).toBe('restored')
+    expect(getResourceDatabase().guiHTML).toBe('restored')
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    expect(durableSettingState.dispatches).toEqual([])
+    unmount(component)
+  })
+
   it('overlays an in-flight immediate setting across full and grouped authoritative reads', async () => {
     const patchResponse = deferredResponse()
     const calls: CapturedFetch[] = []

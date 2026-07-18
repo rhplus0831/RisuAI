@@ -88,7 +88,11 @@ export async function loadBackupFromDevice(options: BackupOperationOptions = {})
     onProgress: options.onProgress,
   })
   if (result.status === 'ok') {
-    alertNormal('Local backup loaded')
+    if (result.discardedPendingMutations > 0) {
+      alertError(language.backupQueuedChangesDiscarded)
+    } else {
+      alertNormal('Local backup loaded')
+    }
     return 'ok'
   } else if (result.status === 'unsupported-groups') {
     alertError(
@@ -99,7 +103,9 @@ export async function loadBackupFromDevice(options: BackupOperationOptions = {})
     )
     return 'error'
   } else if (result.status === 'error') {
-    alertError(result.error)
+    alertError(
+      result.discardedPendingMutations ? `${result.error}\n\n${language.backupQueuedChangesDiscarded}` : result.error,
+    )
     return 'error'
   }
   return 'unavailable'

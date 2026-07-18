@@ -67,6 +67,7 @@ import {
   markSettingsGroupAcknowledgementTainted,
   markSettingsAcknowledgementTainted,
   replaceResourceDatabase,
+  resetServerResourceRevisionFencesForDatabaseReplacement,
   resetServerResourceState,
   setResourceDatabaseWriteGuardEnabled,
   settingsResourceState,
@@ -150,6 +151,35 @@ afterEach(() => {
 })
 
 describe('resource-scoped database state', () => {
+  it('accepts a lower full snapshot after database replacement fences are reset', () => {
+    applySettingsResource({ revision: 12, settings: { language: 'en' } })
+    applyCollectionsResource({ revision: 12, collections: completeCollections() })
+    applyCharactersResource({
+      revision: 12,
+      characters: [metadataCharacter('char-a', 'Before')],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(applySettingsResource({ revision: 3, settings: { language: 'ko' } })).toBe(false)
+    resetServerResourceRevisionFencesForDatabaseReplacement()
+
+    expect(applySettingsResource({ revision: 3, settings: { language: 'ko' } })).toBe(true)
+    expect(applyCollectionsResource({ revision: 3, collections: completeCollections() })).toBe(true)
+    expect(
+      applyCharactersResource({
+        revision: 3,
+        characters: [metadataCharacter('char-b', 'Restored')],
+        characterOrder: ['char-b'],
+        currentChar: 0,
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase()).toMatchObject({
+      language: 'ko',
+      characters: [{ chaId: 'char-b', name: 'Restored' }],
+    })
+  })
+
   it('composes settings, collections, and character metadata without a monolithic database object', () => {
     applySettingsResource({
       revision: 5,

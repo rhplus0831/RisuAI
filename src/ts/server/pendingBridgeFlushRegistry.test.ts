@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   flushRegisteredPendingBridgePatch,
   flushRegisteredPendingBridgePatches,
+  registerPendingBridgeOwnershipResetter,
   registerPendingBridgePatchFlusher,
+  resetRegisteredPendingBridgeOwnershipState,
 } from './pendingBridgeFlushRegistry'
 
 describe('pending bridge flush registry', () => {
@@ -48,5 +50,19 @@ describe('pending bridge flush registry', () => {
 
     unregisterSettings()
     unregisterChat()
+  })
+
+  it('resets only the current in-memory owner registration after database replacement', () => {
+    const staleResetter = vi.fn()
+    const currentResetter = vi.fn()
+    const unregisterStale = registerPendingBridgeOwnershipResetter('test:settings-owner', staleResetter)
+    const unregisterCurrent = registerPendingBridgeOwnershipResetter('test:settings-owner', currentResetter)
+
+    unregisterStale()
+    resetRegisteredPendingBridgeOwnershipState()
+
+    expect(staleResetter).not.toHaveBeenCalled()
+    expect(currentResetter).toHaveBeenCalledOnce()
+    unregisterCurrent()
   })
 })

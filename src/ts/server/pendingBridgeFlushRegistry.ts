@@ -1,8 +1,10 @@
 import type { ServerCommandTransportOptions } from './commands'
 
 type PendingBridgePatchFlusher = (options: ServerCommandTransportOptions) => void
+type PendingBridgeOwnershipResetter = () => void
 
 const pendingBridgePatchFlushers = new Map<string, PendingBridgePatchFlusher>()
+const pendingBridgeOwnershipResetters = new Map<string, PendingBridgeOwnershipResetter>()
 
 /** Register a lazily loaded bridge without making bootstrap import its feature module. */
 export function registerPendingBridgePatchFlusher(id: string, flusher: PendingBridgePatchFlusher): () => void {
@@ -22,4 +24,19 @@ export function flushRegisteredPendingBridgePatch(id: string, options: ServerCom
   if (!flusher) return false
   flusher(options)
   return true
+}
+
+/** Register in-memory state that must not survive a database ownership change. */
+export function registerPendingBridgeOwnershipResetter(
+  id: string,
+  resetter: PendingBridgeOwnershipResetter,
+): () => void {
+  pendingBridgeOwnershipResetters.set(id, resetter)
+  return () => {
+    if (pendingBridgeOwnershipResetters.get(id) === resetter) pendingBridgeOwnershipResetters.delete(id)
+  }
+}
+
+export function resetRegisteredPendingBridgeOwnershipState(): void {
+  for (const resetter of pendingBridgeOwnershipResetters.values()) resetter()
 }

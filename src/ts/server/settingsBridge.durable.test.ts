@@ -5,6 +5,8 @@ import { flushSync } from 'svelte'
 const recorded = vi.hoisted(() => ({
   dispatched: [] as Array<{ key: string; mutationId: string; intent: unknown }>,
   patches: [] as Array<Record<string, unknown>>,
+  patchResults: [] as Array<{ status: 'ok'; revision: number } | { status: 'unavailable' }>,
+  settlementListeners: new Map<string, Set<(settlement: 'accepted' | 'discarded') => void>>(),
   objectPatches: [] as Array<{
     baseRevision: number
     group: string
@@ -49,7 +51,7 @@ vi.mock('./commands', () => ({
   ),
   patchServerBackedSettings: vi.fn(async (args: { patch: Record<string, unknown> }) => {
     recorded.patches.push(args.patch)
-    return { status: 'ok', revision: 1 }
+    return recorded.patchResults.shift() ?? { status: 'ok', revision: 1 }
   }),
   runServerCommand: vi.fn(
     async (args: { command: (baseRevision: number) => Promise<{ status: string }>; rollback?: () => void }) => {
@@ -61,6 +63,7 @@ vi.mock('./commands', () => ({
   settingsGroupForKey: (key: string) => {
     if (key === 'NAIImgConfig') return 'media'
     if (key === 'notification') return 'display'
+    if (key === 'textTheme') return 'display'
     if (key === 'useAutoSuggestions') return 'sidebar'
     if (key === 'authRefreshes') return 'providers'
     return null
@@ -68,7 +71,17 @@ vi.mock('./commands', () => ({
 }))
 
 vi.mock('./durableMutationDispatch', () => ({
-  registerDurableMutationSettlementListener: vi.fn(() => () => {}),
+  registerDurableMutationSettlementListener: vi.fn(
+    (mutationId: string, listener: (settlement: 'accepted' | 'discarded') => void) => {
+      const listeners = recorded.settlementListeners.get(mutationId) ?? new Set()
+      listeners.add(listener)
+      recorded.settlementListeners.set(mutationId, listeners)
+      return () => {
+        listeners.delete(listener)
+        if (listeners.size === 0) recorded.settlementListeners.delete(mutationId)
+      }
+    },
+  ),
   dispatchDurableMutation: vi.fn(
     async (
       handle: { key: string; mutationId: string },
@@ -76,7 +89,11 @@ vi.mock('./durableMutationDispatch', () => ({
       dispatch: (options: Record<string, unknown>) => Promise<unknown>,
     ) => {
       recorded.dispatched.push({ key: handle.key, mutationId: handle.mutationId, intent })
-      return dispatch({ mutationId: handle.mutationId, databaseLineage: 'database-settings-bridge' })
+      return dispatch({
+        mutationId: handle.mutationId,
+        databaseLineage: 'database-settings-bridge',
+        failureRollbackDisposition: () => 'retain',
+      })
     },
   ),
 }))
@@ -87,6 +104,7 @@ vi.mock('./resourceReads', () => ({
 
 vi.mock('../alert', () => ({
   alertError: vi.fn(),
+  alertNormal: vi.fn(),
 }))
 
 vi.mock('./resourceWriteGuard.svelte', () => ({
@@ -116,23 +134,30 @@ vi.mock('../process/templates/templates', () => ({
 
 import type { Database } from '../storage/database.svelte'
 import '../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './resourceState.svelte'
+import { applySettingsResource, getResourceDatabase, replaceResourceDatabase } from './resourceState.svelte'
 import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
   listPendingMutations,
   preparePendingMutationOutbox,
+  registerPendingMutationDiscardListener,
   resetPendingMutationOutboxForTests,
   type PendingMutationOutboxEntry,
 } from './pendingMutationOutbox'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from './settingsMutationKey'
+import { resetRegisteredPendingBridgeOwnershipState } from './pendingBridgeFlushRegistry'
 import {
+  applyServerBackedSettingsPatch,
   dispatchDurableServerBackedSettingsPatch,
   flushPendingServerBackedSettingsPatch,
   watchServerBackedSettings,
 } from './settingsBridge.svelte'
 
 const LONG_DELAY = 60_000
+
+registerPendingMutationDiscardListener((mutationId) => {
+  for (const listener of [...(recorded.settlementListeners.get(mutationId) ?? [])]) listener('discarded')
+})
 
 const testDatabaseState = {
   get db() {
@@ -182,6 +207,8 @@ beforeEach(async () => {
   })
   recorded.dispatched.length = 0
   recorded.patches.length = 0
+  recorded.patchResults.length = 0
+  recorded.settlementListeners.clear()
   recorded.objectPatches.length = 0
   resourceGuardState.epoch = 0
 })
@@ -196,6 +223,34 @@ afterEach(async () => {
 })
 
 describe('settings bridge durable marker ordering', () => {
+  it('drops a queued old-lineage overlay before applying restored settings', async () => {
+    setupSettings({ textTheme: 'before' })
+    recorded.patchResults.push({ status: 'unavailable' })
+
+    applyServerBackedSettingsPatch({ textTheme: 'queued' })
+    await vi.waitFor(() => expect(recorded.dispatched).toHaveLength(1))
+    await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
+    await vi.waitFor(() => expect(recorded.settlementListeners.size).toBe(1))
+
+    expect(applySettingsResource({ revision: 1, settings: { textTheme: 'server-before' } })).toBe(true)
+    expect(testDatabaseState.db.textTheme).toBe('queued')
+
+    await expect(
+      preparePendingMutationOutbox({
+        writerSessionId: 'writer-settings-bridge',
+        writerEpoch: 7,
+        databaseLineage: 'database-restored',
+        requestedWriterWasActive: true,
+        onOwnershipChange: resetRegisteredPendingBridgeOwnershipState,
+      }),
+    ).resolves.toEqual({ discarded: 1 })
+
+    expect(recorded.settlementListeners.size).toBe(0)
+    expect(await listPendingMutations()).toEqual([])
+    expect(applySettingsResource({ revision: 2, settings: { textTheme: 'restored' } })).toBe(true)
+    expect(testDatabaseState.db.textTheme).toBe('restored')
+  })
+
   it('stages caller-owned optimistic settings patches before dispatch', async () => {
     const authRefreshes = [
       {

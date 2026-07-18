@@ -14,6 +14,8 @@ import { reapplyPendingPromptTemplateStructuralProjections } from './promptTempl
 import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
 import { applyServerChatMessagesResource, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
 import {
+  clearAppliedServerResourceRevision,
+  clearCachedServerCommandRevision,
   peekAppliedServerResourceRevision,
   setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
@@ -25,7 +27,10 @@ import {
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
 } from './lorebookBridge.svelte'
-import { getResourceDatabase as getDatabase } from './resourceState.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  resetServerResourceRevisionFencesForDatabaseReplacement,
+} from './resourceState.svelte'
 import { clearActiveMessageTranslation, setActiveMessageTranslations } from './messageTranslationJobs'
 import { fetchServerBootstrapReadOnly } from './bootstrap'
 import { recordFullResourceRefresh } from './protocolDiagnostics'
@@ -48,6 +53,7 @@ export type ServerResourceRefreshResult =
 
 let serverResourceRefreshPromise: Promise<ServerResourceRefreshResult> | null = null
 let serverResourceRefreshPending = false
+let serverDatabaseReplacementRefreshPending = false
 
 export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = {
   reapplyPendingPresetProjections,
@@ -85,6 +91,17 @@ export async function forceServerResourceRefresh(
   } finally {
     serverResourceRefreshPromise = null
   }
+}
+
+/** Force a full snapshot that may legitimately rewind every server revision. */
+export function forceServerDatabaseReplacementRefresh(
+  reason: string,
+  options: { resource?: string } = {},
+): Promise<ServerResourceRefreshResult> {
+  serverDatabaseReplacementRefreshPending = true
+  clearCachedServerCommandRevision()
+  clearAppliedServerResourceRevision()
+  return forceServerResourceRefresh(reason, options)
 }
 
 /**
@@ -144,6 +161,15 @@ async function runServerResourceRefresh(): Promise<ServerResourceRefreshResult> 
 
   do {
     serverResourceRefreshPending = false
+    if (serverDatabaseReplacementRefreshPending) {
+      serverDatabaseReplacementRefreshPending = false
+      // A replacement request can join an older full refresh that was already
+      // reading the previous database. Reset again after that iteration drains
+      // so its higher revision cannot fence out the replacement snapshot.
+      clearCachedServerCommandRevision()
+      clearAppliedServerResourceRevision()
+      resetServerResourceRevisionFencesForDatabaseReplacement()
+    }
     const selectionTracker = trackSelectedCharacterDuringRefresh()
     try {
       const result = await refreshAllServerResources({ hooks: serverResourceInvalidationHooks })
@@ -156,7 +182,7 @@ async function runServerResourceRefresh(): Promise<ServerResourceRefreshResult> 
     } finally {
       selectionTracker.stop()
     }
-  } while (serverResourceRefreshPending)
+  } while (serverResourceRefreshPending || serverDatabaseReplacementRefreshPending)
 
   return latestResult ?? { status: 'error', error: 'Server resource refresh did not complete' }
 }

@@ -75,11 +75,15 @@ export interface PreparePendingMutationOutboxInput {
   writerEpoch: number
   databaseLineage: string
   requestedWriterWasActive: boolean
+  /** Runs synchronously before a changed scope can admit replacement-owner writes. */
+  onOwnershipChange?: () => void
 }
 
 export interface PreparePendingMutationOutboxSummary {
   discarded: number
 }
+
+export type PendingMutationDiscardListener = (mutationId: string) => void
 
 export interface PendingMutationOwnerCandidate {
   writerSessionId: string
@@ -257,6 +261,7 @@ let persistenceWarningReported = false
 let pendingMutationScope: PendingMutationScope | null = null
 const liveProjectionGenerations = new Map<string, LivePendingMutationProjectionGeneration>()
 const liveProjectionGenerationStacks = new Map<string, string[]>()
+const pendingMutationDiscardListeners = new Set<PendingMutationDiscardListener>()
 
 export function pendingMutationSettingsFieldProjectionTarget(field: string): string {
   return `settings-field:${encodeProjectionTargetPart(field)}`
@@ -505,13 +510,13 @@ export async function preparePendingMutationOutbox(
   input: PreparePendingMutationOutboxInput,
 ): Promise<PreparePendingMutationOutboxSummary> {
   const scope = normalizeScope(input.writerSessionId, input.writerEpoch, input.databaseLineage)
-  if (
-    !input.requestedWriterWasActive ||
-    (pendingMutationScope &&
-      (pendingMutationScope.writerSessionId !== scope.writerSessionId ||
-        pendingMutationScope.writerEpoch !== scope.writerEpoch ||
-        pendingMutationScope.databaseLineage !== scope.databaseLineage))
-  ) {
+  const ownershipChanged =
+    pendingMutationScope !== null &&
+    (pendingMutationScope.writerSessionId !== scope.writerSessionId ||
+      pendingMutationScope.writerEpoch !== scope.writerEpoch ||
+      pendingMutationScope.databaseLineage !== scope.databaseLineage)
+  if (ownershipChanged) input.onOwnershipChange?.()
+  if (!input.requestedWriterWasActive || ownershipChanged) {
     clearLivePendingMutationProjectionGenerations()
     clearRetainedChatProjections()
   }
@@ -519,7 +524,7 @@ export async function preparePendingMutationOutbox(
   const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
   if (!database || !encryptionKey) return { discarded: 0 }
 
-  let discarded = 0
+  const discardedMutationIds: string[] = []
   try {
     const transaction = database.transaction([OUTBOX_MUTATION_STORE, OUTBOX_RECEIPT_ACK_STORE], 'readwrite')
     const mutationStore = transaction.objectStore(OUTBOX_MUTATION_STORE)
@@ -535,17 +540,39 @@ export async function preparePendingMutationOutbox(
         !input.requestedWriterWasActive && mutation.ownerWriterSessionId === scope.writerSessionId
       if (lineageMismatch || writerEpochMismatch || rejectedWriterDraft) {
         mutationStore.delete(mutation.mutationId)
-        if (!lineageMismatch && (writerEpochMismatch || rejectedWriterDraft)) discarded += 1
+        discardedMutationIds.push(mutation.mutationId)
       }
     }
     for (const receipt of receipts) {
       if (receipt.databaseLineage !== scope.databaseLineage) receiptStore.delete(receipt.mutationId)
     }
     await transactionDone(transaction)
+    for (const mutationId of discardedMutationIds) publishPendingMutationDiscard(mutationId)
   } catch (error) {
     reportPersistenceWarning('Unable to prepare the pending-mutation outbox', error)
+    return { discarded: 0 }
   }
-  return { discarded }
+  return { discarded: discardedMutationIds.length }
+}
+
+/**
+ * Observe rows removed while authenticated database ownership is prepared.
+ * The durable dispatcher uses this hook to publish terminal settlements
+ * without making the outbox import its higher-level dispatch module.
+ */
+export function registerPendingMutationDiscardListener(listener: PendingMutationDiscardListener): () => void {
+  pendingMutationDiscardListeners.add(listener)
+  return () => pendingMutationDiscardListeners.delete(listener)
+}
+
+function publishPendingMutationDiscard(mutationId: string): void {
+  for (const listener of pendingMutationDiscardListeners) {
+    try {
+      listener(mutationId)
+    } catch (error) {
+      console.error('Pending mutation discard listener rejected:', error)
+    }
+  }
 }
 
 /**

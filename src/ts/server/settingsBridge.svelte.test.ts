@@ -284,6 +284,7 @@ import {
   flushPendingServerBackedSettingsPatch,
   persistServerBackedSettingsPatch,
   persistServerBackedSettingsPatchWithSettlement,
+  resetServerBackedSettingsBridgeForDatabaseReplacement,
   type ServerBackedSettingDraft,
   watchServerBackedSettings,
 } from './settingsBridge.svelte'
@@ -412,6 +413,24 @@ afterEach(async () => {
 })
 
 describe('settingsBridge coalescing', () => {
+  it('releases a dirty draft when replacement database ownership is adopted', async () => {
+    setupSettings({ textTheme: 'before' })
+    const { draft, stop } = await createSettingDraft('textTheme', '')
+
+    draft.value = 'queued'
+    await flushAndSettle()
+    expect(testDatabaseState.db.textTheme).toBe('queued')
+
+    resetServerBackedSettingsBridgeForDatabaseReplacement()
+    await applyProjectionSetting('textTheme', 'restored')
+
+    expect(draft.value).toBe('restored')
+    expect(testDatabaseState.db.textTheme).toBe('restored')
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches).toEqual([])
+    stop()
+  })
+
   it('commits onboarding through the selected split-preset owners in one command', async () => {
     const persistence = createDeferred<{
       status: 'ok'
@@ -948,6 +967,19 @@ describe('settingsBridge coalescing', () => {
     },
   )
 
+  it('returns a discarded exact-setting receipt while its old HTTP request remains pending', async () => {
+    const command = createDeferred<unknown>()
+    recorded.patchResults.push(command.promise)
+    setupSettings({ notification: true })
+
+    const receipt = persistServerBackedSettingsPatchWithSettlement({ notification: false })
+    await vi.waitFor(() => expect(durabilityMocks.dispatched).toHaveLength(1))
+    resetServerBackedSettingsBridgeForDatabaseReplacement()
+    publishSettingsSettlement(durabilityMocks.dispatched[0].mutationId, 'discarded')
+
+    await expect(receipt).resolves.toEqual({ status: 'failed' })
+  })
+
   it('removes only the failed Hypa V3 appended preset while preserving sibling edits and later appends', async () => {
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta')],
@@ -1437,6 +1469,39 @@ describe('settingsBridge coalescing', () => {
         ['NAIImgConfig'],
       ),
     ).toBe(true)
+    stop()
+  })
+
+  it('retires an in-flight sparse queue before restored settings are applied', async () => {
+    const original = { width: 512, height: 768 }
+    const restored = { width: 640, height: 960 }
+    const firstResult = createDeferred<unknown>()
+    recorded.objectResults.push(firstResult.promise)
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await flushAndSettle()
+    expect(recorded.objectPatches).toHaveLength(1)
+
+    resetServerBackedSettingsBridgeForDatabaseReplacement()
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: Number.MAX_SAFE_INTEGER,
+          group: 'media',
+          settings: { NAIImgConfig: restored as never },
+        },
+        ['NAIImgConfig'],
+      ),
+    ).toBe(true)
+    firstResult.resolve({ status: 'error', error: 'old database request failed' })
+    for (let index = 0; index < 8; index += 1) await flushAndSettle()
+
+    expect(testDatabaseState.db.NAIImgConfig).toEqual(restored)
+    expect(alertMocks.alertError).not.toHaveBeenCalled()
     stop()
   })
 

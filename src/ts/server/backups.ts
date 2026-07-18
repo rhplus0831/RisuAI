@@ -1,12 +1,11 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
-import {
-  activeWriterSessionHeader,
-  getActiveWriterSessionId,
-  handleActiveWriterStaleResponse,
-} from './activeWriterSession'
+import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import type { CommandEvent } from './commands'
-import { preparePendingMutationOutbox } from './pendingMutationOutbox'
-import { forceServerResourceRefresh } from './resourceRefresh'
+import {
+  adoptReplacementDatabaseOwnership,
+  beginLocalReplacementDatabaseOperation,
+} from './replacementDatabaseOwnership'
+import { forceServerDatabaseReplacementRefresh } from './resourceRefresh'
 
 const BACKUPS_ENDPOINT = '/api/v1/backups'
 const BUNDLE_EXPORT_ENDPOINT = '/api/v1/export/bundle'
@@ -27,7 +26,7 @@ export interface ServerBackupManifest {
 
 export type ServerBackupResult<T> =
   | ({ status: 'ok' } & T)
-  | { status: 'error'; error: string }
+  | { status: 'error'; error: string; discardedPendingMutations?: number }
   | { status: 'unavailable' }
 
 export interface UnsupportedBackupGroup {
@@ -121,7 +120,20 @@ export async function restoreServerBackup(input: {
   id: string
   signal?: AbortSignal | null
   onProgress?: ServerBackupProgressCallback
-}): Promise<ServerBackupResult<{ revision: number; event?: CommandEvent }>> {
+}): Promise<ServerBackupResult<{ revision: number; event?: CommandEvent; discardedPendingMutations: number }>> {
+  const finishReplacement = beginLocalReplacementDatabaseOperation()
+  try {
+    return await restoreServerBackupImplementation(input)
+  } finally {
+    finishReplacement()
+  }
+}
+
+async function restoreServerBackupImplementation(input: {
+  id: string
+  signal?: AbortSignal | null
+  onProgress?: ServerBackupProgressCallback
+}): Promise<ServerBackupResult<{ revision: number; event?: CommandEvent; discardedPendingMutations: number }>> {
   reportProgress(input.onProgress, {
     phase: 'process',
     message: 'Restoring server backup',
@@ -151,24 +163,24 @@ export async function restoreServerBackup(input: {
     map: (result) => result,
   })
   if (restored.status !== 'ok') return restored
-  await adoptReplacementDatabaseOwnership(restored)
+  const { discarded: discardedPendingMutations } = await adoptReplacementDatabaseOwnership(restored)
 
   reportProgress(input.onProgress, {
     phase: 'resync',
     message: 'Refreshing local state',
     percent: 75,
   })
-  const resync = await forceServerResourceRefresh('backup-restore')
+  const resync = await forceServerDatabaseReplacementRefresh('backup-restore')
   if (resync.status !== 'ok') {
     return {
       status: 'error',
+      ...(discardedPendingMutations > 0 ? { discardedPendingMutations } : {}),
       error:
         resync.status === 'unavailable'
           ? 'Backup restored, but server resource APIs are unavailable; reload to refresh local state.'
           : `Backup restored, but resource refresh failed: ${resync.error}`,
     }
   }
-
   reportProgress(input.onProgress, {
     phase: 'complete',
     message: 'Server backup loaded',
@@ -177,6 +189,7 @@ export async function restoreServerBackup(input: {
   return {
     status: 'ok',
     revision: restored.revision,
+    discardedPendingMutations,
     ...(restored.event ? { event: restored.event } : {}),
   }
 }
@@ -288,7 +301,27 @@ export async function importServerBundle(input: {
   filename?: string
   signal?: AbortSignal | null
   onProgress?: ServerBackupProgressCallback
-}): Promise<ServerBackupResult<{ revision: number; event?: CommandEvent }> | UnsupportedBackupGroupsResult> {
+}): Promise<
+  | ServerBackupResult<{ revision: number; event?: CommandEvent; discardedPendingMutations: number }>
+  | UnsupportedBackupGroupsResult
+> {
+  const finishReplacement = beginLocalReplacementDatabaseOperation()
+  try {
+    return await importServerBundleImplementation(input)
+  } finally {
+    finishReplacement()
+  }
+}
+
+async function importServerBundleImplementation(input: {
+  file: Blob
+  filename?: string
+  signal?: AbortSignal | null
+  onProgress?: ServerBackupProgressCallback
+}): Promise<
+  | ServerBackupResult<{ revision: number; event?: CommandEvent; discardedPendingMutations: number }>
+  | UnsupportedBackupGroupsResult
+> {
   if (!canUseServerBackups()) return { status: 'unavailable' }
 
   reportProgress(input.onProgress, {
@@ -348,24 +381,24 @@ export async function importServerBundle(input: {
   if (imported === null) {
     return { status: 'error', error: 'Invalid bundle import response' }
   }
-  await adoptReplacementDatabaseOwnership(imported)
+  const { discarded: discardedPendingMutations } = await adoptReplacementDatabaseOwnership(imported)
 
   reportProgress(input.onProgress, {
     phase: 'resync',
     message: 'Refreshing local state',
     percent: 90,
   })
-  const resync = await forceServerResourceRefresh('bundle-restore')
+  const resync = await forceServerDatabaseReplacementRefresh('bundle-restore')
   if (resync.status !== 'ok') {
     return {
       status: 'error',
+      ...(discardedPendingMutations > 0 ? { discardedPendingMutations } : {}),
       error:
         resync.status === 'unavailable'
           ? 'Backup imported, but server resource APIs are unavailable; reload to refresh local state.'
           : `Backup imported, but resource refresh failed: ${resync.error}`,
     }
   }
-
   reportProgress(input.onProgress, {
     phase: 'complete',
     message: 'Local backup loaded',
@@ -374,6 +407,7 @@ export async function importServerBundle(input: {
   return {
     status: 'ok',
     revision: imported.revision,
+    discardedPendingMutations,
     ...(imported.event ? { event: imported.event } : {}),
   }
 }
@@ -615,18 +649,6 @@ function readDatabaseOwnership(record: {
     databaseLineage: record.databaseLineage,
     writerEpoch: record.writerEpoch as number,
   }
-}
-
-async function adoptReplacementDatabaseOwnership(ownership: {
-  databaseLineage: string
-  writerEpoch: number
-}): Promise<void> {
-  await preparePendingMutationOutbox({
-    writerSessionId: getActiveWriterSessionId(),
-    writerEpoch: ownership.writerEpoch,
-    databaseLineage: ownership.databaseLineage,
-    requestedWriterWasActive: true,
-  })
 }
 
 function filenameFromContentDisposition(header: string | null): string | null {

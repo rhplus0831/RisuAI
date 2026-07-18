@@ -117,6 +117,7 @@ import { canUseServerResourceReads } from '../server/resourceReads'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from '../server/chatGenerationSettingsResourceGuard'
 import {
   flushRegisteredPendingBridgePatch,
+  registerPendingBridgeOwnershipResetter,
   registerPendingBridgePatchFlusher,
 } from '../server/pendingBridgeFlushRegistry'
 import { dispatchDurableMutation, registerDurableMutationSettlementListener } from '../server/durableMutationDispatch'
@@ -592,6 +593,7 @@ interface DispatchedSplitPresetPatch {
   outcomeResolvers: Array<(outcome: PresetMutationOutcome) => void>
   finalSettlement: PresetMutationFinalSettlement
   settlementCleanup?: () => void
+  retired: boolean
   settled: boolean
 }
 
@@ -659,7 +661,10 @@ interface PresetRowMutationAttempt {
   entries: PresetRowMutationEntry[]
   selection?: PresetSelectionMutation
   outbox: PendingMutationHandle | null
+  finalSettlement?: PresetMutationFinalSettlement
+  retirement?: () => void
   settlementCleanup?: () => void
+  retired: boolean
   settled: boolean
 }
 
@@ -669,7 +674,10 @@ interface PresetReorderMutationAttempt {
   previousPresetIds: string[]
   attemptedPresetIds: string[]
   outbox: PendingMutationHandle | null
+  finalSettlement?: PresetMutationFinalSettlement
+  retirement?: () => void
   settlementCleanup?: () => void
+  retired: boolean
   settled: boolean
 }
 
@@ -1004,6 +1012,7 @@ export function flushPendingSplitPresetPatches(options: ServerCommandTransportOp
 }
 
 registerPendingBridgePatchFlusher('split-preset-fields', flushPendingSplitPresetPatches)
+registerPendingBridgeOwnershipResetter('preset-mutations', resetPendingPresetMutationsForDatabaseReplacement)
 
 function splitPresetPatchPayload(
   fields: Map<string, SplitPresetPatchFieldAttempt>,
@@ -1135,6 +1144,7 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
     outbox: pending.outbox,
     outcomeResolvers: pending.outcomeResolvers.splice(0),
     finalSettlement,
+    retired: false,
     settled: false,
   }
   const optimisticAcknowledgement: SplitPresetPatchOptimisticAcknowledgement = {
@@ -1196,6 +1206,7 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
         return result
       },
       rollback: () => {
+        if (attempt.settled) return
         taintSplitPresetPatchAttempt(attempt)
         settleSplitPresetPatchAttempt(attempt, false)
         rollbackSplitPresetPatchAttempt(attempt)
@@ -1208,7 +1219,11 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
   void dispatch
     .then(async (result) => {
       if (result.status === 'ok' || attempt.settled) return
-      if ((await attempt.outbox.ready) === 'persisted' && (await isPendingMutationCurrent(attempt.outbox))) {
+      const persisted = (await attempt.outbox.ready) === 'persisted'
+      if (attempt.settled) return
+      const current = persisted && (await isPendingMutationCurrent(attempt.outbox))
+      if (attempt.settled) return
+      if (current) {
         reapplyPendingPresetProjections()
         resolveDispatchedSplitPresetOutcome(attempt, 'queued')
         return
@@ -1219,7 +1234,11 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
     })
     .catch(async (error) => {
       if (attempt.settled) return
-      if ((await attempt.outbox.ready) === 'persisted' && (await isPendingMutationCurrent(attempt.outbox))) {
+      const persisted = (await attempt.outbox.ready) === 'persisted'
+      if (attempt.settled) return
+      const current = persisted && (await isPendingMutationCurrent(attempt.outbox))
+      if (attempt.settled) return
+      if (current) {
         reapplyPendingPresetProjections()
         resolveDispatchedSplitPresetOutcome(attempt, 'queued')
         return
@@ -1808,6 +1827,7 @@ function createPresetRowMutationAttempt(
     entries: safeStructuredClone(entries),
     ...(selection ? { selection: safeStructuredClone(selection) } : {}),
     outbox: null,
+    retired: false,
     settled: false,
   }
   unsettledPresetRowMutationAttempts.push(attempt)
@@ -1847,6 +1867,7 @@ function createPresetReorderMutationAttempt(
     previousPresetIds: [...previousPresetIds],
     attemptedPresetIds: [...attemptedPresetIds],
     outbox: null,
+    retired: false,
     settled: false,
   }
   unsettledPresetReorderMutationAttempts.push(attempt)
@@ -1856,6 +1877,7 @@ function createPresetReorderMutationAttempt(
 function settlePresetRowMutationAttempt(attempt: PresetRowMutationAttempt, accepted: boolean): void {
   if (attempt.settled) return
   attempt.settled = true
+  attempt.retirement = undefined
   attempt.settlementCleanup?.()
   attempt.settlementCleanup = undefined
   const attemptIndex = unsettledPresetRowMutationAttempts.indexOf(attempt)
@@ -1942,6 +1964,7 @@ function copyPresetRowFieldState(target: Record<string, unknown>, source: Record
 function settlePresetReorderMutationAttempt(attempt: PresetReorderMutationAttempt, accepted: boolean): void {
   if (attempt.settled) return
   attempt.settled = true
+  attempt.retirement = undefined
   attempt.settlementCleanup?.()
   attempt.settlementCleanup = undefined
   const attemptIndex = unsettledPresetReorderMutationAttempts.indexOf(attempt)
@@ -2047,6 +2070,7 @@ function reapplyRetainedPresetRowMutationAttempt(
   attempt: PresetRowMutationAttempt,
   handle: PendingMutationHandle,
 ): void {
+  if (attempt.retired || attempt.settled) return
   attempt.outbox = handle
   reapplyPendingPresetProjections()
 }
@@ -2067,6 +2091,7 @@ function reapplyRetainedPresetReorderMutationAttempt(
   attempt: PresetReorderMutationAttempt,
   handle: PendingMutationHandle,
 ): void {
+  if (attempt.retired || attempt.settled) return
   attempt.outbox = handle
   reapplyPendingPresetProjections()
 }
@@ -2271,21 +2296,48 @@ export function reapplyPendingPresetProjections(): void {
   withTrustedResourceWrite(reapplyPendingPresetProjectionsMutable)
 }
 
-export function resetPendingPresetMutationsForTests(): void {
+export function resetPendingPresetMutationsForDatabaseReplacement(): void {
   for (const pending of pendingSplitPresetPatches.values()) {
     if (pending.timer) clearTimeout(pending.timer)
     resolvePendingSplitPresetOutcome(pending, { status: 'failed' })
   }
   for (const attempts of unsettledSplitPresetPatches.values()) {
     for (const attempt of attempts) {
+      attempt.retired = true
+      attempt.settled = true
       attempt.settlementCleanup?.()
+      attempt.settlementCleanup = undefined
       resolveDispatchedSplitPresetOutcome(attempt, 'failed')
       attempt.finalSettlement.resolve('failed')
     }
   }
-  for (const attempt of unsettledPresetRowMutationAttempts) attempt.settlementCleanup?.()
-  for (const attempt of unsettledPresetReorderMutationAttempts) attempt.settlementCleanup?.()
-  for (const attempt of unsettledImportedSplitPresets) attempt.settlementCleanup?.()
+  for (const attempt of unsettledPresetRowMutationAttempts) {
+    attempt.retired = true
+    attempt.settled = true
+    attempt.retirement?.()
+    attempt.retirement = undefined
+    attempt.settlementCleanup?.()
+    attempt.settlementCleanup = undefined
+    attempt.finalSettlement?.resolve('failed')
+    attempt.finalSettlement = undefined
+  }
+  for (const attempt of unsettledPresetReorderMutationAttempts) {
+    attempt.retired = true
+    attempt.settled = true
+    attempt.retirement?.()
+    attempt.retirement = undefined
+    attempt.settlementCleanup?.()
+    attempt.settlementCleanup = undefined
+    attempt.finalSettlement?.resolve('failed')
+    attempt.finalSettlement = undefined
+  }
+  for (const attempt of unsettledImportedSplitPresets) {
+    attempt.retired = true
+    attempt.settled = true
+    attempt.retirement.resolve()
+    attempt.settlementCleanup?.()
+    attempt.settlementCleanup = undefined
+  }
   pendingSplitPresetPatches.clear()
   unsettledSplitPresetPatches.clear()
   unsettledPresetRowMutationAttempts.splice(0)
@@ -2295,6 +2347,8 @@ export function resetPendingPresetMutationsForTests(): void {
   activeImportedSplitPresetOwnerKeys.get('prompt')?.clear()
   nextPresetMutationSequence = 0
 }
+
+export const resetPendingPresetMutationsForTests = resetPendingPresetMutationsForDatabaseReplacement
 
 function preparePresetMutation(
   intent: DurableMutationIntent,
@@ -2322,6 +2376,8 @@ function dispatchPreparedPresetMutation<T extends Record<string, unknown>>(input
   onRollback: () => void
   onRetained: (handle: PendingMutationHandle) => void
   finalSettlement: Promise<PresetMutationFinalStatus>
+  isActive: () => boolean
+  registerRetirement: (retire: () => void) => void
   retryConflictWhile?: () => boolean
 }): Promise<PresetMutationOutcome> {
   let settled = false
@@ -2330,24 +2386,30 @@ function dispatchPreparedPresetMutation<T extends Record<string, unknown>>(input
   const outcome = new Promise<PresetMutationOutcome>((resolve) => {
     resolveOutcome = resolve
   })
+  const canContinue = () => !settled && input.isActive()
   const acceptOnce = () => {
-    if (settled) return
+    if (!canContinue()) return
     settled = true
     input.onAccepted()
     resolveOutcome({ status: 'accepted' })
   }
   const rollbackOnce = () => {
-    if (settled) return
+    if (!canContinue()) return
     settled = true
     input.onRollback()
     resolveOutcome({ status: 'failed' })
   }
   const retainOnce = (handle: PendingMutationHandle) => {
-    if (settled || retained) return
+    if (!canContinue() || retained) return
     retained = true
     input.onRetained(handle)
     resolveOutcome({ status: 'queued', settlement: input.finalSettlement })
   }
+  input.registerRetirement(() => {
+    if (settled) return
+    settled = true
+    resolveOutcome({ status: 'failed' })
+  })
 
   if (input.prepared.status === 'failed') {
     rollbackOnce()
@@ -2374,6 +2436,7 @@ function dispatchPreparedPresetMutation<T extends Record<string, unknown>>(input
   const pending = (async () => {
     const result = await dispatchOnce(!!input.retryConflictWhile)
     if (result.status !== 'conflict' || !input.retryConflictWhile) return result
+    if (!canContinue()) return result
     if (input.retryConflictWhile()) return dispatchOnce(false)
 
     await acknowledgePendingMutation(prepared.handle)
@@ -2383,15 +2446,24 @@ function dispatchPreparedPresetMutation<T extends Record<string, unknown>>(input
 
   void pending
     .then(async (result) => {
-      if (result.status === 'ok' || settled) return
-      if ((await prepared.handle.ready) === 'persisted' && (await isPendingMutationCurrent(prepared.handle))) {
+      if (result.status === 'ok' || !canContinue()) return
+      const persisted = (await prepared.handle.ready) === 'persisted'
+      if (!canContinue()) return
+      const current = persisted && (await isPendingMutationCurrent(prepared.handle))
+      if (!canContinue()) return
+      if (current) {
         retainOnce(prepared.handle)
         return
       }
       rollbackOnce()
     })
     .catch(async (error) => {
-      if ((await prepared.handle.ready) === 'persisted' && (await isPendingMutationCurrent(prepared.handle))) {
+      if (!canContinue()) return
+      const persisted = (await prepared.handle.ready) === 'persisted'
+      if (!canContinue()) return
+      const current = persisted && (await isPendingMutationCurrent(prepared.handle))
+      if (!canContinue()) return
+      if (current) {
         retainOnce(prepared.handle)
         return
       }
@@ -2409,15 +2481,20 @@ function dispatchPresetRowMutation<T extends Record<string, unknown>>(
   options: { retryConflictWhile?: () => boolean } = {},
 ): Promise<PresetMutationOutcome> {
   const finalSettlement = createPresetMutationFinalSettlement()
+  attempt.finalSettlement = finalSettlement
   const accept = () => {
+    if (attempt.retired || attempt.settled) return
     settlePresetRowMutationAttempt(attempt, true)
     finalSettlement.resolve('accepted')
+    attempt.finalSettlement = undefined
   }
   const rollback = () => {
+    if (attempt.retired || attempt.settled) return
     settlePresetRowMutationAttempt(attempt, false)
     rollbackPresetRowMutationAttempt(attempt)
     onTerminalRollback()
     finalSettlement.resolve('failed')
+    attempt.finalSettlement = undefined
   }
   if (prepared.status === 'durable') {
     attempt.outbox = prepared.handle
@@ -2432,6 +2509,10 @@ function dispatchPresetRowMutation<T extends Record<string, unknown>>(
     onRollback: rollback,
     onRetained: (handle) => reapplyRetainedPresetRowMutationAttempt(attempt, handle),
     finalSettlement: finalSettlement.promise,
+    isActive: () => !attempt.retired && !attempt.settled,
+    registerRetirement: (retire) => {
+      attempt.retirement = retire
+    },
     ...options,
   })
 }
@@ -2443,15 +2524,20 @@ function dispatchPresetReorderMutation<T extends Record<string, unknown>>(
   onTerminalRollback: () => void = () => {},
 ): Promise<PresetMutationOutcome> {
   const finalSettlement = createPresetMutationFinalSettlement()
+  attempt.finalSettlement = finalSettlement
   const accept = () => {
+    if (attempt.retired || attempt.settled) return
     settlePresetReorderMutationAttempt(attempt, true)
     finalSettlement.resolve('accepted')
+    attempt.finalSettlement = undefined
   }
   const rollback = () => {
+    if (attempt.retired || attempt.settled) return
     settlePresetReorderMutationAttempt(attempt, false)
     rollbackPresetReorderMutationAttempt(attempt)
     onTerminalRollback()
     finalSettlement.resolve('failed')
+    attempt.finalSettlement = undefined
   }
   if (prepared.status === 'durable') {
     attempt.outbox = prepared.handle
@@ -2466,6 +2552,10 @@ function dispatchPresetReorderMutation<T extends Record<string, unknown>>(
     onRollback: rollback,
     onRetained: (handle) => reapplyRetainedPresetReorderMutationAttempt(attempt, handle),
     finalSettlement: finalSettlement.promise,
+    isActive: () => !attempt.retired && !attempt.settled,
+    registerRetirement: (retire) => {
+      attempt.retirement = retire
+    },
   })
 }
 
@@ -5813,11 +5903,26 @@ interface StagedImportedSplitPreset extends ImportedSplitPresetDefinition {
   sequence: number
   handle: PendingMutationHandle
   intent: DurableMutationIntent
+  retirement: PresetMutationRetirementSignal
   settlementCleanup?: () => void
+  retired: boolean
   settled: boolean
 }
 
+interface PresetMutationRetirementSignal {
+  promise: Promise<void>
+  resolve: () => void
+}
+
 const unsettledImportedSplitPresets: StagedImportedSplitPreset[] = []
+
+function createPresetMutationRetirementSignal(): PresetMutationRetirementSignal {
+  let resolve!: () => void
+  const promise = new Promise<void>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
 
 interface ImportedSplitPresetDispatchOutcome {
   result: ServerCommandResult
@@ -5836,7 +5941,7 @@ function projectImportedSplitPresets(attempts: readonly ImportedSplitPresetDefin
 }
 
 function reapplyRetainedImportedSplitPreset(attempt: StagedImportedSplitPreset): void {
-  if (!attempt.settled) reapplyPendingPresetProjections()
+  if (!attempt.retired && !attempt.settled) reapplyPendingPresetProjections()
 }
 
 function settleImportedSplitPreset(attempt: StagedImportedSplitPreset, accepted: boolean): void {
@@ -5882,6 +5987,8 @@ async function dispatchImportedSplitPresetBatch(
         sequence: reservePresetMutationSequence(),
         handle,
         intent,
+        retirement: createPresetMutationRetirementSignal(),
+        retired: false,
         settled: false,
       }
       attempt.settlementCleanup = registerDurableMutationSettlementListener(handle.mutationId, (settlement) =>
@@ -5912,6 +6019,10 @@ async function dispatchImportedSplitPresetBatch(
           runServerCommand({
             command: async (baseRevision) => {
               await durabilityReady
+              if (attempt.retired) {
+                firstFailure ??= { status: 'unavailable' }
+                return firstFailure
+              }
               if (firstFailure) return firstFailure
               const result =
                 attempt.kind === 'model'
@@ -5926,7 +6037,9 @@ async function dispatchImportedSplitPresetBatch(
               if (result.status !== 'ok') firstFailure ??= result
               return result
             },
-            rollback: () => rollbackSplitPresetCreate(attempt.kind, attempt.preset),
+            rollback: () => {
+              if (!attempt.retired) rollbackSplitPresetCreate(attempt.kind, attempt.preset)
+            },
             ...transport,
             failureRollbackDisposition: (failure) => {
               const disposition = transport.failureRollbackDisposition?.(failure) ?? 'rollback'
@@ -5941,18 +6054,36 @@ async function dispatchImportedSplitPresetBatch(
       return { result, retained }
     } catch (error) {
       firstFailure ??= { status: 'unavailable' }
-      if ((await attempt.handle.ready) === 'persisted' && (await isPendingMutationCurrent(attempt.handle))) {
+      if (attempt.retired) return { result: { status: 'unavailable' }, retained: false }
+      const persisted = (await attempt.handle.ready) === 'persisted'
+      if (attempt.retired) return { result: { status: 'unavailable' }, retained: false }
+      const current = persisted && (await isPendingMutationCurrent(attempt.handle))
+      if (attempt.retired) return { result: { status: 'unavailable' }, retained: false }
+      if (current) {
         return { result: { status: 'unavailable' }, retained: true }
       }
       throw error
     }
   }
 
-  const settled = await Promise.allSettled(staged.map(dispatchAttempt))
+  const settled = await Promise.allSettled(
+    staged.map((attempt) =>
+      Promise.race([
+        dispatchAttempt(attempt),
+        attempt.retirement.promise.then(
+          (): ImportedSplitPresetDispatchOutcome => ({ result: { status: 'unavailable' }, retained: false }),
+        ),
+      ]),
+    ),
+  )
   let queued = false
   let failed = false
   settled.forEach((outcome, index) => {
     const attempt = staged[index]
+    if (attempt.retired) {
+      failed = true
+      return
+    }
     if (outcome.status === 'rejected') {
       settleImportedSplitPreset(attempt, false)
       failed = true

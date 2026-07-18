@@ -75,7 +75,20 @@ import {
   reconcileChatCompletionPushNotificationSetting,
 } from './server/pushNotificationSetting'
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
-import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './server/resourceRefresh'
+import {
+  forceServerDatabaseReplacementRefresh,
+  forceServerResourceRefresh,
+  serverResourceInvalidationHooks,
+} from './server/resourceRefresh'
+import {
+  adoptReplacementDatabaseOwnership,
+  hasPendingReplacementDatabaseRefresh,
+  isReplacementDatabaseOwnershipRefreshPending,
+  markReplacementDatabaseOwnershipRefreshed,
+  waitForLocalReplacementDatabaseOperations,
+  wasReplacementDatabaseOwnershipRefreshed,
+  type ReplacementDatabaseOwnership,
+} from './server/replacementDatabaseOwnership'
 import {
   resolveSelectedCharacterIndexAfterRefresh,
   trackSelectedCharacterDuringRefresh,
@@ -250,12 +263,17 @@ export async function loadWebInitialDatabase() {
     : await initializeFreshServerDatabase(firstBootstrap.bootstrap)
 
   const { databaseLineage, requestedWriterWasActive, writerEpoch } = firstBootstrap.bootstrap
-  if (!databaseLineage || typeof requestedWriterWasActive !== 'boolean' || !Number.isSafeInteger(writerEpoch)) {
+  if (
+    !databaseLineage ||
+    typeof requestedWriterWasActive !== 'boolean' ||
+    typeof writerEpoch !== 'number' ||
+    !Number.isSafeInteger(writerEpoch)
+  ) {
     throw new Error('Server bootstrap is missing durable mutation ownership metadata')
   }
   const pendingMutationPreparation = await preparePendingMutationOutbox({
     writerSessionId: getActiveWriterSessionId(),
-    writerEpoch: writerEpoch!,
+    writerEpoch,
     databaseLineage,
     requestedWriterWasActive,
   })
@@ -292,6 +310,7 @@ export async function loadWebInitialDatabase() {
   }
   setCachedServerCommandRevision(resources.revision)
   setAppliedServerResourceRevision(resources.revision)
+  markReplacementDatabaseOwnershipRefreshed({ databaseLineage, writerEpoch })
   setServerCommandSuccessReconciler((event, coalescedEvents, localEffects) =>
     enqueueServerResourceSync(() =>
       processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event], localEffects),
@@ -418,6 +437,13 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
     serverResourceEventSubscription = subscription
     recordServerResourceEventFrame(eventEpoch)
     if (options.replayPendingMutations !== false) triggerReconnectPendingMutationReplay()
+    if (hasPendingReplacementDatabaseRefresh()) {
+      enqueueServerResourceSync(async () => {
+        if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
+        const refreshed = await retryPendingReplacementDatabaseRefresh()
+        if (!refreshed) scheduleServerResourceReconnect(eventEpoch)
+      })
+    }
   } else if (subscription.status === 'error') {
     console.warn(`Server event subscription failed: ${subscription.error}`)
     scheduleServerResourceReconnect(eventEpoch)
@@ -425,10 +451,40 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
     console.warn(`Server event replay unavailable at revision ${subscription.currentRevision}; refreshing resources`)
     enqueueServerResourceSync(async () => {
       if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
-      await forceServerResourceRefresh('event-replay-unavailable')
+      await refreshAfterUnavailableEventReplay()
       scheduleServerResourceReconnect(eventEpoch)
     })
   }
+}
+
+async function refreshAfterUnavailableEventReplay(): Promise<void> {
+  const reconciliation = await reconcileReplacementDatabaseOwnership()
+  if (reconciliation === null) return
+  const replacementRefresh =
+    reconciliation.ownershipChanged ||
+    isReplacementDatabaseOwnershipRefreshPending(reconciliation.ownership) ||
+    !wasReplacementDatabaseOwnershipRefreshed(reconciliation.ownership)
+  const refresh = replacementRefresh
+    ? await forceServerDatabaseReplacementRefresh('event-replay-unavailable')
+    : await forceServerResourceRefresh('event-replay-unavailable')
+  if (replacementRefresh && refresh.status === 'ok') {
+    markReplacementDatabaseOwnershipRefreshed(reconciliation.ownership)
+  }
+}
+
+async function retryPendingReplacementDatabaseRefresh(): Promise<boolean> {
+  const reconciliation = await reconcileReplacementDatabaseOwnership()
+  if (reconciliation === null) return false
+  if (!isReplacementDatabaseOwnershipRefreshPending(reconciliation.ownership)) return true
+  const refresh = await forceServerDatabaseReplacementRefresh('database-replacement-reconnect')
+  if (refresh.status !== 'ok') {
+    if (refresh.status === 'error') {
+      console.warn(`Pending server database replacement refresh failed: ${refresh.error}`)
+    }
+    return false
+  }
+  markReplacementDatabaseOwnershipRefreshed(reconciliation.ownership)
+  return true
 }
 
 function teardownServerResourceSubscription() {
@@ -1643,6 +1699,33 @@ function selectedPromptPresetOwnsTemplate(promptPresetId: string): boolean {
 async function processAuthoritativeServerCommandEvents(events: readonly CommandEvent[]): Promise<boolean> {
   if (events.length === 0) return true
 
+  if (events.some(isDatabaseReplacementEvent)) {
+    const reconciliation = await reconcileReplacementDatabaseOwnership()
+    if (reconciliation === null) {
+      scheduleServerResourceReconnect()
+      return false
+    }
+    if (
+      !reconciliation.ownershipChanged &&
+      !isReplacementDatabaseOwnershipRefreshPending(reconciliation.ownership) &&
+      wasReplacementDatabaseOwnershipRefreshed(reconciliation.ownership)
+    ) {
+      return true
+    }
+    const refresh = await forceServerDatabaseReplacementRefresh('database-replacement-event', {
+      resource: 'state',
+    })
+    if (refresh.status === 'ok') {
+      markReplacementDatabaseOwnershipRefreshed(reconciliation.ownership)
+      return true
+    }
+    if (refresh.status === 'error') {
+      console.warn(`Server database replacement refresh failed: ${refresh.error}`)
+    }
+    scheduleServerResourceReconnect()
+    return false
+  }
+
   const selectionTracker = trackSelectedCharacterDuringRefresh()
   try {
     const result = await refreshInvalidatedServerResources(events, {
@@ -1690,6 +1773,36 @@ async function processAuthoritativeServerCommandEvents(events: readonly CommandE
   } finally {
     selectionTracker.stop()
   }
+}
+
+function isDatabaseReplacementEvent(event: CommandEvent): boolean {
+  return event.type === 'state.restored' || event.type === 'state.imported'
+}
+
+async function reconcileReplacementDatabaseOwnership(): Promise<{
+  ownership: ReplacementDatabaseOwnership
+  ownershipChanged: boolean
+} | null> {
+  await waitForLocalReplacementDatabaseOperations()
+  const runtime = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
+  if (runtime.status !== 'ok') {
+    if (runtime.status === 'error') {
+      console.warn(`Server database ownership refresh failed: ${runtime.error}`)
+    }
+    return null
+  }
+  const { databaseLineage, writerEpoch } = runtime.bootstrap
+  if (!databaseLineage || typeof writerEpoch !== 'number' || !Number.isSafeInteger(writerEpoch) || writerEpoch < 0) {
+    console.warn('Server database ownership refresh failed: bootstrap ownership metadata is missing')
+    return null
+  }
+  const ownership = {
+    databaseLineage,
+    writerEpoch,
+  }
+  const adoption = await adoptReplacementDatabaseOwnership(ownership)
+  if (adoption.discarded > 0) alertError(language.backupQueuedChangesDiscarded)
+  return { ownership, ownershipChanged: adoption.ownershipChanged }
 }
 
 function reconcileSelectedCharacterAfterResourceRefresh(

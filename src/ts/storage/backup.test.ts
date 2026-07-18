@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const serverBackupState = vi.hoisted(() => ({
   createServerBackup: vi.fn(async () => ({ status: 'ok' as const, backup: { id: 'backup-a' } })),
+  importServerBundle: vi.fn(),
 }))
 const alertState = vi.hoisted(() => ({
   alertError: vi.fn(),
@@ -16,12 +17,15 @@ vi.mock('../alert', () => ({
 
 vi.mock('../server/backups', () => ({
   createServerBackup: serverBackupState.createServerBackup,
+  importServerBundle: serverBackupState.importServerBundle,
 }))
 
-import { SaveServerBackup } from './backup'
+import { language } from '../../lang'
+import { loadBackupFromDevice, SaveServerBackup } from './backup'
 
 beforeEach(() => {
   serverBackupState.createServerBackup.mockClear()
+  serverBackupState.importServerBundle.mockReset()
   alertState.alertError.mockClear()
   alertState.alertNormal.mockClear()
   alertState.alertWait.mockClear()
@@ -34,5 +38,24 @@ describe('Fastify backup storage gates', () => {
     expect(serverBackupState.createServerBackup).toHaveBeenCalledWith({ label: 'Manual backup' })
     expect(alertState.alertWait).toHaveBeenCalledWith('Saving server backup...')
     expect(alertState.alertNormal).toHaveBeenCalledWith('Server backup saved')
+  })
+
+  it('shows one restore warning when database replacement discards queued changes', async () => {
+    const file = new File(['backup'], 'database.risu.zip', { type: 'application/zip' })
+    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function () {
+      Object.defineProperty(this, 'files', { configurable: true, value: [file] })
+      this.onchange?.(new Event('change'))
+    })
+    serverBackupState.importServerBundle.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      discardedPendingMutations: 1,
+    })
+
+    await expect(loadBackupFromDevice()).resolves.toBe('ok')
+
+    expect(alertState.alertError).toHaveBeenCalledOnce()
+    expect(alertState.alertError).toHaveBeenCalledWith(language.backupQueuedChangesDiscarded)
+    expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 })

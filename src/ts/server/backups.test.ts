@@ -1,18 +1,43 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const resourceRefreshSpies = vi.hoisted(() => ({
-  forceServerResourceRefresh: vi.fn(),
+  forceServerDatabaseReplacementRefresh: vi.fn(),
 }))
 const ownershipSpies = vi.hoisted(() => ({
   preparePendingMutationOutbox: vi.fn(),
+  markReplacementDatabaseOwnershipRefreshed: vi.fn(),
+}))
+const bridgeResetSpies = vi.hoisted(() => ({
+  resetRegisteredPendingBridgeOwnershipState: vi.fn(),
+}))
+const settlementSpies = vi.hoisted(() => ({
+  countRegisteredDurableMutationSettlements: vi.fn(() => 0),
+  discardRegisteredDurableMutationSettlements: vi.fn(),
 }))
 
 vi.mock('./resourceRefresh', () => ({
-  forceServerResourceRefresh: resourceRefreshSpies.forceServerResourceRefresh,
+  forceServerDatabaseReplacementRefresh: resourceRefreshSpies.forceServerDatabaseReplacementRefresh,
 }))
 
 vi.mock('./pendingMutationOutbox', () => ({
   preparePendingMutationOutbox: ownershipSpies.preparePendingMutationOutbox,
+}))
+
+vi.mock('./replacementDatabaseOwnership', async (importActual) => {
+  const actual = await importActual<typeof import('./replacementDatabaseOwnership')>()
+  return {
+    ...actual,
+    markReplacementDatabaseOwnershipRefreshed: ownershipSpies.markReplacementDatabaseOwnershipRefreshed,
+  }
+})
+
+vi.mock('./pendingBridgeFlushRegistry', () => ({
+  resetRegisteredPendingBridgeOwnershipState: bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState,
+}))
+
+vi.mock('./durableMutationDispatch', () => ({
+  countRegisteredDurableMutationSettlements: settlementSpies.countRegisteredDurableMutationSettlements,
+  discardRegisteredDurableMutationSettlements: settlementSpies.discardRegisteredDurableMutationSettlements,
 }))
 
 vi.mock('../platform', () => ({ isFastifyServer: true }))
@@ -54,6 +79,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
+}
+
 function makeBackupFetch(bodyForUrl: (url: string, init: RequestInit) => unknown): {
   calls: CapturedFetch[]
   fetch: typeof fetch
@@ -90,10 +123,17 @@ const replacementOwnership = { databaseLineage: 'database-restored', writerEpoch
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  resourceRefreshSpies.forceServerResourceRefresh.mockReset()
-  resourceRefreshSpies.forceServerResourceRefresh.mockResolvedValue({ status: 'ok', revision: 12 })
+  resourceRefreshSpies.forceServerDatabaseReplacementRefresh.mockReset()
+  resourceRefreshSpies.forceServerDatabaseReplacementRefresh.mockResolvedValue({ status: 'ok', revision: 12 })
   ownershipSpies.preparePendingMutationOutbox.mockReset()
-  ownershipSpies.preparePendingMutationOutbox.mockResolvedValue(undefined)
+  ownershipSpies.preparePendingMutationOutbox.mockImplementation(async (input) => {
+    input.onOwnershipChange?.()
+    return { discarded: 0 }
+  })
+  ownershipSpies.markReplacementDatabaseOwnershipRefreshed.mockReset()
+  bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState.mockReset()
+  settlementSpies.countRegisteredDurableMutationSettlements.mockClear()
+  settlementSpies.discardRegisteredDurableMutationSettlements.mockReset()
 })
 
 afterEach(() => {
@@ -136,6 +176,10 @@ describe('server backup helpers', () => {
   })
 
   it('restores backups and refreshes API-backed resources', async () => {
+    ownershipSpies.preparePendingMutationOutbox.mockImplementationOnce(async (input) => {
+      input.onOwnershipChange?.()
+      return { discarded: 2 }
+    })
     const event = { type: 'state.restored', resource: 'state', revision: 12 }
     const backupFetch = makeBackupFetch((url) => {
       if (url === '/api/v1/backups/2026-05-26-01-02-03-abcdef/restore') {
@@ -148,14 +192,18 @@ describe('server backup helpers', () => {
     await expect(restoreServerBackup({ id: backupManifest.id })).resolves.toEqual({
       status: 'ok',
       revision: 12,
+      discardedPendingMutations: 2,
       event,
     })
-    expect(resourceRefreshSpies.forceServerResourceRefresh).toHaveBeenCalledWith('backup-restore')
+    expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).toHaveBeenCalledWith('backup-restore')
     expect(ownershipSpies.preparePendingMutationOutbox).toHaveBeenCalledWith({
       writerSessionId: expect.any(String),
       requestedWriterWasActive: true,
+      onOwnershipChange: expect.any(Function),
       ...replacementOwnership,
     })
+    expect(bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState).toHaveBeenCalledOnce()
+    expect(ownershipSpies.markReplacementDatabaseOwnershipRefreshed).not.toHaveBeenCalled()
     expect(backupFetch.calls).toHaveLength(1)
     expect(backupFetch.calls[0]).toMatchObject({
       url: '/api/v1/backups/2026-05-26-01-02-03-abcdef/restore',
@@ -164,8 +212,34 @@ describe('server backup helpers', () => {
     })
   })
 
+  it('retires old bridge state before asynchronous ownership preparation finishes', async () => {
+    const preparation = deferred<{ discarded: number }>()
+    const order: string[] = []
+    bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState.mockImplementationOnce(() => {
+      order.push('reset')
+    })
+    ownershipSpies.preparePendingMutationOutbox.mockImplementationOnce((input) => {
+      order.push('prepare')
+      input.onOwnershipChange?.()
+      return preparation.promise
+    })
+    const backupFetch = makeBackupFetch(() => ({
+      revision: 12,
+      event: { type: 'state.restored', resource: 'state', revision: 12 },
+      ...replacementOwnership,
+    }))
+    vi.stubGlobal('fetch', backupFetch.fetch)
+
+    const restoring = restoreServerBackup({ id: backupManifest.id })
+    await vi.waitFor(() => expect(order).toEqual(['prepare', 'reset']))
+    expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).not.toHaveBeenCalled()
+
+    preparation.resolve({ discarded: 0 })
+    await expect(restoring).resolves.toMatchObject({ status: 'ok', revision: 12 })
+  })
+
   it('reports a failed resource refresh after the server restore succeeds', async () => {
-    resourceRefreshSpies.forceServerResourceRefresh.mockResolvedValueOnce({
+    resourceRefreshSpies.forceServerDatabaseReplacementRefresh.mockResolvedValueOnce({
       status: 'error',
       error: 'settings failed',
     })
@@ -401,14 +475,18 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     await expect(importServerBundle({ file, filename: 'database.risu.zip' })).resolves.toEqual({
       status: 'ok',
       revision: 21,
+      discardedPendingMutations: 0,
       event,
     })
-    expect(resourceRefreshSpies.forceServerResourceRefresh).toHaveBeenCalledWith('bundle-restore')
+    expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).toHaveBeenCalledWith('bundle-restore')
     expect(ownershipSpies.preparePendingMutationOutbox).toHaveBeenCalledWith({
       writerSessionId: expect.any(String),
       requestedWriterWasActive: true,
+      onOwnershipChange: expect.any(Function),
       ...replacementOwnership,
     })
+    expect(bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState).toHaveBeenCalledOnce()
+    expect(ownershipSpies.markReplacementDatabaseOwnershipRefreshed).not.toHaveBeenCalled()
     expect(backupFetch.calls).toHaveLength(1)
     // The upload carries auth but no explicit content-type (the browser sets the
     // multipart boundary for the FormData body).
@@ -441,7 +519,8 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       error: 'This backup contains 1 unsupported group character. The active database was not changed.',
     })
     expect(ownershipSpies.preparePendingMutationOutbox).not.toHaveBeenCalled()
-    expect(resourceRefreshSpies.forceServerResourceRefresh).not.toHaveBeenCalled()
+    expect(bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState).not.toHaveBeenCalled()
+    expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).not.toHaveBeenCalled()
   })
 
   it('reports upload progress when restoring a device backup with progress enabled', async () => {
@@ -514,6 +593,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     ).resolves.toEqual({
       status: 'ok',
       revision: 21,
+      discardedPendingMutations: 0,
       event,
     })
 
@@ -532,11 +612,11 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     expect(progress.some((frame) => frame.phase === 'process' && frame.percent === 80)).toBe(true)
     expect(progress.at(-1)).toMatchObject({ phase: 'complete', percent: 100 })
     expect(backupFetch.calls).toHaveLength(0)
-    expect(resourceRefreshSpies.forceServerResourceRefresh).toHaveBeenCalledWith('bundle-restore')
+    expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).toHaveBeenCalledWith('bundle-restore')
   })
 
   it('reports a failed resource refresh after the bundle import succeeds', async () => {
-    resourceRefreshSpies.forceServerResourceRefresh.mockResolvedValueOnce({
+    resourceRefreshSpies.forceServerDatabaseReplacementRefresh.mockResolvedValueOnce({
       status: 'error',
       error: 'collections failed',
     })

@@ -10,6 +10,7 @@ const resourceApi = vi.hoisted(() => ({
   loadInitial: vi.fn(),
   refreshInvalidated: vi.fn(),
   forceRefresh: vi.fn(),
+  forceReplacement: vi.fn(),
   hooks: { kind: 'resource-hooks' },
 }))
 
@@ -71,7 +72,9 @@ const pendingMutationApi = vi.hoisted(() => ({
   prepare: vi.fn(),
   readOwner: vi.fn(),
   replay: vi.fn(),
+  scope: null as string | null,
 }))
+const ownershipApi = vi.hoisted(() => ({ count: vi.fn(() => 0), discard: vi.fn(), reset: vi.fn() }))
 const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyProgress: vi.fn() }))
 const pushApi = vi.hoisted(() => ({
   initialize: vi.fn(async () => undefined),
@@ -113,6 +116,7 @@ vi.mock('./server/resourceInvalidation', () => ({
 }))
 
 vi.mock('./server/resourceRefresh', () => ({
+  forceServerDatabaseReplacementRefresh: resourceApi.forceReplacement,
   forceServerResourceRefresh: resourceApi.forceRefresh,
   serverResourceInvalidationHooks: resourceApi.hooks,
 }))
@@ -139,7 +143,13 @@ vi.mock('./server/pendingMutationOutbox', () => ({
   preparePendingMutationOutbox: pendingMutationApi.prepare,
   readSinglePendingMutationOwner: pendingMutationApi.readOwner,
 }))
+vi.mock('./server/pendingBridgeFlushRegistry', async (importActual) => {
+  const actual = await importActual<typeof import('./server/pendingBridgeFlushRegistry')>()
+  return { ...actual, resetRegisteredPendingBridgeOwnershipState: ownershipApi.reset }
+})
 vi.mock('./server/durableMutationDispatch', () => ({
+  countRegisteredDurableMutationSettlements: ownershipApi.count,
+  discardRegisteredDurableMutationSettlements: ownershipApi.discard,
   flushPendingMutationReceiptAcknowledgements: pendingMutationApi.flushAcknowledgements,
 }))
 vi.mock('./process/reattach', () => ({
@@ -216,6 +226,7 @@ import {
   withDirectServerCommandEventReconciliation,
 } from './server/commands'
 import { getActiveWriterSessionId } from './server/activeWriterSession'
+import { adoptReplacementDatabaseOwnership } from './server/replacementDatabaseOwnership'
 import { getDatabase, setResourceWriteGuardEnabled, withTrustedResourceWrite } from './storage/database.svelte'
 import {
   applyCollectionsResource,
@@ -325,6 +336,9 @@ beforeEach(() => {
   clearAppliedServerResourceRevision()
 
   vi.clearAllMocks()
+  ownershipApi.count.mockClear()
+  ownershipApi.discard.mockReset()
+  ownershipApi.reset.mockReset()
   eventApi.subscriptions = []
   bridgeApi.start.mockReturnValue(bridgeApi.stop)
   pendingMutationApi.flushAcknowledgements.mockReset()
@@ -332,7 +346,13 @@ beforeEach(() => {
   pendingMutationApi.count.mockReset()
   pendingMutationApi.count.mockResolvedValue(0)
   pendingMutationApi.prepare.mockReset()
-  pendingMutationApi.prepare.mockResolvedValue({ discarded: 0 })
+  pendingMutationApi.prepare.mockImplementation(async (input) => {
+    const scope = `${input.writerSessionId}\u0000${input.writerEpoch}\u0000${input.databaseLineage}`
+    if (pendingMutationApi.scope !== null && pendingMutationApi.scope !== scope) input.onOwnershipChange?.()
+    pendingMutationApi.scope = scope
+    return { discarded: 0 }
+  })
+  pendingMutationApi.scope = null
   pendingMutationApi.readOwner.mockReset()
   pendingMutationApi.readOwner.mockResolvedValue(null)
   pendingMutationApi.replay.mockResolvedValue({ attempted: 0, discarded: 0, retained: 0, succeeded: 0 })
@@ -355,6 +375,7 @@ beforeEach(() => {
     return { status: 'ok', revision: batch.at(-1)?.revision ?? 5, scope: 'targeted' }
   })
   resourceApi.forceRefresh.mockResolvedValue({ status: 'ok', revision: 9 })
+  resourceApi.forceReplacement.mockResolvedValue({ status: 'ok', revision: 9 })
   commandApi.initialize.mockResolvedValue({ status: 'ok', revision: 1, initialized: true })
   eventApi.subscribe.mockImplementation(async (input) => {
     eventApi.subscriptions.push(input)
@@ -604,6 +625,172 @@ describe('API-backed client bootstrap', () => {
       hooks: resourceApi.hooks,
     })
     await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(6))
+  })
+
+  it.each(['state.restored', 'state.imported'])(
+    'reconciles replacement ownership before applying a cross-tab %s event',
+    async (type) => {
+      await loadWebInitialDatabase()
+      const event = { type, revision: 6, resource: 'state' }
+      const order: string[] = []
+      bootstrapApi.fetchReadOnly.mockReset()
+      bootstrapApi.fetchReadOnly.mockImplementationOnce(async () => {
+        order.push('bootstrap')
+        return runtimeBootstrap({ revision: 3, databaseLineage: 'database-restored', writerEpoch: 2 })
+      })
+      pendingMutationApi.prepare.mockReset()
+      pendingMutationApi.prepare.mockImplementationOnce(async (input) => {
+        order.push('prepare')
+        input.onOwnershipChange?.()
+        pendingMutationApi.scope = `${input.writerSessionId}\u0000${input.writerEpoch}\u0000${input.databaseLineage}`
+        return { discarded: 2 }
+      })
+      ownershipApi.reset.mockImplementationOnce(() => {
+        order.push('reset')
+      })
+      resourceApi.forceReplacement.mockImplementationOnce(async () => {
+        order.push('refresh')
+        return { status: 'ok', revision: 3 }
+      })
+
+      eventApi.subscriptions[0].onCommandEvent({ ...event, revision: 3 })
+
+      await vi.waitFor(() => expect(resourceApi.forceReplacement).toHaveBeenCalledOnce())
+      expect(order).toEqual(['bootstrap', 'prepare', 'reset', 'refresh'])
+      expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledWith(null, { cacheRevision: false })
+      expect(pendingMutationApi.prepare).toHaveBeenCalledWith({
+        writerSessionId: getActiveWriterSessionId(),
+        writerEpoch: 2,
+        databaseLineage: 'database-restored',
+        requestedWriterWasActive: true,
+        onOwnershipChange: expect.any(Function),
+      })
+      expect(resourceApi.forceReplacement).toHaveBeenCalledWith('database-replacement-event', {
+        resource: 'state',
+      })
+      expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+      expect(ownershipApi.discard).toHaveBeenCalledOnce()
+      expect(alertError).toHaveBeenCalledOnce()
+    },
+  )
+
+  it('retries a failed replacement snapshot when the state event is replayed', async () => {
+    await loadWebInitialDatabase()
+    const event = { type: 'state.restored', revision: 3, resource: 'state' }
+    bootstrapApi.fetchReadOnly.mockResolvedValue(
+      runtimeBootstrap({ revision: 3, databaseLineage: 'database-retry', writerEpoch: 2 }),
+    )
+    resourceApi.forceReplacement
+      .mockResolvedValueOnce({ status: 'error', error: 'settings failed' })
+      .mockResolvedValueOnce({ status: 'ok', revision: 3 })
+
+    eventApi.subscriptions[0].onCommandEvent(event)
+    await vi.waitFor(() => expect(resourceApi.forceReplacement).toHaveBeenCalledTimes(1))
+
+    eventApi.subscriptions[0].onCommandEvent(event)
+    await vi.waitFor(() => expect(resourceApi.forceReplacement).toHaveBeenCalledTimes(2))
+
+    expect(ownershipApi.reset).toHaveBeenCalledOnce()
+    expect(resourceApi.forceReplacement).toHaveBeenNthCalledWith(1, 'database-replacement-event', {
+      resource: 'state',
+    })
+    expect(resourceApi.forceReplacement).toHaveBeenNthCalledWith(2, 'database-replacement-event', {
+      resource: 'state',
+    })
+  })
+
+  it('retries a failed replacement snapshot after a normal reconnect without another event', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    await loadWebInitialDatabase()
+    const event = { type: 'state.restored', revision: 3, resource: 'state' }
+    bootstrapApi.fetchReadOnly.mockResolvedValue(
+      runtimeBootstrap({ revision: 3, databaseLineage: 'database-reconnect-retry', writerEpoch: 2 }),
+    )
+    resourceApi.forceReplacement
+      .mockResolvedValueOnce({ status: 'error', error: 'settings failed' })
+      .mockResolvedValueOnce({ status: 'ok', revision: 3 })
+
+    eventApi.subscriptions[0].onCommandEvent(event)
+    await vi.waitFor(() => expect(resourceApi.forceReplacement).toHaveBeenCalledTimes(1))
+    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.waitFor(() => expect(resourceApi.forceReplacement).toHaveBeenCalledTimes(2))
+
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+    expect(resourceApi.forceReplacement).toHaveBeenNthCalledWith(1, 'database-replacement-event', {
+      resource: 'state',
+    })
+    expect(resourceApi.forceReplacement).toHaveBeenNthCalledWith(2, 'database-replacement-reconnect')
+    expect(ownershipApi.reset).toHaveBeenCalledOnce()
+  })
+
+  it('retries a failed replay-unavailable replacement snapshot after a normal reconnect', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    eventApi.subscribe
+      .mockResolvedValueOnce({ status: 'replay-unavailable', currentRevision: 3 })
+      .mockImplementationOnce(async (input) => {
+        eventApi.subscriptions.push(input)
+        return { status: 'ok', unsubscribe: eventApi.unsubscribe }
+      })
+    bootstrapApi.fetchReadOnly.mockResolvedValue(
+      runtimeBootstrap({ revision: 3, databaseLineage: 'database-replay-retry', writerEpoch: 2 }),
+    )
+    resourceApi.forceReplacement
+      .mockResolvedValueOnce({ status: 'error', error: 'settings failed' })
+      .mockResolvedValueOnce({ status: 'ok', revision: 3 })
+
+    await loadWebInitialDatabase()
+    await vi.waitFor(() => expect(resourceApi.forceReplacement).toHaveBeenCalledTimes(1))
+    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.waitFor(() => expect(resourceApi.forceReplacement).toHaveBeenCalledTimes(2))
+
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+    expect(resourceApi.forceReplacement).toHaveBeenNthCalledWith(1, 'event-replay-unavailable')
+    expect(resourceApi.forceReplacement).toHaveBeenNthCalledWith(2, 'database-replacement-reconnect')
+    expect(ownershipApi.reset).toHaveBeenCalledOnce()
+  })
+
+  it('refreshes again after an older targeted read drains behind a successful local restore', async () => {
+    await loadWebInitialDatabase()
+    const order: string[] = []
+    let finishOldRead!: () => void
+    const oldReadFinished = new Promise<void>((resolve) => {
+      finishOldRead = resolve
+    })
+    resourceApi.refreshInvalidated.mockImplementationOnce(async () => {
+      order.push('old-read-started')
+      await oldReadFinished
+      order.push('old-read-applied')
+      return { status: 'ok', revision: 6, scope: 'targeted' }
+    })
+    resourceApi.forceReplacement.mockImplementation(async (reason) => {
+      order.push(reason)
+      return { status: 'ok', revision: 3 }
+    })
+    bootstrapApi.fetchReadOnly.mockResolvedValue(
+      runtimeBootstrap({ revision: 3, databaseLineage: 'database-local-restore', writerEpoch: 2 }),
+    )
+
+    eventApi.subscriptions[0].onCommandEvent({
+      type: 'settings.updated',
+      revision: 6,
+      resource: 'settings',
+      id: 'display',
+    })
+    await vi.waitFor(() => expect(resourceApi.refreshInvalidated).toHaveBeenCalledOnce())
+
+    await adoptReplacementDatabaseOwnership({ databaseLineage: 'database-local-restore', writerEpoch: 2 })
+    await resourceApi.forceReplacement('backup-restore')
+    eventApi.subscriptions[0].onCommandEvent({ type: 'state.restored', revision: 3, resource: 'state' })
+    finishOldRead()
+
+    await vi.waitFor(() =>
+      expect(resourceApi.forceReplacement).toHaveBeenCalledWith('database-replacement-event', {
+        resource: 'state',
+      }),
+    )
+    expect(order).toEqual(['old-read-started', 'backup-restore', 'old-read-applied', 'database-replacement-event'])
   })
 
   it('preserves a newer character selection while a targeted resource invalidation is pending', async () => {
@@ -4183,6 +4370,20 @@ describe('API-backed client bootstrap', () => {
 
     await vi.waitFor(() => expect(resourceApi.refreshInvalidated).toHaveBeenCalledTimes(1))
     expect(peekAppliedServerResourceRevision()).toBe(5)
+  })
+
+  it('reconciles ownership before replay-unavailable recovery when a disconnected tab missed a restore', async () => {
+    eventApi.subscribe.mockResolvedValueOnce({ status: 'replay-unavailable', currentRevision: 3 })
+    bootstrapApi.fetchReadOnly.mockResolvedValue(
+      runtimeBootstrap({ revision: 3, databaseLineage: 'database-missed-restore', writerEpoch: 2 }),
+    )
+
+    await loadWebInitialDatabase()
+
+    await vi.waitFor(() => expect(resourceApi.forceReplacement).toHaveBeenCalledWith('event-replay-unavailable'))
+    expect(ownershipApi.reset).toHaveBeenCalledOnce()
+    expect(ownershipApi.discard).toHaveBeenCalledOnce()
+    expect(resourceApi.forceRefresh).not.toHaveBeenCalledWith('event-replay-unavailable')
   })
 
   it('repairs replay and malformed-frame failures through a complete resource refresh', async () => {

@@ -22,7 +22,10 @@ import {
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { captureSettingsPatchProjectionEpochs } from '../server/resourceState.svelte'
 import type { SettingsGroupProjectionEpochs } from '../server/settingsGroups'
-import { registerPendingBridgePatchFlusher } from '../server/pendingBridgeFlushRegistry'
+import {
+  registerPendingBridgeOwnershipResetter,
+  registerPendingBridgePatchFlusher,
+} from '../server/pendingBridgeFlushRegistry'
 import {
   currentTopLevelPresetFieldMirrorValue,
   mirrorTopLevelPresetField,
@@ -131,7 +134,9 @@ interface PendingDeferredServerSettingAttempt {
 const pendingDeferredSettingWrites = new Map<string, PendingDeferredSettingWrite>()
 const pendingDeferredServerSettingAttempts: PendingDeferredServerSettingAttempt[] = []
 let nextDeferredServerSettingAttemptSequence = 0
+let deferredSettingDatabaseOwnershipEpoch = 0
 registerPendingBridgePatchFlusher('setting-renderer-inputs', flushDeferredSettingWrites)
+registerPendingBridgeOwnershipResetter('setting-renderer-inputs', resetDeferredSettingWritesForDatabaseReplacement)
 registerPendingSettingsProjectionOverlay((target, allowedKeys) => {
   const converged: PendingDeferredServerSettingAttempt[] = []
   for (const attempt of [...pendingDeferredServerSettingAttempts]) {
@@ -287,12 +292,25 @@ export function flushDeferredSettingWrites(options: ServerCommandTransportOption
 }
 
 export function clearDeferredSettingWrites(): void {
+  clearDeferredSettingWriteState(true)
+}
+
+function resetDeferredSettingWritesForDatabaseReplacement(): void {
+  clearDeferredSettingWriteState(false)
+}
+
+function clearDeferredSettingWriteState(acknowledgeOutbox: boolean): void {
+  deferredSettingDatabaseOwnershipEpoch += 1
   for (const pending of pendingDeferredSettingWrites.values()) {
     clearTimeout(pending.timer)
-    if (pending.outbox) void acknowledgePendingMutation(pending.outbox)
+    if (acknowledgeOutbox && pending.outbox) void acknowledgePendingMutation(pending.outbox)
   }
   pendingDeferredSettingWrites.clear()
   for (const attempt of [...pendingDeferredServerSettingAttempts]) clearDeferredServerSettingAttempt(attempt)
+}
+
+export function getDeferredSettingDatabaseOwnershipEpoch(): number {
+  return deferredSettingDatabaseOwnershipEpoch
 }
 
 function writeLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {

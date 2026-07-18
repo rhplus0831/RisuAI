@@ -8,6 +8,7 @@ import {
 import type { SettingContext, SettingItem } from './types'
 import {
   UNINITIALIZED,
+  getDeferredSettingDatabaseOwnershipEpoch,
   getSettingValue,
   getSettingWriteOwnerKey,
   reassertSettingValue,
@@ -41,6 +42,7 @@ export function createSettingInputDraft<T>(
   let previousServerSnapshot = snapshotJson(initialValue)
   let previousOwnerKey = untrack(() => getSettingWriteOwnerKey(getItem(), getContext()))
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
+  let previousDatabaseOwnershipEpoch = getDeferredSettingDatabaseOwnershipEpoch()
   let dirtyResourceEpoch: number | null = null
   let dirtyOwnerKey: string | null = null
   let dirtyRootKey: string | null = null
@@ -53,12 +55,14 @@ export function createSettingInputDraft<T>(
     const ownerKey = getSettingWriteOwnerKey(item, context)
     const resourceApplyEpoch = getServerResourceApplyEpoch()
     const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
+    const databaseOwnershipEpoch = getDeferredSettingDatabaseOwnershipEpoch()
+    const databaseOwnershipChanged = databaseOwnershipEpoch !== previousDatabaseOwnershipEpoch
     const ownerChanged = ownerKey !== previousOwnerKey
     const serverValue = getSettingValue(item, context) as T
     const serverSnapshot = snapshotJson(serverValue)
     const draftSnapshot = snapshotJson(draft.value)
 
-    if (ownerChanged) {
+    if (databaseOwnershipChanged || ownerChanged) {
       clearDirty()
       if (serverSnapshot !== draftSnapshot) replaceDraftValue(serverValue)
     } else if (serverSnapshot === draftSnapshot) {
@@ -79,6 +83,7 @@ export function createSettingInputDraft<T>(
 
     previousOwnerKey = ownerKey
     previousResourceApplyEpoch = resourceApplyEpoch
+    previousDatabaseOwnershipEpoch = databaseOwnershipEpoch
     previousServerSnapshot = serverSnapshot
   })
 

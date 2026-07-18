@@ -21,7 +21,11 @@ vi.mock('./activeWriterSession', () => ({
   schedulePendingMutationRecoveryReload: recoveryApi.scheduleReload,
 }))
 
-import { dispatchDurableMutation, executePreparedDurableMutationWithinQueue } from './durableMutationDispatch'
+import {
+  dispatchDurableMutation,
+  executePreparedDurableMutationWithinQueue,
+  registerDurableMutationSettlementListener,
+} from './durableMutationDispatch'
 import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
@@ -64,6 +68,26 @@ afterEach(async () => {
 })
 
 describe('durable mutation dispatch', () => {
+  it('publishes a terminal discard when ownership preparation removes an old-lineage row', async () => {
+    const handle = stagePendingMutation('settings:runtime', intent)
+    await expect(handle.ready).resolves.toBe('persisted')
+    const settlement = vi.fn()
+    const cleanup = registerDurableMutationSettlementListener(handle.mutationId, settlement)
+
+    await expect(
+      preparePendingMutationOutbox({
+        writerSessionId: 'writer-a',
+        writerEpoch: 1,
+        databaseLineage: 'database-restored',
+        requestedWriterWasActive: true,
+      }),
+    ).resolves.toEqual({ discarded: 1 })
+
+    expect(settlement).toHaveBeenCalledOnce()
+    expect(settlement).toHaveBeenCalledWith('discarded', {})
+    cleanup()
+  })
+
   it('does not start the request until the exact encrypted generation is durable', async () => {
     const encryptionGate = deferred<void>()
     const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)

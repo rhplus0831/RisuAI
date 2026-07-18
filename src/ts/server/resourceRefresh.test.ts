@@ -65,7 +65,11 @@ vi.mock('./promptTemplateHydration', () => ({
   ensurePromptTemplateHydrated: sideEffects.hydratePromptTemplate,
 }))
 
-import { forceServerResourceRefresh, refreshServerRealmImportResources } from './resourceRefresh'
+import {
+  forceServerDatabaseReplacementRefresh,
+  forceServerResourceRefresh,
+  refreshServerRealmImportResources,
+} from './resourceRefresh'
 import {
   clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
@@ -214,6 +218,51 @@ describe('complete server resource refresh', () => {
       sideEffects.triggerReattach.mock.invocationCallOrder[0],
     )
     expect(sideEffects.recordRefresh).toHaveBeenCalledWith('backup-restore', undefined)
+  })
+
+  it('rewinds revision fences when a replacement database has an older revision', async () => {
+    setCachedServerCommandRevision(12)
+    setAppliedServerResourceRevision(12)
+    refreshApi.refreshAll.mockResolvedValueOnce({ status: 'ok', revision: 3, scope: 'full' })
+
+    await expect(forceServerDatabaseReplacementRefresh('database-replacement-event')).resolves.toEqual({
+      status: 'ok',
+      revision: 3,
+    })
+
+    expect(peekCachedServerCommandRevision()).toBe(3)
+    expect(peekAppliedServerResourceRevision()).toBe(3)
+  })
+
+  it('resets replacement fences after an older in-flight full refresh drains', async () => {
+    let finishOldRead!: () => void
+    const oldReadFinished = new Promise<void>((resolve) => {
+      finishOldRead = resolve
+    })
+    refreshApi.refreshAll
+      .mockImplementationOnce(async () => {
+        await oldReadFinished
+        replaceResourceDatabase(database([{ chaId: 'char-old', name: 'Old database' }]), 12)
+        return { status: 'ok', revision: 12, scope: 'full' }
+      })
+      .mockImplementationOnce(async () => {
+        replaceResourceDatabase(database([{ chaId: 'char-restored', name: 'Restored database' }]), 3)
+        return { status: 'ok', revision: 3, scope: 'full' }
+      })
+
+    const oldRefresh = forceServerResourceRefresh('old-database-refresh')
+    await vi.waitFor(() => expect(refreshApi.refreshAll).toHaveBeenCalledTimes(1))
+    const replacementRefresh = forceServerDatabaseReplacementRefresh('backup-restore')
+    finishOldRead()
+
+    await expect(Promise.all([oldRefresh, replacementRefresh])).resolves.toEqual([
+      { status: 'ok', revision: 3 },
+      { status: 'ok', revision: 3 },
+    ])
+    expect(refreshApi.refreshAll).toHaveBeenCalledTimes(2)
+    expect(getResourceDatabase().characters[0]?.chaId).toBe('char-restored')
+    expect(peekCachedServerCommandRevision()).toBe(3)
+    expect(peekAppliedServerResourceRevision()).toBe(3)
   })
 
   it('preserves the selected character identity when a refresh reorders rows', async () => {

@@ -51,6 +51,7 @@ import {
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { normalizeCharacterOrder } from './characterCommands'
 import { triggerOpenChatGenerationReattach } from './process/reattach'
+import { language } from '../lang'
 
 export const forageStorage = new AutoStorage()
 
@@ -1699,10 +1700,18 @@ export async function loadInternalBackup(options: LoadInternalBackupOptions = {}
     onProgress: scaleInternalBackupProgress(options.onProgress, 20, 100),
   })
   if (restored.status === 'ok') {
-    alertNormal('Loaded server backup')
+    if (restored.discardedPendingMutations > 0) {
+      alertError(language.backupQueuedChangesDiscarded)
+    } else {
+      alertNormal('Loaded server backup')
+    }
     return 'ok'
   } else if (restored.status === 'error') {
-    alertError(restored.error)
+    alertError(
+      restored.discardedPendingMutations
+        ? `${restored.error}\n\n${language.backupQueuedChangesDiscarded}`
+        : restored.error,
+    )
     return 'error'
   }
   return 'unavailable'
