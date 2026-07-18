@@ -949,11 +949,7 @@ function dispatchPromptItemUpdate(pending: PendingPromptItemUpdate, options: Ser
     (result) => {
       clearPromptItemAttempt(attempt)
       if (result.status !== 'ok') return
-      clearDirtyPromptItemFieldsMatchingProjection(
-        pending.ownerId,
-        pending.binding.getItems(),
-        (getDatabase().promptTemplate ?? []) as PromptItem[],
-      )
+      clearDirtyPromptItemFieldsAcknowledgedByAttempt(pending)
     },
     () => clearPromptItemAttempt(attempt),
   )
@@ -1462,6 +1458,20 @@ function clearPromptItemDirtyFields(ownerId: string | null, itemId: string, fiel
   if (dirtyFields.size === 0) {
     promptItemDirtyFieldsByOwnerAndId.delete(dirtyKey)
   }
+}
+
+function clearDirtyPromptItemFieldsAcknowledgedByAttempt(pending: PendingPromptItemUpdate): void {
+  const currentItem = pending.binding.getItems().find((item) => promptItemIdValue(item) === pending.itemId)
+  if (!currentItem) return
+
+  const acknowledgedFields = new Set([...Object.keys(pending.sparseUpdate.patch), ...pending.sparseUpdate.deleteKeys])
+  clearPromptItemDirtyFields(
+    pending.ownerId,
+    pending.itemId,
+    Array.from(acknowledgedFields).filter((field) =>
+      samePromptItemFieldValue(currentItem, pending.attemptedItem, field),
+    ),
+  )
 }
 
 function clearDirtyPromptItemFieldsMatchingProjection(

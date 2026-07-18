@@ -3225,6 +3225,41 @@ describe('reconcilePromptTemplateDraft', () => {
     await flushPromptItemDirtyTestState(draftItems)
   })
 
+  it('does not let an older PATCH acknowledge a newer debounced row edit', async () => {
+    const firstResult = createDeferred<{ status: string; error?: string }>()
+    commandState.runResults.push(firstResult.promise)
+    resourceDatabase.current = {
+      promptTemplate: [item('dirty-text', 'server old')],
+    }
+    let draftItems = draftCopy()
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    draftItems[0] = item('dirty-text', 'first edit')
+    queuePromptItemProjectionUpdate(binding, 'dirty-text', item('dirty-text', 'server old'), 0)
+    await vi.advanceTimersByTimeAsync(0)
+
+    draftItems[0] = item('dirty-text', 'newer debounced edit')
+    queuePromptItemProjectionUpdate(binding, 'dirty-text', item('dirty-text', 'first edit'), 500)
+
+    firstResult.resolve({ status: 'ok' })
+    await flushMicrotasks()
+
+    getResourceDatabase().promptTemplate = [item('dirty-text', 'first edit')]
+    commandState.revision = 6
+    const result = reconcilePromptTemplateDraft(draftItems, 5)
+    if (result.nextDraft) draftItems = result.nextDraft
+
+    expect(textOf(draftItems[0])).toBe('newer debounced edit')
+    expect(result.revision).toBe(6)
+
+    resetPromptTemplateSelectionDirtyState()
+  })
+
   it('refreshes clean fields on the dirty row', async () => {
     resourceDatabase.current = {
       promptTemplate: [promptItemFixture({ ...item('dirty-row', 'server old'), name: 'old name', role: 'system' })],
