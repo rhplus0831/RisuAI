@@ -227,6 +227,7 @@ vi.mock('src/lang', () => ({
     sendChatConsent: '{}',
     v3RuntimeConsent: '{}',
     permissionDenied: 'Permission denied',
+    pluginMutation: { failed: 'Plugin changes failed' },
   },
 }))
 
@@ -300,6 +301,7 @@ import { alertConfirm } from 'src/ts/alert'
 import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import { additionalFloatingActionButtons, additionalSettingsMenu } from 'src/ts/stores.svelte'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
+import { dispatchUpdatePlugin } from 'src/ts/pluginCommands'
 import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
 import { appendCurrentChatUserMessageForSend, prepareCompatibleChatUpdateScoped } from 'src/ts/chatCommands'
@@ -311,6 +313,7 @@ import {
   getV3PluginInstance,
   loadV3Plugins,
 } from './v3.svelte'
+import { SandboxHost } from './factory'
 
 function seedV3Plugin(name: string) {
   return {
@@ -323,6 +326,14 @@ function seedV3Plugin(name: string) {
     argMeta: {},
     enabled: true,
   } as any
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
 }
 
 function messageCalls(spy: { mock: { calls: unknown[][] } }) {
@@ -349,6 +360,8 @@ beforeEach(async () => {
   vi.mocked(prepareCompatibleChatUpdateScoped).mockClear()
   vi.mocked(appendCurrentChatUserMessageForSend).mockReset()
   vi.mocked(processSendChat).mockReset()
+  vi.mocked(dispatchUpdatePlugin).mockReset()
+  vi.mocked(dispatchUpdatePlugin).mockResolvedValue(null)
   vi.mocked(dispatchDurableServerBackedSettingsPatch).mockReset()
   vi.mocked(dispatchDurableServerBackedSettingsPatch).mockResolvedValue({
     status: 'ok',
@@ -373,8 +386,66 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
+describe('V3 durable setter acknowledgement', () => {
+  it('resolves setArgument when the exact update is durably queued', async () => {
+    mockServerCommands.canUse = true
+    const plugin = seedV3Plugin('plugin-a')
+    mockDbState.db.plugins = [plugin]
+    vi.mocked(dispatchUpdatePlugin).mockResolvedValueOnce({
+      status: 'queued',
+      result: { status: 'unavailable' },
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    await expect(api.setArgument('api-key', 'queued-value')).resolves.toBeUndefined()
+    expect(plugin.realArg['api-key']).toBe('queued-value')
+  })
+
+  it('keeps setArgument RPC pending and returns a terminal dispatcher failure to the guest', async () => {
+    mockServerCommands.canUse = true
+    const plugin = seedV3Plugin('plugin-a')
+    mockDbState.db.plugins = [plugin]
+    const persistence = deferred<any>()
+    vi.mocked(dispatchUpdatePlugin).mockReturnValueOnce(persistence.promise)
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin)
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const host = new SandboxHost(api)
+    host.run(iframe, '')
+    const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage').mockImplementation(() => undefined)
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: iframe.contentWindow,
+        data: {
+          type: 'CALL_ROOT',
+          reqId: 'set-argument',
+          method: 'setArgument',
+          args: ['api-key', 'new-value'],
+        },
+      }),
+    )
+
+    await vi.waitFor(() => expect(dispatchUpdatePlugin).toHaveBeenCalledOnce())
+    expect(postMessage.mock.calls.some((call) => (call[0] as { reqId?: string }).reqId === 'set-argument')).toBe(false)
+
+    persistence.resolve({
+      status: 'failed',
+      result: { status: 'error', error: 'argument rejected', reason: 'invalid-request' },
+    })
+
+    await vi.waitFor(() => {
+      const response = postMessage.mock.calls.find(
+        (call) => (call[0] as { reqId?: string }).reqId === 'set-argument',
+      )?.[0] as { error?: string } | undefined
+      expect(response?.error).toBe('argument rejected')
+    })
+    host.terminate()
+  })
+})
+
 describe('V3 character command bridge', () => {
-  it('setCharacterToIndex applies the shared compatible optimistic row in server mode', () => {
+  it('setCharacterToIndex applies the shared compatible optimistic row and awaits persistence', async () => {
     mockServerCommands.canUse = true
     const existingCharacter = {
       chaId: 'char-a',
@@ -388,7 +459,8 @@ describe('V3 character command bridge', () => {
       chats: existingCharacter.chats,
       globalLore: existingCharacter.globalLore,
     }
-    const dispatch = vi.fn()
+    const persistence = deferred<any>()
+    const dispatchAsync = vi.fn(() => persistence.promise)
     mockDbState.db.characters = {
       0: existingCharacter,
     }
@@ -398,8 +470,8 @@ describe('V3 character command bridge', () => {
       optimisticCharacter,
       factories: [vi.fn()],
       rollback: vi.fn(),
-      dispatch,
-      dispatchAsync: vi.fn(async () => null),
+      dispatch: vi.fn(),
+      dispatchAsync,
     } as any)
     const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
     const pluginCharacter = {
@@ -409,7 +481,11 @@ describe('V3 character command bridge', () => {
       globalLore: existingCharacter.globalLore,
     }
 
-    api.setCharacterToIndex(0, pluginCharacter)
+    let settled = false
+    const mutation = api.setCharacterToIndex(0, pluginCharacter).then(() => {
+      settled = true
+    })
+    await Promise.resolve()
 
     expect(prepareCompatibleCharacterUpdateScoped).toHaveBeenCalledWith(
       expect.objectContaining({ chaId: 'char-a' }),
@@ -418,10 +494,22 @@ describe('V3 character command bridge', () => {
     )
     expect(mockDbState.db.characters[0]).toBe(optimisticCharacter)
     expect(mockDbState.db.characters[0]).not.toBe(pluginCharacter)
-    expect(dispatch).toHaveBeenCalledOnce()
+    expect(dispatchAsync).toHaveBeenCalledOnce()
+    expect(settled).toBe(false)
+
+    persistence.resolve({
+      status: 'accepted',
+      result: {
+        status: 'ok',
+        revision: 2,
+        event: { type: 'character.updated', revision: 2, resource: 'character' },
+      },
+    })
+    await mutation
+    expect(settled).toBe(true)
   })
 
-  it('setCharacterToIndex rejects unsupported character fields before projection mutation', () => {
+  it('setCharacterToIndex rejects unsupported character fields before projection mutation', async () => {
     mockServerCommands.canUse = true
     const existingCharacter = {
       chaId: 'char-a',
@@ -440,12 +528,40 @@ describe('V3 character command bridge', () => {
       globalLore: [{ key: 'changed lore' }],
     }
 
-    expect(() => api.setCharacterToIndex(0, pluginCharacter)).toThrow(
+    await expect(api.setCharacterToIndex(0, pluginCharacter)).rejects.toThrow(
       /setCharacterToIndex cannot update unsupported character fields .*chats, globalLore/,
     )
 
     expect(mockDbState.db.characters[0]).toBe(existingCharacter)
     expect(prepareCompatibleCharacterUpdateScoped).not.toHaveBeenCalled()
+  })
+
+  it('setCharacter rejects when the current-character dispatcher reports terminal failure', async () => {
+    mockServerCommands.canUse = true
+    const existingCharacter = {
+      chaId: 'char-a',
+      name: 'Old name',
+      chats: [],
+    }
+    const optimisticCharacter = { ...existingCharacter, name: 'New name' }
+    mockDbState.db.characters = { 'char-a': existingCharacter }
+    vi.mocked(prepareCompatibleCharacterUpdateScoped).mockReturnValueOnce({
+      characterId: 'char-a',
+      patch: { name: 'New name' },
+      optimisticCharacter,
+      factories: [vi.fn()],
+      rollback: vi.fn(),
+      dispatch: vi.fn(),
+      dispatchAsync: vi.fn(async () => ({
+        status: 'failed',
+        result: { status: 'error', error: 'character rejected', reason: 'invalid-request' },
+      })),
+    } as any)
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    await expect(api.setCharacter(optimisticCharacter)).rejects.toThrow('character rejected')
+
+    expect(mockDbState.db.characters['char-a']).toBe(optimisticCharacter)
   })
 })
 
@@ -520,7 +636,7 @@ describe('V3 chat command bridge', () => {
     expect(mockDbState.db.characters['char-a'].chats[0].message).toEqual([])
   })
 
-  it('setChatToIndex rejects unsupported chat fields before projection mutation', () => {
+  it('setChatToIndex rejects unsupported chat fields before projection mutation', async () => {
     mockServerCommands.canUse = true
     const existingChat = {
       id: 'chat-a',
@@ -544,7 +660,7 @@ describe('V3 chat command bridge', () => {
       generationSettings: { configured: true },
     }
 
-    expect(() => api.setChatToIndex(0, 0, pluginChat)).toThrow(
+    await expect(api.setChatToIndex(0, 0, pluginChat)).rejects.toThrow(
       /setChatToIndex cannot update unsupported chat fields .*localLore, generationSettings/,
     )
 
@@ -552,7 +668,7 @@ describe('V3 chat command bridge', () => {
     expect(prepareCompatibleChatUpdateScoped).not.toHaveBeenCalled()
   })
 
-  it('setChatToIndex rejects unsupported scriptstate value changes before projection mutation', () => {
+  it('setChatToIndex rejects unsupported scriptstate value changes before projection mutation', async () => {
     mockServerCommands.canUse = true
     const existingChat = {
       id: 'chat-a',
@@ -573,7 +689,7 @@ describe('V3 chat command bridge', () => {
       scriptstate: { count: { nested: true } },
     }
 
-    expect(() => api.setChatToIndex(0, 0, pluginChat)).toThrow(
+    await expect(api.setChatToIndex(0, 0, pluginChat)).rejects.toThrow(
       /setChatToIndex cannot update unsupported chat fields .*scriptstate.count/,
     )
 
@@ -581,7 +697,7 @@ describe('V3 chat command bridge', () => {
     expect(prepareCompatibleChatUpdateScoped).not.toHaveBeenCalled()
   })
 
-  it('setChatToIndex still dispatches supported chat changes in server mode', () => {
+  it('setChatToIndex awaits and accepts a durably queued supported chat change', async () => {
     mockServerCommands.canUse = true
     const existingChat = {
       id: 'chat-a',
@@ -590,7 +706,8 @@ describe('V3 chat command bridge', () => {
       scriptstate: { count: 1 },
       localLore: [{ key: 'old lore' }],
     }
-    const dispatch = vi.fn()
+    const persistence = deferred<any>()
+    const dispatchAsync = vi.fn(() => persistence.promise)
     mockDbState.db.characters = {
       0: {
         chaId: 'char-a',
@@ -599,8 +716,8 @@ describe('V3 chat command bridge', () => {
     }
     vi.mocked(prepareCompatibleChatUpdateScoped).mockReturnValueOnce({
       commandCount: 3,
-      dispatch,
-      dispatchAsync: vi.fn(async () => null),
+      dispatch: vi.fn(),
+      dispatchAsync,
     })
     const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
     const pluginChat = {
@@ -611,7 +728,11 @@ describe('V3 chat command bridge', () => {
       localLore: existingChat.localLore,
     }
 
-    api.setChatToIndex(0, 0, pluginChat)
+    let settled = false
+    const mutation = api.setChatToIndex(0, 0, pluginChat).then(() => {
+      settled = true
+    })
+    await Promise.resolve()
 
     expect(mockDbState.db.characters[0].chats[0]).toBe(pluginChat)
     expect(prepareCompatibleChatUpdateScoped).toHaveBeenCalledWith(existingChat, pluginChat, {
@@ -620,7 +741,43 @@ describe('V3 chat command bridge', () => {
       chatId: 'chat-a',
       chat: existingChat,
     })
-    expect(dispatch).toHaveBeenCalledOnce()
+    expect(dispatchAsync).toHaveBeenCalledOnce()
+    expect(settled).toBe(false)
+
+    persistence.resolve({ status: 'retained', acceptedCount: 0, failure: { status: 'unavailable' } })
+    await mutation
+    expect(settled).toBe(true)
+  })
+
+  it('setChatToIndex rejects a terminal durable batch failure', async () => {
+    mockServerCommands.canUse = true
+    const existingChat = {
+      id: 'chat-a',
+      name: 'Old chat',
+      message: [],
+    }
+    mockDbState.db.characters = {
+      0: {
+        chaId: 'char-a',
+        chats: [existingChat],
+      },
+    }
+    vi.mocked(prepareCompatibleChatUpdateScoped).mockReturnValueOnce({
+      commandCount: 1,
+      dispatch: vi.fn(),
+      dispatchAsync: vi.fn(async () => ({
+        status: 'failure' as const,
+        acceptedCount: 0,
+        failure: {
+          status: 'error' as const,
+          error: 'chat rejected',
+          reason: 'invalid-request' as const,
+        },
+      })),
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    await expect(api.setChatToIndex(0, 0, { ...existingChat, name: 'New chat' })).rejects.toThrow('chat rejected')
   })
 })
 

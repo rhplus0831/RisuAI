@@ -142,8 +142,13 @@ export interface CompatibleCharacterUpdatePreparation {
 
 export interface CompatibleCharacterScopedUpdatePreparation extends CompatibleCharacterUpdatePreparation {
   dispatch: () => void
-  dispatchAsync: () => Promise<ServerCommandResult | null>
+  dispatchAsync: () => Promise<CompatibleCharacterMutationOutcome | null>
 }
+
+export type CompatibleCharacterMutationOutcome =
+  | { status: 'accepted'; result: Extract<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
 
 export interface CreateAndSelectCharacterDispatchOptions {
   shouldRestoreSelection?: () => boolean
@@ -883,6 +888,11 @@ interface CharacterFieldMutationAttempt {
   fields: ReadonlyMap<string, CharacterFieldMutationFieldAttempt>
 }
 
+interface PendingCharacterMutationExecution {
+  promise: Promise<ServerCommandResult>
+  disposition: () => 'retain' | 'rollback'
+}
+
 function characterFieldMutationKey(characterId: string, field: string): string {
   return `${characterId}\u0000${field}`
 }
@@ -955,6 +965,15 @@ function dispatchDurableCharacterPatch(
   previousFields: ReadonlyMap<string, CharacterFieldMutationBaseline>,
   rollback: (attempt: CharacterFieldMutationAttempt) => void,
 ): Promise<ServerCommandResult> | undefined {
+  return prepareDurableCharacterPatchExecution(characterId, patch, previousFields, rollback)?.promise
+}
+
+function prepareDurableCharacterPatchExecution(
+  characterId: string,
+  patch: CharacterSnapshot,
+  previousFields: ReadonlyMap<string, CharacterFieldMutationBaseline>,
+  rollback: (attempt: CharacterFieldMutationAttempt) => void,
+): PendingCharacterMutationExecution | undefined {
   const attempted = sanitizeCharacterPatch(patch)
   if (Object.keys(attempted).length === 0) return
   const attempt = captureCharacterFieldMutationAttempt(characterId, attempted, previousFields)
@@ -975,12 +994,16 @@ function dispatchDurableCharacterPatch(
   } catch (error) {
     rebaseImmediateCharacterFieldMutationSuccessors(attempt)
     rollback(attempt)
-    return Promise.resolve(pendingMutationStagingFailure(error))
+    return {
+      promise: Promise.resolve(pendingMutationStagingFailure(error)),
+      disposition: () => 'rollback',
+    }
   }
-  return dispatchDurableMutation(
-    outbox,
-    intent,
-    (transport) =>
+  let disposition: 'retain' | 'rollback' = 'rollback'
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const promise = dispatchDurableMutation(outbox, intent, (transport) => {
+    failureRollbackDisposition = transport.failureRollbackDisposition
+    return (
       dispatchUpdateCharacterWith(
         characterId,
         attempted,
@@ -989,8 +1012,49 @@ function dispatchDurableCharacterPatch(
           rollback(attempt)
         },
         transport,
-      ) ?? Promise.resolve({ status: 'unavailable' as const }),
+      ) ?? Promise.resolve({ status: 'unavailable' as const })
+    )
+  }).then(
+    (result) => {
+      disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? disposition)
+      return result
+    },
+    (error) => {
+      disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? disposition
+      throw error
+    },
   )
+  return { promise, disposition: () => disposition }
+}
+
+async function compatibleCharacterMutationOutcome(
+  execution: PendingCharacterMutationExecution,
+): Promise<CompatibleCharacterMutationOutcome> {
+  let result: ServerCommandResult
+  try {
+    result = await execution.promise
+  } catch (error) {
+    console.error('Compatible character mutation command rejected:', error)
+    result = { status: 'unavailable' }
+  }
+  if (result.status === 'ok') return { status: 'accepted', result }
+  return execution.disposition() === 'retain' ? { status: 'queued', result } : { status: 'failed', result }
+}
+
+function dispatchCompatibleCharacterPatchScopedOutcome(
+  characterId: string,
+  patch: CharacterSnapshot,
+  previous: CharacterRowSnapshot,
+): Promise<CompatibleCharacterMutationOutcome> | undefined {
+  const attempted = sanitizeCharacterPatch(patch)
+  if (Object.keys(attempted).length === 0) return
+  const execution = prepareDurableCharacterPatchExecution(
+    characterId,
+    attempted,
+    characterRowMutationBaselines(previous, attempted),
+    (attempt) => restoreCompatibleCharacterRowAttempt(rebasedCharacterRowSnapshot(previous, attempted, attempt)),
+  )
+  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
 }
 
 export function dispatchUpdateCharacter(
@@ -1233,10 +1297,10 @@ export function prepareCompatibleCharacterUpdateScoped(
       }),
     )
   }
-  const dispatchAsync = (): Promise<ServerCommandResult | null> => {
+  const dispatchAsync = (): Promise<CompatibleCharacterMutationOutcome | null> => {
     if (!compatibleUpdate.characterId || Object.keys(compatibleUpdate.patch).length === 0) return Promise.resolve(null)
     return (
-      dispatchCompatibleCharacterPatchScoped(compatibleUpdate.characterId, compatibleUpdate.patch, previous) ??
+      dispatchCompatibleCharacterPatchScopedOutcome(compatibleUpdate.characterId, compatibleUpdate.patch, previous) ??
       Promise.resolve(null)
     )
   }

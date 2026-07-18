@@ -11,11 +11,15 @@ import {
 import { SandboxHost } from './factory'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { currentPluginStateSnapshot, dispatchUpdatePlugin } from 'src/ts/pluginCommands'
-import { canUseServerCommands } from 'src/ts/server/commands'
+import { canUseServerCommands, type ServerCommandResult } from 'src/ts/server/commands'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
 import { captureSettingsPatchProjectionEpochs } from 'src/ts/server/resourceState.svelte'
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
-import { appendCurrentChatUserMessageForSend, prepareCompatibleChatUpdateScoped } from 'src/ts/chatCommands'
+import {
+  appendCurrentChatUserMessageForSend,
+  prepareCompatibleChatUpdateScoped,
+  type CharacterOwnedDurableBatchResult,
+} from 'src/ts/chatCommands'
 import {
   SafeLocalPluginStorage,
   assertDeviceLocalPluginStorageEnabled,
@@ -72,6 +76,29 @@ import {
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function pluginV3MutationFailure(result: Exclude<ServerCommandResult, { status: 'ok' }>): never {
+  if (result.status === 'error' && result.error) throw new Error(result.error)
+  throw new Error(language.pluginMutation.failed)
+}
+
+function requirePluginV3Mutation(
+  outcome:
+    | {
+        status: 'accepted' | 'queued' | 'failed'
+        result: ServerCommandResult
+      }
+    | null
+    | undefined,
+): void {
+  if (outcome?.status === 'failed') {
+    pluginV3MutationFailure(outcome.result as Exclude<ServerCommandResult, { status: 'ok' }>)
+  }
+}
+
+function requirePluginV3BatchMutation(outcome: CharacterOwnedDurableBatchResult | null): void {
+  if (outcome?.status === 'failure') pluginV3MutationFailure(outcome.failure)
 }
 
 async function dispatchPluginApiSettingsPatch(
@@ -903,6 +930,27 @@ const makeRisuaiAPIV3 = (
   instance: V3PluginInstance,
 ) => {
   const oldApis = getV2PluginAPIs(plugin, () => assertV3InstanceCurrent(instance))
+  const setCurrentCharacter = async (char: any): Promise<void> => {
+    const charId = get(selectedCharID)
+    if (!canUseServerCommands()) {
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[charId] = char
+      })
+      return
+    }
+
+    const previousCharacter = getDatabase().characters?.[charId]
+    assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setCharacter')
+    const previous = currentCharacterRowSnapshot(charId)
+    const previousCharacterSnapshot = previousCharacter ? $state.snapshot(previousCharacter) : undefined
+    const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacterSnapshot, char, previous)
+    const optimisticCharacter = preparation.optimisticCharacter
+    if (!optimisticCharacter || preparation.factories.length === 0) return
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[charId] = optimisticCharacter
+    })
+    requirePluginV3Mutation(await preparation.dispatchAsync())
+  }
   const registerOwnedMCP = async (
     arg: Parameters<typeof registerMCPModule>[0],
     getToolList: Parameters<typeof registerMCPModule>[1],
@@ -951,7 +999,7 @@ const makeRisuaiAPIV3 = (
       return oldApis.nativeFetch(url, options)
     },
     getChar: oldApis.getChar,
-    setChar: oldApis.setChar,
+    setChar: setCurrentCharacter,
     addProvider: (
       name: string,
       func: (
@@ -1197,7 +1245,7 @@ const makeRisuaiAPIV3 = (
         }
       }
     },
-    setArgument: async (key: string, value: string) => {
+    setArgument: async (key: string, value: string | number) => {
       const previous = currentPluginStateSnapshot()
       let matched = false
       withTrustedResourceWrite(() => {
@@ -1212,7 +1260,7 @@ const makeRisuaiAPIV3 = (
       if (matched) {
         const p = getDatabase().plugins.find((candidate) => candidate.name === plugin.name)
         if (p) {
-          dispatchUpdatePlugin(p.name, { realArg: p.realArg }, previous)
+          requirePluginV3Mutation(await dispatchUpdatePlugin(p.name, { realArg: p.realArg }, previous))
         }
       }
     },
@@ -1225,7 +1273,7 @@ const makeRisuaiAPIV3 = (
       }
       return null
     },
-    setCharacterToIndex: (index: number, char: any) => {
+    setCharacterToIndex: async (index: number, char: any) => {
       const db = getDatabase()
       const charIds = Object.keys(db.characters)
       const charId = charIds[index]
@@ -1249,7 +1297,7 @@ const makeRisuaiAPIV3 = (
         withTrustedResourceWrite(() => {
           getDatabase().characters[charId] = optimisticCharacter
         })
-        preparation.dispatch()
+        requirePluginV3Mutation(await preparation.dispatchAsync())
       }
     },
     getChatFromIndex: (characterIndex: number, chatIndex: number) => {
@@ -1264,7 +1312,7 @@ const makeRisuaiAPIV3 = (
       }
       return null
     },
-    setChatToIndex: (characterIndex: number, chatIndex: number, chat: any) => {
+    setChatToIndex: async (characterIndex: number, chatIndex: number, chat: any) => {
       const db = getDatabase()
       const charIds = Object.keys(db.characters)
       const charId = charIds[characterIndex]
@@ -1285,7 +1333,9 @@ const makeRisuaiAPIV3 = (
           withTrustedResourceWrite(() => {
             getDatabase().characters[charId].chats[chatIndex] = chat
           })
-          prepareCompatibleChatUpdateScoped(previousChatSnapshot, chat, previous).dispatch()
+          requirePluginV3BatchMutation(
+            await prepareCompatibleChatUpdateScoped(previousChatSnapshot, chat, previous).dispatchAsync(),
+          )
         }
       }
     },
@@ -1299,7 +1349,7 @@ const makeRisuaiAPIV3 = (
     },
     //New names for character APIs, to match API naming conventions
     getCharacter: oldApis.getChar,
-    setCharacter: oldApis.setChar,
+    setCharacter: setCurrentCharacter,
 
     showContainer: (type: 'fullscreen' = 'fullscreen') => {
       iframe.style.display = 'block'

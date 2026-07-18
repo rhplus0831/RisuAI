@@ -3074,12 +3074,59 @@ describe('Phase 3 kept-key character diff (M13)', () => {
 
     try {
       await expect(prepared.dispatchAsync()).resolves.toMatchObject({
-        status: 'error',
-        reason: 'invalid-request',
+        status: 'failed',
+        result: { status: 'error', reason: 'invalid-request' },
       })
       expect(testDatabaseState.db.characters[0].name).toBe('Original')
     } finally {
       stage.mockRestore()
+    }
+  })
+
+  it('reports a durably retained compatible character projection as queued', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-compatible-character-retained',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-compatible-character-retained',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    testDatabaseState.db = {
+      characters: [{ chaId: 'char-a', name: 'Original', chats: [] }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/commands/characters/char-a') {
+          return jsonResponse({ error: 'temporarily unavailable' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${String(input)}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const previousCharacter = testDatabaseState.db.characters[0]
+      const prepared = prepareCompatibleCharacterUpdateScoped(
+        previousCharacter,
+        { ...previousCharacter, name: 'Queued name' } as any,
+        currentCharacterRowSnapshot(0),
+      )
+      testDatabaseState.db.characters[0] = prepared.optimisticCharacter as any
+
+      await expect(prepared.dispatchAsync()).resolves.toMatchObject({
+        status: 'queued',
+        result: { status: 'error', error: 'temporarily unavailable' },
+      })
+      expect(testDatabaseState.db.characters[0].name).toBe('Queued name')
+      expect(await listPendingMutations()).toHaveLength(1)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
     }
   })
 
@@ -3142,8 +3189,14 @@ describe('Phase 3 kept-key character diff (M13)', () => {
 
       await vi.waitFor(() => expect(patches).toHaveLength(1))
       firstResponse.resolve(jsonResponse({ error: 'first replacement rejected' }, 400))
-      await expect(firstDispatch).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
-      await expect(secondDispatch).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
+      await expect(firstDispatch).resolves.toMatchObject({
+        status: 'failed',
+        result: { status: 'error', reason: 'invalid-request' },
+      })
+      await expect(secondDispatch).resolves.toMatchObject({
+        status: 'failed',
+        result: { status: 'error', reason: 'invalid-request' },
+      })
 
       expect(testDatabaseState.db.characters[0].sdData).toEqual({ nested: { values: ['original', 1] } })
       expect(patches.map((body) => body.patch)).toEqual([

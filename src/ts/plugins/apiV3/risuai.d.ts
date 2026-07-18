@@ -1262,6 +1262,8 @@ interface RisuaiPluginAPI {
    * char.name = 'New Name';
    * await risuai.setCharacter(char);
    * ```
+   * Resolves after server acceptance or durable local queueing. Queued work may not yet be server-applied.
+   * Rejects when persistence fails terminally.
    */
   setCharacter(character: any): Promise<void>
 
@@ -1272,6 +1274,8 @@ interface RisuaiPluginAPI {
 
   /**
    * @deprecated Use setCharacter() instead
+   * Resolves after server acceptance or durable local queueing. Queued work may not yet be server-applied.
+   * Rejects when persistence fails terminally.
    */
   setChar(character: any): Promise<void>
 
@@ -1286,6 +1290,8 @@ interface RisuaiPluginAPI {
    * Saves a character at a specific index
    * @param index - Character index
    * @param character - Character object to save
+   * Resolves after server acceptance or durable local queueing. Queued work may not yet be server-applied.
+   * Rejects when persistence fails terminally.
    */
   setCharacterToIndex(index: number, character: any): Promise<void>
 
@@ -1302,6 +1308,8 @@ interface RisuaiPluginAPI {
    * @param characterIndex - Character index
    * @param chatIndex - Chat index
    * @param chat - Chat object to save
+   * Resolves after server acceptance or durable local queueing. Queued work may not yet be server-applied.
+   * Rejects when persistence fails terminally.
    */
   setChatToIndex(characterIndex: number, chatIndex: number, chat: any): Promise<void>
 
@@ -1355,6 +1363,8 @@ interface RisuaiPluginAPI {
    * Sets a plugin argument value
    * @param key - Argument key
    * @param value - Value to set
+   * Resolves after server acceptance or durable local queueing. Queued work may not yet be server-applied.
+   * Rejects when persistence fails terminally.
    */
   setArgument(key: string, value: string | number): Promise<void>
 
