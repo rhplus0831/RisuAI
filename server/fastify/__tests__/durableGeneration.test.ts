@@ -1240,6 +1240,36 @@ describe('Durable generation (Milestone 1)', () => {
     controller.abort()
   })
 
+  it('rejects stale durable continue finalization when an orthogonal target field changes', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'story', chatId: 'msg-user-1' },
+      { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: ' and then', after: ' the end' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable({ mode: 'continue', userMessage: undefined }, { signal: controller.signal })
+    const events = await readSse(res, (ev) => ev.type === 'token')
+    const jobId = jobIdFromEvents(events)
+
+    await patchMessage('msg-char-1', { disabled: true })
+    gated.release()
+
+    const terminal = await waitForTerminalFinalization(jobId)
+    expect(terminal.terminal_error).toContain('stale')
+    const messages = await chatMessages(await bootstrap())
+    expect(messages).toHaveLength(2)
+    expect(messages[1]).toMatchObject({
+      role: 'char',
+      data: 'Once upon a time',
+      chatId: 'msg-char-1',
+      disabled: true,
+    })
+    expect(messages.some((message) => message.data === 'Once upon a time and then the end')).toBe(false)
+    controller.abort()
+  })
+
   it('rejects stale durable regenerate finalization when the target assistant was edited', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'greet me', chatId: 'msg-user-1' },

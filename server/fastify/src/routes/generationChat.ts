@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { isDeepStrictEqual } from 'node:util'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
@@ -441,9 +442,7 @@ function dispatchProviderWithPolicies(
 }
 
 interface GenerationFinalizationSnapshotRow {
-  role: Message['role']
-  data: string
-  messageId?: string
+  message: Message
 }
 
 export type GenerationFinalizationTargetSnapshot =
@@ -1499,11 +1498,7 @@ function buildRawModeMessage(args: {
 
 function snapshotMessageRow(message: Message | undefined): GenerationFinalizationSnapshotRow | undefined {
   if (!message) return undefined
-  return {
-    role: message.role,
-    data: message.data,
-    ...(message.chatId ? { messageId: message.chatId } : {}),
-  }
+  return { message: structuredClone(message) }
 }
 
 function captureGenerationFinalizationTargetSnapshot(
@@ -2294,9 +2289,7 @@ function regenerateTargetMessageIdFromInitialMessages(
 }
 
 function rowMatchesSnapshot(row: unknown, snapshot: GenerationFinalizationSnapshotRow): boolean {
-  if (!isRecord(row)) return false
-  if (row.role !== snapshot.role || row.data !== snapshot.data) return false
-  return snapshot.messageId === undefined || row.chatId === snapshot.messageId
+  return isDeepStrictEqual(row, snapshot.message)
 }
 
 function rowMatchesMessage(row: unknown, message: Message): boolean {
