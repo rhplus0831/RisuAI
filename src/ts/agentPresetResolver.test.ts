@@ -100,6 +100,23 @@ describe('agent preset resolver', () => {
     })
   })
 
+  it('falls back to the global default unless the chat explicitly opts out', () => {
+    const database = db({
+      agentPresetDefaultId: 'ap_default',
+      agentPresets: [preset()],
+    })
+
+    expect(resolveAgentPresetForChat({ database, generationSettings: {} })).toMatchObject({
+      status: 'ready',
+      ready: true,
+      selectedPresetId: 'ap_default',
+    })
+    expect(resolveAgentPresetForChat({ database, generationSettings: { agentPresetId: '' } })).toMatchObject({
+      status: 'none',
+      ready: true,
+    })
+  })
+
   it('builds stable dependency levels and named output registry for parallel phase execution', () => {
     const result = resolveAgentPresetForChat({
       database: db({

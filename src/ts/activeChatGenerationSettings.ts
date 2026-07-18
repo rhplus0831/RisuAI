@@ -1,4 +1,5 @@
 import { get } from 'svelte/store'
+import { resolveEffectiveAgentPresetId } from './agentPresetResolver'
 import {
   CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE,
   resolveDisplayedSidebarToggles,
@@ -48,6 +49,7 @@ export interface ActiveChatGenerationSettingsState {
   persona?: ChatGenerationPersonaReference
   modelPreset?: ChatGenerationModelPresetReference
   promptPreset?: ChatGenerationPromptPresetReference
+  effectiveAgentPresetId?: string
   agentPreset?: ChatGenerationAgentPresetReference
   readiness: ChatGenerationSettingsReadiness
   requiredSidebarToggles: ChatGenerationRequiredSidebarToggle[]
@@ -97,6 +99,7 @@ export function resolveActiveChatGenerationSettings(
   const agentPresets = safeArray<ChatGenerationAgentPresetReference>(
     db.agentPresets as unknown as ChatGenerationAgentPresetReference[] | undefined,
   )
+  const effectiveAgentPresetId = resolveEffectiveAgentPresetId(db, settings)
 
   const readiness = resolveReadiness(db, character, chat, settings)
   const identity: ActiveChatGenerationSettingsIdentity = {
@@ -116,7 +119,8 @@ export function resolveActiveChatGenerationSettings(
     persona: findById(personas, settings?.personaId),
     modelPreset: findById(modelPresets, settings?.modelPresetId),
     promptPreset: findById(promptPresets, settings?.promptPresetId),
-    agentPreset: findById(agentPresets, settings?.agentPresetId),
+    effectiveAgentPresetId,
+    agentPreset: findById(agentPresets, effectiveAgentPresetId),
     readiness,
     requiredSidebarToggles: readiness.requirements.sidebarToggles,
     displayedSidebarToggles: resolveDisplayedToggles(db, character, chat, settings),

@@ -626,6 +626,30 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerControl('agent-preset').textContent).toContain(language.agentPresets.noSelected)
   })
 
+  it('shows the global Agent Preset default until the chat explicitly opts out', async () => {
+    testDatabaseState().agentPresetDefaultId = 'agent-preset-a'
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    expect(resolveActiveChatGenerationSettings()).toMatchObject({
+      effectiveAgentPresetId: 'agent-preset-a',
+      agentPreset: { id: 'agent-preset-a' },
+    })
+    expect(pickerControl('agent-preset').dataset.risuPickerSelectedId).toBe('agent-preset-a')
+    expect(pickerControl('agent-preset').textContent).toContain('Research Agent')
+
+    activeChat().generationSettings = {
+      ...activeChat().generationSettings,
+      agentPresetId: '',
+    }
+    await tick()
+
+    expect(resolveActiveChatGenerationSettings().effectiveAgentPresetId).toBeUndefined()
+    expect(pickerControl('agent-preset').dataset.risuPickerSelectedId).toBe('')
+    expect(pickerControl('agent-preset').textContent).toContain(language.agentPresets.noSelected)
+  })
+
   it('saves and clears Agent Preset selection through active-chat controls', async () => {
     const calls = stubCommandFetch()
     mountGenerationSettingsPickerHost()

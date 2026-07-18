@@ -40,6 +40,7 @@ import {
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
+import { resolveEffectiveAgentPresetId } from './agentPresetResolver'
 import {
   applyModelPresetFieldsToDatabase,
   applyPromptPresetFieldsToDatabase,
@@ -1501,7 +1502,7 @@ function currentActiveChatRecord(): {
 }
 
 function currentChatAgentPreset(): { id?: string; name?: string } | undefined {
-  const agentPresetId = nonBlankId(currentActiveChatRecord()?.chat.generationSettings?.agentPresetId)
+  const agentPresetId = resolveEffectiveAgentPresetId(getDatabase(), currentActiveChatRecord()?.chat.generationSettings)
   if (!agentPresetId) return undefined
   return getDatabase().agentPresets?.find((preset) => preset.id === agentPresetId)
 }

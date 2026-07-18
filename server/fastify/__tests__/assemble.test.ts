@@ -413,6 +413,53 @@ describe('prompt summary hashes', () => {
     expect(result.formated?.map((row) => row.content).join('\n')).toContain('source-backed agent context')
   })
 
+  it('runs the global default Agent Preset when the chat has no explicit selection', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'Agent context:\n{{agent::context}}',
+      agentPresetDefaultId: 'ap_research',
+      agentPresets: [
+        {
+          id: 'ap_research',
+          name: 'Research Agent',
+          enabled: true,
+          version: 1,
+          steps: [agentPresetStep()],
+        },
+      ],
+    })
+    const executeAgentPresetStep = vi.fn(async () => ({
+      status: 'success' as const,
+      stepId: 'aps_context',
+      stepName: 'Gather Context',
+      outputKey: 'context',
+      outputText: 'global-default context',
+      outputTruncated: false,
+      diagnostics: {
+        phase: 'beforeMain' as const,
+        outputFormat: 'text' as const,
+        destination: 'promptOutput' as const,
+        failurePolicy: 'required' as const,
+        inputChars: 12,
+        outputChars: 22,
+        startedAt: 1,
+        endedAt: 2,
+        durationMs: 1,
+        preparedInputSections: [],
+        preparedInputDiagnostics: [],
+        parseStatus: 'not_applicable' as const,
+      },
+    }))
+
+    const result = await assemblePrompt(baseInput(), depsFor(db, { executeAgentPresetStep }))
+
+    expect(executeAgentPresetStep).toHaveBeenCalledTimes(1)
+    expect(result.stopSending).toBe(false)
+    if (result.stopSending) return
+    expect(result.formated?.map((row) => row.content).join('\n')).toContain('global-default context')
+  })
+
   it('lets the last before-main modifier replace the latest user input before prompt rendering', async () => {
     const db = makeDatabase({
       maxContext: 100_000,

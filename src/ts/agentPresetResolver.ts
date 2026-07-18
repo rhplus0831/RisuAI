@@ -264,7 +264,10 @@ export type AgentPresetResolution =
     }
 
 export function resolveAgentPresetForChat(input: ResolveAgentPresetForChatInput): AgentPresetResolution {
-  const selectedPresetId = selectedAgentPresetId(input.generationSettings ?? input.currentChat?.generationSettings)
+  const selectedPresetId = resolveEffectiveAgentPresetId(
+    input.database,
+    input.generationSettings ?? input.currentChat?.generationSettings,
+  )
   if (!selectedPresetId) {
     return {
       status: 'none',
@@ -814,9 +817,18 @@ function directModifierStatus(enabledSteps: readonly AgentPresetStepRecord[]): A
   return afterMainSteps[afterMainSteps.length - 1] === modifiers[0] ? 'valid' : 'not_last'
 }
 
-function selectedAgentPresetId(settings: ChatGenerationSettings | undefined): string | undefined {
-  const id = settings?.agentPresetId
-  return typeof id === 'string' && id.trim().length > 0 ? id.trim() : undefined
+export function resolveEffectiveAgentPresetId(
+  database: Pick<Database, 'agentPresetDefaultId'>,
+  settings: ChatGenerationSettings | undefined,
+): string | undefined {
+  if (settings && Object.prototype.hasOwnProperty.call(settings, 'agentPresetId')) {
+    return nonBlankAgentPresetId(settings.agentPresetId)
+  }
+  return nonBlankAgentPresetId(database.agentPresetDefaultId)
+}
+
+function nonBlankAgentPresetId(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
 
 function createEmptyStatusSummary(status: AgentPresetResolutionStatus): AgentPresetStatusSummary {

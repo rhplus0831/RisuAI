@@ -47,7 +47,7 @@
   let agentPresets = $derived(
     Array.isArray(activeGenerationSettings.db.agentPresets) ? activeGenerationSettings.db.agentPresets : [],
   )
-  let selectedAgentPresetId = $derived(activeGenerationSettings.settings?.agentPresetId ?? '')
+  let selectedAgentPresetId = $derived(activeGenerationSettings.effectiveAgentPresetId ?? '')
   let selectedAgentPresetMissing = $derived(!!selectedAgentPresetId && !activeGenerationSettings.agentPreset)
   let agentPresetSaveOperation = 0
   let agentPresetSaveStates = $state<Record<string, { operation: number; status: 'pending' | 'queued' | 'failed' }>>({})
