@@ -638,7 +638,7 @@ describe('loadout projection command helpers', () => {
     const creation = saveCurrentLoadout('   ')
     const created = testDatabaseState.db.loadouts.at(-1) as Loadout
     await waitForCallCount(calls, 2)
-    await expect(creation).resolves.toStrictEqual(created)
+    await expect(creation).resolves.toStrictEqual({ status: 'accepted', loadout: created })
     await flushCommandEffects()
 
     expect(created.name).toBe('New Loadout')
@@ -679,7 +679,7 @@ describe('loadout projection command helpers', () => {
 
     command.accept()
 
-    await expect(creation).resolves.toStrictEqual(created)
+    await expect(creation).resolves.toStrictEqual({ status: 'accepted', loadout: created })
     expect(testDatabaseState.db.loadouts.at(-1)).toStrictEqual(created)
   })
 
@@ -728,7 +728,7 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.loadouts[0]).toMatchObject(loadout)
 
     await waitForCallCount(calls, 2)
-    await expect(creation).resolves.toStrictEqual(loadout)
+    await expect(creation).resolves.toStrictEqual({ status: 'accepted', loadout })
 
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/loadouts',
@@ -2330,7 +2330,7 @@ describe('loadout projection command helpers', () => {
       'loadouts',
     )
     failure.reject()
-    await expect(creation).resolves.toBeNull()
+    await expect(creation).resolves.toEqual({ status: 'failed', loadout: created })
     await flushCommandEffects()
 
     expect(testDatabaseState.db.loadouts).toEqual(authoritativeLoadouts)
@@ -2386,7 +2386,7 @@ describe('loadout projection command helpers', () => {
       )
       failure.reject()
 
-      await expect(creation).resolves.toEqual(created)
+      await expect(creation).resolves.toEqual({ status: 'queued', loadout: created })
       expect(testDatabaseState.db.loadouts.at(-1)).toEqual(created)
       expect((await listPendingMutations()).map((entry) => entry.handle.key)).toContain(
         loadoutOwnerMutationKey(created.id),
@@ -2494,7 +2494,7 @@ describe('loadout projection command helpers', () => {
 
       const creation = saveCurrentLoadout('Composed Create')
       const created = cloneJsonValue(testDatabaseState.db.loadouts.at(-1) as Loadout)
-      await expect(creation).resolves.toEqual(created)
+      await expect(creation).resolves.toEqual({ status: 'queued', loadout: created })
       const favoriteMutation = toggleLoadoutFavorite(created.id)
       await waitForCallCount(calls, 3)
       applyCollectionsResource(
@@ -2594,7 +2594,7 @@ describe('loadout projection command helpers', () => {
     })
 
     await waitForCallCount(calls, 2)
-    await expect(creation).resolves.toBeNull()
+    await expect(creation).resolves.toEqual({ status: 'failed', loadout: created })
     await flushCommandEffects()
 
     expect(calls[1]).toMatchObject({

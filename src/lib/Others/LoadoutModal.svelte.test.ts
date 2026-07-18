@@ -50,7 +50,9 @@ beforeEach(() => {
   loadoutDatabase.loadouts = []
   loadoutMocks.applyLoadout.mockReset().mockResolvedValue('applied')
   loadoutMocks.deleteLoadout.mockReset().mockResolvedValue('accepted')
-  loadoutMocks.saveCurrentLoadout.mockReset().mockResolvedValue({ id: 'saved-loadout' })
+  loadoutMocks.saveCurrentLoadout
+    .mockReset()
+    .mockResolvedValue({ status: 'accepted', loadout: { id: 'saved-loadout' } })
   loadoutMocks.toggleLoadoutFavorite.mockReset().mockResolvedValue('accepted')
   alertMocks.confirm.mockReset().mockResolvedValue(true)
   alertMocks.normal.mockReset()
@@ -228,8 +230,8 @@ describe('LoadoutModal operations', () => {
     expect(target.querySelector('[role="alert"]')?.textContent).toContain('Could not load the preset')
   })
 
-  it('keeps the save name and lock until create succeeds, then clears it', async () => {
-    const creation = deferred<{ id: string }>()
+  it('keeps the save name and lock until create is accepted, then clears it', async () => {
+    const creation = deferred<{ status: 'accepted'; loadout: { id: string } }>()
     loadoutMocks.saveCurrentLoadout.mockReturnValue(creation.promise)
     component = mount(LoadoutModal, { target })
     await settle()
@@ -253,7 +255,7 @@ describe('LoadoutModal operations', () => {
     expect(input.disabled).toBe(true)
     expect(dialog.getAttribute('aria-busy')).toBe('true')
 
-    creation.resolve({ id: 'saved-loadout' })
+    creation.resolve({ status: 'accepted', loadout: { id: 'saved-loadout' } })
     await settle()
 
     expect(input.value).toBe('')
@@ -261,8 +263,33 @@ describe('LoadoutModal operations', () => {
     expect(dialog.getAttribute('aria-busy')).toBe('false')
   })
 
+  it('clears the name and reports a create retained in the durable queue', async () => {
+    loadoutMocks.saveCurrentLoadout.mockResolvedValue({
+      status: 'queued',
+      loadout: { id: 'queued-loadout' },
+    })
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    const input = target.querySelector<HTMLInputElement>('input[type="text"]')
+    const save = target.querySelector<HTMLButtonElement>('[data-risu-loadout-action="save"]')
+    if (!input || !save) throw new Error('Loadout save controls not found')
+    input.value = 'Queued Snapshot'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    save.click()
+    await settle()
+
+    expect(input.value).toBe('')
+    expect(alertMocks.normal).toHaveBeenCalledWith(
+      'This loadout is saved locally and queued. You do not need to save it again.',
+    )
+    expect(target.querySelector('[role="alert"]')).toBeNull()
+  })
+
   it('restores the save controls and retains the name when create fails', async () => {
-    const creation = deferred<null>()
+    const creation = deferred<{ status: 'failed'; loadout: { id: string } }>()
     loadoutMocks.saveCurrentLoadout.mockReturnValue(creation.promise)
     component = mount(LoadoutModal, { target })
     await settle()
@@ -283,7 +310,7 @@ describe('LoadoutModal operations', () => {
     expect(input.disabled).toBe(true)
     expect(dialog.getAttribute('aria-busy')).toBe('true')
 
-    creation.resolve(null)
+    creation.resolve({ status: 'failed', loadout: { id: 'failed-loadout' } })
     await settle()
 
     expect(loadoutStore.open).toBe(true)

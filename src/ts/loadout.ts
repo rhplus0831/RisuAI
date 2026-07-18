@@ -147,6 +147,11 @@ export type LoadoutApplyStatus = 'applied' | 'queued' | 'superseded' | 'preset-h
 
 export type LoadoutMutationStatus = 'accepted' | 'queued' | 'superseded' | 'failed' | 'not-found'
 
+export interface LoadoutCreateResult {
+  status: Exclude<LoadoutMutationStatus, 'not-found'>
+  loadout: Loadout
+}
+
 type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
 
 interface LoadoutListRollbackEntry {
@@ -1280,8 +1285,8 @@ function dispatchCreateLoadout(
   loadout: Loadout,
   acknowledgeOptimistic: boolean,
   loadoutsProjectionEpoch: number,
-): Promise<{ result: ServerCommandResult; projectionOwned: boolean } | null> {
-  if (!canUseServerCommands()) return Promise.resolve(null)
+): Promise<Exclude<LoadoutMutationStatus, 'not-found'>> {
+  if (!canUseServerCommands()) return Promise.resolve('accepted')
   const attemptedLoadout = cloneJsonValue(loadout)
   const attemptedIndex = Math.max(
     0,
@@ -1292,31 +1297,27 @@ function dispatchCreateLoadout(
     requests: [{ method: 'POST', path: '/loadouts', body: { loadout: toLoadoutSnapshot(attemptedLoadout) } }],
   }
   const handle = stagePendingMutation(loadoutOwnerMutationKey(loadout.id), intent)
-  return dispatchDurableMutation(handle, intent, (transport) =>
-    runServerCommand({
-      command: (baseRevision) =>
-        createLoadoutCommand(
-          {
-            baseRevision,
-            loadout: toLoadoutSnapshot(attemptedLoadout),
-            acknowledgeOptimistic,
-            loadoutsProjectionEpoch,
-          },
-          transport.signal,
-        ),
-      rollback: () => rollbackCreatedLoadout(attemptedLoadout, loadoutsProjectionEpoch),
-      ...transport,
-    }),
-  ).then((result) => {
-    if (result.status !== 'ok' && isPendingLoadoutProjectionCurrent(handle, loadout.id)) {
-      reapplyRetainedCreatedLoadout(attemptedLoadout, attemptedIndex)
-    }
-    return {
-      result,
-      projectionOwned:
-        pendingMutationProjectionFence(handle, pendingMutationLoadoutRowProjectionTarget(loadout.id)) !== null,
-    }
-  })
+  return settleLoadoutMutation(
+    handle,
+    loadout.id,
+    dispatchDurableMutation(handle, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          createLoadoutCommand(
+            {
+              baseRevision,
+              loadout: toLoadoutSnapshot(attemptedLoadout),
+              acknowledgeOptimistic,
+              loadoutsProjectionEpoch,
+            },
+            transport.signal,
+          ),
+        rollback: () => rollbackCreatedLoadout(attemptedLoadout, loadoutsProjectionEpoch),
+        ...transport,
+      }),
+    ),
+    () => reapplyRetainedCreatedLoadout(attemptedLoadout, attemptedIndex),
+  )
 }
 
 function dispatchDeleteLoadout(
@@ -2367,13 +2368,13 @@ async function applyLoadoutNowExclusive(
     : 'persistence-failed'
 }
 
-export async function saveCurrentLoadout(name: string): Promise<Loadout | null> {
+export async function saveCurrentLoadout(name: string): Promise<LoadoutCreateResult> {
   const loadout = makeLoadout({ name })
   const acknowledgeOptimistic = isCanonicalLoadoutCollection(getDatabase().loadouts) && isCanonicalLoadout(loadout)
   const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
   withTrustedResourceWrite(() => {
     getDatabase().loadouts.push(loadout)
   })
-  const result = await dispatchCreateLoadout(loadout, acknowledgeOptimistic, loadoutsProjectionEpoch)
-  return result === null || result.result.status === 'ok' || result.projectionOwned ? loadout : null
+  const status = await dispatchCreateLoadout(loadout, acknowledgeOptimistic, loadoutsProjectionEpoch)
+  return { status, loadout }
 }

@@ -107,9 +107,10 @@
     savingLoadout = true
     applyError = ''
     try {
-      const saved = await saveCurrentLoadout(name)
-      if (saved) {
+      const result = await saveCurrentLoadout(name)
+      if (result.status === 'accepted' || result.status === 'queued') {
         if (saveName === originalName) saveName = ''
+        if (result.status === 'queued') alertNormal(language.loadoutSaveQueued)
         return
       }
       applyError = language.loadoutSaveFailed

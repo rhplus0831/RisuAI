@@ -2102,6 +2102,7 @@ export const languageEnglish = {
   loadoutApplyFailed: 'Could not apply this loadout. Please try again.',
   loadoutApplyQueued: 'Changes are saved locally and queued. You do not need to apply this loadout again.',
   loadoutSaveFailed: 'Could not save this loadout. Please try again.',
+  loadoutSaveQueued: 'This loadout is saved locally and queued. You do not need to save it again.',
   loadoutFavoriteFailed: (name: string) => `Could not update favorites for “${name}”. Please try again.`,
   loadoutFavoriteQueued: (name: string) => `The favorite change for “${name}” is saved locally and queued.`,
   loadoutDeleteFailed: (name: string) => `Could not remove “${name}”. Please try again.`,
