@@ -182,22 +182,29 @@ describe('SettingSelect initial values', () => {
     expect(action).toHaveBeenCalledOnce()
   })
 
-  it.each(['zh-TW', 'fa'])('preserves the hidden Google translation target %s on mount', async (value) => {
+  it.each(['zh-TW', 'fa'])('keeps translation target %s enabled when the provider changes', async (value) => {
     const action = vi.fn()
     const item = {
       ...languageSettingsItems.find((candidate) => candidate.id === 'lang.translatorLang')!,
       onChange: action,
     }
-    const nonGoogleContext: SettingContext = {
+    const googleContext: SettingContext = {
       ...ctx,
-      db: { translatorType: 'deepl' } as any,
+      db: { translatorType: 'google' } as any,
     }
     selectMocks.currentValue = value
 
-    component = mount(SettingSelect, { target, props: { item, ctx: nonGoogleContext } })
+    component = mount(SettingConditionalOptionsTestHost, {
+      target,
+      props: { initialContext: googleContext, item, kind: 'select' },
+    }) as MountedConditionalOptionsHost
     await tick()
 
-    expect(Array.from(target.querySelector('select')!.options).map((option) => option.value)).not.toContain(value)
+    component.replaceContext({ ...ctx, db: { translatorType: 'deepl' } as any })
+    await tick()
+
+    expect(Array.from(target.querySelector('select')!.options).map((option) => option.value)).toContain(value)
+    expect(target.querySelector('select')?.value).toBe(value)
     expect(selectMocks.currentValue).toBe(value)
     expect(selectMocks.setSettingValue).not.toHaveBeenCalled()
     expect(action).not.toHaveBeenCalled()

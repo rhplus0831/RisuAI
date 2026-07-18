@@ -103,16 +103,8 @@ export const languageSettingsItems: SettingItem[] = [
         { value: 'ko', label: 'Korean' },
         { value: 'ru', label: 'Russian' },
         { value: 'zh', label: 'Chinese' },
-        {
-          value: 'zh-TW',
-          label: 'Chinese (Traditional)',
-          condition: (ctx) => ctx.db.translatorType === 'google',
-        },
-        {
-          value: 'fa',
-          label: 'Persian (Farsi)',
-          condition: (ctx) => ctx.db.translatorType === 'google',
-        },
+        { value: 'zh-TW', label: 'Chinese (Traditional)' },
+        { value: 'fa', label: 'Persian (Farsi)' },
         { value: 'ja', label: 'Japanese' },
         { value: 'fr', label: 'French' },
         { value: 'es', label: 'Spanish' },
