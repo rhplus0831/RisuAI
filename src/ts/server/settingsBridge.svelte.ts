@@ -42,7 +42,7 @@ import {
   serverSettingDraftOwnerKey,
   splitPresetSettingDraftOwnerKey,
 } from './settingsDraftAcknowledgement'
-import { dispatchDurableMutation } from './durableMutationDispatch'
+import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './durableMutationDispatch'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from './settingsMutationKey'
 import {
   acknowledgePendingMutation,
@@ -51,6 +51,7 @@ import {
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
 import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
+import { registerPendingSettingsProjectionOverlay } from './settingsPendingProjection'
 
 interface PendingSettingsPatch {
   patch: SettingsPatch
@@ -66,6 +67,10 @@ interface PendingSettingsAttempt {
   sequence: number
   previous: SettingsPatch
   attempted: SettingsPatch
+  mutationId?: string
+  phase: 'dispatching' | 'queued' | 'accepted-replay'
+  acceptedReplayPendingKeys?: Set<string>
+  settlementCleanup?: () => void
 }
 
 interface HypaV3PresetRollbackResult {
@@ -98,10 +103,53 @@ interface SparseObjectSettingQueue {
   timer: ReturnType<typeof setTimeout> | null
   running: boolean
   outbox: PendingMutationHandle | null
+  settlementCleanup?: () => void
+  settlementMutationId?: string
+  settlementPhase?: 'dispatching' | 'queued' | 'accepted-replay'
 }
 
 const SPARSE_OBJECT_SETTING_KEYS = new Set(['NAIImgConfig', 'wavespeedImage', 'seperateParameters'])
 const sparseObjectSettingQueues = new Map<string, SparseObjectSettingQueue>()
+
+registerPendingSettingsProjectionOverlay((target, allowedKeys) => {
+  const settledAttempts: PendingSettingsAttempt[] = []
+  for (const attempt of [...pendingSettingsAttempts]) {
+    for (const [key, value] of Object.entries(attempt.attempted)) {
+      if (allowedKeys && !allowedKeys.has(key)) continue
+      if (attempt.phase === 'accepted-replay') {
+        attempt.acceptedReplayPendingKeys?.delete(key)
+        continue
+      }
+      target[key] = cloneJsonValue(value)
+    }
+    if (attempt.phase === 'accepted-replay' && attempt.acceptedReplayPendingKeys?.size === 0) {
+      settledAttempts.push(attempt)
+    }
+  }
+
+  for (const [key, value] of Object.entries(pendingSettingsPatch.attempted)) {
+    if (allowedKeys && !allowedKeys.has(key)) continue
+    target[key] = cloneJsonValue(value)
+  }
+
+  for (const state of sparseObjectSettingQueues.values()) {
+    if (allowedKeys && !allowedKeys.has(state.key)) continue
+    if (state.settlementPhase === 'accepted-replay') {
+      clearSparseObjectSettingSettlement(state)
+      if (!state.running && !state.desired && !state.outbox) {
+        state.durableAttempted = null
+        sparseObjectSettingQueues.delete(state.key)
+      }
+      continue
+    }
+    if (state.settlementPhase && state.durableAttempted) {
+      target[state.key] = cloneJsonValue(state.durableAttempted)
+    }
+    if (state.desired) target[state.key] = cloneJsonValue(state.desired)
+  }
+
+  for (const attempt of settledAttempts) clearSettingsAttempt(attempt)
+})
 
 let suppressRollbackDispatch = false
 
@@ -932,8 +980,20 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
   failureRollbackDisposition?: ServerCommandTransportOptions['failureRollbackDisposition']
   reportFailure?: () => void
 }): Promise<ServerCommandResult> {
-  const attempt = registerSettingsAttempt(input.previous, input.attempted)
   const reportFailure = input.reportFailure ?? createSettingsSaveFailureReporter()
+  const attempt = registerSettingsAttempt(input.previous, input.attempted, input.mutationId)
+  if (input.mutationId) {
+    attempt.settlementCleanup = registerDurableMutationSettlementListener(input.mutationId, (settlement) => {
+      if (!isSettingsAttemptCurrent(attempt)) return
+      if (settlement === 'accepted') {
+        attempt.phase = 'accepted-replay'
+        attempt.acceptedReplayPendingKeys = new Set(Object.keys(attempt.attempted))
+        return
+      }
+      rollbackSettingsAttempt(attempt)
+      reportFailure()
+    })
+  }
   const result = patchServerBackedSettings({
     patch: input.patch,
     acknowledgeOptimistic: true,
@@ -951,10 +1011,26 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
   })
   void result.then(
     (settled) => {
+      if (!isSettingsAttemptCurrent(attempt)) return
+      if (settled.status === 'ok') {
+        clearSettingsAttempt(attempt)
+        return
+      }
+      if (input.failureRollbackDisposition?.(settled) === 'retain') {
+        attempt.phase = 'queued'
+        reportFailure()
+        return
+      }
       clearSettingsAttempt(attempt)
-      if (settled.status !== 'ok') reportFailure()
+      reportFailure()
     },
     () => {
+      if (!isSettingsAttemptCurrent(attempt)) return
+      if (input.failureRollbackDisposition?.({ status: 'unavailable' }) === 'retain') {
+        attempt.phase = 'queued'
+        reportFailure()
+        return
+      }
       clearSettingsAttempt(attempt)
       reportFailure()
     },
@@ -962,14 +1038,26 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
   return result
 }
 
-function registerSettingsAttempt(previous: SettingsPatch, attempted: SettingsPatch): PendingSettingsAttempt {
+function registerSettingsAttempt(
+  previous: SettingsPatch,
+  attempted: SettingsPatch,
+  mutationId?: string,
+): PendingSettingsAttempt {
   const attempt = {
     sequence: ++nextSettingsAttemptSequence,
     previous,
     attempted,
+    mutationId,
+    phase: 'dispatching' as const,
   }
   pendingSettingsAttempts.push(attempt)
   return attempt
+}
+
+function isSettingsAttemptCurrent(attempt: PendingSettingsAttempt): boolean {
+  return pendingSettingsAttempts.some(
+    (candidate) => candidate.sequence === attempt.sequence && candidate.mutationId === attempt.mutationId,
+  )
 }
 
 function rollbackSettingsAttempt(attempt: PendingSettingsAttempt): void {
@@ -1014,6 +1102,8 @@ function rebaseLaterSettingsAttempts(failed: PendingSettingsAttempt): void {
 }
 
 function clearSettingsAttempt(attempt: PendingSettingsAttempt): void {
+  attempt.settlementCleanup?.()
+  attempt.settlementCleanup = undefined
   const index = pendingSettingsAttempts.findIndex((candidate) => candidate.sequence === attempt.sequence)
   if (index !== -1) pendingSettingsAttempts.splice(index, 1)
 }
@@ -1053,6 +1143,7 @@ function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted
       timer: null,
       running: false,
       outbox: null,
+      settlementPhase: undefined,
     }
     sparseObjectSettingQueues.set(key, state)
   } else {
@@ -1114,6 +1205,36 @@ async function dispatchSparseObjectSettingQueue(
   const reportFailure = createSettingsSaveFailureReporter()
   let result: Awaited<ReturnType<typeof patchSettingsObjectFieldsCommand>>
   try {
+    clearSparseObjectSettingSettlement(state)
+    state.settlementMutationId = outbox.mutationId
+    state.settlementPhase = 'dispatching'
+    state.settlementCleanup = registerDurableMutationSettlementListener(outbox.mutationId, (settlement) => {
+      if (state.settlementMutationId !== outbox.mutationId) return
+      if (settlement === 'accepted') {
+        state.settlementPhase = 'accepted-replay'
+        state.outbox = null
+        return
+      }
+      if (state.desired && state.stagedUpdate && state.intent && state.outbox) {
+        // A later absolute successor already covers the visible desired value.
+        // Retire only the discarded predecessor and let that successor run.
+        state.running = false
+        clearSparseObjectSettingSettlement(state)
+        reportFailure()
+        queueMicrotask(() => void dispatchSparseObjectSettingQueue(state, options))
+        return
+      }
+      const current = currentSettingValue(state.key, null)
+      if (!state.desired && state.durableAttempted && isJsonSnapshotEqual(current, state.durableAttempted)) {
+        writeSparseObjectSettingProjection(state.key, state.baseline)
+      }
+      state.outbox = null
+      state.durableAttempted = null
+      state.running = false
+      clearSparseObjectSettingSettlement(state)
+      sparseObjectSettingQueues.delete(state.key)
+      reportFailure()
+    })
     result = await dispatchDurableMutation(outbox!, intent!, (transport) => {
       failureRollbackDisposition = transport.failureRollbackDisposition
       return runServerCommand({
@@ -1153,12 +1274,15 @@ async function dispatchSparseObjectSettingQueue(
     // both its visible projection and its queue baseline; a later edit stages
     // an ordered correction instead of silently exposing stale server state.
     state.running = false
+    state.settlementPhase = 'queued'
     state.outbox ??= outbox
     if (state.desired && state.stagedUpdate && state.intent && state.outbox) {
       queueMicrotask(() => void dispatchSparseObjectSettingQueue(state, options))
     }
     return
   }
+
+  clearSparseObjectSettingSettlement(state)
 
   await Promise.resolve()
   let baseline: Record<string, unknown> | null = null
@@ -1209,6 +1333,13 @@ async function dispatchSparseObjectSettingQueue(
 
   state.durableAttempted = null
   sparseObjectSettingQueues.delete(state.key)
+}
+
+function clearSparseObjectSettingSettlement(state: SparseObjectSettingQueue): void {
+  state.settlementCleanup?.()
+  state.settlementCleanup = undefined
+  state.settlementMutationId = undefined
+  state.settlementPhase = undefined
 }
 
 function rebaseSparseObjectSettingDesired(
@@ -1275,12 +1406,12 @@ async function refreshSparseObjectSettingBaseline(
 ): Promise<Record<string, unknown> | null> {
   const result = await fetchServerSettingsGroup(group, signal)
   if (result.status !== 'ok') return null
+  const authoritative = result.settings[key]
   const applied = withServerResourceApply(() =>
     applySettingsGroupResource(result, SERVER_SETTINGS_KEYS_BY_GROUP[group]),
   )
   if (!applied) return null
-  const value = currentSettingValue(key, null)
-  return isPlainJsonObject(value) ? cloneJsonValue(value) : null
+  return isPlainJsonObject(authoritative) ? cloneJsonValue(authoritative) : null
 }
 
 function canonicalSparseObjectSettingResult(

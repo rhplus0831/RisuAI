@@ -68,6 +68,7 @@ vi.mock('./commands', () => ({
 }))
 
 vi.mock('./durableMutationDispatch', () => ({
+  registerDurableMutationSettlementListener: vi.fn(() => () => {}),
   dispatchDurableMutation: vi.fn(
     async (
       handle: { key: string; mutationId: string },

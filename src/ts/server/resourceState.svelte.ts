@@ -1346,6 +1346,7 @@ export function applyCollectionsResource(
   if (requestedName && !Object.prototype.hasOwnProperty.call(payload.collections, requestedName)) return false
 
   let applied = false
+  const appliedNames: ServerCollectionName[] = []
   for (const name of names) {
     if (isOlderRevision(payload.revision, collectionsResourceState.revisions[name] ?? null)) continue
     collectionsResourceState.values[name] = cloneJsonValue(payload.collections[name]) as never
@@ -1353,7 +1354,15 @@ export function applyCollectionsResource(
     collectionsResourceState.statuses[name] = 'ready'
     delete collectionsResourceState.errors[name]
     advanceCollectionProjectionEpoch(name)
+    appliedNames.push(name)
     applied = true
+  }
+
+  if (appliedNames.length > 0) {
+    applyPendingSettingsProjectionOverlays(
+      collectionsResourceState.values as unknown as Record<string, unknown>,
+      new Set(appliedNames),
+    )
   }
 
   if (!requestedName && !isOlderRevision(payload.revision, collectionsResourceState.fullRevision)) {

@@ -30,6 +30,7 @@ const durabilityMocks = vi.hoisted(() => ({
   dispatched: [] as Array<{ key: string; mutationId: string; intent: unknown }>,
   nextId: 1,
   retainFailures: false,
+  settlementListeners: new Map<string, Set<(settlement: 'accepted' | 'discarded') => void>>(),
   staged: [] as Array<{ key: string; mutationId: string; intent: unknown }>,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
@@ -188,6 +189,18 @@ vi.mock('./pendingMutationOutbox', () => ({
 }))
 
 vi.mock('./durableMutationDispatch', () => ({
+  registerDurableMutationSettlementListener: (
+    mutationId: string,
+    listener: (settlement: 'accepted' | 'discarded') => void,
+  ) => {
+    const listeners = durabilityMocks.settlementListeners.get(mutationId) ?? new Set()
+    listeners.add(listener)
+    durabilityMocks.settlementListeners.set(mutationId, listeners)
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) durabilityMocks.settlementListeners.delete(mutationId)
+    }
+  },
   dispatchDurableMutation: vi.fn(
     async (
       handle: { key: string; mutationId: string; phase: string },
@@ -232,6 +245,8 @@ vi.mock('../process/templates/templates', () => ({
 import type { HypaV3Preset } from '../process/memory/hypav3'
 import { language } from '../../lang'
 import {
+  applyCollectionsResource,
+  applySettingsResource,
   applySettingsGroupResource,
   captureSettingsGroupProjectionEpoch,
   getResourceDatabase,
@@ -265,6 +280,10 @@ function createDeferred<T>(): Deferred<T> {
     resolve = promiseResolve
   })
   return { promise, resolve }
+}
+
+function publishSettingsSettlement(mutationId: string, settlement: 'accepted' | 'discarded'): void {
+  for (const listener of [...(durabilityMocks.settlementListeners.get(mutationId) ?? [])]) listener(settlement)
 }
 
 function sparseObjectAcceptedResult(input: (typeof recorded.objectPatches)[number]) {
@@ -351,11 +370,18 @@ beforeEach(() => {
   durabilityMocks.dispatched.length = 0
   durabilityMocks.nextId = 1
   durabilityMocks.retainFailures = false
+  durabilityMocks.settlementListeners.clear()
   durabilityMocks.staged.length = 0
   presetMocks.setPreset.mockClear()
 })
 
-afterEach(() => {
+afterEach(async () => {
+  for (const mutationId of [...durabilityMocks.settlementListeners.keys()]) {
+    publishSettingsSettlement(mutationId, 'discarded')
+  }
+  await Promise.resolve()
+  await Promise.resolve()
+  durabilityMocks.settlementListeners.clear()
   setSettingsRuntimeProjectionHook(null)
   vi.useRealTimers()
   ;(testDatabaseState as { db: unknown }).db = {}
@@ -635,6 +661,106 @@ describe('settingsBridge coalescing', () => {
     expect(testDatabaseState.db.notification).toBe(false)
     expect(testDatabaseState.db.textTheme).toBe('newer local')
     expect(projectedKeys).toEqual([['notification']])
+  })
+
+  it('overlays an in-flight direct setting across full and grouped authoritative reads', async () => {
+    const persistence = createDeferred<unknown>()
+    recorded.patchResults.push(persistence.promise)
+    setupSettings({ notification: false })
+
+    applyServerBackedSettingsPatch({ notification: true })
+    await flushAndSettle()
+    expect(testDatabaseState.db.notification).toBe(true)
+
+    expect(applySettingsResource({ revision: 1, settings: { notification: false } })).toBe(true)
+    expect(testDatabaseState.db.notification).toBe(true)
+    expect(
+      applySettingsGroupResource({ revision: 1, group: 'display', settings: { notification: false } }, [
+        'notification',
+      ]),
+    ).toBe(true)
+    expect(testDatabaseState.db.notification).toBe(true)
+
+    persistence.resolve({ status: 'ok', revision: 2 })
+    await flushAndSettle()
+    expect(testDatabaseState.db.notification).toBe(true)
+  })
+
+  it('keeps a retained direct setting projected until replay acceptance is observed', async () => {
+    durabilityMocks.retainFailures = true
+    recorded.patchResults.push({ status: 'error', error: 'temporarily unavailable' })
+    setupSettings({ notification: false })
+
+    applyServerBackedSettingsPatch({ notification: true })
+    await flushAndSettle()
+    expect(testDatabaseState.db.notification).toBe(true)
+
+    expect(applySettingsResource({ revision: 1, settings: { notification: false } })).toBe(true)
+    expect(testDatabaseState.db.notification).toBe(true)
+    expect(
+      applySettingsGroupResource({ revision: 1, group: 'display', settings: { notification: false } }, [
+        'notification',
+      ]),
+    ).toBe(true)
+    expect(testDatabaseState.db.notification).toBe(true)
+
+    const mutationId = durabilityMocks.dispatched[0].mutationId
+    publishSettingsSettlement(mutationId, 'accepted')
+    expect(
+      applySettingsGroupResource({ revision: 2, group: 'display', settings: { notification: true } }, ['notification']),
+    ).toBe(true)
+    expect(
+      applySettingsGroupResource({ revision: 3, group: 'display', settings: { notification: false } }, [
+        'notification',
+      ]),
+    ).toBe(true)
+    expect(testDatabaseState.db.notification).toBe(false)
+  })
+
+  it('rolls back a retained direct setting after final durable discard', async () => {
+    durabilityMocks.retainFailures = true
+    recorded.patchResults.push({ status: 'error', error: 'temporarily unavailable' })
+    setupSettings({ notification: false })
+
+    applyServerBackedSettingsPatch({ notification: true })
+    await flushAndSettle()
+    expect(applySettingsResource({ revision: 1, settings: { notification: false } })).toBe(true)
+    expect(testDatabaseState.db.notification).toBe(true)
+
+    publishSettingsSettlement(durabilityMocks.dispatched[0].mutationId, 'discarded')
+    expect(testDatabaseState.db.notification).toBe(false)
+    expect(
+      applySettingsGroupResource({ revision: 2, group: 'display', settings: { notification: false } }, [
+        'notification',
+      ]),
+    ).toBe(true)
+    expect(testDatabaseState.db.notification).toBe(false)
+  })
+
+  it('overlays a retained collection-backed direct setting on collection refresh', async () => {
+    durabilityMocks.retainFailures = true
+    recorded.patchResults.push({ status: 'error', error: 'temporarily unavailable' })
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha')],
+      hypaV3PresetId: 0,
+    })
+
+    applyServerBackedSettingsPatch({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+      hypaV3PresetId: 1,
+    })
+    await flushAndSettle()
+
+    expect(
+      applyCollectionsResource(
+        {
+          revision: 1,
+          collections: { hypaV3Presets: [hypaPreset('Alpha')] },
+        } as never,
+        'hypaV3Presets',
+      ),
+    ).toBe(true)
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Imported')])
   })
 
   it('rebases a later same-key rollback after two immediate settings writes fail', async () => {
@@ -1203,6 +1329,7 @@ describe('settingsBridge coalescing', () => {
       ),
     ).toBe(true)
     flushSync()
+    expect(testDatabaseState.db.NAIImgConfig).toEqual({ ...original, width: 832 })
     expect(hasSettingsGroupProjectionEpochChanged('media', intentEpoch)).toBe(true)
 
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -1240,6 +1367,28 @@ describe('settingsBridge coalescing', () => {
     expect(recorded.objectPatches).toHaveLength(1)
     expect(testDatabaseState.db.NAIImgConfig).toEqual(attempted)
     expect(recorded.groupReads).toHaveLength(1)
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: Number.MAX_SAFE_INTEGER - 1,
+          group: 'media',
+          settings: { NAIImgConfig: original as never },
+        },
+        ['NAIImgConfig'],
+      ),
+    ).toBe(true)
+    expect(testDatabaseState.db.NAIImgConfig).toEqual(attempted)
+    publishSettingsSettlement(durabilityMocks.dispatched.at(-1)!.mutationId, 'accepted')
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: Number.MAX_SAFE_INTEGER,
+          group: 'media',
+          settings: { NAIImgConfig: attempted as never },
+        },
+        ['NAIImgConfig'],
+      ),
+    ).toBe(true)
     stop()
   })
 
