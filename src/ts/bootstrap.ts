@@ -69,7 +69,10 @@ import {
 import { setActiveMessageTranslations, startActiveMessageTranslationRefresh } from './server/messageTranslationJobs'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
-import { reconcileChatCompletionPushNotificationSetting } from './server/pushNotificationSetting'
+import {
+  initializePushNotificationCoordinator,
+  reconcileChatCompletionPushNotificationSetting,
+} from './server/pushNotificationSetting'
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
 import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './server/resourceRefresh'
 import {
@@ -180,6 +183,7 @@ export async function loadData(): Promise<void> {
     try {
       await loadWebInitialDatabase()
       const db = getDatabase()
+      await initializePushNotificationCoordinator()
       void reconcileChatCompletionPushNotificationSetting(db.notification === true)
       LoadingStatusState.text = 'Loading Plugins...'
       try {

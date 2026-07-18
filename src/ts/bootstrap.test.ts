@@ -72,7 +72,10 @@ const pendingMutationApi = vi.hoisted(() => ({
   replay: vi.fn(),
 }))
 const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyProgress: vi.fn() }))
-const pushApi = vi.hoisted(() => ({ reconcile: vi.fn(async () => ({ status: 'applied' })) }))
+const pushApi = vi.hoisted(() => ({
+  initialize: vi.fn(async () => undefined),
+  reconcile: vi.fn(async () => ({ status: 'applied' })),
+}))
 
 interface TestCommandEvent {
   type: string
@@ -180,6 +183,7 @@ vi.mock('./model/modellist', () => ({
   registerModelDynamic: vi.fn(),
 }))
 vi.mock('./server/pushNotificationSetting', () => ({
+  initializePushNotificationCoordinator: pushApi.initialize,
   reconcileChatCompletionPushNotificationSetting: pushApi.reconcile,
 }))
 
@@ -378,6 +382,8 @@ describe('API-backed client bootstrap', () => {
   it('reconciles disabled device push state after the initial settings load', async () => {
     await loadData()
 
+    expect(pushApi.initialize).toHaveBeenCalledOnce()
+    expect(pushApi.initialize.mock.invocationCallOrder[0]).toBeLessThan(pushApi.reconcile.mock.invocationCallOrder[0])
     expect(pushApi.reconcile).toHaveBeenCalledTimes(2)
     expect(pushApi.reconcile).toHaveBeenNthCalledWith(1, false)
     expect(pushApi.reconcile).toHaveBeenNthCalledWith(2, false)

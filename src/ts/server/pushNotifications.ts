@@ -6,7 +6,7 @@ const VAPID_PUBLIC_KEY_ENDPOINT = '/api/v1/push/vapid-public-key'
 const PUSH_SUBSCRIPTIONS_ENDPOINT = '/api/v1/push/subscriptions'
 const LOG_PREFIX = '[push notifications]'
 
-type PushNotificationFallbackReason =
+export type PushNotificationFallbackReason =
   | 'notification-unavailable'
   | 'permission-default'
   | 'service-worker-unavailable'
@@ -17,8 +17,37 @@ type PushNotificationFallbackReason =
 
 export type EnablePushNotificationsResult =
   | { status: 'enabled'; endpoint: string }
-  | { status: 'fallback'; reason: PushNotificationFallbackReason; endpoint?: string }
+  | {
+      status: 'fallback'
+      reason: PushNotificationFallbackReason
+      endpoint?: string
+      localCleanup?: 'succeeded' | 'failed'
+    }
   | { status: 'permission-denied' }
+
+export type DisablePushNotificationCleanupStep =
+  | 'service-worker'
+  | 'subscription-inspection'
+  | 'local-unsubscribe'
+  | 'server-deletion'
+
+export interface DisablePushNotificationFailure {
+  step: DisablePushNotificationCleanupStep
+  error?: unknown
+  endpoint?: string
+}
+
+export interface DisablePushNotificationsResult {
+  status: 'disabled' | 'partial'
+  subscriptionFound: boolean | null
+  localUnsubscribed: boolean | null
+  serverDeleted: boolean | null
+  pendingEndpoints: string[]
+  localInspectionPending: boolean
+  failures: DisablePushNotificationFailure[]
+}
+
+type PushTransportResult = { ok: true } | { ok: false; error: unknown }
 
 export async function enableChatCompletionPushNotifications(): Promise<EnablePushNotificationsResult> {
   const permission = await requestNotificationPermission()
@@ -44,33 +73,94 @@ export async function enableChatCompletionPushNotifications(): Promise<EnablePus
 
   const endpoint = subscription.endpoint
   const registered = await registerPushSubscription(subscription)
-  if (!registered) return { status: 'fallback', reason: 'server-registration-failed', endpoint }
+  if (!registered.ok) {
+    const localCleanup = await unsubscribePushSubscription(subscription)
+    return {
+      status: 'fallback',
+      reason: 'server-registration-failed',
+      endpoint,
+      localCleanup: localCleanup.ok ? 'succeeded' : 'failed',
+    }
+  }
 
   return { status: 'enabled', endpoint }
 }
 
-export async function disableChatCompletionPushNotifications(): Promise<void> {
-  if (!canUseServiceWorker()) return
+export async function disableChatCompletionPushNotifications(
+  pendingEndpoints: readonly string[] = [],
+  requireLocalInspection = false,
+): Promise<DisablePushNotificationsResult> {
+  const failures: DisablePushNotificationFailure[] = []
+  const endpoints = new Set(pendingEndpoints)
+  let subscriptionFound: boolean | null = null
+  let localUnsubscribed: boolean | null = null
+  let localInspectionPending = requireLocalInspection
 
-  let endpoint: string | null = null
-  try {
-    const registration = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE)
-    const pushManager = registration ? pushManagerForRegistration(registration) : null
-    const subscription = pushManager ? await pushManager.getSubscription() : null
-    if (!subscription) return
-
-    endpoint = subscription.endpoint
-    try {
-      await subscription.unsubscribe()
-    } catch (error) {
-      warnPushError('Failed to unsubscribe from local push notifications.', error)
+  if (!canUseServiceWorker()) {
+    if (requireLocalInspection) {
+      failures.push({ step: 'service-worker' })
+      localInspectionPending = true
+    } else {
+      subscriptionFound = false
+      localInspectionPending = false
     }
-  } catch (error) {
-    warnPushError('Failed to inspect local push subscription.', error)
+  } else {
+    try {
+      const registration = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE)
+      const pushManager = registration ? pushManagerForRegistration(registration) : null
+      const subscription = pushManager ? await pushManager.getSubscription() : null
+      subscriptionFound = !!subscription
+      localInspectionPending = false
+
+      if (subscription) {
+        endpoints.add(subscription.endpoint)
+        const unsubscribeResult = await unsubscribePushSubscription(subscription)
+        localUnsubscribed = unsubscribeResult.ok
+        if (unsubscribeResult.ok === false) {
+          localInspectionPending = true
+          failures.push({
+            step: 'local-unsubscribe',
+            endpoint: subscription.endpoint,
+            error: unsubscribeResult.error,
+          })
+        }
+      }
+    } catch (error) {
+      warnPushError('Failed to inspect local push subscription.', error)
+      localInspectionPending = true
+      failures.push({ step: 'subscription-inspection', error })
+    }
   }
 
-  if (endpoint) {
-    await deletePushSubscription(endpoint)
+  let serverDeleted: boolean | null = null
+  const failedServerEndpoints: string[] = []
+  if (endpoints.size > 0) {
+    const deletionResults = await Promise.all(
+      [...endpoints].map(async (endpoint) => ({ endpoint, result: await deletePushSubscription(endpoint) })),
+    )
+    serverDeleted = deletionResults.every(({ result }) => result.ok)
+    for (const { endpoint, result } of deletionResults) {
+      if (result.ok === false) {
+        failedServerEndpoints.push(endpoint)
+        failures.push({ step: 'server-deletion', endpoint, error: result.error })
+      }
+    }
+  }
+
+  const localCleanupPending = subscriptionFound === true && localUnsubscribed !== true
+  const unresolvedEndpoints = new Set(failedServerEndpoints)
+  if (localCleanupPending) {
+    for (const endpoint of endpoints) unresolvedEndpoints.add(endpoint)
+  }
+
+  return {
+    status: failures.length === 0 ? 'disabled' : 'partial',
+    subscriptionFound,
+    localUnsubscribed,
+    serverDeleted,
+    pendingEndpoints: [...unresolvedEndpoints],
+    localInspectionPending,
+    failures,
   }
 }
 
@@ -158,7 +248,7 @@ async function getOrCreatePushSubscription(
   }
 }
 
-async function registerPushSubscription(subscription: PushSubscription): Promise<boolean> {
+async function registerPushSubscription(subscription: PushSubscription): Promise<PushTransportResult> {
   try {
     const auth = await getNodeServerProxyAuth()
     const response = await fetch(PUSH_SUBSCRIPTIONS_ENDPOINT, {
@@ -174,14 +264,14 @@ async function registerPushSubscription(subscription: PushSubscription): Promise
       throw new Error(`HTTP ${response.status}`)
     }
 
-    return true
+    return { ok: true }
   } catch (error) {
     warnPushError('Failed to register the push subscription with the server.', error)
-    return false
+    return { ok: false, error }
   }
 }
 
-async function deletePushSubscription(endpoint: string): Promise<boolean> {
+async function deletePushSubscription(endpoint: string): Promise<PushTransportResult> {
   try {
     const auth = await getNodeServerProxyAuth()
     const response = await fetch(PUSH_SUBSCRIPTIONS_ENDPOINT, {
@@ -197,10 +287,21 @@ async function deletePushSubscription(endpoint: string): Promise<boolean> {
       throw new Error(`HTTP ${response.status}`)
     }
 
-    return true
+    return { ok: true }
   } catch (error) {
     warnPushError('Failed to delete the push subscription from the server.', error)
-    return false
+    return { ok: false, error }
+  }
+}
+
+async function unsubscribePushSubscription(subscription: PushSubscription): Promise<PushTransportResult> {
+  try {
+    const unsubscribed = await subscription.unsubscribe()
+    if (!unsubscribed) throw new Error('Browser push subscription unsubscribe returned false.')
+    return { ok: true }
+  } catch (error) {
+    warnPushError('Failed to unsubscribe from local push notifications.', error)
+    return { ok: false, error }
   }
 }
 

@@ -174,6 +174,16 @@ function createSettingsQueuedReporter(): () => void {
 }
 
 export type ServerBackedSettingsPersistenceOutcome = 'accepted' | 'queued' | 'failed'
+export type ServerBackedSettingsFinalSettlement = Extract<ServerBackedSettingsPersistenceOutcome, 'accepted' | 'failed'>
+
+export type ServerBackedSettingsPersistenceReceipt =
+  | { status: 'accepted' | 'failed' }
+  | {
+      status: 'queued'
+      mutationId: string
+      settlement: Promise<ServerBackedSettingsFinalSettlement>
+      subscribeSettlement: (listener: (settlement: ServerBackedSettingsFinalSettlement) => void) => () => void
+    }
 
 export interface WatchServerBackedSettingsOptions<T = unknown> {
   delayMs?: number
@@ -661,8 +671,18 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
 export async function persistServerBackedSettingsPatch(
   patch: SettingsPatch,
 ): Promise<ServerBackedSettingsPersistenceOutcome> {
+  return (await persistServerBackedSettingsPatchWithSettlement(patch)).status
+}
+
+/**
+ * Persist one exact settings operation and retain the queued generation's
+ * final replay settlement for callers that render durable acknowledgement.
+ */
+export async function persistServerBackedSettingsPatchWithSettlement(
+  patch: SettingsPatch,
+): Promise<ServerBackedSettingsPersistenceReceipt> {
   const prepared = prepareServerBackedSettingsPatch(patch)
-  if (!prepared) return 'accepted'
+  if (!prepared) return { status: 'accepted' }
   const projectionEpochs = captureSettingsPatchProjectionEpochs(prepared.commandPatch)
   applyOptimisticServerBackedSettingsPatch(prepared.commandPatch)
 
@@ -671,7 +691,7 @@ export async function persistServerBackedSettingsPatch(
   if (intent.requests.length === 0) {
     rollbackServerBackedSettings(prepared.previous, prepared.attempted)
     reportFailure()
-    return 'failed'
+    return { status: 'failed' }
   }
 
   let outbox: PendingMutationHandle
@@ -681,7 +701,48 @@ export async function persistServerBackedSettingsPatch(
     console.error('Durable settings patch could not be staged:', error)
     rollbackServerBackedSettings(prepared.previous, prepared.attempted)
     reportFailure()
-    return 'failed'
+    return { status: 'failed' }
+  }
+
+  let finalSettlement: ServerBackedSettingsFinalSettlement | null = null
+  let resolveFinalSettlement!: (settlement: ServerBackedSettingsFinalSettlement) => void
+  const finalSettlementPromise = new Promise<ServerBackedSettingsFinalSettlement>((resolve) => {
+    resolveFinalSettlement = resolve
+  })
+  const finalSettlementListeners = new Set<(settlement: ServerBackedSettingsFinalSettlement) => void>()
+  let settlementCleanup: () => void = () => {}
+  settlementCleanup = registerDurableMutationSettlementListener(outbox.mutationId, (settlement) => {
+    finalSettlement = settlement === 'accepted' ? 'accepted' : 'failed'
+    for (const listener of [...finalSettlementListeners]) {
+      try {
+        listener(finalSettlement)
+      } catch (error) {
+        console.error('Queued settings settlement listener failed:', error)
+      }
+    }
+    finalSettlementListeners.clear()
+    resolveFinalSettlement(finalSettlement)
+    settlementCleanup()
+  })
+
+  const queuedReceipt = (): ServerBackedSettingsPersistenceReceipt => ({
+    status: 'queued',
+    mutationId: outbox.mutationId,
+    settlement: finalSettlementPromise,
+    subscribeSettlement(listener): () => void {
+      if (finalSettlement) {
+        listener(finalSettlement)
+        return () => {}
+      }
+      finalSettlementListeners.add(listener)
+      return () => finalSettlementListeners.delete(listener)
+    },
+  })
+
+  const immediateReceipt = (status: ServerBackedSettingsFinalSettlement): ServerBackedSettingsPersistenceReceipt => {
+    settlementCleanup()
+    finalSettlementListeners.clear()
+    return { status }
   }
 
   let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
@@ -701,13 +762,15 @@ export async function persistServerBackedSettingsPatch(
         reportQueued: () => {},
       })
     })
-    if (result.status === 'ok') return 'accepted'
-    return failureRollbackDisposition?.(result) === 'retain' ? 'queued' : 'failed'
+    if (result.status === 'ok') return immediateReceipt('accepted')
+    return failureRollbackDisposition?.(result) === 'retain' ? queuedReceipt() : immediateReceipt('failed')
   } catch (error) {
     console.error('Durable settings patch rejected:', error)
-    if (failureRollbackDisposition?.({ status: 'unavailable' }) === 'retain') return 'queued'
+    if (failureRollbackDisposition?.({ status: 'unavailable' }) === 'retain') return queuedReceipt()
+    settlementCleanup()
+    finalSettlementListeners.clear()
     reportFailure()
-    return 'failed'
+    return { status: 'failed' }
   }
 }
 

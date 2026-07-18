@@ -53,7 +53,13 @@ function pushSubscription(endpoint = 'https://push.example.test/subscription-a')
   } as unknown as PushSubscription
 }
 
-function setupPushFetch(publicKey: string | null = 'AQIDBA') {
+interface PushFetchOptions {
+  publicKey?: string | null
+  postStatus?: number
+  deleteStatus?: number
+}
+
+function setupPushFetch({ publicKey = 'AQIDBA', postStatus = 200, deleteStatus = 200 }: PushFetchOptions = {}) {
   const calls: FetchCall[] = []
   vi.stubGlobal(
     'fetch',
@@ -74,6 +80,7 @@ function setupPushFetch(publicKey: string | null = 'AQIDBA') {
       }
 
       return new Response(JSON.stringify({ status: 'ok' }), {
+        status: method === 'POST' ? postStatus : deleteStatus,
         headers: { 'content-type': 'application/json' },
       })
     }) as unknown as typeof fetch,
@@ -158,7 +165,7 @@ describe('push notification browser helper', () => {
         subscribe,
       } as unknown as PushManager,
     })
-    setupPushFetch(null)
+    setupPushFetch({ publicKey: null })
 
     await expect(enableChatCompletionPushNotifications()).resolves.toEqual({
       status: 'fallback',
@@ -181,6 +188,68 @@ describe('push notification browser helper', () => {
     expect(serviceWorker.register).not.toHaveBeenCalled()
   })
 
+  it('reports each browser setup prerequisite that can terminate enablement', async () => {
+    vi.stubGlobal('Notification', undefined)
+    setupServiceWorker({})
+    setupPushFetch()
+    await expect(enableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'fallback',
+      reason: 'notification-unavailable',
+    })
+
+    setupNotification('default', 'default')
+    await expect(enableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'fallback',
+      reason: 'permission-default',
+    })
+
+    setupNotification('granted')
+    vi.stubGlobal('navigator', {})
+    await expect(enableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'fallback',
+      reason: 'service-worker-unavailable',
+    })
+
+    setupServiceWorker({})
+    await expect(enableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'fallback',
+      reason: 'push-unavailable',
+    })
+
+    setupServiceWorker({
+      pushManager: {
+        getSubscription: vi.fn(async () => null),
+        subscribe: vi.fn(async () => {
+          throw new Error('subscription failed')
+        }),
+      } as unknown as PushManager,
+    })
+    await expect(enableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'fallback',
+      reason: 'subscription-failed',
+    })
+  })
+
+  it('unsubscribes locally when server registration fails', async () => {
+    setupNotification('granted')
+    const subscription = pushSubscription('https://push.example.test/unregistered')
+    setupServiceWorker({
+      pushManager: {
+        getSubscription: vi.fn(async () => null),
+        subscribe: vi.fn(async () => subscription),
+      } as unknown as PushManager,
+    })
+    setupPushFetch({ postStatus: 503 })
+
+    await expect(enableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'fallback',
+      reason: 'server-registration-failed',
+      endpoint: subscription.endpoint,
+      localCleanup: 'succeeded',
+    })
+    expect(subscription.unsubscribe).toHaveBeenCalledOnce()
+  })
+
   it('unsubscribes the local subscription and deletes its endpoint from the server when disabling', async () => {
     setupNotification('granted')
     const subscription = pushSubscription('https://push.example.test/subscription-b')
@@ -192,7 +261,15 @@ describe('push notification browser helper', () => {
     })
     const fetchCalls = setupPushFetch()
 
-    await expect(disableChatCompletionPushNotifications()).resolves.toBeUndefined()
+    await expect(disableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'disabled',
+      subscriptionFound: true,
+      localUnsubscribed: true,
+      serverDeleted: true,
+      pendingEndpoints: [],
+      localInspectionPending: false,
+      failures: [],
+    })
 
     expect(serviceWorker.getRegistration).toHaveBeenCalledWith('/')
     expect(subscription.unsubscribe).toHaveBeenCalledTimes(1)
@@ -209,5 +286,179 @@ describe('push notification browser helper', () => {
         },
       },
     ])
+  })
+
+  it.each([
+    {
+      name: 'local unsubscribe only',
+      unsubscribeResult: false,
+      deleteStatus: 200,
+      expectedSteps: ['local-unsubscribe'],
+      serverDeleted: true,
+    },
+    {
+      name: 'server deletion only',
+      unsubscribeResult: true,
+      deleteStatus: 503,
+      expectedSteps: ['server-deletion'],
+      serverDeleted: false,
+    },
+    {
+      name: 'local unsubscribe and server deletion',
+      unsubscribeResult: false,
+      deleteStatus: 503,
+      expectedSteps: ['local-unsubscribe', 'server-deletion'],
+      serverDeleted: false,
+    },
+  ])(
+    'returns retryable partial cleanup when $name fails',
+    async ({ unsubscribeResult, deleteStatus, expectedSteps, serverDeleted }) => {
+      setupNotification('granted')
+      const subscription = pushSubscription('https://push.example.test/partial')
+      vi.mocked(subscription.unsubscribe).mockResolvedValue(unsubscribeResult)
+      setupServiceWorker({
+        pushManager: {
+          getSubscription: vi.fn(async () => subscription),
+        } as unknown as PushManager,
+      })
+      const fetchCalls = setupPushFetch({ deleteStatus })
+
+      const result = await disableChatCompletionPushNotifications()
+
+      expect(result).toMatchObject({
+        status: 'partial',
+        subscriptionFound: true,
+        localUnsubscribed: unsubscribeResult,
+        serverDeleted,
+        pendingEndpoints: [subscription.endpoint],
+        localInspectionPending: !unsubscribeResult,
+      })
+      expect(result.failures.map(({ step }) => step)).toEqual(expectedSteps)
+      expect(fetchCalls.some(({ method }) => method === 'DELETE')).toBe(true)
+    },
+  )
+
+  it('reports a rejected browser unsubscribe and still attempts server deletion', async () => {
+    setupNotification('granted')
+    const subscription = pushSubscription('https://push.example.test/unsubscribe-rejection')
+    const unsubscribeError = new Error('browser rejected unsubscribe')
+    vi.mocked(subscription.unsubscribe).mockRejectedValue(unsubscribeError)
+    setupServiceWorker({
+      pushManager: {
+        getSubscription: vi.fn(async () => subscription),
+      } as unknown as PushManager,
+    })
+    const fetchCalls = setupPushFetch()
+
+    const result = await disableChatCompletionPushNotifications()
+
+    expect(result).toMatchObject({
+      status: 'partial',
+      subscriptionFound: true,
+      localUnsubscribed: false,
+      serverDeleted: true,
+      pendingEndpoints: [subscription.endpoint],
+      localInspectionPending: true,
+      failures: [{ step: 'local-unsubscribe', endpoint: subscription.endpoint, error: unsubscribeError }],
+    })
+    expect(fetchCalls.at(-1)).toMatchObject({ method: 'DELETE' })
+  })
+
+  it('retries a failed server deletion after the local subscription is already gone', async () => {
+    setupNotification('granted')
+    const endpoint = 'https://push.example.test/server-retry'
+    setupServiceWorker({
+      pushManager: {
+        getSubscription: vi.fn(async () => null),
+      } as unknown as PushManager,
+    })
+    const fetchCalls = setupPushFetch()
+
+    await expect(disableChatCompletionPushNotifications([endpoint])).resolves.toEqual({
+      status: 'disabled',
+      subscriptionFound: false,
+      localUnsubscribed: null,
+      serverDeleted: true,
+      pendingEndpoints: [],
+      localInspectionPending: false,
+      failures: [],
+    })
+    expect(fetchCalls.at(-1)).toMatchObject({
+      method: 'DELETE',
+      body: { endpoint },
+    })
+  })
+
+  it('still deletes a known server endpoint when local subscription inspection fails', async () => {
+    setupNotification('granted')
+    const endpoint = 'https://push.example.test/inspection-failure'
+    setupServiceWorker({
+      pushManager: {
+        getSubscription: vi.fn(async () => {
+          throw new Error('inspection failed')
+        }),
+      } as unknown as PushManager,
+    })
+    const fetchCalls = setupPushFetch()
+
+    const result = await disableChatCompletionPushNotifications([endpoint])
+
+    expect(result).toMatchObject({
+      status: 'partial',
+      subscriptionFound: null,
+      localUnsubscribed: null,
+      serverDeleted: true,
+      pendingEndpoints: [],
+      localInspectionPending: true,
+    })
+    expect(result.failures.map(({ step }) => step)).toEqual(['subscription-inspection'])
+    expect(fetchCalls.at(-1)).toMatchObject({ method: 'DELETE', body: { endpoint } })
+  })
+
+  it('finishes empty cleanup when unsupported service workers prevented any subscription', async () => {
+    vi.stubGlobal('navigator', {})
+    setupPushFetch()
+
+    await expect(disableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'disabled',
+      subscriptionFound: false,
+      localUnsubscribed: null,
+      serverDeleted: null,
+      pendingEndpoints: [],
+      localInspectionPending: false,
+      failures: [],
+    })
+  })
+
+  it('finishes known server-endpoint cleanup without inventing a local inspection marker', async () => {
+    const endpoint = 'https://push.example.test/server-only-retry'
+    vi.stubGlobal('navigator', {})
+    const fetchCalls = setupPushFetch()
+
+    await expect(disableChatCompletionPushNotifications([endpoint], false)).resolves.toEqual({
+      status: 'disabled',
+      subscriptionFound: false,
+      localUnsubscribed: null,
+      serverDeleted: true,
+      pendingEndpoints: [],
+      localInspectionPending: false,
+      failures: [],
+    })
+    expect(fetchCalls.at(-1)).toMatchObject({ method: 'DELETE', body: { endpoint } })
+  })
+
+  it('retains a durable local-inspection marker when retry cannot access service workers', async () => {
+    vi.stubGlobal('navigator', {})
+    setupPushFetch()
+
+    const result = await disableChatCompletionPushNotifications([], true)
+
+    expect(result).toMatchObject({
+      status: 'partial',
+      subscriptionFound: null,
+      pendingEndpoints: [],
+      localInspectionPending: true,
+      failures: [{ step: 'service-worker' }],
+    })
   })
 })

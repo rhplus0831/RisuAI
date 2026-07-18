@@ -147,6 +147,7 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
 
   return {
     applyServerBackedSetting: vi.fn(),
+    persistServerBackedSettingsPatchWithSettlement: vi.fn(async () => ({ status: 'accepted' as const })),
     createServerBackedSettingDraft: (key: string, fallback: unknown) => {
       const initialValue = botSettingsMocks.settingDraftInitialValues.has(key)
         ? botSettingsMocks.settingDraftInitialValues.get(key)

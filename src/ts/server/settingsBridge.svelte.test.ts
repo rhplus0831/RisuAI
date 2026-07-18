@@ -283,6 +283,7 @@ import {
   createServerBackedSettingDraft,
   flushPendingServerBackedSettingsPatch,
   persistServerBackedSettingsPatch,
+  persistServerBackedSettingsPatchWithSettlement,
   type ServerBackedSettingDraft,
   watchServerBackedSettings,
 } from './settingsBridge.svelte'
@@ -921,6 +922,31 @@ describe('settingsBridge coalescing', () => {
     expect(alertMocks.alertError).not.toHaveBeenCalled()
     expect(alertMocks.alertNormal).not.toHaveBeenCalled()
   })
+
+  it.each([
+    { durableSettlement: 'accepted' as const, finalSettlement: 'accepted' as const, notification: false },
+    { durableSettlement: 'discarded' as const, finalSettlement: 'failed' as const, notification: true },
+  ])(
+    'reports queued exact-setting replay as $finalSettlement',
+    async ({ durableSettlement, finalSettlement, notification }) => {
+      durabilityMocks.retainFailures = true
+      recorded.patchResults.push({ status: 'error', error: 'temporarily unavailable' })
+      setupSettings({ notification: true })
+
+      const receipt = await persistServerBackedSettingsPatchWithSettlement({ notification: false })
+
+      expect(receipt.status).toBe('queued')
+      if (receipt.status !== 'queued') throw new Error('expected queued settings receipt')
+      const subscriber = vi.fn()
+      receipt.subscribeSettlement(subscriber)
+
+      publishSettingsSettlement(receipt.mutationId, durableSettlement)
+
+      expect(subscriber).toHaveBeenCalledWith(finalSettlement)
+      await expect(receipt.settlement).resolves.toBe(finalSettlement)
+      expect(testDatabaseState.db.notification).toBe(notification)
+    },
+  )
 
   it('removes only the failed Hypa V3 appended preset while preserving sibling edits and later appends', async () => {
     setupSettings({
