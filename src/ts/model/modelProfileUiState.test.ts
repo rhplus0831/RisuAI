@@ -117,6 +117,66 @@ describe('resolveModelProfileUiState', () => {
     })
   })
 
+  it('does not expose legacy provider credentials for durable-profile roles', () => {
+    const durableRoleBindings = Object.fromEntries(
+      MODEL_ROLES.map((role) => [
+        role,
+        role === 'chatMain' || role === 'chatAux'
+          ? { mode: 'profile', profileId: 'durable-anthropic' }
+          : { mode: 'inherit' },
+      ]),
+    ) as Database['modelRoleProfiles']
+    const state = resolveModelProfileUiState({
+      database: db({
+        modelProfiles: [
+          {
+            id: 'durable-anthropic',
+            name: 'Durable Anthropic',
+            providerId: 'anthropic',
+            modelId: 'claude-3-5-sonnet-latest',
+            providerOptions: { apiKey: 'profile-key' },
+          },
+        ],
+        modelRoleProfiles: durableRoleBindings,
+      } as Partial<Database>),
+    })
+
+    expect(MODEL_ROLES.every((role) => state.resolvedProfiles[role].source.kind === 'durable-profile')).toBe(true)
+    expect(state.usesAnthropicProvider).toBe(false)
+  })
+
+  it('keeps legacy provider credentials visible when a matching legacy role remains', () => {
+    const mixedRoleBindings = Object.fromEntries(
+      MODEL_ROLES.map((role) => [
+        role,
+        role === 'chatAux' ? { mode: 'legacy' } : { mode: 'profile', profileId: 'durable-anthropic' },
+      ]),
+    ) as Database['modelRoleProfiles']
+    const state = resolveModelProfileUiState({
+      database: db({
+        subModel: 'legacy-anthropic',
+        modelProfiles: [
+          {
+            id: 'durable-anthropic',
+            name: 'Durable Anthropic',
+            providerId: 'anthropic',
+            modelId: 'claude-3-5-sonnet-latest',
+            providerOptions: { apiKey: 'profile-key' },
+          },
+        ],
+        modelRoleProfiles: mixedRoleBindings,
+      } as Partial<Database>),
+      lookupModelInfo: (_database, modelId) =>
+        modelInfo(modelId, {
+          provider: modelId === 'legacy-anthropic' ? LLMProvider.Anthropic : LLMProvider.AsIs,
+        }),
+    })
+
+    expect(state.resolvedProfiles.chatMain.source.kind).toBe('durable-profile')
+    expect(state.resolvedProfiles.chatAux.source.kind).not.toBe('durable-profile')
+    expect(state.usesAnthropicProvider).toBe(true)
+  })
+
   it('keeps legacy special panels tied to resolved model ids instead of provider inference', () => {
     const providerOnlyState = resolveModelProfileUiState({
       database: db({

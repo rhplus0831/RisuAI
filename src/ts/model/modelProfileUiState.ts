@@ -64,10 +64,11 @@ export function resolveModelProfileUiState({
     ]),
   ) as Record<ModelRole, ResolvedModelProfile>
   const profiles = Object.values(resolvedProfiles)
+  const legacyProfiles = profiles.filter((profile) => profile.source.kind !== 'durable-profile')
   const roleStatuses = resolveRoleStatuses(resolvedProfiles)
   const rolesByStatus = groupRolesByStatus(roleStatuses)
-  const modelIds = profiles.map((profile) => profile.modelId).filter((modelId) => modelId.trim() !== '')
-  const modelInfos = profiles.map((profile) => profile.modelInfo)
+  const modelIds = legacyProfiles.map((profile) => profile.modelId).filter((modelId) => modelId.trim() !== '')
+  const modelInfos = legacyProfiles.map((profile) => profile.modelInfo)
 
   return {
     resolvedProfiles,
