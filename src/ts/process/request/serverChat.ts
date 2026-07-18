@@ -30,6 +30,7 @@ import {
   updateAgentPresetProgress,
   type AgentPresetProgressSession,
 } from '../agentPresetProgress'
+import { forgetActiveGenerationJob, rememberActiveGenerationJob } from '../reattach'
 import { iterateSseEvents } from './sseParse'
 import type {
   AgentPresetProgressEvent,
@@ -49,6 +50,8 @@ const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_inco
 const HUMAN_REASON_ERROR_CODES = new Set(['generation_in_progress', 'generation_job_not_found'])
 const REQUEST_UID_HEADER = 'X-Request-UID'
 const DURABLE_JOB_ID_HEADER = 'X-Risu-Generation-Job-ID'
+const DURABLE_STREAM_RECONNECT_DELAYS_MS = [0, 250, 500, 1_000, 2_000, 4_000] as const
+const MAX_DURABLE_STREAM_RECONNECT_CYCLES = 8
 const SERVER_CHAT_CLIENT_CAPABILITIES = {
   compactPromptEvent: true,
   promptMetadataOnly: true,
@@ -235,7 +238,7 @@ async function openChatResponse(
   reattachJobId?: string,
 ): Promise<
   | { status: 'ok'; response: Response; requestUid?: string }
-  | { status: 'error'; error: string; requestUid?: string }
+  | { status: 'error'; error: string; requestUid?: string; httpStatus?: number; retryable?: boolean }
   | { status: 'aborted' }
 > {
   const auth = await getNodeServerProxyAuth()
@@ -271,7 +274,7 @@ async function openChatResponse(
   } catch (err) {
     if (signal?.aborted) return { status: 'aborted' }
     const msg = err instanceof Error ? err.message : String(err)
-    return { status: 'error', error: `Network error: ${msg}` }
+    return { status: 'error', error: `Network error: ${msg}`, retryable: true }
   }
   const requestUid = response.headers.get(REQUEST_UID_HEADER) || undefined
   debugServerChat('server-chat-response-opened', {
@@ -296,16 +299,42 @@ async function openChatResponse(
     }
     handleActiveWriterStaleResponse(response)
     debugServerChat('server-chat-response-error', { requestUid, status: response.status, error: reason })
-    return { status: 'error', error: reason, requestUid }
+    return {
+      status: 'error',
+      error: reason,
+      requestUid,
+      httpStatus: response.status,
+      retryable: response.status === 408 || response.status === 429 || response.status >= 500,
+    }
   }
 
   if (!response.body) {
     const error = 'Server did not return a streaming response body.'
     debugServerChat('server-chat-response-error', { requestUid, status: response.status, error })
-    return { status: 'error', error, requestUid }
+    return { status: 'error', error, requestUid, retryable: true }
   }
 
   return { status: 'ok', response, requestUid }
+}
+
+async function waitForDurableReconnect(delayMs: number, signal: AbortSignal | null): Promise<boolean> {
+  if (signal?.aborted) return false
+  if (delayMs <= 0) return true
+
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value: boolean): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      resolve(value)
+    }
+    const onAbort = (): void => finish(false)
+    const timer = setTimeout(() => finish(true), delayMs)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted) finish(false)
+  })
 }
 
 /**
@@ -315,7 +344,9 @@ async function openChatResponse(
  */
 export async function requestServerChat(input: ServerChatInput, signal: AbortSignal | null): Promise<ServerChatResult> {
   const opened = await openChatResponse(input, signal)
-  if (opened.status !== 'ok') return opened
+  if (opened.status !== 'ok') {
+    return opened.status === 'error' ? { status: 'error', error: opened.error } : opened
+  }
   const response = opened.response
 
   let prompt: ServerChatPrompt | null = null
@@ -428,7 +459,7 @@ export async function requestServerChatGeneration(
   if (opened.status !== 'ok') {
     clearAgentPresetProgress(agentPresetSession)
     clearPostGenerationProgress(postGenerationSession)
-    return opened
+    return opened.status === 'error' ? { status: 'error', error: opened.error } : opened
   }
 
   let prompt: ServerChatPrompt | null = null
@@ -437,6 +468,11 @@ export async function requestServerChatGeneration(
   const messagePatches: ServerChatMessagePatch[] = []
   const sideEffects: ServerChatSideEffect[] = []
   const warnings: ServerChatWarning[] = []
+  const seenMessagePatches = new Set<string>()
+  const seenSideEffects = new Set<string>()
+  const seenAgentProgress = new Set<string>()
+  const seenPostGenerationProgress = new Set<string>()
+  const seenWarnings = new Set<string>()
   let readyResolved = false
   let terminalResolved = false
   let tokenStreamInactive = false
@@ -449,6 +485,17 @@ export async function requestServerChatGeneration(
   let durableJobId = reattachJobId ?? opened.response.headers.get(DURABLE_JOB_ID_HEADER)?.trim() ?? ''
   const watchesDurableJob = input.durable === true || reattachJobId !== undefined
   let cancelledDurableJobId = ''
+  const rememberDurableJob = (): void => {
+    if (!watchesDurableJob || durableJobId.length === 0) return
+    rememberActiveGenerationJob({
+      chatId: input.chatId,
+      jobId: durableJobId,
+      ...(input.mode === 'continue' || input.mode === 'regenerate' ? { mode: input.mode } : { mode: 'send' }),
+      ...(input.mode === 'regenerate' && input.regenerateMessageId
+        ? { regenerateMessageId: input.regenerateMessageId }
+        : {}),
+    })
+  }
   const cancelDurableOnAbort = (): void => {
     // A durable send or a reattached generation: an explicit abort (the stop
     // button) cancels the server job; a bare disconnect only detaches.
@@ -457,6 +504,7 @@ export async function requestServerChatGeneration(
     void cancelServerChatGeneration(durableJobId)
   }
   const stopWatchingAbort = (): void => signal?.removeEventListener('abort', cancelDurableOnAbort)
+  rememberDurableJob()
   if (signal?.aborted) cancelDurableOnAbort()
   else signal?.addEventListener('abort', cancelDurableOnAbort, { once: true })
 
@@ -518,155 +566,230 @@ export async function requestServerChatGeneration(
         })
       }
 
+      const settleAborted = (): void => {
+        cancelDurableOnAbort()
+        forgetActiveGenerationJob(durableJobId)
+        resolveReadyOnce({ status: 'aborted' })
+        resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
+        clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+        closeTokenStream()
+        stopWatchingAbort()
+      }
+
+      const settleTransportError = (error: string): void => {
+        resolveReadyOnce({ status: 'error', error })
+        resolveTerminalOnce({ status: 'error', error, warnings })
+        clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+        closeTokenStream()
+        stopWatchingAbort()
+      }
+
+      let reconnectCycles = 0
+      const reconnectDurableStream = async (
+        transportError: string,
+      ): Promise<
+        | { status: 'ok'; opened: Extract<Awaited<ReturnType<typeof openChatResponse>>, { status: 'ok' }> }
+        | { status: 'error'; error: string }
+        | { status: 'aborted' }
+      > => {
+        if (!watchesDurableJob || durableJobId.length === 0) {
+          return { status: 'error', error: transportError }
+        }
+        if (reconnectCycles >= MAX_DURABLE_STREAM_RECONNECT_CYCLES) {
+          return { status: 'error', error: transportError }
+        }
+        reconnectCycles += 1
+
+        let lastError = transportError
+        for (const delayMs of DURABLE_STREAM_RECONNECT_DELAYS_MS) {
+          if (!(await waitForDurableReconnect(delayMs, signal))) return { status: 'aborted' }
+          const next = await openChatResponse(input, signal, durableJobId)
+          if (next.status === 'ok') {
+            // Durable reattach replays the complete token delta history. Rebuild
+            // the accumulated text from zero so replayed deltas do not duplicate
+            // the partial text rendered before mobile suspension.
+            tokenResult = ''
+            debugServerChat('server-chat-stream-reattached', {
+              requestUid: next.requestUid,
+              jobId: durableJobId,
+              reconnectCycle: reconnectCycles,
+            })
+            return { status: 'ok', opened: next }
+          }
+          if (next.status === 'aborted') return next
+          lastError = next.error
+          if (next.httpStatus === 404) forgetActiveGenerationJob(durableJobId)
+          if (next.retryable === false) break
+        }
+        return { status: 'error', error: lastError }
+      }
+
       void (async () => {
-        try {
-          for await (const frame of iterateSseEvents(opened.response.body!, signal)) {
-            const data = parseData(frame.data)
-            if (!data) continue
-            switch (frame.event) {
-              case 'job_accepted':
-                if (typeof data.jobId === 'string') durableJobId = data.jobId
-                // Backward-compatible with servers that predate the response
-                // header: an abort may have won the race with this first frame.
-                if (signal?.aborted) cancelDurableOnAbort()
-                debugServerChat('server-chat-job-accepted', {
-                  requestUid: opened.requestUid,
-                  jobId: durableJobId,
-                })
-                break
-              case 'prompt':
-                prompt = data as unknown as ServerChatPrompt
-                maybeResolveReady()
-                break
-              case 'info':
-                info = data as unknown as ServerChatInfo
-                reconcileServerCommandRevision(info)
-                maybeResolveReady()
-                break
-              case 'message_patch':
-                if (data.patch && typeof data.patch === 'object') {
-                  messagePatches.push(data.patch as unknown as ServerChatMessagePatch)
-                }
-                break
-              case 'side_effect':
-                if (typeof data.kind === 'string') {
-                  sideEffects.push(data as unknown as ServerChatSideEffect)
-                }
-                break
-              case 'agent_preset_progress':
-                updateAgentPresetProgress(agentPresetSession, {
-                  type: 'agent_preset_progress',
-                  ...(data as unknown as Omit<AgentPresetProgressEvent, 'type'>),
-                })
-                break
-              case 'post_generation_progress':
-                updatePostGenerationProgress(postGenerationSession, {
-                  type: 'post_generation_progress',
-                  ...(data as unknown as Omit<PostGenerationProgressEvent, 'type'>),
-                })
-                break
-              case 'warning':
-                if (typeof data.message === 'string') {
-                  const warning = data as unknown as ServerChatWarning
-                  warnings.push(warning)
-                  debugServerChat('server-chat-warning', {
-                    requestUid: opened.requestUid,
-                    message: warning.message,
-                    context: warning.context,
+        let activeOpened = opened
+        while (true) {
+          let transportError = 'stream ended without a done event'
+          try {
+            for await (const frame of iterateSseEvents(activeOpened.response.body!, signal)) {
+              const data = parseData(frame.data)
+              if (!data) continue
+              switch (frame.event) {
+                case 'job_accepted':
+                  if (typeof data.jobId === 'string') durableJobId = data.jobId
+                  rememberDurableJob()
+                  // Backward-compatible with servers that predate the response
+                  // header: an abort may have won the race with this first frame.
+                  if (signal?.aborted) cancelDurableOnAbort()
+                  debugServerChat('server-chat-job-accepted', {
+                    requestUid: activeOpened.requestUid,
+                    jobId: durableJobId,
                   })
-                  console.warn(`Server chat warning: ${warning.message}`, warning.context ?? '')
+                  break
+                case 'prompt':
+                  prompt = data as unknown as ServerChatPrompt
+                  maybeResolveReady()
+                  break
+                case 'info':
+                  info = data as unknown as ServerChatInfo
+                  reconcileServerCommandRevision(info)
+                  maybeResolveReady()
+                  break
+                case 'message_patch':
+                  if (data.patch && typeof data.patch === 'object') {
+                    const signature = JSON.stringify(data.patch)
+                    if (!seenMessagePatches.has(signature)) {
+                      seenMessagePatches.add(signature)
+                      messagePatches.push(data.patch as unknown as ServerChatMessagePatch)
+                    }
+                  }
+                  break
+                case 'side_effect':
+                  if (typeof data.kind === 'string') {
+                    const signature = JSON.stringify(data)
+                    if (!seenSideEffects.has(signature)) {
+                      seenSideEffects.add(signature)
+                      sideEffects.push(data as unknown as ServerChatSideEffect)
+                    }
+                  }
+                  break
+                case 'agent_preset_progress': {
+                  const signature = JSON.stringify(data)
+                  if (!seenAgentProgress.has(signature)) {
+                    seenAgentProgress.add(signature)
+                    updateAgentPresetProgress(agentPresetSession, {
+                      type: 'agent_preset_progress',
+                      ...(data as unknown as Omit<AgentPresetProgressEvent, 'type'>),
+                    })
+                  }
+                  break
                 }
-                break
-              case 'token': {
-                const content = typeof data.content === 'string' ? data.content : ''
-                tokenResult += content
-                enqueueToken({ [streamKey]: tokenResult })
-                break
-              }
-              case 'error': {
-                const error = errorMessageFromEvent(data, 'Server returned an error without details during generation.')
-                const restoration =
-                  data.restoration && typeof data.restoration === 'object'
-                    ? (data.restoration as unknown as ServerChatRestoration)
-                    : undefined
-                resolveReadyOnce({
-                  status: 'error',
-                  error,
-                  ...(messagePatches.length > 0 ? { messagePatches } : {}),
-                  ...(restoration ? { restoration } : {}),
-                })
-                resolveTerminalOnce({
-                  status: 'error',
-                  error,
-                  restoration,
-                  sideEffects,
-                  warnings,
-                })
-                clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
-                closeTokenStream()
-                stopWatchingAbort()
-                return
-              }
-              case 'done':
-                donePayload = data as unknown as Omit<DoneEvent, 'type'>
-                if (typeof donePayload.result === 'string' && tokenResult.length === 0) {
-                  tokenResult = donePayload.result
+                case 'post_generation_progress': {
+                  const signature = JSON.stringify(data)
+                  if (!seenPostGenerationProgress.has(signature)) {
+                    seenPostGenerationProgress.add(signature)
+                    updatePostGenerationProgress(postGenerationSession, {
+                      type: 'post_generation_progress',
+                      ...(data as unknown as Omit<PostGenerationProgressEvent, 'type'>),
+                    })
+                  }
+                  break
+                }
+                case 'warning':
+                  if (typeof data.message === 'string') {
+                    const signature = JSON.stringify(data)
+                    if (seenWarnings.has(signature)) break
+                    seenWarnings.add(signature)
+                    const warning = data as unknown as ServerChatWarning
+                    warnings.push(warning)
+                    debugServerChat('server-chat-warning', {
+                      requestUid: activeOpened.requestUid,
+                      message: warning.message,
+                      context: warning.context,
+                    })
+                    console.warn(`Server chat warning: ${warning.message}`, warning.context ?? '')
+                  }
+                  break
+                case 'token': {
+                  const content = typeof data.content === 'string' ? data.content : ''
+                  tokenResult += content
                   enqueueToken({ [streamKey]: tokenResult })
+                  break
                 }
-                // The post-gen pass may have persisted a scriptstate delta and
-                // bumped the revision; reconcile it so the follow-up command POSTs
-                // the right baseRevision.
-                if (typeof donePayload.postGeneration?.revision === 'number') {
-                  setCachedServerCommandRevision(donePayload.postGeneration.revision)
-                }
-                maybeResolveReady()
-                if (!readyResolved) {
+                case 'error': {
+                  const error = errorMessageFromEvent(
+                    data,
+                    'Server returned an error without details during generation.',
+                  )
+                  const restoration =
+                    data.restoration && typeof data.restoration === 'object'
+                      ? (data.restoration as unknown as ServerChatRestoration)
+                      : undefined
+                  forgetActiveGenerationJob(durableJobId)
                   resolveReadyOnce({
                     status: 'error',
-                    error: prompt
-                      ? 'server chat dispatch did not return generation metadata'
-                      : 'stream ended without a prompt event',
+                    error,
+                    ...(messagePatches.length > 0 ? { messagePatches } : {}),
+                    ...(restoration ? { restoration } : {}),
                   })
+                  resolveTerminalOnce({
+                    status: 'error',
+                    error,
+                    restoration,
+                    sideEffects,
+                    warnings,
+                  })
+                  clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+                  closeTokenStream()
+                  stopWatchingAbort()
+                  return
                 }
-                resolveTerminalOnce({ status: 'done', done: donePayload, sideEffects, warnings })
-                clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
-                closeTokenStream()
-                stopWatchingAbort()
-                return
-              default:
-                break
+                case 'done':
+                  donePayload = data as unknown as Omit<DoneEvent, 'type'>
+                  if (typeof donePayload.result === 'string' && tokenResult.length === 0) {
+                    tokenResult = donePayload.result
+                    enqueueToken({ [streamKey]: tokenResult })
+                  }
+                  // The post-gen pass may have persisted a scriptstate delta and
+                  // bumped the revision; reconcile it so the follow-up command POSTs
+                  // the right baseRevision.
+                  if (typeof donePayload.postGeneration?.revision === 'number') {
+                    setCachedServerCommandRevision(donePayload.postGeneration.revision)
+                  }
+                  maybeResolveReady()
+                  if (!readyResolved) {
+                    resolveReadyOnce({
+                      status: 'error',
+                      error: prompt
+                        ? 'server chat dispatch did not return generation metadata'
+                        : 'stream ended without a prompt event',
+                    })
+                  }
+                  forgetActiveGenerationJob(durableJobId)
+                  resolveTerminalOnce({ status: 'done', done: donePayload, sideEffects, warnings })
+                  clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+                  closeTokenStream()
+                  stopWatchingAbort()
+                  return
+                default:
+                  break
+              }
             }
+          } catch (err) {
+            transportError = err instanceof Error ? err.message : String(err)
           }
+
           if (signal?.aborted) {
-            cancelDurableOnAbort()
-            resolveReadyOnce({ status: 'aborted' })
-            resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
-            clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
-          } else {
-            resolveReadyOnce({ status: 'error', error: 'stream ended without a done event' })
-            resolveTerminalOnce({
-              status: 'error',
-              error: 'stream ended without a done event',
-              warnings,
-            })
-            clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+            settleAborted()
+            return
           }
-          closeTokenStream()
-          stopWatchingAbort()
-        } catch (err) {
-          if (signal?.aborted) {
-            cancelDurableOnAbort()
-            resolveReadyOnce({ status: 'aborted' })
-            resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
-            clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
-          } else {
-            const error = err instanceof Error ? err.message : String(err)
-            resolveReadyOnce({ status: 'error', error })
-            resolveTerminalOnce({ status: 'error', error, warnings })
-            clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+
+          const reconnected = await reconnectDurableStream(transportError)
+          if (reconnected.status === 'ok') {
+            activeOpened = reconnected.opened
+            continue
           }
-          closeTokenStream()
-          stopWatchingAbort()
+          if (reconnected.status === 'aborted') settleAborted()
+          else settleTransportError(reconnected.error)
+          return
         }
       })()
     },

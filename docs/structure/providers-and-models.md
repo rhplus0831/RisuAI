@@ -396,8 +396,11 @@ send/continue/regenerate is the normal app path: jobs are process-local in
 `generationJobs.ts`, emit `job_accepted`, buffer replayable frames, appear in
 bootstrap `activeGenerationJobs`, reattach with
 `GET /api/v1/generate/chat/:id/stream`, and cancel with
-`DELETE /api/v1/generate/chat/:id`. Inline non-durable SSE remains for
-tools/tests and preview-style callers. Browser `serverChat.ts` sends
+`DELETE /api/v1/generate/chat/:id`. The browser also retains the live accepted
+job id, reconnects unrequested transport drops with bounded backoff, and
+refreshes bootstrap job metadata on foreground/page-show/online lifecycle
+events. Inline non-durable SSE remains for tools/tests and preview-style callers.
+Browser `serverChat.ts` sends
 `clientCapabilities.compactPromptEvent`, `promptMetadataOnly`, and
 `omitDuplicateDoneResult`; the server may strip heavy prompt fields, delta-trim
 `replace_all` message patches with `firstChangedIndex`, and omit an inline

@@ -92,22 +92,34 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     prefix = continueTarget?.data ?? ''
     streamTargetMessageId = continueTarget?.chatId
   } else {
-    withTrustedResourceWrite(() => {
-      const targetChat = currentLiveChat()
-      if (!targetChat) {
-        throw new Error('Active chat is unavailable for the streaming response')
-      }
-      targetChat.message ??= []
-      targetChat.message.push({
-        role: 'char',
-        data: '',
-        saying: currentChar.chaId,
-        time: Date.now(),
-        generationInfo,
-        promptInfo,
-        chatId: generationId,
+    const existingGeneratedIndex = initialMessages.findIndex(
+      (message) =>
+        message?.role === 'char' &&
+        (message.chatId === generationId || message.generationInfo?.generationId === generationId),
+    )
+    if (existingGeneratedIndex >= 0) {
+      // A durable reattach replays the same generation. Reuse its partial row
+      // instead of appending a second empty assistant message.
+      msgIndex = existingGeneratedIndex
+      streamTargetMessageId = initialMessages[existingGeneratedIndex]?.chatId ?? generationId
+    } else {
+      withTrustedResourceWrite(() => {
+        const targetChat = currentLiveChat()
+        if (!targetChat) {
+          throw new Error('Active chat is unavailable for the streaming response')
+        }
+        targetChat.message ??= []
+        targetChat.message.push({
+          role: 'char',
+          data: '',
+          saying: currentChar.chaId,
+          time: Date.now(),
+          generationInfo,
+          promptInfo,
+          chatId: generationId,
+        })
       })
-    })
+    }
   }
 
   const findStreamMessageIndex = (messages: readonly Message[]): number => {
@@ -172,8 +184,9 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     })
   }
   const renderCoalescer = createStreamRenderCoalescer(applyLatestChunk, opts.renderFlushScheduler)
-  const removeEmptyGeneratedMessageOnAbort = (): void => {
-    if (arg.continue || (!streamAborted && !abortSignal.aborted)) return
+  const removeEmptyGeneratedMessage = (): void => {
+    if (arg.continue) return
+    if (result.length > 0 && !streamAborted && !abortSignal.aborted) return
     const target = resolveStreamMessage()
     if (!target) return
     if (target.message.role !== 'char') return
@@ -225,7 +238,10 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     // swallow apply errors here so they cannot mask the propagating one.
     await renderCoalescer.settle().catch(() => {})
     withTrustedResourceWrite(() => {
-      removeEmptyGeneratedMessageOnAbort()
+      // A successful server stream supplies either tokens or `done.result`.
+      // Therefore an empty generated row at stream termination is a placeholder
+      // left by abort/transport failure and should never remain in the transcript.
+      removeEmptyGeneratedMessage()
       const targetChat = currentLiveChat()
       if (targetChat) targetChat.isStreaming = false
       bumpReloadKey()

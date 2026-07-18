@@ -273,6 +273,44 @@ describe('consumeStreamResponse', () => {
     expect(testDatabaseState.db.characters[0].chats[0].isStreaming).toBe(false)
   })
 
+  it('terminal stream closure before tokens removes the empty generated message', async () => {
+    const currentChar = seed()
+    const { stream, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+
+    close()
+
+    const out = await promise
+    expect(out.streamAborted).toBe(false)
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi' }])
+  })
+
+  it('durable replay reuses an existing partial generation row', async () => {
+    const currentChar = seed()
+    testDatabaseState.db.characters[0].chats[0].message.push({
+      role: 'char',
+      data: 'partial',
+      chatId: 'gen-1',
+      generationInfo: { generationId: 'gen-1' },
+    })
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+
+    push({ msgKey: 'partial recovered' })
+    close()
+
+    await promise
+    const messages = testDatabaseState.db.characters[0].chats[0].message
+    expect(messages).toHaveLength(2)
+    expect(messages[1]).toMatchObject({
+      role: 'char',
+      data: 'partial recovered',
+      chatId: 'gen-1',
+    })
+  })
+
   it('mid-stream abort keeps a non-empty generated message for server reconciliation', async () => {
     const currentChar = seed()
     const { stream, push, close } = makeControlledStream()

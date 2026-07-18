@@ -16,6 +16,24 @@ export function setActiveGenerationJobs(jobs: readonly ActiveGenerationJob[]): v
   activeGenerationJobs.set([...jobs])
 }
 
+/**
+ * Retain a durable job learned from the live generation response itself. Mobile
+ * browsers can discard the response body while leaving the page alive, so the
+ * bootstrap-only projection is not sufficient for a same-page reconnect.
+ */
+export function rememberActiveGenerationJob(job: ActiveGenerationJob): void {
+  activeGenerationJobs.update((jobs) => {
+    const retained = jobs.filter((entry) => entry.jobId !== job.jobId && entry.chatId !== job.chatId)
+    return [job, ...retained]
+  })
+}
+
+/** Remove a locally/bootstrap-known job once its terminal frame is observed. */
+export function forgetActiveGenerationJob(jobId: string): void {
+  if (!jobId) return
+  activeGenerationJobs.update((jobs) => jobs.filter((entry) => entry.jobId !== jobId))
+}
+
 function openChatTarget(): ActiveChatTarget | null {
   const selectedChar = get(selectedCharID)
   if (selectedChar < 0) return null
@@ -52,6 +70,7 @@ let reattachQueued = false
 // switched to another chat with its own live job. Re-arm one probe after the
 // in-flight reattach settles instead of dropping the request.
 let reattachDeferred = false
+let stopWaitingForGenerationIdle: (() => void) | null = null
 
 /**
  * Request a delayed reattach probe after projection state has settled. This
@@ -90,7 +109,23 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
       reattachDeferred = true
       return
     }
-    if (get(doingChat)) return
+    if (get(doingChat)) {
+      // A foreground/online probe can race the old stream unwinding. Remember
+      // one probe for the transition back to idle instead of dropping it.
+      if (!stopWaitingForGenerationIdle) {
+        let subscribing = true
+        const unsubscribe = doingChat.subscribe((active) => {
+          if (subscribing || active) return
+          const stop = stopWaitingForGenerationIdle
+          stopWaitingForGenerationIdle = null
+          stop?.()
+          triggerOpenChatGenerationReattach()
+        })
+        stopWaitingForGenerationIdle = unsubscribe
+        subscribing = false
+      }
+      return
+    }
     // Consume the job up front so a re-render / re-selection does not double
     // reattach while this one streams.
     activeGenerationJobs.update((jobs) => jobs.filter((entry) => entry.jobId !== job.jobId))
@@ -140,6 +175,26 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
 }
 
 let wired = false
+let runtimeJobRefresh: Promise<void> | null = null
+
+async function refreshRuntimeJobsAndTriggerReattach(): Promise<void> {
+  if (runtimeJobRefresh) return runtimeJobRefresh
+  runtimeJobRefresh = (async () => {
+    try {
+      const { fetchServerBootstrapReadOnly } = await import('../server/bootstrap')
+      const runtime = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
+      if (runtime.status === 'ok') {
+        setActiveGenerationJobs(runtime.bootstrap.activeGenerationJobs ?? [])
+      }
+    } catch {
+      // Keep the locally remembered job; a later lifecycle event can retry.
+    } finally {
+      runtimeJobRefresh = null
+      triggerOpenChatGenerationReattach()
+    }
+  })()
+  return runtimeJobRefresh
+}
 
 /**
  * Wire the reattach trigger: whenever the selected character changes (the
@@ -152,4 +207,17 @@ export function startActiveGenerationReattach(): void {
   selectedCharID.subscribe(() => {
     triggerOpenChatGenerationReattach()
   })
+
+  // A mobile tab can remain mounted while its fetch/SSE sockets are discarded.
+  // Refresh the server's active-job projection when the page or network returns
+  // so even a request dropped before its job-id header arrived can recover.
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void refreshRuntimeJobsAndTriggerReattach()
+    })
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pageshow', () => void refreshRuntimeJobsAndTriggerReattach())
+    window.addEventListener('online', () => void refreshRuntimeJobsAndTriggerReattach())
+  }
 }

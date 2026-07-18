@@ -180,8 +180,8 @@ async function completeFullServerResourceRefresh(
   reapplyPendingPresetProjections()
   setCachedServerCommandRevision(revision)
   setAppliedServerResourceRevision(revision)
-  triggerOpenChatGenerationReattach()
   await refreshRuntimeJobs()
+  triggerOpenChatGenerationReattach()
   return { status: 'ok', revision }
 }
 

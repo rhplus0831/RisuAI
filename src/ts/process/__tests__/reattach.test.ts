@@ -26,6 +26,7 @@ const h = vi.hoisted(() => {
     createActiveGenerationAbortController: vi.fn(() => new AbortController()),
     clearActiveGenerationAbortController: vi.fn(),
     sendChat: vi.fn(async () => true),
+    fetchRuntimeJobs: vi.fn(),
   }
 })
 
@@ -37,6 +38,10 @@ vi.mock('../../storage/database.svelte', () => ({
   getDatabase: () => h.database,
 }))
 
+vi.mock('../../server/bootstrap', () => ({
+  fetchServerBootstrapReadOnly: h.fetchRuntimeJobs,
+}))
+
 vi.mock('../index.svelte', () => ({
   sendChat: h.sendChat,
   doingChat: h.doingChat,
@@ -46,8 +51,11 @@ vi.mock('../index.svelte', () => ({
 
 import {
   activeGenerationJobs,
+  forgetActiveGenerationJob,
   maybeReattachOpenChatGeneration,
+  rememberActiveGenerationJob,
   setActiveGenerationJobs,
+  startActiveGenerationReattach,
   triggerOpenChatGenerationReattach,
 } from '../reattach'
 
@@ -65,11 +73,32 @@ beforeEach(() => {
   h.sendChat.mockResolvedValue(true)
   h.createActiveGenerationAbortController.mockClear()
   h.clearActiveGenerationAbortController.mockClear()
+  h.fetchRuntimeJobs.mockReset()
+  h.fetchRuntimeJobs.mockResolvedValue({
+    status: 'ok',
+    bootstrap: { activeGenerationJobs: [] },
+  })
   h.doingChat.set(false)
   activeGenerationJobs.set([])
 })
 
 describe('reattach open-chat generation (Phase 4)', () => {
+  it('retains and forgets a job learned from the live response', () => {
+    setActiveGenerationJobs([
+      { chatId: 'chat-1', jobId: 'job-old' },
+      { chatId: 'chat-2', jobId: 'job-other' },
+    ])
+
+    rememberActiveGenerationJob({ chatId: 'chat-1', jobId: 'job-new', mode: 'send' })
+
+    expect(get(activeGenerationJobs)).toEqual([
+      { chatId: 'chat-1', jobId: 'job-new', mode: 'send' },
+      { chatId: 'chat-2', jobId: 'job-other' },
+    ])
+    forgetActiveGenerationJob('job-new')
+    expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-2', jobId: 'job-other' }])
+  })
+
   it('reattaches the open chat and consumes the job', async () => {
     openChat('chat-1')
     setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-1' }])
@@ -176,7 +205,7 @@ describe('reattach open-chat generation (Phase 4)', () => {
     expect(h.clearActiveGenerationAbortController).toHaveBeenCalledTimes(1)
   })
 
-  it('does nothing (and keeps the job) while a generation is already in flight', async () => {
+  it('keeps the job while a generation is in flight and retries when it becomes idle', async () => {
     openChat('chat-1')
     setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-1' }])
     h.doingChat.set(true)
@@ -185,6 +214,11 @@ describe('reattach open-chat generation (Phase 4)', () => {
 
     expect(h.sendChat).not.toHaveBeenCalled()
     expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-1', jobId: 'job-1' }])
+
+    h.doingChat.set(false)
+    await vi.waitFor(() => {
+      expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-1' }))
+    })
   })
 
   it('does nothing when no chat is open', async () => {
@@ -292,5 +326,21 @@ describe('reattach open-chat generation (Phase 4)', () => {
       )
     })
     expect(get(activeGenerationJobs)).toEqual([])
+  })
+
+  it('probes a retained job when the browser network returns', async () => {
+    openChat('chat-1')
+    startActiveGenerationReattach()
+    h.fetchRuntimeJobs.mockResolvedValueOnce({
+      status: 'ok',
+      bootstrap: { activeGenerationJobs: [{ chatId: 'chat-1', jobId: 'job-online' }] },
+    })
+
+    window.dispatchEvent(new Event('online'))
+
+    await vi.waitFor(() => {
+      expect(h.fetchRuntimeJobs).toHaveBeenCalledWith(null, { cacheRevision: false })
+      expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-online' }))
+    })
   })
 })

@@ -334,11 +334,17 @@ inspect `setupSendChatContext`, `waitForPendingChatGenerationSettingsSave`, and
 
 Durable sends such as send, continue, and regenerate set `durable: true` when
 allowed. Disconnect detaches from durable jobs; abort/cancel uses the durable
-DELETE path when a job exists. Terminal `postGeneration` data can advance the
-revision cache, apply a server-owned `messagePatch`, render the inlay screen
-over `finalText`, request `resendChat`, or surface an Agent Preset error as a
-failed terminal result. Generation results are persisted server-side, so the
-browser suppresses the old generation-result command in server-backed paths.
+DELETE path when a job exists. The live adapter retains the accepted job id and
+boundedly reattaches after an unrequested SSE EOF/read failure, rebuilding
+replayed token deltas from zero and deduplicating replayed non-token effects.
+Foreground, page-show, and online lifecycle probes refresh bootstrap job
+metadata so a mounted mobile tab can recover even when its original connection
+was discarded before the id reached JavaScript. Terminal `postGeneration` data
+can advance the revision cache, apply a server-owned `messagePatch`, render the
+inlay screen over `finalText`, request `resendChat`, or surface an Agent Preset
+error as a failed terminal result. Generation results are persisted server-side,
+so the browser suppresses the old generation-result command in server-backed
+paths.
 
 Agent Preset step instructions can place selected prepared inputs through
 matching placeholders such as `{{currentUserMessage}}` and can consume an

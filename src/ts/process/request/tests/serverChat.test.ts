@@ -39,6 +39,7 @@ import {
   clearAgentPresetProgress,
   type ActiveAgentPresetProgress,
 } from '../../agentPresetProgress'
+import { activeGenerationJobs } from '../../reattach'
 
 const baseInput: ServerChatInput = {
   chatId: 'chat-1',
@@ -68,6 +69,9 @@ function controlledGenerationStream() {
     },
     close() {
       controller.close()
+    },
+    error(error: unknown) {
+      controller.error(error)
     },
   }
 }
@@ -100,6 +104,7 @@ describe('server chat SSE taxonomy', () => {
 
 beforeEach(() => {
   resetServerChatState()
+  activeGenerationJobs.set([])
   localStorage.removeItem('risu:protocol-debug')
   vi.mocked(handleActiveWriterStaleResponse).mockClear()
 })
@@ -477,6 +482,80 @@ describe('requestServerChat', () => {
         generationId: 'uuid-0',
       },
     })
+  })
+
+  it('reattaches a durable stream after a mobile-style transport drop without duplicating replayed tokens', async () => {
+    const first = controlledGenerationStream()
+    const calls: Array<{ url: string; method: string }> = []
+    const encoder = new TextEncoder()
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString()
+      const method = init?.method ?? 'GET'
+      calls.push({ url, method })
+      if (method === 'POST') return first.response
+
+      const replay = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode('event: job_accepted\ndata: {"jobId":"job-mobile"}\n\n'))
+          controller.enqueue(encoder.encode('event: prompt\ndata: {"promptInfo":{}}\n\n'))
+          controller.enqueue(
+            encoder.encode(
+              'event: info\ndata: {"generationId":"job-mobile","generationInfo":{"generationId":"job-mobile","model":"m"}}\n\n',
+            ),
+          )
+          controller.enqueue(encoder.encode('event: token\ndata: {"content":"partial"}\n\n'))
+          controller.enqueue(encoder.encode('event: token\ndata: {"content":" recovered"}\n\n'))
+          controller.enqueue(
+            encoder.encode(
+              'event: done\ndata: {"result":"partial recovered","generationId":"job-mobile","generationInfo":{"generationId":"job-mobile"}}\n\n',
+            ),
+          )
+          controller.close()
+        },
+      })
+      return new Response(replay, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    })
+
+    const pending = requestServerChatGeneration({ ...baseInput, durable: true }, null)
+    first.send('job_accepted', { jobId: 'job-mobile' })
+    sendGenerationReadyFrames(first, 'job-mobile')
+    const served = await pending
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok' || served.req.type !== 'streaming') return
+    expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-1', jobId: 'job-mobile', mode: 'send' }])
+
+    const reader = served.req.result.getReader()
+    first.send('token', { content: 'partial' })
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'job-mobile': 'partial' },
+    })
+    first.error(new TypeError('NetworkError: connection was suspended'))
+
+    // Reattach replays the token history. The accumulator resets first, so the
+    // replay replaces the partial projection instead of producing
+    // `partialpartial recovered`.
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'job-mobile': 'partial' },
+    })
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'job-mobile': 'partial recovered' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    await expect(served.terminal).resolves.toMatchObject({
+      status: 'done',
+      done: { result: 'partial recovered', generationId: 'job-mobile' },
+    })
+    expect(calls).toEqual([
+      { url: '/api/v1/generate/chat', method: 'POST' },
+      { url: '/api/v1/generate/chat/job-mobile/stream', method: 'GET' },
+    ])
+    expect(get(activeGenerationJobs)).toEqual([])
   })
 
   it('reconstructs the full result when compact done omits the streamed duplicate', async () => {

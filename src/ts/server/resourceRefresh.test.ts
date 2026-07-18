@@ -210,6 +210,9 @@ describe('complete server resource refresh', () => {
     expect(sideEffects.setTranslations).toHaveBeenCalledWith([
       { chatId: 'chat-b', messageId: 'message-b', jobId: 'translation-b', status: 'running' },
     ])
+    expect(sideEffects.setGenerationJobs.mock.invocationCallOrder[0]).toBeLessThan(
+      sideEffects.triggerReattach.mock.invocationCallOrder[0],
+    )
     expect(sideEffects.recordRefresh).toHaveBeenCalledWith('backup-restore', undefined)
   })
 
