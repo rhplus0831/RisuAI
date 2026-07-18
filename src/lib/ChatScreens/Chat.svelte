@@ -125,6 +125,7 @@
     chatButtonTriggerChatSignature,
     renderedChatButtonTriggerOperationTracker,
     resolveChatButtonTriggerFreshness,
+    resolveChatButtonTriggerTargetAfterHydration,
     type ChatButtonTriggerFreshnessSnapshot,
     type ChatButtonTriggerIdentity,
     type ChatButtonTriggerTarget,
@@ -1368,6 +1369,19 @@
     return resolveChatButtonTriggerFreshness(target.snapshot, liveTarget, renderedChatButtonTriggerOperationTracker).ok
   }
 
+  function isChatButtonTriggerTargetCurrentAfterHydration(target: CapturedChatButtonTriggerTarget): boolean {
+    const liveTarget = readChatButtonTriggerLiveTarget(target.snapshot)
+    if (!liveTarget) {
+      return false
+    }
+
+    return resolveChatButtonTriggerTargetAfterHydration(
+      target.snapshot,
+      liveTarget,
+      renderedChatButtonTriggerOperationTracker,
+    ).ok
+  }
+
   function applyFreshChatButtonTriggerResult(target: CapturedChatButtonTriggerTarget, nextChat: Chat): boolean {
     if (!isChatButtonTriggerTargetFresh(target)) {
       return false
@@ -1403,11 +1417,6 @@
   }
 
   async function handleButtonTriggerWithin(event: UIEvent) {
-    const currentChar = getCurrentCharacter()
-    if (!currentChar) {
-      return
-    }
-
     const target = event.target as HTMLElement
     const origin = target.closest('[risu-trigger], [risu-btn]')
     if (!origin) {
@@ -1417,17 +1426,42 @@
     const triggerName = origin.getAttribute('risu-trigger')
     const triggerId = origin.getAttribute('risu-id')
     const btnEvent = origin.getAttribute('risu-btn')
-    const triggerTarget = captureChatButtonTriggerTarget({
+    const identity = {
       triggerName,
       triggerId,
       btnEvent,
-    })
-    if (!triggerTarget) {
+    }
+    const hydrationTarget = captureChatButtonTriggerTarget(identity)
+    if (!hydrationTarget) {
       return
     }
     const triggerDisplayGeneration = triggerName ? ++manualTriggerDisplayGeneration : null
 
     try {
+      if (canUseServerCommands()) {
+        if (!hydrationTarget.snapshot.chatId) {
+          alertError(language.chatDataLoadFailed)
+          return
+        }
+        try {
+          await hydrateChatMessages(hydrationTarget.snapshot.chatId, { strict: true })
+        } catch {
+          if (isChatButtonTriggerTargetCurrentAfterHydration(hydrationTarget)) {
+            alertError(language.chatDataLoadFailed)
+          }
+          return
+        }
+      }
+
+      if (!isChatButtonTriggerTargetCurrentAfterHydration(hydrationTarget)) {
+        return
+      }
+      const triggerTarget = captureChatButtonTriggerTarget(identity)
+      const currentChar = getCurrentCharacter()
+      if (!triggerTarget || !currentChar) {
+        return
+      }
+
       let triggerResult = null
       if (triggerName) {
         const triggerController = createManualTriggerAbortController()

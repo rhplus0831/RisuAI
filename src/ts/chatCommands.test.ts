@@ -5508,7 +5508,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     )
   })
 
-  it('skips unsafe placeholder-containing message edits instead of full replacing the list', () => {
+  it('rolls back unsafe placeholder-containing message edits instead of leaving an unpersisted projection', () => {
     const previousChat: Chat = {
       ...jsonClone(getDatabase().characters[0].chats[0]),
       message: [
@@ -5529,6 +5529,8 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
 
     expect(prepared.commandCount).toBe(0)
+    prepared.dispatch()
+    expect(getDatabase().characters[0].chats[0].message).toEqual(previousChat.message)
   })
 
   it('P5: scoped compatible chat preparation preserves accepted metadata when message persistence fails', async () => {

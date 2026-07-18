@@ -63,6 +63,40 @@ export function resolveChatButtonTriggerFreshness(
   liveTarget: ChatButtonTriggerTarget,
   tracker: ChatButtonTriggerOperationTracker,
 ): ChatButtonTriggerFreshnessResult {
+  const stableTarget = resolveStableChatButtonTriggerTarget(snapshot, liveTarget, tracker)
+  if (!stableTarget.ok) return stableTarget
+
+  const live = normalizeTarget(liveTarget)
+
+  if (
+    snapshot.transcriptLength !== live.transcriptLength ||
+    !sameStableValue(snapshot.tailMessageId, live.tailMessageId) ||
+    snapshot.tailMessageData !== live.tailMessageData ||
+    snapshot.tailMessageRole !== live.tailMessageRole ||
+    !sameStableValue(snapshot.chatStateSignature, live.chatStateSignature)
+  ) {
+    return { ok: false, reason: 'transcript-changed' }
+  }
+
+  return { ok: true }
+}
+
+// Full hydration intentionally changes a placeholder-backed transcript. Keep
+// the operation/ownership checks while allowing that expected projection
+// change, then capture a new full freshness snapshot before running scripts.
+export function resolveChatButtonTriggerTargetAfterHydration(
+  snapshot: ChatButtonTriggerFreshnessSnapshot,
+  liveTarget: ChatButtonTriggerTarget,
+  tracker: ChatButtonTriggerOperationTracker,
+): ChatButtonTriggerFreshnessResult {
+  return resolveStableChatButtonTriggerTarget(snapshot, liveTarget, tracker)
+}
+
+function resolveStableChatButtonTriggerTarget(
+  snapshot: ChatButtonTriggerFreshnessSnapshot,
+  liveTarget: ChatButtonTriggerTarget,
+  tracker: ChatButtonTriggerOperationTracker,
+): ChatButtonTriggerFreshnessResult {
   if (snapshot.operationToken !== tracker.latestToken) {
     return { ok: false, reason: 'superseded-operation' }
   }
@@ -86,16 +120,6 @@ export function resolveChatButtonTriggerFreshness(
 
   if (snapshot.messageData !== live.messageData || snapshot.messageRole !== live.messageRole) {
     return { ok: false, reason: 'source-changed' }
-  }
-
-  if (
-    snapshot.transcriptLength !== live.transcriptLength ||
-    !sameStableValue(snapshot.tailMessageId, live.tailMessageId) ||
-    snapshot.tailMessageData !== live.tailMessageData ||
-    snapshot.tailMessageRole !== live.tailMessageRole ||
-    !sameStableValue(snapshot.chatStateSignature, live.chatStateSignature)
-  ) {
-    return { ok: false, reason: 'transcript-changed' }
   }
 
   if (

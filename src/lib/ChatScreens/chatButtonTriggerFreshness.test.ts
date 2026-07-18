@@ -4,6 +4,7 @@ import {
   chatButtonTriggerChatSignature,
   createChatButtonTriggerOperationTracker,
   resolveChatButtonTriggerFreshness,
+  resolveChatButtonTriggerTargetAfterHydration,
   type ChatButtonTriggerTarget,
 } from './chatButtonTriggerFreshness'
 
@@ -108,6 +109,38 @@ describe('chat button trigger freshness', () => {
         tracker,
       ),
     ).toEqual({ ok: false, reason: 'transcript-changed' })
+  })
+
+  it('allows hydration-only transcript changes before a fresh recapture', () => {
+    const { tracker, snapshot } = capture()
+
+    expect(
+      resolveChatButtonTriggerTargetAfterHydration(
+        snapshot,
+        baseTarget({
+          chatStateSignature: chatButtonTriggerChatSignature({
+            id: 'chat-a',
+            message: [
+              { chatId: 'message-a', role: 'user', data: 'hydrated hello' },
+              { chatId: 'message-b', role: 'char', data: 'hi' },
+              { chatId: 'message-c', role: 'char', data: 'source message' },
+            ],
+          }),
+        }),
+        tracker,
+      ),
+    ).toEqual({ ok: true })
+  })
+
+  it('still rejects a superseded operation after hydration', () => {
+    const tracker = createChatButtonTriggerOperationTracker()
+    const snapshot = captureChatButtonTriggerFreshness(baseTarget(), tracker)
+    captureChatButtonTriggerFreshness(baseTarget(), tracker)
+
+    expect(resolveChatButtonTriggerTargetAfterHydration(snapshot, baseTarget(), tracker)).toEqual({
+      ok: false,
+      reason: 'superseded-operation',
+    })
   })
 
   it('rejects trigger identity changes', () => {

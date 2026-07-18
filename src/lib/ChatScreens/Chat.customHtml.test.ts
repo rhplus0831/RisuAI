@@ -702,6 +702,54 @@ describe('customHTML template memo', () => {
 })
 
 describe('customHTML rendered button trigger freshness', () => {
+  it('hydrates the full transcript before running and persisting a manual trigger', async () => {
+    seedDatabase(31, customHtmlMocks.templates.triggerButton)
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.message[0] = {
+      role: 'char',
+      data: '',
+      isComment: true,
+      disabled: true,
+      __risuServerUnloadedMessage: true,
+    } as unknown as (typeof chat.message)[number]
+    chat.message[1] = {
+      role: 'char',
+      data: '',
+      isComment: true,
+      disabled: true,
+      __risuServerUnloadedMessage: true,
+    } as unknown as (typeof chat.message)[number]
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    customHtmlMocks.hydrateChatMessages.mockImplementationOnce(async () => {
+      chat.message[0] = { chatId: 'message-0', data: 'hydrated head 0', role: 'user' }
+      chat.message[1] = { chatId: 'message-1', data: 'hydrated head 1', role: 'char' }
+    })
+    customHtmlMocks.runTrigger.mockImplementationOnce(async (_char, _mode, arg) => {
+      expect(arg.chat.message[0].data).toBe('hydrated head 0')
+      expect(arg.chat.message[1].data).toBe('hydrated head 1')
+      return {
+        chat: {
+          ...arg.chat,
+          message: arg.chat.message.map((message: { data: string }, index: number) =>
+            index < 2 ? { ...message, data: `trigger edit ${index}` } : message,
+          ),
+        },
+      }
+    })
+    mountCustomHtmlRows(1, 'char', {}, 30)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.manual-trigger-button')?.click()
+    await settle()
+
+    expect(customHtmlMocks.hydrateChatMessages).toHaveBeenCalledWith('custom-html-chat', { strict: true })
+    expect(customHtmlMocks.runTrigger).toHaveBeenCalledTimes(1)
+    const appliedMessages = testDatabaseState.db.characters[0].chats[0].message
+    expect(appliedMessages[0].data).toBe('trigger edit 0')
+    expect(appliedMessages[1].data).toBe('trigger edit 1')
+    expect(dispatchCompatibleChatUpdateScoped).toHaveBeenCalledTimes(1)
+  })
+
   it('does not let an older trigger cleanup clear a newer manual trigger identity', async () => {
     seedDatabase(1, customHtmlMocks.templates.triggerButton)
     mountCustomHtmlRows(1)

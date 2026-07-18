@@ -3553,25 +3553,36 @@ export function prepareCompatibleChatUpdateScoped(
   nextChat: Chat | undefined,
   previous: ChatScopedSnapshot,
 ): CompatibleChatUpdatePreparation {
-  const steps = buildCompatibleChatUpdateScopedSteps(previousChat, nextChat, previous)
+  const { steps, rejectedMessages } = buildCompatibleChatUpdateScopedSteps(previousChat, nextChat, previous)
+  const rollbackRejectedMessages = () => {
+    if (rejectedMessages) restoreScopedMessageListAttempt(previous, rejectedMessages)
+  }
   return {
     commandCount: steps.length,
     dispatch: () => {
+      rollbackRejectedMessages()
       if (steps.length > 0) void dispatchCharacterOwnedDurableBatch(previous.characterId, steps)
     },
-    dispatchAsync: () =>
-      steps.length > 0 ? dispatchCharacterOwnedDurableBatch(previous.characterId, steps) : Promise.resolve(null),
+    dispatchAsync: () => {
+      rollbackRejectedMessages()
+      return steps.length > 0 ? dispatchCharacterOwnedDurableBatch(previous.characterId, steps) : Promise.resolve(null)
+    },
   }
+}
+
+interface CompatibleChatUpdatePlan {
+  steps: CompatibleChatUpdateStep[]
+  rejectedMessages: Message[] | null
 }
 
 function buildCompatibleChatUpdateScopedSteps(
   previousChat: Chat | undefined,
   nextChat: Chat | undefined,
   previous: ChatScopedSnapshot,
-): CompatibleChatUpdateStep[] {
+): CompatibleChatUpdatePlan {
   const steps: CompatibleChatUpdateStep[] = []
   const chatId = nextChat?.id ?? previousChat?.id
-  if (!chatId || !previousChat || !nextChat) return steps
+  if (!chatId || !previousChat || !nextChat) return { steps, rejectedMessages: null }
 
   const metadataPatch = sanitizeChatPatch(changedChatMetadata(previousChat, nextChat))
   if (Object.keys(metadataPatch).length > 0) {
@@ -3598,6 +3609,12 @@ function buildCompatibleChatUpdateScopedSteps(
   }
 
   const messageUpdate = buildCompatibleMessageListUpdate(chatId, previousChat.message ?? [], nextChat.message ?? [])
+  const rejectedMessages =
+    !messageUpdate &&
+    snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? []) &&
+    hasServerChatMessagePlaceholders(nextChat.message ?? [])
+      ? cloneJsonValue(nextChat.message ?? [])
+      : null
   if (messageUpdate) {
     steps.push({
       method: messageUpdate.method,
@@ -3629,7 +3646,7 @@ function buildCompatibleChatUpdateScopedSteps(
     })
   }
 
-  return steps
+  return { steps, rejectedMessages }
 }
 
 function buildCompatibleMessageListUpdate(
