@@ -2192,15 +2192,13 @@ export function applyCharacterSelectionResource(payload: ServerCharacterSelectio
   const characterIndex = charactersResourceState.characters.findIndex(
     (candidate) => candidate?.chaId === payload.characterId,
   )
-  if (
-    characterIndex < 0 ||
-    payload.currentChar < 0 ||
-    payload.currentChar >= charactersResourceState.characters.length
-  ) {
-    return false
-  }
+  if (characterIndex < 0) return false
+  const selectedCharacterIndex =
+    charactersResourceState.characters[payload.currentChar]?.chaId === payload.characterId
+      ? payload.currentChar
+      : characterIndex
 
-  charactersResourceState.currentChar = payload.currentChar
+  charactersResourceState.currentChar = selectedCharacterIndex
   if (typeof payload.lastInteraction === 'number') {
     charactersResourceState.characters[characterIndex].lastInteraction = payload.lastInteraction
   }

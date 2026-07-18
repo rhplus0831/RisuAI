@@ -2202,7 +2202,7 @@ describe('resource-scoped database state', () => {
     expect(charactersResourceState.rowRevisions['char-a']).toBe(4)
   })
 
-  it('keeps narrow order and selection pointers newer than unrelated settings', () => {
+  it('keeps narrow pointers newer than settings and resolves selection by character id', () => {
     applyCharactersResource({
       revision: 5,
       characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
@@ -2226,7 +2226,7 @@ describe('resource-scoped database state', () => {
 
     expect(getResourceDatabase()).toMatchObject({
       characterOrder: ['char-b', 'char-a'],
-      currentChar: 1,
+      currentChar: 0,
       characters: [{ chaId: 'char-a', lastInteraction: 88 }, { chaId: 'char-b' }],
     })
   })
