@@ -1218,6 +1218,51 @@
   let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationStage)])
   let generationLoadingProgress = $derived(getChatGenerationLoadingProgress(normalizedGenerationStage))
 
+  function ownsSucceededServerTranslation(
+    jobId: string,
+    target: TranslationMessageTarget,
+    isCancelled: () => boolean,
+  ): boolean {
+    const job = serverTranslationJob
+    return (
+      !isCancelled() &&
+      job?.jobId === jobId &&
+      job.status === 'succeeded' &&
+      job.chatId === target.chatId &&
+      job.messageId === target.messageId &&
+      isRenderingTranslationMessageTarget(target)
+    )
+  }
+
+  async function restoreSucceededServerTranslation(
+    jobId: string,
+    target: TranslationMessageTarget,
+    isCancelled: () => boolean,
+  ): Promise<void> {
+    if (!target.chatId || !ownsSucceededServerTranslation(jobId, target, isCancelled)) return
+
+    const displayAppliedTranslation = (): boolean => {
+      if (!ownsSucceededServerTranslation(jobId, target, isCancelled)) return false
+      if (!liveRawTranslationForTarget(target)) return false
+      translated = true
+      clearMessageTranslationJob(jobId)
+      return true
+    }
+
+    if (displayAppliedTranslation()) return
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await hydrateChatMessages(target.chatId, { force: true, strict: true })
+      } catch {
+        if (!ownsSucceededServerTranslation(jobId, target, isCancelled)) return
+        continue
+      }
+      if (displayAppliedTranslation()) return
+      if (!ownsSucceededServerTranslation(jobId, target, isCancelled)) return
+    }
+  }
+
   $effect(() => {
     const job = serverTranslationJob
     if (serverTranslationInProgress) {
@@ -1232,21 +1277,13 @@
       return
     }
     if (job?.status === 'succeeded') {
-      const expectedChatId = currentChatId
-      const expectedMessageId = messageRowId
-      clearMessageTranslationJob(job.jobId)
-      void hydrateChatMessages(expectedChatId, { force: true, strict: true })
-        .then(() => {
-          if (currentChatId !== expectedChatId || messageRowId !== expectedMessageId) return
-          if (activeRawTranslation()) translated = true
-        })
-        .catch((error: unknown) => {
-          if (currentChatId !== expectedChatId || messageRowId !== expectedMessageId) return
-          const detail = error instanceof Error ? error.message : String(error)
-          setStatusMessage(language.playground.translationRunFailed(detail), 5000)
-        })
+      const target = { chatId: job.chatId, messageId: job.messageId }
+      let cancelled = false
+      void restoreSucceededServerTranslation(job.jobId, target, () => cancelled)
       sawServerTranslationInProgress = false
-      return
+      return () => {
+        cancelled = true
+      }
     }
     if (sawServerTranslationInProgress && activeRawTranslation()) {
       translated = true

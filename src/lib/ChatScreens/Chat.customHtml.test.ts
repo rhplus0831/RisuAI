@@ -1843,4 +1843,87 @@ describe('server raw translation controls', () => {
     expect(target.textContent).toContain('translated after terminal reattach')
     expect(get(activeMessageTranslations)).toEqual([])
   })
+
+  it('retries a stale successful-translation hydration before clearing the job', async () => {
+    const firstHydration = deferred<void>()
+    const translation = {
+      source: 'raw' as const,
+      text: 'translated after hydration retry',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 790,
+    }
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    customHtmlMocks.hydrateChatMessages
+      .mockImplementationOnce(() => firstHydration.promise)
+      .mockImplementationOnce(async () => {
+        testDatabaseState.db.characters[0].chats[0].message[0].translation = translation
+      })
+    setActiveMessageTranslations([
+      {
+        chatId: 'custom-html-chat',
+        messageId: 'message-0',
+        jobId: 'translation-retry',
+        status: 'succeeded',
+        completedAt: 790,
+      },
+    ])
+
+    mountCustomHtmlRows(1, 'char', { rerollIcon: true })
+    await settle()
+
+    expect(customHtmlMocks.hydrateChatMessages).toHaveBeenCalledTimes(1)
+    expect(get(activeMessageTranslations)).toEqual([
+      expect.objectContaining({ jobId: 'translation-retry', status: 'succeeded' }),
+    ])
+
+    firstHydration.reject(new Error('Chat hydration incomplete for: custom-html-chat'))
+    await settle()
+
+    expect(customHtmlMocks.hydrateChatMessages).toHaveBeenCalledTimes(2)
+    expect(customHtmlMocks.hydrateChatMessages).toHaveBeenNthCalledWith(2, 'custom-html-chat', {
+      force: true,
+      strict: true,
+    })
+    expect(target.textContent).toContain('translated after hydration retry')
+    expect(target.textContent).not.toContain('Translation failed:')
+    expect(get(activeMessageTranslations)).toEqual([])
+  })
+
+  it('does not clear a successful translation job after its row loses ownership', async () => {
+    const hydration = deferred<void>()
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    customHtmlMocks.hydrateChatMessages.mockImplementationOnce(() => hydration.promise)
+    setActiveMessageTranslations([
+      {
+        chatId: 'custom-html-chat',
+        messageId: 'message-0',
+        jobId: 'translation-old-chat',
+        status: 'succeeded',
+        completedAt: 791,
+      },
+    ])
+
+    mountCustomHtmlRows(1, 'char', { rerollIcon: true })
+    await settle()
+    testDatabaseState.db.characters[0].chatPage = 1
+    await settle()
+    hydration.resolve()
+    await settle()
+
+    expect(customHtmlMocks.hydrateChatMessages).toHaveBeenCalledTimes(1)
+    expect(get(activeMessageTranslations)).toEqual([
+      expect.objectContaining({ jobId: 'translation-old-chat', status: 'succeeded' }),
+    ])
+    expect(target.textContent).not.toContain('Translation failed:')
+  })
 })
