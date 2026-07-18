@@ -375,6 +375,10 @@ function toolbarButton(index: number): HTMLButtonElement {
   return buttons[index]
 }
 
+function translatorPresetPersistenceStatus(): HTMLElement | null {
+  return target.querySelector<HTMLElement>('[data-translator-preset-persistence]')
+}
+
 async function clickCreatePreset(): Promise<void> {
   toolbarButton(0).click()
   await tick()
@@ -1074,6 +1078,8 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorPresetId).toBe(2)
     expect(getDatabase().translatorPrompt).toBe('')
     expect(getDatabase().translatorMaxResponse).toBe(1000)
+    expect(toolbarButton(0).getAttribute('aria-busy')).toBe('true')
+    expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.saving)
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
     expect(presetSelect?.options).toHaveLength(3)
@@ -1131,6 +1137,10 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(presetSelect?.value).toBe('0')
     expect(promptTextarea().value).toBe('old prompt A')
     expect(maxResponseInput().value).toBe('100')
+    await vi.waitFor(() =>
+      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.failed),
+    )
+    expect(alertError).toHaveBeenCalledWith(language.translatorPresetPersistence.failed)
   })
 
   it('removes a rejected optimistic create even when its draft was edited before the response', async () => {
@@ -1191,7 +1201,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     try {
       toolbarButton(4).click()
 
-      await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.translatorPresetImportQueued))
+      await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.translatorPresetPersistence.queued))
       expect(alertNormal).not.toHaveBeenCalledWith(language.successImport)
       expect(alertError).not.toHaveBeenCalled()
       expect(getDatabase().translatorPresets.at(-1)).toMatchObject({
@@ -1199,7 +1209,12 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         prompt: 'Queued prompt',
         maxResponse: 654,
       })
-      expect(await listPendingMutations()).toHaveLength(1)
+      const [retainedImport] = await listPendingMutations()
+      expect(retainedImport).toBeTruthy()
+      await expect(dispatchDurableMutationReplay(retainedImport.handle, retainedImport.intent)).resolves.toMatchObject({
+        disposition: 'succeeded',
+      })
+      await vi.waitFor(() => expect(translatorPresetPersistenceStatus()).toBeNull())
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -1220,9 +1235,162 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await flushMicrotasks()
     commandSpies.deferredCreateResults.shift()!.resolve({ status: 'error', error: 'invalid import' })
 
-    await vi.waitFor(() => expect(alertError).toHaveBeenCalledWith(language.translatorPresetImportFailed))
+    await vi.waitFor(() => expect(alertError).toHaveBeenCalledWith(language.translatorPresetPersistence.failed))
     expect(alertNormal).not.toHaveBeenCalledWith(language.successImport)
     expect(getDatabase().translatorPresets.map((preset) => preset.name)).not.toContain('Rejected Preset')
+  })
+
+  it('clears normal structural feedback after create, selection, and deletion are accepted', async () => {
+    await clickCreatePreset()
+    await vi.waitFor(() => expect(translatorPresetPersistenceStatus()).toBeNull())
+
+    await selectTranslatorPreset(0)
+    await vi.waitFor(() => expect(translatorPresetPersistenceStatus()).toBeNull())
+
+    await clickDeletePreset()
+    await vi.waitFor(() => expect(translatorPresetPersistenceStatus()).toBeNull())
+    expect(alertNormal).not.toHaveBeenCalledWith(language.translatorPresetPersistence.queued)
+    expect(alertError).not.toHaveBeenCalledWith(language.translatorPresetPersistence.failed)
+  })
+
+  it('reports a normal create as queued until durable replay accepts it', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-create-feedback',
+      writerEpoch: 11,
+      databaseLineage: 'lineage-translator-create-feedback',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.failNextCreate = true
+    commandSpies.skipNextRollback = true
+
+    try {
+      await clickCreatePreset()
+
+      await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.translatorPresetPersistence.queued))
+      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.queued)
+      const createdPresetId = getDatabase().translatorPresets.at(-1)?.id
+      expect(createdPresetId).toBeTruthy()
+
+      const [retainedCreate] = await listPendingMutations()
+      expect(retainedCreate).toBeTruthy()
+      await expect(dispatchDurableMutationReplay(retainedCreate.handle, retainedCreate.intent)).resolves.toMatchObject({
+        disposition: 'succeeded',
+      })
+      await tick()
+
+      expect(translatorPresetPersistenceStatus()).toBeNull()
+      expect(getDatabase().translatorPresets.some((preset) => preset.id === createdPresetId)).toBe(true)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
+  it('rolls back a queued normal selection and reports its final replay rejection', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-select-feedback',
+      writerEpoch: 12,
+      databaseLineage: 'lineage-translator-select-feedback',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.failNextSelect = true
+    commandSpies.skipNextRollback = true
+
+    try {
+      await selectTranslatorPreset(1)
+
+      await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.translatorPresetPersistence.queued))
+      expect(currentSelectedPresetId()).toBe('preset-b')
+      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.queued)
+
+      const [retainedSelection] = await listPendingMutations()
+      expect(retainedSelection).toBeTruthy()
+      commandSpies.replayResults.push({
+        status: 'error',
+        reason: 'invalid-request',
+        error: 'selection is no longer valid',
+      })
+      await expect(
+        dispatchDurableMutationReplay(retainedSelection.handle, retainedSelection.intent),
+      ).resolves.toMatchObject({ disposition: 'discarded' })
+      await tick()
+
+      expect(currentSelectedPresetId()).toBe('preset-a')
+      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.failed)
+      expect(alertError).toHaveBeenCalledWith(language.translatorPresetPersistence.failed)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
+  })
+
+  it('restores a queued normal deletion and reports its final replay rejection', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-delete-feedback',
+      writerEpoch: 13,
+      databaseLineage: 'lineage-translator-delete-feedback',
+      requestedWriterWasActive: true,
+    })
+    commandSpies.failNextDelete = true
+    commandSpies.skipNextRollback = true
+
+    try {
+      await clickDeletePreset()
+
+      await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.translatorPresetPersistence.queued))
+      expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.queued)
+
+      const [retainedDelete] = await listPendingMutations()
+      expect(retainedDelete).toBeTruthy()
+      commandSpies.replayResults.push({
+        status: 'error',
+        reason: 'invalid-request',
+        error: 'deletion is no longer valid',
+      })
+      await expect(dispatchDurableMutationReplay(retainedDelete.handle, retainedDelete.intent)).resolves.toMatchObject({
+        disposition: 'discarded',
+      })
+      await tick()
+
+      expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+      expect(currentSelectedPresetId()).toBe('preset-a')
+      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.failed)
+      expect(alertError).toHaveBeenCalledWith(language.translatorPresetPersistence.failed)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      if (component) {
+        unmount(component)
+        component = undefined
+        await flushMicrotasks()
+      }
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
   })
 
   it('replays a retained create before an edit to its new translator preset owner', async () => {
@@ -1385,6 +1553,8 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorPresetId).toBe(1)
     expect(getDatabase().translatorPrompt).toBe('old prompt B')
     expect(getDatabase().translatorMaxResponse).toBe(200)
+    expect(target.querySelector('select')?.getAttribute('aria-busy')).toBe('true')
+    expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.saving)
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
     expect(presetSelect?.value).toBe('1')
@@ -1465,6 +1635,10 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(presetSelect?.value).toBe('0')
     expect(promptTextarea().value).toBe('old prompt A')
     expect(maxResponseInput().value).toBe('100')
+    await vi.waitFor(() =>
+      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.failed),
+    )
+    expect(alertError).toHaveBeenCalledWith(language.translatorPresetPersistence.failed)
   })
 
   it('rolls back selection and row edits independently when both commands fail', async () => {
@@ -1861,6 +2035,8 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorPresetId).toBe(0)
     expect(getDatabase().translatorPrompt).toBe('old prompt B')
     expect(getDatabase().translatorMaxResponse).toBe(200)
+    expect(toolbarButton(2).getAttribute('aria-busy')).toBe('true')
+    expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.saving)
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
     expect(presetSelect?.options).toHaveLength(1)
@@ -1919,6 +2095,10 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(presetSelect?.value).toBe('0')
     expect(promptTextarea().value).toBe('old prompt A')
     expect(maxResponseInput().value).toBe('100')
+    await vi.waitFor(() =>
+      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.failed),
+    )
+    expect(alertError).toHaveBeenCalledWith(language.translatorPresetPersistence.failed)
   })
 
   it('restores a failed deletion without replacing a newer fallback edit', async () => {

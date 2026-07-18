@@ -1564,9 +1564,11 @@ export const languageEnglish = {
   personaIconSaveQueued:
     'The persona image is saved on this device and queued. It will finish saving when the server is available.',
   personaIconSaveFailed: 'Could not save the persona image. Please try again.',
-  translatorPresetImportQueued:
-    'The translator preset is saved on this device and queued. It will finish importing when the server is available.',
-  translatorPresetImportFailed: 'Could not import the translator preset. Please try again.',
+  translatorPresetPersistence: {
+    saving: 'Saving translator preset changes...',
+    queued: 'The translator preset change is saved on this device and queued. It will retry automatically.',
+    failed: 'Could not save the translator preset change. Please try again.',
+  },
   presetImportQueued:
     'The preset is saved on this device and queued. It will finish importing when the server is available.',
   presetImportFailed: 'Could not save the imported preset. Please try again.',

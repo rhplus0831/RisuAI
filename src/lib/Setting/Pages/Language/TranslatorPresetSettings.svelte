@@ -25,7 +25,10 @@
     type TranslatorPresetSnapshot,
   } from 'src/ts/server/commands'
   import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
-  import { dispatchDurableMutation } from 'src/ts/server/durableMutationDispatch'
+  import {
+    dispatchDurableMutation,
+    registerDurableMutationSettlementListener,
+  } from 'src/ts/server/durableMutationDispatch'
   import {
     acknowledgePendingMutation,
     isPendingMutationCurrent,
@@ -108,7 +111,8 @@
     collectionProjectionEpoch: number
   }
 
-  type TranslatorPresetCreateStatus = 'accepted' | 'queued' | 'failed'
+  type TranslatorPresetPersistenceStatus = 'accepted' | 'queued' | 'failed'
+  type TranslatorPresetPersistenceState = 'idle' | 'saving' | 'queued' | 'failed'
 
   type PendingTranslatorPresetStructuralMutation =
     | { kind: 'create'; attempt: TranslatorPresetCreateAttempt }
@@ -125,6 +129,74 @@
   const translatorPresetCreateOutcomesById = new Map<string, 'pending' | 'succeeded' | 'failed'>()
   let nextTranslatorPresetStructuralOperationId = 1
   let confirmedTranslatorPresetSelectionId: string | null | undefined
+  let nextTranslatorPresetFeedbackOperationId = 1
+  let activeTranslatorPresetFeedbackOperationId = 0
+  let translatorPresetPersistenceState = $state<TranslatorPresetPersistenceState>('idle')
+
+  async function runTranslatorPresetPersistenceAction(
+    action: (feedbackOperationId: number) => Promise<TranslatorPresetPersistenceStatus>,
+  ): Promise<TranslatorPresetPersistenceStatus> {
+    const feedbackOperationId = nextTranslatorPresetFeedbackOperationId++
+    activeTranslatorPresetFeedbackOperationId = feedbackOperationId
+    translatorPresetPersistenceState = 'saving'
+
+    let status: TranslatorPresetPersistenceStatus
+    try {
+      status = await action(feedbackOperationId)
+    } catch (error) {
+      console.error('Translator preset structural mutation rejected:', error)
+      status = 'failed'
+    }
+
+    if (activeTranslatorPresetFeedbackOperationId === feedbackOperationId) {
+      translatorPresetPersistenceState = status === 'accepted' ? 'idle' : status
+    }
+    if (status === 'queued') alertNormal(language.translatorPresetPersistence.queued)
+    if (status === 'failed') alertError(language.translatorPresetPersistence.failed)
+    return status
+  }
+
+  function settleTranslatorPresetPersistenceFeedback(
+    feedbackOperationId: number,
+    settlement: 'accepted' | 'discarded',
+  ): void {
+    if (settlement === 'discarded') {
+      activeTranslatorPresetFeedbackOperationId = Math.max(
+        activeTranslatorPresetFeedbackOperationId,
+        feedbackOperationId,
+      )
+      translatorPresetPersistenceState = 'failed'
+      alertError(language.translatorPresetPersistence.failed)
+      return
+    }
+    if (
+      activeTranslatorPresetFeedbackOperationId === feedbackOperationId &&
+      translatorPresetPersistenceState === 'queued'
+    ) {
+      translatorPresetPersistenceState = 'idle'
+    }
+  }
+
+  function trackTranslatorPresetFinalSettlement(
+    outbox: PendingMutationHandle,
+    feedbackOperationId: number,
+    callbacks: { accepted: () => void; discarded: () => void },
+  ): () => void {
+    let active = true
+    let unregister = () => {}
+    const stop = () => {
+      if (!active) return
+      active = false
+      unregister()
+    }
+    unregister = registerDurableMutationSettlementListener(outbox.mutationId, (settlement) => {
+      if (!active) return
+      stop()
+      callbacks[settlement]()
+      settleTranslatorPresetPersistenceFeedback(feedbackOperationId, settlement)
+    })
+    return stop
+  }
 
   function translatorPresetRecord(preset: TranslatorPreset): Record<string, unknown> {
     return preset as unknown as Record<string, unknown>
@@ -807,18 +879,56 @@
     )
   }
 
-  async function createTranslatorPresetOptimistically(preset: TranslatorPreset): Promise<TranslatorPresetCreateStatus> {
+  async function createTranslatorPresetOptimistically(
+    preset: TranslatorPreset,
+    feedbackOperationId: number,
+  ): Promise<TranslatorPresetPersistenceStatus> {
     const attempt = applyOptimisticTranslatorPresetCreate(preset)
     if (!attempt) return 'failed'
     let createOutbox: PendingMutationHandle | null = null
-    const result = await dispatchCreateTranslatorPreset(
-      preset,
-      attempt.previousSelectedPresetId,
-      () => rollbackOptimisticTranslatorPresetCreate(attempt),
-      (outbox) => {
-        createOutbox = outbox
-      },
-    )
+    let stopFinalSettlement = () => {}
+    let result: ServerCommandResult
+    try {
+      result = await dispatchCreateTranslatorPreset(
+        preset,
+        attempt.previousSelectedPresetId,
+        () => rollbackOptimisticTranslatorPresetCreate(attempt),
+        (outbox) => {
+          createOutbox = outbox
+          stopFinalSettlement = trackTranslatorPresetFinalSettlement(outbox, feedbackOperationId, {
+            accepted: () => {
+              removePendingTranslatorPresetStructuralMutation(attempt.operationId)
+              translatorPresetCreateOutcomesById.set(attempt.attemptedPreset.id, 'succeeded')
+              settleConfirmedTranslatorPresetCreate(attempt)
+            },
+            discarded: () => {
+              if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+                rollbackOptimisticTranslatorPresetCreate(attempt)
+              }
+              cancelPendingTranslatorPresetUpdates(attempt.attemptedPreset.id)
+            },
+          })
+        },
+      )
+    } catch (error) {
+      console.error('Translator preset create command rejected:', error)
+      const retained = await isTranslatorPresetMutationRetained(createOutbox)
+      if (retained) {
+        if (!hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+          translatorPresetCreateOutcomesById.set(attempt.attemptedPreset.id, 'pending')
+          registerPendingTranslatorPresetStructuralMutation({ kind: 'create', attempt })
+        }
+        reassertPendingTranslatorPresetStructuralMutations()
+        retainPendingTranslatorPresetUpdateForReplay(attempt.attemptedPreset.id)
+        return 'queued'
+      }
+      stopFinalSettlement()
+      if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+        rollbackOptimisticTranslatorPresetCreate(attempt)
+      }
+      cancelPendingTranslatorPresetUpdates(attempt.attemptedPreset.id)
+      return 'failed'
+    }
     if (result.status !== 'ok') {
       const retained = await isTranslatorPresetMutationRetained(createOutbox)
       if (retained) {
@@ -830,12 +940,14 @@
         retainPendingTranslatorPresetUpdateForReplay(attempt.attemptedPreset.id)
         return 'queued'
       }
+      stopFinalSettlement()
       if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
         rollbackOptimisticTranslatorPresetCreate(attempt)
       }
       cancelPendingTranslatorPresetUpdates(attempt.attemptedPreset.id)
       return 'failed'
     }
+    stopFinalSettlement()
     removePendingTranslatorPresetStructuralMutation(attempt.operationId)
     translatorPresetCreateOutcomesById.set(attempt.attemptedPreset.id, 'succeeded')
     settleConfirmedTranslatorPresetCreate(attempt)
@@ -925,33 +1037,68 @@
     )
   }
 
-  function dispatchOptimisticTranslatorPresetSelection(attempt: TranslatorPresetSelectionAttempt): void {
+  async function dispatchOptimisticTranslatorPresetSelection(
+    attempt: TranslatorPresetSelectionAttempt,
+    feedbackOperationId: number,
+  ): Promise<TranslatorPresetPersistenceStatus> {
     let selectOutbox: PendingMutationHandle | null = null
-    void dispatchSelectTranslatorPreset(
-      attempt.attemptedPresetId,
-      attempt.previousSelectedPresetId,
-      () => rollbackOptimisticTranslatorPresetSelection(attempt),
-      (outbox) => {
-        selectOutbox = outbox
-      },
-    ).then(async (result) => {
-      if (result.status !== 'ok') {
-        const retained = await isTranslatorPresetMutationRetained(selectOutbox)
-        if (retained) {
-          if (!hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
-            registerPendingTranslatorPresetStructuralMutation({ kind: 'select', attempt })
-          }
-          reassertPendingTranslatorPresetStructuralMutations()
-          return
+    let stopFinalSettlement = () => {}
+    let result: ServerCommandResult
+    try {
+      result = await dispatchSelectTranslatorPreset(
+        attempt.attemptedPresetId,
+        attempt.previousSelectedPresetId,
+        () => rollbackOptimisticTranslatorPresetSelection(attempt),
+        (outbox) => {
+          selectOutbox = outbox
+          stopFinalSettlement = trackTranslatorPresetFinalSettlement(outbox, feedbackOperationId, {
+            accepted: () => {
+              removePendingTranslatorPresetStructuralMutation(attempt.operationId)
+              confirmedTranslatorPresetSelectionId = attempt.attemptedPresetId
+            },
+            discarded: () => {
+              if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+                rollbackOptimisticTranslatorPresetSelection(attempt)
+              }
+            },
+          })
+        },
+      )
+    } catch (error) {
+      console.error('Translator preset selection command rejected:', error)
+      const retained = await isTranslatorPresetMutationRetained(selectOutbox)
+      if (retained) {
+        if (!hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+          registerPendingTranslatorPresetStructuralMutation({ kind: 'select', attempt })
         }
-        if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
-          rollbackOptimisticTranslatorPresetSelection(attempt)
-        }
-        return
+        reassertPendingTranslatorPresetStructuralMutations()
+        return 'queued'
       }
-      removePendingTranslatorPresetStructuralMutation(attempt.operationId)
-      confirmedTranslatorPresetSelectionId = attempt.attemptedPresetId
-    })
+      stopFinalSettlement()
+      if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+        rollbackOptimisticTranslatorPresetSelection(attempt)
+      }
+      return 'failed'
+    }
+    if (result.status !== 'ok') {
+      const retained = await isTranslatorPresetMutationRetained(selectOutbox)
+      if (retained) {
+        if (!hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+          registerPendingTranslatorPresetStructuralMutation({ kind: 'select', attempt })
+        }
+        reassertPendingTranslatorPresetStructuralMutations()
+        return 'queued'
+      }
+      stopFinalSettlement()
+      if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+        rollbackOptimisticTranslatorPresetSelection(attempt)
+      }
+      return 'failed'
+    }
+    stopFinalSettlement()
+    removePendingTranslatorPresetStructuralMutation(attempt.operationId)
+    confirmedTranslatorPresetSelectionId = attempt.attemptedPresetId
+    return 'accepted'
   }
 
   function applyOptimisticTranslatorPresetDelete(
@@ -1137,35 +1284,71 @@
     )
   }
 
-  function deleteTranslatorPresetOptimistically(presetId: string, latestOptimisticPreset?: TranslatorPreset): void {
+  async function deleteTranslatorPresetOptimistically(
+    presetId: string,
+    latestOptimisticPreset: TranslatorPreset | undefined,
+    feedbackOperationId: number,
+  ): Promise<TranslatorPresetPersistenceStatus> {
     const attempt = applyOptimisticTranslatorPresetDelete(presetId, latestOptimisticPreset)
-    if (!attempt) return
+    if (!attempt) return 'failed'
     let deleteOutbox: PendingMutationHandle | null = null
-    void dispatchDurableDeleteTranslatorPreset(
-      presetId,
-      attempt.attemptedSelectedPreset.id,
-      () => rollbackOptimisticTranslatorPresetDelete(attempt),
-      (outbox) => {
-        deleteOutbox = outbox
-      },
-    ).then(async (result) => {
-      if (result.status !== 'ok') {
-        const retained = await isTranslatorPresetMutationRetained(deleteOutbox)
-        if (retained) {
-          if (!hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
-            registerPendingTranslatorPresetStructuralMutation({ kind: 'delete', attempt })
-          }
-          reassertPendingTranslatorPresetStructuralMutations()
-          return
+    let stopFinalSettlement = () => {}
+    let result: ServerCommandResult
+    try {
+      result = await dispatchDurableDeleteTranslatorPreset(
+        presetId,
+        attempt.attemptedSelectedPreset.id,
+        () => rollbackOptimisticTranslatorPresetDelete(attempt),
+        (outbox) => {
+          deleteOutbox = outbox
+          stopFinalSettlement = trackTranslatorPresetFinalSettlement(outbox, feedbackOperationId, {
+            accepted: () => {
+              removePendingTranslatorPresetStructuralMutation(attempt.operationId)
+              settleConfirmedTranslatorPresetDelete(attempt)
+            },
+            discarded: () => {
+              if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+                rollbackOptimisticTranslatorPresetDelete(attempt)
+              }
+            },
+          })
+        },
+      )
+    } catch (error) {
+      console.error('Translator preset delete command rejected:', error)
+      const retained = await isTranslatorPresetMutationRetained(deleteOutbox)
+      if (retained) {
+        if (!hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+          registerPendingTranslatorPresetStructuralMutation({ kind: 'delete', attempt })
         }
-        if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
-          rollbackOptimisticTranslatorPresetDelete(attempt)
-        }
-        return
+        reassertPendingTranslatorPresetStructuralMutations()
+        return 'queued'
       }
-      removePendingTranslatorPresetStructuralMutation(attempt.operationId)
-      settleConfirmedTranslatorPresetDelete(attempt)
-    })
+      stopFinalSettlement()
+      if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+        rollbackOptimisticTranslatorPresetDelete(attempt)
+      }
+      return 'failed'
+    }
+    if (result.status !== 'ok') {
+      const retained = await isTranslatorPresetMutationRetained(deleteOutbox)
+      if (retained) {
+        if (!hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+          registerPendingTranslatorPresetStructuralMutation({ kind: 'delete', attempt })
+        }
+        reassertPendingTranslatorPresetStructuralMutations()
+        return 'queued'
+      }
+      stopFinalSettlement()
+      if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+        rollbackOptimisticTranslatorPresetDelete(attempt)
+      }
+      return 'failed'
+    }
+    stopFinalSettlement()
+    removePendingTranslatorPresetStructuralMutation(attempt.operationId)
+    settleConfirmedTranslatorPresetDelete(attempt)
+    return 'accepted'
   }
 
   function dispatchPendingTranslatorPresetUpdate(
@@ -1454,6 +1637,7 @@
 <span class="text-textcolor mt-4">Preset</span>
 <select
   aria-label="Preset"
+  aria-busy={translatorPresetPersistenceState === 'saving'}
   class={'border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 text-md px-4 py-2 mb-1'}
   bind:value={
     () => getDatabase().translatorPresetId,
@@ -1467,8 +1651,12 @@
       } else if (presetId) {
         const attempt = applyOptimisticTranslatorPresetSelection(presetId)
         if (!attempt) return
-        void flushPendingTranslatorPresetUpdates().finally(() => {
-          dispatchOptimisticTranslatorPresetSelection(attempt)
+        void runTranslatorPresetPersistenceAction(async (feedbackOperationId) => {
+          try {
+            await flushPendingTranslatorPresetUpdates()
+          } finally {
+            return dispatchOptimisticTranslatorPresetSelection(attempt, feedbackOperationId)
+          }
         })
       }
     }
@@ -1482,12 +1670,13 @@
   <button
     type="button"
     aria-label={`${language.add}: ${language.presets}`}
+    aria-busy={translatorPresetPersistenceState === 'saving'}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
-      await flushPendingTranslatorPresetUpdates()
       const newPreset = createTranslatorPreset()
       newPreset.id = createClientTranslatorPresetId()
       if (!canUseServerCommands()) {
+        await flushPendingTranslatorPresetUpdates()
         const presets = getDatabase().translatorPresets
         presets.push(newPreset)
         getDatabase().translatorPresets = presets
@@ -1495,7 +1684,10 @@
         normalizeTranslatorPresets()
         dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId], null)
       } else {
-        void createTranslatorPresetOptimistically(newPreset)
+        await runTranslatorPresetPersistenceAction(async (feedbackOperationId) => {
+          await flushPendingTranslatorPresetUpdates()
+          return createTranslatorPresetOptimistically(newPreset, feedbackOperationId)
+        })
       }
     }}>
     <PlusIcon size={24} />
@@ -1542,6 +1734,7 @@
   <button
     type="button"
     aria-label={`${language.remove}: ${getDatabase().translatorPresets[getDatabase().translatorPresetId]?.name ?? language.presets}`}
+    aria-busy={translatorPresetPersistenceState === 'saving'}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       const presets = getDatabase().translatorPresets
@@ -1559,11 +1752,9 @@
 
       const presetId = preset.id
       const latestOptimisticPreset = presetId ? cloneJsonValue(currentTranslatorPresetById(presetId) ?? preset) : null
-      await flushPendingTranslatorPresetUpdates()
       if (!canUseServerCommands()) {
+        await flushPendingTranslatorPresetUpdates()
         normalizeTranslatorPresets()
-      }
-      if (!canUseServerCommands()) {
         getDatabase().translatorPresetId = 0
         presets.splice(id, 1)
         getDatabase().translatorPresets = presets
@@ -1573,7 +1764,16 @@
           dispatchDeleteTranslatorPreset(presetId, selectPresetId)
         }
       } else {
-        if (presetId) deleteTranslatorPresetOptimistically(presetId, latestOptimisticPreset ?? undefined)
+        if (presetId) {
+          await runTranslatorPresetPersistenceAction(async (feedbackOperationId) => {
+            await flushPendingTranslatorPresetUpdates()
+            return deleteTranslatorPresetOptimistically(
+              presetId,
+              latestOptimisticPreset ?? undefined,
+              feedbackOperationId,
+            )
+          })
+        }
       }
     }}>
     <TrashIcon size={24} />
@@ -1607,6 +1807,7 @@
   <button
     type="button"
     aria-label={`${language.import}: ${language.presets}`}
+    aria-busy={translatorPresetPersistenceState === 'saving'}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       try {
@@ -1616,8 +1817,8 @@
 
         const newPreset = await decodeTranslatorPresetFile(selectedFile.data)
         newPreset.id = createClientTranslatorPresetId()
-        await flushPendingTranslatorPresetUpdates()
         if (!canUseServerCommands()) {
+          await flushPendingTranslatorPresetUpdates()
           const presets = getDatabase().translatorPresets
 
           presets.push(newPreset)
@@ -1626,15 +1827,11 @@
           normalizeTranslatorPresets()
           dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId], null)
         } else {
-          const status = await createTranslatorPresetOptimistically(newPreset)
-          if (status === 'queued') {
-            alertNormal(language.translatorPresetImportQueued)
-            return
-          }
-          if (status === 'failed') {
-            alertError(language.translatorPresetImportFailed)
-            return
-          }
+          const status = await runTranslatorPresetPersistenceAction(async (feedbackOperationId) => {
+            await flushPendingTranslatorPresetUpdates()
+            return createTranslatorPresetOptimistically(newPreset, feedbackOperationId)
+          })
+          if (status !== 'accepted') return
         }
 
         alertNormal(language.successImport)
@@ -1645,6 +1842,22 @@
     <HardDriveUploadIcon size={24} />
   </button>
 </div>
+
+{#if translatorPresetPersistenceState !== 'idle'}
+  <p
+    class:text-draculared={translatorPresetPersistenceState === 'failed'}
+    class:text-textcolor2={translatorPresetPersistenceState !== 'failed'}
+    class="mb-3 text-sm"
+    role="status"
+    aria-live="polite"
+    data-translator-preset-persistence>
+    {translatorPresetPersistenceState === 'saving'
+      ? language.translatorPresetPersistence.saving
+      : translatorPresetPersistenceState === 'queued'
+        ? language.translatorPresetPersistence.queued
+        : language.translatorPresetPersistence.failed}
+  </p>
+{/if}
 
 {#if getDatabase().translatorPresets?.[getDatabase().translatorPresetId]}
   {@const preset = getDatabase().translatorPresets[getDatabase().translatorPresetId]}
