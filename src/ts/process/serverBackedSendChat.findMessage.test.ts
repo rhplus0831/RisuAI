@@ -22,6 +22,9 @@ const inlayMock = vi.hoisted(() => ({
 const inlayFinalizationMock = vi.hoisted(() => ({
   finalize: vi.fn(async () => true),
 }))
+const ttsMock = vi.hoisted(() => ({
+  say: vi.fn(async () => {}),
+}))
 
 vi.mock('./inlayScreen', () => ({
   runInlayScreen: inlayMock.run,
@@ -29,6 +32,10 @@ vi.mock('./inlayScreen', () => ({
 
 vi.mock('./inlayFinalization', () => ({
   finalizeServerBackedInlayMessage: inlayFinalizationMock.finalize,
+}))
+
+vi.mock('./tts', () => ({
+  sayTTS: ttsMock.say,
 }))
 
 import { applyServerBackedTerminal, findGeneratedAssistantMessage } from './serverBackedSendChat'
@@ -210,6 +217,8 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     inlayMock.run.mockImplementation((_character: unknown, data: string) => ({ text: data }))
     inlayFinalizationMock.finalize.mockReset()
     inlayFinalizationMock.finalize.mockResolvedValue(true)
+    ttsMock.say.mockReset()
+    ttsMock.say.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -435,6 +444,43 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(target.scriptstate).toEqual({ $mood: 'steady' })
     expect(staleIndexChat.message[0].data).toBe('stale original')
     expect(staleIndexChat.scriptstate).toBeUndefined()
+  })
+
+  it('mirrors a terminal patch before slow TTS and preserves a newer saved edit', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    const tts = deferred<void>()
+    ttsMock.say.mockReturnValueOnce(tts.promise)
+
+    const applying = applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        sideEffects: [{ kind: 'tts', payload: { text: 'patched then finalized' } }],
+        done: {
+          postGeneration: {
+            finalText: 'patched then finalized',
+            messagePatch: makePostGenerationPatch('chat-target', 'patched text'),
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    await vi.waitFor(() => expect(ttsMock.say).toHaveBeenCalledOnce())
+    expect(target.message[0].data).toBe('patched then finalized')
+    expect(target.scriptstate).toEqual({ $mood: 'steady' })
+
+    markChatMessageMutationIntent('chat-target')
+    target.message[0].data = 'newer saved edit'
+    tts.resolve()
+    await applying
+
+    expect(target.message[0].data).toBe('newer saved edit')
   })
 
   it('applies terminal final text before surfacing an Agent Preset terminal error', async () => {

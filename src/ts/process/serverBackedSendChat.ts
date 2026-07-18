@@ -526,6 +526,7 @@ export async function applyServerBackedTerminal(args: {
     }
   }
 
+  const pendingTtsTexts: string[] = []
   for (const sideEffect of args.terminal.sideEffects ?? []) {
     switch (sideEffect.kind) {
       case 'tts': {
@@ -533,7 +534,7 @@ export async function applyServerBackedTerminal(args: {
         if (!payload || typeof payload !== 'object') break
         const text = (payload as { text?: unknown }).text
         if (typeof text === 'string' && text.length > 0) {
-          await sayTTS(args.currentChar, text)
+          pendingTtsTexts.push(text)
         }
         break
       }
@@ -600,6 +601,13 @@ export async function applyServerBackedTerminal(args: {
       }
     }
   })
+
+  // The terminal patch is already durable on the server. Mirror it before
+  // waiting on best-effort client TTS so a newer message edit cannot be
+  // overwritten when slow synthesis eventually settles.
+  for (const text of pendingTtsTexts) {
+    await sayTTS(args.currentChar, text)
+  }
 
   const settleInlayProjection = (finalization: InlayFinalizationState, finalData: string, persisted: boolean): void => {
     withTrustedResourceWrite(() => {
