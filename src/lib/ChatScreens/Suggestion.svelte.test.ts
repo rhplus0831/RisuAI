@@ -331,6 +331,72 @@ describe('runSuggestionTranslation', () => {
 })
 
 describe('Suggestion component persistence', () => {
+  it('keeps an in-flight generation lease while reroll confirmation settles', async () => {
+    seedSuggestionDatabase(['Take the lead'])
+    const confirmation = deferred<boolean>()
+    suggestionMocks.alertConfirm.mockReturnValueOnce(confirmation.promise)
+    const observedDoingChat: boolean[] = []
+    const unsubscribe = suggestionMocks.doingChat.subscribe((value) => observedDoingChat.push(value))
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await waitFor(() => {
+        expect(target.querySelector(`button[aria-label="${language.reroll}"]`)).toBeTruthy()
+      })
+
+      target.querySelector<HTMLButtonElement>(`button[aria-label="${language.reroll}"]`)!.click()
+      suggestionMocks.doingChat.set(true)
+      confirmation.resolve(true)
+      await settle()
+
+      expect(observedDoingChat).toEqual([false, true])
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+    } finally {
+      unsubscribe()
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('requests an idle suggestion reroll without pulsing the generation lease', async () => {
+    seedSuggestionDatabase(['Take the lead'])
+    suggestionMocks.alertConfirm.mockResolvedValueOnce(true)
+    suggestionMocks.requestChatData.mockResolvedValue({ type: 'success', result: '- Follow the new path' })
+    const observedDoingChat: boolean[] = []
+    const unsubscribe = suggestionMocks.doingChat.subscribe((value) => observedDoingChat.push(value))
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await waitFor(() => {
+        expect(target.querySelector(`button[aria-label="${language.reroll}"]`)).toBeTruthy()
+      })
+
+      target.querySelector<HTMLButtonElement>(`button[aria-label="${language.reroll}"]`)!.click()
+      await waitFor(() => {
+        expect(target.textContent).toContain('Follow the new path')
+      })
+
+      expect(observedDoingChat).toEqual([false])
+      expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce()
+    } finally {
+      unsubscribe()
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
   it('starts one suggestion request when an empty chat shell hydrates with messages', async () => {
     seedSuggestionDatabase([])
     getResourceDatabase().characters[0].chats[0].message = []

@@ -101,6 +101,7 @@
   import { language } from 'src/lang'
   import { getUserName, replacePlaceholders } from '../../ts/util'
   import { onDestroy, untrack } from 'svelte'
+  import { get } from 'svelte/store'
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { defaultAutoSuggestPrompt } from '../../ts/storage/defaultPrompts.js'
   import { dispatchUpdateChatRow, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
@@ -321,14 +322,12 @@
     const target = captureSuggestionTarget()
     alertConfirm(language.askReRollAutoSuggestions).then((result) => {
       if (destroyed) return
-      if (result && clearFreshSuggestions(target)) {
-        doingChat.set(true)
-        doingChat.set(false)
-      }
+      if (!result || get(doingChat)) return
+      if (clearFreshSuggestions(target)) requestSuggestions()
     })
   }
 
-  async function handleDoingChatChange(v: boolean): Promise<void> {
+  function handleDoingChatChange(v: boolean): void {
     if (destroyed) return
     if (v) {
       abandonActiveSuggestionRequest()
@@ -337,7 +336,12 @@
         setVisibleSuggestions([])
       }
     }
-    if (!v && $selectedCharID > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress) {
+    if (!v) requestSuggestions()
+  }
+
+  function requestSuggestions(): void {
+    if (destroyed || get(doingChat)) return
+    if ($selectedCharID > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress) {
       const requestSelectedCharId = $selectedCharID
       const database = getDatabase()
       let currentChar: character = database.characters[$selectedCharID]
