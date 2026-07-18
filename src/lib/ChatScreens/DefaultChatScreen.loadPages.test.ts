@@ -1974,7 +1974,7 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.hydrateActiveChatFully).not.toHaveBeenCalled()
   })
 
-  it('ignores a delayed menu file result after composer text changes', async () => {
+  it('merges a delayed menu file result into newer composer text', async () => {
     seedDatabase([1])
     const upload =
       createDeferred<Array<{ type: 'asset'; data: string } | { type: 'text'; name: string; data: string }>>()
@@ -1996,14 +1996,14 @@ describe('DefaultChatScreen transcript window state', () => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
     upload.resolve([
-      { type: 'asset', data: 'stale-asset' },
-      { type: 'text', name: 'stale.txt', data: 'stale-text' },
+      { type: 'asset', data: 'uploaded-asset' },
+      { type: 'text', name: 'uploaded.txt', data: 'uploaded-text' },
     ])
     await settle()
 
-    expect(textarea.value).toBe('Newer draft')
-    expect(textarea.value).not.toContain('stale.txt')
-    expect(target.textContent).not.toContain('Missing file')
+    expect(textarea.value).toBe('Newer draft{{file::uploaded.txt::uploaded-text}}')
+    expect(target.querySelector('button[aria-label="remove: uploaded-asset"]')).toBeTruthy()
+    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
   })
 
   it('ignores a delayed menu file result after the active chat changes', async () => {
@@ -2041,7 +2041,7 @@ describe('DefaultChatScreen transcript window state', () => {
 
     expect(secondTextarea.value).toBe('')
     expect(secondTextarea.value).not.toContain('other-chat.txt')
-    expect(target.textContent).not.toContain('Missing file')
+    expect(loadPageMocks.alertError).toHaveBeenCalledWith('composerFileResultDiscarded')
   })
 
   it('keeps composer drafts scoped to their chat', async () => {
@@ -2109,7 +2109,7 @@ describe('DefaultChatScreen transcript window state', () => {
     })
   })
 
-  it('ignores a delayed pasted image result after composer text changes', async () => {
+  it('merges a delayed pasted image result into newer composer text', async () => {
     seedDatabase([1])
     const upload =
       createDeferred<Array<{ type: 'asset'; data: string } | { type: 'text'; name: string; data: string }>>()
@@ -2164,15 +2164,15 @@ describe('DefaultChatScreen transcript window state', () => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
     upload.resolve([
-      { type: 'asset', data: 'pasted-stale-asset' },
-      { type: 'text', name: 'pasted-stale.txt', data: 'pasted-stale-text' },
+      { type: 'asset', data: 'pasted-asset' },
+      { type: 'text', name: 'pasted.txt', data: 'pasted-text' },
     ])
     await settle()
 
     expect(pasteEvent.defaultPrevented).toBe(true)
-    expect(textarea.value).toBe('Newer paste draft')
-    expect(textarea.value).not.toContain('pasted-stale.txt')
-    expect(target.textContent).not.toContain('Missing file')
+    expect(textarea.value).toBe('Newer paste draft{{file::pasted.txt::pasted-text}}')
+    expect(target.querySelector('button[aria-label="remove: pasted-asset"]')).toBeTruthy()
+    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
   })
 
   it('reports a pasted image upload failure while the composer is still current', async () => {

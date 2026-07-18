@@ -132,7 +132,7 @@
   type ComposerFileOperation = {
     token: ReturnType<typeof composerFileOperationGuard.issue>
     targetIdentity: string
-    composerVersion: number
+    invalidationVersion: number
   }
   type ComposerOperationKind = 'send' | 'continue'
   type ComposerDraftField = 'message' | 'translation' | 'files'
@@ -193,6 +193,7 @@
   let preparingSend = $state(false)
   let scrollToMessageRunId = 0
   let composerMutationVersion = 0
+  let composerFileInvalidationVersion = 0
   let messageInputMutationVersion = 0
   let messageInputTranslateMutationVersion = 0
   let activeTranscriptWindowIdentity: string | null = $state(null)
@@ -430,7 +431,7 @@
     return {
       token: composerFileOperationGuard.issue(targetIdentity),
       targetIdentity,
-      composerVersion: composerMutationVersion,
+      invalidationVersion: composerFileInvalidationVersion,
     }
   }
 
@@ -438,7 +439,7 @@
     return (
       composerFileOperationGuard.isLatest(operation.token) &&
       getActiveTranscriptWindowIdentity() === operation.targetIdentity &&
-      composerMutationVersion === operation.composerVersion
+      composerFileInvalidationVersion === operation.invalidationVersion
     )
   }
 
@@ -482,6 +483,7 @@
     messageInput = ''
     messageInputTranslate = ''
     fileInput = []
+    composerFileInvalidationVersion += 1
     markComposerDraftChanged()
     updateInputSizeAll()
     return true
@@ -491,6 +493,7 @@
     if (operation && !isCurrentComposerOperation(operation)) return false
 
     messageInput = ''
+    composerFileInvalidationVersion += 1
     markComposerDraftChanged('message')
     return true
   }
@@ -499,7 +502,11 @@
     results: PostChatFileResults | null,
     operation: ComposerFileOperation,
   ): boolean {
-    if (!results || !isCurrentComposerFileOperation(operation)) return false
+    if (!results) return false
+    if (!isCurrentComposerFileOperation(operation)) {
+      alertError(language.composerFileResultDiscarded)
+      return false
+    }
 
     let nextMessageInput = messageInput
     const nextFileInput = [...fileInput]
@@ -580,13 +587,19 @@
       const collectedResults: PostChatFileResults = []
       for (const file of files) {
         const buffer = await readFileAsArrayBuffer(file)
-        if (!isCurrentComposerFileOperation(operation)) return
+        if (!isCurrentComposerFileOperation(operation)) {
+          alertError(language.composerFileResultDiscarded)
+          return
+        }
 
         const results = await postChatFile({
           name: file.name,
           data: new Uint8Array(buffer),
         })
-        if (!isCurrentComposerFileOperation(operation)) return
+        if (!isCurrentComposerFileOperation(operation)) {
+          alertError(language.composerFileResultDiscarded)
+          return
+        }
         if (results) collectedResults.push(...results)
       }
 

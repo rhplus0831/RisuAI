@@ -46,6 +46,8 @@ export const languageEnglish = {
   chatGenerationSettingsSaveFailed: (detail: string) =>
     `Chat generation settings could not be saved.${detail ? ` ${detail}` : ''}`,
   generationPersistenceQueued: 'This reply is waiting to be saved and remains provisional.',
+  composerFileResultDiscarded:
+    'The uploaded file could not be attached because the active composer changed. Please attach it again.',
   alternateGreetingMutationQueued:
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',
   alternateGreetingMutationFailed:
