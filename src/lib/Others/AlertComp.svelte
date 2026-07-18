@@ -6,6 +6,7 @@
     resolveAlertInput,
     resolveAlertSelection,
     resolveAlertWorkflow,
+    type AlertGenerationInfoStoreData,
     type alertData,
   } from '../../ts/alert'
 
@@ -31,7 +32,7 @@
   import { ColorSchemeTypeStore } from 'src/ts/gui/colorscheme'
   import Help from './Help.svelte'
   import { getChatBranches } from 'src/ts/gui/branches'
-  import { getCurrentCharacter, getDatabase } from 'src/ts/storage/database.svelte'
+  import { getCurrentCharacter, getDatabase, type Message } from 'src/ts/storage/database.svelte'
   import { translateStackTrace } from '../../ts/sourcemap'
   import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from 'src/ts/platform'
   import versionData from '../../../version.json'
@@ -69,13 +70,39 @@
 
     return lines.join('\n')
   })
-  const generationMessage = $derived.by(() => {
+  function resolveGenerationMessage(
+    info: AlertGenerationInfoStoreData,
+  ): { message: Message; index: number } | undefined {
+    const characters = getDatabase().characters ?? []
+    const character = info.characterId
+      ? characters.find((candidate) => candidate.chaId === info.characterId)
+      : characters[$selectedCharID]
+    const chat = info.chatId
+      ? character?.chats?.find((candidate) => candidate.id === info.chatId)
+      : character?.chats?.[character.chatPage]
+    const messages = chat?.message ?? []
+    if (info.messageId) {
+      const index = messages.findIndex((message) => message.chatId === info.messageId)
+      if (index >= 0) return { message: messages[index], index }
+    }
+    const generationId = info.genInfo.generationId
+    if (generationId) {
+      const index = messages.findIndex(
+        (message) => message.generationInfo?.generationId === generationId || message.chatId === generationId,
+      )
+      if (index >= 0) return { message: messages[index], index }
+    }
+    if (!info.messageId && !generationId && messages[info.idx]) {
+      return { message: messages[info.idx], index: info.idx }
+    }
+    return undefined
+  }
+  const generationMessageTarget = $derived.by(() => {
     const info = $alertGenerationInfoStore
     if (!info) return undefined
-    const character = getDatabase().characters?.[$selectedCharID]
-    const chat = character?.chats?.[character.chatPage]
-    return chat?.message?.[info.idx]
+    return resolveGenerationMessage(info)
   })
+  const generationMessage = $derived(generationMessageTarget?.message)
   const promptInfoView = $derived.by(() => normalizeMessagePromptInfo(generationMessage))
   const alertDialogRole = $derived(
     $alertStore.type === 'error' || $alertStore.type === 'ask' || $alertStore.type === 'pluginconfirm'
@@ -687,21 +714,25 @@
         {#if generationInfoMenuIndex === 1}
           <div class="grid grid-cols-2 gap-y-2 gap-x-4 mt-4">
             <span class="text-blue-500">Index</span>
-            <span class="text-blue-500 justify-self-end">{$alertGenerationInfoStore.idx}</span>
+            <span class="text-blue-500 justify-self-end"
+              >{generationMessageTarget?.index ?? $alertGenerationInfoStore.idx}</span>
             <span class="text-amber-500">Model</span>
             <span class="text-amber-500 justify-self-end">{$alertGenerationInfoStore.genInfo.model}</span>
-            <span class="text-green-500">ID</span>
-            <span class="text-green-500 justify-self-end">{generationMessage?.chatId ?? 'None'}</span>
             <span class="text-red-500">GenID</span>
             <span class="text-red-500 justify-self-end">{$alertGenerationInfoStore.genInfo.generationId}</span>
-            <span class="text-cyan-500">Saying</span>
-            <span class="text-cyan-500 justify-self-end">{generationMessage?.saying}</span>
-            <span class="text-purple-500">Size</span>
-            <span class="text-purple-500 justify-self-end"
-              >{JSON.stringify(generationMessage ?? null).length} Bytes</span>
-            <span class="text-yellow-500">Time</span>
-            <span class="text-yellow-500 justify-self-end"
-              >{new Date(generationMessage?.time ?? 0).toLocaleString()}</span>
+            {#if generationMessage}
+              <span class="text-green-500">ID</span>
+              <span class="text-green-500 justify-self-end">{generationMessage.chatId ?? 'None'}</span>
+              <span class="text-cyan-500">Saying</span>
+              <span class="text-cyan-500 justify-self-end">{generationMessage.saying}</span>
+              <span class="text-purple-500">Size</span>
+              <span class="text-purple-500 justify-self-end">{JSON.stringify(generationMessage).length} Bytes</span>
+              <span class="text-yellow-500">Time</span>
+              <span class="text-yellow-500 justify-self-end"
+                >{new Date(generationMessage.time ?? 0).toLocaleString()}</span>
+            {:else}
+              <span class="col-span-2 text-gray-400" role="status">{language.errors.requestDataMessageMissing}</span>
+            {/if}
             {#if $alertGenerationInfoStore.genInfo.stageTiming}
               {@const stage1 = parseFloat(
                 (($alertGenerationInfoStore.genInfo.stageTiming.stage1 ?? 0) / 1000).toFixed(1),
@@ -726,12 +757,14 @@
               </span>
             {/if}
 
-            <span class="text-green-500">Tokens</span>
-            {#await tokenize(generationMessage?.data ?? '')}
-              <span class="text-green-500 justify-self-end">Loading</span>
-            {:then tokens}
-              <span class="text-green-500 justify-self-end">{tokens}</span>
-            {/await}
+            {#if generationMessage}
+              <span class="text-green-500">Tokens</span>
+              {#await tokenize(generationMessage.data ?? '')}
+                <span class="text-green-500 justify-self-end">Loading</span>
+              {:then tokens}
+                <span class="text-green-500 justify-self-end">{tokens}</span>
+              {/await}
+            {/if}
           </div>
         {/if}
         {#if generationInfoMenuIndex === 2}

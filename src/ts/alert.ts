@@ -1,7 +1,7 @@
 import { get, writable } from 'svelte/store'
 import { language } from '../lang'
 import { getDatabase, type MessageGenerationInfo } from './storage/database.svelte'
-import { alertStore as alertStoreImported } from './stores.svelte'
+import { alertStore as alertStoreImported, selectedCharID } from './stores.svelte'
 
 export interface alertData {
   type:
@@ -81,9 +81,12 @@ interface WorkflowRequest {
 
 type ResultDialogRequest = ConfirmationRequest | SelectionRequest | InputRequest | WorkflowRequest
 
-type AlertGenerationInfoStoreData = {
+export type AlertGenerationInfoStoreData = {
   genInfo: MessageGenerationInfo
   idx: number
+  characterId?: string
+  chatId?: string
+  messageId?: string
 }
 export const alertGenerationInfoStore = writable<AlertGenerationInfoStoreData | undefined>(undefined)
 export const alertStore = {
@@ -699,7 +702,23 @@ export async function alertModuleSelect() {
 }
 
 export function alertRequestData(info: AlertGenerationInfoStoreData) {
-  alertGenerationInfoStore.set(info)
+  const character = getDatabase().characters?.[get(selectedCharID)]
+  const chat = character?.chats?.[character.chatPage]
+  const messages = chat?.message ?? []
+  const indexedMessage = messages[info.idx]
+  const generationId = info.genInfo.generationId
+  const message =
+    generationId && indexedMessage?.generationInfo?.generationId !== generationId
+      ? messages.find(
+          (candidate) => candidate.generationInfo?.generationId === generationId || candidate.chatId === generationId,
+        )
+      : indexedMessage
+  alertGenerationInfoStore.set({
+    ...info,
+    characterId: info.characterId ?? character?.chaId,
+    chatId: info.chatId ?? chat?.id,
+    messageId: info.messageId ?? message?.chatId,
+  })
   alertStoreImported.set({
     type: 'requestdata',
     msg: info.genInfo.generationId ?? 'none',
