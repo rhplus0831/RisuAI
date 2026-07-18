@@ -562,7 +562,7 @@ export function watchServerBackedScriptDefinitions(
   options: WatchServerBackedScriptDefinitionsOptions = {},
 ): () => void {
   if (!canUseServerCommands()) return () => {}
-  const delayMs = options.delayMs ?? 300
+  const delayMs = options.delayMs ?? 250
   const scope: ScriptDefinitionWatchScope = options.scope ?? { kind: 'all' }
   let initialized = false
   let previousSnapshots = new Map<string, string>()

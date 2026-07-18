@@ -25,7 +25,7 @@
   {language.globalRegexScript}
   <Help key="regexScript" />
 </h2>
-<RegexList bind:value={globalScriptDraft.value} />
+<RegexList bind:value={globalScriptDraft.value} ownerKey="global" />
 <div class="text-textcolor2 mt-2 flex gap-2">
   <button
     type="button"

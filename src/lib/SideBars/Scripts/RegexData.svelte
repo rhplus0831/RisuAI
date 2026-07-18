@@ -1,7 +1,6 @@
 <script lang="ts">
   import { XIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { reloadGuiAfterDefinitionChange } from 'src/ts/stores.svelte'
   import { alertConfirm } from 'src/ts/alert'
   import type { customscript } from 'src/ts/storage/database.svelte'
   import Check from '../../UI/GUI/CheckInput.svelte'
@@ -131,18 +130,9 @@
   {#if open}
     <div class="seperator p-2">
       <span class="text-textcolor mt-6">{language.name}</span>
-      <TextInput
-        size="sm"
-        bind:value={value.comment}
-        onchange={(e) => {
-          reloadGuiAfterDefinitionChange()
-        }} />
+      <TextInput size="sm" bind:value={value.comment} />
       <span class="text-textcolor mt-4">Modification Type</span>
-      <SelectInput
-        bind:value={value.type}
-        onchange={(e) => {
-          reloadGuiAfterDefinitionChange()
-        }}>
+      <SelectInput bind:value={value.type}>
         <OptionInput value="editinput">{language.editInput}</OptionInput>
         <OptionInput value="editoutput">{language.editOutput}</OptionInput>
         <OptionInput value="editprocess">{language.editProcess}</OptionInput>
@@ -153,14 +143,7 @@
       <span class="text-textcolor mt-6">IN:</span>
       <TextInput size="sm" bind:value={value.in} />
       <span class="text-textcolor mt-6">OUT:</span>
-      <TextAreaInput
-        highlight
-        autocomplete="off"
-        size="sm"
-        bind:value={value.out}
-        onInput={(e) => {
-          reloadGuiAfterDefinitionChange()
-        }} />
+      <TextAreaInput highlight autocomplete="off" size="sm" bind:value={value.out} />
       {#if value.ableFlag}
         <Accordion styled name="FLAGS">
           <span class="text-textcolor mt-3">Normal Flag</span>

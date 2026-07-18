@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store'
-import type { character } from './storage/database.svelte'
+import type { character, customscript } from './storage/database.svelte'
 import { type simpleCharacterArgument } from './parser/parser.svelte'
 import type { alertData } from './alert'
 import { moduleUpdate } from './process/modules'
@@ -92,14 +92,14 @@ CustomCSSStore.subscribe((css) => {
   }
 })
 
-export function createSimpleCharacter(char: character) {
+export function createSimpleCharacter(char: character, customscript: customscript[] | undefined = char.customscript) {
   if (!char) {
     return null
   }
 
   const simpleChar: simpleCharacterArgument = {
     type: 'simple',
-    customscript: char.customscript,
+    customscript,
     chaId: char.chaId,
     additionalAssets: char.additionalAssets,
     virtualscript: char.virtualscript,

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const regexListMocks = vi.hoisted(() => ({
   exportRegex: vi.fn(),
   importRegexRows: vi.fn(),
+  reloadRegexDisplay: vi.fn(),
   resetScriptCache: vi.fn(),
   sortableCreate: vi.fn(() => ({ destroy: vi.fn() })),
 }))
@@ -14,16 +15,34 @@ vi.mock('src/ts/process/scripts', () => ({
   resetScriptCache: regexListMocks.resetScriptCache,
 }))
 
+vi.mock('src/ts/process/regexDisplayReload', () => ({
+  reloadRegexDisplay: regexListMocks.reloadRegexDisplay,
+}))
+
+vi.mock('src/ts/stores.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    closePopupEditorSession: vi.fn(),
+    disableHighlight: writable(false),
+    isPopupEditorSessionCurrent: vi.fn(() => false),
+    openPopupEditorSession: vi.fn(() => 1),
+    popUpEditorStore: { open: false, sessionId: 0, value: '' },
+    selIdState: { selId: -1 },
+  }
+})
+
 vi.mock('sortablejs', () => ({
   default: { create: regexListMocks.sortableCreate },
 }))
 
 import type { customscript } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
+import { REGEX_DISPLAY_ACTIVATION_DELAY_MS } from 'src/ts/process/regexDisplayActivation'
 import RegexListHarness from './RegexList.testHarness.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0] & {
   getValue: () => customscript[]
+  patchScript: (index: number, patch: Partial<customscript>) => void
   replaceOwner: (ownerKey: string, value: customscript[]) => void
 }
 
@@ -49,6 +68,7 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   regexListMocks.importRegexRows.mockReset()
+  regexListMocks.reloadRegexDisplay.mockReset()
 })
 
 afterEach(() => {
@@ -56,6 +76,7 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
+  vi.useRealTimers()
   target.remove()
 })
 
@@ -82,5 +103,106 @@ describe('RegexList imports', () => {
     await settle()
 
     expect(component.getValue().map((script) => script.id)).toEqual(['preset-b-script'])
+  })
+})
+
+describe('RegexList display activation', () => {
+  it('shows progress and activates one display refresh after editing pauses', async () => {
+    vi.useFakeTimers()
+    component = mount(RegexListHarness, {
+      target,
+      props: {
+        initialValue: [{ id: 'display-script', comment: 'Display', in: 'before', out: 'after', type: 'editdisplay' }],
+      },
+    }) as MountedComponent
+    await settle()
+
+    component.patchScript(0, { out: 'first edit' })
+    await settle()
+
+    expect(target.querySelector('[data-risu-regex-display-pending]')?.textContent).toContain(
+      language.regexDisplayUpdatePending,
+    )
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS - 1)
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    await settle()
+
+    expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledOnce()
+    expect(target.querySelector('[data-risu-regex-display-pending]')).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('does not schedule display work for non-display scripts or metadata-only edits', async () => {
+    vi.useFakeTimers()
+    component = mount(RegexListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { id: 'input-script', comment: 'Input', in: 'before', out: 'after', type: 'editinput' },
+          { id: 'display-script', comment: 'Display', in: 'before', out: 'after', type: 'editdisplay' },
+        ],
+      },
+    }) as MountedComponent
+    await settle()
+
+    component.patchScript(0, { out: 'input-only edit' })
+    component.patchScript(1, { comment: 'Renamed display script' })
+    await settle()
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS)
+
+    expect(target.querySelector('[data-risu-regex-display-pending]')).toBeNull()
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('restarts pending display progress while any editor activity continues', async () => {
+    vi.useFakeTimers()
+    component = mount(RegexListHarness, {
+      target,
+      props: {
+        initialValue: [{ id: 'display-script', comment: 'Display', in: 'before', out: 'after', type: 'editdisplay' }],
+      },
+    }) as MountedComponent
+    await settle()
+
+    component.patchScript(0, { out: 'changed output' })
+    await settle()
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS - 100)
+
+    component.patchScript(0, { comment: 'Still editing' })
+    await settle()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS - 100)
+    expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledOnce()
+    vi.useRealTimers()
+  })
+
+  it('cancels pending activation when the edited owner changes', async () => {
+    vi.useFakeTimers()
+    component = mount(RegexListHarness, {
+      target,
+      props: {
+        initialValue: [{ id: 'preset-a-script', comment: 'A', in: 'a', out: 'A', type: 'editdisplay' }],
+      },
+    }) as MountedComponent
+    await settle()
+
+    component.patchScript(0, { out: 'A2' })
+    await settle()
+    component.replaceOwner('preset-b', [
+      { id: 'preset-b-script', comment: 'B', in: 'b', out: 'B', type: 'editdisplay' },
+    ])
+    await settle()
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS)
+
+    expect(target.querySelector('[data-risu-regex-display-pending]')).toBeNull()
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+    vi.useRealTimers()
   })
 })

@@ -6,6 +6,12 @@
   import { onDestroy, onMount } from 'svelte'
   import { DownloadIcon, HardDriveUploadIcon, PlusIcon } from '@lucide/svelte'
   import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
+  import {
+    REGEX_DISPLAY_ACTIVATION_DELAY_MS,
+    regexDisplayDefinitionSignature,
+    regexEditorActivitySignature,
+  } from 'src/ts/process/regexDisplayActivation'
+  import { reloadRegexDisplay } from 'src/ts/process/regexDisplayReload'
   import { language } from 'src/lang'
   interface Props {
     value?: customscript[]
@@ -19,6 +25,36 @@
   let sorted = $state(0)
   let opened = 0
   let destroyed = false
+  let displayActivationTimer: ReturnType<typeof setTimeout> | null = null
+  let displayActivationPending = $state(false)
+  let displayActivationRun = $state(0)
+  let displaySignatureInitialized = false
+  let displaySignatureOwner = ''
+  let previousDisplaySignature = ''
+  let previousActivitySignature = ''
+
+  const cancelDisplayActivation = () => {
+    if (displayActivationTimer) clearTimeout(displayActivationTimer)
+    displayActivationTimer = null
+    displayActivationPending = false
+  }
+
+  const activateDisplayChanges = () => {
+    if (!displayActivationPending) return
+    cancelDisplayActivation()
+    reloadRegexDisplay()
+  }
+
+  const scheduleDisplayActivation = () => {
+    if (displayActivationTimer) clearTimeout(displayActivationTimer)
+    displayActivationPending = true
+    displayActivationRun += 1
+    displayActivationTimer = setTimeout(() => {
+      displayActivationTimer = null
+      displayActivationPending = false
+      reloadRegexDisplay()
+    }, REGEX_DISPLAY_ACTIVATION_DELAY_MS)
+  }
   const createStb = () => {
     if (destroyed || !ele || opened > 0) return
     stb = Sortable.create(ele, {
@@ -82,8 +118,33 @@
 
   onMount(createStb)
 
+  $effect(() => {
+    const nextOwner = ownerKey
+    const nextDisplaySignature = regexDisplayDefinitionSignature(value)
+    const nextActivitySignature = regexEditorActivitySignature(value)
+
+    if (!displaySignatureInitialized || nextOwner !== displaySignatureOwner) {
+      cancelDisplayActivation()
+      displaySignatureInitialized = true
+      displaySignatureOwner = nextOwner
+      previousDisplaySignature = nextDisplaySignature
+      previousActivitySignature = nextActivitySignature
+      return
+    }
+
+    const displayChanged = nextDisplaySignature !== previousDisplaySignature
+    const editorActivityChanged = nextActivitySignature !== previousActivitySignature
+    previousDisplaySignature = nextDisplaySignature
+    previousActivitySignature = nextActivitySignature
+
+    if (displayChanged || (displayActivationPending && editorActivityChanged)) {
+      scheduleDisplayActivation()
+    }
+  })
+
   onDestroy(() => {
     destroyed = true
+    activateDisplayChanges()
     if (stb) {
       try {
         stb.destroy()
@@ -105,6 +166,26 @@
     {/each}
   </div>
 {/key}
+{#if displayActivationPending}
+  <div
+    class="mt-2 flex flex-col gap-1 text-xs text-textcolor2"
+    data-risu-regex-display-pending
+    role="status"
+    aria-live="polite">
+    <span>{language.regexDisplayUpdatePending}</span>
+    <div
+      class="h-1 w-full overflow-hidden rounded-full bg-darkborderc"
+      role="progressbar"
+      aria-label={language.regexDisplayUpdatePending}>
+      {#key displayActivationRun}
+        <div
+          class="regex-display-progress h-full origin-left rounded-full bg-selected"
+          style={`animation-duration: ${REGEX_DISPLAY_ACTIVATION_DELAY_MS}ms`}>
+        </div>
+      {/key}
+    </div>
+  </div>
+{/if}
 {#if buttons}
   <div class="flex gap-2 mt-2">
     <button
@@ -132,3 +213,20 @@
       onclick={importRows}><HardDriveUploadIcon /></button>
   </div>
 {/if}
+
+<style>
+  .regex-display-progress {
+    animation-name: regex-display-progress-fill;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+
+  @keyframes regex-display-progress-fill {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+</style>

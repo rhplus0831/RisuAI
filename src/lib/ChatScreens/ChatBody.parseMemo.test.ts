@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { character, Database } from '../../ts/storage/database.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import { ReloadChatPointer, ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../../ts/stores.svelte'
+import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
+import { withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
 
 const moduleMockState = vi.hoisted(() => ({
   modules: [] as any[],
@@ -60,6 +62,7 @@ const previousDb = getResourceDatabase({ snapshot: true })
 const previousSelectedChar = get(selectedCharID)
 const previousReloadGui = get(ReloadGUIPointer)
 const previousVariableReloadGui = get(VariableReloadGUIPointer)
+const previousRegexDisplayReload = get(RegexDisplayReloadPointer)
 const previousReloadChat = get(ReloadChatPointer)
 const explicitRetranslateCacheKey = '<p>explicit source body</p>'
 
@@ -120,6 +123,7 @@ function seedDb(overrides: Partial<Database> = {}) {
   ReloadChatPointer.set({})
   ReloadGUIPointer.set(0)
   VariableReloadGUIPointer.set(0)
+  RegexDisplayReloadPointer.set(0)
   replaceResourceDatabase({
     characters: [char],
     characterOrder: [char.chaId],
@@ -232,6 +236,7 @@ afterEach(async () => {
   ReloadChatPointer.set(previousReloadChat)
   ReloadGUIPointer.set(previousReloadGui)
   VariableReloadGUIPointer.set(previousVariableReloadGui)
+  RegexDisplayReloadPointer.set(previousRegexDisplayReload)
 })
 
 describe('ChatBody content-keyed parse memo', () => {
@@ -702,6 +707,46 @@ describe('ChatBody content-keyed parse memo', () => {
 
     expect(parseSpy.mock.calls.length - callsBeforeChange).toBe(1)
     expect(parseSpy.mock.calls.at(-1)?.[0]).toBe('changed memo body')
+    unmount(component)
+  })
+
+  it('defers projected regex edits until the display activation epoch advances', async () => {
+    const char = seedDb()
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().characters[0].customscript = [
+        {
+          id: 'deferred-display-script',
+          comment: 'Deferred display script',
+          in: 'visible',
+          out: 'initial',
+          type: 'editdisplay',
+          flag: 'g',
+          ableFlag: true,
+        },
+      ]
+    })
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const { ChatBody, parseSpy } = await loadChatBodyWithParseSpy()
+    const component = mountChatBody(ChatBody, target, {
+      character: char.chaId,
+      msgDisplay: 'visible body',
+    })
+    await waitForText(target, 'initial body')
+    parseSpy.mockClear()
+
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().characters[0].customscript![0].out = 'activated'
+    })
+    await settleRenderWork()
+
+    expect(parseSpy).not.toHaveBeenCalled()
+    expect(target.textContent).toContain('initial body')
+
+    RegexDisplayReloadPointer.update((value) => value + 1)
+    await waitForText(target, 'activated body')
+
+    expect(parseSpy).toHaveBeenCalledOnce()
     unmount(component)
   })
 

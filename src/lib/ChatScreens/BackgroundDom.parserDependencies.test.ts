@@ -57,6 +57,7 @@ import {
   selIdState,
   selectedCharID,
 } from '../../ts/stores.svelte'
+import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
 
 backgroundParserMocks.getDatabase.mockImplementation(() => getResourceDatabase())
@@ -67,6 +68,7 @@ const previousDb = getResourceDatabase({ snapshot: true })
 const previousSelectedChar = get(selectedCharID)
 const previousReloadGui = get(ReloadGUIPointer)
 const previousVariableReloadGui = get(VariableReloadGUIPointer)
+const previousRegexDisplayReload = get(RegexDisplayReloadPointer)
 const previousModuleBackgroundEmbedding = get(moduleBackgroundEmbedding)
 
 let target: HTMLElement
@@ -77,6 +79,7 @@ function seedDatabase(backgroundHTML = '<section>background one</section>') {
   selIdState.selId = 0
   ReloadGUIPointer.set(0)
   VariableReloadGUIPointer.set(0)
+  RegexDisplayReloadPointer.set(0)
   moduleBackgroundEmbedding.set('')
   replaceResourceDatabase({
     characters: [
@@ -153,6 +156,7 @@ afterEach(() => {
   selIdState.selId = previousSelectedChar
   ReloadGUIPointer.set(previousReloadGui)
   VariableReloadGUIPointer.set(previousVariableReloadGui)
+  RegexDisplayReloadPointer.set(previousRegexDisplayReload)
   moduleBackgroundEmbedding.set(previousModuleBackgroundEmbedding)
   target.remove()
   document.body.innerHTML = ''
@@ -243,5 +247,34 @@ describe('BackgroundDom parser dependencies', () => {
       '<section>background two</section>\n<style>.background-module { color: red; }</style>',
     )
     expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledTimes(1)
+  })
+
+  it('defers background regex reparsing until the display activation epoch advances', async () => {
+    seedDatabase()
+    component = mount(BackgroundDom, { target })
+    await waitForParserCalls(1)
+    backgroundParserMocks.risuChatParser.mockClear()
+    backgroundParserMocks.ParseMarkdown.mockClear()
+
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().characters[0].customscript = [
+        {
+          id: 'background-display-script',
+          comment: 'Background display script',
+          in: 'background',
+          out: 'delayed',
+          type: 'editdisplay',
+        },
+      ]
+    })
+    await settle()
+
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(backgroundParserMocks.ParseMarkdown).not.toHaveBeenCalled()
+
+    RegexDisplayReloadPointer.update((value) => value + 1)
+    await waitForParserCalls(1)
+
+    expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledOnce()
   })
 })

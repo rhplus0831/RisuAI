@@ -1,10 +1,11 @@
 <script lang="ts">
   import { XIcon, TrashIcon, PencilIcon, BookOpenCheckIcon, BookLockIcon, ArrowRightIcon } from '@lucide/svelte'
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
   import { getUserDisplayName, getUserIcon } from 'src/ts/util'
   import { createSimpleCharacter, bookmarkListOpen, selectedCharID } from 'src/ts/stores.svelte'
+  import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
   import { language } from 'src/lang'
   import { alertError, alertInput, alertNormal } from 'src/ts/alert'
   import {
@@ -29,7 +30,14 @@
 
   const close = () => ($bookmarkListOpen = false)
   let chara = $derived(getDatabase().characters[$selectedCharID])
-  const simpleChar = $derived(createSimpleCharacter(chara))
+  const simpleChar = $derived.by(() => {
+    void $RegexDisplayReloadPointer
+    if (!chara) return null
+    return createSimpleCharacter(
+      chara,
+      untrack(() => chara.customscript),
+    )
+  })
   let bookmarkHydrationState = $state<'loading' | 'ready' | 'error'>('loading')
   let bookmarkHydrationRun = 0
   type BookmarkHydrationOwner = {

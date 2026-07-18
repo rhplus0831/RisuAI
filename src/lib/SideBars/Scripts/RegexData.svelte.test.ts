@@ -4,7 +4,6 @@ import type { customscript } from 'src/ts/storage/database.svelte'
 
 const regexDataMocks = vi.hoisted(() => ({
   alertConfirm: vi.fn(async () => true),
-  reloadGuiAfterDefinitionChange: vi.fn(),
 }))
 
 vi.mock('src/lang', () => ({
@@ -19,10 +18,17 @@ vi.mock('src/ts/alert', () => ({
   alertConfirm: regexDataMocks.alertConfirm,
 }))
 
-vi.mock('src/ts/stores.svelte', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('src/ts/stores.svelte')>()),
-  reloadGuiAfterDefinitionChange: regexDataMocks.reloadGuiAfterDefinitionChange,
-}))
+vi.mock('src/ts/stores.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    closePopupEditorSession: vi.fn(),
+    disableHighlight: writable(false),
+    isPopupEditorSessionCurrent: vi.fn(() => false),
+    openPopupEditorSession: vi.fn(() => 1),
+    popUpEditorStore: { open: false, sessionId: 0, value: '' },
+    selIdState: { selId: -1 },
+  }
+})
 
 import RegexData from './RegexData.svelte'
 

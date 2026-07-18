@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { getDatabase, type character, type Message } from 'src/ts/storage/database.svelte'
   import Chat from './Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
   import { createSimpleCharacter, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte'
+  import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
   import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte'
   import { get } from 'svelte/store'
   import { getTranscriptWindowRange } from './DefaultChatScreen.loadPages'
@@ -52,9 +54,13 @@
   let chatBody: HTMLDivElement
 
   const chatRows = $derived.by(() => {
+    void $RegexDisplayReloadPointer
     const charImage = getCharImage(currentCharacter.image, 'css')
     const userImage = getCharImage(userIcon, 'css')
-    const simpleChar = createSimpleCharacter(currentCharacter)
+    const simpleChar = createSimpleCharacter(
+      currentCharacter,
+      untrack(() => currentCharacter.customscript),
+    )
     const database = getDatabase()
     const currentChat = currentCharacter.chats?.[currentCharacter.chatPage]
     const currentChatId = currentChat?.id

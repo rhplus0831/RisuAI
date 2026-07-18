@@ -1,4 +1,5 @@
 import { get } from 'svelte/store'
+import { untrack } from 'svelte'
 import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
 import { getModules } from '../../ts/process/modules'
 import {
@@ -189,6 +190,10 @@ function scriptListSignature(scripts?: readonly customscript[] | null) {
   return (scripts ?? []).map(scriptSignature)
 }
 
+function untrackedScriptListSignature(readScripts: () => readonly customscript[] | null | undefined) {
+  return untrack(() => scriptListSignature(readScripts()))
+}
+
 function triggerListSignature(triggers?: readonly triggerscript[] | null) {
   return (triggers ?? []).map(triggerSignature)
 }
@@ -207,7 +212,7 @@ function findCharacterByArg(charArg: ChatBodyParseMemoInput['charArg']) {
 }
 
 function characterSignature(charArg: ChatBodyParseMemoInput['charArg']) {
-  const char = findCharacterByArg(charArg)
+  const char = untrack(() => findCharacterByArg(charArg))
   if (!char || typeof char === 'string') {
     return char
   }
@@ -215,7 +220,7 @@ function characterSignature(charArg: ChatBodyParseMemoInput['charArg']) {
   return {
     type: char.type,
     chaId: char.chaId,
-    customscript: (char.customscript ?? []).map(scriptSignature),
+    customscript: untrackedScriptListSignature(() => char.customscript),
     triggerscript: (char.triggerscript ?? []).map(triggerSignature),
     additionalAssets: char.additionalAssets ?? [],
     emotionImages: char.emotionImages ?? [],
@@ -228,7 +233,7 @@ function characterSignature(charArg: ChatBodyParseMemoInput['charArg']) {
 
 function characterSignatureToken(charArg: ChatBodyParseMemoInput['charArg']) {
   const reloadEpoch = get(ReloadGUIPointer)
-  const char = findCharacterByArg(charArg)
+  const char = untrack(() => findCharacterByArg(charArg))
   if (!char || typeof char === 'string') {
     return {
       reloadEpoch,
@@ -241,7 +246,7 @@ function characterSignatureToken(charArg: ChatBodyParseMemoInput['charArg']) {
     reloadEpoch,
     type: char.type,
     chaId: char.chaId,
-    customscript: scriptListSignature(char.customscript),
+    customscript: untrackedScriptListSignature(() => char.customscript),
     triggerscript: triggerListSignature(char.triggerscript),
     additionalAssets: tupleListSignature(char.additionalAssets),
     emotionImages: tupleListSignature(char.emotionImages),
@@ -283,7 +288,7 @@ function moduleSignature(modules = safeGetModules()) {
     return modules.map((module) => ({
       id: module?.id,
       namespace: module?.namespace,
-      regex: scriptListSignature(module?.regex),
+      regex: untrackedScriptListSignature(() => module?.regex),
       assets: module?.assets ?? [],
       trigger: triggerListSignature(module?.trigger),
       lowLevelAccess: module?.lowLevelAccess,
@@ -300,7 +305,7 @@ function moduleSignatureToken(modules = safeGetModules()) {
     modules: modules.map((module) => ({
       id: module?.id,
       namespace: module?.namespace,
-      regex: scriptListSignature(module?.regex),
+      regex: untrackedScriptListSignature(() => module?.regex),
       assets: tupleListSignature(module?.assets),
       trigger: triggerListSignature(module?.trigger),
       lowLevelAccess: module?.lowLevelAccess,
@@ -397,9 +402,9 @@ function parseSettingsSignature(modules = safeGetModules()) {
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
-    globalRegex: scriptListSignature(db.globalscript),
-    presetRegex: scriptListSignature(safeGetActivePromptPresetRegexScripts()),
-    moduleRegex: moduleRegexSignature(modules),
+    globalRegex: untrackedScriptListSignature(() => db.globalscript),
+    presetRegex: untrackedScriptListSignature(() => safeGetActivePromptPresetRegexScripts()),
+    moduleRegex: untrack(() => moduleRegexSignature(modules)),
     moduleAssets: moduleAssetsSignature(modules),
     hideAllImages: db.hideAllImages,
     customQuotes: db.customQuotes,
@@ -420,9 +425,9 @@ function settingsSignatureToken(modules = safeGetModules()) {
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
-    globalRegex: scriptListSignature(db.globalscript),
-    presetRegex: scriptListSignature(safeGetActivePromptPresetRegexScripts()),
-    moduleRegex: moduleRegexSignature(modules),
+    globalRegex: untrackedScriptListSignature(() => db.globalscript),
+    presetRegex: untrackedScriptListSignature(() => safeGetActivePromptPresetRegexScripts()),
+    moduleRegex: untrack(() => moduleRegexSignature(modules)),
     moduleAssets: tupleListSignature(moduleAssetsSignature(modules)),
     hideAllImages: db.hideAllImages,
     customQuotes: db.customQuotes,
@@ -448,17 +453,19 @@ function serializedSettingsSignature(modules = safeGetModules()) {
 }
 
 export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
-  debugStats.parseKeyBuilds += 1
-  const modules = safeGetModules()
-  return `{"activeChat":${serializedActiveChatSignature()},"cbsConditions":${stableFragment(
-    input.cbsConditions ?? {},
-  )},"character":${serializedCharacterSignature(input.charArg)},"chatID":${stableFragment(
-    input.chatID,
-  )},"data":${stableFragment(input.data ?? '')},"kind":"chat-body-parse","mode":${stableFragment(
-    input.mode,
-  )},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(
-    modules,
-  )},"variableReloadEpoch":${stableFragment(get(VariableReloadGUIPointer))}}`
+  return untrack(() => {
+    debugStats.parseKeyBuilds += 1
+    const modules = safeGetModules()
+    return `{"activeChat":${serializedActiveChatSignature()},"cbsConditions":${stableFragment(
+      input.cbsConditions ?? {},
+    )},"character":${serializedCharacterSignature(input.charArg)},"chatID":${stableFragment(
+      input.chatID,
+    )},"data":${stableFragment(input.data ?? '')},"kind":"chat-body-parse","mode":${stableFragment(
+      input.mode,
+    )},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(
+      modules,
+    )},"variableReloadEpoch":${stableFragment(get(VariableReloadGUIPointer))}}`
+  })
 }
 
 function getTranslateSettingsSignature() {
@@ -508,20 +515,22 @@ export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyIn
 }
 
 export function memoizedChatBodyParse(input: ChatBodyParseMemoInput): Promise<string> {
-  const key = input.memoKey ?? getChatBodyParseMemoKey(input)
-  const cached = parseMemo.get(key)
-  if (cached) {
-    return refresh(parseMemo, key, cached)
-  }
+  return untrack(() => {
+    const key = input.memoKey ?? getChatBodyParseMemoKey(input)
+    const cached = parseMemo.get(key)
+    if (cached) {
+      return refresh(parseMemo, key, cached)
+    }
 
-  const promise = ParseMarkdown(input.data, input.charArg, input.mode, input.chatID, input.cbsConditions).catch(
-    (error) => {
-      parseMemo.delete(key)
-      throw error
-    },
-  )
-  remember(parseMemo, key, promise, PARSE_MEMO_LIMIT)
-  return promise
+    const promise = ParseMarkdown(input.data, input.charArg, input.mode, input.chatID, input.cbsConditions).catch(
+      (error) => {
+        parseMemo.delete(key)
+        throw error
+      },
+    )
+    remember(parseMemo, key, promise, PARSE_MEMO_LIMIT)
+    return promise
+  })
 }
 
 export async function getChatBodyCachedOnlyLlmDecision(input: ChatBodyCachedOnlyInput): Promise<boolean> {

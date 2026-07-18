@@ -47,6 +47,7 @@ export const languageEnglish = {
     `${name} was removed on this device and the change is queued. It will retry automatically.`,
   bookmarkRemoveFailed: (name: string) => `${name} could not be removed. The bookmark was restored.`,
   settingsSaveQueued: 'This settings change is saved on this device and queued. It will retry automatically.',
+  regexDisplayUpdatePending: 'Chat display will update when editing pauses.',
   chatGenerationSettingsSaving: 'Saving chat generation settings…',
   chatGenerationSettingsTargetChanged:
     'The active chat changed before this selection could be saved. Reopen the picker and try again.',

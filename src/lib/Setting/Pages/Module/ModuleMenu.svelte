@@ -674,7 +674,7 @@
     className="mt-2"
     placeholder={language.backgroundHTML}
     size="sm" />
-  <RegexList bind:value={currentModule.regex} />
+  <RegexList bind:value={currentModule.regex} ownerKey={`module:${currentModule.id ?? ''}`} />
   <div class="text-textcolor2 mt-2 flex gap-2">
     <button
       aria-label={`${language.add}: ${language.regexScript}`}

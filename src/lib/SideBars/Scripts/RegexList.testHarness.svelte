@@ -21,6 +21,11 @@
   export function getValue(): customscript[] {
     return value
   }
+
+  export function patchScript(index: number, patch: Partial<customscript>): void {
+    if (!value[index]) return
+    Object.assign(value[index], patch)
+  }
 </script>
 
 <RegexList bind:value {ownerKey} buttons />

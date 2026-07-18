@@ -32,6 +32,7 @@
     additionalFloatingActionButtons,
     easyPanelStore,
   } from '../../ts/stores.svelte'
+  import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
   import { onDestroy, tick, untrack } from 'svelte'
   import Chat from './Chat.svelte'
   import {
@@ -212,6 +213,14 @@
   })
 
   let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
+  let currentDisplayCharacter = $derived.by(() => {
+    void $RegexDisplayReloadPointer
+    if (!currentCharacter) return null
+    return createSimpleCharacter(
+      currentCharacter,
+      untrack(() => currentCharacter.customscript),
+    )
+  })
   let activeChatOpen = $derived.by(() => {
     if ($selectedCharID < 0) return false
     const character = getDatabase().characters?.[$selectedCharID]
@@ -1944,7 +1953,7 @@
              cannot throw on the correct lazy-shell state. -->
         {#if !isServerCharacterShell(currentCharacter) && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length <= loadPages}
           <Chat
-            character={createSimpleCharacter(getDatabase().characters[$selectedCharID])}
+            character={currentDisplayCharacter}
             name={getCharacterDisplayName(getDatabase().characters[$selectedCharID])}
             message={getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
               .fmIndex === -1

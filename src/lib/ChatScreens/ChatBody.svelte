@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { sleep } from 'src/ts/util'
   import { alertError } from '../../ts/alert'
   import {
@@ -13,6 +14,7 @@
   import { getModuleAssets } from 'src/ts/process/modules'
   import { getCurrentCharacter, getDatabase } from 'src/ts/storage/database.svelte'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
+  import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
   import {
     getChatBodyCachedOnlyLlmDecision,
     getChatBodyCachedOnlyLlmDetectionMode,
@@ -398,7 +400,23 @@
     }
   }
 
-  let markParsingResult = $derived.by(() => markParsing(msgDisplay, character, idx))
+  let markParsingResult = $derived.by(() => {
+    void $RegexDisplayReloadPointer
+    const parseData = msgDisplay
+    const parseCharacter = character
+    const parseIndex = idx
+
+    // These local inputs intentionally restart parsing. Database reads made by
+    // the parser are snapshots; their UI activation is controlled by the
+    // explicit reload pointers instead of deep subscriptions per chat row.
+    void translated
+    void retranslate
+    void allowClientTranslation
+    void firstMessage
+    void role
+
+    return untrack(() => markParsing(parseData, parseCharacter, parseIndex))
+  })
 
   $effect(() => {
     markParsingResult

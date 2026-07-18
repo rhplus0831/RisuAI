@@ -1,5 +1,6 @@
 export const languageKorean = {
   unknownInteractionTime: '알 수 없음',
+  regexDisplayUpdatePending: '편집을 멈추면 채팅 표시가 업데이트됩니다.',
   secretInput: {
     savedPlaceholder: '저장된 인증 정보',
     savedStatus: '인증 정보가 저장되어 있습니다.',

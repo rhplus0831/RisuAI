@@ -14,6 +14,18 @@ vi.mock('src/ts/alert', () => ({
   alertConfirm: deleteRaceMocks.alertConfirm,
 }))
 
+vi.mock('src/ts/stores.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    closePopupEditorSession: vi.fn(),
+    disableHighlight: writable(false),
+    isPopupEditorSessionCurrent: vi.fn(() => false),
+    openPopupEditorSession: vi.fn(() => 1),
+    popUpEditorStore: { open: false, sessionId: 0, value: '' },
+    selIdState: { selId: -1 },
+  }
+})
+
 vi.mock('sortablejs', () => ({
   default: { create: deleteRaceMocks.sortableCreate },
 }))

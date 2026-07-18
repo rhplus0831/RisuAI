@@ -1750,7 +1750,7 @@
       bind:value={characterDraft.value.backgroundHTML}></TextAreaInput>
 
     <span class="text-textcolor mt-4">{language.regexScript} <Help key="regexScript" /></span>
-    <RegexList bind:value={characterScriptsDraft} />
+    <RegexList bind:value={characterScriptsDraft} ownerKey={scriptDraftCharacterId ?? ''} />
     <div class="text-textcolor2 mt-2 flex gap-2">
       <button
         class="font-medium cursor-pointer hover:text-green-500"
