@@ -32,17 +32,18 @@
   import BaseRoundedButton from '../UI/BaseRoundedButton.svelte'
   import { selectSingleFile } from 'src/ts/util'
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
-  import { alertInput, alertSelect } from 'src/ts/alert'
+  import { alertError, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
   import SideChatList from './SideChatList.svelte'
   import { sideBarSize } from 'src/ts/gui/guisize'
   import DevTool from './DevTool.svelte'
   import QuickSettingsGui from '../Others/QuickSettingsGUI.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import {
-    createCharacterOrderFolder,
-    moveCharacterOrderItem,
-    updateCharacterOrderFolder,
+    createCharacterOrderFolderWithOutcome,
+    moveCharacterOrderItemWithOutcome,
+    updateCharacterOrderFolderWithOutcome,
     type CharacterOrderDragPosition,
+    type CharacterOrderMutationHandle,
   } from 'src/ts/characterCommands'
   import {
     beginCharacterFolderImageUpload,
@@ -70,8 +71,82 @@
   let menuMode = $state(0)
   let devTool = $state(false)
   const characterFolderColors = ['red', 'green', 'blue', 'yellow', 'indigo', 'purple', 'pink', 'default'] as const
+  type CharacterOrganizationActionKind = 'order' | 'folder'
+  interface CharacterOrganizationActionState {
+    kind: CharacterOrganizationActionKind
+    label: string
+    status: 'pending' | 'queued' | 'failed'
+  }
+  let characterOrganizationActions = $state<Record<string, CharacterOrganizationActionState>>({})
+  let characterOrganizationMutationPending = $derived(
+    Object.values(characterOrganizationActions).some((action) => action.status === 'pending'),
+  )
 
   type CharacterFolderColor = (typeof characterFolderColors)[number]
+
+  function characterFolderActionKey(folderId: string): string {
+    return `folder:${folderId}`
+  }
+
+  function characterOrganizationActionMessage(state: CharacterOrganizationActionState): string {
+    if (state.kind === 'folder') {
+      if (state.status === 'pending') return language.characterFolderOrganizationPending(state.label)
+      if (state.status === 'queued') return language.characterFolderOrganizationQueued(state.label)
+      return language.characterFolderOrganizationFailed(state.label)
+    }
+    if (state.status === 'pending') return language.characterOrganizationPending
+    if (state.status === 'queued') return language.characterOrganizationQueued
+    return language.characterOrganizationFailed
+  }
+
+  function isCharacterOrganizationActionPending(key: string): boolean {
+    return characterOrganizationActions[key]?.status === 'pending'
+  }
+
+  async function runCharacterOrganizationAction(
+    key: string,
+    kind: CharacterOrganizationActionKind,
+    label: string,
+    action: () => CharacterOrderMutationHandle | null | Promise<CharacterOrderMutationHandle | null>,
+  ): Promise<void> {
+    const conflictingActionPending =
+      key === 'order'
+        ? characterOrganizationMutationPending
+        : isCharacterOrganizationActionPending('order') || isCharacterOrganizationActionPending(key)
+    if (conflictingActionPending) return
+    characterOrganizationActions[key] = { kind, label, status: 'pending' }
+    try {
+      const handle = await action()
+      if (!handle?.applied || !handle.settlement) {
+        delete characterOrganizationActions[key]
+        return
+      }
+      const outcome = await handle.settlement
+      if (outcome.status === 'accepted') {
+        delete characterOrganizationActions[key]
+        return
+      }
+      characterOrganizationActions[key] = { kind, label, status: outcome.status }
+      const message = characterOrganizationActionMessage(characterOrganizationActions[key])
+      if (outcome.status === 'queued') alertNormal(message)
+      else alertError(message)
+    } catch {
+      characterOrganizationActions[key] = { kind, label, status: 'failed' }
+      alertError(characterOrganizationActionMessage(characterOrganizationActions[key]))
+    }
+  }
+
+  function runCharacterOrderAction(action: () => CharacterOrderMutationHandle): void {
+    void runCharacterOrganizationAction('order', 'order', '', action)
+  }
+
+  async function runCharacterFolderAction(
+    folderId: string,
+    folderName: string,
+    action: () => CharacterOrderMutationHandle | null | Promise<CharacterOrderMutationHandle | null>,
+  ): Promise<void> {
+    await runCharacterOrganizationAction(characterFolderActionKey(folderId), 'folder', folderName, action)
+  }
 
   function parseAlertSelection(value: unknown, optionCount: number): number | null {
     if (typeof value !== 'string') return null
@@ -106,6 +181,12 @@
   }
 
   async function openFolderActions(folderId: string, folderName: string): Promise<void> {
+    if (
+      isCharacterOrganizationActionPending('order') ||
+      isCharacterOrganizationActionPending(characterFolderActionKey(folderId))
+    ) {
+      return
+    }
     const folderActions = [language.renameFolder, language.changeFolderColor, language.changeFolderImage]
     const selectedAction = parseAlertSelection(
       await alertSelect(folderActions, language.folderActionsFor(folderName)),
@@ -115,7 +196,11 @@
 
     if (selectedAction === 0) {
       const value = await alertInput(language.changeFolderName, [], folderName)
-      if (value) updateCharacterOrderFolder(folderId, { name: value })
+      if (value) {
+        await runCharacterFolderAction(folderId, folderName, () =>
+          updateCharacterOrderFolderWithOutcome(folderId, { name: value }),
+        )
+      }
       return
     }
 
@@ -126,7 +211,11 @@
       )
       if (selectedColor === null) return
       const color = characterFolderColors[selectedColor]
-      if (color) updateCharacterOrderFolder(folderId, { color })
+      if (color) {
+        await runCharacterFolderAction(folderId, folderName, () =>
+          updateCharacterOrderFolderWithOutcome(folderId, { color }),
+        )
+      }
       return
     }
 
@@ -137,9 +226,11 @@
     )
     if (selectedImageAction === null) return
     if (selectedImageAction === 0) {
-      updateCharacterOrderFolder(folderId, { imgFile: null, img: '' })
+      await runCharacterFolderAction(folderId, folderName, () =>
+        updateCharacterOrderFolderWithOutcome(folderId, { imgFile: null, img: '' }),
+      )
     } else {
-      await uploadCharacterFolderImage(folderId)
+      await uploadCharacterFolderImage(folderId, folderName)
     }
   }
 
@@ -170,70 +261,67 @@
     navigate($selectedCharID === -1 && $PlaygroundStore !== 0 ? '/' : '/playground')
   }
 
-  async function uploadCharacterFolderImage(folderId: string) {
-    let folderImageUpload: CharacterFolderImageUploadOperation | null = null
-    const folderImage = await selectSingleFile(['png', 'jpg', 'webp'], {
-      onFileSelected: () => {
-        const folderImageTarget = captureCharacterFolderImageUploadTarget({
-          characterOrder: getDatabase().characterOrder,
-          folderId,
-        })
-        if (!folderImageTarget) return
-        folderImageUpload = beginCharacterFolderImageUpload(folderImageTarget)
-      },
-    })
-
-    if (!folderImage || !folderImageUpload) {
-      return
-    }
-    const freshFolderImageUpload = folderImageUpload
-
-    try {
-      if (
-        !isFreshCharacterFolderImageUpload({
-          operation: freshFolderImageUpload,
-          characterOrder: getDatabase().characterOrder,
-        })
-      ) {
-        return
-      }
-
-      const folderImageData = await saveAsset(folderImage.data, '', folderImage.name)
-
-      if (
-        !isFreshCharacterFolderImageUpload({
-          operation: freshFolderImageUpload,
-          characterOrder: getDatabase().characterOrder,
-        })
-      ) {
-        return
-      }
-
-      const folderImageSrc = await getFileSrc(folderImageData)
-
-      if (
-        !isFreshCharacterFolderImageUpload({
-          operation: freshFolderImageUpload,
-          characterOrder: getDatabase().characterOrder,
-        })
-      ) {
-        return
-      }
-
-      const freshImagePatch = resolveFreshCharacterFolderImageUploadPatch({
-        operation: freshFolderImageUpload,
-        characterOrder: getDatabase().characterOrder,
-        patch: { imgFile: folderImageData, img: folderImageSrc },
+  async function uploadCharacterFolderImage(folderId: string, folderName: string): Promise<void> {
+    await runCharacterFolderAction(folderId, folderName, async () => {
+      let folderImageUpload: CharacterFolderImageUploadOperation | null = null
+      const folderImage = await selectSingleFile(['png', 'jpg', 'webp'], {
+        onFileSelected: () => {
+          const folderImageTarget = captureCharacterFolderImageUploadTarget({
+            characterOrder: getDatabase().characterOrder,
+            folderId,
+          })
+          if (!folderImageTarget) return
+          folderImageUpload = beginCharacterFolderImageUpload(folderImageTarget)
+        },
       })
 
-      if (!freshImagePatch) {
-        return
-      }
+      if (!folderImage || !folderImageUpload) return null
+      const freshFolderImageUpload = folderImageUpload
 
-      updateCharacterOrderFolder(freshFolderImageUpload.folderId, freshImagePatch)
-    } finally {
-      clearCharacterFolderImageUpload(freshFolderImageUpload)
-    }
+      try {
+        if (
+          !isFreshCharacterFolderImageUpload({
+            operation: freshFolderImageUpload,
+            characterOrder: getDatabase().characterOrder,
+          })
+        ) {
+          return null
+        }
+
+        const folderImageData = await saveAsset(folderImage.data, '', folderImage.name)
+
+        if (
+          !isFreshCharacterFolderImageUpload({
+            operation: freshFolderImageUpload,
+            characterOrder: getDatabase().characterOrder,
+          })
+        ) {
+          return null
+        }
+
+        const folderImageSrc = await getFileSrc(folderImageData)
+
+        if (
+          !isFreshCharacterFolderImageUpload({
+            operation: freshFolderImageUpload,
+            characterOrder: getDatabase().characterOrder,
+          })
+        ) {
+          return null
+        }
+
+        const freshImagePatch = resolveFreshCharacterFolderImageUploadPatch({
+          operation: freshFolderImageUpload,
+          characterOrder: getDatabase().characterOrder,
+          patch: { imgFile: folderImageData, img: folderImageSrc },
+        })
+
+        if (!freshImagePatch) return null
+        return updateCharacterOrderFolderWithOutcome(freshFolderImageUpload.folderId, freshImagePatch)
+      } finally {
+        clearCharacterFolderImageUpload(freshFolderImageUpload)
+      }
+    })
   }
 
   function openCharacterRoute(index: number) {
@@ -262,7 +350,10 @@
 
   sideBarClosing.set(false)
 
-  const inserter = (mainIndex: DragData, targetIndex: DragData) => moveCharacterOrderItem(mainIndex, targetIndex)
+  const inserter = (mainIndex: DragData, targetIndex: DragData) => {
+    if (characterOrganizationMutationPending) return
+    runCharacterOrderAction(() => moveCharacterOrderItemWithOutcome(mainIndex, targetIndex))
+  }
 
   function scrollToActiveCharacter() {
     const selectedId = $selectedCharID
@@ -313,14 +404,19 @@
     }
   })
 
-  const createFolder = (mainIndex: DragData, targetIndex: DragData) =>
-    createCharacterOrderFolder(mainIndex, targetIndex, undefined, language.newCharacterFolderName)
+  const createFolder = (mainIndex: DragData, targetIndex: DragData) => {
+    if (characterOrganizationMutationPending) return
+    runCharacterOrderAction(() =>
+      createCharacterOrderFolderWithOutcome(mainIndex, targetIndex, undefined, language.newCharacterFolderName),
+    )
+  }
 
   type DragEv = DragEvent & {
     currentTarget: EventTarget & HTMLDivElement
   }
   type DragData = CharacterOrderDragPosition
   const avatarDragStart = (ind: DragData, e: DragEv) => {
+    if (characterOrganizationMutationPending) return
     if (!sidebarCharacterDrag.begin(ind, getDatabase().characterOrder)) return
 
     e.dataTransfer.setData('text/plain', '')
@@ -339,6 +435,7 @@
   }
 
   const avatarDrop = (ind: DragData, e: DragEv) => {
+    if (characterOrganizationMutationPending) return
     const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, getDatabase().characterOrder)
     if (!drag) return
 
@@ -349,6 +446,7 @@
   }
 
   const dropZoneDragOver = (e: DragEv) => {
+    if (characterOrganizationMutationPending) return
     if (!isSidebarCharacterDrag(e.dataTransfer.types)) return
 
     e.preventDefault()
@@ -358,6 +456,7 @@
 
   const consumeDropZoneDrag = (e: DragEv) => {
     e.currentTarget.classList.remove('bg-green-500')
+    if (characterOrganizationMutationPending) return null
     const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, getDatabase().characterOrder)
     if (!drag) return null
 
@@ -470,6 +569,21 @@
       class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
       data-risu-sidebar-character-controls
       inert={menuMode === 1}>
+      {#each Object.entries(characterOrganizationActions) as [actionKey, action] (actionKey)}
+        <span
+          class="w-16 px-1 py-0.5 text-center text-[10px] leading-tight text-textcolor2"
+          data-risu-character-organization-status={action.status}
+          data-risu-character-organization-key={actionKey}
+          role="status"
+          aria-live="polite"
+          title={characterOrganizationActionMessage(action)}>
+          {action.status === 'pending'
+            ? language.characterOrganizationSaving
+            : action.status === 'queued'
+              ? language.mutationStatusQueued
+              : language.mutationStatusFailed}
+        </span>
+      {/each}
       <div
         class="h-4 min-h-4 w-14"
         role="listitem"
@@ -489,7 +603,16 @@
         <div
           class="group relative flex items-center px-2"
           role="listitem"
-          draggable="true"
+          draggable={!characterOrganizationMutationPending}
+          data-risu-character-organization-status={char.type === 'folder'
+            ? (characterOrganizationActions[characterFolderActionKey(char.id)]?.status ??
+              characterOrganizationActions.order?.status ??
+              'idle')
+            : (characterOrganizationActions.order?.status ?? 'idle')}
+          aria-busy={char.type === 'folder'
+            ? isCharacterOrganizationActionPending(characterFolderActionKey(char.id)) ||
+              isCharacterOrganizationActionPending('order')
+            : isCharacterOrganizationActionPending('order')}
           ondragstart={(e) => {
             avatarDragStart({ index: ind }, e)
           }}
@@ -589,7 +712,9 @@
                 <div
                   class="group relative flex items-center px-2 z-10"
                   role="listitem"
-                  draggable="true"
+                  draggable={!characterOrganizationMutationPending}
+                  data-risu-character-organization-status={characterOrganizationActions.order?.status ?? 'idle'}
+                  aria-busy={isCharacterOrganizationActionPending('order')}
                   ondragstart={(e) => {
                     if (char.type === 'folder') {
                       avatarDragStart({ index: ind, folder: char.id }, e)

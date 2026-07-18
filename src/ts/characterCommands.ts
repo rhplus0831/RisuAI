@@ -152,6 +152,11 @@ export type CharacterMutationOutcome =
 
 export type CompatibleCharacterMutationOutcome = CharacterMutationOutcome
 
+export interface CharacterOrderMutationHandle {
+  applied: boolean
+  settlement: Promise<CharacterMutationOutcome> | null
+}
+
 export interface CreateAndSelectCharacterDispatchOptions {
   shouldRestoreSelection?: () => boolean
 }
@@ -1566,11 +1571,20 @@ export function dispatchSelectCharacter(
   )
 }
 
-function dispatchCharacterOrderCommand(
+function dispatchCharacterOrderCommandWithOutcome(
   projection: CharacterOrderDurableProjection,
   rollback: () => void,
   dependencyCharacterIds: readonly string[] = [],
-): void {
+): Promise<CharacterMutationOutcome> | undefined {
+  const execution = prepareCharacterOrderCommand(projection, rollback, dependencyCharacterIds)
+  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
+}
+
+function prepareCharacterOrderCommand(
+  projection: CharacterOrderDurableProjection,
+  rollback: () => void,
+  dependencyCharacterIds: readonly string[] = [],
+): PendingCharacterMutationExecution | undefined {
   if (!canUseServerCommands()) return
   const generation = ++characterOrderProjectionGeneration
   const commandOrder = cloneJsonValue(projection.attemptedOrder)
@@ -1592,12 +1606,22 @@ function dispatchCharacterOrderCommand(
       },
     ],
   }
-  const outbox = stagePendingMutation(CHARACTER_SELECTION_MUTATION_KEY, intent)
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(CHARACTER_SELECTION_MUTATION_KEY, intent)
+  } catch (error) {
+    if (projection.metadata || generation === characterOrderProjectionGeneration) rollback()
+    return {
+      promise: Promise.resolve(pendingMutationStagingFailure(error)),
+      disposition: () => 'rollback',
+    }
+  }
   const projectionFence = pendingMutationProjectionFence(outbox, pendingMutationCharacterOrderProjectionTarget())
-  void dispatchDurableMutation(
-    outbox,
-    intent,
-    (transport) =>
+  let disposition: 'retain' | 'rollback' = 'rollback'
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const promise = dispatchDurableMutation(outbox, intent, (transport) => {
+    failureRollbackDisposition = transport.failureRollbackDisposition
+    return (
       runCharacterCommand(
         (baseRevision) =>
           reorderCharactersCommand({
@@ -1605,27 +1629,47 @@ function dispatchCharacterOrderCommand(
             characterOrder: cloneJsonValue(commandOrder) as CharacterOrderEntry[],
           }),
         () => {
-          if (generation === characterOrderProjectionGeneration) rollback()
+          if (projection.metadata || generation === characterOrderProjectionGeneration) rollback()
         },
         transport,
-      ) ?? Promise.resolve({ status: 'unavailable' as const }),
-  ).then((result) => {
-    if (
-      result.status !== 'ok' &&
-      generation === characterOrderProjectionGeneration &&
-      isCurrentCharacterOrderProjectionFence(projectionFence)
-    ) {
-      reapplyCharacterOrderProjection(projection)
-    }
-  })
+      ) ?? Promise.resolve({ status: 'unavailable' as const })
+    )
+  }).then(
+    (result) => {
+      disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? disposition)
+      if (result.status !== 'ok' && disposition === 'retain') {
+        if (projection.metadata) {
+          reapplyCharacterOrderFolderMetadataProjection(projection.metadata)
+        } else if (
+          generation === characterOrderProjectionGeneration &&
+          isCurrentCharacterOrderProjectionFence(projectionFence)
+        ) {
+          reapplyCharacterOrderProjection(projection)
+        }
+      }
+      return result
+    },
+    (error) => {
+      disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? disposition
+      throw error
+    },
+  )
+  return { promise, disposition: () => disposition }
 }
 
 export function dispatchReorderCharacters(
   previousOrder: (string | folder)[],
   dependencyCharacterIds: readonly string[] = [],
 ): void {
+  void dispatchReorderCharactersWithOutcome(previousOrder, dependencyCharacterIds)
+}
+
+export function dispatchReorderCharactersWithOutcome(
+  previousOrder: (string | folder)[],
+  dependencyCharacterIds: readonly string[] = [],
+): Promise<CharacterMutationOutcome> | undefined {
   const rollback = characterOrderRollbackFromOrders(previousOrder, getDatabase().characterOrder ?? [])
-  dispatchCharacterOrderCommand(
+  return dispatchCharacterOrderCommandWithOutcome(
     { attemptedOrder: rollback.attemptedOrder },
     () => restoreCharacterOrderAttempt(rollback),
     dependencyCharacterIds,
@@ -1650,6 +1694,31 @@ function reapplyCharacterOrderProjection(projection: CharacterOrderDurableProjec
       }
     }
     getDatabase().characterOrder = normalizeCharacterOrder(reappliedOrder, getDatabase().characters).characterOrder
+  })
+}
+
+function reapplyCharacterOrderFolderMetadataProjection(metadata: CharacterOrderFolderMetadataRollback): void {
+  withTrustedResourceWrite(() => {
+    const characterOrder = getDatabase().characterOrder ?? []
+    const folderIndex = findCharacterOrderFolderIndex(characterOrder, metadata.folderId)
+    const targetFolder = characterOrder[folderIndex]
+    if (!isCharacterOrderFolder(targetFolder)) return
+
+    const target = targetFolder as unknown as Record<string, unknown>
+    const reapplied: Partial<Record<CharacterOrderFolderMetadataKey, unknown>> = {}
+    for (const [key, attemptedValue] of Object.entries(metadata.attempted) as Array<
+      [CharacterOrderFolderMetadataKey, unknown]
+    >) {
+      if (characterFieldSnapshotEquals(target[key], attemptedValue)) continue
+      const hadPrevious = Object.prototype.hasOwnProperty.call(metadata.previous, key)
+      if (Object.prototype.hasOwnProperty.call(target, key) !== hadPrevious) continue
+      if (hadPrevious && !characterFieldSnapshotEquals(target[key], metadata.previous[key])) continue
+      reapplied[key] = attemptedValue
+    }
+    if (Object.keys(reapplied).length === 0) return
+    applyCharacterOrderFolderMetadata(targetFolder, reapplied)
+    characterOrder[folderIndex] = targetFolder
+    getDatabase().characterOrder = characterOrder
   })
 }
 
@@ -1784,7 +1853,21 @@ export function moveCharacterOrderItem(
   mainIndex: CharacterOrderDragPosition,
   targetIndex: CharacterOrderDragPosition,
 ): boolean {
-  if (isSameCharacterOrderPosition(mainIndex, targetIndex)) return false
+  return prepareMoveCharacterOrderItem(mainIndex, targetIndex).applied
+}
+
+export function moveCharacterOrderItemWithOutcome(
+  mainIndex: CharacterOrderDragPosition,
+  targetIndex: CharacterOrderDragPosition,
+): CharacterOrderMutationHandle {
+  return prepareMoveCharacterOrderItem(mainIndex, targetIndex)
+}
+
+function prepareMoveCharacterOrderItem(
+  mainIndex: CharacterOrderDragPosition,
+  targetIndex: CharacterOrderDragPosition,
+): CharacterOrderMutationHandle {
+  if (isSameCharacterOrderPosition(mainIndex, targetIndex)) return { applied: false, settlement: null }
 
   const previousOrder = currentCharacterOrderSnapshot()
   let changed = false
@@ -1864,9 +1947,12 @@ export function moveCharacterOrderItem(
     changed = true
   })
 
-  if (!changed) return false
-  dispatchReorderCharacters(previousOrder, dependencyCharacterId ? [dependencyCharacterId] : [])
-  return true
+  if (!changed) return { applied: false, settlement: null }
+  return {
+    applied: true,
+    settlement:
+      dispatchReorderCharactersWithOutcome(previousOrder, dependencyCharacterId ? [dependencyCharacterId] : []) ?? null,
+  }
 }
 
 export function createCharacterOrderFolder(
@@ -1875,7 +1961,25 @@ export function createCharacterOrderFolder(
   createFolderId: () => string = v4,
   folderName = 'New Folder',
 ): boolean {
-  if (isSameCharacterOrderPosition(mainIndex, targetIndex)) return false
+  return prepareCreateCharacterOrderFolder(mainIndex, targetIndex, createFolderId, folderName).applied
+}
+
+export function createCharacterOrderFolderWithOutcome(
+  mainIndex: CharacterOrderDragPosition,
+  targetIndex: CharacterOrderDragPosition,
+  createFolderId: () => string = v4,
+  folderName = 'New Folder',
+): CharacterOrderMutationHandle {
+  return prepareCreateCharacterOrderFolder(mainIndex, targetIndex, createFolderId, folderName)
+}
+
+function prepareCreateCharacterOrderFolder(
+  mainIndex: CharacterOrderDragPosition,
+  targetIndex: CharacterOrderDragPosition,
+  createFolderId: () => string,
+  folderName: string,
+): CharacterOrderMutationHandle {
+  if (isSameCharacterOrderPosition(mainIndex, targetIndex)) return { applied: false, settlement: null }
 
   const previousOrder = currentCharacterOrderSnapshot()
   let changed = false
@@ -1930,18 +2034,34 @@ export function createCharacterOrderFolder(
     changed = true
   })
 
-  if (!changed) return false
-  dispatchReorderCharacters(previousOrder, dependencyCharacterIds)
-  return true
+  if (!changed) return { applied: false, settlement: null }
+  return {
+    applied: true,
+    settlement: dispatchReorderCharactersWithOutcome(previousOrder, dependencyCharacterIds) ?? null,
+  }
 }
 
 export function updateCharacterOrderFolder(
   folderIdOrIndex: CharacterOrderFolderTarget,
   patch: CharacterOrderFolderMetadataPatch,
 ): boolean {
+  return prepareUpdateCharacterOrderFolder(folderIdOrIndex, patch).applied
+}
+
+export function updateCharacterOrderFolderWithOutcome(
+  folderIdOrIndex: CharacterOrderFolderTarget,
+  patch: CharacterOrderFolderMetadataPatch,
+): CharacterOrderMutationHandle {
+  return prepareUpdateCharacterOrderFolder(folderIdOrIndex, patch)
+}
+
+function prepareUpdateCharacterOrderFolder(
+  folderIdOrIndex: CharacterOrderFolderTarget,
+  patch: CharacterOrderFolderMetadataPatch,
+): CharacterOrderMutationHandle {
   const attemptedPatch = normalizeCharacterOrderFolderMetadataPatch(patch)
   const patchKeys = Object.keys(attemptedPatch) as CharacterOrderFolderMetadataKey[]
-  if (patchKeys.length === 0) return false
+  if (patchKeys.length === 0) return { applied: false, settlement: null }
 
   let rollback: CharacterOrderFolderMetadataRollback | null = null
   let changed = false
@@ -1985,12 +2105,16 @@ export function updateCharacterOrderFolder(
     changed = true
   })
 
-  if (!changed || !rollback) return false
+  if (!changed || !rollback) return { applied: false, settlement: null }
   const metadataRollback = rollback
-  dispatchCharacterOrderCommand({ attemptedOrder: currentCharacterOrderSnapshot(), metadata: metadataRollback }, () =>
-    restoreCharacterOrderFolderMetadataAttempt(metadataRollback),
-  )
-  return true
+  return {
+    applied: true,
+    settlement:
+      dispatchCharacterOrderCommandWithOutcome(
+        { attemptedOrder: currentCharacterOrderSnapshot(), metadata: metadataRollback },
+        () => restoreCharacterOrderFolderMetadataAttempt(metadataRollback),
+      ) ?? null,
+  }
 }
 
 function normalizeCharacterOrderFolderMetadataPatch(

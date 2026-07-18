@@ -46,6 +46,7 @@ import {
   dispatchSelectCharacter,
   dispatchUpdateCharacterScoped,
   moveCharacterOrderItem,
+  moveCharacterOrderItemWithOutcome,
   normalizeCharacterOrder,
   prepareCompatibleCharacterUpdate,
   prepareCompatibleCharacterUpdateScoped,
@@ -1554,7 +1555,8 @@ describe('character order command helpers', () => {
     ]
     setResourceWriteGuardEnabled(true)
 
-    expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-1', index: 1 })).toBe(true)
+    const mutation = moveCharacterOrderItemWithOutcome({ index: 0 }, { folder: 'folder-1', index: 1 })
+    expect(mutation.applied).toBe(true)
 
     expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
     await waitForCallCount(calls, 2)
@@ -1570,6 +1572,7 @@ describe('character order command helpers', () => {
     await vi.waitFor(() => {
       expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
     })
+    await expect(mutation.settlement).resolves.toMatchObject({ status: 'failed' })
   })
 
   it('failed character reorder restores previous structure when live still equals attempted', async () => {
@@ -2089,9 +2092,11 @@ describe('character order command helpers', () => {
         }) as unknown as typeof fetch,
       )
 
-      expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
+      const mutation = moveCharacterOrderItemWithOutcome({ index: 2 }, { index: 0 })
+      expect(mutation.applied).toBe(true)
 
       await vi.waitFor(() => expect(reorderRequests).toBe(1))
+      await expect(mutation.settlement).resolves.toMatchObject({ status: 'queued' })
       await vi.waitFor(() => expect(testDatabaseState.db.characterOrder).toEqual(attemptedOrder))
       const retained = await listPendingMutations()
       expect(retained).toHaveLength(1)

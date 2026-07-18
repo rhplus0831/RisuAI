@@ -21,6 +21,16 @@ export const languageEnglish = {
     `${name} was deleted on this device and the permanent deletion is queued. It will retry automatically.`,
   characterPermanentDeleteFailed: (name: string) =>
     `${name} could not be deleted permanently. The character was restored.`,
+  characterOrganizationSaving: 'Saving…',
+  characterOrganizationPending: 'Saving the character order…',
+  characterOrganizationQueued:
+    'The character organization change is saved on this device and queued. It will retry automatically.',
+  characterOrganizationFailed: 'The character organization change could not be saved. The previous order was restored.',
+  characterFolderOrganizationPending: (name: string) => `Saving changes to ${name}…`,
+  characterFolderOrganizationQueued: (name: string) =>
+    `Changes to ${name} are saved on this device and queued. They will retry automatically.`,
+  characterFolderOrganizationFailed: (name: string) =>
+    `Changes to ${name} could not be saved. The previous folder settings were restored.`,
   settingsSaveQueued: 'This settings change is saved on this device and queued. It will retry automatically.',
   alternateGreetingMutationQueued:
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',

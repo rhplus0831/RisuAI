@@ -6,7 +6,10 @@ const sidebarKeyboardMocks = vi.hoisted(() => ({
   alertSelect: vi.fn(),
   navigate: vi.fn(),
   selectSingleFile: vi.fn(),
-  updateCharacterOrderFolder: vi.fn(),
+  updateCharacterOrderFolderWithOutcome: vi.fn((): any => ({
+    applied: true,
+    settlement: Promise.resolve({ status: 'accepted', result: { status: 'ok' } }),
+  })),
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -46,7 +49,7 @@ vi.mock('src/ts/characterCommands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/characterCommands')>()
   return {
     ...actual,
-    updateCharacterOrderFolder: sidebarKeyboardMocks.updateCharacterOrderFolder,
+    updateCharacterOrderFolderWithOutcome: sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome,
   }
 })
 
@@ -256,7 +259,7 @@ describe('Sidebar character folder context menu', () => {
     await tick()
 
     expect(sidebarKeyboardMocks.alertSelect.mock.calls[1][0]).toHaveLength(8)
-    expect(sidebarKeyboardMocks.updateCharacterOrderFolder).not.toHaveBeenCalled()
+    expect(sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome).not.toHaveBeenCalled()
   })
 
   it('ignores an invalid nested color selection', async () => {
@@ -267,7 +270,7 @@ describe('Sidebar character folder context menu', () => {
     await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(2))
     await tick()
 
-    expect(sidebarKeyboardMocks.updateCharacterOrderFolder).not.toHaveBeenCalled()
+    expect(sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome).not.toHaveBeenCalled()
   })
 
   it('cancels image selection without resetting or opening the file picker', async () => {
@@ -279,7 +282,7 @@ describe('Sidebar character folder context menu', () => {
     await tick()
 
     expect(sidebarKeyboardMocks.alertSelect.mock.calls[1][0]).toHaveLength(2)
-    expect(sidebarKeyboardMocks.updateCharacterOrderFolder).not.toHaveBeenCalled()
+    expect(sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome).not.toHaveBeenCalled()
     expect(sidebarKeyboardMocks.selectSingleFile).not.toHaveBeenCalled()
   })
 
@@ -296,7 +299,63 @@ describe('Sidebar character folder context menu', () => {
 
     outerSelection.resolve('1')
 
-    await vi.waitFor(() => expect(sidebarKeyboardMocks.updateCharacterOrderFolder).toHaveBeenCalledTimes(1))
-    expect(sidebarKeyboardMocks.updateCharacterOrderFolder).toHaveBeenCalledWith('folder-a', { color: 'red' })
+    await vi.waitFor(() => expect(sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome).toHaveBeenCalledTimes(1))
+    expect(sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome).toHaveBeenCalledWith('folder-a', {
+      color: 'red',
+    })
+  })
+
+  it('keeps a folder change pending through classification, serializes that folder, and labels a queued result', async () => {
+    const settlement = deferred<any>()
+    sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome.mockReturnValueOnce({
+      applied: true,
+      settlement: settlement.promise,
+    })
+    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('1').mockResolvedValueOnce('0')
+
+    openFolderContextMenu('Folder A')
+    await vi.waitFor(() => expect(sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome).toHaveBeenCalledTimes(1))
+    await tick()
+
+    const folderAvatar = target.querySelector<HTMLElement>('[role="button"][aria-label="Folder A"]')
+    const folderRow = folderAvatar?.closest<HTMLElement>('[role="listitem"]')
+    expect(folderRow?.getAttribute('aria-busy')).toBe('true')
+    expect(folderRow?.getAttribute('draggable')).toBe('false')
+    expect(target.querySelector('[data-risu-character-organization-status="pending"]')?.textContent).toContain(
+      language.characterOrganizationSaving,
+    )
+
+    openFolderContextMenu('Folder A')
+    await tick()
+    expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(2)
+
+    openFolderContextMenu('Folder B')
+    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(3))
+
+    settlement.resolve({ status: 'queued', result: { status: 'unavailable' } })
+    await tick()
+    await tick()
+
+    expect(target.querySelector('[data-risu-character-organization-status="queued"]')?.textContent).toContain(
+      language.mutationStatusQueued,
+    )
+    expect(folderRow?.getAttribute('draggable')).toBe('true')
+  })
+
+  it('labels a terminal folder-organization failure after settlement', async () => {
+    sidebarKeyboardMocks.updateCharacterOrderFolderWithOutcome.mockReturnValueOnce({
+      applied: true,
+      settlement: Promise.resolve({ status: 'failed', result: { status: 'error', error: 'rejected' } }),
+    })
+    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('0')
+    sidebarKeyboardMocks.alertInput.mockResolvedValueOnce('Renamed A')
+
+    openFolderContextMenu('Folder A')
+
+    await vi.waitFor(() => {
+      expect(target.querySelector('[data-risu-character-organization-status="failed"]')?.textContent).toContain(
+        language.mutationStatusFailed,
+      )
+    })
   })
 })
