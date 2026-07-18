@@ -113,6 +113,7 @@ interface CapturedFetch {
 }
 
 interface StubCommandFetchOptions {
+  generationSettingsResponse?: Promise<Response>
   modelPatchResponse?: Promise<Response>
   promptPatchResponse?: Promise<Response>
   promptDeleteResponse?: Promise<Response>
@@ -233,6 +234,7 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
         })
       }
       if (url.endsWith('/generation-settings')) {
+        if (options.generationSettingsResponse) return options.generationSettingsResponse
         return jsonResponse({
           status: 'ok',
           revision: 201,
@@ -949,6 +951,28 @@ describe('generation settings picker mode', () => {
     })
   })
 
+  it('keeps the preset picker open and reports a rejected active-chat save', async () => {
+    stubCommandFetch({
+      generationSettingsResponse: Promise.resolve(jsonResponse({ error: 'preset selection rejected' }, 400)),
+    })
+    const close = mountPresetPicker('active-chat-generation-settings')
+
+    pickerSelectionControl('prompt', 'preset-a').click()
+
+    await vi.waitFor(() =>
+      expect(target.querySelector('[data-risu-preset-selection-status]')?.textContent).toContain(
+        'preset selection rejected',
+      ),
+    )
+    expect(alertSpies.alertError).toHaveBeenCalledWith(
+      language.chatGenerationSettingsSaveFailed('preset selection rejected'),
+    )
+    expect(close).not.toHaveBeenCalled()
+    expect(getDatabase().characters[0].chats[0].generationSettings?.promptPresetId).toBe('preset-b')
+    expectPickerRowSelection('prompt', 'preset-a', false)
+    expectPickerRowSelection('prompt', 'preset-b', true)
+  })
+
   it('keeps global preset rows on changeToPreset in global mode', async () => {
     const calls = stubCommandFetch()
     const close = mountPresetPicker('global')
@@ -1253,6 +1277,26 @@ describe('generation settings picker mode', () => {
       baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
       patch: { personaId: 'persona-a' },
     })
+  })
+
+  it('keeps the persona picker open and reports a rejected active-chat save', async () => {
+    stubCommandFetch({
+      generationSettingsResponse: Promise.resolve(jsonResponse({ error: 'persona selection rejected' }, 400)),
+    })
+    const close = mountPersonaPicker('active-chat-generation-settings')
+
+    pickerRow('persona', 'persona-a').click()
+
+    await vi.waitFor(() =>
+      expect(target.querySelector('[role="alert"]')?.textContent).toContain('persona selection rejected'),
+    )
+    expect(alertSpies.alertError).toHaveBeenCalledWith(
+      language.chatGenerationSettingsSaveFailed('persona selection rejected'),
+    )
+    expect(close).not.toHaveBeenCalled()
+    expect(getDatabase().characters[0].chats[0].generationSettings?.personaId).toBe('persona-b')
+    expectPickerRowSelection('persona', 'persona-a', false)
+    expectPickerRowSelection('persona', 'persona-b', true)
   })
 
   it('keeps global persona rows on changeUserPersona in global mode', async () => {

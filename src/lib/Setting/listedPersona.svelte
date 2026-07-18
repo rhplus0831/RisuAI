@@ -1,7 +1,7 @@
 <script lang="ts">
   import { XIcon } from '@lucide/svelte'
   import { language } from '../../lang'
-  import { alertNormal } from 'src/ts/alert'
+  import { alertError, alertNormal } from 'src/ts/alert'
 
   import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
@@ -9,7 +9,7 @@
   import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
   import {
     resolveActiveChatGenerationSettings,
-    saveActiveChatGenerationSettingsSelection,
+    saveActiveChatGenerationSettingsSelectionWithOutcome,
   } from 'src/ts/activeChatGenerationSettings'
   import type { ActiveChatTarget } from 'src/ts/chatCommands'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
@@ -38,19 +38,33 @@
   }
 
   async function selectPersona(index: number): Promise<void> {
-    if (isChatGenerationSelectionMode) {
-      const personaId = validUniquePersonaIdAt(index)
-      if (!personaId) return
-      if (saveActiveChatGenerationSettingsSelection({ personaId }, { expectedTarget: target })) {
-        close()
-      }
-      return
-    }
-
     if (mutationPending) return
     mutationPending = true
     mutationError = ''
     try {
+      if (isChatGenerationSelectionMode) {
+        const personaId = validUniquePersonaIdAt(index)
+        if (!personaId) return
+        const persistence = saveActiveChatGenerationSettingsSelectionWithOutcome(
+          { personaId },
+          { expectedTarget: target },
+        )
+        if (!persistence) {
+          mutationError = language.chatGenerationSettingsSaveFailed(language.chatGenerationSettingsTargetChanged)
+          alertError(mutationError)
+          return
+        }
+        const result = await persistence.settlement
+        if (result.status === 'failed') {
+          mutationError = language.chatGenerationSettingsSaveFailed(result.error)
+          alertError(mutationError)
+          return
+        }
+        if (result.status === 'queued') alertNormal(language.settingsSaveQueued)
+        close()
+        return
+      }
+
       const persistence = changeUserPersonaWithOutcome(index)
       if (!persistence) {
         mutationError = language.personaMutationFailed
@@ -63,8 +77,11 @@
       }
       if (status === 'queued') alertNormal(language.personaMutationQueued)
       close()
-    } catch {
-      mutationError = language.personaMutationFailed
+    } catch (error) {
+      mutationError = isChatGenerationSelectionMode
+        ? language.chatGenerationSettingsSaveFailed(error instanceof Error ? error.message : '')
+        : language.personaMutationFailed
+      if (isChatGenerationSelectionMode) alertError(mutationError)
     } finally {
       mutationPending = false
     }
@@ -126,6 +143,10 @@
     {#if mutationError}
       <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
         {mutationError}
+      </div>
+    {:else if mutationPending && isChatGenerationSelectionMode}
+      <div class="mb-3 text-sm text-textcolor2" role="status">
+        {language.chatGenerationSettingsSaving}
       </div>
     {/if}
     {#each getDatabase().personas as persona, i}

@@ -2,9 +2,11 @@ import { mount, tick, unmount } from 'svelte'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 
 const pickerMocks = vi.hoisted(() => ({
+  alertError: vi.fn(),
   alertNormal: vi.fn(),
   changeUserPersonaWithOutcome: vi.fn(),
   close: vi.fn(),
+  saveActiveChatGenerationSettingsSelectionWithOutcome: vi.fn(),
   database: {
     personas: [
       { id: 'persona-a', name: 'Persona A', note: '' },
@@ -15,6 +17,7 @@ const pickerMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('src/ts/alert', () => ({
+  alertError: pickerMocks.alertError,
   alertNormal: pickerMocks.alertNormal,
 }))
 
@@ -33,7 +36,8 @@ vi.mock('src/ts/server/resourceState.svelte', () => ({
 
 vi.mock('src/ts/activeChatGenerationSettings', () => ({
   resolveActiveChatGenerationSettings: () => ({ settings: null }),
-  saveActiveChatGenerationSettingsSelection: vi.fn(() => true),
+  saveActiveChatGenerationSettingsSelectionWithOutcome:
+    pickerMocks.saveActiveChatGenerationSettingsSelectionWithOutcome,
 }))
 
 vi.mock('src/ts/stores.svelte', async () => {
@@ -69,8 +73,12 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   pickerMocks.alertNormal.mockReset()
+  pickerMocks.alertError.mockReset()
   pickerMocks.changeUserPersonaWithOutcome.mockReset()
   pickerMocks.close.mockReset()
+  pickerMocks.saveActiveChatGenerationSettingsSelectionWithOutcome.mockReset().mockReturnValue({
+    settlement: Promise.resolve({ status: 'accepted' }),
+  })
   pickerMocks.database.selectedPersona = 0
 })
 
@@ -118,6 +126,85 @@ describe('global persona picker persistence', () => {
     personaRow(1).click()
 
     await vi.waitFor(() => expect(pickerMocks.alertNormal).toHaveBeenCalledWith(language.personaMutationQueued))
+    expect(pickerMocks.close).toHaveBeenCalledOnce()
+  })
+})
+
+describe('active-chat persona picker persistence', () => {
+  const targetIdentity = {
+    selectedCharID: 0,
+    chatPage: 0,
+    characterId: 'char-a',
+    chatId: 'chat-a',
+  }
+
+  it('stays busy and surfaces a rejected chat-generation selection', async () => {
+    const persistence = deferred<{ status: 'accepted' | 'queued' } | { status: 'failed'; error: string }>()
+    pickerMocks.saveActiveChatGenerationSettingsSelectionWithOutcome.mockReturnValue({
+      settlement: persistence.promise,
+    })
+    component = mount(ListedPersona, {
+      target,
+      props: {
+        close: pickerMocks.close,
+        mode: 'active-chat-generation-settings',
+        target: targetIdentity,
+      },
+    })
+
+    personaRow(1).click()
+    await tick()
+
+    expect(personaRow(1).disabled).toBe(true)
+    expect(target.querySelector('[role="status"]')?.textContent).toContain(language.chatGenerationSettingsSaving)
+    expect(pickerMocks.close).not.toHaveBeenCalled()
+
+    persistence.resolve({ status: 'failed', error: 'selection rejected' })
+    await vi.waitFor(() => expect(target.querySelector('[role="alert"]')?.textContent).toContain('selection rejected'))
+    expect(pickerMocks.alertError).toHaveBeenCalledWith(language.chatGenerationSettingsSaveFailed('selection rejected'))
+    expect(pickerMocks.close).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a stale active-chat target without closing', async () => {
+    pickerMocks.saveActiveChatGenerationSettingsSelectionWithOutcome.mockReturnValue(null)
+    component = mount(ListedPersona, {
+      target,
+      props: {
+        close: pickerMocks.close,
+        mode: 'active-chat-generation-settings',
+        target: targetIdentity,
+      },
+    })
+
+    personaRow(1).click()
+
+    await vi.waitFor(() =>
+      expect(target.querySelector('[role="alert"]')?.textContent).toContain(
+        language.chatGenerationSettingsTargetChanged,
+      ),
+    )
+    expect(pickerMocks.alertError).toHaveBeenCalledWith(
+      language.chatGenerationSettingsSaveFailed(language.chatGenerationSettingsTargetChanged),
+    )
+    expect(pickerMocks.close).not.toHaveBeenCalled()
+  })
+
+  it('announces a queued active-chat selection before closing', async () => {
+    pickerMocks.saveActiveChatGenerationSettingsSelectionWithOutcome.mockReturnValue({
+      settlement: Promise.resolve({ status: 'queued' }),
+    })
+    component = mount(ListedPersona, {
+      target,
+      props: {
+        close: pickerMocks.close,
+        mode: 'active-chat-generation-settings',
+        target: targetIdentity,
+      },
+    })
+
+    personaRow(1).click()
+
+    await vi.waitFor(() => expect(pickerMocks.alertNormal).toHaveBeenCalledWith(language.settingsSaveQueued))
     expect(pickerMocks.close).toHaveBeenCalledOnce()
   })
 })

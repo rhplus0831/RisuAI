@@ -1,6 +1,8 @@
 import { get } from 'svelte/store'
 import {
   alertMd,
+  alertError,
+  alertNormal,
   alertSelect,
   alertToast,
   alertWait,
@@ -33,8 +35,9 @@ import { defaultHotkeys } from './defaulthotkeys'
 import { doingChat, previewBody, sendChat } from './process/index.svelte'
 import {
   resolveActiveChatGenerationSettings,
-  saveActiveChatGenerationSettingsSelection,
+  saveActiveChatGenerationSettingsSelectionWithOutcome,
 } from './activeChatGenerationSettings'
+import { captureActiveChatTarget } from './chatCommands'
 import { closeSettingsRoute, navigate, openSettingsRoute } from './router'
 
 export function initHotkey() {
@@ -530,11 +533,36 @@ export function changeToPreset(num: number): boolean {
     const preset = Number.isInteger(num) && num >= 0 ? pres[num] : undefined
     if (preset && typeof preset.id === 'string' && preset.id.length > 0) {
       const activeChat = resolveActiveChatGenerationSettings()
-      const selected = activeChat.identity.chatId
-        ? saveActiveChatGenerationSettingsSelection({ modelPresetId: preset.id })
-        : (selectModelPreset(num), true)
-      if (selected) alertToast(`${language.modelPresets}: ${preset.name ?? ''}`)
-      return selected
+      if (activeChat.identity.chatId) {
+        const target = captureActiveChatTarget()
+        const persistence = saveActiveChatGenerationSettingsSelectionWithOutcome(
+          { modelPresetId: preset.id },
+          { expectedTarget: target },
+        )
+        if (!persistence) {
+          alertError(language.chatGenerationSettingsSaveFailed(language.chatGenerationSettingsTargetChanged))
+          return false
+        }
+        void persistence.settlement.then(
+          (result) => {
+            if (result.status === 'accepted') {
+              alertToast(`${language.modelPresets}: ${preset.name ?? ''}`)
+            } else if (result.status === 'queued') {
+              alertNormal(language.settingsSaveQueued)
+            } else {
+              alertError(language.chatGenerationSettingsSaveFailed(result.error))
+            }
+          },
+          (error) => {
+            alertError(language.chatGenerationSettingsSaveFailed(error instanceof Error ? error.message : ''))
+          },
+        )
+        return true
+      }
+
+      void selectModelPreset(num)
+      alertToast(`${language.modelPresets}: ${preset.name ?? ''}`)
+      return true
     }
   }
   return false

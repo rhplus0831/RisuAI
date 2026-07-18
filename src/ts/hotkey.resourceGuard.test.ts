@@ -8,6 +8,11 @@ import { testDatabaseState } from './__tests__/resourceDatabaseState'
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const changeCharMock = vi.hoisted(() => vi.fn(async () => {}))
+const alertSpies = vi.hoisted(() => ({
+  alertError: vi.fn(),
+  alertNormal: vi.fn(),
+  alertToast: vi.fn(),
+}))
 
 vi.mock('./platform', async (importActual) => {
   const actual = await importActual<typeof import('./platform')>()
@@ -27,6 +32,11 @@ vi.mock('./characters', () => ({
   changeChar: changeCharMock,
 }))
 
+vi.mock('./alert', async (importActual) => ({
+  ...(await importActual<typeof import('./alert')>()),
+  ...alertSpies,
+}))
+
 // stores.svelte.ts installs a root $effect that calls moduleUpdate() whenever
 // testDatabaseState.db changes; stub it so seeding the database does not trigger the
 // module pipeline (and its circular-import init order) under test.
@@ -39,7 +49,8 @@ import { adjacentCharacterIndex, changeToAdjacentCharacter, changeToPreset, hotk
 import { applyServerBackedSetting } from './server/settingsBridge.svelte'
 import { settingsGroupForKey, clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
-import { selectedCharID } from './stores.svelte'
+import { alertStore, selectedCharID } from './stores.svelte'
+import { language } from 'src/lang'
 
 interface CapturedFetch {
   url: string
@@ -54,7 +65,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function stubCommandFetch(): CapturedFetch[] {
+function stubCommandFetch(options: { generationSettingsResponse?: Promise<Response> } = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
     'fetch',
@@ -81,6 +92,7 @@ function stubCommandFetch(): CapturedFetch[] {
         })
       }
       if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+        if (options.generationSettingsResponse) return options.generationSettingsResponse
         return jsonResponse({
           revision: 11,
           event: {
@@ -137,7 +149,9 @@ function seedDatabase(): void {
 
 beforeEach(() => {
   changeCharMock.mockClear()
+  for (const spy of Object.values(alertSpies)) spy.mockReset()
   platformState.isFastifyServer = true
+  alertStore.set({ type: 'none', msg: '' })
   selectedCharID.set(-1)
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
@@ -274,6 +288,44 @@ describe('hotkey handling under the resource guard', () => {
       baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
       patch: { modelPresetId: 'model-second' },
     })
+    await vi.waitFor(() => expect(alertSpies.alertToast).toHaveBeenCalledWith(`${language.modelPresets}: Second Model`))
+  })
+
+  it('reports an active-chat preset rejection without showing a success toast', async () => {
+    const calls = stubCommandFetch({
+      generationSettingsResponse: Promise.resolve(jsonResponse({ error: 'hotkey selection rejected' }, 400)),
+    })
+    testDatabaseState.db.characters = [
+      {
+        chaId: 'char-a',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a',
+            generationSettings: {
+              configured: true,
+              personaId: 'persona-default',
+              modelPresetId: 'model-default',
+              promptPresetId: 'prompt-default',
+              jailbreakToggle: false,
+              sidebarToggles: {},
+            },
+          },
+        ],
+      },
+    ] as any
+    selectedCharID.set(0)
+
+    expect(changeToPreset(1)).toBe(true)
+    await waitForCommand(calls, (call) => call.url.endsWith('/chat-a/generation-settings'))
+    await vi.waitFor(() =>
+      expect(alertSpies.alertError).toHaveBeenCalledWith(
+        language.chatGenerationSettingsSaveFailed('hotkey selection rejected'),
+      ),
+    )
+
+    expect(alertSpies.alertToast).not.toHaveBeenCalled()
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings.modelPresetId).toBe('model-default')
   })
 
   it('routes a hotkey settings edit through a sidebar settings patch', async () => {

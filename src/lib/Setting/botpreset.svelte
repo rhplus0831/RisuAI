@@ -35,7 +35,7 @@
   import { prebuiltPresets } from 'src/ts/process/templates/templates'
   import {
     resolveActiveChatGenerationSettings,
-    saveActiveChatGenerationSettingsSelection,
+    saveActiveChatGenerationSettingsSelectionWithOutcome,
   } from 'src/ts/activeChatGenerationSettings'
   import type { ActiveChatTarget } from 'src/ts/chatCommands'
   import ModelPresetList from './Pages/Model/ModelPresetList.svelte'
@@ -159,8 +159,38 @@
     if (isChatGenerationSelectionMode) {
       const presetId = nonEmptyId(preset?.id)
       if (!presetId) return
+      if (selectionPendingKey) return
+
+      const operation = ++selectionOperation
+      selectionPendingKey = presetDraftKey(preset, index)
+      selectionError = ''
       const patch = kind === 'prompt' ? { promptPresetId: presetId } : { modelPresetId: presetId }
-      if (saveActiveChatGenerationSettingsSelection(patch, { expectedTarget: target })) close()
+      try {
+        const persistence = saveActiveChatGenerationSettingsSelectionWithOutcome(patch, { expectedTarget: target })
+        if (!persistence) {
+          if (operation !== selectionOperation) return
+          selectionPendingKey = null
+          selectionError = language.chatGenerationSettingsSaveFailed(language.chatGenerationSettingsTargetChanged)
+          alertError(selectionError)
+          return
+        }
+
+        const result = await persistence.settlement
+        if (operation !== selectionOperation) return
+        selectionPendingKey = null
+        if (result.status === 'failed') {
+          selectionError = language.chatGenerationSettingsSaveFailed(result.error)
+          alertError(selectionError)
+          return
+        }
+        if (result.status === 'queued') alertNormal(language.settingsSaveQueued)
+        close()
+      } catch (error) {
+        if (operation !== selectionOperation) return
+        selectionPendingKey = null
+        selectionError = language.chatGenerationSettingsSaveFailed(error instanceof Error ? error.message : '')
+        alertError(selectionError)
+      }
       return
     }
 
@@ -308,11 +338,11 @@
     if (event.key !== 'Escape') return
     event.preventDefault()
     event.stopPropagation()
-    close()
+    if (!selectionPendingKey) close()
   }
 
   function handleBackdropClick(event: MouseEvent): void {
-    if (event.target === event.currentTarget) close()
+    if (event.target === event.currentTarget && !selectionPendingKey) close()
   }
 </script>
 
@@ -340,9 +370,12 @@
       <div class="grow flex justify-end">
         <button
           data-modal-initial-focus
+          disabled={!!selectionPendingKey}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
           aria-label={language.close}
-          onclick={close}>
+          onclick={() => {
+            if (!selectionPendingKey) close()
+          }}>
           <XIcon size={24} />
         </button>
       </div>
