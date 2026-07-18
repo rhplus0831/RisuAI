@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
-  import { popUpEditorStore } from '../../ts/stores.svelte'
+  import { onDestroy, onMount, untrack } from 'svelte'
+  import { closePopupEditorSession, popUpEditorStore } from '../../ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import type MonacoEditorType from './MonacoEditor.svelte'
   import { language } from 'src/lang'
@@ -15,9 +15,10 @@
   let MonacoComponent: typeof MonacoEditorType | null = $state(null)
   let showToggles = $state(false)
   let tokenCountRun = 0
+  const sessionId = untrack(() => popUpEditorStore.sessionId)
 
   function close(): void {
-    popUpEditorStore.open = false
+    closePopupEditorSession(sessionId)
   }
 
   function handleDialogKeydown(event: KeyboardEvent): void {

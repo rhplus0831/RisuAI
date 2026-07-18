@@ -3,7 +3,7 @@
 </script>
 
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import {
     ArrowLeft,
     ArrowLeftRightIcon,
@@ -48,6 +48,9 @@
     popupStore,
     refreshVariableOnlyGui,
     SizeStore,
+    closePopupEditorSession,
+    isPopupEditorSessionCurrent,
+    openPopupEditorSession,
     popUpEditorStore,
   } from 'src/ts/stores.svelte'
   import { capitalize, getUserDisplayName, getUserIcon, sleep } from 'src/ts/util'
@@ -218,6 +221,8 @@
   }: Props = $props()
   let autoPopupMessageEditorOpen = $state(false)
   let autoPopupTranslationEditorOpen = $state(false)
+  let activeAutoPopupMessageSessionId: number | null = null
+  let activeAutoPopupTranslationSessionId: number | null = null
   let suppressAutoPopupTranslationEditor = $state(false)
   const autoPopupMessageEditor = $derived(
     shouldAutoPopupMessageEditor({
@@ -393,18 +398,31 @@
 
     autoPopupMessageEditorOpen = true
     messageEditOriginalText ??= message
-    popUpEditorStore.value = message
-    popUpEditorStore.mode = 'default'
-    popUpEditorStore.language = 'markdown'
-    popUpEditorStore.open = true
+    const initialValue = message
+    const sessionId = openPopupEditorSession(message)
+    activeAutoPopupMessageSessionId = sessionId
 
     try {
-      while (popUpEditorStore.open) {
+      while (isPopupEditorSessionCurrent(sessionId) && popUpEditorStore.open) {
         await sleep(100)
+        if (
+          messageEditTarget !== target ||
+          !editMode ||
+          message !== initialValue ||
+          !isCurrentMessageEditorTarget(target)
+        ) {
+          closePopupEditorSession(sessionId)
+          return
+        }
       }
 
-      if (messageEditTarget !== target || !editMode) return
+      if (!isPopupEditorSessionCurrent(sessionId)) return
+      if (messageEditTarget !== target || !editMode || message !== initialValue) {
+        closePopupEditorSession(sessionId)
+        return
+      }
       if (!isCurrentMessageEditorTarget(target)) {
+        closePopupEditorSession(sessionId)
         cancelMessageEdit()
         return
       }
@@ -412,6 +430,7 @@
       message = popUpEditorStore.value
       await saveMessageEdit()
     } finally {
+      if (activeAutoPopupMessageSessionId === sessionId) activeAutoPopupMessageSessionId = null
       autoPopupMessageEditorOpen = false
     }
   }
@@ -419,27 +438,58 @@
   async function openAutoPopupTranslationEditor() {
     if (autoPopupTranslationEditorOpen || popUpEditorStore.open) return
 
+    const target = editTranslationTarget ?? captureTranslationMessageTarget()
+    if (!target || !isRenderingTranslationMessageTarget(target)) return
+
     autoPopupTranslationEditorOpen = true
-    const messageIndex = idx
-    popUpEditorStore.value = editTranslationText
-    popUpEditorStore.mode = 'default'
-    popUpEditorStore.language = 'markdown'
-    popUpEditorStore.open = true
+    const initialValue = editTranslationText
+    const sessionId = openPopupEditorSession(editTranslationText)
+    activeAutoPopupTranslationSessionId = sessionId
 
     try {
-      while (popUpEditorStore.open) {
+      while (isPopupEditorSessionCurrent(sessionId) && popUpEditorStore.open) {
         await sleep(100)
+        if (
+          editTranslationTarget !== target ||
+          !editTranslationMode ||
+          editTranslationText !== initialValue ||
+          !isRenderingTranslationMessageTarget(target)
+        ) {
+          closePopupEditorSession(sessionId)
+          return
+        }
       }
 
-      if (idx !== messageIndex || !editTranslationMode) return
+      if (!isPopupEditorSessionCurrent(sessionId)) return
+      if (
+        editTranslationTarget !== target ||
+        !editTranslationMode ||
+        editTranslationText !== initialValue ||
+        !isRenderingTranslationMessageTarget(target)
+      ) {
+        closePopupEditorSession(sessionId)
+        return
+      }
 
       suppressAutoPopupTranslationEditor = true
       editTranslationText = popUpEditorStore.value
       await saveTranslationEdit()
     } finally {
+      if (activeAutoPopupTranslationSessionId === sessionId) activeAutoPopupTranslationSessionId = null
       autoPopupTranslationEditorOpen = false
     }
   }
+
+  onDestroy(() => {
+    if (activeAutoPopupMessageSessionId !== null) {
+      closePopupEditorSession(activeAutoPopupMessageSessionId)
+      activeAutoPopupMessageSessionId = null
+    }
+    if (activeAutoPopupTranslationSessionId !== null) {
+      closePopupEditorSession(activeAutoPopupTranslationSessionId)
+      activeAutoPopupTranslationSessionId = null
+    }
+  })
 
   $effect(() => {
     if (autoPopupMessageEditor) {

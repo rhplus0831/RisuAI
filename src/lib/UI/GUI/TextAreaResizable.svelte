@@ -4,7 +4,12 @@
 
   import { language } from 'src/lang'
   import { hotkeyMatches } from 'src/ts/hotkey'
-  import { popUpEditorStore } from 'src/ts/stores.svelte'
+  import {
+    closePopupEditorSession,
+    isPopupEditorSessionCurrent,
+    openPopupEditorSession,
+    popUpEditorStore,
+  } from 'src/ts/stores.svelte'
   import { longpress } from 'src/ts/gui/longtouch'
   import { sleep } from 'src/ts/util'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
@@ -14,6 +19,7 @@
   let resizeRequest = 0
   let openingPopupEditor = false
   let popupEditorRun = 0
+  let activePopupEditorSessionId: number | null = null
   interface Props {
     value?: string
     handleLongPress?: any
@@ -53,22 +59,30 @@
     const run = ++popupEditorRun
     const initialValue = value
     openingPopupEditor = true
-    popUpEditorStore.value = value
-    popUpEditorStore.mode = 'default'
-    popUpEditorStore.language = popupLanguage
-    popUpEditorStore.open = true
+    const sessionId = openPopupEditorSession(value, popupLanguage)
+    activePopupEditorSessionId = sessionId
 
     try {
-      while (run === popupEditorRun && value === initialValue && popUpEditorStore.open) {
+      while (
+        run === popupEditorRun &&
+        value === initialValue &&
+        isPopupEditorSessionCurrent(sessionId) &&
+        popUpEditorStore.open
+      ) {
         await sleep(100)
       }
 
-      if (run !== popupEditorRun || value !== initialValue) return
+      if (run !== popupEditorRun || value !== initialValue) {
+        closePopupEditorSession(sessionId)
+        return
+      }
+      if (!isPopupEditorSessionCurrent(sessionId)) return
       value = popUpEditorStore.value
       onchange()
       await tick()
       resize()
     } finally {
+      if (activePopupEditorSessionId === sessionId) activePopupEditorSessionId = null
       openingPopupEditor = false
     }
   }
@@ -79,6 +93,10 @@
 
   onDestroy(() => {
     popupEditorRun += 1
+    if (activePopupEditorSessionId !== null) {
+      closePopupEditorSession(activePopupEditorSessionId)
+      activePopupEditorSessionId = null
+    }
     resizeRequest += 1
   })
 

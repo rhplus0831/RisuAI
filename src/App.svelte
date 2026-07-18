@@ -333,7 +333,9 @@
     <EasyPanel />
   {/if}
   {#if popUpEditorStore.open}
-    <PopupEditor />
+    {#key popUpEditorStore.sessionId}
+      <PopupEditor />
+    {/key}
   {/if}
   {#if loadoutModalStore.open}
     <LoadoutModal />

@@ -4,7 +4,13 @@
   import { highlighter, getNewHighlightId, removeHighlight, AllCBS } from 'src/ts/gui/highlight'
   import { sleep } from 'src/ts/util'
   import { onDestroy, onMount } from 'svelte'
-  import { disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte'
+  import {
+    closePopupEditorSession,
+    disableHighlight,
+    isPopupEditorSessionCurrent,
+    openPopupEditorSession,
+    popUpEditorStore,
+  } from 'src/ts/stores.svelte'
   import { isMobile } from 'src/ts/platform'
   import { hotkeyMatches } from 'src/ts/hotkey'
   import { language } from 'src/lang'
@@ -67,6 +73,7 @@
   let highlightTimer: ReturnType<typeof setTimeout> | null = null
   let popupEditorRun = 0
   let popupEditorContextRevision = 0
+  let activePopupEditorSessionId: number | null = null
 
   const isPopupEditorEnabled = () =>
     popupEditor === true ||
@@ -82,34 +89,39 @@
     const initialContext = popupEditorContext
     const initialContextRevision = popupEditorContextRevision
     hideAutoComplete()
-    popUpEditorStore.value = value
-    popUpEditorStore.mode = 'default'
-    popUpEditorStore.language = popupLanguage
-    popUpEditorStore.open = true
+    const sessionId = openPopupEditorSession(value, popupLanguage)
+    activePopupEditorSessionId = sessionId
 
-    while (
-      run === popupEditorRun &&
-      popupEditorContextRevision === initialContextRevision &&
-      popupEditorContext === initialContext &&
-      value === initialValue &&
-      popUpEditorStore.open
-    ) {
-      await sleep(100)
+    try {
+      while (
+        run === popupEditorRun &&
+        popupEditorContextRevision === initialContextRevision &&
+        popupEditorContext === initialContext &&
+        value === initialValue &&
+        isPopupEditorSessionCurrent(sessionId) &&
+        popUpEditorStore.open
+      ) {
+        await sleep(100)
+      }
+
+      if (
+        run !== popupEditorRun ||
+        popupEditorContextRevision !== initialContextRevision ||
+        popupEditorContext !== initialContext ||
+        value !== initialValue
+      ) {
+        closePopupEditorSession(sessionId)
+        return
+      }
+      if (!isPopupEditorSessionCurrent(sessionId)) return
+
+      value = popUpEditorStore.value
+      onInput(value, initialContext)
+      onchange()
+      scheduleHighlight(value)
+    } finally {
+      if (activePopupEditorSessionId === sessionId) activePopupEditorSessionId = null
     }
-
-    if (
-      run !== popupEditorRun ||
-      popupEditorContextRevision !== initialContextRevision ||
-      popupEditorContext !== initialContext ||
-      value !== initialValue
-    ) {
-      return
-    }
-
-    value = popUpEditorStore.value
-    onInput(value, initialContext)
-    onchange()
-    scheduleHighlight(value)
   }
 
   const getSelectionInInput = () => {
@@ -281,6 +293,10 @@
 
   onDestroy(() => {
     popupEditorRun++
+    if (activePopupEditorSessionId !== null) {
+      closePopupEditorSession(activePopupEditorSessionId)
+      activePopupEditorSessionId = null
+    }
     if (highlightTimer) {
       clearTimeout(highlightTimer)
       highlightTimer = null

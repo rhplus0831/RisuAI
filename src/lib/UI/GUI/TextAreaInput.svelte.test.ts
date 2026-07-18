@@ -111,6 +111,50 @@ afterEach(() => {
 })
 
 describe('TextAreaInput popup editor finalization', () => {
+  it('does not commit a newer popup session into an earlier field', async () => {
+    const firstTarget = document.createElement('div')
+    const secondTarget = document.createElement('div')
+    target.append(firstTarget, secondTarget)
+    const firstOnInput = vi.fn()
+    const firstOnchange = vi.fn()
+    const secondOnInput = vi.fn()
+    const secondOnchange = vi.fn()
+    const firstComponent = mount(TextAreaInput, {
+      target: firstTarget,
+      props: { value: 'first field', onInput: firstOnInput, onchange: firstOnchange },
+    })
+    const secondComponent = mount(TextAreaInput, {
+      target: secondTarget,
+      props: { value: 'second field', onInput: secondOnInput, onchange: secondOnchange },
+    })
+
+    try {
+      firstTarget.querySelector<HTMLButtonElement>('button[aria-label]')?.click()
+      await tick()
+      const firstSessionId = popUpEditorStore.sessionId
+
+      popUpEditorStore.value = 'edited first field'
+      popUpEditorStore.open = false
+      secondTarget.querySelector<HTMLButtonElement>('button[aria-label]')?.click()
+      await tick()
+
+      expect(popUpEditorStore.sessionId).not.toBe(firstSessionId)
+      popUpEditorStore.value = 'edited second field'
+      popUpEditorStore.open = false
+      await vi.advanceTimersByTimeAsync(100)
+      await tick()
+
+      expect(firstOnInput).not.toHaveBeenCalled()
+      expect(firstOnchange).not.toHaveBeenCalled()
+      expect(secondOnInput).toHaveBeenCalledOnce()
+      expect(secondOnInput).toHaveBeenCalledWith('edited second field', undefined)
+      expect(secondOnchange).toHaveBeenCalledOnce()
+    } finally {
+      unmount(firstComponent)
+      unmount(secondComponent)
+    }
+  })
+
   it('calls onchange after committing a hotkey popup edit', async () => {
     const onInput = vi.fn()
     const onchange = vi.fn()
@@ -265,10 +309,10 @@ describe('TextAreaInput popup editor finalization', () => {
       'same note',
     )
     await tick()
-    popUpEditorStore.open = false
     await vi.advanceTimersByTimeAsync(100)
     await tick()
 
+    expect(popUpEditorStore.open).toBe(false)
     expect((component as unknown as { getValue: () => string }).getValue()).toBe('same note')
     expect(onInput).not.toHaveBeenCalled()
     expect(onchange).not.toHaveBeenCalled()
