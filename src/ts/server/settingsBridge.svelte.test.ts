@@ -24,6 +24,7 @@ const recorded = vi.hoisted(() => ({
 }))
 const alertMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
+  alertNormal: vi.fn(),
 }))
 const durabilityMocks = vi.hoisted(() => ({
   acknowledged: [] as Array<{ mutationId: string }>,
@@ -224,6 +225,7 @@ vi.mock('./resourceReads', () => ({
 
 vi.mock('../alert', () => ({
   alertError: alertMocks.alertError,
+  alertNormal: alertMocks.alertNormal,
 }))
 
 vi.mock('./resourceWriteGuard.svelte', () => ({
@@ -366,6 +368,7 @@ beforeEach(() => {
   recorded.groupReads.length = 0
   resourceGuardState.epoch = 0
   alertMocks.alertError.mockClear()
+  alertMocks.alertNormal.mockClear()
   durabilityMocks.acknowledged.length = 0
   durabilityMocks.dispatched.length = 0
   durabilityMocks.nextId = 1
@@ -671,6 +674,8 @@ describe('settingsBridge coalescing', () => {
     applyServerBackedSettingsPatch({ notification: true })
     await flushAndSettle()
     expect(testDatabaseState.db.notification).toBe(true)
+    expect(alertMocks.alertError).not.toHaveBeenCalled()
+    expect(alertMocks.alertNormal).not.toHaveBeenCalled()
 
     expect(applySettingsResource({ revision: 1, settings: { notification: false } })).toBe(true)
     expect(testDatabaseState.db.notification).toBe(true)
@@ -694,6 +699,9 @@ describe('settingsBridge coalescing', () => {
     applyServerBackedSettingsPatch({ notification: true })
     await flushAndSettle()
     expect(testDatabaseState.db.notification).toBe(true)
+    expect(alertMocks.alertError).not.toHaveBeenCalled()
+    expect(alertMocks.alertNormal).toHaveBeenCalledOnce()
+    expect(alertMocks.alertNormal).toHaveBeenCalledWith(language.settingsSaveQueued)
 
     expect(applySettingsResource({ revision: 1, settings: { notification: false } })).toBe(true)
     expect(testDatabaseState.db.notification).toBe(true)
@@ -726,9 +734,12 @@ describe('settingsBridge coalescing', () => {
     await flushAndSettle()
     expect(applySettingsResource({ revision: 1, settings: { notification: false } })).toBe(true)
     expect(testDatabaseState.db.notification).toBe(true)
+    expect(alertMocks.alertError).not.toHaveBeenCalled()
+    expect(alertMocks.alertNormal).toHaveBeenCalledWith(language.settingsSaveQueued)
 
     publishSettingsSettlement(durabilityMocks.dispatched[0].mutationId, 'discarded')
     expect(testDatabaseState.db.notification).toBe(false)
+    expect(alertMocks.alertError).toHaveBeenCalledOnce()
     expect(
       applySettingsGroupResource({ revision: 2, group: 'display', settings: { notification: false } }, [
         'notification',
@@ -843,9 +854,9 @@ describe('settingsBridge coalescing', () => {
     const result = persistServerBackedSettingsPatch({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
       hypaV3PresetId: 1,
-    }).then((accepted) => {
+    }).then((outcome) => {
       settled = true
-      return accepted
+      return outcome
     })
     await flushAndSettle()
 
@@ -860,7 +871,7 @@ describe('settingsBridge coalescing', () => {
     ])
 
     persistence.resolve({ status: 'ok', revision: 1 })
-    expect(await result).toBe(true)
+    expect(await result).toBe('accepted')
   })
 
   it('rolls back and rejects a terminal durable Hypa import', async () => {
@@ -870,18 +881,18 @@ describe('settingsBridge coalescing', () => {
       hypaV3PresetId: 0,
     })
 
-    const accepted = await persistServerBackedSettingsPatch({
+    const outcome = await persistServerBackedSettingsPatch({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
       hypaV3PresetId: 1,
     })
 
-    expect(accepted).toBe(false)
+    expect(outcome).toBe('failed')
     expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha')])
     expect(testDatabaseState.db.hypaV3PresetId).toBe(0)
     expect(alertMocks.alertError).toHaveBeenCalledTimes(1)
   })
 
-  it('does not claim a retained durable Hypa import was accepted or roll back its pending projection', async () => {
+  it('reports a retained durable Hypa import as queued without rolling back its pending projection', async () => {
     durabilityMocks.retainFailures = true
     recorded.patchResults.push({ status: 'error', error: 'temporarily unavailable' })
     setupSettings({
@@ -889,15 +900,16 @@ describe('settingsBridge coalescing', () => {
       hypaV3PresetId: 0,
     })
 
-    const accepted = await persistServerBackedSettingsPatch({
+    const outcome = await persistServerBackedSettingsPatch({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
       hypaV3PresetId: 1,
     })
 
-    expect(accepted).toBe(false)
+    expect(outcome).toBe('queued')
     expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Imported')])
     expect(testDatabaseState.db.hypaV3PresetId).toBe(1)
-    expect(alertMocks.alertError).toHaveBeenCalledTimes(1)
+    expect(alertMocks.alertError).not.toHaveBeenCalled()
+    expect(alertMocks.alertNormal).not.toHaveBeenCalled()
   })
 
   it('removes only the failed Hypa V3 appended preset while preserving sibling edits and later appends', async () => {

@@ -1,5 +1,6 @@
 export const languageEnglish = {
   unknownInteractionTime: 'Unknown',
+  settingsSaveQueued: 'This settings change is saved on this device and queued. It will retry automatically.',
   realm: {
     searchCharacters: 'Search Realm characters',
     previousPage: 'Previous Realm page',

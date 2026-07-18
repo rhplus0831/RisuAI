@@ -146,12 +146,13 @@
 
       const newPreset = createHypaV3Preset(objImport.data.name || 'Imported Preset', objImport.data.settings || {})
       const presets = [...hypaV3PresetsDraft.value, newPreset]
-      const persisted = await persistServerBackedSettingsPatch({
+      const persistence = await persistServerBackedSettingsPatch({
         hypaV3Presets: presets,
         hypaV3PresetId: presets.length - 1,
       })
       if (!componentAlive) return
-      if (persisted) alertNormal(language.successImport)
+      if (persistence === 'accepted') alertNormal(language.successImport)
+      if (persistence === 'queued') alertNormal(language.settingsSaveQueued)
     } catch (error) {
       if (componentAlive) alertError(`${error}`)
     } finally {

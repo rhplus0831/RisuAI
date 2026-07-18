@@ -1,6 +1,6 @@
 import { untrack } from 'svelte'
 import { language } from '../../lang'
-import { alertError } from '../alert'
+import { alertError, alertNormal } from '../alert'
 import { prebuiltPresets } from '../process/templates/templates'
 import {
   mirrorTopLevelPresetField,
@@ -161,6 +161,17 @@ function createSettingsSaveFailureReporter(): () => void {
     alertError(language.errors.settingsSaveFailed)
   }
 }
+
+function createSettingsQueuedReporter(): () => void {
+  let reported = false
+  return () => {
+    if (reported) return
+    reported = true
+    alertNormal(language.settingsSaveQueued)
+  }
+}
+
+export type ServerBackedSettingsPersistenceOutcome = 'accepted' | 'queued' | 'failed'
 
 export interface WatchServerBackedSettingsOptions<T = unknown> {
   delayMs?: number
@@ -645,9 +656,11 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
  * Optimistically apply and durably persist one exact settings operation. The
  * returned promise settles only with this patch's command receipt.
  */
-export async function persistServerBackedSettingsPatch(patch: SettingsPatch): Promise<boolean> {
+export async function persistServerBackedSettingsPatch(
+  patch: SettingsPatch,
+): Promise<ServerBackedSettingsPersistenceOutcome> {
   const prepared = prepareServerBackedSettingsPatch(patch)
-  if (!prepared) return true
+  if (!prepared) return 'accepted'
   const projectionEpochs = captureSettingsPatchProjectionEpochs(prepared.commandPatch)
   applyOptimisticServerBackedSettingsPatch(prepared.commandPatch)
 
@@ -656,7 +669,7 @@ export async function persistServerBackedSettingsPatch(patch: SettingsPatch): Pr
   if (intent.requests.length === 0) {
     rollbackServerBackedSettings(prepared.previous, prepared.attempted)
     reportFailure()
-    return false
+    return 'failed'
   }
 
   let outbox: PendingMutationHandle
@@ -666,12 +679,14 @@ export async function persistServerBackedSettingsPatch(patch: SettingsPatch): Pr
     console.error('Durable settings patch could not be staged:', error)
     rollbackServerBackedSettings(prepared.previous, prepared.attempted)
     reportFailure()
-    return false
+    return 'failed'
   }
 
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
   try {
-    const result = await dispatchDurableMutation(outbox, intent, (transport) =>
-      dispatchTrackedServerBackedSettingsPatch({
+    const result = await dispatchDurableMutation(outbox, intent, (transport) => {
+      failureRollbackDisposition = transport.failureRollbackDisposition
+      return dispatchTrackedServerBackedSettingsPatch({
         patch: prepared.commandPatch,
         optimisticProjectionEpochs: projectionEpochs,
         previous: prepared.previous,
@@ -681,14 +696,16 @@ export async function persistServerBackedSettingsPatch(patch: SettingsPatch): Pr
         executionWrapper: transport.executionWrapper,
         failureRollbackDisposition: transport.failureRollbackDisposition,
         reportFailure,
-      }),
-    )
-    if (result.status !== 'ok') reportFailure()
-    return result.status === 'ok'
+        reportQueued: () => {},
+      })
+    })
+    if (result.status === 'ok') return 'accepted'
+    return failureRollbackDisposition?.(result) === 'retain' ? 'queued' : 'failed'
   } catch (error) {
     console.error('Durable settings patch rejected:', error)
+    if (failureRollbackDisposition?.({ status: 'unavailable' }) === 'retain') return 'queued'
     reportFailure()
-    return false
+    return 'failed'
   }
 }
 
@@ -979,8 +996,10 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
   executionWrapper?: ServerCommandTransportOptions['executionWrapper']
   failureRollbackDisposition?: ServerCommandTransportOptions['failureRollbackDisposition']
   reportFailure?: () => void
+  reportQueued?: () => void
 }): Promise<ServerCommandResult> {
   const reportFailure = input.reportFailure ?? createSettingsSaveFailureReporter()
+  const reportQueued = input.reportQueued ?? createSettingsQueuedReporter()
   const attempt = registerSettingsAttempt(input.previous, input.attempted, input.mutationId)
   if (input.mutationId) {
     attempt.settlementCleanup = registerDurableMutationSettlementListener(input.mutationId, (settlement) => {
@@ -1018,7 +1037,7 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
       }
       if (input.failureRollbackDisposition?.(settled) === 'retain') {
         attempt.phase = 'queued'
-        reportFailure()
+        reportQueued()
         return
       }
       clearSettingsAttempt(attempt)
@@ -1028,7 +1047,7 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
       if (!isSettingsAttemptCurrent(attempt)) return
       if (input.failureRollbackDisposition?.({ status: 'unavailable' }) === 'retain') {
         attempt.phase = 'queued'
-        reportFailure()
+        reportQueued()
         return
       }
       clearSettingsAttempt(attempt)
@@ -1203,6 +1222,7 @@ async function dispatchSparseObjectSettingQueue(
   let failed = false
   let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
   const reportFailure = createSettingsSaveFailureReporter()
+  const reportQueued = createSettingsQueuedReporter()
   let result: Awaited<ReturnType<typeof patchSettingsObjectFieldsCommand>>
   try {
     clearSparseObjectSettingSettlement(state)
@@ -1268,7 +1288,6 @@ async function dispatchSparseObjectSettingQueue(
     console.error('Sparse settings command rejected:', error)
     result = { status: 'unavailable' }
   }
-  if (result.status !== 'ok') reportFailure()
   if (result.status !== 'ok' && failureRollbackDisposition?.(result) === 'retain') {
     // The exact attempted object is still represented by a durable row. Keep
     // both its visible projection and its queue baseline; a later edit stages
@@ -1276,11 +1295,13 @@ async function dispatchSparseObjectSettingQueue(
     state.running = false
     state.settlementPhase = 'queued'
     state.outbox ??= outbox
+    reportQueued()
     if (state.desired && state.stagedUpdate && state.intent && state.outbox) {
       queueMicrotask(() => void dispatchSparseObjectSettingQueue(state, options))
     }
     return
   }
+  if (result.status !== 'ok') reportFailure()
 
   clearSparseObjectSettingSettlement(state)
 

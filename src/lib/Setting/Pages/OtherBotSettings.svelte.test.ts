@@ -208,7 +208,7 @@ beforeEach(() => {
   otherBotMocks.getCharToken.mockReset().mockResolvedValue({ dynamic: 0, persistant: 0 })
   otherBotMocks.persistServerBackedSettingsPatch.mockReset().mockImplementation(async (patch) => {
     projectSettingsPatch(patch as Record<string, unknown>)
-    return true
+    return 'accepted'
   })
   otherBotMocks.saveAsset.mockReset()
   otherBotMocks.selectSingleFile.mockReset()
@@ -564,7 +564,7 @@ describe('OtherBotSettings Hypa preset import', () => {
   })
 
   it('announces import success only after the exact settings patch is acknowledged', async () => {
-    const persistence = deferred<boolean>()
+    const persistence = deferred<'accepted' | 'queued' | 'failed'>()
     otherBotMocks.hypaEnabled = true
     otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]
     otherBotMocks.selectSingleFile.mockResolvedValue({
@@ -594,7 +594,7 @@ describe('OtherBotSettings Hypa preset import', () => {
     uploadButton?.click()
     expect(otherBotMocks.selectSingleFile).toHaveBeenCalledTimes(1)
 
-    persistence.resolve(true)
+    persistence.resolve('accepted')
     await vi.waitFor(() => expect(otherBotMocks.alertNormal).toHaveBeenCalledWith(language.successImport))
     expect(uploadButton?.disabled).toBe(false)
   })
@@ -606,7 +606,7 @@ describe('OtherBotSettings Hypa preset import', () => {
       name: 'import.json',
       data: Buffer.from(JSON.stringify({ type: 'risu', data: { name: 'Imported', settings: {} } })),
     })
-    otherBotMocks.persistServerBackedSettingsPatch.mockResolvedValue(false)
+    otherBotMocks.persistServerBackedSettingsPatch.mockResolvedValue('failed')
     component = mount(OtherBotSettings, { target })
     await tick()
 
@@ -615,6 +615,25 @@ describe('OtherBotSettings Hypa preset import', () => {
     await tick()
 
     expect(otherBotMocks.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('announces when preset persistence is durably queued', async () => {
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]
+    otherBotMocks.selectSingleFile.mockResolvedValue({
+      name: 'import.json',
+      data: Buffer.from(JSON.stringify({ type: 'risu', data: { name: 'Imported', settings: {} } })),
+    })
+    otherBotMocks.persistServerBackedSettingsPatch.mockImplementationOnce(async (patch) => {
+      projectSettingsPatch(patch as Record<string, unknown>)
+      return 'queued'
+    })
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    target.querySelector<SVGElement>('svg.lucide-hard-drive-upload')?.closest('button')?.click()
+    await vi.waitFor(() => expect(otherBotMocks.alertNormal).toHaveBeenCalledWith(language.settingsSaveQueued))
+    expect(otherBotMocks.alertNormal).not.toHaveBeenCalledWith(language.successImport)
   })
 
   it('drops a file-picker continuation after the settings page unmounts', async () => {
