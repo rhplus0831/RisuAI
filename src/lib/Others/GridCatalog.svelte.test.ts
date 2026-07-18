@@ -332,6 +332,26 @@ describe('GridCatalog derived lists', () => {
     expect(characterSpies.removeChar).toHaveBeenCalledWith(4, 'Trashed Alpha', 'permanent')
   })
 
+  it('keeps an id-less legacy character trashed when restore cannot be persisted', async () => {
+    setDatabaseLite({
+      language: 'en',
+      characters: [makeCharacter({ name: 'Legacy Trash', trashTime: 20 })],
+    } as any)
+    mountCatalog()
+    await clickCatalogTab('trash')
+
+    gridAction('trash', '', 'restore').click()
+    await tick()
+    await tick()
+
+    expect(getDatabase().characters[0].trashTime).toBe(20)
+    expect(characterCommandSpies.currentCharacterRowSnapshot).not.toHaveBeenCalled()
+    expect(characterCommandSpies.dispatchUpdateCharacterScopedWithOutcome).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-character-action-status="failed"]')?.textContent).toContain(
+      language.characterRestoreUnavailable('Legacy Trash'),
+    )
+  })
+
   it('keeps a character action pending through durable classification and reports queued or failed outcomes', async () => {
     const removal = deferred<any>()
     characterSpies.removeChar.mockReturnValueOnce(removal.promise)

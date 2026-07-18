@@ -15,6 +15,8 @@ export const languageEnglish = {
   characterRestorePending: (name: string) => `Restoring ${name}…`,
   characterRestoreQueued: (name: string) =>
     `${name} was restored on this device and the change is queued. It will retry automatically.`,
+  characterRestoreUnavailable: (name: string) =>
+    `${name} cannot be restored because this legacy row has no persistent character ID.`,
   characterRestoreFailed: (name: string) => `${name} could not be restored. The character remains in the trash.`,
   characterPermanentDeletePending: (name: string) => `Deleting ${name} permanently…`,
   characterPermanentDeleteQueued: (name: string) =>

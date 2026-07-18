@@ -92,6 +92,7 @@
     kind: CharacterCatalogActionKind
     name: string
     status: 'pending' | 'queued' | 'failed'
+    reason?: string
   }
   let characterCatalogActions = $state<Record<string, CharacterCatalogActionState>>({})
 
@@ -99,6 +100,7 @@
     if (state.kind === 'restore') {
       if (state.status === 'pending') return language.characterRestorePending(state.name)
       if (state.status === 'queued') return language.characterRestoreQueued(state.name)
+      if (state.reason === 'missing-character-id') return language.characterRestoreUnavailable(state.name)
       return language.characterRestoreFailed(state.name)
     }
     if (state.kind === 'delete-permanent') {
@@ -129,7 +131,12 @@
         delete characterCatalogActions[actionId]
         return
       }
-      characterCatalogActions[actionId] = { kind, name: char.name, status: outcome.status }
+      characterCatalogActions[actionId] = {
+        kind,
+        name: char.name,
+        status: outcome.status,
+        reason: outcome.result.status === 'error' ? outcome.result.error : undefined,
+      }
       const message = characterCatalogActionMessage(characterCatalogActions[actionId])
       if (outcome.status === 'queued') alertNormal(message)
       else alertError(message)
@@ -173,12 +180,13 @@
     if (!character) return null
 
     const characterId = character.chaId
+    if (!characterId) {
+      return { status: 'failed', result: { status: 'error', error: 'missing-character-id' } }
+    }
     const previous = currentCharacterRowSnapshot(index)
     let applied = false
     withTrustedResourceWrite(() => {
-      const liveIndex = characterId
-        ? getDatabase().characters.findIndex((candidate) => candidate.chaId === characterId)
-        : index
+      const liveIndex = getDatabase().characters.findIndex((candidate) => candidate.chaId === characterId)
       const liveCharacter = getDatabase().characters?.[liveIndex] as
         | (typeof character & { trashTime?: number | null })
         | undefined
@@ -186,7 +194,7 @@
       liveCharacter.trashTime = null
       applied = true
     })
-    if (applied && characterId) {
+    if (applied) {
       return (await dispatchUpdateCharacterScopedWithOutcome(characterId, { trashTime: null }, previous)) ?? null
     }
     return null
