@@ -137,6 +137,27 @@ describe('SettingSelect initial values', () => {
     expect(action).not.toHaveBeenCalled()
   })
 
+  it.each(['zh-TW', 'fa'])('preserves the hidden Google translation target %s on mount', async (value) => {
+    const action = vi.fn()
+    const item = {
+      ...languageSettingsItems.find((candidate) => candidate.id === 'lang.translatorLang')!,
+      onChange: action,
+    }
+    const nonGoogleContext: SettingContext = {
+      ...ctx,
+      db: { translatorType: 'deepl' } as any,
+    }
+    selectMocks.currentValue = value
+
+    component = mount(SettingSelect, { target, props: { item, ctx: nonGoogleContext } })
+    await tick()
+
+    expect(Array.from(target.querySelector('select')!.options).map((option) => option.value)).not.toContain(value)
+    expect(selectMocks.currentValue).toBe(value)
+    expect(selectMocks.setSettingValue).not.toHaveBeenCalled()
+    expect(action).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['missing', undefined],
     ['invalid', 'unsupported-target'],

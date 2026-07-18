@@ -30,9 +30,20 @@
     return availableOptions.find((option) => option.value === fallbackValue)?.value ?? value
   }
 
+  function resolveInitialValue(value: unknown, availableOptions: typeof processedOptions): unknown {
+    const configuredOptions = item.options?.selectOptions ?? []
+
+    // A value that is part of the control's full option set may only be hidden
+    // by the current context. Keep that durable value until the option set
+    // changes after mount or the user explicitly chooses another option.
+    if (configuredOptions.some((option) => option.value === value)) return value
+
+    return resolveConfiguredFallback(value, availableOptions)
+  }
+
   // Sync: DB → local (one-way read)
   $effect(() => {
-    localValue = resolveConfiguredFallback(getSettingValue(item, ctx), processedOptions)
+    localValue = resolveInitialValue(getSettingValue(item, ctx), processedOptions)
   })
 
   // Write-back: local → DB (guarded — only fires on actual user changes)
