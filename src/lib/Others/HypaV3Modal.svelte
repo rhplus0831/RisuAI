@@ -7,7 +7,7 @@
     type SerializableSummary,
     summarize,
   } from 'src/ts/process/memory/hypav3'
-  import { alertNormalWait } from 'src/ts/alert'
+  import { alertConfirm, alertNormalWait } from 'src/ts/alert'
   import { selectedCharID, hypaV3ModalOpen } from 'src/ts/stores.svelte'
   import { getCharacterByIndex, type character, type Chat } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
@@ -102,6 +102,7 @@
   const serverSummaryEditVersions = new Map<string, number>()
   let pendingServerSummaryRefreshChatId: string | null = null
   let serverSummaryCloseRequest: Promise<boolean> | null = null
+  let consecutiveServerSummaryCloseFailures = 0
   const hypaV3Data = $derived(serverBackedMemoryMode ? serverHypaV3Data : legacyHypaV3Data)
   const activeServerSummaryModel = $derived(resolveActiveServerSummaryModel())
   const activeServerSummaryIds = $derived.by(
@@ -226,7 +227,10 @@
     serverMemoryLoading = false
     if (result.status === 'ok') {
       const localSummaries = new Map(
-        serverHypaV3Data.summaries.map((summary) => [(summary as ServerSummaryView).serverId, summary]),
+        serverHypaV3Data.summaries.map((summary) => {
+          const view = summary as ServerSummaryView
+          return [view.serverId, view] as const
+        }),
       )
       const summaries = result.summaries.flatMap((summary) => {
         const deletedAtVersion = deletedServerSummaryIds.get(summary.id)
@@ -239,7 +243,10 @@
         const incoming = serverSummaryView(summary)
         return [
           local &&
-          (dirtyServerSummaryIds.has(summary.id) || changedDuringRefresh || sameServerSummaryView(local, incoming))
+          (dirtyServerSummaryIds.has(summary.id) ||
+            dirtyServerSummaryTextVersions.has(summary.id) ||
+            changedDuringRefresh ||
+            sameServerSummaryView(local, incoming))
             ? local
             : incoming,
         ]
@@ -260,9 +267,6 @@
       if (serverSummaryLoadedChatId !== chatId) {
         serverSummaryLoadedChatId = chatId
         uiState.collapsedSummaries = new Set(summaries.map((_, index) => index))
-      }
-      for (const summaryId of dirtyServerSummaryTextVersions.keys()) {
-        if (!dirtyServerSummaryIds.has(summaryId)) dirtyServerSummaryTextVersions.delete(summaryId)
       }
       return
     }
@@ -367,7 +371,7 @@
         persisted = true
         return
       }
-      acknowledgeServerSummaryEdit(summaryId, editVersion)
+      if (field !== 'text') acknowledgeServerSummaryEdit(summaryId, editVersion)
       serverMemoryMutationError = result.status === 'error' ? result.error : language.errors.networkFetch
       // A later queued field patch no longer contains this field. Reconcile
       // after the queue drains so a failed earlier patch cannot leave the
@@ -455,6 +459,8 @@
     deletedServerSummaryIds.clear()
     serverSummaryEditVersions.clear()
     pendingServerSummaryRefreshChatId = null
+    serverSummaryCloseRequest = null
+    consecutiveServerSummaryCloseFailures = 0
     serverSummaryLoadedChatId = null
     serverMemoryMutationError = null
     serverMemoryRefreshError = null
@@ -708,14 +714,16 @@
     tagManagerState.isOpen = true
   }
 
-  async function flushDirtyServerSummaryText(): Promise<boolean> {
-    while (dirtyServerSummaryTextVersions.size > 0) {
+  async function flushDirtyServerSummaryText(owner: ServerSummaryMutationOwner): Promise<boolean> {
+    while (isCurrentServerSummaryMutationOwner(owner) && dirtyServerSummaryTextVersions.size > 0) {
       const dirtySnapshot = [...dirtyServerSummaryTextVersions.entries()]
       for (const [summaryId, dirtyVersion] of dirtySnapshot) {
+        if (!isCurrentServerSummaryMutationOwner(owner)) return false
         if (dirtyServerSummaryTextVersions.get(summaryId) !== dirtyVersion) continue
         const pendingSave = pendingServerSummaryTextSaves.get(summaryId)
         if (pendingSave) {
           if (!(await pendingSave)) return false
+          if (!isCurrentServerSummaryMutationOwner(owner)) return false
           continue
         }
         const summaryIndex = serverHypaV3Data.summaries.findIndex(
@@ -726,15 +734,14 @@
           continue
         }
         if (!(await handleServerSummaryChanged(summaryIndex, 'text'))) return false
+        if (!isCurrentServerSummaryMutationOwner(owner)) return false
       }
     }
-    return true
+    return isCurrentServerSummaryMutationOwner(owner)
   }
 
-  async function flushPendingServerSummaryChanges(): Promise<boolean> {
-    if (!(await flushDirtyServerSummaryText())) return false
-    const owner = captureServerSummaryMutationOwner()
-    if (!owner) return false
+  async function flushPendingServerSummaryChanges(owner: ServerSummaryMutationOwner): Promise<boolean> {
+    if (!(await flushDirtyServerSummaryText(owner))) return false
     while ([...pendingServerSummarySaves].some((save) => isCurrentServerSummaryMutationOwner(save.owner))) {
       const results = await Promise.all(
         [...pendingServerSummarySaves]
@@ -743,9 +750,22 @@
       )
       if (results.some((persisted) => !persisted)) return false
       if (!isCurrentServerSummaryMutationOwner(owner)) return false
-      if (!(await flushDirtyServerSummaryText())) return false
+      if (!(await flushDirtyServerSummaryText(owner))) return false
     }
     return true
+  }
+
+  function discardDirtyServerSummaryText(
+    owner: ServerSummaryMutationOwner,
+    dirtySnapshot: ReadonlyMap<string, number>,
+  ): boolean {
+    if (!isCurrentServerSummaryMutationOwner(owner)) return false
+    for (const [summaryId, dirtyVersion] of dirtySnapshot) {
+      if (dirtyServerSummaryTextVersions.get(summaryId) !== dirtyVersion) continue
+      dirtyServerSummaryTextVersions.delete(summaryId)
+      if (serverSummaryEditVersions.get(summaryId) === dirtyVersion) dirtyServerSummaryIds.delete(summaryId)
+    }
+    return dirtyServerSummaryTextVersions.size === 0
   }
 
   function requestModalClose(): boolean | Promise<boolean> {
@@ -753,20 +773,41 @@
       $hypaV3ModalOpen = false
       return true
     }
+    if (serverSummaryCloseRequest) return serverSummaryCloseRequest
+
+    const owner = captureServerSummaryMutationOwner()
+    if (!owner) return false
     const hasPendingSave = [...pendingServerSummarySaves].some((save) =>
       isCurrentServerSummaryMutationOwner(save.owner),
     )
     if (dirtyServerSummaryTextVersions.size === 0 && !hasPendingSave) {
+      consecutiveServerSummaryCloseFailures = 0
       $hypaV3ModalOpen = false
       return true
     }
-    if (serverSummaryCloseRequest) return serverSummaryCloseRequest
 
     let closeRequest: Promise<boolean>
     closeRequest = (async () => {
-      const persisted = await flushPendingServerSummaryChanges()
-      if (persisted) $hypaV3ModalOpen = false
-      return persisted
+      const persisted = await flushPendingServerSummaryChanges(owner)
+      if (!isCurrentServerSummaryMutationOwner(owner)) return false
+      if (persisted) {
+        consecutiveServerSummaryCloseFailures = 0
+        $hypaV3ModalOpen = false
+        return true
+      }
+
+      consecutiveServerSummaryCloseFailures += 1
+      if (consecutiveServerSummaryCloseFailures < 2) return false
+
+      const dirtySnapshot = new Map(dirtyServerSummaryTextVersions)
+      if (dirtySnapshot.size === 0) return false
+      const discardChanges = await alertConfirm(language.hypaV3Modal.discardFailedSummaryChangesConfirm)
+      if (!discardChanges || !isCurrentServerSummaryMutationOwner(owner)) return false
+      if (!discardDirtyServerSummaryText(owner, dirtySnapshot)) return false
+
+      consecutiveServerSummaryCloseFailures = 0
+      $hypaV3ModalOpen = false
+      return true
     })().finally(() => {
       if (serverSummaryCloseRequest === closeRequest) serverSummaryCloseRequest = null
     })

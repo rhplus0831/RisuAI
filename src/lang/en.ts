@@ -1850,6 +1850,7 @@ export const languageEnglish = {
     searchPlaceholder: 'Enter #N, ID, or query',
     summaryNumberLabel: 'Summary #{0}',
     inactiveSummaryModelLabel: 'Not used for current memory (model: {0})',
+    discardFailedSummaryChangesConfirm: 'Saving failed. Discard unsaved summary text and close?',
     deleteThisConfirmMessage: 'Delete this summary?',
     deleteAfterConfirmMessage: 'Delete all summaries after this one?',
     deleteAfterConfirmSecondMessage: 'This action cannot be undone. Are you really sure?',

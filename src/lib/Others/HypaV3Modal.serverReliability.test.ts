@@ -60,7 +60,7 @@ vi.mock('src/ts/server/memoryJobEvents', () => ({
 import HypaV3Modal from './HypaV3Modal.svelte'
 import { language } from 'src/lang'
 import { hypaV3ModalOpen, selectedCharID } from 'src/ts/stores.svelte'
-import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = ReturnType<typeof mount>
 
@@ -371,6 +371,7 @@ describe('Hypa V3 server summary close reliability', () => {
 
     editSummary(target, 'Edit that cannot persist')
     closeModal(target)
+    closeModal(target)
 
     await vi.waitFor(() => expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(1))
     expect(get(hypaV3ModalOpen)).toBe(true)
@@ -378,6 +379,133 @@ describe('Hypa V3 server summary close reliability', () => {
     patch.resolve({ status: 'error', error: 'PATCH rejected' })
     await settle()
     expect(get(hypaV3ModalOpen)).toBe(true)
+    expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(1)
+    expect(serverMocks.alertConfirm).not.toHaveBeenCalled()
+  })
+
+  it('offers to discard dirty summary text after a second failed close attempt', async () => {
+    serverMocks.patchServerMemorySummary.mockResolvedValue({ status: 'error', error: 'PATCH rejected' })
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const textarea = editSummary(target, 'Edit to discard')
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(1))
+    await settle()
+    expect(get(hypaV3ModalOpen)).toBe(true)
+    expect(serverMocks.alertConfirm).not.toHaveBeenCalled()
+
+    closeModal(target)
+
+    await vi.waitFor(() =>
+      expect(serverMocks.alertConfirm).toHaveBeenCalledWith(language.hypaV3Modal.discardFailedSummaryChangesConfirm),
+    )
+    await vi.waitFor(() => expect(get(hypaV3ModalOpen)).toBe(false))
+    expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps declined text edits and closes without another prompt when persistence recovers', async () => {
+    serverMocks.patchServerMemorySummary
+      .mockResolvedValueOnce({ status: 'error', error: 'First PATCH rejected' })
+      .mockResolvedValueOnce({ status: 'error', error: 'Second PATCH rejected' })
+    serverMocks.alertConfirm.mockResolvedValue(false)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    editSummary(target, 'Edit to retry')
+    closeModal(target)
+    await vi.waitFor(() => expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(1))
+    await settle()
+
+    closeModal(target)
+    await vi.waitFor(() => expect(serverMocks.alertConfirm).toHaveBeenCalledTimes(1))
+    await settle()
+
+    expect(get(hypaV3ModalOpen)).toBe(true)
+    expect(
+      Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).some(
+        (textarea) => textarea.value === 'Edit to retry',
+      ),
+    ).toBe(true)
+
+    closeModal(target)
+    await vi.waitFor(() => expect(get(hypaV3ModalOpen)).toBe(false))
+    expect(serverMocks.patchServerMemorySummary).toHaveBeenLastCalledWith('summary-a', {
+      text: 'Edit to retry',
+    })
+    expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(3)
+    expect(serverMocks.alertConfirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let an old discard confirmation close or count against a newly selected chat', async () => {
+    const discardConfirmation = deferred<boolean>()
+    const character = getDatabase().characters[0]
+    character.chats.push({
+      id: 'chat-b',
+      name: 'Chat B',
+      message: [{ chatId: 'message-d', role: 'user', data: 'Message D' }],
+      note: '',
+      localLore: [],
+      hypaV3Data: {
+        summaries: [],
+        categories: [{ id: '', name: 'Unclassified' }],
+        lastSelectedSummaries: [],
+      },
+    })
+    serverMocks.listServerMemorySummaries.mockImplementation(async (chatId: string) => ({
+      status: 'ok',
+      summaries: [
+        serverSummary(
+          chatId === 'chat-b'
+            ? {
+                id: 'summary-b',
+                chatId: 'chat-b',
+                chunkId: 'chunk-b',
+                text: 'Second persisted summary',
+                metadata: { chatMemos: ['message-d'], isImportant: false },
+              }
+            : {},
+        ),
+      ],
+    }))
+    serverMocks.patchServerMemorySummary.mockResolvedValue({ status: 'error', error: 'PATCH rejected' })
+    serverMocks.alertConfirm.mockReturnValue(discardConfirmation.promise)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    editSummary(target, 'Old chat edit')
+    closeModal(target)
+    await vi.waitFor(() => expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(1))
+    await settle()
+    closeModal(target)
+    await vi.waitFor(() => expect(serverMocks.alertConfirm).toHaveBeenCalledTimes(1))
+
+    character.chatPage = 1
+    await vi.waitFor(() =>
+      expect(
+        Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).some(
+          (textarea) => textarea.value === 'Second persisted summary',
+        ),
+      ).toBe(true),
+    )
+    const newChatTextarea = Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).find(
+      (textarea) => textarea.value === 'Second persisted summary',
+    )
+    if (!newChatTextarea) throw new Error('Missing new chat summary textarea')
+    newChatTextarea.value = 'New chat edit'
+    newChatTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+
+    discardConfirmation.resolve(true)
+    await settle()
+
+    expect(get(hypaV3ModalOpen)).toBe(true)
+    expect(newChatTextarea.value).toBe('New chat edit')
+
+    closeModal(target)
+    await vi.waitFor(() => expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(3))
+    await settle()
+    expect(get(hypaV3ModalOpen)).toBe(true)
+    expect(serverMocks.alertConfirm).toHaveBeenCalledTimes(1)
   })
 
   it('waits for an Important metadata PATCH before closing', async () => {
