@@ -1,7 +1,12 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte'
   import { ChevronUpIcon, ChevronDownIcon } from '@lucide/svelte'
-  import { type SerializableHypaV3Data, type SerializableSummary, summarize } from 'src/ts/process/memory/hypav3'
+  import {
+    getCurrentHypaV3Preset,
+    type SerializableHypaV3Data,
+    type SerializableSummary,
+    summarize,
+  } from 'src/ts/process/memory/hypav3'
   import { alertNormalWait } from 'src/ts/alert'
   import { selectedCharID, hypaV3ModalOpen } from 'src/ts/stores.svelte'
   import { getCharacterByIndex, type character, type Chat } from 'src/ts/storage/database.svelte'
@@ -53,6 +58,8 @@
 
   interface ServerSummaryView extends SerializableSummary {
     serverId: string
+    chunkId: string
+    model: string
   }
 
   interface ServerSummaryMutationOwner {
@@ -93,6 +100,25 @@
   let pendingServerSummaryRefreshChatId: string | null = null
   let serverSummaryCloseRequest: Promise<boolean> | null = null
   const hypaV3Data = $derived(serverBackedMemoryMode ? serverHypaV3Data : legacyHypaV3Data)
+  const activeServerSummaryModel = $derived(resolveActiveServerSummaryModel())
+  const activeServerSummaryIds = $derived.by(
+    () =>
+      new Set(
+        filterServerSummaryViewsForModel(
+          serverHypaV3Data.summaries as ServerSummaryView[],
+          activeServerSummaryModel,
+        ).map((summary) => summary.serverId),
+      ),
+  )
+  const footerHypaV3Data = $derived.by<SerializableHypaV3Data>(() => {
+    if (!serverBackedMemoryMode) return hypaV3Data
+    return {
+      ...serverHypaV3Data,
+      summaries: serverHypaV3Data.summaries.filter((summary) =>
+        activeServerSummaryIds.has((summary as ServerSummaryView).serverId),
+      ),
+    }
+  })
 
   function createInitialHypaV3Data(): SerializableHypaV3Data {
     return {
@@ -100,6 +126,28 @@
       categories: [{ id: '', name: language.hypaV3Modal.unclassified }],
       lastSelectedSummaries: [],
     }
+  }
+
+  function resolveActiveServerSummaryModel(): string {
+    try {
+      const model = getCurrentHypaV3Preset().settings.summarizationModel
+      return typeof model === 'string' && model.trim().length > 0 ? model : 'subModel'
+    } catch {
+      return 'subModel'
+    }
+  }
+
+  function filterServerSummaryViewsForModel(
+    summaries: readonly ServerSummaryView[],
+    activeModel: string,
+  ): ServerSummaryView[] {
+    const legacyChunkIds = new Set(
+      summaries.filter((summary) => summary.model === 'legacy-hypav3').map((summary) => summary.chunkId),
+    )
+    return summaries.filter(
+      (summary) =>
+        summary.model === 'legacy-hypav3' || (summary.model === activeModel && !legacyChunkIds.has(summary.chunkId)),
+    )
   }
 
   function isObject(value: unknown): value is Record<string, unknown> {
@@ -117,6 +165,8 @@
 
     return {
       serverId: summary.id,
+      chunkId: summary.chunkId,
+      model: summary.model,
       text: summary.text,
       chatMemos,
       isImportant: metadata.isImportant === true,
@@ -1316,6 +1366,10 @@
               {uiState}
               readOnly={false}
               tagsReadOnly={false}
+              inactiveModel={serverBackedMemoryMode &&
+              !activeServerSummaryIds.has((summary as ServerSummaryView).serverId)
+                ? (summary as ServerSummaryView).model
+                : undefined}
               onToggleSummarySelection={handleToggleSummarySelection}
               onOpenTagManager={handleOpenTagManager}
               onToggleCollapse={handleToggleCollapse}
@@ -1327,7 +1381,7 @@
         {/each}
 
         <!-- Footer -->
-        <ModalFooter {hypaV3Data} />
+        <ModalFooter hypaV3Data={footerHypaV3Data} />
       </div>
 
       <!-- Bulk Resummary Result -->

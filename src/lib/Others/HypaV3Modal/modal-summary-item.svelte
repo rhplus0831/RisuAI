@@ -40,6 +40,7 @@
     uiState?: UIState
     readOnly?: boolean
     tagsReadOnly?: boolean
+    inactiveModel?: string
     onToggleSummarySelection?: (index: number) => void
     onOpenTagManager?: (index: number) => void
     onToggleCollapse?: (index: number) => void
@@ -61,6 +62,7 @@
     uiState,
     readOnly = false,
     tagsReadOnly = false,
+    inactiveModel,
     onToggleSummarySelection,
     onOpenTagManager,
     onToggleCollapse,
@@ -583,6 +585,15 @@
 
       <span id={`hypav3-summary-${summaryIndex}-label`} class="text-sm text-zinc-400"
         >{language.hypaV3Modal.summaryNumberLabel.replace('{0}', (summaryIndex + 1).toString())}</span>
+
+      {#if inactiveModel}
+        <span
+          data-inactive-summary-model
+          class="px-2 py-1 text-xs rounded-full bg-amber-950 text-amber-200"
+          title={language.hypaV3Modal.inactiveSummaryModelLabel.replace('{0}', inactiveModel)}>
+          {language.hypaV3Modal.inactiveSummaryModelLabel.replace('{0}', inactiveModel)}
+        </span>
+      {/if}
 
       <!-- Category Tag -->
       {#if readOnly}

@@ -56,11 +56,11 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-function seedDatabase(categories = [{ id: '', name: 'Unclassified' }]): void {
+function seedDatabase(categories = [{ id: '', name: 'Unclassified' }], summarizationModel = 'test-model'): void {
   selectedCharID.set(0)
   setDatabaseLite({
     hypaV3PresetId: 0,
-    hypaV3Presets: [{ name: 'Default', settings: { processRegexScript: false } }],
+    hypaV3Presets: [{ name: 'Default', settings: { processRegexScript: false, summarizationModel } }],
     characters: [
       {
         chaId: 'character-a',
@@ -71,7 +71,11 @@ function seedDatabase(categories = [{ id: '', name: 'Unclassified' }]): void {
           {
             id: 'chat-a',
             name: 'Chat A',
-            message: [{ chatId: 'message-a', role: 'user', data: 'Message A' }],
+            message: [
+              { chatId: 'message-a', role: 'user', data: 'Message A' },
+              { chatId: 'message-b', role: 'char', data: 'Message B' },
+              { chatId: 'message-c', role: 'user', data: 'Message C' },
+            ],
             note: '',
             localLore: [],
             hypaV3Data: {
@@ -95,7 +99,7 @@ async function settle(): Promise<void> {
   }
 }
 
-function serverSummary() {
+function serverSummary(overrides: Record<string, unknown> = {}) {
   return {
     id: 'summary-a',
     chatId: 'chat-a',
@@ -105,6 +109,7 @@ function serverSummary() {
     metadata: { chatMemos: ['message-a'], isImportant: false },
     tokens: 4,
     createdAt: '2026-07-17T00:00:00.000Z',
+    ...overrides,
   }
 }
 
@@ -172,6 +177,41 @@ describe('Hypa V3 server summary close reliability', () => {
     patch.resolve({ status: 'ok', summaryId: 'summary-a' })
     await vi.waitFor(() => expect(get(hypaV3ModalOpen)).toBe(false))
     expect(serverMocks.patchServerMemorySummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks summaries excluded by the active model and scopes the footer to generation-compatible rows', async () => {
+    seedDatabase([{ id: '', name: 'Unclassified' }], 'model-b')
+    serverMocks.listServerMemorySummaries.mockResolvedValue({
+      status: 'ok',
+      summaries: [
+        serverSummary({ id: 'active-shadowed', chunkId: 'shared-chunk', model: 'model-b' }),
+        serverSummary({
+          id: 'legacy-preferred',
+          chunkId: 'shared-chunk',
+          model: 'legacy-hypav3',
+          metadata: { chatMemos: ['message-b'], isImportant: false },
+        }),
+        serverSummary({
+          id: 'inactive-model',
+          chunkId: 'inactive-chunk',
+          model: 'model-a',
+          metadata: { chatMemos: ['message-c'], isImportant: false },
+        }),
+      ],
+    })
+
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    expect(
+      Array.from(target.querySelectorAll('[data-inactive-summary-model]'), (badge) => badge.textContent?.trim()),
+    ).toEqual([
+      language.hypaV3Modal.inactiveSummaryModelLabel.replace('{0}', 'model-b'),
+      language.hypaV3Modal.inactiveSummaryModelLabel.replace('{0}', 'model-a'),
+    ])
+    await vi.waitFor(() =>
+      expect(target.querySelector<HTMLTextAreaElement>('textarea[readonly]')?.value).toBe('Message C'),
+    )
   })
 
   it('keeps the modal open when a close-button flush fails', async () => {
