@@ -248,7 +248,7 @@ vi.mock('src/ts/chatCommands', () => ({
   dispatchForkChat: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchTruncateMessagesScoped: vi.fn(),
-  dispatchUpdateChatScoped: vi.fn(),
+  dispatchUpdateChatScopedWithOutcome: vi.fn(),
   dispatchUpdateMessageScoped: vi.fn(),
   ensureMessageId: vi.fn((message: { chatId?: string }) => {
     message.chatId ??= 'generated-message-id'
@@ -309,7 +309,7 @@ import {
   dispatchForkChat,
   dispatchReplaceMessagesScoped,
   dispatchTruncateMessagesScoped,
-  dispatchUpdateChatScoped,
+  dispatchUpdateChatScopedWithOutcome,
   dispatchUpdateMessageScoped,
 } from 'src/ts/chatCommands'
 import {
@@ -1067,7 +1067,7 @@ describe('message action target freshness', () => {
     await openMessageActions()
     expect(target.querySelector('.button-icon-bookmark')?.classList.contains('text-yellow-400')).toBe(true)
     expect(customHtmlMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
-    expect(dispatchUpdateChatScoped).toHaveBeenCalled()
+    expect(dispatchUpdateChatScopedWithOutcome).toHaveBeenCalled()
   })
 
   it('bookmarks the clicked message when the active chat switches before the prompt resolves', async () => {
@@ -1092,7 +1092,7 @@ describe('message action target freshness', () => {
     })
     expect(testDatabaseState.db.characters[0].chats[1].bookmarks).toEqual([])
     expect(customHtmlMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
-    expect(dispatchUpdateChatScoped).toHaveBeenCalledWith(
+    expect(dispatchUpdateChatScopedWithOutcome).toHaveBeenCalledWith(
       'custom-html-chat',
       expect.objectContaining({
         bookmarks: ['message-0'],
@@ -1396,9 +1396,12 @@ describe('server raw translation controls', () => {
     vi.mocked(dispatchUpdateMessageScoped).mockImplementationOnce(async (_messageId, patch) => {
       Object.assign(testDatabaseState.db.characters[0].chats[0].message[0], patch)
       return {
-        status: 'ok',
-        revision: 2,
-        event: { type: 'message.updated', revision: 2, resource: 'message', id: 'message-0' },
+        status: 'accepted',
+        result: {
+          status: 'ok',
+          revision: 2,
+          event: { type: 'message.updated', revision: 2, resource: 'message', id: 'message-0' },
+        },
       }
     })
     mountCustomHtmlRows(1)
@@ -1610,7 +1613,10 @@ describe('server raw translation controls', () => {
       text: 'other chat raw translation',
       updatedAt: 456,
     }
-    const pendingUpdate = deferred<{ status: 'error'; error: string }>()
+    const pendingUpdate = deferred<{
+      status: 'failed'
+      result: { status: 'error'; error: string }
+    }>()
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     seedDatabase(1, null as unknown as string)
     testDatabaseState.db.translator = 'configured'
@@ -1655,7 +1661,7 @@ describe('server raw translation controls', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message[0].translation?.text).toBe('attempted raw translation')
 
     testDatabaseState.db.characters[0].chatPage = 1
-    pendingUpdate.resolve({ status: 'error', error: 'update failed' })
+    pendingUpdate.resolve({ status: 'failed', result: { status: 'error', error: 'update failed' } })
     await settle()
 
     expect(testDatabaseState.db.characters[0].chats[0].message[0].translation).toEqual(existingTranslation)
@@ -1711,18 +1717,24 @@ describe('server raw translation controls', () => {
     expect(target.querySelector('.message-edit-area')).toBeNull()
 
     firstSave.resolve({
-      status: 'ok',
-      revision: 1,
-      event: { type: 'message.updated', revision: 1, resource: 'message', id: 'message-0' },
+      status: 'accepted',
+      result: {
+        status: 'ok',
+        revision: 1,
+        event: { type: 'message.updated', revision: 1, resource: 'message', id: 'message-0' },
+      },
     })
     await settle()
     expect(target.querySelector('.message-edit-area')).toBeNull()
     expect(testDatabaseState.db.characters[0].chats[0].message[0].translation?.text).toBe('translation B')
 
     secondSave.resolve({
-      status: 'ok',
-      revision: 2,
-      event: { type: 'message.updated', revision: 2, resource: 'message', id: 'message-0' },
+      status: 'accepted',
+      result: {
+        status: 'ok',
+        revision: 2,
+        event: { type: 'message.updated', revision: 2, resource: 'message', id: 'message-0' },
+      },
     })
     await settle()
     expect(target.querySelector('.message-edit-area')).toBeNull()

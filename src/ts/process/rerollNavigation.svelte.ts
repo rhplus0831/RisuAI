@@ -239,7 +239,7 @@ async function applyRerollTruncate(keepLength: number, operation: RerollOperatio
     const result = await dispatchTruncateMessagesScoped(recovery.chatId, afterMessageId, previous, {
       preserveRemovedAsAlternates: true,
     })
-    return result === null || result.status === 'ok' || result.status === 'unavailable' ? recovery : null
+    return result === null || ['accepted', 'queued', 'ok', 'unavailable'].includes(result.status) ? recovery : null
   }
   return recovery
 }

@@ -2,6 +2,10 @@ export const languageEnglish = {
   unknownInteractionTime: 'Unknown',
   mutationStatusQueued: 'Queued',
   mutationStatusFailed: 'Save failed',
+  messageMutationPending: 'Saving message change…',
+  messageMutationQueued: 'This message change is saved on this device and queued. It will retry automatically.',
+  messageMutationFailed: 'The message change could not be saved. The previous transcript was restored.',
+  messageMutationStale: 'The message changed before this action could be saved. Review it and try again.',
   hypaMemoryMutationQueued: 'The Hypa Memory change is saved on this device and queued. It will retry automatically.',
   hypaMemoryMutationFailed: 'The Hypa Memory change could not be saved. The previous setting was restored.',
   inputTranslationHookMutationQueued:

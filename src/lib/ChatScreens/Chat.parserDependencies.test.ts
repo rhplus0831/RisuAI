@@ -6,6 +6,7 @@ import type { Database } from '../../ts/storage/database.svelte'
 const chatParserMocks = vi.hoisted(() => ({
   alertClear: vi.fn(),
   alertConfirm: vi.fn(async () => false),
+  alertError: vi.fn(),
   alertInput: vi.fn(async () => ''),
   alertNormal: vi.fn(),
   alertRequestData: vi.fn(),
@@ -136,6 +137,7 @@ vi.mock('src/ts/process/tts', () => ({
 vi.mock('../../ts/alert', () => ({
   alertClear: chatParserMocks.alertClear,
   alertConfirm: chatParserMocks.alertConfirm,
+  alertError: chatParserMocks.alertError,
   alertInput: chatParserMocks.alertInput,
   alertNormal: chatParserMocks.alertNormal,
   alertRequestData: chatParserMocks.alertRequestData,
@@ -168,7 +170,7 @@ vi.mock('src/ts/chatCommands', () => ({
   dispatchForkChat: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchTruncateMessagesScoped: vi.fn(),
-  dispatchUpdateChatScoped: vi.fn(),
+  dispatchUpdateChatScopedWithOutcome: vi.fn(),
   dispatchUpdateMessageScoped: vi.fn(),
   ensureMessageId: vi.fn((message: { chatId?: string }) => {
     message.chatId ??= 'generated-message-id'
@@ -658,6 +660,48 @@ describe('Chat parser dependencies', () => {
 
     expect(dispatchDeleteMessageScoped).toHaveBeenCalledWith('row-1', {})
     expect(dispatchDeleteMessageScoped).not.toHaveBeenCalledWith('row-0', expect.anything())
+  })
+
+  it('surfaces a failed transcript-row deletion', async () => {
+    const rows = makeRows(1)
+    seedDatabase(rows)
+    chatParserMocks.canUseServerCommands.mockReturnValue(true)
+    vi.mocked(dispatchDeleteMessageScoped).mockResolvedValueOnce({
+      status: 'failed',
+      error: 'delete rejected',
+    })
+    mountHarness(rows)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-remove')?.click()
+    await settle()
+
+    expect(chatParserMocks.alertError).toHaveBeenCalledWith(languageMocks.language.messageMutationFailed)
+    expect(target.textContent).toContain(languageMocks.language.messageMutationFailed)
+  })
+
+  it('surfaces a queued transcript-row deletion while its settlement is pending', async () => {
+    const rows = makeRows(1)
+    const settlement = deferred<{ status: 'accepted' }>()
+    seedDatabase(rows)
+    chatParserMocks.canUseServerCommands.mockReturnValue(true)
+    vi.mocked(dispatchDeleteMessageScoped).mockResolvedValueOnce({
+      status: 'queued',
+      mutationId: 'queued-delete',
+      settlement: settlement.promise,
+    })
+    mountHarness(rows)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-remove')?.click()
+    await settle()
+
+    expect(chatParserMocks.alertNormal).toHaveBeenCalledWith(languageMocks.language.messageMutationQueued)
+    expect(target.textContent).toContain(languageMocks.language.messageMutationQueued)
+
+    settlement.resolve({ status: 'accepted' })
+    await settle()
+    expect(target.textContent).not.toContain(languageMocks.language.messageMutationQueued)
   })
 
   it('keeps the same deletion target across the instant-remove confirmation', async () => {

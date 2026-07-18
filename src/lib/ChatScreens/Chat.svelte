@@ -104,7 +104,7 @@
     dispatchForkChat,
     dispatchReplaceMessagesScoped,
     dispatchTruncateMessagesScoped,
-    dispatchUpdateChatScoped,
+    dispatchUpdateChatScopedWithOutcome,
     dispatchUpdateMessageScoped,
     ensureMessageId,
   } from 'src/ts/chatCommands'
@@ -518,7 +518,7 @@
     previous: ReturnType<typeof currentChatScopedSnapshot>,
   ) {
     if (chat.id) {
-      dispatchReplaceMessagesScoped(chat.id, messages, previous)
+      observeMessageMutation(dispatchReplaceMessagesScoped(chat.id, messages, previous))
     }
   }
 
@@ -718,14 +718,14 @@
         alertError(language.chatDataLoadFailed)
         return
       }
-      dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
+      observeMessageMutation(dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous))
       return
     }
 
     const afterMessageId = messageIndex > 0 ? ensureMessageId(chat.message[messageIndex - 1]) : null
     chat.message = chat.message.slice(0, messageIndex)
     if (chat.id) {
-      dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
+      observeMessageMutation(dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous))
     }
   }
 
@@ -738,7 +738,7 @@
     if (canUseServerCommands()) {
       const messageId = chat.message[messageIndex]?.chatId
       if (messageId) {
-        dispatchDeleteMessageScoped(messageId, previous)
+        observeMessageMutation(dispatchDeleteMessageScoped(messageId, previous))
       } else {
         const nextMessages = cloneMessagesWithIds(chat)
         nextMessages.splice(messageIndex, 1)
@@ -751,7 +751,7 @@
     const messageId = ensureMessageId(messages[messageIndex])
     messages.splice(messageIndex, 1)
     chat.message = messages
-    dispatchDeleteMessageScoped(messageId, previous)
+    observeMessageMutation(dispatchDeleteMessageScoped(messageId, previous))
   }
 
   function applyOptimisticBookmarkMetadata(
@@ -1013,9 +1013,11 @@
     applyLocalTranslation(target, nextTranslation)
     editTranslationMode = false
     editTranslationTarget = null
-    const result = await dispatchUpdateMessageScoped(target.messageId, { translation: nextTranslation }, previous, {
+    const save = dispatchUpdateMessageScoped(target.messageId, { translation: nextTranslation }, previous, {
       optimisticPatchAlreadyApplied: true,
     })
+    observeMessageMutation(save)
+    const result = await save
     if (saveOperation !== translationEditOperation) return
     if (result && !isSameTranslation(findLiveMessageByTarget(target)?.translation, nextTranslation)) {
       if (isRenderingTranslationMessageTarget(target)) {
@@ -1066,7 +1068,7 @@
     invalidateTranslationUiForSourceEdit(patch)
     if (canUseServerCommands()) {
       if (messageId) {
-        dispatchUpdateMessageScoped(messageId, patch, previous)
+        observeMessageMutation(dispatchUpdateMessageScoped(messageId, patch, previous))
       } else {
         const nextMessages = cloneMessagesWithIds(chat)
         if (nextMessages[idx]) {
@@ -1079,7 +1081,7 @@
 
     const localMessageId = ensureMessageId(chat.message[idx])
     Object.assign(chat.message[idx], patch)
-    dispatchUpdateMessageScoped(localMessageId, patch, previous)
+    observeMessageMutation(dispatchUpdateMessageScoped(localMessageId, patch, previous))
   }
 
   function handlePartialEditSave(e: CustomEvent<PartialEditSaveDetail>) {
@@ -1110,7 +1112,7 @@
       invalidateTranslationUiForSourceEdit(patch)
       if (canUseServerCommands()) {
         if (messageId) {
-          dispatchUpdateMessageScoped(messageId, patch, previous)
+          observeMessageMutation(dispatchUpdateMessageScoped(messageId, patch, previous))
         } else {
           const nextMessages = cloneMessagesWithIds(chat)
           if (nextMessages[idx]) {
@@ -1121,7 +1123,7 @@
       } else {
         const localMessageId = ensureMessageId(liveMessage)
         Object.assign(liveMessage, patch)
-        dispatchUpdateMessageScoped(localMessageId, patch, previous)
+        observeMessageMutation(dispatchUpdateMessageScoped(localMessageId, patch, previous))
       }
       displaya(nextData)
     }
@@ -1181,6 +1183,57 @@
     setTimeout(() => {
       statusMessage = ''
     }, timeout)
+  }
+
+  interface ObservableMessageMutationOutcome {
+    status: string
+    settlement?: Promise<{ status: string }>
+  }
+
+  let messageMutationStatusRun = 0
+
+  function reportMessageMutationFailure(run: number): void {
+    if (run === messageMutationStatusRun) setStatusMessage(language.messageMutationFailed)
+    alertError(language.messageMutationFailed)
+  }
+
+  function settleObservedMessageMutation(run: number, outcome: ObservableMessageMutationOutcome): void {
+    if (outcome.status === 'accepted' || outcome.status === 'ok') {
+      if (run === messageMutationStatusRun) setStatusMessage('')
+      return
+    }
+    if (outcome.status === 'queued' && outcome.settlement) {
+      if (run === messageMutationStatusRun) setStatusMessage(language.messageMutationQueued)
+      alertNormal(language.messageMutationQueued)
+      void outcome.settlement.then(
+        (settlement) => {
+          if (settlement.status === 'accepted') {
+            if (run === messageMutationStatusRun) setStatusMessage('')
+            return
+          }
+          reportMessageMutationFailure(run)
+        },
+        () => reportMessageMutationFailure(run),
+      )
+      return
+    }
+    reportMessageMutationFailure(run)
+  }
+
+  function observeMessageMutation(outcome: Promise<ObservableMessageMutationOutcome> | null | undefined): void {
+    if (!outcome) return
+    const run = ++messageMutationStatusRun
+    setStatusMessage(language.messageMutationPending)
+    void outcome.then(
+      (settled) => settleObservedMessageMutation(run, settled),
+      () => reportMessageMutationFailure(run),
+    )
+  }
+
+  function reportStaleMessageMutation(): void {
+    messageMutationStatusRun += 1
+    setStatusMessage(language.messageMutationStale)
+    alertError(language.messageMutationStale)
   }
 
   let blankMessage = $derived(
@@ -1642,20 +1695,23 @@
       chat.bookmarkNames = bookmarkNames
     }
     if (!hadMessageId && chat.id) {
-      dispatchReplaceMessagesScoped(chat.id, useServerCommands && nextMessages ? nextMessages : chat.message, previous)
+      dispatchReplaceMessagesForChat(chat, useServerCommands && nextMessages ? nextMessages : chat.message, previous)
     }
     if (useServerCommands && !applyOptimisticBookmarkMetadata(previous, messageId, bookmarks, bookmarkNames)) {
+      reportStaleMessageMutation()
       return
     }
     if (chat.id) {
-      dispatchUpdateChatScoped(
-        chat.id,
-        {
-          bookmarks,
-          bookmarkNames,
-        },
-        previous,
-        rollbackServerBackedChatRowMetadata,
+      observeMessageMutation(
+        dispatchUpdateChatScopedWithOutcome(
+          chat.id,
+          {
+            bookmarks,
+            bookmarkNames,
+          },
+          previous,
+          rollbackServerBackedChatRowMetadata,
+        ),
       )
     }
   }
@@ -2408,7 +2464,7 @@
       const messageId = currentMessage.chatId
       if (canUseServerCommands()) {
         if (messageId) {
-          dispatchUpdateMessageScoped(messageId, { disabled }, previous)
+          observeMessageMutation(dispatchUpdateMessageScoped(messageId, { disabled }, previous))
         } else {
           const chat =
             getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
@@ -2423,7 +2479,7 @@
         getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[
           idx
         ].disabled = disabled
-        dispatchUpdateMessageScoped(localMessageId, { disabled }, previous)
+        observeMessageMutation(dispatchUpdateMessageScoped(localMessageId, { disabled }, previous))
       }
     }}>
     <PowerOff size={20} />
@@ -2446,7 +2502,7 @@
       const messageId = currentMessage.chatId
       if (canUseServerCommands()) {
         if (messageId) {
-          dispatchUpdateMessageScoped(messageId, { disabled }, previous)
+          observeMessageMutation(dispatchUpdateMessageScoped(messageId, { disabled }, previous))
         } else {
           const chat =
             getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
@@ -2461,7 +2517,7 @@
         getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[
           idx
         ].disabled = disabled
-        dispatchUpdateMessageScoped(localMessageId, { disabled }, previous)
+        observeMessageMutation(dispatchUpdateMessageScoped(localMessageId, { disabled }, previous))
       }
     }}>
     <Scissors size={20} />
@@ -2768,7 +2824,7 @@
                   const messageId = chat.message[idx].chatId
                   if (canUseServerCommands()) {
                     if (messageId) {
-                      dispatchUpdateMessageScoped(messageId, { role }, previous)
+                      observeMessageMutation(dispatchUpdateMessageScoped(messageId, { role }, previous))
                     } else {
                       const nextMessages = cloneMessagesWithIds(chat)
                       if (nextMessages[idx]) {
@@ -2779,7 +2835,7 @@
                   } else {
                     const localMessageId = ensureMessageId(chat.message[idx])
                     chat.message[idx].role = role
-                    dispatchUpdateMessageScoped(localMessageId, { role }, previous)
+                    observeMessageMutation(dispatchUpdateMessageScoped(localMessageId, { role }, previous))
                   }
                   ReloadChatPointer.update((v) => {
                     v[idx] = (v[idx] ?? 0) + 1

@@ -5327,6 +5327,36 @@ function dispatchSanitizedUpdateMessageWith(
   })
 }
 
+function dispatchSanitizedUpdateMessageWithOutcome(
+  messageId: string,
+  commandPatch: MessageSnapshot,
+  characterId: string | undefined,
+  rollback: () => void,
+  optimisticProjection?: ChatBodyProjectionFence,
+  onTransport?: (transport: ServerCommandTransportOptions) => void,
+): Promise<ChatMutationOutcome> | null {
+  if (Object.keys(commandPatch).length === 0) return null
+  if (optimisticProjection) markChatMessageMutationIntent(optimisticProjection.chatId)
+  const body = freezeDurableChatRequestBody({ patch: commandPatch })
+  const intent = durableChatMutationIntent('PATCH', `/messages/${encodeURIComponent(messageId)}`, body)
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) => {
+    onTransport?.(transport)
+    return runServerCommand({
+      command: (baseRevision) =>
+        updateMessageCommand({
+          baseRevision,
+          messageId,
+          patch: body.patch,
+          optimisticChatId: optimisticProjection?.chatId,
+          optimisticChatBodyProjectionEpoch: optimisticProjection?.projectionEpoch,
+        }),
+      rollback,
+      ...transport,
+    })
+  })
+  return normalizedChatMutationOutcome(outcome, rollback)
+}
+
 function dispatchUpdateMessageWith(
   messageId: string,
   patch: MessageSnapshot,
@@ -5363,7 +5393,7 @@ export function dispatchUpdateMessageScoped(
   patch: MessageSnapshot,
   previous: ChatScopedSnapshot,
   options: DispatchUpdateMessageScopedOptions = {},
-): Promise<ServerCommandResult> | null {
+): Promise<ChatMutationOutcome> | null {
   const optimisticProjection = captureChatBodyProjectionFenceForScopedSnapshot(previous)
   const { commandPatch, dispatcherAppliedKeys } = applyScopedMessagePatchAttempt(
     previous,
@@ -5383,7 +5413,7 @@ export function dispatchUpdateMessageScoped(
     (previousMessages) => messagesAfterPatch(previousMessages, messageId, commandPatch),
     (attempt) => restoreScopedMessagePatchAttempt(attempt.previous, messageId, commandPatch),
   )
-  const result = dispatchSanitizedUpdateMessageWith(
+  const outcome = dispatchSanitizedUpdateMessageWithOutcome(
     messageId,
     commandPatch,
     previous.characterId,
@@ -5391,8 +5421,9 @@ export function dispatchUpdateMessageScoped(
     optimisticProjection,
     (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
   )
+  const result = outcome?.then((settled) => settled.result as ServerCommandResult) ?? null
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
-  return result
+  return outcome
 }
 
 function scopedMessagePatchBaseline(
@@ -5669,6 +5700,40 @@ function dispatchTruncateMessagesWith(
   })
 }
 
+function dispatchTruncateMessagesWithOutcome(
+  chatId: string,
+  afterMessageId: string | null,
+  characterId: string | undefined,
+  rollback: () => void,
+  optimisticChatBodyProjectionEpoch: number,
+  options: TruncateMessagesOptions = {},
+  onTransport?: (transport: ServerCommandTransportOptions) => void,
+): Promise<ChatMutationOutcome> | null {
+  if (!canUseServerCommands()) return null
+  markChatMessageMutationIntent(chatId)
+  const body = freezeDurableChatRequestBody({
+    afterMessageId,
+    ...(options.preserveRemovedAsAlternates ? { preserveRemovedAsAlternates: true } : {}),
+  })
+  const intent = durableChatMutationIntent('POST', `/chats/${encodeURIComponent(chatId)}/messages/truncate`, body)
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) => {
+    onTransport?.(transport)
+    return runServerCommand({
+      command: (baseRevision) =>
+        truncateMessagesCommand({
+          baseRevision,
+          chatId,
+          afterMessageId: body.afterMessageId,
+          preserveRemovedAsAlternates: body.preserveRemovedAsAlternates,
+          optimisticChatBodyProjectionEpoch,
+        }),
+      rollback,
+      ...transport,
+    })
+  })
+  return normalizedChatMutationOutcome(outcome, rollback)
+}
+
 export function dispatchTruncateMessages(
   chatId: string,
   afterMessageId: string | null,
@@ -5690,7 +5755,7 @@ export function dispatchTruncateMessagesScoped(
   afterMessageId: string | null,
   previous: ChatScopedSnapshot,
   options: TruncateMessagesOptions = {},
-): Promise<ServerCommandResult | null> {
+): Promise<ChatMutationOutcome> | null {
   const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
   const attemptedMessages = attemptedMessagesAfterTruncate(previous, afterMessageId)
   const pendingAttempt = registerScopedTranscriptAttempt(
@@ -5700,7 +5765,7 @@ export function dispatchTruncateMessagesScoped(
     (attempt) => restoreScopedMessageListAttempt(attempt.previous, attempt.attemptedMessages),
   )
   applyScopedMessageListAttempt(previous, attemptedMessages)
-  const result = dispatchTruncateMessagesWith(
+  const outcome = dispatchTruncateMessagesWithOutcome(
     chatId,
     afterMessageId,
     previous.characterId,
@@ -5711,8 +5776,9 @@ export function dispatchTruncateMessagesScoped(
     options,
     (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
   )
+  const result = outcome?.then((settled) => settled.result as ServerCommandResult) ?? null
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
-  return result
+  return outcome
 }
 
 function dispatchReplaceTailMessagesWith(
@@ -5823,6 +5889,35 @@ function dispatchReplaceMessagesWith(
   })
 }
 
+function dispatchReplaceMessagesWithOutcome(
+  chatId: string,
+  messages: Message[],
+  characterId: string | undefined,
+  rollback: () => void,
+  optimisticChatBodyProjectionEpoch: number,
+  onTransport?: (transport: ServerCommandTransportOptions) => void,
+): Promise<ChatMutationOutcome> | null {
+  if (!prepareReplaceMessages(messages)) return null
+  markChatMessageMutationIntent(chatId)
+  const body = freezeDurableChatRequestBody({ messages: messages.map(toMessageSnapshot) })
+  const intent = durableChatMutationIntent('PUT', `/chats/${encodeURIComponent(chatId)}/messages`, body)
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) => {
+    onTransport?.(transport)
+    return runServerCommand({
+      command: (baseRevision) =>
+        replaceMessagesCommand({
+          baseRevision,
+          chatId,
+          messages: body.messages,
+          optimisticChatBodyProjectionEpoch,
+        }),
+      rollback,
+      ...transport,
+    })
+  })
+  return normalizedChatMutationOutcome(outcome, rollback)
+}
+
 function hasServerChatMessagePlaceholders(messages: readonly Message[]): boolean {
   return messages.some(isServerChatMessagePlaceholder)
 }
@@ -5837,7 +5932,11 @@ export function dispatchReplaceMessages(chatId: string, messages: Message[], pre
   )
 }
 
-export function dispatchReplaceMessagesScoped(chatId: string, messages: Message[], previous: ChatScopedSnapshot): void {
+export function dispatchReplaceMessagesScoped(
+  chatId: string,
+  messages: Message[],
+  previous: ChatScopedSnapshot,
+): Promise<ChatMutationOutcome> | undefined {
   if (!prepareReplaceMessages(messages)) return
   const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
   const attemptedMessages = cloneJsonValue(messages)
@@ -5848,7 +5947,7 @@ export function dispatchReplaceMessagesScoped(chatId: string, messages: Message[
     (attempt) => restoreScopedMessageListAttempt(attempt.previous, attempt.attemptedMessages),
   )
   applyScopedMessageListAttempt(previous, attemptedMessages)
-  const result = dispatchReplaceMessagesWith(
+  const outcome = dispatchReplaceMessagesWithOutcome(
     chatId,
     messages,
     previous.characterId,
@@ -5858,7 +5957,9 @@ export function dispatchReplaceMessagesScoped(chatId: string, messages: Message[
     optimisticChatBodyProjectionEpoch,
     (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
   )
+  const result = outcome?.then((settled) => settled.result as ServerCommandResult) ?? null
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
+  return outcome ?? undefined
 }
 
 function prepareReplaceTailMessages(messages: Message[]): boolean {
