@@ -49,7 +49,7 @@
   import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints } from '@lucide/svelte'
   import { v4 } from 'uuid'
   import { tooltip } from 'src/ts/gui/tooltip'
-  import { alertConfirm, alertError } from 'src/ts/alert'
+  import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { onDestroy } from 'svelte'
   import { importMCPModule } from 'src/ts/process/mcp/mcp'
@@ -59,6 +59,7 @@
     rebaseModuleEditorDraftOntoLatest,
     saveGlobalModuleDraft,
     setGlobalModuleEnabled,
+    type ModuleMutationOutcome,
   } from 'src/ts/moduleCommands'
   import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
   import type { ServerCommandResult } from 'src/ts/server/commands'
@@ -77,6 +78,8 @@
   let mutationPending = $state(false)
   let mcpImportPending = $state(false)
   let mutationError = $state('')
+  let rowMutationPending = $state<Record<string, 'toggle' | 'delete'>>({})
+  let rowMutationErrors = $state<Record<string, string>>({})
   let moduleSearch = $state('')
   let normalizedModuleSearch = $derived(normalizeModuleSearch(moduleSearch))
   let sortedModuleRows = $derived(sortModuleSettingsRows(getResourceDatabase().modules ?? [], normalizedModuleSearch))
@@ -100,6 +103,58 @@
 
   function thrownMutationError(error: unknown): string {
     return language.moduleSave.commandError(error instanceof Error ? error.message : String(error))
+  }
+
+  function isRowMutationPending(moduleId: string): boolean {
+    return rowMutationPending[moduleId] !== undefined
+  }
+
+  function beginRowMutation(moduleId: string, action: 'toggle' | 'delete'): boolean {
+    if (isRowMutationPending(moduleId)) return false
+    rowMutationPending[moduleId] = action
+    const nextErrors = { ...rowMutationErrors }
+    delete nextErrors[moduleId]
+    rowMutationErrors = nextErrors
+    return true
+  }
+
+  function finishRowMutation(moduleId: string): void {
+    delete rowMutationPending[moduleId]
+  }
+
+  function reconcileRowMutation(moduleId: string, outcome: ModuleMutationOutcome): void {
+    if (outcome.status === 'queued') {
+      alertNormal(language.moduleSave.queued)
+      return
+    }
+    if (outcome.status === 'failed') {
+      rowMutationErrors = { ...rowMutationErrors, [moduleId]: moduleMutationError(outcome.result) }
+    }
+  }
+
+  async function toggleGlobalModule(moduleId: string): Promise<void> {
+    if (!beginRowMutation(moduleId, 'toggle')) return
+    try {
+      const enabled = !getResourceDatabase().enabledModules.includes(moduleId)
+      reconcileRowMutation(moduleId, await setGlobalModuleEnabled(moduleId, enabled))
+    } catch (error) {
+      rowMutationErrors = { ...rowMutationErrors, [moduleId]: thrownMutationError(error) }
+    } finally {
+      finishRowMutation(moduleId)
+    }
+  }
+
+  async function removeGlobalModule(moduleId: string, moduleName: string): Promise<void> {
+    if (!beginRowMutation(moduleId, 'delete')) return
+    try {
+      const confirmed = await alertConfirm(`${language.removeConfirm}${moduleName}`)
+      if (!confirmed) return
+      reconcileRowMutation(moduleId, await deleteGlobalModule(moduleId))
+    } catch (error) {
+      rowMutationErrors = { ...rowMutationErrors, [moduleId]: thrownMutationError(error) }
+    } finally {
+      finishRowMutation(moduleId)
+    }
   }
 
   async function createModuleFromDraft() {
@@ -180,6 +235,7 @@
           data-risu-module-row
           data-risu-row-id={rmodule.id}
           data-risu-row-index={moduleRow.index}
+          aria-busy={isRowMutationPending(rmodule.id)}
           data-risu-enabled={isModuleEnabled(rmodule.id) ? 'true' : 'false'}
           data-risu-integration-state={moduleIntegrationState(rmodule)}>
           {#if rmodule.mcp}
@@ -191,6 +247,7 @@
               data-risu-module-action="toggle-enabled"
               aria-label={`${language.enableGlobal}: ${moduleName}`}
               aria-pressed={isModuleEnabled(rmodule.id)}
+              disabled={isRowMutationPending(rmodule.id)}
               class={isModuleEnabled(rmodule.id)
                 ? 'mr-2 cursor-pointer text-blue-500'
                 : rmodule.namespace && moduleIntegrationNamespaces.has(rmodule.namespace)
@@ -199,8 +256,7 @@
               use:tooltip={language.enableGlobal}
               onclick={async (e) => {
                 e.stopPropagation()
-                const enabled = !getResourceDatabase().enabledModules.includes(rmodule.id)
-                setGlobalModuleEnabled(rmodule.id, enabled)
+                await toggleGlobalModule(rmodule.id)
               }}>
               <Globe size={18} />
             </button>
@@ -219,6 +275,7 @@
               <button
                 data-risu-module-action="edit"
                 aria-label={`${language.edit}: ${moduleName}`}
+                disabled={isRowMutationPending(rmodule.id)}
                 class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
                 use:tooltip={language.edit}
                 onclick={async (e) => {
@@ -254,14 +311,12 @@
             <button
               data-risu-module-action="delete"
               aria-label={`${language.remove}: ${moduleName}`}
+              disabled={isRowMutationPending(rmodule.id)}
               class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
               use:tooltip={language.remove}
               onclick={async (e) => {
                 e.stopPropagation()
-                const d = await alertConfirm(`${language.removeConfirm}` + moduleName)
-                if (d) {
-                  deleteGlobalModule(rmodule.id)
-                }
+                await removeGlobalModule(rmodule.id, moduleName)
               }}>
               <TrashIcon size={18} />
             </button>
@@ -269,6 +324,15 @@
         </div>
         <div class="mt-1 mb-3 pl-3">
           <span class="text-sm text-textcolor2">{rmodule.description || language.noModuleDescription}</span>
+          {#if rowMutationErrors[rmodule.id]}
+            <div
+              class="mt-1 text-sm text-draculared"
+              role="alert"
+              data-risu-module-mutation-error
+              data-risu-row-id={rmodule.id}>
+              {rowMutationErrors[rmodule.id]}
+            </div>
+          {/if}
         </div>
       {/each}
     {/if}

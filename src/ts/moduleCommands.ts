@@ -40,7 +40,7 @@ import {
   resolveActiveChatGenerationSettings,
 } from './activeChatGenerationSettings'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
-import { dispatchDurableMutation } from './server/durableMutationDispatch'
+import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './server/durableMutationDispatch'
 import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
 import {
   pendingMutationChatGenerationSettingsProjectionTarget,
@@ -62,6 +62,11 @@ export interface GlobalModuleStateSnapshot {
   enabledModules: string[]
   moduleReferences?: ModuleReferenceStateSnapshot
 }
+
+export type ModuleMutationOutcome =
+  | { status: 'accepted'; result: Extract<ServerCommandResult, { status: 'ok' }> | null }
+  | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
 
 export interface CharacterModuleStateSnapshot {
   characterId: string
@@ -620,8 +625,11 @@ export function dispatchModuleInfoPatch(
   runModuleCollectionPatchSteps(steps)
 }
 
-export function dispatchDeleteModule(moduleId: string, previous: GlobalModuleStateSnapshot): void {
-  if (!canUseServerCommands()) return
+export async function dispatchDeleteModule(
+  moduleId: string,
+  previous: GlobalModuleStateSnapshot,
+): Promise<ModuleMutationOutcome> {
+  if (!canUseServerCommands()) return { status: 'failed', result: { status: 'unavailable' } }
   flushRegisteredPendingBridgePatches({})
   const rollbackEntries = moduleDeleteRollbackEntries(moduleId, previous)
   const operation = rollbackEntries.length > 0 ? issueGlobalModuleOperation(rollbackEntries) : null
@@ -638,30 +646,50 @@ export function dispatchDeleteModule(moduleId: string, previous: GlobalModuleSta
   }
   const outbox = stagePendingMutation(moduleOwnerMutationKey(moduleId), intent)
   recordPendingMutationProjectionTargets(outbox, globalModuleProjectionTargets(rollbackEntries))
-  void dispatchDurableMutation(outbox, intent, (transport) =>
-    runModuleCommand(
-      async (baseRevision) => {
-        const result = await deleteModuleCommand({
-          baseRevision,
-          moduleId,
-        })
-        if (operation && result.status === 'ok') {
-          clearGlobalModuleOperation(operation)
-        }
-        return result
-      },
-      () => {
-        if (operation) {
-          rollbackGlobalModuleEntries(rollbackEntries, operation)
-        }
-      },
-      transport,
-    ),
-  )
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const settlementCleanup = registerDurableMutationSettlementListener(outbox.mutationId, (settlement) => {
+    if (!operation) return
+    if (settlement === 'accepted') clearGlobalModuleOperation(operation)
+    else rollbackGlobalModuleEntries(rollbackEntries, operation)
+  })
+  let result: ServerCommandResult
+  try {
+    result = await dispatchDurableMutation(outbox, intent, (transport) => {
+      failureRollbackDisposition = transport.failureRollbackDisposition
+      return runModuleCommand(
+        async (baseRevision) => {
+          const result = await deleteModuleCommand({
+            baseRevision,
+            moduleId,
+          })
+          if (operation && result.status === 'ok') {
+            clearGlobalModuleOperation(operation)
+          }
+          return result
+        },
+        () => {
+          if (operation) {
+            rollbackGlobalModuleEntries(rollbackEntries, operation)
+          }
+        },
+        transport,
+      )
+    })
+  } catch (error) {
+    console.error('Module delete command rejected:', error)
+    result = { status: 'unavailable' }
+  }
+  const outcome = moduleMutationOutcome(result, failureRollbackDisposition)
+  if (outcome.status !== 'queued') settlementCleanup()
+  return outcome
 }
 
-export function dispatchEnableModule(moduleId: string, enabled: boolean, previous: GlobalModuleStateSnapshot): void {
-  if (!canUseServerCommands()) return
+export async function dispatchEnableModule(
+  moduleId: string,
+  enabled: boolean,
+  previous: GlobalModuleStateSnapshot,
+): Promise<ModuleMutationOutcome> {
+  if (!canUseServerCommands()) return { status: 'failed', result: { status: 'unavailable' } }
   const rollbackEntry = moduleEnableRollbackEntry(moduleId, enabled, previous)
   const operation = issueGlobalModuleOperation([rollbackEntry])
   const intent: DurableMutationIntent = {
@@ -677,27 +705,41 @@ export function dispatchEnableModule(moduleId: string, enabled: boolean, previou
   }
   const outbox = stagePendingMutation(moduleOwnerMutationKey(moduleId), intent)
   recordPendingMutationProjectionTargets(outbox, globalModuleProjectionTargets([rollbackEntry]))
-  void dispatchDurableMutation(outbox, intent, (transport) =>
-    runModuleCommand(
-      async (baseRevision) => {
-        const result = await enableModuleCommand({ baseRevision, moduleId, enabled }, undefined, true)
-        if (result.status === 'ok') {
-          clearGlobalModuleOperation(operation)
-        }
-        return result
-      },
-      () => rollbackGlobalModuleEntries([rollbackEntry], operation),
-      transport,
-    ),
-  )
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const settlementCleanup = registerDurableMutationSettlementListener(outbox.mutationId, (settlement) => {
+    if (settlement === 'accepted') clearGlobalModuleOperation(operation)
+    else rollbackGlobalModuleEntries([rollbackEntry], operation)
+  })
+  let result: ServerCommandResult
+  try {
+    result = await dispatchDurableMutation(outbox, intent, (transport) => {
+      failureRollbackDisposition = transport.failureRollbackDisposition
+      return runModuleCommand(
+        async (baseRevision) => {
+          const result = await enableModuleCommand({ baseRevision, moduleId, enabled }, undefined, true)
+          if (result.status === 'ok') {
+            clearGlobalModuleOperation(operation)
+          }
+          return result
+        },
+        () => rollbackGlobalModuleEntries([rollbackEntry], operation),
+        transport,
+      )
+    })
+  } catch (error) {
+    console.error('Module enable command rejected:', error)
+    result = { status: 'unavailable' }
+  }
+  const outcome = moduleMutationOutcome(result, failureRollbackDisposition)
+  if (outcome.status !== 'queued') settlementCleanup()
+  return outcome
 }
 
-export function setGlobalModuleEnabled(moduleId: string, enabled: boolean): void {
+export async function setGlobalModuleEnabled(moduleId: string, enabled: boolean): Promise<ModuleMutationOutcome> {
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
     applyOptimisticGlobalModuleEnabled(moduleId, enabled)
-    dispatchEnableModule(moduleId, enabled, previous)
-    return
+    return dispatchEnableModule(moduleId, enabled, previous)
   }
 
   if (enabled) {
@@ -708,6 +750,7 @@ export function setGlobalModuleEnabled(moduleId: string, enabled: boolean): void
     getDatabase().enabledModules = getDatabase().enabledModules.filter((id) => id !== moduleId)
   }
   reloadGuiAfterDefinitionChange()
+  return { status: 'accepted', result: null }
 }
 
 export async function createGlobalModule(module: RisuModule): Promise<ServerCommandResult | null> {
@@ -904,18 +947,27 @@ function applyOptimisticGlobalModulePatch(moduleId: string, patch: ModuleSnapsho
   })
 }
 
-export function deleteGlobalModule(moduleId: string): void {
+export async function deleteGlobalModule(moduleId: string): Promise<ModuleMutationOutcome> {
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot(moduleId)
     applyOptimisticDeletedGlobalModule(moduleId)
-    dispatchDeleteModule(moduleId, previous)
-    return
+    return dispatchDeleteModule(moduleId, previous)
   }
 
   getDatabase().enabledModules = getDatabase().enabledModules.filter((id) => id !== moduleId)
   getDatabase().modules = getDatabase().modules.filter((module) => module.id !== moduleId)
   removeProjectedModuleReferences(moduleId)
   reloadGuiAfterDefinitionChange()
+  return { status: 'accepted', result: null }
+}
+
+function moduleMutationOutcome(
+  result: ServerCommandResult,
+  failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition'],
+): ModuleMutationOutcome {
+  if (result.status === 'ok') return { status: 'accepted', result }
+  if (failureRollbackDisposition?.(result) === 'retain') return { status: 'queued', result }
+  return { status: 'failed', result }
 }
 
 function applyOptimisticGlobalModuleEnabled(moduleId: string, enabled: boolean): void {

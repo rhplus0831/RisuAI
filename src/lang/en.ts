@@ -1360,6 +1360,7 @@ export const languageEnglish = {
   editModule: 'Edit Module',
   moduleSave: {
     saving: 'Saving...',
+    queued: 'The module change is saved on this device and queued. It will retry automatically.',
     commandConflict: 'The server has newer module data. Your draft was kept. Review it and try again.',
     commandUnavailable: 'Module saving is unavailable. Your draft was kept.',
     editTargetMissing: 'The module you were editing no longer exists. Your draft was kept.',

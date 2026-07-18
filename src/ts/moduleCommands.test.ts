@@ -1565,7 +1565,7 @@ describe('module command projection helpers', () => {
     getDatabase().enabledModules = ['mod-b']
     setResourceWriteGuardEnabled(true)
 
-    setGlobalModuleEnabled('mod-a', true)
+    const outcome = setGlobalModuleEnabled('mod-a', true)
     expect(getDatabase().enabledModules).toEqual(['mod-b', 'mod-a'])
 
     withTrustedResourceWrite(() => {
@@ -1576,7 +1576,52 @@ describe('module command projection helpers', () => {
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
 
+    await expect(outcome).resolves.toMatchObject({ status: 'failed' })
     expect(getDatabase().enabledModules).toEqual(['mod-c'])
+  })
+
+  it('classifies a retained global enable as queued until replay accepts it', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-module-enable-outcome',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-module-enable-outcome',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    setResourceWriteGuardEnabled(true)
+    let recover = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/modules/enable') {
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'module.enabled', revision: 11, resource: 'module', id: 'mod-a' },
+            moduleId: 'mod-a',
+            enabled: true,
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(setGlobalModuleEnabled('mod-a', true)).resolves.toMatchObject({ status: 'queued' })
+      expect(getDatabase().enabledModules).toEqual(['mod-a'])
+      expect(await listPendingMutations()).toHaveLength(1)
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('failed delete reinserts only deleted module and restores references only while they match attempted deletion', async () => {

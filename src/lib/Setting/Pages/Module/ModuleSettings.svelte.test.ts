@@ -272,6 +272,8 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
+  moduleCommandSpies.deleteGlobalModule.mockResolvedValue({ status: 'accepted', result: null })
+  moduleCommandSpies.setGlobalModuleEnabled.mockResolvedValue({ status: 'accepted', result: null })
   alertSpies.alertConfirm.mockResolvedValue(false)
   seedModules()
 })
@@ -376,6 +378,50 @@ describe('ModuleSettings derived module rows', () => {
     await tick()
     await Promise.resolve()
     expect(moduleCommandSpies.deleteGlobalModule).toHaveBeenCalledWith('beta-id')
+  })
+
+  it('keeps a module toggle busy through its durable outcome and reports queued work', async () => {
+    const outcome = createDeferred<any>()
+    moduleCommandSpies.setGlobalModuleEnabled.mockReturnValueOnce(outcome.promise)
+    mountSettings()
+
+    const toggle = moduleAction('beta-id', 'toggle-enabled')
+    toggle.click()
+    toggle.click()
+    await tick()
+
+    expect(moduleCommandSpies.setGlobalModuleEnabled).toHaveBeenCalledOnce()
+    expect(moduleCommandSpies.setGlobalModuleEnabled).toHaveBeenCalledWith('beta-id', true)
+    expect(toggle.disabled).toBe(true)
+    expect(rowForModuleId('beta-id').getAttribute('aria-busy')).toBe('true')
+
+    outcome.resolve({ status: 'queued', result: { status: 'unavailable' } })
+    await vi.waitFor(() => expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.moduleSave.queued))
+    expect(toggle.disabled).toBe(false)
+    expect(rowForModuleId('beta-id').getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('blocks duplicate deletes and exposes a terminal delete failure on its row', async () => {
+    const outcome = createDeferred<any>()
+    alertSpies.alertConfirm.mockResolvedValue(true)
+    moduleCommandSpies.deleteGlobalModule.mockReturnValueOnce(outcome.promise)
+    mountSettings()
+
+    const deleteButton = moduleAction('beta-id', 'delete')
+    deleteButton.click()
+    deleteButton.click()
+    await vi.waitFor(() => expect(moduleCommandSpies.deleteGlobalModule).toHaveBeenCalledOnce())
+
+    expect(alertSpies.alertConfirm).toHaveBeenCalledOnce()
+    expect(deleteButton.disabled).toBe(true)
+    outcome.resolve({ status: 'failed', result: { status: 'unavailable' } })
+    await outcome.promise
+    await vi.waitFor(() => expect(deleteButton.disabled).toBe(false))
+
+    expect(
+      target.querySelector('[data-risu-module-mutation-error][data-risu-row-id="beta-id"]')?.textContent,
+    ).toContain(language.moduleSave.commandUnavailable)
+    expect(deleteButton.disabled).toBe(false)
   })
 
   it('L43: ModuleSettings edit after filtering saves the original module id', async () => {
