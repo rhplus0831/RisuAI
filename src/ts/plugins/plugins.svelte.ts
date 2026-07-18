@@ -867,6 +867,13 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
   let replacedStorage: Record<string, unknown> | null = null
 
   for (const [key, value] of Object.entries(newDb)) {
+    if (value === undefined) {
+      console.warn(
+        `[plugin db bridge] Ignored undefined database value for "${key}" because undefined cannot be persisted.`,
+      )
+      continue
+    }
+
     if (key === 'pluginCustomStorage') {
       replacedStorage =
         value && typeof value === 'object' && !Array.isArray(value)

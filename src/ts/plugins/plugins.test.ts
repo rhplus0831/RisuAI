@@ -2312,6 +2312,23 @@ describe('plugin database command bridge', () => {
     expect(getDatabase().pluginCustomStorage.customPluginKey).toEqual({ value: 1 })
   })
 
+  it('rejects undefined database values before changing the live projection', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const calls = stubCommandFetch()
+    const apis = getV2PluginAPIs()
+    getDatabase().customCSS = 'body { color: red; }'
+
+    apis.setDatabaseLite({ customCSS: undefined })
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect(getDatabase().customCSS).toBe('body { color: red; }')
+    expect(calls.some((call) => call.url.includes('/api/v1/commands/'))).toBe(false)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('customCSS'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('undefined'))
+    warn.mockRestore()
+  })
+
   it('blocks recognized resource families (in allowedDbKeys) in server mode without persisting', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const calls = stubCommandFetch()
