@@ -170,6 +170,8 @@ let serverResourceEventEpoch = 0
 let serverResourceLastFrameAt = 0
 let serverResourceEventWatchdogTimer: ReturnType<typeof setTimeout> | null = null
 let stopServerResourceRecoveryListeners: (() => void) | null = null
+let reconnectPendingMutationReplay: Promise<void> | null = null
+let serverResourceRuntimeReplayEnabled = false
 
 function initialSelectedCharFromDatabase(db: Database): number {
   const currentChar = (db as { currentChar?: unknown }).currentChar
@@ -305,7 +307,9 @@ export async function loadWebInitialDatabase() {
   void hydrateActiveChat()
   stopBridgePatchLifecycleFlush?.()
   stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
-  await startServerResourceEvents()
+  serverResourceRuntimeReplayEnabled = false
+  await startServerResourceEvents({ replayPendingMutations: false })
+  serverResourceRuntimeReplayEnabled = true
   normalizeLegacyCustomBackgroundSetting()
 }
 
@@ -359,6 +363,7 @@ function serverCommandFailureMessage(
 
 export function stopServerResourceEvents() {
   serverResourceEventsDesired = false
+  serverResourceRuntimeReplayEnabled = false
   serverResourceEventEpoch += 1
   teardownServerResourceSubscription()
   stopServerResourceRecoveryListeners?.()
@@ -374,7 +379,7 @@ export function stopServerResourceEvents() {
   serverResourceReconnectAttempt = 0
 }
 
-async function startServerResourceEvents() {
+async function startServerResourceEvents(options: { replayPendingMutations?: boolean } = {}) {
   const eventEpoch = serverResourceEventEpoch + 1
   serverResourceEventEpoch = eventEpoch
   teardownServerResourceSubscription()
@@ -384,7 +389,8 @@ async function startServerResourceEvents() {
     sinceRevision: peekAppliedServerResourceRevision(),
     onCommandEvent: handleServerCommandEvent,
     onMemoryEvent: applyServerMemoryEvent,
-    onFrame: () => recordServerResourceEventFrame(eventEpoch),
+    onFrame: (frame) =>
+      recordServerResourceEventFrame(eventEpoch, frame.event === 'message' && frame.data.length === 0),
     onError: (error) => {
       if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
       console.warn(error)
@@ -411,6 +417,7 @@ async function startServerResourceEvents() {
     serverResourceReconnectAttempt = 0
     serverResourceEventSubscription = subscription
     recordServerResourceEventFrame(eventEpoch)
+    if (options.replayPendingMutations !== false) triggerReconnectPendingMutationReplay()
   } else if (subscription.status === 'error') {
     console.warn(`Server event subscription failed: ${subscription.error}`)
     scheduleServerResourceReconnect(eventEpoch)
@@ -445,10 +452,11 @@ function scheduleServerResourceReconnect(eventEpoch = serverResourceEventEpoch) 
   }, delayMs)
 }
 
-function recordServerResourceEventFrame(eventEpoch: number): void {
+function recordServerResourceEventFrame(eventEpoch: number, retryPendingMutations = false): void {
   if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
   serverResourceLastFrameAt = Date.now()
   armServerResourceEventWatchdog(eventEpoch, SERVER_RESOURCE_EVENT_STALE_TIMEOUT_MS)
+  if (serverResourceRuntimeReplayEnabled && retryPendingMutations) triggerReconnectPendingMutationReplay()
 }
 
 function armServerResourceEventWatchdog(eventEpoch: number, delayMs: number): void {
@@ -501,6 +509,21 @@ function restartServerResourceEvents(): void {
     serverResourceReconnectTimer = null
   }
   void startServerResourceEvents()
+}
+
+function triggerReconnectPendingMutationReplay(): void {
+  if (!serverResourceEventsDesired || reconnectPendingMutationReplay) return
+  const replay = (async () => {
+    const summary = await replayPendingMutations()
+    if (summary.discarded === 0) return
+    await enqueueServerResourceSync(async () => {
+      await forceServerResourceRefresh('pending-mutation-replay-discarded')
+    })
+  })().catch((error) => console.warn('Pending mutation reconnect replay failed', error))
+  reconnectPendingMutationReplay = replay
+  void replay.finally(() => {
+    if (reconnectPendingMutationReplay === replay) reconnectPendingMutationReplay = null
+  })
 }
 
 function handleServerCommandConflictGap(currentRevision: number, appliedRevision: number): void {

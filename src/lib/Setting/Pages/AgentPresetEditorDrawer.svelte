@@ -585,6 +585,11 @@
       if (outcome.projectionLatch) onQueuedProjection(outcome.projectionLatch)
       return true
     }
+    if (outcome.status === 'blocked') {
+      stepMutationState = 'idle'
+      stepCommandError = language.agentPresets.commandBlocked
+      return false
+    }
     const result = outcome.result
     stepMutationState = 'idle'
     stepCommandError =

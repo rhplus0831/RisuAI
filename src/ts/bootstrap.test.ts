@@ -23,7 +23,7 @@ const eventApi = vi.hoisted(() => ({
     sinceRevision?: number | null
     onCommandEvent: (event: TestCommandEvent) => void
     onMemoryEvent?: (event: TestMemoryEvent) => void
-    onFrame?: () => void
+    onFrame?: (frame?: { event: string; data: string }) => void
     onError?: (error: string) => void
     onClose?: () => void
   }>,
@@ -4224,6 +4224,16 @@ describe('API-backed client bootstrap', () => {
 })
 
 describe('resource event reconnect backoff', () => {
+  it('uses a live heartbeat to retry retained mutations without a reconnect', async () => {
+    await loadWebInitialDatabase()
+    expect(pendingMutationApi.replay).toHaveBeenCalledTimes(1)
+
+    eventApi.subscriptions[0].onFrame?.({ event: 'message', data: '' })
+
+    await vi.waitFor(() => expect(pendingMutationApi.replay).toHaveBeenCalledTimes(2))
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(1)
+  })
+
   it('reconnects a stream that stops delivering heartbeat frames', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
@@ -4231,7 +4241,7 @@ describe('resource event reconnect backoff', () => {
     await loadWebInitialDatabase()
     await vi.advanceTimersByTimeAsync(59_999)
     expect(eventApi.subscribe).toHaveBeenCalledTimes(1)
-    eventApi.subscriptions[0].onFrame?.()
+    eventApi.subscriptions[0].onFrame?.({ event: 'message', data: '' })
     await vi.advanceTimersByTimeAsync(59_999)
     expect(eventApi.subscribe).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(1)
@@ -4244,9 +4254,11 @@ describe('resource event reconnect backoff', () => {
 
   it('resubscribes when the browser comes online or returns to the foreground', async () => {
     await loadWebInitialDatabase()
+    expect(pendingMutationApi.replay).toHaveBeenCalledTimes(1)
 
     window.dispatchEvent(new Event('online'))
     await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(pendingMutationApi.replay).toHaveBeenCalledTimes(2))
     document.dispatchEvent(new Event('visibilitychange'))
     await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(3))
 

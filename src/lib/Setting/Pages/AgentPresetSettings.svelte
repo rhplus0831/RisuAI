@@ -148,6 +148,11 @@
       if (outcome.projectionLatch) queuedProjectionLatch = outcome.projectionLatch
       return true
     }
+    if (outcome.status === 'blocked') {
+      mutationState = 'idle'
+      commandError = language.agentPresets.commandBlocked
+      return false
+    }
     const result = outcome.result
     mutationState = 'idle'
     commandError =

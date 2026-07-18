@@ -2592,6 +2592,7 @@ export const languageEnglish = {
     cancel: 'Cancel',
     saving: 'Saving...',
     commandQueued: 'Saved locally and queued. You do not need to submit this change again.',
+    commandBlocked: 'Wait for the queued Agent Preset change to finish syncing, then try again.',
     newPresetName: 'New Agent Preset',
     nameLabel: 'Name',
     descriptionLabel: 'Description',

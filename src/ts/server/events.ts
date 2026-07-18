@@ -28,7 +28,7 @@ export type ServerMemoryEventHandler = (event: ServerMemoryEvent) => void
 export interface SubscribeServerCommandEventsInput {
   onCommandEvent: ServerCommandEventHandler
   onMemoryEvent?: ServerMemoryEventHandler
-  onFrame?: () => void
+  onFrame?: (frame: { event: string; data: string; id?: string }) => void
   onError?: (error: string) => void
   onClose?: () => void
   sinceRevision?: number | null
@@ -121,7 +121,7 @@ export async function subscribeServerCommandEvents(
     try {
       for await (const frame of iterateSseEvents(response.body!, controller.signal)) {
         if (stopped) continue
-        input.onFrame?.()
+        input.onFrame?.(frame)
         if (frame.event === 'command') {
           const event = parseCommandEvent(frame.data)
           if (!event) {

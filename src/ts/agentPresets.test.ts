@@ -55,6 +55,7 @@ import {
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
 } from './server/pendingMutationOutbox'
+import { replayPendingMutations } from './server/pendingMutationReplay'
 import {
   getDatabase,
   setDatabaseLite,
@@ -776,6 +777,42 @@ describe('Agent Preset ordered mutation durability', () => {
     })
   })
 
+  it('retires a retained patch overlay after an in-session replay accepts it', async () => {
+    await prepareDurableAgentPresetOutbox('retained-patch-reconnect')
+    let updateAttempts = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/mutation-receipts/ack')) return response({ acknowledged: 1, requested: 1 }, 200)
+        if (!url.endsWith('/agent-presets/ap_a')) throw new Error(`Unexpected URL: ${url}`)
+        updateAttempts += 1
+        if (updateAttempts === 1) return response({ error: 'temporary failure' }, 500)
+        return response(
+          {
+            revision: 2,
+            event: { type: 'agentPreset.updated', revision: 2, resource: 'agentPreset', id: 'ap_a' },
+            presetId: 'ap_a',
+          },
+          200,
+        )
+      }),
+    )
+
+    await expect(updateAgentPreset('ap_a', { name: 'Queued name' })).resolves.toMatchObject({ status: 'queued' })
+    expect(
+      mergePendingAgentPresetSettingsResource({ agentPresets: [preset({ name: 'Authoritative name' })] })
+        .agentPresets[0].name,
+    ).toBe('Queued name')
+
+    await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1, retained: 0 })
+
+    expect(
+      mergePendingAgentPresetSettingsResource({ agentPresets: [preset({ name: 'Authoritative name' })] })
+        .agentPresets[0].name,
+    ).toBe('Authoritative name')
+  })
+
   it('drops terminal intents, removes their overlays, and restores the projection', async () => {
     await prepareDurableAgentPresetOutbox('terminal')
     vi.stubGlobal(
@@ -981,9 +1018,15 @@ describe('Agent Preset generated-id projection latches', () => {
     expect(currentPendingAgentPresetGeneratedProjectionLatch()).toEqual(latch)
 
     await expect(createAgentPreset({ name: 'Second click', enabled: true })).resolves.toMatchObject({
-      status: 'queued',
+      status: 'blocked',
       projectionLatch: latch,
     })
+    await expect(updateAgentPreset('ap_a', { name: 'Dropped edit' })).resolves.toMatchObject({
+      status: 'blocked',
+      projectionLatch: latch,
+    })
+    expect(getDatabase().agentPresets[0].name).toBe('Preset A')
+    expect(await listPendingMutations()).toHaveLength(1)
     expect(fetchMock).toHaveBeenCalledOnce()
 
     withTrustedResourceWrite(() => {
@@ -1001,6 +1044,65 @@ describe('Agent Preset generated-id projection latches', () => {
     })
     expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(true)
     expect(currentPendingAgentPresetGeneratedProjectionLatch()).toBeNull()
+  })
+
+  it('replays an offline generated create in-session and releases its projection latch', async () => {
+    await prepareDurableAgentPresetOutbox('generated-preset-reconnect')
+    let createAttempts = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/mutation-receipts/ack')) {
+          return response({ acknowledged: 1, requested: 1 }, 200)
+        }
+        if (!url.endsWith('/agent-presets')) throw new Error(`Unexpected URL: ${url}`)
+        createAttempts += 1
+        if (createAttempts === 1) return response({ error: 'temporary failure' }, 500)
+        return response(
+          {
+            revision: 2,
+            event: { type: 'agentPreset.created', revision: 2, resource: 'agentPreset', id: 'ap_created' },
+            presetId: 'ap_created',
+          },
+          200,
+        )
+      }),
+    )
+    setServerCommandSuccessReconciler((event) => {
+      if (event.type !== 'agentPreset.created') return
+      withTrustedResourceWrite(() => {
+        getDatabase().agentPresets.push(
+          preset({
+            id: 'ap_created',
+            name: 'Offline create',
+            description: 'Queued description',
+            enabled: false,
+            steps: [],
+          }),
+        )
+      })
+    })
+
+    const outcome = await createAgentPreset({
+      name: 'Offline create',
+      description: 'Queued description',
+      enabled: false,
+    })
+    expect(outcome).toMatchObject({ status: 'queued', projectionLatch: { kind: 'preset' } })
+    expect(currentPendingAgentPresetGeneratedProjectionLatch()).not.toBeNull()
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 1,
+      discarded: 0,
+      retained: 0,
+      succeeded: 1,
+    })
+
+    expect(createAttempts).toBe(2)
+    expect(getDatabase().agentPresets).toContainEqual(expect.objectContaining({ id: 'ap_created' }))
+    expect(currentPendingAgentPresetGeneratedProjectionLatch()).toBeNull()
+    expect(await listPendingMutations()).toEqual([])
   })
 
   it('matches duplicated preset dependencies semantically after every step id is regenerated', async () => {
@@ -1096,7 +1198,7 @@ describe('Agent Preset generated-id projection latches', () => {
     expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(true)
   })
 
-  it('matches a duplicated step only after its canonical unique output key appears', async () => {
+  it('matches a duplicated step when the server mints a different unique output key', async () => {
     await prepareDurableAgentPresetOutbox('duplicate-step')
     vi.stubGlobal(
       'fetch',
@@ -1108,13 +1210,7 @@ describe('Agent Preset generated-id projection latches', () => {
 
     withTrustedResourceWrite(() => {
       getDatabase().agentPresets[0].steps.push(
-        step({ id: 'aps_unrelated', name: 'Same step copy', outputKey: 'wrong_copy' }),
-      )
-    })
-    expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(false)
-    withTrustedResourceWrite(() => {
-      getDatabase().agentPresets[0].steps.push(
-        step({ id: 'aps_duplicate', name: 'Same step copy', outputKey: 'step_a_copy' }),
+        step({ id: 'aps_duplicate', name: 'Same step copy', outputKey: 'server_minted_copy' }),
       )
     })
     expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(true)

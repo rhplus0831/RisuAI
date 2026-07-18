@@ -2,7 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type AgentPresetCommandMockResult = {
-  status: 'accepted' | 'queued' | 'failed'
+  status: 'accepted' | 'queued' | 'blocked' | 'failed'
   result: {
     status: string
     revision?: number
@@ -375,6 +375,33 @@ describe('AgentPresetSettings', () => {
         enabled: true,
       }),
     )
+  })
+
+  it('keeps the create editor open when an unresolved generated id blocks submission', async () => {
+    seedDb([])
+    const latch: AgentPresetProjectionLatchMock = {
+      kind: 'preset',
+      key: 'agent-preset:generated',
+      baselineIds: [],
+      expectedName: 'Earlier queued preset',
+      semanticDescriptor: 'earlier',
+    }
+    agentPresetSpies.createAgentPreset.mockResolvedValueOnce({
+      status: 'blocked',
+      result: { status: 'unavailable' },
+      projectionLatch: latch,
+    })
+    mountPage()
+    await tick()
+
+    button('[data-risu-agent-preset-create]').click()
+    await tick()
+    button('[data-risu-agent-preset-save]').click()
+    await flushAsyncWork()
+
+    expect(target.querySelector('[data-risu-agent-preset-editor]')).toBeTruthy()
+    expect(target.textContent).toContain(language.agentPresets.commandBlocked)
+    expect(target.textContent).not.toContain(language.agentPresets.commandQueued)
   })
 
   it('latches a queued create until its matching authoritative row arrives', async () => {

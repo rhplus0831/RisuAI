@@ -26,7 +26,7 @@ import {
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './server/commands'
-import { dispatchDurableMutation } from './server/durableMutationDispatch'
+import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './server/durableMutationDispatch'
 import {
   MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
   pendingMutationIntentPayloadByteLength,
@@ -66,6 +66,11 @@ export type AgentPresetMutationOutcome<T extends Record<string, unknown> = Recor
       projectionLatch?: AgentPresetGeneratedProjectionLatch
     }
   | {
+      status: 'blocked'
+      result: Exclude<ServerCommandResult<T>, { status: 'ok' }>
+      projectionLatch: AgentPresetGeneratedProjectionLatch
+    }
+  | {
       status: 'failed'
       result: Exclude<ServerCommandResult<T>, { status: 'ok' }>
     }
@@ -86,6 +91,7 @@ export type AgentPresetGeneratedProjectionLatch =
       expectedName: string
       expectedOutputKey?: string
       semanticDescriptor: string
+      semanticDescriptorWithoutOutputKey?: string
       compareOutputKey: boolean
     }
 
@@ -107,6 +113,7 @@ interface AgentPresetRollbackAttempt {
   rollback: () => void
   inheritedRollbacks: Array<() => void>
   successor?: AgentPresetRollbackAttempt
+  settlementCleanup?: () => void
   settled: boolean
 }
 
@@ -118,7 +125,13 @@ interface PendingAgentPresetRollbackAttempt {
 let nextAgentPresetMutationSequence = 0
 const pendingAgentPresetProjections: PendingAgentPresetProjection[] = []
 const pendingAgentPresetRollbackAttempts: PendingAgentPresetRollbackAttempt[] = []
-const pendingGeneratedSubmissions = new Map<string, AgentPresetGeneratedProjectionLatch>()
+const pendingGeneratedSubmissions = new Map<
+  string,
+  {
+    latch: AgentPresetGeneratedProjectionLatch
+    stopSettlementListener?: () => void
+  }
+>()
 let latestAgentPresetRollbackAttempt: AgentPresetRollbackAttempt | undefined
 
 export function getAgentPresets(): AgentPresetRecord[] {
@@ -328,6 +341,7 @@ export function createAgentPresetStep(
     expectedName,
     ...(expectedOutputKey ? { expectedOutputKey } : {}),
     semanticDescriptor: createdStepSemanticDescriptor(attempted),
+    semanticDescriptorWithoutOutputKey: createdStepSemanticDescriptor(attempted, false),
     compareOutputKey: Object.prototype.hasOwnProperty.call(attempted, 'outputKey'),
   }
   const intent: DurableMutationIntent = {
@@ -408,6 +422,13 @@ export function duplicateAgentPresetStep(
           { ...safeStructuredClone(source), name: expectedName, outputKey: expectedOutputKey! },
           undefined,
           true,
+        )
+      : missingStepSemanticDescriptor(expectedName),
+    semanticDescriptorWithoutOutputKey: source
+      ? agentPresetStepSemanticDescriptor(
+          { ...safeStructuredClone(source), name: expectedName, outputKey: expectedOutputKey! },
+          undefined,
+          false,
         )
       : missingStepSemanticDescriptor(expectedName),
     compareOutputKey: expectedOutputKey !== undefined,
@@ -494,7 +515,7 @@ function dispatchAgentPresetMutation<T extends Record<string, unknown>>(
   if (blockedLatch) {
     rollback()
     return Promise.resolve({
-      status: 'queued',
+      status: 'blocked',
       result: { status: 'unavailable' },
       projectionLatch: safeStructuredClone(blockedLatch),
     })
@@ -511,23 +532,31 @@ function dispatchGeneratedAgentPresetMutation<T extends Record<string, unknown>>
   const blockedLatch = firstUnresolvedGeneratedSubmission()
   if (blockedLatch) {
     return Promise.resolve({
-      status: 'queued',
+      status: 'blocked',
       result: { status: 'unavailable' },
       projectionLatch: safeStructuredClone(blockedLatch),
     })
   }
   const frozenLatch = safeStructuredClone(latch)
-  pendingGeneratedSubmissions.set(frozenLatch.key, frozenLatch)
-  return dispatchAgentPresetDurableMutation(intent, command, undefined, undefined, options).then(
+  const pendingSubmission: {
+    latch: AgentPresetGeneratedProjectionLatch
+    stopSettlementListener?: () => void
+  } = { latch: frozenLatch }
+  pendingGeneratedSubmissions.set(frozenLatch.key, pendingSubmission)
+  return dispatchAgentPresetDurableMutation(intent, command, undefined, undefined, options, (mutationId) => {
+    pendingSubmission.stopSettlementListener = registerDurableMutationSettlementListener(mutationId, () => {
+      clearPendingGeneratedSubmission(frozenLatch.key, pendingSubmission)
+    })
+  }).then(
     (outcome) => {
       if (outcome.status === 'queued') {
         return { ...outcome, projectionLatch: frozenLatch }
       }
-      pendingGeneratedSubmissions.delete(frozenLatch.key)
+      clearPendingGeneratedSubmission(frozenLatch.key, pendingSubmission)
       return outcome
     },
     (error) => {
-      pendingGeneratedSubmissions.delete(frozenLatch.key)
+      clearPendingGeneratedSubmission(frozenLatch.key, pendingSubmission)
       console.error('Agent Preset generated mutation rejected:', error)
       return {
         status: 'failed',
@@ -546,6 +575,7 @@ async function dispatchAgentPresetDurableMutation<T extends Record<string, unkno
   rollback?: () => void,
   projection?: AgentPresetProjectionEntry,
   options: AgentPresetCommandOptions = {},
+  onStaged?: (mutationId: string) => void,
 ): Promise<AgentPresetMutationOutcome<T>> {
   const sequence = ++nextAgentPresetMutationSequence
   if (projection) {
@@ -559,6 +589,20 @@ async function dispatchAgentPresetDurableMutation<T extends Record<string, unkno
       throw new RangeError('Pending Agent Preset mutation payload is too large')
     }
     outbox = stagePendingMutation(AGENT_PRESET_MUTATION_KEY, intent)
+    if (rollbackAttempt) {
+      rollbackAttempt.settlementCleanup = registerDurableMutationSettlementListener(outbox.mutationId, (settlement) => {
+        clearAgentPresetSettlementListener(rollbackAttempt)
+        if (settlement === 'accepted') {
+          clearAcceptedAgentPresetProjections(sequence)
+          clearAcceptedAgentPresetRollbackAttempts(sequence)
+          return
+        }
+        settleFailedAgentPresetRollbackAttempt(rollbackAttempt)
+        removeAgentPresetProjection(sequence)
+        removeAgentPresetRollbackAttempt(sequence)
+      })
+    }
+    onStaged?.(outbox.mutationId)
   } catch (error) {
     console.error('Unable to stage Agent Preset mutation:', error)
     if (rollbackAttempt) settleFailedAgentPresetRollbackAttempt(rollbackAttempt)
@@ -645,6 +689,7 @@ function registerAgentPresetRollbackAttempt(sequence: number, rollback: () => vo
 
 function settleFailedAgentPresetRollbackAttempt(attempt: AgentPresetRollbackAttempt): void {
   if (attempt.settled) return
+  clearAgentPresetSettlementListener(attempt)
   attempt.settled = true
   const rollbackChain = [attempt.rollback, ...attempt.inheritedRollbacks]
   for (const rollback of rollbackChain) rollback()
@@ -658,6 +703,7 @@ function clearAcceptedAgentPresetRollbackAttempts(sequence: number): void {
   for (let index = pendingAgentPresetRollbackAttempts.length - 1; index >= 0; index -= 1) {
     const pending = pendingAgentPresetRollbackAttempts[index]
     if (pending.sequence > sequence) continue
+    clearAgentPresetSettlementListener(pending.attempt)
     pending.attempt.settled = true
     pendingAgentPresetRollbackAttempts.splice(index, 1)
   }
@@ -666,8 +712,16 @@ function clearAcceptedAgentPresetRollbackAttempts(sequence: number): void {
 
 function removeAgentPresetRollbackAttempt(sequence: number): void {
   const index = pendingAgentPresetRollbackAttempts.findIndex((pending) => pending.sequence === sequence)
-  if (index >= 0) pendingAgentPresetRollbackAttempts.splice(index, 1)
+  if (index >= 0) {
+    clearAgentPresetSettlementListener(pendingAgentPresetRollbackAttempts[index].attempt)
+    pendingAgentPresetRollbackAttempts.splice(index, 1)
+  }
   updateLatestAgentPresetRollbackAttempt()
+}
+
+function clearAgentPresetSettlementListener(attempt: AgentPresetRollbackAttempt): void {
+  attempt.settlementCleanup?.()
+  attempt.settlementCleanup = undefined
 }
 
 function updateLatestAgentPresetRollbackAttempt(): void {
@@ -692,7 +746,10 @@ function createdPresetSemanticDescriptor(snapshot: AgentPresetSnapshot): string 
     : missingPresetSemanticDescriptor(typeof snapshot.name === 'string' ? snapshot.name : 'New Agent Preset')
 }
 
-function createdStepSemanticDescriptor(snapshot: AgentPresetStepSnapshot): string {
+function createdStepSemanticDescriptor(
+  snapshot: AgentPresetStepSnapshot,
+  compareOutputKey = Object.prototype.hasOwnProperty.call(snapshot, 'outputKey'),
+): string {
   const phase = snapshot.phase === 'afterMain' ? 'afterMain' : 'beforeMain'
   const normalized = normalizeAgentPresets([
     {
@@ -721,11 +778,7 @@ function createdStepSemanticDescriptor(snapshot: AgentPresetStepSnapshot): strin
     },
   ])[0]?.steps[0]
   return normalized
-    ? agentPresetStepSemanticDescriptor(
-        normalized,
-        undefined,
-        Object.prototype.hasOwnProperty.call(snapshot, 'outputKey'),
-      )
+    ? agentPresetStepSemanticDescriptor(normalized, undefined, compareOutputKey)
     : missingStepSemanticDescriptor(typeof snapshot.name === 'string' ? snapshot.name : 'New Step')
 }
 
@@ -815,9 +868,10 @@ function sanitizeAgentPresetOutputKeyBase(base: string): string {
 }
 
 function firstUnresolvedGeneratedSubmission(): AgentPresetGeneratedProjectionLatch | undefined {
-  for (const [key, latch] of pendingGeneratedSubmissions) {
+  for (const [key, pending] of pendingGeneratedSubmissions) {
+    const latch = pending.latch
     if (isAgentPresetGeneratedProjectionResolved(latch)) {
-      pendingGeneratedSubmissions.delete(key)
+      clearPendingGeneratedSubmission(key, pending)
       continue
     }
     return latch
@@ -831,6 +885,8 @@ export function currentPendingAgentPresetGeneratedProjectionLatch(): AgentPreset
 }
 
 export function isAgentPresetGeneratedProjectionResolved(latch: AgentPresetGeneratedProjectionLatch): boolean {
+  const pending = pendingGeneratedSubmissions.get(latch.key)
+  if (!pending || canonicalAgentPresetDescriptor(pending.latch) !== canonicalAgentPresetDescriptor(latch)) return true
   const baselineIds = new Set(latch.baselineIds)
   if (latch.kind === 'preset') {
     return getAgentPresets().some(
@@ -841,19 +897,35 @@ export function isAgentPresetGeneratedProjectionResolved(latch: AgentPresetGener
     )
   }
   const preset = getAgentPresetById(latch.presetId)
-  return !!preset?.steps.some(
-    (step) =>
-      !baselineIds.has(step.id) &&
-      step.name === latch.expectedName &&
+  return !!preset?.steps.some((step) => {
+    if (baselineIds.has(step.id) || step.name !== latch.expectedName) return false
+    const exactMatch =
       (latch.expectedOutputKey === undefined || step.outputKey === latch.expectedOutputKey) &&
-      agentPresetStepSemanticDescriptor(step, undefined, latch.compareOutputKey) === latch.semanticDescriptor,
-  )
+      agentPresetStepSemanticDescriptor(step, undefined, latch.compareOutputKey) === latch.semanticDescriptor
+    if (exactMatch) return true
+    return (
+      latch.compareOutputKey &&
+      typeof latch.semanticDescriptorWithoutOutputKey === 'string' &&
+      agentPresetStepSemanticDescriptor(step, undefined, false) === latch.semanticDescriptorWithoutOutputKey
+    )
+  })
+}
+
+function clearPendingGeneratedSubmission(
+  key: string,
+  expected: { latch: AgentPresetGeneratedProjectionLatch; stopSettlementListener?: () => void },
+): void {
+  if (pendingGeneratedSubmissions.get(key) !== expected) return
+  pendingGeneratedSubmissions.delete(key)
+  expected.stopSettlementListener?.()
+  expected.stopSettlementListener = undefined
 }
 
 export function resetPendingAgentPresetMutationsForTests(): void {
   pendingAgentPresetProjections.splice(0)
+  for (const pending of pendingAgentPresetRollbackAttempts) clearAgentPresetSettlementListener(pending.attempt)
   pendingAgentPresetRollbackAttempts.splice(0)
-  pendingGeneratedSubmissions.clear()
+  for (const [key, pending] of pendingGeneratedSubmissions) clearPendingGeneratedSubmission(key, pending)
   latestAgentPresetRollbackAttempt = undefined
   nextAgentPresetMutationSequence = 0
 }
