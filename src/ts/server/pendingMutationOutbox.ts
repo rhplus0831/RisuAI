@@ -1,3 +1,5 @@
+import { clearRetainedChatProjections } from './chatRetainedProjection'
+
 export type DurableMutationRequestMethod = 'DELETE' | 'PATCH' | 'POST' | 'PUT'
 
 export interface DurableMutationRequest {
@@ -511,6 +513,7 @@ export async function preparePendingMutationOutbox(
         pendingMutationScope.databaseLineage !== scope.databaseLineage))
   ) {
     clearLivePendingMutationProjectionGenerations()
+    clearRetainedChatProjections()
   }
   pendingMutationScope = scope
   const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
@@ -965,6 +968,7 @@ export async function deletePendingMutationReceiptAcknowledgement(
 /** Test/support hook. Production callers should delete exact handles. */
 export async function clearPendingMutationOutbox(): Promise<void> {
   clearLivePendingMutationProjectionGenerations()
+  clearRetainedChatProjections()
   const database = await openOutboxDatabase()
   if (!database) return
   const transaction = database.transaction([OUTBOX_MUTATION_STORE, OUTBOX_RECEIPT_ACK_STORE], 'readwrite')
@@ -981,6 +985,7 @@ export function resetPendingMutationOutboxForTests(): void {
   persistenceWarningReported = false
   pendingMutationScope = null
   clearLivePendingMutationProjectionGenerations()
+  clearRetainedChatProjections()
 }
 
 async function persistPendingMutation(

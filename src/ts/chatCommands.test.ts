@@ -30,6 +30,7 @@ import { setChatVar } from './parser/chatVar.svelte'
 import { selectedCharID } from './stores.svelte'
 import {
   applyCharacterResource,
+  applyCharactersResource,
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from './server/resourceState.svelte'
@@ -127,6 +128,7 @@ import { dispatchDurableMutation } from './server/durableMutationDispatch'
 import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRegistry'
 import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from './server/chatBridge.svelte'
 import { PERSONA_SELECTION_MUTATION_KEY } from './server/personaMutationKeys'
+import { reapplyRetainedChatBodyProjections } from './server/chatRetainedProjection'
 
 interface CapturedFetch {
   url: string
@@ -6837,6 +6839,96 @@ describe('durable chat and folder structure dispatch', () => {
       ])
       const { baseRevision: _baseRevision, ...sentBody } = liveBody ?? {}
       expect(sentBody).toEqual(pending[0].intent.requests[0].body)
+
+      const authoritativeCharacter = jsonClone(getDatabase().characters[0])
+      authoritativeCharacter.chats[0].name = 'Chat A'
+      expect(applyCharacterResource({ revision: 11, character: authoritativeCharacter })).toBe(true)
+      expect(getDatabase().characters[0].chats[0].name).toBe('Durable rename')
+
+      expect(
+        applyCharactersResource({
+          revision: 12,
+          characters: [authoritativeCharacter],
+          characterOrder: ['char-a'],
+          currentChar: 0,
+        }),
+      ).toBe(true)
+      expect(getDatabase().characters[0].chats[0].name).toBe('Durable rename')
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
+  it('reapplies retained message edits in owner order after transcript hydration', async () => {
+    await prepareDurableOutbox('message-patch-refresh')
+    let commandCalls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/messages/message-a' && init.method === 'PATCH') {
+          commandCalls += 1
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].message = [
+          { role: 'char', data: 'persisted', chatId: 'message-a' } as Message,
+        ]
+      })
+      dispatchUpdateMessageScoped('message-a', { data: 'first retained edit' }, currentChatScopedSnapshot())
+      await vi.waitFor(() => expect(commandCalls).toBe(1))
+      dispatchUpdateMessageScoped('message-a', { data: 'newest retained edit' }, currentChatScopedSnapshot())
+      await vi.waitFor(() => expect(commandCalls).toBe(2))
+
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].message = [
+          { role: 'char', data: 'persisted', chatId: 'message-a' } as Message,
+        ]
+      })
+      reapplyRetainedChatBodyProjections('chat-a')
+
+      expect(getDatabase().characters[0].chats[0].message[0].data).toBe('newest retained edit')
+      expect(await listPendingMutations()).toHaveLength(2)
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
+  it('rolls a retained chat projection back when replay finally rejects it', async () => {
+    await prepareDurableOutbox('chat-patch-discard')
+    let rejectReplay = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH') {
+          return rejectReplay
+            ? jsonResponse({ error: 'invalid retained rename' }, 400)
+            : jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const previous = currentChatStateSnapshot()
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].name = 'Rejected rename'
+      })
+      const result = dispatchUpdateChatAsync('chat-a', { name: 'Rejected rename' }, previous)
+      await expect(result).resolves.toMatchObject({ status: 'error' })
+      expect(getDatabase().characters[0].chats[0].name).toBe('Rejected rename')
+
+      rejectReplay = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ discarded: 1, retained: 0 })
+
+      expect(getDatabase().characters[0].chats[0].name).toBe('Chat A')
+      expect(await listPendingMutations()).toEqual([])
     } finally {
       await clearDurableOutbox()
     }

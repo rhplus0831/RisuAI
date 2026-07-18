@@ -67,7 +67,11 @@ import {
   type SparseChatGenerationSettingsUpdate,
 } from './chatGenerationSettings'
 import { v4 } from 'uuid'
-import { dispatchDurableMutation, executePreparedDurableMutationWithinQueue } from './server/durableMutationDispatch'
+import {
+  dispatchDurableMutation,
+  executePreparedDurableMutationWithinQueue,
+  registerDurableMutationSettlementListener,
+} from './server/durableMutationDispatch'
 import {
   discardPendingMutation,
   isPendingMutationProjectionFenceCurrent,
@@ -88,6 +92,9 @@ import {
   chatResourceOwnerMutationKey,
 } from './server/resourceOwnerMutationKeys'
 import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGenerationSettingsMutationKeys'
+import { registerRetainedChatProjection, type RetainedChatProjectionTarget } from './server/chatRetainedProjection'
+import { alertError } from './alert'
+import { language } from '../lang'
 
 export interface ChatStateSnapshot {
   characters: character[]
@@ -568,12 +575,14 @@ interface PendingChatMetadataAttempt {
   sequence: number
   chatId: string
   rollback: ChatRowMetadataSnapshot
+  durability?: PendingDurableChatProjection
 }
 
 interface PendingChatFolderMetadataAttempt {
   sequence: number
   folderId: string
   rollback: ChatFolderRowMetadataSnapshot
+  durability?: PendingDurableChatProjection
 }
 
 interface PendingScopedTranscriptAttempt {
@@ -583,6 +592,12 @@ interface PendingScopedTranscriptAttempt {
   attemptedMessages: Message[]
   reapply: (previousMessages: readonly Message[]) => Message[] | null
   rollback: (attempt: PendingScopedTranscriptAttempt) => void
+  durability?: PendingDurableChatProjection
+}
+
+interface PendingDurableChatProjection {
+  failureRollbackDisposition: NonNullable<ServerCommandTransportOptions['failureRollbackDisposition']>
+  release: () => void
 }
 
 interface AppliedScopedMessagePatchAttempt {
@@ -596,6 +611,82 @@ const pendingChatFolderMetadataAttempts = new Map<string, PendingChatFolderMetad
 let nextChatFolderMetadataAttemptSequence = 0
 const pendingScopedTranscriptAttempts = new Map<string, PendingScopedTranscriptAttempt[]>()
 let nextScopedTranscriptAttemptSequence = 0
+
+function bindDurableChatProjectionAttempt(
+  attempt: { durability?: PendingDurableChatProjection },
+  transport: ServerCommandTransportOptions,
+  target: RetainedChatProjectionTarget,
+  reapply: () => void,
+  onAccepted: () => void,
+  onDiscarded: () => void,
+): void {
+  if (attempt.durability || !transport.mutationId || !transport.failureRollbackDisposition) return
+
+  let releaseSettlement = () => {}
+  let durability: PendingDurableChatProjection
+  const releaseProjection = registerRetainedChatProjection(target, reapply, () => {
+    if (attempt.durability !== durability) return
+    attempt.durability = undefined
+    durability.release()
+    onAccepted()
+  })
+  durability = {
+    failureRollbackDisposition: transport.failureRollbackDisposition,
+    release: () => {
+      releaseProjection()
+      releaseSettlement()
+    },
+  }
+  attempt.durability = durability
+  releaseSettlement = registerDurableMutationSettlementListener(transport.mutationId, (settlement) => {
+    if (attempt.durability !== durability) return
+    attempt.durability = undefined
+    durability.release()
+    if (settlement === 'accepted') {
+      onAccepted()
+      return
+    }
+    onDiscarded()
+    alertError(language.retainedChatMutationFailed)
+  })
+}
+
+function releaseDurableChatProjectionAttempt(attempt: { durability?: PendingDurableChatProjection }): void {
+  const durability = attempt.durability
+  attempt.durability = undefined
+  durability?.release()
+}
+
+function trackDurableChatProjectionAttempt(
+  attempt: { durability?: PendingDurableChatProjection },
+  result: Promise<ServerCommandResult | null> | null,
+  clear: () => void,
+  reapply: () => void,
+): void {
+  if (!result) {
+    releaseDurableChatProjectionAttempt(attempt)
+    clear()
+    return
+  }
+  void result.then(
+    (settled) => {
+      if (settled && settled.status !== 'ok' && attempt.durability?.failureRollbackDisposition(settled) === 'retain') {
+        reapply()
+        return
+      }
+      releaseDurableChatProjectionAttempt(attempt)
+      clear()
+    },
+    () => {
+      if (attempt.durability?.failureRollbackDisposition({ status: 'unavailable' }) === 'retain') {
+        reapply()
+        return
+      }
+      releaseDurableChatProjectionAttempt(attempt)
+      clear()
+    },
+  )
+}
 
 export interface ChatGenerationSettingsSnapshot {
   characterId: string | undefined
@@ -2285,7 +2376,10 @@ function dispatchUpdateChatResult(
   const result = dispatchCharacterOwnedDurableMutation(
     characterId,
     intent,
-    (transport) => execute(transport, () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata)),
+    (transport) => {
+      bindChatMetadataAttemptDurability(pendingAttempt, transport, rollbackRowMetadata)
+      return execute(transport, () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata))
+    },
     projectionTargets,
   )
   trackChatMetadataAttemptResult(pendingAttempt, result)
@@ -2358,8 +2452,9 @@ export function dispatchUpdateChatRow(
     ? moduleEnabledProjectionTargets(rollback.metadata.modules, commandPatch.modules)
     : []
   const pendingAttempt = registerChatMetadataAttempt(chatId, rollbackSnapshot)
-  const execute = (transport: ServerCommandTransportOptions) =>
-    runServerCommand({
+  const execute = (transport: ServerCommandTransportOptions) => {
+    bindChatMetadataAttemptDurability(pendingAttempt, transport, rollbackRowMetadata)
+    return runServerCommand({
       command: (baseRevision) =>
         updateChatCommand(
           {
@@ -2374,6 +2469,7 @@ export function dispatchUpdateChatRow(
       rollback: () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata),
       ...transport,
     })
+  }
   const result = hasExistingDurableMutationTransport(options)
     ? execute(options)
     : dispatchCharacterOwnedDurableMutation(
@@ -2430,7 +2526,10 @@ export function dispatchUpdateChatScoped(
   const result = dispatchCharacterOwnedDurableMutation(
     previous.characterId,
     intent,
-    (transport) => execute(transport, () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata)),
+    (transport) => {
+      bindChatMetadataAttemptDurability(pendingAttempt, transport, rollbackRowMetadata)
+      return execute(transport, () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata))
+    },
     projectionTargets,
   )
   trackChatMetadataAttemptResult(pendingAttempt, result)
@@ -2452,6 +2551,7 @@ function rollbackChatMetadataAttempt(
   attempt: PendingChatMetadataAttempt,
   rollbackRowMetadata: ChatRowMetadataRollback,
 ): void {
+  releaseDurableChatProjectionAttempt(attempt)
   rollbackRowMetadata(attempt.rollback)
 
   const failedAttempted = attempt.rollback.attempted
@@ -2485,14 +2585,42 @@ function trackChatMetadataAttemptResult(
   attempt: PendingChatMetadataAttempt,
   result: Promise<ServerCommandResult> | null,
 ): void {
-  if (!result) {
-    clearChatMetadataAttempt(attempt)
-    return
-  }
-  void result.then(
+  trackDurableChatProjectionAttempt(
+    attempt,
+    result,
     () => clearChatMetadataAttempt(attempt),
-    () => clearChatMetadataAttempt(attempt),
+    () => reapplyChatMetadataAttempt(attempt),
   )
+}
+
+function bindChatMetadataAttemptDurability(
+  attempt: PendingChatMetadataAttempt,
+  transport: ServerCommandTransportOptions,
+  rollbackRowMetadata: ChatRowMetadataRollback,
+): void {
+  bindDurableChatProjectionAttempt(
+    attempt,
+    transport,
+    { kind: 'character', characterId: attempt.rollback.characterId },
+    () => reapplyChatMetadataAttempt(attempt),
+    () => clearChatMetadataAttempt(attempt),
+    () => rollbackChatMetadataAttempt(attempt, rollbackRowMetadata),
+  )
+}
+
+function reapplyChatMetadataAttempt(attempt: PendingChatMetadataAttempt): void {
+  const attempted = attempt.rollback.attempted
+  if (!attempted) return
+  withTrustedResourceWrite(() => {
+    const character = locateSnapshotCharacter(attempt.rollback.characterId, attempt.rollback.selectedCharID)
+    const chat = character?.chats?.find((candidate) => candidate.id === attempt.chatId)
+    if (!chat) return
+    const target = chat as unknown as Record<string, unknown>
+    for (const key of CHAT_PATCH_ALLOWED_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(attempted, key)) continue
+      target[key] = cloneJsonValue(attempted[key])
+    }
+  })
 }
 
 function clearChatMetadataAttempt(attempt: PendingChatMetadataAttempt): void {
@@ -3806,9 +3934,10 @@ export function dispatchUpdateChatFolder(
   }
 
   const pendingAttempt = registerChatFolderMetadataAttempt(folderId, rollback)
-  const result = dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
-    execute(transport, () => rollbackChatFolderMetadataAttempt(pendingAttempt, rollbackFolderMetadata)),
-  )
+  const result = dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) => {
+    bindChatFolderMetadataAttemptDurability(pendingAttempt, transport, rollbackFolderMetadata)
+    return execute(transport, () => rollbackChatFolderMetadataAttempt(pendingAttempt, rollbackFolderMetadata))
+  })
   trackChatFolderMetadataAttemptResult(pendingAttempt, result)
 }
 
@@ -3835,8 +3964,9 @@ export function dispatchUpdateChatFolderRow(
         }
       : rollback
   const pendingAttempt = registerChatFolderMetadataAttempt(folderId, attemptedRollback)
-  const execute = (transport: ServerCommandTransportOptions) =>
-    runServerCommand({
+  const execute = (transport: ServerCommandTransportOptions) => {
+    bindChatFolderMetadataAttemptDurability(pendingAttempt, transport, rollbackFolderMetadata)
+    return runServerCommand({
       command: (baseRevision) =>
         updateChatFolderCommand(
           {
@@ -3850,6 +3980,7 @@ export function dispatchUpdateChatFolderRow(
       rollback: () => rollbackChatFolderMetadataAttempt(pendingAttempt, rollbackFolderMetadata),
       ...transport,
     })
+  }
   const result = hasExistingDurableMutationTransport(options)
     ? execute(options)
     : dispatchCharacterOwnedDurableMutation(rollback.characterId, intent, (transport) =>
@@ -3878,6 +4009,7 @@ function rollbackChatFolderMetadataAttempt(
   attempt: PendingChatFolderMetadataAttempt,
   rollbackFolderMetadata: ChatFolderRowMetadataRollback,
 ): void {
+  releaseDurableChatProjectionAttempt(attempt)
   rollbackFolderMetadata(attempt.rollback)
 
   const failedAttempted = attempt.rollback.attempted
@@ -3911,14 +4043,42 @@ function trackChatFolderMetadataAttemptResult(
   attempt: PendingChatFolderMetadataAttempt,
   result: Promise<ServerCommandResult> | null,
 ): void {
-  if (!result) {
-    clearChatFolderMetadataAttempt(attempt)
-    return
-  }
-  void result.then(
+  trackDurableChatProjectionAttempt(
+    attempt,
+    result,
     () => clearChatFolderMetadataAttempt(attempt),
-    () => clearChatFolderMetadataAttempt(attempt),
+    () => reapplyChatFolderMetadataAttempt(attempt),
   )
+}
+
+function bindChatFolderMetadataAttemptDurability(
+  attempt: PendingChatFolderMetadataAttempt,
+  transport: ServerCommandTransportOptions,
+  rollbackFolderMetadata: ChatFolderRowMetadataRollback,
+): void {
+  bindDurableChatProjectionAttempt(
+    attempt,
+    transport,
+    { kind: 'character', characterId: attempt.rollback.characterId },
+    () => reapplyChatFolderMetadataAttempt(attempt),
+    () => clearChatFolderMetadataAttempt(attempt),
+    () => rollbackChatFolderMetadataAttempt(attempt, rollbackFolderMetadata),
+  )
+}
+
+function reapplyChatFolderMetadataAttempt(attempt: PendingChatFolderMetadataAttempt): void {
+  const attempted = attempt.rollback.attempted
+  if (!attempted) return
+  withTrustedResourceWrite(() => {
+    const character = locateSnapshotCharacter(attempt.rollback.characterId, attempt.rollback.selectedCharID)
+    const folder = character?.chatFolders?.find((candidate) => candidate.id === attempt.folderId)
+    if (!folder) return
+    const target = folder as unknown as Record<string, unknown>
+    for (const key of CHAT_FOLDER_PATCH_ALLOWED_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(attempted, key)) continue
+      target[key] = cloneJsonValue(attempted[key])
+    }
+  })
 }
 
 function clearChatFolderMetadataAttempt(attempt: PendingChatFolderMetadataAttempt): void {
@@ -4425,6 +4585,7 @@ function registerScopedTranscriptAttempt(
 }
 
 function rollbackScopedTranscriptAttempt(attempt: PendingScopedTranscriptAttempt): void {
+  releaseDurableChatProjectionAttempt(attempt)
   const liveChatBeforeRollback = locateChatScopedSnapshot(attempt.previous)
   const liveMessagesBeforeRollback = liveChatBeforeRollback
     ? cloneJsonValue(liveChatBeforeRollback.message ?? [])
@@ -4477,14 +4638,36 @@ function trackScopedTranscriptAttemptResult(
   result: Promise<ServerCommandResult | null> | null,
 ): void {
   if (!attempt) return
-  if (!result) {
-    clearScopedTranscriptAttempt(attempt)
-    return
-  }
-  void result.then(
+  trackDurableChatProjectionAttempt(
+    attempt,
+    result,
     () => clearScopedTranscriptAttempt(attempt),
-    () => clearScopedTranscriptAttempt(attempt),
+    () => reapplyScopedTranscriptAttempt(attempt),
   )
+}
+
+function bindScopedTranscriptAttemptDurability(
+  attempt: PendingScopedTranscriptAttempt | null,
+  transport: ServerCommandTransportOptions,
+): void {
+  if (!attempt) return
+  bindDurableChatProjectionAttempt(
+    attempt,
+    transport,
+    { kind: 'chat-body', chatId: attempt.previous.chatId },
+    () => reapplyScopedTranscriptAttempt(attempt),
+    () => clearScopedTranscriptAttempt(attempt),
+    () => rollbackScopedTranscriptAttempt(attempt),
+  )
+}
+
+function reapplyScopedTranscriptAttempt(attempt: PendingScopedTranscriptAttempt): void {
+  withTrustedResourceWrite(() => {
+    const chat = locateChatScopedSnapshot(attempt.previous)
+    if (!chat) return
+    const reapplied = attempt.reapply(chat.message ?? [])
+    if (reapplied) chat.message = cloneJsonValue(reapplied)
+  })
 }
 
 function clearScopedTranscriptAttempt(attempt: PendingScopedTranscriptAttempt): void {
@@ -4585,13 +4768,15 @@ function dispatchSanitizedUpdateMessageWith(
   characterId: string | undefined,
   rollback: () => void,
   optimisticProjection?: ChatBodyProjectionFence,
+  onTransport?: (transport: ServerCommandTransportOptions) => void,
 ): Promise<ServerCommandResult> | null {
   if (Object.keys(commandPatch).length === 0) return null
   if (optimisticProjection) markChatMessageMutationIntent(optimisticProjection.chatId)
   const body = freezeDurableChatRequestBody({ patch: commandPatch })
   const intent = durableChatMutationIntent('PATCH', `/messages/${encodeURIComponent(messageId)}`, body)
-  return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
-    runServerCommand({
+  return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) => {
+    onTransport?.(transport)
+    return runServerCommand({
       command: (baseRevision) =>
         updateMessageCommand({
           baseRevision,
@@ -4602,8 +4787,8 @@ function dispatchSanitizedUpdateMessageWith(
         }),
       rollback,
       ...transport,
-    }),
-  )
+    })
+  })
 }
 
 function dispatchUpdateMessageWith(
@@ -4668,6 +4853,7 @@ export function dispatchUpdateMessageScoped(
     previous.characterId,
     () => (pendingAttempt ? rollbackScopedTranscriptAttempt(pendingAttempt) : undefined),
     optimisticProjection,
+    (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
   )
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
   return result
@@ -4728,12 +4914,14 @@ function dispatchDeleteMessageWith(
   characterId: string | undefined,
   rollback: () => void,
   optimisticProjection?: ChatBodyProjectionFence,
+  onTransport?: (transport: ServerCommandTransportOptions) => void,
 ): Promise<ServerCommandResult> | null {
   if (optimisticProjection) markChatMessageMutationIntent(optimisticProjection.chatId)
   const body = freezeDurableChatRequestBody({})
   const intent = durableChatMutationIntent('DELETE', `/messages/${encodeURIComponent(messageId)}`, body)
-  return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
-    runServerCommand({
+  return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) => {
+    onTransport?.(transport)
+    return runServerCommand({
       command: (baseRevision) =>
         deleteMessageCommand({
           baseRevision,
@@ -4743,8 +4931,8 @@ function dispatchDeleteMessageWith(
         }),
       rollback,
       ...transport,
-    }),
-  )
+    })
+  })
 }
 
 export function dispatchDeleteMessage(messageId: string, previous: ChatStateSnapshot): void {
@@ -4773,6 +4961,7 @@ export function dispatchDeleteMessageScoped(messageId: string, previous: ChatSco
       if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
     },
     optimisticProjection,
+    (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
   )
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
 }
@@ -4788,6 +4977,7 @@ function dispatchTruncateMessagesWith(
   rollback: () => void,
   optimisticChatBodyProjectionEpoch: number,
   options: TruncateMessagesOptions = {},
+  onTransport?: (transport: ServerCommandTransportOptions) => void,
 ): Promise<ServerCommandResult | null> {
   if (!canUseServerCommands()) return Promise.resolve(null)
   markChatMessageMutationIntent(chatId)
@@ -4796,8 +4986,9 @@ function dispatchTruncateMessagesWith(
     ...(options.preserveRemovedAsAlternates ? { preserveRemovedAsAlternates: true } : {}),
   })
   const intent = durableChatMutationIntent('POST', `/chats/${encodeURIComponent(chatId)}/messages/truncate`, body)
-  return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
-    runServerCommand({
+  return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) => {
+    onTransport?.(transport)
+    return runServerCommand({
       command: (baseRevision) =>
         truncateMessagesCommand({
           baseRevision,
@@ -4808,8 +4999,8 @@ function dispatchTruncateMessagesWith(
         }),
       rollback,
       ...transport,
-    }),
-  )
+    })
+  })
 }
 
 export function dispatchTruncateMessages(
@@ -4852,6 +5043,7 @@ export function dispatchTruncateMessagesScoped(
     },
     optimisticChatBodyProjectionEpoch,
     options,
+    (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
   )
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
   return result
@@ -4864,6 +5056,7 @@ function dispatchReplaceTailMessagesWith(
   characterId: string | undefined,
   rollback: () => void,
   optimisticChatBodyProjectionEpoch: number,
+  onTransport?: (transport: ServerCommandTransportOptions) => void,
 ): Promise<ServerCommandResult> | null {
   if (!prepareReplaceTailMessages(messages)) return null
   markChatMessageMutationIntent(chatId)
@@ -4872,8 +5065,9 @@ function dispatchReplaceTailMessagesWith(
     messages: messages.map(toMessageSnapshot),
   })
   const intent = durableChatMutationIntent('POST', `/chats/${encodeURIComponent(chatId)}/messages/tail`, body)
-  return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
-    runServerCommand({
+  return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) => {
+    onTransport?.(transport)
+    return runServerCommand({
       command: (baseRevision) =>
         replaceTailMessagesCommand({
           baseRevision,
@@ -4884,8 +5078,8 @@ function dispatchReplaceTailMessagesWith(
         }),
       rollback,
       ...transport,
-    }),
-  )
+    })
+  })
 }
 
 export function dispatchReplaceTailMessages(
@@ -4930,6 +5124,7 @@ export function dispatchReplaceTailMessagesScoped(
       if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
     },
     optimisticChatBodyProjectionEpoch,
+    (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
   )
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
 }
@@ -4940,13 +5135,15 @@ function dispatchReplaceMessagesWith(
   characterId: string | undefined,
   rollback: () => void,
   optimisticChatBodyProjectionEpoch: number,
+  onTransport?: (transport: ServerCommandTransportOptions) => void,
 ): Promise<ServerCommandResult> | null {
   if (!prepareReplaceMessages(messages)) return null
   markChatMessageMutationIntent(chatId)
   const body = freezeDurableChatRequestBody({ messages: messages.map(toMessageSnapshot) })
   const intent = durableChatMutationIntent('PUT', `/chats/${encodeURIComponent(chatId)}/messages`, body)
-  return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
-    runServerCommand({
+  return dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) => {
+    onTransport?.(transport)
+    return runServerCommand({
       command: (baseRevision) =>
         replaceMessagesCommand({
           baseRevision,
@@ -4956,8 +5153,8 @@ function dispatchReplaceMessagesWith(
         }),
       rollback,
       ...transport,
-    }),
-  )
+    })
+  })
 }
 
 function hasServerChatMessagePlaceholders(messages: readonly Message[]): boolean {
@@ -4993,6 +5190,7 @@ export function dispatchReplaceMessagesScoped(chatId: string, messages: Message[
       if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
     },
     optimisticChatBodyProjectionEpoch,
+    (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
   )
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
 }

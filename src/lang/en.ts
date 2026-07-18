@@ -5,6 +5,7 @@ export const languageEnglish = {
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',
   alternateGreetingMutationFailed:
     'The alternate greeting change could not be saved. The previous greeting order was restored.',
+  retainedChatMutationFailed: 'A queued chat change was rejected. The previous value was restored.',
   realm: {
     searchCharacters: 'Search Realm characters',
     previousPage: 'Previous Realm page',

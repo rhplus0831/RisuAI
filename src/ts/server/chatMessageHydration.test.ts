@@ -64,6 +64,7 @@ import {
   hasNewerChatBodyResourceRevision,
   markCharacterLorebookProjectionApplied,
 } from './resourceState.svelte'
+import { clearRetainedChatProjections, registerRetainedChatProjection } from './chatRetainedProjection'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -181,10 +182,12 @@ beforeEach(() => {
   resetChatHydration()
   resetLorebookHydration()
   resetRerollNavigation()
+  clearRetainedChatProjections()
   seedTwoStubChats()
 })
 
 afterEach(() => {
+  clearRetainedChatProjections()
   selectedCharID.set(-1)
 })
 
@@ -192,6 +195,21 @@ const db = () =>
   (testDatabaseState as { db: { characters: Array<{ chats: Array<{ id: string; message: unknown[] }> }> } }).db
 
 describe('chat message hydration bridge', () => {
+  it('reapplies a retained transcript projection after authoritative hydration', async () => {
+    projectionState.fetchChat.mockResolvedValue(
+      okResult('chat-1', [{ role: 'char', data: 'persisted', chatId: 'message-a' }]),
+    )
+    const release = registerRetainedChatProjection({ kind: 'chat-body', chatId: 'chat-1' }, () => {
+      const message = db().characters[0].chats[0].message[0] as Record<string, unknown> | undefined
+      if (message?.chatId === 'message-a') message.data = 'retained edit'
+    })
+
+    await hydrateActiveChat()
+
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'char', data: 'retained edit', chatId: 'message-a' }])
+    release()
+  })
+
   it('hydrates only the active chat, and dedupes a second call', async () => {
     const projectionEpoch = captureChatBodyProjectionEpoch('chat-1')
     projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]))

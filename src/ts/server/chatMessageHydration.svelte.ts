@@ -35,6 +35,7 @@ import {
   markChatBodyProjectionApplied,
   markChatBodyResourceRevision,
 } from './resourceState.svelte'
+import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
 
 export const BULK_HYDRATION_CONCURRENCY = 4
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_DISPLAY_TAIL_COUNT
@@ -372,6 +373,7 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
       }
       markChatBodyResourceRevision(chatId, result.revision)
       markChatBodyProjectionApplied(chatId)
+      reapplyRetainedChatBodyProjections(chatId)
       if (wantsFullHydration || !range || isFullRange(range.start, range.total, result.message.length)) {
         hydratedChatIds.add(chatId)
       }
@@ -458,6 +460,7 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
       }
       markChatBodyResourceRevision(chatId, result.revision)
       markChatBodyProjectionApplied(chatId)
+      reapplyRetainedChatBodyProjections(chatId)
       hydratedChatIds.add(chatId)
       refreshPendingFreshnessAfterHydration(chatId, freshness)
     }
@@ -571,6 +574,7 @@ export function applyServerChatMessagesResource(
   )
   if (!applied) return false
   advanceChatProjectionEpoch(chatId)
+  reapplyRetainedChatBodyProjections(chatId)
   if (!range || isFullRange(range.start, range.total, message.length)) {
     hydratedChatIds.add(chatId)
   }

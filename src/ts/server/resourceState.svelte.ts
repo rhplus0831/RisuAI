@@ -13,6 +13,7 @@ import {
 import type { PromptItemMutationOperation, PromptTemplateOwnerStateSnapshot } from './commands'
 import { applySettingsRuntimeProjectionEffects } from './settingsRuntimeProjectionHooks'
 import { applyPendingSettingsProjectionOverlays } from './settingsPendingProjection'
+import { reapplyRetainedCharacterProjections } from './chatRetainedProjection'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -2070,6 +2071,7 @@ export function applyCharactersResource(
   if (!preserveResidentChatBodies) advanceAllChatBodyProjectionEpochs()
   if (!preserveResidentChatBodies) advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
+  reapplyRetainedCharacterProjections()
   markResourceDatabaseChanged()
   return true
 }
@@ -2151,6 +2153,7 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
   advanceCharacterRowProjectionEpoch(characterId)
   advanceCharacterLorebookProjectionEpoch(characterId)
+  reapplyRetainedCharacterProjections(characterId)
   markResourceDatabaseChanged()
   return true
 }
