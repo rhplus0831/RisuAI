@@ -553,6 +553,7 @@ interface SplitPresetPatchFieldAttempt {
 }
 
 interface PendingSplitPresetPatch {
+  sequence: number
   kind: SplitPresetKind
   presetId: string
   fields: Map<string, SplitPresetPatchFieldAttempt>
@@ -569,6 +570,8 @@ interface PendingSplitPresetPatch {
   intent: DurableMutationIntent | null
   outbox: PendingMutationHandle | null
   timer: ReturnType<typeof setTimeout> | null
+  outcomeResolvers: Array<(outcome: PresetMutationOutcome) => void>
+  settled: false
 }
 
 interface DispatchedSplitPresetPatch {
@@ -586,6 +589,8 @@ interface DispatchedSplitPresetPatch {
   selectedProjectionExpected: boolean
   ownerProjectionExpected: boolean
   outbox: PendingMutationHandle
+  outcomeResolvers: Array<(outcome: PresetMutationOutcome) => void>
+  finalSettlement: PresetMutationFinalSettlement
   settlementCleanup?: () => void
   settled: boolean
 }
@@ -701,6 +706,27 @@ function createPresetMutationFinalSettlement(): PresetMutationFinalSettlement {
   return { promise, resolve }
 }
 
+function waitForPendingSplitPresetOutcome(pending: PendingSplitPresetPatch): Promise<PresetMutationOutcome> {
+  return new Promise((resolve) => pending.outcomeResolvers.push(resolve))
+}
+
+function resolvePendingSplitPresetOutcome(pending: PendingSplitPresetPatch, outcome: PresetMutationOutcome): void {
+  for (const resolve of pending.outcomeResolvers.splice(0)) resolve(outcome)
+}
+
+function resolveDispatchedSplitPresetOutcome(
+  attempt: DispatchedSplitPresetPatch,
+  status: PresetMutationOutcome['status'],
+): void {
+  const outcome: PresetMutationOutcome =
+    status === 'queued'
+      ? { status, settlement: attempt.finalSettlement.promise }
+      : status === 'accepted'
+        ? { status }
+        : { status }
+  for (const resolve of attempt.outcomeResolvers.splice(0)) resolve(outcome)
+}
+
 function splitPresetPatchKey(kind: SplitPresetKind, presetId: string): string {
   return `${kind}:${presetId}`
 }
@@ -784,6 +810,7 @@ function queueSplitPresetPatch(
     const selectedPromptPresetId = currentSplitPresetSelectedId('prompt')
     const capturesPromptOwner = kind === 'prompt' && selectedPresetId === presetId
     pending = {
+      sequence: reservePresetMutationSequence(),
       kind,
       presetId,
       fields: new Map(),
@@ -800,6 +827,8 @@ function queueSplitPresetPatch(
       intent: null,
       outbox: null,
       timer: null,
+      outcomeResolvers: [],
+      settled: false,
     }
     pendingSplitPresetPatches.set(pendingKey, pending)
     createdPending = true
@@ -835,8 +864,11 @@ function queueSplitPresetPatch(
   }
 
   if (!desiredChanged) {
-    if (createdPending) pendingSplitPresetPatches.delete(pendingKey)
-    return null
+    if (createdPending) {
+      pendingSplitPresetPatches.delete(pendingKey)
+      return null
+    }
+    return pending
   }
   return pending
 }
@@ -926,6 +958,7 @@ function schedulePendingSplitPresetPatch(pending: PendingSplitPresetPatch): void
     if (pendingSplitPresetPatches.get(pendingKey) === pending) {
       pendingSplitPresetPatches.delete(pendingKey)
     }
+    resolvePendingSplitPresetOutcome(pending, { status: 'accepted' })
     return
   }
   if (durability === 'correction') {
@@ -1049,7 +1082,10 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
     fields.set(fieldName, cloneSplitPresetPatchFieldAttempt(field))
     patch[fieldName] = safeStructuredClone(field.attemptedValue)
   }
-  if (fields.size === 0 || !pending.intent || !pending.outbox) return
+  if (fields.size === 0 || !pending.intent || !pending.outbox) {
+    resolvePendingSplitPresetOutcome(pending, { status: 'accepted' })
+    return
+  }
 
   const projectionFields = new Map<string, SplitPresetPatchFieldAttempt>()
   for (const [fieldName, field] of pending.projectionFields) {
@@ -1072,6 +1108,7 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
     | undefined
   if (!livePreset) {
     void acknowledgePendingMutation(pending.outbox)
+    resolvePendingSplitPresetOutcome(pending, { status: 'failed' })
     return
   }
   const ownerProjectionExpected =
@@ -1080,8 +1117,9 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
     Object.prototype.hasOwnProperty.call(patch, 'promptTemplate') &&
     Object.prototype.hasOwnProperty.call(livePreset, 'promptTemplate')
 
+  const finalSettlement = createPresetMutationFinalSettlement()
   const attempt: DispatchedSplitPresetPatch = {
-    sequence: reservePresetMutationSequence(),
+    sequence: pending.sequence,
     kind: pending.kind,
     presetId: pending.presetId,
     fields,
@@ -1095,6 +1133,8 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
     selectedProjectionExpected,
     ownerProjectionExpected,
     outbox: pending.outbox,
+    outcomeResolvers: pending.outcomeResolvers.splice(0),
+    finalSettlement,
     settled: false,
   }
   const optimisticAcknowledgement: SplitPresetPatchOptimisticAcknowledgement = {
@@ -1170,6 +1210,7 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
       if (result.status === 'ok' || attempt.settled) return
       if ((await attempt.outbox.ready) === 'persisted' && (await isPendingMutationCurrent(attempt.outbox))) {
         reapplyPendingPresetProjections()
+        resolveDispatchedSplitPresetOutcome(attempt, 'queued')
         return
       }
       taintSplitPresetPatchAttempt(attempt)
@@ -1180,6 +1221,7 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
       if (attempt.settled) return
       if ((await attempt.outbox.ready) === 'persisted' && (await isPendingMutationCurrent(attempt.outbox))) {
         reapplyPendingPresetProjections()
+        resolveDispatchedSplitPresetOutcome(attempt, 'queued')
         return
       }
       taintSplitPresetPatchAttempt(attempt)
@@ -1230,6 +1272,9 @@ function splitPresetPatchFieldValuesDiffer(
 function settleSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch, accepted: boolean): void {
   if (attempt.settled) return
   attempt.settled = true
+  const status = accepted ? 'accepted' : 'failed'
+  resolveDispatchedSplitPresetOutcome(attempt, status)
+  attempt.finalSettlement.resolve(status)
   attempt.settlementCleanup?.()
   attempt.settlementCleanup = undefined
 
@@ -2090,33 +2135,47 @@ function applyPresetReorderProjection(attempt: PresetReorderMutationAttempt): vo
   assignPresetRowList(attempt.kind, ordered)
 }
 
-function applySplitPresetPatchProjection(attempt: DispatchedSplitPresetPatch): void {
+function applySplitPresetPatchProjection(attempt: PendingSplitPresetPatch | DispatchedSplitPresetPatch): void {
+  const collectionName = attempt.kind === 'model' ? 'modelPresets' : 'promptPresets'
+  const collectionWasReplaced = hasCollectionProjectionEpochChanged(collectionName, attempt.collectionProjectionEpoch)
   const list = splitPresetList(attempt.kind)
   const index = list.findIndex((preset) => preset?.id === attempt.presetId)
   if (index >= 0) {
     const target = list[index] as unknown as Record<string, unknown>
     for (const [fieldName, field] of attempt.fields) {
+      if (collectionWasReplaced) {
+        field.previousPresent = Object.prototype.hasOwnProperty.call(target, fieldName)
+        field.previousValue = safeStructuredClone(target[fieldName])
+      }
       if (field.attemptedPresent) target[fieldName] = safeStructuredClone(field.attemptedValue)
       else delete target[fieldName]
     }
     assignSplitPresetList(attempt.kind, list)
   }
 
+  const settingsWereReplaced = hasSettingsProjectionEpochChanged(attempt.settingsProjectionEpoch)
   if (currentSplitPresetSelectedId(attempt.kind) === attempt.presetId) {
     if (attempt.kind !== 'model' || currentSplitPresetSelectedId('prompt') === attempt.selectedPromptPresetId) {
       const database = getDatabase() as unknown as Record<string, unknown>
       for (const [fieldName, field] of attempt.projectionFields) {
+        if (settingsWereReplaced) {
+          field.previousPresent = Object.prototype.hasOwnProperty.call(database, fieldName)
+          field.previousValue = safeStructuredClone(database[fieldName])
+        }
         if (field.attemptedPresent) database[fieldName] = safeStructuredClone(field.attemptedValue)
         else delete database[fieldName]
       }
     }
   }
 
-  attempt.collectionProjectionEpoch = captureCollectionProjectionEpoch(
-    attempt.kind === 'model' ? 'modelPresets' : 'promptPresets',
-  )
+  attempt.collectionProjectionEpoch = captureCollectionProjectionEpoch(collectionName)
   attempt.settingsProjectionEpoch = captureSettingsProjectionEpoch()
-  if (attempt.kind === 'prompt' && attempt.ownerProjectionExpected) {
+  const ownsPromptProjection =
+    attempt.kind === 'prompt' &&
+    ('ownerProjectionExpected' in attempt
+      ? attempt.ownerProjectionExpected
+      : attempt.selectedPresetId === attempt.presetId && attempt.projectionFields.has('promptTemplate'))
+  if (ownsPromptProjection) {
     attempt.promptOwnerProjectionEpoch = capturePromptTemplateOwnerProjectionEpoch(attempt.presetId)
     attempt.promptOwnerRevision = peekPromptTemplateOwnerRevision(attempt.presetId)
   }
@@ -2126,7 +2185,11 @@ function reapplyPendingPresetProjectionsMutable(): void {
   const operations: Array<
     | { sequence: number; type: 'row'; attempt: PresetRowMutationAttempt }
     | { sequence: number; type: 'reorder'; attempt: PresetReorderMutationAttempt }
-    | { sequence: number; type: 'split-patch'; attempt: DispatchedSplitPresetPatch }
+    | {
+        sequence: number
+        type: 'split-patch'
+        attempt: PendingSplitPresetPatch | DispatchedSplitPresetPatch
+      }
     | { sequence: number; type: 'imported-create'; attempt: StagedImportedSplitPreset }
   > = [
     ...unsettledPresetRowMutationAttempts.map((attempt) => ({
@@ -2146,6 +2209,11 @@ function reapplyPendingPresetProjectionsMutable(): void {
         attempt,
       })),
     ),
+    ...Array.from(pendingSplitPresetPatches.values()).map((attempt) => ({
+      sequence: attempt.sequence,
+      type: 'split-patch' as const,
+      attempt,
+    })),
     ...unsettledImportedSplitPresets.map((attempt) => ({
       sequence: attempt.sequence,
       type: 'imported-create' as const,
@@ -2206,9 +2274,14 @@ export function reapplyPendingPresetProjections(): void {
 export function resetPendingPresetMutationsForTests(): void {
   for (const pending of pendingSplitPresetPatches.values()) {
     if (pending.timer) clearTimeout(pending.timer)
+    resolvePendingSplitPresetOutcome(pending, { status: 'failed' })
   }
   for (const attempts of unsettledSplitPresetPatches.values()) {
-    for (const attempt of attempts) attempt.settlementCleanup?.()
+    for (const attempt of attempts) {
+      attempt.settlementCleanup?.()
+      resolveDispatchedSplitPresetOutcome(attempt, 'failed')
+      attempt.finalSettlement.resolve('failed')
+    }
   }
   for (const attempt of unsettledPresetRowMutationAttempts) attempt.settlementCleanup?.()
   for (const attempt of unsettledPresetReorderMutationAttempts) attempt.settlementCleanup?.()
@@ -5446,11 +5519,11 @@ export function createModelPreset(preset: ModelPreset) {
   })
 }
 
-export function updateModelPreset(id: number, patch: Partial<ModelPreset>) {
-  withTrustedResourceWrite(() => {
+export function updateModelPreset(id: number, patch: Partial<ModelPreset>): Promise<PresetMutationOutcome> {
+  return withTrustedResourceWrite(() => {
     const db = getDatabase()
     const modelPresetId = db.modelPresets[id]?.id
-    if (!modelPresetId) return
+    if (!modelPresetId) return Promise.resolve({ status: 'failed' })
     const attempted = omitUndefinedSplitPresetPatchValues(safeStructuredClone(patch))
     const previousProjectionFields = captureSplitPresetProjectionFields('model', attempted as Record<string, unknown>)
     const pending = queueSplitPresetPatch(
@@ -5464,7 +5537,11 @@ export function updateModelPreset(id: number, patch: Partial<ModelPreset>) {
       applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
     }
     recordSplitPresetProjectionFields(pending, previousProjectionFields)
+    const outcome = pending
+      ? waitForPendingSplitPresetOutcome(pending)
+      : Promise.resolve<PresetMutationOutcome>({ status: 'accepted' })
     if (pending) schedulePendingSplitPresetPatch(pending)
+    return outcome
   })
 }
 
@@ -5936,11 +6013,11 @@ export async function addImportedLegacyPreset(preset: botPreset): Promise<Preset
   ])
 }
 
-export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
-  withTrustedResourceWrite(() => {
+export function updatePromptPreset(id: number, patch: Partial<PromptPreset>): Promise<PresetMutationOutcome> {
+  return withTrustedResourceWrite(() => {
     const db = getDatabase()
     const promptPresetId = db.promptPresets[id]?.id
-    if (!promptPresetId) return
+    if (!promptPresetId) return Promise.resolve({ status: 'failed' })
     const attempted = normalizePromptPresetPatchAliases(omitUndefinedSplitPresetPatchValues(safeStructuredClone(patch)))
     const previousProjectionFields = captureSplitPresetProjectionFields('prompt', attempted as Record<string, unknown>)
     const pending = queueSplitPresetPatch(
@@ -5954,7 +6031,11 @@ export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
       applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
     }
     recordSplitPresetProjectionFields(pending, previousProjectionFields)
+    const outcome = pending
+      ? waitForPendingSplitPresetOutcome(pending)
+      : Promise.resolve<PresetMutationOutcome>({ status: 'accepted' })
     if (pending) schedulePendingSplitPresetPatch(pending)
+    return outcome
   })
 }
 

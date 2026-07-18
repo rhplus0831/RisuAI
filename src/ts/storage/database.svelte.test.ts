@@ -4847,10 +4847,12 @@ describe('durable preset mutation projections', () => {
         }) as unknown as typeof fetch,
       )
 
-      updateModelPreset(0, { name: 'Alpha retained edit' })
+      const renameOutcomePromise = updateModelPreset(0, { name: 'Alpha retained edit' })
       reorderModelPresets(0, 3)
 
       await waitForState(() => expect(calls.filter((call) => call.url.endsWith('/model-a'))).toHaveLength(2))
+      const renameOutcome = await renameOutcomePromise
+      expect(renameOutcome.status).toBe('queued')
       expect(calls.some((call) => call.url.endsWith('/reorder'))).toBe(false)
       const queued = await listPendingMutations()
       expect(queued).toHaveLength(2)
@@ -4863,6 +4865,7 @@ describe('durable preset mutation projections', () => {
         'PATCH /api/v1/commands/model-presets/model-a',
         'POST /api/v1/commands/model-presets/reorder',
       ])
+      if (renameOutcome.status === 'queued') await expect(renameOutcome.settlement).resolves.toBe('accepted')
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

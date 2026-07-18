@@ -93,8 +93,14 @@ import {
   resetPendingMutationOutboxForTests,
 } from 'src/ts/server/pendingMutationOutbox'
 import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
-import { getDatabase, resetPendingPresetMutationsForTests, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import {
+  getDatabase,
+  reapplyPendingPresetProjections,
+  resetPendingPresetMutationsForTests,
+  setDatabaseLite,
+} from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
+import { applyCollectionsResource, type ServerCollectionName } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -107,6 +113,8 @@ interface CapturedFetch {
 }
 
 interface StubCommandFetchOptions {
+  modelPatchResponse?: Promise<Response>
+  promptPatchResponse?: Promise<Response>
   promptDeleteResponse?: Promise<Response>
   modelSelectResponse?: Promise<Response>
   promptSelectResponse?: Promise<Response>
@@ -151,6 +159,7 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
       if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
       if (init.method === 'PATCH' && url.startsWith('/api/v1/commands/model-presets/')) {
+        if (options.modelPatchResponse) return options.modelPatchResponse
         const modelPresetId = decodeURIComponent(url.slice('/api/v1/commands/model-presets/'.length))
         return jsonResponse({
           status: 'ok',
@@ -169,6 +178,7 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
         })
       }
       if (init.method === 'PATCH' && url.startsWith('/api/v1/commands/prompt-presets/')) {
+        if (options.promptPatchResponse) return options.promptPatchResponse
         const promptPresetId = decodeURIComponent(url.slice('/api/v1/commands/prompt-presets/'.length))
         return jsonResponse({
           status: 'ok',
@@ -627,7 +637,7 @@ describe('generation settings picker mode', () => {
     expect(calls.filter((call) => call.method === 'PATCH')).toHaveLength(1)
   })
 
-  it('projects a quick model preset rename immediately and keeps its edit draft', async () => {
+  it('projects a quick model preset rename immediately through shared state', async () => {
     const calls = stubCommandFetch()
     mountPresetPicker('active-chat-generation-settings', vi.fn(), 'model')
 
@@ -652,6 +662,115 @@ describe('generation settings picker mode', () => {
         body: expect.objectContaining({ patch: { name: 'Renamed Model Preset' } }),
       }),
     )
+  })
+
+  describe.each(['model', 'prompt'] as const)('%s preset rename reconciliation', (kind) => {
+    it('keeps every visible consumer on the resource-backed name after terminal rollback', async () => {
+      const response = createDeferred<Response>()
+      const calls = stubCommandFetch(
+        kind === 'model' ? { modelPatchResponse: response.promise } : { promptPatchResponse: response.promise },
+      )
+      const mode: GenerationSettingsPickerMode = kind === 'model' ? 'active-chat-generation-settings' : 'global'
+      mountPresetPicker(mode, vi.fn(), kind)
+      elementBySelector<HTMLButtonElement>('[data-risu-preset-edit]', `${kind} preset edit button`).click()
+      await tick()
+
+      const presetId = kind === 'model' ? 'model-preset-a' : 'preset-a'
+      const originalName = kind === 'model' ? 'Model Preset A' : 'Preset A'
+      const rejectedName = `${originalName} rejected`
+      const authoritativeName = `${originalName} from server`
+      const collectionName: ServerCollectionName = kind === 'model' ? 'modelPresets' : 'promptPresets'
+      const currentPresets = () => (kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets)
+      const input = pickerRow(kind, presetId).querySelector<HTMLInputElement>('input')
+      expect(input).toBeTruthy()
+
+      const consumerTarget = document.createElement('div')
+      document.body.appendChild(consumerTarget)
+      const consumer = mount(Botpreset, {
+        target: consumerTarget,
+        props: { mode, close: vi.fn(), kind },
+      })
+
+      try {
+        input!.value = rejectedName
+        input!.dispatchEvent(new Event('input', { bubbles: true }))
+        await tick()
+
+        expect(currentPresets()[0].name).toBe(rejectedName)
+        expect(input!.value).toBe(rejectedName)
+        expect(consumerTarget.querySelector(`[data-risu-row-id="${presetId}"]`)?.textContent).toContain(rejectedName)
+
+        const authoritativePresets = safeStructuredClone(currentPresets())
+        authoritativePresets[0].name = authoritativeName
+        applyCollectionsResource(
+          {
+            revision: 201,
+            collections: { [collectionName]: authoritativePresets },
+          } as any,
+          collectionName,
+        )
+        reapplyPendingPresetProjections()
+        await tick()
+        expect(input!.value).toBe(rejectedName)
+
+        flushRegisteredPendingBridgePatches({})
+        await waitForFetchCount(calls, 2)
+        response.resolve(jsonResponse({ error: 'preset no longer exists' }, 404))
+
+        await vi.waitFor(() => expect(input!.value).toBe(authoritativeName))
+        expect(currentPresets()[0].name).toBe(authoritativeName)
+        expect(consumerTarget.querySelector(`[data-risu-row-id="${presetId}"]`)?.textContent).toContain(
+          authoritativeName,
+        )
+        expect(target.querySelector('[data-risu-preset-rename-status]')?.textContent).toContain(
+          language.presetRenameFailed,
+        )
+        expect(alertSpies.alertError).toHaveBeenCalledWith(language.presetRenameFailed)
+      } finally {
+        unmount(consumer)
+        consumerTarget.remove()
+      }
+    })
+  })
+
+  it('keeps a durably queued rename visible and marks it pending', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-prompt-rename',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-prompt-rename',
+      requestedWriterWasActive: true,
+    })
+    stubCommandFetch({
+      promptPatchResponse: Promise.resolve(jsonResponse({ error: 'temporarily unavailable' }, 503)),
+    })
+
+    try {
+      mountPresetPicker('global')
+      elementBySelector<HTMLButtonElement>('[data-risu-preset-edit]', 'prompt preset edit button').click()
+      await tick()
+
+      const input = pickerRow('prompt', 'preset-a').querySelector<HTMLInputElement>('input')
+      expect(input).toBeTruthy()
+      input!.value = 'Queued prompt name'
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+      flushRegisteredPendingBridgePatches({})
+
+      await vi.waitFor(() => {
+        expect(target.querySelector('[data-risu-preset-rename-status]')?.textContent).toContain(
+          language.presetRenameQueued,
+        )
+      })
+      expect(input!.value).toBe('Queued prompt name')
+      expect(getDatabase().promptPresets[0].name).toBe('Queued prompt name')
+      expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.presetRenameQueued)
+      expect(await listPendingMutations()).toHaveLength(1)
+    } finally {
+      resetPendingPresetMutationsForTests()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('stages the encrypted quick prompt rename intent before the network debounce', async () => {

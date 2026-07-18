@@ -47,7 +47,9 @@
   let isDragging = $state(false)
   let dragOverIndex = $state(-1)
   let draggedPreset = $state<{ kind: ModernPresetKind; id: string } | null>(null)
-  let renameDrafts = $state<Record<string, string>>({})
+  let renameOperation = 0
+  let renameStates = $state<Record<string, { operation: number; status: 'saving' | 'queued' }>>({})
+  let renameErrors = $state<Record<string, string>>({})
   let selectionOperation = 0
   let selectionPendingKey = $state<string | null>(null)
   let selectionError = $state('')
@@ -92,38 +94,58 @@
     return `${kind}:${nonEmptyId(preset?.id) ?? `index:${index}`}`
   }
 
-  function presetNameDraft(preset: ModernPreset | undefined, index: number) {
-    const key = presetDraftKey(preset, index)
-    if (Object.prototype.hasOwnProperty.call(renameDrafts, key)) return renameDrafts[key]
+  function presetName(preset: ModernPreset | undefined) {
     return preset?.name ?? ''
   }
 
-  function updatePresetNameDraft(preset: ModernPreset | undefined, index: number, name: string) {
+  function updatePresetName(preset: ModernPreset | undefined, index: number, name: string) {
     const key = presetDraftKey(preset, index)
-    renameDrafts[key] = name
-
     const presetId = nonEmptyId(preset?.id)
     const presets = kind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets
     const liveIndex = presetId ? presets.findIndex((candidate) => candidate?.id === presetId) : index
     const livePreset = presets[liveIndex]
     if (!livePreset || (!presetId && livePreset !== preset) || (livePreset.name ?? '') === name) return
 
-    if (kind === 'prompt') updatePromptPreset(liveIndex, { name })
-    else updateModelPreset(liveIndex, { name })
-  }
-
-  function clearRenameDrafts() {
-    renameDrafts = {}
+    const operation = ++renameOperation
+    renameStates[key] = { operation, status: 'saving' }
+    delete renameErrors[key]
+    const outcome = kind === 'prompt' ? updatePromptPreset(liveIndex, { name }) : updateModelPreset(liveIndex, { name })
+    void outcome.then((result) => settlePresetRename(key, operation, result))
   }
 
   function toggleEditMode() {
-    if (editMode) {
-      clearRenameDrafts()
-      editMode = false
+    renameErrors = {}
+    editMode = !editMode
+  }
+
+  function settlePresetRename(
+    key: string,
+    operation: number,
+    outcome: Awaited<ReturnType<typeof updateModelPreset>>,
+  ): void {
+    if (renameStates[key]?.operation !== operation) return
+    if (outcome.status === 'accepted') {
+      delete renameStates[key]
       return
     }
-    clearRenameDrafts()
-    editMode = true
+    if (outcome.status === 'failed') {
+      showPresetRenameFailure(key)
+      return
+    }
+
+    renameStates[key] = { operation, status: 'queued' }
+    alertNormal(language.presetRenameQueued)
+    void outcome.settlement.then((status) => {
+      if (renameStates[key]?.operation !== operation) return
+      if (status === 'accepted') delete renameStates[key]
+      else showPresetRenameFailure(key)
+    })
+  }
+
+  function showPresetRenameFailure(key: string): void {
+    delete renameStates[key]
+    renameErrors[key] = language.presetRenameFailed
+    alertError(language.presetRenameFailed)
   }
 
   async function selectPreset(preset: ModernPreset | undefined, index: number) {
@@ -373,11 +395,24 @@
             dragOverIndex = e.clientY < rect.top + rect.height / 2 ? i : i + 1
           }}>
           {#if editMode}
-            <TextInput
-              bind:value={() => presetNameDraft(preset, i), (value) => updatePresetNameDraft(preset, i, value)}
-              ariaLabel={`${language.edit}: ${preset.name ?? `#${i + 1}`}`}
-              placeholder="string"
-              padding={false} />
+            <div class="min-w-0 grow">
+              <TextInput
+                bind:value={() => presetName(preset), (value) => updatePresetName(preset, i, value)}
+                ariaLabel={`${language.edit}: ${preset.name ?? `#${i + 1}`}`}
+                placeholder="string"
+                padding={false} />
+              {#if renameStates[presetDraftKey(preset, i)]}
+                <span data-risu-preset-rename-status role="status" class="block text-xs text-textcolor2">
+                  {renameStates[presetDraftKey(preset, i)].status === 'queued'
+                    ? language.presetRenameQueued
+                    : language.presetRenameSaving}
+                </span>
+              {:else if renameErrors[presetDraftKey(preset, i)]}
+                <span data-risu-preset-rename-status role="alert" class="block text-xs text-draculared">
+                  {renameErrors[presetDraftKey(preset, i)]}
+                </span>
+              {/if}
+            </div>
           {:else}
             <button
               type="button"
