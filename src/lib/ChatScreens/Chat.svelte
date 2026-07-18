@@ -134,6 +134,7 @@
   let editTranslationMode = $state(false)
   let editTranslationText = $state('')
   let editTranslationTarget: TranslationMessageTarget | null = $state(null)
+  let translationEditOperation = 0
   let bodyRoot: HTMLElement | null = $state(null)
   interface Props {
     message?: string
@@ -855,6 +856,7 @@
 
   function invalidateTranslationUiForSourceEdit(patch: Pick<Message, 'data' | 'translation'>): void {
     if (!Object.prototype.hasOwnProperty.call(patch, 'translation')) return
+    translationEditOperation += 1
     translated = false
     editTranslationMode = false
     editTranslationTarget = null
@@ -874,6 +876,7 @@
       setStatusMessage('Message is not ready to translate yet.', 2500)
       return
     }
+    translationEditOperation += 1
     translating = true
     editTranslationMode = false
     editTranslationTarget = null
@@ -922,6 +925,7 @@
         (isRenderingTranslationMessageTarget(target) ? activeRawTranslation() : null))
       : null
     if (!existing || !target) return
+    const saveOperation = ++translationEditOperation
     if (editTranslationText === existing.text) {
       editTranslationMode = false
       editTranslationTarget = null
@@ -940,6 +944,7 @@
     const result = await dispatchUpdateMessageScoped(target.messageId, { translation: nextTranslation }, previous, {
       optimisticPatchAlreadyApplied: true,
     })
+    if (saveOperation !== translationEditOperation) return
     if (result && !isSameTranslation(findLiveMessageByTarget(target)?.translation, nextTranslation)) {
       if (isRenderingTranslationMessageTarget(target)) {
         editTranslationMode = true
@@ -1068,6 +1073,7 @@
   async function loadTranslationForEdit() {
     const target = captureTranslationMessageTarget()
     if (!target) return
+    translationEditOperation += 1
     suppressAutoPopupTranslationEditor = false
     editTranslationTarget = target
     editTranslationText = liveRawTranslationForTarget(target)?.text ?? activeRawTranslation()?.text ?? ''

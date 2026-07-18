@@ -1596,6 +1596,72 @@ describe('server raw translation controls', () => {
     expect(target.querySelector('.message-edit-area')).toBeNull()
   })
 
+  it('does not let an older translation save reopen a newer completed edit', async () => {
+    const existingTranslation = {
+      source: 'raw' as const,
+      text: 'original raw translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    const firstSave = deferred<Awaited<NonNullable<ReturnType<typeof dispatchUpdateMessageScoped>>>>()
+    const secondSave = deferred<Awaited<NonNullable<ReturnType<typeof dispatchUpdateMessageScoped>>>>()
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].message[0].translation = existingTranslation
+    vi.mocked(dispatchUpdateMessageScoped)
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementationOnce(() => secondSave.promise)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    buttonByText('editTranslation')?.click()
+    await settle()
+    let textarea = target.querySelector<HTMLTextAreaElement>('.message-edit-area')
+    textarea!.value = 'translation A'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+    buttonByText('editTranslationSave')?.click()
+    await settle()
+
+    buttonByText('editTranslation')?.click()
+    await settle()
+    textarea = target.querySelector<HTMLTextAreaElement>('.message-edit-area')
+    textarea!.value = 'translation B'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+    buttonByText('editTranslationSave')?.click()
+    await settle()
+
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation?.text).toBe('translation B')
+    expect(target.querySelector('.message-edit-area')).toBeNull()
+
+    firstSave.resolve({
+      status: 'ok',
+      revision: 1,
+      event: { type: 'message.updated', revision: 1, resource: 'message', id: 'message-0' },
+    })
+    await settle()
+    expect(target.querySelector('.message-edit-area')).toBeNull()
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation?.text).toBe('translation B')
+
+    secondSave.resolve({
+      status: 'ok',
+      revision: 2,
+      event: { type: 'message.updated', revision: 2, resource: 'message', id: 'message-0' },
+    })
+    await settle()
+    expect(target.querySelector('.message-edit-area')).toBeNull()
+    expect(popUpEditorStore.open).toBe(false)
+  })
+
   it('preserves server-active translation busy state across refresh and displays the completed translation', async () => {
     const translation = {
       source: 'raw' as const,
