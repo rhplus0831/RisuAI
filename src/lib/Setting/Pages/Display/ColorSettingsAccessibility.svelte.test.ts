@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const colorSettingsState = vi.hoisted(() => ({
   database: {} as Record<string, any>,
+  applyServerBackedSetting: vi.fn(),
 }))
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
@@ -12,7 +13,7 @@ vi.mock('src/ts/storage/database.svelte', () => ({
   getDatabase: () => colorSettingsState.database,
 }))
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
-  applyServerBackedSetting: vi.fn(),
+  applyServerBackedSetting: colorSettingsState.applyServerBackedSetting,
 }))
 vi.mock('src/ts/gui/colorscheme', () => ({
   changeColorScheme: vi.fn(),
@@ -86,6 +87,7 @@ beforeEach(() => {
   }
   target = document.createElement('div')
   document.body.appendChild(target)
+  colorSettingsState.applyServerBackedSetting.mockClear()
 })
 
 afterEach(() => {
@@ -141,5 +143,26 @@ describe('display color setting names', () => {
     expect(visibleLabel).toBe(language.textBackgrounds)
     expect(checkbox?.getAttribute('aria-label')).toBe(visibleLabel)
     expect(accessibleName(colorInput!)).toBe(visibleLabel)
+  })
+
+  it('commits a nullable native color only on the change boundary', async () => {
+    component = mount(NullableTextColorToggle, {
+      target,
+      props: {
+        field: 'textScreenColor',
+        labelKey: 'textBackgrounds',
+        defaultColor: '#000000',
+      },
+    })
+    await tick()
+
+    const colorInput = target.querySelector<HTMLInputElement>('input[type="color"]')!
+    colorInput.value = '#abcdef'
+    colorInput.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(colorSettingsState.applyServerBackedSetting).not.toHaveBeenCalled()
+
+    colorInput.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(colorSettingsState.applyServerBackedSetting).toHaveBeenCalledOnce()
+    expect(colorSettingsState.applyServerBackedSetting).toHaveBeenCalledWith('textScreenColor', '#abcdef')
   })
 })

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
 
   import ColorPicker from 'svelte-awesome-color-picker'
   import { language } from 'src/lang'
@@ -13,6 +13,17 @@
 
   let { value = $bindable('#000000'), nullable = false, ariaLabel, oninput, onchange }: Props = $props()
   let initialized = false
+  let pendingChangeTimer: ReturnType<typeof setTimeout> | undefined
+  let pendingChangeValue = value
+
+  function commitPendingChange() {
+    if (pendingChangeTimer === undefined) return
+    clearTimeout(pendingChangeTimer)
+    pendingChangeTimer = undefined
+    onchange?.(pendingChangeValue)
+  }
+
+  onDestroy(commitPendingChange)
 
   $effect(() => {
     //this is for updating
@@ -24,7 +35,9 @@
         initialized = true
         return
       }
-      onchange?.(currentValue)
+      pendingChangeValue = currentValue
+      if (pendingChangeTimer !== undefined) clearTimeout(pendingChangeTimer)
+      pendingChangeTimer = setTimeout(commitPendingChange, 250)
     })
   })
 </script>

@@ -28,7 +28,7 @@
       class="style2 text-sm mr-2"
       aria-label={language[labelKey]}
       value={currentValue}
-      oninput={(e) => {
+      onchange={(e) => {
         applyServerBackedSetting(field, e.currentTarget.value)
       }} />
     <span>{language[labelKey]}</span>
