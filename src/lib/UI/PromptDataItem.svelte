@@ -22,6 +22,7 @@
     onDragEnd?: () => void
     isDragging?: boolean
     structuralDisabled?: boolean
+    readOnly?: boolean
     isOpened?: boolean
     openedItemIndices?: Set<number>
     currentIndex?: number
@@ -40,11 +41,14 @@
     onDragEnd = () => {},
     isDragging = false,
     structuralDisabled = false,
+    readOnly = false,
     isOpened = false,
     openedItemIndices = $bindable(new Set<number>()),
     currentIndex = -1,
     displayIndex = -1,
   }: Props = $props()
+
+  let interactionsDisabled = $derived(structuralDisabled || readOnly)
 
   let initializedPromptSnapshot = false
   let previousPromptSnapshot = ''
@@ -145,7 +149,7 @@
   class:scale-95={isDragging}
   ondragover={(e) => {
     e.preventDefault()
-    if (isDragging || structuralDisabled) return
+    if (isDragging || interactionsDisabled) return
 
     const rect = e.currentTarget.getBoundingClientRect()
     const mouseY = e.clientY
@@ -160,7 +164,7 @@
   ondrop={(e) => {
     e.preventDefault()
     e.stopPropagation()
-    if (structuralDisabled) return
+    if (interactionsDisabled) return
     const data = e.dataTransfer.getData('text')
     if (data === 'prompt') {
       onDrop()
@@ -168,10 +172,10 @@
   }}>
   <div
     class="flex items-center w-full"
-    draggable={!structuralDisabled}
-    style:cursor={structuralDisabled ? 'default' : 'grab'}
+    draggable={!interactionsDisabled}
+    style:cursor={interactionsDisabled ? 'default' : 'grab'}
     ondragstart={(e) => {
-      if (structuralDisabled) {
+      if (interactionsDisabled) {
         e.preventDefault()
         return
       }
@@ -204,7 +208,7 @@
       <button
         type="button"
         aria-label={`${language.remove}: ${getName(promptItem)}`}
-        disabled={structuralDisabled}
+        disabled={interactionsDisabled}
         onclick={(e) => {
           e.stopPropagation()
           onRemove()
@@ -212,7 +216,7 @@
       <button
         type="button"
         aria-label={`${language.moveDown}: ${getName(promptItem)}`}
-        disabled={structuralDisabled}
+        disabled={interactionsDisabled}
         onclick={(e) => {
           e.stopPropagation()
           moveDown()
@@ -220,7 +224,7 @@
       <button
         type="button"
         aria-label={`${language.moveUp}: ${getName(promptItem)}`}
-        disabled={structuralDisabled}
+        disabled={interactionsDisabled}
         onclick={(e) => {
           e.stopPropagation()
           moveUp()
@@ -228,148 +232,150 @@
     </div>
   </div>
   {#if isOpened}
-    <span class="mt-6">{language.name}</span>
-    <TextInput bind:value={promptItem.name} ariaLabel={language.name} />
-    <span class="mt-2">{language.type} </span>
-    <SelectInput
-      bind:value={promptItem.type}
-      ariaLabel={language.type}
-      onchange={() => {
-        if (promptItem.type === 'plain' || promptItem.type === 'jailbreak' || promptItem.type === 'cot') {
-          promptItem.text = ''
-          promptItem.role = 'system'
-        }
-        if (promptItem.type === 'cache') {
-          promptItem.depth = 1
-          promptItem.role = 'all'
-        }
-        if (promptItem.type === 'chat') {
-          promptItem.rangeStart = -1000
-          promptItem.rangeEnd = 'end'
-        }
-      }}>
-      <OptionInput value="plain">{language.formating.plain}</OptionInput>
-      <OptionInput value="jailbreak">{language.formating.jailbreak}</OptionInput>
-      <OptionInput value="chat">{language.Chat}</OptionInput>
-      <OptionInput value="persona">{language.formating.personaPrompt}</OptionInput>
-      <OptionInput value="description">{language.formating.description}</OptionInput>
-      <OptionInput value="authornote">{language.formating.authorNote}</OptionInput>
-      <OptionInput value="lorebook">{language.formating.lorebook}</OptionInput>
-      <OptionInput value="memory">{language.formating.memory}</OptionInput>
-      <OptionInput value="postEverything">{language.formating.postEverything}</OptionInput>
-      <OptionInput value="chatML">{'chatML'}</OptionInput>
-      <OptionInput value="cache">{language.cachePoint}</OptionInput>
+    <fieldset class="contents" disabled={readOnly}>
+      <span class="mt-6">{language.name}</span>
+      <TextInput bind:value={promptItem.name} ariaLabel={language.name} />
+      <span class="mt-2">{language.type} </span>
+      <SelectInput
+        bind:value={promptItem.type}
+        ariaLabel={language.type}
+        onchange={() => {
+          if (promptItem.type === 'plain' || promptItem.type === 'jailbreak' || promptItem.type === 'cot') {
+            promptItem.text = ''
+            promptItem.role = 'system'
+          }
+          if (promptItem.type === 'cache') {
+            promptItem.depth = 1
+            promptItem.role = 'all'
+          }
+          if (promptItem.type === 'chat') {
+            promptItem.rangeStart = -1000
+            promptItem.rangeEnd = 'end'
+          }
+        }}>
+        <OptionInput value="plain">{language.formating.plain}</OptionInput>
+        <OptionInput value="jailbreak">{language.formating.jailbreak}</OptionInput>
+        <OptionInput value="chat">{language.Chat}</OptionInput>
+        <OptionInput value="persona">{language.formating.personaPrompt}</OptionInput>
+        <OptionInput value="description">{language.formating.description}</OptionInput>
+        <OptionInput value="authornote">{language.formating.authorNote}</OptionInput>
+        <OptionInput value="lorebook">{language.formating.lorebook}</OptionInput>
+        <OptionInput value="memory">{language.formating.memory}</OptionInput>
+        <OptionInput value="postEverything">{language.formating.postEverything}</OptionInput>
+        <OptionInput value="chatML">{'chatML'}</OptionInput>
+        <OptionInput value="cache">{language.cachePoint}</OptionInput>
 
-      {#if getDatabase().promptSettings.customChainOfThought}
-        <OptionInput value="cot">{language.cot}</OptionInput>
+        {#if getDatabase().promptSettings.customChainOfThought}
+          <OptionInput value="cot">{language.cot}</OptionInput>
+        {/if}
+      </SelectInput>
+
+      {#if promptItem.type === 'plain' || promptItem.type === 'jailbreak' || promptItem.type === 'cot'}
+        <span>{language.specialType}</span>
+        <SelectInput bind:value={promptItem.type2} ariaLabel={language.specialType}>
+          <OptionInput value="normal">{language.noSpecialType}</OptionInput>
+          <OptionInput value="main">{language.mainPrompt}</OptionInput>
+          <OptionInput value="globalNote">{language.globalNote}</OptionInput>
+        </SelectInput>
+        <span>{language.prompt}</span>
+        <TextAreaInput highlight bind:value={promptItem.text} ariaLabel={language.prompt} />
+        <span>{language.role}</span>
+        <SelectInput bind:value={promptItem.role} ariaLabel={language.role}>
+          <OptionInput value="user">{language.user}</OptionInput>
+          <OptionInput value="bot">{language.character}</OptionInput>
+          <OptionInput value="system">{language.systemPrompt}</OptionInput>
+        </SelectInput>
       {/if}
-    </SelectInput>
-
-    {#if promptItem.type === 'plain' || promptItem.type === 'jailbreak' || promptItem.type === 'cot'}
-      <span>{language.specialType}</span>
-      <SelectInput bind:value={promptItem.type2} ariaLabel={language.specialType}>
-        <OptionInput value="normal">{language.noSpecialType}</OptionInput>
-        <OptionInput value="main">{language.mainPrompt}</OptionInput>
-        <OptionInput value="globalNote">{language.globalNote}</OptionInput>
-      </SelectInput>
-      <span>{language.prompt}</span>
-      <TextAreaInput highlight bind:value={promptItem.text} ariaLabel={language.prompt} />
-      <span>{language.role}</span>
-      <SelectInput bind:value={promptItem.role} ariaLabel={language.role}>
-        <OptionInput value="user">{language.user}</OptionInput>
-        <OptionInput value="bot">{language.character}</OptionInput>
-        <OptionInput value="system">{language.systemPrompt}</OptionInput>
-      </SelectInput>
-    {/if}
-    {#if promptItem.type === 'chatML'}
-      <span>{language.prompt}</span>
-      <TextAreaInput highlight bind:value={promptItem.text} ariaLabel={language.prompt} />
-    {/if}
-    {#if promptItem.type === 'cache'}
-      <span>{language.depth}</span>
-      <NumberInput bind:value={promptItem.depth} ariaLabel={language.depth} />
-      <span>{language.role}</span>
-      <SelectInput bind:value={promptItem.role} ariaLabel={language.role}>
-        <OptionInput value="all">{language.all}</OptionInput>
-        <OptionInput value="user">{language.user}</OptionInput>
-        <OptionInput value="bot">{language.character}</OptionInput>
-        <OptionInput value="system">{language.systemPrompt}</OptionInput>
-      </SelectInput>
-    {/if}
-    {#if promptItem.type === 'chat'}
-      {#if promptItem.rangeStart !== -1000}
-        <span>{language.rangeStart}</span>
-        <NumberInput bind:value={promptItem.rangeStart} ariaLabel={language.rangeStart} />
-        <span>{language.rangeEnd}</span>
-        {#if promptItem.rangeEnd === 'end'}
-          <NumberInput value={0} marginBottom disabled ariaLabel={language.rangeEnd} />
+      {#if promptItem.type === 'chatML'}
+        <span>{language.prompt}</span>
+        <TextAreaInput highlight bind:value={promptItem.text} ariaLabel={language.prompt} />
+      {/if}
+      {#if promptItem.type === 'cache'}
+        <span>{language.depth}</span>
+        <NumberInput bind:value={promptItem.depth} ariaLabel={language.depth} />
+        <span>{language.role}</span>
+        <SelectInput bind:value={promptItem.role} ariaLabel={language.role}>
+          <OptionInput value="all">{language.all}</OptionInput>
+          <OptionInput value="user">{language.user}</OptionInput>
+          <OptionInput value="bot">{language.character}</OptionInput>
+          <OptionInput value="system">{language.systemPrompt}</OptionInput>
+        </SelectInput>
+      {/if}
+      {#if promptItem.type === 'chat'}
+        {#if promptItem.rangeStart !== -1000}
+          <span>{language.rangeStart}</span>
+          <NumberInput bind:value={promptItem.rangeStart} ariaLabel={language.rangeStart} />
+          <span>{language.rangeEnd}</span>
+          {#if promptItem.rangeEnd === 'end'}
+            <NumberInput value={0} marginBottom disabled ariaLabel={language.rangeEnd} />
+            <CheckInput
+              name={language.untilChatEnd}
+              check={true}
+              onChange={() => {
+                if (promptItem.type === 'chat') {
+                  promptItem.rangeEnd = 0
+                }
+              }} />
+          {:else}
+            <NumberInput bind:value={promptItem.rangeEnd} marginBottom ariaLabel={language.rangeEnd} />
+            <CheckInput
+              name={language.untilChatEnd}
+              check={false}
+              onChange={() => {
+                if (promptItem.type === 'chat') {
+                  promptItem.rangeEnd = 'end'
+                }
+              }} />
+          {/if}
+          {#if getDatabase().promptSettings.sendChatAsSystem}
+            <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem} />
+          {/if}
+        {/if}
+        <CheckInput
+          name={language.advanced}
+          check={promptItem.rangeStart !== -1000}
+          onChange={chatPromptChange}
+          className="my-2" />
+      {/if}
+      {#if promptItem.type === 'authornote'}
+        <span>{language.defaultPrompt}</span>
+        <TextInput bind:value={promptItem.defaultText} ariaLabel={language.defaultPrompt} />
+      {/if}
+      {#if promptItem.type === 'persona' || promptItem.type === 'description' || promptItem.type === 'authornote' || promptItem.type === 'memory'}
+        {#if !promptItem.innerFormat}
           <CheckInput
-            name={language.untilChatEnd}
-            check={true}
+            name={language.customInnerFormat}
+            check={false}
+            className="mt-2"
             onChange={() => {
-              if (promptItem.type === 'chat') {
-                promptItem.rangeEnd = 0
+              if (
+                promptItem.type === 'persona' ||
+                promptItem.type === 'description' ||
+                promptItem.type === 'authornote' ||
+                promptItem.type === 'memory'
+              ) {
+                promptItem.innerFormat = '{{slot}}'
               }
             }} />
         {:else}
-          <NumberInput bind:value={promptItem.rangeEnd} marginBottom ariaLabel={language.rangeEnd} />
+          <span>{language.innerFormat}</span>
+          <TextAreaInput highlight bind:value={promptItem.innerFormat} ariaLabel={language.innerFormat} />
           <CheckInput
-            name={language.untilChatEnd}
-            check={false}
+            name={language.customInnerFormat}
+            check={true}
+            className="mt-2"
             onChange={() => {
-              if (promptItem.type === 'chat') {
-                promptItem.rangeEnd = 'end'
+              if (
+                promptItem.type === 'persona' ||
+                promptItem.type === 'description' ||
+                promptItem.type === 'authornote' ||
+                promptItem.type === 'memory'
+              ) {
+                promptItem.innerFormat = null
               }
             }} />
         {/if}
-        {#if getDatabase().promptSettings.sendChatAsSystem}
-          <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem} />
-        {/if}
       {/if}
-      <CheckInput
-        name={language.advanced}
-        check={promptItem.rangeStart !== -1000}
-        onChange={chatPromptChange}
-        className="my-2" />
-    {/if}
-    {#if promptItem.type === 'authornote'}
-      <span>{language.defaultPrompt}</span>
-      <TextInput bind:value={promptItem.defaultText} ariaLabel={language.defaultPrompt} />
-    {/if}
-    {#if promptItem.type === 'persona' || promptItem.type === 'description' || promptItem.type === 'authornote' || promptItem.type === 'memory'}
-      {#if !promptItem.innerFormat}
-        <CheckInput
-          name={language.customInnerFormat}
-          check={false}
-          className="mt-2"
-          onChange={() => {
-            if (
-              promptItem.type === 'persona' ||
-              promptItem.type === 'description' ||
-              promptItem.type === 'authornote' ||
-              promptItem.type === 'memory'
-            ) {
-              promptItem.innerFormat = '{{slot}}'
-            }
-          }} />
-      {:else}
-        <span>{language.innerFormat}</span>
-        <TextAreaInput highlight bind:value={promptItem.innerFormat} ariaLabel={language.innerFormat} />
-        <CheckInput
-          name={language.customInnerFormat}
-          check={true}
-          className="mt-2"
-          onChange={() => {
-            if (
-              promptItem.type === 'persona' ||
-              promptItem.type === 'description' ||
-              promptItem.type === 'authornote' ||
-              promptItem.type === 'memory'
-            ) {
-              promptItem.innerFormat = null
-            }
-          }} />
-      {/if}
-    {/if}
+    </fieldset>
   {/if}
 </div>

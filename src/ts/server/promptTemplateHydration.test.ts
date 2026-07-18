@@ -24,6 +24,7 @@ import {
 } from './commands'
 import {
   capturePromptTemplateOwnerProjectionEpoch,
+  clonePromptTemplateSelectedFallback,
   ensurePromptTemplateHydrated,
   hasPromptTemplateOwnerProjectionEpochChanged,
   invalidatePromptTemplateHydration,
@@ -32,6 +33,7 @@ import {
   markPromptTemplateOwnerAcknowledgementTainted,
   markPromptTemplateProjectionApplied,
   peekPromptTemplateOwnerRevision,
+  promptTemplateOwnerUsesSelectedFallback,
   resetPromptTemplateHydration,
 } from './promptTemplateHydration'
 
@@ -500,9 +502,17 @@ describe('promptTemplate hydration', () => {
     })
 
     await expect(ensurePromptTemplateHydrated({ force: true })).resolves.toBe(true)
-    await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
 
     expect(testDatabaseState.db.promptPresets[0]).not.toHaveProperty('promptTemplate')
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('root-row', 'fresh root fallback')])
+    expect(promptTemplateOwnerUsesSelectedFallback('default-prompt-preset')).toBe(true)
+    expect(clonePromptTemplateSelectedFallback('default-prompt-preset')).toEqual([
+      item('root-row', 'fresh root fallback'),
+    ])
+
+    delete testDatabaseState.db.promptTemplate
+    await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
+
     expect(testDatabaseState.db.promptTemplate).toEqual([item('root-row', 'fresh root fallback')])
     expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
   })

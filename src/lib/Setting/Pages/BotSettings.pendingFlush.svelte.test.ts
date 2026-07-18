@@ -203,6 +203,7 @@ vi.mock('src/ts/server/promptTemplateHydration', async () => {
     markPromptTemplateOwnerAcknowledgementTainted: vi.fn(),
     peekPromptTemplateOwnerRevision: vi.fn(() => 100),
     promptTemplateHydratedStore: readable(true),
+    promptTemplateOwnerUsesSelectedFallback: vi.fn(() => false),
   }
 })
 

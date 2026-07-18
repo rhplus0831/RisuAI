@@ -10,7 +10,7 @@ let promptTemplateHydrationInFlight = new Map<string, Promise<boolean>>()
 let promptTemplateHydrationGeneration = 0
 let promptTemplateHydratedOwnerIds = new Set<string | null>()
 let promptTemplateSelectedFallbackOwnerIds = new Set<string>()
-let deferredPromptTemplateSelectedFallbacks = new Map<string, Database['promptTemplate']>()
+let promptTemplateSelectedFallbacks = new Map<string, Database['promptTemplate']>()
 let nextPromptTemplateOwnerProjectionEpoch = 0
 let promptTemplateOwnerProjectionBaseline = 0
 let promptTemplateOwnerProjectionEpochs = new Map<string | null, number>()
@@ -27,6 +27,20 @@ export function currentPromptTemplateOwnerId(): string | null {
 export function isPromptTemplateHydrated(promptPresetId: string | null = currentPromptTemplateOwnerId()): boolean {
   if (get(promptTemplateHydratedStore) && promptTemplateHydratedOwnerIds.has(promptPresetId)) return true
   return promptPresetId === null && Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate')
+}
+
+export function promptTemplateOwnerUsesSelectedFallback(
+  promptPresetId: string | null = currentPromptTemplateOwnerId(),
+): boolean {
+  return promptPresetId !== null && promptTemplateSelectedFallbackOwnerIds.has(promptPresetId)
+}
+
+export function clonePromptTemplateSelectedFallback(
+  promptPresetId: string | null = currentPromptTemplateOwnerId(),
+): Database['promptTemplate'] | undefined {
+  if (promptPresetId === null || !promptTemplateSelectedFallbackOwnerIds.has(promptPresetId)) return undefined
+  const fallback = promptTemplateSelectedFallbacks.get(promptPresetId)
+  return Array.isArray(fallback) ? JSON.parse(JSON.stringify(fallback)) : undefined
 }
 
 export function capturePromptTemplateOwnerProjectionEpoch(
@@ -58,7 +72,7 @@ export function resetPromptTemplateHydration(): void {
   promptTemplateHydrationInFlight = new Map()
   promptTemplateHydratedOwnerIds = new Set()
   promptTemplateSelectedFallbackOwnerIds = new Set()
-  deferredPromptTemplateSelectedFallbacks = new Map()
+  promptTemplateSelectedFallbacks = new Map()
   promptTemplateOwnerProjectionBaseline = ++nextPromptTemplateOwnerProjectionEpoch
   promptTemplateOwnerProjectionEpochs = new Map()
   promptTemplateOwnerRevisions = new Map()
@@ -72,7 +86,7 @@ export function invalidatePromptTemplateHydration(
   promptTemplateHydratedOwnerIds.delete(promptPresetId)
   if (promptPresetId !== null) {
     promptTemplateSelectedFallbackOwnerIds.delete(promptPresetId)
-    deferredPromptTemplateSelectedFallbacks.delete(promptPresetId)
+    promptTemplateSelectedFallbacks.delete(promptPresetId)
   }
   if (promptPresetId !== null) promptTemplateHydrationInFlight.delete(promptPresetId)
   promptTemplateOwnerProjectionEpochs.set(promptPresetId, ++nextPromptTemplateOwnerProjectionEpoch)
@@ -191,14 +205,10 @@ export async function ensurePromptTemplateHydrated(
     }
     if (selectedFallbackPromptTemplate === undefined) {
       promptTemplateSelectedFallbackOwnerIds.delete(ownerId)
-      deferredPromptTemplateSelectedFallbacks.delete(ownerId)
+      promptTemplateSelectedFallbacks.delete(ownerId)
     } else {
       promptTemplateSelectedFallbackOwnerIds.add(ownerId)
-      if (applyProjection && ownerIsCurrent) {
-        deferredPromptTemplateSelectedFallbacks.delete(ownerId)
-      } else {
-        deferredPromptTemplateSelectedFallbacks.set(ownerId, JSON.parse(JSON.stringify(selectedFallbackPromptTemplate)))
-      }
+      promptTemplateSelectedFallbacks.set(ownerId, JSON.parse(JSON.stringify(selectedFallbackPromptTemplate)))
     }
     markPromptTemplateProjectionApplied(ownerId, result.revision)
     return true
@@ -219,13 +229,11 @@ function applyHydratedOwnerCompatibilityProjection(ownerId: string): boolean {
   const hasPromptTemplate = Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
   if (hasPromptTemplate && !Array.isArray(preset.promptTemplate)) return false
   const usesSelectedFallback = !hasPromptTemplate && promptTemplateSelectedFallbackOwnerIds.has(ownerId)
-  const selectedFallbackPromptTemplate = usesSelectedFallback
-    ? (deferredPromptTemplateSelectedFallbacks.get(ownerId) ?? getDatabase().promptTemplate)
-    : undefined
+  const selectedFallbackPromptTemplate = usesSelectedFallback ? promptTemplateSelectedFallbacks.get(ownerId) : undefined
   if (usesSelectedFallback && !Array.isArray(selectedFallbackPromptTemplate)) {
     promptTemplateHydratedOwnerIds.delete(ownerId)
     promptTemplateSelectedFallbackOwnerIds.delete(ownerId)
-    deferredPromptTemplateSelectedFallbacks.delete(ownerId)
+    promptTemplateSelectedFallbacks.delete(ownerId)
     promptTemplateHydratedStore.set(promptTemplateHydratedOwnerIds.size > 0)
     return false
   }
@@ -238,7 +246,6 @@ function applyHydratedOwnerCompatibilityProjection(ownerId: string): boolean {
       ? { selectedFallbackPromptTemplate: JSON.parse(JSON.stringify(selectedFallbackPromptTemplate)) }
       : {}),
   })
-  if (applied) deferredPromptTemplateSelectedFallbacks.delete(ownerId)
   return applied
 }
 

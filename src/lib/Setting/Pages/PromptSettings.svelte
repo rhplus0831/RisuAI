@@ -54,10 +54,12 @@
   } from 'src/ts/server/promptTemplateBridge.svelte'
   import { mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
   import {
+    clonePromptTemplateSelectedFallback,
     currentPromptTemplateOwnerId,
     ensurePromptTemplateHydrated,
     isPromptTemplateHydrated,
     markPromptTemplateOwnerAcknowledgementTainted,
+    promptTemplateOwnerUsesSelectedFallback,
     promptTemplateHydratedStore,
   } from 'src/ts/server/promptTemplateHydration'
   import {
@@ -180,6 +182,7 @@
   let previousPromptTemplateRevision = peekCachedServerCommandRevision()
   let previousPromptTemplatePresetSelection = promptTemplatePresetSelectionSignature()
   let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
+  let promptTemplateUsesSelectedFallback = $derived(promptTemplateOwnerUsesSelectedFallback(selectedPromptPresetId()))
   let promptTemplateHydrationPending = $state(!isPromptTemplateHydrated())
   let promptTemplateHydrationFailed = $state(false)
   let promptTemplateHydrationRequestId = 0
@@ -272,7 +275,11 @@
   function cloneSelectedPromptPresetTemplate(): PromptItem[] {
     const preset = selectedPromptPreset()
     if (preset) {
-      return cloneJsonValue(Array.isArray(preset.promptTemplate) ? (preset.promptTemplate as PromptItem[]) : [])
+      if (Array.isArray(preset.promptTemplate)) return cloneJsonValue(preset.promptTemplate as PromptItem[])
+      if (promptTemplateOwnerUsesSelectedFallback(selectedPromptPresetId())) {
+        return cloneJsonValue(clonePromptTemplateSelectedFallback(selectedPromptPresetId()) ?? [])
+      }
+      return []
     }
     return cloneJsonValue(getResourceDatabase().promptTemplate ?? [])
   }
@@ -312,6 +319,9 @@
         getResourceDatabase().promptTemplate = cloneJsonValue(
           Array.isArray(preset.promptTemplate) ? (preset.promptTemplate as PromptItem[]) : [],
         )
+      } else if (promptTemplateOwnerUsesSelectedFallback(selectedPromptPresetId())) {
+        const fallback = clonePromptTemplateSelectedFallback(selectedPromptPresetId())
+        if (Array.isArray(fallback)) getResourceDatabase().promptTemplate = fallback
       } else {
         delete (getResourceDatabase() as unknown as Record<string, unknown>).promptTemplate
       }
@@ -1407,6 +1417,14 @@
       {language.loading}
     </div>
   {:else}
+    {#if promptTemplateUsesSelectedFallback}
+      <div
+        class="mt-4 rounded-md border border-darkborderc px-3 py-2 text-sm text-textcolor2"
+        role="status"
+        data-testid="prompt-template-selected-fallback-notice">
+        {language.promptTemplateSelectedFallbackNotice}
+      </div>
+    {/if}
     <div class="contain w-full max-w-full mt-4 flex flex-col p-3 rounded-md">
       {#if promptTemplateDraft.value.length === 0}
         <div class="text-textcolor2">No Format</div>
@@ -1425,7 +1443,8 @@
             onDragOver={capturePromptItemDropBoundary}
             onDragEnd={resetPromptItemDragState}
             onDrop={handlePromptDrop}
-            structuralDisabled={promptTemplateStructuralMutationPending}
+            structuralDisabled={promptTemplateStructuralMutationPending || promptTemplateUsesSelectedFallback}
+            readOnly={promptTemplateUsesSelectedFallback}
             onRemove={() => {
               if (promptTemplateStructuralMutationPending) return
               const removed = promptTemplateDraft.value[originalIndex]
@@ -1500,12 +1519,12 @@
     <button
       type="button"
       aria-label={`${language.add}: ${language.promptTemplate}`}
-      disabled={promptTemplateStructuralMutationPending}
+      disabled={promptTemplateStructuralMutationPending || promptTemplateUsesSelectedFallback}
       class="font-medium cursor-pointer hover:text-green-500"
       class:cursor-wait={promptTemplateStructuralMutationPending}
-      class:opacity-60={promptTemplateStructuralMutationPending}
+      class:opacity-60={promptTemplateStructuralMutationPending || promptTemplateUsesSelectedFallback}
       onclick={() => {
-        if (promptTemplateStructuralMutationPending) return
+        if (promptTemplateStructuralMutationPending || promptTemplateUsesSelectedFallback) return
         const sequence = beginPromptTemplateStructuralMutation()
         if (sequence === null) return
         if (canUseServerCommands()) flushPendingPromptTemplatePatches()

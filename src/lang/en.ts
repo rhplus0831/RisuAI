@@ -1930,6 +1930,8 @@ export const languageEnglish = {
   loadingChatData: 'Loading Chat Data',
   chatDataLoadFailed: 'Chat data could not be loaded.',
   promptTemplateLoadFailed: 'Prompt template could not be loaded.',
+  promptTemplateSelectedFallbackNotice:
+    'This preset uses the selected fallback prompt template. It is shown read-only to prevent replacing it accidentally.',
   loadingLorebookData: 'Loading Lorebook Data',
   lorebookDataLoadFailed: 'Lorebook data could not be loaded.',
   retry: 'Retry',

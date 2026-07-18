@@ -109,6 +109,7 @@ const hydrationState = vi.hoisted(() => {
   const subscribers = new Set<(value: boolean) => void>()
   const ownerEpochs = new Map<string | null, number>()
   const taintedOwners = new Set<string | null>()
+  const selectedFallbacks = new Map<string, unknown[]>()
   return {
     ensure: vi.fn(
       async (options?: { force?: boolean; promptPresetId?: string | null }) =>
@@ -126,6 +127,15 @@ const hydrationState = vi.hoisted(() => {
     isTainted: (owner: string | null) => taintedOwners.has(owner),
     markTainted: (owner: string | null) => taintedOwners.add(owner),
     resetTaints: () => taintedOwners.clear(),
+    usesSelectedFallback: (owner: string | null = ownerId) => owner !== null && selectedFallbacks.has(owner),
+    cloneSelectedFallback: (owner: string | null = ownerId) => {
+      const fallback = owner === null ? undefined : selectedFallbacks.get(owner)
+      return fallback === undefined ? undefined : JSON.parse(JSON.stringify(fallback))
+    },
+    setSelectedFallback: (owner: string, fallback: unknown[]) => {
+      selectedFallbacks.set(owner, JSON.parse(JSON.stringify(fallback)))
+    },
+    resetSelectedFallbacks: () => selectedFallbacks.clear(),
     setOwner: (value: string | null) => {
       ownerId = value
     },
@@ -228,21 +238,25 @@ vi.mock('src/ts/server/settingsBridge.svelte', () => ({
 
 vi.mock('./promptTemplateHydration', () => ({
   capturePromptTemplateOwnerProjectionEpoch: hydrationState.captureOwnerEpoch,
+  clonePromptTemplateSelectedFallback: hydrationState.cloneSelectedFallback,
   currentPromptTemplateOwnerId: hydrationState.currentOwner,
   hasPromptTemplateOwnerProjectionEpochChanged: hydrationState.hasOwnerEpochChanged,
   ensurePromptTemplateHydrated: hydrationState.ensure,
   isPromptTemplateHydrated: hydrationState.isHydrated,
   markPromptTemplateOwnerAcknowledgementTainted: hydrationState.markTainted,
+  promptTemplateOwnerUsesSelectedFallback: hydrationState.usesSelectedFallback,
   peekPromptTemplateOwnerRevision: () => null,
   promptTemplateHydratedStore: hydrationState.store,
 }))
 vi.mock('src/ts/server/promptTemplateHydration', () => ({
   capturePromptTemplateOwnerProjectionEpoch: hydrationState.captureOwnerEpoch,
+  clonePromptTemplateSelectedFallback: hydrationState.cloneSelectedFallback,
   currentPromptTemplateOwnerId: hydrationState.currentOwner,
   hasPromptTemplateOwnerProjectionEpochChanged: hydrationState.hasOwnerEpochChanged,
   ensurePromptTemplateHydrated: hydrationState.ensure,
   isPromptTemplateHydrated: hydrationState.isHydrated,
   markPromptTemplateOwnerAcknowledgementTainted: hydrationState.markTainted,
+  promptTemplateOwnerUsesSelectedFallback: hydrationState.usesSelectedFallback,
   peekPromptTemplateOwnerRevision: () => null,
   promptTemplateHydratedStore: hydrationState.store,
 }))
@@ -550,6 +564,7 @@ beforeEach(() => {
   hydrationState.setOwner(null)
   hydrationState.resetOwnerEpochs()
   hydrationState.resetTaints()
+  hydrationState.resetSelectedFallbacks()
   hydrationState.ensure.mockClear()
   hydrationState.ensure.mockImplementation(async (options?: { force?: boolean; promptPresetId?: string | null }) =>
     hydrationState.isHydrated(
@@ -2547,6 +2562,53 @@ describe('flushPendingPromptTemplatePatches', () => {
 
       await vi.advanceTimersByTimeAsync(300)
       expect(commandState.commands).toHaveLength(0)
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('PromptSettings renders a selected fallback without deleting or shadowing it', async () => {
+    commandState.revision = 5
+    hydrationState.setOwner('preset-a')
+    hydrationState.setHydrated(true, 'preset-a')
+    const fallback = [promptItemFixture({ ...item('fallback-row', 'fallback text'), name: 'Selected fallback row' })]
+    hydrationState.setSelectedFallback('preset-a', fallback)
+    resourceDatabase.current = {
+      promptSettings: { ...minimalPromptSettings },
+      promptTemplate: cloneJsonValue(fallback),
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      expect(target.querySelector('[data-testid="prompt-template-selected-fallback-notice"]')?.textContent).toContain(
+        language.promptTemplateSelectedFallbackNotice,
+      )
+      expect(target.textContent).toContain('Selected fallback row')
+      expect(getResourceDatabase().promptTemplate).toEqual(fallback)
+      expect(getResourceDatabase().promptPresets[0]).not.toHaveProperty('promptTemplate')
+
+      promptRowToggle(target, 'Selected fallback row').click()
+      await tick()
+      expect(target.querySelector('fieldset')?.hasAttribute('disabled')).toBe(true)
+      expect(
+        target.querySelector<HTMLButtonElement>(`button[aria-label="${language.add}: ${language.promptTemplate}"]`)
+          ?.disabled,
+      ).toBe(true)
+      expect(commandState.commands).toHaveLength(0)
+      expect(getResourceDatabase().promptPresets[0]).not.toHaveProperty('promptTemplate')
     } finally {
       if (component) await unmount(component)
       target.remove()
