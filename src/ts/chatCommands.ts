@@ -123,6 +123,15 @@ export type ChatMutationOutcome =
   | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
   | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
 
+export type ChatGenerationSettingsSaveSettlement =
+  | { status: 'accepted' }
+  | { status: 'queued' }
+  | { status: 'failed'; error: string }
+
+export interface ChatGenerationSettingsSaveOperation {
+  settlement: Promise<ChatGenerationSettingsSaveSettlement>
+}
+
 export const CHAT_IMPORT_TOO_LARGE_ERROR = 'chat_import_too_large'
 
 export interface ActiveChatTarget {
@@ -737,6 +746,7 @@ interface PendingChatGenerationSettingsJob {
   pendingSave: ReturnType<typeof registerPendingChatGenerationSettingsSave>
   durableIntent: DurableMutationIntent
   outbox: PendingMutationHandle
+  settle: (settlement: ChatGenerationSettingsSaveSettlement) => void
 }
 
 interface PreparedChatGenerationSettingsSave {
@@ -2716,19 +2726,43 @@ export function setCurrentChatGreetingIndex(
   return true
 }
 
-export function dispatchSaveChatGenerationSettings(
+function settledChatGenerationSettingsSaveOperation(
+  settlement: ChatGenerationSettingsSaveSettlement,
+): ChatGenerationSettingsSaveOperation {
+  return { settlement: Promise.resolve(settlement) }
+}
+
+function pendingChatGenerationSettingsSaveOperation(): ChatGenerationSettingsSaveOperation & {
+  settle: (settlement: ChatGenerationSettingsSaveSettlement) => void
+} {
+  let resolve!: (settlement: ChatGenerationSettingsSaveSettlement) => void
+  let settled = false
+  const settlement = new Promise<ChatGenerationSettingsSaveSettlement>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return {
+    settlement,
+    settle: (result) => {
+      if (settled) return
+      settled = true
+      resolve(result)
+    },
+  }
+}
+
+export function dispatchSaveChatGenerationSettingsWithOutcome(
   chatId: string,
   generationSettings: ChatGenerationSettings,
   options: ServerCommandTransportOptions = {},
-): boolean {
+): ChatGenerationSettingsSaveOperation | null {
   const commandSettings = cloneJsonValue(generationSettings)
   const rollbackSnapshot = currentChatGenerationSettingsSnapshot(chatId)
-  if (!rollbackSnapshot) return false
+  if (!rollbackSnapshot) return null
   const intent = diffChatGenerationSettings(
     rollbackSnapshot.hadGenerationSettings ? rollbackSnapshot.generationSettings : undefined,
     commandSettings,
   )
-  if (!intent) return true
+  if (!intent) return settledChatGenerationSettingsSaveOperation({ status: 'accepted' })
   const rollback: ChatGenerationSettingsSnapshot = {
     ...rollbackSnapshot,
     attemptedGenerationSettings: commandSettings,
@@ -2741,7 +2775,7 @@ export function dispatchSaveChatGenerationSettings(
     location.chat.generationSettings = cloneJsonValue(commandSettings)
     applied = true
   })
-  if (!applied) return false
+  if (!applied) return null
 
   if (canUseServerCommands()) {
     let state = pendingChatGenerationSettingsSaves.get(chatId)
@@ -2755,6 +2789,16 @@ export function dispatchSaveChatGenerationSettings(
     }
     const durableIntent = chatGenerationSettingsFullDurableIntent(chatId, commandSettings)
     const durableKey = chatResourceOwnerMutationKey(chatId, rollback.characterId)
+    const operation = pendingChatGenerationSettingsSaveOperation()
+    let outbox: PendingMutationHandle
+    try {
+      outbox = stagePendingMutation(durableKey, durableIntent)
+    } catch (error) {
+      restoreChatGenerationSettings(rollback)
+      if (state.jobs.length === 0) pendingChatGenerationSettingsSaves.delete(chatId)
+      operation.settle({ status: 'failed', error: error instanceof Error ? error.message : String(error) })
+      return operation
+    }
     const job: PendingChatGenerationSettingsJob = {
       intent,
       originalTarget: commandSettings,
@@ -2762,12 +2806,25 @@ export function dispatchSaveChatGenerationSettings(
       options,
       pendingSave: registerPendingChatGenerationSettingsSave(chatId, commandSettings),
       durableIntent,
-      outbox: stagePendingMutation(durableKey, durableIntent),
+      outbox,
+      settle: operation.settle,
     }
     state.jobs.push(job)
     enqueueChatGenerationSettingsSave(chatId, state, job)
+    return operation
   }
-  return true
+  return settledChatGenerationSettingsSaveOperation({
+    status: 'failed',
+    error: 'Server commands are unavailable.',
+  })
+}
+
+export function dispatchSaveChatGenerationSettings(
+  chatId: string,
+  generationSettings: ChatGenerationSettings,
+  options: ServerCommandTransportOptions = {},
+): boolean {
+  return dispatchSaveChatGenerationSettingsWithOutcome(chatId, generationSettings, options) !== null
 }
 
 function enqueueChatGenerationSettingsSave(
@@ -2838,6 +2895,8 @@ function executeChatGenerationSettingsQueueSlot(
         if (outcome.disposition === 'retained-without-send') {
           if (outcome.settlement === 'retained') {
             finishRetainedChatGenerationSettingsSave(chatId, state, head, prepared)
+          } else {
+            await finishChatGenerationSettingsSave(chatId, state, head, prepared, { status: 'unavailable' })
           }
           return { status: 'unavailable' }
         }
@@ -2878,6 +2937,7 @@ function finishRetainedChatGenerationSettingsSave(
     generationSettings: cloneJsonValue(prepared.fullCommandInput.generationSettings),
   }
   projectChatGenerationSettingsQueue(chatId, state)
+  job.settle({ status: 'queued' })
 }
 
 function prepareChatGenerationSettingsSave(
@@ -2944,6 +3004,10 @@ async function finishChatGenerationSettingsSave(
 ): Promise<void> {
   if (state.jobs[0] !== job) return
   state.jobs.shift()
+  const settlement: ChatGenerationSettingsSaveSettlement =
+    result.status === 'ok'
+      ? { status: 'accepted' }
+      : { status: 'failed', error: chatGenerationSettingsSaveFailureMessage(result) }
   if (result.status === 'ok') {
     acknowledgePendingChatGenerationSettingsSave(job.pendingSave)
   } else {
@@ -2955,6 +3019,7 @@ async function finishChatGenerationSettingsSave(
   const acknowledgementValid = isChatGenerationSettingsValue(acknowledged)
   if ((result?.status === 'ok' && !acknowledgementValid) || chatGenerationSettingsSaveNeedsReseed(prepared, result)) {
     await reseedChatGenerationSettingsQueue(chatId, prepared.characterId, state)
+    job.settle(settlement)
     return
   }
 
@@ -2968,6 +3033,13 @@ async function finishChatGenerationSettingsSave(
     }
   }
   projectChatGenerationSettingsQueue(chatId, state)
+  job.settle(settlement)
+}
+
+function chatGenerationSettingsSaveFailureMessage(result: ServerCommandResult): string {
+  if (result.status === 'error') return result.error || 'Chat generation settings could not be saved.'
+  if (result.status === 'conflict') return `Server revision conflict (${result.currentRevision}).`
+  return 'Server commands are unavailable.'
 }
 
 function chatGenerationSettingsSaveNeedsReseed(

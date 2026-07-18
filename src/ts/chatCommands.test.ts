@@ -78,6 +78,7 @@ import {
   dispatchReplaceTailMessagesScoped,
   dispatchReplaceMessagesScoped,
   dispatchSaveChatGenerationSettings,
+  dispatchSaveChatGenerationSettingsWithOutcome,
   dispatchSelectChat,
   dispatchStagedChatNoteMutation,
   dispatchTruncateMessagesScoped,
@@ -1831,7 +1832,8 @@ describe('chat command projection helpers', () => {
       },
     }
 
-    expect(dispatchSaveChatGenerationSettings('chat-a', generationSettings)).toBe(true)
+    const operation = dispatchSaveChatGenerationSettingsWithOutcome('chat-a', generationSettings)
+    expect(operation).not.toBeNull()
     expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettings)
 
     await waitForCallCount(calls, 2)
@@ -1853,6 +1855,7 @@ describe('chat command projection helpers', () => {
         },
       },
     ])
+    await expect(operation!.settlement).resolves.toEqual({ status: 'accepted' })
   })
 
   it('reserves a generation-settings save before a synchronously dispatched structural command', async () => {
@@ -2238,8 +2241,10 @@ describe('chat command projection helpers', () => {
     )
 
     try {
-      expect(dispatchSaveChatGenerationSettings('chat-a', firstTarget)).toBe(true)
+      const retainedOperation = dispatchSaveChatGenerationSettingsWithOutcome('chat-a', firstTarget)
+      expect(retainedOperation).not.toBeNull()
       await waitForPendingChatGenerationSettingsSave('chat-a')
+      await expect(retainedOperation!.settlement).resolves.toEqual({ status: 'queued' })
       expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(firstTarget)
       expect(applyCharacterResource({ revision: 11, character: jsonClone(olderCharacter) })).toBe(true)
       expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(firstTarget)
@@ -2534,7 +2539,8 @@ describe('chat command projection helpers', () => {
     }
 
     expect(getDatabase().characters[0].chats[0]).not.toHaveProperty('generationSettings')
-    expect(dispatchSaveChatGenerationSettings('chat-a', nextGenerationSettings)).toBe(true)
+    const operation = dispatchSaveChatGenerationSettingsWithOutcome('chat-a', nextGenerationSettings)
+    expect(operation).not.toBeNull()
     expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(nextGenerationSettings)
 
     withTrustedResourceWrite(() => {
@@ -2558,6 +2564,7 @@ describe('chat command projection helpers', () => {
       },
     ])
     expect(getDatabase().characters[0].chats[1].name).toBe('Concurrent sibling edit')
+    await expect(operation!.settlement).resolves.toEqual({ status: 'failed', error: 'nope' })
   })
 
   it('does not overwrite a destructive refresh after a pending save fails', async () => {

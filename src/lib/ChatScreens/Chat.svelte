@@ -164,6 +164,7 @@
     totalPages?: number
     isComment?: boolean
     isGenerationLoading?: boolean
+    isGenerationPersistenceQueued?: boolean
     generationStage?: number
     disabled?: boolean | 'allBefore'
   }
@@ -211,6 +212,7 @@
     totalPages = 1,
     isComment = false,
     isGenerationLoading = false,
+    isGenerationPersistenceQueued = false,
     generationStage = 0,
     disabled = false,
   }: Props = $props()
@@ -1606,6 +1608,15 @@
 {/snippet}
 
 {#snippet textBox()}
+  {#if isGenerationPersistenceQueued}
+    <div
+      class="mb-2 rounded-sm border border-yellow-500/60 bg-yellow-500/10 px-2 py-1 text-xs text-yellow-600 dark:text-yellow-300"
+      data-risu-generation-persistence="queued"
+      role="status"
+      aria-live="polite">
+      {language.generationPersistenceQueued}
+    </div>
+  {/if}
   {#if editTranslationMode}
     <AutoresizeArea
       bind:value={editTranslationText}

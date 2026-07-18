@@ -1,10 +1,10 @@
 <script lang="ts">
   import { SaveIcon, TrashIcon, UploadIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { alertConfirm, alertInput, alertSelect } from 'src/ts/alert'
+  import { alertConfirm, alertError, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
   import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
   import {
-    applyChatGenerationTogglePreset,
+    applyChatGenerationTogglePresetWithOutcome,
     compareChatGenerationTogglePresetToActiveState,
     deleteChatGenerationTogglePreset,
     getChatGenerationTogglePresets,
@@ -30,6 +30,12 @@
   )
   let presets = $derived.by(() => getChatGenerationTogglePresets())
   let selectedPreset = $derived.by(() => presets.find((preset) => preset.id === selectedPresetId))
+  let applyOperation = 0
+  let applySaveStates = $state<Record<string, { operation: number; status: 'pending' | 'queued' | 'failed' }>>({})
+  let applySaveStatus = $derived(
+    (activeGenerationSettings.identity.chatId && applySaveStates[activeGenerationSettings.identity.chatId]?.status) ||
+      'idle',
+  )
   let selectedPresetComparison = $derived.by(() =>
     selectedPreset ? compareChatGenerationTogglePresetToActiveState(selectedPreset, activeGenerationSettings) : null,
   )
@@ -90,7 +96,27 @@
     const target = captureActiveChatTarget()
     if (!presetId) return
     if (!(await alertConfirm(language.chatGenerationTogglePresetApplyConfirm))) return
-    applyChatGenerationTogglePreset(presetId, { expectedTarget: target })
+    const chatId = target?.chatId
+    if (!chatId) return
+    const operation = ++applyOperation
+    applySaveStates[chatId] = { operation, status: 'pending' }
+    const persistence = applyChatGenerationTogglePresetWithOutcome(presetId, { expectedTarget: target })
+    if (!persistence) {
+      if (applySaveStates[chatId]?.operation === operation) delete applySaveStates[chatId]
+      return
+    }
+    const result = await persistence.settlement
+    if (applySaveStates[chatId]?.operation !== operation) return
+    if (result.status === 'accepted') {
+      delete applySaveStates[chatId]
+    } else {
+      applySaveStates[chatId].status = result.status
+    }
+    if (result.status === 'queued') {
+      alertNormal(language.settingsSaveQueued)
+    } else if (result.status === 'failed') {
+      alertError(language.chatGenerationSettingsSaveFailed(result.error))
+    }
   }
 
   async function deletePreset(): Promise<void> {
@@ -101,7 +127,10 @@
   }
 </script>
 
-<div class="w-full mt-2 flex flex-col gap-1" data-risu-generation-toggle-presets>
+<div
+  class="w-full mt-2 flex flex-col gap-1"
+  data-risu-generation-toggle-presets
+  data-risu-persistence-status={applySaveStatus}>
   <SelectInput
     size="sm"
     className="w-full min-w-0"
@@ -122,7 +151,11 @@
         <span class="truncate">{language.chatGenerationTogglePresetSave}</span>
       </span>
     </Button>
-    <Button size="sm" className="min-w-0" onclick={applyPreset} disabled={applyDisabled}>
+    <Button
+      size="sm"
+      className="min-w-0"
+      onclick={applyPreset}
+      disabled={applyDisabled || applySaveStatus === 'pending'}>
       <span class="flex items-center justify-center gap-1 min-w-0">
         <UploadIcon size={14} />
         <span class="truncate">{language.chatGenerationTogglePresetApply}</span>

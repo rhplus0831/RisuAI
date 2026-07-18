@@ -14,7 +14,13 @@ import {
   type ChatGenerationSettingsMissingReason,
   type ChatGenerationSettingsReadiness,
 } from './chatGenerationSettings'
-import { dispatchSaveChatGenerationSettings, isActiveChatTargetFresh, type ActiveChatTarget } from './chatCommands'
+import {
+  dispatchSaveChatGenerationSettings,
+  dispatchSaveChatGenerationSettingsWithOutcome,
+  isActiveChatTargetFresh,
+  type ActiveChatTarget,
+  type ChatGenerationSettingsSaveOperation,
+} from './chatCommands'
 import { language } from '../lang'
 import type { ServerCommandTransportOptions } from './server/commands'
 import { getResourceDatabase } from './server/resourceState.svelte'
@@ -291,11 +297,18 @@ export function saveActiveChatGenerationSettingsPatch(
   patch: ActiveChatGenerationSettingsPatch,
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
-  if (hasStaleExpectedTarget(options)) return false
+  return saveActiveChatGenerationSettingsPatchWithOutcome(patch, options) !== null
+}
+
+export function saveActiveChatGenerationSettingsPatchWithOutcome(
+  patch: ActiveChatGenerationSettingsPatch,
+  options: ActiveChatGenerationSettingsSaveOptions = {},
+): ChatGenerationSettingsSaveOperation | null {
+  if (hasStaleExpectedTarget(options)) return null
   const state = resolveActiveChatGenerationSettings()
   const chatId = state.identity.chatId
-  if (!chatId) return false
-  return dispatchSaveChatGenerationSettings(
+  if (!chatId) return null
+  return dispatchSaveChatGenerationSettingsWithOutcome(
     chatId,
     createActiveChatGenerationSettingsPatch(patch, state),
     transportOptions(options),
@@ -306,11 +319,18 @@ export function saveActiveChatGenerationSettings(
   generationSettings: ChatGenerationSettings,
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
-  if (hasStaleExpectedTarget(options)) return false
+  return saveActiveChatGenerationSettingsWithOutcome(generationSettings, options) !== null
+}
+
+export function saveActiveChatGenerationSettingsWithOutcome(
+  generationSettings: ChatGenerationSettings,
+  options: ActiveChatGenerationSettingsSaveOptions = {},
+): ChatGenerationSettingsSaveOperation | null {
+  if (hasStaleExpectedTarget(options)) return null
   const state = resolveActiveChatGenerationSettings()
   const chatId = state.identity.chatId
-  if (!chatId) return false
-  return dispatchSaveChatGenerationSettings(
+  if (!chatId) return null
+  return dispatchSaveChatGenerationSettingsWithOutcome(
     chatId,
     normalizeActiveChatGenerationSettingsForSave(state, generationSettings),
     transportOptions(options),
@@ -327,14 +347,30 @@ export function saveActiveChatGenerationSettingsSelection(
   return saveActiveChatGenerationSettingsPatch(selection, options)
 }
 
+export function saveActiveChatGenerationSettingsSelectionWithOutcome(
+  selection: Pick<
+    ActiveChatGenerationSettingsPatch,
+    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId'
+  >,
+  options: ActiveChatGenerationSettingsSaveOptions = {},
+): ChatGenerationSettingsSaveOperation | null {
+  return saveActiveChatGenerationSettingsPatchWithOutcome(selection, options)
+}
+
 export function saveActiveChatGenerationSettingsDefaultValues(
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
-  if (hasStaleExpectedTarget(options)) return false
+  return saveActiveChatGenerationSettingsDefaultValuesWithOutcome(options) !== null
+}
+
+export function saveActiveChatGenerationSettingsDefaultValuesWithOutcome(
+  options: ActiveChatGenerationSettingsSaveOptions = {},
+): ChatGenerationSettingsSaveOperation | null {
+  if (hasStaleExpectedTarget(options)) return null
   const state = resolveActiveChatGenerationSettings()
   const chatId = state.identity.chatId
-  if (!chatId) return false
-  return dispatchSaveChatGenerationSettings(
+  if (!chatId) return null
+  return dispatchSaveChatGenerationSettingsWithOutcome(
     chatId,
     createActiveChatGenerationSettingsDefaultValuesPatch(state),
     transportOptions(options),
@@ -348,12 +384,27 @@ export function saveActiveChatJailbreakToggleGenerationSettings(
   return saveActiveChatGenerationSettingsPatch({ jailbreakToggle }, options)
 }
 
+export function saveActiveChatJailbreakToggleGenerationSettingsWithOutcome(
+  jailbreakToggle: boolean,
+  options: ActiveChatGenerationSettingsSaveOptions = {},
+): ChatGenerationSettingsSaveOperation | null {
+  return saveActiveChatGenerationSettingsPatchWithOutcome({ jailbreakToggle }, options)
+}
+
 export function saveActiveChatSidebarToggleGenerationSettings(
   key: string,
   value: string,
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
   return saveActiveChatGenerationSettingsPatch({ sidebarToggles: { [key]: value } }, options)
+}
+
+export function saveActiveChatSidebarToggleGenerationSettingsWithOutcome(
+  key: string,
+  value: string,
+  options: ActiveChatGenerationSettingsSaveOptions = {},
+): ChatGenerationSettingsSaveOperation | null {
+  return saveActiveChatGenerationSettingsPatchWithOutcome({ sidebarToggles: { [key]: value } }, options)
 }
 
 function hasStaleExpectedTarget(options: ActiveChatGenerationSettingsSaveOptions): boolean {

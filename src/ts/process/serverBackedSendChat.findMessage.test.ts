@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 // Terminal assistant lookup scans newest-to-oldest without copying the transcript.
 
@@ -56,6 +57,7 @@ import { getResourceDatabase, replaceResourceDatabase } from '../server/resource
 import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'
 import type { ServerChatMessagePatch, ServerChatRestoration } from './request/serverChatEvents'
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
+import { acknowledgeHydratedGenerationPersistences, queuedGenerationPersistences } from './generationPersistenceState'
 
 const testDatabaseState = {
   get db() {
@@ -233,10 +235,12 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     ttsMock.say.mockResolvedValue(undefined)
     hydrationMock.hydrate.mockReset()
     hydrationMock.hydrate.mockResolvedValue(undefined)
+    queuedGenerationPersistences.set([])
   })
 
   afterEach(() => {
     resetRerollNavigation()
+    queuedGenerationPersistences.set([])
     testDatabaseState.db = originalDb
   })
 
@@ -657,6 +661,72 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(result.status).toBe('failed')
     expect(target.message).toEqual([])
     expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
+  })
+
+  it('keeps a retry-queued reply visibly provisional until authoritative persistence', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message = [terminalMessage('streamed and queued')]
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'error',
+        error: 'database temporarily unavailable',
+        persistenceDisposition: 'queued',
+        generationProjection: {
+          characterId: 'char-stable',
+          chatId: 'chat-target',
+          generationId: 'gen-stable',
+          mode: 'send',
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'streamed and queued',
+        appended: true,
+      },
+    })
+
+    expect(result.status).toBe('failed')
+    expect(target.message[0].data).toBe('streamed and queued')
+    expect(get(queuedGenerationPersistences)).toEqual([
+      { chatId: 'chat-target', messageId: 'gen-stable', generationId: 'gen-stable' },
+    ])
+  })
+
+  it('clears provisional state only when hydration confirms the queued generation', () => {
+    queuedGenerationPersistences.set([
+      { chatId: 'chat-target', messageId: 'continued-message', generationId: 'new-generation' },
+    ])
+
+    acknowledgeHydratedGenerationPersistences('chat-target', [
+      {
+        role: 'char',
+        data: 'old persisted text',
+        chatId: 'continued-message',
+        generationInfo: { generationId: 'old-generation' },
+      },
+    ])
+    expect(get(queuedGenerationPersistences)).toHaveLength(1)
+
+    acknowledgeHydratedGenerationPersistences('chat-target', [
+      {
+        role: 'char',
+        data: 'new persisted text',
+        chatId: 'continued-message',
+        generationInfo: { generationId: 'new-generation' },
+      },
+    ])
+    expect(get(queuedGenerationPersistences)).toEqual([])
   })
 
   it('does not remove a newer edit of an optimistic reply after persistence rejection', async () => {

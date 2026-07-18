@@ -31,6 +31,7 @@
     popupEditor?: PopupEditorAvailability
     popupEditorContext?: unknown
     ariaLabel?: string
+    disabled?: boolean
   }
 
   let {
@@ -52,6 +53,7 @@
     popupEditor = 'auto',
     popupEditorContext = undefined,
     ariaLabel,
+    disabled = false,
   }: Props = $props()
   let selectingAutoComplete = $state(0)
   // highlight is captured once when the input is created.
@@ -71,7 +73,7 @@
     (popupEditor === 'auto' && (['32', '36', 'full'].includes(height) || (height === 'default' && $textAreaSize >= -2)))
 
   const openPopupEditor = async () => {
-    if (!isPopupEditorEnabled()) {
+    if (disabled || !isPopupEditorEnabled()) {
       return
     }
 
@@ -380,6 +382,8 @@
   class:min-h-64={height === 'default' && $textAreaSize === 3}
   class:min-h-72={height === 'default' && $textAreaSize === 4}
   class:min-h-80={height === 'default' && $textAreaSize === 5}
+  class:cursor-not-allowed={disabled}
+  class:opacity-60={disabled}
   class:mb-4={margin === 'bottom'}
   class:mb-2={margin === 'both'}
   class:mt-4={margin === 'top'}
@@ -398,6 +402,7 @@
       {autocomplete}
       {placeholder}
       {id}
+      {disabled}
       aria-label={ariaLabel}
       bind:value
       oninput={(e) => {
@@ -439,6 +444,7 @@
     <div
       class="w-full h-full bg-transparent focus-within:outline-hidden resize-none absolute top-0 left-0 z-50 overflow-y-auto px-4 py-2 wrap-break-word whitespace-pre-wrap"
       class:pr-10={isPopupEditorEnabled()}
+      class:pointer-events-none={disabled}
       contenteditable="true"
       bind:textContent={value}
       onkeydown={(e) => {
@@ -446,7 +452,8 @@
       }}
       role="textbox"
       aria-label={ariaLabel}
-      tabindex="0"
+      aria-disabled={disabled}
+      tabindex={disabled ? -1 : 0}
       oninput={(e) => {
         value = e.currentTarget.textContent ?? ''
         onInput(value)
@@ -463,6 +470,7 @@
   {#if isPopupEditorEnabled()}
     <button
       type="button"
+      {disabled}
       class="absolute right-1 top-1 z-60 flex h-7 w-7 items-center justify-center rounded-md text-textcolor2 transition-colors hover:bg-darkbutton hover:text-textcolor focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-borderc"
       aria-label={language.hotkeyDesc.popupEditor}
       title={language.hotkeyDesc.popupEditor}

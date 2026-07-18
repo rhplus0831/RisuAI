@@ -1,6 +1,7 @@
 <script lang="ts">
   import { MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
+  import { alertError, alertNormal } from 'src/ts/alert'
   import { getDatabase, type character } from 'src/ts/storage/database.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
@@ -20,13 +21,13 @@
     setCharacterInputTranslationHookWithOutcome,
     setCharacterSupaMemoryWithOutcome,
   } from 'src/ts/characterCommands'
-  import { alertError, alertNormal } from 'src/ts/alert'
   import {
     ensureActiveChatSidebarToggleDefaults,
     resolveActiveChatGenerationSettings,
-    saveActiveChatJailbreakToggleGenerationSettings,
-    saveActiveChatSidebarToggleGenerationSettings,
+    saveActiveChatJailbreakToggleGenerationSettingsWithOutcome,
+    saveActiveChatSidebarToggleGenerationSettingsWithOutcome,
   } from 'src/ts/activeChatGenerationSettings'
+  import type { ChatGenerationSettingsSaveOperation } from 'src/ts/chatCommands'
   import type {
     ChatGenerationDisplayedSidebarToggle,
     ChatGenerationRequiredSidebarToggle,
@@ -69,6 +70,10 @@
     supaMemory: 'idle',
     inputTranslationHook: 'idle',
   })
+  let generationSettingsSaveOperation = 0
+  let generationSettingsSaveStates = $state<
+    Record<string, { operation: number; status: 'pending' | 'queued' | 'failed'; attempted: string | boolean }>
+  >({})
 
   let activeGenerationSettings = $derived.by(() =>
     resolveActiveChatGenerationSettings({
@@ -95,8 +100,55 @@
     return activeGenerationSettings.settings?.jailbreakToggle === true
   }
 
+  function trackGenerationSettingsSave(
+    field: string,
+    attempted: string | boolean,
+    save: () => ChatGenerationSettingsSaveOperation | null,
+  ): void {
+    const chatId = activeGenerationSettings.identity.chatId
+    if (!chatId) return
+    const stateKey = `${chatId}\u0000${field}`
+    if (
+      generationSettingsSaveStates[stateKey]?.status === 'pending' &&
+      generationSettingsSaveStates[stateKey]?.attempted === attempted
+    ) {
+      return
+    }
+    const operation = ++generationSettingsSaveOperation
+    generationSettingsSaveStates[stateKey] = { operation, status: 'pending', attempted }
+    const persistence = save()
+    if (!persistence) {
+      if (generationSettingsSaveStates[stateKey]?.operation === operation) delete generationSettingsSaveStates[stateKey]
+      return
+    }
+    void persistence.settlement.then((result) => {
+      if (generationSettingsSaveStates[stateKey]?.operation !== operation) return
+      if (result.status === 'accepted') {
+        delete generationSettingsSaveStates[stateKey]
+        return
+      }
+      generationSettingsSaveStates[stateKey].status = result.status
+      if (result.status === 'queued') {
+        alertNormal(language.settingsSaveQueued)
+      } else {
+        alertError(language.chatGenerationSettingsSaveFailed(result.error))
+      }
+    })
+  }
+
+  function generationSettingsPersistenceStatus(field: string): 'idle' | 'pending' | 'queued' | 'failed' {
+    const chatId = activeGenerationSettings.identity.chatId
+    return (chatId && generationSettingsSaveStates[`${chatId}\u0000${field}`]?.status) || 'idle'
+  }
+
+  function generationSettingsSavePending(field: string): boolean {
+    return generationSettingsPersistenceStatus(field) === 'pending'
+  }
+
   function setJailbreakToggleValue(value: boolean): void {
-    saveActiveChatJailbreakToggleGenerationSettings(value)
+    trackGenerationSettingsSave('jailbreakToggle', value, () =>
+      saveActiveChatJailbreakToggleGenerationSettingsWithOutcome(value),
+    )
   }
 
   function getToggleValue(key: string): string {
@@ -104,7 +156,9 @@
   }
 
   function setToggleValue(key: string, value: string): void {
-    saveActiveChatSidebarToggleGenerationSettings(key, value)
+    trackGenerationSettingsSave(`sidebarToggles.${key}`, value, () =>
+      saveActiveChatSidebarToggleGenerationSettingsWithOutcome(key, value),
+    )
   }
 
   async function setSupaMemoryValue(value: boolean): Promise<void> {
@@ -242,6 +296,7 @@
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
         data-risu-input-kind="select"
+        data-risu-persistence-status={generationSettingsPersistenceStatus(`sidebarToggles.${toggle.key}`)}
         data-risu-toggle-preset-different={isSidebarTogglePresetDifferent(toggle.key) ? 'true' : 'false'}
         class:bg-red-900={isSidebarTogglePresetDifferent(toggle.key)}
         class:rounded-sm={isSidebarTogglePresetDifferent(toggle.key)}>
@@ -249,6 +304,7 @@
         <SelectInput
           className="w-32"
           ariaLabel={toggle.label}
+          disabled={generationSettingsSavePending(`sidebarToggles.${toggle.key}`)}
           bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, String(value))}>
           {#each toggle.options as option, i}
             <OptionInput value={i.toString()}>{option}</OptionInput>
@@ -263,6 +319,7 @@
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
         data-risu-input-kind="text"
+        data-risu-persistence-status={generationSettingsPersistenceStatus(`sidebarToggles.${toggle.key}`)}
         data-risu-toggle-preset-different={isSidebarTogglePresetDifferent(toggle.key) ? 'true' : 'false'}
         class:bg-red-900={isSidebarTogglePresetDifferent(toggle.key)}
         class:rounded-sm={isSidebarTogglePresetDifferent(toggle.key)}>
@@ -270,6 +327,7 @@
         <TextInput
           className="w-32"
           ariaLabel={toggle.label}
+          disabled={generationSettingsSavePending(`sidebarToggles.${toggle.key}`)}
           bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)} />
       </div>
     {:else if toggle.kind === 'textarea'}
@@ -280,6 +338,7 @@
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
         data-risu-input-kind="textarea"
+        data-risu-persistence-status={generationSettingsPersistenceStatus(`sidebarToggles.${toggle.key}`)}
         data-risu-toggle-preset-different={isSidebarTogglePresetDifferent(toggle.key) ? 'true' : 'false'}
         class:bg-red-900={isSidebarTogglePresetDifferent(toggle.key)}
         class:rounded-sm={isSidebarTogglePresetDifferent(toggle.key)}>
@@ -288,6 +347,7 @@
           className="w-32"
           height="20"
           ariaLabel={toggle.label}
+          disabled={generationSettingsSavePending(`sidebarToggles.${toggle.key}`)}
           bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)} />
       </div>
     {:else}
@@ -298,12 +358,14 @@
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
         data-risu-input-kind="checkbox"
+        data-risu-persistence-status={generationSettingsPersistenceStatus(`sidebarToggles.${toggle.key}`)}
         data-risu-selected={getToggleValue(toggle.key) === '1' ? 'true' : 'false'}
         data-risu-toggle-preset-different={isSidebarTogglePresetDifferent(toggle.key) ? 'true' : 'false'}
         class:bg-red-900={isSidebarTogglePresetDifferent(toggle.key)}
         class:rounded-sm={isSidebarTogglePresetDifferent(toggle.key)}>
         <CheckInput
           check={getToggleValue(toggle.key) === '1'}
+          disabled={generationSettingsSavePending(`sidebarToggles.${toggle.key}`)}
           {reverse}
           name={toggle.label}
           onChange={(check) => {
@@ -327,12 +389,14 @@
         data-risu-toggle-key="jailbreakToggle"
         data-risu-toggle-kind="jailbreak"
         data-risu-input-kind="checkbox"
+        data-risu-persistence-status={generationSettingsPersistenceStatus('jailbreakToggle')}
         data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}
         data-risu-toggle-preset-different={isJailbreakTogglePresetDifferent() ? 'true' : 'false'}
         class:bg-red-900={isJailbreakTogglePresetDifferent()}
         class:rounded-sm={isJailbreakTogglePresetDifferent()}>
         <CheckInput
           bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
+          disabled={generationSettingsSavePending('jailbreakToggle')}
           name={language.jailbreakToggle}
           reverse />
       </div>
@@ -397,12 +461,14 @@
       data-risu-toggle-key="jailbreakToggle"
       data-risu-toggle-kind="jailbreak"
       data-risu-input-kind="checkbox"
+      data-risu-persistence-status={generationSettingsPersistenceStatus('jailbreakToggle')}
       data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}
       data-risu-toggle-preset-different={isJailbreakTogglePresetDifferent() ? 'true' : 'false'}
       class:bg-red-900={isJailbreakTogglePresetDifferent()}
       class:rounded-sm={isJailbreakTogglePresetDifferent()}>
       <CheckInput
         bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
+        disabled={generationSettingsSavePending('jailbreakToggle')}
         name={language.jailbreakToggle} />
     </div>
   {/if}

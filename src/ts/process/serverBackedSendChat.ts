@@ -28,6 +28,7 @@ import { captureChatMessageMutationIntentEpoch } from '../server/chatMessageMuta
 import { finalizeServerBackedInlayMessage } from './inlayFinalization'
 import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
 import type { StreamMessageProjection } from './postGeneration/streamResponse'
+import { clearGenerationPersistence, markGenerationPersistenceQueued } from './generationPersistenceState'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -589,12 +590,30 @@ export async function applyServerBackedTerminal(args: {
       })
     }
     if (args.terminal.persistenceDisposition === 'rejected') {
+      const generationId =
+        args.terminal.generationProjection?.generationId ??
+        args.streamProjection?.generationId ??
+        args.generationInfo.generationId
+      if (target.chatId && generationId) clearGenerationPersistence(target.chatId, generationId)
       await reconcileRejectedGenerationProjection({
         selectedChar: args.selectedChar,
         selectedChat: args.selectedChat,
         target,
         streamProjection: args.streamProjection,
       })
+    } else if (args.terminal.persistenceDisposition === 'queued') {
+      const generationId =
+        args.terminal.generationProjection?.generationId ??
+        args.streamProjection?.generationId ??
+        args.generationInfo.generationId
+      const messageId =
+        args.streamProjection?.messageId ??
+        args.terminal.generationProjection?.targetMessageId ??
+        args.targetMessageId ??
+        generationId
+      if (target.chatId && generationId && messageId) {
+        markGenerationPersistenceQueued({ chatId: target.chatId, messageId, generationId })
+      }
     }
     return {
       status: 'failed',
@@ -638,6 +657,7 @@ export async function applyServerBackedTerminal(args: {
   const resendChat = !!postGen?.resendChat
   const generationId = args.generationInfo.generationId ?? ''
   const terminalTarget = targetFromPayloadOrContext(postGen?.messagePatch, contextTarget)
+  if (terminalTarget.chatId && generationId) clearGenerationPersistence(terminalTarget.chatId, generationId)
   type InlayFinalizationState = {
     messageId: string
     expectedServerData: string

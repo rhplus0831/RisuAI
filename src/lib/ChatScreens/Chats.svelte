@@ -11,6 +11,7 @@
   import { didChatOwnerChange } from './ChatsUnread'
   import { scrollElementToContainerStart } from './chatScroll'
   import { isMemoryLimitMessage } from './memoryLimitMarker'
+  import { queuedGenerationPersistences } from 'src/ts/process/generationPersistenceState'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -55,7 +56,9 @@
     const userImage = getCharImage(userIcon, 'css')
     const simpleChar = createSimpleCharacter(currentCharacter)
     const database = getDatabase()
-    const lastMemoryId = currentCharacter.chats?.[currentCharacter.chatPage]?.lastMemory
+    const currentChat = currentCharacter.chats?.[currentCharacter.chatPage]
+    const currentChatId = currentChat?.id
+    const lastMemoryId = currentChat?.lastMemory
     const { loadStart, loadEnd } = getTranscriptWindowRange({
       messageCount: messages.length,
       loadPages,
@@ -72,6 +75,7 @@
       name: string
       character: ReturnType<typeof createSimpleCharacter>
       isLastMemory: boolean
+      isGenerationPersistenceQueued: boolean
     }[] = []
 
     for (let i = loadStart; i >= loadEnd; i--) {
@@ -88,6 +92,13 @@
         largePortrait: messageLargePortrait,
         name: message.role === 'user' ? currentUsername : getCharacterDisplayName(currentCharacter),
         character: simpleChar,
+        isGenerationPersistenceQueued:
+          !!currentChatId &&
+          $queuedGenerationPersistences.some(
+            (entry) =>
+              entry.chatId === currentChatId &&
+              (entry.messageId === message.chatId || entry.generationId === message.generationInfo?.generationId),
+          ),
         isLastMemory: isMemoryLimitMessage(database.showMemoryLimit, lastMemoryId, message.chatId),
       })
     }
@@ -178,6 +189,7 @@
           row.idx === messages.length - 1 &&
           row.message.role === 'char' &&
           row.message.data === ''}
+        isGenerationPersistenceQueued={row.isGenerationPersistenceQueued}
         generationStage={$chatProcessStage}
         disabled={row.message.disabled ?? false} />
     </div>

@@ -41,6 +41,9 @@ export const languageEnglish = {
     `${name} was removed on this device and the change is queued. It will retry automatically.`,
   bookmarkRemoveFailed: (name: string) => `${name} could not be removed. The bookmark was restored.`,
   settingsSaveQueued: 'This settings change is saved on this device and queued. It will retry automatically.',
+  chatGenerationSettingsSaveFailed: (detail: string) =>
+    `Chat generation settings could not be saved.${detail ? ` ${detail}` : ''}`,
+  generationPersistenceQueued: 'This reply is waiting to be saved and remains provisional.',
   alternateGreetingMutationQueued:
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',
   alternateGreetingMutationFailed:

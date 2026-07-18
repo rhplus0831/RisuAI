@@ -501,9 +501,9 @@ beforeEach(() => {
   document.body.appendChild(target)
   alertSpies.alertConfirm.mockReset()
   alertSpies.alertConfirm.mockResolvedValue(false)
+  alertSpies.alertError.mockReset()
   alertSpies.alertInput.mockReset()
   alertSpies.alertInput.mockResolvedValue('')
-  alertSpies.alertError.mockReset()
   alertSpies.alertNormal.mockReset()
   alertSpies.alertSelect.mockReset()
   alertSpies.alertSelect.mockResolvedValue('2')
@@ -672,6 +672,28 @@ describe('sidebar chat generation settings controls', () => {
       baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
       patch: { agentPresetId: '' },
     })
+  })
+
+  it('marks Agent Preset selection pending and reports its exact failed save', async () => {
+    const { calls, failGenerationSettingsSave } = stubDeferredFailedGenerationSettingsFetch()
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const select = agentPresetSelect()
+    select.value = 'agent-preset-a'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    await waitForGenerationSettingsSaveCount(calls, 1)
+
+    expect(pickerControl('agent-preset').dataset.risuPersistenceStatus).toBe('pending')
+    expect(agentPresetSelect().disabled).toBe(true)
+
+    failGenerationSettingsSave()
+    await vi.waitFor(() => {
+      expect(pickerControl('agent-preset').dataset.risuPersistenceStatus).toBe('failed')
+    })
+    expect(agentPresetSelect().disabled).toBe(false)
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.chatGenerationSettingsSaveFailed('forced rollback'))
   })
 
   it('shows missing selected Agent Preset as an actionable error', async () => {
@@ -863,6 +885,8 @@ describe('sidebar chat generation settings controls', () => {
     expect(activeChat().generationSettings?.jailbreakToggle).toBe(false)
     expect(jailbreakCheckbox().checked).toBe(false)
     expect(jailbreakControl().dataset.risuSelected).toBe('false')
+    expect(jailbreakControl().dataset.risuPersistenceStatus).toBe('pending')
+    expect(jailbreakCheckbox().disabled).toBe(true)
 
     failGenerationSettingsSave()
     await vi.waitFor(() => {
@@ -888,6 +912,8 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerControl('persona').textContent).toContain('Persona Alpha')
     expect(jailbreakCheckbox().checked).toBe(true)
     expect(jailbreakControl().dataset.risuSelected).toBe('true')
+    expect(jailbreakControl().dataset.risuPersistenceStatus).toBe('failed')
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.chatGenerationSettingsSaveFailed('forced rollback'))
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
@@ -898,6 +924,34 @@ describe('sidebar chat generation settings controls', () => {
       baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
       patch: { jailbreakToggle: false },
     })
+  })
+
+  it('does not apply a pending or failed field status to a newly selected chat', async () => {
+    const { calls, failGenerationSettingsSave } = stubDeferredFailedGenerationSettingsFetch()
+    mountToggles()
+    await tick()
+
+    jailbreakCheckbox().click()
+    await tick()
+    await waitForGenerationSettingsSaveCount(calls, 1)
+    expect(jailbreakControl().dataset.risuPersistenceStatus).toBe('pending')
+
+    testDatabaseState().characters[0].chatPage = 1
+    await tick()
+    expect(activeChat().id).toBe('chat-b')
+    expect(jailbreakControl().dataset.risuPersistenceStatus).toBe('idle')
+    expect(jailbreakCheckbox().disabled).toBe(false)
+
+    failGenerationSettingsSave()
+    await vi.waitFor(() => expect(alertSpies.alertError).toHaveBeenCalledTimes(1))
+    await tick()
+    expect(activeChat().id).toBe('chat-b')
+    expect(jailbreakControl().dataset.risuPersistenceStatus).toBe('idle')
+    expect(jailbreakCheckbox().disabled).toBe(false)
+
+    testDatabaseState().characters[0].chatPage = 0
+    await tick()
+    expect(jailbreakControl().dataset.risuPersistenceStatus).toBe('failed')
   })
 
   it('renders preset, persona, and toggle values from the active chat while switching chats', async () => {
@@ -1051,6 +1105,29 @@ describe('sidebar chat generation settings controls', () => {
     expect(selectToggleInput('mood').getAttribute('aria-label')).toBe('Mood')
     expect(textToggleInput('note').getAttribute('aria-label')).toBe('Note')
     expect(textareaToggleInput('details').getAttribute('aria-label')).toBe('Details')
+  })
+
+  it('disables a textarea toggle while its exact save is pending', async () => {
+    const { calls, failGenerationSettingsSave } = stubDeferredFailedGenerationSettingsFetch()
+    testDatabaseState().promptPresets[0].customPromptTemplateToggle = 'details=Details=textarea'
+    activeChat().generationSettings!.sidebarToggles = { details: 'before', moduleFlag: '1' }
+
+    mountToggles()
+    await tick()
+
+    const textarea = textareaToggleInput('details') as HTMLTextAreaElement
+    textarea.value = 'after'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    await vi.waitFor(() => expect(activeChat().generationSettings?.sidebarToggles?.details).toBe('after'))
+    await waitForGenerationSettingsSaveCount(calls, 1)
+
+    expect(toggleControl('details').dataset.risuPersistenceStatus).toBe('pending')
+    expect((textareaToggleInput('details') as HTMLTextAreaElement).disabled).toBe(true)
+
+    failGenerationSettingsSave()
+    await vi.waitFor(() => expect(toggleControl('details').dataset.risuPersistenceStatus).toBe('failed'))
+    expect((textareaToggleInput('details') as HTMLTextAreaElement).disabled).toBe(false)
   })
 
   it('updates mounted active-chat controls after a character-row projection changes generation settings', async () => {
@@ -1493,6 +1570,26 @@ describe('sidebar chat generation settings controls', () => {
     expect(activeChat().generationSettings?.sidebarToggles?.note).toBe('beta-note')
   })
 
+  it('marks reset-to-defaults pending and reports its failed save', async () => {
+    const { calls, failGenerationSettingsSave } = stubDeferredFailedGenerationSettingsFetch()
+    alertSpies.alertConfirm.mockResolvedValueOnce(true)
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    resetDefaultsButton().click()
+    await vi.waitFor(() => expect(alertSpies.alertConfirm).toHaveBeenCalled())
+    await flushAsyncWork()
+    await waitForGenerationSettingsSaveCount(calls, 1)
+    const reset = elementBySelector<HTMLElement>('[data-risu-generation-reset-defaults]', 'reset defaults')
+    expect(reset.dataset.risuPersistenceStatus).toBe('pending')
+    expect(resetDefaultsButton().disabled).toBe(true)
+
+    failGenerationSettingsSave()
+    await vi.waitFor(() => expect(reset.dataset.risuPersistenceStatus).toBe('failed'))
+    expect(resetDefaultsButton().disabled).toBe(false)
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.chatGenerationSettingsSaveFailed('forced rollback'))
+  })
+
   it('renders reset toggle defaults below Toggle HypaMemory in the chat sidebar controls', async () => {
     testDatabaseState().hypaV3 = true
 
@@ -1630,6 +1727,41 @@ describe('sidebar chat generation settings controls', () => {
         },
       },
     })
+  })
+
+  it('marks saved-toggle preset application pending and reports its failed save', async () => {
+    const { calls, failGenerationSettingsSave } = stubDeferredFailedGenerationSettingsFetch()
+    testDatabaseState().chatGenerationTogglePresets = [
+      {
+        id: 'saved-opposite',
+        name: 'Opposite',
+        createdAt: 1,
+        updatedAt: 1,
+        jailbreakToggle: false,
+        sidebarToggles: { mood: '0', flag: '0', note: '', moduleFlag: '0' },
+        sidebarToggleKinds: {
+          mood: 'select',
+          flag: 'boolean',
+          note: 'text',
+          moduleFlag: 'boolean',
+        },
+      },
+    ]
+    alertSpies.alertConfirm.mockResolvedValueOnce(true)
+    mountToggles()
+    await tick()
+    await chooseTogglePreset('saved-opposite')
+
+    togglePresetButton(1).click()
+    await vi.waitFor(() => expect(alertSpies.alertConfirm).toHaveBeenCalled())
+    await flushAsyncWork()
+    await waitForGenerationSettingsSaveCount(calls, 1)
+    expect(togglePresetRoot().dataset.risuPersistenceStatus).toBe('pending')
+    expect(togglePresetButton(1).disabled).toBe(true)
+
+    failGenerationSettingsSave()
+    await vi.waitFor(() => expect(togglePresetRoot().dataset.risuPersistenceStatus).toBe('failed'))
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.chatGenerationSettingsSaveFailed('forced rollback'))
   })
 
   it('disables saving but allows applying a selected toggle preset when the active chat has different toggle types', async () => {

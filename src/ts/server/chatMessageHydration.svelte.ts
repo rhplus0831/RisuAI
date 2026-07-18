@@ -36,6 +36,7 @@ import {
   markChatBodyResourceRevision,
 } from './resourceState.svelte'
 import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
+import { acknowledgeHydratedGenerationPersistences } from '../process/generationPersistenceState'
 
 export const BULK_HYDRATION_CONCURRENCY = 4
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_DISPLAY_TAIL_COUNT
@@ -374,6 +375,7 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
       markChatBodyResourceRevision(chatId, result.revision)
       markChatBodyProjectionApplied(chatId)
       reapplyRetainedChatBodyProjections(chatId)
+      acknowledgeHydratedGenerationPersistences(chatId, result.message as Message[])
       if (wantsFullHydration || !range || isFullRange(range.start, range.total, result.message.length)) {
         hydratedChatIds.add(chatId)
       }
@@ -461,6 +463,7 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
       markChatBodyResourceRevision(chatId, result.revision)
       markChatBodyProjectionApplied(chatId)
       reapplyRetainedChatBodyProjections(chatId)
+      acknowledgeHydratedGenerationPersistences(chatId, hydration.message as Message[])
       hydratedChatIds.add(chatId)
       refreshPendingFreshnessAfterHydration(chatId, freshness)
     }
@@ -575,6 +578,7 @@ export function applyServerChatMessagesResource(
   if (!applied) return false
   advanceChatProjectionEpoch(chatId)
   reapplyRetainedChatBodyProjections(chatId)
+  acknowledgeHydratedGenerationPersistences(chatId, message as Message[])
   if (!range || isFullRange(range.start, range.total, message.length)) {
     hydratedChatIds.add(chatId)
   }

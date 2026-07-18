@@ -1,7 +1,7 @@
 import {
   createActiveChatGenerationSettingsPatch,
   resolveActiveChatGenerationSettings,
-  saveActiveChatGenerationSettings,
+  saveActiveChatGenerationSettingsWithOutcome,
   type ActiveChatGenerationSettingsSaveOptions,
   type ActiveChatGenerationSettingsState,
 } from './activeChatGenerationSettings'
@@ -18,6 +18,7 @@ import {
 import { applyServerBackedSettingsPatch } from './server/settingsBridge.svelte'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { isActiveChatTargetFresh } from './chatCommands'
+import type { ChatGenerationSettingsSaveOperation } from './chatCommands'
 import { createNonSecurityUuid } from './nonSecurityUuid'
 
 const CHAT_GENERATION_TOGGLE_PRESETS_FIELD = 'chatGenerationTogglePresets' as const
@@ -95,13 +96,20 @@ export function applyChatGenerationTogglePreset(
   presetId: string,
   options: Pick<ActiveChatGenerationSettingsSaveOptions, 'expectedTarget'> = {},
 ): boolean {
-  if (options.expectedTarget !== undefined && !isActiveChatTargetFresh(options.expectedTarget)) return false
+  return applyChatGenerationTogglePresetWithOutcome(presetId, options) !== null
+}
+
+export function applyChatGenerationTogglePresetWithOutcome(
+  presetId: string,
+  options: Pick<ActiveChatGenerationSettingsSaveOptions, 'expectedTarget'> = {},
+): ChatGenerationSettingsSaveOperation | null {
+  if (options.expectedTarget !== undefined && !isActiveChatTargetFresh(options.expectedTarget)) return null
 
   const preset = getChatGenerationTogglePresets().find((candidate) => candidate.id === presetId)
-  if (!preset) return false
+  if (!preset) return null
 
   const state = resolveActiveChatGenerationSettings()
-  if (!state.identity.chatId) return false
+  if (!state.identity.chatId) return null
 
   const generationSettings = createActiveChatGenerationSettingsPatch(
     {
@@ -110,7 +118,7 @@ export function applyChatGenerationTogglePreset(
     },
     state,
   )
-  return saveActiveChatGenerationSettings(generationSettings, options)
+  return saveActiveChatGenerationSettingsWithOutcome(generationSettings, options)
 }
 
 export function deleteChatGenerationTogglePreset(presetId: string): boolean {

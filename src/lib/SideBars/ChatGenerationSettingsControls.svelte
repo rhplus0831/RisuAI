@@ -1,9 +1,10 @@
 <script lang="ts">
   import { openPersonaListModal, openPresetListModal, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
+  import { alertError, alertNormal } from 'src/ts/alert'
   import {
     resolveActiveChatGenerationSettings,
-    saveActiveChatGenerationSettingsSelection,
+    saveActiveChatGenerationSettingsSelectionWithOutcome,
   } from 'src/ts/activeChatGenerationSettings'
   import { captureActiveChatTarget } from 'src/ts/chatCommands'
   import Button from '../UI/GUI/Button.svelte'
@@ -48,19 +49,47 @@
   )
   let selectedAgentPresetId = $derived(activeGenerationSettings.settings?.agentPresetId ?? '')
   let selectedAgentPresetMissing = $derived(!!selectedAgentPresetId && !activeGenerationSettings.agentPreset)
+  let agentPresetSaveOperation = 0
+  let agentPresetSaveStates = $state<Record<string, { operation: number; status: 'pending' | 'queued' | 'failed' }>>({})
+  let agentPresetSaveStatus = $derived(
+    (activeGenerationSettings.identity.chatId &&
+      agentPresetSaveStates[activeGenerationSettings.identity.chatId]?.status) ||
+      'idle',
+  )
   let agentPresetName = $derived.by(() => {
     const name = (activeGenerationSettings.agentPreset as NamedGenerationReference | undefined)?.name
     if (name && name.trim().length > 0) return name
     return selectedAgentPresetMissing ? language.agentPresets.missingSelectedShort : language.agentPresets.noSelected
   })
 
-  function saveAgentPresetSelection(agentPresetId: string): void {
-    saveActiveChatGenerationSettingsSelection(
+  async function saveAgentPresetSelection(agentPresetId: string): Promise<void> {
+    const target = captureActiveChatTarget()
+    const chatId = target?.chatId
+    if (!chatId) return
+    const operation = ++agentPresetSaveOperation
+    agentPresetSaveStates[chatId] = { operation, status: 'pending' }
+    const persistence = saveActiveChatGenerationSettingsSelectionWithOutcome(
       { agentPresetId },
       {
-        expectedTarget: captureActiveChatTarget(),
+        expectedTarget: target,
       },
     )
+    if (!persistence) {
+      if (agentPresetSaveStates[chatId]?.operation === operation) delete agentPresetSaveStates[chatId]
+      return
+    }
+    const result = await persistence.settlement
+    if (agentPresetSaveStates[chatId]?.operation !== operation) return
+    if (result.status === 'accepted') {
+      delete agentPresetSaveStates[chatId]
+    } else {
+      agentPresetSaveStates[chatId].status = result.status
+    }
+    if (result.status === 'queued') {
+      alertNormal(language.settingsSaveQueued)
+    } else if (result.status === 'failed') {
+      alertError(language.chatGenerationSettingsSaveFailed(result.error))
+    }
   }
 </script>
 
@@ -104,14 +133,16 @@
     data-risu-generation-picker-control
     data-risu-picker-kind="agent-preset"
     data-risu-picker-mode="active-chat-generation-settings"
+    data-risu-persistence-status={agentPresetSaveStatus}
     data-risu-picker-selected-id={selectedAgentPresetId}>
     <label class="flex w-full min-w-0 flex-col gap-1 text-left text-sm">
       <span class="text-xs font-medium text-textcolor2">{language.agentPresets.chatSelectionLabel}</span>
       <SelectInput
         value={selectedAgentPresetId}
         className="w-full"
+        disabled={agentPresetSaveStatus === 'pending'}
         onchange={(event) => {
-          saveAgentPresetSelection(event.currentTarget.value)
+          void saveAgentPresetSelection(event.currentTarget.value)
         }}>
         <option value="">{language.agentPresets.noSelected}</option>
         {#if selectedAgentPresetMissing}
