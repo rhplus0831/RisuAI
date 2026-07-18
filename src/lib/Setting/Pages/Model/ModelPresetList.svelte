@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ArrowDownIcon, ArrowUpIcon, CopyIcon, FilePlusIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
+  import { alertError, alertNormal } from 'src/ts/alert'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { createModelRoleBindingPresetSnapshot } from 'src/ts/model/modelPresetSnapshots'
@@ -25,6 +26,9 @@
   let { embedded = false, afterApply = () => {} }: Props = $props()
 
   let newPresetName = $state('')
+  let selectionOperation = 0
+  let selectionPendingIndex = $state<number | null>(null)
+  let selectionError = $state('')
 
   let presets = $derived(getDatabase().modelPresets ?? [])
   let selectedIndex = $derived(getDatabase().modelPresetsId ?? -1)
@@ -99,12 +103,26 @@
     deleteModelPreset(index, 0)
   }
 
-  function applyPreset(index: number): void {
+  async function applyPreset(index: number): Promise<void> {
     if (index === selectedIndex) {
       afterApply()
       return
     }
-    selectModelPreset(index)
+    if (selectionPendingIndex !== null) return
+
+    const operation = ++selectionOperation
+    selectionPendingIndex = index
+    selectionError = ''
+    const outcome = await selectModelPreset(index)
+    if (operation !== selectionOperation) return
+    selectionPendingIndex = null
+
+    if (outcome.status === 'failed') {
+      selectionError = language.presetSelectionFailed
+      alertError(selectionError)
+      return
+    }
+    if (outcome.status === 'queued') alertNormal(language.presetSelectionQueued)
     afterApply()
   }
 
@@ -260,6 +278,8 @@
               class:bg-selected={index === selectedIndex}
               role="button"
               tabindex="0"
+              aria-busy={selectionPendingIndex === index ? 'true' : 'false'}
+              aria-disabled={selectionPendingIndex !== null ? 'true' : undefined}
               onclick={() => applyPreset(index)}
               onkeydown={(event) => applyPresetFromKeyboard(event, index)}>
               <td class="px-3 py-3" onclick={(event) => event.stopPropagation()}>
@@ -336,5 +356,13 @@
         </tbody>
       </table>
     </div>
+  {/if}
+
+  {#if selectionPendingIndex !== null}
+    <span data-risu-preset-selection-status role="status" class="text-sm text-textcolor2">
+      {language.presetSelectionSaving}
+    </span>
+  {:else if selectionError}
+    <span data-risu-preset-selection-status role="alert" class="text-sm text-draculared">{selectionError}</span>
   {/if}
 </section>

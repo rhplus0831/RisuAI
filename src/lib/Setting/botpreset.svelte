@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { alertConfirm, alertError } from '../../ts/alert'
+  import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
   import {
     createModelPreset,
@@ -48,6 +48,9 @@
   let dragOverIndex = $state(-1)
   let draggedPreset = $state<{ kind: ModernPresetKind; id: string } | null>(null)
   let renameDrafts = $state<Record<string, string>>({})
+  let selectionOperation = 0
+  let selectionPendingKey = $state<string | null>(null)
+  let selectionError = $state('')
 
   interface Props {
     close?: () => void
@@ -123,7 +126,7 @@
     editMode = true
   }
 
-  function selectPreset(preset: ModernPreset | undefined, index: number) {
+  async function selectPreset(preset: ModernPreset | undefined, index: number) {
     if (editMode) return
     if (isChatGenerationSelectionMode) {
       const presetId = nonEmptyId(preset?.id)
@@ -133,8 +136,25 @@
       return
     }
 
-    if (kind === 'prompt') selectPromptPreset(index)
-    else selectModelPreset(index)
+    if (isPresetSelected(preset, index)) {
+      close()
+      return
+    }
+    if (selectionPendingKey) return
+
+    const operation = ++selectionOperation
+    selectionPendingKey = presetDraftKey(preset, index)
+    selectionError = ''
+    const outcome = await (kind === 'prompt' ? selectPromptPreset(index) : selectModelPreset(index))
+    if (operation !== selectionOperation) return
+    selectionPendingKey = null
+
+    if (outcome.status === 'failed') {
+      selectionError = language.presetSelectionFailed
+      alertError(selectionError)
+      return
+    }
+    if (outcome.status === 'queued') alertNormal(language.presetSelectionQueued)
     close()
   }
 
@@ -236,6 +256,7 @@
     data-risu-generation-picker
     data-risu-picker-kind={kind}
     data-risu-picker-mode={mode}
+    aria-busy={selectionPendingKey ? 'true' : 'false'}
     role="dialog"
     aria-modal="true"
     aria-labelledby="risu-preset-picker-title"
@@ -362,6 +383,7 @@
               type="button"
               data-risu-picker-select
               class="flex min-w-0 grow items-center text-left"
+              disabled={!!selectionPendingKey}
               aria-pressed={isPresetSelected(preset, i)}
               aria-current={isPresetSelected(preset, i) ? 'true' : undefined}
               onclick={(event) => {
@@ -447,6 +469,13 @@
         </button>
       </div>
       <span class="text-textcolor2 text-sm">{language.quickPreset}</span>
+      {#if selectionPendingKey}
+        <span data-risu-preset-selection-status role="status" class="text-textcolor2 text-sm">
+          {language.presetSelectionSaving}
+        </span>
+      {:else if selectionError}
+        <span data-risu-preset-selection-status role="alert" class="text-draculared text-sm">{selectionError}</span>
+      {/if}
     {/if}
   </div>
 </div>

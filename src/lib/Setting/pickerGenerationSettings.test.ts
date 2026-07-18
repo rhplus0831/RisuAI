@@ -36,6 +36,8 @@ const moduleSpies = vi.hoisted(() => ({
 
 const alertSpies = vi.hoisted(() => ({
   alertConfirm: vi.fn(),
+  alertError: vi.fn(),
+  alertNormal: vi.fn(),
 }))
 
 vi.mock('../../ts/storage/database.svelte', async (importActual) => {
@@ -74,6 +76,8 @@ vi.mock('../../ts/alert', async (importActual) => {
   return {
     ...actual,
     alertConfirm: alertSpies.alertConfirm,
+    alertError: alertSpies.alertError,
+    alertNormal: alertSpies.alertNormal,
   }
 })
 
@@ -89,7 +93,7 @@ import {
   resetPendingMutationOutboxForTests,
 } from 'src/ts/server/pendingMutationOutbox'
 import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase, resetPendingPresetMutationsForTests, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -104,6 +108,8 @@ interface CapturedFetch {
 
 interface StubCommandFetchOptions {
   promptDeleteResponse?: Promise<Response>
+  modelSelectResponse?: Promise<Response>
+  promptSelectResponse?: Promise<Response>
   promptSelectConflictOnce?: boolean
 }
 
@@ -184,11 +190,26 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
       if (init.method === 'DELETE' && url.endsWith('/prompt-presets/preset-b') && options.promptDeleteResponse) {
         return options.promptDeleteResponse
       }
+      if (url.endsWith('/model-presets/select')) {
+        if (options.modelSelectResponse) return options.modelSelectResponse
+        return jsonResponse({
+          status: 'ok',
+          revision: 201,
+          event: {
+            type: 'modelPreset.selected',
+            revision: 201,
+            resource: 'modelPreset',
+            id: 'model-preset-b',
+          },
+          modelPresetId: 'model-preset-b',
+        })
+      }
       if (url.endsWith('/prompt-presets/select')) {
         promptSelectAttempts += 1
         if (options.promptSelectConflictOnce && promptSelectAttempts === 1) {
           return jsonResponse({ error: 'revision_conflict', currentRevision: 201 }, 409)
         }
+        if (options.promptSelectResponse) return options.promptSelectResponse
         return jsonResponse({
           status: 'ok',
           revision: options.promptSelectConflictOnce ? 202 : 201,
@@ -247,6 +268,10 @@ function seedDb(): void {
       {
         id: 'model-preset-a',
         name: 'Model Preset A',
+      },
+      {
+        id: 'model-preset-b',
+        name: 'Model Preset B',
       },
     ],
     promptPresetsId: 0,
@@ -396,6 +421,28 @@ function mountPersonaPicker(mode: GenerationSettingsPickerMode, close = vi.fn())
     props: { mode, close },
   })
   return close
+}
+
+function globalPresetSelectionControl(kind: 'model' | 'prompt'): HTMLElement {
+  if (kind === 'prompt') return pickerSelectionControl('prompt', 'preset-b')
+  const rows = target.querySelectorAll<HTMLElement>('tbody tr')
+  expect(rows).toHaveLength(2)
+  return rows[1]
+}
+
+function presetSelectionSuccess(kind: 'model' | 'prompt'): Response {
+  const presetId = kind === 'model' ? 'model-preset-b' : 'preset-b'
+  return jsonResponse({
+    status: 'ok',
+    revision: 201,
+    event: {
+      type: `${kind}Preset.selected`,
+      revision: 201,
+      resource: `${kind}Preset`,
+      id: presetId,
+    },
+    [`${kind}PresetId`]: presetId,
+  })
 }
 
 async function settleModalFocus(): Promise<void> {
@@ -785,6 +832,87 @@ describe('generation settings picker mode', () => {
     })
   })
 
+  describe.each(['model', 'prompt'] as const)('global %s preset selection persistence', (kind) => {
+    it('keeps the picker open and busy until the exact selection is accepted', async () => {
+      const response = createDeferred<Response>()
+      const calls = stubCommandFetch(
+        kind === 'model' ? { modelSelectResponse: response.promise } : { promptSelectResponse: response.promise },
+      )
+      const close = mountPresetPicker('global', vi.fn(), kind)
+
+      globalPresetSelectionControl(kind).click()
+      await tick()
+      await waitForFetchCount(calls, 2)
+
+      expect(close).not.toHaveBeenCalled()
+      expect(target.querySelector('[data-risu-preset-selection-status]')?.textContent).toContain(
+        language.presetSelectionSaving,
+      )
+
+      response.resolve(presetSelectionSuccess(kind))
+      await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
+      expect(kind === 'model' ? getDatabase().modelPresetsId : getDatabase().promptPresetsId).toBe(1)
+    })
+
+    it('acknowledges a durably queued selection before closing', async () => {
+      vi.stubGlobal('indexedDB', new IDBFactory())
+      resetPendingMutationOutboxForTests()
+      await preparePendingMutationOutbox({
+        writerSessionId: `writer-${kind}-selection`,
+        writerEpoch: 3,
+        databaseLineage: `lineage-${kind}-selection`,
+        requestedWriterWasActive: true,
+      })
+      stubCommandFetch(
+        kind === 'model'
+          ? { modelSelectResponse: Promise.resolve(jsonResponse({ error: 'temporarily_unavailable' }, 503)) }
+          : { promptSelectResponse: Promise.resolve(jsonResponse({ error: 'temporarily_unavailable' }, 503)) },
+      )
+
+      try {
+        const close = mountPresetPicker('global', vi.fn(), kind)
+        globalPresetSelectionControl(kind).click()
+
+        await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
+        expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.presetSelectionQueued)
+        expect(kind === 'model' ? getDatabase().modelPresetsId : getDatabase().promptPresetsId).toBe(1)
+        expect(await listPendingMutations()).toHaveLength(1)
+      } finally {
+        resetPendingPresetMutationsForTests()
+        await clearPendingMutationOutbox()
+        resetPendingMutationOutboxForTests()
+      }
+    })
+
+    it('keeps the picker open and shows the restored selection after terminal rejection', async () => {
+      stubCommandFetch(
+        kind === 'model'
+          ? { modelSelectResponse: Promise.resolve(jsonResponse({ error: 'invalid_selection' }, 400)) }
+          : { promptSelectResponse: Promise.resolve(jsonResponse({ error: 'invalid_selection' }, 400)) },
+      )
+      const close = mountPresetPicker('global', vi.fn(), kind)
+
+      globalPresetSelectionControl(kind).click()
+      await vi.waitFor(() => {
+        expect(target.querySelector('[data-risu-preset-selection-status]')?.textContent).toContain(
+          language.presetSelectionFailed,
+        )
+      })
+
+      expect(close).not.toHaveBeenCalled()
+      expect(alertSpies.alertError).toHaveBeenCalledWith(language.presetSelectionFailed)
+      expect(kind === 'model' ? getDatabase().modelPresetsId : getDatabase().promptPresetsId).toBe(0)
+      if (kind === 'prompt') {
+        expectPickerRowSelection('prompt', 'preset-a', true)
+        expectPickerRowSelection('prompt', 'preset-b', false)
+      } else {
+        const rows = target.querySelectorAll<HTMLElement>('tbody tr')
+        expect(rows[0].classList.contains('bg-selected')).toBe(true)
+        expect(rows[1].classList.contains('bg-selected')).toBe(false)
+      }
+    })
+  })
+
   it('retries global prompt preset selection once after a revision conflict', async () => {
     const calls = stubCommandFetch({ promptSelectConflictOnce: true })
     const close = mountPresetPicker('global')
@@ -807,7 +935,7 @@ describe('generation settings picker mode', () => {
     })
   })
 
-  it('does not retry a stale prompt preset selection after a newer selection wins', async () => {
+  it('suppresses a duplicate prompt selection while the exact command is pending', async () => {
     getDatabase().promptPresets.push({
       id: 'preset-c',
       name: 'Preset C',
@@ -828,10 +956,7 @@ describe('generation settings picker mode', () => {
     } as any)
 
     const calls: CapturedFetch[] = []
-    let resolvePresetBConflict: (response: Response) => void = () => {}
-    const presetBConflict = new Promise<Response>((resolve) => {
-      resolvePresetBConflict = resolve
-    })
+    const presetBResponse = createDeferred<Response>()
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -848,7 +973,7 @@ describe('generation settings picker mode', () => {
 
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
         if (url.endsWith('/prompt-presets/select') && body?.promptPresetId === 'preset-b') {
-          return presetBConflict
+          return presetBResponse.promise
         }
         if (url.endsWith('/prompt-presets/select') && body?.promptPresetId === 'preset-c') {
           return jsonResponse({
@@ -867,28 +992,23 @@ describe('generation settings picker mode', () => {
       }) as unknown as typeof fetch,
     )
 
-    mountPresetPicker('global')
+    const close = mountPresetPicker('global')
     pickerSelectionControl('prompt', 'preset-b').click()
     await tick()
     await waitForFetchCount(calls, 2)
 
     pickerSelectionControl('prompt', 'preset-c').click()
     await tick()
-    // The revisioned command lane keeps C queued until B settles, while the
-    // optimistic selection paints C immediately.
     expect(calls).toHaveLength(2)
-    expect(getDatabase().promptPresetsId).toBe(2)
+    expect(getDatabase().promptPresetsId).toBe(1)
+    expect(close).not.toHaveBeenCalled()
 
-    resolvePresetBConflict(jsonResponse({ error: 'revision_conflict', currentRevision: 201 }, 409))
-    await waitForFetchCount(calls, 3)
-    await tick()
+    presetBResponse.resolve(presetSelectionSuccess('prompt'))
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
 
     const selectCalls = calls.filter((call) => call.url.endsWith('/prompt-presets/select'))
-    expect(selectCalls.map((call) => (call.body as { promptPresetId?: string }).promptPresetId)).toEqual([
-      'preset-b',
-      'preset-c',
-    ])
-    expect(getDatabase().promptPresetsId).toBe(2)
+    expect(selectCalls.map((call) => (call.body as { promptPresetId?: string }).promptPresetId)).toEqual(['preset-b'])
+    expect(getDatabase().promptPresetsId).toBe(1)
   })
 
   it('deletes the confirmed preset by stable id after the list reorders', async () => {

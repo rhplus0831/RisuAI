@@ -673,6 +673,17 @@ type PreparedPresetMutation =
   | { status: 'durable'; handle: PendingMutationHandle; intent: DurableMutationIntent }
   | { status: 'failed' }
 
+export type PresetMutationFinalStatus = 'accepted' | 'failed'
+export type PresetMutationOutcome =
+  | { status: 'accepted' }
+  | { status: 'queued'; settlement: Promise<PresetMutationFinalStatus> }
+  | { status: 'failed' }
+
+interface PresetMutationFinalSettlement {
+  promise: Promise<PresetMutationFinalStatus>
+  resolve: (status: PresetMutationFinalStatus) => void
+}
+
 const PRESET_MUTATION_KEY = 'preset-operations'
 let nextPresetMutationSequence = 0
 const unsettledPresetRowMutationAttempts: PresetRowMutationAttempt[] = []
@@ -681,6 +692,14 @@ const activeImportedSplitPresetOwnerKeys = new Map<SplitPresetKind, Set<string>>
   ['model', new Set()],
   ['prompt', new Set()],
 ])
+
+function createPresetMutationFinalSettlement(): PresetMutationFinalSettlement {
+  let resolve!: (status: PresetMutationFinalStatus) => void
+  const promise = new Promise<PresetMutationFinalStatus>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
 
 function splitPresetPatchKey(kind: SplitPresetKind, presetId: string): string {
   return `${kind}:${presetId}`
@@ -2229,33 +2248,41 @@ function dispatchPreparedPresetMutation<T extends Record<string, unknown>>(input
   onAccepted: () => void
   onRollback: () => void
   onRetained: (handle: PendingMutationHandle) => void
+  finalSettlement: Promise<PresetMutationFinalStatus>
   retryConflictWhile?: () => boolean
-}): void {
+}): Promise<PresetMutationOutcome> {
   let settled = false
   let retained = false
+  let resolveOutcome!: (outcome: PresetMutationOutcome) => void
+  const outcome = new Promise<PresetMutationOutcome>((resolve) => {
+    resolveOutcome = resolve
+  })
   const acceptOnce = () => {
     if (settled) return
     settled = true
     input.onAccepted()
+    resolveOutcome({ status: 'accepted' })
   }
   const rollbackOnce = () => {
     if (settled) return
     settled = true
     input.onRollback()
+    resolveOutcome({ status: 'failed' })
   }
   const retainOnce = (handle: PendingMutationHandle) => {
     if (settled || retained) return
     retained = true
     input.onRetained(handle)
+    resolveOutcome({ status: 'queued', settlement: input.finalSettlement })
   }
 
   if (input.prepared.status === 'failed') {
     rollbackOnce()
-    return
+    return outcome
   }
   if (input.prepared.status === 'plain') {
     acceptOnce()
-    return
+    return outcome
   }
   const prepared = input.prepared
 
@@ -2298,6 +2325,7 @@ function dispatchPreparedPresetMutation<T extends Record<string, unknown>>(input
       rollbackOnce()
       console.error('Preset command rejected:', error)
     })
+  return outcome
 }
 
 function dispatchPresetRowMutation<T extends Record<string, unknown>>(
@@ -2306,12 +2334,17 @@ function dispatchPresetRowMutation<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   onTerminalRollback: () => void = () => {},
   options: { retryConflictWhile?: () => boolean } = {},
-): void {
-  const accept = () => settlePresetRowMutationAttempt(attempt, true)
+): Promise<PresetMutationOutcome> {
+  const finalSettlement = createPresetMutationFinalSettlement()
+  const accept = () => {
+    settlePresetRowMutationAttempt(attempt, true)
+    finalSettlement.resolve('accepted')
+  }
   const rollback = () => {
     settlePresetRowMutationAttempt(attempt, false)
     rollbackPresetRowMutationAttempt(attempt)
     onTerminalRollback()
+    finalSettlement.resolve('failed')
   }
   if (prepared.status === 'durable') {
     attempt.outbox = prepared.handle
@@ -2319,12 +2352,13 @@ function dispatchPresetRowMutation<T extends Record<string, unknown>>(
       settlement === 'accepted' ? accept() : rollback(),
     )
   }
-  dispatchPreparedPresetMutation({
+  return dispatchPreparedPresetMutation({
     prepared,
     command,
     onAccepted: accept,
     onRollback: rollback,
     onRetained: (handle) => reapplyRetainedPresetRowMutationAttempt(attempt, handle),
+    finalSettlement: finalSettlement.promise,
     ...options,
   })
 }
@@ -2334,12 +2368,17 @@ function dispatchPresetReorderMutation<T extends Record<string, unknown>>(
   attempt: PresetReorderMutationAttempt,
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   onTerminalRollback: () => void = () => {},
-): void {
-  const accept = () => settlePresetReorderMutationAttempt(attempt, true)
+): Promise<PresetMutationOutcome> {
+  const finalSettlement = createPresetMutationFinalSettlement()
+  const accept = () => {
+    settlePresetReorderMutationAttempt(attempt, true)
+    finalSettlement.resolve('accepted')
+  }
   const rollback = () => {
     settlePresetReorderMutationAttempt(attempt, false)
     rollbackPresetReorderMutationAttempt(attempt)
     onTerminalRollback()
+    finalSettlement.resolve('failed')
   }
   if (prepared.status === 'durable') {
     attempt.outbox = prepared.handle
@@ -2347,12 +2386,13 @@ function dispatchPresetReorderMutation<T extends Record<string, unknown>>(
       settlement === 'accepted' ? accept() : rollback(),
     )
   }
-  dispatchPreparedPresetMutation({
+  return dispatchPreparedPresetMutation({
     prepared,
     command,
     onAccepted: accept,
     onRollback: rollback,
     onRetained: (handle) => reapplyRetainedPresetReorderMutationAttempt(attempt, handle),
+    finalSettlement: finalSettlement.promise,
   })
 }
 
@@ -5528,14 +5568,15 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
   })
 }
 
-export function selectModelPreset(id: number) {
-  withTrustedResourceWrite(() => {
+export function selectModelPreset(id: number): Promise<PresetMutationOutcome> {
+  return withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
     const previousSelectedId = splitPresetSelectedId(db, 'model')
     const previousSettings = snapshotSetPresetSettings(db)
     const modelPresetId = db.modelPresets[id]?.id
-    if (!modelPresetId) return
+    if (!modelPresetId) return Promise.resolve({ status: 'failed' })
+    if (previousSelectedId === modelPresetId) return Promise.resolve({ status: 'accepted' })
     flushPendingSplitPresetPatches()
     if (canUseServerCommands()) {
       flushRegisteredPendingBridgePatch('settings', {})
@@ -5575,7 +5616,7 @@ export function selectModelPreset(id: number) {
         selectionRollback.attemptedSettings,
       )
     }
-    dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
+    return dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
       selectModelPresetCommand({ baseRevision, modelPresetId }),
     )
   })
@@ -6038,14 +6079,15 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
   })
 }
 
-export function selectPromptPreset(id: number) {
-  withTrustedResourceWrite(() => {
+export function selectPromptPreset(id: number): Promise<PresetMutationOutcome> {
+  return withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
     const previousSelectedId = splitPresetSelectedId(db, 'prompt')
     const previousSettings = snapshotSetPresetSettings(db)
     const promptPresetId = db.promptPresets[id]?.id
-    if (!promptPresetId) return
+    if (!promptPresetId) return Promise.resolve({ status: 'failed' })
+    if (previousSelectedId === promptPresetId) return Promise.resolve({ status: 'accepted' })
     // Flush row edits while their owner is still selected. Once the selection
     // changes, the prompt-template bridge deliberately rejects old-owner timer
     // callbacks, which would otherwise turn a quick preset switch into silent
@@ -6090,7 +6132,7 @@ export function selectPromptPreset(id: number) {
         selectionRollback.attemptedSettings,
       )
     }
-    dispatchPresetRowMutation(
+    return dispatchPresetRowMutation(
       prepared,
       attempt,
       (baseRevision) => selectPromptPresetCommand({ baseRevision, promptPresetId }),

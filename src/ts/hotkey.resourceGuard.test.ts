@@ -237,12 +237,8 @@ describe('hotkey handling under the resource guard', () => {
     testDatabaseState.db.modelPresetsId = 0
 
     expect(changeToPreset(0)).toBe(true)
-
-    const command = await waitForCommand(
-      calls,
-      (call) => call.url === '/api/v1/commands/model-presets/select' && call.method === 'POST',
-    )
-    expect(command.body).toMatchObject({ modelPresetId: 'model-default' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls).toEqual([])
   })
 
   it('switches the active chat generation model preset when the chat owns preset selection', async () => {
