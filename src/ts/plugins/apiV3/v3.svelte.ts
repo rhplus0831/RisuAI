@@ -949,7 +949,9 @@ const makeRisuaiAPIV3 = (
     withTrustedResourceWrite(() => {
       getDatabase().characters[charId] = optimisticCharacter
     })
-    requirePluginV3Mutation(await preparation.dispatchAsync())
+    const outcome = await preparation.dispatchAsync()
+    assertV3InstanceCurrent(instance)
+    requirePluginV3Mutation(outcome)
   }
   const registerOwnedMCP = async (
     arg: Parameters<typeof registerMCPModule>[0],
@@ -1234,7 +1236,11 @@ const makeRisuaiAPIV3 = (
     //Deprecated APIs from v2.1
     //Use getArgument / setArgument instead if possible
     getArg: oldApis.getArg,
-    setArg: oldApis.setArg,
+    setArg: async (arg: string, value: string | number) => {
+      const outcome = await oldApis.setArg(arg, value)
+      assertV3InstanceCurrent(instance)
+      requirePluginV3Mutation(outcome)
+    },
 
     //New APIs for v3
     getArgument: async (key: string) => {
@@ -1260,7 +1266,9 @@ const makeRisuaiAPIV3 = (
       if (matched) {
         const p = getDatabase().plugins.find((candidate) => candidate.name === plugin.name)
         if (p) {
-          requirePluginV3Mutation(await dispatchUpdatePlugin(p.name, { realArg: p.realArg }, previous))
+          const outcome = await dispatchUpdatePlugin(p.name, { realArg: p.realArg }, previous)
+          assertV3InstanceCurrent(instance)
+          requirePluginV3Mutation(outcome)
         }
       }
     },

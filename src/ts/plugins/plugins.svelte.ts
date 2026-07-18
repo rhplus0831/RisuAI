@@ -1219,7 +1219,7 @@ export const getV2PluginAPIs = (
         withTrustedResourceWrite(() => {
           getDatabase().characters[charid] = char
         })
-        return
+        return Promise.resolve(null)
       }
 
       const previousCharacter = getDatabase().characters?.[charid]
@@ -1228,11 +1228,14 @@ export const getV2PluginAPIs = (
       const previousCharacterSnapshot = previousCharacter ? $state.snapshot(previousCharacter) : undefined
       const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacterSnapshot, char, previous)
       const optimisticCharacter = preparation.optimisticCharacter
-      if (!optimisticCharacter || preparation.factories.length === 0) return
+      if (!optimisticCharacter || preparation.factories.length === 0) return Promise.resolve(null)
       withTrustedResourceWrite(() => {
         getDatabase().characters[charid] = optimisticCharacter
       })
-      preparation.dispatch()
+      return preparation.dispatchAsync().then((outcome) => {
+        lifecycle.assertCurrent()
+        return outcome
+      })
     },
     addProvider: (
       name: string,
@@ -1300,9 +1303,16 @@ export const getV2PluginAPIs = (
       if (matched) {
         const plugin = getDatabase().plugins.find((p) => p.name === name)
         if (plugin) {
-          dispatchUpdatePlugin(plugin.name, { realArg: plugin.realArg }, previous)
+          const pending = dispatchUpdatePlugin(plugin.name, { realArg: plugin.realArg }, previous)
+          if (pending) {
+            return pending.then((outcome) => {
+              lifecycle.assertCurrent()
+              return outcome
+            })
+          }
         }
       }
+      return Promise.resolve(null)
     },
     safeGlobalThis: {} as any,
     getSafeGlobalThis: () => {

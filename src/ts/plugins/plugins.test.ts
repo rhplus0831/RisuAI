@@ -1204,7 +1204,11 @@ describe('plugin database command bridge', () => {
       getDatabase().plugins[0].realArg['raw'] = 'x'
     }).toThrow(/resource database compatibility view is read-only/)
 
-    expect(() => apis.setArg('plugin-a::myarg', 'myvalue')).not.toThrow()
+    let persistence: ReturnType<typeof apis.setArg> | undefined
+    expect(() => {
+      persistence = apis.setArg('plugin-a::myarg', 'myvalue')
+    }).not.toThrow()
+    expect(persistence).toBeInstanceOf(Promise)
 
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toBe(true)
@@ -1214,6 +1218,40 @@ describe('plugin database command bridge', () => {
       body: { patch: { realArg: { myarg: 'myvalue' } } },
     })
     expect(getDatabase().plugins[0].realArg.myarg).toBe('myvalue')
+    await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
+  })
+
+  it('setArg returns a terminal persistence failure after guarded rollback', async () => {
+    stubCommandFetch({ failCommands: true, failureStatus: 400 })
+    const apis = getV2PluginAPIs()
+
+    const persistence = apis.setArg('plugin-a::rejected', 'attempted')
+    expect(getDatabase().plugins[0].realArg.rejected).toBe('attempted')
+
+    await expect(persistence).resolves.toMatchObject({ status: 'failed' })
+    expect(getDatabase().plugins[0].realArg).not.toHaveProperty('rejected')
+  })
+
+  it('setArg rechecks the plugin lifecycle after persistence settles', async () => {
+    const { calls, commandResponses } = stubDeferredCommandFetch()
+    let current = true
+    const apis = getV2PluginAPIs(undefined, () => {
+      if (!current) throw new Error('stale plugin instance')
+    })
+
+    const persistence = apis.setArg('plugin-a::delayed', 'value')
+    await vi.waitFor(() => expect(commandResponses).toHaveLength(1))
+    expect(calls.at(-1)?.url).toBe('/api/v1/commands/plugins/plugin-a')
+    current = false
+    commandResponses[0].resolve(
+      jsonResponse({
+        revision: 11,
+        event: { type: 'plugin.updated', revision: 11, resource: 'plugin', id: 'plugin-a' },
+        pluginId: 'plugin-a',
+      }),
+    )
+
+    await expect(persistence).rejects.toThrow('stale plugin instance')
   })
 
   it('setChar applies command-compatible character fields in server mode', async () => {
@@ -1233,7 +1271,7 @@ describe('plugin database command bridge', () => {
       },
     ] as any
 
-    apis.setChar({
+    const persistence = apis.setChar({
       chaId: 'char-a',
       name: 'New name',
       desc: 'New desc',
@@ -1275,6 +1313,7 @@ describe('plugin database command bridge', () => {
     expect(patch).not.toHaveProperty('customscript')
     expect(patch).not.toHaveProperty('triggerscript')
     expect(patch).not.toHaveProperty('modules')
+    await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
   })
 
   it('setChar retains a transient optimistic replacement and replays its exact patch', async () => {
@@ -1316,13 +1355,14 @@ describe('plugin database command bridge', () => {
     ] as any
 
     try {
-      getV2PluginAPIs().setChar({
+      const persistence = getV2PluginAPIs().setChar({
         chaId: 'char-a',
         name: 'Retained name',
         chats: [{ id: 'chat-a', message: [] }],
       })
 
       await vi.waitFor(() => expect(patches).toHaveLength(1))
+      await expect(persistence).resolves.toMatchObject({ status: 'queued' })
       expect(getDatabase().characters[0].name).toBe('Retained name')
       expect((await listPendingMutations()).map((entry) => entry.intent.requests[0])).toMatchObject([
         {
@@ -1361,7 +1401,7 @@ describe('plugin database command bridge', () => {
     ] as any
     ;(getDatabase() as any).currentChar = 0
 
-    apis.setChar({
+    const persistence = apis.setChar({
       chaId: 'char-a',
       name: 'Attempted name',
       desc: 'Attempted desc',
@@ -1389,6 +1429,7 @@ describe('plugin database command bridge', () => {
     expect(getDatabase().characters[1].name).toBe('Newer sibling name')
     expect((getDatabase() as any).currentChar).toBe(1)
     expect(get(selectedCharID)).toBe(1)
+    await expect(persistence).resolves.toMatchObject({ status: 'failed' })
   })
 
   it('setChar rejects unsupported character field changes before projection mutation and command dispatch', async () => {

@@ -1375,8 +1375,10 @@ interface RisuaiPluginAPI {
 
   /**
    * @deprecated Use setArgument() instead
+   * Resolves after server acceptance or durable local queueing. Queued work may not yet be server-applied.
+   * Rejects when persistence fails terminally.
    */
-  setArg(arg: string, value: string | number): void
+  setArg(arg: string, value: string | number): Promise<void>
 
   // ========== Database APIs ==========
 

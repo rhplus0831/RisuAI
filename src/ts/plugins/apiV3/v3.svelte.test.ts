@@ -50,6 +50,10 @@ const mockPluginMCP = vi.hoisted(() => ({
   unregisterMCPModule: vi.fn(),
 }))
 
+const mockLegacyPluginApis = vi.hoisted(() => ({
+  setArg: vi.fn(async () => null),
+}))
+
 const mockPermissionForage = vi.hoisted(() => {
   const values = new Map<string, unknown>()
   return {
@@ -78,7 +82,7 @@ vi.mock('../plugins.svelte', () => ({
     readImage: vi.fn(),
     saveAsset: vi.fn(),
     getArg: vi.fn(),
-    setArg: vi.fn(),
+    setArg: mockLegacyPluginApis.setArg,
     addRisuScriptHandler: vi.fn(),
     removeRisuScriptHandler: vi.fn(),
     addRisuReplacer: vi.fn(),
@@ -362,6 +366,8 @@ beforeEach(async () => {
   vi.mocked(processSendChat).mockReset()
   vi.mocked(dispatchUpdatePlugin).mockReset()
   vi.mocked(dispatchUpdatePlugin).mockResolvedValue(null)
+  mockLegacyPluginApis.setArg.mockReset()
+  mockLegacyPluginApis.setArg.mockResolvedValue(null)
   vi.mocked(dispatchDurableServerBackedSettingsPatch).mockReset()
   vi.mocked(dispatchDurableServerBackedSettingsPatch).mockResolvedValue({
     status: 'ok',
@@ -394,6 +400,8 @@ describe('V3 durable setter acknowledgement', () => {
     vi.mocked(dispatchUpdatePlugin).mockResolvedValueOnce({
       status: 'queued',
       result: { status: 'unavailable' },
+      mutationId: 'plugin-argument-queued',
+      settlement: new Promise(() => {}),
     })
     const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
 
@@ -441,6 +449,35 @@ describe('V3 durable setter acknowledgement', () => {
       expect(response?.error).toBe('argument rejected')
     })
     host.terminate()
+  })
+
+  it('awaits and translates the deprecated setArg persistence outcome', async () => {
+    const plugin = seedV3Plugin('plugin-a')
+    const persistence = deferred<any>()
+    mockLegacyPluginApis.setArg.mockReturnValueOnce(persistence.promise)
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    const result = api.setArg('plugin-a::api-key', 'new-value')
+    expect(mockLegacyPluginApis.setArg).toHaveBeenCalledWith('plugin-a::api-key', 'new-value')
+    persistence.resolve({
+      status: 'failed',
+      result: { status: 'error', error: 'deprecated argument rejected', reason: 'invalid-request' },
+    })
+
+    await expect(result).rejects.toThrow('deprecated argument rejected')
+  })
+
+  it('rejects a deprecated setArg result after its V3 instance becomes stale', async () => {
+    const plugin = seedV3Plugin('plugin-a')
+    const persistence = deferred<any>()
+    mockLegacyPluginApis.setArg.mockReturnValueOnce(persistence.promise)
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    const result = api.setArg('plugin-a::api-key', 'new-value')
+    await __v3PluginLifecycleTestHooks.reset()
+    persistence.resolve({ status: 'accepted', result: { status: 'ok', revision: 1 } })
+
+    await expect(result).rejects.toThrow('Plugin instance is no longer active')
   })
 })
 
