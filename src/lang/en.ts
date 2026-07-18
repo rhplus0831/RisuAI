@@ -1,5 +1,13 @@
 export const languageEnglish = {
   unknownInteractionTime: 'Unknown',
+  mutationStatusQueued: 'Queued',
+  mutationStatusFailed: 'Save failed',
+  hypaMemoryMutationQueued: 'The Hypa Memory change is saved on this device and queued. It will retry automatically.',
+  hypaMemoryMutationFailed: 'The Hypa Memory change could not be saved. The previous setting was restored.',
+  inputTranslationHookMutationQueued:
+    'The input translation hook change is saved on this device and queued. It will retry automatically.',
+  inputTranslationHookMutationFailed:
+    'The input translation hook change could not be saved. The previous setting was restored.',
   settingsSaveQueued: 'This settings change is saved on this device and queued. It will retry automatically.',
   alternateGreetingMutationQueued:
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',

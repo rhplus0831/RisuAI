@@ -55,7 +55,9 @@ import {
   restoreCharacterTrashTime,
   sanitizeCharacterPatch,
   setCharacterSupaMemory,
+  setCharacterSupaMemoryWithOutcome,
   setCharacterInputTranslationHook,
+  setCharacterInputTranslationHookWithOutcome,
   updateCharacterOrderFolder,
 } from './characterCommands'
 import { setCharacterByIndex, type Database, type folder } from './storage/database.svelte'
@@ -2216,7 +2218,7 @@ describe('character command projection helpers', () => {
       testDatabaseState.db.characters[0].supaMemory = true
     }).toThrow()
 
-    setCharacterSupaMemory('char-a', true)
+    const mutation = setCharacterSupaMemoryWithOutcome('char-a', true)
 
     expect(testDatabaseState.db.characters[0].supaMemory).toBe(true)
 
@@ -2238,6 +2240,7 @@ describe('character command projection helpers', () => {
         },
       },
     ])
+    await expect(mutation).resolves.toMatchObject({ status: 'accepted' })
   })
 })
 
@@ -2273,7 +2276,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     )
 
     try {
-      await expect(setCharacterSupaMemory('char-a', true)).resolves.toMatchObject({ status: 'error' })
+      await expect(setCharacterSupaMemoryWithOutcome('char-a', true)).resolves.toMatchObject({ status: 'queued' })
       expect(testDatabaseState.db.characters[0].supaMemory).toBe(true)
       expect((await listPendingMutations()).map((entry) => entry.intent.requests[0])).toMatchObject([
         {
@@ -2509,7 +2512,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     } as any
     selectedCharID.set(0)
 
-    setCharacterSupaMemory('char-a', true)
+    const mutation = setCharacterSupaMemoryWithOutcome('char-a', true)
     await waitForCharacterPatch(calls, 'char-a')
     expect(testDatabaseState.db.characters[0].supaMemory).toBe(true)
 
@@ -2518,12 +2521,46 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     selectedCharID.set(1)
     patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
 
+    await expect(mutation).resolves.toMatchObject({ status: 'failed' })
+
     await vi.waitFor(() => {
       expect(testDatabaseState.db.characters[0].supaMemory).toBe(false)
     })
     expect(testDatabaseState.db.characters[0].name).toBe('Same row concurrent edit')
     expect(testDatabaseState.db.characters[1].name).toBe('Sibling concurrent edit')
     expect(get(selectedCharID)).toBe(1)
+  })
+
+  it('classifies a retained input-translation toggle without rolling back its optimistic value', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-input-translation-retained',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-character-input-translation-retained',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    testDatabaseState.db.characters[0].useInputTranslationHook = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/commands/characters/char-a') {
+          return jsonResponse({ error: 'temporarily unavailable' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${String(input)}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(setCharacterInputTranslationHookWithOutcome('char-a', true)).resolves.toMatchObject({
+        status: 'queued',
+      })
+      expect(testDatabaseState.db.characters[0].useInputTranslationHook).toBe(true)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('L34: selectedCharID auto-enable uses one-field patch without full row clone', async () => {

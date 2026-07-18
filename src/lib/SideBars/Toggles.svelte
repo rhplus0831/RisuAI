@@ -16,7 +16,11 @@
     compareChatGenerationTogglePresetToActiveState,
     getChatGenerationTogglePresets,
   } from 'src/ts/chatGenerationTogglePresets'
-  import { setCharacterInputTranslationHook, setCharacterSupaMemory } from 'src/ts/characterCommands'
+  import {
+    setCharacterInputTranslationHookWithOutcome,
+    setCharacterSupaMemoryWithOutcome,
+  } from 'src/ts/characterCommands'
+  import { alertError, alertNormal } from 'src/ts/alert'
   import {
     ensureActiveChatSidebarToggleDefaults,
     resolveActiveChatGenerationSettings,
@@ -51,6 +55,20 @@
   let { chara, noContainer }: Props = $props()
 
   let selectedTogglePresetId = $state('')
+  type CharacterToggleField = 'supaMemory' | 'inputTranslationHook'
+  type CharacterToggleStatus = 'idle' | 'queued' | 'failed'
+  let characterToggleAttempts = $state<Record<CharacterToggleField, number>>({
+    supaMemory: 0,
+    inputTranslationHook: 0,
+  })
+  let characterTogglePending = $state<Record<CharacterToggleField, boolean>>({
+    supaMemory: false,
+    inputTranslationHook: false,
+  })
+  let characterToggleStatus = $state<Record<CharacterToggleField, CharacterToggleStatus>>({
+    supaMemory: 'idle',
+    inputTranslationHook: 'idle',
+  })
 
   let activeGenerationSettings = $derived.by(() =>
     resolveActiveChatGenerationSettings({
@@ -89,14 +107,44 @@
     saveActiveChatSidebarToggleGenerationSettings(key, value)
   }
 
-  function setSupaMemoryValue(value: boolean): void {
+  async function setSupaMemoryValue(value: boolean): Promise<void> {
     if (!chara?.chaId) return
-    setCharacterSupaMemory(chara.chaId, value)
+    const characterId = chara.chaId
+    const attempt = ++characterToggleAttempts.supaMemory
+    characterTogglePending.supaMemory = true
+    characterToggleStatus.supaMemory = 'idle'
+    const outcome = await setCharacterSupaMemoryWithOutcome(characterId, value)
+    settleCharacterToggle('supaMemory', characterId, attempt, outcome?.status)
   }
 
-  function setInputTranslationHookValue(value: boolean): void {
+  async function setInputTranslationHookValue(value: boolean): Promise<void> {
     if (!chara?.chaId) return
-    setCharacterInputTranslationHook(chara.chaId, value)
+    const characterId = chara.chaId
+    const attempt = ++characterToggleAttempts.inputTranslationHook
+    characterTogglePending.inputTranslationHook = true
+    characterToggleStatus.inputTranslationHook = 'idle'
+    const outcome = await setCharacterInputTranslationHookWithOutcome(characterId, value)
+    settleCharacterToggle('inputTranslationHook', characterId, attempt, outcome?.status)
+  }
+
+  function settleCharacterToggle(
+    field: CharacterToggleField,
+    characterId: string,
+    attempt: number,
+    status: 'accepted' | 'queued' | 'failed' | undefined,
+  ): void {
+    if (chara?.chaId !== characterId || characterToggleAttempts[field] !== attempt) return
+    characterTogglePending[field] = false
+    characterToggleStatus[field] = status === 'queued' ? 'queued' : status === 'failed' ? 'failed' : 'idle'
+    if (status === 'queued') {
+      alertNormal(
+        field === 'supaMemory' ? language.hypaMemoryMutationQueued : language.inputTranslationHookMutationQueued,
+      )
+    } else if (status === 'failed') {
+      alertError(
+        field === 'supaMemory' ? language.hypaMemoryMutationFailed : language.inputTranslationHookMutationFailed,
+      )
+    }
   }
 
   function isSidebarTogglePresetDifferent(key: string): boolean {
@@ -292,17 +340,47 @@
 
     {@render toggles(displayedSidebarToggles, true)}
     {#if chara && getDatabase().hypaV3}
-      <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI} data-risu-hypa-memory-toggle>
-        <CheckInput check={chara.supaMemory} reverse name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
+      <div
+        class="flex mt-2 items-center w-full gap-2"
+        class:justify-end={$MobileGUI}
+        data-risu-hypa-memory-toggle
+        data-risu-mutation-status={characterToggleStatus.supaMemory}
+        aria-busy={characterTogglePending.supaMemory}>
+        <CheckInput
+          check={chara.supaMemory}
+          reverse
+          name={language.ToggleHypaMemory}
+          onChange={setSupaMemoryValue}
+          disabled={characterTogglePending.supaMemory} />
+        {#if characterToggleStatus.supaMemory !== 'idle'}
+          <span class="text-xs text-textcolor2" role="status">
+            {characterToggleStatus.supaMemory === 'queued'
+              ? language.mutationStatusQueued
+              : language.mutationStatusFailed}
+          </span>
+        {/if}
       </div>
     {/if}
     {#if chara}
-      <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI} data-risu-input-translation-hook-toggle>
+      <div
+        class="flex mt-2 items-center w-full gap-2"
+        class:justify-end={$MobileGUI}
+        data-risu-input-translation-hook-toggle
+        data-risu-mutation-status={characterToggleStatus.inputTranslationHook}
+        aria-busy={characterTogglePending.inputTranslationHook}>
         <CheckInput
           check={chara.useInputTranslationHook}
           reverse
           name={language.useInputTranslationHook}
-          onChange={setInputTranslationHookValue} />
+          onChange={setInputTranslationHookValue}
+          disabled={characterTogglePending.inputTranslationHook} />
+        {#if characterToggleStatus.inputTranslationHook !== 'idle'}
+          <span class="text-xs text-textcolor2" role="status">
+            {characterToggleStatus.inputTranslationHook === 'queued'
+              ? language.mutationStatusQueued
+              : language.mutationStatusFailed}
+          </span>
+        {/if}
       </div>
     {/if}
     <ChatGenerationResetDefaultsButton />
@@ -330,16 +408,43 @@
   {/if}
   {@render toggles(displayedSidebarToggles)}
   {#if chara && getDatabase().hypaV3}
-    <div class="flex mt-2 items-center" data-risu-hypa-memory-toggle>
-      <CheckInput check={chara.supaMemory} name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
+    <div
+      class="flex mt-2 items-center gap-2"
+      data-risu-hypa-memory-toggle
+      data-risu-mutation-status={characterToggleStatus.supaMemory}
+      aria-busy={characterTogglePending.supaMemory}>
+      <CheckInput
+        check={chara.supaMemory}
+        name={language.ToggleHypaMemory}
+        onChange={setSupaMemoryValue}
+        disabled={characterTogglePending.supaMemory} />
+      {#if characterToggleStatus.supaMemory !== 'idle'}
+        <span class="text-xs text-textcolor2" role="status">
+          {characterToggleStatus.supaMemory === 'queued'
+            ? language.mutationStatusQueued
+            : language.mutationStatusFailed}
+        </span>
+      {/if}
     </div>
   {/if}
   {#if chara}
-    <div class="flex mt-2 items-center" data-risu-input-translation-hook-toggle>
+    <div
+      class="flex mt-2 items-center gap-2"
+      data-risu-input-translation-hook-toggle
+      data-risu-mutation-status={characterToggleStatus.inputTranslationHook}
+      aria-busy={characterTogglePending.inputTranslationHook}>
       <CheckInput
         check={chara.useInputTranslationHook}
         name={language.useInputTranslationHook}
-        onChange={setInputTranslationHookValue} />
+        onChange={setInputTranslationHookValue}
+        disabled={characterTogglePending.inputTranslationHook} />
+      {#if characterToggleStatus.inputTranslationHook !== 'idle'}
+        <span class="text-xs text-textcolor2" role="status">
+          {characterToggleStatus.inputTranslationHook === 'queued'
+            ? language.mutationStatusQueued
+            : language.mutationStatusFailed}
+        </span>
+      {/if}
     </div>
   {/if}
   <ChatGenerationResetDefaultsButton />

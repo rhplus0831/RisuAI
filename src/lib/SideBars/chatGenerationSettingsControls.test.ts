@@ -4,8 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const alertSpies = vi.hoisted(() => ({
   alertConfirm: vi.fn(async () => false),
+  alertError: vi.fn(),
   alertInput: vi.fn(async () => ''),
+  alertNormal: vi.fn(),
   alertSelect: vi.fn(async () => '2'),
+}))
+const characterCommandSpies = vi.hoisted(() => ({
+  setCharacterSupaMemoryWithOutcome: vi.fn(
+    async (): Promise<{ status: 'accepted' | 'queued' | 'failed' }> => ({ status: 'accepted' }),
+  ),
+  setCharacterInputTranslationHookWithOutcome: vi.fn(
+    async (): Promise<{ status: 'accepted' | 'queued' | 'failed' }> => ({ status: 'accepted' }),
+  ),
 }))
 
 vi.mock('src/ts/alert', async (importActual) => {
@@ -13,7 +23,9 @@ vi.mock('src/ts/alert', async (importActual) => {
   return {
     ...actual,
     alertConfirm: alertSpies.alertConfirm,
+    alertError: alertSpies.alertError,
     alertInput: alertSpies.alertInput,
+    alertNormal: alertSpies.alertNormal,
     alertSelect: alertSpies.alertSelect,
   }
 })
@@ -41,9 +53,7 @@ vi.mock('src/ts/process/scripts', () => ({
   resetScriptCache: vi.fn(),
 }))
 
-vi.mock('src/ts/characterCommands', () => ({
-  setCharacterSupaMemory: vi.fn(),
-}))
+vi.mock('src/ts/characterCommands', () => characterCommandSpies)
 
 vi.mock('src/ts/setting/utils', () => ({
   getFullSettingsData: () => [],
@@ -493,8 +503,14 @@ beforeEach(() => {
   alertSpies.alertConfirm.mockResolvedValue(false)
   alertSpies.alertInput.mockReset()
   alertSpies.alertInput.mockResolvedValue('')
+  alertSpies.alertError.mockReset()
+  alertSpies.alertNormal.mockReset()
   alertSpies.alertSelect.mockReset()
   alertSpies.alertSelect.mockResolvedValue('2')
+  characterCommandSpies.setCharacterSupaMemoryWithOutcome.mockReset()
+  characterCommandSpies.setCharacterSupaMemoryWithOutcome.mockResolvedValue({ status: 'accepted' })
+  characterCommandSpies.setCharacterInputTranslationHookWithOutcome.mockReset()
+  characterCommandSpies.setCharacterInputTranslationHookWithOutcome.mockResolvedValue({ status: 'accepted' })
   clearCachedServerCommandRevision()
   seedDb()
 })
@@ -519,6 +535,40 @@ afterEach(async () => {
 })
 
 describe('sidebar chat generation settings controls', () => {
+  it('keeps a character toggle pending and reports queued and failed persistence outcomes', async () => {
+    const queued = deferred<{ status: 'queued' }>()
+    characterCommandSpies.setCharacterInputTranslationHookWithOutcome.mockReturnValueOnce(queued.promise)
+    mountToggles()
+    await tick()
+
+    const control = elementBySelector<HTMLElement>(
+      '[data-risu-input-translation-hook-toggle]',
+      'input translation hook toggle',
+    )
+    const checkbox = control.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+    checkbox.click()
+    await tick()
+
+    expect(control.getAttribute('aria-busy')).toBe('true')
+    expect(checkbox.disabled).toBe(true)
+
+    queued.resolve({ status: 'queued' })
+    await flushAsyncWork()
+
+    expect(control.dataset.risuMutationStatus).toBe('queued')
+    expect(checkbox.disabled).toBe(false)
+    expect(control.querySelector('[role="status"]')?.textContent).toContain(language.mutationStatusQueued)
+    expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.inputTranslationHookMutationQueued)
+
+    characterCommandSpies.setCharacterInputTranslationHookWithOutcome.mockResolvedValueOnce({ status: 'failed' })
+    checkbox.click()
+    await flushAsyncWork()
+
+    expect(control.dataset.risuMutationStatus).toBe('failed')
+    expect(control.querySelector('[role="status"]')?.textContent).toContain(language.mutationStatusFailed)
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.inputTranslationHookMutationFailed)
+  })
+
   it('always shows chat setup controls without custom sidebar configuration', async () => {
     testDatabaseState().customSidebarItems = []
     testDatabaseState().characters[0].chats[0].generationSettings = {

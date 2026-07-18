@@ -145,10 +145,12 @@ export interface CompatibleCharacterScopedUpdatePreparation extends CompatibleCh
   dispatchAsync: () => Promise<CompatibleCharacterMutationOutcome | null>
 }
 
-export type CompatibleCharacterMutationOutcome =
+export type CharacterMutationOutcome =
   | { status: 'accepted'; result: Extract<ServerCommandResult, { status: 'ok' }> }
   | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
   | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+
+export type CompatibleCharacterMutationOutcome = CharacterMutationOutcome
 
 export interface CreateAndSelectCharacterDispatchOptions {
   shouldRestoreSelection?: () => boolean
@@ -1029,7 +1031,7 @@ function prepareDurableCharacterPatchExecution(
 
 async function compatibleCharacterMutationOutcome(
   execution: PendingCharacterMutationExecution,
-): Promise<CompatibleCharacterMutationOutcome> {
+): Promise<CharacterMutationOutcome> {
   let result: ServerCommandResult
   try {
     result = await execution.promise
@@ -1154,8 +1156,25 @@ export function dispatchUpdateCharacterSupaMemory(
   enabled: boolean,
   previous: CharacterSupaMemorySnapshot,
 ): Promise<ServerCommandResult> | undefined {
+  return prepareUpdateCharacterSupaMemory(characterId, enabled, previous)?.promise
+}
+
+export function dispatchUpdateCharacterSupaMemoryWithOutcome(
+  characterId: string,
+  enabled: boolean,
+  previous: CharacterSupaMemorySnapshot,
+): Promise<CharacterMutationOutcome> | undefined {
+  const execution = prepareUpdateCharacterSupaMemory(characterId, enabled, previous)
+  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
+}
+
+function prepareUpdateCharacterSupaMemory(
+  characterId: string,
+  enabled: boolean,
+  previous: CharacterSupaMemorySnapshot,
+): PendingCharacterMutationExecution | undefined {
   const baseline = { hadValue: previous.hadSupaMemory, value: previous.supaMemory }
-  return dispatchDurableCharacterPatch(
+  return prepareDurableCharacterPatchExecution(
     characterId,
     { supaMemory: enabled },
     new Map([['supaMemory', baseline]]),
@@ -1176,11 +1195,28 @@ export function dispatchUpdateCharacterInputTranslationHook(
   enabled: boolean,
   previous: CharacterInputTranslationHookSnapshot,
 ): Promise<ServerCommandResult> | undefined {
+  return prepareUpdateCharacterInputTranslationHook(characterId, enabled, previous)?.promise
+}
+
+export function dispatchUpdateCharacterInputTranslationHookWithOutcome(
+  characterId: string,
+  enabled: boolean,
+  previous: CharacterInputTranslationHookSnapshot,
+): Promise<CharacterMutationOutcome> | undefined {
+  const execution = prepareUpdateCharacterInputTranslationHook(characterId, enabled, previous)
+  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
+}
+
+function prepareUpdateCharacterInputTranslationHook(
+  characterId: string,
+  enabled: boolean,
+  previous: CharacterInputTranslationHookSnapshot,
+): PendingCharacterMutationExecution | undefined {
   const baseline = {
     hadValue: previous.hadUseInputTranslationHook,
     value: previous.useInputTranslationHook,
   }
-  return dispatchDurableCharacterPatch(
+  return prepareDurableCharacterPatchExecution(
     characterId,
     { useInputTranslationHook: enabled },
     new Map([['useInputTranslationHook', baseline]]),
@@ -2034,6 +2070,21 @@ export function setCharacterSupaMemory(
   characterId: string,
   enabled: boolean,
 ): Promise<ServerCommandResult> | undefined {
+  return startCharacterSupaMemoryMutation(characterId, enabled)?.promise
+}
+
+export function setCharacterSupaMemoryWithOutcome(
+  characterId: string,
+  enabled: boolean,
+): Promise<CharacterMutationOutcome> | undefined {
+  const execution = startCharacterSupaMemoryMutation(characterId, enabled)
+  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
+}
+
+function startCharacterSupaMemoryMutation(
+  characterId: string,
+  enabled: boolean,
+): PendingCharacterMutationExecution | undefined {
   if (!characterId) return
   return withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
@@ -2042,7 +2093,7 @@ export function setCharacterSupaMemory(
     const previous = canUseServerCommands() ? currentCharacterSupaMemorySnapshot(characterId) : null
     character.supaMemory = enabled
     if (previous) {
-      return dispatchUpdateCharacterSupaMemory(characterId, enabled, previous)
+      return prepareUpdateCharacterSupaMemory(characterId, enabled, previous)
     }
   })
 }
@@ -2051,6 +2102,21 @@ export function setCharacterInputTranslationHook(
   characterId: string,
   enabled: boolean,
 ): Promise<ServerCommandResult> | undefined {
+  return startCharacterInputTranslationHookMutation(characterId, enabled)?.promise
+}
+
+export function setCharacterInputTranslationHookWithOutcome(
+  characterId: string,
+  enabled: boolean,
+): Promise<CharacterMutationOutcome> | undefined {
+  const execution = startCharacterInputTranslationHookMutation(characterId, enabled)
+  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
+}
+
+function startCharacterInputTranslationHookMutation(
+  characterId: string,
+  enabled: boolean,
+): PendingCharacterMutationExecution | undefined {
   if (!characterId) return
   return withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
@@ -2059,7 +2125,7 @@ export function setCharacterInputTranslationHook(
     const previous = canUseServerCommands() ? currentCharacterInputTranslationHookSnapshot(characterId) : null
     character.useInputTranslationHook = enabled
     if (previous) {
-      return dispatchUpdateCharacterInputTranslationHook(characterId, enabled, previous)
+      return prepareUpdateCharacterInputTranslationHook(characterId, enabled, previous)
     }
   })
 }
