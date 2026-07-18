@@ -359,6 +359,13 @@ async function editMaxResponse(value: number): Promise<void> {
   await tick()
 }
 
+async function clearMaxResponse(): Promise<void> {
+  const input = maxResponseInput()
+  input.value = ''
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+}
+
 async function renameSelectedPreset(value: string): Promise<void> {
   vi.mocked(alertInput).mockResolvedValueOnce(value)
   const buttons = target.querySelectorAll<HTMLButtonElement>('button')
@@ -642,6 +649,27 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         maxResponse: 100,
       },
     })
+  })
+
+  it('ignores an empty response size without cancelling a pending prompt edit', async () => {
+    await editPrompt('pending prompt A')
+    await clearMaxResponse()
+
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
+      prompt: 'pending prompt A',
+      maxResponse: 100,
+    })
+    expect(commandSpies.updateInputs).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'pending prompt A' },
+      },
+    ])
   })
 
   it('persists the exact translator preset PATCH and immediately closes a total revert', async () => {

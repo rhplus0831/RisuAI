@@ -1460,12 +1460,12 @@
       !previousPreset ||
       !currentPreset ||
       !isCanonicalTranslatorPreset(previousPreset, presetId) ||
-      !isCanonicalTranslatorPreset(currentPreset, presetId) ||
-      !isValidTranslatorPresetPatch(patch)
+      !isCanonicalTranslatorPreset(currentPreset, presetId)
     ) {
       cancelPendingTranslatorPresetUpdates(presetId)
       return
     }
+    if (!isValidTranslatorPresetPatch(patch)) return
     const pendingPatch = pending.patch as Record<string, unknown>
     const pendingPrevious = pending.previous as Record<string, unknown>
     const pendingAttempted = pending.attempted as Record<string, unknown>
@@ -1870,6 +1870,8 @@
     bind:value={
       () => preset.maxResponse,
       (value) => {
+        if (typeof value !== 'number' || !Number.isFinite(value)) return
+
         const previous = currentTranslatorPresetStateSnapshot()
         const presetId = selectedTranslatorPresetId()
         if (!canUseServerCommands()) {
