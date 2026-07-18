@@ -1596,8 +1596,11 @@
           if (currentRealCharacterDraftTarget()) {
             if (characterDraft.value.inlayViewScreen && characterDraft.value.additionalAssets === undefined) {
               characterDraft.value.additionalAssets = []
-            } else if (!characterDraft.value.inlayViewScreen && characterDraft.value.additionalAssets.length === 0) {
-              characterDraft.value.additionalAssets = undefined
+            } else if (
+              !characterDraft.value.inlayViewScreen &&
+              (characterDraft.value.additionalAssets?.length ?? 0) === 0
+            ) {
+              characterDraft.value.additionalAssets = []
             }
 
             updateCharacterInlayScreen()

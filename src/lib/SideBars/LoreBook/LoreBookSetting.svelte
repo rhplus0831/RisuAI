@@ -222,7 +222,7 @@
       <Check
         check={false}
         onChange={() => {
-          characterLoreSettingsDraft.value.loreSettings = undefined
+          characterLoreSettingsDraft.value.loreSettings = null
           characterLoreSettingsDraft.value = { ...characterLoreSettingsDraft.value }
         }}
         name={language.useGlobalSettings} />

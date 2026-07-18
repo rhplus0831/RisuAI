@@ -7063,6 +7063,36 @@ describe('Phase 9-3a character commands', () => {
     })
   })
 
+  it('persists the character lore settings deletion sentinel as a removed field', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-lore-settings',
+          name: 'Lore Character',
+          loreSettings: {
+            scanDepth: 4,
+            tokenBudget: 800,
+            recursiveScanning: true,
+          },
+        },
+      ],
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-lore-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { loreSettings: null },
+      },
+    })
+
+    expect(updated.statusCode).toBe(200)
+    expect(readJsonRow('characters', 'char-lore-settings')).not.toHaveProperty('loreSettings')
+  })
+
   it('creates and selects a character in one command', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

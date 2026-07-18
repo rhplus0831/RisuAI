@@ -1,9 +1,13 @@
 import { untrack } from 'svelte'
 import { get } from 'svelte/store'
 import {
+  CHARACTER_PATCH_DELETABLE_KEYS,
   CHARACTER_PATCH_EXCLUDED_KEYS,
+  applyAttemptedCharacterFieldRollback,
+  applyCharacterPatchToRecord,
   cloneJsonValue,
   dispatchUpdateCharacter,
+  isCharacterPatchValueCurrent,
   restoreCharacterState,
   sanitizeCharacterPatch,
   type CharacterStateSnapshot,
@@ -17,7 +21,7 @@ import {
 } from './resourceWriteGuard.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER } from '../storage/database.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
-import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from './staleStateGuards'
+import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 import { dispatchDurableMutation } from './durableMutationDispatch'
 import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import {
@@ -89,7 +93,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
     for (const key of Object.keys(attempt.attempted)) {
       if (!dirtyFields.has(key)) continue
-      if (snapshotJson(draft.value[key]) !== snapshotJson(attempt.attempted[key])) continue
+      if (!isCharacterPatchValueCurrent(draft.value, key, attempt.attempted[key])) continue
       draft.value[key] = cloneJsonValue(previousValue[key])
       dirtyFields.delete(key)
       changed = true
@@ -183,7 +187,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
       for (const key of Array.from(dirtyFields)) {
         if (
           Object.prototype.hasOwnProperty.call(localEffect.patch, key) &&
-          snapshotJson(draft.value[key]) === snapshotJson(localEffect.patch[key])
+          isCharacterPatchValueCurrent(draft.value, key, localEffect.patch[key])
         ) {
           dirtyFields.delete(key)
         }
@@ -218,9 +222,10 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
       }
       const patch = sanitizeCharacterPatch(changedPatch)
       withTrustedResourceWrite(() => {
-        const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-        if (!character) return
-        Object.assign(character, patch)
+        const characters = getDatabase().characters
+        const index = characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
+        if (!characters || index < 0) return
+        applyCharacterProjectionPatch(characters, index, patch)
       })
       previousServerSnapshot = snapshotJson({ characterId, value: patch })
     })
@@ -264,10 +269,30 @@ function reassertDirtyDraftFields(
   if (Object.keys(sanitized).length === 0) return
 
   withTrustedResourceWrite(() => {
-    const character = getDatabase().characters?.[selected]
+    const characters = getDatabase().characters
+    const character = characters?.[selected]
     if (!character || character.chaId !== characterId || isServerCharacterShell(character)) return
-    Object.assign(character, sanitized)
+    applyCharacterProjectionPatch(characters, selected, sanitized)
   })
+}
+
+function applyCharacterProjectionPatch(
+  characters: NonNullable<ReturnType<typeof getDatabase>['characters']>,
+  index: number,
+  patch: CharacterSnapshot,
+): void {
+  const character = characters[index]
+  const deletesField = Object.entries(patch).some(
+    ([field, value]) => value === null && CHARACTER_PATCH_DELETABLE_KEYS.has(field),
+  )
+  if (!deletesField) {
+    applyCharacterPatchToRecord(character as unknown as Record<string, unknown>, patch)
+    return
+  }
+
+  const next = { ...(character as unknown as Record<string, unknown>) }
+  applyCharacterPatchToRecord(next, patch)
+  characters[index] = next as unknown as (typeof characters)[number]
 }
 
 function currentCharacterDraftSeed(
@@ -508,10 +533,10 @@ function characterSnapshotProfile(snapshot: CharacterStateSnapshot): CharacterSn
 }
 
 function sameFieldValue(left: CharacterSnapshot, right: CharacterSnapshot, key: string): boolean {
-  return (
-    Object.prototype.hasOwnProperty.call(left, key) === Object.prototype.hasOwnProperty.call(right, key) &&
-    snapshotJson(left[key]) === snapshotJson(right[key])
-  )
+  if (!Object.prototype.hasOwnProperty.call(right, key)) {
+    return !Object.prototype.hasOwnProperty.call(left, key)
+  }
+  return isCharacterPatchValueCurrent(left, key, right[key])
 }
 
 function copyFieldValue(target: CharacterSnapshot, source: CharacterSnapshot, key: string): void {
@@ -705,11 +730,10 @@ export function rollbackServerBackedCharacterProfile(snapshot: CharacterStateSna
         )
         if (!character) return
         if (profileSnapshot.attemptedProfile) {
-          applyAttemptedFieldRollback({
+          applyAttemptedCharacterFieldRollback({
             target: character as unknown as Record<string, unknown>,
             previous: profileSnapshot.profile,
             attempted: profileSnapshot.attemptedProfile,
-            deleteMissingPrevious: true,
           })
           return
         }

@@ -175,9 +175,71 @@ export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
   'coldStoragedChats',
 ])
 
+export const CHARACTER_PATCH_DELETABLE_KEYS = new Set(['loreSettings'])
+
 export function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function isCharacterPatchDeleteSentinel(field: string, value: unknown): boolean {
+  return value === null && CHARACTER_PATCH_DELETABLE_KEYS.has(field)
+}
+
+export function isCharacterPatchValueCurrent(
+  target: Record<string, unknown>,
+  field: string,
+  attemptedValue: unknown,
+): boolean {
+  if (isCharacterPatchDeleteSentinel(field, attemptedValue)) {
+    return !Object.prototype.hasOwnProperty.call(target, field) || target[field] === undefined || target[field] === null
+  }
+  return (
+    Object.prototype.hasOwnProperty.call(target, field) && characterFieldSnapshotEquals(target[field], attemptedValue)
+  )
+}
+
+export function applyCharacterPatchToRecord(
+  target: Record<string, unknown>,
+  patch: CharacterSnapshot,
+): Record<string, unknown> {
+  for (const [field, value] of Object.entries(sanitizeCharacterPatch(patch))) {
+    if (isCharacterPatchDeleteSentinel(field, value)) {
+      delete target[field]
+    } else {
+      target[field] = cloneJsonValue(value)
+    }
+  }
+  return target
+}
+
+export function applyAttemptedCharacterFieldRollback(input: {
+  target: Record<string, unknown>
+  previous: Record<string, unknown>
+  attempted: CharacterSnapshot
+}): string[] {
+  const deletionFields: string[] = []
+  const ordinaryFields: string[] = []
+  for (const [field, value] of Object.entries(input.attempted)) {
+    const fields = isCharacterPatchDeleteSentinel(field, value) ? deletionFields : ordinaryFields
+    fields.push(field)
+  }
+
+  const rolledBack = applyAttemptedFieldRollback({
+    ...input,
+    keys: ordinaryFields,
+    deleteMissingPrevious: true,
+  })
+  for (const field of deletionFields) {
+    if (!isCharacterPatchValueCurrent(input.target, field, input.attempted[field])) continue
+    if (Object.prototype.hasOwnProperty.call(input.previous, field)) {
+      input.target[field] = cloneJsonValue(input.previous[field])
+    } else {
+      delete input.target[field]
+    }
+    rolledBack.push(field)
+  }
+  return rolledBack
 }
 
 function pendingMutationStagingFailure(error: unknown): ServerCommandResult {
@@ -369,11 +431,10 @@ export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
       const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
       if (index >= 0) {
         if (snapshot.attempted) {
-          applyAttemptedFieldRollback({
+          applyAttemptedCharacterFieldRollback({
             target: characters[index] as unknown as Record<string, unknown>,
             previous: snapshot.character as unknown as Record<string, unknown>,
             attempted: snapshot.attempted,
-            deleteMissingPrevious: true,
           })
         } else {
           characters[index] = cloneJsonValue(snapshot.character) as character
@@ -392,11 +453,10 @@ function restoreCompatibleCharacterRowAttempt(snapshot: CharacterRowSnapshot): v
     if (!characters) return
     const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
     if (index < 0) return
-    applyAttemptedFieldRollback({
+    applyAttemptedCharacterFieldRollback({
       target: characters[index] as unknown as Record<string, unknown>,
       previous: snapshot.character as unknown as Record<string, unknown>,
       attempted: snapshot.attempted,
-      deleteMissingPrevious: true,
     })
   })
 }
@@ -927,12 +987,24 @@ function captureCharacterFieldMutationAttempt(
 }
 
 function rebaseImmediateCharacterFieldMutationSuccessors(attempt: CharacterFieldMutationAttempt): void {
-  for (const fieldAttempt of attempt.fields.values()) {
+  for (const [field, fieldAttempt] of attempt.fields) {
     const successor = fieldAttempt.successor
-    if (!successor?.previous.hadValue) continue
-    if (!characterFieldSnapshotEquals(successor.previous.value, fieldAttempt.attemptedValue)) continue
+    if (!successor || !characterFieldMutationBaselineMatches(field, successor.previous, fieldAttempt.attemptedValue)) {
+      continue
+    }
     successor.previous = { ...fieldAttempt.previous }
   }
+}
+
+function characterFieldMutationBaselineMatches(
+  field: string,
+  baseline: CharacterFieldMutationBaseline,
+  attemptedValue: unknown,
+): boolean {
+  if (isCharacterPatchDeleteSentinel(field, attemptedValue)) {
+    return !baseline.hadValue || baseline.value === undefined || baseline.value === null
+  }
+  return baseline.hadValue && characterFieldSnapshotEquals(baseline.value, attemptedValue)
 }
 
 function characterFieldSnapshotEquals(left: unknown, right: unknown): boolean {
@@ -963,7 +1035,9 @@ function isCharacterFieldMutationAttemptCurrent(
     return false
   }
   const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-  return !!character && Object.is((character as unknown as Record<string, unknown>)[field], attemptedValue)
+  return (
+    !!character && isCharacterPatchValueCurrent(character as unknown as Record<string, unknown>, field, attemptedValue)
+  )
 }
 
 function dispatchDurableCharacterPatch(
@@ -1415,11 +1489,8 @@ export function prepareCompatibleCharacterProjectionUpdate(
 }
 
 export function applyCompatibleCharacterPatch(previousCharacter: character, patch: CharacterSnapshot): character {
-  const sanitizedPatch = sanitizeCharacterPatch(patch)
   const nextRecord = { ...(previousCharacter as unknown as Record<string, unknown>) }
-  for (const [key, value] of Object.entries(sanitizedPatch)) {
-    nextRecord[key] = cloneJsonValue(value)
-  }
+  applyCharacterPatchToRecord(nextRecord, patch)
   return nextRecord as unknown as character
 }
 
@@ -2351,7 +2422,11 @@ export function initialCharacterChatSnapshot(character: character): ChatSnapshot
 export function sanitizeCharacterPatch(patch: CharacterSnapshot): CharacterSnapshot {
   const sanitized: CharacterSnapshot = {}
   for (const [key, value] of Object.entries(patch)) {
-    if (CHARACTER_PATCH_EXCLUDED_KEYS.has(key) || value === undefined) continue
+    if (CHARACTER_PATCH_EXCLUDED_KEYS.has(key)) continue
+    if (value === undefined) {
+      if (CHARACTER_PATCH_DELETABLE_KEYS.has(key)) sanitized[key] = null
+      continue
+    }
     sanitized[key] = cloneJsonValue(value)
   }
   return sanitized
@@ -2374,8 +2449,9 @@ export function changedCharacterFields(previous: character, current: character):
   for (const key of keys) {
     if (CHARACTER_PATCH_EXCLUDED_KEYS.has(key)) continue
     if (snapshotJson(previousRecord[key]) !== snapshotJson(currentRecord[key])) {
-      // A deleted field clones `undefined` here, exactly like the old shape;
-      // `sanitizeCharacterPatch` drops it before the command is built.
+      // Deletable fields are converted from `undefined` to an explicit null
+      // sentinel by `sanitizeCharacterPatch`; other undefined fields remain
+      // unsupported and are dropped.
       patch[key] = cloneJsonValue(currentRecord[key])
     }
   }

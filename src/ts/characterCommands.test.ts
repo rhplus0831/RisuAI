@@ -31,6 +31,8 @@ vi.mock('./alert', async (importActual) => {
 })
 
 import {
+  applyAttemptedCharacterFieldRollback,
+  applyCompatibleCharacterPatch,
   changedCharacterFields,
   createCharacterOrderFolder,
   currentCharacterRowSnapshot,
@@ -2901,6 +2903,46 @@ describe('Phase 2 character-row scoped dispatch', () => {
 })
 
 describe('Phase 3 kept-key character diff (M13)', () => {
+  it('restores a rejected deletion without overwriting a newer field value', () => {
+    const previous = { loreSettings: { scanDepth: 4 } }
+    const deletedProjection: Record<string, unknown> = {}
+
+    expect(
+      applyAttemptedCharacterFieldRollback({
+        target: deletedProjection,
+        previous,
+        attempted: { loreSettings: null },
+      }),
+    ).toEqual(['loreSettings'])
+    expect(deletedProjection.loreSettings).toEqual({ scanDepth: 4 })
+
+    const newerProjection = { loreSettings: { scanDepth: 9 } }
+    expect(
+      applyAttemptedCharacterFieldRollback({
+        target: newerProjection,
+        previous,
+        attempted: { loreSettings: null },
+      }),
+    ).toEqual([])
+    expect(newerProjection.loreSettings).toEqual({ scanDepth: 9 })
+  })
+
+  it('applies the lore settings sentinel as an optimistic field deletion', () => {
+    const character = {
+      chaId: 'char-a',
+      name: 'A',
+      loreSettings: { scanDepth: 4, tokenBudget: 800 },
+    } as any
+
+    const updated = applyCompatibleCharacterPatch(character, { loreSettings: null }) as unknown as Record<
+      string,
+      unknown
+    >
+
+    expect(updated).not.toHaveProperty('loreSettings')
+    expect(character).toHaveProperty('loreSettings')
+  })
+
   it('M13: changedCharacterFields diffs without cloning the chats payload', () => {
     testDatabaseState.db = seedCloneCostDb() as any // char-0 carries a 40-message hydrated chat
     const previous = testDatabaseState.db.characters[0]
@@ -2915,7 +2957,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(instrumented.result).toEqual({ name: 'Renamed' })
   })
 
-  it('M13: the per-key diff matches the old clone-then-sanitize semantics', () => {
+  it('M13: the per-key diff preserves ordinary semantics and emits supported deletion sentinels', () => {
     const previous = {
       chaId: 'char-a',
       name: 'Old name',
@@ -2923,6 +2965,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
       lastInteraction: 100,
       nested: { a: 1, b: [1, 2] },
       removed: 'gone after',
+      loreSettings: { scanDepth: 4, tokenBudget: 800 },
       chats: [{ id: 'chat-1', message: [{ role: 'user', data: 'x' }] }],
       scriptstate: { $x: '1' },
     }
@@ -2944,13 +2987,17 @@ describe('Phase 3 kept-key character diff (M13)', () => {
       nested: { a: 1, b: [1, 2, 3] },
       added: 'new field',
     })
-    // a deleted kept field appears as an explicit undefined; sanitize drops it
+    // An unsupported deleted field remains explicit undefined and is dropped.
     expect('removed' in patch).toBe(true)
     expect(patch.removed).toBeUndefined()
+    // Supported deletions are translated into the server's null sentinel.
+    expect('loreSettings' in patch).toBe(true)
+    expect(patch.loreSettings).toBeUndefined()
     expect(sanitizeCharacterPatch(patch)).toEqual({
       name: 'New name',
       nested: { a: 1, b: [1, 2, 3] },
       added: 'new field',
+      loreSettings: null,
     })
     // excluded keys never enter the patch, changed or not
     expect('chats' in patch).toBe(false)

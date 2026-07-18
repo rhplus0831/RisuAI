@@ -53,6 +53,8 @@ const EXCLUDED_CHARACTER_PATCH_KEYS = new Set([
   'coldStoragedChats',
 ])
 
+const CHARACTER_PATCH_DELETABLE_KEYS = new Set(['loreSettings'])
+
 export function ensureDatabaseObject(database: unknown): JsonRecord {
   if (!database || typeof database !== 'object' || Array.isArray(database)) {
     throw new ValidationError('database must be an object before character commands can run')
@@ -113,12 +115,15 @@ export function buildPatchedCharacterCollectionRow(
   options: { assetDb?: DatabaseSync } = {},
 ): CharacterRecord {
   const character = input && typeof input === 'object' && !Array.isArray(input) ? (input as JsonRecord) : {}
-  const patched = {
+  const patched: JsonRecord = {
     ...characterCollectionRowDefaults(index),
     ...character,
     chats: [],
     ...patch,
     chaId: characterId,
+  }
+  for (const key of CHARACTER_PATCH_DELETABLE_KEYS) {
+    if (patch[key] === null) delete patched[key]
   }
   validateCharacterRecord(patched, 'character', options)
   return patched as CharacterRecord

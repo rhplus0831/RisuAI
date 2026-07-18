@@ -80,17 +80,58 @@ vi.mock('../characterCommands', () => {
     'coldstorage',
     'coldStoragedChats',
   ])
+  const deletable = new Set(['loreSettings'])
   const cloneJsonValue = <T>(value: T): T => (value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T))
   const sanitizeCharacterPatch = (patch: Record<string, unknown>) => {
     const sanitized: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(patch)) {
-      if (!excluded.has(key) && value !== undefined) sanitized[key] = cloneJsonValue(value)
+      if (excluded.has(key)) continue
+      if (value === undefined) {
+        if (deletable.has(key)) sanitized[key] = null
+        continue
+      }
+      sanitized[key] = cloneJsonValue(value)
     }
     return sanitized
   }
+  const isCharacterPatchValueCurrent = (target: Record<string, unknown>, field: string, attemptedValue: unknown) => {
+    if (deletable.has(field) && attemptedValue === null) {
+      return (
+        !Object.prototype.hasOwnProperty.call(target, field) || target[field] === undefined || target[field] === null
+      )
+    }
+    return (
+      Object.prototype.hasOwnProperty.call(target, field) &&
+      JSON.stringify(target[field]) === JSON.stringify(attemptedValue)
+    )
+  }
+  const applyCharacterPatchToRecord = (target: Record<string, unknown>, patch: Record<string, unknown>) => {
+    for (const [field, value] of Object.entries(sanitizeCharacterPatch(patch))) {
+      if (deletable.has(field) && value === null) delete target[field]
+      else target[field] = cloneJsonValue(value)
+    }
+    return target
+  }
+  const applyAttemptedCharacterFieldRollback = (input: {
+    target: Record<string, unknown>
+    previous: Record<string, unknown>
+    attempted: Record<string, unknown>
+  }) => {
+    for (const [field, attemptedValue] of Object.entries(input.attempted)) {
+      if (!isCharacterPatchValueCurrent(input.target, field, attemptedValue)) continue
+      if (Object.prototype.hasOwnProperty.call(input.previous, field)) {
+        input.target[field] = cloneJsonValue(input.previous[field])
+      } else {
+        delete input.target[field]
+      }
+    }
+  }
 
   return {
+    CHARACTER_PATCH_DELETABLE_KEYS: deletable,
     CHARACTER_PATCH_EXCLUDED_KEYS: excluded,
+    applyAttemptedCharacterFieldRollback,
+    applyCharacterPatchToRecord,
     cloneJsonValue,
     dispatchUpdateCharacter: (
       characterId: string,
@@ -114,6 +155,7 @@ vi.mock('../characterCommands', () => {
         return settled
       })
     },
+    isCharacterPatchValueCurrent,
     restoreCharacterState: vi.fn(),
     sanitizeCharacterPatch,
   }
@@ -523,6 +565,53 @@ describe('createServerBackedCharacterDraft seed gating', () => {
       },
     })
     expect(recorded.characterUpdates[0].patch).not.toHaveProperty('chaId')
+    stop()
+    stopWatcher()
+  })
+
+  it('persists lore settings deletion and releases the draft conflict boundary after acknowledgement', async () => {
+    setupCharacters([
+      characterRow('char-1', 'Initial', {
+        loreSettings: { scanDepth: 4, tokenBudget: 800 },
+      }),
+    ])
+    const stopWatcher = watchServerBackedCharacterProfile({ delayMs: DELAY })
+    flushSync()
+    const { draft, stop } = await createDraft(['name', 'loreSettings'])
+
+    draft.value.loreSettings = null
+    draft.value = { ...draft.value }
+    await flushAndSettle()
+
+    expect(getDatabase().characters[0]).not.toHaveProperty('loreSettings')
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.characterUpdates).toEqual([
+      {
+        characterId: 'char-1',
+        patch: { loreSettings: null },
+      },
+    ])
+    expect(durableState.stages[0].intent).toMatchObject({
+      requests: [
+        {
+          body: { patch: { loreSettings: null } },
+        },
+      ],
+    })
+
+    notifyServerCommandLocalEffectApplied(
+      { type: 'character.updated', revision: 2, resource: 'characterRow', id: 'char-1' },
+      { kind: 'characterPatch', characterId: 'char-1', patch: { loreSettings: null } },
+    )
+    const applied = mergeServerResourceCharacterRow({
+      ...characterRow('char-1', 'Server'),
+      loreSettings: { scanDepth: 9, tokenBudget: 1200 },
+    })
+    expect(applied).toBe(true)
+    await flushAndSettle()
+
+    expect(draft.value.loreSettings).toEqual({ scanDepth: 9, tokenBudget: 1200 })
+    expect(getDatabase().characters[0].loreSettings).toEqual({ scanDepth: 9, tokenBudget: 1200 })
     stop()
     stopWatcher()
   })
