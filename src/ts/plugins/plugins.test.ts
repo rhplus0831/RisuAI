@@ -727,6 +727,51 @@ describe('plugin import/update freshness', () => {
     expect(calls).toEqual([])
   })
 
+  it('completes a remote update across unrelated plugin argument edits', async () => {
+    const remoteUrl = 'https://plugins.example/plugin-a.js'
+    const remoteSource = createDeferred<string>()
+    const calls = stubRemotePluginUpdateFetch({
+      remoteUrl,
+      remoteSource: remoteSource.promise,
+    })
+    getDatabase().plugins = [
+      seedPlugin('plugin-a', {
+        script: 'Risuai.log("old")',
+        updateURL: remoteUrl,
+        versionOfPlugin: '1.0.0',
+      }),
+      seedPlugin('plugin-b', { realArg: { mode: 'before' } }),
+    ]
+
+    const updatePromise = updatePlugin(getDatabase().plugins[0])
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/proxy/plugin-fetch',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({ 'risu-url': encodeURIComponent(remoteUrl) }),
+        }),
+      )
+    })
+
+    getDatabase().plugins[1] = {
+      ...getDatabase().plugins[1],
+      realArg: { mode: 'after' },
+    }
+    remoteSource.resolve(
+      pluginSource('plugin-a', {
+        body: 'Risuai.log("updated")',
+        versionOfPlugin: '1.0.1',
+        updateURL: remoteUrl,
+      }),
+    )
+
+    await expect(updatePromise).resolves.toBe(true)
+    expect(getDatabase().plugins[0].script).toContain('Risuai.log("updated")')
+    expect(getDatabase().plugins[1].realArg).toEqual({ mode: 'after' })
+    expect(calls.some((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toBe(true)
+  })
+
   it('rolls back a fresh remote update and skips runtime reload when update command fails', async () => {
     const remoteUrl = 'https://plugins.example/plugin-a.js'
     const updatedSource = pluginSource('plugin-a', {

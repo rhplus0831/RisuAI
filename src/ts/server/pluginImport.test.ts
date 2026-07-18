@@ -11,6 +11,8 @@ import {
 type PluginRow = {
   name: string
   script: string
+  displayName?: string
+  realArg?: Record<string, unknown>
 }
 
 function plugin(name: string, script = `Risuai.log("${name}")`): PluginRow {
@@ -94,6 +96,42 @@ describe('plugin import freshness', () => {
       })
     } finally {
       clearPluginImport(newer)
+    }
+  })
+
+  it('keeps imports fresh across unrelated argument and presentation edits', () => {
+    const plugins = [
+      plugin('plugin-a'),
+      {
+        ...plugin('plugin-b'),
+        displayName: 'Before',
+        realArg: { mode: 'before' },
+      },
+    ]
+    const operation = beginImport(plugins)
+
+    try {
+      expect(
+        resolveFreshPluginImportApplyTarget({
+          operation,
+          freshness: {
+            plugins: [
+              plugins[0],
+              {
+                ...plugins[1],
+                displayName: 'After',
+                realArg: { mode: 'after' },
+              },
+            ],
+          },
+          plugin: plugin('plugin-c'),
+        }),
+      ).toEqual({
+        kind: 'create',
+        index: 2,
+      })
+    } finally {
+      clearPluginImport(operation)
     }
   })
 

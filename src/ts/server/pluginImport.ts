@@ -4,6 +4,12 @@ const PLUGIN_IMPORT_TARGET = 'pluginImport' as const
 
 export interface PluginImportPluginLike {
   readonly name: string
+  readonly script?: string
+  readonly updateURL?: string
+  readonly versionOfPlugin?: string
+  readonly version?: number | string
+  readonly enabled?: boolean
+  readonly allowedIPC?: readonly string[]
 }
 
 export interface PluginImportFreshness<TPlugin extends PluginImportPluginLike = PluginImportPluginLike> {
@@ -50,11 +56,27 @@ function pluginList<TPlugin extends PluginImportPluginLike>(
   return freshness.plugins ?? []
 }
 
+function pluginImportIdentityList<TPlugin extends PluginImportPluginLike>(
+  freshness: PluginImportFreshness<TPlugin>,
+): readonly unknown[] {
+  return pluginList(freshness).map((plugin) => [
+    plugin.name,
+    plugin.script ?? null,
+    plugin.updateURL ?? null,
+    plugin.versionOfPlugin ?? null,
+    plugin.version ?? null,
+    plugin.enabled ?? null,
+    plugin.allowedIPC ?? null,
+  ])
+}
+
 export function capturePluginImportTarget<TPlugin extends PluginImportPluginLike>(
   freshness: PluginImportFreshness<TPlugin>,
 ): PluginImportTarget {
   return {
-    pluginListSnapshot: snapshotJson(pluginList(freshness)),
+    // Argument values and presentation fields can change while an import is
+    // awaiting permission or network I/O without changing its apply target.
+    pluginListSnapshot: snapshotJson(pluginImportIdentityList(freshness)),
   }
 }
 
@@ -74,7 +96,7 @@ export function isFreshPluginImport<TPlugin extends PluginImportPluginLike>(
   freshness: PluginImportFreshness<TPlugin>,
 ): boolean {
   if (!pluginImportGuard.isLatest(operation.token)) return false
-  return snapshotJson(pluginList(freshness)) === operation.pluginListSnapshot
+  return snapshotJson(pluginImportIdentityList(freshness)) === operation.pluginListSnapshot
 }
 
 export function resolveFreshPluginImportApplyTarget<TPlugin extends PluginImportPluginLike>(input: {
