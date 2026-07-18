@@ -25,6 +25,8 @@ import { selectedCharID } from '../../stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
 import { consumeStreamResponse } from '../postGeneration/streamResponse'
+import { markChatMessageMutationIntent } from '../../server/chatMessageMutationIntent'
+import { markChatBodyProjectionApplied } from '../../server/resourceState.svelte'
 
 const testDatabaseState = {
   get db() {
@@ -43,6 +45,7 @@ function makeChar(): character {
     chaId: 'cha-1',
     chats: [
       {
+        id: 'chat-1',
         message: [{ role: 'user', data: 'hi' }],
         note: '',
         name: 'main',
@@ -518,7 +521,7 @@ describe('H3 streaming render coalescing', () => {
     expect(processScriptFullSpy).toHaveBeenCalledTimes(2)
   })
 
-  it('retargets a coalesced write after a server projection moves the generated row', async () => {
+  it('does not overwrite a newer projection when a coalesced write settles', async () => {
     const currentChar = seed()
     const frames: (() => void)[] = []
     const { stream, push, close } = makeControlledStream()
@@ -545,10 +548,78 @@ describe('H3 streaming render coalescing', () => {
     close()
 
     const out = await promise
-    expect(out.msgIndex).toBe(0)
+    expect(out.msgIndex).toBe(1)
     expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(1)
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('projection final')
+    expect(processScriptFullSpy).not.toHaveBeenCalled()
+  })
+
+  it('retargets a coalesced write when a moved row is still stream-owned', async () => {
+    const currentChar = seed()
+    const frames: (() => void)[] = []
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream), currentChar, ctrl.signal, {
+        renderFlushScheduler: (flush) => {
+          frames.push(flush)
+        },
+      }),
+    )
+
+    push({ msgKey: 'server stream' })
+    await vi.waitFor(() => expect(frames.length).toBe(1))
+    testDatabaseState.db.characters[0].chats[0].message = [
+      {
+        role: 'char',
+        data: '',
+        chatId: 'gen-1',
+        generationInfo: { generationId: 'gen-1' },
+      },
+    ]
+    close()
+
+    const out = await promise
+    expect(out.msgIndex).toBe(0)
     expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('server stream')
-    expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'server stream', 'editoutput', 0)
+  })
+
+  it('stops applying frames after a message mutation intent advances', async () => {
+    const currentChar = seed()
+    const frames: (() => void)[] = []
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream), currentChar, ctrl.signal, {
+        arg: { continue: true },
+        renderFlushScheduler: (flush) => frames.push(flush),
+      }),
+    )
+    const target = testDatabaseState.db.characters[0].chats[0].message[0]
+    target.role = 'char'
+    target.chatId = 'continue-target'
+    target.data = 'user edit'
+    markChatMessageMutationIntent('chat-1')
+    push({ msgKey: 'server stream' })
+    close()
+
+    await promise
+    expect(target.data).toBe('user edit')
+  })
+
+  it('stops applying frames after an authoritative body projection advances', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+    const target = testDatabaseState.db.characters[0].chats[0].message[1]
+    target.data = 'authoritative final'
+    markChatBodyProjectionApplied('chat-1')
+    push({ msgKey: 'server stream' })
+    close()
+
+    await promise
+    expect(target.data).toBe('authoritative final')
   })
 
   it('a mid-stream apply failure propagates and still runs the finally cleanup', async () => {

@@ -11,6 +11,8 @@ import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
 import { createStreamRenderCoalescer, type RenderFlushScheduler } from './streamCoalescer'
+import { captureChatMessageMutationIntentEpoch } from '../../server/chatMessageMutationIntent'
+import { captureChatBodyProjectionEpoch, hasChatBodyProjectionEpochChanged } from '../../server/resourceState.svelte'
 
 type StreamingResponse = Extract<requestDataResponse, { type: 'streaming' }>
 
@@ -97,10 +99,12 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   let prefix = ''
   let streamTargetMessageId: string | undefined = generationId
   let anonymousStreamTarget: Message | undefined
+  let lastStreamOwnedData = ''
   if (arg.continue) {
     msgIndex -= 1
     const continueTarget = initialMessages[msgIndex]
     prefix = continueTarget?.data ?? ''
+    lastStreamOwnedData = prefix
     streamTargetMessageId = continueTarget?.chatId
     if (!streamTargetMessageId) anonymousStreamTarget = continueTarget
   } else {
@@ -114,6 +118,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       // instead of appending a second empty assistant message.
       msgIndex = existingGeneratedIndex
       streamTargetMessageId = initialMessages[existingGeneratedIndex]?.chatId ?? generationId
+      lastStreamOwnedData = initialMessages[existingGeneratedIndex]?.data ?? ''
     } else {
       withTrustedResourceWrite(() => {
         const targetChat = currentLiveChat()
@@ -162,6 +167,31 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     return { chat, index, message }
   }
 
+  const projectionEpoch = streamChatId ? captureChatBodyProjectionEpoch(streamChatId) : undefined
+  const mutationIntentEpoch = streamChatId ? captureChatMessageMutationIntentEpoch(streamChatId) : undefined
+  let streamDetached = false
+  const ownsStreamTarget = (target: { message: Message } | null): boolean => {
+    if (streamDetached) return false
+    if (!target) {
+      streamDetached = true
+      return false
+    }
+    if (
+      streamChatId &&
+      ((projectionEpoch !== undefined && hasChatBodyProjectionEpochChanged(streamChatId, projectionEpoch)) ||
+        (mutationIntentEpoch !== undefined &&
+          captureChatMessageMutationIntentEpoch(streamChatId) !== mutationIntentEpoch))
+    ) {
+      streamDetached = true
+      return false
+    }
+    if (target.message.data !== lastStreamOwnedData) {
+      streamDetached = true
+      return false
+    }
+    return true
+  }
+
   withTrustedResourceWrite(() => {
     const targetChat = currentLiveChat()
     if (targetChat) targetChat.isStreaming = true
@@ -178,7 +208,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   // (including `editoutput`) before this function returns.
   const applyLatestChunk = async (): Promise<void> => {
     const targetBeforeScript = resolveStreamMessage()
-    if (!targetBeforeScript) return
+    if (!ownsStreamTarget(targetBeforeScript)) return
     msgIndex = targetBeforeScript.index
     let nextData: string
     if (skipEditOutput) {
@@ -192,18 +222,20 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     }
     withTrustedResourceWrite(() => {
       const target = resolveStreamMessage()
-      if (!target) return
+      if (!ownsStreamTarget(target)) return
       msgIndex = target.index
       target.message.data = nextData
+      lastStreamOwnedData = nextData
       bumpReloadKey()
     })
   }
   const renderCoalescer = createStreamRenderCoalescer(applyLatestChunk, opts.renderFlushScheduler)
   const removeEmptyGeneratedMessage = (): void => {
     if (arg.continue) return
+    if (streamDetached) return
     if (result.length > 0 && !streamAborted && !abortSignal.aborted) return
     const target = resolveStreamMessage()
-    if (!target) return
+    if (!ownsStreamTarget(target)) return
     if (target.message.role !== 'char') return
     if ((target.message.data ?? '').length > 0) return
     target.chat.message.splice(target.index, 1)
