@@ -1176,44 +1176,33 @@
     }
   }
 
-  async function reroll() {
-    if ($doingChat) {
-      return
-    }
+  async function runRerollPreflight(action: () => Promise<void>) {
+    if ($doingChat || preparingSend) return
     const targetIdentity = getActiveTranscriptWindowIdentity()
-    await hydrateActiveChatFully()
-    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
-    await rerollNav({ sendChatMain, closeMenu: closeChatMenu })
+    preparingSend = true
+    try {
+      await hydrateActiveChatFully()
+      if ($doingChat || !preparingSend || getActiveTranscriptWindowIdentity() !== targetIdentity) return
+      await action()
+    } finally {
+      preparingSend = false
+    }
+  }
+
+  async function reroll() {
+    await runRerollPreflight(() => rerollNav({ sendChatMain, closeMenu: closeChatMenu }))
   }
 
   async function unReroll() {
-    if ($doingChat) {
-      return
-    }
-    const targetIdentity = getActiveTranscriptWindowIdentity()
-    await hydrateActiveChatFully()
-    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
-    await unRerollNav()
+    await runRerollPreflight(unRerollNav)
   }
 
   async function newReroll() {
-    if ($doingChat) {
-      return
-    }
-    const targetIdentity = getActiveTranscriptWindowIdentity()
-    await hydrateActiveChatFully()
-    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
-    await newRerollNav({ sendChatMain, closeMenu: closeChatMenu })
+    await runRerollPreflight(() => newRerollNav({ sendChatMain, closeMenu: closeChatMenu }))
   }
 
   async function selectRerollCandidate(index: number) {
-    if ($doingChat) {
-      return
-    }
-    const targetIdentity = getActiveTranscriptWindowIdentity()
-    await hydrateActiveChatFully()
-    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
-    await selectRerollCandidateNav(index)
+    await runRerollPreflight(() => selectRerollCandidateNav(index))
   }
 
   function playSendSoundIfEnabled() {

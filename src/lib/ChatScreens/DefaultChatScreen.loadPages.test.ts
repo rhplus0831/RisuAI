@@ -1890,6 +1890,55 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(rerollNavigation.reroll).not.toHaveBeenCalled()
   })
 
+  it('rejects reroll while a send preflight owns the hydration gate', async () => {
+    seedDatabase([2])
+    getResourceDatabase().sideMenuRerollButton = true
+    const hydration = createDeferred<void>()
+    loadPageMocks.hydrateActiveChatFully.mockReturnValueOnce(hydration.promise)
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Send owns preflight'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+    await waitFor(() => expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1))
+
+    await clickSideMenuRerollItem()
+    await settle()
+
+    expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1)
+    expect(rerollNavigation.reroll).not.toHaveBeenCalled()
+
+    hydration.resolve()
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
+  })
+
+  it('rejects send while a reroll preflight owns the hydration gate', async () => {
+    seedDatabase([2])
+    getResourceDatabase().sideMenuRerollButton = true
+    const hydration = createDeferred<void>()
+    loadPageMocks.hydrateActiveChatFully.mockReturnValueOnce(hydration.promise)
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    await clickSideMenuRerollItem()
+    await waitFor(() => expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1))
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Blocked by reroll preflight'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+    await settle()
+
+    expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1)
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+
+    hydration.resolve()
+    await waitFor(() => expect(rerollNavigation.reroll).toHaveBeenCalledTimes(1))
+  })
+
   it('does not let a stale auto-translate result overwrite newer source or target fields', async () => {
     seedDatabase([1])
     getResourceDatabase().useAutoTranslateInput = true
