@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const settingMocks = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
+  setSettingValue: vi.fn(),
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -18,7 +19,10 @@ vi.mock('src/ts/setting/utils', () => ({
   getLabel: (item: { fallbackLabel?: string }) => item.fallbackLabel ?? '',
   getSettingValue: (item: { id: string }) => settingMocks.values.get(item.id),
   getSettingWriteOwnerKey: (item: { id: string }) => item.id,
-  setSettingValue: (item: { id: string }, value: unknown) => settingMocks.values.set(item.id, value),
+  setSettingValue: (item: { id: string }, value: unknown) => {
+    settingMocks.setSettingValue(item, value)
+    settingMocks.values.set(item.id, value)
+  },
 }))
 
 vi.mock('src/ts/setting/inputDraft.svelte', () => ({
@@ -51,6 +55,7 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   settingMocks.values.clear()
+  settingMocks.setSettingValue.mockClear()
 })
 
 afterEach(() => {
@@ -81,6 +86,21 @@ async function resetMountedSetting(): Promise<void> {
 }
 
 describe('data-driven setting input labels', () => {
+  it('restores a transiently empty number without dispatching a null setting write', async () => {
+    await mountSetting(SettingNumber, { id: 'empty.number', type: 'number', fallbackLabel: 'Number setting' }, 2)
+
+    const input = target.querySelector<HTMLInputElement>('input[type="number"]')
+    expect(input?.value).toBe('2')
+    input!.value = ''
+    input!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    await tick()
+
+    expect(settingMocks.setSettingValue).not.toHaveBeenCalled()
+    expect(settingMocks.values.get('empty.number')).toBe(2)
+    expect(input?.value).toBe('2')
+  })
+
   it('gives every core setting control the visible setting name', async () => {
     await mountSetting(SettingText, { id: 'accessible.text', type: 'text', fallbackLabel: 'Text setting' }, 'value')
     expect(target.querySelector('input[type="text"]')?.getAttribute('aria-label')).toBe('Text setting')

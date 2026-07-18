@@ -26,7 +26,7 @@
     if (val === UNINITIALIZED) return
     untrack(() => {
       const currentValue = getSettingValue(item, ctx)
-      if (val === undefined) {
+      if (val === undefined || val === null) {
         if (currentValue !== undefined) {
           localValue = currentValue
         }

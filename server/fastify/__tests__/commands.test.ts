@@ -592,6 +592,15 @@ describe('Phase 9-1 command foundation', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json().error).toBe('streamGeminiThoughts must be a boolean')
 
+    const emptyMinP = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { min_p: null } },
+    })
+    expect(emptyMinP.statusCode).toBe(400)
+    expect(emptyMinP.json().error).toBe('min_p must be a finite number')
+
     const bootstrap = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',

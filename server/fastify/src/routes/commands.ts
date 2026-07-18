@@ -1758,6 +1758,7 @@ const NUMBER_SETTING_KEYS = new Set([
   'maxContext',
   'maxResponse',
   'memoryLimitThickness',
+  'min_p',
   'ollamaRequestFormat',
   'PresensePenalty',
   'reasoningEffort',
