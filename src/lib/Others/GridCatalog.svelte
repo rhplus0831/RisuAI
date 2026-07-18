@@ -64,9 +64,14 @@
   import { language } from 'src/lang'
   import { parseMultilangString } from 'src/ts/util'
   import MobileCharacters from '../Mobile/MobileCharacters.svelte'
-  import { currentCharacterRowSnapshot, dispatchUpdateCharacterScoped } from 'src/ts/characterCommands'
+  import {
+    currentCharacterRowSnapshot,
+    dispatchUpdateCharacterScopedWithOutcome,
+    type CharacterMutationOutcome,
+  } from 'src/ts/characterCommands'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
+  import { alertError, alertNormal } from 'src/ts/alert'
   interface Props {
     endGrid?: any
   }
@@ -82,6 +87,57 @@
   let catalogCount = $derived(
     selectedListKind === 'trash' ? catalogCharacters.trash.length : catalogCharacters.active.length,
   )
+  type CharacterCatalogActionKind = 'remove' | 'restore' | 'delete-permanent'
+  interface CharacterCatalogActionState {
+    kind: CharacterCatalogActionKind
+    name: string
+    status: 'pending' | 'queued' | 'failed'
+  }
+  let characterCatalogActions = $state<Record<string, CharacterCatalogActionState>>({})
+
+  function characterCatalogActionMessage(state: CharacterCatalogActionState): string {
+    if (state.kind === 'restore') {
+      if (state.status === 'pending') return language.characterRestorePending(state.name)
+      if (state.status === 'queued') return language.characterRestoreQueued(state.name)
+      return language.characterRestoreFailed(state.name)
+    }
+    if (state.kind === 'delete-permanent') {
+      if (state.status === 'pending') return language.characterPermanentDeletePending(state.name)
+      if (state.status === 'queued') return language.characterPermanentDeleteQueued(state.name)
+      return language.characterPermanentDeleteFailed(state.name)
+    }
+    if (state.status === 'pending') return language.characterRemovalPending(state.name)
+    if (state.status === 'queued') return language.characterRemovalQueued(state.name)
+    return language.characterRemovalFailed(state.name)
+  }
+
+  async function runCharacterCatalogAction(
+    char: GridCatalogCharacter,
+    kind: CharacterCatalogActionKind,
+    action: () => Promise<CharacterMutationOutcome | null>,
+  ): Promise<void> {
+    const actionId = gridCatalogCharacterKey(char)
+    if (characterCatalogActions[actionId]?.status === 'pending') return
+    characterCatalogActions[actionId] = { kind, name: char.name, status: 'pending' }
+    try {
+      const outcome = await action()
+      if (!outcome) {
+        delete characterCatalogActions[actionId]
+        return
+      }
+      if (outcome.status === 'accepted') {
+        delete characterCatalogActions[actionId]
+        return
+      }
+      characterCatalogActions[actionId] = { kind, name: char.name, status: outcome.status }
+      const message = characterCatalogActionMessage(characterCatalogActions[actionId])
+      if (outcome.status === 'queued') alertNormal(message)
+      else alertError(message)
+    } catch {
+      characterCatalogActions[actionId] = { kind, name: char.name, status: 'failed' }
+      alertError(characterCatalogActionMessage(characterCatalogActions[actionId]))
+    }
+  }
 
   function resolveGridCatalogDescription(
     creatorNotes: string,
@@ -112,9 +168,9 @@
     navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
   }
 
-  function restoreTrashedCharacter(index: number): void {
+  async function restoreTrashedCharacter(index: number): Promise<CharacterMutationOutcome | null> {
     const character = getDatabase().characters?.[index]
-    if (!character) return
+    if (!character) return null
 
     const characterId = character.chaId
     const previous = currentCharacterRowSnapshot(index)
@@ -131,8 +187,9 @@
       applied = true
     })
     if (applied && characterId) {
-      dispatchUpdateCharacterScoped(characterId, { trashTime: null }, previous)
+      return (await dispatchUpdateCharacterScopedWithOutcome(characterId, { trashTime: null }, previous)) ?? null
     }
+    return null
   }
 </script>
 
@@ -158,6 +215,16 @@
             fullwidth={true} />
         </div>
       </div>
+      {#each Object.entries(characterCatalogActions) as [actionId, state] (actionId)}
+        <p
+          class="mt-2 text-sm text-textcolor2"
+          data-risu-character-action-status={state.status}
+          data-risu-row-id={actionId}
+          role="status"
+          aria-live="polite">
+          {characterCatalogActionMessage(state)}
+        </p>
+      {/each}
       <div class="flex flex-wrap gap-2 mt-2">
         <span data-risu-grid-tab data-risu-list-kind="simple" data-risu-selected={selected === 3 ? 'true' : 'false'}>
           <Button
@@ -289,10 +356,13 @@
                 </button>
                 <button
                   data-risu-grid-action="delete"
+                  data-risu-mutation-status={characterCatalogActions[gridCatalogCharacterKey(char)]?.status ?? 'idle'}
                   aria-label={`${language.removeCharacter}: ${char.name}`}
+                  aria-busy={characterCatalogActions[gridCatalogCharacterKey(char)]?.status === 'pending'}
+                  disabled={characterCatalogActions[gridCatalogCharacterKey(char)]?.status === 'pending'}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
-                    removeChar(char.index, char.name)
+                    void runCharacterCatalogAction(char, 'remove', () => removeChar(char.index, char.name))
                   }}>
                   <TrashIcon />
                 </button>
@@ -335,19 +405,27 @@
               <div class="flex gap-2 justify-end">
                 <button
                   data-risu-grid-action="restore"
+                  data-risu-mutation-status={characterCatalogActions[gridCatalogCharacterKey(char)]?.status ?? 'idle'}
                   aria-label={language.restoreCharacter(char.name)}
+                  aria-busy={characterCatalogActions[gridCatalogCharacterKey(char)]?.status === 'pending'}
+                  disabled={characterCatalogActions[gridCatalogCharacterKey(char)]?.status === 'pending'}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
-                    restoreTrashedCharacter(char.index)
+                    void runCharacterCatalogAction(char, 'restore', () => restoreTrashedCharacter(char.index))
                   }}>
                   <Undo2Icon />
                 </button>
                 <button
                   data-risu-grid-action="delete-permanent"
+                  data-risu-mutation-status={characterCatalogActions[gridCatalogCharacterKey(char)]?.status ?? 'idle'}
                   aria-label={language.deleteCharacterPermanently(char.name)}
+                  aria-busy={characterCatalogActions[gridCatalogCharacterKey(char)]?.status === 'pending'}
+                  disabled={characterCatalogActions[gridCatalogCharacterKey(char)]?.status === 'pending'}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
-                    removeChar(char.index, char.name, 'permanent')
+                    void runCharacterCatalogAction(char, 'delete-permanent', () =>
+                      removeChar(char.index, char.name, 'permanent'),
+                    )
                   }}>
                   <TrashIcon />
                 </button>

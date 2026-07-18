@@ -4,12 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const characterSpies = vi.hoisted(() => ({
   changeChar: vi.fn(),
   getCharImage: vi.fn(() => ''),
-  removeChar: vi.fn(),
+  removeChar: vi.fn(async () => ({ status: 'accepted', result: { status: 'ok' } })),
 }))
 
 const characterCommandSpies = vi.hoisted(() => ({
   currentCharacterRowSnapshot: vi.fn(() => ({ snapshot: 'before-trash-restore' })),
-  dispatchUpdateCharacterScoped: vi.fn(),
+  dispatchUpdateCharacterScopedWithOutcome: vi.fn(async () => ({ status: 'accepted', result: { status: 'ok' } })),
 }))
 
 const globalApiSpies = vi.hoisted(() => ({
@@ -43,7 +43,7 @@ import MobileCharacters, {
   normalizeMobileCharacterSearch,
   resolveMobileRelativeTimeLocale,
 } from '../Mobile/MobileCharacters.svelte'
-import { changeLanguage } from 'src/lang'
+import { changeLanguage, language } from 'src/lang'
 import { languageKorean } from 'src/lang/ko'
 import { languageSpanish } from 'src/lang/es'
 import { MobileSearch } from 'src/ts/stores.svelte'
@@ -69,6 +69,14 @@ let target: HTMLElement
 let component: MountedComponent | undefined
 
 type GridCatalogListKind = 'simple' | 'grid' | 'list' | 'trash'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
+}
 
 function makeCharacter(options: CharacterFixtureOptions) {
   const char: Record<string, unknown> = {
@@ -309,7 +317,7 @@ describe('GridCatalog derived lists', () => {
 
     expect(getDatabase().characters[1].trashTime).toBeNull()
     expect(gridRows('trash').map((row) => row.dataset.risuRowId)).toEqual(['trash-alpha'])
-    expect(characterCommandSpies.dispatchUpdateCharacterScoped).toHaveBeenCalledWith(
+    expect(characterCommandSpies.dispatchUpdateCharacterScopedWithOutcome).toHaveBeenCalledWith(
       'trash-beta',
       { trashTime: null },
       { snapshot: 'before-trash-restore' },
@@ -322,6 +330,50 @@ describe('GridCatalog derived lists', () => {
     await tick()
 
     expect(characterSpies.removeChar).toHaveBeenCalledWith(4, 'Trashed Alpha', 'permanent')
+  })
+
+  it('keeps a character action pending through durable classification and reports queued or failed outcomes', async () => {
+    const removal = deferred<any>()
+    characterSpies.removeChar.mockReturnValueOnce(removal.promise)
+    mountCatalog()
+    await clickCatalogTab('list')
+
+    const deleteButton = gridAction('list', 'alpha-main', 'delete')
+    deleteButton.click()
+    await tick()
+
+    expect(deleteButton.disabled).toBe(true)
+    expect(deleteButton.getAttribute('aria-busy')).toBe('true')
+    expect(target.querySelector('[data-risu-character-action-status="pending"]')?.textContent).toContain(
+      language.characterRemovalPending('AlphaHero'),
+    )
+
+    removal.resolve({ status: 'queued', result: { status: 'unavailable' } })
+    await tick()
+    await tick()
+
+    expect(deleteButton.disabled).toBe(false)
+    expect(target.querySelector('[data-risu-character-action-status="queued"]')?.textContent).toContain(
+      language.characterRemovalQueued('AlphaHero'),
+    )
+
+    const restore = deferred<any>()
+    characterCommandSpies.dispatchUpdateCharacterScopedWithOutcome.mockReturnValueOnce(restore.promise)
+    await clickCatalogTab('trash')
+    const restoreButton = gridAction('trash', 'trash-beta', 'restore')
+    restoreButton.click()
+    await tick()
+
+    expect(target.querySelector('[data-risu-character-action-status="pending"]')?.textContent).toContain(
+      language.characterRestorePending('Beta Backlog'),
+    )
+    restore.resolve({ status: 'failed', result: { status: 'error', error: 'rejected' } })
+    await tick()
+    await tick()
+
+    expect(target.querySelector('[data-risu-character-action-status="failed"]')?.textContent).toContain(
+      language.characterRestoreFailed('Beta Backlog'),
+    )
   })
 
   it('exposes named character controls and announces an empty search result', async () => {

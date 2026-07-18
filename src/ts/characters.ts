@@ -39,10 +39,11 @@ import {
   dispatchCreateAndSelectCharacter,
   dispatchCompatibleCharacterUpdateScoped,
   dispatchCreateCharacter,
-  dispatchDeleteCharacter,
+  dispatchDeleteCharacterWithOutcome,
   dispatchSelectCharacter,
-  dispatchUpdateCharacterTrashTime,
+  dispatchUpdateCharacterTrashTimeWithOutcome,
   repairCharacterOrderOptimistically,
+  type CharacterMutationOutcome,
 } from './characterCommands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
@@ -1278,40 +1279,42 @@ export async function removeChar(
   index: number,
   name: string,
   type: 'normal' | 'permanent' | 'permanentForce' = 'normal',
-) {
+): Promise<CharacterMutationOutcome | null> {
   const characterId = getDatabase().characters?.[index]?.chaId
-  if (!characterId || pendingCharacterRemovalIds.has(characterId)) return
+  if (!characterId || pendingCharacterRemovalIds.has(characterId)) return null
   pendingCharacterRemovalIds.add(characterId)
   try {
     if (type !== 'permanentForce') {
       const conf = await alertConfirm(language.removeConfirm + name)
       if (!conf) {
-        return
+        return null
       }
       const conf2 = await alertConfirm(language.removeConfirm2 + name)
       if (!conf2) {
-        return
+        return null
       }
     }
     const liveIndex = findLiveCharacterIndex(characterId)
-    if (liveIndex < 0) return
+    if (liveIndex < 0) return null
+    let dispatch: () => Promise<CharacterMutationOutcome> | undefined
     if (type === 'normal') {
       const previous = currentCharacterTrashTimeSnapshot(liveIndex)
       const trashTime = Date.now()
       withTrustedResourceWrite(() => {
         getDatabase().characters[liveIndex].trashTime = trashTime
       })
-      dispatchUpdateCharacterTrashTime(characterId, trashTime, previous)
+      dispatch = () => dispatchUpdateCharacterTrashTimeWithOutcome(characterId, trashTime, previous)
     } else {
       const previous = currentCharacterStateSnapshot()
       withTrustedResourceWrite(() => {
         getDatabase().characters.splice(liveIndex, 1)
       })
-      dispatchDeleteCharacter(characterId, previous)
+      dispatch = () => dispatchDeleteCharacterWithOutcome(characterId, previous)
     }
     repairCharacterOrderOptimistically({ dispatchReorder: false })
     requiresFullEncoderReload.state = true
     selectedCharID.set(-1)
+    return (await dispatch()) ?? null
   } finally {
     pendingCharacterRemovalIds.delete(characterId)
   }

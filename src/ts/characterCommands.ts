@@ -1109,9 +1109,26 @@ export function dispatchUpdateCharacterScoped(
   patch: CharacterSnapshot,
   previous: CharacterRowSnapshot,
 ): Promise<ServerCommandResult> | undefined {
+  return prepareUpdateCharacterScoped(characterId, patch, previous)?.promise
+}
+
+export function dispatchUpdateCharacterScopedWithOutcome(
+  characterId: string,
+  patch: CharacterSnapshot,
+  previous: CharacterRowSnapshot,
+): Promise<CharacterMutationOutcome> | undefined {
+  const execution = prepareUpdateCharacterScoped(characterId, patch, previous)
+  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
+}
+
+function prepareUpdateCharacterScoped(
+  characterId: string,
+  patch: CharacterSnapshot,
+  previous: CharacterRowSnapshot,
+): PendingCharacterMutationExecution | undefined {
   const attempted = sanitizeCharacterPatch(patch)
   if (Object.keys(attempted).length === 0) return
-  return dispatchDurableCharacterPatch(
+  return prepareDurableCharacterPatchExecution(
     characterId,
     attempted,
     characterRowMutationBaselines(previous, attempted),
@@ -1139,16 +1156,38 @@ export function dispatchUpdateCharacterTrashTime(
   trashTime: number,
   previous: CharacterTrashTimeSnapshot,
 ): Promise<ServerCommandResult> | undefined {
+  return prepareUpdateCharacterTrashTime(characterId, trashTime, previous)?.promise
+}
+
+export function dispatchUpdateCharacterTrashTimeWithOutcome(
+  characterId: string,
+  trashTime: number,
+  previous: CharacterTrashTimeSnapshot,
+): Promise<CharacterMutationOutcome> | undefined {
+  const execution = prepareUpdateCharacterTrashTime(characterId, trashTime, previous)
+  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
+}
+
+function prepareUpdateCharacterTrashTime(
+  characterId: string,
+  trashTime: number,
+  previous: CharacterTrashTimeSnapshot,
+): PendingCharacterMutationExecution | undefined {
   const baseline = { hadValue: previous.hadTrashTime, value: previous.trashTime }
-  return dispatchDurableCharacterPatch(characterId, { trashTime }, new Map([['trashTime', baseline]]), (attempt) => {
-    if (!isCharacterFieldMutationAttemptCurrent(characterId, 'trashTime', trashTime, attempt)) return
-    const rebased = characterFieldMutationBaseline(attempt, 'trashTime', baseline)
-    restoreCharacterTrashTime({
-      ...previous,
-      hadTrashTime: rebased.hadValue,
-      trashTime: rebased.value as number | null | undefined,
-    })
-  })
+  return prepareDurableCharacterPatchExecution(
+    characterId,
+    { trashTime },
+    new Map([['trashTime', baseline]]),
+    (attempt) => {
+      if (!isCharacterFieldMutationAttemptCurrent(characterId, 'trashTime', trashTime, attempt)) return
+      const rebased = characterFieldMutationBaseline(attempt, 'trashTime', baseline)
+      restoreCharacterTrashTime({
+        ...previous,
+        hadTrashTime: rebased.hadValue,
+        trashTime: rebased.value as number | null | undefined,
+      })
+    },
+  )
 }
 
 export function dispatchUpdateCharacterSupaMemory(
@@ -1380,6 +1419,21 @@ export function applyCompatibleCharacterPatch(previousCharacter: character, patc
 }
 
 export function dispatchDeleteCharacter(characterId: string, previous: CharacterStateSnapshot): void {
+  void prepareDeleteCharacter(characterId, previous)?.promise
+}
+
+export function dispatchDeleteCharacterWithOutcome(
+  characterId: string,
+  previous: CharacterStateSnapshot,
+): Promise<CharacterMutationOutcome> | undefined {
+  const execution = prepareDeleteCharacter(characterId, previous)
+  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
+}
+
+function prepareDeleteCharacter(
+  characterId: string,
+  previous: CharacterStateSnapshot,
+): PendingCharacterMutationExecution | undefined {
   const rollback = characterDeleteRollbackFromState(characterId, previous)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
   normalizeCurrentCharacterPointerAfterDelete(characterId, previous)
@@ -1397,11 +1451,21 @@ export function dispatchDeleteCharacter(characterId: string, previous: Character
       },
     ],
   }
-  const outbox = stagePendingMutation(CHARACTER_SELECTION_MUTATION_KEY, intent)
-  void dispatchDurableMutation(
-    outbox,
-    intent,
-    (transport) =>
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(CHARACTER_SELECTION_MUTATION_KEY, intent)
+  } catch (error) {
+    restoreDeletedCharacterAttempt(rollback)
+    return {
+      promise: Promise.resolve(pendingMutationStagingFailure(error)),
+      disposition: () => 'rollback',
+    }
+  }
+  let disposition: 'retain' | 'rollback' = 'rollback'
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const promise = dispatchDurableMutation(outbox, intent, (transport) => {
+    failureRollbackDisposition = transport.failureRollbackDisposition
+    return (
       runCharacterCommand(
         (baseRevision) =>
           deleteCharacterCommand({
@@ -1410,8 +1474,19 @@ export function dispatchDeleteCharacter(characterId: string, previous: Character
           }),
         () => restoreDeletedCharacterAttempt(rollback),
         transport,
-      ) ?? Promise.resolve({ status: 'unavailable' as const }),
+      ) ?? Promise.resolve({ status: 'unavailable' as const })
+    )
+  }).then(
+    (result) => {
+      disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? disposition)
+      return result
+    },
+    (error) => {
+      disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? disposition
+      throw error
+    },
   )
+  return { promise, disposition: () => disposition }
 }
 
 function normalizeCurrentCharacterPointerAfterDelete(characterId: string, previous: CharacterStateSnapshot): void {

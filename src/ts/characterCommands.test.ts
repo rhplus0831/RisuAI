@@ -3309,9 +3309,10 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     selectedCharID.set(0)
 
     try {
-      await withMockedNow(654321, () => removeChar(0, 'Character', 'normal'))
+      const outcome = await withMockedNow(654321, () => removeChar(0, 'Character', 'normal'))
       await vi.waitFor(() => expect(patches).toHaveLength(1))
 
+      expect(outcome).toMatchObject({ status: 'queued' })
       expect(testDatabaseState.db.characters[0].trashTime).toBe(654321)
       expect(testDatabaseState.db.characterOrder).toEqual([])
       expect((await listPendingMutations()).map((entry) => entry.intent.requests[0].body)).toEqual([
@@ -3568,15 +3569,21 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     } as any
     selectedCharID.set(0)
 
-    await withMockedNow(222222, () => removeChar(0, 'Character', 'normal'))
+    const removal = withMockedNow(222222, () => removeChar(0, 'Character', 'normal'))
     await waitForCharacterPatch(calls, 'char-a')
     expect(testDatabaseState.db.characters[0].trashTime).toBe(222222)
     expect(testDatabaseState.db.characterOrder).toEqual(['char-b'])
     expect(get(selectedCharID)).toBe(-1)
 
+    await expect(removeChar(0, 'Character', 'normal')).resolves.toBeNull()
+    expect(alertConfirmState.messages).toHaveLength(2)
+    expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-a')).toHaveLength(1)
+
     testDatabaseState.db.characters[0].name = 'Same row concurrent edit'
     testDatabaseState.db.characters[1].name = 'Sibling concurrent edit'
     patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+
+    await expect(removal).resolves.toMatchObject({ status: 'failed' })
 
     await vi.waitFor(() => {
       expect(Object.prototype.hasOwnProperty.call(testDatabaseState.db.characters[0], 'trashTime')).toBe(false)
@@ -3618,13 +3625,15 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     } as any
     selectedCharID.set(1)
 
-    await withMockedNow(333333, () => removeChar(1, 'B', 'normal'))
+    const removal = withMockedNow(333333, () => removeChar(1, 'B', 'normal'))
     await waitForCharacterPatch(calls, 'char-b')
     expect(testDatabaseState.db.characters[1].trashTime).toBe(333333)
 
     testDatabaseState.db.characters.unshift({ chaId: 'char-new', name: 'Inserted', chats: [] } as any)
     testDatabaseState.db.characters[1].name = 'Stale index sibling edit'
     patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+
+    await expect(removal).resolves.toMatchObject({ status: 'failed' })
 
     await vi.waitFor(() => {
       expect(testDatabaseState.db.characters.find((c: any) => c.chaId === 'char-b')?.trashTime).toBe(111111)

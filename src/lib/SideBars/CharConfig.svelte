@@ -123,6 +123,7 @@
   import { assetListRenderKey } from 'src/ts/media/assetList'
   import { mutateAlternateGreetings, type AlternateGreetingMutation } from 'src/ts/alternateGreetingMutation'
   import { dispatchDurableAlternateGreetingMutation } from 'src/ts/alternateGreetingCommands'
+  import { alertError, alertNormal } from 'src/ts/alert'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -131,6 +132,9 @@
   let alternateGreetingMutationPending = $state(false)
   let alternateGreetingMutationStatus = $state<'idle' | 'queued' | 'failed'>('idle')
   let alternateGreetingMutationAttempt = 0
+  let characterRemovalPending = $state(false)
+  let characterRemovalStatus = $state<'idle' | 'queued' | 'failed'>('idle')
+  let characterRemovalName = $state('')
   let iconButtonSize = $derived($SizeStore.w > 360 ? (24 as const) : (20 as const))
   const CHARACTER_ADDITIONAL_ASSET_EXTENSIONS = [
     'png',
@@ -208,6 +212,29 @@
     'alternateGreetings',
     'removedQuotes',
   ])
+
+  async function removeCurrentCharacter(): Promise<void> {
+    if (characterRemovalPending) return
+    const characterIndex = $selectedCharID
+    const character = getDatabase().characters[characterIndex]
+    if (!character) return
+    const characterName = getCharacterDisplayName(character)
+    characterRemovalName = characterName
+    characterRemovalPending = true
+    characterRemovalStatus = 'idle'
+    try {
+      const outcome = await removeChar(characterIndex, characterName)
+      if (!outcome || outcome.status === 'accepted') return
+      characterRemovalStatus = outcome.status
+      if (outcome.status === 'queued') alertNormal(language.characterRemovalQueued(characterName))
+      else alertError(language.characterRemovalFailed(characterName))
+    } catch {
+      characterRemovalStatus = 'failed'
+      alertError(language.characterRemovalFailed(characterName))
+    } finally {
+      characterRemovalPending = false
+    }
+  }
   let characterScriptsDraft = $state<customscript[]>([])
   let characterTriggersDraft = $state<triggerscript[]>([])
   let scriptDraftCharacterId = $state<string | null>(null)
@@ -1776,12 +1803,23 @@
       className="mt-2">{language.exportCharacter}</Button>
   {/if}
 
-  <Button
-    onclick={async () => {
-      removeChar($selectedCharID, getCharacterDisplayName(getDatabase().characters[$selectedCharID]))
-    }}
-    className="mt-2"
-    size="sm">{language.removeCharacter}</Button>
+  <div
+    class="mt-2 flex items-center gap-2"
+    data-risu-character-removal
+    data-risu-mutation-status={characterRemovalStatus}
+    aria-busy={characterRemovalPending}>
+    <Button onclick={removeCurrentCharacter} disabled={characterRemovalPending} size="sm"
+      >{language.removeCharacter}</Button>
+    {#if characterRemovalPending || characterRemovalStatus !== 'idle'}
+      <span class="text-xs text-textcolor2" role="status" aria-live="polite">
+        {characterRemovalPending
+          ? language.characterRemovalPending(characterRemovalName)
+          : characterRemovalStatus === 'queued'
+            ? language.mutationStatusQueued
+            : language.mutationStatusFailed}
+      </span>
+    {/if}
+  </div>
 {:else if $CharConfigSubMenu === 5}
   {#if currentRealCharacterDraftTarget()}
     {#if !$MobileGUI}

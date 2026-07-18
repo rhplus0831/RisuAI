@@ -8,6 +8,19 @@ export const languageEnglish = {
     'The input translation hook change is saved on this device and queued. It will retry automatically.',
   inputTranslationHookMutationFailed:
     'The input translation hook change could not be saved. The previous setting was restored.',
+  characterRemovalPending: (name: string) => `Moving ${name} to the trash…`,
+  characterRemovalQueued: (name: string) =>
+    `${name} was moved to the trash on this device and the change is queued. It will retry automatically.`,
+  characterRemovalFailed: (name: string) => `${name} could not be moved to the trash. The character was restored.`,
+  characterRestorePending: (name: string) => `Restoring ${name}…`,
+  characterRestoreQueued: (name: string) =>
+    `${name} was restored on this device and the change is queued. It will retry automatically.`,
+  characterRestoreFailed: (name: string) => `${name} could not be restored. The character remains in the trash.`,
+  characterPermanentDeletePending: (name: string) => `Deleting ${name} permanently…`,
+  characterPermanentDeleteQueued: (name: string) =>
+    `${name} was deleted on this device and the permanent deletion is queued. It will retry automatically.`,
+  characterPermanentDeleteFailed: (name: string) =>
+    `${name} could not be deleted permanently. The character was restored.`,
   settingsSaveQueued: 'This settings change is saved on this device and queued. It will retry automatically.',
   alternateGreetingMutationQueued:
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',
