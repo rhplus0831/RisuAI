@@ -303,7 +303,12 @@ vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
 import { customProviderStore, pluginV2 } from '../plugins.svelte'
 import { alertConfirm } from 'src/ts/alert'
 import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
-import { additionalFloatingActionButtons, additionalSettingsMenu } from 'src/ts/stores.svelte'
+import {
+  additionalChatMenu,
+  additionalFloatingActionButtons,
+  additionalHamburgerMenu,
+  additionalSettingsMenu,
+} from 'src/ts/stores.svelte'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
 import { dispatchUpdatePlugin } from 'src/ts/pluginCommands'
 import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
@@ -1351,6 +1356,35 @@ describe('V3 plugin lifecycle cleanup', () => {
     await __v3PluginLifecycleTestHooks.unloadInstance(newRuntime.instance)
 
     expect(additionalFloatingActionButtons).toHaveLength(0)
+  })
+
+  it('moves a re-registered button to its newly requested location', async () => {
+    const runtime = __v3PluginLifecycleTestHooks.createTrackedApi(seedV3Plugin('plugin-moving-button'))
+    const api = runtime.api as any
+    const firstCallback = vi.fn()
+    const movedCallback = vi.fn()
+
+    api.registerButton(
+      { name: 'Floating button', icon: '', iconType: 'none', location: 'action', id: 'moving-button' },
+      firstCallback,
+    )
+    api.registerButton(
+      { name: 'Chat button', icon: '', iconType: 'none', location: 'chat', id: 'moving-button' },
+      movedCallback,
+    )
+
+    expect(additionalFloatingActionButtons).toHaveLength(0)
+    expect(additionalHamburgerMenu).toHaveLength(0)
+    expect(additionalChatMenu.map((button) => ({ id: button.id, name: button.name }))).toEqual([
+      { id: 'moving-button', name: 'Chat button' },
+    ])
+
+    additionalChatMenu[0].callback()
+    expect(firstCallback).not.toHaveBeenCalled()
+    expect(movedCallback).toHaveBeenCalledOnce()
+
+    await __v3PluginLifecycleTestHooks.unloadInstance(runtime.instance)
+    expect(additionalChatMenu).toHaveLength(0)
   })
 
   it('scopes shared UI ids to each plugin owner', async () => {

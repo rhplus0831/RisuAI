@@ -1501,46 +1501,39 @@ const makeRisuaiAPIV3 = (
         instance,
       )
 
+      let targetStore: MenuDef[]
+      switch (location) {
+        case 'action':
+          targetStore = additionalFloatingActionButtons
+          break
+        case 'hamburger':
+          targetStore = additionalHamburgerMenu
+          break
+        case 'chat':
+          targetStore = additionalChatMenu
+          break
+        default:
+          throw new Error('Invalid location for button')
+      }
+
       const buttonStores = [additionalFloatingActionButtons, additionalHamburgerMenu, additionalChatMenu]
+      let replacedInTarget = false
       for (const store of buttonStores) {
         const existingIndex = store.findIndex(
           (item) => item.id === id && (item as V3OwnedMenuDef).__v3OwnerName === plugin.name,
         )
         if (existingIndex !== -1) {
-          store[existingIndex] = menuDef
-          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef, store), instance.generation)
-          return { id }
+          if (store === targetStore) {
+            store[existingIndex] = menuDef
+            replacedInTarget = true
+          } else {
+            store.splice(existingIndex, 1)
+          }
         }
       }
 
-      switch (location) {
-        case 'action': {
-          additionalFloatingActionButtons.push(menuDef)
-          addPluginUnloadCallback(
-            plugin.name,
-            makeMenuUnloadCallback(menuDef, additionalFloatingActionButtons),
-            instance.generation,
-          )
-          break
-        }
-        case 'hamburger': {
-          additionalHamburgerMenu.push(menuDef)
-          addPluginUnloadCallback(
-            plugin.name,
-            makeMenuUnloadCallback(menuDef, additionalHamburgerMenu),
-            instance.generation,
-          )
-          break
-        }
-        case 'chat': {
-          additionalChatMenu.push(menuDef)
-          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef, additionalChatMenu), instance.generation)
-          break
-        }
-        default: {
-          throw new Error('Invalid location for button')
-        }
-      }
+      if (!replacedInTarget) targetStore.push(menuDef)
+      addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef, targetStore), instance.generation)
       return { id }
     },
     registerMCP: registerOwnedMCP,
