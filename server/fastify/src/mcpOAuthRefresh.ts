@@ -30,6 +30,11 @@ export interface McpOAuthRefreshExecutionOptions {
   timeoutMs?: number
   maxResponseBytes?: number
   signal?: AbortSignal
+  onRotatedRefreshToken?: (rotation: {
+    url: string
+    previousRefreshToken: string
+    refreshToken: string
+  }) => void | Promise<void>
 }
 
 export type McpOAuthRefreshErrorCode =
@@ -141,6 +146,21 @@ export async function executeStoredMcpOAuthRefresh(
       accessToken === MASKED_PROVIDER_SECRET
     ) {
       throw invalidUpstreamResponse()
+    }
+    if (data.refresh_token !== undefined) {
+      const rotatedRefreshToken = readNonBlankString(
+        data.refresh_token,
+        MCP_OAUTH_REFRESH_MAX_SECRET_LENGTH,
+        invalidUpstreamResponse,
+      )
+      if (rotatedRefreshToken === MASKED_PROVIDER_SECRET) throw invalidUpstreamResponse()
+      if (rotatedRefreshToken !== refresh.refreshToken) {
+        await options.onRotatedRefreshToken?.({
+          url: refresh.url,
+          previousRefreshToken: refresh.refreshToken,
+          refreshToken: rotatedRefreshToken,
+        })
+      }
     }
     return { accessToken }
   } finally {

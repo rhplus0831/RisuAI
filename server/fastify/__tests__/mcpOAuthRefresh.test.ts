@@ -6,6 +6,7 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
+import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import {
   MCP_OAUTH_REFRESH_REQUEST_BODY_LIMIT_BYTES,
   executeStoredMcpOAuthRefresh,
@@ -86,6 +87,7 @@ describe('stored MCP OAuth refresh validation', () => {
 
 describe('stored MCP OAuth refresh execution', () => {
   it('posts only the raw stored refresh fields and returns only the access token', async () => {
+    const onRotatedRefreshToken = vi.fn()
     const fetchImpl = vi.fn(
       async (_input: string | URL | Request, _init?: RequestInit) =>
         new Response(
@@ -98,7 +100,10 @@ describe('stored MCP OAuth refresh execution', () => {
     )
 
     await expect(
-      executeStoredMcpOAuthRefresh({ url: MCP_URL }, storedSettings, { fetchImpl: fetchImpl as typeof fetch }),
+      executeStoredMcpOAuthRefresh({ url: MCP_URL }, storedSettings, {
+        fetchImpl: fetchImpl as typeof fetch,
+        onRotatedRefreshToken,
+      }),
     ).resolves.toEqual({ accessToken: 'fresh-access-token' })
 
     expect(fetchImpl).toHaveBeenCalledOnce()
@@ -117,6 +122,11 @@ describe('stored MCP OAuth refresh execution', () => {
     expect(formBody(init).get('client_id')).toBe('stored-client-id')
     expect(formBody(init).get('client_secret')).toBe('stored-client-secret')
     expect(init.signal?.aborted).toBe(false)
+    expect(onRotatedRefreshToken).toHaveBeenCalledWith({
+      url: MCP_URL,
+      previousRefreshToken: 'stored-refresh-token',
+      refreshToken: 'rotated-refresh-token-that-must-not-return',
+    })
   })
 
   it('sanitizes upstream failures and rejects malformed or oversized token responses', async () => {
@@ -131,6 +141,7 @@ describe('stored MCP OAuth refresh execution', () => {
       new Response('not-json'),
       new Response(JSON.stringify({ access_token: '' })),
       new Response(JSON.stringify({ token_type: 'Bearer' })),
+      new Response(JSON.stringify({ access_token: 'fresh-access-token', refresh_token: '' })),
     ]) {
       await expect(
         executeStoredMcpOAuthRefresh({ url: MCP_URL }, storedSettings, {
@@ -336,7 +347,7 @@ afterEach(async () => {
   }
 })
 
-async function startHarness(fetchImpl: typeof fetch): Promise<Harness> {
+async function startHarness(fetchImpl: typeof fetch, commandEvents?: CommandEventSink): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-mcp-oauth-refresh-'))
   const { app } = await buildApp({
@@ -352,6 +363,7 @@ async function startHarness(fetchImpl: typeof fetch): Promise<Harness> {
     },
     memoryWorker: false,
     assetGc: false,
+    ...(commandEvents ? { commandEvents } : {}),
     mcpOAuthRefresh: { fetchImpl },
   })
   await app.ready()
@@ -401,6 +413,46 @@ describe('POST /api/v1/mcp/oauth/refresh', () => {
     expect(formBody(init).get('refresh_token')).toBe('stored-refresh-token')
     expect(formBody(init).get('client_secret')).toBe('stored-client-secret')
     expect(init.signal?.aborted).toBe(false)
+  })
+
+  it('persists a rotated refresh token and uses it on the next stored refresh', async () => {
+    const refreshTokens: string[] = []
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const refreshToken = formBody(init ?? {}).get('refresh_token') ?? ''
+      refreshTokens.push(refreshToken)
+      return new Response(
+        JSON.stringify(
+          refreshTokens.length === 1
+            ? { access_token: 'first-access-token', refresh_token: 'rotated-refresh-token' }
+            : { access_token: 'second-access-token' },
+        ),
+      )
+    })
+    const commandEvents = createCommandEventSink()
+    const harness = await startHarness(fetchImpl as typeof fetch, commandEvents)
+    await seedRefreshRecord(harness.app)
+    commandEvents.clear()
+
+    const first = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/mcp/oauth/refresh',
+      payload: { url: MCP_URL },
+    })
+    const second = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/mcp/oauth/refresh',
+      payload: { url: MCP_URL },
+    })
+
+    expect(first.statusCode, first.body).toBe(200)
+    expect(first.json()).toEqual({ accessToken: 'first-access-token' })
+    expect(first.body).not.toContain('rotated-refresh-token')
+    expect(second.statusCode, second.body).toBe(200)
+    expect(second.json()).toEqual({ accessToken: 'second-access-token' })
+    expect(refreshTokens).toEqual(['stored-refresh-token', 'rotated-refresh-token'])
+    expect(commandEvents.list()).toEqual([
+      expect.objectContaining({ type: 'settings.updated', resource: 'settings', id: 'providers' }),
+    ])
   })
 
   it('returns only sanitized upstream failure metadata', async () => {

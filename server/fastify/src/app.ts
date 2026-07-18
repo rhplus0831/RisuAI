@@ -281,7 +281,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerAssetsRoutes(app, db, authState, config.dataDir, activeWriterState)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerPushNotificationRoutes(app, authState, pushNotifications)
-  registerMcpOAuthRefreshRoutes(app, db, authState, opts.mcpOAuthRefresh)
+  registerMcpOAuthRefreshRoutes(app, db, authState, config.dataDir, commandEventSink, opts.mcpOAuthRefresh)
   registerOpenAITranscriptionRoutes(app, db, authState, opts.openAITranscription)
   registerEmbeddingOperationRoutes(app, db, authState, opts.embeddingOperations)
   registerProviderOperationRoutes(app, db, authState, opts.providerOperations)
