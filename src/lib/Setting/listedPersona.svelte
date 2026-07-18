@@ -1,10 +1,11 @@
 <script lang="ts">
   import { XIcon } from '@lucide/svelte'
   import { language } from '../../lang'
+  import { alertNormal } from 'src/ts/alert'
 
   import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
-  import { changeUserPersona, validUniquePersonaIdAt } from 'src/ts/persona'
+  import { changeUserPersonaWithOutcome, validUniquePersonaIdAt } from 'src/ts/persona'
   import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
   import {
     resolveActiveChatGenerationSettings,
@@ -29,12 +30,14 @@
       }).settings?.personaId ?? null
     )
   })
+  let mutationPending = $state(false)
+  let mutationError = $state('')
 
   function nonEmptyId(id: unknown): string | null {
     return typeof id === 'string' && id.trim().length > 0 ? id : null
   }
 
-  function selectPersona(index: number) {
+  async function selectPersona(index: number): Promise<void> {
     if (isChatGenerationSelectionMode) {
       const personaId = validUniquePersonaIdAt(index)
       if (!personaId) return
@@ -44,8 +47,27 @@
       return
     }
 
-    changeUserPersona(index)
-    close()
+    if (mutationPending) return
+    mutationPending = true
+    mutationError = ''
+    try {
+      const persistence = changeUserPersonaWithOutcome(index)
+      if (!persistence) {
+        mutationError = language.personaMutationFailed
+        return
+      }
+      const status = await persistence
+      if (status === 'failed') {
+        mutationError = language.personaMutationFailed
+        return
+      }
+      if (status === 'queued') alertNormal(language.personaMutationQueued)
+      close()
+    } catch {
+      mutationError = language.personaMutationFailed
+    } finally {
+      mutationPending = false
+    }
   }
 
   function isPersonaSelected(index: number) {
@@ -60,11 +82,11 @@
     if (event.key !== 'Escape') return
     event.preventDefault()
     event.stopPropagation()
-    close()
+    if (!mutationPending) close()
   }
 
   function handleBackdropClick(event: MouseEvent): void {
-    if (event.target === event.currentTarget) close()
+    if (event.target === event.currentTarget && !mutationPending) close()
   }
 </script>
 
@@ -83,6 +105,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="risu-persona-picker-title"
+    aria-busy={mutationPending}
     tabindex="-1"
     onkeydown={handleDialogKeydown}>
     <div class="flex items-center text-textcolor mb-4">
@@ -90,17 +113,26 @@
       <div class="grow flex justify-end">
         <button
           data-modal-initial-focus
+          disabled={mutationPending}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
           aria-label={language.close}
-          onclick={close}>
+          onclick={() => {
+            if (!mutationPending) close()
+          }}>
           <XIcon size={24} />
         </button>
       </div>
     </div>
+    {#if mutationError}
+      <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
+        {mutationError}
+      </div>
+    {/if}
     {#each getDatabase().personas as persona, i}
       <button
-        onclick={() => {
-          selectPersona(i)
+        disabled={mutationPending}
+        onclick={async () => {
+          await selectPersona(i)
         }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
         class:bg-selected={isPersonaSelected(i)}

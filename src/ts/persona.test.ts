@@ -40,14 +40,18 @@ import { getDatabase, setDatabaseLite } from './storage/database.svelte'
 import {
   beginPersonaReorder,
   changeUserPersona,
+  changeUserPersonaWithOutcome,
   createNewUserPersona,
+  createNewUserPersonaWithOutcome,
   currentPersonaStateSnapshot,
   deleteSelectedUserPersona,
+  deleteSelectedUserPersonaWithOutcome,
   flushPendingSelectedPersonaUpdate,
   personaMutationOptimisticAcknowledgement,
   queueSelectedPersonaUpdate,
   reconcileSelectedPersonaProjectionEpoch,
   reorderUserPersonasByIndices,
+  reorderUserPersonasByIndicesWithOutcome,
   saveUserPersona,
   selectedPersonaId,
   settleAcceptedPersonaPatchDirtyFields,
@@ -2022,6 +2026,45 @@ describe('persona ID read and command preparation', () => {
     expect(isSettingsAcknowledgementTainted()).toBe(true)
   })
 
+  it('reports a retryable durable persona selection as queued', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-persona-selection-outcome',
+      writerEpoch: 3,
+      databaseLineage: 'lineage-persona-selection-outcome',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    seedPersonaState(
+      [
+        makePersona({ id: 'persona-select-a', name: 'A', personaPrompt: 'A prompt' }),
+        makePersona({ id: 'persona-select-b', name: 'B', personaPrompt: 'B prompt' }),
+      ],
+      0,
+    )
+    getDatabase().username = 'A'
+    getDatabase().userIcon = ''
+    getDatabase().personaPrompt = 'A prompt'
+    getDatabase().userNote = ''
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ error: 'temporarily unavailable' }, 500))
+
+    try {
+      const persistence = changeUserPersonaWithOutcome(1)
+      expect(persistence).not.toBeNull()
+      await expect(persistence!).resolves.toBe('queued')
+      expect(getDatabase()).toMatchObject({
+        selectedPersona: 1,
+        username: 'B',
+        personaPrompt: 'B prompt',
+      })
+      expect(await listPendingMutations()).toHaveLength(1)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('selectedPersonaId returns null for missing and duplicate IDs without mutating the projection', () => {
     seedPersonaState([makePersona({ name: 'Missing ID' }), makePersona({ id: 'persona-b', name: 'B' })], 0)
     const missingBefore = cloneJsonValue(getDatabase())
@@ -2118,12 +2161,12 @@ describe('persona collection rollback guards', () => {
     )
     mockNextCommandFailure()
 
-    createNewUserPersona()
+    const mutation = createNewUserPersonaWithOutcome()
     getDatabase().personas[0] = {
       ...getDatabase().personas[0],
       name: 'Persona A edited after dispatch',
     } as any
-    await flushCommandEffects()
+    await expect(mutation.persistence).resolves.toBe('failed')
 
     expect(isCollectionAcknowledgementTainted('personas')).toBe(true)
     expect(isSettingsAcknowledgementTainted()).toBe(true)
@@ -2242,7 +2285,8 @@ describe('persona collection rollback guards', () => {
     ]
     mockNextCommandFailure()
 
-    expect(deleteSelectedUserPersona()).toBe(true)
+    const persistence = deleteSelectedUserPersonaWithOutcome()
+    expect(persistence).not.toBeNull()
     expect(getDatabase().characters[0].chats[0].generationSettings?.personaId).toBe('persona-a')
     expect(getDatabase().loadouts[0].personaId).toBe('persona-a')
     getDatabase().personas[1] = {
@@ -2255,7 +2299,7 @@ describe('persona collection rollback guards', () => {
         name: 'Persona D appended after dispatch',
       }) as any,
     )
-    await flushCommandEffects()
+    await expect(persistence).resolves.toBe('failed')
 
     expect(isCollectionAcknowledgementTainted('personas')).toBe(true)
     expect(isSettingsAcknowledgementTainted()).toBe(true)
@@ -2303,12 +2347,13 @@ describe('persona collection rollback guards', () => {
     )
     mockNextCommandFailure()
 
-    expect(reorderUserPersonasByIndices([2, 0, 1], 'persona-b')).toBe(true)
+    const persistence = reorderUserPersonasByIndicesWithOutcome([2, 0, 1], 'persona-b')
+    expect(persistence).not.toBeNull()
     getDatabase().personas[0] = {
       ...getDatabase().personas[0],
       name: 'Persona C edited after dispatch',
     } as any
-    await flushCommandEffects()
+    await expect(persistence).resolves.toBe('failed')
 
     expect(isCollectionAcknowledgementTainted('personas')).toBe(true)
     expect(isSettingsAcknowledgementTainted()).toBe(true)

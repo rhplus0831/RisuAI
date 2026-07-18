@@ -1539,6 +1539,8 @@ export const languageEnglish = {
   personaImportQueued:
     'The persona is saved on this device and queued. It will finish importing when the server is available.',
   personaImportFailed: 'Could not import the persona. Please try again.',
+  personaMutationQueued: 'The persona change is saved on this device and queued. It will retry automatically.',
+  personaMutationFailed: 'The persona change could not be saved. The previous state was restored.',
   personaIconSaveQueued:
     'The persona image is saved on this device and queued. It will finish saving when the server is available.',
   personaIconSaveFailed: 'Could not save the persona image. Please try again.',

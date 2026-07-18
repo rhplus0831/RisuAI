@@ -16,7 +16,7 @@ const presetSpies = vi.hoisted(() => ({
 }))
 
 const personaSpies = vi.hoisted(() => ({
-  changeUserPersona: vi.fn(),
+  changeUserPersonaWithOutcome: vi.fn(async (_index: number): Promise<'accepted' | 'queued' | 'failed'> => 'accepted'),
 }))
 
 const moduleSpies = vi.hoisted(() => ({
@@ -59,7 +59,7 @@ vi.mock('src/ts/persona', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/persona')>()
   return {
     ...actual,
-    changeUserPersona: personaSpies.changeUserPersona,
+    changeUserPersonaWithOutcome: personaSpies.changeUserPersonaWithOutcome,
   }
 })
 
@@ -970,7 +970,7 @@ describe('generation settings picker mode', () => {
     await tick()
     await waitForCommandFetches(calls)
 
-    expect(personaSpies.changeUserPersona).not.toHaveBeenCalled()
+    expect(personaSpies.changeUserPersonaWithOutcome).not.toHaveBeenCalled()
     expect(close).toHaveBeenCalledOnce()
     expect(getDatabase().characters[0].chats[0].generationSettings).toEqual({
       configured: true,
@@ -1003,7 +1003,7 @@ describe('generation settings picker mode', () => {
     pickerRow('persona', 'persona-b').click()
     await tick()
 
-    expect(personaSpies.changeUserPersona).toHaveBeenCalledWith(1)
+    expect(personaSpies.changeUserPersonaWithOutcome).toHaveBeenCalledWith(1)
     expect(close).toHaveBeenCalledOnce()
     expect(getDatabase().characters[0].chats[0].generationSettings?.personaId).toBe('persona-b')
     expect(calls).toEqual([])

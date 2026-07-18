@@ -5,22 +5,22 @@
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
-  import { alertConfirm, alertSelect } from 'src/ts/alert'
+  import { alertConfirm, alertNormal, alertSelect } from 'src/ts/alert'
   import { getCharImage } from 'src/ts/characters'
   import {
     beginPersonaReorder,
-    changeUserPersona,
-    createNewUserPersona,
+    changeUserPersonaWithOutcome,
+    createNewUserPersonaWithOutcome,
     currentPersonaStateSnapshot,
     currentSelectedPersonaProjectionSnapshot,
-    deleteSelectedUserPersona,
+    deleteSelectedUserPersonaWithOutcome,
     exportUserPersona,
     flushPendingSelectedPersonaUpdate,
     importUserPersona,
     isPersonaSettingsWatcherSuppressed,
     queueSelectedPersonaUpdate,
     reconcileSelectedPersonaProjectionEpoch,
-    reorderUserPersonasByIndices,
+    reorderUserPersonasByIndicesWithOutcome,
     selectedPersonaId,
     selectUserImg,
     snapshotPersonaJson,
@@ -28,6 +28,7 @@
     updateSelectedPersonaField,
     updateSelectedPersonaLargePortrait,
     type PersonaStateSnapshot,
+    type PersonaPersistenceStatus,
   } from 'src/ts/persona'
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import { onDestroy, onMount, untrack } from 'svelte'
@@ -44,6 +45,32 @@
   let previousPersonaSnapshot = ''
   let previousPersonaState: PersonaStateSnapshot | null = null
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
+  let structuralMutationPending = $state(false)
+  let structuralMutationError = $state('')
+
+  async function runPersonaStructuralMutation(
+    start: () => Promise<PersonaPersistenceStatus> | null,
+  ): Promise<PersonaPersistenceStatus | null> {
+    if (structuralMutationPending) return null
+    structuralMutationPending = true
+    structuralMutationError = ''
+    try {
+      const persistence = start()
+      if (!persistence) {
+        structuralMutationError = language.personaMutationFailed
+        return 'failed'
+      }
+      const status = await persistence
+      if (status === 'queued') alertNormal(language.personaMutationQueued)
+      if (status === 'failed') structuralMutationError = language.personaMutationFailed
+      return status
+    } catch {
+      structuralMutationError = language.personaMutationFailed
+      return 'failed'
+    } finally {
+      structuralMutationPending = false
+    }
+  }
 
   $effect(() => {
     const resourceApplyEpoch = getServerResourceApplyEpoch()
@@ -84,6 +111,7 @@
   const createStb = () => {
     stb = Sortable.create(ele, {
       onStart: async () => {
+        if (structuralMutationPending) return
         selectedId = beginPersonaReorder()
       },
       onEnd: async () => {
@@ -91,7 +119,7 @@
         ele.querySelectorAll('[data-risu-idx]').forEach((e, i) => {
           idx.push(parseInt(e.getAttribute('data-risu-idx')))
         })
-        reorderUserPersonasByIndices(idx, selectedId)
+        await runPersonaStructuralMutation(() => reorderUserPersonasByIndicesWithOutcome(idx, selectedId))
         try {
           stb.destroy()
         } catch (error) {}
@@ -117,17 +145,25 @@
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.persona}</h2>
 
+{#if structuralMutationError}
+  <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
+    {structuralMutationError}
+  </div>
+{/if}
+
 {#key sorted}
   <div
     class="p-4 rounded-md border-darkborderc border mb-2 flex-wrap flex gap-2 w-full max-w-full min-w-0"
-    bind:this={ele}>
+    bind:this={ele}
+    aria-busy={structuralMutationPending}>
     {#each getDatabase().personas as persona, i}
       <button
         aria-label={persona.name || `${language.persona} ${i + 1}`}
         aria-pressed={i === getDatabase().selectedPersona}
+        disabled={structuralMutationPending}
         data-risu-idx={i}
-        onclick={() => {
-          changeUserPersona(i)
+        onclick={async () => {
+          await runPersonaStructuralMutation(() => changeUserPersonaWithOutcome(i))
         }}>
         {#if persona.icon === ''}
           <div
@@ -152,13 +188,14 @@
     {/each}
     <div class="flex justify-center items-center ml-2 mr-2">
       <BaseRoundedButton
+        isDisabled={structuralMutationPending}
         ariaLabel={`${language.add} ${language.persona}`}
         onClick={async () => {
           const selection = await alertSelect([language.createfromScratch, language.importCharacter])
           if (selection === null) return
           const sel = Number(selection)
           if (sel === 0) {
-            createNewUserPersona()
+            await runPersonaStructuralMutation(() => createNewUserPersonaWithOutcome().persistence)
           } else if (sel === 1) {
             await importUserPersona()
           }
@@ -227,6 +264,7 @@
 
       <Button
         styled="danger"
+        disabled={structuralMutationPending}
         onclick={async () => {
           if (getDatabase().personas.length === 1) {
             return
@@ -237,7 +275,7 @@
             `${language.removeConfirm}${getPersonaDisplayName(getDatabase().personas[getDatabase().selectedPersona])}`,
           )
           if (d) {
-            deleteSelectedUserPersona(targetPersonaId)
+            await runPersonaStructuralMutation(() => deleteSelectedUserPersonaWithOutcome(targetPersonaId))
           }
         }}>{language.remove}</Button>
       <Check

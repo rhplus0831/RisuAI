@@ -1172,6 +1172,16 @@ async function personaPersistenceStatus(
   return (await isPersonaMutationRetained(outbox)) ? 'queued' : 'failed'
 }
 
+function settlePersonaStructuralMutation(
+  mutation: Promise<ServerCommandResult>,
+  outbox: PendingMutationHandle,
+): Promise<PersonaPersistenceStatus> {
+  return mutation.then(
+    (result) => personaPersistenceStatus(result, outbox),
+    async () => ((await isPersonaMutationRetained(outbox)) ? 'queued' : 'failed'),
+  )
+}
+
 function dispatchPersonaProfilePatch(input: {
   personaId: string
   patch: PersonaSnapshot
@@ -1228,10 +1238,10 @@ function dispatchPersonaProfilePatch(input: {
   )
 }
 
-function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot): void {
-  if (!canUseServerCommands()) return
+function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot): Promise<PersonaPersistenceStatus> {
+  if (!canUseServerCommands()) return Promise.resolve('accepted')
   const createdPersonaId = nonBlankPersonaId(persona)
-  if (!createdPersonaId) return
+  if (!createdPersonaId) return Promise.resolve('failed')
   const previousPersonaId = uniquePersonaIdAt(previous.personas, previous.selectedPersona)
   const previousProfile = profileMirrorRollbackSnapshotFromState(previous)
   const attemptedProfile = currentProfileMirrorRollbackSnapshot()
@@ -1260,25 +1270,28 @@ function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot)
     dependencyKeys: personaOwnerDependencyKeys(previousPersonaId),
   }
   const outbox = stagePendingMutation(PERSONA_SELECTION_MUTATION_KEY, intent)
-  void dispatchDurableMutation(outbox, intent, (transport) =>
-    runServerCommand({
-      command: (baseRevision) =>
-        createPersonaCommand({
-          baseRevision,
-          persona: cloneJsonValue(attemptedCreatedPersona) as PersonaSnapshot,
-          mirrorLegacyProfile: true,
-          optimisticAcknowledgement,
-        }),
-      rollback: personaCommandRollback({ personas: true, settings: true }, () =>
-        applyCreatePersonaRollback({
-          createdPersonaId,
-          attemptedCreatedPersona,
-          previousProfile,
-          attemptedProfile,
-        }),
-      ),
-      ...transport,
-    }),
+  return settlePersonaStructuralMutation(
+    dispatchDurableMutation(outbox, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          createPersonaCommand({
+            baseRevision,
+            persona: cloneJsonValue(attemptedCreatedPersona) as PersonaSnapshot,
+            mirrorLegacyProfile: true,
+            optimisticAcknowledgement,
+          }),
+        rollback: personaCommandRollback({ personas: true, settings: true }, () =>
+          applyCreatePersonaRollback({
+            createdPersonaId,
+            attemptedCreatedPersona,
+            previousProfile,
+            attemptedProfile,
+          }),
+        ),
+        ...transport,
+      }),
+    ),
+    outbox,
   )
 }
 
@@ -1350,11 +1363,11 @@ function dispatchDeletePersona(
   selectPersonaId: string | undefined,
   previous: PersonaStateSnapshot,
   rollbackReferences: () => void,
-): void {
-  if (!canUseServerCommands()) return
+): Promise<PersonaPersistenceStatus> {
+  if (!canUseServerCommands()) return Promise.resolve('accepted')
   const previousIndex = findPersonaIndexById(previous.personas, personaId)
   const previousPersona = previousIndex === -1 ? null : previous.personas[previousIndex]
-  if (!previousPersona) return
+  if (!previousPersona) return Promise.resolve('failed')
   const previousProfile = profileMirrorRollbackSnapshotFromState(previous)
   const attemptedProfile = currentProfileMirrorRollbackSnapshot()
   void flushPendingSelectedPersonaUpdate()
@@ -1374,41 +1387,44 @@ function dispatchDeletePersona(
     dependencyKeys: [personaOwnerMutationKey(personaId)],
   }
   const outbox = stagePendingMutation(PERSONA_SELECTION_MUTATION_KEY, intent)
-  void dispatchDurableMutation(outbox, intent, (transport) =>
-    runServerCommand({
-      command: (baseRevision) =>
-        deletePersonaCommand({
-          baseRevision,
-          personaId,
-          selectPersonaId,
-          mirrorLegacyProfile: true,
-          saveCurrent: true,
+  return settlePersonaStructuralMutation(
+    dispatchDurableMutation(outbox, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          deletePersonaCommand({
+            baseRevision,
+            personaId,
+            selectPersonaId,
+            mirrorLegacyProfile: true,
+            saveCurrent: true,
+          }),
+        // Persona mutation certificates cover the collection/settings slices,
+        // but deletion also rewrites chats and loadouts. Leave this command
+        // without a local-effect acknowledgement so success reconciliation reads
+        // every cascaded slice through the authoritative invalidation plan.
+        rollback: personaCommandRollback({ personas: true, settings: true }, () => {
+          applyDeletePersonaRollback({
+            deletedPersonaId: personaId,
+            previousIndex,
+            previousPersona,
+            previousProfile,
+            attemptedProfile,
+          })
+          if (findPersonaIndexById(getDatabase().personas, personaId) !== -1) rollbackReferences()
         }),
-      // Persona mutation certificates cover the collection/settings slices,
-      // but deletion also rewrites chats and loadouts. Leave this command
-      // without a local-effect acknowledgement so success reconciliation reads
-      // every cascaded slice through the authoritative invalidation plan.
-      rollback: personaCommandRollback({ personas: true, settings: true }, () => {
-        applyDeletePersonaRollback({
-          deletedPersonaId: personaId,
-          previousIndex,
-          previousPersona,
-          previousProfile,
-          attemptedProfile,
-        })
-        if (findPersonaIndexById(getDatabase().personas, personaId) !== -1) rollbackReferences()
+        ...transport,
       }),
-      ...transport,
-    }),
+    ),
+    outbox,
   )
 }
 
-function dispatchReorderPersonas(previous: PersonaStateSnapshot): void {
-  if (!canUseServerCommands()) return
+function dispatchReorderPersonas(previous: PersonaStateSnapshot): Promise<PersonaPersistenceStatus> {
+  if (!canUseServerCommands()) return Promise.resolve('accepted')
   const personaIds = personaCommandIdList()
-  if (!personaIds) return
+  if (!personaIds) return Promise.resolve('failed')
   const previousPersonaIds = personaCommandIdList(previous.personas)
-  if (!previousPersonaIds) return
+  if (!previousPersonaIds) return Promise.resolve('failed')
   const attemptedPersonaIds = [...personaIds]
   const attempted = currentPersonaStateSnapshot()
   const settingsProjectionChanged = attempted.selectedPersona !== previous.selectedPersona
@@ -1432,22 +1448,25 @@ function dispatchReorderPersonas(previous: PersonaStateSnapshot): void {
     dependencyKeys: personaOwnerDependencyKeys(...personaIds),
   }
   const outbox = stagePendingMutation(PERSONA_SELECTION_MUTATION_KEY, intent)
-  void dispatchDurableMutation(outbox, intent, (transport) =>
-    runServerCommand({
-      command: (baseRevision) =>
-        reorderPersonasCommand({
-          baseRevision,
-          personaIds,
-          optimisticAcknowledgement,
-        }),
-      rollback: personaCommandRollback({ personas: true, settings: settingsProjectionChanged }, () =>
-        applyReorderPersonaRollback({
-          previousPersonaIds,
-          attemptedPersonaIds,
-        }),
-      ),
-      ...transport,
-    }),
+  return settlePersonaStructuralMutation(
+    dispatchDurableMutation(outbox, intent, (transport) =>
+      runServerCommand({
+        command: (baseRevision) =>
+          reorderPersonasCommand({
+            baseRevision,
+            personaIds,
+            optimisticAcknowledgement,
+          }),
+        rollback: personaCommandRollback({ personas: true, settings: settingsProjectionChanged }, () =>
+          applyReorderPersonaRollback({
+            previousPersonaIds,
+            attemptedPersonaIds,
+          }),
+        ),
+        ...transport,
+      }),
+    ),
+    outbox,
   )
 }
 
@@ -1656,7 +1675,12 @@ export function updateSelectedPersonaDisplayName(value: string): void {
   })
 }
 
-export function createNewUserPersona(): Persona {
+export interface NewUserPersonaMutation {
+  persona: Persona
+  persistence: Promise<PersonaPersistenceStatus>
+}
+
+export function createNewUserPersonaWithOutcome(): NewUserPersonaMutation {
   const previous = currentPersonaStateSnapshot()
   const persona = {
     id: v4(),
@@ -1676,8 +1700,14 @@ export function createNewUserPersona(): Persona {
     getDatabase().personaPrompt = persona.personaPrompt
     getDatabase().userNote = persona.note ?? ''
   })
-  dispatchCreatePersona(persona, previous)
-  return persona
+  return {
+    persona,
+    persistence: dispatchCreatePersona(persona, previous),
+  }
+}
+
+export function createNewUserPersona(): Persona {
+  return createNewUserPersonaWithOutcome().persona
 }
 
 export function beginPersonaReorder(): string | null {
@@ -1688,13 +1718,16 @@ export function beginPersonaReorder(): string | null {
   return personaId
 }
 
-export function reorderUserPersonasByIndices(indices: number[], selectedPersonaId: string | null): boolean {
+export function reorderUserPersonasByIndicesWithOutcome(
+  indices: number[],
+  selectedPersonaId: string | null,
+): Promise<PersonaPersistenceStatus> | null {
   const previous = currentPersonaStateSnapshot()
   const personas = indices
     .map((index) => getDatabase().personas[index])
     .filter((persona): persona is Persona => Boolean(persona))
-  if (personas.length !== getDatabase().personas.length) return false
-  if (!personaCommandIdList(personas)) return false
+  if (personas.length !== getDatabase().personas.length) return null
+  if (!personaCommandIdList(personas)) return null
 
   suppressPersonaSettingsWatcherUntilNextTask()
   withTrustedResourceWrite(() => {
@@ -1702,15 +1735,20 @@ export function reorderUserPersonasByIndices(indices: number[], selectedPersonaI
     const selectedPersona = getDatabase().personas.findIndex((persona) => persona.id === selectedPersonaId)
     getDatabase().selectedPersona = selectedPersona !== -1 ? selectedPersona : 0
   })
-  dispatchReorderPersonas(previous)
-  return true
+  return dispatchReorderPersonas(previous)
 }
 
-export function deleteSelectedUserPersona(expectedPersonaId?: string): boolean {
-  if (getDatabase().personas.length === 1) return false
-  if (!personaCommandIdList()) return false
+export function reorderUserPersonasByIndices(indices: number[], selectedPersonaId: string | null): boolean {
+  return reorderUserPersonasByIndicesWithOutcome(indices, selectedPersonaId) !== null
+}
+
+export function deleteSelectedUserPersonaWithOutcome(
+  expectedPersonaId?: string,
+): Promise<PersonaPersistenceStatus> | null {
+  if (getDatabase().personas.length === 1) return null
+  if (!personaCommandIdList()) return null
   const personaId = selectedPersonaId()
-  if (!personaId || (expectedPersonaId !== undefined && personaId !== expectedPersonaId)) return false
+  if (!personaId || (expectedPersonaId !== undefined && personaId !== expectedPersonaId)) return null
   saveUserPersona({ dispatch: false })
   const previous = currentPersonaStateSnapshot()
 
@@ -1734,8 +1772,11 @@ export function deleteSelectedUserPersona(expectedPersonaId?: string): boolean {
     deletedId: personaId,
     replacement: selectedId ? { id: selectedId } : null,
   })
-  dispatchDeletePersona(personaId, selectedId, previous, references.rollback)
-  return true
+  return dispatchDeletePersona(personaId, selectedId, previous, references.rollback)
+}
+
+export function deleteSelectedUserPersona(expectedPersonaId?: string): boolean {
+  return deleteSelectedUserPersonaWithOutcome(expectedPersonaId) !== null
 }
 
 export async function selectUserImg() {
@@ -1916,12 +1957,15 @@ export function selectUserPersonaLocally(id: number, save: 'save' | 'noSave' = '
   return true
 }
 
-export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') {
-  if (!personaCommandIdList()) return
+export function changeUserPersonaWithOutcome(
+  id: number,
+  save: 'save' | 'noSave' = 'save',
+): Promise<PersonaPersistenceStatus> | null {
+  if (!personaCommandIdList()) return null
   const personaId = validUniquePersonaIdAt(id)
-  if (!personaId) return
+  if (!personaId) return null
   const previous = currentPersonaStateSnapshot()
-  if (!selectUserPersonaLocally(id, save)) return
+  if (!selectUserPersonaLocally(id, save)) return null
   const attempted = currentPersonaStateSnapshot()
   const optimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
     operation: 'select',
@@ -1955,27 +1999,35 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
         .filter((key) => !exactJsonValuesEqual(previous[key], attempted[key]))
         .map(pendingMutationSettingsFieldProjectionTarget),
     )
-    void dispatchDurableMutation(outbox, intent, (transport) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          selectPersonaCommand({
-            baseRevision,
-            personaId,
-            saveCurrent: save === 'save',
-            mirrorLegacyProfile: true,
-            optimisticAcknowledgement,
-          }),
-        rollback: personaCommandRollback({ personas: save === 'save', settings: true }, () =>
-          applySelectPersonaRollback({
-            previous,
-            attempted,
-            saveCurrent: save === 'save',
-          }),
-        ),
-        ...transport,
-      }),
+    return settlePersonaStructuralMutation(
+      dispatchDurableMutation(outbox, intent, (transport) =>
+        runServerCommand({
+          command: (baseRevision) =>
+            selectPersonaCommand({
+              baseRevision,
+              personaId,
+              saveCurrent: save === 'save',
+              mirrorLegacyProfile: true,
+              optimisticAcknowledgement,
+            }),
+          rollback: personaCommandRollback({ personas: save === 'save', settings: true }, () =>
+            applySelectPersonaRollback({
+              previous,
+              attempted,
+              saveCurrent: save === 'save',
+            }),
+          ),
+          ...transport,
+        }),
+      ),
+      outbox,
     )
   }
+  return Promise.resolve('accepted')
+}
+
+export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save'): void {
+  void changeUserPersonaWithOutcome(id, save)
 }
 
 interface PersonaCard {
