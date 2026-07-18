@@ -928,7 +928,7 @@ describe('AgentPresetSettings', () => {
     expect(agentPresetSpies.updateAgentPresetStep).not.toHaveBeenCalled()
   })
 
-  it('closes and latches a queued step create until the matching step is projected', async () => {
+  it('keeps dirty metadata in the locked drawer until a queued step is projected', async () => {
     const original = preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })
     seedDb([original])
     const latch: AgentPresetProjectionLatchMock = {
@@ -963,13 +963,20 @@ describe('AgentPresetSettings', () => {
 
     rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
     await tick()
+    const metadataName = nameInput()
+    metadataName.value = 'Unsaved Research Agent'
+    metadataName.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
     target.querySelector<HTMLButtonElement>('[data-risu-agent-preset-step-editor] button')?.click()
     await tick()
     button('[data-risu-agent-preset-step-save]').click()
     await flushAsyncWork()
 
     expect(agentPresetSpies.createAgentPresetStep).toHaveBeenCalledTimes(1)
-    expect(target.querySelector('[data-risu-agent-preset-editor]')).toBeNull()
+    expect(target.querySelector('[data-risu-agent-preset-editor]')).toBeTruthy()
+    expect(nameInput().value).toBe('Unsaved Research Agent')
+    expect(target.querySelector<HTMLFieldSetElement>('[data-risu-agent-preset-controls]')?.disabled).toBe(true)
+    expect(window.confirm).not.toHaveBeenCalled()
     expect(target.textContent).toContain(language.agentPresets.commandQueued)
     expect(button('[data-risu-agent-preset-create]').disabled).toBe(true)
 
@@ -990,6 +997,7 @@ describe('AgentPresetSettings', () => {
     ]
     await tick()
     expect(button('[data-risu-agent-preset-create]').disabled).toBe(true)
+    expect(nameInput().value).toBe('Unsaved Research Agent')
 
     getDatabase().agentPresets = [
       preset({
@@ -1012,9 +1020,12 @@ describe('AgentPresetSettings', () => {
         ],
       }),
     ]
-    await tick()
+    await flushAsyncWork()
     expect(button('[data-risu-agent-preset-create]').disabled).toBe(false)
     expect(target.textContent).not.toContain(language.agentPresets.commandQueued)
+    expect(nameInput().value).toBe('Unsaved Research Agent')
+    expect(target.querySelector<HTMLFieldSetElement>('[data-risu-agent-preset-controls]')?.disabled).toBe(false)
+    expect(button('[data-risu-agent-preset-save]').disabled).toBe(false)
   })
 
   it('sends only a changed step name and omits large unchanged fields', async () => {

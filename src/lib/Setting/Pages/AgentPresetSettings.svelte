@@ -36,6 +36,7 @@
   const initialProjectionLatch = currentPendingAgentPresetGeneratedProjectionLatch()
   let mutationState = $state<'idle' | 'saving' | 'queued'>(initialProjectionLatch ? 'queued' : 'idle')
   let queuedProjectionLatch = $state<AgentPresetGeneratedProjectionLatch | null>(initialProjectionLatch)
+  let resolveQueuedEditorProjection: (() => void) | null = null
 
   let presets = $derived(Array.isArray(getDatabase().agentPresets) ? getDatabase().agentPresets : [])
   let defaultPresetId = $derived(
@@ -49,6 +50,9 @@
     if (!latch || !isAgentPresetGeneratedProjectionResolved(latch)) return
     queuedProjectionLatch = null
     mutationState = 'idle'
+    const resolve = resolveQueuedEditorProjection
+    resolveQueuedEditorProjection = null
+    resolve?.()
   })
 
   function openCreateEditor(): void {
@@ -164,10 +168,12 @@
     return false
   }
 
-  function latchQueuedProjection(latch: AgentPresetGeneratedProjectionLatch): void {
+  function latchQueuedProjection(latch: AgentPresetGeneratedProjectionLatch): Promise<void> {
     queuedProjectionLatch = latch
     mutationState = 'queued'
-    closeEditor()
+    return new Promise((resolve) => {
+      resolveQueuedEditorProjection = resolve
+    })
   }
 
   function enabledSteps(preset: AgentPresetRecord): AgentPresetStepRecord[] {

@@ -51,7 +51,7 @@
     commandError?: string
     onSave: (preset: AgentPresetSnapshot) => void | Promise<void>
     onCancel: () => void
-    onQueuedProjection?: (latch: AgentPresetGeneratedProjectionLatch) => void
+    onQueuedProjection?: (latch: AgentPresetGeneratedProjectionLatch) => void | Promise<void>
   }
 
   type StepEditorMode = 'new' | 'edit' | null
@@ -582,7 +582,14 @@
     }
     if (outcome.status === 'queued') {
       stepMutationState = 'queued'
-      if (outcome.projectionLatch) onQueuedProjection(outcome.projectionLatch)
+      if (outcome.projectionLatch) {
+        const completion = onQueuedProjection(outcome.projectionLatch)
+        if (completion) {
+          void completion.then(() => {
+            if (stepMutationState === 'queued') stepMutationState = 'idle'
+          })
+        }
+      }
       return true
     }
     if (outcome.status === 'blocked') {
