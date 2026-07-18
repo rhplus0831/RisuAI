@@ -33,13 +33,14 @@ vi.mock('src/ts/process/request/serverMemory', () => ({
 }))
 
 vi.mock('src/ts/alert', () => ({
+  alertError: vi.fn(),
   alertInput: vi.fn(),
   alertNormalWait: vi.fn(),
 }))
 
 import BookmarkList from './BookmarkList.svelte'
 import HypaV3Modal from './HypaV3Modal.svelte'
-import { alertInput } from 'src/ts/alert'
+import { alertError, alertInput } from 'src/ts/alert'
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
 import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
 import { listServerMemorySummaries, patchServerMemorySummary } from 'src/ts/process/request/serverMemory'
@@ -193,6 +194,7 @@ describe('server resource guarded UI paths', () => {
     clearCachedServerCommandRevision()
     setResourceWriteGuardEnabled(false)
     seedDatabase()
+    vi.mocked(alertError).mockReset()
     vi.mocked(listServerMemorySummaries).mockResolvedValue({ status: 'ok', summaries: [] })
     vi.mocked(patchServerMemorySummary).mockResolvedValue({ status: 'error', error: 'not configured' })
     target = document.createElement('div')
@@ -424,6 +426,7 @@ describe('server resource guarded UI paths', () => {
     await vi.waitFor(() => {
       expect(chat.bookmarks).toEqual(['msg-1', 'msg-2'])
       expect(chat.bookmarkNames).toEqual({ 'msg-1': 'Old name', 'msg-2': 'Second name' })
+      expect(alertError).toHaveBeenCalledTimes(2)
     })
     await tick()
     expect(target.textContent).toContain('Old name')

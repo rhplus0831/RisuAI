@@ -88,6 +88,7 @@ import {
   dispatchUpdateChatNoteScoped,
   dispatchUpdateChatRow,
   dispatchUpdateChatScoped,
+  dispatchUpdateChatScopedWithOutcome,
   dispatchUpdateMessageScoped,
   isActiveChatTargetFresh,
   prepareCompatibleChatUpdateScoped,
@@ -4724,7 +4725,7 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
       getDatabase().characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
     })
 
-    dispatchUpdateChatScoped(
+    const mutation = dispatchUpdateChatScopedWithOutcome(
       'chat-a',
       { bookmarks: attemptedBookmarks, bookmarkNames: attemptedBookmarkNames },
       previous,
@@ -4734,6 +4735,7 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     await vi.waitFor(() => {
       expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['msg-old'])
     })
+    await expect(mutation).resolves.toMatchObject({ status: 'failed' })
     expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'msg-newer': 'Newer bookmark' })
     expect(getDatabase().characters[0].chats[0].note).toBe('newer note')
     expect(getDatabase().characters[0].chats[0].message).toEqual([
@@ -6825,6 +6827,40 @@ describe('durable chat and folder structure dispatch', () => {
     await clearPendingMutationOutbox()
     resetPendingMutationOutboxForTests()
   }
+
+  it('classifies a retained scoped bookmark update as queued while preserving its projection', async () => {
+    await prepareDurableOutbox('bookmark-outcome')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH') {
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const previous = currentChatScopedSnapshot()
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].bookmarks = ['message-a']
+        getDatabase().characters[0].chats[0].bookmarkNames = { 'message-a': 'Queued bookmark' }
+      })
+      const mutation = dispatchUpdateChatScopedWithOutcome(
+        'chat-a',
+        { bookmarks: ['message-a'], bookmarkNames: { 'message-a': 'Queued bookmark' } },
+        previous,
+      )
+
+      await expect(mutation).resolves.toMatchObject({ status: 'queued' })
+      expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['message-a'])
+      expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'message-a': 'Queued bookmark' })
+      expect(await listPendingMutations()).toHaveLength(1)
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
 
   it('waits for every batch row to persist and reapplies only the latest retained projection', async () => {
     await prepareDurableOutbox('batch-readiness')

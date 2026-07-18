@@ -31,6 +31,15 @@ export const languageEnglish = {
     `Changes to ${name} are saved on this device and queued. They will retry automatically.`,
   characterFolderOrganizationFailed: (name: string) =>
     `Changes to ${name} could not be saved. The previous folder settings were restored.`,
+  bookmarkRenamePending: (name: string) => `Saving the new name for ${name}…`,
+  bookmarkRenameQueued: (name: string) =>
+    `The new name for ${name} is saved on this device and queued. It will retry automatically.`,
+  bookmarkRenameFailed: (name: string) =>
+    `The new name for ${name} could not be saved. The previous bookmark name was restored.`,
+  bookmarkRemovePending: (name: string) => `Removing ${name}…`,
+  bookmarkRemoveQueued: (name: string) =>
+    `${name} was removed on this device and the change is queued. It will retry automatically.`,
+  bookmarkRemoveFailed: (name: string) => `${name} could not be removed. The bookmark was restored.`,
   settingsSaveQueued: 'This settings change is saved on this device and queued. It will retry automatically.',
   alternateGreetingMutationQueued:
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',

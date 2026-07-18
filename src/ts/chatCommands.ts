@@ -118,6 +118,11 @@ export type DeleteMessageScopedResult =
 
 export type ChatImportDispatchResult = { status: 'ok' } | { status: 'error'; error: string }
 
+export type ChatMutationOutcome =
+  | { status: 'accepted'; result: Extract<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+
 export const CHAT_IMPORT_TOO_LARGE_ERROR = 'chat_import_too_large'
 
 export interface ActiveChatTarget {
@@ -214,6 +219,22 @@ function dispatchCharacterOwnedDurableMutation<T extends Record<string, unknown>
 interface CharacterOwnedDurableMutationOutcome<T extends Record<string, unknown>> {
   result: ServerCommandResult<T>
   retained: boolean
+}
+
+function failedChatMutationResult(error: unknown): Exclude<ServerCommandResult, { status: 'ok' }> {
+  return {
+    status: 'error',
+    error: error instanceof Error ? error.message : 'Unable to save the chat change',
+    reason: 'invalid-request',
+  }
+}
+
+async function chatMutationOutcome(
+  outcome: Promise<CharacterOwnedDurableMutationOutcome<Record<string, unknown>>>,
+): Promise<ChatMutationOutcome> {
+  const settled = await outcome
+  if (settled.result.status === 'ok') return { status: 'accepted', result: settled.result }
+  return settled.retained ? { status: 'queued', result: settled.result } : { status: 'failed', result: settled.result }
 }
 
 export interface CharacterOwnedDurableBatchStep {
@@ -387,12 +408,14 @@ async function dispatchCharacterOwnedDurableMutationWithOutcome<T extends Record
   characterId: string | undefined,
   intent: DurableMutationIntent,
   dispatch: (options: ServerCommandTransportOptions) => Promise<ServerCommandResult<T>>,
+  projectionTargets: readonly string[] = [],
 ): Promise<CharacterOwnedDurableMutationOutcome<T>> {
   if (!characterId || !canUseServerCommands()) {
     return { result: await dispatch({}), retained: false }
   }
 
   const outbox = stagePendingMutation(characterOwnerMutationKey(characterId), intent)
+  if (projectionTargets.length > 0) recordPendingMutationProjectionTargets(outbox, projectionTargets)
   return dispatchPreparedCharacterOwnedDurableMutationWithOutcome(outbox, intent, dispatch)
 }
 
@@ -2501,6 +2524,15 @@ export function dispatchUpdateChatScoped(
   previous: ChatScopedSnapshot,
   rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
 ): void {
+  void dispatchUpdateChatScopedWithOutcome(chatId, patch, previous, rollbackRowMetadata)
+}
+
+export function dispatchUpdateChatScopedWithOutcome(
+  chatId: string,
+  patch: ChatSnapshot,
+  previous: ChatScopedSnapshot,
+  rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
+): Promise<ChatMutationOutcome> | undefined {
   const commandPatch = sanitizeFrozenChatPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
   if (!canUseServerCommands()) return
@@ -2523,17 +2555,22 @@ export function dispatchUpdateChatScoped(
       ...transport,
     })
   if (!rollback) {
-    void dispatchCharacterOwnedDurableMutation(
+    const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(
       previous.characterId,
       intent,
       (transport) => execute(transport, () => {}),
       projectionTargets,
+    ).catch(
+      (error): CharacterOwnedDurableMutationOutcome<Record<string, unknown>> => ({
+        result: failedChatMutationResult(error),
+        retained: false,
+      }),
     )
-    return
+    return chatMutationOutcome(outcome)
   }
 
   const pendingAttempt = registerChatMetadataAttempt(chatId, rollback)
-  const result = dispatchCharacterOwnedDurableMutation(
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(
     previous.characterId,
     intent,
     (transport) => {
@@ -2541,8 +2578,13 @@ export function dispatchUpdateChatScoped(
       return execute(transport, () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata))
     },
     projectionTargets,
-  )
+  ).catch((error): CharacterOwnedDurableMutationOutcome<Record<string, unknown>> => {
+    rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata)
+    return { result: failedChatMutationResult(error), retained: false }
+  })
+  const result = outcome.then((settled) => settled.result)
   trackChatMetadataAttemptResult(pendingAttempt, result)
+  return chatMutationOutcome(outcome)
 }
 
 function registerChatMetadataAttempt(chatId: string, rollback: ChatRowMetadataSnapshot): PendingChatMetadataAttempt {

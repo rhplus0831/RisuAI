@@ -6,12 +6,13 @@
   import { getUserDisplayName, getUserIcon } from 'src/ts/util'
   import { createSimpleCharacter, bookmarkListOpen, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
-  import { alertInput } from 'src/ts/alert'
+  import { alertError, alertInput, alertNormal } from 'src/ts/alert'
   import {
     currentChatScopedSnapshot,
     currentChatStateSnapshot,
     dispatchUpdateChat,
-    dispatchUpdateChatScoped,
+    dispatchUpdateChatScopedWithOutcome,
+    type ChatMutationOutcome,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
   import {
@@ -40,6 +41,69 @@
     chatReference: ChatData
   }
   let preparedBookmarkOwner: BookmarkHydrationOwner | null | undefined
+  type BookmarkMutationOperation = 'rename' | 'remove'
+  interface BookmarkMutationState {
+    chatId: string
+    messageId: string
+    operation: BookmarkMutationOperation
+    label: string
+    status: 'pending' | 'queued' | 'failed'
+  }
+  let bookmarkMutations = $state<Record<string, BookmarkMutationState>>({})
+
+  function bookmarkMutationKey(chatId: string, messageId: string, operation: BookmarkMutationOperation): string {
+    return `${chatId}::${messageId}::${operation}`
+  }
+
+  function isBookmarkMutationPending(chatId: string, messageId: string): boolean {
+    return Object.values(bookmarkMutations).some(
+      (mutation) => mutation.chatId === chatId && mutation.messageId === messageId && mutation.status === 'pending',
+    )
+  }
+
+  function bookmarkMutationStatus(chatId: string, messageId: string): BookmarkMutationState['status'] | 'idle' {
+    const matching = Object.values(bookmarkMutations).filter(
+      (mutation) => mutation.chatId === chatId && mutation.messageId === messageId,
+    )
+    return matching.find((mutation) => mutation.status === 'pending')?.status ?? matching.at(-1)?.status ?? 'idle'
+  }
+
+  function bookmarkMutationMessage(mutation: BookmarkMutationState): string {
+    if (mutation.operation === 'rename') {
+      if (mutation.status === 'pending') return language.bookmarkRenamePending(mutation.label)
+      if (mutation.status === 'queued') return language.bookmarkRenameQueued(mutation.label)
+      return language.bookmarkRenameFailed(mutation.label)
+    }
+    if (mutation.status === 'pending') return language.bookmarkRemovePending(mutation.label)
+    if (mutation.status === 'queued') return language.bookmarkRemoveQueued(mutation.label)
+    return language.bookmarkRemoveFailed(mutation.label)
+  }
+
+  async function runBookmarkMutation(
+    chatId: string,
+    messageId: string,
+    operation: BookmarkMutationOperation,
+    label: string,
+    action: () => Promise<ChatMutationOutcome> | undefined,
+  ): Promise<void> {
+    if (isBookmarkMutationPending(chatId, messageId)) return
+    const key = bookmarkMutationKey(chatId, messageId, operation)
+    bookmarkMutations[key] = { chatId, messageId, operation, label, status: 'pending' }
+    try {
+      const outcome = await action()
+      if (!outcome || outcome.status === 'accepted') {
+        delete bookmarkMutations[key]
+        return
+      }
+      bookmarkMutations[key] = { chatId, messageId, operation, label, status: outcome.status }
+      const message = bookmarkMutationMessage(bookmarkMutations[key])
+      if (outcome.status === 'queued') alertNormal(message)
+      else alertError(message)
+    } catch {
+      bookmarkMutations[key] = { chatId, messageId, operation, label, status: 'failed' }
+      alertError(bookmarkMutationMessage(bookmarkMutations[key]))
+    }
+  }
 
   function activeBookmarkChat() {
     return chara?.chats?.[chara.chatPage]
@@ -217,24 +281,27 @@
 
   async function editName(chatId: string) {
     const chat = chara.chats[chara.chatPage]
-    const newName = await alertInput(language.bookmarkAskNameOrCancel, [], chat.bookmarkNames?.[chatId] || '')
+    const previousName = chat.bookmarkNames?.[chatId] || ''
+    const newName = await alertInput(language.bookmarkAskNameOrCancel, [], previousName)
     if (newName && newName.trim() !== '') {
       if (canUseServerCommands()) {
         if (!chat.id) return
-        const previous = currentChatScopedSnapshot()
-        if (previous.chatId !== chat.id || !previous.chat) return
-        if (!(previous.chat.bookmarks ?? []).includes(chatId)) return
-        const nextBookmarkNames = {
-          ...(previous.chat.bookmarkNames ?? {}),
-          [chatId]: newName,
-        }
-        if (!applyOptimisticBookmarkMetadata(chat.id, { bookmarkNames: nextBookmarkNames })) return
-        dispatchUpdateChatScoped(
-          chat.id,
-          { bookmarkNames: nextBookmarkNames },
-          previous,
-          rollbackServerBackedChatRowMetadata,
-        )
+        await runBookmarkMutation(chat.id, chatId, 'rename', previousName || newName, () => {
+          const previous = currentChatScopedSnapshot()
+          if (previous.chatId !== chat.id || !previous.chat) return
+          if (!(previous.chat.bookmarks ?? []).includes(chatId)) return
+          const nextBookmarkNames = {
+            ...(previous.chat.bookmarkNames ?? {}),
+            [chatId]: newName,
+          }
+          if (!applyOptimisticBookmarkMetadata(chat.id!, { bookmarkNames: nextBookmarkNames })) return
+          return dispatchUpdateChatScopedWithOutcome(
+            chat.id!,
+            { bookmarkNames: nextBookmarkNames },
+            previous,
+            rollbackServerBackedChatRowMetadata,
+          )
+        })
         return
       }
 
@@ -248,26 +315,35 @@
     }
   }
 
-  function removeBookmark(chatId: string) {
+  async function removeBookmark(chatId: string) {
     const chat = chara.chats[chara.chatPage]
     const bookmarks = chat.bookmarks ?? []
     const index = bookmarks.indexOf(chatId)
     if (index > -1) {
       if (canUseServerCommands()) {
         if (!chat.id) return
-        const previous = currentChatScopedSnapshot()
-        if (previous.chatId !== chat.id || !previous.chat) return
-        const nextBookmarks = (previous.chat.bookmarks ?? []).filter((id) => id !== chatId)
-        const nextBookmarkNames = { ...(previous.chat.bookmarkNames ?? {}) }
-        delete nextBookmarkNames[chatId]
-        if (!applyOptimisticBookmarkMetadata(chat.id, { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames }))
-          return
-        dispatchUpdateChatScoped(
-          chat.id,
-          { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames },
-          previous,
-          rollbackServerBackedChatRowMetadata,
-        )
+        const bookmarkLabel = chat.bookmarkNames?.[chatId] || chatId
+        await runBookmarkMutation(chat.id, chatId, 'remove', bookmarkLabel, () => {
+          const previous = currentChatScopedSnapshot()
+          if (previous.chatId !== chat.id || !previous.chat) return
+          const nextBookmarks = (previous.chat.bookmarks ?? []).filter((id) => id !== chatId)
+          const nextBookmarkNames = { ...(previous.chat.bookmarkNames ?? {}) }
+          delete nextBookmarkNames[chatId]
+          if (
+            !applyOptimisticBookmarkMetadata(chat.id!, {
+              bookmarks: nextBookmarks,
+              bookmarkNames: nextBookmarkNames,
+            })
+          ) {
+            return
+          }
+          return dispatchUpdateChatScopedWithOutcome(
+            chat.id!,
+            { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames },
+            previous,
+            rollbackServerBackedChatRowMetadata,
+          )
+        })
         return
       }
 
@@ -337,6 +413,18 @@
       </div>
     </div>
 
+    {#each Object.entries(bookmarkMutations).filter((entry) => entry[1].chatId === activeBookmarkChat()?.id) as mutationEntry (mutationEntry[0])}
+      {@const mutation = mutationEntry[1]}
+      <p
+        class="mb-2 text-sm text-textcolor2"
+        data-risu-bookmark-mutation-status={mutation.status}
+        data-risu-bookmark-mutation-id={mutation.messageId}
+        role="status"
+        aria-live="polite">
+        {bookmarkMutationMessage(mutation)}
+      </p>
+    {/each}
+
     {#if bookmarkHydrationState === 'loading'}
       <p class="text-textcolor2" role="status">{language.loading}</p>
     {:else if bookmarkHydrationState === 'error'}
@@ -354,7 +442,11 @@
         {#each bookmarkedMessages as msg (msg.chatId)}
           {@const bookmarkName =
             chara.chats[chara.chatPage].bookmarkNames?.[msg.chatId] || msg.data.substring(0, 30) + '...'}
-          <div data-risu-bookmark-id={msg.chatId} class="border border-darkborderc rounded-lg">
+          <div
+            data-risu-bookmark-id={msg.chatId}
+            data-risu-mutation-status={bookmarkMutationStatus(chara.chats[chara.chatPage].id ?? '', msg.chatId)}
+            aria-busy={isBookmarkMutationPending(chara.chats[chara.chatPage].id ?? '', msg.chatId)}
+            class="border border-darkborderc rounded-lg">
             <div class="flex items-center p-3 hover:bg-selected transition-colors">
               <button
                 class="grow text-left truncate cursor-pointer"
@@ -376,8 +468,9 @@
                   data-risu-bookmark-action="rename"
                   class="text-textcolor2 hover:text-green-500"
                   aria-label={`${language.edit}: ${bookmarkName}`}
+                  disabled={isBookmarkMutationPending(chara.chats[chara.chatPage].id ?? '', msg.chatId)}
                   onclick={() => {
-                    editName(msg.chatId)
+                    void editName(msg.chatId)
                   }}>
                   <PencilIcon size={16} />
                 </button>
@@ -385,8 +478,9 @@
                   data-risu-bookmark-action="remove"
                   class="text-textcolor2 hover:text-red-500"
                   aria-label={`${language.remove}: ${bookmarkName}`}
+                  disabled={isBookmarkMutationPending(chara.chats[chara.chatPage].id ?? '', msg.chatId)}
                   onclick={() => {
-                    removeBookmark(msg.chatId)
+                    void removeBookmark(msg.chatId)
                   }}>
                   <TrashIcon size={16} />
                 </button>
