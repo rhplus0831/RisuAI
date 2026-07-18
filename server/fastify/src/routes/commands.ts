@@ -5224,10 +5224,16 @@ export function registerCommandRoutes(
           if (index === -1) {
             throw new EntityNotFoundError(`Character not found: ${characterId}`)
           }
-          const patched = buildPatchedCharacterCollectionRow(characters[index], patch, characterId, index)
+          const resolvedContainer = resolveMaskedProviderSecretPlaceholders(target, {
+            characters: [{ chaId: characterId, ...patch }],
+          })
+          const resolvedRow = (resolvedContainer.characters as Array<Record<string, unknown>>)[0]
+          const resolvedPatch = { ...resolvedRow }
+          delete resolvedPatch.chaId
+          const patched = buildPatchedCharacterCollectionRow(characters[index], resolvedPatch, characterId, index)
           characters[index] = patched
           writeSingleCharacterRow(innerDb, characterId, patched)
-          const updatesTrashState = Object.prototype.hasOwnProperty.call(patch, 'trashTime')
+          const updatesTrashState = Object.prototype.hasOwnProperty.call(resolvedPatch, 'trashTime')
           if (updatesTrashState) {
             updateCharacterOrderForPatchedRow(target, characterId, patched)
             writeSettingsOnly(innerDb, extractSettings(target))

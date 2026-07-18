@@ -7017,6 +7017,52 @@ describe('Phase 9-3a character commands', () => {
     ])
   })
 
+  it('preserves a stored character TTS key when a sibling patch carries the mask', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-tts',
+          name: 'TTS Character',
+          oaiTTSConfig: {
+            enabled: true,
+            apiKey: 'stored-tts-secret',
+            voice: 'alloy',
+            model: 'tts-1',
+            format: 'mp3',
+          },
+        },
+      ],
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-tts',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          oaiTTSConfig: {
+            enabled: true,
+            apiKey: MASKED_PROVIDER_SECRET,
+            voice: 'nova',
+            model: 'tts-1-hd',
+            format: 'opus',
+          },
+        },
+      },
+    })
+
+    expect(updated.statusCode).toBe(200)
+    expect(readJsonRow('characters', 'char-tts').oaiTTSConfig).toEqual({
+      enabled: true,
+      apiKey: 'stored-tts-secret',
+      voice: 'nova',
+      model: 'tts-1-hd',
+      format: 'opus',
+    })
+  })
+
   it('creates and selects a character in one command', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
