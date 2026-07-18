@@ -26,6 +26,7 @@ import {
   type ChatScriptstatePatch,
   type ChatScriptstateValue,
   type ChatSnapshot,
+  type DurableMutationReplayResult,
   type MessageSnapshot,
   type ServerCommandResult,
   type ServerCommandSequenceEntry,
@@ -118,10 +119,21 @@ export type DeleteMessageScopedResult =
 
 export type ChatImportDispatchResult = { status: 'ok' } | { status: 'error'; error: string }
 
+export type ChatMutationResult = ServerCommandResult | CharacterOwnedDurableBatchResult
+
+export type ChatMutationFinalOutcome =
+  | { status: 'accepted' }
+  | { status: 'failed'; result: Exclude<DurableMutationReplayResult, { status: 'ok' }> }
+
 export type ChatMutationOutcome =
-  | { status: 'accepted'; result: Extract<ServerCommandResult, { status: 'ok' }> }
-  | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
-  | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'accepted'; result: Extract<ChatMutationResult, { status: 'ok' }> }
+  | {
+      status: 'queued'
+      result: Exclude<ChatMutationResult, { status: 'ok' }>
+      mutationIds: readonly string[]
+      settlement: Promise<ChatMutationFinalOutcome>
+    }
+  | { status: 'failed'; result: Exclude<ChatMutationResult, { status: 'ok' }> }
 
 export type ChatGenerationSettingsSaveSettlement =
   | { status: 'accepted' }
@@ -228,6 +240,35 @@ function dispatchCharacterOwnedDurableMutation<T extends Record<string, unknown>
 interface CharacterOwnedDurableMutationOutcome<T extends Record<string, unknown>> {
   result: ServerCommandResult<T>
   retained: boolean
+  mutationId?: string
+  settlement?: Promise<ChatMutationFinalOutcome>
+}
+
+interface ChatMutationFinalSettlementTracker {
+  mutationId: string
+  settlement: Promise<ChatMutationFinalOutcome>
+  cancel: () => void
+}
+
+function trackChatMutationFinalSettlement(outbox: PendingMutationHandle): ChatMutationFinalSettlementTracker | null {
+  if (!outbox.databaseLineage) return null
+
+  let cancel = () => {}
+  const settlement = new Promise<ChatMutationFinalOutcome>((resolve) => {
+    cancel = registerDurableMutationSettlementListener(outbox.mutationId, (finalSettlement, details) => {
+      cancel()
+      if (finalSettlement === 'accepted') {
+        resolve({ status: 'accepted' })
+        return
+      }
+      const result = details.result
+      resolve({
+        status: 'failed',
+        result: result && result.status !== 'ok' ? result : { status: 'unavailable' },
+      })
+    })
+  })
+  return { mutationId: outbox.mutationId, settlement, cancel: () => cancel() }
 }
 
 function failedChatMutationResult(error: unknown): Exclude<ServerCommandResult, { status: 'ok' }> {
@@ -243,7 +284,51 @@ async function chatMutationOutcome(
 ): Promise<ChatMutationOutcome> {
   const settled = await outcome
   if (settled.result.status === 'ok') return { status: 'accepted', result: settled.result }
-  return settled.retained ? { status: 'queued', result: settled.result } : { status: 'failed', result: settled.result }
+  if (settled.retained && settled.mutationId && settled.settlement) {
+    return {
+      status: 'queued',
+      result: settled.result,
+      mutationIds: [settled.mutationId],
+      settlement: settled.settlement,
+    }
+  }
+  return { status: 'failed', result: settled.result }
+}
+
+function normalizedChatMutationOutcome<T extends Record<string, unknown>>(
+  outcome: Promise<CharacterOwnedDurableMutationOutcome<T>>,
+  rollback: () => void,
+): Promise<ChatMutationOutcome> {
+  const normalized = outcome.catch((error): CharacterOwnedDurableMutationOutcome<T> => {
+    rollback()
+    return { result: failedChatMutationResult(error), retained: false }
+  })
+  return chatMutationOutcome(normalized).then((settled) => {
+    if (settled.status !== 'queued') return settled
+    return {
+      ...settled,
+      settlement: settled.settlement.then((finalSettlement) => {
+        if (finalSettlement.status === 'failed') rollback()
+        return finalSettlement
+      }),
+    }
+  })
+}
+
+async function chatBatchMutationOutcome(
+  result: Promise<CharacterOwnedDurableBatchResult>,
+): Promise<ChatMutationOutcome> {
+  const settled = await result
+  if (settled.status === 'ok') return { status: 'accepted', result: settled }
+  if (settled.status === 'retained' && settled.mutationIds && settled.settlement) {
+    return {
+      status: 'queued',
+      result: settled,
+      mutationIds: settled.mutationIds,
+      settlement: settled.settlement,
+    }
+  }
+  return { status: 'failed', result: settled }
 }
 
 export interface CharacterOwnedDurableBatchStep {
@@ -261,7 +346,13 @@ export interface CharacterOwnedDurableBatchStep {
 
 export type CharacterOwnedDurableBatchResult =
   | { status: 'ok'; acceptedCount: number }
-  | { status: 'retained'; acceptedCount: number; failure: Exclude<ServerCommandResult, { status: 'ok' }> }
+  | {
+      status: 'retained'
+      acceptedCount: number
+      failure: Exclude<ServerCommandResult, { status: 'ok' }>
+      mutationIds?: readonly string[]
+      settlement?: Promise<ChatMutationFinalOutcome>
+    }
   | { status: 'failure'; acceptedCount: number; failure: Exclude<ServerCommandResult, { status: 'ok' }> }
 
 /**
@@ -387,6 +478,13 @@ export async function dispatchOwnedDurableBatch(
   const outcomes = settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
   settled.forEach((result, index) => {
     if (result.status !== 'fulfilled' || !result.value.retained) return
+    if (result.value.settlement) {
+      const finalSettlement = result.value.settlement
+      result.value.settlement = finalSettlement.then((outcome) => {
+        if (outcome.status === 'failed') prepared[index].rollback()
+        return outcome
+      })
+    }
     const { handle, projectionTargets, reapply } = prepared[index]
     if (!reapply) return
     const fences = new Map(
@@ -407,7 +505,34 @@ export async function dispatchOwnedDurableBatch(
         } as const)
       : undefined)
   if (outcomes.some((outcome) => outcome.retained)) {
-    return { status: 'retained', acceptedCount, failure: failure ?? { status: 'unavailable' } }
+    const retainedOutcomeCount = outcomes.filter((outcome) => outcome.retained).length
+    const retainedOutcomes = outcomes.filter(
+      (
+        outcome,
+      ): outcome is CharacterOwnedDurableMutationOutcome<Record<string, unknown>> & {
+        retained: true
+        mutationId: string
+        settlement: Promise<ChatMutationFinalOutcome>
+      } => outcome.retained && Boolean(outcome.mutationId) && Boolean(outcome.settlement),
+    )
+    const mutationIds = retainedOutcomes.map((outcome) => outcome.mutationId)
+    const settlement =
+      retainedOutcomes.length === retainedOutcomeCount
+        ? Promise.all(retainedOutcomes.map((outcome) => outcome.settlement)).then(
+            (finalSettlements): ChatMutationFinalOutcome =>
+              finalSettlements.find(
+                (finalSettlement): finalSettlement is Extract<ChatMutationFinalOutcome, { status: 'failed' }> =>
+                  finalSettlement.status === 'failed',
+              ) ?? { status: 'accepted' },
+          )
+        : Promise.resolve<ChatMutationFinalOutcome>({ status: 'failed', result: { status: 'unavailable' } })
+    return {
+      status: 'retained',
+      acceptedCount,
+      failure: failure ?? { status: 'unavailable' },
+      mutationIds,
+      settlement,
+    }
   }
   if (failure) return { status: 'failure', acceptedCount, failure }
   return { status: 'ok', acceptedCount }
@@ -434,6 +559,7 @@ async function dispatchPreparedCharacterOwnedDurableMutationWithOutcome<T extend
   dispatch: (options: ServerCommandTransportOptions) => Promise<ServerCommandResult<T>>,
   beforeExecuteResult?: () => Exclude<ServerCommandResult, { status: 'ok' }> | undefined,
 ): Promise<CharacterOwnedDurableMutationOutcome<T>> {
+  const finalSettlement = trackChatMutationFinalSettlement(outbox)
   let retained = false
   try {
     const result = await dispatchDurableMutation(
@@ -454,9 +580,26 @@ async function dispatchPreparedCharacterOwnedDurableMutationWithOutcome<T extend
           : undefined,
       },
     )
-    return { result, retained }
+    if (retained && finalSettlement) {
+      return {
+        result,
+        retained,
+        mutationId: finalSettlement.mutationId,
+        settlement: finalSettlement.settlement,
+      }
+    }
+    finalSettlement?.cancel()
+    return { result, retained: false }
   } catch (error) {
-    if (retained) return { result: { status: 'unavailable' }, retained: true }
+    if (retained && finalSettlement) {
+      return {
+        result: { status: 'unavailable' },
+        retained: true,
+        mutationId: finalSettlement.mutationId,
+        settlement: finalSettlement.settlement,
+      }
+    }
+    finalSettlement?.cancel()
     throw error
   }
 }
@@ -2078,6 +2221,15 @@ function hasOneLiveChatFolder(characterId: string, folderId: string): boolean {
 }
 
 export function dispatchCreateChat(characterId: string, chat: Chat, previous: ChatStateSnapshot, select = true): void {
+  void dispatchCreateChatWithOutcome(characterId, chat, previous, select)
+}
+
+export function dispatchCreateChatWithOutcome(
+  characterId: string,
+  chat: Chat,
+  previous: ChatStateSnapshot,
+  select = true,
+): Promise<ChatMutationOutcome> {
   const optimisticEpoch = captureDestructiveRefreshEpoch()
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
   const attemptedChat = cloneJsonValue(chat)
@@ -2092,7 +2244,13 @@ export function dispatchCreateChat(characterId: string, chat: Chat, previous: Ch
   }
   const body = freezeDurableChatRequestBody({ chat: toChatSnapshot(attemptedChat), select })
   const intent = durableChatMutationIntent('POST', `/characters/${encodeURIComponent(characterId)}/chats`, body)
-  void dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
+  const rollbackAttempt = () => {
+    rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () =>
+      restoreFailedCreatedChatAttempt(rollback),
+    )
+    if (acknowledgeOptimistic && attemptedChat.id) invalidateOptimisticCreatedChatTranscript(attemptedChat.id)
+  }
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) =>
     runServerCommand({
       command: (baseRevision) =>
         createChatCommand({
@@ -2104,15 +2262,11 @@ export function dispatchCreateChat(characterId: string, chat: Chat, previous: Ch
           optimisticEpoch,
           optimisticRowEpoch,
         }),
-      rollback: () => {
-        rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () =>
-          restoreFailedCreatedChatAttempt(rollback),
-        )
-        if (acknowledgeOptimistic && attemptedChat.id) invalidateOptimisticCreatedChatTranscript(attemptedChat.id)
-      },
+      rollback: rollbackAttempt,
       ...transport,
     }),
   )
+  return normalizedChatMutationOutcome(outcome, rollbackAttempt)
 }
 
 interface ImportedChatTailChunk {
@@ -2436,7 +2590,71 @@ export function dispatchUpdateChat(
   select = false,
   rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
 ): void {
-  void dispatchUpdateChatResult(chatId, patch, previous, select, rollbackRowMetadata)
+  void dispatchUpdateChatWithOutcome(chatId, patch, previous, select, rollbackRowMetadata)
+}
+
+export function dispatchUpdateChatWithOutcome(
+  chatId: string,
+  patch: ChatSnapshot,
+  previous: ChatStateSnapshot,
+  select = false,
+  rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
+): Promise<ChatMutationOutcome> | undefined {
+  const commandPatch = sanitizeFrozenChatPatch(patch)
+  if (Object.keys(commandPatch).length === 0 && !select) return
+  if (!canUseServerCommands()) return
+  const rollback = chatMetadataRollbackFromPatch(chatId, commandPatch, previous)
+  const characterId = characterIdForChatInState(previous, chatId)
+  const previousChat = locateChatInState(previous, chatId)?.chat as Chat | undefined
+  const projectionTargets = Object.prototype.hasOwnProperty.call(commandPatch, 'modules')
+    ? moduleEnabledProjectionTargets(previousChat?.modules, commandPatch.modules)
+    : []
+  const body = freezeDurableChatRequestBody({ patch: commandPatch, select })
+  const intent = durableChatMutationIntent('PATCH', `/chats/${encodeURIComponent(chatId)}`, body)
+  const execute = (transport: ServerCommandTransportOptions, rollbackAttempt: () => void) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        updateChatCommand({
+          baseRevision,
+          chatId,
+          patch: body.patch,
+          select: body.select,
+        }),
+      rollback: rollbackAttempt,
+      ...transport,
+    })
+  if (!rollback) {
+    const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(
+      characterId,
+      intent,
+      (transport) => execute(transport, () => {}),
+      projectionTargets,
+    ).catch(
+      (error): CharacterOwnedDurableMutationOutcome<Record<string, unknown>> => ({
+        result: failedChatMutationResult(error),
+        retained: false,
+      }),
+    )
+    return chatMutationOutcome(outcome)
+  }
+
+  const pendingAttempt = registerChatMetadataAttempt(chatId, rollback)
+  const rollbackAttempt = () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata)
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(
+    characterId,
+    intent,
+    (transport) => {
+      bindChatMetadataAttemptDurability(pendingAttempt, transport, rollbackRowMetadata)
+      return execute(transport, rollbackAttempt)
+    },
+    projectionTargets,
+  ).catch((error): CharacterOwnedDurableMutationOutcome<Record<string, unknown>> => {
+    rollbackAttempt()
+    return { result: failedChatMutationResult(error), retained: false }
+  })
+  const result = outcome.then((settled) => settled.result)
+  trackChatMetadataAttemptResult(pendingAttempt, result)
+  return chatMutationOutcome(outcome)
 }
 
 export function dispatchUpdateChatAsync(
@@ -3740,6 +3958,13 @@ function chatScriptstateSnapshotFromScoped(previous: ChatScopedSnapshot, chatId:
 }
 
 export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot): void {
+  void dispatchDeleteChatWithOutcome(chatId, previous)
+}
+
+export function dispatchDeleteChatWithOutcome(
+  chatId: string,
+  previous: ChatStateSnapshot,
+): Promise<ChatMutationOutcome> | undefined {
   if (!canUseServerCommands()) return
   flushRegisteredPendingBridgePatches({})
   const optimisticEpoch = captureDestructiveRefreshEpoch()
@@ -3758,8 +3983,18 @@ export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot):
       },
     ],
   }
-  const outbox = stagePendingMutation(chatResourceOwnerMutationKey(chatId, rollback?.characterId), intent)
-  void dispatchDurableMutation(outbox, intent, (transport) =>
+  const rollbackAttempt = () =>
+    rollbackChatStructureUnlessCharacterRowChanged(rollback?.characterId, optimisticRowEpoch, () =>
+      restoreDeletedChatAttempt(rollback),
+    )
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(chatResourceOwnerMutationKey(chatId, rollback?.characterId), intent)
+  } catch (error) {
+    rollbackAttempt()
+    return Promise.resolve({ status: 'failed', result: failedChatMutationResult(error) })
+  }
+  const outcome = dispatchPreparedCharacterOwnedDurableMutationWithOutcome(outbox, intent, (transport) =>
     runServerCommand({
       command: (baseRevision) =>
         deleteChatCommand({
@@ -3769,13 +4004,11 @@ export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot):
           optimisticEpoch,
           optimisticRowEpoch,
         }),
-      rollback: () =>
-        rollbackChatStructureUnlessCharacterRowChanged(rollback?.characterId, optimisticRowEpoch, () =>
-          restoreDeletedChatAttempt(rollback),
-        ),
+      rollback: rollbackAttempt,
       ...transport,
     }),
   )
+  return normalizedChatMutationOutcome(outcome, rollbackAttempt)
 }
 
 export function dispatchForkChat(
@@ -3788,6 +4021,19 @@ export function dispatchForkChat(
     select?: boolean
   },
 ): void {
+  void dispatchForkChatWithOutcome(sourceChatId, previous, input)
+}
+
+export function dispatchForkChatWithOutcome(
+  sourceChatId: string,
+  previous: ChatStateSnapshot,
+  input: {
+    chat: Chat
+    sourcePatch?: ChatSnapshot
+    folder?: ChatFolder
+    select?: boolean
+  },
+): Promise<ChatMutationOutcome> {
   const optimisticEpoch = captureDestructiveRefreshEpoch()
   const attemptedChat = cloneJsonValue(input.chat)
   const attemptedSourcePatch = input.sourcePatch ? sanitizeFrozenChatPatch(input.sourcePatch) : undefined
@@ -3822,7 +4068,13 @@ export function dispatchForkChat(
     ...(input.select !== undefined ? { select: input.select } : {}),
   })
   const intent = durableChatMutationIntent('POST', `/chats/${encodeURIComponent(sourceChatId)}/fork`, body)
-  void dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
+  const rollbackAttempt = () => {
+    rollbackChatStructureUnlessCharacterRowChanged(rollback?.createdChat?.characterId, optimisticRowEpoch, () =>
+      restoreForkChatAttempt(rollback),
+    )
+    if (acknowledgeOptimistic && attemptedChat.id) invalidateOptimisticCreatedChatTranscript(attemptedChat.id)
+  }
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) =>
     runServerCommand({
       command: (baseRevision) =>
         forkChatCommand({
@@ -3836,18 +4088,22 @@ export function dispatchForkChat(
           optimisticEpoch,
           optimisticRowEpoch,
         }),
-      rollback: () => {
-        rollbackChatStructureUnlessCharacterRowChanged(rollback?.createdChat?.characterId, optimisticRowEpoch, () =>
-          restoreForkChatAttempt(rollback),
-        )
-        if (acknowledgeOptimistic && attemptedChat.id) invalidateOptimisticCreatedChatTranscript(attemptedChat.id)
-      },
+      rollback: rollbackAttempt,
       ...transport,
     }),
   )
+  return normalizedChatMutationOutcome(outcome, rollbackAttempt)
 }
 
 export function dispatchReorderChats(characterId: string, previous: ChatStateSnapshot, selectedChatId?: string): void {
+  void dispatchReorderChatsWithOutcome(characterId, previous, selectedChatId)
+}
+
+export function dispatchReorderChatsWithOutcome(
+  characterId: string,
+  previous: ChatStateSnapshot,
+  selectedChatId?: string,
+): Promise<ChatMutationOutcome> | undefined {
   const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
   if (!character) return
   const folderByChatId: Record<string, string | null> = {}
@@ -3855,7 +4111,7 @@ export function dispatchReorderChats(characterId: string, previous: ChatStateSna
     if (!chat.id) continue
     folderByChatId[chat.id] = chat.folderId ?? null
   }
-  dispatchReorderChatsByIds(
+  return dispatchReorderChatsByIdsWithOutcome(
     characterId,
     character.chats.map((chat) => chat.id).filter(Boolean) as string[],
     folderByChatId,
@@ -3871,6 +4127,16 @@ export function dispatchReorderChatsByIds(
   previous: ChatStateSnapshot,
   selectedChatId?: string,
 ): void {
+  void dispatchReorderChatsByIdsWithOutcome(characterId, chatIds, folderByChatId, previous, selectedChatId)
+}
+
+export function dispatchReorderChatsByIdsWithOutcome(
+  characterId: string,
+  chatIds: string[],
+  folderByChatId: Record<string, string | null>,
+  previous: ChatStateSnapshot,
+  selectedChatId?: string,
+): Promise<ChatMutationOutcome> {
   const optimisticEpoch = captureDestructiveRefreshEpoch()
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
   const rollback = chatReorderRollbackFromState(characterId, chatIds, folderByChatId, previous)
@@ -3890,7 +4156,11 @@ export function dispatchReorderChatsByIds(
     ...(selectedChatId !== undefined ? { selectedChatId } : {}),
   })
   const intent = durableChatMutationIntent('POST', `/characters/${encodeURIComponent(characterId)}/chats/reorder`, body)
-  void dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
+  const rollbackAttempt = () =>
+    rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () =>
+      restoreChatOrderAttempt(rollback),
+    )
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) =>
     runServerCommand({
       command: (baseRevision) =>
         reorderChatsCommand({
@@ -3903,13 +4173,11 @@ export function dispatchReorderChatsByIds(
           optimisticEpoch,
           optimisticRowEpoch,
         }),
-      rollback: () =>
-        rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () =>
-          restoreChatOrderAttempt(rollback),
-        ),
+      rollback: rollbackAttempt,
       ...transport,
     }),
   )
+  return normalizedChatMutationOutcome(outcome, rollbackAttempt)
 }
 
 export function dispatchReorderChatFoldersAndChatsByIds(
@@ -3920,6 +4188,24 @@ export function dispatchReorderChatFoldersAndChatsByIds(
   previous: ChatStateSnapshot,
   selectedChatId?: string,
 ): void {
+  void dispatchReorderChatFoldersAndChatsByIdsWithOutcome(
+    characterId,
+    folderIds,
+    chatIds,
+    folderByChatId,
+    previous,
+    selectedChatId,
+  )
+}
+
+export function dispatchReorderChatFoldersAndChatsByIdsWithOutcome(
+  characterId: string,
+  folderIds: string[],
+  chatIds: string[],
+  folderByChatId: Record<string, string | null>,
+  previous: ChatStateSnapshot,
+  selectedChatId?: string,
+): Promise<ChatMutationOutcome> {
   const optimisticEpoch = captureDestructiveRefreshEpoch()
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
   const attemptedFolderIds = cloneJsonValue(folderIds)
@@ -3952,52 +4238,62 @@ export function dispatchReorderChatFoldersAndChatsByIds(
     ...(changedFolderByChatId !== undefined ? { folderByChatId: changedFolderByChatId } : {}),
     ...(selectedChatId !== undefined ? { selectedChatId } : {}),
   })
-  void dispatchCharacterOwnedDurableBatch(characterId, [
-    {
-      method: 'POST',
-      path: `/characters/${encodeURIComponent(characterId)}/chat-folders/reorder`,
-      body: folderBody,
-      command: (baseRevision, frozenBody) =>
-        reorderChatFoldersCommand({
-          baseRevision,
-          characterId,
-          folderIds: frozenBody.folderIds as string[],
-          selectedChatId: frozenBody.selectedChatId as string | undefined,
-          acknowledgeOptimistic: acknowledgeFolderOptimistic,
-          optimisticEpoch,
-          optimisticRowEpoch,
-        }),
-      rollback: () =>
-        rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () => {
-          if (previousFolderIds) {
-            restoreChatFolderOrderAttempt(characterId, previousFolderIds, attemptedFolderIds, previous)
-          }
-        }),
-    },
-    {
-      method: 'POST',
-      path: `/characters/${encodeURIComponent(characterId)}/chats/reorder`,
-      body: chatBody,
-      command: (baseRevision, frozenBody) =>
-        reorderChatsCommand({
-          baseRevision,
-          characterId,
-          chatIds: frozenBody.chatIds as string[],
-          folderByChatId: frozenBody.folderByChatId as Record<string, string | null> | undefined,
-          selectedChatId: frozenBody.selectedChatId as string | undefined,
-          acknowledgeOptimistic: acknowledgeChatOptimistic,
-          optimisticEpoch,
-          optimisticRowEpoch,
-        }),
-      rollback: () =>
-        rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () =>
-          restoreChatOrderAttempt(chatRollback),
-        ),
-    },
-  ])
+  return chatBatchMutationOutcome(
+    dispatchCharacterOwnedDurableBatch(characterId, [
+      {
+        method: 'POST',
+        path: `/characters/${encodeURIComponent(characterId)}/chat-folders/reorder`,
+        body: folderBody,
+        command: (baseRevision, frozenBody) =>
+          reorderChatFoldersCommand({
+            baseRevision,
+            characterId,
+            folderIds: frozenBody.folderIds as string[],
+            selectedChatId: frozenBody.selectedChatId as string | undefined,
+            acknowledgeOptimistic: acknowledgeFolderOptimistic,
+            optimisticEpoch,
+            optimisticRowEpoch,
+          }),
+        rollback: () =>
+          rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () => {
+            if (previousFolderIds) {
+              restoreChatFolderOrderAttempt(characterId, previousFolderIds, attemptedFolderIds, previous)
+            }
+          }),
+      },
+      {
+        method: 'POST',
+        path: `/characters/${encodeURIComponent(characterId)}/chats/reorder`,
+        body: chatBody,
+        command: (baseRevision, frozenBody) =>
+          reorderChatsCommand({
+            baseRevision,
+            characterId,
+            chatIds: frozenBody.chatIds as string[],
+            folderByChatId: frozenBody.folderByChatId as Record<string, string | null> | undefined,
+            selectedChatId: frozenBody.selectedChatId as string | undefined,
+            acknowledgeOptimistic: acknowledgeChatOptimistic,
+            optimisticEpoch,
+            optimisticRowEpoch,
+          }),
+        rollback: () =>
+          rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () =>
+            restoreChatOrderAttempt(chatRollback),
+          ),
+      },
+    ]),
+  )
 }
 
 export function dispatchCreateChatFolder(characterId: string, folder: ChatFolder, previous: ChatStateSnapshot): void {
+  void dispatchCreateChatFolderWithOutcome(characterId, folder, previous)
+}
+
+export function dispatchCreateChatFolderWithOutcome(
+  characterId: string,
+  folder: ChatFolder,
+  previous: ChatStateSnapshot,
+): Promise<ChatMutationOutcome> {
   const optimisticEpoch = captureDestructiveRefreshEpoch()
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
   const attemptedFolder = freezeJsonValue(cloneJsonValue(folder))
@@ -4008,7 +4304,11 @@ export function dispatchCreateChatFolder(characterId: string, folder: ChatFolder
     hasOneLiveChatFolder(characterId, attemptedFolder.id)
   const body = freezeDurableChatRequestBody({ folder: toChatFolderSnapshot(attemptedFolder) })
   const intent = durableChatMutationIntent('POST', `/characters/${encodeURIComponent(characterId)}/chat-folders`, body)
-  void dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
+  const rollbackAttempt = () =>
+    rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () =>
+      restoreCreatedChatFolderAttemptIfUnreferenced(rollback),
+    )
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) =>
     runServerCommand({
       command: (baseRevision) =>
         createChatFolderCommand({
@@ -4019,13 +4319,11 @@ export function dispatchCreateChatFolder(characterId: string, folder: ChatFolder
           optimisticEpoch,
           optimisticRowEpoch,
         }),
-      rollback: () =>
-        rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () =>
-          restoreCreatedChatFolderAttemptIfUnreferenced(rollback),
-        ),
+      rollback: rollbackAttempt,
       ...transport,
     }),
   )
+  return normalizedChatMutationOutcome(outcome, rollbackAttempt)
 }
 
 export function dispatchUpdateChatFolder(
@@ -4034,6 +4332,15 @@ export function dispatchUpdateChatFolder(
   previous: ChatStateSnapshot,
   rollbackFolderMetadata: ChatFolderRowMetadataRollback = restoreChatFolderRowMetadata,
 ): void {
+  void dispatchUpdateChatFolderWithOutcome(folderId, patch, previous, rollbackFolderMetadata)
+}
+
+export function dispatchUpdateChatFolderWithOutcome(
+  folderId: string,
+  patch: ChatFolderSnapshot,
+  previous: ChatStateSnapshot,
+  rollbackFolderMetadata: ChatFolderRowMetadataRollback = restoreChatFolderRowMetadata,
+): Promise<ChatMutationOutcome> | undefined {
   if (!canUseServerCommands()) return
   const rollback = chatFolderMetadataRollbackFromPatch(folderId, patch, previous)
   const attemptedPatch = freezeJsonValue(cloneJsonValue(patch))
@@ -4053,16 +4360,24 @@ export function dispatchUpdateChatFolder(
       ...transport,
     })
   if (!rollback) {
-    void dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) => execute(transport, () => {}))
-    return
+    const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) =>
+      execute(transport, () => {}),
+    )
+    return normalizedChatMutationOutcome(outcome, () => {})
   }
 
   const pendingAttempt = registerChatFolderMetadataAttempt(folderId, rollback)
-  const result = dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) => {
+  const rollbackAttempt = () => rollbackChatFolderMetadataAttempt(pendingAttempt, rollbackFolderMetadata)
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) => {
     bindChatFolderMetadataAttemptDurability(pendingAttempt, transport, rollbackFolderMetadata)
-    return execute(transport, () => rollbackChatFolderMetadataAttempt(pendingAttempt, rollbackFolderMetadata))
+    return execute(transport, rollbackAttempt)
+  }).catch((error): CharacterOwnedDurableMutationOutcome<Record<string, unknown>> => {
+    rollbackAttempt()
+    return { result: failedChatMutationResult(error), retained: false }
   })
+  const result = outcome.then((settled) => settled.result)
   trackChatFolderMetadataAttemptResult(pendingAttempt, result)
+  return chatMutationOutcome(outcome)
 }
 
 // Narrow-rollback variant of `dispatchUpdateChatFolder` for the chat-metadata
@@ -4217,6 +4532,13 @@ function clearChatFolderMetadataAttempt(attempt: PendingChatFolderMetadataAttemp
 }
 
 export function dispatchDeleteChatFolder(folderId: string, previous: ChatStateSnapshot): void {
+  void dispatchDeleteChatFolderWithOutcome(folderId, previous)
+}
+
+export function dispatchDeleteChatFolderWithOutcome(
+  folderId: string,
+  previous: ChatStateSnapshot,
+): Promise<ChatMutationOutcome> | undefined {
   if (!canUseServerCommands()) return
   flushRegisteredPendingBridgePatches({})
   const optimisticEpoch = captureDestructiveRefreshEpoch()
@@ -4235,8 +4557,18 @@ export function dispatchDeleteChatFolder(folderId: string, previous: ChatStateSn
       },
     ],
   }
-  const outbox = stagePendingMutation(chatFolderResourceOwnerMutationKey(folderId, rollback?.characterId), intent)
-  void dispatchDurableMutation(outbox, intent, (transport) =>
+  const rollbackAttempt = () =>
+    rollbackChatStructureUnlessCharacterRowChanged(rollback?.characterId, optimisticRowEpoch, () =>
+      restoreDeletedChatFolderAttempt(rollback),
+    )
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(chatFolderResourceOwnerMutationKey(folderId, rollback?.characterId), intent)
+  } catch (error) {
+    rollbackAttempt()
+    return Promise.resolve({ status: 'failed', result: failedChatMutationResult(error) })
+  }
+  const outcome = dispatchPreparedCharacterOwnedDurableMutationWithOutcome(outbox, intent, (transport) =>
     runServerCommand({
       command: (baseRevision) =>
         deleteChatFolderCommand({
@@ -4246,13 +4578,11 @@ export function dispatchDeleteChatFolder(folderId: string, previous: ChatStateSn
           optimisticEpoch,
           optimisticRowEpoch,
         }),
-      rollback: () =>
-        rollbackChatStructureUnlessCharacterRowChanged(rollback?.characterId, optimisticRowEpoch, () =>
-          restoreDeletedChatFolderAttempt(rollback),
-        ),
+      rollback: rollbackAttempt,
       ...transport,
     }),
   )
+  return normalizedChatMutationOutcome(outcome, rollbackAttempt)
 }
 
 export function dispatchReorderChatFolders(
@@ -4260,9 +4590,17 @@ export function dispatchReorderChatFolders(
   previous: ChatStateSnapshot,
   selectedChatId?: string,
 ): void {
+  void dispatchReorderChatFoldersWithOutcome(characterId, previous, selectedChatId)
+}
+
+export function dispatchReorderChatFoldersWithOutcome(
+  characterId: string,
+  previous: ChatStateSnapshot,
+  selectedChatId?: string,
+): Promise<ChatMutationOutcome> | undefined {
   const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
   if (!character) return
-  dispatchReorderChatFoldersByIds(
+  return dispatchReorderChatFoldersByIdsWithOutcome(
     characterId,
     character.chatFolders.map((folder) => folder.id),
     previous,
@@ -4276,6 +4614,15 @@ export function dispatchReorderChatFoldersByIds(
   previous: ChatStateSnapshot,
   selectedChatId?: string,
 ): void {
+  void dispatchReorderChatFoldersByIdsWithOutcome(characterId, folderIds, previous, selectedChatId)
+}
+
+export function dispatchReorderChatFoldersByIdsWithOutcome(
+  characterId: string,
+  folderIds: string[],
+  previous: ChatStateSnapshot,
+  selectedChatId?: string,
+): Promise<ChatMutationOutcome> {
   const optimisticEpoch = captureDestructiveRefreshEpoch()
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
   const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
@@ -4296,7 +4643,11 @@ export function dispatchReorderChatFoldersByIds(
     `/characters/${encodeURIComponent(characterId)}/chat-folders/reorder`,
     body,
   )
-  void dispatchCharacterOwnedDurableMutation(characterId, intent, (transport) =>
+  const rollbackAttempt = () =>
+    rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () => {
+      if (previousIds) restoreChatFolderOrderAttempt(characterId, previousIds, attemptedIds, previous)
+    })
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) =>
     runServerCommand({
       command: (baseRevision) =>
         reorderChatFoldersCommand({
@@ -4308,13 +4659,11 @@ export function dispatchReorderChatFoldersByIds(
           optimisticEpoch,
           optimisticRowEpoch,
         }),
-      rollback: () =>
-        rollbackChatStructureUnlessCharacterRowChanged(characterId, optimisticRowEpoch, () => {
-          if (previousIds) restoreChatFolderOrderAttempt(characterId, previousIds, attemptedIds, previous)
-        }),
+      rollback: rollbackAttempt,
       ...transport,
     }),
   )
+  return normalizedChatMutationOutcome(outcome, rollbackAttempt)
 }
 
 export function toChatSnapshot(chat: Chat): ChatSnapshot {

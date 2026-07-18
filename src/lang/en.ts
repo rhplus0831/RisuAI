@@ -961,6 +961,11 @@ export const languageEnglish = {
   chatListImport: 'Import chat',
   chatListEdit: 'Edit chat list',
   chatListCreateFolder: 'Create chat folder',
+  chatStructurePending: (action: string) => `Saving ${action}…`,
+  chatStructureQueued: (action: string) => `${action} is saved on this device and queued. It will retry automatically.`,
+  chatStructureFailed: (action: string) => `${action} could not be saved. The previous chat list was restored.`,
+  chatCreateProvisional: (name: string) =>
+    `${name} is available provisionally. Its creation is queued and will retry automatically.`,
   selectChatToOpen: 'Select a chat from the list to start.',
   openMostRecentChat: 'Open most recent chat',
   removeChat: 'Remove this message?',

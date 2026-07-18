@@ -15,6 +15,26 @@ const chatListMocks = vi.hoisted(() => {
   let pendingCreateCommand: DeferredCommand | undefined
   let pendingDeleteCommand: DeferredCommand | undefined
   let pendingSelectCommand: DeferredCommand | undefined
+  let createOutcomeOverride: ((...args: any[]) => Promise<any>) | undefined
+  const currentRouteSubscribers = new Set<(value: unknown) => void>()
+  let currentRouteValue: unknown = {
+    kind: 'character',
+    path: '/character/char-a',
+    chaId: 'char-a',
+  }
+
+  const currentRoute = {
+    subscribe(run: (value: unknown) => void) {
+      run(currentRouteValue)
+      currentRouteSubscribers.add(run)
+      return () => currentRouteSubscribers.delete(run)
+    },
+  }
+
+  function setCurrentRoute(value: unknown): void {
+    currentRouteValue = value
+    currentRouteSubscribers.forEach((run) => run(value))
+  }
 
   function createDeferredCommand(): DeferredCommand {
     let resolveCommand!: (value: unknown) => void
@@ -64,6 +84,7 @@ const chatListMocks = vi.hoisted(() => {
   return {
     alertConfirm: vi.fn(async () => false),
     alertError: vi.fn(),
+    alertNormal: vi.fn(),
     appendMessageCommand: unusedCommand,
     canUseServerCommands: vi.fn(() => serverCommandsEnabled),
     changeChatTo: vi.fn(),
@@ -87,11 +108,15 @@ const chatListMocks = vi.hoisted(() => {
     }),
     deleteChatFolderCommand: unusedCommand,
     deleteMessageCommand: unusedCommand,
-    dispatchUpdateChat: vi.fn(),
+    dispatchUpdateChatWithOutcome: vi.fn(async (..._args: any[]) => ({
+      status: 'accepted',
+      result: okCommandResult(),
+    })),
     exportChat: vi.fn(),
     forkChatCommand: unusedCommand,
     importChat: vi.fn(),
     navigate: vi.fn(),
+    currentRoute,
     patchChatScriptstateCommand: unusedCommand,
     reorderChatFoldersCommand: unusedCommand,
     reorderChatsCommand: unusedCommand,
@@ -100,29 +125,45 @@ const chatListMocks = vi.hoisted(() => {
       pendingCreateCommand = undefined
       pendingDeleteCommand = undefined
       pendingSelectCommand = undefined
+      createOutcomeOverride = undefined
       serverCommandsEnabled = false
+      setCurrentRoute({
+        kind: 'character',
+        path: '/character/char-a',
+        chaId: 'char-a',
+      })
     },
     runServerCommand: vi.fn(
-      async (input: { command: (baseRevision: number) => Promise<any>; rollback?: () => void }) => {
+      async (input: {
+        command: (baseRevision: number) => Promise<any>
+        rollback?: () => void
+        failureRollbackDisposition?: (failure: any) => 'retain' | 'rollback'
+      }) => {
         if (!serverCommandsEnabled) return { status: 'unavailable' }
         try {
           const result = await input.command(10)
-          if (result.status !== 'ok') {
+          if (result.status !== 'ok' && (input.failureRollbackDisposition?.(result) ?? 'rollback') === 'rollback') {
             input.rollback?.()
           }
           return result
         } catch (error) {
-          input.rollback?.()
-          return {
+          const result = {
             error: error instanceof Error ? error.message : String(error),
             status: 'error',
           }
+          if ((input.failureRollbackDisposition?.(result) ?? 'rollback') === 'rollback') input.rollback?.()
+          return result
         }
       },
     ),
     setServerCommandsEnabled: (enabled: boolean) => {
       serverCommandsEnabled = enabled
     },
+    setCreateOutcomeOverride: (override: ((...args: any[]) => Promise<any>) | undefined) => {
+      createOutcomeOverride = override
+    },
+    dispatchCreateChatWithOutcome: (...args: any[]) => createOutcomeOverride?.(...args),
+    setCurrentRoute,
     truncateMessagesCommand: unusedCommand,
     updateChatCommand: vi.fn((input: unknown) => {
       if ((input as { select?: boolean }).select) {
@@ -146,7 +187,17 @@ const chatListMocks = vi.hoisted(() => {
 vi.mock('../../lang', () => ({
   language: {
     chatList: 'Chat List',
+    chatCreateProvisional: (name: string) => `${name} is provisional`,
+    chatStructureFailed: (action: string) => `${action} failed`,
+    chatStructurePending: (action: string) => `Saving ${action}`,
+    chatStructureQueued: (action: string) => `${action} queued`,
+    close: 'Close',
+    edit: 'Edit',
     errors: { onlyOneChat: 'Only one chat' },
+    export: 'Export',
+    import: 'Import',
+    newChat: 'New Chat',
+    remove: 'Remove',
     removeConfirm: 'Remove ',
   },
 }))
@@ -154,6 +205,7 @@ vi.mock('../../lang', () => ({
 vi.mock('../../ts/alert', () => ({
   alertConfirm: chatListMocks.alertConfirm,
   alertError: chatListMocks.alertError,
+  alertNormal: chatListMocks.alertNormal,
 }))
 
 vi.mock('../../ts/characters', () => ({
@@ -165,7 +217,9 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/chatCommands')>()
   return {
     ...actual,
-    dispatchUpdateChat: chatListMocks.dispatchUpdateChat,
+    dispatchCreateChatWithOutcome: (...args: Parameters<typeof actual.dispatchCreateChatWithOutcome>) =>
+      chatListMocks.dispatchCreateChatWithOutcome(...args) ?? actual.dispatchCreateChatWithOutcome(...args),
+    dispatchUpdateChatWithOutcome: chatListMocks.dispatchUpdateChatWithOutcome,
   }
 })
 
@@ -192,6 +246,7 @@ vi.mock('src/ts/process/scripts', () => ({
 vi.mock('src/ts/router', () => ({
   characterRoutePath: (characterId: string, chatId?: string) =>
     chatId ? `/character/${characterId}/${chatId}` : `/character/${characterId}`,
+  currentRoute: chatListMocks.currentRoute,
   navigate: chatListMocks.navigate,
 }))
 
@@ -542,14 +597,16 @@ describe('ChatList DOM contract harness', () => {
     input!.dispatchEvent(new Event('change', { bubbles: true }))
     await tick()
 
-    expect(chatListMocks.canUseServerCommands).toHaveBeenCalledOnce()
+    expect(chatListMocks.canUseServerCommands).toHaveBeenCalled()
     expect(chatListMocks.withTrustedResourceWrite).toHaveBeenCalledOnce()
     expect(chatListMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
-    expect(chatListMocks.dispatchUpdateChat).toHaveBeenCalledOnce()
-    const [chatId, patch, previous] = chatListMocks.dispatchUpdateChat.mock.calls[0]
+    expect(chatListMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledOnce()
+    const [chatId, patch, previous] = chatListMocks.dispatchUpdateChatWithOutcome.mock.calls[0]
     expect(chatId).toBe('chat-b')
     expect(patch).toEqual({ name: 'Renamed Modal Chat B' })
-    expect(chatListMocks.dispatchUpdateChat.mock.calls[0][4]).toBe(chatListMocks.rollbackServerBackedChatRowMetadata)
+    expect(chatListMocks.dispatchUpdateChatWithOutcome.mock.calls[0][4]).toBe(
+      chatListMocks.rollbackServerBackedChatRowMetadata,
+    )
     expect(previous).toMatchObject({
       selectedCharID: 0,
       characters: [
@@ -654,7 +711,7 @@ describe('ChatList DOM contract harness', () => {
     expectRowSelected('chat-c', false)
   })
 
-  it('shows a newly created modal chat before the command resolves and closes', async () => {
+  it('shows a pending modal chat but waits for acceptance before navigating and closing', async () => {
     seedModalDatabase()
     chatListMocks.setServerCommandsEnabled(true)
     const command = chatListMocks.createDeferredCreateCommand()
@@ -672,15 +729,19 @@ describe('ChatList DOM contract harness', () => {
     expect(createdChat.name).toBe('New Chat 4')
     expect(chara.chatPage).toBe(0)
     expectRowSelected(createdChat.id, true)
-    expect(chatListMocks.navigate).toHaveBeenCalledWith(`/character/char-a/${createdChat.id}`)
+    expect(rowByChatId(createdChat.id).dataset.risuChatMutationStatus).toBe('pending')
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
     expect(command.input).toMatchObject({
       characterId: 'char-a',
       select: true,
     })
-    expect(close).toHaveBeenCalledOnce()
+    expect(close).not.toHaveBeenCalled()
 
     command.resolve({ revision: 11, status: 'ok' })
     await flushCommandWork()
+
+    expect(chatListMocks.navigate).toHaveBeenCalledWith(`/character/char-a/${createdChat.id}`)
+    expect(close).toHaveBeenCalledOnce()
   })
 
   it('rolls back a failed optimistic modal chat create in state and DOM', async () => {
@@ -703,7 +764,7 @@ describe('ChatList DOM contract harness', () => {
       'Modal Chat B',
       'Modal Chat C',
     ])
-    expect(close).toHaveBeenCalledOnce()
+    expect(close).not.toHaveBeenCalled()
 
     command.resolve({ error: 'create failed', status: 'error' })
     await flushCommandWork()
@@ -712,7 +773,148 @@ describe('ChatList DOM contract harness', () => {
     expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Modal Chat A', 'Modal Chat B', 'Modal Chat C'])
     expect(selectedCharacter().chatPage).toBe(1)
     expectRowSelected('chat-b', true)
-    expect(target.textContent).not.toContain('New Chat 4')
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+    expect(modalRoot().querySelector('[data-risu-chat-mutation-status="failed"]')).toBeTruthy()
+  })
+
+  it('labels a retained modal create as provisional before navigating', async () => {
+    seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
+    let resolveOutcome!: (outcome: any) => void
+    let resolveSettlement!: (outcome: any) => void
+    const settlement = new Promise((resolve) => {
+      resolveSettlement = resolve
+    })
+    chatListMocks.setCreateOutcomeOverride(
+      () =>
+        new Promise((resolve) => {
+          resolveOutcome = resolve
+        }),
+    )
+    const close = vi.fn()
+
+    component = mount(ChatList, { target, props: { close } })
+    await tick()
+
+    createButton().click()
+    await tick()
+    const createdChat = selectedCharacter().chats[0]
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
+
+    resolveOutcome({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationIds: ['queued-modal-create'],
+      settlement,
+    })
+    await flushCommandWork()
+
+    expect(selectedCharacter().chats[0].id).toBe(createdChat.id)
+    expect(chatListMocks.alertNormal).toHaveBeenCalledWith(`${createdChat.name} is provisional`)
+    expect(chatListMocks.navigate).toHaveBeenCalledWith(`/character/char-a/${createdChat.id}`)
+    expect(close).toHaveBeenCalledOnce()
+    expect(modalRoot().querySelector('[data-risu-chat-mutation-status="queued"]')).toBeTruthy()
+
+    resolveSettlement({ status: 'accepted' })
+    await flushCommandWork()
+    expect(modalRoot().querySelector('[data-risu-chat-mutation-status="queued"]')).toBeNull()
+  })
+
+  it('recovers a rejected provisional route only while that provisional chat is still open', async () => {
+    const chara = seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
+    let resolveSettlement!: (outcome: any) => void
+    const settlement = new Promise((resolve) => {
+      resolveSettlement = resolve
+    })
+    chatListMocks.setCreateOutcomeOverride(async () => ({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationIds: ['rejected-modal-create'],
+      settlement,
+    }))
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+    createButton().click()
+    await flushCommandWork()
+    const provisionalChatId = chara.chats[0].id
+    chatListMocks.setCurrentRoute({
+      kind: 'character',
+      path: `/character/char-a/${provisionalChatId}`,
+      chaId: 'char-a',
+      chatId: provisionalChatId,
+    })
+
+    chara.chats.splice(0, 1)
+    chara.chatPage = chara.chats.findIndex((chat) => chat.id === 'chat-b')
+    resolveSettlement({ status: 'failed', result: { status: 'error', error: 'rejected' } })
+    await flushCommandWork()
+
+    expect(chatListMocks.navigate).toHaveBeenLastCalledWith('/character/char-a/chat-b', { replace: true })
+    expect(modalRoot().querySelector('[data-risu-chat-mutation-status="failed"]')).toBeTruthy()
+  })
+
+  it('does not recover a rejected provisional create over newer modal navigation', async () => {
+    const chara = seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
+    let resolveSettlement!: (outcome: any) => void
+    const settlement = new Promise((resolve) => {
+      resolveSettlement = resolve
+    })
+    chatListMocks.setCreateOutcomeOverride(async () => ({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationIds: ['stale-modal-create'],
+      settlement,
+    }))
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+    createButton().click()
+    await flushCommandWork()
+    chara.chats.splice(0, 1)
+    chara.chatPage = chara.chats.findIndex((chat) => chat.id === 'chat-c')
+    chatListMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/char-a/chat-c',
+      chaId: 'char-a',
+      chatId: 'chat-c',
+    })
+    const navigationCount = chatListMocks.navigate.mock.calls.length
+
+    resolveSettlement({ status: 'failed', result: { status: 'error', error: 'rejected' } })
+    await flushCommandWork()
+
+    expect(chatListMocks.navigate).toHaveBeenCalledTimes(navigationCount)
+  })
+
+  it('does not let an older accepted create hijack a newer modal route selection', async () => {
+    const chara = seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
+    const command = chatListMocks.createDeferredCreateCommand()
+    const close = vi.fn()
+
+    component = mount(ChatList, { target, props: { close } })
+    await tick()
+
+    createButton().click()
+    await tick()
+    chara.chatPage = chara.chats.findIndex((chat) => chat.id === 'chat-c')
+    chatListMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/char-a/chat-c',
+      chaId: 'char-a',
+      chatId: 'chat-c',
+    })
+    await tick()
+
+    command.resolve({ revision: 11, status: 'ok' })
+    await flushCommandWork()
+
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
   })
 
   it('removes a confirmed modal chat before the command resolves and restores on failure', async () => {
@@ -733,11 +935,9 @@ describe('ChatList DOM contract harness', () => {
     expect(command.input).toMatchObject({ chatId: 'chat-b' })
     expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Modal Chat A', 'Modal Chat C'])
     expect(selectedCharacter().chatPage).toBe(1)
-    expect(target.textContent).not.toContain('Modal Chat B')
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-a', 'chat-c'])
     expectRowSelected('chat-c', true)
-    expect(chatListMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-c', {
-      replace: true,
-    })
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
 
     command.resolve({ error: 'delete failed', status: 'error' })
     await flushCommandWork()
@@ -746,6 +946,7 @@ describe('ChatList DOM contract harness', () => {
     expect(selectedCharacter().chatPage).toBe(1)
     expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     expectRowSelected('chat-b', true)
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
   })
 
   it('deletes the originally targeted modal chat when selection changes during confirm', async () => {
@@ -793,6 +994,34 @@ describe('ChatList DOM contract harness', () => {
 
     command.resolve({ revision: 11, status: 'ok' })
     await flushCommandWork()
+  })
+
+  it('navigates a selected modal delete only after acceptance and ignores a newer route', async () => {
+    const chara = seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
+    chatListMocks.alertConfirm.mockResolvedValueOnce(true)
+    const command = chatListMocks.createDeferredDeleteCommand()
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+
+    deleteButtonForRow(rowByChatId('chat-b')).click()
+    await flushCommandWork()
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
+
+    chara.chatPage = chara.chats.findIndex((chat) => chat.id === 'chat-a')
+    chatListMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/char-a/chat-a',
+      chaId: 'char-a',
+      chatId: 'chat-a',
+    })
+    await tick()
+
+    command.resolve({ revision: 11, status: 'ok' })
+    await flushCommandWork()
+
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
   })
 
   it('reports the one-chat modal delete guard and leaves the row unchanged', async () => {

@@ -1,6 +1,7 @@
 <script>
   import { untrack } from 'svelte'
-  import { alertConfirm, alertError } from '../../ts/alert'
+  import { get } from 'svelte/store'
+  import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
 
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
@@ -14,9 +15,9 @@
     applyOptimisticCreatedChat,
     applyOptimisticDeletedChat,
     currentChatStateSnapshot,
-    dispatchCreateChat,
-    dispatchDeleteChat,
-    dispatchUpdateChat,
+    dispatchCreateChatWithOutcome,
+    dispatchDeleteChatWithOutcome,
+    dispatchUpdateChatWithOutcome,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
   import {
@@ -25,13 +26,16 @@
     watchServerBackedChatMetadata,
   } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-  import { characterRoutePath, navigate } from 'src/ts/router'
+  import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   let editMode = $state(false)
   let chatNameDrafts = $state({})
   let chatNameBaselines = $state({})
   let chatNameDraftOwner = $state(undefined)
+  /** @type {Record<string, {targetId: string, action: string, conflictKeys: string[], run: number, status: 'pending' | 'queued' | 'failed'}>} */
+  let chatMutations = $state({})
+  let nextMutationRun = 0
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
   const ownerSelectedCharIndex = $selectedCharID
@@ -112,10 +116,143 @@
     chatNameDraftOwner = owner
   })
 
-  function updateChatName(chat, name) {
+  function mutationKey(operation, targetId) {
+    return `${operation}:${targetId}`
+  }
+
+  function mutationForChat(chatId) {
+    const matches = Object.values(chatMutations).filter((mutation) => mutation.targetId === chatId)
+    return (
+      matches.find((mutation) => mutation.status === 'pending') ??
+      matches.find((mutation) => mutation.status === 'queued') ??
+      matches.find((mutation) => mutation.status === 'failed')
+    )
+  }
+
+  function chatConflictKey(chatId) {
+    return `chat:${chatId}`
+  }
+
+  function chatOrderConflictKey() {
+    return `chat-order:${ownerCharacterId ?? `index:${ownerSelectedCharIndex}`}`
+  }
+
+  function hasConflictingMutation(conflictKeys) {
+    return Object.values(chatMutations).some(
+      (mutation) =>
+        mutation.status === 'pending' &&
+        mutation.conflictKeys.some((conflictKey) => conflictKeys.includes(conflictKey)),
+    )
+  }
+
+  function isChatMutationPending(chatId) {
+    return Boolean(chatId && hasConflictingMutation([chatConflictKey(chatId)]))
+  }
+
+  function isChatStructuralMutationPending(chatId) {
+    return Boolean(chatId && hasConflictingMutation([chatOrderConflictKey(), chatConflictKey(chatId)]))
+  }
+
+  function isOrderMutationPending() {
+    return hasConflictingMutation([chatOrderConflictKey()])
+  }
+
+  function setMutation(key, targetId, action, conflictKeys, run, status) {
+    chatMutations[key] = { targetId, action, conflictKeys, run, status }
+  }
+
+  function isCurrentMutation(key, run) {
+    return chatMutations[key]?.run === run
+  }
+
+  function clearMutation(key, run) {
+    if (isCurrentMutation(key, run)) delete chatMutations[key]
+  }
+
+  function recoverRejectedProvisionalChatRoute(characterId, provisionalChatId) {
+    const route = get(currentRoute)
+    if (route.kind !== 'character' || route.chaId !== characterId || route.chatId !== provisionalChatId) return
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    if (!character || character.chats?.some((chat) => chat.id === provisionalChatId)) return
+    const replacementChatId = character.chats?.[character.chatPage]?.id
+    navigate(characterRoutePath(characterId, replacementChatId), { replace: true })
+  }
+
+  function settleQueuedMutation(key, run, targetId, action, conflictKeys, settlement, onFinal) {
+    void settlement.then(
+      (finalOutcome) => {
+        if (!isCurrentMutation(key, run)) return
+        if (finalOutcome.status === 'accepted') {
+          clearMutation(key, run)
+          onFinal?.(finalOutcome)
+          return
+        }
+        setMutation(key, targetId, action, conflictKeys, run, 'failed')
+        alertError(language.chatStructureFailed(action))
+        onFinal?.(finalOutcome)
+      },
+      () => {
+        if (!isCurrentMutation(key, run)) return
+        setMutation(key, targetId, action, conflictKeys, run, 'failed')
+        alertError(language.chatStructureFailed(action))
+        onFinal?.({ status: 'failed', result: { status: 'unavailable' } })
+      },
+    )
+  }
+
+  function mutationMessage(mutation) {
+    if (mutation.status === 'pending') return language.chatStructurePending(mutation.action)
+    if (mutation.status === 'queued') return language.chatStructureQueued(mutation.action)
+    return language.chatStructureFailed(mutation.action)
+  }
+
+  async function settleMutation(key, targetId, action, conflictKeys, dispatch, queuedMessage, onFinal) {
+    const run = ++nextMutationRun
+    setMutation(key, targetId, action, conflictKeys, run, 'pending')
+    try {
+      const outcome = await dispatch()
+      if (!isCurrentMutation(key, run)) return 'failed'
+      if (!outcome || outcome.status === 'failed') {
+        setMutation(key, targetId, action, conflictKeys, run, 'failed')
+        alertError(language.chatStructureFailed(action))
+        return 'failed'
+      }
+      if (outcome.status === 'queued') {
+        setMutation(key, targetId, action, conflictKeys, run, 'queued')
+        alertNormal(queuedMessage ?? language.chatStructureQueued(action))
+        settleQueuedMutation(key, run, targetId, action, conflictKeys, outcome.settlement, onFinal)
+        return 'queued'
+      }
+      clearMutation(key, run)
+      return 'accepted'
+    } catch {
+      if (isCurrentMutation(key, run)) {
+        setMutation(key, targetId, action, conflictKeys, run, 'failed')
+        alertError(language.chatStructureFailed(action))
+      }
+      return 'failed'
+    }
+  }
+
+  function currentRouteIdentity() {
+    const route = get(currentRoute)
+    return `${route.kind}:${route.path}`
+  }
+
+  function isExpectedOwnerChatSelected(originCharacterId, originSelectedCharIndex, originCharacterReference, chatId) {
+    const character = resolveOriginCharacter(originCharacterId, originSelectedCharIndex, originCharacterReference)
+    return Boolean(
+      character &&
+      isOriginCharacterSelected(character, originCharacterId) &&
+      character.chats?.[character.chatPage]?.id === chatId,
+    )
+  }
+
+  async function updateChatName(chat, name) {
     const character = resolveActiveOwnerCharacter()
     const liveTargetChat = character?.chats?.find((candidate) => candidate.id === chat?.id)
-    if (!character || !liveTargetChat?.id || liveTargetChat.name === name) return
+    if (!character || !liveTargetChat?.id || liveTargetChat.name === name || isChatMutationPending(liveTargetChat.id))
+      return
     if (!canUseServerCommands()) {
       liveTargetChat.name = name
       return
@@ -138,7 +275,11 @@
     })
     if (!applied) return
     syncServerBackedChatMetadataBaselines()
-    dispatchUpdateChat(liveTargetChat.id, { name }, previous, false, rollbackServerBackedChatRowMetadata)
+    const action = `${language.edit}: ${name}`
+    const key = mutationKey('rename', liveTargetChat.id)
+    await settleMutation(key, liveTargetChat.id, action, [chatConflictKey(liveTargetChat.id)], () =>
+      dispatchUpdateChatWithOutcome(liveTargetChat.id, { name }, previous, false, rollbackServerBackedChatRowMetadata),
+    )
   }
 
   function openChatRoute(index) {
@@ -170,7 +311,7 @@
     }
 
     const confirmed = await alertConfirm(`${language.removeConfirm}${targetChatName}`)
-    if (!confirmed || !targetChatId) return
+    if (!confirmed || !targetChatId || isChatStructuralMutationPending(targetChatId)) return
 
     const resolvedOriginCharacter = resolveOriginCharacter(
       originCharacterId,
@@ -187,14 +328,37 @@
     if (previousOwnerIndex < 0) return
     previous.selectedCharID = previousOwnerIndex
     const originStillSelected = isOriginCharacterSelected(resolvedOriginCharacter, originCharacterId)
+    const originRoute = currentRouteIdentity()
 
     if (canUseServerCommands()) {
       const result = applyOptimisticDeletedChat(originCharacterId, targetChatId, previous)
-      if (originStillSelected && result.applied && resolvedOriginCharacter.chaId && result.selectedChatId) {
+      if (!result.applied) return
+      const action = `${language.remove}: ${targetChatName}`
+      const outcome = await settleMutation(
+        mutationKey('delete', targetChatId),
+        targetChatId,
+        action,
+        [chatOrderConflictKey(), chatConflictKey(targetChatId)],
+        () => dispatchDeleteChatWithOutcome(targetChatId, previous),
+      )
+      if (
+        outcome !== 'failed' &&
+        originStillSelected &&
+        currentRouteIdentity() === originRoute &&
+        isExpectedOwnerChatSelected(
+          originCharacterId,
+          originSelectedCharIndex,
+          ownerCharacterReference,
+          result.selectedChatId,
+        ) &&
+        resolvedOriginCharacter.chaId &&
+        result.selectedChatId
+      ) {
         navigate(characterRoutePath(resolvedOriginCharacter.chaId, result.selectedChatId), {
           replace: true,
         })
       }
+      return
     } else {
       if (originStillSelected) {
         changeChatTo(0)
@@ -205,12 +369,11 @@
       chats.splice(liveChatIndex, 1)
       resolvedOriginCharacter.chats = chats
     }
-    dispatchDeleteChat(targetChatId, previous)
   }
 
-  function createModalChat() {
+  async function createModalChat() {
     const character = resolveActiveOwnerCharacter()
-    if (!character) return
+    if (!character || isOrderMutationPending()) return
 
     const previous = currentChatStateSnapshot()
     const chat = {
@@ -224,13 +387,31 @@
     if (!canUseServerCommands()) {
       character.chats.unshift(chat)
       changeChatTo(0)
-    } else {
-      const applied = applyOptimisticCreatedChat(character.chaId, chat, previous)
-      if (applied && character.chaId && chat.id) {
-        navigate(characterRoutePath(character.chaId, chat.id))
-      }
+      close()
+      return
     }
-    dispatchCreateChat(character.chaId, chat, previous)
+
+    const applied = applyOptimisticCreatedChat(character.chaId, chat, previous)
+    if (!applied || !character.chaId || !chat.id) return
+    const originRoute = currentRouteIdentity()
+    const outcome = await settleMutation(
+      mutationKey('create', chat.id),
+      chat.id,
+      `${language.newChat}: ${chat.name}`,
+      [chatOrderConflictKey(), chatConflictKey(chat.id)],
+      () => dispatchCreateChatWithOutcome(character.chaId, chat, previous),
+      language.chatCreateProvisional(chat.name),
+      (finalOutcome) => {
+        if (finalOutcome.status === 'failed') recoverRejectedProvisionalChatRoute(character.chaId, chat.id)
+      },
+    )
+    if (outcome === 'failed') return
+    if (
+      currentRouteIdentity() !== originRoute ||
+      !isExpectedOwnerChatSelected(character.chaId, ownerSelectedCharIndex, ownerCharacterReference, chat.id)
+    )
+      return
+    navigate(characterRoutePath(character.chaId, chat.id))
     close()
   }
 
@@ -289,19 +470,33 @@
           </button>
         </div>
       </div>
+      <div aria-live="polite">
+        {#each Object.entries(chatMutations) as [key, mutation] (key)}
+          <div
+            data-risu-chat-mutation={key}
+            data-risu-chat-mutation-status={mutation.status}
+            role={mutation.status === 'failed' ? 'alert' : 'status'}
+            class="mb-2 rounded-md border border-darkborderc px-2 py-1 text-sm text-textcolor2">
+            {mutationMessage(mutation)}
+          </div>
+        {/each}
+      </div>
       {#each modalCharacter.chats as chat, i}
         <div
           data-risu-chat-id={chat.id ?? ''}
           data-risu-chat-idx={i}
           data-risu-chat-selected={i === modalCharacter.chatPage ? 'true' : 'false'}
+          data-risu-chat-mutation-status={mutationForChat(chat.id)?.status ?? ''}
+          aria-busy={isChatMutationPending(chat.id)}
           class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
           class:bg-selected={i === modalCharacter.chatPage}>
           {#if editMode}
             <TextInput
               bind:value={chatNameDrafts[chat.id]}
               padding={false}
+              disabled={isChatMutationPending(chat.id)}
               onchange={() => {
-                updateChatName(chat, chatNameDrafts[chat.id])
+                void updateChatName(chat, chatNameDrafts[chat.id])
               }} />
           {:else}
             <button data-risu-chat-action="open" class="grow text-left" onclick={() => openChatRoute(i)}
@@ -322,7 +517,9 @@
               type="button"
               data-risu-chat-action="delete"
               aria-label={`${language.remove}: ${chat.name}`}
+              disabled={isChatStructuralMutationPending(chat.id)}
               class="text-textcolor2 hover:text-green-500 cursor-pointer"
+              class:opacity-50={isChatStructuralMutationPending(chat.id)}
               onclick={async () => {
                 await deleteModalChat(chat)
               }}>
@@ -335,8 +532,11 @@
         <button
           data-risu-chat-action="create"
           aria-label={language.newChat}
+          aria-busy={isOrderMutationPending()}
+          disabled={isOrderMutationPending()}
           class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
-          onclick={createModalChat}>
+          class:opacity-50={isOrderMutationPending()}
+          onclick={() => void createModalChat()}>
           <PlusIcon />
         </button>
         <button

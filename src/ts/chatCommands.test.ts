@@ -63,6 +63,7 @@ import {
   dispatchAppendMessage,
   dispatchCharacterOwnedDurableBatch,
   dispatchCreateChat,
+  dispatchCreateChatWithOutcome,
   dispatchCreateChatForImport,
   dispatchCreateImportedChats,
   dispatchCreateChatFolder,
@@ -73,6 +74,7 @@ import {
   dispatchForkChat,
   dispatchPatchChatScriptstateScoped,
   dispatchReorderChatFoldersAndChatsByIds,
+  dispatchReorderChatFoldersAndChatsByIdsWithOutcome,
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
   dispatchReplaceTailMessagesScoped,
@@ -84,7 +86,9 @@ import {
   dispatchTruncateMessagesScoped,
   dispatchUpdateChat,
   dispatchUpdateChatAsync,
+  dispatchUpdateChatWithOutcome,
   dispatchUpdateChatFolder,
+  dispatchUpdateChatFolderWithOutcome,
   dispatchUpdateChatFolderRow,
   dispatchUpdateChatNoteScoped,
   dispatchUpdateChatRow,
@@ -6835,6 +6839,122 @@ describe('durable chat and folder structure dispatch', () => {
     resetPendingMutationOutboxForTests()
   }
 
+  it('classifies a terminal structural create as failed after narrow rollback', async () => {
+    resetPendingMutationOutboxForTests()
+    stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
+    })
+    setResourceWriteGuardEnabled(true)
+    const previous = currentChatStateSnapshot()
+    const attemptedChat = {
+      id: 'chat-created',
+      name: 'Attempted Chat',
+      note: '',
+      folderId: null,
+      message: [],
+      localLore: [],
+      fmIndex: -1,
+    } as Chat
+    expect(applyOptimisticCreatedChat('char-a', attemptedChat, previous)).toBe(true)
+
+    await expect(dispatchCreateChatWithOutcome('char-a', attemptedChat, previous)).resolves.toMatchObject({
+      status: 'failed',
+    })
+    expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+  })
+
+  it('settles a retained structural create after its exact replay is accepted', async () => {
+    await prepareDurableOutbox('create-outcome')
+    let recover = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST') {
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 503)
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'chat.created', revision: 11, resource: 'chatTranscript', parentId: 'char-a' },
+            chatId: 'chat-created',
+            selectedChatId: 'chat-created',
+            generationSettings: null,
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const previous = currentChatStateSnapshot()
+      const attemptedChat = {
+        id: 'chat-created',
+        name: 'Queued Chat',
+        note: '',
+        folderId: null,
+        message: [],
+        localLore: [],
+        fmIndex: -1,
+      } as Chat
+      expect(applyOptimisticCreatedChat('char-a', attemptedChat, previous)).toBe(true)
+
+      const mutation = await dispatchCreateChatWithOutcome('char-a', attemptedChat, previous)
+      expect(mutation).toMatchObject({ status: 'queued', mutationIds: [expect.any(String)] })
+      expect(getDatabase().characters[0].chats[0].id).toBe('chat-created')
+      expect(await listPendingMutations()).toHaveLength(1)
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1, retained: 0 })
+      if (mutation.status !== 'queued') throw new Error('Expected a queued create')
+      await expect(mutation.settlement).resolves.toEqual({ status: 'accepted' })
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
+  it('reports a terminal final replay and rolls the retained structural create back', async () => {
+    await prepareDurableOutbox('create-final-failure')
+    let rejectReplay = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST') {
+          return rejectReplay
+            ? jsonResponse({ error: 'invalid queued chat' }, 400)
+            : jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const previous = currentChatStateSnapshot()
+      const attemptedChat = {
+        id: 'chat-rejected-finally',
+        name: 'Rejected Queued Chat',
+        note: '',
+        folderId: null,
+        message: [],
+        localLore: [],
+        fmIndex: -1,
+      } as Chat
+      expect(applyOptimisticCreatedChat('char-a', attemptedChat, previous)).toBe(true)
+      const mutation = await dispatchCreateChatWithOutcome('char-a', attemptedChat, previous)
+      if (mutation.status !== 'queued') throw new Error('Expected a queued create')
+
+      rejectReplay = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ discarded: 1, retained: 0 })
+      await expect(mutation.settlement).resolves.toMatchObject({
+        status: 'failed',
+        result: { status: 'error', error: 'invalid queued chat' },
+      })
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+    } finally {
+      await clearDurableOutbox()
+    }
+  })
+
   it('classifies a retained scoped bookmark update as queued while preserving its projection', async () => {
     await prepareDurableOutbox('bookmark-outcome')
     vi.stubGlobal(
@@ -6928,6 +7048,80 @@ describe('durable chat and folder structure dispatch', () => {
     }
   })
 
+  it('waits for every exact retained batch handle and fails the aggregate when one is discarded', async () => {
+    await prepareDurableOutbox('batch-final-settlement')
+    const secondReplayGate = createDeferred<void>()
+    const replayPaths: string[] = []
+    const firstRollback = vi.fn()
+    const secondRollback = vi.fn()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        const path = url.replace('/api/v1/commands', '')
+        if (path === '/chats/chat-a') {
+          replayPaths.push(path)
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'chat.updated', revision: 11, resource: 'chat', id: 'chat-a' },
+          })
+        }
+        if (path === '/chats/chat-b') {
+          replayPaths.push(path)
+          await secondReplayGate.promise
+          return jsonResponse({ error: 'invalid retained suffix' }, 400)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const batch = await dispatchCharacterOwnedDurableBatch('char-a', [
+        {
+          method: 'PATCH',
+          path: '/chats/chat-a',
+          body: { patch: { name: 'first' }, select: false },
+          command: async () => ({ status: 'unavailable' }),
+          rollback: firstRollback,
+        },
+        {
+          method: 'PATCH',
+          path: '/chats/chat-b',
+          body: { patch: { name: 'second' }, select: false },
+          command: async () => ({ status: 'unavailable' }),
+          rollback: secondRollback,
+        },
+      ])
+      expect(batch).toMatchObject({
+        status: 'retained',
+        mutationIds: [expect.any(String), expect.any(String)],
+      })
+      if (batch.status !== 'retained' || !batch.settlement) throw new Error('Expected a retained batch')
+
+      let aggregateSettled = false
+      void batch.settlement.then(() => {
+        aggregateSettled = true
+      })
+      const replay = replayPendingMutations()
+      await vi.waitFor(() => expect(replayPaths).toEqual(['/chats/chat-a', '/chats/chat-b']))
+      await Promise.resolve()
+      expect(aggregateSettled).toBe(false)
+
+      secondReplayGate.resolve()
+      await expect(replay).resolves.toMatchObject({ succeeded: 1, discarded: 1, retained: 0 })
+      await expect(batch.settlement).resolves.toMatchObject({
+        status: 'failed',
+        result: { status: 'error', error: 'invalid retained suffix' },
+      })
+      expect(firstRollback).not.toHaveBeenCalled()
+      expect(secondRollback).toHaveBeenCalledOnce()
+    } finally {
+      secondReplayGate.resolve()
+      await clearDurableOutbox()
+    }
+  })
+
   it('sends no batch request and rolls back every row when one durable row cannot persist', async () => {
     await prepareDurableOutbox('batch-persistence-failure')
     const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
@@ -6994,9 +7188,10 @@ describe('durable chat and folder structure dispatch', () => {
       withTrustedResourceWrite(() => {
         getDatabase().characters[0].chats[0].name = 'Durable rename'
       })
-      dispatchUpdateChat('chat-a', { name: 'Durable rename' }, previous)
+      const mutation = dispatchUpdateChatWithOutcome('chat-a', { name: 'Durable rename' }, previous)
 
       await vi.waitFor(() => expect(liveBody).toBeDefined())
+      await expect(mutation).resolves.toMatchObject({ status: 'queued' })
       expect(getDatabase().characters[0].chats[0].name).toBe('Durable rename')
       const pending = await listPendingMutations()
       expect(pending).toMatchObject([
@@ -7171,8 +7366,9 @@ describe('durable chat and folder structure dispatch', () => {
       withTrustedResourceWrite(() => {
         getDatabase().characters[0].chatFolders[0].name = 'Durable folder rename'
       })
-      dispatchUpdateChatFolder('folder-a', { name: 'Durable folder rename' }, previous)
+      const mutation = dispatchUpdateChatFolderWithOutcome('folder-a', { name: 'Durable folder rename' }, previous)
       await vi.waitFor(() => expect(liveBody).toBeDefined())
+      await expect(mutation).resolves.toMatchObject({ status: 'queued' })
 
       expect(getDatabase().characters[0].chatFolders[0].name).toBe('Durable folder rename')
       const pending = await listPendingMutations()
@@ -7387,7 +7583,7 @@ describe('durable chat and folder structure dispatch', () => {
     )
 
     try {
-      dispatchReorderChatFoldersAndChatsByIds(
+      const mutation = dispatchReorderChatFoldersAndChatsByIdsWithOutcome(
         'char-a',
         ['folder-b', 'folder-a'],
         ['chat-b', 'chat-a'],
@@ -7396,6 +7592,11 @@ describe('durable chat and folder structure dispatch', () => {
         'chat-b',
       )
       await vi.waitFor(() => expect(commandPaths).toEqual(['/characters/char-a/chat-folders/reorder']))
+      const queuedOutcome = await mutation
+      expect(queuedOutcome).toMatchObject({
+        status: 'queued',
+        mutationIds: [expect.any(String), expect.any(String)],
+      })
 
       expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b', 'folder-a'])
       expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-b', 'chat-a'])
@@ -7425,6 +7626,8 @@ describe('durable chat and folder structure dispatch', () => {
         '/characters/char-a/chat-folders/reorder',
         '/characters/char-a/chats/reorder',
       ])
+      if (queuedOutcome.status !== 'queued') throw new Error('Expected a queued reorder batch')
+      await expect(queuedOutcome.settlement).resolves.toEqual({ status: 'accepted' })
       expect(await listPendingMutations()).toEqual([])
     } finally {
       await clearDurableOutbox()
@@ -7466,7 +7669,7 @@ describe('durable chat and folder structure dispatch', () => {
     )
 
     try {
-      dispatchReorderChatFoldersAndChatsByIds(
+      const mutation = dispatchReorderChatFoldersAndChatsByIdsWithOutcome(
         'char-a',
         ['folder-b', 'folder-a'],
         ['chat-b', 'chat-a'],
@@ -7477,6 +7680,7 @@ describe('durable chat and folder structure dispatch', () => {
       await vi.waitFor(() => {
         expect(commandPaths).toEqual(['/characters/char-a/chat-folders/reorder', '/characters/char-a/chats/reorder'])
       })
+      await expect(mutation).resolves.toMatchObject({ status: 'failed' })
       await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
 
       expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b', 'folder-a'])

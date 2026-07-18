@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte'
+  import { get } from 'svelte/store'
   import { v4 } from 'uuid'
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import {
@@ -38,17 +39,18 @@
     applyOptimisticDeletedChat,
     currentChatSelectionSnapshot,
     currentChatStateSnapshot,
-    dispatchCreateChat,
-    dispatchCreateChatFolder,
-    dispatchDeleteChat,
-    dispatchDeleteChatFolder,
-    dispatchForkChat,
-    dispatchReorderChatFoldersAndChatsByIds,
-    dispatchReorderChats,
-    dispatchReorderChatsByIds,
+    dispatchCreateChatFolderWithOutcome,
+    dispatchCreateChatWithOutcome,
+    dispatchDeleteChatFolderWithOutcome,
+    dispatchDeleteChatWithOutcome,
+    dispatchForkChatWithOutcome,
+    dispatchReorderChatFoldersAndChatsByIdsWithOutcome,
+    dispatchReorderChatsByIdsWithOutcome,
     dispatchSelectChat,
     dispatchUpdateChatAsync,
-    dispatchUpdateChatFolder,
+    dispatchUpdateChatFolderWithOutcome,
+    dispatchUpdateChatWithOutcome,
+    type ChatMutationOutcome,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands, type ServerCommandResult } from 'src/ts/server/commands'
   import {
@@ -69,6 +71,23 @@
   let { chara }: Props = $props()
   let editMode = $state(false)
   let pendingPersonaBindings = $state<Record<string, boolean>>({})
+  type ChatStructureMutationStatus = 'pending' | 'queued' | 'failed'
+  type ChatStructureTargetKind = 'chat' | 'folder' | 'order'
+  interface ChatStructureMutationState {
+    targetKind: ChatStructureTargetKind
+    targetId: string
+    action: string
+    conflictKeys: string[]
+    run: number
+    status: ChatStructureMutationStatus
+  }
+  let chatStructureMutations = $state<Record<string, ChatStructureMutationState>>({})
+  let nextStructureMutationRun = 0
+  let chatNameDrafts = $state<Record<string, string>>({})
+  let chatNameBaselines = $state<Record<string, string>>({})
+  let folderNameDrafts = $state<Record<string, string>>({})
+  let folderNameBaselines = $state<Record<string, string>>({})
+  let nameDraftOwner = $state<string | undefined>(undefined)
 
   let chatsStb: Sortable[] = []
   let folderStb: Sortable = null
@@ -97,6 +116,169 @@
     return stop
   })
 
+  $effect(() => {
+    const previousChatDrafts = untrack(() => chatNameDrafts)
+    const previousChatBaselines = untrack(() => chatNameBaselines)
+    const previousFolderDrafts = untrack(() => folderNameDrafts)
+    const previousFolderBaselines = untrack(() => folderNameBaselines)
+    const previousOwner = untrack(() => nameDraftOwner)
+    const owner = chara.chaId
+    const nextChatDrafts: Record<string, string> = {}
+    const nextChatBaselines: Record<string, string> = {}
+    const nextFolderDrafts: Record<string, string> = {}
+    const nextFolderBaselines: Record<string, string> = {}
+
+    for (const chat of chara.chats ?? []) {
+      if (!chat.id) continue
+      const baseline = chat.name ?? ''
+      const hasPreviousBaseline =
+        previousOwner === owner && Object.prototype.hasOwnProperty.call(previousChatBaselines, chat.id)
+      const draftIsDirty = hasPreviousBaseline && previousChatDrafts[chat.id] !== previousChatBaselines[chat.id]
+      nextChatDrafts[chat.id] = draftIsDirty ? previousChatDrafts[chat.id] : baseline
+      nextChatBaselines[chat.id] = baseline
+    }
+    for (const folder of chara.chatFolders ?? []) {
+      if (!folder.id) continue
+      const baseline = folder.name ?? ''
+      const hasPreviousBaseline =
+        previousOwner === owner && Object.prototype.hasOwnProperty.call(previousFolderBaselines, folder.id)
+      const draftIsDirty = hasPreviousBaseline && previousFolderDrafts[folder.id] !== previousFolderBaselines[folder.id]
+      nextFolderDrafts[folder.id] = draftIsDirty ? previousFolderDrafts[folder.id] : baseline
+      nextFolderBaselines[folder.id] = baseline
+    }
+
+    chatNameDrafts = nextChatDrafts
+    chatNameBaselines = nextChatBaselines
+    folderNameDrafts = nextFolderDrafts
+    folderNameBaselines = nextFolderBaselines
+    nameDraftOwner = owner
+  })
+
+  function structureMutationKey(operation: string, targetId: string): string {
+    return `${operation}:${targetId}`
+  }
+
+  function pendingStructureMutations(): ChatStructureMutationState[] {
+    return Object.values(chatStructureMutations).filter((mutation) => mutation.status === 'pending')
+  }
+
+  function chatConflictKey(chatId: string): string {
+    return `chat:${chatId}`
+  }
+
+  function folderConflictKey(folderId: string): string {
+    return `folder:${folderId}`
+  }
+
+  function chatOrderConflictKey(characterId = chara.chaId): string {
+    return `chat-order:${characterId ?? 'missing-owner'}`
+  }
+
+  function folderOrderConflictKey(characterId = chara.chaId): string {
+    return `folder-order:${characterId ?? 'missing-owner'}`
+  }
+
+  function hasConflictingStructureMutation(conflictKeys: readonly string[]): boolean {
+    return pendingStructureMutations().some((mutation) =>
+      mutation.conflictKeys.some((conflictKey) => conflictKeys.includes(conflictKey)),
+    )
+  }
+
+  function structureMutationForTarget(
+    targetKind: ChatStructureTargetKind,
+    targetId: string | undefined,
+  ): ChatStructureMutationState | undefined {
+    if (!targetId) return undefined
+    const matches = Object.values(chatStructureMutations).filter(
+      (mutation) => mutation.targetKind === targetKind && mutation.targetId === targetId,
+    )
+    return (
+      matches.find((mutation) => mutation.status === 'pending') ??
+      matches.find((mutation) => mutation.status === 'queued') ??
+      matches.find((mutation) => mutation.status === 'failed')
+    )
+  }
+
+  function isChatStructurePending(chatId: string | undefined): boolean {
+    return Boolean(chatId && hasConflictingStructureMutation([chatConflictKey(chatId)]))
+  }
+
+  function isFolderStructurePending(folderId: string | undefined): boolean {
+    return Boolean(folderId && hasConflictingStructureMutation([folderConflictKey(folderId)]))
+  }
+
+  function isChatStructuralActionPending(chatId: string | undefined): boolean {
+    return Boolean(chatId && hasConflictingStructureMutation([chatOrderConflictKey(), chatConflictKey(chatId)]))
+  }
+
+  function isFolderStructuralActionPending(folderId: string | undefined): boolean {
+    return Boolean(
+      folderId &&
+      hasConflictingStructureMutation([chatOrderConflictKey(), folderOrderConflictKey(), folderConflictKey(folderId)]),
+    )
+  }
+
+  function structureMutationMessage(mutation: ChatStructureMutationState): string {
+    if (mutation.status === 'pending') return language.chatStructurePending(mutation.action)
+    if (mutation.status === 'queued') return language.chatStructureQueued(mutation.action)
+    return language.chatStructureFailed(mutation.action)
+  }
+
+  async function settleStructureMutation(
+    key: string,
+    targetKind: ChatStructureTargetKind,
+    targetId: string,
+    action: string,
+    conflictKeys: string[],
+    dispatch: () => Promise<ChatMutationOutcome> | undefined,
+    queuedMessage?: string,
+    onFinal?: (outcome: Awaited<Extract<ChatMutationOutcome, { status: 'queued' }>['settlement']>) => void,
+  ): Promise<ChatMutationOutcome['status']> {
+    const run = ++nextStructureMutationRun
+    chatStructureMutations[key] = { targetKind, targetId, action, conflictKeys, run, status: 'pending' }
+    try {
+      const outcome = await dispatch()
+      if (chatStructureMutations[key]?.run !== run) return 'failed'
+      if (!outcome || outcome.status === 'failed') {
+        chatStructureMutations[key] = { targetKind, targetId, action, conflictKeys, run, status: 'failed' }
+        alertError(language.chatStructureFailed(action))
+        return 'failed'
+      }
+      if (outcome.status === 'queued') {
+        chatStructureMutations[key] = { targetKind, targetId, action, conflictKeys, run, status: 'queued' }
+        alertNormal(queuedMessage ?? language.chatStructureQueued(action))
+        void outcome.settlement.then(
+          (finalOutcome) => {
+            if (chatStructureMutations[key]?.run !== run) return
+            if (finalOutcome.status === 'accepted') {
+              delete chatStructureMutations[key]
+              onFinal?.(finalOutcome)
+              return
+            }
+            chatStructureMutations[key] = { targetKind, targetId, action, conflictKeys, run, status: 'failed' }
+            alertError(language.chatStructureFailed(action))
+            onFinal?.(finalOutcome)
+          },
+          () => {
+            if (chatStructureMutations[key]?.run !== run) return
+            chatStructureMutations[key] = { targetKind, targetId, action, conflictKeys, run, status: 'failed' }
+            alertError(language.chatStructureFailed(action))
+            onFinal?.({ status: 'failed', result: { status: 'unavailable' } })
+          },
+        )
+        return 'queued'
+      }
+      delete chatStructureMutations[key]
+      return 'accepted'
+    } catch {
+      if (chatStructureMutations[key]?.run === run) {
+        chatStructureMutations[key] = { targetKind, targetId, action, conflictKeys, run, status: 'failed' }
+        alertError(language.chatStructureFailed(action))
+      }
+      return 'failed'
+    }
+  }
+
   function selectChat(index: number): void {
     const chatId = chara.chats[index]?.id
     if (chara.chaId && chatId) {
@@ -118,12 +300,20 @@
     reloadGuiDisplay()
   }
 
-  function toggleChatFolder(folder: ChatFolder): void {
-    if (editMode) return
+  async function toggleChatFolder(folder: ChatFolder): Promise<void> {
+    if (editMode || hasConflictingStructureMutation([folderConflictKey(folder.id)])) return
     const previous = currentChatStateSnapshot()
     const folded = !folder.folded
     if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.folded = folded))) return
-    dispatchUpdateChatFolder(folder.id, { folded }, previous, rollbackServerBackedChatFolderRowMetadata)
+    await settleStructureMutation(
+      structureMutationKey('fold-folder', folder.id),
+      'folder',
+      folder.id,
+      `${language.edit}: ${folder.name}`,
+      [folderConflictKey(folder.id)],
+      () =>
+        dispatchUpdateChatFolderWithOutcome(folder.id, { folded }, previous, rollbackServerBackedChatFolderRowMetadata),
+    )
     reloadGuiDisplay()
   }
 
@@ -131,6 +321,29 @@
     if (chara.chaId) {
       navigate(characterRoutePath(chara.chaId))
     }
+  }
+
+  function currentRouteIdentity(): string {
+    const route = get(currentRoute)
+    return `${route.kind}:${route.path}`
+  }
+
+  function recoverRejectedProvisionalChatRoute(characterId: string, provisionalChatId: string): void {
+    const route = get(currentRoute)
+    if (route.kind !== 'character' || route.chaId !== characterId || route.chatId !== provisionalChatId) return
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    if (!character || character.chats?.some((chat) => chat.id === provisionalChatId)) return
+    const replacementChatId = character.chats?.[character.chatPage]?.id
+    navigate(characterRoutePath(characterId, replacementChatId), { replace: true })
+  }
+
+  function isExpectedSidebarChatSelected(characterId: string, chatId: string): boolean {
+    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
+    return Boolean(
+      selectedCharacter?.chaId === characterId &&
+      chara.chaId === characterId &&
+      selectedCharacter.chats?.[selectedCharacter.chatPage]?.id === chatId,
+    )
   }
 
   type ChatOrganizerAction =
@@ -230,12 +443,25 @@
     return [...folderIds.flatMap((folderId) => groups.get(folderId) ?? []), ...(groups.get(null) ?? [])]
   }
 
-  function applyChatOrganization(chatIds: string[], assignments: Record<string, string | null>): void {
+  async function applyChatOrganization(
+    targetChatId: string,
+    chatIds: string[],
+    assignments: Record<string, string | null>,
+  ): Promise<void> {
     if (!chara.chaId) return
     const previous = currentChatStateSnapshot()
     const selectedChatId = chara.chats[chara.chatPage]?.id
     if (canUseServerCommands()) {
-      dispatchReorderChatsByIds(chara.chaId, chatIds, assignments, previous, selectedChatId)
+      const conflictKeys = [chatOrderConflictKey(), chatConflictKey(targetChatId)]
+      if (hasConflictingStructureMutation(conflictKeys)) return
+      await settleStructureMutation(
+        structureMutationKey('organize-chat', targetChatId),
+        'chat',
+        targetChatId,
+        language.chatListEdit,
+        conflictKeys,
+        () => dispatchReorderChatsByIdsWithOutcome(chara.chaId, chatIds, assignments, previous, selectedChatId),
+      )
       return
     }
 
@@ -248,12 +474,17 @@
     const selectedIndex = selectedChatId ? chatIds.indexOf(selectedChatId) : -1
     if (selectedIndex >= 0) changeChatTo(selectedIndex)
     reloadGuiDisplay()
-    dispatchReorderChats(chara.chaId, previous, selectedChatId)
   }
 
   async function openChatOrganizerActions(chat: Chat, focusOrigin?: HTMLButtonElement): Promise<void> {
     const ownerCharacterId = chara.chaId
-    if (!ownerCharacterId || !isCurrentOrganizerOwner(ownerCharacterId) || !chat.id || !hasStableOrganizationIds())
+    if (
+      !ownerCharacterId ||
+      !isCurrentOrganizerOwner(ownerCharacterId) ||
+      !chat.id ||
+      !hasStableOrganizationIds() ||
+      isChatStructuralActionPending(chat.id)
+    )
       return
     const shouldRestoreFocus = focusOrigin === document.activeElement
     const chatId = chat.id
@@ -325,7 +556,7 @@
       assignments[chatId] = targetFolderId
     }
 
-    applyChatOrganization(flattenChatGroups(groups), assignments)
+    await applyChatOrganization(chatId, flattenChatGroups(groups), assignments)
     await tick()
     if (!isCurrentOrganizerOwner(ownerCharacterId)) return
     if (shouldRestoreFocus) restoreChatOrganizerFocus(chatId, assignments[chatId] ?? null)
@@ -333,7 +564,12 @@
 
   async function openChatFolderOrganizerActions(folder: ChatFolder, focusOrigin?: HTMLButtonElement): Promise<void> {
     const ownerCharacterId = chara.chaId
-    if (!ownerCharacterId || !isCurrentOrganizerOwner(ownerCharacterId)) return
+    if (
+      !ownerCharacterId ||
+      !isCurrentOrganizerOwner(ownerCharacterId) ||
+      hasConflictingStructureMutation([folderConflictKey(folder.id)])
+    )
+      return
     const shouldRestoreFocus = focusOrigin === document.activeElement
     const initialFolders = chara.chatFolders ?? []
     if (!hasUniqueNonemptyIds(initialFolders.map((candidate) => candidate.id))) return
@@ -364,10 +600,24 @@
       if (!isCurrentOrganizerOwner(ownerCharacterId)) return
       const colorSelection = parseAlertSelection(colorSelectionValue, colors.length)
       if (colorSelection === null) return
+      if (hasConflictingStructureMutation([folderConflictKey(folder.id)])) return
       const previous = currentChatStateSnapshot()
       const color = colors[colorSelection]
       if (!color || !applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.color = color))) return
-      dispatchUpdateChatFolder(folder.id, { color }, previous, rollbackServerBackedChatFolderRowMetadata)
+      await settleStructureMutation(
+        structureMutationKey('color-folder', folder.id),
+        'folder',
+        folder.id,
+        `${language.changeFolderColor}: ${folder.name}`,
+        [folderConflictKey(folder.id)],
+        () =>
+          dispatchUpdateChatFolderWithOutcome(
+            folder.id,
+            { color },
+            previous,
+            rollbackServerBackedChatFolderRowMetadata,
+          ),
+      )
       return
     }
 
@@ -386,7 +636,28 @@
     const usingServerCommands = canUseServerCommands()
     if (usingServerCommands && !chara.chaId) return
     if (usingServerCommands) {
-      dispatchReorderChatFoldersAndChatsByIds(chara.chaId, folderIds, chatIds, assignments, previous, selectedChatId)
+      const conflictKeys = [
+        chatOrderConflictKey(chara.chaId),
+        folderOrderConflictKey(chara.chaId),
+        folderConflictKey(folder.id),
+      ]
+      if (hasConflictingStructureMutation(conflictKeys)) return
+      await settleStructureMutation(
+        structureMutationKey('organize-folders', chara.chaId),
+        'order',
+        chara.chaId,
+        language.chatListEdit,
+        conflictKeys,
+        () =>
+          dispatchReorderChatFoldersAndChatsByIdsWithOutcome(
+            chara.chaId,
+            folderIds,
+            chatIds,
+            assignments,
+            previous,
+            selectedChatId,
+          ),
+      )
     } else {
       const foldersById = new Map(folders.map((candidate) => [candidate.id, candidate]))
       const chatsById = new Map(chara.chats.map((candidate) => [candidate.id, candidate]))
@@ -401,7 +672,8 @@
     if (shouldRestoreFocus) organizerButtonForFolder(folder.id)?.focus()
   }
 
-  function createChat(): void {
+  async function createChat(): Promise<void> {
+    if (hasConflictingStructureMutation([chatOrderConflictKey()])) return
     const previous = currentChatStateSnapshot()
     const len = chara.chats.length
     const chat = {
@@ -413,11 +685,29 @@
       id: v4(),
     }
     if (canUseServerCommands()) {
-      const applied = applyOptimisticCreatedChat(chara.chaId, chat, previous)
-      if (applied && chara.chaId && chat.id) {
-        navigate(characterRoutePath(chara.chaId, chat.id))
+      const characterId = chara.chaId
+      const originRoute = currentRouteIdentity()
+      const applied = applyOptimisticCreatedChat(characterId, chat, previous)
+      if (!applied || !characterId || !chat.id) return
+      const outcome = await settleStructureMutation(
+        structureMutationKey('create-chat', chat.id),
+        'chat',
+        chat.id,
+        `${language.newChat}: ${chat.name}`,
+        [chatOrderConflictKey(characterId), chatConflictKey(chat.id)],
+        () => dispatchCreateChatWithOutcome(characterId, chat, previous),
+        language.chatCreateProvisional(chat.name),
+        (finalOutcome) => {
+          if (finalOutcome.status === 'failed') recoverRejectedProvisionalChatRoute(characterId, chat.id)
+        },
+      )
+      if (
+        outcome !== 'failed' &&
+        currentRouteIdentity() === originRoute &&
+        isExpectedSidebarChatSelected(characterId, chat.id)
+      ) {
+        navigate(characterRoutePath(characterId, chat.id))
       }
-      dispatchCreateChat(chara.chaId, chat, previous)
       return
     }
     chara.chats.unshift(chat)
@@ -430,6 +720,7 @@
     const characterId = chara.chaId
     let liveSourceChat = sourceChat
     if (canUseServerCommands() && sourceChatId) {
+      if (isChatStructuralActionPending(sourceChatId)) return
       try {
         await hydrateChatMessages(sourceChatId, { strict: true })
       } catch {
@@ -451,7 +742,21 @@
     newChat.name = createChatCopyName(newChat.name, 'Copy')
     rekeyClonedChat(newChat)
     if (canUseServerCommands()) {
-      dispatchForkChat(sourceChatId, previous, { chat: newChat })
+      if (!sourceChatId || !newChat.id) return
+      const conflictKeys = [
+        chatOrderConflictKey(characterId),
+        chatConflictKey(sourceChatId),
+        chatConflictKey(newChat.id),
+      ]
+      if (hasConflictingStructureMutation(conflictKeys)) return
+      await settleStructureMutation(
+        structureMutationKey('fork-chat', newChat.id),
+        'chat',
+        newChat.id,
+        `${language.createCopy}: ${newChat.name}`,
+        conflictKeys,
+        () => dispatchForkChatWithOutcome(sourceChatId, previous, { chat: newChat }),
+      )
       return
     }
     chara.chats.unshift(newChat)
@@ -502,21 +807,49 @@
     return applied
   }
 
-  function updateChatName(chat: Chat, name: string): void {
+  async function updateChatName(chat: Chat, name: string): Promise<void> {
     if (canUseServerCommands()) {
       const chatId = chat.id
-      if (!chatId) return
-      applyOptimisticChatMetadata(chatId, (liveChat) => (liveChat.name = name))
+      const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
+      if (!chatId || !liveChat || liveChat.name === name || hasConflictingStructureMutation([chatConflictKey(chatId)]))
+        return
+      const previous = currentChatStateSnapshot()
+      if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.name = name))) return
+      await settleStructureMutation(
+        structureMutationKey('rename-chat', chatId),
+        'chat',
+        chatId,
+        `${language.edit}: ${name}`,
+        [chatConflictKey(chatId)],
+        () => dispatchUpdateChatWithOutcome(chatId, { name }, previous, false, rollbackServerBackedChatRowMetadata),
+      )
       return
     }
     chat.name = name
   }
 
-  function updateFolderName(folder: ChatFolder, name: string): void {
+  async function updateFolderName(folder: ChatFolder, name: string): Promise<void> {
     if (canUseServerCommands()) {
       const folderId = folder.id
-      if (!folderId) return
-      applyOptimisticFolderMetadata(folderId, (liveFolder) => (liveFolder.name = name))
+      const liveFolder = currentSidebarCharacter()?.chatFolders?.find((candidate) => candidate.id === folderId)
+      if (
+        !folderId ||
+        !liveFolder ||
+        liveFolder.name === name ||
+        hasConflictingStructureMutation([folderConflictKey(folderId)])
+      )
+        return
+      const previous = currentChatStateSnapshot()
+      if (!applyDirectOptimisticFolderMetadata(folderId, (candidate) => (candidate.name = name))) return
+      await settleStructureMutation(
+        structureMutationKey('rename-folder', folderId),
+        'folder',
+        folderId,
+        `${language.edit}: ${name}`,
+        [folderConflictKey(folderId)],
+        () =>
+          dispatchUpdateChatFolderWithOutcome(folderId, { name }, previous, rollbackServerBackedChatFolderRowMetadata),
+      )
       return
     }
     folder.name = name
@@ -592,16 +925,36 @@
       alertError(language.errors.onlyOneChat)
       return
     }
+    if (!chat.id || isChatStructuralActionPending(chat.id)) return
     const confirmed = await alertConfirm(`${language.removeConfirm}${chat.name}`)
-    if (!confirmed || !chat.id) return
+    if (!confirmed || isChatStructuralActionPending(chat.id)) return
 
     const previous = currentChatStateSnapshot()
     const deletedSelectedChat = chara.chats[chara.chatPage]?.id === chat.id
     if (canUseServerCommands()) {
-      const result = applyOptimisticDeletedChat(chara.chaId, chat.id, previous)
-      if (deletedSelectedChat && result.applied && chara.chaId && result.selectedChatId) {
-        navigate(characterRoutePath(chara.chaId, result.selectedChatId), { replace: true })
+      const characterId = chara.chaId
+      const originRoute = currentRouteIdentity()
+      const result = applyOptimisticDeletedChat(characterId, chat.id, previous)
+      if (!result.applied) return
+      const outcome = await settleStructureMutation(
+        structureMutationKey('delete-chat', chat.id),
+        'chat',
+        chat.id,
+        `${language.remove}: ${chat.name}`,
+        [chatOrderConflictKey(characterId), chatConflictKey(chat.id)],
+        () => dispatchDeleteChatWithOutcome(chat.id, previous),
+      )
+      if (
+        outcome !== 'failed' &&
+        deletedSelectedChat &&
+        characterId &&
+        result.selectedChatId &&
+        currentRouteIdentity() === originRoute &&
+        isExpectedSidebarChatSelected(characterId, result.selectedChatId)
+      ) {
+        navigate(characterRoutePath(characterId, result.selectedChatId), { replace: true })
       }
+      return
     } else {
       changeChatTo(0)
       const chats = chara.chats
@@ -609,7 +962,60 @@
       chara.chats = chats
       reloadGuiDisplay()
     }
-    dispatchDeleteChat(chat.id, previous)
+  }
+
+  async function deleteChatFolder(folder: ChatFolder, index: number): Promise<void> {
+    if (isFolderStructuralActionPending(folder.id)) return
+    const confirmed = await alertConfirm(`${language.removeConfirm}${folder.name}`)
+    if (!confirmed || isFolderStructuralActionPending(folder.id)) return
+    const previous = currentChatStateSnapshot()
+    if (canUseServerCommands()) {
+      await settleStructureMutation(
+        structureMutationKey('delete-folder', folder.id),
+        'folder',
+        folder.id,
+        `${language.remove}: ${folder.name}`,
+        [chatOrderConflictKey(), folderOrderConflictKey(), folderConflictKey(folder.id)],
+        () => dispatchDeleteChatFolderWithOutcome(folder.id, previous),
+      )
+      return
+    }
+
+    const folders = chara.chatFolders
+    folders.splice(index, 1)
+    chara.chats.forEach((chat) => {
+      if (chat.folderId === folder.id) chat.folderId = null
+    })
+    chara.chatFolders = folders
+    reloadGuiDisplay()
+  }
+
+  async function createChatFolder(): Promise<void> {
+    if (hasConflictingStructureMutation([folderOrderConflictKey()])) return
+    const previous = currentChatStateSnapshot()
+    const length = chara.chatFolders?.length ?? 0
+    const folder = {
+      id: v4(),
+      name: `New Folder ${length + 1}`,
+      folded: false,
+    }
+    if (canUseServerCommands()) {
+      if (!applyOptimisticCreatedChatFolder(chara.chaId, folder, previous)) return
+      await settleStructureMutation(
+        structureMutationKey('create-folder', folder.id),
+        'folder',
+        folder.id,
+        `${language.chatListCreateFolder}: ${folder.name}`,
+        [folderOrderConflictKey(), folderConflictKey(folder.id)],
+        () => dispatchCreateChatFolderWithOutcome(chara.chaId, folder, previous),
+      )
+      return
+    }
+
+    chara.chatFolders ??= []
+    chara.chatFolders.unshift(folder)
+    chara.chatFolders = chara.chatFolders
+    reloadGuiDisplay()
   }
 
   type ChatDomOrder = {
@@ -765,6 +1171,10 @@
         new Sortable(chat, {
           group: 'chats',
           onEnd: async () => {
+            if (hasConflictingStructureMutation([chatOrderConflictKey()])) {
+              await resetSortableProjection()
+              return
+            }
             const previous = currentChatStateSnapshot()
             const currentChatPage = chara.chatPage
             const usingServerCommands = canUseServerCommands()
@@ -778,12 +1188,21 @@
 
             const selectedChatId = selectedChatIdFromDom(chatOrder.chatsById, chara.chats[currentChatPage]?.id)
             if (usingServerCommands) {
-              dispatchReorderChatsByIds(
-                chara.chaId,
-                chatOrder.chatIds,
-                chatOrder.folderByChatId,
-                previous,
-                selectedChatId,
+              const characterId = chara.chaId
+              await settleStructureMutation(
+                structureMutationKey('drag-chats', characterId),
+                'order',
+                characterId,
+                language.chatListEdit,
+                [chatOrderConflictKey(characterId)],
+                () =>
+                  dispatchReorderChatsByIdsWithOutcome(
+                    characterId,
+                    chatOrder.chatIds,
+                    chatOrder.folderByChatId,
+                    previous,
+                    selectedChatId,
+                  ),
               )
             } else {
               const newChats = chatOrder.chatIds.map((chatId) => chatOrder.chatsById.get(chatId) as Chat)
@@ -792,7 +1211,6 @@
               }
               changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
               chara.chats = newChats
-              dispatchReorderChats(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
             }
 
             await resetSortableProjection()
@@ -804,6 +1222,10 @@
     folderStb = Sortable.create(folderEles, {
       group: 'folders',
       onEnd: async (event) => {
+        if (hasConflictingStructureMutation([chatOrderConflictKey(), folderOrderConflictKey()])) {
+          await resetSortableProjection()
+          return
+        }
         const previous = currentChatStateSnapshot()
         const currentChatPage = chara.chatPage
         const usingServerCommands = canUseServerCommands()
@@ -817,13 +1239,22 @@
 
         const selectedChatId = selectedChatIdFromDom(folderOrder.chatsById, chara.chats[currentChatPage]?.id)
         if (usingServerCommands) {
-          dispatchReorderChatFoldersAndChatsByIds(
-            chara.chaId,
-            folderOrder.folderIds,
-            folderOrder.chatIds,
-            folderOrder.folderByChatId,
-            previous,
-            selectedChatId,
+          const characterId = chara.chaId
+          await settleStructureMutation(
+            structureMutationKey('drag-folders', characterId),
+            'order',
+            characterId,
+            language.chatListEdit,
+            [chatOrderConflictKey(characterId), folderOrderConflictKey(characterId)],
+            () =>
+              dispatchReorderChatFoldersAndChatsByIdsWithOutcome(
+                characterId,
+                folderOrder.folderIds,
+                folderOrder.chatIds,
+                folderOrder.folderByChatId,
+                previous,
+                selectedChatId,
+              ),
           )
         } else {
           const newFolders = folderOrder.folderIds.map(
@@ -890,8 +1321,26 @@
       {/if}
     </div>
   {:else}
-    <div class="w-full" data-risu-chat-action="create">
-      <Button className="relative bottom-2 w-full" onclick={createChat}>{language.newChat}</Button>
+    <div
+      class="w-full"
+      data-risu-chat-action="create"
+      data-risu-chat-mutation-status={hasConflictingStructureMutation([chatOrderConflictKey()]) ? 'pending' : ''}>
+      <Button
+        className="relative bottom-2 w-full"
+        disabled={hasConflictingStructureMutation([chatOrderConflictKey()])}
+        onclick={() => void createChat()}>{language.newChat}</Button>
+    </div>
+
+    <div aria-live="polite">
+      {#each Object.entries(chatStructureMutations) as [key, mutation] (key)}
+        <div
+          data-risu-chat-mutation={key}
+          data-risu-chat-mutation-status={mutation.status}
+          role={mutation.status === 'failed' ? 'alert' : 'status'}
+          class="mb-2 rounded-md border border-darkborderc px-2 py-1 text-sm text-textcolor2">
+          {structureMutationMessage(mutation)}
+        </div>
+      {/each}
     </div>
 
     {#key sorted}
@@ -902,6 +1351,8 @@
               data-risu-chat-folder-idx={i}
               data-risu-chat-folder-id={folder.id}
               data-risu-chat-folder-folded={folder.folded ? 'true' : 'false'}
+              data-risu-chat-mutation-status={structureMutationForTarget('folder', folder.id)?.status ?? ''}
+              aria-busy={isFolderStructurePending(folder.id)}
               class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
               <!-- The nested native button retains keyboard semantics; the row handler restores the larger pointer target. -->
               <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -916,12 +1367,14 @@
                 class:bg-indigo-900={folder.color === 'indigo'}
                 class:bg-purple-900={folder.color === 'purple'}
                 class:bg-pink-900={folder.color === 'pink'}
-                onclick={() => toggleChatFolder(folder)}>
+                onclick={() => void toggleChatFolder(folder)}>
                 {#if editMode}
                   <TextInput
-                    bind:value={() => folder.name, (value) => updateFolderName(folder, value)}
+                    bind:value={folderNameDrafts[folder.id]}
                     className="grow min-w-0"
                     ariaLabel={`${language.edit}: ${folder.name}`}
+                    disabled={isFolderStructurePending(folder.id)}
+                    onchange={() => void updateFolderName(folder, folderNameDrafts[folder.id])}
                     padding={false} />
                 {:else}
                   <button
@@ -929,10 +1382,12 @@
                     data-risu-chat-action="toggle-folder"
                     aria-expanded={!folder.folded}
                     aria-controls={`risu-chat-folder-panel-${folder.id}`}
+                    disabled={isFolderStructurePending(folder.id)}
                     class="min-w-0 grow cursor-pointer text-left"
+                    class:opacity-50={isFolderStructurePending(folder.id)}
                     onclick={(event) => {
                       event.stopPropagation()
-                      toggleChatFolder(folder)
+                      void toggleChatFolder(folder)
                     }}>
                     <span>{folder.name}</span>
                   </button>
@@ -943,7 +1398,9 @@
                     data-risu-chat-action="folder-options"
                     data-risu-chat-folder-organizer-action={folder.id}
                     aria-label={`${language.options}: ${folder.name}`}
+                    disabled={isFolderStructurePending(folder.id)}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
+                    class:opacity-50={isFolderStructurePending(folder.id)}
                     onclick={(e) => {
                       e.stopPropagation()
                       void openChatFolderOrganizerActions(folder, e.currentTarget)
@@ -954,7 +1411,9 @@
                     type="button"
                     data-risu-chat-action="folder-edit"
                     aria-label={`${language.edit}: ${folder.name}`}
+                    disabled={isFolderStructurePending(folder.id)}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
+                    class:opacity-50={isFolderStructurePending(folder.id)}
                     onclick={(e) => {
                       e.stopPropagation()
                       editMode = !editMode
@@ -965,25 +1424,12 @@
                     type="button"
                     data-risu-chat-action="folder-delete"
                     aria-label={`${language.remove}: ${folder.name}`}
+                    disabled={isFolderStructuralActionPending(folder.id)}
                     class="text-textcolor2 hover:text-green-500 cursor-pointer"
+                    class:opacity-50={isFolderStructuralActionPending(folder.id)}
                     onclick={async (e) => {
                       e.stopPropagation()
-                      const d = await alertConfirm(`${language.removeConfirm}${folder.name}`)
-                      if (d) {
-                        const previous = currentChatStateSnapshot()
-                        reloadGuiDisplay()
-                        if (!canUseServerCommands()) {
-                          const folders = chara.chatFolders
-                          folders.splice(i, 1)
-                          chara.chats.forEach((chat) => {
-                            if (chat.folderId == folder.id) {
-                              chat.folderId = null
-                            }
-                          })
-                          chara.chatFolders = folders
-                        }
-                        dispatchDeleteChatFolder(folder.id, previous)
-                      }
+                      await deleteChatFolder(folder, i)
                     }}>
                     <TrashIcon size={18} />
                   </button>
@@ -1009,14 +1455,18 @@
                       data-risu-chat-id={chat.id ?? ''}
                       data-risu-chat-folder-id={chat.folderId ?? ''}
                       data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
+                      data-risu-chat-mutation-status={structureMutationForTarget('chat', chat.id)?.status ?? ''}
+                      aria-busy={isChatStructurePending(chat.id)}
                       class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
                       class:bg-selected={index === chara.chatPage}
                       onclick={() => activateChatRow(index)}>
                       {#if editMode}
                         <TextInput
-                          bind:value={() => chat.name, (value) => updateChatName(chat, value)}
+                          bind:value={chatNameDrafts[chat.id ?? '']}
                           className="grow min-w-0"
                           ariaLabel={`${language.edit}: ${chat.name}`}
+                          disabled={isChatStructurePending(chat.id)}
+                          onchange={() => void updateChatName(chat, chatNameDrafts[chat.id ?? ''])}
                           padding={false} />
                       {:else}
                         <button
@@ -1038,6 +1488,7 @@
                             data-risu-chat-action="organize"
                             data-risu-chat-organizer-action={chat.id}
                             aria-label={`${language.options}: ${chat.name}`}
+                            disabled={isChatStructuralActionPending(chat.id)}
                             class="sr-only"
                             onclick={(event) => {
                               event.stopPropagation()
@@ -1050,11 +1501,14 @@
                           type="button"
                           data-risu-chat-action="options"
                           aria-label={`${language.chatOptions}: ${chat.name}`}
-                          aria-busy={pendingPersonaBindings[chat.id ?? ''] ?? false}
-                          aria-disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
-                          disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
+                          aria-busy={(pendingPersonaBindings[chat.id ?? ''] ?? false) ||
+                            isChatStructurePending(chat.id)}
+                          aria-disabled={(pendingPersonaBindings[chat.id ?? ''] ?? false) ||
+                            isChatStructurePending(chat.id)}
+                          disabled={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                          class:opacity-50={pendingPersonaBindings[chat.id ?? '']}
+                          class:opacity-50={(pendingPersonaBindings[chat.id ?? ''] ?? false) ||
+                            isChatStructurePending(chat.id)}
                           onclick={async (e) => {
                             e.stopPropagation()
                             if (pendingPersonaBindings[chat.id ?? '']) return
@@ -1100,7 +1554,9 @@
                           type="button"
                           data-risu-chat-action="delete"
                           aria-label={`${language.remove}: ${chat.name}`}
+                          disabled={isChatStructuralActionPending(chat.id)}
                           class="text-textcolor2 hover:text-green-500 cursor-pointer"
+                          class:opacity-50={isChatStructuralActionPending(chat.id)}
                           onclick={async (e) => {
                             e.stopPropagation()
                             await deleteChat(chat, chara.chats.indexOf(chat))
@@ -1124,14 +1580,18 @@
               data-risu-chat-id={chat.id ?? ''}
               data-risu-chat-folder-id={chat.folderId ?? ''}
               data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
+              data-risu-chat-mutation-status={structureMutationForTarget('chat', chat.id)?.status ?? ''}
+              aria-busy={isChatStructurePending(chat.id)}
               class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
               class:bg-selected={index === chara.chatPage}
               onclick={() => activateChatRow(index)}>
               {#if editMode}
                 <TextInput
-                  bind:value={() => chat.name, (value) => updateChatName(chat, value)}
+                  bind:value={chatNameDrafts[chat.id ?? '']}
                   className="grow min-w-0"
                   ariaLabel={`${language.edit}: ${chat.name}`}
+                  disabled={isChatStructurePending(chat.id)}
+                  onchange={() => void updateChatName(chat, chatNameDrafts[chat.id ?? ''])}
                   padding={false} />
               {:else}
                 <button
@@ -1153,6 +1613,7 @@
                     data-risu-chat-action="organize"
                     data-risu-chat-organizer-action={chat.id}
                     aria-label={`${language.options}: ${chat.name}`}
+                    disabled={isChatStructuralActionPending(chat.id)}
                     class="sr-only"
                     onclick={(event) => {
                       event.stopPropagation()
@@ -1165,11 +1626,11 @@
                   type="button"
                   data-risu-chat-action="options"
                   aria-label={`${language.chatOptions}: ${chat.name}`}
-                  aria-busy={pendingPersonaBindings[chat.id ?? ''] ?? false}
-                  aria-disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
-                  disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
+                  aria-busy={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
+                  aria-disabled={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
+                  disabled={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
                   class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                  class:opacity-50={pendingPersonaBindings[chat.id ?? '']}
+                  class:opacity-50={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
                   onclick={async (e) => {
                     e.stopPropagation()
                     if (pendingPersonaBindings[chat.id ?? '']) return
@@ -1215,7 +1676,9 @@
                   type="button"
                   data-risu-chat-action="delete"
                   aria-label={`${language.remove}: ${chat.name}`}
+                  disabled={isChatStructuralActionPending(chat.id)}
                   class="text-textcolor2 hover:text-green-500 cursor-pointer"
+                  class:opacity-50={isChatStructuralActionPending(chat.id)}
                   onclick={async (e) => {
                     e.stopPropagation()
                     await deleteChat(chat, index)
@@ -1302,28 +1765,11 @@
         <button
           data-risu-chat-action="create-folder"
           aria-label={language.chatListCreateFolder}
+          aria-busy={hasConflictingStructureMutation([folderOrderConflictKey()])}
+          disabled={hasConflictingStructureMutation([folderOrderConflictKey()])}
           class="ml-auto text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
-          onclick={() => {
-            const previous = currentChatStateSnapshot()
-            const length = chara.chatFolders?.length ?? 0
-            const folder = {
-              id: v4(),
-              name: `New Folder ${length + 1}`,
-              folded: false,
-            }
-            if (canUseServerCommands()) {
-              applyOptimisticCreatedChatFolder(chara.chaId, folder, previous)
-            } else {
-              if (!chara.chatFolders) {
-                chara.chatFolders = []
-              }
-              const folders = chara.chatFolders
-              folders.unshift(folder)
-              chara.chatFolders = folders
-              reloadGuiDisplay()
-            }
-            dispatchCreateChatFolder(chara.chaId, folder, previous)
-          }}>
+          class:opacity-50={hasConflictingStructureMutation([folderOrderConflictKey()])}
+          onclick={() => void createChatFolder()}>
           <FolderPlusIcon size={18} />
         </button>
       </div>
