@@ -127,6 +127,38 @@ describe('AlertComp input dialog', () => {
       alertStore.set({ type: 'none', msg: '' })
     }
   })
+
+  it('resets the input when another dialog with the same default is queued', async () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(AlertComp, { target })
+
+    try {
+      const first = alertInput('First prompt')
+      const second = alertInput('Second prompt')
+      await tick()
+
+      const firstInput = target.querySelector<HTMLInputElement>('#alert-input')
+      expect(firstInput?.getAttribute('aria-label')).toBe('First prompt')
+      firstInput!.value = 'first answer'
+      firstInput!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await expect(first).resolves.toBe('first answer')
+      await tick()
+
+      const secondInput = target.querySelector<HTMLInputElement>('#alert-input')
+      expect(secondInput).not.toBe(firstInput)
+      expect(secondInput?.getAttribute('aria-label')).toBe('Second prompt')
+      expect(secondInput?.value).toBe('')
+
+      const ok = Array.from(target.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'OK')
+      ok?.click()
+      await expect(second).resolves.toBe('')
+    } finally {
+      unmount(component)
+      target.remove()
+      alertStore.set({ type: 'none', msg: '' })
+    }
+  })
 })
 
 describe('AlertComp workflow dialogs', () => {

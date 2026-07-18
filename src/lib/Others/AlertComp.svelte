@@ -541,36 +541,38 @@
             })
           }}>OK</Button>
       {:else if $alertStore.type === 'input'}
-        {@const inputOwner = $alertStore.dialogOwner}
-        <TextInput
-          bind:inputRef={alertInputElement}
-          value={$alertStore.defaultValue}
-          id="alert-input"
-          ariaLabel={$alertStore.msg}
-          autocomplete="off"
-          marginTop
-          list="alert-input-list"
-          onkeydown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              submitInputAlert(inputOwner)
-            } else if (event.key === 'Escape') {
-              event.preventDefault()
-              closeInputAlert(inputOwner, '')
-            }
-          }} />
-        <div class="flex gap-2 w-full mt-4">
-          <Button className="grow" onclick={() => submitInputAlert(inputOwner)}>OK</Button>
-          <Button className="grow" styled="outlined" onclick={() => closeInputAlert(inputOwner, '')}
-            >{language.cancel}</Button>
-        </div>
-        {#if $alertStore.datalist}
-          <datalist id="alert-input-list">
-            {#each $alertStore.datalist as item}
-              <option value={item[0]} label={item[1] ? item[1] : item[0]}>{item[1] ? item[1] : item[0]}</option>
-            {/each}
-          </datalist>
-        {/if}
+        {#key $alertStore.dialogOwner}
+          {@const inputOwner = $alertStore.dialogOwner}
+          <TextInput
+            bind:inputRef={alertInputElement}
+            value={$alertStore.defaultValue}
+            id="alert-input"
+            ariaLabel={$alertStore.msg}
+            autocomplete="off"
+            marginTop
+            list="alert-input-list"
+            onkeydown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                submitInputAlert(inputOwner)
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                closeInputAlert(inputOwner, '')
+              }
+            }} />
+          <div class="flex gap-2 w-full mt-4">
+            <Button className="grow" onclick={() => submitInputAlert(inputOwner)}>OK</Button>
+            <Button className="grow" styled="outlined" onclick={() => closeInputAlert(inputOwner, '')}
+              >{language.cancel}</Button>
+          </div>
+          {#if $alertStore.datalist}
+            <datalist id="alert-input-list">
+              {#each $alertStore.datalist as item}
+                <option value={item[0]} label={item[1] ? item[1] : item[0]}>{item[1] ? item[1] : item[0]}</option>
+              {/each}
+            </datalist>
+          {/if}
+        {/key}
       {:else if $alertStore.type === 'login'}
         <div class="fixed top-0 left-0 bg-black/50 w-full h-full flex justify-center items-center">
           <iframe src={hubURL + '/hub/login'} title="login" class="w-full h-full"> </iframe>
