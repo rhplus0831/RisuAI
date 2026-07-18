@@ -5759,17 +5759,150 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     const previous = currentChatScopedSnapshot()
     setResourceWriteGuardEnabled(true)
 
-    dispatchDeleteMessageScoped('m-1', previous)
+    const deletion = dispatchDeleteMessageScoped('m-1', previous)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
     expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-2'])
     expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'm-2': 'Two' })
     await waitForCallCount(calls, 2)
+    await expect(deletion).resolves.toEqual({ status: 'accepted' })
     await vi.waitFor(() => {
       expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
     })
     expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-2'])
     expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'm-2': 'Two' })
+  })
+
+  it('treats an exact missing-message delete as accepted without restoring a ghost row', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/messages/m-1' && init.method === 'DELETE') {
+          return jsonResponse({ error: 'Message not found: m-1', reason: 'not-found' }, 404)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'translated', chatId: 'm-1' },
+      { role: 'char', data: 'reply', chatId: 'm-2' },
+    ]
+    seedActiveMessages(previousMessages)
+    setResourceWriteGuardEnabled(true)
+
+    const deletion = dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
+    expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
+
+    await expect(deletion).resolves.toEqual({ status: 'accepted' })
+    await waitForCallCount(calls, 2)
+    expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
+  })
+
+  it('keeps a retained scoped delete projected and accepts a later not-found replay idempotently', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-retained-message-delete',
+      writerEpoch: 4,
+      databaseLineage: 'lineage-retained-message-delete',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    let replaying = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/messages/m-1' && init.method === 'DELETE') {
+          return replaying
+            ? jsonResponse({ error: 'Message not found: m-1', reason: 'not-found' }, 404)
+            : jsonResponse({ error: 'temporarily unavailable' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'translated', chatId: 'm-1' },
+      { role: 'char', data: 'reply', chatId: 'm-2' },
+    ]
+    seedActiveMessages(previousMessages)
+    setResourceWriteGuardEnabled(true)
+
+    try {
+      const queued = await dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
+      expect(queued).toMatchObject({ status: 'queued', mutationId: expect.any(String) })
+      expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
+      const pending = await listPendingMutations()
+      expect(pending).toHaveLength(1)
+      expect(queued.status === 'queued' ? queued.mutationId : '').toBe(pending[0].handle.mutationId)
+
+      replaying = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ discarded: 1 })
+      if (queued.status !== 'queued') throw new Error('Expected a queued delete')
+      await expect(queued.settlement).resolves.toEqual({ status: 'accepted' })
+      expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('rolls back a retained scoped delete when replay is terminally discarded', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-discarded-message-delete',
+      writerEpoch: 5,
+      databaseLineage: 'lineage-discarded-message-delete',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    let replaying = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        if (url === '/api/v1/commands/messages/m-1' && init.method === 'DELETE') {
+          return replaying
+            ? jsonResponse({ error: 'Writer session is stale', reason: 'stale-writer' }, 423)
+            : jsonResponse({ error: 'temporarily unavailable' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'translated', chatId: 'm-1' },
+      { role: 'char', data: 'reply', chatId: 'm-2' },
+    ]
+    seedActiveMessages(previousMessages)
+    setResourceWriteGuardEnabled(true)
+
+    try {
+      const queued = await dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
+      expect(queued.status).toBe('queued')
+      expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
+
+      replaying = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ discarded: 1 })
+      if (queued.status !== 'queued') throw new Error('Expected a queued delete')
+      await expect(queued.settlement).resolves.toEqual({ status: 'failed', error: 'Writer session is stale' })
+      expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('keeps an accepted scoped message update optimistically applied under the resource guard', async () => {
@@ -5898,11 +6031,12 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     getDatabase().characters[0].chats[0].bookmarkNames = { 'm-1': 'One', 'm-2': 'Two' }
     const previous = currentChatScopedSnapshot()
 
-    dispatchDeleteMessageScoped('m-1', previous)
+    const deletion = dispatchDeleteMessageScoped('m-1', previous)
     expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
     expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-2'])
     expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'm-2': 'Two' })
     await waitForCallCount(calls, 2)
+    await expect(deletion).resolves.toEqual({ status: 'failed', error: 'nope' })
 
     expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
     expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['m-1', 'm-2'])

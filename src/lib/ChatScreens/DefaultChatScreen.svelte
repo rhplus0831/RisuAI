@@ -99,6 +99,7 @@
     isActiveChatTargetFresh,
     setCurrentChatGreetingIndex,
     type ActiveChatTarget,
+    type DeleteMessageScopedFinalResult,
   } from 'src/ts/chatCommands'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import {
@@ -159,6 +160,12 @@
     originalText: string
     fileInput: string[]
   }
+  type InputTranslationUndoAttempt = {
+    rollback: InputTranslationRollback
+    previousComposer: DefaultChatComposerDraft
+    appliedComposer: DefaultChatComposerDraft
+    appliedComposerVersion: number
+  }
   type ScreenshotOperation = {
     target: ActiveChatTarget
     transcriptIdentity: string
@@ -193,6 +200,7 @@
   let transcriptWindowConfigurationRun = 0
   let activeBgmObserverIdentity: string | null = $state(null)
   let lastInputTranslationRollback: InputTranslationRollback | null = $state(null)
+  const recoverableInputTranslationRollbacks = new Map<string, InputTranslationRollback>()
   let activeScreenshotOperation: ScreenshotOperation | null = null
   let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
 
@@ -661,6 +669,11 @@
     }
     if (previousIdentity !== nextIdentity) {
       lastInputTranslationRollback = null
+      const recoverableRollback = nextIdentity ? recoverableInputTranslationRollbacks.get(nextIdentity) : undefined
+      if (recoverableRollback && isActiveChatTargetFresh(recoverableRollback.target)) {
+        recoverableInputTranslationRollbacks.delete(nextIdentity!)
+        lastInputTranslationRollback = recoverableRollback
+      }
     }
   })
 
@@ -903,19 +916,104 @@
     }
   }
 
-  function rollbackLastInputTranslation() {
+  function composerDraftMatches(left: DefaultChatComposerDraft | undefined, right: DefaultChatComposerDraft): boolean {
+    return (
+      left?.messageInput === right.messageInput &&
+      left.messageInputTranslate === right.messageInputTranslate &&
+      JSON.stringify(left.fileInput) === JSON.stringify(right.fileInput)
+    )
+  }
+
+  function restoreComposerAfterFailedInputTranslationUndo(attempt: InputTranslationUndoAttempt): void {
+    const activeIdentity = getActiveTranscriptWindowIdentity()
+    if (
+      activeIdentity === attempt.rollback.transcriptIdentity &&
+      composerMutationVersion === attempt.appliedComposerVersion
+    ) {
+      messageInput = attempt.previousComposer.messageInput
+      messageInputTranslate = attempt.previousComposer.messageInputTranslate
+      fileInput = [...attempt.previousComposer.fileInput]
+      markComposerDraftChanged()
+      updateInputSizeAll()
+      return
+    }
+
+    if (activeIdentity !== attempt.rollback.transcriptIdentity) {
+      const storedDraft = readDefaultChatComposerDraft(attempt.rollback.transcriptIdentity)
+      if (composerDraftMatches(storedDraft, attempt.appliedComposer)) {
+        if (
+          attempt.previousComposer.messageInput === '' &&
+          attempt.previousComposer.messageInputTranslate === '' &&
+          attempt.previousComposer.fileInput.length === 0
+        ) {
+          deleteDefaultChatComposerDraft(attempt.rollback.transcriptIdentity)
+        } else {
+          writeDefaultChatComposerDraft(attempt.rollback.transcriptIdentity, attempt.previousComposer)
+        }
+      }
+    }
+  }
+
+  function reconcileInputTranslationUndo(
+    attempt: InputTranslationUndoAttempt,
+    result: DeleteMessageScopedFinalResult,
+  ): void {
+    if (result.status === 'accepted') {
+      recoverableInputTranslationRollbacks.delete(attempt.rollback.transcriptIdentity)
+      return
+    }
+
+    restoreComposerAfterFailedInputTranslationUndo(attempt)
+    if (
+      getActiveTranscriptWindowIdentity() === attempt.rollback.transcriptIdentity &&
+      isActiveChatTargetFresh(attempt.rollback.target)
+    ) {
+      if (!lastInputTranslationRollback || lastInputTranslationRollback.messageId === attempt.rollback.messageId) {
+        lastInputTranslationRollback = attempt.rollback
+      }
+    } else {
+      recoverableInputTranslationRollbacks.set(attempt.rollback.transcriptIdentity, attempt.rollback)
+    }
+    alertError(language.inputTranslationRollbackFailed)
+  }
+
+  async function rollbackLastInputTranslation() {
     clearStaleInputTranslationRollback()
     const rollback = lastInputTranslationRollback
     if (!rollback) return
 
     const previous = currentChatScopedSnapshot()
-    dispatchDeleteMessageScoped(rollback.messageId, previous)
+    const previousComposer: DefaultChatComposerDraft = {
+      messageInput,
+      messageInputTranslate,
+      fileInput: [...fileInput],
+    }
+    const appliedComposer: DefaultChatComposerDraft = {
+      messageInput: rollback.originalText,
+      messageInputTranslate: '',
+      fileInput: [...rollback.fileInput],
+    }
+    lastInputTranslationRollback = null
+    const deletion = dispatchDeleteMessageScoped(rollback.messageId, previous)
     messageInput = rollback.originalText
     messageInputTranslate = ''
     fileInput = [...rollback.fileInput]
     markComposerDraftChanged()
-    lastInputTranslationRollback = null
     updateInputSizeAll()
+
+    const attempt: InputTranslationUndoAttempt = {
+      rollback,
+      previousComposer,
+      appliedComposer,
+      appliedComposerVersion: composerMutationVersion,
+    }
+    const result = await deletion
+    if (result.status === 'queued') {
+      alertNormal(language.inputTranslationRollbackQueued)
+      reconcileInputTranslationUndo(attempt, await result.settlement)
+      return
+    }
+    reconcileInputTranslationUndo(attempt, result)
   }
 
   async function sendMain(continueResponse: boolean) {

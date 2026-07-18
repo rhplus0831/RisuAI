@@ -1158,6 +1158,10 @@ export const languageEnglish = {
   enterMessageForTranslateToEnglish: 'Enter Message for Translate to English',
   useInputTranslationHook: 'Use Input Translation Hook',
   rollbackInputTranslation: 'Restore Original Input',
+  inputTranslationRollbackQueued:
+    'Restoring the original input is saved on this device and queued. It will retry automatically.',
+  inputTranslationRollbackFailed:
+    'The original input could not be restored because the translated message was not deleted. You can try again.',
   recent: 'Recent',
   downloads: 'Downloads',
   trending: 'Trending',

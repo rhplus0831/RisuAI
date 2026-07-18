@@ -1,7 +1,12 @@
 import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ActiveChatTarget, AppendCurrentChatUserMessageResult } from 'src/ts/chatCommands'
+import type {
+  ActiveChatTarget,
+  AppendCurrentChatUserMessageResult,
+  DeleteMessageScopedFinalResult,
+  DeleteMessageScopedResult,
+} from 'src/ts/chatCommands'
 
 const loadPageMocks = vi.hoisted(() => ({
   abortActiveGeneration: vi.fn(),
@@ -11,7 +16,10 @@ const loadPageMocks = vi.hoisted(() => ({
   clearAlertWait: vi.fn(() => true),
   appendCurrentChatEmptyCharMessage: vi.fn(),
   appendCurrentChatUserMessageForSend: vi.fn(
-    async (): Promise<AppendCurrentChatUserMessageResult> => ({ status: 'ok', messageId: 'message-a' }),
+    async (_input?: unknown): Promise<AppendCurrentChatUserMessageResult> => ({
+      status: 'ok',
+      messageId: 'message-a',
+    }),
   ),
   applySuccessfulSendChatEffects: vi.fn(() => true),
   captureActiveChatTarget: vi.fn((): ActiveChatTarget | null => null),
@@ -19,6 +27,7 @@ const loadPageMocks = vi.hoisted(() => ({
   chatFoldedStateMessageIndex: { index: -1 },
   clearActiveGenerationAbortController: vi.fn(),
   createActiveGenerationAbortController: vi.fn(() => ({ signal: new AbortController().signal })),
+  dispatchDeleteMessageScoped: vi.fn(async (): Promise<DeleteMessageScopedResult> => ({ status: 'accepted' })),
   downloadFile: vi.fn(async () => undefined),
   getCharImage: vi.fn(() => ''),
   getInlayAsset: vi.fn(async () => null),
@@ -182,7 +191,7 @@ vi.mock('src/ts/chatCommands', () => ({
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
   currentChatScopedSnapshot: vi.fn(() => ({ before: 'chat-scoped' })),
   currentChatStateSnapshot: vi.fn(() => ({ before: 'chat-state' })),
-  dispatchDeleteMessageScoped: vi.fn(),
+  dispatchDeleteMessageScoped: loadPageMocks.dispatchDeleteMessageScoped,
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchSaveChatGenerationSettings: vi.fn(() => true),
   dispatchUpdateChat: vi.fn(),
@@ -522,6 +531,7 @@ beforeEach(() => {
   loadPageMocks.hydrateActiveChatWindow.mockClear()
   loadPageMocks.guardActiveChatGenerationSettingsForSend.mockReturnValue({ status: 'ok' })
   loadPageMocks.preflightChatSendBeforeMutation.mockReturnValue({ type: 'server' })
+  loadPageMocks.dispatchDeleteMessageScoped.mockImplementation(async () => ({ status: 'accepted' }))
 })
 
 afterEach(() => {
@@ -1376,6 +1386,127 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(dispatchDeleteMessageScoped).toHaveBeenCalledWith('translated-message', { before: 'chat-scoped' })
     expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeNull()
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('keeps the optimistic composer restore while an accepted translated-message delete is deferred', async () => {
+    seedDatabase([1])
+    getResourceDatabase().characters[0].useInputTranslationHook = true
+    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
+      status: 'ok',
+      messageId: 'translated-message',
+    })
+    const deletion = createDeferred<DeleteMessageScopedResult>()
+    loadPageMocks.dispatchDeleteMessageScoped.mockReturnValueOnce(deletion.promise)
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = '원문'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() =>
+      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy(),
+    )
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-input-translation-rollback"]')!.click()
+    await settle()
+
+    expect(textarea.value).toBe('원문')
+    expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeNull()
+    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
+
+    deletion.resolve({ status: 'accepted' })
+    await settle()
+    expect(textarea.value).toBe('원문')
+    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('atomically restores the transcript, prior composer, and rollback affordance when delete fails', async () => {
+    seedDatabase([1])
+    getResourceDatabase().characters[0].useInputTranslationHook = true
+    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated visible row')
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockImplementationOnce(async (message?: unknown) => {
+      getResourceDatabase().characters[0].chats[0].message.push({
+        ...(message as Record<string, unknown>),
+        chatId: 'translated-message',
+      } as never)
+      return { status: 'ok', messageId: 'translated-message' }
+    })
+    const deletion = createDeferred<DeleteMessageScopedResult>()
+    loadPageMocks.dispatchDeleteMessageScoped.mockImplementationOnce(() => {
+      const messages = getResourceDatabase().characters[0].chats[0].message
+      const index = messages.findIndex((message) => message.chatId === 'translated-message')
+      const [removed] = index >= 0 ? messages.splice(index, 1) : []
+      return deletion.promise.then((result) => {
+        if (result.status === 'failed' && removed) messages.splice(index, 0, removed)
+        return result
+      })
+    })
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = '원문'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => {
+      expect(target.textContent).toContain('Translated visible row')
+      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy()
+    })
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-input-translation-rollback"]')!.click()
+    await waitFor(() => expect(target.textContent).not.toContain('Translated visible row'))
+    expect(textarea.value).toBe('원문')
+
+    deletion.resolve({ status: 'failed', error: 'delete failed' })
+    await waitFor(() => {
+      expect(target.textContent).toContain('Translated visible row')
+      expect(textarea.value).toBe('')
+      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy()
+      expect(loadPageMocks.alertError).toHaveBeenCalledWith('inputTranslationRollbackFailed')
+    })
+  })
+
+  it('labels a retained undo as queued and preserves newer typing if final settlement fails', async () => {
+    seedDatabase([1])
+    getResourceDatabase().characters[0].useInputTranslationHook = true
+    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated queued undo')
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
+      status: 'ok',
+      messageId: 'translated-message',
+    })
+    const finalSettlement = createDeferred<DeleteMessageScopedFinalResult>()
+    loadPageMocks.dispatchDeleteMessageScoped.mockResolvedValueOnce({
+      status: 'queued',
+      mutationId: 'delete-translated-message',
+      settlement: finalSettlement.promise,
+    })
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = '원문'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() =>
+      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy(),
+    )
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-input-translation-rollback"]')!.click()
+    await waitFor(() => expect(loadPageMocks.alertNormal).toHaveBeenCalledWith('inputTranslationRollbackQueued'))
+    expect(textarea.value).toBe('원문')
+
+    textarea.value = 'Newer draft typed while delete is queued'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    finalSettlement.resolve({ status: 'failed', error: 'writer stale' })
+
+    await waitFor(() => {
+      expect(loadPageMocks.alertError).toHaveBeenCalledWith('inputTranslationRollbackFailed')
+      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy()
+    })
+    expect(textarea.value).toBe('Newer draft typed while delete is queued')
   })
 
   it('clears stored original hook input when generation starts', async () => {

@@ -106,6 +106,16 @@ export type AppendCurrentChatUserMessageResult =
   | { status: 'queued'; messageId: string }
   | { status: 'error'; error: string }
 
+export type DeleteMessageScopedFinalResult = { status: 'accepted' } | { status: 'failed'; error: string }
+
+export type DeleteMessageScopedResult =
+  | DeleteMessageScopedFinalResult
+  | {
+      status: 'queued'
+      mutationId: string
+      settlement: Promise<DeleteMessageScopedFinalResult>
+    }
+
 export type ChatImportDispatchResult = { status: 'ok' } | { status: 'error'; error: string }
 
 export const CHAT_IMPORT_TOO_LARGE_ERROR = 'chat_import_too_large'
@@ -4944,7 +4954,27 @@ export function dispatchDeleteMessage(messageId: string, previous: ChatStateSnap
   )
 }
 
-export function dispatchDeleteMessageScoped(messageId: string, previous: ChatScopedSnapshot): void {
+interface ScopedDeleteSettlementResult {
+  status: string
+  currentRevision?: number
+  error?: string
+  reason?: string
+}
+
+function isMissingMessageDeleteResult(result: ScopedDeleteSettlementResult | null | undefined): boolean {
+  return result?.status === 'error' && result.reason === 'not-found'
+}
+
+function scopedDeleteFailureMessage(result: ScopedDeleteSettlementResult | null | undefined): string {
+  if (result?.status === 'error') return result.error || 'The message could not be deleted.'
+  if (result?.status === 'conflict') return `Server revision conflict (${result.currentRevision}).`
+  return 'Server commands are unavailable.'
+}
+
+export async function dispatchDeleteMessageScoped(
+  messageId: string,
+  previous: ChatScopedSnapshot,
+): Promise<DeleteMessageScopedResult> {
   const optimisticProjection = captureChatBodyProjectionFenceForScopedSnapshot(previous)
   const attemptedMessages = attemptedMessagesAfterDelete(previous, messageId)
   const pendingAttempt = registerScopedTranscriptAttempt(
@@ -4954,16 +4984,126 @@ export function dispatchDeleteMessageScoped(messageId: string, previous: ChatSco
     (attempt) => restoreScopedMessageListAttempt(attempt.previous, attempt.attemptedMessages),
   )
   applyScopedMessageListAttempt(previous, attemptedMessages)
-  const result = dispatchDeleteMessageWith(
-    messageId,
-    previous.characterId,
-    () => {
-      if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
-    },
-    optimisticProjection,
-    (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
-  )
-  trackScopedTranscriptAttemptResult(pendingAttempt, result)
+
+  let transcriptAttemptOpen = pendingAttempt !== null
+  const acceptTranscriptAttempt = () => {
+    if (!pendingAttempt || !transcriptAttemptOpen) return
+    transcriptAttemptOpen = false
+    clearScopedTranscriptAttempt(pendingAttempt)
+  }
+  const rollbackTranscriptAttempt = () => {
+    if (!pendingAttempt || !transcriptAttemptOpen) return
+    transcriptAttemptOpen = false
+    rollbackScopedTranscriptAttempt(pendingAttempt)
+  }
+
+  if (!canUseServerCommands()) {
+    rollbackTranscriptAttempt()
+    return { status: 'failed', error: 'Server commands are unavailable.' }
+  }
+
+  if (optimisticProjection) markChatMessageMutationIntent(optimisticProjection.chatId)
+  const body = freezeDurableChatRequestBody({})
+  const intent = durableChatMutationIntent('DELETE', `/messages/${encodeURIComponent(messageId)}`, body)
+  let outbox: PendingMutationHandle | null = null
+  try {
+    if (previous.characterId) {
+      outbox = stagePendingMutation(characterOwnerMutationKey(previous.characterId), intent)
+    }
+  } catch (error) {
+    rollbackTranscriptAttempt()
+    return { status: 'failed', error: error instanceof Error ? error.message : String(error) }
+  }
+
+  let resolveFinalSettlement!: (result: DeleteMessageScopedFinalResult) => void
+  const finalSettlement = new Promise<DeleteMessageScopedFinalResult>((resolve) => {
+    resolveFinalSettlement = resolve
+  })
+  let finalSettlementResolved = false
+  let settlementCleanup = () => {}
+  let releaseProjection = () => {}
+  const settleFinal = (result: DeleteMessageScopedFinalResult) => {
+    if (finalSettlementResolved) return
+    finalSettlementResolved = true
+    settlementCleanup()
+    releaseProjection()
+    resolveFinalSettlement(result)
+  }
+
+  if (outbox?.databaseLineage) {
+    releaseProjection = registerRetainedChatProjection(
+      { kind: 'chat-body', chatId: previous.chatId },
+      () => {
+        if (pendingAttempt && transcriptAttemptOpen) reapplyScopedTranscriptAttempt(pendingAttempt)
+      },
+      () => {
+        rollbackTranscriptAttempt()
+        settleFinal({ status: 'failed', error: 'The queued message deletion lost server ownership.' })
+      },
+    )
+    settlementCleanup = registerDurableMutationSettlementListener(outbox.mutationId, (settlement, details) => {
+      if (settlement === 'accepted' || isMissingMessageDeleteResult(details.result)) {
+        acceptTranscriptAttempt()
+        settleFinal({ status: 'accepted' })
+        return
+      }
+      rollbackTranscriptAttempt()
+      settleFinal({ status: 'failed', error: scopedDeleteFailureMessage(details.result) })
+    })
+  }
+
+  let retained = false
+  const dispatch = (transport: ServerCommandTransportOptions) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        deleteMessageCommand({
+          baseRevision,
+          messageId,
+          optimisticChatId: optimisticProjection?.chatId,
+          optimisticChatBodyProjectionEpoch: optimisticProjection?.projectionEpoch,
+        }),
+      rollback: rollbackTranscriptAttempt,
+      ...transport,
+      failureRollbackDisposition: (failure) => {
+        // Deleting an exact stable id is idempotent. A not-found response is
+        // authoritative proof that the optimistic absence is already correct;
+        // restoring the captured row would create a client-only ghost.
+        if (isMissingMessageDeleteResult(failure)) return 'retain'
+        const disposition = transport.failureRollbackDisposition?.(failure) ?? 'rollback'
+        if (disposition === 'retain') retained = true
+        return disposition
+      },
+    })
+
+  let result: ServerCommandResult
+  try {
+    result = outbox ? await dispatchDurableMutation(outbox, intent, dispatch) : await dispatch({})
+  } catch (error) {
+    if (retained && outbox) {
+      if (pendingAttempt) reapplyScopedTranscriptAttempt(pendingAttempt)
+      return { status: 'queued', mutationId: outbox.mutationId, settlement: finalSettlement }
+    }
+    rollbackTranscriptAttempt()
+    settlementCleanup()
+    releaseProjection()
+    return { status: 'failed', error: error instanceof Error ? error.message : String(error) }
+  }
+
+  if (result.status === 'ok' || isMissingMessageDeleteResult(result)) {
+    acceptTranscriptAttempt()
+    settlementCleanup()
+    releaseProjection()
+    return { status: 'accepted' }
+  }
+  if (retained && outbox) {
+    if (pendingAttempt) reapplyScopedTranscriptAttempt(pendingAttempt)
+    return { status: 'queued', mutationId: outbox.mutationId, settlement: finalSettlement }
+  }
+
+  rollbackTranscriptAttempt()
+  settlementCleanup()
+  releaseProjection()
+  return { status: 'failed', error: scopedDeleteFailureMessage(result) }
 }
 
 interface TruncateMessagesOptions {

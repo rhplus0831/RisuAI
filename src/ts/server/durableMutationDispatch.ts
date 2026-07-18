@@ -27,12 +27,19 @@ import {
 
 const localMutationLockTails = new Map<string, Promise<void>>()
 export type DurableMutationFinalSettlement = 'accepted' | 'discarded'
-const durableMutationSettlementListeners = new Map<string, Set<(settlement: DurableMutationFinalSettlement) => void>>()
+export interface DurableMutationFinalSettlementDetails {
+  result?: DurableMutationReplayResult
+}
+type DurableMutationSettlementListener = (
+  settlement: DurableMutationFinalSettlement,
+  details: DurableMutationFinalSettlementDetails,
+) => void
+const durableMutationSettlementListeners = new Map<string, Set<DurableMutationSettlementListener>>()
 
 /** Observe replay/predecessor settlement for an optimistic projection retained in this page. */
 export function registerDurableMutationSettlementListener(
   mutationId: string,
-  listener: (settlement: DurableMutationFinalSettlement) => void,
+  listener: DurableMutationSettlementListener,
 ): () => void {
   const listeners = durableMutationSettlementListeners.get(mutationId) ?? new Set()
   listeners.add(listener)
@@ -44,10 +51,14 @@ export function registerDurableMutationSettlementListener(
   }
 }
 
-function publishDurableMutationFinalSettlement(mutationId: string, settlement: DurableMutationFinalSettlement): void {
+function publishDurableMutationFinalSettlement(
+  mutationId: string,
+  settlement: DurableMutationFinalSettlement,
+  details: DurableMutationFinalSettlementDetails = {},
+): void {
   for (const listener of durableMutationSettlementListeners.get(mutationId) ?? []) {
     try {
-      listener(settlement)
+      listener(settlement, details)
     } catch (error) {
       console.error('Durable mutation settlement listener rejected:', error)
     }
@@ -307,7 +318,7 @@ export async function dispatchDurableMutationReplay(
     if (result.status === 'ok') {
       const completed = await completePendingMutation(handle, intent.requests.length)
       if (completed !== 'deleted') return { disposition: 'skipped', result }
-      publishDurableMutationFinalSettlement(handle.mutationId, 'accepted')
+      publishDurableMutationFinalSettlement(handle.mutationId, 'accepted', { result })
       await flushReceiptAcknowledgement({
         mutationId: handle.mutationId,
         requestCount: intent.requests.length,
@@ -318,7 +329,7 @@ export async function dispatchDurableMutationReplay(
     }
     if (result.status === 'error' && shouldDiscardDurableMutation(result.reason)) {
       const discarded = await discardPendingMutation(handle)
-      if (discarded === 'deleted') publishDurableMutationFinalSettlement(handle.mutationId, 'discarded')
+      if (discarded === 'deleted') publishDurableMutationFinalSettlement(handle.mutationId, 'discarded', { result })
       return { disposition: 'discarded', result }
     }
     return { disposition: 'retained', result }
@@ -347,7 +358,7 @@ async function drainPendingMutationPredecessors(handle: PendingMutationHandle): 
           const completed = await completePendingMutation(predecessor.handle, predecessor.intent.requests.length)
           if (completed === 'superseded') return true
           if (completed !== 'deleted') return false
-          publishDurableMutationFinalSettlement(predecessor.handle.mutationId, 'accepted')
+          publishDurableMutationFinalSettlement(predecessor.handle.mutationId, 'accepted', { result })
           await flushReceiptAcknowledgement({
             mutationId: predecessor.handle.mutationId,
             requestCount: predecessor.intent.requests.length,
@@ -360,7 +371,7 @@ async function drainPendingMutationPredecessors(handle: PendingMutationHandle): 
           const discarded = await discardPendingMutation(predecessor.handle)
           if (discarded !== 'deleted' && discarded !== 'superseded') return false
           if (discarded === 'deleted') {
-            publishDurableMutationFinalSettlement(predecessor.handle.mutationId, 'discarded')
+            publishDurableMutationFinalSettlement(predecessor.handle.mutationId, 'discarded', { result })
             // The request was rejected and the durable row is gone, but this
             // page no longer owns the predecessor's optimistic rollback. Stop
             // the successor and let startup replay it before hydrating the
