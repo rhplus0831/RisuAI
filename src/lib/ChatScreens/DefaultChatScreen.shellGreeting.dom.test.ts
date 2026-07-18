@@ -151,6 +151,7 @@ vi.mock('src/ts/process/tts', () => ({ stopTTS: vi.fn() }))
 vi.mock('src/ts/chatCommands', () => ({
   appendCurrentChatEmptyCharMessage: shellMocks.appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend: shellMocks.appendCurrentChatUserMessageForSend,
+  captureActiveChatTarget: vi.fn(() => null),
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
   currentChatScopedSnapshot: vi.fn(() => ({ before: 'chat-scoped' })),
   currentChatStateSnapshot: vi.fn(() => ({ before: 'chat-state' })),

@@ -620,8 +620,14 @@
     loadPages = configuredChatLoadPages
     isScrollingToMessage = false
     scrollToMessageRunId += 1
-    chatFoldedState.data = null
-    chatFoldedStateMessageIndex.index = -1
+    const activeTarget = captureActiveChatTarget()
+    const foldTargetsActiveChat =
+      chatFoldedState.data?.targetChatId === activeTarget?.chatId &&
+      chatFoldedState.data?.targetCharacterId === activeTarget?.characterId
+    if (!foldTargetsActiveChat) {
+      chatFoldedState.data = null
+      chatFoldedStateMessageIndex.index = -1
+    }
   }
 
   let mostRecentChat = $derived.by(() => {

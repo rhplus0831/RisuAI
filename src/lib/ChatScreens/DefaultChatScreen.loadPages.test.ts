@@ -730,6 +730,25 @@ describe('DefaultChatScreen floating action accessibility', () => {
 })
 
 describe('DefaultChatScreen transcript window state', () => {
+  it('preserves a branch fold that targets the chat selected in the same task', async () => {
+    seedDatabase([20, 20])
+    mountScreen()
+    await waitFor(() => expect(messageRowIndexes()).toContain(19))
+
+    const foldedTarget = {
+      targetCharacterId: 'character-1',
+      targetChatId: 'chat-1',
+      targetMessageId: 'chat-1-message-10',
+    }
+    loadPageMocks.chatFoldedState.data = foldedTarget
+    loadPageMocks.chatFoldedStateMessageIndex.index = 10
+    switchToCharacterChat(1)
+
+    await waitFor(() => expect(messageRowIndexes()).toContain(10))
+    expect(loadPageMocks.chatFoldedState.data).toEqual(foldedTarget)
+    expect(loadPageMocks.chatFoldedStateMessageIndex.index).toBe(10)
+  })
+
   it('renders one native Load More control instead of nested buttons', async () => {
     seedDatabase([20])
     loadPageMocks.chatFoldedStateMessageIndex.index = 10
