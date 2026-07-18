@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const durableSettingState = vi.hoisted(() => ({
   nextId: 0,
+  retainFailures: false,
   stages: [] as Array<{ key: string; intent: Record<string, unknown>; handle: Record<string, any> }>,
   dispatches: [] as Array<{ handle: Record<string, any>; intent: Record<string, unknown> }>,
   acknowledgements: [] as Array<Record<string, any>>,
+  settlementListeners: new Map<string, Set<(settlement: 'accepted' | 'discarded') => void>>(),
 }))
 const settingAlertMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
@@ -24,6 +26,8 @@ vi.mock('../server/pendingMutationOutbox', () => ({
       key,
       mutationId: reuse ? previous!.mutationId : `renderer-mutation-${++durableSettingState.nextId}`,
       phase: 'staged',
+      databaseLineage: 'renderer-test-lineage',
+      ready: Promise.resolve('persisted'),
     }
     durableSettingState.stages.push({ key, intent: JSON.parse(JSON.stringify(intent)), handle })
     return handle
@@ -35,15 +39,34 @@ vi.mock('../server/pendingMutationOutbox', () => ({
 }))
 
 vi.mock('../server/durableMutationDispatch', () => ({
-  registerDurableMutationSettlementListener: () => () => {},
+  registerDurableMutationSettlementListener: (
+    mutationId: string,
+    listener: (settlement: 'accepted' | 'discarded') => void,
+  ) => {
+    const listeners = durableSettingState.settlementListeners.get(mutationId) ?? new Set()
+    listeners.add(listener)
+    durableSettingState.settlementListeners.set(mutationId, listeners)
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) durableSettingState.settlementListeners.delete(mutationId)
+    }
+  },
   dispatchDurableMutation: async (
     handle: Record<string, any>,
     intent: Record<string, unknown>,
-    dispatch: (transport: { mutationId: string; databaseLineage: string }) => Promise<unknown>,
+    dispatch: (transport: {
+      mutationId: string
+      databaseLineage: string
+      failureRollbackDisposition: () => 'retain' | 'rollback'
+    }) => Promise<unknown>,
   ) => {
     handle.phase = 'dispatching'
     durableSettingState.dispatches.push({ handle, intent: JSON.parse(JSON.stringify(intent)) })
-    return dispatch({ mutationId: handle.mutationId, databaseLineage: 'renderer-test-lineage' })
+    return dispatch({
+      mutationId: handle.mutationId,
+      databaseLineage: 'renderer-test-lineage',
+      failureRollbackDisposition: () => (durableSettingState.retainFailures ? 'retain' : 'rollback'),
+    })
   },
 }))
 
@@ -202,6 +225,10 @@ function collectSettingItems(items: SettingItem[]): SettingItem[] {
   return collected
 }
 
+function publishDurableSettingSettlement(mutationId: string, settlement: 'accepted' | 'discarded'): void {
+  for (const listener of [...(durableSettingState.settlementListeners.get(mutationId) ?? [])]) listener(settlement)
+}
+
 function serverCommandKeyForSetting(item: SettingItem): string | null {
   if (item.bindPath) return item.bindPath.split('.')[0] ?? null
   return item.bindKey ? String(item.bindKey) : null
@@ -209,9 +236,11 @@ function serverCommandKeyForSetting(item: SettingItem): string | null {
 
 beforeEach(() => {
   durableSettingState.nextId = 0
+  durableSettingState.retainFailures = false
   durableSettingState.stages.length = 0
   durableSettingState.dispatches.length = 0
   durableSettingState.acknowledgements.length = 0
+  durableSettingState.settlementListeners.clear()
   settingAlertMocks.alertError.mockReset()
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
@@ -584,6 +613,66 @@ describe('server-backed data-driven settings', () => {
       }),
     )
     await vi.waitFor(() => expect(getResourceDatabase().notification).toBe(true))
+  })
+
+  it('keeps a retained immediate setting projected until replay acceptance converges', async () => {
+    durableSettingState.retainFailures = true
+    stubSettingsFetch()
+    replaceResourceDatabase({ roundIcons: false } as any)
+    const item: SettingItem = {
+      id: 'display.roundIcons',
+      type: 'check',
+      bindKey: 'roundIcons' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setSettingValue(item, true, ctx)
+    await vi.waitFor(() => expect(durableSettingState.dispatches).toHaveLength(1))
+    await Promise.resolve()
+    expect(getResourceDatabase().roundIcons).toBe(true)
+    expect(settingAlertMocks.alertError).not.toHaveBeenCalled()
+
+    withServerResourceApply(() => {
+      applySettingsResource({ revision: 4, settings: { roundIcons: false } })
+    })
+    expect(getResourceDatabase().roundIcons).toBe(true)
+    withServerResourceApply(() => {
+      applySettingsGroupResource({ revision: 4, group: 'display', settings: { roundIcons: false } }, ['roundIcons'])
+    })
+    expect(getResourceDatabase().roundIcons).toBe(true)
+
+    const mutationId = durableSettingState.dispatches[0].handle.mutationId
+    publishDurableSettingSettlement(mutationId, 'accepted')
+    withServerResourceApply(() => {
+      applySettingsGroupResource({ revision: 5, group: 'display', settings: { roundIcons: true } }, ['roundIcons'])
+    })
+    withServerResourceApply(() => {
+      applySettingsGroupResource({ revision: 6, group: 'display', settings: { roundIcons: false } }, ['roundIcons'])
+    })
+    expect(getResourceDatabase().roundIcons).toBe(false)
+  })
+
+  it('rolls back and reports a retained immediate setting when replay discards it', async () => {
+    durableSettingState.retainFailures = true
+    stubSettingsFetch()
+    replaceResourceDatabase({ roundIcons: false } as any)
+    const item: SettingItem = {
+      id: 'display.roundIcons',
+      type: 'check',
+      bindKey: 'roundIcons' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setSettingValue(item, true, ctx)
+    await vi.waitFor(() => expect(durableSettingState.dispatches).toHaveLength(1))
+    await Promise.resolve()
+    expect(getResourceDatabase().roundIcons).toBe(true)
+
+    publishDurableSettingSettlement(durableSettingState.dispatches[0].handle.mutationId, 'discarded')
+
+    expect(getResourceDatabase().roundIcons).toBe(false)
+    expect(settingAlertMocks.alertError).toHaveBeenCalledOnce()
+    expect(settingAlertMocks.alertError).toHaveBeenCalledWith(language.errors.settingsSaveFailed)
   })
 
   it('keeps a newer input dirty after an older acknowledgement advances the resource epoch', () => {

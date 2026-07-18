@@ -44,7 +44,7 @@ import {
   splitPresetSettingDraftOwnerKey,
   type SplitPresetDraftProjection,
 } from '../server/settingsDraftAcknowledgement'
-import { dispatchDurableMutation } from '../server/durableMutationDispatch'
+import { dispatchDurableMutation, registerDurableMutationSettlementListener } from '../server/durableMutationDispatch'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from '../server/settingsMutationKey'
 import {
   acknowledgePendingMutation,
@@ -123,6 +123,9 @@ interface PendingDeferredServerSettingAttempt {
   rootKey: string
   previousRoot: unknown
   attemptedRoot: unknown
+  outbox: PendingMutationHandle
+  phase: 'dispatching' | 'queued' | 'accepted-replay'
+  settlementCleanup?: () => void
 }
 
 const pendingDeferredSettingWrites = new Map<string, PendingDeferredSettingWrite>()
@@ -130,8 +133,16 @@ const pendingDeferredServerSettingAttempts: PendingDeferredServerSettingAttempt[
 let nextDeferredServerSettingAttemptSequence = 0
 registerPendingBridgePatchFlusher('setting-renderer-inputs', flushDeferredSettingWrites)
 registerPendingSettingsProjectionOverlay((target, allowedKeys) => {
-  for (const attempt of pendingDeferredServerSettingAttempts) {
+  const converged: PendingDeferredServerSettingAttempt[] = []
+  for (const attempt of [...pendingDeferredServerSettingAttempts]) {
     if (allowedKeys && !allowedKeys.has(attempt.rootKey)) continue
+    if (
+      attempt.phase === 'accepted-replay' &&
+      snapshotJson(target[attempt.rootKey]) === snapshotJson(attempt.attemptedRoot)
+    ) {
+      converged.push(attempt)
+      continue
+    }
     target[attempt.rootKey] = cloneJsonValue(attempt.attemptedRoot)
   }
   for (const pending of pendingDeferredSettingWrites.values()) {
@@ -139,6 +150,7 @@ registerPendingSettingsProjectionOverlay((target, allowedKeys) => {
     if (allowedKeys && !allowedKeys.has(pending.target.rootKey)) continue
     target[pending.target.rootKey] = cloneJsonValue(pending.desiredRoot)
   }
+  for (const attempt of converged) clearDeferredServerSettingAttempt(attempt)
 })
 
 function createSettingSaveFailureReporter(): () => void {
@@ -280,6 +292,7 @@ export function clearDeferredSettingWrites(): void {
     if (pending.outbox) void acknowledgePendingMutation(pending.outbox)
   }
   pendingDeferredSettingWrites.clear()
+  for (const attempt of [...pendingDeferredServerSettingAttempts]) clearDeferredServerSettingAttempt(attempt)
 }
 
 function writeLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
@@ -500,9 +513,21 @@ function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTr
     serverTarget.rootKey,
     pending.previousRoot,
     attemptedRoot,
+    pending.outbox,
   )
+  attempt.settlementCleanup = registerDurableMutationSettlementListener(pending.outbox.mutationId, (settlement) => {
+    if (!isDeferredServerSettingAttemptCurrent(attempt)) return
+    if (settlement === 'accepted') {
+      attempt.phase = 'accepted-replay'
+      return
+    }
+    rollbackDeferredServerSetting(serverTarget, attemptedRoot, attempt.previousRoot, pending.edits)
+    rebaseLaterDeferredServerSettingAttempt(attempt)
+    clearDeferredServerSettingAttempt(attempt)
+    reportFailure()
+  })
 
-  void dispatchDurableMutation(pending.outbox, pending.intent, (transport) => {
+  const dispatched = dispatchDurableMutation(pending.outbox, pending.intent, (transport) => {
     const result = patchServerBackedSettings({
       patch: { [serverTarget.rootKey]: attemptedRoot },
       acknowledgeOptimistic: true,
@@ -519,21 +544,33 @@ function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTr
     })
     void result.then(
       (settled) => {
-        clearDeferredServerSettingAttempt(attempt)
-        if (
-          settled.status !== 'ok' &&
-          (!transport.failureRollbackDisposition || transport.failureRollbackDisposition(settled) !== 'retain')
-        ) {
-          reportFailure()
+        if (!isDeferredServerSettingAttemptCurrent(attempt)) return
+        if (settled.status === 'ok') {
+          clearDeferredServerSettingAttempt(attempt)
+          return
         }
-      },
-      () => {
+        if (transport.failureRollbackDisposition?.(settled) === 'retain') {
+          attempt.phase = 'queued'
+          return
+        }
         clearDeferredServerSettingAttempt(attempt)
         reportFailure()
       },
+      () => undefined,
     )
     return result
-  }).catch(() => reportFailure())
+  })
+  void dispatched.catch(async () => {
+    if (!isDeferredServerSettingAttemptCurrent(attempt)) return
+    if ((await pending.outbox!.ready) === 'persisted') {
+      attempt.phase = 'queued'
+      return
+    }
+    rollbackDeferredServerSetting(serverTarget, attemptedRoot, attempt.previousRoot, pending.edits)
+    rebaseLaterDeferredServerSettingAttempt(attempt)
+    clearDeferredServerSettingAttempt(attempt)
+    reportFailure()
+  })
 }
 
 function registerDeferredServerSettingAttempt(
@@ -541,6 +578,7 @@ function registerDeferredServerSettingAttempt(
   rootKey: string,
   previousRoot: unknown,
   attemptedRoot: unknown,
+  outbox: PendingMutationHandle,
 ): PendingDeferredServerSettingAttempt {
   const attempt = {
     sequence: ++nextDeferredServerSettingAttemptSequence,
@@ -548,9 +586,17 @@ function registerDeferredServerSettingAttempt(
     rootKey,
     previousRoot: cloneJsonValue(previousRoot),
     attemptedRoot: cloneJsonValue(attemptedRoot),
+    outbox,
+    phase: 'dispatching' as const,
   }
   pendingDeferredServerSettingAttempts.push(attempt)
   return attempt
+}
+
+function isDeferredServerSettingAttemptCurrent(attempt: PendingDeferredServerSettingAttempt): boolean {
+  return pendingDeferredServerSettingAttempts.some(
+    (candidate) => candidate.sequence === attempt.sequence && candidate.outbox.mutationId === attempt.outbox.mutationId,
+  )
 }
 
 function rebaseLaterDeferredServerSettingAttempt(failed: PendingDeferredServerSettingAttempt): void {
@@ -568,6 +614,8 @@ function rebaseLaterDeferredServerSettingAttempt(failed: PendingDeferredServerSe
 }
 
 function clearDeferredServerSettingAttempt(attempt: PendingDeferredServerSettingAttempt): void {
+  attempt.settlementCleanup?.()
+  attempt.settlementCleanup = undefined
   const index = pendingDeferredServerSettingAttempts.findIndex((candidate) => candidate.sequence === attempt.sequence)
   if (index !== -1) pendingDeferredServerSettingAttempts.splice(index, 1)
 }
