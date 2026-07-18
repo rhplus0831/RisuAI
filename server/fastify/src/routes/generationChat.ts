@@ -2795,6 +2795,15 @@ async function buildDurablePostGeneration(args: {
     args.emit({
       type: 'error',
       error: errorMessage(err, 'failed to persist the generation result'),
+      reason: 'generation_persistence_failed',
+      persistenceDisposition: isTerminalGenerationFinalizationError(err) ? 'rejected' : 'queued',
+      generationProjection: {
+        characterId: args.input.characterId,
+        chatId: args.input.chatId,
+        generationId: args.generationId,
+        mode: finalizationModeFromInput(args.input),
+        ...(targetMessageId ? { targetMessageId } : {}),
+      },
     })
     return { alternates: alternateTexts }
   }

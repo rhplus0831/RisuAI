@@ -1195,6 +1195,21 @@ describe('Durable generation (Milestone 1)', () => {
     const terminal = await waitForTerminalFinalization(jobId)
     expect(terminal.terminal_error).toContain('stale')
     expect(await chatMessages(await bootstrap())).toEqual([])
+
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    const replayEvents = await readSse(replay, (event) => event.type === 'error')
+    expect(replayEvents.find((event) => event.type === 'error')?.data).toMatchObject({
+      reason: 'generation_persistence_failed',
+      persistenceDisposition: 'rejected',
+      generationProjection: {
+        characterId: 'char-1',
+        chatId: 'chat-1',
+        generationId: jobId,
+        mode: 'send',
+      },
+    })
     controller.abort()
   })
 

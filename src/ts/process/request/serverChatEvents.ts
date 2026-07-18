@@ -214,6 +214,16 @@ export interface ErrorEvent {
   statusText?: string
   code?: string
   restoration?: ServerChatRestoration
+  persistenceDisposition?: 'queued' | 'rejected'
+  generationProjection?: ServerChatGenerationProjection
+}
+
+export interface ServerChatGenerationProjection {
+  characterId: string
+  chatId: string
+  generationId: string
+  mode: 'send' | 'continue' | 'regenerate'
+  targetMessageId?: string
 }
 
 export interface ServerChatAgentPresetError {

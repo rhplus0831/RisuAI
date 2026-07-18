@@ -5,6 +5,7 @@ import { evaluateIgp } from './igp'
 import { applyOutputTrigger } from './outputTrigger'
 import { applyNonStreamResponse } from './nonStreamResponse'
 import { consumeStreamResponse } from './streamResponse'
+import type { StreamMessageProjection } from './streamResponse'
 import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import {
   getDatabase,
@@ -23,6 +24,7 @@ export type OrchestrateResponseResult =
       result: string
       emoChanged: boolean
       resendChat: boolean
+      streamProjection?: StreamMessageProjection
     }
 
 /**
@@ -95,6 +97,7 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
   let result = ''
   let emoChanged = false
   let resendChat = false
+  let streamProjection: StreamMessageProjection | undefined
 
   if (req.type === 'streaming') {
     const stream = await consumeStreamResponse({
@@ -114,6 +117,7 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
       skipEditOutput: serverOwnsPostGeneration,
     })
     result = stream.result
+    streamProjection = stream.projection
     emoChanged = stream.emoChanged
 
     if (stream.streamAborted || abortSignal.aborted) {
@@ -209,5 +213,5 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
     selectedChat,
   })
 
-  return { status: 'done', currentChat, result, emoChanged, resendChat }
+  return { status: 'done', currentChat, result, emoChanged, resendChat, streamProjection }
 }

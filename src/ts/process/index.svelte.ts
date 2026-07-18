@@ -508,6 +508,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         generationInfo,
         targetMessageId: serverGenerationTargetMessageId,
         restorationGuard: serverDispatch?.restorationGuard,
+        streamProjection: orchestrate.streamProjection,
       })
       currentChat = terminalResult.currentChat
       if (terminalResult.status === 'failed') {

@@ -50,6 +50,16 @@ export interface ConsumeStreamResponseResult {
   msgIndex: number
   lastResponseChunk: StreamResponseChunk
   streamAborted: boolean
+  projection: StreamMessageProjection
+}
+
+export interface StreamMessageProjection {
+  chatId?: string
+  messageId?: string
+  generationId: string
+  previousData: string
+  ownedData: string
+  appended: boolean
 }
 
 export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions): Promise<ConsumeStreamResponseResult> {
@@ -100,6 +110,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   let streamTargetMessageId: string | undefined = generationId
   let anonymousStreamTarget: Message | undefined
   let lastStreamOwnedData = ''
+  let appendedGeneratedMessage = false
   if (arg.continue) {
     msgIndex -= 1
     const continueTarget = initialMessages[msgIndex]
@@ -135,9 +146,11 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
           promptInfo,
           chatId: generationId,
         })
+        appendedGeneratedMessage = true
       })
     }
   }
+  const preStreamData = lastStreamOwnedData
 
   const findStreamMessageIndex = (messages: readonly Message[]): number => {
     if (streamTargetMessageId) {
@@ -296,5 +309,19 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     void reader.cancel().catch(() => {})
   }
 
-  return { result, emoChanged, msgIndex, lastResponseChunk, streamAborted }
+  return {
+    result,
+    emoChanged,
+    msgIndex,
+    lastResponseChunk,
+    streamAborted,
+    projection: {
+      chatId: streamChatId,
+      messageId: streamTargetMessageId,
+      generationId,
+      previousData: preStreamData,
+      ownedData: lastStreamOwnedData,
+      appended: appendedGeneratedMessage,
+    },
+  }
 }

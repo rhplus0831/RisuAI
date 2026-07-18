@@ -26,6 +26,8 @@ import { sayTTS } from './tts'
 import { captureChatBodyProjectionEpoch, hasChatBodyProjectionEpochChanged } from '../server/resourceState.svelte'
 import { captureChatMessageMutationIntentEpoch } from '../server/chatMessageMutationIntent'
 import { finalizeServerBackedInlayMessage } from './inlayFinalization'
+import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
+import type { StreamMessageProjection } from './postGeneration/streamResponse'
 
 export interface ServerBackedStageTimings {
   stage1Start: number
@@ -199,6 +201,43 @@ function unresolvedServerBackedChat(): Chat {
 
 function resolveServerBackedCurrentChat(target: ServerBackedLiveChatTarget & { currentChat?: Chat }): Chat {
   return resolveServerBackedLiveChat(target)?.chat ?? target.currentChat ?? unresolvedServerBackedChat()
+}
+
+async function reconcileRejectedGenerationProjection(args: {
+  selectedChar: number
+  selectedChat: number
+  target: ServerBackedStableChatTarget
+  streamProjection?: StreamMessageProjection
+}): Promise<void> {
+  const chatId = args.target.chatId
+  const projection = args.streamProjection
+  if (chatId && projection?.chatId === chatId) {
+    withTrustedResourceWrite(() => {
+      const resolution = resolveServerBackedLiveChat({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        characterId: args.target.characterId,
+        chatId,
+      })
+      const messages = resolution?.chat.message
+      if (!messages) return
+      const messageId = projection.messageId || projection.generationId
+      const index = messages.findIndex(
+        (message) =>
+          message.chatId === messageId ||
+          (message.role === 'char' && message.generationInfo?.generationId === projection.generationId),
+      )
+      if (index < 0 || messages[index]?.data !== projection.ownedData) return
+      if (projection.appended) {
+        messages.splice(index, 1)
+      } else {
+        messages[index].data = projection.previousData
+      }
+    })
+  }
+  if (chatId) {
+    await hydrateChatMessages(chatId, { force: true, strict: true }).catch(() => {})
+  }
 }
 
 // Apply the server's `message_patch` to the local projection only. `/generate/chat`
@@ -521,6 +560,7 @@ export async function applyServerBackedTerminal(args: {
    * on the right row when it is not keyed by `generationId` (the continue case). */
   targetMessageId?: string
   restorationGuard?: ServerBackedRestorationGuard
+  streamProjection?: StreamMessageProjection
 }): Promise<ServerBackedTerminalResult> {
   const terminalInfo = args.terminal.done?.generationInfo
   if (terminalInfo && typeof terminalInfo === 'object') {
@@ -528,7 +568,10 @@ export async function applyServerBackedTerminal(args: {
   }
   const contextTarget = { characterId: args.targetCharacterId, chatId: args.targetChatId }
   if (args.terminal.status === 'error') {
-    const target = targetFromPayloadOrContext(args.terminal.restoration, contextTarget)
+    const target = targetFromPayloadOrContext(
+      args.terminal.restoration ?? args.terminal.generationProjection,
+      contextTarget,
+    )
     const restorationIsFresh =
       !args.restorationGuard ||
       (target.chatId === args.restorationGuard.chatId && isServerBackedRestorationGuardFresh(args.restorationGuard))
@@ -543,6 +586,14 @@ export async function applyServerBackedTerminal(args: {
         if (resolution) {
           applyServerChatRestoration(resolution.chat, args.terminal.restoration!)
         }
+      })
+    }
+    if (args.terminal.persistenceDisposition === 'rejected') {
+      await reconcileRejectedGenerationProjection({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        target,
+        streamProjection: args.streamProjection,
       })
     }
     return {

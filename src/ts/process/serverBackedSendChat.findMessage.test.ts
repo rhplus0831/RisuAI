@@ -25,6 +25,9 @@ const inlayFinalizationMock = vi.hoisted(() => ({
 const ttsMock = vi.hoisted(() => ({
   say: vi.fn(async () => {}),
 }))
+const hydrationMock = vi.hoisted(() => ({
+  hydrate: vi.fn(async () => {}),
+}))
 
 vi.mock('./inlayScreen', () => ({
   runInlayScreen: inlayMock.run,
@@ -37,6 +40,11 @@ vi.mock('./inlayFinalization', () => ({
 vi.mock('./tts', () => ({
   sayTTS: ttsMock.say,
 }))
+
+vi.mock('../server/chatMessageHydration.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('../server/chatMessageHydration.svelte')>()
+  return { ...actual, hydrateChatMessages: hydrationMock.hydrate }
+})
 
 import {
   applyServerBackedTerminal,
@@ -223,6 +231,8 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     inlayFinalizationMock.finalize.mockResolvedValue(true)
     ttsMock.say.mockReset()
     ttsMock.say.mockResolvedValue(undefined)
+    hydrationMock.hydrate.mockReset()
+    hydrationMock.hydrate.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -609,5 +619,80 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(target.message[0].data).toBe('accepted newer edit')
     expect(target.scriptstate).toBeUndefined()
     expect(staleIndexChat.message[0].data).toBe('stale original')
+  })
+
+  it('removes a still-owned optimistic reply after terminal persistence rejection', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message = [terminalMessage('streamed but rejected')]
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'error',
+        error: 'Generation finalization target is stale',
+        persistenceDisposition: 'rejected',
+        generationProjection: {
+          characterId: 'char-stable',
+          chatId: 'chat-target',
+          generationId: 'gen-stable',
+          mode: 'send',
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'streamed but rejected',
+        appended: true,
+      },
+    })
+
+    expect(result.status).toBe('failed')
+    expect(target.message).toEqual([])
+    expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
+  })
+
+  it('does not remove a newer edit of an optimistic reply after persistence rejection', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message = [terminalMessage('newer user edit')]
+
+    await applyServerBackedTerminal({
+      terminal: {
+        status: 'error',
+        error: 'Generation finalization target is stale',
+        persistenceDisposition: 'rejected',
+        generationProjection: {
+          characterId: 'char-stable',
+          chatId: 'chat-target',
+          generationId: 'gen-stable',
+          mode: 'send',
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'older streamed value',
+        appended: true,
+      },
+    })
+
+    expect(target.message[0].data).toBe('newer user edit')
+    expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
   })
 })

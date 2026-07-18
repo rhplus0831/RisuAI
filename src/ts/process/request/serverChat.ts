@@ -38,6 +38,7 @@ import type {
   InfoEvent,
   PostGenerationProgressEvent,
   PromptEvent,
+  ServerChatGenerationProjection,
   ServerChatMessagePatch,
   ServerChatRestoration,
   ServerChatSideEffect,
@@ -109,6 +110,8 @@ export interface ServerChatTerminal {
   status: 'done' | 'error'
   error?: string
   restoration?: ServerChatRestoration
+  persistenceDisposition?: 'queued' | 'rejected'
+  generationProjection?: ServerChatGenerationProjection
   sideEffects?: ServerChatSideEffect[]
   warnings?: ServerChatWarning[]
   done?: Omit<DoneEvent, 'type'>
@@ -723,6 +726,14 @@ export async function requestServerChatGeneration(
                     data.restoration && typeof data.restoration === 'object'
                       ? (data.restoration as unknown as ServerChatRestoration)
                       : undefined
+                  const persistenceDisposition =
+                    data.persistenceDisposition === 'queued' || data.persistenceDisposition === 'rejected'
+                      ? data.persistenceDisposition
+                      : undefined
+                  const generationProjection =
+                    data.generationProjection && typeof data.generationProjection === 'object'
+                      ? (data.generationProjection as unknown as ServerChatGenerationProjection)
+                      : undefined
                   forgetActiveGenerationJob(durableJobId)
                   resolveReadyOnce({
                     status: 'error',
@@ -734,6 +745,8 @@ export async function requestServerChatGeneration(
                     status: 'error',
                     error,
                     restoration,
+                    ...(persistenceDisposition ? { persistenceDisposition } : {}),
+                    ...(generationProjection ? { generationProjection } : {}),
                     sideEffects,
                     warnings,
                   })

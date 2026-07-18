@@ -105,6 +105,14 @@ export interface ErrorEvent {
   statusText?: string
   code?: string
   restoration?: unknown
+  persistenceDisposition?: 'queued' | 'rejected'
+  generationProjection?: {
+    characterId: string
+    chatId: string
+    generationId: string
+    mode: 'send' | 'continue' | 'regenerate'
+    targetMessageId?: string
+  }
 }
 
 /**
