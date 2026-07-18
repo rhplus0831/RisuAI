@@ -10,6 +10,7 @@ import {
   mergePendingPluginStorageResource,
 } from '../pluginCommands'
 import { reapplyPendingPresetProjections } from '../storage/database.svelte'
+import { reapplyPendingPromptTemplateStructuralProjections } from './promptTemplateBridge.svelte'
 import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
 import { applyServerChatMessagesResource, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
 import {
@@ -50,6 +51,7 @@ let serverResourceRefreshPending = false
 
 export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = {
   reapplyPendingPresetProjections,
+  reapplyPendingPromptTemplateStructuralProjections,
   mergePendingAgentPresetSettings: mergePendingAgentPresetSettingsResource,
   mergePendingAgentPresetLoadouts: mergePendingAgentPresetLoadoutsResource,
   mergePendingAgentPresetCharacters: mergePendingAgentPresetCharactersResource,
@@ -178,6 +180,7 @@ async function completeFullServerResourceRefresh(
     return { status: 'error', error: 'Selected prompt-template owner hydration failed' }
   }
   reapplyPendingPresetProjections()
+  reapplyPendingPromptTemplateStructuralProjections()
   setCachedServerCommandRevision(revision)
   setAppliedServerResourceRevision(revision)
   await refreshRuntimeJobs()

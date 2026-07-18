@@ -20,6 +20,8 @@ const durableState = vi.hoisted(() => ({
   stages: [] as Array<{ key: string; intent: Record<string, unknown>; handle: Record<string, any> }>,
   dispatches: [] as Array<{ handle: Record<string, any>; intent: Record<string, unknown> }>,
   acknowledgements: [] as Array<Record<string, any>>,
+  retainFailures: false,
+  settlementListeners: new Map<string, Set<(settlement: 'accepted' | 'discarded') => void>>(),
 }))
 
 const resourceGuardState = vi.hoisted(() => ({
@@ -42,6 +44,7 @@ const commandMocks = vi.hoisted(() => ({
       keepalive?: boolean
       mutationId?: string
       databaseLineage?: string
+      failureRollbackDisposition?: (result: { status: string; error?: string }) => 'retain' | 'rollback'
     }) => {
       const beforeBuild = commandState.beforeBuild
       commandState.beforeBuild = null
@@ -62,7 +65,7 @@ const commandMocks = vi.hoisted(() => ({
       })
       const queuedResult = commandState.runResults.shift()
       const result = queuedResult ? await queuedResult : { status: 'ok', revision: 1 }
-      if (result.status !== 'ok') args.rollback?.()
+      if (result.status !== 'ok' && args.failureRollbackDisposition?.(result) !== 'retain') args.rollback?.()
       return result
     },
   ),
@@ -163,15 +166,34 @@ const pendingMutationOutboxMock = vi.hoisted(() => ({
 }))
 
 const durableMutationDispatchMock = vi.hoisted(() => ({
-  registerDurableMutationSettlementListener: () => () => {},
+  registerDurableMutationSettlementListener: (
+    mutationId: string,
+    listener: (settlement: 'accepted' | 'discarded') => void,
+  ) => {
+    const listeners = durableState.settlementListeners.get(mutationId) ?? new Set()
+    listeners.add(listener)
+    durableState.settlementListeners.set(mutationId, listeners)
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) durableState.settlementListeners.delete(mutationId)
+    }
+  },
   dispatchDurableMutation: async (
     handle: Record<string, any>,
     intent: Record<string, unknown>,
-    dispatch: (transport: { mutationId: string; databaseLineage: string }) => Promise<unknown>,
+    dispatch: (transport: {
+      mutationId: string
+      databaseLineage: string
+      failureRollbackDisposition: () => 'retain' | 'rollback'
+    }) => Promise<unknown>,
   ) => {
     handle.phase = 'dispatching'
     durableState.dispatches.push({ handle, intent: JSON.parse(JSON.stringify(intent)) })
-    return dispatch({ mutationId: handle.mutationId, databaseLineage: 'test-lineage' })
+    return dispatch({
+      mutationId: handle.mutationId,
+      databaseLineage: 'test-lineage',
+      failureRollbackDisposition: () => (durableState.retainFailures ? 'retain' : 'rollback'),
+    })
   },
 }))
 
@@ -254,6 +276,8 @@ import {
   queuePromptItemProjectionUpdate,
   queuePromptSettingsProjectionPatch,
   reconcilePromptTemplateDraft,
+  reapplyPendingPromptTemplateStructuralProjections,
+  resetPendingPromptTemplateStructuralMutationsForTests,
   resetPromptTemplateSelectionDirtyState,
   promptTemplateOwnerCommandId,
   restorePromptItemProjectionWrite,
@@ -281,6 +305,10 @@ function createDeferred<T>(): Deferred<T> {
     resolve = promiseResolve
   })
   return { promise, resolve }
+}
+
+function publishPromptTemplateStructuralSettlement(mutationId: string, settlement: 'accepted' | 'discarded'): void {
+  for (const listener of durableState.settlementListeners.get(mutationId) ?? []) listener(settlement)
 }
 
 const resourceDatabase = {
@@ -506,6 +534,9 @@ beforeEach(() => {
   durableState.stages.length = 0
   durableState.dispatches.length = 0
   durableState.acknowledgements.length = 0
+  durableState.retainFailures = false
+  durableState.settlementListeners.clear()
+  resetPendingPromptTemplateStructuralMutationsForTests()
   commandMocks.patchPromptSettingsCommand.mockClear()
   commandMocks.updatePromptItemCommand.mockClear()
   commandMocks.createPromptItemCommand.mockClear()
@@ -528,6 +559,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetPendingPromptTemplateStructuralMutationsForTests()
+  durableState.settlementListeners.clear()
   vi.useRealTimers()
   resourceDatabase.current = {}
 })
@@ -1695,6 +1728,140 @@ describe('flushPendingPromptTemplatePatches', () => {
       ])
     } finally {
       if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('disables structural controls and renders a pending status until create persistence settles', async () => {
+    const pending = createDeferred<{ status: string; error?: string }>()
+    commandState.runResults.push(pending.promise)
+    const existing = promptItemFixture({ ...item('p-a', 'first'), name: 'Existing row' })
+    seedPromptSettings({ promptTemplate: [existing] })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, { target, props: { mode: 'inline', subMenu: 0 } })
+      await tick()
+      await flushMicrotasks()
+
+      const add = target.querySelector<HTMLButtonElement>(
+        `button[aria-label="${language.add}: ${language.promptTemplate}"]`,
+      )!
+      add.click()
+      await tick()
+
+      expect(add.disabled).toBe(true)
+      expect(
+        target.querySelector<HTMLButtonElement>(`button[aria-label="${language.remove}: Existing row"]`)?.disabled,
+      ).toBe(true)
+      expect(target.querySelector('[data-testid="prompt-template-structural-mutation-status"]')?.textContent).toContain(
+        language.promptTemplateMutation.saving,
+      )
+      expect(target.querySelectorAll('[data-risu-prompt-item-id]')).toHaveLength(2)
+
+      pending.resolve({ status: 'ok' })
+      await flushMicrotasks()
+      await tick()
+      expect(add.disabled).toBe(false)
+      expect(target.querySelector('[data-testid="prompt-template-structural-mutation-status"]')).toBeNull()
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it.each(['create', 'delete', 'reorder'] as const)(
+    'keeps a retained %s projected through refresh and reports final replay discard',
+    async (action) => {
+      const first = promptItemFixture({ ...item('p-a', 'first'), name: 'First row' })
+      const second = promptItemFixture({ ...item('p-b', 'second'), name: 'Second row' })
+      const authoritative = [first, second]
+      seedPromptSettings({ promptTemplate: authoritative })
+      durableState.retainFailures = true
+      commandState.runResults.push(Promise.resolve({ status: 'unavailable' }))
+
+      const target = document.createElement('div')
+      document.body.appendChild(target)
+      let component: MountedComponent | null = null
+      try {
+        component = mount(PromptSettings, { target, props: { mode: 'inline', subMenu: 0 } })
+        await tick()
+        await flushMicrotasks()
+
+        const actionButton =
+          action === 'create'
+            ? target.querySelector<HTMLButtonElement>(
+                `button[aria-label="${language.add}: ${language.promptTemplate}"]`,
+              )
+            : target.querySelector<HTMLButtonElement>(
+                `button[aria-label="${action === 'delete' ? language.remove : language.moveDown}: First row"]`,
+              )
+        expect(actionButton).toBeTruthy()
+        actionButton!.click()
+        await flushMicrotasks()
+        await tick()
+
+        expect(
+          target.querySelector('[data-testid="prompt-template-structural-mutation-status"]')?.textContent,
+        ).toContain(language.promptTemplateMutation.queued)
+        const attemptedIds = (getResourceDatabase().promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)
+        if (action === 'create') expect(attemptedIds).toHaveLength(3)
+        if (action === 'delete') expect(attemptedIds).toEqual(['p-b'])
+        if (action === 'reorder') expect(attemptedIds).toEqual(['p-b', 'p-a'])
+
+        getResourceDatabase().promptTemplate = cloneJsonValue(authoritative)
+        hydrationState.advanceOwnerEpoch(null)
+        reapplyPendingPromptTemplateStructuralProjections(null)
+        expect((getResourceDatabase().promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual(
+          attemptedIds,
+        )
+
+        const requestPath =
+          action === 'create' ? '/prompt-items' : action === 'delete' ? '/prompt-items/p-a' : '/prompt-items/reorder'
+        const stage = durableStageByRequestPath(requestPath)
+        expect(stage).toBeTruthy()
+        publishPromptTemplateStructuralSettlement(stage!.handle.mutationId, 'discarded')
+        await flushMicrotasks()
+        await tick()
+
+        expect((getResourceDatabase().promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual([
+          'p-a',
+          'p-b',
+        ])
+        expect(
+          target.querySelector('[data-testid="prompt-template-structural-mutation-status"]')?.textContent,
+        ).toContain(language.promptTemplateMutation.replayDiscarded)
+      } finally {
+        if (component) await unmount(component)
+        target.remove()
+      }
+    },
+  )
+
+  it('shows the exact terminal delete failure after restoring the removed row', async () => {
+    const first = promptItemFixture({ ...item('p-a', 'first'), name: 'First row' })
+    seedPromptSettings({ promptTemplate: [first] })
+    commandState.runResults.push(Promise.resolve({ status: 'error', error: 'delete rejected' }))
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, { target, props: { mode: 'inline', subMenu: 0 } })
+      await tick()
+      await flushMicrotasks()
+      target.querySelector<HTMLButtonElement>(`button[aria-label="${language.remove}: First row"]`)!.click()
+      await flushMicrotasks()
+      await tick()
+
+      expect((getResourceDatabase().promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual(['p-a'])
+      expect(target.querySelector('[data-testid="prompt-template-structural-mutation-status"]')?.textContent).toContain(
+        'delete rejected',
+      )
+    } finally {
+      if (component) await unmount(component)
       target.remove()
     }
   })

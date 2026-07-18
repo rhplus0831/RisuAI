@@ -20,9 +20,11 @@ const botSettingsMocks = vi.hoisted(() => {
     deferredResult,
     enableInputs: [] as Array<Record<string, unknown>>,
     failNextEnableTerminal: false,
+    failNextEnableTransient: false,
     failNextPromptItemUpdateTransient: false,
     promptItemUpdateInputs: [] as Array<Record<string, unknown>>,
     replayInlineResults: [] as Array<Record<string, unknown>>,
+    replayResults: [] as Array<Record<string, unknown>>,
     replayInlineInputs: [] as Array<{
       requests: Array<{ path?: string }>
       mutationId: string
@@ -60,6 +62,10 @@ vi.mock('src/ts/server/commands', () => ({
       botSettingsMocks.failNextEnableTerminal = false
       return { status: 'error', error: 'stale owner', reason: 'stale-writer' }
     }
+    if (botSettingsMocks.failNextEnableTransient) {
+      botSettingsMocks.failNextEnableTransient = false
+      return { status: 'error', error: 'temporarily offline' }
+    }
     return { status: 'ok', revision: Number(input.baseRevision) + 1 }
   }),
   peekCachedServerCommandRevision: vi.fn(() => 100),
@@ -91,12 +97,13 @@ vi.mock('src/ts/server/commands', () => ({
       signal?: AbortSignal | null
       keepalive?: boolean
       executionWrapper?: (execute: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>
+      failureRollbackDisposition?: (result: Record<string, unknown>) => 'retain' | 'rollback'
     }) => {
       botSettingsMocks.runInputs.push({ signal: input.signal, keepalive: input.keepalive })
       const execution = botSettingsMocks.runTail.then(async () => {
         const execute = () => input.command(100)
         const result = input.executionWrapper ? await input.executionWrapper(execute) : await execute()
-        if (result.status !== 'ok') input.rollback?.()
+        if (result.status !== 'ok' && input.failureRollbackDisposition?.(result) !== 'retain') input.rollback?.()
         return result
       })
       botSettingsMocks.runTail = execution.then(
@@ -106,7 +113,7 @@ vi.mock('src/ts/server/commands', () => ({
       return execution
     },
   ),
-  replayDurableMutationRequests: vi.fn(async () => ({ status: 'ok' })),
+  replayDurableMutationRequests: vi.fn(async () => botSettingsMocks.replayResults.shift() ?? { status: 'ok' }),
   replayDurableMutationRequestsInline: vi.fn(
     async (requests: Array<{ path?: string }>, mutationId: string, databaseLineage: string) => {
       botSettingsMocks.replayInlineInputs.push({ requests, mutationId, databaseLineage })
@@ -256,7 +263,12 @@ import {
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
 } from 'src/ts/server/pendingMutationOutbox'
-import { queuePromptItemProjectionUpdate } from 'src/ts/server/promptTemplateBridge.svelte'
+import { dispatchDurableMutationReplay } from 'src/ts/server/durableMutationDispatch'
+import {
+  queuePromptItemProjectionUpdate,
+  reapplyPendingPromptTemplateStructuralProjections,
+  resetPendingPromptTemplateStructuralMutationsForTests,
+} from 'src/ts/server/promptTemplateBridge.svelte'
 import type { PromptItem } from 'src/ts/process/prompt'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -274,9 +286,11 @@ beforeEach(() => {
   botSettingsMocks.deferredPatchResults.length = 0
   botSettingsMocks.enableInputs.length = 0
   botSettingsMocks.failNextEnableTerminal = false
+  botSettingsMocks.failNextEnableTransient = false
   botSettingsMocks.failNextPromptItemUpdateTransient = false
   botSettingsMocks.promptItemUpdateInputs.length = 0
   botSettingsMocks.replayInlineResults.length = 0
+  botSettingsMocks.replayResults.length = 0
   botSettingsMocks.replayInlineInputs.length = 0
   botSettingsMocks.networkOrder.length = 0
   botSettingsMocks.ownerId = null
@@ -286,6 +300,7 @@ beforeEach(() => {
   vi.mocked(dispatchSelectPluginProvider).mockClear()
   customProviderStore.set([])
   botSettingsMocks.settingDrafts.clear()
+  resetPendingPromptTemplateStructuralMutationsForTests()
   resetServerResourceState()
   setDatabaseLite({
     aiModel: 'gpt35',
@@ -307,6 +322,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetPendingPromptTemplateStructuralMutationsForTests()
   if (component) {
     unmount(component)
     component = undefined
@@ -667,7 +683,7 @@ describe('BotSettings pending prompt persistence', () => {
       expect(getDatabase().promptPresets[0]).toHaveProperty('promptTemplate')
 
       toggle = promptTemplateToggle()
-      expect(toggle?.checked).toBe(true)
+      expect(toggle?.checked).toBe(false)
       toggle!.checked = false
       toggle!.dispatchEvent(new Event('change', { bubbles: true }))
 
@@ -749,7 +765,93 @@ describe('BotSettings pending prompt persistence', () => {
       expect(getDatabase().promptPresets[0].promptTemplate).toEqual(originalTemplate)
       expect(getDatabase().promptTemplate).toEqual(originalTemplate)
       expect(promptTemplateToggle()?.checked).toBe(true)
+      expect(target.querySelector('[data-testid="prompt-template-toggle-mutation-status"]')?.textContent).toContain(
+        'stale owner',
+      )
       await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      botSettingsMocks.ownerId = null
+      vi.useFakeTimers()
+    }
+  })
+
+  it('keeps a retained prompt-template toggle projected and reports replay discard', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-bot-toggle-retained',
+      writerEpoch: 9,
+      databaseLineage: 'lineage-bot-toggle-retained',
+      requestedWriterWasActive: true,
+    })
+
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+    botSettingsMocks.ownerId = 'prompt-a'
+    const originalTemplate = [{ id: 'row-a', type: 'plain', type2: 'normal', role: 'system', text: 'retained' }]
+    const database = () => ({
+      aiModel: 'gpt35',
+      subModel: 'gpt35',
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', promptTemplate: structuredClone(originalTemplate) }],
+      promptPresetsId: 0,
+      promptTemplate: structuredClone(originalTemplate),
+      botPresets: [],
+      useLegacyGUI: false,
+      mainPrompt: 'old main prompt',
+      guiHTML: 'old renderer value',
+      jsonSchemaEnabled: true,
+      jailbreak: 'old jailbreak',
+      globalNote: 'old global note',
+      formatingOrder: [],
+    })
+    setDatabaseLite(database() as any)
+    component = mount(BotSettings, { target, props: { settingsKind: 'prompt' } })
+
+    try {
+      await tick()
+      await openOtherPromptSettings()
+      const toggle = promptTemplateToggle()!
+      botSettingsMocks.failNextEnableTransient = true
+      toggle.checked = false
+      toggle.dispatchEvent(new Event('change', { bubbles: true }))
+
+      await vi.waitFor(() => expect(botSettingsMocks.enableInputs).toHaveLength(1))
+      await botSettingsMocks.runTail
+      await tick()
+      expect(target.querySelector('[data-testid="prompt-template-toggle-mutation-status"]')?.textContent).toContain(
+        language.promptTemplateMutation.queued,
+      )
+      expect(getDatabase().promptPresets[0].promptTemplate).toBeUndefined()
+
+      setDatabaseLite(database() as any)
+      reapplyPendingPromptTemplateStructuralProjections('prompt-a')
+      await tick()
+      expect(getDatabase().promptPresets[0].promptTemplate).toBeUndefined()
+      expect(promptTemplateToggle()?.checked).toBe(false)
+
+      const [entry] = await listPendingMutations()
+      expect(entry).toBeTruthy()
+      botSettingsMocks.replayResults.push({
+        status: 'error',
+        error: 'queued toggle rejected',
+        reason: 'invalid-request',
+      })
+      await expect(dispatchDurableMutationReplay(entry.handle, entry.intent)).resolves.toMatchObject({
+        disposition: 'discarded',
+      })
+      await tick()
+
+      expect(getDatabase().promptPresets[0].promptTemplate).toEqual(originalTemplate)
+      expect(getDatabase().promptTemplate).toEqual(originalTemplate)
+      expect(promptTemplateToggle()?.checked).toBe(true)
+      expect(target.querySelector('[data-testid="prompt-template-toggle-mutation-status"]')?.textContent).toContain(
+        language.promptTemplateMutation.replayDiscarded,
+      )
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

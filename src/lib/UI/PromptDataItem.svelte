@@ -21,6 +21,7 @@
     onDragOver?: (promptItem: PromptItem, placement: 'before' | 'after') => void
     onDragEnd?: () => void
     isDragging?: boolean
+    structuralDisabled?: boolean
     isOpened?: boolean
     openedItemIndices?: Set<number>
     currentIndex?: number
@@ -38,6 +39,7 @@
     onDragOver = () => {},
     onDragEnd = () => {},
     isDragging = false,
+    structuralDisabled = false,
     isOpened = false,
     openedItemIndices = $bindable(new Set<number>()),
     currentIndex = -1,
@@ -137,12 +139,13 @@
 <div class="first:mt-0 w-full h-2" aria-hidden="true"></div>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  data-risu-prompt-item-id={promptItem.id ?? undefined}
   class="flex flex-col border border-selected p-4 rounded-md bg-darkbg transition-all duration-200"
   class:opacity-50={isDragging}
   class:scale-95={isDragging}
   ondragover={(e) => {
     e.preventDefault()
-    if (isDragging) return
+    if (isDragging || structuralDisabled) return
 
     const rect = e.currentTarget.getBoundingClientRect()
     const mouseY = e.clientY
@@ -157,6 +160,7 @@
   ondrop={(e) => {
     e.preventDefault()
     e.stopPropagation()
+    if (structuralDisabled) return
     const data = e.dataTransfer.getData('text')
     if (data === 'prompt') {
       onDrop()
@@ -164,9 +168,13 @@
   }}>
   <div
     class="flex items-center w-full"
-    draggable="true"
-    style:cursor="grab"
+    draggable={!structuralDisabled}
+    style:cursor={structuralDisabled ? 'default' : 'grab'}
     ondragstart={(e) => {
+      if (structuralDisabled) {
+        e.preventDefault()
+        return
+      }
       onDragStart(promptItem)
       e.dataTransfer.setData('text', 'prompt')
       e.dataTransfer.setData('prompt', JSON.stringify(promptItem))
@@ -196,6 +204,7 @@
       <button
         type="button"
         aria-label={`${language.remove}: ${getName(promptItem)}`}
+        disabled={structuralDisabled}
         onclick={(e) => {
           e.stopPropagation()
           onRemove()
@@ -203,6 +212,7 @@
       <button
         type="button"
         aria-label={`${language.moveDown}: ${getName(promptItem)}`}
+        disabled={structuralDisabled}
         onclick={(e) => {
           e.stopPropagation()
           moveDown()
@@ -210,6 +220,7 @@
       <button
         type="button"
         aria-label={`${language.moveUp}: ${getName(promptItem)}`}
+        disabled={structuralDisabled}
         onclick={(e) => {
           e.stopPropagation()
           moveUp()

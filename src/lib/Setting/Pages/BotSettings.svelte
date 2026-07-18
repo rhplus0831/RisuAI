@@ -61,6 +61,7 @@
     enablePromptItemsCommand,
     patchPromptSettingsCommand,
     runServerCommand,
+    type ServerCommandResult,
     type ServerCommandTransportOptions,
     type SettingsPatch,
   } from 'src/ts/server/commands'
@@ -100,11 +101,15 @@
   import {
     capturePromptItemOptimisticAcknowledgement,
     capturePromptTemplateOwnerMutationFence,
+    dispatchPromptTemplateStructuralMutation,
     flushPendingPromptTemplatePatches,
     promptTemplateOwnerCommandId,
     promptTemplateOwnerMutationKey,
     runPromptTemplateOwnerCommand,
     runPromptTemplateOwnerRollback,
+    type PromptTemplateStructuralFinalSettlement,
+    type PromptTemplateStructuralMutationOutcome,
+    type PromptTemplateStructuralOwnerState,
   } from 'src/ts/server/promptTemplateBridge.svelte'
   import {
     beginPromptPresetIconUpload,
@@ -279,7 +284,18 @@
   let selectedPromptPreset = $derived(getDatabase().promptPresets?.[getDatabase().promptPresetsId])
   let selectedPromptPresetOwnsPromptTemplate = $derived(selectedPromptPresetHasOwnPromptTemplate())
   let selectedPromptTemplateEnabledControl = $state(selectedPromptPresetHasOwnPromptTemplate())
+  let promptTemplateToggleMutationState = $state<'idle' | 'saving' | 'queued' | 'failed'>('idle')
+  let promptTemplateToggleMutationError = $state('')
+  let promptTemplateToggleMutationSequence = 0
+  let promptTemplateToggleMutationOwnerId = currentPromptTemplateOwnerId()
   $effect(() => {
+    const ownerId = currentPromptTemplateOwnerId()
+    if (ownerId !== promptTemplateToggleMutationOwnerId) {
+      promptTemplateToggleMutationOwnerId = ownerId
+      promptTemplateToggleMutationSequence += 1
+      promptTemplateToggleMutationState = 'idle'
+      promptTemplateToggleMutationError = ''
+    }
     selectedPromptTemplateEnabledControl = selectedPromptPresetOwnsPromptTemplate
   })
   const PROMPT_PRESET_ICON_SIZE = 48
@@ -844,9 +860,7 @@
 
   function selectedPromptPresetHasOwnPromptTemplate(): boolean {
     const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
-    return preset
-      ? Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
-      : Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate')
+    return preset ? Array.isArray(preset.promptTemplate) : Array.isArray(getDatabase().promptTemplate)
   }
 
   function promptTemplatePresetSelectionSignature(): string {
@@ -861,13 +875,13 @@
     template: unknown
   } {
     if (ownerId === null) {
-      if (!Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate')) {
+      if (!Array.isArray(getDatabase().promptTemplate)) {
         return { hasTemplate: false, template: undefined }
       }
       return { hasTemplate: true, template: cloneJsonValue(getDatabase().promptTemplate) }
     }
     const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
-    if (preset?.id !== ownerId || !Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')) {
+    if (preset?.id !== ownerId || !Array.isArray(preset.promptTemplate)) {
       return { hasTemplate: false, template: undefined }
     }
     return { hasTemplate: true, template: cloneJsonValue(preset.promptTemplate) }
@@ -895,9 +909,68 @@
     setSelectedPromptPresetTemplateProjection(snapshot.hasTemplate, snapshot.template)
   }
 
+  function promptTemplateToggleOwnerState(snapshot: {
+    hasTemplate: boolean
+    template: unknown
+  }): PromptTemplateStructuralOwnerState {
+    return snapshot.hasTemplate
+      ? { enabled: true, items: cloneJsonValue(Array.isArray(snapshot.template) ? snapshot.template : []) }
+      : { enabled: false }
+  }
+
+  function promptTemplateToggleMutationMessage(result: ServerCommandResult): string {
+    if (result.status === 'conflict') return language.promptTemplateMutation.commandConflict
+    if (result.status === 'unavailable') return language.promptTemplateMutation.commandUnavailable
+    if (result.status === 'error') return language.promptTemplateMutation.commandError(result.error)
+    return language.promptTemplateMutation.commandUnavailable
+  }
+
+  function handlePromptTemplateToggleFinalSettlement(
+    sequence: number,
+    ownerId: string | null,
+    settlement: PromptTemplateStructuralFinalSettlement,
+  ): void {
+    if (sequence !== promptTemplateToggleMutationSequence || ownerId !== currentPromptTemplateOwnerId()) return
+    selectedPromptTemplateEnabledControl = selectedPromptPresetHasOwnPromptTemplate()
+    if (settlement === 'accepted') {
+      promptTemplateToggleMutationState = 'idle'
+      promptTemplateToggleMutationError = ''
+      return
+    }
+    promptTemplateToggleMutationState = 'failed'
+    promptTemplateToggleMutationError = language.promptTemplateMutation.replayDiscarded
+  }
+
+  function reconcilePromptTemplateToggleOutcome(
+    sequence: number,
+    outcome: PromptTemplateStructuralMutationOutcome,
+  ): void {
+    if (sequence !== promptTemplateToggleMutationSequence) return
+    if (outcome.status === 'accepted') {
+      promptTemplateToggleMutationState = 'idle'
+      return
+    }
+    if (outcome.status === 'queued') {
+      promptTemplateToggleMutationState = 'queued'
+      return
+    }
+    promptTemplateToggleMutationState = 'failed'
+    promptTemplateToggleMutationError = promptTemplateToggleMutationMessage(outcome.result)
+  }
+
   async function setSelectedPromptTemplateEnabled(enabled: boolean): Promise<void> {
+    if (promptTemplateToggleMutationState === 'saving') return
     const ownerId = currentPromptTemplateOwnerId()
-    if (!(await ensurePromptTemplateHydrated({ promptPresetId: ownerId }))) return
+    const sequence = ++promptTemplateToggleMutationSequence
+    promptTemplateToggleMutationState = 'saving'
+    promptTemplateToggleMutationError = ''
+    if (!(await ensurePromptTemplateHydrated({ promptPresetId: ownerId }))) {
+      if (sequence === promptTemplateToggleMutationSequence) {
+        promptTemplateToggleMutationState = 'failed'
+        promptTemplateToggleMutationError = language.promptTemplateMutation.commandUnavailable
+      }
+      return
+    }
     if (ownerId !== currentPromptTemplateOwnerId()) return
     if (canUseServerCommands()) flushPendingPromptTemplatePatches()
 
@@ -923,31 +996,43 @@
       ],
     }
     const outbox = stagePendingMutation(promptTemplateOwnerMutationKey(ownerId), intent)
-    void dispatchDurableMutation(outbox, intent, (transport) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          runPromptTemplateOwnerCommand(ownerId, () =>
-            enablePromptItemsCommand({
-              baseRevision,
-              promptPresetId: promptTemplateOwnerCommandId(ownerId),
-              enabled,
-              optimisticAcknowledgement,
-            }),
-          ),
-        rollback: () =>
-          runPromptTemplateOwnerRollback(
-            ownerId,
-            () => {
-              if (snapshotJson(snapshotPromptTemplateOwnerProjection(ownerId)) !== snapshotJson(attempted)) return false
-              restoreSelectedPromptPresetTemplateProjection(previous)
-              selectedPromptTemplateEnabledControl = previous.hasTemplate
-              return true
-            },
-            projectionFence,
-          ),
-        ...transport,
-      }),
-    )
+    const outcome = await dispatchPromptTemplateStructuralMutation({
+      ownerId,
+      operation: {
+        kind: 'enable',
+        previous: promptTemplateToggleOwnerState(previous),
+        attempted: promptTemplateToggleOwnerState(attempted),
+      },
+      outbox,
+      intent,
+      dispatch: (transport, rollback) =>
+        runServerCommand({
+          command: (baseRevision) =>
+            runPromptTemplateOwnerCommand(ownerId, () =>
+              enablePromptItemsCommand({
+                baseRevision,
+                promptPresetId: promptTemplateOwnerCommandId(ownerId),
+                enabled,
+                optimisticAcknowledgement,
+              }),
+            ),
+          rollback,
+          ...transport,
+        }),
+      rollback: () =>
+        runPromptTemplateOwnerRollback(
+          ownerId,
+          () => {
+            if (snapshotJson(snapshotPromptTemplateOwnerProjection(ownerId)) !== snapshotJson(attempted)) return false
+            restoreSelectedPromptPresetTemplateProjection(previous)
+            selectedPromptTemplateEnabledControl = previous.hasTemplate
+            return true
+          },
+          projectionFence,
+        ),
+      onFinalSettlement: (settlement) => handlePromptTemplateToggleFinalSettlement(sequence, ownerId, settlement),
+    })
+    reconcilePromptTemplateToggleOutcome(sequence, outcome)
   }
 
   function currentPromptPresetIconUploadTarget() {
@@ -2143,7 +2228,24 @@
           <Check
             bind:check={selectedPromptTemplateEnabledControl}
             name={language.usePromptTemplate}
+            disabled={promptTemplateToggleMutationState === 'saving'}
             onChange={setSelectedPromptTemplateEnabled} />
+          {#if promptTemplateToggleMutationState !== 'idle'}
+            <div
+              class="mt-2 text-sm"
+              class:text-red-500={promptTemplateToggleMutationState === 'failed'}
+              class:text-textcolor2={promptTemplateToggleMutationState !== 'failed'}
+              role={promptTemplateToggleMutationState === 'failed' ? 'alert' : 'status'}
+              data-testid="prompt-template-toggle-mutation-status">
+              {#if promptTemplateToggleMutationState === 'saving'}
+                {language.promptTemplateMutation.saving}
+              {:else if promptTemplateToggleMutationState === 'queued'}
+                {language.promptTemplateMutation.queued}
+              {:else}
+                {promptTemplateToggleMutationError}
+              {/if}
+            </div>
+          {/if}
           {#if selectedPromptPresetOwnsPromptTemplate && submenu !== -1}
             <PromptSettings
               mode="inline"

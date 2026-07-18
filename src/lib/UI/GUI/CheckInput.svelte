@@ -8,6 +8,7 @@
     reverse?: boolean
     className?: string
     grayText?: boolean
+    disabled?: boolean
     children?: import('svelte').Snippet
   }
 
@@ -20,6 +21,7 @@
     reverse = false,
     className = '',
     grayText = false,
+    disabled = false,
     children,
   }: Props = $props()
 </script>
@@ -28,16 +30,21 @@
   class={'flex items-center gap-2 cursor-pointer' +
     (className ? ' ' + className : '') +
     (grayText ? ' text-textcolor2' : ' text-textcolor')}
-  class:mr-2={margin}>
+  class:mr-2={margin}
+  class:cursor-not-allowed={disabled}
+  class:opacity-60={disabled}
+  aria-disabled={disabled}>
   {#if reverse}
     <span>{name} {@render children?.()}</span>
   {/if}
   <input
     class="peer sr-only"
     type="checkbox"
+    {disabled}
     aria-label={name || undefined}
     bind:checked={check}
     onchange={() => {
+      if (disabled) return
       onChange(check)
     }} />
   <span

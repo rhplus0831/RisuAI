@@ -78,7 +78,9 @@ describe('BotSettings pending prompt persistence', () => {
     expect(toggleSource).toContain('flushPendingPromptTemplatePatches()')
     expect(toggleSource).toContain("path: '/prompt-items/enable'")
     expect(toggleSource).toContain('promptTemplateOwnerMutationKey(ownerId)')
-    expect(toggleSource).toContain('dispatchDurableMutation(outbox, intent')
+    expect(toggleSource).toContain('dispatchPromptTemplateStructuralMutation({')
+    expect(toggleSource).toContain('outbox,')
+    expect(toggleSource).toContain('intent,')
     expect(toggleSource.indexOf('flushPendingPromptTemplatePatches()')).toBeLessThan(
       toggleSource.indexOf('setSelectedPromptPresetTemplateProjection(enabled)'),
     )

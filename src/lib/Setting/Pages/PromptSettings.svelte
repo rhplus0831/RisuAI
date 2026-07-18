@@ -31,10 +31,12 @@
     dropPendingPromptSettingsProjectionPatchKeys,
     capturePromptItemOptimisticAcknowledgement,
     capturePromptTemplateOwnerMutationFence,
+    dispatchPromptTemplateStructuralMutation,
     flushPendingPromptTemplatePatches,
     queuePromptItemProjectionUpdate,
     queuePromptSettingsProjectionPatch,
     reconcilePromptTemplateDraft,
+    reapplyPendingPromptTemplateStructuralProjections,
     resetPromptTemplateSelectionDirtyState,
     promptTemplateOwnerCommandId,
     promptTemplateOwnerMutationKey,
@@ -46,6 +48,9 @@
     stagePromptItemDeleteMutation,
     type PromptTemplateDraftBinding,
     type PromptTemplateOwnerMutationFence,
+    type PromptTemplateStructuralFinalSettlement,
+    type PromptTemplateStructuralMutationOutcome,
+    type PromptTemplateStructuralOwnerState,
   } from 'src/ts/server/promptTemplateBridge.svelte'
   import { mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
   import {
@@ -65,6 +70,7 @@
     updatePromptPresetCommand,
     type PromptItemSnapshot,
     type PromptPresetSnapshot,
+    type ServerCommandResult,
     type SettingsPatch,
   } from 'src/ts/server/commands'
   import { dispatchDurableMutation } from 'src/ts/server/durableMutationDispatch'
@@ -177,6 +183,10 @@
   let promptTemplateHydrationPending = $state(!isPromptTemplateHydrated())
   let promptTemplateHydrationFailed = $state(false)
   let promptTemplateHydrationRequestId = 0
+  let promptTemplateStructuralMutationState = $state<'idle' | 'saving' | 'queued' | 'failed'>('idle')
+  let promptTemplateStructuralMutationError = $state('')
+  let promptTemplateStructuralMutationSequence = 0
+  let promptTemplateStructuralMutationPending = $derived(promptTemplateStructuralMutationState === 'saving')
   const promptSettingsDraft = createPromptSettingsDraft<Record<string, any>>('promptSettings', {})
   const jsonSchemaEnabledDraft = createPromptSettingsDraft<boolean>('jsonSchemaEnabled', false)
   const outputImageModalDraft = createPromptSettingsDraft<boolean>('outputImageModal', false)
@@ -394,6 +404,7 @@
     promptTemplateHydrationPending = false
     promptTemplateHydrationFailed = !hydrated
     if (!hydrated) return
+    reapplyPendingPromptTemplateStructuralProjections(ownerId)
 
     if (options.resetSelectionDirtyState) {
       resetPromptTemplateDraftFromProjection()
@@ -426,16 +437,81 @@
     return itemIds
   }
 
+  function promptTemplateStructuralOwnerState(items: PromptItem[]): PromptTemplateStructuralOwnerState {
+    return { enabled: true, items: cloneJsonValue(items) }
+  }
+
+  function promptTemplateStructuralMutationMessage(result: ServerCommandResult): string {
+    if (result.status === 'conflict') return language.promptTemplateMutation.commandConflict
+    if (result.status === 'unavailable') return language.promptTemplateMutation.commandUnavailable
+    if (result.status === 'error') return language.promptTemplateMutation.commandError(result.error)
+    return language.promptTemplateMutation.commandUnavailable
+  }
+
+  function beginPromptTemplateStructuralMutation(): number | null {
+    if (promptTemplateStructuralMutationPending) return null
+    promptTemplateStructuralMutationState = 'saving'
+    promptTemplateStructuralMutationError = ''
+    return ++promptTemplateStructuralMutationSequence
+  }
+
+  function trackPromptTemplateStructuralMutation(
+    sequence: number,
+    pending: Promise<PromptTemplateStructuralMutationOutcome>,
+  ): void {
+    void pending.then(
+      (outcome) => {
+        if (sequence !== promptTemplateStructuralMutationSequence) return
+        if (outcome.status === 'accepted') {
+          promptTemplateStructuralMutationState = 'idle'
+          return
+        }
+        if (outcome.status === 'queued') {
+          promptTemplateStructuralMutationState = 'queued'
+          return
+        }
+        promptTemplateStructuralMutationState = 'failed'
+        promptTemplateStructuralMutationError = promptTemplateStructuralMutationMessage(outcome.result)
+      },
+      (error) => {
+        if (sequence !== promptTemplateStructuralMutationSequence) return
+        promptTemplateStructuralMutationState = 'failed'
+        promptTemplateStructuralMutationError = language.promptTemplateMutation.commandError(
+          error instanceof Error ? error.message : String(error),
+        )
+      },
+    )
+  }
+
+  function handlePromptTemplateStructuralFinalSettlement(
+    sequence: number,
+    ownerId: string | null,
+    settlement: PromptTemplateStructuralFinalSettlement,
+  ): void {
+    if (sequence !== promptTemplateStructuralMutationSequence || ownerId !== currentPromptTemplateOwnerId()) return
+    if (settlement === 'accepted') {
+      promptTemplateStructuralMutationState = 'idle'
+      promptTemplateStructuralMutationError = ''
+      return
+    }
+    adoptPromptTemplateDraftFromProjection()
+    promptTemplateStructuralMutationState = 'failed'
+    promptTemplateStructuralMutationError = language.promptTemplateMutation.replayDiscarded
+  }
+
   function dispatchCreatePromptItem(
     ownerId: string | null,
     promptItem: PromptItem,
+    previous: PromptItem[],
     projectionFence: PromptTemplateOwnerMutationFence,
-  ): void {
-    if (!promptTemplateHydrated) return
-    if (!canUseServerCommands()) return
-    if (projectionFence.ownerId !== ownerId) return
+    sequence: number,
+  ): Promise<PromptTemplateStructuralMutationOutcome> {
+    if (!promptTemplateHydrated || !canUseServerCommands() || projectionFence.ownerId !== ownerId) {
+      return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
+    }
     const itemId = promptItemId(promptItem)
     const attemptedItem = cloneJsonValue(promptItem)
+    const attemptedItems = cloneJsonValue(promptTemplateDraft.value)
     const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
     const intent: DurableMutationIntent = {
       version: 1,
@@ -451,28 +527,40 @@
       ],
     }
     const outbox = stagePendingMutation(promptTemplateOwnerMutationKey(ownerId), intent)
-    void dispatchDurableMutation(outbox, intent, (transport) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          runPromptTemplateOwnerCommand(ownerId, () =>
-            createPromptItemCommand({
-              baseRevision,
-              promptPresetId: promptTemplateOwnerCommandId(ownerId),
-              promptItem: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
-              optimisticAcknowledgement,
-            }),
-          ),
-        rollback: () =>
-          rollbackFailedPromptTemplateItemCreate({
-            ownerId,
-            binding: promptTemplateDraftBinding,
-            itemId,
-            attemptedItem,
-            projectionFence,
-          }),
-        ...transport,
-      }),
-    )
+    return dispatchPromptTemplateStructuralMutation({
+      ownerId,
+      operation: {
+        kind: 'create',
+        itemId,
+        previous: promptTemplateStructuralOwnerState(previous),
+        attempted: promptTemplateStructuralOwnerState(attemptedItems),
+      },
+      outbox,
+      intent,
+      dispatch: (transport, rollback) =>
+        runServerCommand({
+          command: (baseRevision) =>
+            runPromptTemplateOwnerCommand(ownerId, () =>
+              createPromptItemCommand({
+                baseRevision,
+                promptPresetId: promptTemplateOwnerCommandId(ownerId),
+                promptItem: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
+                optimisticAcknowledgement,
+              }),
+            ),
+          rollback,
+          ...transport,
+        }),
+      rollback: () =>
+        rollbackFailedPromptTemplateItemCreate({
+          ownerId,
+          binding: promptTemplateDraftBinding,
+          itemId,
+          attemptedItem,
+          projectionFence,
+        }),
+      onFinalSettlement: (settlement) => handlePromptTemplateStructuralFinalSettlement(sequence, ownerId, settlement),
+    })
   }
 
   function dispatchDeletePromptItem(
@@ -480,52 +568,69 @@
     promptItem: PromptItem,
     previous: PromptItem[],
     projectionFence: PromptTemplateOwnerMutationFence,
-  ): void {
-    if (!promptTemplateHydrated) return
-    if (!canUseServerCommands()) return
-    if (projectionFence.ownerId !== ownerId) return
+    sequence: number,
+  ): Promise<PromptTemplateStructuralMutationOutcome> {
+    if (!promptTemplateHydrated || !canUseServerCommands() || projectionFence.ownerId !== ownerId) {
+      return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
+    }
     const itemId = promptItemId(promptItem)
     const previousIndex = previous.findIndex((item) => item.id === itemId)
     const previousItem = previousIndex === -1 ? cloneJsonValue(promptItem) : previous[previousIndex]
+    const attemptedItems = cloneJsonValue(promptTemplateDraft.value)
     const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
     const stagedDelete = stagePromptItemDeleteMutation(ownerId, itemId)
-    void dispatchDurableMutation(stagedDelete.outbox, stagedDelete.intent, (transport) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          runPromptTemplateOwnerCommand(ownerId, () =>
-            deletePromptItemCommand({
-              baseRevision,
-              promptPresetId: promptTemplateOwnerCommandId(ownerId),
-              itemId,
-              optimisticAcknowledgement,
-            }),
-          ),
-        rollback: () =>
-          rollbackFailedPromptTemplateItemDelete({
-            ownerId,
-            binding: promptTemplateDraftBinding,
-            itemId,
-            previousIndex,
-            previousItem,
-            projectionFence,
-          }),
-        ...transport,
-      }),
-    )
+    return dispatchPromptTemplateStructuralMutation({
+      ownerId,
+      operation: {
+        kind: 'delete',
+        itemId,
+        previous: promptTemplateStructuralOwnerState(previous),
+        attempted: promptTemplateStructuralOwnerState(attemptedItems),
+      },
+      outbox: stagedDelete.outbox,
+      intent: stagedDelete.intent,
+      dispatch: (transport, rollback) =>
+        runServerCommand({
+          command: (baseRevision) =>
+            runPromptTemplateOwnerCommand(ownerId, () =>
+              deletePromptItemCommand({
+                baseRevision,
+                promptPresetId: promptTemplateOwnerCommandId(ownerId),
+                itemId,
+                optimisticAcknowledgement,
+              }),
+            ),
+          rollback,
+          ...transport,
+        }),
+      rollback: () =>
+        rollbackFailedPromptTemplateItemDelete({
+          ownerId,
+          binding: promptTemplateDraftBinding,
+          itemId,
+          previousIndex,
+          previousItem,
+          projectionFence,
+        }),
+      onFinalSettlement: (settlement) => handlePromptTemplateStructuralFinalSettlement(sequence, ownerId, settlement),
+    })
   }
 
   function dispatchReorderPromptItems(
     ownerId: string | null,
     previous: PromptItem[],
     projectionFence: PromptTemplateOwnerMutationFence,
-  ): void {
-    if (!promptTemplateHydrated) return
-    if (!canUseServerCommands()) return
-    if (projectionFence.ownerId !== ownerId) return
+    sequence: number,
+  ): Promise<PromptTemplateStructuralMutationOutcome> {
+    if (!promptTemplateHydrated || !canUseServerCommands() || projectionFence.ownerId !== ownerId) {
+      return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
+    }
     ensurePromptTemplateDraftIds(ownerId)
     const itemIds = promptTemplateItemIds(promptTemplateDraft.value)
     const previousItemIds = promptTemplateItemIds(previous)
-    if (!itemIds || !previousItemIds) return
+    if (!itemIds || !previousItemIds) {
+      return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
+    }
     const attemptedItemIds = [...itemIds]
     const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
     const intent: DurableMutationIntent = {
@@ -542,28 +647,41 @@
       ],
     }
     const outbox = stagePendingMutation(promptTemplateOwnerMutationKey(ownerId), intent)
-    void dispatchDurableMutation(outbox, intent, (transport) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          runPromptTemplateOwnerCommand(ownerId, () =>
-            reorderPromptItemsCommand({
-              baseRevision,
-              promptPresetId: promptTemplateOwnerCommandId(ownerId),
-              itemIds,
-              optimisticAcknowledgement,
-            }),
-          ),
-        rollback: () =>
-          rollbackFailedPromptTemplateItemReorder({
-            ownerId,
-            binding: promptTemplateDraftBinding,
-            previousItemIds,
-            attemptedItemIds,
-            projectionFence,
-          }),
-        ...transport,
-      }),
-    )
+    return dispatchPromptTemplateStructuralMutation({
+      ownerId,
+      operation: {
+        kind: 'reorder',
+        previousItemIds,
+        attemptedItemIds,
+        previous: promptTemplateStructuralOwnerState(previous),
+        attempted: promptTemplateStructuralOwnerState(promptTemplateDraft.value),
+      },
+      outbox,
+      intent,
+      dispatch: (transport, rollback) =>
+        runServerCommand({
+          command: (baseRevision) =>
+            runPromptTemplateOwnerCommand(ownerId, () =>
+              reorderPromptItemsCommand({
+                baseRevision,
+                promptPresetId: promptTemplateOwnerCommandId(ownerId),
+                itemIds,
+                optimisticAcknowledgement,
+              }),
+            ),
+          rollback,
+          ...transport,
+        }),
+      rollback: () =>
+        rollbackFailedPromptTemplateItemReorder({
+          ownerId,
+          binding: promptTemplateDraftBinding,
+          previousItemIds,
+          attemptedItemIds,
+          projectionFence,
+        }),
+      onFinalSettlement: (settlement) => handlePromptTemplateStructuralFinalSettlement(sequence, ownerId, settlement),
+    })
   }
 
   function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem, originalIndex: number): void {
@@ -697,8 +815,10 @@
   }
 
   function movePromptItem(originalIndex: number, nextIndex: number): void {
-    if (!promptTemplateHydrated) return
+    if (!promptTemplateHydrated || promptTemplateStructuralMutationPending) return
     if (nextIndex < 0 || nextIndex >= promptTemplateDraft.value.length) return
+    const sequence = beginPromptTemplateStructuralMutation()
+    if (sequence === null) return
     if (canUseServerCommands()) flushPendingPromptTemplatePatches()
     const previous = currentPromptTemplateSnapshot()
     const templates = [...promptTemplateDraft.value]
@@ -709,7 +829,10 @@
     const projectionFence = capturePromptTemplateOwnerMutationFence(ownerId)
     promptTemplateDraft.value = templates
     syncSelectedPromptPresetTemplateProjection(templates)
-    dispatchReorderPromptItems(ownerId, previous, projectionFence)
+    trackPromptTemplateStructuralMutation(
+      sequence,
+      dispatchReorderPromptItems(ownerId, previous, projectionFence, sequence),
+    )
   }
 
   function applyPromptTemplateDraft(templates: PromptItem[]): string | null {
@@ -1026,6 +1149,9 @@
     if (selection === previousPromptTemplatePresetSelection) return
     previousPromptTemplatePresetSelection = selection
     untrack(() => {
+      promptTemplateStructuralMutationSequence += 1
+      promptTemplateStructuralMutationState = 'idle'
+      promptTemplateStructuralMutationError = ''
       resetPromptTemplateUiState()
       void hydrateCurrentPromptTemplateOwner({ resetSelectionDirtyState: true })
     })
@@ -1086,6 +1212,7 @@
   }
 
   function capturePromptItemDrag(promptItem: PromptItem): void {
+    if (promptTemplateStructuralMutationPending) return
     const ownerId = currentPromptTemplateOwnerId()
     ensurePromptTemplateDraftIds(ownerId)
     const itemId = promptItem.id
@@ -1102,6 +1229,7 @@
   }
 
   function capturePromptItemDropBoundary(promptItem: PromptItem, placement: PromptDropPlacement): void {
+    if (promptTemplateStructuralMutationPending) return
     const drag = promptItemDrag
     const ownerId = currentPromptTemplateOwnerId()
     const itemId = promptItem.id
@@ -1143,12 +1271,21 @@
   }
 
   function handlePromptDrop(): void {
+    if (promptTemplateStructuralMutationPending) {
+      resetPromptItemDragState()
+      return
+    }
     const drag = resolvePromptItemDrag()
     if (!drag || drag.sourceIndex === drag.adjustedDropIndex) {
       resetPromptItemDragState()
       return
     }
 
+    const sequence = beginPromptTemplateStructuralMutation()
+    if (sequence === null) {
+      resetPromptItemDragState()
+      return
+    }
     if (canUseServerCommands()) flushPendingPromptTemplatePatches()
     const templates = [...promptTemplateDraft.value]
     const previous = currentPromptTemplateSnapshot()
@@ -1170,7 +1307,10 @@
     )
 
     const ownerId = applyPromptTemplateDraft(templates)
-    dispatchReorderPromptItems(ownerId, previous, projectionFence)
+    trackPromptTemplateStructuralMutation(
+      sequence,
+      dispatchReorderPromptItems(ownerId, previous, projectionFence, sequence),
+    )
     resetPromptItemDragState()
   }
 
@@ -1285,11 +1425,16 @@
             onDragOver={capturePromptItemDropBoundary}
             onDragEnd={resetPromptItemDragState}
             onDrop={handlePromptDrop}
+            structuralDisabled={promptTemplateStructuralMutationPending}
             onRemove={() => {
+              if (promptTemplateStructuralMutationPending) return
+              const removed = promptTemplateDraft.value[originalIndex]
+              if (!removed) return
+              const sequence = beginPromptTemplateStructuralMutation()
+              if (sequence === null) return
               if (canUseServerCommands()) flushPendingPromptTemplatePatches()
               const previous = currentPromptTemplateSnapshot()
               const projectionFence = capturePromptTemplateOwnerMutationFence()
-              const removed = promptTemplateDraft.value[originalIndex]
               let templates = [...promptTemplateDraft.value]
               templates.splice(originalIndex, 1)
               const ownerId = applyPromptTemplateDraft(templates)
@@ -1307,7 +1452,10 @@
               openedItemIndices = newOpenedIndices
 
               resetPromptItemDragState()
-              dispatchDeletePromptItem(ownerId, removed, previous, projectionFence)
+              trackPromptTemplateStructuralMutation(
+                sequence,
+                dispatchDeletePromptItem(ownerId, removed, previous, projectionFence, sequence),
+              )
             }}
             moveDown={() => {
               if (originalIndex === promptTemplateDraft.value.length - 1) {
@@ -1352,14 +1500,41 @@
     <button
       type="button"
       aria-label={`${language.add}: ${language.promptTemplate}`}
+      disabled={promptTemplateStructuralMutationPending}
       class="font-medium cursor-pointer hover:text-green-500"
+      class:cursor-wait={promptTemplateStructuralMutationPending}
+      class:opacity-60={promptTemplateStructuralMutationPending}
       onclick={() => {
+        if (promptTemplateStructuralMutationPending) return
+        const sequence = beginPromptTemplateStructuralMutation()
+        if (sequence === null) return
         if (canUseServerCommands()) flushPendingPromptTemplatePatches()
+        const previous = currentPromptTemplateSnapshot()
         const promptItem = createPromptItem()
         const projectionFence = capturePromptTemplateOwnerMutationFence()
         const ownerId = applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])
-        dispatchCreatePromptItem(ownerId, promptItem, projectionFence)
+        trackPromptTemplateStructuralMutation(
+          sequence,
+          dispatchCreatePromptItem(ownerId, promptItem, previous, projectionFence, sequence),
+        )
       }}><PlusIcon /></button>
+
+    {#if promptTemplateStructuralMutationState !== 'idle'}
+      <div
+        class="mt-2 text-sm"
+        class:text-red-500={promptTemplateStructuralMutationState === 'failed'}
+        class:text-textcolor2={promptTemplateStructuralMutationState !== 'failed'}
+        role={promptTemplateStructuralMutationState === 'failed' ? 'alert' : 'status'}
+        data-testid="prompt-template-structural-mutation-status">
+        {#if promptTemplateStructuralMutationState === 'saving'}
+          {language.promptTemplateMutation.saving}
+        {:else if promptTemplateStructuralMutationState === 'queued'}
+          {language.promptTemplateMutation.queued}
+        {:else}
+          {promptTemplateStructuralMutationError}
+        {/if}
+      </div>
+    {/if}
 
     <span class="text-textcolor2 text-sm mt-2">{tokens} {language.fixedTokens}</span>
     <span class="text-textcolor2 mb-6 text-sm mt-2">{extokens} {language.exactTokens}</span>

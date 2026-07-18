@@ -89,4 +89,21 @@ describe('CheckInput accessibility', () => {
     expect(target.querySelector('label')?.hasAttribute('aria-labelledby')).toBe(false)
     expect(target.querySelector('label')?.hasAttribute('aria-describedby')).toBe(false)
   })
+
+  it('removes a disabled checkbox from interaction while exposing its state', async () => {
+    const onChange = vi.fn()
+    component = mount(CheckInput, {
+      target,
+      props: { check: true, name: 'Enable notifications', disabled: true, onChange },
+    })
+
+    const input = checkbox()
+    input.click()
+    await tick()
+
+    expect(input.disabled).toBe(true)
+    expect(input.checked).toBe(true)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(target.querySelector('label')?.getAttribute('aria-disabled')).toBe('true')
+  })
 })

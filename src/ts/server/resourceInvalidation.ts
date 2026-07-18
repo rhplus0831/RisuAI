@@ -66,6 +66,7 @@ export type ServerResourceRefreshResult =
 
 export interface ServerResourceInvalidationHooks {
   reapplyPendingPresetProjections(): void
+  reapplyPendingPromptTemplateStructuralProjections?(): void
   mergePendingAgentPresetSettings(value: Record<string, unknown>): Record<string, unknown>
   mergePendingAgentPresetLoadouts(
     value: NonNullable<ServerCollectionsResourcePayload['collections']['loadouts']>,
@@ -223,6 +224,7 @@ export async function refreshAllServerResources(
             inlayCatalogApplied: applyServerInlayCatalogResource(inlayCatalog, { force: true }),
           }
           options.hooks?.reapplyPendingPresetProjections?.()
+          options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
           return applied
         },
       )
@@ -306,6 +308,7 @@ export async function refreshInvalidatedServerResources(
           if (!applyTargetedRead(entry, bodyReadSupersessions, options.hooks)) return targetedReadLabel(entry)
         }
         options.hooks?.reapplyPendingPresetProjections?.()
+        options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
         return null
       })
       if (failedApply) {
@@ -320,6 +323,7 @@ export async function refreshInvalidatedServerResources(
   if (promptTemplateRefreshError) return { status: 'error', error: promptTemplateRefreshError }
   if (plan.promptTemplateOwnerIds.size > 0 || plan.refreshSelectedPromptTemplate) {
     options.hooks?.reapplyPendingPresetProjections?.()
+    options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
   }
 
   if (plan.chatIds.size > 0 || plan.generationChatMessageIds.size > 0) {

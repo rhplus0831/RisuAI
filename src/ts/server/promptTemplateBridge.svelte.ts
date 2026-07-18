@@ -29,7 +29,7 @@ import {
   markSettingsGroupAcknowledgementTainted,
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
-import { dispatchDurableMutation } from './durableMutationDispatch'
+import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './durableMutationDispatch'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from './settingsMutationKey'
 import {
   acknowledgePendingMutation,
@@ -179,6 +179,53 @@ interface PendingPromptSettingsAttempt {
   projectionEpoch: number | null
 }
 
+export interface PromptTemplateStructuralOwnerState {
+  enabled: boolean
+  items?: PromptItem[]
+}
+
+export type PromptTemplateStructuralOperation =
+  | {
+      kind: 'create'
+      itemId: string
+      previous: PromptTemplateStructuralOwnerState
+      attempted: PromptTemplateStructuralOwnerState
+    }
+  | {
+      kind: 'delete'
+      itemId: string
+      previous: PromptTemplateStructuralOwnerState
+      attempted: PromptTemplateStructuralOwnerState
+    }
+  | {
+      kind: 'reorder'
+      previousItemIds: string[]
+      attemptedItemIds: string[]
+      previous: PromptTemplateStructuralOwnerState
+      attempted: PromptTemplateStructuralOwnerState
+    }
+  | {
+      kind: 'enable'
+      previous: PromptTemplateStructuralOwnerState
+      attempted: PromptTemplateStructuralOwnerState
+    }
+
+export type PromptTemplateStructuralMutationOutcome =
+  | { status: 'accepted'; result: Extract<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+
+export type PromptTemplateStructuralFinalSettlement = 'accepted' | 'discarded'
+
+interface PendingPromptTemplateStructuralAttempt {
+  sequence: number
+  ownerId: string | null
+  operation: PromptTemplateStructuralOperation
+  settled: boolean
+  rollback: () => void
+  settlementCleanup?: () => void
+}
+
 const pendingPromptItemUpdates = new Map<string, PendingPromptItemUpdate>()
 const pendingPromptItemAttempts: PendingPromptItemAttempt[] = []
 const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
@@ -194,7 +241,9 @@ const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
 const pendingPromptSettingsAttempts: PendingPromptSettingsAttempt[] = []
 let nextPromptItemAttemptSequence = 0
 let nextPromptSettingsAttemptSequence = 0
+let nextPromptTemplateStructuralAttemptSequence = 0
 const promptItemDirtyFieldsByOwnerAndId = new Map<string, Set<string>>()
+const pendingPromptTemplateStructuralAttempts: PendingPromptTemplateStructuralAttempt[] = []
 
 /**
  * Mirror one edited prompt item into resource-backed state in place, without
@@ -266,7 +315,7 @@ function promptTemplateOwnerCollectionName(ownerId: string | null): 'promptTempl
 function captureCanonicalPromptTemplateOwnerState(ownerId: string | null): PromptTemplateOwnerStateSnapshot | null {
   const database = getDatabase()
   if (ownerId === null) {
-    if (!Object.prototype.hasOwnProperty.call(database, 'promptTemplate')) return { enabled: false }
+    if (database.promptTemplate === undefined) return { enabled: false }
     return canonicalPromptTemplateEnabledState(database.promptTemplate)
   }
 
@@ -320,6 +369,261 @@ export function runPromptTemplateOwnerRollback(
   if (projectionFence && projectionFence.ownerId !== ownerId) return
   if (projectionFence && hasPromptTemplateOwnerMutationFenceChanged(projectionFence)) return
   rollback()
+}
+
+export async function dispatchPromptTemplateStructuralMutation(input: {
+  ownerId: string | null
+  operation: PromptTemplateStructuralOperation
+  outbox: PendingMutationHandle
+  intent: DurableMutationIntent
+  dispatch: (transport: ServerCommandTransportOptions, rollback: () => void) => Promise<ServerCommandResult>
+  rollback: () => void
+  onFinalSettlement?: (settlement: PromptTemplateStructuralFinalSettlement) => void
+}): Promise<PromptTemplateStructuralMutationOutcome> {
+  const attempt: PendingPromptTemplateStructuralAttempt = {
+    sequence: ++nextPromptTemplateStructuralAttemptSequence,
+    ownerId: input.ownerId,
+    operation: cloneJsonValue(input.operation),
+    settled: false,
+    rollback: input.rollback,
+  }
+  pendingPromptTemplateStructuralAttempts.push(attempt)
+
+  const settleAccepted = (finalSettlement = false) => {
+    if (!settlePromptTemplateStructuralAttempt(attempt, true)) return
+    if (finalSettlement) input.onFinalSettlement?.('accepted')
+  }
+  const settleFailed = (finalSettlement = false) => {
+    if (!settlePromptTemplateStructuralAttempt(attempt, false)) return
+    if (finalSettlement) input.onFinalSettlement?.('discarded')
+  }
+  attempt.settlementCleanup = registerDurableMutationSettlementListener(input.outbox.mutationId, (settlement) => {
+    if (settlement === 'accepted') settleAccepted(true)
+    else settleFailed(true)
+  })
+
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  let result: ServerCommandResult
+  try {
+    result = await dispatchDurableMutation(input.outbox, input.intent, (transport) => {
+      failureRollbackDisposition = transport.failureRollbackDisposition
+      return input.dispatch(transport, () => settleFailed())
+    })
+  } catch (error) {
+    console.error('Prompt-template structural command rejected:', error)
+    result = { status: 'unavailable' }
+  }
+
+  if (result.status === 'ok') {
+    settleAccepted()
+    return { status: 'accepted', result }
+  }
+  if (failureRollbackDisposition?.(result) === 'retain') {
+    reapplyPendingPromptTemplateStructuralProjections(input.ownerId)
+    return { status: 'queued', result }
+  }
+  settleFailed()
+  return { status: 'failed', result }
+}
+
+function settlePromptTemplateStructuralAttempt(
+  attempt: PendingPromptTemplateStructuralAttempt,
+  accepted: boolean,
+): boolean {
+  if (attempt.settled) return false
+  attempt.settled = true
+  attempt.settlementCleanup?.()
+  attempt.settlementCleanup = undefined
+  const index = pendingPromptTemplateStructuralAttempts.indexOf(attempt)
+  if (index !== -1) pendingPromptTemplateStructuralAttempts.splice(index, 1)
+
+  if (!accepted) {
+    attempt.rollback()
+    rollbackPromptTemplateStructuralProjection(attempt)
+  }
+  reapplyPendingPromptTemplateStructuralProjections(attempt.ownerId)
+  return true
+}
+
+export function reapplyPendingPromptTemplateStructuralProjections(ownerId?: string | null): void {
+  const ownerIds =
+    ownerId === undefined
+      ? new Set(pendingPromptTemplateStructuralAttempts.map((attempt) => attempt.ownerId))
+      : new Set([ownerId])
+  if (ownerIds.size === 0) return
+
+  withTrustedResourceWrite(() => {
+    for (const targetOwnerId of ownerIds) {
+      const current = readPromptTemplateStructuralOwnerState(targetOwnerId)
+      if (!current) continue
+      const projected = applyPendingPromptTemplateStructuralOperations(targetOwnerId, current)
+      writePromptTemplateStructuralOwnerState(targetOwnerId, projected)
+    }
+  })
+}
+
+export function applyPendingPromptTemplateStructuralItems(ownerId: string | null, items: PromptItem[]): PromptItem[] {
+  if (!pendingPromptTemplateStructuralAttempts.some((attempt) => !attempt.settled && attempt.ownerId === ownerId)) {
+    return items
+  }
+  const projected = applyPendingPromptTemplateStructuralOperations(ownerId, {
+    enabled: true,
+    items: cloneJsonValue(items),
+  })
+  return projected.enabled ? cloneJsonValue(projected.items ?? []) : []
+}
+
+export function resetPendingPromptTemplateStructuralMutationsForTests(): void {
+  for (const attempt of pendingPromptTemplateStructuralAttempts) attempt.settlementCleanup?.()
+  pendingPromptTemplateStructuralAttempts.splice(0)
+  nextPromptTemplateStructuralAttemptSequence = 0
+}
+
+function applyPendingPromptTemplateStructuralOperations(
+  ownerId: string | null,
+  state: PromptTemplateStructuralOwnerState,
+): PromptTemplateStructuralOwnerState {
+  let projected = cloneJsonValue(state)
+  const attempts = pendingPromptTemplateStructuralAttempts
+    .filter((attempt) => !attempt.settled && attempt.ownerId === ownerId)
+    .sort((left, right) => left.sequence - right.sequence)
+  for (const attempt of attempts) {
+    projected = applyPromptTemplateStructuralOperation(projected, attempt.operation)
+  }
+  return projected
+}
+
+function applyPromptTemplateStructuralOperation(
+  state: PromptTemplateStructuralOwnerState,
+  operation: PromptTemplateStructuralOperation,
+): PromptTemplateStructuralOwnerState {
+  if (operation.kind === 'enable') {
+    if (!operation.attempted.enabled) return { enabled: false }
+    if (state.enabled) return cloneJsonValue(state)
+    return cloneJsonValue(operation.attempted)
+  }
+
+  const enabledState = state.enabled ? cloneJsonValue(state) : cloneJsonValue(operation.attempted)
+  if (!enabledState.enabled) return enabledState
+  const items = cloneJsonValue(enabledState.items ?? [])
+
+  if (operation.kind === 'create') {
+    if (!items.some((item) => item.id === operation.itemId)) {
+      const attemptedItems = operation.attempted.items ?? []
+      const attemptedIndex = attemptedItems.findIndex((item) => item.id === operation.itemId)
+      const attemptedItem = attemptedItems[attemptedIndex]
+      if (attemptedItem) {
+        items.splice(Math.max(0, Math.min(attemptedIndex, items.length)), 0, cloneJsonValue(attemptedItem))
+      }
+    }
+    return { enabled: true, items }
+  }
+
+  if (operation.kind === 'delete') {
+    return { enabled: true, items: items.filter((item) => item.id !== operation.itemId) }
+  }
+
+  return {
+    enabled: true,
+    items: reorderPromptTemplateStructuralItems(items, operation.attemptedItemIds),
+  }
+}
+
+function rollbackPromptTemplateStructuralProjection(attempt: PendingPromptTemplateStructuralAttempt): void {
+  withTrustedResourceWrite(() => {
+    const live = readPromptTemplateStructuralOwnerState(attempt.ownerId)
+    if (!live) return
+    const operation = attempt.operation
+
+    if (operation.kind === 'enable') {
+      if (snapshotJson(live) === snapshotJson(operation.attempted)) {
+        writePromptTemplateStructuralOwnerState(attempt.ownerId, operation.previous)
+      }
+      return
+    }
+
+    if (!live.enabled) return
+    const items = cloneJsonValue(live.items ?? [])
+    if (operation.kind === 'create') {
+      const attemptedItem = operation.attempted.items?.find((item) => item.id === operation.itemId)
+      const liveIndex = items.findIndex((item) => item.id === operation.itemId)
+      if (liveIndex !== -1 && attemptedItem && snapshotJson(items[liveIndex]) === snapshotJson(attemptedItem)) {
+        items.splice(liveIndex, 1)
+        writePromptTemplateStructuralOwnerState(attempt.ownerId, { enabled: true, items })
+      }
+      return
+    }
+
+    if (operation.kind === 'delete') {
+      if (items.some((item) => item.id === operation.itemId)) return
+      const previousItems = operation.previous.items ?? []
+      const previousIndex = previousItems.findIndex((item) => item.id === operation.itemId)
+      const previousItem = previousItems[previousIndex]
+      if (!previousItem) return
+      items.splice(Math.max(0, Math.min(previousIndex, items.length)), 0, cloneJsonValue(previousItem))
+      writePromptTemplateStructuralOwnerState(attempt.ownerId, { enabled: true, items })
+      return
+    }
+
+    if (!stringArraysEqual(promptItemIdList(items), operation.attemptedItemIds)) return
+    writePromptTemplateStructuralOwnerState(attempt.ownerId, {
+      enabled: true,
+      items: reorderPromptTemplateStructuralItems(items, operation.previousItemIds),
+    })
+  })
+}
+
+function reorderPromptTemplateStructuralItems(items: PromptItem[], itemIds: readonly string[]): PromptItem[] {
+  const byId = new Map(items.map((item) => [item.id, item]))
+  if (itemIds.some((itemId) => !byId.has(itemId))) return items
+  const ordered = itemIds.map((itemId) => byId.get(itemId)!)
+  const orderedIds = new Set(itemIds)
+  ordered.push(...items.filter((item) => !item.id || !orderedIds.has(item.id)))
+  return ordered
+}
+
+function readPromptTemplateStructuralOwnerState(ownerId: string | null): PromptTemplateStructuralOwnerState | null {
+  const database = getDatabase()
+  if (ownerId === null) {
+    if (database.promptTemplate === undefined) return { enabled: false }
+    if (!Array.isArray(database.promptTemplate)) return null
+    return { enabled: true, items: cloneJsonValue(database.promptTemplate as PromptItem[]) }
+  }
+
+  const presets = database.promptPresets
+  if (!Array.isArray(presets)) return null
+  const matches = presets.filter((preset) => preset?.id === ownerId)
+  if (matches.length !== 1) return null
+  const preset = matches[0] as unknown as Record<string, unknown>
+  if (preset.promptTemplate === undefined) return { enabled: false }
+  if (!Array.isArray(preset.promptTemplate)) return null
+  return { enabled: true, items: cloneJsonValue(preset.promptTemplate as PromptItem[]) }
+}
+
+function writePromptTemplateStructuralOwnerState(
+  ownerId: string | null,
+  state: PromptTemplateStructuralOwnerState,
+): void {
+  const database = getDatabase()
+  if (ownerId === null) {
+    if (state.enabled) database.promptTemplate = cloneJsonValue(state.items ?? [])
+    else delete (database as unknown as Record<string, unknown>).promptTemplate
+    return
+  }
+
+  const presets = database.promptPresets
+  if (!Array.isArray(presets)) return
+  const matches = presets.filter((preset) => preset?.id === ownerId)
+  if (matches.length !== 1) return
+  const preset = matches[0] as unknown as Record<string, unknown>
+  if (state.enabled) preset.promptTemplate = cloneJsonValue(state.items ?? [])
+  else delete preset.promptTemplate
+
+  const selectedIndex = database.promptPresetsId
+  const selectedPreset = Number.isInteger(selectedIndex) && selectedIndex >= 0 ? presets[selectedIndex] : undefined
+  if (selectedPreset?.id !== ownerId) return
+  if (state.enabled) database.promptTemplate = cloneJsonValue(state.items ?? [])
+  else delete (database as unknown as Record<string, unknown>).promptTemplate
 }
 
 export function rollbackFailedPromptTemplateItemCreate(input: FailedPromptTemplateItemCreateRollback): void {
@@ -996,7 +1300,7 @@ export function reconcilePromptTemplateDraft(
   if (!isPromptTemplateHydrated(ownerId)) {
     return { revision: previousRevision, nextDraft: null }
   }
-  const serverValue = projectedItems
+  const serverValue = applyPendingPromptTemplateStructuralItems(ownerId, projectedItems)
   const revision = peekCachedServerCommandRevision()
   if (revision === previousRevision) return { revision, nextDraft: null }
   if (ownerDirtyFieldCount(ownerId) > 0) {

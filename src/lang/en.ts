@@ -1377,6 +1377,15 @@ export const languageEnglish = {
     editTargetMissing: 'The module you were editing no longer exists. Your draft was kept.',
     commandError: (error: string) => `Module save failed: ${error}`,
   },
+  promptTemplateMutation: {
+    saving: 'Saving prompt template...',
+    queued: 'The prompt template change is saved on this device and queued. It will retry automatically.',
+    commandConflict:
+      'The server has newer prompt-template data. The previous template was restored; review it and try again.',
+    commandUnavailable: 'Prompt-template saving is unavailable. The previous template was restored.',
+    commandError: (error: string) => `Prompt-template save failed: ${error}`,
+    replayDiscarded: 'The queued prompt-template change could not be applied. The server version was restored.',
+  },
   moduleImport: {
     commandConflict: 'The server changed while the module was being imported. The module was not imported. Try again.',
     commandUnavailable: 'Module import is unavailable. The module was not imported.',
