@@ -49,6 +49,11 @@ const serverCommandState = vi.hoisted(() => ({
   alternateGreetingCalls: [] as Record<string, unknown>[],
 }))
 
+const alternateGreetingMutationState = vi.hoisted(() => ({
+  outcomes: [] as Array<'accepted' | 'queued' | 'failed' | Promise<'accepted' | 'queued' | 'failed'>>,
+  settleQueued: [] as Array<(settlement: 'accepted' | 'discarded') => void>,
+}))
+
 const regexImportMocks = vi.hoisted(() => ({
   importRegexRows: vi.fn(),
 }))
@@ -105,6 +110,39 @@ vi.mock('src/ts/server/commands', () => {
     updateMessageCommand: command('updateMessage'),
   }
 })
+
+vi.mock('src/ts/alternateGreetingCommands', () => ({
+  dispatchDurableAlternateGreetingMutation: vi.fn(
+    async (input: {
+      characterId: string
+      alternateGreetings: string[]
+      operation: Record<string, unknown>
+      chatGreetingIndices: Array<{ chatId: string; fmIndex: number }>
+      applyOptimistic: () => void
+      rollback: () => void
+      onFinalSettlement?: (settlement: 'accepted' | 'discarded') => void
+    }) => {
+      serverCommandState.alternateGreetingCalls.push(
+        structuredClone({
+          characterId: input.characterId,
+          alternateGreetings: input.alternateGreetings,
+          operation: input.operation,
+          chatGreetingIndices: input.chatGreetingIndices,
+        }),
+      )
+      input.applyOptimistic()
+      const result = await (alternateGreetingMutationState.outcomes.shift() ?? 'accepted')
+      if (result === 'failed') input.rollback()
+      if (result === 'queued') {
+        alternateGreetingMutationState.settleQueued.push((settlement) => {
+          if (settlement === 'discarded') input.rollback()
+          input.onFinalSettlement?.(settlement)
+        })
+      }
+      return result
+    },
+  ),
+}))
 
 vi.mock('src/ts/chatCommands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/chatCommands')>()
@@ -448,6 +486,8 @@ beforeEach(() => {
   serverCommandState.enabled = false
   serverCommandState.updateCharacterCalls.length = 0
   serverCommandState.alternateGreetingCalls.length = 0
+  alternateGreetingMutationState.outcomes.length = 0
+  alternateGreetingMutationState.settleQueued.length = 0
   regexImportMocks.importRegexRows.mockReset().mockResolvedValue(null)
   assetMocks.saveAsset.mockReset().mockResolvedValue('asset-id')
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
@@ -1147,6 +1187,66 @@ describe('CharConfig draft-type-less character actions', () => {
         ],
       }),
     ])
+  })
+
+  it('keeps a retained alternate greeting cascade visible and identifies it as queued', async () => {
+    serverCommandState.enabled = true
+    alternateGreetingMutationState.outcomes.push('queued')
+    await mountCharConfig(2, {
+      alternateGreetings: ['Zero', 'One'],
+      chats: [
+        { id: 'chat-zero', name: 'Zero', message: [], note: '', localLore: [], fmIndex: 0 },
+        { id: 'chat-one', name: 'One', message: [], note: '', localLore: [], fmIndex: 1 },
+      ],
+    })
+
+    buttonByAccessibleName(`${language.moveUp}: ${language.altGreet} 2`).click()
+    await settleComponent()
+
+    expect(getDatabase().characters[0].alternateGreetings).toEqual(['One', 'Zero'])
+    expect(getDatabase().characters[0].chats.map((chat) => chat.fmIndex)).toEqual([1, 0])
+    expect(target.querySelector('[role="status"]')?.textContent).toBe(language.alternateGreetingMutationQueued)
+
+    alternateGreetingMutationState.settleQueued[0]?.('accepted')
+    await settleComponent()
+    expect(target.querySelector('[role="status"]')).toBeNull()
+  })
+
+  it('rolls back a terminal alternate greeting rejection and reports the failure', async () => {
+    serverCommandState.enabled = true
+    alternateGreetingMutationState.outcomes.push('failed')
+    await mountCharConfig(2, {
+      alternateGreetings: ['Zero', 'One'],
+      chats: [
+        { id: 'chat-zero', name: 'Zero', message: [], note: '', localLore: [], fmIndex: 0 },
+        { id: 'chat-one', name: 'One', message: [], note: '', localLore: [], fmIndex: 1 },
+      ],
+    })
+
+    buttonByAccessibleName(`${language.remove}: ${language.altGreet} 1`).click()
+    await settleComponent()
+
+    expect(getDatabase().characters[0].alternateGreetings).toEqual(['Zero', 'One'])
+    expect(getDatabase().characters[0].chats.map((chat) => chat.fmIndex)).toEqual([0, 1])
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe(language.alternateGreetingMutationFailed)
+  })
+
+  it('disables structural greeting actions while their durable outcome is pending', async () => {
+    serverCommandState.enabled = true
+    const outcome = deferred<'accepted' | 'queued' | 'failed'>()
+    alternateGreetingMutationState.outcomes.push(outcome.promise)
+    await mountCharConfig(2, { alternateGreetings: ['Zero', 'One'] })
+
+    buttonByAccessibleName(`${language.moveUp}: ${language.altGreet} 2`).click()
+    await settleComponent()
+
+    expect(buttonByAccessibleName(`${language.remove}: ${language.altGreet} 1`).disabled).toBe(true)
+    expect(buttonByAccessibleName(`${language.moveDown}: ${language.altGreet} 1`).disabled).toBe(true)
+    expect(serverCommandState.alternateGreetingCalls).toHaveLength(1)
+
+    outcome.resolve('accepted')
+    await settleComponent()
+    expect(buttonByAccessibleName(`${language.remove}: ${language.altGreet} 1`).disabled).toBe(false)
   })
 
   it('adds a regex script row when the script draft still targets the selected character', async () => {

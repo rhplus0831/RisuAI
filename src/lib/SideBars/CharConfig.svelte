@@ -116,22 +116,21 @@
     mergeScriptDefinitionProjectionRows,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
-  import {
-    canUseServerCommands,
-    mutateAlternateGreetingsCommand,
-    runServerCommand,
-    subscribeServerCommandLocalEffectApplied,
-  } from 'src/ts/server/commands'
+  import { canUseServerCommands, subscribeServerCommandLocalEffectApplied } from 'src/ts/server/commands'
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { applyCharacterRowMutationScoped } from 'src/ts/characterCommands'
   import { assetListRenderKey } from 'src/ts/media/assetList'
   import { mutateAlternateGreetings, type AlternateGreetingMutation } from 'src/ts/alternateGreetingMutation'
+  import { dispatchDurableAlternateGreetingMutation } from 'src/ts/alternateGreetingCommands'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
   let webSpeechSupported = $state(false)
   let webSpeechVoices = $state<string[]>([])
+  let alternateGreetingMutationPending = $state(false)
+  let alternateGreetingMutationStatus = $state<'idle' | 'queued' | 'failed'>('idle')
+  let alternateGreetingMutationAttempt = 0
   let iconButtonSize = $derived($SizeStore.w > 360 ? (24 as const) : (20 as const))
   const CHARACTER_ADDITIONAL_ASSET_EXTENSIONS = [
     'png',
@@ -557,15 +556,16 @@
 
   function moveAlternateGreetingUp(index: number) {
     if (index === 0) return
-    applyAlternateGreetingMutation({ type: 'swap', firstIndex: index, secondIndex: index - 1 })
+    void applyAlternateGreetingMutation({ type: 'swap', firstIndex: index, secondIndex: index - 1 })
   }
 
   function moveAlternateGreetingDown(index: number) {
     if (index === characterDraft.value.alternateGreetings.length - 1) return
-    applyAlternateGreetingMutation({ type: 'swap', firstIndex: index, secondIndex: index + 1 })
+    void applyAlternateGreetingMutation({ type: 'swap', firstIndex: index, secondIndex: index + 1 })
   }
 
-  function applyAlternateGreetingMutation(operation: AlternateGreetingMutation): void {
+  async function applyAlternateGreetingMutation(operation: AlternateGreetingMutation): Promise<void> {
+    if (alternateGreetingMutationPending) return
     const target = currentRealCharacterDraftTarget()
     if (!target) return
     const characterId = target.character.chaId
@@ -585,56 +585,71 @@
       flushPendingServerBackedChatPatches()
     }
 
-    characterDraft.value.alternateGreetings = cloneJsonValue(mutation.alternateGreetings)
-    characterDraft.value = { ...characterDraft.value }
-    withTrustedResourceWrite(() => {
-      const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
-      if (!character) return
-      character.alternateGreetings = cloneJsonValue(mutation.alternateGreetings)
-      const nextByChatId = new Map(mutation.chatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
-      for (const chat of character.chats) {
-        const fmIndex = nextByChatId.get(chat.id)
-        if (fmIndex !== undefined) chat.fmIndex = fmIndex
-      }
-    })
-    syncServerBackedCharacterProfileBaselines()
-    syncServerBackedChatMetadataBaselines()
-
-    if (!serverBacked) return
-    void runServerCommand({
-      command: (baseRevision) =>
-        mutateAlternateGreetingsCommand({
-          baseRevision,
-          characterId,
-          alternateGreetings: cloneJsonValue(mutation.alternateGreetings),
-          operation,
-          chatGreetingIndices: cloneJsonValue(mutation.chatGreetingIndices),
-        }),
-      rollback: () => {
-        const attemptedGreetings = snapshotJson(mutation.alternateGreetings)
-        if (
-          characterDraft.characterId === characterId &&
-          snapshotJson(characterDraft.value.alternateGreetings) === attemptedGreetings
-        ) {
-          characterDraft.value.alternateGreetings = cloneJsonValue(previousGreetings)
-          characterDraft.value = { ...characterDraft.value }
+    const applyOptimistic = () => {
+      characterDraft.value.alternateGreetings = cloneJsonValue(mutation.alternateGreetings)
+      characterDraft.value = { ...characterDraft.value }
+      withTrustedResourceWrite(() => {
+        const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
+        if (!character) return
+        character.alternateGreetings = cloneJsonValue(mutation.alternateGreetings)
+        const nextByChatId = new Map(mutation.chatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
+        for (const chat of character.chats) {
+          const fmIndex = nextByChatId.get(chat.id)
+          if (fmIndex !== undefined) chat.fmIndex = fmIndex
         }
-        withTrustedResourceWrite(() => {
-          const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
-          if (!character) return
-          if (snapshotJson(character.alternateGreetings) === attemptedGreetings) {
-            character.alternateGreetings = cloneJsonValue(previousGreetings)
-          }
-          const attemptedByChatId = new Map(mutation.chatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
-          for (const previous of previousGreetingIndices) {
-            const chat = character.chats.find((candidate) => candidate.id === previous.chatId)
-            if (chat && chat.fmIndex === attemptedByChatId.get(previous.chatId)) chat.fmIndex = previous.fmIndex
-          }
-        })
-        syncServerBackedCharacterProfileBaselines()
-        syncServerBackedChatMetadataBaselines()
+      })
+      syncServerBackedCharacterProfileBaselines()
+      syncServerBackedChatMetadataBaselines()
+    }
+    const rollback = () => {
+      const attemptedGreetings = snapshotJson(mutation.alternateGreetings)
+      if (
+        characterDraft.characterId === characterId &&
+        snapshotJson(characterDraft.value.alternateGreetings) === attemptedGreetings
+      ) {
+        characterDraft.value.alternateGreetings = cloneJsonValue(previousGreetings)
+        characterDraft.value = { ...characterDraft.value }
+      }
+      withTrustedResourceWrite(() => {
+        const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
+        if (!character) return
+        if (snapshotJson(character.alternateGreetings) === attemptedGreetings) {
+          character.alternateGreetings = cloneJsonValue(previousGreetings)
+        }
+        const attemptedByChatId = new Map(mutation.chatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
+        for (const previous of previousGreetingIndices) {
+          const chat = character.chats.find((candidate) => candidate.id === previous.chatId)
+          if (chat && chat.fmIndex === attemptedByChatId.get(previous.chatId)) chat.fmIndex = previous.fmIndex
+        }
+      })
+      syncServerBackedCharacterProfileBaselines()
+      syncServerBackedChatMetadataBaselines()
+    }
+
+    if (!serverBacked) {
+      applyOptimistic()
+      return
+    }
+
+    const attempt = ++alternateGreetingMutationAttempt
+    alternateGreetingMutationPending = true
+    alternateGreetingMutationStatus = 'idle'
+    const result = await dispatchDurableAlternateGreetingMutation({
+      characterId,
+      alternateGreetings: mutation.alternateGreetings,
+      operation,
+      chatGreetingIndices: mutation.chatGreetingIndices,
+      applyOptimistic,
+      rollback,
+      onFinalSettlement: (settlement) => {
+        if (attempt !== alternateGreetingMutationAttempt) return
+        alternateGreetingMutationStatus = settlement === 'accepted' ? 'idle' : 'failed'
       },
     })
+    if (attempt === alternateGreetingMutationAttempt) {
+      alternateGreetingMutationStatus = result === 'queued' ? 'queued' : result === 'failed' ? 'failed' : 'idle'
+      alternateGreetingMutationPending = false
+    }
   }
 
   function cloneJsonValue<T>(value: T): T {
@@ -2324,7 +2339,12 @@
   </div>
 
   <span class="text-textcolor mt-2">{language.altGreet}</span>
-  <div class="w-full max-w-full border border-selected rounded-md p-2">
+  <div class="w-full max-w-full border border-selected rounded-md p-2" aria-busy={alternateGreetingMutationPending}>
+    {#if alternateGreetingMutationStatus === 'queued'}
+      <p class="text-textcolor text-sm" role="status">{language.alternateGreetingMutationQueued}</p>
+    {:else if alternateGreetingMutationStatus === 'failed'}
+      <p class="text-red-500 text-sm" role="alert">{language.alternateGreetingMutationFailed}</p>
+    {/if}
     <table class="contain w-full max-w-full tabler mt-2">
       <tbody>
         <tr>
@@ -2366,21 +2386,23 @@
                   class="hover:text-blue-500 p-1"
                   aria-label={`${language.moveUp}: ${language.altGreet} ${i + 1}`}
                   onclick={() => moveAlternateGreetingUp(i)}
-                  disabled={i === 0}>
+                  disabled={alternateGreetingMutationPending || i === 0}>
                   <ArrowUp size={16} />
                 </button>
                 <button
                   class="hover:text-blue-500 p-1"
                   aria-label={`${language.moveDown}: ${language.altGreet} ${i + 1}`}
                   onclick={() => moveAlternateGreetingDown(i)}
-                  disabled={i === characterDraft.value.alternateGreetings.length - 1}>
+                  disabled={alternateGreetingMutationPending ||
+                    i === characterDraft.value.alternateGreetings.length - 1}>
                   <ArrowDown size={16} />
                 </button>
                 <button
                   class="hover:text-red-500 p-1"
                   aria-label={`${language.remove}: ${language.altGreet} ${i + 1}`}
+                  disabled={alternateGreetingMutationPending}
                   onclick={() => {
-                    applyAlternateGreetingMutation({ type: 'delete', index: i })
+                    void applyAlternateGreetingMutation({ type: 'delete', index: i })
                   }}>
                   <TrashIcon size={16} />
                 </button>

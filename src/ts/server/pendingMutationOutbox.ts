@@ -139,6 +139,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/settings\/[a-z][a-z-]*\/objects\/[^/?#]+$/ },
   { method: 'POST', path: /^\/characters$/ },
   { method: 'POST', path: /^\/characters\/create-and-select$/ },
+  { method: 'PATCH', path: /^\/characters\/[^/?#]+\/alternate-greetings$/ },
   { method: 'PATCH', path: /^\/characters\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/characters\/[^/?#]+$/ },
   { method: 'POST', path: /^\/characters\/select$/ },
