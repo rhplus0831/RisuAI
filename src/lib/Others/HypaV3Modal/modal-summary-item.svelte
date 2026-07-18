@@ -98,7 +98,6 @@
   let connectedMessageHydrationPromise: Promise<boolean> | null = null
 
   interface SummaryDeletionTarget {
-    owner: SerializableHypaV3Data
     summary: SerializableSummary
   }
 
@@ -155,12 +154,12 @@
 
   function captureSummaryDeletionTarget(): SummaryDeletionTarget | null {
     if (!summary || !hypaV3Data.summaries.includes(summary)) return null
-    return { owner: hypaV3Data, summary }
+    return { summary }
   }
 
   function resolveSummaryDeletionIndex(target: SummaryDeletionTarget): number {
-    if (!deletionOwnerActive || hypaV3Data !== target.owner) return -1
-    return target.owner.summaries.indexOf(target.summary)
+    if (!deletionOwnerActive) return -1
+    return hypaV3Data.summaries.indexOf(target.summary)
   }
 
   $effect.pre(() => {
@@ -376,14 +375,14 @@
     const liveIndex = resolveSummaryDeletionIndex(target)
     if (liveIndex < 0) return
     if (onDeleteSummary) await onDeleteSummary(liveIndex)
-    else target.owner.summaries.splice(liveIndex, 1)
+    else hypaV3Data.summaries.splice(liveIndex, 1)
   }
 
   async function deleteAfter(): Promise<void> {
     const target = captureSummaryDeletionTarget()
     if (!target) return
-    const targetIndex = target.owner.summaries.indexOf(target.summary)
-    const trailingSummaries = target.owner.summaries.slice(targetIndex + 1)
+    const targetIndex = hypaV3Data.summaries.indexOf(target.summary)
+    const trailingSummaries = hypaV3Data.summaries.slice(targetIndex + 1)
     const confirmed = await alertConfirmTwice(
       language.hypaV3Modal.deleteAfterConfirmMessage,
       language.hypaV3Modal.deleteAfterConfirmSecondMessage,
@@ -392,7 +391,7 @@
 
     const liveIndex = resolveSummaryDeletionIndex(target)
     if (liveIndex < 0) return
-    const liveTrailingSummaries = target.owner.summaries.slice(liveIndex + 1)
+    const liveTrailingSummaries = hypaV3Data.summaries.slice(liveIndex + 1)
     if (
       liveTrailingSummaries.length !== trailingSummaries.length ||
       liveTrailingSummaries.some((candidate, index) => candidate !== trailingSummaries[index])
@@ -400,7 +399,7 @@
       return
     }
     if (onDeleteAfter) await onDeleteAfter(liveIndex)
-    else target.owner.summaries.splice(liveIndex + 1)
+    else hypaV3Data.summaries.splice(liveIndex + 1)
   }
 
   async function toggleTranslateRerolled(regenerate: boolean): Promise<void> {

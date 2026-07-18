@@ -9,7 +9,14 @@ const serverMocks = vi.hoisted(() => ({
   listServerMemoryJobs: vi.fn(),
   cancelServerMemoryJob: vi.fn(),
   hydrateChatMessages: vi.fn<(...args: unknown[]) => Promise<void>>(),
+  summarize: vi.fn<(...args: unknown[]) => Promise<string>>(),
+  memoryJobListeners: new Set<(event: any) => void>(),
 }))
+
+vi.mock('src/ts/process/memory/hypav3', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/process/memory/hypav3')>()
+  return { ...actual, summarize: serverMocks.summarize }
+})
 
 vi.mock('src/ts/process/modules', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/process/modules')>()
@@ -38,7 +45,10 @@ vi.mock('src/ts/server/chatMessageHydration.svelte', async (importActual) => {
 })
 
 vi.mock('src/ts/server/memoryJobEvents', () => ({
-  subscribeServerMemoryJobEvents: () => () => undefined,
+  subscribeServerMemoryJobEvents: (listener: (event: any) => void) => {
+    serverMocks.memoryJobListeners.add(listener)
+    return () => serverMocks.memoryJobListeners.delete(listener)
+  },
 }))
 
 import HypaV3Modal from './HypaV3Modal.svelte'
@@ -145,6 +155,8 @@ describe('Hypa V3 server summary close reliability', () => {
     serverMocks.deleteServerMemorySummary.mockResolvedValue({ status: 'ok', summaryId: 'summary-a' })
     serverMocks.listServerMemoryJobs.mockResolvedValue({ status: 'ok', jobs: [], etag: 'jobs-a' })
     serverMocks.hydrateChatMessages.mockResolvedValue(undefined)
+    serverMocks.summarize.mockResolvedValue('Rerolled summary')
+    serverMocks.memoryJobListeners.clear()
     target = document.createElement('div')
     document.body.appendChild(target)
   })
@@ -212,6 +224,78 @@ describe('Hypa V3 server summary close reliability', () => {
     await vi.waitFor(() =>
       expect(target.querySelector<HTMLTextAreaElement>('textarea[readonly]')?.value).toBe('Message C'),
     )
+  })
+
+  it('keeps active row work and view state mounted across an identical background refresh', async () => {
+    const reroll = deferred<string>()
+    const refresh = deferred<{ status: 'ok'; summaries: ReturnType<typeof serverSummary>[] }>()
+    const persistedSummary = serverSummary()
+    serverMocks.summarize.mockReturnValueOnce(reroll.promise)
+    serverMocks.listServerMemorySummaries.mockResolvedValueOnce({ status: 'ok', summaries: [persistedSummary] })
+    serverMocks.listServerMemorySummaries.mockReturnValueOnce(refresh.promise)
+
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const summaryTextarea = Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).find(
+      (textarea) => textarea.value === 'Persisted summary',
+    )
+    if (!summaryTextarea) throw new Error('Missing persisted summary')
+
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.hypaV3Modal.searchAction}"]`)?.click()
+    await settle()
+    const searchInput = target.querySelector<HTMLInputElement>(
+      `input[aria-label="${language.hypaV3Modal.searchAction}"]`,
+    )
+    if (!searchInput) throw new Error('Missing summary search input')
+    searchInput.value = 'persisted'
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const connectedMessagesToggle = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.includes(language.hypaV3Modal.connectedMessageCountLabel.replace('{0}', '1')),
+    )
+    connectedMessagesToggle?.click()
+    await settle()
+    target.querySelector<HTMLButtonElement>('[data-chat-memo="message-a"]')?.click()
+    await vi.waitFor(() =>
+      expect(
+        Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).some(
+          (textarea) => textarea.value === 'Message A',
+        ),
+      ).toBe(true),
+    )
+    target.querySelector<HTMLButtonElement>('[data-summary-action="reroll"]')?.click()
+    await vi.waitFor(() => expect(serverMocks.summarize).toHaveBeenCalledOnce())
+
+    for (const listener of serverMocks.memoryJobListeners) {
+      listener({ chatId: 'chat-a', job: { kind: 'summarize', status: 'completed' } })
+    }
+    await vi.waitFor(() => expect(serverMocks.listServerMemorySummaries).toHaveBeenCalledTimes(2))
+
+    expect(
+      Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).find(
+        (textarea) => textarea.value === 'Persisted summary',
+      ),
+    ).toBe(summaryTextarea)
+    expect(searchInput.value).toBe('persisted')
+
+    refresh.resolve({ status: 'ok', summaries: [persistedSummary] })
+    await settle()
+    reroll.resolve('Reroll preserved after refresh')
+
+    await vi.waitFor(() =>
+      expect(
+        Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).some(
+          (textarea) => textarea.value === 'Reroll preserved after refresh',
+        ),
+      ).toBe(true),
+    )
+    expect(searchInput.value).toBe('persisted')
+    expect(
+      Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).some(
+        (textarea) => textarea.value === 'Message A',
+      ),
+    ).toBe(true)
   })
 
   it('keeps the modal open when a close-button flush fails', async () => {

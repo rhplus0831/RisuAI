@@ -90,6 +90,7 @@
   let serverMemoryError = $state<string | null>(null)
   let serverSummaryRefreshEpoch = 0
   let serverSummaryOwnerEpoch = 0
+  let serverSummaryLoadedChatId: string | null = null
   const serverSummaryMutationQueues = new Map<string, Promise<void>>()
   const pendingServerSummarySaves = new Set<PendingServerSummarySave>()
   const pendingServerSummaryTextSaves = new Map<string, Promise<boolean>>()
@@ -175,6 +176,25 @@
     }
   }
 
+  function sameStringArray(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
+    const leftValues = left ?? []
+    const rightValues = right ?? []
+    return leftValues.length === rightValues.length && leftValues.every((value, index) => value === rightValues[index])
+  }
+
+  function sameServerSummaryView(left: ServerSummaryView, right: ServerSummaryView): boolean {
+    return (
+      left.serverId === right.serverId &&
+      left.chunkId === right.chunkId &&
+      left.model === right.model &&
+      left.text === right.text &&
+      left.isImportant === right.isImportant &&
+      left.categoryId === right.categoryId &&
+      sameStringArray(left.chatMemos, right.chatMemos) &&
+      sameStringArray(left.tags, right.tags)
+    )
+  }
+
   function cloneLegacyCategories(): SerializableHypaV3Data['categories'] {
     return (legacyHypaV3Data.categories ?? []).map((category) => ({ ...category }))
   }
@@ -214,8 +234,12 @@
         const local = localSummaries.get(summary.id)
         const changedDuringRefresh =
           (serverSummaryEditVersions.get(summary.id) ?? 0) !== (editVersionsAtStart.get(summary.id) ?? 0)
+        const incoming = serverSummaryView(summary)
         return [
-          local && (dirtyServerSummaryIds.has(summary.id) || changedDuringRefresh) ? local : serverSummaryView(summary),
+          local &&
+          (dirtyServerSummaryIds.has(summary.id) || changedDuringRefresh || sameServerSummaryView(local, incoming))
+            ? local
+            : incoming,
         ]
       })
       // A successful list that began after a deletion is authoritative: retire
@@ -229,6 +253,10 @@
         summaries,
         categories: categoriesSnapshot,
         lastSelectedSummaries: [],
+      }
+      if (serverSummaryLoadedChatId !== chatId) {
+        serverSummaryLoadedChatId = chatId
+        uiState.collapsedSummaries = new Set(summaries.map((_, index) => index))
       }
       for (const summaryId of dirtyServerSummaryTextVersions.keys()) {
         if (!dirtyServerSummaryIds.has(summaryId)) dirtyServerSummaryTextVersions.delete(summaryId)
@@ -429,6 +457,7 @@
     deletedServerSummaryIds.clear()
     serverSummaryEditVersions.clear()
     pendingServerSummaryRefreshChatId = null
+    serverSummaryLoadedChatId = null
     const categoriesSnapshot = untrack(() => cloneLegacyCategories())
     tagManagerState.isOpen = false
     tagManagerState.currentSummaryIndex = -1
@@ -519,6 +548,7 @@
     collapsedSummaries: new Set(),
     dropdownOpen: false,
   })
+  let summaryViewOwnerKey: string | null = null
 
   function cancelPendingSearchFocusRestore(): void {
     if (!pendingSearchFocusRestore) return
@@ -597,22 +627,32 @@
   })
 
   $effect.pre(() => {
-    hypaV3Data?.summaries?.length
-    filterSelected
+    const modalOpen = $hypaV3ModalOpen
+    const character = currentCharacter
+    const chat = currentChat
+    const ownerKey =
+      modalOpen && character && chat
+        ? `${serverBackedMemoryMode ? 'server' : 'legacy'}:${character.chaId}:${chat.id ?? character.chatPage}`
+        : null
 
     untrack(() => {
-      if (!currentChat) {
+      if (!chat) {
         hypaV3ModalOpen.set(false)
         clearBulkResummary(true)
         return
       }
-      if (!serverBackedMemoryMode && !currentChat.hypaV3Data) {
-        currentChat.hypaV3Data = createInitialHypaV3Data()
+      if (!modalOpen) {
+        summaryViewOwnerKey = null
+        return
       }
+      if (!serverBackedMemoryMode && !chat.hypaV3Data) {
+        chat.hypaV3Data = createInitialHypaV3Data()
+      }
+      if (summaryViewOwnerKey === ownerKey) return
+      summaryViewOwnerKey = ownerKey
 
       expandedMessageState = null
       searchState = null
-
       uiState.collapsedSummaries = new Set(hypaV3Data.summaries.map((_, index) => index))
     })
   })
@@ -1275,7 +1315,7 @@
           <ServerMemoryJobs chatId={currentChatId} />
         {/if}
 
-        {#if serverBackedMemoryMode && serverMemoryLoading}
+        {#if serverBackedMemoryMode && serverMemoryLoading && hypaV3Data.summaries.length === 0}
           <div class="p-4 text-center sm:p-3 md:p-4 text-zinc-400">
             {language.loading}
           </div>
