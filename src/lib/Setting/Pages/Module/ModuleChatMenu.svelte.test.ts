@@ -18,6 +18,11 @@ const moduleMenuMocks = vi.hoisted(() => ({
   toggleSelectedChatModule: vi.fn(),
 }))
 
+const moduleMenuAlertMocks = vi.hoisted(() => ({
+  alertError: vi.fn(),
+  alertNormal: vi.fn(),
+}))
+
 const moduleMenuStores = vi.hoisted(() => {
   function writable<T>(initial: T) {
     let value = initial
@@ -43,11 +48,13 @@ const moduleMenuStores = vi.hoisted(() => {
 })
 
 vi.mock('src/ts/moduleCommands', () => moduleMenuMocks)
+vi.mock('src/ts/alert', () => moduleMenuAlertMocks)
 vi.mock('src/ts/server/resourceState.svelte', () => ({
   getResourceDatabase: () => moduleMenuDatabase,
 }))
 vi.mock('src/ts/stores.svelte', () => moduleMenuStores)
 
+import { language } from 'src/lang'
 import ModuleChatMenu from './ModuleChatMenu.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -56,6 +63,16 @@ let component: MountedComponent | undefined
 let opener: HTMLButtonElement
 let target: HTMLElement
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 async function settle(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
@@ -63,10 +80,17 @@ async function settle(): Promise<void> {
 }
 
 beforeEach(() => {
+  moduleMenuDatabase.characters[0].chatPage = 0
+  moduleMenuDatabase.characters[0].chats = [{ modules: [] }]
+  moduleMenuDatabase.characters[0].modules = []
   moduleMenuDatabase.modules = []
   moduleMenuDatabase.enabledModules = []
   moduleMenuMocks.toggleSelectedCharacterModule.mockReset()
   moduleMenuMocks.toggleSelectedChatModule.mockReset()
+  moduleMenuMocks.toggleSelectedCharacterModule.mockResolvedValue({ status: 'accepted', result: null })
+  moduleMenuMocks.toggleSelectedChatModule.mockResolvedValue({ status: 'accepted', result: null })
+  moduleMenuAlertMocks.alertError.mockReset()
+  moduleMenuAlertMocks.alertNormal.mockReset()
   opener = document.createElement('button')
   opener.textContent = 'Open modules'
   target = document.createElement('div')
@@ -110,6 +134,73 @@ describe('ModuleChatMenu modal behavior', () => {
     expect(target.querySelector('button[aria-label="Module: MCP A"]')).toBeNull()
     expect(moduleMenuMocks.toggleSelectedChatModule).not.toHaveBeenCalled()
     expect(moduleMenuMocks.toggleSelectedCharacterModule).not.toHaveBeenCalled()
+  })
+
+  it('shows pending and failed state when a chat-scoped toggle is rejected', async () => {
+    moduleMenuDatabase.modules = [{ id: 'module-a', name: 'Module A' }]
+    const dispatch = createDeferred<{
+      status: 'failed'
+      result: { status: 'conflict'; currentRevision: number }
+    }>()
+    moduleMenuMocks.toggleSelectedChatModule.mockReturnValueOnce(dispatch.promise)
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    const toggle = target.querySelector<HTMLButtonElement>('button[aria-label="Module: Module A"]')
+    if (!toggle) throw new Error('Chat module toggle not found')
+    toggle.click()
+    await settle()
+
+    expect(toggle.disabled).toBe(true)
+    expect(target.querySelector('[data-module-mutation-status="module-a"]')?.textContent).toContain(
+      language.moduleSave.saving,
+    )
+
+    dispatch.resolve({ status: 'failed', result: { status: 'conflict', currentRevision: 12 } })
+    await vi.waitFor(() =>
+      expect(target.querySelector('[data-module-mutation-status="module-a"]')?.textContent).toContain(
+        language.moduleSave.commandConflict,
+      ),
+    )
+    expect(toggle.disabled).toBe(false)
+    expect(moduleMenuAlertMocks.alertError).toHaveBeenCalledWith(language.moduleSave.commandConflict)
+  })
+
+  it('keeps a character-scoped toggle queued and reports a later replay failure', async () => {
+    moduleMenuDatabase.modules = [{ id: 'module-a', name: 'Module A' }]
+    const settlement = createDeferred<{
+      status: 'failed'
+      result: { status: 'unavailable' }
+    }>()
+    moduleMenuMocks.toggleSelectedCharacterModule.mockResolvedValueOnce({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationIds: ['mutation-a'],
+      settlement: settlement.promise,
+    })
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    const toggle = target.querySelector<HTMLButtonElement>('button[aria-label="Module: Module A"]')
+    if (!toggle) throw new Error('Character module toggle not found')
+    toggle.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() =>
+      expect(target.querySelector('[data-module-mutation-status="module-a"]')?.textContent).toContain(
+        language.moduleSave.queued,
+      ),
+    )
+    expect(toggle.disabled).toBe(true)
+    expect(moduleMenuAlertMocks.alertNormal).toHaveBeenCalledWith(language.moduleSave.queued)
+
+    settlement.resolve({ status: 'failed', result: { status: 'unavailable' } })
+    await vi.waitFor(() =>
+      expect(target.querySelector('[data-module-mutation-status="module-a"]')?.textContent).toContain(
+        language.moduleSave.commandUnavailable,
+      ),
+    )
+    expect(toggle.disabled).toBe(false)
+    expect(moduleMenuAlertMocks.alertError).toHaveBeenCalledWith(language.moduleSave.commandUnavailable)
   })
 
   it('contains focus, owns Escape, and restores the opener', async () => {

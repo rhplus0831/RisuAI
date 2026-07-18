@@ -5,6 +5,7 @@ import {
   dispatchOwnedDurableBatch,
   type CharacterOwnedDurableBatchResult,
   type CharacterOwnedDurableBatchStep,
+  type ChatMutationFinalOutcome,
   type ChatScopedSnapshot,
   type ChatGenerationSettingsSnapshot,
 } from './chatCommands'
@@ -66,6 +67,16 @@ export interface GlobalModuleStateSnapshot {
 export type ModuleMutationOutcome =
   | { status: 'accepted'; result: Extract<ServerCommandResult, { status: 'ok' }> | null }
   | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+  | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+
+export type ScopedModuleMutationOutcome =
+  | { status: 'accepted'; result: null }
+  | {
+      status: 'queued'
+      result: Exclude<ServerCommandResult, { status: 'ok' }>
+      mutationIds: readonly string[]
+      settlement: Promise<ChatMutationFinalOutcome>
+    }
   | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
 
 export interface CharacterModuleStateSnapshot {
@@ -1814,14 +1825,49 @@ interface ScopedModuleDurableBatchStep extends CharacterOwnedDurableBatchStep {
   operation: PendingScopedModuleOperation
 }
 
-function dispatchScopedModuleDurableBatch(
+async function dispatchScopedModuleDurableBatch(
   characterId: string | undefined,
   steps: ScopedModuleDurableBatchStep[],
-): void {
-  void dispatchCharacterOwnedDurableBatch(characterId, steps).then((outcome) => {
-    if (outcome.status !== 'retained') return
+): Promise<ScopedModuleMutationOutcome> {
+  let outcome: CharacterOwnedDurableBatchResult
+  try {
+    outcome = await dispatchCharacterOwnedDurableBatch(characterId, steps)
+  } catch (error) {
+    for (const step of [...steps].reverse()) rejectScopedModuleOperation(step.operation)
+    return {
+      status: 'failed',
+      result: {
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+        reason: 'invalid-request',
+      },
+    }
+  }
+
+  if (outcome.status === 'ok') {
     for (const step of steps.slice(outcome.acceptedCount)) acceptScopedModuleOperation(step.operation)
+    return { status: 'accepted', result: null }
+  }
+  if (outcome.status === 'failure') return { status: 'failed', result: outcome.failure }
+
+  const retainedSteps = steps.slice(outcome.acceptedCount)
+  if (!outcome.mutationIds || !outcome.settlement) {
+    for (const step of [...retainedSteps].reverse()) rejectScopedModuleOperation(step.operation)
+    return { status: 'failed', result: outcome.failure }
+  }
+
+  const settlement = outcome.settlement.then((finalOutcome) => {
+    if (finalOutcome.status === 'accepted') {
+      for (const step of retainedSteps) acceptScopedModuleOperation(step.operation)
+    }
+    return finalOutcome
   })
+  return {
+    status: 'queued',
+    result: outcome.failure,
+    mutationIds: outcome.mutationIds,
+    settlement,
+  }
 }
 
 function chatForScopedModuleMutation(
@@ -2065,10 +2111,10 @@ function dispatchUpdateChatScopedWithGenerationSettings(
   nextModules: string[],
   generationUpdate: ActiveChatSidebarToggleDefaultUpdate | null,
   previous: ChatScopedSnapshot,
-): void {
+): Promise<ScopedModuleMutationOutcome> {
   const steps = [chatModuleDurableStep(chatId, nextModules, previous)]
   if (generationUpdate) steps.push(generationSettingsDurableStep(generationUpdate))
-  dispatchScopedModuleDurableBatch(previous.characterId, steps)
+  return dispatchScopedModuleDurableBatch(previous.characterId, steps)
 }
 
 function dispatchReorderCharacterModulesWithGenerationSettings(
@@ -2076,24 +2122,24 @@ function dispatchReorderCharacterModulesWithGenerationSettings(
   nextModules: string[],
   previous: CharacterModuleStateSnapshot,
   generationUpdate: ActiveChatSidebarToggleDefaultUpdate | null,
-): void {
+): Promise<ScopedModuleMutationOutcome> {
   const steps = [characterModuleDurableStep(characterId, nextModules, previous)]
   if (generationUpdate) steps.push(generationSettingsDurableStep(generationUpdate))
-  dispatchScopedModuleDurableBatch(characterId, steps)
+  return dispatchScopedModuleDurableBatch(characterId, steps)
 }
 
 export function dispatchReorderCharacterModules(characterId: string, previous: CharacterModuleStateSnapshot): void {
   const character = findCharacterById(characterId)
   if (!character) return
-  dispatchReorderCharacterModulesWithGenerationSettings(characterId, character.modules ?? [], previous, null)
+  void dispatchReorderCharacterModulesWithGenerationSettings(characterId, character.modules ?? [], previous, null)
 }
 
-export function toggleSelectedChatModule(moduleId: string): void {
+export function toggleSelectedChatModule(moduleId: string): Promise<ScopedModuleMutationOutcome> {
   const selectedIndex = get(selectedCharID)
   const character = getDatabase().characters?.[selectedIndex]
   const chatIndex = character?.chatPage
   const chat = Number.isInteger(chatIndex) ? character?.chats?.[chatIndex] : undefined
-  if (!chat?.id) return
+  if (!chat?.id) return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
 
   // Toggling a chat's module link mutates only the active chat row, so the
   // rollback needs just that one chat — not a deep clone of every character
@@ -2110,17 +2156,18 @@ export function toggleSelectedChatModule(moduleId: string): void {
   })
 
   const generationUpdate = enabling ? applyMissingActiveChatSidebarToggleDefaults() : null
-  dispatchUpdateChatScopedWithGenerationSettings(chat.id, nextModules, generationUpdate, previous)
+  const outcome = dispatchUpdateChatScopedWithGenerationSettings(chat.id, nextModules, generationUpdate, previous)
   reloadGuiAfterDefinitionChange()
+  return outcome
 }
 
-export function toggleSelectedCharacterModule(moduleId: string): void {
+export function toggleSelectedCharacterModule(moduleId: string): Promise<ScopedModuleMutationOutcome> {
   const selectedIndex = get(selectedCharID)
   const character = getDatabase().characters?.[selectedIndex]
-  if (!character?.chaId) return
+  if (!character?.chaId) return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
 
   const previous = currentCharacterModuleStateSnapshot(character.chaId)
-  if (!previous) return
+  if (!previous) return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
   const enabling = !(character.modules ?? []).includes(moduleId)
   const nextModules = toggledModuleIds(character.modules, moduleId)
 
@@ -2131,8 +2178,14 @@ export function toggleSelectedCharacterModule(moduleId: string): void {
   })
 
   const generationUpdate = enabling ? applyMissingActiveChatSidebarToggleDefaults() : null
-  dispatchReorderCharacterModulesWithGenerationSettings(character.chaId, nextModules, previous, generationUpdate)
+  const outcome = dispatchReorderCharacterModulesWithGenerationSettings(
+    character.chaId,
+    nextModules,
+    previous,
+    generationUpdate,
+  )
   reloadGuiAfterDefinitionChange()
+  return outcome
 }
 
 export function toggledModuleIds(current: readonly string[] | undefined, moduleId: string): string[] {

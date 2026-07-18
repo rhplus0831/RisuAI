@@ -549,7 +549,7 @@ describe('module command projection helpers', () => {
     )
 
     try {
-      toggleSelectedChatModule('mod-b')
+      const mutation = toggleSelectedChatModule('mod-b')
 
       await vi.waitFor(() => expect(commands).toEqual(['/api/v1/commands/chats/chat-a']))
       await vi.waitFor(async () => {
@@ -565,6 +565,12 @@ describe('module command projection helpers', () => {
       })
       expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'mod-b'])
       expect(getDatabase().characters[0].chats[0].generationSettings?.sidebarToggles).toEqual({ flag: '0' })
+      const queued = await mutation
+      expect(queued).toMatchObject({
+        status: 'queued',
+        result: { status: 'error' },
+        mutationIds: expect.arrayContaining([expect.any(String)]),
+      })
 
       recover = true
       await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
@@ -573,6 +579,57 @@ describe('module command projection helpers', () => {
         '/api/v1/commands/chats/chat-a',
         '/api/v1/commands/chats/chat-a/generation-settings',
       ])
+      expect(await listPendingMutations()).toEqual([])
+      if (queued.status !== 'queued') throw new Error('Expected the module mutation to be retained')
+      await expect(queued.settlement).resolves.toEqual({ status: 'accepted' })
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('reports and rolls back a retained chat-module toggle when replay is discarded', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-module-discard',
+      writerEpoch: 16,
+      databaseLineage: 'lineage-chat-module-discard',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(60)
+    setResourceWriteGuardEnabled(true)
+
+    let replaying = false
+    const commands: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/chats/chat-a') {
+          commands.push(url)
+          if (!replaying) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          return jsonResponse({ error: 'module link is invalid', reason: 'invalid-request' }, 400)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const queued = await toggleSelectedChatModule('mod-b')
+      expect(queued).toMatchObject({ status: 'queued', result: { status: 'error' } })
+      if (queued.status !== 'queued') throw new Error('Expected the module mutation to be retained')
+      expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'mod-b'])
+
+      replaying = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ discarded: 1, retained: 0 })
+      await expect(queued.settlement).resolves.toMatchObject({
+        status: 'failed',
+        result: { status: 'error', error: 'module link is invalid' },
+      })
+      await vi.waitFor(() => expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a']))
+      expect(commands).toEqual(['/api/v1/commands/chats/chat-a', '/api/v1/commands/chats/chat-a'])
       expect(await listPendingMutations()).toEqual([])
     } finally {
       await clearPendingMutationOutbox()
@@ -621,9 +678,13 @@ describe('module command projection helpers', () => {
     )
 
     try {
-      toggleSelectedChatModule('mod-b')
+      const mutation = toggleSelectedChatModule('mod-b')
       await vi.waitFor(() => expect(commands).toEqual(['/api/v1/commands/chats/chat-a']))
       await vi.waitFor(() => expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a']))
+      await expect(mutation).resolves.toMatchObject({
+        status: 'failed',
+        result: { status: 'error', reason: 'not-found' },
+      })
       expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initialSettings)
       expect(await listPendingMutations()).toEqual([])
     } finally {
