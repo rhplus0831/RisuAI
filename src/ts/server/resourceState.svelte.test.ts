@@ -2231,6 +2231,50 @@ describe('resource-scoped database state', () => {
     })
   })
 
+  it('keeps character pointers newer than an unrelated settings acknowledgement fence', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+        modelPresets: [
+          { id: 'model-a', name: 'A' },
+          { id: 'model-b', name: 'B' },
+        ],
+        modelPresetsId: 0,
+      } as never,
+      3,
+    )
+    applyCharactersResource({
+      revision: 4,
+      characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 1,
+    })
+
+    expect(
+      applyPresetReorderLocalEffect({
+        revision: 5,
+        presetKind: 'model',
+        presetIds: ['model-a', 'model-b'],
+        selectedPresetId: 'model-a',
+        settingsWritten: true,
+      }),
+    ).toBe(true)
+
+    expect(settingsResourceState.fullRevision).toBe(5)
+    expect(settingsResourceState.pointerValueRevisions).toEqual({ characterOrder: 3, currentChar: 3 })
+    expect(getResourceDatabase()).toMatchObject({
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 1,
+    })
+    expect(composeResourceDatabaseSnapshot()).toMatchObject({
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 1,
+    })
+  })
+
   it('fences optimistic character order and nested-row writes without replacing newer values', () => {
     const ada = metadataCharacter('char-a', 'Ada')
     ada.chats = [{ id: 'chat-a', message: [], scriptstate: { $score: 'newer' } }] as never

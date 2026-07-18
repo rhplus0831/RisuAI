@@ -580,6 +580,7 @@ export interface SettingsResourceState {
   value: ServerSettingsValues
   revision: number | null
   fullRevision: number | null
+  pointerValueRevisions: Record<'characterOrder' | 'currentChar', number | null>
   enabledModulesRevision: number | null
   loreBookPageRevision: number | null
   groupRevisions: Partial<Record<SettingsGroup, number>>
@@ -617,6 +618,10 @@ export const settingsResourceState = $state<SettingsResourceState>({
   value: {},
   revision: null,
   fullRevision: null,
+  pointerValueRevisions: {
+    characterOrder: null,
+    currentChar: null,
+  },
   enabledModulesRevision: null,
   loreBookPageRevision: null,
   groupRevisions: {},
@@ -712,6 +717,8 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
       ? maxRevision(settingsResourceState.revision, payload.revision)
       : payload.revision
   settingsResourceState.fullRevision = payload.revision
+  settingsResourceState.pointerValueRevisions.characterOrder = payload.revision
+  settingsResourceState.pointerValueRevisions.currentChar = payload.revision
   settingsResourceState.enabledModulesRevision = preserveEnabledModules
     ? settingsResourceState.enabledModulesRevision
     : null
@@ -2334,6 +2341,10 @@ export function resetServerResourceState(): void {
   settingsResourceState.value = {}
   settingsResourceState.revision = null
   settingsResourceState.fullRevision = null
+  settingsResourceState.pointerValueRevisions = {
+    characterOrder: null,
+    currentChar: null,
+  }
   settingsResourceState.enabledModulesRevision = null
   settingsResourceState.loreBookPageRevision = null
   settingsResourceState.groupRevisions = {}
@@ -2386,6 +2397,10 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   settingsResourceState.value = settings as ServerSettingsValues
   settingsResourceState.revision = nextRevision
   settingsResourceState.fullRevision = nextRevision
+  settingsResourceState.pointerValueRevisions = {
+    characterOrder: nextRevision,
+    currentChar: nextRevision,
+  }
   settingsResourceState.enabledModulesRevision = null
   settingsResourceState.loreBookPageRevision = null
   settingsResourceState.groupRevisions = {}
@@ -2595,6 +2610,7 @@ function setResourceDatabaseField(property: string, value: unknown): void {
   ;(settingsResourceState.value as Record<string, unknown>)[property] = value
   settingsResourceState.status = 'ready'
   mirrorCharacterPointerField(property, value)
+  noteSettingsPointerValueWrite(property)
 }
 
 function deleteResourceDatabaseField(property: string): void {
@@ -2615,6 +2631,7 @@ function deleteResourceDatabaseField(property: string): void {
   delete (settingsResourceState.value as Record<string, unknown>)[property]
   if (property === 'characterOrder') charactersResourceState.characterOrder = []
   if (property === 'currentChar') charactersResourceState.currentChar = -1
+  noteSettingsPointerValueWrite(property)
 }
 
 function mirrorCharacterPointerField(property: string, value: unknown): void {
@@ -2624,6 +2641,19 @@ function mirrorCharacterPointerField(property: string, value: unknown): void {
   if (property === 'currentChar' && Number.isInteger(value)) {
     charactersResourceState.currentChar = value as number
   }
+}
+
+function noteSettingsPointerValueWrite(property: string): void {
+  if (property !== 'characterOrder' && property !== 'currentChar') return
+  const targetedRevision =
+    property === 'characterOrder' ? charactersResourceState.orderRevision : charactersResourceState.selectionRevision
+  settingsResourceState.pointerValueRevisions[property] = Math.max(
+    settingsResourceState.pointerValueRevisions[property] ?? -1,
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.revision ?? -1,
+    charactersResourceState.listRevision ?? -1,
+    targetedRevision ?? -1,
+  )
 }
 
 function guardResourceDatabaseValue<T>(value: T): T {
@@ -2720,7 +2750,8 @@ function shouldUseCharacterPointerResource(property: 'characterOrder' | 'current
     property === 'characterOrder' ? charactersResourceState.orderRevision : charactersResourceState.selectionRevision
   const pointerRevision = Math.max(charactersResourceState.listRevision ?? -1, targetedRevision ?? -1)
   if (pointerRevision < 0) return false
-  return settingsResourceState.fullRevision === null || pointerRevision >= settingsResourceState.fullRevision
+  const settingsPointerValueRevision = settingsResourceState.pointerValueRevisions[property]
+  return settingsPointerValueRevision === null || pointerRevision >= settingsPointerValueRevision
 }
 
 function isLorebookMutationOperation(value: unknown): value is ServerLorebookMutationLocalEffectPayload['operation'] {
