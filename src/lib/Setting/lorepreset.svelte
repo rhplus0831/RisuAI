@@ -8,14 +8,17 @@
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import {
     createGlobalLorebook,
-    deleteGlobalLorebook,
-    deleteGlobalLorebookById,
+    deleteGlobalLorebookByIdWithOutcome,
+    deleteGlobalLorebookWithOutcome,
     renameGlobalLorebook,
     renameGlobalLorebookById,
     selectGlobalLorebook,
+    subscribeGlobalLorebookDeleteStates,
     watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
   let editMode = $state(false)
+  /** @type {Map<string, import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState>} */
+  let globalLorebookDeleteStates = $state(new Map())
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
 
@@ -32,6 +35,18 @@
     return matches.length === 1 ? lorebookId : lorebook
   }
 
+  /** @param {import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState | undefined} state */
+  function isDeletePending(state) {
+    return state?.status === 'deleting' || state?.status === 'queued'
+  }
+
+  /** @param {import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState} state */
+  function deleteStatusText(state) {
+    if (state.status === 'deleting') return language.globalLorebookDelete.deleting
+    if (state.status === 'queued') return language.globalLorebookDelete.queued
+    return language.globalLorebookDelete.failed
+  }
+
   /** @param {KeyboardEvent} event */
   function handleDialogKeydown(event) {
     if (event.key !== 'Escape') return
@@ -39,6 +54,12 @@
     event.stopPropagation()
     close()
   }
+
+  $effect(() => {
+    return subscribeGlobalLorebookDeleteStates((states) => {
+      globalLorebookDeleteStates = new Map(states.map((state) => [state.lorebookId, state]))
+    })
+  })
 
   $effect(() => {
     // This modal only edits the global lorebook list, so scope change detection
@@ -70,50 +91,69 @@
       </div>
     </div>
     {#each getDatabase().loreBook as lore, ind (lorebookRenderKey(lore))}
+      {@const lorebookId = stableLorebookId(lore.id)}
+      {@const deleteState = lorebookId ? globalLorebookDeleteStates.get(lorebookId) : undefined}
+      {@const deletePending = isDeletePending(deleteState)}
       <div
-        class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-        class:bg-selected={ind === getDatabase().loreBookPage}>
-        {#if editMode}
-          <TextInput
-            bind:value={
-              () => lore.name,
-              (value) => {
-                const lorebookId = stableLorebookId(lore.id)
-                if (lorebookId) {
-                  renameGlobalLorebookById(lorebookId, value)
-                } else if (getDatabase().loreBook[ind] === lore) {
-                  renameGlobalLorebook(ind, value)
+        class="flex flex-col items-stretch text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2"
+        class:bg-selected={ind === getDatabase().loreBookPage}
+        class:opacity-70={deletePending}
+        aria-busy={deletePending}
+        data-risu-global-lorebook-delete-status={deleteState?.status}>
+        <div class="flex items-center gap-2">
+          {#if editMode && !deletePending}
+            <TextInput
+              bind:value={
+                () => lore.name,
+                (value) => {
+                  if (lorebookId) {
+                    renameGlobalLorebookById(lorebookId, value)
+                  } else if (getDatabase().loreBook[ind] === lore) {
+                    renameGlobalLorebook(ind, value)
+                  }
                 }
               }
-            }
-            placeholder="string"
-            padding={false} />
-        {:else}
-          <button class="grow text-left" onclick={() => selectGlobalLorebook(ind)}>{lore.name}</button>
-        {/if}
-        <div class="grow flex justify-end">
-          <button
-            type="button"
-            class="text-textcolor2 hover:text-green-500 cursor-pointer"
-            aria-label={`${language.remove}: ${lore.name}`}
-            onclick={async () => {
-              if (getDatabase().loreBook.length === 1) {
-                return
-              }
-              const lorebookId = stableLorebookId(lore.id)
-              const lorebookReference = lore
-              const d = await alertConfirm(`${language.removeConfirm}${lore.name}`)
-              if (d) {
+              placeholder="string"
+              padding={false} />
+          {:else}
+            <button
+              class="grow text-left disabled:cursor-not-allowed"
+              disabled={deletePending}
+              onclick={() => selectGlobalLorebook(ind)}>{lore.name}</button>
+          {/if}
+          <div class="grow flex justify-end">
+            <button
+              type="button"
+              class="text-textcolor2 hover:text-green-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label={`${language.remove}: ${lore.name}`}
+              disabled={deletePending}
+              onclick={async () => {
+                if (deletePending || getDatabase().loreBook.length === 1) {
+                  return
+                }
+                const lorebookReference = lore
+                const d = await alertConfirm(`${language.removeConfirm}${lore.name}`)
+                if (!d) return
                 if (lorebookId) {
-                  deleteGlobalLorebookById(lorebookId)
+                  await deleteGlobalLorebookByIdWithOutcome(lorebookId)
                 } else if (getDatabase().loreBook[ind] === lorebookReference) {
-                  deleteGlobalLorebook(ind)
+                  await deleteGlobalLorebookWithOutcome(ind)
                 }
-              }
-            }}>
-            <TrashIcon size={18} />
-          </button>
+              }}>
+              <TrashIcon size={18} />
+            </button>
+          </div>
         </div>
+        {#if deleteState}
+          <p
+            class="m-0 mt-1 text-xs"
+            class:text-red-400={deleteState.status === 'failed'}
+            class:text-textcolor2={deleteState.status !== 'failed'}
+            role={deleteState.status === 'failed' ? 'alert' : 'status'}
+            aria-live={deleteState.status === 'failed' ? 'assertive' : 'polite'}>
+            {deleteStatusText(deleteState)}
+          </p>
+        {/if}
       </div>
     {/each}
     <div class="flex mt-2 items-center">

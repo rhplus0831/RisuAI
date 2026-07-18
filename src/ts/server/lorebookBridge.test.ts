@@ -19,10 +19,12 @@ import {
   currentLorebookCollectionScopedSnapshot,
   currentLorebookStateSnapshot,
   deleteGlobalLorebookById,
+  deleteGlobalLorebookByIdWithOutcome,
   dispatchCreateGlobalLorebook,
   dispatchSelectGlobalLorebook,
   dispatchUpdateGlobalLorebook,
   ensureGlobalLorebookListIds,
+  getGlobalLorebookDeleteState,
   globalLorebookListIdsNeedNormalization,
   markCharacterLorebookHydrated,
   replaceGlobalLorebookEntryCollection,
@@ -766,7 +768,7 @@ describe('lorebook durable generation ordering', () => {
     }
   })
 
-  it('restores the latest edited global lorebook row, siblings, and page after delete failure', async () => {
+  it('marks a restored global lorebook delete queued and removes it after accepted replay', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
     await preparePendingMutationOutbox({
@@ -792,6 +794,7 @@ describe('lorebook durable generation ordering', () => {
     } as any)
     setCachedServerCommandRevision(70)
     const calls: CapturedFetch[] = []
+    let recoverDelete = false
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -808,6 +811,21 @@ describe('lorebook durable generation ordering', () => {
           body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
         })
         if (method === 'DELETE') {
+          if (recoverDelete) {
+            return new Response(
+              JSON.stringify({
+                revision: 72,
+                event: {
+                  type: 'lorebook.deleted',
+                  revision: 72,
+                  resource: 'globalLorebook',
+                  id: 'book-delete-rollback',
+                },
+                lorebookId: 'book-delete-rollback',
+              }),
+              { headers: { 'content-type': 'application/json' } },
+            )
+          }
           return new Response(JSON.stringify({ error: 'forced global lorebook delete failure' }), {
             status: 500,
             headers: { 'content-type': 'application/json' },
@@ -843,7 +861,8 @@ describe('lorebook durable generation ordering', () => {
           10_000,
         ),
       ).toBe(true)
-      expect(deleteGlobalLorebookById('book-delete-rollback')).toBe(true)
+      const deleteOutcome = deleteGlobalLorebookByIdWithOutcome('book-delete-rollback')
+      expect(deleteOutcome).not.toBeNull()
       expect((getDatabase().loreBook as any[]).map((book) => book.id)).toEqual([
         'book-rollback-sibling',
         'book-rollback-later',
@@ -858,11 +877,99 @@ describe('lorebook durable generation ordering', () => {
           'book-rollback-later',
         ])
       })
+      await expect(deleteOutcome).resolves.toBe('queued')
       expect((getDatabase().loreBook as any[])[1].data[0].content).toBe('latest edited content')
       expect((getDatabase().loreBook as any[])[0].name).toBe('Sibling latest')
       expect((getDatabase().loreBook as any[])[2].name).toBe('Later latest')
       expect(getDatabase().loreBookPage).toBe(1)
       expect((await listPendingMutations()).map((entry) => entry.intent.requests[0]?.method)).toEqual(['DELETE'])
+      expect(getGlobalLorebookDeleteState('book-delete-rollback')).toMatchObject({
+        lorebookId: 'book-delete-rollback',
+        mutationId: expect.any(String),
+        status: 'queued',
+      })
+
+      recoverDelete = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      expect((getDatabase().loreBook as any[]).map((book) => book.id)).toEqual([
+        'book-rollback-sibling',
+        'book-rollback-later',
+      ])
+      expect(getGlobalLorebookDeleteState('book-delete-rollback')).toBeNull()
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      resetServerBackedLorebookBridgeForTests()
+      await Promise.resolve()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('clears queued ownership and reports failure when replay finally discards the delete', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-global-lorebook-delete-discard',
+      writerEpoch: 9,
+      databaseLineage: 'lineage-global-lorebook-delete-discard',
+      requestedWriterWasActive: true,
+    })
+    setDatabaseLite({
+      characters: [],
+      modules: [],
+      loreBookPage: 0,
+      loreBook: [
+        { id: 'book-delete-discard', name: 'Discard delete', data: [] },
+        { id: 'book-delete-discard-sibling', name: 'Sibling', data: [] },
+      ],
+    } as any)
+    setCachedServerCommandRevision(75)
+    let terminal = false
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return new Response(JSON.stringify({ acknowledged: true }), {
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        return new Response(JSON.stringify({ error: terminal ? 'lorebook no longer exists' : 'temporarily offline' }), {
+          status: terminal ? 404 : 503,
+          headers: { 'content-type': 'application/json' },
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const deleteOutcome = deleteGlobalLorebookByIdWithOutcome('book-delete-discard')
+      expect(deleteOutcome).not.toBeNull()
+      await waitForCallCount(calls, 1)
+      await expect(deleteOutcome).resolves.toBe('queued')
+      expect((getDatabase().loreBook as any[]).map((book) => book.id)).toEqual([
+        'book-delete-discard',
+        'book-delete-discard-sibling',
+      ])
+      expect(getGlobalLorebookDeleteState('book-delete-discard')).toMatchObject({ status: 'queued' })
+
+      terminal = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ discarded: 1 })
+      expect((getDatabase().loreBook as any[]).map((book) => book.id)).toEqual([
+        'book-delete-discard',
+        'book-delete-discard-sibling',
+      ])
+      expect(getGlobalLorebookDeleteState('book-delete-discard')).toMatchObject({
+        lorebookId: 'book-delete-discard',
+        mutationId: expect.any(String),
+        status: 'failed',
+      })
+      expect(await listPendingMutations()).toEqual([])
     } finally {
       resetServerBackedLorebookBridgeForTests()
       await Promise.resolve()

@@ -6,6 +6,9 @@ const lorepresetMocks = vi.hoisted(() => ({
   createGlobalLorebook: vi.fn(),
   deleteGlobalLorebook: vi.fn(),
   deleteGlobalLorebookById: vi.fn(),
+  deleteGlobalLorebookWithOutcome: vi.fn(),
+  deleteGlobalLorebookByIdWithOutcome: vi.fn(),
+  deleteStateListener: null as null | ((states: MockGlobalLorebookDeleteState[]) => void),
   renameGlobalLorebook: vi.fn(),
   renameGlobalLorebookById: vi.fn(),
   selectGlobalLorebook: vi.fn(),
@@ -29,6 +32,8 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   createGlobalLorebook: lorepresetMocks.createGlobalLorebook,
   deleteGlobalLorebook: lorepresetMocks.deleteGlobalLorebook,
   deleteGlobalLorebookById: lorepresetMocks.deleteGlobalLorebookById,
+  deleteGlobalLorebookWithOutcome: lorepresetMocks.deleteGlobalLorebookWithOutcome,
+  deleteGlobalLorebookByIdWithOutcome: lorepresetMocks.deleteGlobalLorebookByIdWithOutcome,
   flushPendingServerBackedLorebookPatches: vi.fn(async () => {}),
   isCharacterLorebookHydrated: vi.fn(() => true),
   isCharacterLorebookMutationReady: vi.fn(() => true),
@@ -38,6 +43,13 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   renameGlobalLorebookById: lorepresetMocks.renameGlobalLorebookById,
   resetLorebookHydration: vi.fn(),
   selectGlobalLorebook: lorepresetMocks.selectGlobalLorebook,
+  subscribeGlobalLorebookDeleteStates: (listener: (states: MockGlobalLorebookDeleteState[]) => void) => {
+    lorepresetMocks.deleteStateListener = listener
+    listener([])
+    return () => {
+      if (lorepresetMocks.deleteStateListener === listener) lorepresetMocks.deleteStateListener = null
+    }
+  },
   watchServerBackedLorebooks: vi.fn(() => () => {}),
 }))
 
@@ -50,6 +62,11 @@ import {
 
 type MountedComponent = Parameters<typeof unmount>[0]
 type LorebookFixture = { id: string; name: string; data: never[] }
+type MockGlobalLorebookDeleteState = {
+  lorebookId: string
+  mutationId: string
+  status: 'deleting' | 'queued' | 'failed'
+}
 
 let target: HTMLElement
 let component: MountedComponent | undefined
@@ -86,10 +103,17 @@ function deleteButton(name: string): HTMLButtonElement {
   return button
 }
 
+async function publishDeleteStates(states: MockGlobalLorebookDeleteState[]): Promise<void> {
+  lorepresetMocks.deleteStateListener?.(states)
+  await tick()
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   lorepresetMocks.alertConfirm.mockReset()
+  lorepresetMocks.deleteStateListener = null
+  lorepresetMocks.deleteGlobalLorebook.mockReset()
   lorepresetMocks.deleteGlobalLorebookById.mockReset()
   lorepresetMocks.deleteGlobalLorebookById.mockImplementation((lorebookId: string) => {
     const loreBook = getDatabase().loreBook as LorebookFixture[]
@@ -98,6 +122,14 @@ beforeEach(() => {
     projectLorebooks(loreBook.filter((_, index) => index !== matchingIndices[0]))
     return true
   })
+  lorepresetMocks.deleteGlobalLorebookWithOutcome.mockReset()
+  lorepresetMocks.deleteGlobalLorebookWithOutcome.mockImplementation((index: number) =>
+    lorepresetMocks.deleteGlobalLorebook(index) ? Promise.resolve('accepted') : null,
+  )
+  lorepresetMocks.deleteGlobalLorebookByIdWithOutcome.mockReset()
+  lorepresetMocks.deleteGlobalLorebookByIdWithOutcome.mockImplementation((lorebookId: string) =>
+    lorepresetMocks.deleteGlobalLorebookById(lorebookId) ? Promise.resolve('accepted') : null,
+  )
   lorepresetMocks.renameGlobalLorebookById.mockReset()
   lorepresetMocks.renameGlobalLorebookById.mockImplementation((lorebookId: string, name: string) => {
     const loreBook = getDatabase().loreBook as LorebookFixture[]
@@ -189,6 +221,74 @@ describe('global lorebook modal targeting', () => {
 
     expect(deleteButton('First')).toBeTruthy()
     expect(deleteButton('Second')).toBeTruthy()
+  })
+})
+
+describe('global lorebook delete status', () => {
+  it('marks a restored retained delete as queued and removes it when replay is accepted', async () => {
+    projectLorebooks([lorebook('g1', 'First'), lorebook('g2', 'Second')])
+    lorepresetMocks.alertConfirm.mockResolvedValue(true)
+    const outcome = deferred<'queued'>()
+    lorepresetMocks.deleteGlobalLorebookByIdWithOutcome.mockImplementationOnce((lorebookId: string) => {
+      lorepresetMocks.deleteGlobalLorebookById(lorebookId)
+      return outcome.promise
+    })
+    component = mount(Lorepreset, { target })
+    await settle()
+
+    deleteButton('Second').click()
+    await settle()
+    expect(lorebookIds()).toEqual(['g1'])
+
+    projectLorebooks([lorebook('g1', 'First'), lorebook('g2', 'Second')])
+    await publishDeleteStates([{ lorebookId: 'g2', mutationId: 'delete-g2', status: 'queued' }])
+
+    const queuedRow = target.querySelector<HTMLElement>('[data-risu-global-lorebook-delete-status="queued"]')
+    expect(queuedRow?.textContent).toContain(language.globalLorebookDelete.queued)
+    expect(queuedRow?.getAttribute('aria-busy')).toBe('true')
+    expect(deleteButton('Second').disabled).toBe(true)
+    const selectButton = Array.from(queuedRow?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
+      (button) => button.textContent === 'Second',
+    )
+    expect(selectButton?.disabled).toBe(true)
+
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.edit}"]`)?.click()
+    await tick()
+    expect(
+      Array.from(target.querySelectorAll<HTMLInputElement>('input')).some((input) => input.value === 'Second'),
+    ).toBe(false)
+
+    outcome.resolve('queued')
+    await settle()
+    projectLorebooks([lorebook('g1', 'First')])
+    await publishDeleteStates([])
+
+    expect(lorebookIds()).toEqual(['g1'])
+    expect(target.textContent).not.toContain(language.globalLorebookDelete.queued)
+    expect(target.querySelector('[data-risu-global-lorebook-delete-status]')).toBeNull()
+  })
+
+  it('clears queued ownership and shows a terminal discard without hiding the restored row', async () => {
+    projectLorebooks([lorebook('g1', 'First'), lorebook('g2', 'Second')])
+    component = mount(Lorepreset, { target })
+    await settle()
+    await publishDeleteStates([{ lorebookId: 'g2', mutationId: 'delete-g2', status: 'queued' }])
+
+    expect(deleteButton('Second').disabled).toBe(true)
+
+    await publishDeleteStates([{ lorebookId: 'g2', mutationId: 'delete-g2', status: 'failed' }])
+
+    const failedRow = target.querySelector<HTMLElement>('[data-risu-global-lorebook-delete-status="failed"]')
+    expect(failedRow?.querySelector('[role="alert"]')?.textContent).toContain(language.globalLorebookDelete.failed)
+    expect(failedRow?.getAttribute('aria-busy')).toBe('false')
+    expect(deleteButton('Second').disabled).toBe(false)
+    const selectButton = Array.from(failedRow?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
+      (button) => button.textContent === 'Second',
+    )
+    expect(selectButton?.disabled).toBe(false)
+    selectButton?.click()
+    expect(lorepresetMocks.selectGlobalLorebook).toHaveBeenCalledWith(1)
+    expect(lorebookIds()).toEqual(['g1', 'g2'])
   })
 })
 

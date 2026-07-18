@@ -125,6 +125,8 @@ interface PendingLorebookEntryAttempt {
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
 const pendingLorebookEntryAttempts: PendingLorebookEntryAttempt[] = []
 const pendingGlobalLorebookDeleteProjections = new Map<string, PendingGlobalLorebookDeleteProjection>()
+const globalLorebookDeleteStates = new Map<string, GlobalLorebookDeleteState>()
+const globalLorebookDeleteStateListeners = new Set<(states: readonly GlobalLorebookDeleteState[]) => void>()
 let nextLorebookEntryAttemptSequence = 0
 const pendingEntryEditKeys = new Set<string>()
 const flushedEntryEditSnapshots = new Map<string, string>()
@@ -138,11 +140,71 @@ interface LocalLoreSnapshotCacheEntry {
 
 const characterScopeLocalLoreSnapshots = new Map<string, LocalLoreSnapshotCacheEntry>()
 
+export type GlobalLorebookDeleteOutcome = 'accepted' | 'queued' | 'failed'
+export type GlobalLorebookDeleteUiStatus = 'deleting' | 'queued' | 'failed'
+
+export interface GlobalLorebookDeleteState {
+  lorebookId: string
+  mutationId: string
+  status: GlobalLorebookDeleteUiStatus
+}
+
 interface PendingGlobalLorebookDeleteProjection {
   lorebookId: string
   outbox: PendingMutationHandle
   settled: boolean
+  finalSettlement?: 'accepted' | 'discarded'
   settlementCleanup?: () => void
+}
+
+export function getGlobalLorebookDeleteState(lorebookId: string): GlobalLorebookDeleteState | null {
+  const state = globalLorebookDeleteStates.get(lorebookId)
+  return state ? { ...state } : null
+}
+
+export function subscribeGlobalLorebookDeleteStates(
+  listener: (states: readonly GlobalLorebookDeleteState[]) => void,
+): () => void {
+  globalLorebookDeleteStateListeners.add(listener)
+  listener(snapshotGlobalLorebookDeleteStates())
+  return () => globalLorebookDeleteStateListeners.delete(listener)
+}
+
+function snapshotGlobalLorebookDeleteStates(): GlobalLorebookDeleteState[] {
+  return [...globalLorebookDeleteStates.values()].map((state) => ({ ...state }))
+}
+
+function publishGlobalLorebookDeleteStates(): void {
+  const states = snapshotGlobalLorebookDeleteStates()
+  for (const listener of globalLorebookDeleteStateListeners) {
+    try {
+      listener(states)
+    } catch (error) {
+      console.error('Global lorebook delete state listener rejected:', error)
+    }
+  }
+}
+
+function setGlobalLorebookDeleteState(
+  pending: PendingGlobalLorebookDeleteProjection,
+  status: GlobalLorebookDeleteUiStatus,
+  replaceFailed = false,
+): void {
+  const current = globalLorebookDeleteStates.get(pending.lorebookId)
+  if (current && current.mutationId !== pending.outbox.mutationId && !(replaceFailed && current.status === 'failed'))
+    return
+  globalLorebookDeleteStates.set(pending.lorebookId, {
+    lorebookId: pending.lorebookId,
+    mutationId: pending.outbox.mutationId,
+    status,
+  })
+  publishGlobalLorebookDeleteStates()
+}
+
+function clearGlobalLorebookDeleteState(pending: PendingGlobalLorebookDeleteProjection): void {
+  if (globalLorebookDeleteStates.get(pending.lorebookId)?.mutationId !== pending.outbox.mutationId) return
+  globalLorebookDeleteStates.delete(pending.lorebookId)
+  publishGlobalLorebookDeleteStates()
 }
 
 // Mirror of the selected character id as $state so a `character`-scoped watcher
@@ -176,6 +238,10 @@ export function resetServerBackedLorebookBridgeForTests(): void {
     pending.settlementCleanup?.()
   }
   pendingGlobalLorebookDeleteProjections.clear()
+  if (globalLorebookDeleteStates.size > 0) {
+    globalLorebookDeleteStates.clear()
+    publishGlobalLorebookDeleteStates()
+  }
   nextLorebookEntryAttemptSequence = 0
   pendingEntryEditKeys.clear()
   flushedEntryEditSnapshots.clear()
@@ -973,9 +1039,14 @@ export function renameGlobalLorebookById(lorebookId: string, name: string): bool
   return index >= 0 ? renameGlobalLorebook(index, name) : false
 }
 
-export function deleteGlobalLorebook(index: number): boolean {
+interface StartedGlobalLorebookDelete {
+  deleted: boolean
+  outcome: Promise<GlobalLorebookDeleteOutcome> | null
+}
+
+function startGlobalLorebookDelete(index: number): StartedGlobalLorebookDelete {
   const loreBooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
-  if (loreBooks.length <= 1 || !loreBooks[index]) return false
+  if (loreBooks.length <= 1 || !loreBooks[index]) return { deleted: false, outcome: null }
 
   const lorebookId = loreBooks[index]?.id
   if (lorebookId) {
@@ -991,17 +1062,34 @@ export function deleteGlobalLorebook(index: number): boolean {
     getDatabase().loreBook = current as Database['loreBook']
     return true
   })
+  let outcome: Promise<GlobalLorebookDeleteOutcome> | null = null
   if (stagedDelete && lorebookId) {
-    if (deleted) dispatchStagedGlobalLorebookDelete(lorebookId, previous, stagedDelete)
+    if (deleted) outcome = dispatchStagedGlobalLorebookDelete(lorebookId, previous, stagedDelete)
     else void acknowledgePendingMutation(stagedDelete.outbox)
+  } else if (deleted) {
+    outcome = Promise.resolve('accepted')
   }
 
-  return deleted
+  return { deleted, outcome }
+}
+
+export function deleteGlobalLorebook(index: number): boolean {
+  return startGlobalLorebookDelete(index).deleted
+}
+
+export function deleteGlobalLorebookWithOutcome(index: number): Promise<GlobalLorebookDeleteOutcome> | null {
+  const started = startGlobalLorebookDelete(index)
+  return started.deleted ? started.outcome : null
 }
 
 export function deleteGlobalLorebookById(lorebookId: string): boolean {
   const index = uniqueGlobalLorebookIndexById(lorebookId)
   return index >= 0 ? deleteGlobalLorebook(index) : false
+}
+
+export function deleteGlobalLorebookByIdWithOutcome(lorebookId: string): Promise<GlobalLorebookDeleteOutcome> | null {
+  const index = uniqueGlobalLorebookIndexById(lorebookId)
+  return index >= 0 ? deleteGlobalLorebookWithOutcome(index) : null
 }
 
 // Global-lorebook list operations roll back only the attempted row/order/page
@@ -1091,9 +1179,12 @@ export function dispatchUpdateGlobalLorebook(
   )
 }
 
-export function dispatchDeleteGlobalLorebook(lorebookId: string, previous: GlobalLorebookStateSnapshot): void {
-  if (!canUseServerCommands()) return
-  dispatchStagedGlobalLorebookDelete(lorebookId, previous, stageGlobalLorebookDeleteMutation(lorebookId))
+export function dispatchDeleteGlobalLorebook(
+  lorebookId: string,
+  previous: GlobalLorebookStateSnapshot,
+): Promise<GlobalLorebookDeleteOutcome> | null {
+  if (!canUseServerCommands()) return null
+  return dispatchStagedGlobalLorebookDelete(lorebookId, previous, stageGlobalLorebookDeleteMutation(lorebookId))
 }
 
 function stageGlobalLorebookDeleteMutation(lorebookId: string): {
@@ -1121,7 +1212,7 @@ function dispatchStagedGlobalLorebookDelete(
   lorebookId: string,
   previous: GlobalLorebookStateSnapshot,
   staged: { intent: DurableMutationIntent; outbox: PendingMutationHandle },
-): void {
+): Promise<GlobalLorebookDeleteOutcome> {
   const collectionProjectionEpoch = captureCollectionProjectionEpoch('loreBook')
   const pageProjectionEpoch = captureLorebookPageProjectionEpoch()
   const previousIndex = previous.loreBook.findIndex((lorebook) => lorebook.id === lorebookId)
@@ -1162,7 +1253,7 @@ function dispatchStagedGlobalLorebookDelete(
       failureRollbackDisposition: () => 'rollback',
     }),
   )
-  void settleDispatchedGlobalLorebookDeleteProjection(pendingProjection, dispatch)
+  return settleDispatchedGlobalLorebookDeleteProjection(pendingProjection, dispatch)
 }
 
 function trackPendingGlobalLorebookDeleteProjection(
@@ -1178,27 +1269,39 @@ function trackPendingGlobalLorebookDeleteProjection(
     settlePendingGlobalLorebookDeleteProjection(pending, settlement)
   })
   pendingGlobalLorebookDeleteProjections.set(outbox.mutationId, pending)
+  setGlobalLorebookDeleteState(pending, 'deleting', true)
   return pending
 }
 
 async function settleDispatchedGlobalLorebookDeleteProjection(
   pending: PendingGlobalLorebookDeleteProjection,
   dispatch: Promise<ServerCommandResult>,
-): Promise<void> {
+): Promise<GlobalLorebookDeleteOutcome> {
   try {
     const result = await dispatch
     if (result.status === 'ok') {
       settlePendingGlobalLorebookDeleteProjection(pending, 'accepted')
-      return
+      return 'accepted'
     }
-    if (!(await isPendingMutationCurrent(pending.outbox))) {
-      settlePendingGlobalLorebookDeleteProjection(pending, 'discarded')
+    if (pending.finalSettlement) return pending.finalSettlement === 'accepted' ? 'accepted' : 'failed'
+    if (await isPendingMutationCurrent(pending.outbox)) {
+      if (pending.finalSettlement) return pending.finalSettlement === 'accepted' ? 'accepted' : 'failed'
+      setGlobalLorebookDeleteState(pending, 'queued')
+      return 'queued'
     }
+    settlePendingGlobalLorebookDeleteProjection(pending, 'discarded')
+    return pending.finalSettlement === 'accepted' ? 'accepted' : 'failed'
   } catch (error) {
-    if (!(await isPendingMutationCurrent(pending.outbox))) {
-      settlePendingGlobalLorebookDeleteProjection(pending, 'discarded')
+    if (pending.finalSettlement) return pending.finalSettlement === 'accepted' ? 'accepted' : 'failed'
+    if (await isPendingMutationCurrent(pending.outbox)) {
+      if (pending.finalSettlement) return pending.finalSettlement === 'accepted' ? 'accepted' : 'failed'
+      setGlobalLorebookDeleteState(pending, 'queued')
+      console.error('Global lorebook delete command rejected:', error)
+      return 'queued'
     }
+    settlePendingGlobalLorebookDeleteProjection(pending, 'discarded')
     console.error('Global lorebook delete command rejected:', error)
+    return pending.finalSettlement === 'accepted' ? 'accepted' : 'failed'
   }
 }
 
@@ -1208,12 +1311,18 @@ function settlePendingGlobalLorebookDeleteProjection(
 ): void {
   if (pending.settled) return
   pending.settled = true
+  pending.finalSettlement = settlement
   pending.settlementCleanup?.()
   pending.settlementCleanup = undefined
   if (pendingGlobalLorebookDeleteProjections.get(pending.outbox.mutationId) === pending) {
     pendingGlobalLorebookDeleteProjections.delete(pending.outbox.mutationId)
   }
-  if (settlement === 'accepted') applyAcceptedGlobalLorebookDeleteProjection(pending.lorebookId)
+  if (settlement === 'accepted') {
+    clearGlobalLorebookDeleteState(pending)
+    applyAcceptedGlobalLorebookDeleteProjection(pending.lorebookId)
+  } else {
+    setGlobalLorebookDeleteState(pending, 'failed')
+  }
 }
 
 function applyAcceptedGlobalLorebookDeleteProjection(lorebookId: string): void {

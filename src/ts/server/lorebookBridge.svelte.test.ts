@@ -893,7 +893,7 @@ describe('global lorebook modal bridge helpers', () => {
     expect(source).not.toContain('dispatchDeleteGlobalLorebook')
     expect(source).toContain('createGlobalLorebook()')
     expect(source).toContain('renameGlobalLorebookById(lorebookId, value)')
-    expect(source).toContain('deleteGlobalLorebookById(lorebookId)')
+    expect(source).toContain('deleteGlobalLorebookByIdWithOutcome(lorebookId)')
   })
 
   it('creates a global lorebook, dispatches create, and rolls back to the previous list', async () => {

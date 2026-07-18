@@ -1785,6 +1785,11 @@ export const languageEnglish = {
   adaptiveThinkingEffort: 'Adaptive Thinking Effort',
   antiServerOverload: 'Anti-Server Overload',
   localActivationInGlobalLorebook: 'Local Activation in Global Lorebook',
+  globalLorebookDelete: {
+    deleting: 'Deleting this lorebook…',
+    queued: 'Deletion is queued on this device and will retry automatically.',
+    failed: 'This lorebook could not be deleted. Try again.',
+  },
   cachePoint: 'Cache Point',
   all: 'All',
   showFolderNameInIcon: 'Show Folder Name in Icon',
