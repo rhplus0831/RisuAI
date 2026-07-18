@@ -5650,6 +5650,31 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     })
   })
 
+  it('retains an optimistic edit while its transport is still queued', async () => {
+    const { calls, firstResponse, secondResponse } = stubControlledMessagePatchFetch()
+    seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    setResourceWriteGuardEnabled(true)
+
+    dispatchUpdateMessageScoped('m-1', { data: 'first edit' }, currentChatScopedSnapshot())
+    await waitForCallCount(calls, 2)
+    dispatchUpdateMessageScoped('m-1', { data: 'queued edit' }, currentChatScopedSnapshot())
+
+    expect(calls).toHaveLength(2)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].message = [{ role: 'char', data: 'before', chatId: 'm-1' }]
+    })
+    reapplyRetainedChatBodyProjections('chat-a')
+
+    expect(getDatabase().characters[0].chats[0].message[0].data).toBe('queued edit')
+
+    firstResponse.resolve(successfulMessagePatchResponse(11))
+    await waitForCallCount(calls, 3)
+    secondResponse.resolve(successfulMessagePatchResponse(12))
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].message[0].data).toBe('queued edit')
+    })
+  })
+
   it('rolls back a caller-owned pre-applied scoped message patch', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'PATCH',

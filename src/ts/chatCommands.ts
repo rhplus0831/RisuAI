@@ -777,7 +777,13 @@ interface PendingScopedTranscriptAttempt {
   attemptedMessages: Message[]
   reapply: (previousMessages: readonly Message[]) => Message[] | null
   rollback: (attempt: PendingScopedTranscriptAttempt) => void
+  retainedProjection?: PendingRetainedChatProjection
   durability?: PendingDurableChatProjection
+}
+
+interface PendingRetainedChatProjection {
+  release: () => void
+  onInvalidated?: () => void
 }
 
 interface PendingDurableChatProjection {
@@ -798,7 +804,10 @@ const pendingScopedTranscriptAttempts = new Map<string, PendingScopedTranscriptA
 let nextScopedTranscriptAttemptSequence = 0
 
 function bindDurableChatProjectionAttempt(
-  attempt: { durability?: PendingDurableChatProjection },
+  attempt: {
+    retainedProjection?: PendingRetainedChatProjection
+    durability?: PendingDurableChatProjection
+  },
   transport: ServerCommandTransportOptions,
   target: RetainedChatProjectionTarget,
   reapply: () => void,
@@ -809,16 +818,22 @@ function bindDurableChatProjectionAttempt(
 
   let releaseSettlement = () => {}
   let durability: PendingDurableChatProjection
-  const releaseProjection = registerRetainedChatProjection(target, reapply, () => {
+  const retainedProjection = attempt.retainedProjection ?? createPendingRetainedChatProjection(target, reapply)
+  attempt.retainedProjection = retainedProjection
+  retainedProjection.onInvalidated = () => {
     if (attempt.durability !== durability) return
     attempt.durability = undefined
     durability.release()
     onAccepted()
-  })
+  }
   durability = {
     failureRollbackDisposition: transport.failureRollbackDisposition,
     release: () => {
-      releaseProjection()
+      if (attempt.retainedProjection === retainedProjection) {
+        attempt.retainedProjection = undefined
+      }
+      retainedProjection.onInvalidated = undefined
+      retainedProjection.release()
       releaseSettlement()
     },
   }
@@ -836,20 +851,43 @@ function bindDurableChatProjectionAttempt(
   })
 }
 
-function releaseDurableChatProjectionAttempt(attempt: { durability?: PendingDurableChatProjection }): void {
+function createPendingRetainedChatProjection(
+  target: RetainedChatProjectionTarget,
+  reapply: () => void,
+): PendingRetainedChatProjection {
+  const retainedProjection: PendingRetainedChatProjection = { release: () => {} }
+  retainedProjection.release = registerRetainedChatProjection(target, reapply, () => {
+    retainedProjection.onInvalidated?.()
+  })
+  return retainedProjection
+}
+
+function releaseChatProjectionAttempt(attempt: {
+  retainedProjection?: PendingRetainedChatProjection
+  durability?: PendingDurableChatProjection
+}): void {
   const durability = attempt.durability
   attempt.durability = undefined
-  durability?.release()
+  if (durability) {
+    durability.release()
+    return
+  }
+  const retainedProjection = attempt.retainedProjection
+  attempt.retainedProjection = undefined
+  retainedProjection?.release()
 }
 
 function trackDurableChatProjectionAttempt(
-  attempt: { durability?: PendingDurableChatProjection },
+  attempt: {
+    retainedProjection?: PendingRetainedChatProjection
+    durability?: PendingDurableChatProjection
+  },
   result: Promise<ServerCommandResult | null> | null,
   clear: () => void,
   reapply: () => void,
 ): void {
   if (!result) {
-    releaseDurableChatProjectionAttempt(attempt)
+    releaseChatProjectionAttempt(attempt)
     clear()
     return
   }
@@ -859,7 +897,7 @@ function trackDurableChatProjectionAttempt(
         reapply()
         return
       }
-      releaseDurableChatProjectionAttempt(attempt)
+      releaseChatProjectionAttempt(attempt)
       clear()
     },
     () => {
@@ -867,7 +905,7 @@ function trackDurableChatProjectionAttempt(
         reapply()
         return
       }
-      releaseDurableChatProjectionAttempt(attempt)
+      releaseChatProjectionAttempt(attempt)
       clear()
     },
   )
@@ -2831,7 +2869,7 @@ function rollbackChatMetadataAttempt(
   attempt: PendingChatMetadataAttempt,
   rollbackRowMetadata: ChatRowMetadataRollback,
 ): void {
-  releaseDurableChatProjectionAttempt(attempt)
+  releaseChatProjectionAttempt(attempt)
   rollbackRowMetadata(attempt.rollback)
 
   const failedAttempted = attempt.rollback.attempted
@@ -4465,7 +4503,7 @@ function rollbackChatFolderMetadataAttempt(
   attempt: PendingChatFolderMetadataAttempt,
   rollbackFolderMetadata: ChatFolderRowMetadataRollback,
 ): void {
-  releaseDurableChatProjectionAttempt(attempt)
+  releaseChatProjectionAttempt(attempt)
   rollbackFolderMetadata(attempt.rollback)
 
   const failedAttempted = attempt.rollback.attempted
@@ -5060,13 +5098,20 @@ function registerScopedTranscriptAttempt(
 ): PendingScopedTranscriptAttempt | null {
   if (!previous.chat || !attemptedMessages) return null
   const chatKey = previous.chatId ?? `${previous.characterId ?? previous.selectedCharID}:active`
-  const attempt = {
+  const attempt: PendingScopedTranscriptAttempt = {
     sequence: ++nextScopedTranscriptAttemptSequence,
     chatKey,
     previous,
     attemptedMessages,
     reapply,
     rollback,
+  }
+  attempt.retainedProjection = createPendingRetainedChatProjection({ kind: 'chat-body', chatId: previous.chatId }, () =>
+    reapplyScopedTranscriptAttempt(attempt),
+  )
+  attempt.retainedProjection.onInvalidated = () => {
+    releaseChatProjectionAttempt(attempt)
+    clearScopedTranscriptAttempt(attempt)
   }
   const pending = pendingScopedTranscriptAttempts.get(chatKey) ?? []
   pending.push(attempt)
@@ -5075,7 +5120,7 @@ function registerScopedTranscriptAttempt(
 }
 
 function rollbackScopedTranscriptAttempt(attempt: PendingScopedTranscriptAttempt): void {
-  releaseDurableChatProjectionAttempt(attempt)
+  releaseChatProjectionAttempt(attempt)
   const liveChatBeforeRollback = locateChatScopedSnapshot(attempt.previous)
   const liveMessagesBeforeRollback = liveChatBeforeRollback
     ? cloneJsonValue(liveChatBeforeRollback.message ?? [])
@@ -5161,6 +5206,7 @@ function reapplyScopedTranscriptAttempt(attempt: PendingScopedTranscriptAttempt)
 }
 
 function clearScopedTranscriptAttempt(attempt: PendingScopedTranscriptAttempt): void {
+  releaseChatProjectionAttempt(attempt)
   const pending = pendingScopedTranscriptAttempts.get(attempt.chatKey)
   if (!pending) return
   const next = pending.filter((candidate) => candidate.sequence !== attempt.sequence)
