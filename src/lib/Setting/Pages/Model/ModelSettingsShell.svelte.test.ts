@@ -11,6 +11,20 @@ const mutationMocks = vi.hoisted(() => ({
   updateModelRuntimeDefaultsDurably: vi.fn(),
 }))
 
+const settlementMocks = vi.hoisted(() => ({
+  listeners: new Map<string, (settlement: 'accepted' | 'discarded') => void>(),
+}))
+
+vi.mock('src/ts/server/durableMutationDispatch', () => ({
+  dispatchDurableMutation: vi.fn(),
+  registerDurableMutationSettlementListener: vi.fn(
+    (mutationId: string, listener: (settlement: 'accepted' | 'discarded') => void) => {
+      settlementMocks.listeners.set(mutationId, listener)
+      return () => settlementMocks.listeners.delete(mutationId)
+    },
+  ),
+}))
+
 vi.mock('src/ts/model/modelProfileMutations', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/ts/model/modelProfileMutations')>()),
   ...mutationMocks,
@@ -69,6 +83,7 @@ function clearPendingModelMutations(): void {
 
 beforeEach(() => {
   clearPendingModelMutations()
+  settlementMocks.listeners.clear()
   target = document.createElement('div')
   document.body.appendChild(target)
   setDatabaseLite({
@@ -154,6 +169,27 @@ describe('ModelSettingsShell legacy conversion', () => {
     await flushAsync()
     expect(target.querySelector('[data-model-conversion-command-notice]')).toBeNull()
     expect(conversionButtons()).toHaveLength(0)
+  })
+
+  it('surfaces a discarded queued conversion before releasing its lane', async () => {
+    mutationMocks.convertLegacyModelProfilesDurably.mockResolvedValue({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationId: 'discarded-conversion',
+    })
+    component = mount(ModelSettingsShell, { target })
+    await tick()
+
+    conversionButtons()[0]?.click()
+    await flushAsync()
+    expect(target.textContent).toContain(language.modelProfiles.commandQueued)
+
+    settlementMocks.listeners.get('discarded-conversion')?.('discarded')
+    await flushAsync()
+
+    expect(target.textContent).toContain(language.modelProfiles.commandReplayDiscarded)
+    expect(getPendingModelMutations('model-profiles')).toEqual([])
+    expect(conversionButtons()[0]?.disabled).toBe(false)
   })
 
   it('keeps conversion fenced across a settings remount until its projection converges', async () => {

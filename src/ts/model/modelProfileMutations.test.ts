@@ -296,6 +296,10 @@ describe('durable model-profile mutations', () => {
     })
     retainPendingModelMutation(discardedToken!, 'mutation-discarded')
     mutationMocks.settlementListeners.get('mutation-discarded')?.('discarded')
+    expect(getPendingModelMutations('model-profiles')).toMatchObject([
+      { token: discardedToken, mutationId: 'mutation-discarded', phase: 'discarded' },
+    ])
+    finishPendingModelMutation(discardedToken!)
     expect(getPendingModelMutations('model-profiles')).toEqual([])
   })
 

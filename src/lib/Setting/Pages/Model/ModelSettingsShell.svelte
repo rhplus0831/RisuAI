@@ -74,6 +74,11 @@
   $effect(() => {
     const database = getDatabase()
     for (const pending of [...pendingMutations, ...pendingRuntimeMutations]) {
+      if (pending.phase === 'discarded') {
+        commandError = language.modelProfiles.commandReplayDiscarded
+        finishPendingModelMutation(pending.token)
+        continue
+      }
       if (pending.phase === 'dispatching') continue
       if (isPendingModelMutationProjectionApplied(pending.projection, database)) {
         finishPendingModelMutation(pending.token)

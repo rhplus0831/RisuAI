@@ -47,7 +47,7 @@ export interface PendingModelMutation {
   token: string
   lane: ModelMutationLane
   mutationId: string | null
-  phase: 'dispatching' | 'queued' | 'accepted-replay'
+  phase: 'dispatching' | 'queued' | 'accepted-replay' | 'discarded'
   projection: PendingModelMutationProjection
 }
 
@@ -176,7 +176,9 @@ export function retainPendingModelMutation(token: string, mutationId: string): v
       const current = pendingModelMutations.get(token)
       if (!current || current.mutationId !== mutationId) return
       if (settlement === 'discarded') {
-        finishPendingModelMutation(token)
+        safelyUnregisterSettlement(current)
+        current.phase = 'discarded'
+        publishPendingModelMutations(current.lane)
         return
       }
 

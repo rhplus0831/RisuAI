@@ -63,6 +63,11 @@
 
   $effect(() => {
     for (const pending of pendingMutations) {
+      if (pending.phase === 'discarded') {
+        commandError = language.modelProfiles.commandReplayDiscarded
+        finishPendingModelMutation(pending.token)
+        continue
+      }
       if (pending.phase === 'dispatching' || !isProfileListProjection(pending.projection)) continue
       if (isPendingModelMutationProjectionApplied(pending.projection, { modelProfiles: profiles })) {
         finishPendingModelMutation(pending.token)
