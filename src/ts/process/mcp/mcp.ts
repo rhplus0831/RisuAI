@@ -45,6 +45,7 @@ let mcpToolClientIndexGeneration = 0
 let mcpInitializationDepth = 0
 let mcpInitializationIdleWaiters: Array<() => void> = []
 const mcpClientInitializationBuilds = new Map<string, Promise<void>>()
+const mcpClientLeaseCounts = new Map<string, number>()
 
 setCustomPluginMCPRegistryReconciler(reconcileCustomPluginMCPRegistryChange)
 
@@ -71,6 +72,7 @@ const pendingMCPRefreshTokenPersistences: PendingMCPRefreshTokenPersistence[] = 
 let nextMCPRefreshTokenPersistenceSequence = 0
 
 export async function initializeMCPs(additionalMCPs?: string[]) {
+  const releaseMCPClientLeases = acquireMCPClientLeases(additionalMCPs)
   beginMCPInitialization()
   try {
     const db = getDatabase()
@@ -124,7 +126,7 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
     }
 
     for (const key of Object.keys(MCPs)) {
-      if (!mcpUrls.includes(key)) {
+      if (!mcpUrls.includes(key) && !isMCPClientLeased(key)) {
         MCPs[key].destroy()
         delete MCPs[key]
         invalidateMCPToolClientIndex()
@@ -140,7 +142,30 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
     }
   } finally {
     finishMCPInitialization()
+    releaseMCPClientLeases()
   }
+}
+
+function acquireMCPClientLeases(mcpUrls: readonly string[] | undefined): () => void {
+  const leasedUrls = [...new Set(mcpUrls ?? [])]
+  for (const mcpUrl of leasedUrls) {
+    mcpClientLeaseCounts.set(mcpUrl, (mcpClientLeaseCounts.get(mcpUrl) ?? 0) + 1)
+  }
+
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    for (const mcpUrl of leasedUrls) {
+      const remaining = (mcpClientLeaseCounts.get(mcpUrl) ?? 0) - 1
+      if (remaining > 0) mcpClientLeaseCounts.set(mcpUrl, remaining)
+      else mcpClientLeaseCounts.delete(mcpUrl)
+    }
+  }
+}
+
+function isMCPClientLeased(mcpUrl: string): boolean {
+  return (mcpClientLeaseCounts.get(mcpUrl) ?? 0) > 0
 }
 
 async function initializeMCPClientForKey(mcp: string): Promise<void> {
@@ -518,28 +543,38 @@ function sameJsonValue(left: unknown, right: unknown): boolean {
 }
 
 export async function getMCPTools(additionalMCPs?: string[]) {
-  await initializeMCPs(additionalMCPs)
-  const tools: MCPToolWithURL[] = []
-  for (const key of Object.keys(MCPs)) {
-    const t = (await MCPs[key].getToolList()).map((tool) => {
-      return {
-        ...tool,
-        mcpURL: key,
-      }
-    })
+  const releaseMCPClientLeases = acquireMCPClientLeases(additionalMCPs)
+  try {
+    await initializeMCPs(additionalMCPs)
+    const tools: MCPToolWithURL[] = []
+    for (const key of Object.keys(MCPs)) {
+      const t = (await MCPs[key].getToolList()).map((tool) => {
+        return {
+          ...tool,
+          mcpURL: key,
+        }
+      })
 
-    tools.push(...t)
+      tools.push(...t)
+    }
+    return tools
+  } finally {
+    releaseMCPClientLeases()
   }
-  return tools
 }
 
 export async function getMCPMeta(additionalMCPs?: string[]) {
-  await initializeMCPs(additionalMCPs)
-  const meta: Record<string, typeof MCPClient.prototype.serverInfo> = {}
-  for (const key of Object.keys(MCPs)) {
-    meta[key] = MCPs[key].serverInfo
+  const releaseMCPClientLeases = acquireMCPClientLeases(additionalMCPs)
+  try {
+    await initializeMCPs(additionalMCPs)
+    const meta: Record<string, typeof MCPClient.prototype.serverInfo> = {}
+    for (const key of Object.keys(MCPs)) {
+      meta[key] = MCPs[key].serverInfo
+    }
+    return meta
+  } finally {
+    releaseMCPClientLeases()
   }
-  return meta
 }
 
 export async function callMCPTool(methodName: string, args: any): Promise<RPCToolCallContent[]> {

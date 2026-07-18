@@ -68,6 +68,7 @@ import {
   callOnlyMCPs,
   decodeToolCall,
   encodeToolCall,
+  getMCPMeta,
   getTools,
   initializeMCPs,
   importMCPModule,
@@ -413,6 +414,41 @@ describe('MCP client initialization lifecycle', () => {
     }
 
     expect(initializeCalls).toBe(2)
+  })
+
+  it('keeps an import probe client leased through its metadata snapshot', async () => {
+    const identifier = 'plugin:metadata-import-probe'
+    const client = await registerMCPModule(
+      {
+        identifier,
+        name: 'Metadata Import Probe',
+        version: '1.0.0',
+        description: 'Client used only while an import reads metadata.',
+      },
+      async () => [],
+      async () => [],
+    )
+    const handshake = createDeferred<Awaited<ReturnType<typeof client.checkHandshake>>>()
+    const checkHandshake = vi.spyOn(client, 'checkHandshake').mockReturnValue(handshake.promise)
+    const destroy = vi.spyOn(client, 'destroy')
+
+    const metadata = getMCPMeta([identifier])
+    await vi.waitFor(() => expect(checkHandshake).toHaveBeenCalledTimes(1))
+
+    await initializeMCPs()
+
+    expect(MCPs[identifier]).toBe(client)
+    expect(destroy).not.toHaveBeenCalled()
+
+    handshake.resolve(client.serverInfo)
+    await expect(metadata).resolves.toMatchObject({
+      [identifier]: client.serverInfo,
+    })
+
+    await initializeMCPs()
+
+    expect(MCPs[identifier]).toBeUndefined()
+    expect(destroy).toHaveBeenCalledTimes(1)
   })
 })
 
