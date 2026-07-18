@@ -18,7 +18,7 @@ import {
   type ServerCommandTransportOptions,
   type SettingsGroup,
 } from './server/commands'
-import { dispatchDurableMutation } from './server/durableMutationDispatch'
+import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './server/durableMutationDispatch'
 import { PLUGIN_COLLECTION_MUTATION_KEY, PLUGIN_STORAGE_MUTATION_KEY } from './server/pluginMutationKeys'
 import {
   stagePendingMutation,
@@ -51,9 +51,16 @@ interface PluginSettingsPatchRollbackStep {
   rollbackSnapshot: PluginSettingsPatchRollbackSnapshot
 }
 
+export type PluginMutationFinalSettlement = { status: 'accepted' } | { status: 'failed' }
+
 export type PluginMutationOutcome =
   | { status: 'accepted'; result: Extract<ServerCommandResult, { status: 'ok' }> }
-  | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+  | {
+      status: 'queued'
+      result: Exclude<ServerCommandResult, { status: 'ok' }>
+      mutationId: string
+      settlement: Promise<PluginMutationFinalSettlement>
+    }
   | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
 
 export interface PluginMutationBatchOutcome {
@@ -173,6 +180,8 @@ interface PluginCollectionPatchStep {
 interface PendingPluginMutationExecution {
   promise: Promise<ServerCommandResult>
   disposition: () => 'retain' | 'rollback'
+  mutationId: string
+  settlement: Promise<PluginMutationFinalSettlement>
 }
 
 export function cloneJsonValue<T>(value: T): T {
@@ -234,7 +243,10 @@ function dispatchPluginDurableMutation<T extends Record<string, unknown>>(
         Promise.resolve({ status: 'unavailable' as const })
       )
     },
-    options,
+    {
+      ...options,
+      onReplayDiscarded: options.onReplayDiscarded ?? rollback,
+    },
   )
 }
 
@@ -247,6 +259,26 @@ function dispatchPluginDurableTransport<T extends Record<string, unknown>>(
   const outbox = stagePendingMutation(key, intent)
   let disposition: 'retain' | 'rollback' = 'rollback'
   let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  let resolveSettlement!: (settlement: PluginMutationFinalSettlement) => void
+  let finalSettlementPublished = false
+  let removeSettlementListener = () => {}
+  const settlement = new Promise<PluginMutationFinalSettlement>((resolve) => {
+    resolveSettlement = resolve
+  })
+  const publishFinalSettlement = (status: PluginMutationFinalSettlement['status']) => {
+    if (finalSettlementPublished) return
+    finalSettlementPublished = true
+    removeSettlementListener()
+    resolveSettlement({ status })
+  }
+  removeSettlementListener = registerDurableMutationSettlementListener(outbox.mutationId, (finalSettlement) => {
+    try {
+      if (finalSettlement === 'accepted') options.onReplayAccepted?.()
+      else options.onReplayDiscarded?.()
+    } finally {
+      publishFinalSettlement(finalSettlement === 'accepted' ? 'accepted' : 'failed')
+    }
+  })
   const promise = dispatchDurableMutation(
     outbox,
     intent,
@@ -271,21 +303,31 @@ function dispatchPluginDurableTransport<T extends Record<string, unknown>>(
       // promise resolves, so this resolver now reports the final retain/rollback
       // decision for the exact attempted body.
       disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? disposition)
+      if (result.status === 'ok') publishFinalSettlement('accepted')
+      else if (disposition === 'rollback') publishFinalSettlement('failed')
       return result
     },
     (error) => {
       // Transport exceptions retain a persisted row just like retryable error
       // results. Preserve that decision for the public queued/failed outcome.
       disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? disposition
+      if (disposition === 'rollback') publishFinalSettlement('failed')
       throw error
     },
   )
-  return { promise, disposition: () => disposition }
+  return {
+    promise,
+    disposition: () => disposition,
+    mutationId: outbox.mutationId,
+    settlement,
+  }
 }
 
 interface PluginDurableTransportOptions<T extends Record<string, unknown>> {
   beforeExecuteResult?: () => Exclude<ServerCommandResult<T>, { status: 'ok' }> | undefined
   observeExecutionResult?: (result: ServerCommandResult<T>) => void
+  onReplayAccepted?: () => void
+  onReplayDiscarded?: () => void
 }
 
 async function pluginMutationOutcome(execution: PendingPluginMutationExecution): Promise<PluginMutationOutcome> {
@@ -297,7 +339,14 @@ async function pluginMutationOutcome(execution: PendingPluginMutationExecution):
     result = { status: 'unavailable' }
   }
   if (result.status === 'ok') return { status: 'accepted', result }
-  return execution.disposition() === 'retain' ? { status: 'queued', result } : { status: 'failed', result }
+  return execution.disposition() === 'retain'
+    ? {
+        status: 'queued',
+        result,
+        mutationId: execution.mutationId,
+        settlement: execution.settlement,
+      }
+    : { status: 'failed', result }
 }
 
 function pluginMutationBatchOutcome(outcomes: PluginMutationOutcome[]): PluginMutationBatchOutcome {
@@ -356,6 +405,9 @@ export function runCreatePluginCommand(
         return result
       },
       () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
+      {
+        onReplayAccepted: () => clearPluginNonStorageOperation(operation),
+      },
     ),
   )
 }
@@ -412,6 +464,11 @@ export function runUpdatePluginCommand(
           rollbackPluginNonStorageEntries(rollbackEntries, operation)
         }
       },
+      {
+        onReplayAccepted: () => {
+          if (operation) clearPluginNonStorageOperation(operation)
+        },
+      },
     ),
   )
 }
@@ -448,6 +505,11 @@ export function dispatchDeletePlugin(
         if (rollbackEntry && operation) {
           rollbackPluginNonStorageEntries([rollbackEntry], operation)
         }
+      },
+      {
+        onReplayAccepted: () => {
+          if (operation) clearPluginNonStorageOperation(operation)
+        },
       },
     ),
   )
@@ -487,6 +549,11 @@ export function dispatchEnablePlugin(
         if (rollbackEntry && operation) {
           rollbackPluginNonStorageEntries([rollbackEntry], operation)
         }
+      },
+      {
+        onReplayAccepted: () => {
+          if (operation) clearPluginNonStorageOperation(operation)
+        },
       },
     ),
   )
@@ -583,6 +650,9 @@ export function dispatchSelectPluginProvider(
         return result
       },
       () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
+      {
+        onReplayAccepted: () => clearPluginNonStorageOperation(operation),
+      },
     ),
   )
 }
@@ -608,6 +678,9 @@ export function dispatchReorderPlugins(previous: PluginStateSnapshot): Promise<P
         return result
       },
       () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
+      {
+        onReplayAccepted: () => clearPluginNonStorageOperation(operation),
+      },
     ),
   )
 }
@@ -720,7 +793,11 @@ export function dispatchPluginCollectionPatch(
           // can make the reorder guard miss the still-optimistic collection.
           step.rollbackRequested = true
         },
-        { beforeExecuteResult: () => firstFailure },
+        {
+          beforeExecuteResult: () => firstFailure,
+          onReplayAccepted: () => clearPluginNonStorageOperation(step.operation),
+          onReplayDiscarded: () => rollbackPluginNonStorageEntries(step.rollbackEntries, step.operation),
+        },
       ),
     )
   })
@@ -1132,6 +1209,9 @@ export function dispatchPutPluginStorage(
         return result
       },
       () => rollbackPluginStorageEntries([rollbackEntry], operation),
+      {
+        onReplayAccepted: () => clearPluginStorageOperation(operation),
+      },
     ),
   )
 }
@@ -1157,6 +1237,9 @@ export function dispatchDeletePluginStorage(
         return result
       },
       () => rollbackPluginStorageEntries([rollbackEntry], operation),
+      {
+        onReplayAccepted: () => clearPluginStorageOperation(operation),
+      },
     ),
   )
 }
@@ -1211,6 +1294,9 @@ export function dispatchBulkPluginStorage(
         return result
       },
       () => rollbackPluginStorageEntries(rollbackEntries, operation),
+      {
+        onReplayAccepted: () => clearPluginStorageOperation(operation),
+      },
     ),
   )
 }
@@ -1301,6 +1387,11 @@ function pendingPluginNonStorageEntries(): PluginNonStorageOperationRecord[] {
   const entries = new Map<string, PluginNonStorageOperationRecord>()
   for (const operations of pendingPluginNonStorageOperationsByTarget.values()) {
     for (const operation of operations) {
+      // A rejected operation can remain underneath a newer target operation
+      // until that successor settles. It is bookkeeping for rollback cascade,
+      // not an optimistic value that should still be overlaid or folded into
+      // the accepted runtime baseline.
+      if (operation.status === 'failed') continue
       entries.set(`${operation.sequence}:${operation.entry.kind}:${operation.entry.target}`, operation)
     }
   }
@@ -1596,6 +1687,7 @@ async function dispatchPluginSettingsPatchSteps(
           observeExecutionResult: (result) => {
             if (result.status !== 'ok') firstFailure ??= result
           },
+          onReplayDiscarded: () => rollbackPluginSettingsPatch(step.rollbackSnapshot),
         },
       ),
     )

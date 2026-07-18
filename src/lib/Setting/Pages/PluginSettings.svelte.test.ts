@@ -175,6 +175,7 @@ describe('PluginSettings', () => {
 
   it('keeps a plugin action busy until its durable outcome and reports a queued retry', async () => {
     const mutation = deferred<any>()
+    const settlement = deferred<any>()
     pluginSettingsMocks.togglePluginEnabled.mockReturnValueOnce(mutation.promise)
     component = mount(PluginSettings, { target })
 
@@ -185,11 +186,42 @@ describe('PluginSettings', () => {
     expect(enableButton?.disabled).toBe(true)
     expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.saving)
 
-    mutation.resolve({ status: 'queued', result: { status: 'unavailable' } })
+    mutation.resolve({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationId: 'plugin-mutation-a',
+      settlement: settlement.promise,
+    })
     await vi.waitFor(() =>
       expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.queued),
     )
     expect(enableButton?.disabled).toBe(false)
+
+    settlement.resolve({ status: 'accepted' })
+    await vi.waitFor(() => expect(target.querySelector('[role="status"]')).toBeNull())
+  })
+
+  it('turns a queued plugin action into a visible failure when replay discards it', async () => {
+    const mutation = deferred<any>()
+    const settlement = deferred<any>()
+    pluginSettingsMocks.togglePluginEnabled.mockReturnValueOnce(mutation.promise)
+    component = mount(PluginSettings, { target })
+
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.enable}: Plugin C"]`)?.click()
+    mutation.resolve({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationId: 'plugin-mutation-a',
+      settlement: settlement.promise,
+    })
+    await vi.waitFor(() =>
+      expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.queued),
+    )
+
+    settlement.resolve({ status: 'failed' })
+    await vi.waitFor(() =>
+      expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.failed),
+    )
   })
 
   it('does not let an older failed argument save replace a newer accepted status', async () => {

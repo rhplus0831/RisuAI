@@ -106,6 +106,13 @@
         delete pluginMutationStates[pluginName]
       } else {
         pluginMutationStates[pluginName] = { sequence, status: outcome.status }
+        if (outcome.status === 'queued') {
+          void outcome.settlement.then((settlement) => {
+            if (destroyed || pluginMutationStates[pluginName]?.sequence !== sequence) return
+            if (settlement.status === 'accepted') delete pluginMutationStates[pluginName]
+            else pluginMutationStates[pluginName] = { sequence, status: 'failed' }
+          })
+        }
       }
     })
   }
