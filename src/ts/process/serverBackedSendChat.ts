@@ -41,6 +41,31 @@ export type ServerBackedDispatch = {
   generationId: string
   generationInfo: MessageGenerationInfo
   terminal: Promise<ServerChatTerminal>
+  restorationGuard?: ServerBackedRestorationGuard
+}
+
+export interface ServerBackedRestorationGuard {
+  chatId: string
+  mutationIntentEpoch: number
+  projectionEpoch: number
+}
+
+export function captureServerBackedRestorationGuard(
+  chatId: string | undefined,
+): ServerBackedRestorationGuard | undefined {
+  if (!chatId) return undefined
+  return {
+    chatId,
+    mutationIntentEpoch: captureChatMessageMutationIntentEpoch(chatId),
+    projectionEpoch: captureChatBodyProjectionEpoch(chatId),
+  }
+}
+
+function isServerBackedRestorationGuardFresh(guard: ServerBackedRestorationGuard): boolean {
+  return (
+    captureChatMessageMutationIntentEpoch(guard.chatId) === guard.mutationIntentEpoch &&
+    !hasChatBodyProjectionEpochChanged(guard.chatId, guard.projectionEpoch)
+  )
 }
 
 export type ServerBackedAssemblyResult =
@@ -278,6 +303,7 @@ export async function assembleServerBackedSendChat(args: {
    */
   durable?: boolean
 }): Promise<ServerBackedAssemblyResult> {
+  const restorationGuard = captureServerBackedRestorationGuard(args.currentChat.id)
   // `resolveServerPromptAssembly` (the gate's classifier) has already verified
   // the structural precondition — for `mode === 'send'` the last message is a
   // text user message — before routing here, so the old silent `unavailable`
@@ -369,6 +395,7 @@ export async function assembleServerBackedSendChat(args: {
           generationId: served.generationId,
           generationInfo: served.generationInfo,
           terminal: served.terminal,
+          ...(restorationGuard ? { restorationGuard } : {}),
         }
       : undefined
 
@@ -411,6 +438,7 @@ export async function reattachServerBackedSendChat(args: {
   continue?: boolean
   regenerateMessageId?: string
 }): Promise<ServerBackedAssemblyResult> {
+  const restorationGuard = captureServerBackedRestorationGuard(args.currentChat.id)
   args.setProcessStage(1)
   args.stageTimings.stage1Start = Date.now()
   // The reattach stream is keyed by jobId (the body mode is not what selects the
@@ -462,6 +490,7 @@ export async function reattachServerBackedSendChat(args: {
         generationId: served.generationId,
         generationInfo: served.generationInfo,
         terminal: served.terminal,
+        ...(restorationGuard ? { restorationGuard } : {}),
       }
     : undefined
 
@@ -491,6 +520,7 @@ export async function applyServerBackedTerminal(args: {
   /** Continue/regenerate target message id, so the post-gen final text + inlay land
    * on the right row when it is not keyed by `generationId` (the continue case). */
   targetMessageId?: string
+  restorationGuard?: ServerBackedRestorationGuard
 }): Promise<ServerBackedTerminalResult> {
   const terminalInfo = args.terminal.done?.generationInfo
   if (terminalInfo && typeof terminalInfo === 'object') {
@@ -499,7 +529,10 @@ export async function applyServerBackedTerminal(args: {
   const contextTarget = { characterId: args.targetCharacterId, chatId: args.targetChatId }
   if (args.terminal.status === 'error') {
     const target = targetFromPayloadOrContext(args.terminal.restoration, contextTarget)
-    if (args.terminal.restoration) {
+    const restorationIsFresh =
+      !args.restorationGuard ||
+      (target.chatId === args.restorationGuard.chatId && isServerBackedRestorationGuardFresh(args.restorationGuard))
+    if (args.terminal.restoration && restorationIsFresh) {
       withTrustedResourceWrite(() => {
         const resolution = resolveServerBackedLiveChat({
           selectedChar: args.selectedChar,

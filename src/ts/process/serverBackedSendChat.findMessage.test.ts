@@ -38,12 +38,16 @@ vi.mock('./tts', () => ({
   sayTTS: ttsMock.say,
 }))
 
-import { applyServerBackedTerminal, findGeneratedAssistantMessage } from './serverBackedSendChat'
+import {
+  applyServerBackedTerminal,
+  captureServerBackedRestorationGuard,
+  findGeneratedAssistantMessage,
+} from './serverBackedSendChat'
+import { markChatMessageMutationIntent } from '../server/chatMessageMutationIntent'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'
 import type { ServerChatMessagePatch, ServerChatRestoration } from './request/serverChatEvents'
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
-import { markChatMessageMutationIntent } from '../server/chatMessageMutationIntent'
 
 const testDatabaseState = {
   get db() {
@@ -577,5 +581,33 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(target.isStreaming).toBe(false)
     expect(staleIndexChat.message[0].data).toBe('stale original')
     expect(staleIndexChat.scriptstate).toBeUndefined()
+  })
+
+  it('does not apply an assembly restoration after a newer message mutation intent', async () => {
+    const { char, target, staleIndexChat } = seedReorderedTerminalChats()
+    const restorationGuard = captureServerBackedRestorationGuard('chat-target')
+    target.message[0].data = 'accepted newer edit'
+    markChatMessageMutationIntent('chat-target')
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'error',
+        error: 'provider failed late',
+        restoration: makeRestoration('chat-target'),
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      restorationGuard,
+    })
+
+    expect(result.status).toBe('failed')
+    expect(target.message[0].data).toBe('accepted newer edit')
+    expect(target.scriptstate).toBeUndefined()
+    expect(staleIndexChat.message[0].data).toBe('stale original')
   })
 })
