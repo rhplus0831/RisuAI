@@ -471,6 +471,8 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       currentChat,
       selectedChar,
       selectedChat,
+      targetCharacterId: serverGenerationTargetCharacterId ?? currentChar.chaId,
+      targetChatId: serverGenerationTargetChatId ?? currentChat.id,
       generationId,
       generationInfo,
       promptInfo,

@@ -21,6 +21,9 @@ export interface ConsumeStreamResponseOptions {
   currentChar: character
   selectedChar: number
   selectedChat: number
+  /** Stable generation owner. Numeric indices are only compatibility hints. */
+  targetCharacterId?: string
+  targetChatId?: string
   generationId: string
   generationInfo: MessageGenerationInfo
   promptInfo: MessagePresetInfo
@@ -64,14 +67,21 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   } = opts
 
   const reader = req.result.getReader()
-  const currentLiveCharacter = (): character | undefined => getDatabase().characters?.[selectedChar]
-  let streamChatId: string | undefined
+  const streamCharacterId = opts.targetCharacterId || currentChar.chaId
+  const currentLiveCharacter = (): character | undefined => {
+    const characters = getDatabase().characters
+    if (!Array.isArray(characters)) return undefined
+    const indexedCharacter = characters[selectedChar]
+    if (!streamCharacterId || indexedCharacter?.chaId === streamCharacterId) return indexedCharacter
+    return characters.find((candidate) => candidate?.chaId === streamCharacterId)
+  }
+  let streamChatId: string | undefined = opts.targetChatId
   const currentLiveChat = (): Chat | undefined => {
     const chats = currentLiveCharacter()?.chats
     if (!Array.isArray(chats)) return undefined
     const indexedChat = chats[selectedChat]
     if (!streamChatId || indexedChat?.id === streamChatId) return indexedChat
-    return chats.find((chat) => chat.id === streamChatId) ?? indexedChat
+    return chats.find((chat) => chat.id === streamChatId)
   }
   const bumpReloadKey = (): void => {
     const character = currentLiveCharacter()
@@ -86,11 +96,13 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   let msgIndex = initialMessages.length
   let prefix = ''
   let streamTargetMessageId: string | undefined = generationId
+  let anonymousStreamTarget: Message | undefined
   if (arg.continue) {
     msgIndex -= 1
     const continueTarget = initialMessages[msgIndex]
     prefix = continueTarget?.data ?? ''
     streamTargetMessageId = continueTarget?.chatId
+    if (!streamTargetMessageId) anonymousStreamTarget = continueTarget
   } else {
     const existingGeneratedIndex = initialMessages.findIndex(
       (message) =>
@@ -133,7 +145,10 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       )
       if (index >= 0) return index
     }
-    return msgIndex >= 0 && msgIndex < messages.length ? msgIndex : -1
+    // Legacy rows can lack ids. Preserve compatibility only while the exact
+    // object captured at dispatch remains resident; never reinterpret msgIndex
+    // as permission to write a different row after an authoritative replace.
+    return anonymousStreamTarget ? messages.indexOf(anonymousStreamTarget) : -1
   }
 
   const resolveStreamMessage = (): { chat: Chat; index: number; message: Message } | null => {

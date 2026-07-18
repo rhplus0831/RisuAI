@@ -367,6 +367,70 @@ describe('consumeStreamResponse', () => {
     expect(testDatabaseState.db.characters[0].reloadKeys).toBe(3)
   })
 
+  it('keeps streaming bound to stable character and chat ids after collection reorder', async () => {
+    const characterA = makeChar()
+    characterA.chaId = 'cha-a'
+    characterA.chats[0].id = 'chat-a'
+    const characterB = makeChar()
+    characterB.chaId = 'cha-b'
+    characterB.chats[0].id = 'chat-b'
+    characterB.chats[0].message = [{ role: 'char', data: 'belongs to B', chatId: 'msg-b' }]
+    setDatabase({ characters: [characterA, characterB] } as Database)
+    const liveA = testDatabaseState.db.characters[0]
+    const liveB = testDatabaseState.db.characters[1]
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream), liveA, ctrl.signal, {
+        targetCharacterId: 'cha-a',
+        targetChatId: 'chat-a',
+      }),
+    )
+
+    testDatabaseState.db.characters = [liveB, liveA]
+    push({ msgKey: 'A response' })
+    close()
+    await promise
+
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([
+      { role: 'char', data: 'belongs to B', chatId: 'msg-b' },
+    ])
+    expect(testDatabaseState.db.characters[1].chats[0].message.at(-1)?.data).toBe('A response')
+    expect(testDatabaseState.db.characters[1].chats[0].isStreaming).toBe(false)
+  })
+
+  it('detaches instead of falling back to another indexed owner when the original disappears', async () => {
+    const characterA = makeChar()
+    characterA.chaId = 'cha-a'
+    characterA.chats[0].id = 'chat-a'
+    const characterB = makeChar()
+    characterB.chaId = 'cha-b'
+    characterB.chats[0].id = 'chat-b'
+    characterB.chats[0].message = [{ role: 'char', data: 'belongs to B', chatId: 'msg-b' }]
+    setDatabase({ characters: [characterA, characterB] } as Database)
+    const liveA = testDatabaseState.db.characters[0]
+    const liveB = testDatabaseState.db.characters[1]
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream), liveA, ctrl.signal, {
+        targetCharacterId: 'cha-a',
+        targetChatId: 'chat-a',
+      }),
+    )
+
+    testDatabaseState.db.characters = [liveB]
+    push({ msgKey: 'must not cross owners' })
+    close()
+    await promise
+
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([
+      { role: 'char', data: 'belongs to B', chatId: 'msg-b' },
+    ])
+    expect(testDatabaseState.db.characters[0].chats[0].isStreaming).not.toBe(true)
+    expect(testDatabaseState.db.characters[0].reloadKeys).toBe(0)
+  })
+
   it('removes the abort listener in finally (later abort has no effect on result)', async () => {
     const currentChar = seed()
     const { stream, push, close } = makeControlledStream()

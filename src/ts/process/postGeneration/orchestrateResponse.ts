@@ -44,6 +44,8 @@ export interface OrchestrateResponseArgs {
   currentChat: Chat
   selectedChar: number
   selectedChat: number
+  targetCharacterId?: string
+  targetChatId?: string
   generationId: string
   generationInfo: MessageGenerationInfo
   promptInfo: MessagePresetInfo
@@ -78,6 +80,8 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
     currentChar,
     selectedChar,
     selectedChat,
+    targetCharacterId,
+    targetChatId,
     generationId,
     generationInfo,
     promptInfo,
@@ -100,6 +104,8 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
       currentChar,
       selectedChar,
       selectedChat,
+      targetCharacterId,
+      targetChatId,
       generationId,
       generationInfo,
       promptInfo,
@@ -120,7 +126,12 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
       // The server already ran the run-var pass, `'output'` trigger, and
       // `editoutput`. The browser keeps streamed text for display; final text,
       // inlay rendering, scriptstate patch, and resend arrive on the terminal.
-      currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
+      const stableCharacter = targetCharacterId
+        ? getDatabase().characters.find((candidate) => candidate?.chaId === targetCharacterId)
+        : getDatabase().characters[selectedChar]
+      currentChat =
+        (targetChatId ? stableCharacter?.chats?.find((candidate) => candidate?.id === targetChatId) : undefined) ??
+        currentChat
     } else {
       const streamTrigger = await applyOutputTrigger({
         currentChar,
