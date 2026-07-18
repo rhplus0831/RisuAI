@@ -170,6 +170,19 @@ describe('server command event subscription helper', () => {
     })
   })
 
+  it('reports heartbeat comment frames for stream liveness tracking', async () => {
+    stubEventsFetch(': connected\n\n: heartbeat\n\n')
+    const onFrame = vi.fn()
+
+    const subscription = await subscribeServerCommandEvents({
+      onCommandEvent: vi.fn(),
+      onFrame,
+    })
+
+    expect(subscription.status).toBe('ok')
+    await waitFor(() => onFrame.mock.calls.length === 2)
+  })
+
   it('returns replay-unavailable for exhausted server history', async () => {
     stubEventsFetch(
       JSON.stringify({

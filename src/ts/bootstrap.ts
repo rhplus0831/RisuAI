@@ -22,6 +22,7 @@ import {
   peekCachedServerCommandRevision,
   setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
+  setServerCommandConflictGapHandler,
   setServerCommandSuccessReconciler,
   type CommandEvent,
   type AgentPresetCollectionMutationLocalEffect,
@@ -155,6 +156,7 @@ setSettingsRuntimeProjectionHook((keys) => {
 const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
 const SERVER_RESOURCE_RECONNECT_MAX_DELAY_MS = 30_000
 const SERVER_RESOURCE_RECONNECT_JITTER_RATIO = 0.2
+const SERVER_RESOURCE_EVENT_STALE_TIMEOUT_MS = 60_000
 
 let serverResourceEventSubscription: { unsubscribe: () => void } | null = null
 let stopBridgePatchLifecycleFlush: (() => void) | null = null
@@ -164,6 +166,10 @@ let serverResourceSyncChain: Promise<void> = Promise.resolve()
 let serverResourceEventsDesired = false
 let serverResourceReconnectTimer: ReturnType<typeof setTimeout> | null = null
 let serverResourceReconnectAttempt = 0
+let serverResourceEventEpoch = 0
+let serverResourceLastFrameAt = 0
+let serverResourceEventWatchdogTimer: ReturnType<typeof setTimeout> | null = null
+let stopServerResourceRecoveryListeners: (() => void) | null = null
 
 function initialSelectedCharFromDatabase(db: Database): number {
   const currentChar = (db as { currentChar?: unknown }).currentChar
@@ -289,6 +295,7 @@ export async function loadWebInitialDatabase() {
       processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event], localEffects),
     ),
   )
+  setServerCommandConflictGapHandler(handleServerCommandConflictGap)
   setResourceWriteGuardEnabled(true)
   setActiveGenerationJobs(runtime.activeGenerationJobs ?? [])
   setActiveMessageTranslations(runtime.activeMessageTranslations ?? [])
@@ -352,11 +359,14 @@ function serverCommandFailureMessage(
 
 export function stopServerResourceEvents() {
   serverResourceEventsDesired = false
-  serverResourceEventSubscription?.unsubscribe()
-  serverResourceEventSubscription = null
+  serverResourceEventEpoch += 1
+  teardownServerResourceSubscription()
+  stopServerResourceRecoveryListeners?.()
+  stopServerResourceRecoveryListeners = null
   stopBridgePatchLifecycleFlush?.()
   stopBridgePatchLifecycleFlush = null
   setServerCommandSuccessReconciler(null)
+  setServerCommandConflictGapHandler(null)
   if (serverResourceReconnectTimer) {
     clearTimeout(serverResourceReconnectTimer)
     serverResourceReconnectTimer = null
@@ -365,58 +375,145 @@ export function stopServerResourceEvents() {
 }
 
 async function startServerResourceEvents() {
+  const eventEpoch = serverResourceEventEpoch + 1
+  serverResourceEventEpoch = eventEpoch
   teardownServerResourceSubscription()
   serverResourceEventsDesired = true
+  ensureServerResourceRecoveryListeners()
   const subscription = await subscribeServerCommandEvents({
     sinceRevision: peekAppliedServerResourceRevision(),
     onCommandEvent: handleServerCommandEvent,
     onMemoryEvent: applyServerMemoryEvent,
+    onFrame: () => recordServerResourceEventFrame(eventEpoch),
     onError: (error) => {
+      if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
       console.warn(error)
       if (error.includes('Malformed command event frame')) {
         enqueueServerResourceSync(async () => {
+          if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
           await forceServerResourceRefresh('malformed-command-event')
-          scheduleServerResourceReconnect()
+          scheduleServerResourceReconnect(eventEpoch)
         })
         return
       }
-      scheduleServerResourceReconnect()
+      scheduleServerResourceReconnect(eventEpoch)
     },
     onClose: () => {
-      scheduleServerResourceReconnect()
+      if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
+      scheduleServerResourceReconnect(eventEpoch)
     },
   })
+  if (!isCurrentServerResourceEventEpoch(eventEpoch)) {
+    if (subscription.status === 'ok') subscription.unsubscribe()
+    return
+  }
   if (subscription.status === 'ok') {
     serverResourceReconnectAttempt = 0
     serverResourceEventSubscription = subscription
+    recordServerResourceEventFrame(eventEpoch)
   } else if (subscription.status === 'error') {
     console.warn(`Server event subscription failed: ${subscription.error}`)
-    scheduleServerResourceReconnect()
+    scheduleServerResourceReconnect(eventEpoch)
   } else if (subscription.status === 'replay-unavailable') {
     console.warn(`Server event replay unavailable at revision ${subscription.currentRevision}; refreshing resources`)
     enqueueServerResourceSync(async () => {
+      if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
       await forceServerResourceRefresh('event-replay-unavailable')
-      scheduleServerResourceReconnect()
+      scheduleServerResourceReconnect(eventEpoch)
     })
   }
 }
 
 function teardownServerResourceSubscription() {
+  clearServerResourceEventWatchdog()
   serverResourceEventSubscription?.unsubscribe()
   serverResourceEventSubscription = null
 }
 
-function scheduleServerResourceReconnect() {
-  if (serverResourceReconnectTimer || !serverResourceEventsDesired) return
+function scheduleServerResourceReconnect(eventEpoch = serverResourceEventEpoch) {
+  if (serverResourceReconnectTimer || !serverResourceEventsDesired || eventEpoch !== serverResourceEventEpoch) {
+    return
+  }
   const delayMs = calculateServerResourceReconnectDelayMs(serverResourceReconnectAttempt)
   serverResourceReconnectAttempt += 1
   serverResourceReconnectTimer = setTimeout(() => {
     serverResourceReconnectTimer = null
-    if (!serverResourceEventsDesired) return
+    if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
     void (async () => {
       await startServerResourceEvents()
     })()
   }, delayMs)
+}
+
+function recordServerResourceEventFrame(eventEpoch: number): void {
+  if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
+  serverResourceLastFrameAt = Date.now()
+  armServerResourceEventWatchdog(eventEpoch, SERVER_RESOURCE_EVENT_STALE_TIMEOUT_MS)
+}
+
+function armServerResourceEventWatchdog(eventEpoch: number, delayMs: number): void {
+  clearServerResourceEventWatchdog()
+  serverResourceEventWatchdogTimer = setTimeout(
+    () => {
+      serverResourceEventWatchdogTimer = null
+      if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
+      const remainingMs = SERVER_RESOURCE_EVENT_STALE_TIMEOUT_MS - (Date.now() - serverResourceLastFrameAt)
+      if (remainingMs > 0) {
+        armServerResourceEventWatchdog(eventEpoch, remainingMs)
+        return
+      }
+      console.warn('Server event stream heartbeat timed out; reconnecting')
+      teardownServerResourceSubscription()
+      scheduleServerResourceReconnect(eventEpoch)
+    },
+    Math.max(1, delayMs),
+  )
+}
+
+function clearServerResourceEventWatchdog(): void {
+  if (!serverResourceEventWatchdogTimer) return
+  clearTimeout(serverResourceEventWatchdogTimer)
+  serverResourceEventWatchdogTimer = null
+}
+
+function isCurrentServerResourceEventEpoch(eventEpoch: number): boolean {
+  return serverResourceEventsDesired && eventEpoch === serverResourceEventEpoch
+}
+
+function ensureServerResourceRecoveryListeners(): void {
+  if (stopServerResourceRecoveryListeners || typeof window === 'undefined' || typeof document === 'undefined') return
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') restartServerResourceEvents()
+  }
+  const handleOnline = () => restartServerResourceEvents()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('online', handleOnline)
+  stopServerResourceRecoveryListeners = () => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    window.removeEventListener('online', handleOnline)
+  }
+}
+
+function restartServerResourceEvents(): void {
+  if (!serverResourceEventsDesired) return
+  if (serverResourceReconnectTimer) {
+    clearTimeout(serverResourceReconnectTimer)
+    serverResourceReconnectTimer = null
+  }
+  void startServerResourceEvents()
+}
+
+function handleServerCommandConflictGap(currentRevision: number, appliedRevision: number): void {
+  if (currentRevision <= appliedRevision) return
+  void enqueueServerResourceSync(async () => {
+    const latestAppliedRevision = peekAppliedServerResourceRevision()
+    if (latestAppliedRevision !== null && latestAppliedRevision >= currentRevision) return
+    try {
+      await forceServerResourceRefresh('conflict-gap')
+    } finally {
+      restartServerResourceEvents()
+    }
+  })
 }
 
 export function calculateServerResourceReconnectDelayMs(attempt: number, random: () => number = Math.random): number {

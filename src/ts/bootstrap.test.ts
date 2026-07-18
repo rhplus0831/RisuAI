@@ -23,6 +23,7 @@ const eventApi = vi.hoisted(() => ({
     sinceRevision?: number | null
     onCommandEvent: (event: TestCommandEvent) => void
     onMemoryEvent?: (event: TestMemoryEvent) => void
+    onFrame?: () => void
     onError?: (error: string) => void
     onClose?: () => void
   }>,
@@ -97,6 +98,14 @@ vi.mock('./server/bootstrap', () => ({
   fetchServerBootstrap: bootstrapApi.fetch,
   fetchServerBootstrapReadOnly: bootstrapApi.fetchReadOnly,
 }))
+
+vi.mock('./storage/fastifyStorage', async (importActual) => {
+  const actual = await importActual<typeof import('./storage/fastifyStorage')>()
+  return {
+    ...actual,
+    getNodeServerProxyAuth: async () => 'bootstrap-test-auth-token',
+  }
+})
 
 vi.mock('./server/resourceInvalidation', () => ({
   loadInitialServerResources: resourceApi.loadInitial,
@@ -202,6 +211,7 @@ import {
   clearCachedServerCommandRevision,
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
+  patchRuntimeSettings,
   subscribeServerCommandLocalEffectApplied,
   withDirectServerCommandEventReconciliation,
 } from './server/commands'
@@ -4214,6 +4224,59 @@ describe('API-backed client bootstrap', () => {
 })
 
 describe('resource event reconnect backoff', () => {
+  it('reconnects a stream that stops delivering heartbeat frames', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+    await loadWebInitialDatabase()
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(1)
+    eventApi.subscriptions[0].onFrame?.()
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(eventApi.unsubscribe).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+  })
+
+  it('resubscribes when the browser comes online or returns to the foreground', async () => {
+    await loadWebInitialDatabase()
+
+    window.dispatchEvent(new Event('online'))
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(2))
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(3))
+
+    expect(eventApi.unsubscribe).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes and resubscribes when a conflict proves the applied projection is behind', async () => {
+    await loadWebInitialDatabase()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'revision_conflict', currentRevision: 9 }), {
+            status: 409,
+            headers: { 'content-type': 'application/json' },
+          }),
+      ),
+    )
+
+    await expect(
+      patchRuntimeSettings({
+        baseRevision: 5,
+        patch: { streamGeminiThoughts: true },
+      }),
+    ).resolves.toEqual({ status: 'conflict', currentRevision: 9 })
+
+    await vi.waitFor(() => expect(resourceApi.forceRefresh).toHaveBeenCalledWith('conflict-gap'))
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(2))
+  })
+
   it('L45: schedules increasing reconnect delays during a simulated outage', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)

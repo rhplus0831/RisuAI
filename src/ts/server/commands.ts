@@ -1645,6 +1645,7 @@ type ServerCommandSuccessReconciler = (
   coalescedEvents: readonly CommandEvent[],
   localEffects: ReadonlyMap<number, ServerCommandLocalEffect>,
 ) => Promise<void> | void
+type ServerCommandConflictGapHandler = (currentRevision: number, appliedRevision: number) => void
 
 interface ServerCommandReconciliationBatch {
   pendingEvents: Map<number, CommandEvent>
@@ -1661,6 +1662,7 @@ interface DirectServerCommandReconciliation {
 }
 
 let serverCommandSuccessReconciler: ServerCommandSuccessReconciler | null = null
+let serverCommandConflictGapHandler: ServerCommandConflictGapHandler | null = null
 // Every command domain shares one server revision. Keep high-level mutations in
 // one client queue so two unrelated optimistic edits cannot both dispatch with
 // the same base revision and make the later edit roll back with a self-conflict.
@@ -2025,6 +2027,10 @@ export function peekAppliedServerResourceRevision(): number | null {
 
 export function setServerCommandSuccessReconciler(reconciler: ServerCommandSuccessReconciler | null): void {
   serverCommandSuccessReconciler = reconciler
+}
+
+export function setServerCommandConflictGapHandler(handler: ServerCommandConflictGapHandler | null): void {
+  serverCommandConflictGapHandler = handler
 }
 
 /**
@@ -5497,7 +5503,13 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
 
     if (response.status === 409) {
       const currentRevision = readCurrentRevision(body)
-      if (currentRevision !== null) setCachedServerCommandRevision(currentRevision)
+      if (currentRevision !== null) {
+        const appliedRevision = peekAppliedServerResourceRevision()
+        setCachedServerCommandRevision(currentRevision)
+        if (appliedRevision !== null && currentRevision > appliedRevision) {
+          serverCommandConflictGapHandler?.(currentRevision, appliedRevision)
+        }
+      }
       return currentRevision === null
         ? { status: 'error', error: errorMessageFromBody(body, 'HTTP 409') }
         : { status: 'conflict', currentRevision }

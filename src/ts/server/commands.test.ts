@@ -156,6 +156,7 @@ import {
   selectPresetCommand,
   setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
+  setServerCommandConflictGapHandler,
   setServerCommandSuccessReconciler,
   sha256HexUtf8Sync,
   type AgentPresetStepSnapshot,
@@ -250,6 +251,7 @@ function canonicalLoadoutSnapshot(id = 'loadout-a') {
 beforeEach(() => {
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
+  setServerCommandConflictGapHandler(null)
   setServerCommandSuccessReconciler(null)
 })
 
@@ -1859,6 +1861,23 @@ describe('server command API adapter', () => {
     expect(result).toEqual({ status: 'conflict', currentRevision: 7 })
     expect(peekCachedServerCommandRevision()).toBe(7)
     expect(peekAppliedServerResourceRevision()).toBeNull()
+  })
+
+  it('reports revision conflicts that prove the resource projection is behind', async () => {
+    const commandFetch = makeCommandFetch(() => jsonResponse({ error: 'revision_conflict', currentRevision: 9 }, 409))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const onConflictGap = vi.fn()
+    setAppliedServerResourceRevision(6)
+    setServerCommandConflictGapHandler(onConflictGap)
+
+    await expect(
+      patchRuntimeSettings({
+        baseRevision: 6,
+        patch: { streamGeminiThoughts: true },
+      }),
+    ).resolves.toEqual({ status: 'conflict', currentRevision: 9 })
+
+    expect(onConflictGap).toHaveBeenCalledWith(9, 6)
   })
 
   it.each([
