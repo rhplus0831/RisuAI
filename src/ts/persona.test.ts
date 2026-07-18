@@ -58,6 +58,7 @@ import {
   setSelectedPersonaPromptFromTrigger,
   updateSelectedPersonaDisplayName,
   updateSelectedPersonaField,
+  updateSelectedPersonaFieldWithOutcome,
   updateSelectedPersonaLargePortrait,
 } from './persona'
 
@@ -304,6 +305,79 @@ describe('persona ID read and command preparation', () => {
       personaPrompt: 'Other prompt',
       note: 'Other note',
     })
+  })
+
+  it('persists an onboarding-style username through the selected persona owner', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'default-persona',
+          name: 'User',
+          icon: '',
+          personaPrompt: '',
+          note: '',
+        }),
+      ],
+      0,
+    )
+    getDatabase().username = 'User'
+    const calls: Array<{ url: string; body: Record<string, unknown> | null }> = []
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input)
+      calls.push({
+        url,
+        body: typeof init?.body === 'string' ? JSON.parse(init.body) : null,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/personas/default-persona') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'persona.updated', revision: 11, resource: 'persona', id: 'default-persona' },
+          personaId: 'default-persona',
+          acknowledgedKeys: ['name'],
+          legacyProfileProjectionApplied: true,
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    })
+
+    await expect(updateSelectedPersonaFieldWithOutcome('username', 'Ada')).resolves.toBe('accepted')
+
+    expect(getDatabase().username).toBe('Ada')
+    expect(getDatabase().personas[0].name).toBe('Ada')
+    expect(calls.find((call) => call.url.endsWith('/personas/default-persona'))?.body).toMatchObject({
+      patch: { name: 'Ada' },
+      mirrorLegacyProfile: true,
+    })
+  })
+
+  it('rolls back both username projections when the persona owner rejects the edit', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'default-persona',
+          name: 'User',
+          icon: '',
+          personaPrompt: '',
+          note: '',
+        }),
+      ],
+      0,
+    )
+    getDatabase().username = 'User'
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/personas/default-persona') {
+        return jsonResponse({ error: 'rejected' }, 400)
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    })
+
+    await expect(updateSelectedPersonaFieldWithOutcome('username', 'Ada')).resolves.toBe('failed')
+
+    expect(getDatabase().username).toBe('User')
+    expect(getDatabase().personas[0].name).toBe('User')
   })
 
   it('updates display name as a selected persona row field without changing the internal username', () => {

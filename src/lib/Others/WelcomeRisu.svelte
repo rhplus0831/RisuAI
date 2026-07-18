@@ -4,7 +4,7 @@
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
-  import { alertError } from 'src/ts/alert'
+  import { alertError, alertNormal } from 'src/ts/alert'
   import Airisu from '../../etc/Airisu.webp'
   import { onDestroy } from 'svelte'
   import {
@@ -12,10 +12,10 @@
     applyServerBackedSetting,
     watchServerBackedSettings,
   } from 'src/ts/server/settingsBridge.svelte'
+  import { updateSelectedPersonaFieldWithOutcome } from 'src/ts/persona'
 
   const stopServerSettingsWatch = watchServerBackedSettings([
     'language',
-    'username',
     'openAIKey',
     'openrouterKey',
     'claudeAPIKey',
@@ -43,6 +43,7 @@
   let setupCompletionPending = $state(false)
   let mounted = true
   let setupRunId = 0
+  let usernamePersistencePending = $state(false)
 
   const SETUP_COMPLETION_PENDING_STEP = 9
   const SETUP_COMPLETE_STEP = 10
@@ -139,14 +140,31 @@
   }
   let start = $state(false)
 
+  async function persistOnboardingUsername(): Promise<void> {
+    if (usernamePersistencePending || input.length === 0) return
+    const attemptedName = input
+    usernamePersistencePending = true
+    try {
+      const status = await updateSelectedPersonaFieldWithOutcome('username', attemptedName)
+      if (!mounted) return
+      if (status === 'failed') {
+        alertError(language.personaMutationFailed)
+        return
+      }
+      if (status === 'queued') alertNormal(language.personaMutationQueued)
+      step = 2
+      input = ''
+    } catch {
+      if (mounted) alertError(language.personaMutationFailed)
+    } finally {
+      if (mounted) usernamePersistencePending = false
+    }
+  }
+
   function send() {
     switch (step) {
       case 1: {
-        if (input.length > 0) {
-          applyServerBackedSetting('username', input)
-          step = 2
-          input = ''
-        }
+        void persistOnboardingUsername()
         break
       }
       case 2: {
@@ -449,6 +467,7 @@
                 style:height={'44px'} />
             {:else}
               <textarea
+                disabled={step === 1 && usernamePersistencePending}
                 class="peer focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full"
                 bind:value={input}
                 onkeydown={(e) => {
@@ -460,6 +479,8 @@
                 style:height={'44px'}></textarea>
             {/if}
             <button
+              disabled={step === 1 && usernamePersistencePending}
+              aria-busy={step === 1 && usernamePersistencePending}
               aria-label={language.hotkeyDesc.send}
               onclick={send}
               class="flex justify-center border-y border-r rounded-r-md border-darkborderc items-center text-textcolor p-2 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors">

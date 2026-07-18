@@ -1657,6 +1657,39 @@ export function updateSelectedPersonaField(field: SelectedPersonaProfileField, v
   })
 }
 
+/**
+ * Persist a selected-persona profile edit through the persona row owner. The
+ * persona command mirrors the legacy profile scalar in the same server
+ * transaction, so callers outside PersonaSettings do not need a second generic
+ * settings write.
+ */
+export function updateSelectedPersonaFieldWithOutcome(
+  field: SelectedPersonaProfileField,
+  value: string,
+): Promise<PersonaPersistenceStatus> {
+  const personaId = selectedPersonaId()
+  if (!personaId || !getDatabase().personas[getDatabase().selectedPersona]) {
+    return Promise.resolve('failed')
+  }
+
+  const previous = currentPersonaStateSnapshot()
+  withSuppressedPersonaSettingsWatcher(() => updateSelectedPersonaField(field, value))
+  const attempted = currentPersonaStateSnapshot()
+  const patch = changedPersonaProfilePatch(personaId, previous, attempted)
+  if (Object.keys(patch).length === 0) return Promise.resolve('accepted')
+
+  const rowField = selectedPersonaProfileRowField(field)
+  return dispatchPersonaProfilePatch({
+    personaId,
+    patch,
+    previous,
+    attempted,
+    rollbackRowKeys: [rowField],
+    rollbackLegacyKeys: [field],
+    projectionLegacyKeys: [field],
+  })
+}
+
 export function updateSelectedPersonaLargePortrait(value: boolean): void {
   const persona = getDatabase().personas[getDatabase().selectedPersona]
   if (!persona) return

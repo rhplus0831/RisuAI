@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const welcomeMocks = vi.hoisted(() => ({
   applyOnboardingServerBackedSettings: vi.fn(),
   applyServerBackedSetting: vi.fn(),
+  updateSelectedPersonaFieldWithOutcome: vi.fn(),
   changeLanguage: vi.fn(),
+  alertError: vi.fn(),
+  alertNormal: vi.fn(),
   stopServerSettingsWatch: vi.fn(),
   updateTextThemeAndCSS: vi.fn(),
   watchServerBackedSettings: vi.fn(() => welcomeMocks.stopServerSettingsWatch),
@@ -23,6 +26,8 @@ vi.mock('src/lang', () => ({
       send: 'Send',
     },
     recommended: 'Recommended',
+    personaMutationFailed: 'Persona save failed',
+    personaMutationQueued: 'Persona save queued',
     setup: {
       allDone: 'All done',
       chooseChatType: 'Choose chat type',
@@ -63,7 +68,12 @@ vi.mock('src/ts/gui/colorscheme', () => ({
 }))
 
 vi.mock('src/ts/alert', () => ({
-  alertError: vi.fn(),
+  alertError: welcomeMocks.alertError,
+  alertNormal: welcomeMocks.alertNormal,
+}))
+
+vi.mock('src/ts/persona', () => ({
+  updateSelectedPersonaFieldWithOutcome: welcomeMocks.updateSelectedPersonaFieldWithOutcome,
 }))
 
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
@@ -183,10 +193,20 @@ beforeEach(() => {
   setDatabaseLite({
     didFirstSetup: false,
     username: '',
+    selectedPersona: 0,
+    personas: [{ id: 'default-persona', name: 'User', icon: '', personaPrompt: '', note: '' }],
   } as never)
   welcomeMocks.applyOnboardingServerBackedSettings.mockReset()
   welcomeMocks.applyOnboardingServerBackedSettings.mockResolvedValue(true)
   welcomeMocks.applyServerBackedSetting.mockReset()
+  welcomeMocks.updateSelectedPersonaFieldWithOutcome.mockReset()
+  welcomeMocks.updateSelectedPersonaFieldWithOutcome.mockImplementation(async (_field: string, value: string) => {
+    getDatabase().username = value
+    getDatabase().personas[0].name = value
+    return 'accepted'
+  })
+  welcomeMocks.alertError.mockReset()
+  welcomeMocks.alertNormal.mockReset()
   welcomeMocks.changeLanguage.mockReset()
   welcomeMocks.stopServerSettingsWatch.mockReset()
   welcomeMocks.updateTextThemeAndCSS.mockReset()
@@ -227,6 +247,41 @@ describe('WelcomeRisu onboarding setup completion', () => {
     expect(credential?.getAttribute('aria-label')).toBe('OpenAI API Key')
     expect(credential?.autocomplete).toBe('new-password')
     expect(target.querySelector('textarea')).toBeNull()
+  })
+
+  it('waits for the selected persona owner before advancing from the name step', async () => {
+    const persistence = createDeferred<'accepted' | 'queued' | 'failed'>()
+    welcomeMocks.updateSelectedPersonaFieldWithOutcome.mockReturnValueOnce(persistence.promise)
+    await mountWelcome()
+
+    const input = textInput()
+    input.value = 'Ada'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    sendButton().click()
+    sendButton().click()
+    await tick()
+
+    expect(welcomeMocks.updateSelectedPersonaFieldWithOutcome).toHaveBeenCalledOnce()
+    expect(welcomeMocks.updateSelectedPersonaFieldWithOutcome).toHaveBeenCalledWith('username', 'Ada')
+    expect(sendButton().disabled).toBe(true)
+    expect(target.textContent).not.toContain('Set up now')
+
+    persistence.resolve('accepted')
+    await flushAsync()
+
+    expect(target.textContent).toContain('Set up now')
+  })
+
+  it('keeps the name step retryable when persona persistence fails', async () => {
+    welcomeMocks.updateSelectedPersonaFieldWithOutcome.mockResolvedValueOnce('failed')
+    await mountWelcome()
+    await setInputAndSend('Ada')
+    await flushAsync()
+
+    expect(target.textContent).not.toContain('Set up now')
+    expect(textInput().value).toBe('Ada')
+    expect(welcomeMocks.alertError).toHaveBeenCalledWith('Persona save failed')
   })
 
   it.each([
