@@ -98,7 +98,7 @@ import {
 import { replayPendingMutations } from '../server/pendingMutationReplay'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { selectedCharID } from '../stores.svelte'
-import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
+import { getDatabase, setDatabaseLite, updateModelPreset, type Database } from '../storage/database.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
 import {
@@ -2372,6 +2372,56 @@ describe('plugin database command bridge', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('customCSS'))
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('undefined'))
     warn.mockRestore()
+  })
+
+  it('routes selected model preset fields through the preset mirror', async () => {
+    const calls = stubCommandFetch()
+    setDatabaseLite({
+      ...getDatabase(),
+      currentPluginProvider: 'old-provider',
+      temperature: 0.2,
+      maxContext: 4096,
+      modelPresetsId: 0,
+      modelPresets: [
+        {
+          id: 'model-a',
+          name: 'Model A',
+          currentPluginProvider: 'old-provider',
+          temperature: 0.2,
+          maxContext: 4096,
+        },
+      ],
+      promptPresetsId: -1,
+      promptPresets: [],
+    } as any)
+    const apis = getV2PluginAPIs()
+
+    await apis.setDatabaseLite({
+      currentPluginProvider: 'new-provider',
+      temperature: 0.9,
+    })
+
+    expect(getDatabase().modelPresets[0]).toMatchObject({
+      currentPluginProvider: 'new-provider',
+      temperature: 0.9,
+    })
+    expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')).toHaveLength(1)
+    expect(calls.find((call) => call.url === '/api/v1/commands/model-presets/model-a')).toMatchObject({
+      method: 'PATCH',
+      body: {
+        patch: {
+          currentPluginProvider: 'new-provider',
+          temperature: 0.9,
+        },
+      },
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/plugins/provider')).toBe(false)
+    expect(calls.some((call) => call.url.startsWith('/api/v1/commands/settings/'))).toBe(false)
+
+    const unrelatedEdit = updateModelPreset(0, { maxContext: 8192 })
+    expect(getDatabase().temperature).toBe(0.9)
+    expect(getDatabase().currentPluginProvider).toBe('new-provider')
+    await unrelatedEdit
   })
 
   it('blocks recognized resource families (in allowedDbKeys) in server mode without persisting', async () => {

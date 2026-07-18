@@ -4,6 +4,7 @@ import {
   updateModelPreset,
   updatePromptPreset,
   type ModelPreset,
+  type PresetMutationOutcome,
   type PromptPreset,
 } from './storage/database.svelte'
 
@@ -34,8 +35,15 @@ export type TopLevelPresetFieldMirrorTarget =
     }
 
 export function mirrorTopLevelPresetField(key: string, value: unknown): boolean {
+  return mirrorTopLevelPresetFieldWithOutcome(key, value) !== null
+}
+
+export function mirrorTopLevelPresetFieldWithOutcome(
+  key: string,
+  value: unknown,
+): Promise<PresetMutationOutcome> | null {
   const target = resolveTopLevelPresetFieldMirrorTarget(key)
-  return target ? mirrorTopLevelPresetFieldToTarget(target, value) : false
+  return target ? mirrorTopLevelPresetFieldToTargetWithOutcome(target, value) : null
 }
 
 /**
@@ -69,21 +77,26 @@ export function currentTopLevelPresetFieldMirrorValue(target: TopLevelPresetFiel
 }
 
 export function mirrorTopLevelPresetFieldToTarget(target: TopLevelPresetFieldMirrorTarget, value: unknown): boolean {
+  return mirrorTopLevelPresetFieldToTargetWithOutcome(target, value) !== null
+}
+
+export function mirrorTopLevelPresetFieldToTargetWithOutcome(
+  target: TopLevelPresetFieldMirrorTarget,
+  value: unknown,
+): Promise<PresetMutationOutcome> | null {
   if (target.kind === 'model') {
     const index = getDatabase().modelPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
-    if (index < 0) return false
+    if (index < 0) return null
     const preset = getDatabase().modelPresets[index] as Record<string, unknown>
-    if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return false
-    updateModelPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<ModelPreset>)
-    return true
+    if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return null
+    return updateModelPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<ModelPreset>)
   }
 
   const index = getDatabase().promptPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
-  if (index < 0) return false
+  if (index < 0) return null
   const preset = getDatabase().promptPresets[index] as Record<string, unknown>
-  if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return false
-  updatePromptPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<PromptPreset>)
-  return true
+  if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return null
+  return updatePromptPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<PromptPreset>)
 }
 
 function modelPresetKeyForDatabaseKey(key: string): string | null {

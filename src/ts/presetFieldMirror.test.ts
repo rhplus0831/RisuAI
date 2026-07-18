@@ -17,6 +17,7 @@ vi.mock('./storage/database.svelte', () => ({
 
 import {
   mirrorTopLevelPresetField,
+  mirrorTopLevelPresetFieldWithOutcome,
   mirrorTopLevelPresetFieldToTarget,
   resolveTopLevelPresetFieldMirrorTarget,
 } from './presetFieldMirror'
@@ -64,6 +65,14 @@ describe('mirrorTopLevelPresetField', () => {
     expect(target).toMatchObject({ kind: 'model', presetId: 'model-a', presetKey: 'temperature' })
     expect(mirrorTopLevelPresetFieldToTarget(target!, 0.95)).toBe(true)
 
+    expect(presetUpdateState.updateModelPreset).toHaveBeenCalledWith(0, { temperature: 0.95 })
+  })
+
+  it('returns the selected preset mutation outcome to bridge callers', () => {
+    const outcome = Promise.resolve({ status: 'accepted' as const })
+    presetUpdateState.updateModelPreset.mockReturnValueOnce(outcome)
+
+    expect(mirrorTopLevelPresetFieldWithOutcome('temperature', 0.95)).toBe(outcome)
     expect(presetUpdateState.updateModelPreset).toHaveBeenCalledWith(0, { temperature: 0.95 })
   })
 })

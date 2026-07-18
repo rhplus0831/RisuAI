@@ -62,6 +62,7 @@ import {
   comparePluginVersions,
   downloadPluginUpdate,
 } from './pluginUpdates'
+import { mirrorTopLevelPresetFieldWithOutcome } from '../presetFieldMirror'
 
 export const customProviderStore = writable([] as string[])
 
@@ -897,7 +898,10 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
       withTrustedResourceWrite(() => {
         ;(getDatabase() as any)[key] = cloneJsonValue(value)
       })
-      if (key === 'currentPluginProvider' && typeof value === 'string') {
+      const mirroredPresetOutcome = mirrorTopLevelPresetFieldWithOutcome(key, value)
+      if (mirroredPresetOutcome) {
+        persistence.push(mirroredPresetOutcome)
+      } else if (key === 'currentPluginProvider' && typeof value === 'string') {
         const pending = dispatchSelectPluginProvider(value, previous)
         if (pending) persistence.push(pending)
       } else if (key === 'plugins' && Array.isArray(value)) {
