@@ -11,7 +11,13 @@ const serverMocks = vi.hoisted(() => ({
   hydrateChatMessages: vi.fn<(...args: unknown[]) => Promise<void>>(),
   summarize: vi.fn<(...args: unknown[]) => Promise<string>>(),
   memoryJobListeners: new Set<(event: any) => void>(),
+  alertConfirm: vi.fn<() => Promise<boolean>>(),
 }))
+
+vi.mock('src/ts/alert', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/alert')>()
+  return { ...actual, alertConfirm: serverMocks.alertConfirm }
+})
 
 vi.mock('src/ts/process/memory/hypav3', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/process/memory/hypav3')>()
@@ -157,6 +163,7 @@ describe('Hypa V3 server summary close reliability', () => {
     serverMocks.hydrateChatMessages.mockResolvedValue(undefined)
     serverMocks.summarize.mockResolvedValue('Rerolled summary')
     serverMocks.memoryJobListeners.clear()
+    serverMocks.alertConfirm.mockResolvedValue(true)
     target = document.createElement('div')
     document.body.appendChild(target)
   })
@@ -335,6 +342,25 @@ describe('Hypa V3 server summary close reliability', () => {
     await settle()
 
     expect(visibleSummaryValues()).toEqual(['Important summary', 'Ordinary summary'])
+  })
+
+  it('keeps a failed summary-delete error visible after a successful reconcile', async () => {
+    serverMocks.deleteServerMemorySummary.mockResolvedValueOnce({ status: 'error', error: 'DELETE rejected' })
+
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.hypaV3Modal.deleteSummaryAction}"]`)?.click()
+
+    await vi.waitFor(() => expect(serverMocks.deleteServerMemorySummary).toHaveBeenCalledWith('summary-a'))
+    await vi.waitFor(() => expect(serverMocks.listServerMemorySummaries).toHaveBeenCalledTimes(2))
+
+    expect(target.textContent).toContain('DELETE rejected')
+    expect(
+      Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).some(
+        (textarea) => textarea.value === 'Persisted summary',
+      ),
+    ).toBe(true)
   })
 
   it('keeps the modal open when a close-button flush fails', async () => {

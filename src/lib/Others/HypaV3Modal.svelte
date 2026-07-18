@@ -87,7 +87,9 @@
 
   let serverHypaV3Data = $state<SerializableHypaV3Data>(createInitialHypaV3Data())
   let serverMemoryLoading = $state(false)
-  let serverMemoryError = $state<string | null>(null)
+  let serverMemoryMutationError = $state<string | null>(null)
+  let serverMemoryRefreshError = $state<string | null>(null)
+  const serverMemoryError = $derived(serverMemoryRefreshError ?? serverMemoryMutationError)
   let serverSummaryRefreshEpoch = 0
   let serverSummaryOwnerEpoch = 0
   let serverSummaryLoadedChatId: string | null = null
@@ -217,7 +219,7 @@
     const refreshEpoch = ++serverSummaryRefreshEpoch
     const editVersionsAtStart = new Map(serverSummaryEditVersions)
     serverMemoryLoading = true
-    serverMemoryError = null
+    serverMemoryRefreshError = null
     const result = await listServerMemorySummaries(chatId, undefined, signal)
     if (refreshEpoch !== serverSummaryRefreshEpoch || currentChatId !== chatId) return
 
@@ -265,7 +267,7 @@
       return
     }
     if (signal?.aborted) return
-    serverMemoryError = result.status === 'error' ? result.error : language.errors.networkFetch
+    serverMemoryRefreshError = result.status === 'error' ? result.error : language.errors.networkFetch
   }
 
   function markServerSummaryEdited(summaryId: string): number {
@@ -297,7 +299,7 @@
       .catch(() => undefined)
       .then(operation)
       .catch((error) => {
-        serverMemoryError = error instanceof Error ? error.message : String(error)
+        serverMemoryMutationError = error instanceof Error ? error.message : String(error)
       })
     serverSummaryMutationQueues.set(summaryId, next)
     void next.then(() => {
@@ -308,14 +310,9 @@
         dirtyServerSummaryIds.size === 0
       ) {
         const chatId = pendingServerSummaryRefreshChatId
-        const mutationError = serverMemoryError
         pendingServerSummaryRefreshChatId = null
         if (currentChatId === chatId) {
-          void refreshServerSummaries(chatId).finally(() => {
-            if (currentChatId === chatId && mutationError && !serverMemoryError) {
-              serverMemoryError = mutationError
-            }
-          })
+          void refreshServerSummaries(chatId)
         }
       }
     })
@@ -366,12 +363,12 @@
         if (field === 'text' && dirtyServerSummaryTextVersions.get(summaryId) === editVersion) {
           dirtyServerSummaryTextVersions.delete(summaryId)
         }
-        serverMemoryError = null
+        serverMemoryMutationError = null
         persisted = true
         return
       }
       acknowledgeServerSummaryEdit(summaryId, editVersion)
-      serverMemoryError = result.status === 'error' ? result.error : language.errors.networkFetch
+      serverMemoryMutationError = result.status === 'error' ? result.error : language.errors.networkFetch
       // A later queued field patch no longer contains this field. Reconcile
       // after the queue drains so a failed earlier patch cannot leave the
       // client ahead of the server, and avoid an intermediate stale read.
@@ -396,7 +393,7 @@
     await queueServerSummaryMutation(summaryId, async () => {
       const result = await deleteServerMemorySummary(summaryId)
       if (result.status !== 'ok') {
-        serverMemoryError = result.status === 'error' ? result.error : language.errors.networkFetch
+        serverMemoryMutationError = result.status === 'error' ? result.error : language.errors.networkFetch
         return
       }
       const liveIndex = serverHypaV3Data.summaries.findIndex(
@@ -409,7 +406,7 @@
       const deleteVersion = (serverSummaryEditVersions.get(summaryId) ?? 0) + 1
       serverSummaryEditVersions.set(summaryId, deleteVersion)
       deletedServerSummaryIds.set(summaryId, deleteVersion)
-      serverMemoryError = null
+      serverMemoryMutationError = null
       deleted = true
     })
     if (!deleted) await refreshServerSummaries(currentChatId)
@@ -459,6 +456,8 @@
     serverSummaryEditVersions.clear()
     pendingServerSummaryRefreshChatId = null
     serverSummaryLoadedChatId = null
+    serverMemoryMutationError = null
+    serverMemoryRefreshError = null
     const categoriesSnapshot = untrack(() => cloneLegacyCategories())
     tagManagerState.isOpen = false
     tagManagerState.currentSummaryIndex = -1

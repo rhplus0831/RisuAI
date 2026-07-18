@@ -103,4 +103,36 @@ describe('Server memory job keyboard navigation', () => {
     expect(target.querySelector('button[title="Cancel job"]')).toBeNull()
     expect(target.textContent).not.toContain('No pending or running memory jobs.')
   })
+
+  it('keeps a failed cancellation error after the jobs list reconciles successfully', async () => {
+    let cancelButton: HTMLButtonElement | null = null
+    await vi.waitFor(() => {
+      cancelButton = target.querySelector<HTMLButtonElement>('button[title="Cancel job"]')
+      expect(cancelButton).toBeTruthy()
+    })
+
+    cancelButton?.click()
+
+    await vi.waitFor(() => expect(jobMocks.cancelJob).toHaveBeenCalledWith('job-1'))
+    await vi.waitFor(() => expect(jobMocks.listJobs).toHaveBeenCalledTimes(2))
+    expect(target.textContent).toContain('not used')
+    expect(target.querySelector<HTMLButtonElement>('button[title="Cancel job"]')).toBeTruthy()
+  })
+
+  it('shows a newer jobs-refresh error instead of an earlier cancellation error', async () => {
+    jobMocks.listJobs.mockResolvedValueOnce({
+      status: 'error',
+      error: 'jobs reconcile failed',
+    })
+    let cancelButton: HTMLButtonElement | null = null
+    await vi.waitFor(() => {
+      cancelButton = target.querySelector<HTMLButtonElement>('button[title="Cancel job"]')
+      expect(cancelButton).toBeTruthy()
+    })
+
+    cancelButton?.click()
+
+    await vi.waitFor(() => expect(target.textContent).toContain('jobs reconcile failed'))
+    expect(target.textContent).not.toContain('not used')
+  })
 })

@@ -18,7 +18,9 @@
 
   let jobs = $state<ServerMemoryJob[]>([])
   let loading = $state(false)
-  let error = $state<string | null>(null)
+  let actionError = $state<string | null>(null)
+  let refreshError = $state<string | null>(null)
+  const error = $derived(refreshError ?? actionError)
   let cancellingJobIds = $state(new Set<string>())
   let lastLoadedAt = $state<string | null>(null)
   let refreshController: MemoryJobRefreshController | null = null
@@ -66,7 +68,7 @@
   function applyJobUpdate(job: ServerMemoryJob): boolean {
     const applied = refreshController?.applyJobUpdate(job) ?? false
     if (applied) {
-      error = null
+      refreshError = null
     }
     return applied
   }
@@ -82,11 +84,12 @@
     if (chatId !== cancelChatId) return
 
     if (result.status === 'ok') {
+      actionError = null
       applyJobUpdate(result.job)
       return
     }
 
-    error =
+    actionError =
       result.status === 'unavailable'
         ? 'Server memory jobs are unavailable.'
         : result.status === 'error'
@@ -105,16 +108,17 @@
       listJobs: (currentChatId, signal, etag) => listServerMemoryJobs({ chatId: currentChatId, etag }, signal),
       onJobs: (nextJobs, loadedAt) => {
         jobs = nextJobs
-        error = null
+        refreshError = null
         lastLoadedAt = loadedAt
       },
       onError: (message) => {
         jobs = []
-        error = message
+        refreshError = message
       },
       onClear: () => {
         jobs = []
-        error = null
+        actionError = null
+        refreshError = null
         lastLoadedAt = null
       },
       onLoading: (nextLoading) => {
@@ -164,7 +168,8 @@
     <div class="mt-3 rounded-sm border border-rose-900/70 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
       {error}
     </div>
-  {:else if jobs.length === 0}
+  {/if}
+  {#if jobs.length === 0}
     <div class="mt-3 rounded-sm border border-zinc-700 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-400">
       No pending or running memory jobs.
     </div>
