@@ -26,10 +26,14 @@ vi.mock('src/ts/setting/utils', () => ({
 }))
 
 import SettingSelect from './SettingSelect.svelte'
+import SettingConditionalOptionsTestHost from './SettingConditionalOptions.testHost.svelte'
 import { languageSettingsItems } from 'src/ts/setting/languageSettingsData.svelte'
 import type { SettingContext, SettingItem } from 'src/ts/setting/types'
 
 type MountedComponent = Parameters<typeof unmount>[0]
+type MountedConditionalOptionsHost = MountedComponent & {
+  replaceContext: (nextContext: SettingContext) => void
+}
 
 let target: HTMLElement
 let component: MountedComponent | undefined
@@ -135,6 +139,47 @@ describe('SettingSelect initial values', () => {
     expect(selectMocks.currentValue).toBe('temporarily-hidden')
     expect(selectMocks.setSettingValue).not.toHaveBeenCalled()
     expect(action).not.toHaveBeenCalled()
+  })
+
+  it('coerces hidden values only after the semantic option set changes', async () => {
+    const action = vi.fn()
+    const item: SettingItem = {
+      id: 'test.semantic-options',
+      type: 'select',
+      fallbackLabel: 'Semantic options',
+      onChange: action,
+      options: {
+        selectOptions: [
+          { value: 'standard', label: 'Standard' },
+          { value: 'hidden', label: 'Hidden', condition: () => false },
+          {
+            value: 'advanced',
+            label: 'Advanced',
+            condition: (context) => Boolean((context.db as unknown as { advanced?: boolean }).advanced),
+          },
+        ],
+      },
+    }
+    selectMocks.currentValue = 'hidden'
+    const initialContext = { ...ctx, db: { advanced: false } as any }
+
+    component = mount(SettingConditionalOptionsTestHost, {
+      target,
+      props: { initialContext, item, kind: 'select' },
+    }) as MountedConditionalOptionsHost
+    await tick()
+
+    component.replaceContext({ ...ctx, db: { advanced: false } as any })
+    await tick()
+    expect(selectMocks.currentValue).toBe('hidden')
+    expect(selectMocks.setSettingValue).not.toHaveBeenCalled()
+
+    component.replaceContext({ ...ctx, db: { advanced: true } as any })
+    await tick()
+    await tick()
+    expect(selectMocks.currentValue).toBe('advanced')
+    expect(selectMocks.setSettingValue).toHaveBeenCalledOnce()
+    expect(action).toHaveBeenCalledOnce()
   })
 
   it.each(['zh-TW', 'fa'])('preserves the hidden Google translation target %s on mount', async (value) => {

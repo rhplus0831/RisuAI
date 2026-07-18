@@ -57,17 +57,23 @@
     })
   })
 
-  let hasObservedInitialOptions = false
+  let previousOptionValues: unknown[] | undefined
 
   // Reset value if current selection becomes hidden
   $effect(() => {
     const availableOptions = processedOptions
-    if (!hasObservedInitialOptions) {
+    const optionValues = availableOptions.map((option) => option.value)
+    if (!previousOptionValues) {
       // Persisted values can come from a newer client or a temporarily hidden
       // option. Do not coerce them on mount: the final option may be an action.
-      hasObservedInitialOptions = true
+      previousOptionValues = optionValues
       return
     }
+    const optionSetChanged =
+      previousOptionValues.length !== optionValues.length ||
+      previousOptionValues.some((value, index) => !Object.is(value, optionValues[index]))
+    previousOptionValues = optionValues
+    if (!optionSetChanged) return
 
     const currentValue = untrack(() => localValue)
     if (

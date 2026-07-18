@@ -26,9 +26,13 @@ vi.mock('src/ts/setting/utils', () => ({
 }))
 
 import SettingSegmented from './SettingSegmented.svelte'
+import SettingConditionalOptionsTestHost from './SettingConditionalOptions.testHost.svelte'
 import type { SettingContext, SettingItem } from 'src/ts/setting/types'
 
 type MountedComponent = Parameters<typeof unmount>[0]
+type MountedConditionalOptionsHost = MountedComponent & {
+  replaceContext: (nextContext: SettingContext) => void
+}
 
 let target: HTMLElement
 let component: MountedComponent | undefined
@@ -85,5 +89,46 @@ describe('SettingSegmented initial values', () => {
     expect(segmentedMocks.currentValue).toBe(value)
     expect(segmentedMocks.setSettingValue).not.toHaveBeenCalled()
     expect(action).not.toHaveBeenCalled()
+  })
+
+  it('coerces hidden values only after the semantic option set changes', async () => {
+    const action = vi.fn()
+    const item: SettingItem = {
+      id: 'test.semantic-options',
+      type: 'segmented',
+      fallbackLabel: 'Semantic options',
+      onChange: action,
+      options: {
+        segmentOptions: [
+          { value: 'standard', label: 'Standard' },
+          { value: 'hidden', label: 'Hidden', condition: () => false },
+          {
+            value: 'advanced',
+            label: 'Advanced',
+            condition: (context) => Boolean((context.db as unknown as { advanced?: boolean }).advanced),
+          },
+        ],
+      },
+    }
+    segmentedMocks.currentValue = 'hidden'
+    const initialContext = { ...ctx, db: { advanced: false } as any }
+
+    component = mount(SettingConditionalOptionsTestHost, {
+      target,
+      props: { initialContext, item, kind: 'segmented' },
+    }) as MountedConditionalOptionsHost
+    await tick()
+
+    component.replaceContext({ ...ctx, db: { advanced: false } as any })
+    await tick()
+    expect(segmentedMocks.currentValue).toBe('hidden')
+    expect(segmentedMocks.setSettingValue).not.toHaveBeenCalled()
+
+    component.replaceContext({ ...ctx, db: { advanced: true } as any })
+    await tick()
+    await tick()
+    expect(segmentedMocks.currentValue).toBe('advanced')
+    expect(segmentedMocks.setSettingValue).toHaveBeenCalledOnce()
+    expect(action).toHaveBeenCalledOnce()
   })
 })

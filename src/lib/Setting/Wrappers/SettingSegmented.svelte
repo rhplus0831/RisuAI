@@ -39,17 +39,23 @@
       })),
   )
 
-  let hasObservedInitialOptions = false
+  let previousOptionValues: unknown[] | undefined
 
   // Reset value if current selection becomes hidden due to condition changes
   $effect(() => {
     const availableOptions = processedOptions
-    if (!hasObservedInitialOptions) {
+    const optionValues = availableOptions.map((option) => option.value)
+    if (!previousOptionValues) {
       // Persisted values can come from a newer client or an option that is
       // temporarily hidden. Merely opening settings must not rewrite them.
-      hasObservedInitialOptions = true
+      previousOptionValues = optionValues
       return
     }
+    const optionSetChanged =
+      previousOptionValues.length !== optionValues.length ||
+      previousOptionValues.some((value, index) => !Object.is(value, optionValues[index]))
+    previousOptionValues = optionValues
+    if (!optionSetChanged) return
 
     const currentVal = localValue
     if (
