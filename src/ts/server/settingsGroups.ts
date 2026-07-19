@@ -276,6 +276,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   showDeprecatedTriggerV2: 'advanced',
   showFirstMessagePages: 'display',
   showFolderName: 'display',
+  showGlobalLorebookAndRegex: 'advanced',
   showMemoryLimit: 'display',
   showMenuChatList: 'sidebar',
   showMenuHypaMemoryModal: 'memory',

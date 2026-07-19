@@ -32,6 +32,15 @@ export const advancedSettingsItems: SettingItem[] = [
     bindKey: 'loreBookToken',
     options: { min: 0, max: 4096 },
   },
+  {
+    id: 'adv.showGlobalLorebookAndRegex',
+    type: 'check',
+    labelKey: 'showGlobalLorebookAndRegex',
+    bindKey: 'showGlobalLorebookAndRegex',
+    helpKey: 'showGlobalLorebookAndRegex',
+    keywords: ['global lorebook', 'global regex', 'legacy menus', 'modules'],
+    classes: 'mt-4',
+  },
 
   // Prompts
   {

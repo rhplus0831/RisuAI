@@ -263,6 +263,23 @@ describe('Settings supporter tab', () => {
     expect(target.textContent).toContain(language.agentPresets.emptyState)
   })
 
+  it('hides the legacy global lorebook and regex settings items by default', () => {
+    expect(settingsButton(language.globalLoreBook)).toBeUndefined()
+    expect(settingsButton(language.globalRegexScript)).toBeUndefined()
+  })
+
+  it.each([
+    { path: '/settings/global-lorebook', section: 'global-lorebook', index: 8 },
+    { path: '/settings/global-regex', section: 'global-regex', index: 9 },
+  ])('keeps direct navigation to $path available while its nav item is hidden', async ({ path, section, index }) => {
+    navigate(path)
+    await tick()
+
+    expect(get(currentRoute)).toMatchObject({ kind: 'settings', path, section, index })
+    expect(settingsButton(language.globalLoreBook)).toBeUndefined()
+    expect(settingsButton(language.globalRegexScript)).toBeUndefined()
+  })
+
   it.each([
     {
       label: language.globalLoreBook,
@@ -277,6 +294,8 @@ describe('Settings supporter tab', () => {
       index: 9,
     },
   ])('opens $label from the settings nav', async ({ label, path, section, index }) => {
+    getDatabase().showGlobalLorebookAndRegex = true
+    await tick()
     expect(settingsButton(label)).toBeTruthy()
 
     await resizeViewport(800)

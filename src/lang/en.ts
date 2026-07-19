@@ -283,6 +283,8 @@ export const languageEnglish = {
     sayNothing: "If enabled, it will input 'say nothing' when no string inputed.",
     showUnrecommended:
       'If enabled, it will show unrecommended, deprecated settings. It is NOT RECOMMENDED to use these settings.',
+    showGlobalLorebookAndRegex:
+      'Globally enabled modules are the preferred way to provide global lorebooks and regex scripts. These legacy menus are hidden by default.',
     pluginCompatibilityMode:
       'Restores legacy device-local plugin storage APIs in Fastify server mode. Data written there is device-local, unsynced, and excluded from server backup/export. Prefer pluginStorage for durable plugin data.',
     strictScriptCheck:
@@ -1122,6 +1124,7 @@ export const languageEnglish = {
   unrecommended: 'Not Recommended',
   chatNotes: 'Chat Notes',
   showUnrecommended: 'Show Unrecommended Settings',
+  showGlobalLorebookAndRegex: 'Show Legacy Global Lorebook and Regex Menus',
   doNotWarnExternalServers: 'Do not warn about external servers',
   altGreet: 'Alternative First Messages',
   scripts: 'Scripts',

@@ -5,6 +5,18 @@ vi.mock('../gui/heightMode', () => ({ updateHeightMode: vi.fn() }))
 import { advancedSettingsItems } from './advancedSettingsData'
 
 describe('advanced settings data', () => {
+  it('includes the legacy global lorebook and regex menu visibility toggle', () => {
+    expect(advancedSettingsItems).toContainEqual(
+      expect.objectContaining({
+        id: 'adv.showGlobalLorebookAndRegex',
+        type: 'check',
+        bindKey: 'showGlobalLorebookAndRegex',
+        labelKey: 'showGlobalLorebookAndRegex',
+        helpKey: 'showGlobalLorebookAndRegex',
+      }),
+    )
+  })
+
   it('does not advertise unsupported browser-side cold storage', () => {
     expect(advancedSettingsItems.some((item) => item.bindKey === 'coldstorage')).toBe(false)
   })

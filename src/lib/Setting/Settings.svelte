@@ -235,7 +235,7 @@
             <HardDrive size={20} />
             <span>{language.settingsNavBackups}</span>
           </button>
-          {#if !$isLite}
+          {#if !$isLite && getDatabase().showGlobalLorebookAndRegex}
             <button
               class={navButtonClass($SettingsMenuIndex === 8)}
               onclick={() => {

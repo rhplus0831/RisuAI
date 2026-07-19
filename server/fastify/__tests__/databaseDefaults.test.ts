@@ -16,6 +16,7 @@ describe('database defaults', () => {
     expect(database.agentPresets).toEqual([])
     expect(database.agentPresetDefaultId).toBeUndefined()
     expect(database.reducedMotion).toBe(false)
+    expect(database.showGlobalLorebookAndRegex).toBe(false)
     expect(database.loreBook).toEqual([
       expect.objectContaining({ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }),
     ])
