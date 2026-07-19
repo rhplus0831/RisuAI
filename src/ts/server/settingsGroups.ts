@@ -326,6 +326,8 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   useExperimental: 'advanced',
   useExperimentalGoogleTranslator: 'language',
   useLegacyGUI: 'display',
+  useMonacoEditorOnDesktop: 'sidebar',
+  useMonacoEditorOnMobile: 'sidebar',
   usePlainFetch: 'runtime',
   useSayNothing: 'advanced',
   useStreaming: 'runtime',

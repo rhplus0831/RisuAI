@@ -845,6 +845,8 @@ export const languageKorean = {
   fixedChatTextarea: '채팅창 하단 고정',
   clickToEdit: '클릭해서 수정하기',
   disableAutoPopupMessageEditor: '메시지 수정 시 팝업 편집기 자동 열기 비활성화',
+  useMonacoEditorOnDesktop: '데스크톱에서 Monaco 편집기 사용',
+  useMonacoEditorOnMobile: '모바일에서 Monaco 편집기 사용',
   enableBlockPartialEdit: '블록 부분 수정 활성화 (블록에 마우스를 올려 개별 수정)',
   longPressToPopupEditor: '길게 눌러 팝업 편집기 열기',
   enableDragPartialEdit: '드래그 부분 수정 활성화 (텍스트 선택 후 수정)',

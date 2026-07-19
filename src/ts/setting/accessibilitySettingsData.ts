@@ -91,6 +91,20 @@ export const accessibilitySettingsItems: SettingItem[] = [
     keywords: ['long', 'press', 'popup', 'editor'],
   },
   {
+    id: 'acc.useMonacoEditorOnDesktop',
+    type: 'check',
+    labelKey: 'useMonacoEditorOnDesktop',
+    bindKey: 'useMonacoEditorOnDesktop',
+    keywords: ['monaco', 'editor', 'popup', 'desktop', 'textarea'],
+  },
+  {
+    id: 'acc.useMonacoEditorOnMobile',
+    type: 'check',
+    labelKey: 'useMonacoEditorOnMobile',
+    bindKey: 'useMonacoEditorOnMobile',
+    keywords: ['monaco', 'editor', 'popup', 'mobile', 'textarea'],
+  },
+  {
     id: 'acc.enableDragPartialEdit',
     type: 'check',
     labelKey: 'enableDragPartialEdit',

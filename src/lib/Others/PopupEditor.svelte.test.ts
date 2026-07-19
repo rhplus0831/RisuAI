@@ -57,7 +57,7 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
   popupMocks.tokenize.mockReset()
-  replaceResourceDatabase({ globalChatVariables: {} } as never)
+  replaceResourceDatabase({ globalChatVariables: {}, useMonacoEditorOnDesktop: true } as never)
   popUpEditorStore.open = true
   popUpEditorStore.language = 'markdown'
   popUpEditorStore.value = 'first text'
@@ -77,6 +77,30 @@ afterEach(() => {
 })
 
 describe('PopupEditor token count', () => {
+  it('renders a plain textarea and keeps the popup value in sync when Monaco is disabled', async () => {
+    replaceResourceDatabase({ globalChatVariables: {}, useMonacoEditorOnDesktop: false } as never)
+    component = mount(PopupEditor, { target })
+    await settle()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('textarea')
+    expect(textarea).not.toBeNull()
+    expect(textarea?.value).toBe('first text')
+
+    textarea!.value = 'edited text'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    expect(popUpEditorStore.value).toBe('edited text')
+  })
+
+  it('uses the Monaco path when the desktop setting is enabled', async () => {
+    component = mount(PopupEditor, { target })
+    await settle()
+
+    expect(target.querySelector('textarea')).toBeNull()
+    await vi.waitFor(() => expect(target.textContent).not.toContain('Loading'))
+  })
+
   it('ignores a slower count for older preview text', async () => {
     const first = deferred<number>()
     const second = deferred<number>()

@@ -8,6 +8,7 @@
   import { tokenize } from 'src/ts/tokenizer'
   import Toggles from '../SideBars/Toggles.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import { isMobile } from 'src/ts/platform'
 
   let languageMode = $state(popUpEditorStore.language || 'markdown')
   let previewing = $state(false)
@@ -16,6 +17,9 @@
   let showToggles = $state(false)
   let tokenCountRun = 0
   const sessionId = untrack(() => popUpEditorStore.sessionId)
+  const useMonacoEditor = untrack(() =>
+    isMobile ? getDatabase().useMonacoEditorOnMobile !== false : getDatabase().useMonacoEditorOnDesktop !== false,
+  )
 
   function close(): void {
     closePopupEditorSession(sessionId)
@@ -57,6 +61,7 @@
   })
 
   onMount(() => {
+    if (!useMonacoEditor) return
     import('./MonacoEditor.svelte').then((module) => {
       MonacoComponent = module.default
     })
@@ -138,6 +143,11 @@
             </div>
           {/if}
         </div>
+      {:else if !useMonacoEditor}
+        <textarea
+          bind:value={popUpEditorStore.value}
+          class="w-full h-full resize-none bg-bgcolor text-textcolor font-mono p-4 border-none focus:outline-hidden"
+        ></textarea>
       {:else if MonacoComponent}
         <MonacoComponent bind:value={popUpEditorStore.value} language={languageMode} theme="vs-dark" />
       {:else}

@@ -485,6 +485,8 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'loadouts', [])
   setDefault(database, 'longPressToPopupEditor', false)
   setDefault(database, 'disableAutoPopupMessageEditor', false)
+  setDefault(database, 'useMonacoEditorOnDesktop', true)
+  setDefault(database, 'useMonacoEditorOnMobile', true)
   setDefault(database, 'customSidebarItems', [])
   normalizeFormatVersion(database)
 

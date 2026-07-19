@@ -3316,6 +3316,8 @@ export function setDatabase(data: Database) {
   data.loadouts ??= []
   data.longPressToPopupEditor ??= false
   data.disableAutoPopupMessageEditor ??= false
+  data.useMonacoEditorOnDesktop ??= true
+  data.useMonacoEditorOnMobile ??= true
   data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
   changeLanguage(data.language)
   setDatabaseLite(data)
@@ -3817,6 +3819,8 @@ export interface Database {
   fixedChatTextarea: boolean
   clickToEdit: boolean
   disableAutoPopupMessageEditor: boolean
+  useMonacoEditorOnDesktop?: boolean
+  useMonacoEditorOnMobile?: boolean
   enableBlockPartialEdit: boolean
   enableDragPartialEdit: boolean
   koboldURL: string
