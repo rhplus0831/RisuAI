@@ -7,10 +7,13 @@
     sideBarStore,
     openPresetList,
     openPersonaList,
+    openChatGenerationTogglePresetList,
     closePresetListModal,
     closePersonaListModal,
+    closeChatGenerationTogglePresetListModal,
     presetListModalStore,
     personaListModalStore,
+    chatGenerationTogglePresetListModalStore,
     CustomGUISettingMenuStore,
     loadedStore,
     alertStore,
@@ -40,6 +43,7 @@
   import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte'
   import Botpreset from './lib/Setting/botpreset.svelte'
   import ListedPersona from './lib/Setting/listedPersona.svelte'
+  import ChatGenerationTogglePresetDialog from './lib/SideBars/ChatGenerationTogglePresetDialog.svelte'
   import CustomGUISettingMenu from './lib/Setting/Pages/CustomGUISettingMenu.svelte'
   import { checkCharOrder } from './ts/globalApi.svelte'
   import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte'
@@ -314,6 +318,11 @@
       mode={personaListModalStore.mode}
       target={personaListModalStore.target}
       close={closePersonaListModal} />
+  {/if}
+  {#if $openChatGenerationTogglePresetList}
+    <ChatGenerationTogglePresetDialog
+      target={chatGenerationTogglePresetListModalStore.target}
+      close={closeChatGenerationTogglePresetListModal} />
   {/if}
   {#if $bookmarkListOpen}
     <BookmarkList />

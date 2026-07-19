@@ -616,6 +616,7 @@ export type LoadoutSnapshot = Record<string, unknown> & {
   promptPresetName?: string
   agentPresetId?: string
   agentPresetName?: string
+  togglePresetId?: string
   personaId?: string
 }
 
@@ -5711,7 +5712,7 @@ function isChatGenerationSettingsSnapshot(value: unknown): value is ChatGenerati
   if (Object.keys(value).some((key) => !CHAT_GENERATION_SETTINGS_KEY_SET.has(key))) return false
   if (typeof value.jailbreakToggle !== 'boolean') return false
   if (value.configured !== undefined && typeof value.configured !== 'boolean') return false
-  for (const key of ['personaId', 'modelPresetId', 'promptPresetId', 'agentPresetId'] as const) {
+  for (const key of ['personaId', 'modelPresetId', 'promptPresetId', 'agentPresetId', 'togglePresetId'] as const) {
     if (value[key] !== undefined && typeof value[key] !== 'string') return false
   }
   if (value.sidebarToggles !== undefined) {

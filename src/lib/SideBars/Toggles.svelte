@@ -55,7 +55,6 @@
 
   let { chara, noContainer }: Props = $props()
 
-  let selectedTogglePresetId = $state('')
   type CharacterToggleField = 'supaMemory' | 'inputTranslationHook'
   type CharacterToggleStatus = 'idle' | 'queued' | 'failed'
   let characterToggleAttempts = $state<Record<CharacterToggleField, number>>({
@@ -87,7 +86,8 @@
 
   let displayedSidebarToggles = $derived.by(() => groupSidebarToggles(activeGenerationSettings.displayedSidebarToggles))
   let togglePresets = $derived.by(() => getChatGenerationTogglePresets())
-  let selectedTogglePreset = $derived.by(() => togglePresets.find((preset) => preset.id === selectedTogglePresetId))
+  let loadedTogglePresetId = $derived(activeGenerationSettings.settings?.togglePresetId?.trim() ?? '')
+  let selectedTogglePreset = $derived.by(() => togglePresets.find((preset) => preset.id === loadedTogglePresetId))
   let selectedTogglePresetComparison = $derived.by(() =>
     selectedTogglePreset
       ? compareChatGenerationTogglePresetToActiveState(selectedTogglePreset, activeGenerationSettings)
@@ -243,10 +243,6 @@
 
   function isSidebarTogglePresetDifferent(key: string): boolean {
     return selectedTogglePresetComparison?.differingSidebarToggleKeys.has(key) === true
-  }
-
-  function isJailbreakTogglePresetDifferent(): boolean {
-    return selectedTogglePresetComparison?.jailbreakToggleDiffers === true
   }
 
   function groupSidebarToggles(items: ChatGenerationDisplayedSidebarToggle[]): GroupedSidebarToggle[] {
@@ -434,10 +430,7 @@
         data-risu-toggle-kind="jailbreak"
         data-risu-input-kind="checkbox"
         data-risu-persistence-status={generationSettingsPersistenceStatus('jailbreakToggle')}
-        data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}
-        data-risu-toggle-preset-different={isJailbreakTogglePresetDifferent() ? 'true' : 'false'}
-        class:bg-red-900={isJailbreakTogglePresetDifferent()}
-        class:rounded-sm={isJailbreakTogglePresetDifferent()}>
+        data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}>
         <CheckInput
           bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
           disabled={generationSettingsSavePending('jailbreakToggle')}
@@ -492,7 +485,7 @@
       </div>
     {/if}
     <ChatGenerationResetDefaultsButton />
-    <ChatGenerationTogglePresets bind:selectedPresetId={selectedTogglePresetId} />
+    <ChatGenerationTogglePresets />
   </div>
 {:else}
   <ChatGenerationSettingsControls />
@@ -506,10 +499,7 @@
       data-risu-toggle-kind="jailbreak"
       data-risu-input-kind="checkbox"
       data-risu-persistence-status={generationSettingsPersistenceStatus('jailbreakToggle')}
-      data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}
-      data-risu-toggle-preset-different={isJailbreakTogglePresetDifferent() ? 'true' : 'false'}
-      class:bg-red-900={isJailbreakTogglePresetDifferent()}
-      class:rounded-sm={isJailbreakTogglePresetDifferent()}>
+      data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}>
       <CheckInput
         bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
         disabled={generationSettingsSavePending('jailbreakToggle')}
@@ -558,5 +548,5 @@
     </div>
   {/if}
   <ChatGenerationResetDefaultsButton />
-  <ChatGenerationTogglePresets bind:selectedPresetId={selectedTogglePresetId} />
+  <ChatGenerationTogglePresets />
 {/if}

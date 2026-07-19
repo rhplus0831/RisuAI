@@ -108,6 +108,7 @@ export type Loadout = {
   promptPresetName?: string
   agentPresetId?: string
   agentPresetName?: string
+  togglePresetId?: string
   personaId: string
 }
 
@@ -118,6 +119,7 @@ export function makeLoadout(options: { name: string }): Loadout {
   const modelPreset = getDatabase().modelPresets?.[getDatabase().modelPresetsId]
   const promptPreset = getDatabase().promptPresets?.[getDatabase().promptPresetsId]
   const agentPreset = currentChatAgentPreset()
+  const togglePresetId = currentActiveChatRecord()?.chat.generationSettings?.togglePresetId
   const legacyPresetName = readablePresetName(legacyPreset)
   const modelPresetName = readablePresetName(modelPreset)
   const promptPresetName = readablePresetName(promptPreset)
@@ -138,6 +140,7 @@ export function makeLoadout(options: { name: string }): Loadout {
     promptPresetName,
     agentPresetId: nonBlankId(agentPreset?.id) ?? '',
     agentPresetName,
+    togglePresetId: typeof togglePresetId === 'string' ? togglePresetId : '',
     personaId: typeof selectedPersonaId === 'string' ? selectedPersonaId : '',
   })
 }
@@ -1533,13 +1536,21 @@ function resolveLoadoutAgentPresetId(loadout: Loadout): string | undefined {
   return requestedId ? undefined : ''
 }
 
-function createGenerationSettingsWithAgentPreset(
+function createGenerationSettingsWithPresetSelections(
   current: ChatGenerationSettings | undefined,
-  agentPresetId: string,
+  agentPresetId: string | undefined,
+  togglePresetId: string | undefined,
 ): ChatGenerationSettings | null {
-  if (!current && agentPresetId === '') return null
+  if (
+    !current &&
+    (agentPresetId === '' || agentPresetId === undefined) &&
+    (togglePresetId === '' || togglePresetId === undefined)
+  ) {
+    return null
+  }
   const next = cloneJsonValue(current ?? {})
-  next.agentPresetId = agentPresetId
+  if (agentPresetId !== undefined) next.agentPresetId = agentPresetId
+  if (togglePresetId !== undefined) next.togglePresetId = togglePresetId
   if (!Object.hasOwn(next, 'jailbreakToggle')) {
     next.jailbreakToggle = false
   }
@@ -1846,6 +1857,10 @@ async function applyLoadoutNowExclusive(
     ? resolveSplitPresetSelection(getDatabase().promptPresets, loadout.promptPresetId, loadout.promptPresetName)
     : null
   const resolvedAgentPresetId = requested.has('preset') ? resolveLoadoutAgentPresetId(loadout) : undefined
+  const resolvedTogglePresetId =
+    requested.has('preset') && Object.hasOwn(loadout, 'togglePresetId') && typeof loadout.togglePresetId === 'string'
+      ? loadout.togglePresetId
+      : undefined
   const presetIndex =
     requested.has('preset') && !useSplitPresetSelection
       ? (getDatabase().botPresets?.findIndex((preset) =>
@@ -1875,10 +1890,11 @@ async function applyLoadoutNowExclusive(
     ? nonBlankId(getDatabase().promptPresets?.[getDatabase().promptPresetsId]?.id)
     : null
   const preparedAgentGenerationSettings =
-    activeChatAgentPresetTarget && resolvedAgentPresetId !== undefined
-      ? createGenerationSettingsWithAgentPreset(
+    activeChatAgentPresetTarget && (resolvedAgentPresetId !== undefined || resolvedTogglePresetId !== undefined)
+      ? createGenerationSettingsWithPresetSelections(
           activeChatAgentPresetTarget.chat.generationSettings,
           resolvedAgentPresetId,
+          resolvedTogglePresetId,
         )
       : null
   const agentPresetChanged =

@@ -18,6 +18,7 @@ export interface LoadoutRecord extends JsonRecord {
   promptPresetName: string
   agentPresetId?: string
   agentPresetName?: string
+  togglePresetId?: string
   personaId: string
 }
 
@@ -83,6 +84,9 @@ export function createLoadoutRecord(input: unknown): LoadoutRecord {
   if (hasOwn(loadout, 'agentPresetName')) {
     record.agentPresetName = loadout.agentPresetName as string
   }
+  if (hasOwn(loadout, 'togglePresetId')) {
+    record.togglePresetId = loadout.togglePresetId as string
+  }
   validateLoadoutRecord(record, 'loadout')
   return record
 }
@@ -109,6 +113,9 @@ function repairLoadoutRecord(input: unknown): LoadoutRecord {
   }
   if (typeof loadout.agentPresetName === 'string') {
     record.agentPresetName = loadout.agentPresetName
+  }
+  if (typeof loadout.togglePresetId === 'string') {
+    record.togglePresetId = loadout.togglePresetId
   }
   validateLoadoutRecord(record, 'loadout')
   return record
@@ -187,6 +194,7 @@ function validateLoadoutRecord(record: JsonRecord, label: string): void {
     'promptPresetName',
     'agentPresetId',
     'agentPresetName',
+    'togglePresetId',
     'personaId',
   ]) {
     if (key in record && typeof record[key] !== 'string') {

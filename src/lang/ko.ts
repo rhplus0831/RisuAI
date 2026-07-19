@@ -1,4 +1,24 @@
 export const languageKorean = {
+  chatGenerationTogglePresetUnused: '저장된 토글: 사용 안 함',
+  chatGenerationTogglePresetUnlinked: '저장된 토글: 연결 끊김',
+  chatGenerationTogglePresetMismatch: '저장된 토글: 구조 불일치',
+  chatGenerationTogglePresetEdited: (name: string) => `${name} (편집됨)`,
+  chatGenerationTogglePresetDialogTitle: '저장된 토글',
+  chatGenerationTogglePresetUnselect: '선택 해제',
+  chatGenerationTogglePresetPick: '일부 가져오기',
+  chatGenerationTogglePresetPickSourceTitle: '토글 소스 선택',
+  chatGenerationTogglePresetPickPresetTitle: (name: string) => `${name} 값 가져오기`,
+  chatGenerationTogglePresetPickPromptSource: (name: string) => `프롬프트 프리셋: ${name}`,
+  chatGenerationTogglePresetPickModuleSource: (name: string) => `모듈: ${name}`,
+  chatGenerationTogglePresetPickMissingKeys: (count: number) => `필수 키 ${count}개 누락`,
+  chatGenerationTogglePresetPickKindMismatch: (count: number) => `토글 종류 ${count}개 불일치`,
+  chatGenerationTogglePresetPickConfirm: (name: string, count: number) =>
+    `${name}의 변경 값 ${count}개를 이 채팅으로 복사할까요?`,
+  chatGenerationTogglePresetMismatchOverwriteConfirm:
+    '이 작업은 값만 갱신하는 것이 아니라 저장된 토글 프리셋을 크게 다른 토글 구조로 교체합니다. 계속할까요?',
+  chatGenerationTogglePresetNoPresets: '저장된 토글 프리셋이 없습니다.',
+  chatGenerationTogglePresetNoSources: '사용 가능한 활성 토글 소스가 없습니다.',
+  chatGenerationTogglePresetBack: '뒤로',
   unknownInteractionTime: '알 수 없음',
   regexDisplayUpdatePending: '편집을 멈추면 채팅 표시가 업데이트됩니다.',
   secretInput: {

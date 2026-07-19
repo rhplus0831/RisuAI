@@ -239,7 +239,7 @@ export function createActiveChatGenerationSettingsPatch(
 export function createActiveChatGenerationSettingsSelectionPatch(
   selection: Pick<
     ActiveChatGenerationSettingsPatch,
-    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId'
+    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
   >,
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ChatGenerationSettings {
@@ -344,7 +344,7 @@ export function saveActiveChatGenerationSettingsWithOutcome(
 export function saveActiveChatGenerationSettingsSelection(
   selection: Pick<
     ActiveChatGenerationSettingsPatch,
-    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId'
+    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
   >,
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
@@ -354,7 +354,7 @@ export function saveActiveChatGenerationSettingsSelection(
 export function saveActiveChatGenerationSettingsSelectionWithOutcome(
   selection: Pick<
     ActiveChatGenerationSettingsPatch,
-    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId'
+    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
   >,
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): ChatGenerationSettingsSaveOperation | null {
@@ -574,6 +574,7 @@ function cloneGenerationSettings(settings: ChatGenerationSettings | undefined): 
   if (hasOwn(settings, 'modelPresetId')) clone.modelPresetId = settings.modelPresetId
   if (hasOwn(settings, 'promptPresetId')) clone.promptPresetId = settings.promptPresetId
   if (hasOwn(settings, 'agentPresetId')) clone.agentPresetId = settings.agentPresetId
+  if (hasOwn(settings, 'togglePresetId')) clone.togglePresetId = settings.togglePresetId
   if (hasOwn(settings, 'jailbreakToggle')) clone.jailbreakToggle = settings.jailbreakToggle
   if (isRecord(settings.sidebarToggles)) clone.sidebarToggles = { ...settings.sidebarToggles }
   return clone

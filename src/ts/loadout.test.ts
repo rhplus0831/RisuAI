@@ -1357,11 +1357,13 @@ describe('loadout projection command helpers', () => {
         presetName: '',
         agentPresetId: 'agent-b',
         agentPresetName: 'Agent B',
+        togglePresetId: 'toggle-b',
         personaId: '',
       })
       const generationSettings = {
         configured: true,
         agentPresetId: 'agent-a',
+        togglePresetId: 'toggle-a',
         jailbreakToggle: false,
         sidebarToggles: {},
       }
@@ -1415,10 +1417,11 @@ describe('loadout projection command helpers', () => {
       expect(commands[0].body).toEqual({ baseRevision: 10, generationSettings })
       expect(commands[1].body).toEqual({
         baseRevision: 11,
-        generationSettings: { ...generationSettings, agentPresetId: 'agent-b' },
+        generationSettings: { ...generationSettings, agentPresetId: 'agent-b', togglePresetId: 'toggle-b' },
       })
       expect(new Set(commands.slice(0, 2).map(({ mutationId }) => mutationId)).size).toBe(2)
       expect(testDatabaseState.db.characters[0].chats[0].generationSettings.agentPresetId).toBe('agent-b')
+      expect(testDatabaseState.db.characters[0].chats[0].generationSettings.togglePresetId).toBe('toggle-b')
       expect(await listPendingMutations()).toEqual([])
     } finally {
       await clearPendingMutationOutbox()

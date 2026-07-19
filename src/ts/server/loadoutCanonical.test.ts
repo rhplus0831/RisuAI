@@ -20,13 +20,14 @@ function canonicalLoadout(id = 'loadout-a'): CanonicalLoadout {
 }
 
 describe('canonical loadout validation', () => {
-  it('accepts the exact server row shape and optional agent strings', () => {
+  it('accepts the exact server row shape and optional preset selection strings', () => {
     expect(isCanonicalLoadout(canonicalLoadout())).toBe(true)
     expect(
       isCanonicalLoadout({
         ...canonicalLoadout(),
         agentPresetId: '',
         agentPresetName: 'Research Agent',
+        togglePresetId: 'toggle-preset-a',
       }),
     ).toBe(true)
     expect(isCanonicalLoadoutCollection([canonicalLoadout('loadout-a'), canonicalLoadout('loadout-b')])).toBe(true)
@@ -52,6 +53,7 @@ describe('canonical loadout validation', () => {
     ['non-string global value', { globalVariables: { mood: 1 } }],
     ['non-string required preset field', { promptPresetName: undefined }],
     ['non-string optional agent field', { agentPresetId: undefined }],
+    ['non-string optional toggle preset field', { togglePresetId: undefined }],
   ])('rejects %s', (_label, patch) => {
     expect(isCanonicalLoadout({ ...canonicalLoadout(), ...patch })).toBe(false)
   })

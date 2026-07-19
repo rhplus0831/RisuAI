@@ -5,7 +5,6 @@ export interface ChatGenerationTogglePreset {
   name: string
   createdAt: number
   updatedAt: number
-  jailbreakToggle: boolean
   sidebarToggles: Record<string, string>
   sidebarToggleKinds: Record<string, ChatGenerationSidebarToggleKind>
 }
@@ -28,7 +27,6 @@ export function normalizeChatGenerationTogglePresets(value: unknown): ChatGenera
       name: nonEmptyString(item.name) ?? `Toggle Preset ${index + 1}`,
       createdAt: finiteNumber(item.createdAt) ?? 0,
       updatedAt: finiteNumber(item.updatedAt) ?? finiteNumber(item.createdAt) ?? 0,
-      jailbreakToggle: item.jailbreakToggle === true,
       sidebarToggles: stringRecord(item.sidebarToggles),
       sidebarToggleKinds: sidebarToggleKindRecord(item.sidebarToggleKinds),
     })

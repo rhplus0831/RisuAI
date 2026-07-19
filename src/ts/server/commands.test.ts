@@ -6689,6 +6689,7 @@ describe('server command API adapter', () => {
       modelPresetId: 'model-preset-a',
       promptPresetId: 'preset-a',
       agentPresetId: 'agent-preset-a',
+      togglePresetId: 'toggle-preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
         mode: '0',
@@ -6755,6 +6756,7 @@ describe('server command API adapter', () => {
             modelPresetId: 'model-preset-a',
             promptPresetId: 'preset-a',
             agentPresetId: 'agent-preset-a',
+            togglePresetId: 'toggle-preset-a',
             jailbreakToggle: false,
             sidebarToggles: {
               mode: '0',

@@ -65,6 +65,7 @@ import { language } from 'src/lang'
 import {
   closePersonaListModal,
   closePresetListModal,
+  closeChatGenerationTogglePresetListModal,
   openPersonaList,
   openPresetList,
   personaListModalStore,
@@ -392,30 +393,36 @@ function resetDefaultsButton(): HTMLButtonElement {
 }
 
 function togglePresetRoot(): HTMLElement {
-  return elementBySelector<HTMLElement>('[data-risu-generation-toggle-presets]', 'toggle preset controls')
+  return elementBySelector<HTMLElement>('[data-risu-generation-toggle-presets]', 'toggle preset control')
 }
 
-function togglePresetSelect(): HTMLSelectElement {
-  const select = togglePresetRoot().querySelector<HTMLSelectElement>('select')
-  expect(select, 'toggle preset select').toBeTruthy()
-  return select!
-}
-
-function togglePresetButton(index: number): HTMLButtonElement {
-  const button = togglePresetRoot().querySelectorAll<HTMLButtonElement>('button')[index]
-  expect(button, `toggle preset button ${index}`).toBeTruthy()
+function togglePresetStateButton(): HTMLButtonElement {
+  const button = togglePresetRoot().querySelector<HTMLButtonElement>('button')
+  expect(button, 'toggle preset state button').toBeTruthy()
   return button!
 }
 
-function togglePresetWarning(): HTMLElement | null {
-  return togglePresetRoot().querySelector<HTMLElement>('[data-risu-generation-toggle-preset-warning]')
+function togglePresetDialog(): HTMLElement {
+  return elementBySelector<HTMLElement>('[data-risu-toggle-preset-dialog]', 'toggle preset dialog')
 }
 
-async function chooseTogglePreset(id: string): Promise<void> {
-  const select = togglePresetSelect()
-  select.value = id
-  select.dispatchEvent(new Event('input', { bubbles: true }))
-  select.dispatchEvent(new Event('change', { bubbles: true }))
+function togglePresetDialogRow(id: string): HTMLElement {
+  return elementBySelector<HTMLElement>(
+    `[data-risu-toggle-preset-row][data-risu-row-id="${id}"]`,
+    `toggle preset row ${id}`,
+  )
+}
+
+function togglePresetAction(index: number): HTMLButtonElement {
+  const button = togglePresetDialog().querySelectorAll<HTMLButtonElement>('[data-risu-toggle-preset-actions] button')[
+    index
+  ]
+  expect(button, `toggle preset dialog action ${index}`).toBeTruthy()
+  return button!
+}
+
+async function openTogglePresetDialog(): Promise<void> {
+  togglePresetStateButton().click()
   await tick()
 }
 
@@ -527,6 +534,7 @@ afterEach(async () => {
   await flushAsyncWork()
   closePresetListModal()
   closePersonaListModal()
+  closeChatGenerationTogglePresetListModal()
   target.remove()
   document.body.innerHTML = ''
   vi.unstubAllGlobals()
@@ -1660,393 +1668,205 @@ describe('sidebar chat generation settings controls', () => {
     expect(hypaMemoryToggle.compareDocumentPosition(resetDefaults) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('saves, applies, and deletes reusable chat toggle presets', async () => {
-    const calls = stubCommandFetch()
-    alertSpies.alertInput.mockResolvedValueOnce('Spicy toggles')
-
-    mountToggles()
+  it('derives the Saved Toggles button label with unlinked and mismatch precedence', async () => {
+    activeChat().generationSettings!.togglePresetId = ''
+    mountGenerationSettingsPickerHost()
     await tick()
 
-    expect(togglePresetSelect().value).toBe('')
+    expect(togglePresetRoot().dataset.risuTogglePresetState).toBe('unused')
+    expect(togglePresetStateButton().textContent).toContain(language.chatGenerationTogglePresetUnused)
 
-    togglePresetButton(0).click()
+    activeChat().generationSettings!.togglePresetId = 'missing'
     await tick()
-    await waitForFetchCount(calls, 2)
+    expect(togglePresetRoot().dataset.risuTogglePresetState).toBe('unlinked')
+    expect(togglePresetStateButton().textContent).toContain(language.chatGenerationTogglePresetUnlinked)
 
-    const preset = testDatabaseState().chatGenerationTogglePresets[0]
-    expect(preset).toMatchObject({
-      name: 'Spicy toggles',
-      jailbreakToggle: true,
-      sidebarToggles: {
-        mood: '1',
-        flag: '1',
-        note: 'alpha-note',
-        moduleFlag: '1',
+    testDatabaseState().chatGenerationTogglePresets = [
+      {
+        id: 'saved-alpha',
+        name: 'Saved Alpha',
+        createdAt: 1,
+        updatedAt: 1,
+        sidebarToggles: { mood: '0' },
+        sidebarToggleKinds: { mood: 'select' },
       },
-      sidebarToggleKinds: {
-        mood: 'select',
-        flag: 'boolean',
-        note: 'text',
-        moduleFlag: 'boolean',
-      },
-    })
-    expect(togglePresetSelect().value).toBe(preset.id)
-    expect(togglePresetButton(0).disabled).toBe(true)
-    expect(togglePresetButton(1).disabled).toBe(true)
-    expect(calls[1]).toMatchObject({
-      url: '/api/v1/commands/settings/sidebar',
-      method: 'PATCH',
-      authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 300,
-        patch: {
-          chatGenerationTogglePresets: expect.arrayContaining([
-            expect.objectContaining({
-              id: preset.id,
-              name: 'Spicy toggles',
-            }),
-          ]),
-        },
-      },
-    })
-
-    testDatabaseState().characters[0].chatPage = 1
+    ]
+    activeChat().generationSettings!.togglePresetId = 'saved-alpha'
     await tick()
+    expect(togglePresetRoot().dataset.risuTogglePresetState).toBe('mismatch')
+    expect(togglePresetStateButton().textContent).toContain(language.chatGenerationTogglePresetMismatch)
 
-    expect(jailbreakControl().dataset.risuSelected).toBe('false')
-    expect(jailbreakControl().dataset.risuTogglePresetDifferent).toBe('true')
-    expect(toggleControl('mood').dataset.risuTogglePresetDifferent).toBe('true')
-    expect(toggleControl('flag').dataset.risuTogglePresetDifferent).toBe('true')
-    expect(toggleControl('note').dataset.risuTogglePresetDifferent).toBe('true')
-    expect(toggleControl('moduleFlag').dataset.risuTogglePresetDifferent).toBe('true')
-    expect(togglePresetButton(0).disabled).toBe(false)
-    expect(togglePresetButton(1).disabled).toBe(false)
-    expect(togglePresetWarning()).toBeNull()
-
-    alertSpies.alertConfirm.mockResolvedValueOnce(true)
-    togglePresetButton(1).click()
+    testDatabaseState().chatGenerationTogglePresets[0].sidebarToggles = {
+      mood: '0',
+      flag: '1',
+      note: 'alpha-note',
+      moduleFlag: '1',
+    }
+    testDatabaseState().chatGenerationTogglePresets[0].sidebarToggleKinds = {
+      mood: 'select',
+      flag: 'boolean',
+      note: 'text',
+      moduleFlag: 'boolean',
+    }
     await tick()
-    await waitForFetchCount(calls, 3)
+    expect(togglePresetRoot().dataset.risuTogglePresetState).toBe('edited')
+    expect(togglePresetStateButton().textContent).toContain(language.chatGenerationTogglePresetEdited('Saved Alpha'))
 
-    expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Apply these saved toggles to the current chat?')
-    expect(activeChat().generationSettings).toMatchObject({
-      configured: true,
-      personaId: 'persona-b',
-      modelPresetId: 'model-preset-a',
-      promptPresetId: 'preset-b',
-      jailbreakToggle: true,
-      sidebarToggles: {
-        mood: '1',
-        flag: '1',
-        note: 'alpha-note',
-        moduleFlag: '1',
-      },
-    })
-    expect(jailbreakControl().dataset.risuSelected).toBe('true')
-    expect(jailbreakControl().dataset.risuTogglePresetDifferent).toBe('false')
-    expect(toggleControl('mood').dataset.risuTogglePresetDifferent).toBe('false')
-    expect(togglePresetButton(0).disabled).toBe(true)
-    expect(togglePresetButton(1).disabled).toBe(true)
-    expect(calls[2]).toMatchObject({
-      url: '/api/v1/commands/chats/chat-b/generation-settings',
-      method: 'PUT',
-      authHeader: 'sidebar-generation-settings-token',
-    })
-    expect(calls[2].body).toEqual({
-      baseRevision: 301,
-      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
-      patch: {
-        jailbreakToggle: true,
-        sidebarToggles: {
-          mood: '1',
-          flag: '1',
-          note: 'alpha-note',
-          moduleFlag: '1',
-        },
-      },
-    })
-
-    alertSpies.alertConfirm.mockResolvedValueOnce(true)
-    togglePresetButton(2).click()
+    testDatabaseState().chatGenerationTogglePresets[0].sidebarToggles.mood = '1'
     await tick()
-    await waitForFetchCount(calls, 4)
-
-    expect(alertSpies.alertConfirm).toHaveBeenLastCalledWith('Delete "Spicy toggles"?')
-    expect(testDatabaseState().chatGenerationTogglePresets).toEqual([])
-    expect(togglePresetSelect().value).toBe('')
-    expect(calls[3]).toMatchObject({
-      url: '/api/v1/commands/settings/sidebar',
-      method: 'PATCH',
-      authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 302,
-        patch: {
-          chatGenerationTogglePresets: [],
-        },
-      },
-    })
+    expect(togglePresetRoot().dataset.risuTogglePresetState).toBe('matched')
+    expect(togglePresetStateButton().textContent).toContain('Saved Alpha')
   })
 
-  it('marks saved-toggle preset application pending and reports its failed save', async () => {
-    const { calls, failGenerationSettingsSave } = stubDeferredFailedGenerationSettingsFetch()
+  it('selects a preset row without applying values and explicitly unselects it', async () => {
+    const calls = stubCommandFetch()
     testDatabaseState().chatGenerationTogglePresets = [
       {
         id: 'saved-opposite',
         name: 'Opposite',
         createdAt: 1,
         updatedAt: 1,
-        jailbreakToggle: false,
         sidebarToggles: { mood: '0', flag: '0', note: '', moduleFlag: '0' },
-        sidebarToggleKinds: {
-          mood: 'select',
-          flag: 'boolean',
-          note: 'text',
-          moduleFlag: 'boolean',
-        },
+        sidebarToggleKinds: { mood: 'select', flag: 'boolean', note: 'text', moduleFlag: 'boolean' },
       },
     ]
-    alertSpies.alertConfirm.mockResolvedValueOnce(true)
-    mountToggles()
+    const valuesBefore = clonePlain(activeChat().generationSettings?.sidebarToggles)
+    mountGenerationSettingsPickerHost()
     await tick()
-    await chooseTogglePreset('saved-opposite')
+    await openTogglePresetDialog()
 
-    togglePresetButton(1).click()
-    await vi.waitFor(() => expect(alertSpies.alertConfirm).toHaveBeenCalled())
-    await flushAsyncWork()
+    togglePresetDialogRow('saved-opposite').click()
     await waitForGenerationSettingsSaveCount(calls, 1)
-    expect(togglePresetRoot().dataset.risuPersistenceStatus).toBe('pending')
-    expect(togglePresetButton(1).disabled).toBe(true)
+    await flushAsyncWork()
+    expect(activeChat().generationSettings?.togglePresetId).toBe('saved-opposite')
+    expect(activeChat().generationSettings?.sidebarToggles).toEqual(valuesBefore)
+    expect(togglePresetDialogRow('saved-opposite').dataset.risuSelected).toBe('true')
+    expect(togglePresetDialog()).toBeTruthy()
 
-    failGenerationSettingsSave()
-    await vi.waitFor(() => expect(togglePresetRoot().dataset.risuPersistenceStatus).toBe('failed'))
-    expect(alertSpies.alertError).toHaveBeenCalledWith(language.chatGenerationSettingsSaveFailed('forced rollback'))
+    togglePresetAction(2).click()
+    await waitForGenerationSettingsSaveCount(calls, 2)
+    await flushAsyncWork()
+    expect(activeChat().generationSettings?.togglePresetId).toBe('')
+    expect(togglePresetRoot().dataset.risuTogglePresetState).toBe('unused')
   })
 
-  it('disables saving but allows applying a selected toggle preset when the active chat has different toggle types', async () => {
-    const calls = stubCommandFetch()
-    testDatabaseState().promptPresets[0].customPromptTemplateToggle =
-      'mood=Mood=select=Calm,Spicy\nflag=Flag\nnote=Note=text\ncodex=Codex\nmoduleFlag=Module Flag'
+  it('leaves a loaded preset association unlinked after deleting its row', async () => {
+    stubCommandFetch()
+    activeChat().generationSettings!.togglePresetId = 'saved-alpha'
     testDatabaseState().chatGenerationTogglePresets = [
       {
         id: 'saved-alpha',
         name: 'Saved Alpha',
         createdAt: 1,
         updatedAt: 1,
-        jailbreakToggle: true,
-        sidebarToggles: {
-          mood: '1',
-          flag: '1',
-          note: 'alpha-note',
-          moduleFlag: '1',
-        },
-        sidebarToggleKinds: {
-          mood: 'select',
-          flag: 'boolean',
-          note: 'text',
-          moduleFlag: 'boolean',
-        },
+        sidebarToggles: { mood: '1', flag: '1', note: 'alpha-note', moduleFlag: '1' },
+        sidebarToggleKinds: { mood: 'select', flag: 'boolean', note: 'text', moduleFlag: 'boolean' },
       },
     ]
-
-    mountToggles()
-    await tick()
-
-    await chooseTogglePreset('saved-alpha')
-
-    expect(togglePresetButton(0).disabled).toBe(true)
-    expect(togglePresetButton(1).disabled).toBe(false)
-    expect(togglePresetWarning()?.textContent).toContain(
-      'The selected saved toggles do not match the toggles available in this chat.',
-    )
-    expect(toggleControl('codex').dataset.risuTogglePresetDifferent).toBe('true')
-    expect(toggleControl('mood').dataset.risuTogglePresetDifferent).toBe('false')
-    expect(jailbreakControl().dataset.risuTogglePresetDifferent).toBe('false')
-
     alertSpies.alertConfirm.mockResolvedValueOnce(true)
-    togglePresetButton(1).click()
+    mountGenerationSettingsPickerHost()
     await tick()
-    await waitForGenerationSettingsSaveCount(calls, 1)
+    await openTogglePresetDialog()
 
-    expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Apply these saved toggles to the current chat?')
-    expect(activeChat().generationSettings?.sidebarToggles).toMatchObject({
+    togglePresetDialogRow('saved-alpha').querySelectorAll<HTMLButtonElement>('button')[1].click()
+    await flushAsyncWork()
+    expect(testDatabaseState().chatGenerationTogglePresets).toEqual([])
+    expect(activeChat().generationSettings?.togglePresetId).toBe('saved-alpha')
+    expect(togglePresetRoot().dataset.risuTogglePresetState).toBe('unlinked')
+  })
+
+  it('warns before overwriting a loaded preset whose toggle structure mismatches', async () => {
+    stubCommandFetch()
+    activeChat().generationSettings!.togglePresetId = 'saved-alpha'
+    testDatabaseState().chatGenerationTogglePresets = [
+      {
+        id: 'saved-alpha',
+        name: 'Saved Alpha',
+        createdAt: 1,
+        updatedAt: 1,
+        sidebarToggles: { mood: '0' },
+        sidebarToggleKinds: { mood: 'select' },
+      },
+    ]
+    alertSpies.alertSelect.mockResolvedValueOnce('0')
+    alertSpies.alertConfirm.mockResolvedValueOnce(true)
+    mountGenerationSettingsPickerHost()
+    await tick()
+    await openTogglePresetDialog()
+
+    togglePresetAction(0).click()
+    await flushAsyncWork()
+    expect(alertSpies.alertConfirm).toHaveBeenCalledWith(language.chatGenerationTogglePresetMismatchOverwriteConfirm)
+    expect(testDatabaseState().chatGenerationTogglePresets[0].sidebarToggles).toEqual({
       mood: '1',
       flag: '1',
       note: 'alpha-note',
-      codex: '0',
       moduleFlag: '1',
     })
-    expect(generationSettingsSaves(calls)).toHaveLength(1)
-    expect(generationSettingsSaves(calls)[0]).toMatchObject({
-      url: '/api/v1/commands/chats/chat-a/generation-settings',
-      method: 'PUT',
-      authHeader: 'sidebar-generation-settings-token',
-    })
-    expect(generationSettingsSaves(calls)[0].body).toEqual({
-      baseRevision: 300,
-      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
-      patch: {
-        sidebarToggles: { codex: '0' },
-      },
-    })
+    expect(testDatabaseState().chatGenerationTogglePresets[0]).not.toHaveProperty('jailbreakToggle')
   })
 
-  it('asks whether to overwrite or create when saving with a selected toggle preset', async () => {
+  it('shows Pick ineligibility and writes exactly the chosen source values without linking the preset', async () => {
     const calls = stubCommandFetch()
     testDatabaseState().chatGenerationTogglePresets = [
       {
-        id: 'saved-alpha',
-        name: 'Saved Alpha',
+        id: 'missing-module-key',
+        name: 'Missing Module',
+        createdAt: 1,
+        updatedAt: 2,
+        sidebarToggles: { flag: '0' },
+        sidebarToggleKinds: { flag: 'boolean' },
+      },
+      {
+        id: 'module-values',
+        name: 'Module Values',
         createdAt: 1,
         updatedAt: 1,
-        jailbreakToggle: false,
-        sidebarToggles: {
-          mood: '0',
-          flag: '0',
-          note: 'old-note',
-          moduleFlag: '0',
-        },
-        sidebarToggleKinds: {
-          mood: 'select',
-          flag: 'boolean',
-          note: 'text',
-          moduleFlag: 'boolean',
-        },
+        sidebarToggles: { moduleFlag: '0' },
+        sidebarToggleKinds: { moduleFlag: 'boolean' },
       },
     ]
-
-    mountToggles()
+    alertSpies.alertConfirm.mockResolvedValueOnce(true)
+    mountGenerationSettingsPickerHost()
+    await tick()
+    await openTogglePresetDialog()
+    togglePresetAction(3).click()
     await tick()
 
-    await chooseTogglePreset('saved-alpha')
-
-    togglePresetButton(0).click()
-    await flushAsyncWork()
-
-    expect(alertSpies.alertSelect).toHaveBeenCalledWith(
-      ['Overwrite it', 'Create new Saved Toggle'],
-      'Save changes to "Saved Alpha"?',
+    elementBySelector<HTMLButtonElement>(
+      '[data-risu-toggle-preset-source-row][data-risu-source-id="module:module-a"]',
+      'module Pick source',
+    ).click()
+    await tick()
+    const ineligible = elementBySelector<HTMLButtonElement>(
+      '[data-risu-toggle-preset-pick-row][data-risu-row-id="missing-module-key"]',
+      'ineligible Pick preset',
     )
-    expect(alertSpies.alertInput).not.toHaveBeenCalled()
-    expect(calls).toEqual([])
-    expect(testDatabaseState().chatGenerationTogglePresets).toHaveLength(1)
+    expect(ineligible.disabled).toBe(true)
+    expect(ineligible.dataset.risuIneligibleReason).toBe(language.chatGenerationTogglePresetPickMissingKeys(1))
 
-    alertSpies.alertSelect.mockResolvedValueOnce('1')
-    alertSpies.alertInput.mockResolvedValueOnce('Fresh copy')
-    togglePresetButton(0).click()
-    await tick()
-    await waitForFetchCount(calls, 2)
-
-    expect(testDatabaseState().chatGenerationTogglePresets).toHaveLength(2)
-    const createdPreset = testDatabaseState().chatGenerationTogglePresets[1]
-    expect(createdPreset).toMatchObject({
-      name: 'Fresh copy',
-      jailbreakToggle: true,
-      sidebarToggles: {
-        mood: '1',
-        flag: '1',
-        note: 'alpha-note',
-        moduleFlag: '1',
-      },
-    })
-    expect(togglePresetSelect().value).toBe(createdPreset.id)
-
-    await chooseTogglePreset('saved-alpha')
-
-    alertSpies.alertSelect.mockResolvedValueOnce('0')
-    togglePresetButton(0).click()
-    await tick()
-    await waitForFetchCount(calls, 3)
-
-    expect(testDatabaseState().chatGenerationTogglePresets).toHaveLength(2)
-    expect(testDatabaseState().chatGenerationTogglePresets[0]).toMatchObject({
-      id: 'saved-alpha',
-      name: 'Saved Alpha',
-      createdAt: 1,
-      jailbreakToggle: true,
-      sidebarToggles: {
-        mood: '1',
-        flag: '1',
-        note: 'alpha-note',
-        moduleFlag: '1',
-      },
-    })
-    expect(togglePresetSelect().value).toBe('saved-alpha')
-  })
-
-  it('does not save a reusable toggle preset after the name prompt resolves for a stale active chat', async () => {
-    const calls = stubCommandFetch()
-    const chatASettings = clonePlain(testDatabaseState().characters[0].chats[0].generationSettings)
-    const chatBSettings = clonePlain(testDatabaseState().characters[0].chats[1].generationSettings)
-    const input = deferred<string>()
-    alertSpies.alertInput.mockReturnValueOnce(input.promise)
-
-    mountToggles()
-    await tick()
-
-    togglePresetButton(0).click()
-    await tick()
-    expect(alertSpies.alertInput).toHaveBeenCalledWith('Name this toggle preset')
-
-    testDatabaseState().characters[0].chatPage = 1
-    await tick()
-
-    input.resolve('Late toggles')
+    elementBySelector<HTMLButtonElement>(
+      '[data-risu-toggle-preset-pick-row][data-risu-row-id="module-values"]',
+      'eligible Pick preset',
+    ).click()
+    await waitForGenerationSettingsSaveCount(calls, 1)
     await flushAsyncWork()
-
-    expect(calls).toEqual([])
-    expect(testDatabaseState().chatGenerationTogglePresets).toEqual([])
-    expect(testDatabaseState().characters[0].chats[0].generationSettings).toEqual(chatASettings)
-    expect(testDatabaseState().characters[0].chats[1].generationSettings).toEqual(chatBSettings)
-    expect(togglePresetSelect().value).toBe('')
-  })
-
-  it('does not apply a toggle preset after confirmation resolves for a stale active chat', async () => {
-    const calls = stubCommandFetch()
-    testDatabaseState().chatGenerationTogglePresets = [
-      {
-        id: 'saved-late',
-        name: 'Saved Late',
-        createdAt: 1,
-        updatedAt: 1,
-        jailbreakToggle: false,
-        sidebarToggles: {
-          mood: '1',
-          flag: '1',
-          note: 'late-preset-note',
-          moduleFlag: '1',
-        },
-        sidebarToggleKinds: {
-          mood: 'select',
-          flag: 'boolean',
-          note: 'text',
-          moduleFlag: 'boolean',
-        },
-      },
-    ]
-    const chatASettings = clonePlain(testDatabaseState().characters[0].chats[0].generationSettings)
-    const chatBSettings = clonePlain(testDatabaseState().characters[0].chats[1].generationSettings)
-    const confirmation = deferred<boolean>()
-    alertSpies.alertConfirm.mockReturnValueOnce(confirmation.promise)
-
-    mountToggles()
-    await tick()
-    await chooseTogglePreset('saved-late')
-
-    expect(togglePresetButton(1).disabled).toBe(false)
-    togglePresetButton(1).click()
-    await tick()
-    expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Apply these saved toggles to the current chat?')
-
-    testDatabaseState().characters[0].chatPage = 1
-    await tick()
-
-    confirmation.resolve(true)
-    await flushAsyncWork()
-
-    expect(calls).toEqual([])
-    expect(testDatabaseState().characters[0].chats[0].generationSettings).toEqual(chatASettings)
-    expect(testDatabaseState().characters[0].chats[1].generationSettings).toEqual(chatBSettings)
-    expect(activeChat().id).toBe('chat-b')
+    expect(alertSpies.alertConfirm).toHaveBeenCalledWith(
+      language.chatGenerationTogglePresetPickConfirm(
+        language.chatGenerationTogglePresetPickModuleSource('module-a'),
+        1,
+      ),
+    )
+    expect(activeChat().generationSettings?.sidebarToggles).toEqual({
+      mood: '1',
+      flag: '1',
+      note: 'alpha-note',
+      moduleFlag: '0',
+    })
+    expect(activeChat().generationSettings?.togglePresetId).toBeUndefined()
+    expect(generationSettingsSaves(calls)[0].body).toMatchObject({
+      patch: { sidebarToggles: { moduleFlag: '0' } },
+    })
   })
 
   it('writes jailbreak and sidebar toggles to active chat settings without touching global state', async () => {

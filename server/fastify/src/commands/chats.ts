@@ -483,6 +483,7 @@ export function readChatGenerationSettingsSave(
       key !== 'modelPresetId' &&
       key !== 'promptPresetId' &&
       key !== 'agentPresetId' &&
+      key !== 'togglePresetId' &&
       key !== 'jailbreakToggle' &&
       key !== 'sidebarToggles'
     ) {
@@ -539,6 +540,13 @@ export function readChatGenerationSettingsSave(
     ) {
       throw new ValidationError(`Unknown agent preset id in ${label}.agentPresetId: ${raw.agentPresetId}`)
     }
+  }
+
+  if (hasOwn(raw, 'togglePresetId')) {
+    if (typeof raw.togglePresetId !== 'string') {
+      throw new ValidationError(`${label}.togglePresetId must be a string`)
+    }
+    normalized.togglePresetId = raw.togglePresetId
   }
 
   if (!hasOwn(raw, 'jailbreakToggle')) {

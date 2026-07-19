@@ -1283,7 +1283,6 @@ describe('Phase 9-2a scalar settings groups', () => {
           name: 'Toggle Preset A',
           createdAt: 1,
           updatedAt: 2,
-          jailbreakToggle: true,
           sidebarToggles: {
             mood: '1',
           },
@@ -8093,6 +8092,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
           modelPresetId: 'model-a',
           promptPresetId: 'prompt-a',
           agentPresetId: 'agent-preset-a',
+          togglePresetId: 'deleted-toggle-preset',
           jailbreakToggle: false,
           sidebarToggles: {
             mode: '0',
@@ -8130,6 +8130,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       modelPresetId: 'model-a',
       promptPresetId: 'prompt-a',
       agentPresetId: 'agent-preset-a',
+      togglePresetId: 'deleted-toggle-preset',
       jailbreakToggle: false,
       sidebarToggles: {
         mode: '0',
@@ -8400,6 +8401,10 @@ describe('Phase 9-3b chat record and folder commands', () => {
         error: 'generationSettings.agentPresetId must be a string',
       },
       {
+        generationSettings: { ...validBase, togglePresetId: 123 },
+        error: 'generationSettings.togglePresetId must be a string',
+      },
+      {
         generationSettings: { ...validBase, sidebarToggles: { mode: 1 } },
         error: 'generationSettings.sidebarToggles.mode must be a string',
       },
@@ -8513,6 +8518,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
         personaId: 123,
         modelPresetId: 'model-a',
         promptPresetId: 'prompt-a',
+        togglePresetId: 'missing-is-valid',
         jailbreakToggle: 'bad',
         sidebarToggles: {
           valid: 'on',
@@ -8546,6 +8552,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       configured: true,
       modelPresetId: 'model-a',
       promptPresetId: 'prompt-a',
+      togglePresetId: 'missing-is-valid',
       sidebarToggles: { valid: 'on' },
     })
     expect(Object.keys(chats[0].generationSettings ?? {}).sort()).toEqual([
@@ -8553,6 +8560,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       'modelPresetId',
       'promptPresetId',
       'sidebarToggles',
+      'togglePresetId',
     ])
     expect(chats[1].generationSettings).toBeUndefined()
   })

@@ -12,6 +12,7 @@ export interface ChatGenerationSettings {
   modelPresetId?: string
   promptPresetId?: string
   agentPresetId?: string
+  togglePresetId?: string
   jailbreakToggle?: boolean
   sidebarToggles?: Record<string, string>
 }
@@ -22,6 +23,7 @@ export const CHAT_GENERATION_SETTINGS_KEYS = [
   'modelPresetId',
   'promptPresetId',
   'agentPresetId',
+  'togglePresetId',
   'jailbreakToggle',
   'sidebarToggles',
 ] as const
@@ -272,6 +274,7 @@ export type ChatGenerationSettingsFieldPath =
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.modelPresetId`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.promptPresetId`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.agentPresetId`
+  | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.togglePresetId`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.jailbreakToggle`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles.${string}`

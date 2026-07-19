@@ -13,6 +13,7 @@ export interface CanonicalLoadout {
   promptPresetName: string
   agentPresetId?: string
   agentPresetName?: string
+  togglePresetId?: string
   personaId: string
 }
 
@@ -32,7 +33,7 @@ const REQUIRED_LOADOUT_KEYS = [
   'personaId',
 ] as const
 
-const LOADOUT_KEYS = new Set<string>([...REQUIRED_LOADOUT_KEYS, 'agentPresetId', 'agentPresetName'])
+const LOADOUT_KEYS = new Set<string>([...REQUIRED_LOADOUT_KEYS, 'agentPresetId', 'agentPresetName', 'togglePresetId'])
 
 export function isCanonicalLoadout(value: unknown): value is CanonicalLoadout {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -59,6 +60,9 @@ export function isCanonicalLoadout(value: unknown): value is CanonicalLoadout {
     return false
   }
   if (Object.prototype.hasOwnProperty.call(record, 'agentPresetName') && typeof record.agentPresetName !== 'string') {
+    return false
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'togglePresetId') && typeof record.togglePresetId !== 'string') {
     return false
   }
   return true

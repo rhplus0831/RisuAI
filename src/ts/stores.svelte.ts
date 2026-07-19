@@ -35,6 +35,7 @@ export const botMakerMode = writable(false)
 export const moduleBackgroundEmbedding = writable('')
 export const openPresetList = writable(false)
 export const openPersonaList = writable(false)
+export const openChatGenerationTogglePresetList = writable(false)
 export type GenerationSettingsPickerMode = 'global' | 'active-chat-generation-settings'
 export type PresetPickerKind = 'model' | 'prompt' | 'legacy'
 export const presetListModalStore = $state({
@@ -45,6 +46,10 @@ export const presetListModalStore = $state({
 export const personaListModalStore = $state({
   mode: 'global' as GenerationSettingsPickerMode,
   target: null as ActiveChatTarget | null,
+})
+export const chatGenerationTogglePresetListModalStore = $state({
+  target: null as ActiveChatTarget | null,
+  saveStates: {} as Record<string, { operation: number; status: 'pending' | 'queued' | 'failed' }>,
 })
 export const bookmarkListOpen = writable(false)
 export const MobileGUI = writable(false)
@@ -127,6 +132,10 @@ openPersonaList.subscribe((open) => {
   }
 })
 
+openChatGenerationTogglePresetList.subscribe((open) => {
+  if (!open) chatGenerationTogglePresetListModalStore.target = null
+})
+
 export function openPresetListModal(
   mode: GenerationSettingsPickerMode = 'global',
   kind: PresetPickerKind = 'model',
@@ -153,6 +162,15 @@ export function openPersonaListModal(
 
 export function closePersonaListModal() {
   openPersonaList.set(false)
+}
+
+export function openChatGenerationTogglePresetListModal(target: ActiveChatTarget | null) {
+  chatGenerationTogglePresetListModalStore.target = target
+  openChatGenerationTogglePresetList.set(true)
+}
+
+export function closeChatGenerationTogglePresetListModal() {
+  openChatGenerationTogglePresetList.set(false)
 }
 
 export const LoadingStatusState = $state({
