@@ -74,6 +74,8 @@
   let generationSettingsSaveStates = $state<
     Record<string, { operation: number; status: 'pending' | 'queued' | 'failed'; attempted: string | boolean }>
   >({})
+  let toggleDrafts = $state<Record<string, string>>({})
+  let focusedToggleDraftKey = $state<string | null>(null)
 
   let activeGenerationSettings = $derived.by(() =>
     resolveActiveChatGenerationSettings({
@@ -94,6 +96,17 @@
 
   $effect(() => {
     ensureActiveChatSidebarToggleDefaults(activeGenerationSettings)
+  })
+
+  $effect(() => {
+    for (const toggle of activeGenerationSettings.displayedSidebarToggles) {
+      if ((toggle.kind === 'text' || toggle.kind === 'textarea') && toggle.key) {
+        const draftKey = getToggleDraftKey(toggle.key)
+        if (focusedToggleDraftKey !== draftKey) {
+          toggleDrafts[draftKey] = activeGenerationSettings.settings?.sidebarToggles?.[toggle.key] ?? ''
+        }
+      }
+    }
   })
 
   function getJailbreakToggleValue(): boolean {
@@ -153,6 +166,33 @@
 
   function getToggleValue(key: string): string {
     return activeGenerationSettings.settings?.sidebarToggles?.[key] ?? ''
+  }
+
+  function getToggleDraftKey(key: string): string {
+    return `${activeGenerationSettings.identity.chatId ?? ''}\u0000${key}`
+  }
+
+  function getToggleDraft(key: string): string {
+    const draftKey = getToggleDraftKey(key)
+    return draftKey in toggleDrafts ? toggleDrafts[draftKey] : getToggleValue(key)
+  }
+
+  function setToggleDraft(key: string, value: string): void {
+    toggleDrafts[getToggleDraftKey(key)] = value
+  }
+
+  function commitToggleDraft(key: string): void {
+    setToggleValue(key, getToggleDraft(key))
+  }
+
+  function focusToggleDraft(key: string): void {
+    focusedToggleDraftKey = getToggleDraftKey(key)
+  }
+
+  function blurToggleDraft(key: string, event: FocusEvent & { currentTarget: HTMLElement }): void {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+    const draftKey = getToggleDraftKey(key)
+    if (focusedToggleDraftKey === draftKey) focusedToggleDraftKey = null
   }
 
   function setToggleValue(key: string, value: string): void {
@@ -315,6 +355,8 @@
       <div
         class="w-full flex gap-2 mt-2 items-center"
         class:justify-end={$MobileGUI}
+        onfocusin={() => focusToggleDraft(toggle.key)}
+        onfocusout={(event) => blurToggleDraft(toggle.key, event)}
         data-risu-generation-toggle-control
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
@@ -327,13 +369,15 @@
         <TextInput
           className="w-32"
           ariaLabel={toggle.label}
-          disabled={generationSettingsSavePending(`sidebarToggles.${toggle.key}`)}
-          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)} />
+          onchange={() => commitToggleDraft(toggle.key)}
+          bind:value={() => getToggleDraft(toggle.key), (value) => setToggleDraft(toggle.key, value)} />
       </div>
     {:else if toggle.kind === 'textarea'}
       <div
         class="w-full flex gap-2 mt-2 items-start"
         class:justify-end={$MobileGUI}
+        onfocusin={() => focusToggleDraft(toggle.key)}
+        onfocusout={(event) => blurToggleDraft(toggle.key, event)}
         data-risu-generation-toggle-control
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
@@ -347,8 +391,8 @@
           className="w-32"
           height="20"
           ariaLabel={toggle.label}
-          disabled={generationSettingsSavePending(`sidebarToggles.${toggle.key}`)}
-          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)} />
+          onchange={() => commitToggleDraft(toggle.key)}
+          bind:value={() => getToggleDraft(toggle.key), (value) => setToggleDraft(toggle.key, value)} />
       </div>
     {:else}
       <div

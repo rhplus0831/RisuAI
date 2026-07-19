@@ -1131,7 +1131,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(textareaToggleInput('details').getAttribute('aria-label')).toBe('Details')
   })
 
-  it('disables a textarea toggle while its exact save is pending', async () => {
+  it('keeps a textarea toggle enabled while its change save is pending', async () => {
     const { calls, failGenerationSettingsSave } = stubDeferredFailedGenerationSettingsFetch()
     testDatabaseState().promptPresets[0].customPromptTemplateToggle = 'details=Details=textarea'
     activeChat().generationSettings!.sidebarToggles = { details: 'before', moduleFlag: '1' }
@@ -1143,15 +1143,49 @@ describe('sidebar chat generation settings controls', () => {
     textarea.value = 'after'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
+    expect(generationSettingsSaves(calls)).toHaveLength(0)
+
+    textarea.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
     await vi.waitFor(() => expect(activeChat().generationSettings?.sidebarToggles?.details).toBe('after'))
     await waitForGenerationSettingsSaveCount(calls, 1)
 
     expect(toggleControl('details').dataset.risuPersistenceStatus).toBe('pending')
-    expect((textareaToggleInput('details') as HTMLTextAreaElement).disabled).toBe(true)
+    expect((textareaToggleInput('details') as HTMLTextAreaElement).disabled).toBe(false)
 
     failGenerationSettingsSave()
     await vi.waitFor(() => expect(toggleControl('details').dataset.risuPersistenceStatus).toBe('failed'))
     expect((textareaToggleInput('details') as HTMLTextAreaElement).disabled).toBe(false)
+  })
+
+  it('keeps a text toggle draft intact across keystrokes and saves only on change', async () => {
+    const { calls, failGenerationSettingsSave } = stubDeferredFailedGenerationSettingsFetch()
+    mountToggles()
+    await tick()
+
+    const input = textToggleInput('note')
+    input.focus()
+    for (const value of ['a', 'ab', 'abc']) {
+      input.value = value
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await tick()
+      expect(input.disabled).toBe(false)
+      expect(input.value).toBe(value)
+      expect(generationSettingsSaves(calls)).toHaveLength(0)
+    }
+
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    await waitForGenerationSettingsSaveCount(calls, 1)
+
+    expect(toggleControl('note').dataset.risuPersistenceStatus).toBe('pending')
+    expect(input.disabled).toBe(false)
+    expect(input.value).toBe('abc')
+    expect(document.activeElement).toBe(input)
+    expect(generationSettingsSaves(calls)).toHaveLength(1)
+
+    failGenerationSettingsSave()
+    await vi.waitFor(() => expect(toggleControl('note').dataset.risuPersistenceStatus).toBe('failed'))
   })
 
   it('updates mounted active-chat controls after a character-row projection changes generation settings', async () => {
@@ -2048,6 +2082,8 @@ describe('sidebar chat generation settings controls', () => {
     const noteInput = textToggleInput('note')
     noteInput.value = 'updated-note'
     noteInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    noteInput.dispatchEvent(new Event('change', { bubbles: true }))
     await tick()
     await waitForFetchCount(calls, 5)
 
