@@ -6,37 +6,14 @@
  */
 
 import type { SettingItem } from './types'
-import { changeLanguage, getLanguageForCode, language } from 'src/lang'
-import { languageEnglish } from 'src/lang/en'
+import { changeLanguage, language } from 'src/lang'
 import { sleep } from '../util'
-import { alertNormal, alertSelect, alertConfirm, alertError, alertWait } from '../alert'
+import { alertNormal, alertConfirm, alertError, alertWait } from '../alert'
 import { downloadFile } from '../globalApi.svelte'
 import { selectFileByDom } from '../util'
 import { exportLLMCacheAsJSON, importLLMCacheFromJSON, clearLLMCache } from '../translator/translator'
 
 export const langState = $state({ changed: false })
-
-export async function downloadLanguageTemplate(): Promise<void> {
-  const selection = await alertSelect([language.continueTranslatingLanguage, language.makeNewLanguage])
-  if (selection === null) return
-  const choice = Number(selection)
-
-  if (choice === 0) {
-    const languages = ['de', 'es', 'ko', 'cn', 'vi', 'zh-Hant']
-    const languageSelection = await alertSelect(languages)
-    if (languageSelection === null) return
-    const selectedLanguage = languages[Number(languageSelection)]
-    if (!selectedLanguage) return
-    const selectedLanguageTemplate = getLanguageForCode(selectedLanguage)
-    await downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(selectedLanguageTemplate, null, 4)))
-  } else if (choice === 1) {
-    await downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(languageEnglish, null, 4)))
-  } else {
-    return
-  }
-
-  alertNormal(language.translationTemplateDownloaded)
-}
 
 export const languageSettingsItems: SettingItem[] = [
   {
@@ -70,14 +47,6 @@ export const languageSettingsItems: SettingItem[] = [
       changeLanguage(ctx.db.language)
       langState.changed = true
     },
-  },
-
-  {
-    id: 'lang.downloadTemplate',
-    type: 'button',
-    labelKey: 'translateOwnLanguage',
-    classes: 'mt-2',
-    options: { onClick: downloadLanguageTemplate },
   },
 
   {
