@@ -5,6 +5,7 @@
 </script>
 
 <Button
+  className="mt-2"
   onclick={() => {
     customSideBarConfigDialogStore.open = true
   }}>
