@@ -1582,6 +1582,7 @@ export const languageSpanish = {
   pluginUpdateInstallFailed: 'No se pudo instalar la actualización del plugin. Inténtelo de nuevo.',
   pluginUpdateInstalled: 'Actualización del plugin instalada.',
   branch: 'Rama',
+  branchConfirm: '¿Desea crear una rama a partir de este mensaje?',
   newMessageButtonBottomLeft: 'Abajo a la izquierda',
   newMessage: 'Nuevo mensaje',
   newMessageButtonFloatingCircle: 'Círculo flotante (inferior derecha)',

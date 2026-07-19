@@ -2107,6 +2107,7 @@ export const languageEnglish = {
   bookmark: 'Bookmark',
   translate: 'Translate',
   branch: 'Branch',
+  branchConfirm: 'Do you want to create a branch from this message?',
   branchedText: 'This chat has been branched from {}.',
   loadMore: 'Load More',
   disableMessage: 'Disable Message',

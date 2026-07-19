@@ -1499,6 +1499,7 @@ export const languageChinese = {
   noRequestLogs: '暂无请求日志。',
   duplicatePluginFoundUpdateIt: '发现重复插件。是否更新现有插件？',
   branch: '分支',
+  branchConfirm: '要从此消息创建分支吗？',
   newMessageButtonStyle: '新消息按钮样式',
   newMessageButtonFloatingCircle: '悬浮圆 (右下角)',
   newMessageButtonBottomCenter: '底部居中 (默认)',

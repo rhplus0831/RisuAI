@@ -1603,6 +1603,7 @@ export const languageGerman = {
   pluginUpdateInstalled: 'Plugin-Update installiert.',
   goToChat: 'Zum Chat',
   branch: 'Zweig',
+  branchConfirm: 'Möchten Sie von dieser Nachricht einen Zweig erstellen?',
   newMessageButtonBottomLeft: 'Unten links',
   newMessage: 'Neue Nachricht',
   newMessageButtonBottomRight: 'Unten rechts',

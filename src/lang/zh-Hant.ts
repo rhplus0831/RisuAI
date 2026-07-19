@@ -1520,6 +1520,7 @@ export const languageChineseTraditional = {
   bookmark: '書籤',
   translate: '翻譯',
   branch: '分支',
+  branchConfirm: '要從此訊息建立分支嗎？',
   branchedText: '此對話分支自 {}。',
   loadMore: '載入更多',
   disableMessage: '停用訊息',

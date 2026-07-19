@@ -1568,6 +1568,7 @@ export const languageVietnamese = {
   loadMore: 'Tải thêm',
   goToChat: 'Đi đến Chat',
   branch: 'Chi nhánh',
+  branchConfirm: 'Bạn có muốn tạo nhánh từ tin nhắn này không?',
   newMessage: 'Tin nhắn mới',
   autoScrollToNewMessage: 'Tự động cuộn đến tin nhắn mới',
   alwaysScrollToNewMessage: 'Luôn cuộn đến tin nhắn mới (bỏ qua vị trí cuộn)',

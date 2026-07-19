@@ -2441,7 +2441,8 @@
   <button
     aria-label={language.branch}
     class="flex items-center hover:text-blue-500 transition-colors"
-    onclick={() => {
+    onclick={async () => {
+      if (!(await alertConfirm(language.branchConfirm))) return
       void branchFromCurrentMessage()
     }}>
     <SplitIcon size={20} />
