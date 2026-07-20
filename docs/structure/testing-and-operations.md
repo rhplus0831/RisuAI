@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-07-17.
+Last audited: 2026-07-20.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -9,37 +9,37 @@ pnpm through Corepack.
 
 ## Scripts
 
-| Command                            | Purpose                                                                                                       |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`                         | Start Vite client dev server on `0.0.0.0:5174`.                                                               |
-| `pnpm dev:agent`                   | Start full-stack agent dev server: frontend `6418`, Fastify `6419`, trace mode `agent`, auth/TOS bypass defaults. |
-| `pnpm dev:human`                   | Start full-stack human trace server: frontend `6002`, Fastify `6001`, trace mode `human`, password auth enabled and TOS bypassed by default unless overridden. |
-| `pnpm api:dev`                     | Start Fastify with `tsx watch server/fastify/src/index.ts`.                                                   |
-| `pnpm api:dev:flag`                | Start Fastify through `util/api-flag-dev.ts`; restarts only when `.risu-api-restart` is touched/created.      |
-| `pnpm api:start`                   | Start Fastify once with `tsx server/fastify/src/index.ts`.                                                    |
-| `pnpm build`                       | Vite build with sourcemaps.                                                                                   |
-| `pnpm build:site`                  | Production client build with `VITE_RISU_LEGAL_CONFIGURED=TRUE`.                                               |
-| `pnpm preview`                     | Vite preview server for a built client bundle.                                                                |
-| `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                |
-| `pnpm check:server`                | Emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects without emitting server code. |
-| `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane without explicit gate tests.        |
-| `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit gate tests.                      |
-| `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit gate tests.                                              |
-| `pnpm test:gates`                  | Run explicit frontend architecture, UI, clone-cost, and render-cost gates.                                     |
-| `pnpm test:gates:audit`            | Run UI-audit gate tests.                                                                                       |
-| `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                         |
-| `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                              |
-| `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                       |
+| Command                            | Purpose                                                                                                                                                                       |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                         | Start Vite client dev server on `0.0.0.0:5174`.                                                                                                                               |
+| `pnpm dev:agent`                   | Start full-stack agent dev server: frontend `6418`, Fastify `6419`, trace mode `agent`, auth/TOS bypass defaults.                                                             |
+| `pnpm dev:human`                   | Start full-stack human trace server: frontend `6002`, Fastify `6001`, trace mode `human`, password auth enabled and TOS bypassed by default unless overridden.                |
+| `pnpm api:dev`                     | Start Fastify with `tsx watch server/fastify/src/index.ts`.                                                                                                                   |
+| `pnpm api:dev:flag`                | Start Fastify through `util/api-flag-dev.ts`; restarts only when `.risu-api-restart` is touched/created.                                                                      |
+| `pnpm api:start`                   | Start Fastify once with `tsx server/fastify/src/index.ts`.                                                                                                                    |
+| `pnpm build`                       | Vite build with sourcemaps.                                                                                                                                                   |
+| `pnpm build:site`                  | Production client build with `VITE_RISU_LEGAL_CONFIGURED=TRUE`.                                                                                                               |
+| `pnpm preview`                     | Vite preview server for a built client bundle.                                                                                                                                |
+| `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
+| `pnpm check:server`                | Emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects without emitting server code.                                           |
+| `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane without explicit gate tests.                                                                        |
+| `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit gate tests.                                                                                     |
+| `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit gate tests.                                                                                                             |
+| `pnpm test:gates`                  | Run explicit frontend architecture, UI, clone-cost, and render-cost gates.                                                                                                    |
+| `pnpm test:gates:audit`            | Run UI-audit gate tests.                                                                                                                                                      |
+| `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                                                                                        |
+| `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                                                                                              |
+| `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                                                                                       |
 | `pnpm test:all`                    | Run format, Svelte, strict server/browser-smoke TypeScript, frontend tests, explicit gates, the UI coverage gate, server tests, and browser smoke; preserve any failing lane. |
-| `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write reports to `coverage/ui-map`.                                      |
-| `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                  |
-| `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                        |
-| `pnpm analyze:db <path>`           | Analyze `.risu`, JSON, raw database JSON, or data dirs containing `db.json`; SQLite sidecars are copied when present. Add `--json` for machine-readable output. |
-| `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for navigation, diagnostics, symbols, code actions, imports, and renames. |
-| `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                         |
-| `pnpm coverage:frontend`           | Run root/browser Vitest tests with broad frontend coverage under `coverage/frontend`.                          |
-| `pnpm coverage:backend`            | Run Fastify/server Vitest tests with broad backend coverage under `coverage/backend`.                          |
-| `pnpm coverage:all`                | Run frontend and backend coverage, preserving a failing exit code if either side fails.                        |
+| `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write reports to `coverage/ui-map`.                                                                                                      |
+| `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                                                                                   |
+| `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                                                                                        |
+| `pnpm analyze:db <path>`           | Analyze `.risu`, JSON, raw database JSON, or data dirs containing `db.json`; SQLite sidecars are copied when present. Add `--json` for machine-readable output.               |
+| `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for navigation, diagnostics, symbols, code actions, imports, and renames.                                                     |
+| `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                                                                                         |
+| `pnpm coverage:frontend`           | Run root/browser Vitest tests with broad frontend coverage under `coverage/frontend`.                                                                                         |
+| `pnpm coverage:backend`            | Run Fastify/server Vitest tests with broad backend coverage under `coverage/backend`.                                                                                         |
+| `pnpm coverage:all`                | Run frontend and backend coverage, preserving a failing exit code if either side fails.                                                                                       |
 
 There is no ESLint config or `lint` script.
 
@@ -133,16 +133,16 @@ source helper, not generated output.
 
 ## Tests And Checks
 
-| Area                        | Command/config                                                     | Environment | Locations                                                                                                                  |
-| --------------------------- | ------------------------------------------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Browser/client/domain tests | `pnpm test` or `pnpm test:frontend`, `vitest.config.ts`            | `happy-dom` | Root suite outside `server/**`, including `src/**` and `util/**/*.test.ts`, minus explicit gate tests.                     |
-| Explicit frontend gates     | `pnpm test:gates`, `vitest.config.ts`                              | `happy-dom` | `src/ts/__tests__/**/*.test.ts` and `src/lib/_audit/**/*.test.ts`.                                                         |
-| Full frontend tests         | `pnpm test:frontend:all`, `vitest.config.ts`                       | `happy-dom` | Root suite outside `server/**`, including explicit gate tests.                                                             |
-| Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                       | `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`; reports under `coverage/frontend`.                         |
-| UI coverage map             | `pnpm coverage:ui-map`, `vitest.config.ts`                         | `happy-dom` | Focused UI integration tests mapped over `src/lib/ChatScreens`, `src/lib/Others`, `src/lib/SideBars`, and `src/ts/server`. |
-| Fastify/server tests        | `pnpm test:server` or `pnpm api:test`, `server/fastify/vitest.config.ts` | Node        | `server/fastify/__tests__/**/*.test.ts`.                                                                                   |
-| Backend coverage            | `pnpm coverage:backend`, `server/fastify/vitest.config.ts`         | Node        | Broad coverage over `server/fastify/src/**/*.ts`; reports under `coverage/backend`.                                        |
-| Browser smoke               | `pnpm smoke:fastify-browser` or `pnpm test:smoke`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`; specs start an in-process Fastify app on a random port serving `dist`.                     |
+| Area                        | Command/config                                                                          | Environment | Locations                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Browser/client/domain tests | `pnpm test` or `pnpm test:frontend`, `vitest.config.ts`                                 | `happy-dom` | Root suite outside `server/**`, including `src/**` and `util/**/*.test.ts`, minus explicit gate tests.                     |
+| Explicit frontend gates     | `pnpm test:gates`, `vitest.config.ts`                                                   | `happy-dom` | `src/ts/__tests__/**/*.test.ts` and `src/lib/_audit/**/*.test.ts`.                                                         |
+| Full frontend tests         | `pnpm test:frontend:all`, `vitest.config.ts`                                            | `happy-dom` | Root suite outside `server/**`, including explicit gate tests.                                                             |
+| Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                                            | `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`; reports under `coverage/frontend`.                          |
+| UI coverage map             | `pnpm coverage:ui-map`, `vitest.config.ts`                                              | `happy-dom` | Focused UI integration tests mapped over `src/lib/ChatScreens`, `src/lib/Others`, `src/lib/SideBars`, and `src/ts/server`. |
+| Fastify/server tests        | `pnpm test:server` or `pnpm api:test`, `server/fastify/vitest.config.ts`                | Node        | `server/fastify/__tests__/**/*.test.ts`.                                                                                   |
+| Backend coverage            | `pnpm coverage:backend`, `server/fastify/vitest.config.ts`                              | Node        | Broad coverage over `server/fastify/src/**/*.ts`; reports under `coverage/backend`.                                        |
+| Browser smoke               | `pnpm smoke:fastify-browser` or `pnpm test:smoke`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`; specs start an in-process Fastify app on a random port serving `dist`.                    |
 
 Pick the smallest command that covers the changed area. On a fresh machine, run
 `pnpm exec playwright install chromium` before browser smoke.
@@ -212,6 +212,14 @@ resource applies, bootstrap/refresh/SSE, optimistic command helpers, bridge
 watchers, router selection, array create/delete/reorder flows, `$derived`,
 `$effect`, keyed lists, memo signatures, or render dependency keys.
 
+Two named browser-smoke contracts protect reload/reconciliation behavior:
+`server/fastify/browser-smoke/phase0VisibleState.spec.ts` covers chat-switch
+repainting of the active generation preset, sidebar-toggle survival through
+command/resource reconciliation, and same-character sidebar/history recovery
+after a lineage change.
+`server/fastify/browser-smoke/rerollSwipePersistence.spec.ts` proves persisted
+reroll alternates reconstruct after reload and remain swipe-recoverable.
+
 ## TypeScript And Formatting
 
 - Root `tsconfig.json` is browser-oriented, `strict: false`, allows JS, and uses
@@ -221,6 +229,8 @@ watchers, router selection, array create/delete/reorder flows, `$derived`,
   `vite.config.ts`.
 - `server/fastify/tsconfig.json` is strict, `noEmit: true`, and references
   `tsconfig.client-lib.json`.
+- `tsconfig.browser-smoke.json` typechecks Playwright config/spec/helper sources
+  in the same `pnpm check:server` lane.
 - Prettier uses `prettier-plugin-svelte`, no semicolons, single quotes, and
   print width 120.
 - `.prettierignore` excludes Markdown docs, `docs/`, archived docs, and agent
@@ -265,51 +275,51 @@ flags include `--project`, `--absolute`, `--compact`, and `--timeout-ms`. Set
 
 Server:
 
-| Variable                     | Default                    | Notes                                                                                                      |
-| ---------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `RISU_API_HOST`              | `0.0.0.0`                  | Fastify listen host.                                                                                       |
-| `RISU_API_PORT`              | `6002`                     | Fastify listen port.                                                                                       |
-| `RISU_API_DATA_DIR`          | `<repo>/data`              | SQLite, asset bytes, backups, auth files, legacy import artifacts.                                         |
-| `RISU_API_BODY_LIMIT`        | `104857600`                | JSON/body and multipart file limit.                                                                        |
-| `RISU_API_IMPORT_MAX_BYTES`  | unlimited                  | Streamed device-backup import limit; positive byte count caps, `0`/`unlimited`/`none`/`infinity` opts out. |
-| `RISU_REALM_IMPORT_MAX_EXPANDED_BYTES` | `325058560`       | Expanded payload cap for streamed Realm `charx` imports and Realm-fetched asset totals.                    |
-| `RISU_API_TRACE_MODE`        | unset                      | Enables API request tracing when `agent` or `human`; `0`/`false`/`off`/`none` disable it.                  |
-| `RISU_GENERATION_TRACE_FULL_PROMPT` | unset              | Set to `1` with protocol metrics enabled to write redacted generation prompt sidecars under `data/trace/generation/`. |
-| `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES` | `10485760` | Maximum compressed sidecar size for full-prompt generation traces.                                         |
-| `RISU_WEB_PUSH_VAPID_PUBLIC_KEY` | unset                  | Optional Web Push VAPID public key. If public/private keys are omitted, the server can generate and persist keys under `data/__web_push_vapid_keys.json`. |
-| `RISU_WEB_PUSH_VAPID_PRIVATE_KEY` | unset                 | Optional Web Push VAPID private key. Must be supplied with the public key when using env-provided keys.     |
-| `RISU_WEB_PUSH_CONTACT`      | unset                      | Optional Web Push contact subject used for VAPID details, such as a `mailto:` URL.                         |
-| `TRUST_PROXY`                | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.                                          |
-| `RISU_API_STATIC_ROOT`       | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                                                         |
-| `RISU_HUB_URL`               | `https://sv.risuai.xyz`    | Hub passthrough target.                                                                                    |
-| `RISU_REALM_URL`             | `https://realm.risuai.net` | Realm character import target.                                                                             |
-| `RISU_AGENT_DEV_AUTH_BYPASS` | unset                      | Dev escape hatch; `dev:agent` defaults it to `TRUE`, while `dev:human` defaults it to `FALSE`.             |
-| `LOG_LEVEL`                  | `info`                     | Use `silent` to disable Fastify logger.                                                                    |
-| `RISU_PROTOCOL_METRICS`      | unset                      | Enables structured protocol metrics when `1`, `true`, `yes`, or `on`.                                      |
+| Variable                                           | Default                    | Notes                                                                                                                                                     |
+| -------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RISU_API_HOST`                                    | `0.0.0.0`                  | Fastify listen host.                                                                                                                                      |
+| `RISU_API_PORT`                                    | `6002`                     | Fastify listen port.                                                                                                                                      |
+| `RISU_API_DATA_DIR`                                | `<repo>/data`              | SQLite, asset bytes, backups, auth files, legacy import artifacts.                                                                                        |
+| `RISU_API_BODY_LIMIT`                              | `104857600`                | JSON/body and multipart file limit.                                                                                                                       |
+| `RISU_API_IMPORT_MAX_BYTES`                        | unlimited                  | Streamed device-backup import limit; positive byte count caps, `0`/`unlimited`/`none`/`infinity` opts out.                                                |
+| `RISU_REALM_IMPORT_MAX_EXPANDED_BYTES`             | `325058560`                | Expanded payload cap for streamed Realm `charx` imports and Realm-fetched asset totals.                                                                   |
+| `RISU_API_TRACE_MODE`                              | unset                      | Enables API request tracing when `agent` or `human`; `0`/`false`/`off`/`none` disable it.                                                                 |
+| `RISU_GENERATION_TRACE_FULL_PROMPT`                | unset                      | Set to `1` with protocol metrics enabled to write redacted generation prompt sidecars under `data/trace/generation/`.                                     |
+| `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES` | `10485760`                 | Maximum compressed sidecar size for full-prompt generation traces.                                                                                        |
+| `RISU_WEB_PUSH_VAPID_PUBLIC_KEY`                   | unset                      | Optional Web Push VAPID public key. If public/private keys are omitted, the server can generate and persist keys under `data/__web_push_vapid_keys.json`. |
+| `RISU_WEB_PUSH_VAPID_PRIVATE_KEY`                  | unset                      | Optional Web Push VAPID private key. Must be supplied with the public key when using env-provided keys.                                                   |
+| `RISU_WEB_PUSH_CONTACT`                            | unset                      | Optional Web Push contact subject used for VAPID details, such as a `mailto:` URL.                                                                        |
+| `TRUST_PROXY`                                      | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.                                                                                         |
+| `RISU_API_STATIC_ROOT`                             | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                                                                                                        |
+| `RISU_HUB_URL`                                     | `https://sv.risuai.xyz`    | Hub passthrough target.                                                                                                                                   |
+| `RISU_REALM_URL`                                   | `https://realm.risuai.net` | Realm character import target.                                                                                                                            |
+| `RISU_AGENT_DEV_AUTH_BYPASS`                       | unset                      | Dev escape hatch; `dev:agent` defaults it to `TRUE`, while `dev:human` defaults it to `FALSE`.                                                            |
+| `LOG_LEVEL`                                        | `info`                     | Use `silent` to disable Fastify logger.                                                                                                                   |
+| `RISU_PROTOCOL_METRICS`                            | unset                      | Enables structured protocol metrics when `1`, `true`, `yes`, or `on`.                                                                                     |
 
 Local/dev:
 
-| Variable                         | Default             | Notes                                                                                 |
-| -------------------------------- | ------------------- | ------------------------------------------------------------------------------------- |
-| `RISU_API_RESTART_FLAG`          | `.risu-api-restart` | Flag file watched by `pnpm api:dev:flag`.                                             |
-| `RISU_AGENT_DEV_HOST`            | `127.0.0.1`         | Host used by `pnpm dev:agent` / `pnpm dev:human` for both spawned processes.          |
-| `RISU_AGENT_DEV_PORT`            | `6418`              | Frontend port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6002`.               |
-| `RISU_AGENT_API_PORT`            | `6419`              | Fastify port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6001`.                |
-| `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE` for `dev:agent`, `FALSE` for `dev:human` | Protected API routes ignore password auth when enabled. |
-| `RISU_TS_AGENT_TSSERVER_LOG`     | unset               | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                |
-| `RISU_TS_AGENT_TIMEOUT_MS`       | `30000`             | Default tsserver request timeout for `pnpm ts:agent`; `--timeout-ms` overrides it.    |
-| `RISU_TS_AGENT_DEBUG`            | unset               | Echo tsserver stderr while debugging `pnpm ts:agent`.                                 |
-| `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`              | Set by `pnpm dev:agent` / `pnpm dev:human`; `alertTOS()` returns accepted without showing the TOS modal. |
+| Variable                         | Default                                         | Notes                                                                                                    |
+| -------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `RISU_API_RESTART_FLAG`          | `.risu-api-restart`                             | Flag file watched by `pnpm api:dev:flag`.                                                                |
+| `RISU_AGENT_DEV_HOST`            | `127.0.0.1`                                     | Host used by `pnpm dev:agent` / `pnpm dev:human` for both spawned processes.                             |
+| `RISU_AGENT_DEV_PORT`            | `6418`                                          | Frontend port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6002`.                                  |
+| `RISU_AGENT_API_PORT`            | `6419`                                          | Fastify port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6001`.                                   |
+| `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE` for `dev:agent`, `FALSE` for `dev:human` | Protected API routes ignore password auth when enabled.                                                  |
+| `RISU_TS_AGENT_TSSERVER_LOG`     | unset                                           | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                                   |
+| `RISU_TS_AGENT_TIMEOUT_MS`       | `30000`                                         | Default tsserver request timeout for `pnpm ts:agent`; `--timeout-ms` overrides it.                       |
+| `RISU_TS_AGENT_DEBUG`            | unset                                           | Echo tsserver stderr while debugging `pnpm ts:agent`.                                                    |
+| `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`                                          | Set by `pnpm dev:agent` / `pnpm dev:human`; `alertTOS()` returns accepted without showing the TOS modal. |
 
 Client/build:
 
-| Variable                                                                         | Notes                                                            |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `RISU_API_PROXY_TARGET`                                                          | Vite dev proxy target for `/api`.                                |
-| `VITE_RISU_LEGAL_CONFIGURED`                                                     | Controls legal/setup gating in builds and smoke.                 |
-| `VITE_FASTIFY_BROWSER_SMOKE`                                                     | Enables browser smoke hook and fixed smoke password setup/login. |
+| Variable                                                                         | Notes                                                                                                                   |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `RISU_API_PROXY_TARGET`                                                          | Vite dev proxy target for `/api`.                                                                                       |
+| `VITE_RISU_LEGAL_CONFIGURED`                                                     | Controls legal/setup gating in builds and smoke.                                                                        |
+| `VITE_FASTIFY_BROWSER_SMOKE`                                                     | Enables browser smoke hook and fixed smoke password setup/login.                                                        |
 | `VITE_RISU_LITE`                                                                 | Enables lite-mode consumers in settings/theme/legacy mobile code; does not mount `LiteMain` or the legacy mobile shell. |
-| `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                             |
+| `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                                                                                    |
 
 Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
 `UPDATE_FIXTURES`, `RISU_DIRECT_REALM_IMPORT_TEST`,

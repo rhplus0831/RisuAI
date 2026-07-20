@@ -1,31 +1,31 @@
 # Generated Files And Legacy Caveats
 
-Last audited: 2026-07-17.
+Last audited: 2026-07-20.
 
 These notes help avoid spending time in files that look important but are
 generated, local-only, historical, vendored, or intentionally no-port.
 
 ## Do Not Hand-Edit As Source
 
-| Path                                            | Why                                                                                                                                                    |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `dist/`                                         | Vite build output plus client-lib declarations under `dist/client-types`. Regenerate with `pnpm build`/`pnpm build:site` or the client-lib `tsc` step. |
-| `node_modules/`, `server/fastify/node_modules/` | Installed dependencies.                                                                                                                                |
-| `coverage/`                                     | Local coverage reports from frontend/backend/UI coverage scripts.                                                                                       |
-| `test-results/`                                 | Playwright/test output.                                                                                                                                |
-| `blobs-for-test/`                               | Ignored local binary/test scratch payloads.                                                                                                             |
-| `*.tsbuildinfo`                                 | TypeScript incremental build artifacts, including `tsconfig.client-lib.tsbuildinfo`.                                                                   |
-| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, request/generation body sidecars and optional tsserver logs under `data/trace/`, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
-| `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                                               |
-| `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                            |
-| `public/assets/`                                | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                                     |
-| `public/plugin_start.7z`                        | Packaged starter plugin archive.                                                                                                                       |
-| `src/etc/docs/`, `src/etc/o200k_base.json`      | Bundled/static documentation and tokenizer payloads; treat as static payloads unless intentionally updating them.                                       |
-| `src/ts/rpack/`                                 | Vendored rpack implementation; excluded from Prettier.                                                                                                 |
-| `src/ts/process/__fixtures__/expected/`         | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`.                                                                                |
-| `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                                                    |
-| `*.snap` under test fixtures                    | Vitest snapshots; update through the relevant test workflow.                                                                                           |
-| `server/fastify/browser-smoke/*-snapshots/*.png` | Tracked Playwright visual baselines, not scratch output. Update only for an intentional visible change through the smoke workflow.                    |
+| Path                                             | Why                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dist/`                                          | Vite build output plus client-lib declarations under `dist/client-types`. Regenerate with `pnpm build`/`pnpm build:site` or the client-lib `tsc` step.                                                                                                                                                      |
+| `node_modules/`, `server/fastify/node_modules/`  | Installed dependencies.                                                                                                                                                                                                                                                                                     |
+| `coverage/`                                      | Local coverage reports from frontend/backend/UI coverage scripts.                                                                                                                                                                                                                                           |
+| `test-results/`                                  | Playwright/test output.                                                                                                                                                                                                                                                                                     |
+| `blobs-for-test/`                                | Ignored local binary/test scratch payloads.                                                                                                                                                                                                                                                                 |
+| `*.tsbuildinfo`                                  | TypeScript incremental build artifacts. `tsconfig.client-lib.json` directs its generated artifact under `dist/client-types/`.                                                                                                                                                                               |
+| `data/`                                          | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, request/generation body sidecars and optional tsserver logs under `data/trace/`, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
+| `scripts/` when present                          | Ignored local scratch/tooling directory.                                                                                                                                                                                                                                                                    |
+| `public/token/`                                  | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                                                                                                                                                                                 |
+| `public/assets/`                                 | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                                                                                                                                                                                          |
+| `public/plugin_start.7z`                         | Packaged starter plugin archive.                                                                                                                                                                                                                                                                            |
+| `src/etc/docs/`, `src/etc/o200k_base.json`       | Bundled/static documentation and tokenizer payloads; treat as static payloads unless intentionally updating them.                                                                                                                                                                                           |
+| `src/ts/rpack/`                                  | Vendored rpack implementation; excluded from Prettier.                                                                                                                                                                                                                                                      |
+| `src/ts/process/__fixtures__/expected/`          | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`.                                                                                                                                                                                                                                     |
+| `src/ts/process/__fixtures__/upstream/`          | Upstream fixture corpus for request/provider tests.                                                                                                                                                                                                                                                         |
+| `*.snap` under test fixtures                     | Vitest snapshots; update through the relevant test workflow.                                                                                                                                                                                                                                                |
+| `server/fastify/browser-smoke/*-snapshots/*.png` | Tracked Playwright visual baselines, not scratch output. Update only for an intentional visible change through the smoke workflow.                                                                                                                                                                          |
 
 `.archived-docs/` files are historical documentation. They may contain
 present-tense statements, commands, and gate references that were true at
@@ -123,6 +123,29 @@ Fastify auth state actually lives under `data/__password`,
 `data/__known_session_token_hashes.json`.
 
 ## Stale Or No-Port Surfaces
+
+The settings UI intentionally omits these imported/legacy keys:
+
+- `coldstorage`, `enableRemoteSaving`, `presetChain`, and `realmDirectOpen`;
+- `showPromptComparison` and `showSavingIcon`;
+- `claudeBatching`, `claudeRetrivalCaching`, `forceProxyAsOpenAI`,
+  `googleClaudeTokenizing`, `removePunctuationHypa`, and `antiServerOverloads`;
+- browser-only `localNetworkMode` and `localNetworkTimeoutSec`.
+
+Some keys remain in serialized compatibility shapes, defaults, or import
+normalizers. That does not make them live controls. Absence is guarded by
+`src/ts/setting/advancedSettingsData.test.ts`,
+`src/ts/setting/displaySettingsData.svelte.test.ts`, and
+`src/ts/setting/utils.test.ts`. Language settings
+also intentionally omit the old UI-translation template download, guarded by
+`src/ts/setting/languageSettingsData.test.ts`; translation-cache import/export
+remains current.
+
+The automatic cold-storage setting is retired, but recovery of imported legacy
+character/chat archives is live through `src/ts/process/coldstorage.svelte.ts`
+and the Fastify recovery commands. The frozen Advanced Settings usage-statistics
+dialog is also absent, guarded by
+`src/lib/Setting/Pages/Advanced/SettingsExportButtons.svelte.test.ts`.
 
 - `src/LiteMain.svelte` is unwired. Live lite mode is `VITE_RISU_LITE` driving
   `src/ts/lite.ts` plus consumers such as settings, color scheme, and legacy

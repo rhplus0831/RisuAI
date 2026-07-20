@@ -1,23 +1,24 @@
 # Data And Events
 
-Last audited: 2026-07-17.
+Last audited: 2026-07-20.
 
 Fastify owns durable state. The browser reads authenticated REST resources and
 sends revision-checked commands or explicit server-owned mutation requests.
 
 ## Stores
 
-| Store | Location | Role |
-| --- | --- | --- |
-| SQLite | `data/risu.db` | Authoritative schema/revision/lineage plus normalized domain and operational tables. |
-| Asset bytes | `data/assets/<sha256>.<ext>` | Content-addressed supported binaries; metadata lives in SQLite `assets`. |
-| Backups | `data/backups/<id>/` | Database snapshot, manifest, assets, and legacy storage when present; restore uses an explicit table allowlist. |
-| Legacy `db.json` | `data/db.json` | Import-only input renamed to `db.json.migrated` after boot conversion. |
-| Legacy storage | `data/save/<hex-key>` | Compatibility bytes for `/api/v1/storage/*`; guarded writes do not bump the domain revision. |
-| Auth files | `data/__password`, `data/__known_public_key_hashes.json`, `data/__known_session_token_hashes.json` | Single-user password, registered browser-key hashes, and optional session-token hashes. |
-| Web Push keys | `data/__web_push_vapid_keys.json` | Generated VAPID keypair; subscription rows live in SQLite. |
-| Resource cache | Browser IndexedDB `risu-resource-cache-v1` | Disposable authenticated-hash read cache; never offline or authoritative state. |
-| Mutation outbox | Browser IndexedDB `risu-pending-mutations-v1` | Crash-recovery journal with AES-GCM-encrypted intent payloads plus plaintext scope/order metadata and receipt-ACK rows; never server truth. |
+| Store            | Location                                                                                           | Role                                                                                                                                        |
+| ---------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQLite           | `data/risu.db`                                                                                     | Authoritative schema/revision/lineage plus normalized domain and operational tables.                                                        |
+| Asset bytes      | `data/assets/<sha256>.<ext>`                                                                       | Content-addressed supported binaries; metadata lives in SQLite `assets`.                                                                    |
+| Inlay catalog    | SQLite `inlay_catalog`                                                                             | Revisioned names, dimensions, and aliases keyed to immutable `assets` rows; the browser keeps a separate read projection.                   |
+| Backups          | `data/backups/<id>/`                                                                               | Database snapshot, manifest, assets, and legacy storage when present; restore uses an explicit table allowlist.                             |
+| Legacy `db.json` | `data/db.json`                                                                                     | Import-only input renamed to `db.json.migrated` after boot conversion.                                                                      |
+| Legacy storage   | `data/save/<hex-key>`                                                                              | Compatibility bytes for `/api/v1/storage/*`; guarded writes do not bump the domain revision.                                                |
+| Auth files       | `data/__password`, `data/__known_public_key_hashes.json`, `data/__known_session_token_hashes.json` | Single-user password, registered browser-key hashes, and optional session-token hashes.                                                     |
+| Web Push keys    | `data/__web_push_vapid_keys.json`                                                                  | Generated VAPID keypair; subscription rows live in SQLite.                                                                                  |
+| Resource cache   | Browser IndexedDB `risu-resource-cache-v1`                                                         | Disposable authenticated-hash read cache; never offline or authoritative state.                                                             |
+| Mutation outbox  | Browser IndexedDB `risu-pending-mutations-v1`                                                      | Crash-recovery journal with AES-GCM-encrypted intent payloads plus plaintext scope/order metadata and receipt-ACK rows; never server truth. |
 
 Primary boundaries: `db.ts` owns schema/migrations/revision, `repository.ts`
 owns domain load/write/resource-read/import/applyImport/assets/backups,
@@ -29,16 +30,16 @@ preserves displaced/new candidates as alternates, while send/continue clears the
 reroll buffer for the appended path. Per-chat `hypaV3Data` lives in
 `chat_hypa_v3`.
 
-`CURRENT_SCHEMA_VERSION` is 25. SQLite includes settings; character, chat,
+`CURRENT_SCHEMA_VERSION` is 26. SQLite includes settings; character, chat,
 message, and per-chat memory rows; split collections; assets; command events and
-mutation receipts; push subscriptions; Hypa V3 memory state; and generation
+mutation receipts; the inlay catalog; push subscriptions; Hypa V3 memory state; and generation
 finalization retries. Migration v22 drops the retired
 `collection_body_revisions` and `projection_body_cache_state` tables; v23
 persists stable ids for legacy global lorebooks and entries; v24 adds durable
 command-mutation receipts; v25 adds persistent database lineage, durable active
-writer ownership/epochs, and acknowledged-receipt tombstones. Current browser
-state is rebuilt from concrete REST resources rather than a cached database
-projection.
+writer ownership/epochs, and acknowledged-receipt tombstones; v26 adds the
+`inlay_catalog` table. Current browser state is rebuilt from concrete REST
+resources rather than a cached database projection.
 
 Prompt-template ownership follows the split-preset contract:
 `prompt_presets.prompt_template` is the durable owner for modern prompt preset
@@ -151,9 +152,9 @@ protocol keys to concrete REST reads. Examples include `characterSelection`,
 `promptItem`/`modelPreset`/`promptPreset`/`translatorPreset`/`loadout`,
 `modelProfile`, `agentPreset`, `agentPresetDeleted`, `persona`,
 `legacyBotPreset`, `pluginCollection`, `pluginCollectionWithProvider`,
-`pluginProvider`, `pluginStorage`, `asset`, `generation`, and
-`chatTranscript`. The broad `plugin` key remains a compatibility case for
-retained events from older servers.
+`pluginProvider`, `pluginStorage`, `asset`, `generation`, `chatTranscript`, and
+the standalone `inlayCatalog` resource. The broad `plugin` key remains a
+compatibility case for retained events from older servers.
 
 Grouped settings events reread `/api/v1/settings/:group`; broader settings-like
 events reread `/api/v1/settings`. Collection events reread the owning
@@ -165,11 +166,12 @@ Message/transcript events reread the complete affected chat body; an
 unambiguous generation event rereads only its changed suffix. Character
 lorebook events use the single or bulk lorebook endpoint. `asset` and explicit
 revision-only events advance the applied revision without an application-data
-read. Broad `state`/`lorebook` events, unknown resources, missing required owner
-ids, and revision gaps fall back to a common-revision refresh of settings,
-collections, and characters. Plugin storage is always applied as a complete
-map, with pending local operations replayed over the incoming value until their
-commands settle.
+read. `inlayCatalog` events reread `GET /api/v1/inlay-assets`. Broad
+`state`/`lorebook` events, unknown resources, missing required owner ids, and
+revision gaps fall back to a common-revision refresh of settings, collections,
+characters, and the inlay catalog. Plugin storage is always applied as a
+complete map, with pending local operations replayed over the incoming value
+until their commands settle.
 
 Character list and row responses omit message bodies and, when
 `enableLorebookStubs` is true, character lorebooks. Resource application keeps
@@ -193,6 +195,10 @@ not ordinary browser `/commands/*` resource endpoints:
   metadata/bytes outside the domain revision and emit no command event;
   duplicate uploads are idempotent. Import and Realm flows can instead persist
   staged assets through revisioned `asset.created` transactions.
+- Inlay catalog `PUT`/`DELETE /api/v1/commands/inlay-assets/:assetId` operations
+  are ordinary revisioned commands. They update only `inlay_catalog`, emit
+  `inlayCatalog.upserted`/`inlayCatalog.deleted`, and never rewrite immutable
+  asset bytes.
 - Periodic asset GC deletes orphan asset metadata/files after the grace window
   without a revision bump or command event.
 - Legacy storage write/remove mutates `data/save/<hex-key>` compatibility files
@@ -210,9 +216,11 @@ not ordinary browser `/commands/*` resource endpoints:
   streamed-so-far text through the raw cancel path.
 - Raw message translation uses
   `POST /api/v1/commands/messages/:messageId/translate`: the server detaches the
-  provider work from the browser request, exposes active rows through
-  `activeMessageTranslations`, then persists the translated text through a
-  targeted message command event if the source row is still unchanged.
+  provider work from the browser request and persists through a targeted message
+  command event only when both the source message and its previous translation
+  still match. Bootstrap `activeMessageTranslations` includes running and
+  bounded recent terminal recovery rows; retention is owned by
+  [Backend Map](backend.md#generation-and-memory).
 - Memory job create/cancel writes durable memory-job state and emits memory
   events without a domain revision.
 - The startup push service loads or generates VAPID keys; push notification
@@ -266,18 +274,20 @@ read-only requests omit it. Bootstrap does not return durable application data.
 If no database exists, the browser calls
 `commands/state/initialize`; the winning client reuses the accepted runtime
 metadata/revision, while a client that lost the initialization race retries
-bootstrap read-only. Before it loads the three root resources, the browser
+bootstrap read-only. Before it loads the four root resources, the browser
 prepares the lineage-scoped mutation outbox, flushes durable receipt
 acknowledgements, and replays encrypted pending intents. Retained transient or
 unreadable intents block resource hydration; only a drained outbox proceeds to
 the common-revision root read.
 
-The common-revision root read owns settings, split collections, and the
-message-free character list. Chat messages, per-chat memory data, reroll
-alternates, character lorebooks, legacy preset bodies, and modern prompt
-templates hydrate through owner-specific endpoints. Cache-capable reads always
-have a full authenticated GET fallback, and provider secrets are masked before
-any resource value is hashed or returned.
+The common-revision full read owns settings, split collections, the
+message-free character list, and the standalone inlay catalog. The first three
+compose the compatibility database view; the catalog is a separate browser
+projection. Chat messages, per-chat memory data, reroll alternates, character
+lorebooks, legacy preset bodies, and modern prompt templates hydrate through
+owner-specific endpoints. Cache-capable reads always have a full authenticated
+GET fallback, and provider secrets are masked before any resource value is
+hashed or returned.
 
 The canonical endpoint, cache-cap, shell/body, browser-owner, and stale-response
 map is [Server Resources And Bridges](server-resources-and-bridges.md#read-and-hydration-endpoints).
@@ -301,7 +311,8 @@ events into the active command batch, skip revisions already covered by the
 applied-resource cursor, use verified local effects for contiguous command
 responses, and issue targeted REST reads for the remainder. Gaps, unknown
 resources, replay misses, or invalidation failures fall back to a complete
-settings/collections/characters refresh. The browser keeps separate known-server
+settings/collections/characters/inlay-catalog refresh. The browser keeps
+separate known-server
 and applied-resource revision cursors: mutation base revisions and hydration
 freshness use the known cursor, while SSE replay, gap detection, and
 already-applied skips use only the applied cursor. An own-origin event that
@@ -323,8 +334,8 @@ frames and stops once only protected frames remain. They emit viewer heartbeat
 comments and can persist streamed-so-far text through raw cancel/finalization
 retry paths. Bootstrap `activeGenerationJobs` exposes
 running durable jobs, including mode and regenerate message id when relevant,
-while `activeMessageTranslations` exposes in-flight detached raw-message
-translation rows.
+while `activeMessageTranslations` exposes running plus bounded recent terminal
+raw-message translation rows for completion polling.
 For a negotiated inline, non-replayable stream, `done.result` may be absent when
 non-empty token frames already delivered the same completion. Durable streams
 always retain the terminal result so their protected replay is self-contained.

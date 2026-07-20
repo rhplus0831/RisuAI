@@ -1,11 +1,12 @@
 # Server Resources And Bridges
 
-Last audited: 2026-07-17.
+Last audited: 2026-07-20.
 
 Fastify owns durable state. The browser reads concrete REST resources into
-Svelte-owned settings, collections, and characters state, fetches large bodies
-only when needed, and routes persistent edits through command helpers or
-explicit server-owned mutation routes.
+Svelte-owned settings, collections, and characters state plus a standalone
+inlay-catalog projection, fetches large bodies only when needed, and routes
+persistent edits through command helpers or explicit server-owned mutation
+routes.
 
 ## Bootstrap And Initial Resources
 
@@ -31,9 +32,9 @@ explicit server-owned mutation routes.
   root-resource hydration so unresolved local work is not hidden by fresh reads.
 - `loadInitialServerResources()` concurrently reads settings, collections, and
   characters through their hash-aware POST resources (with compatible full GET
-  fallback). All three responses must report one common revision. Concurrent
-  writes that split the revisions cause the complete read set to retry, up to
-  `FULL_RESOURCE_REFRESH_MAX_ATTEMPTS`.
+  fallback), plus `/api/v1/inlay-assets`. All four responses must report one
+  common revision. Concurrent writes that split the revisions cause the
+  complete read set to retry, up to `FULL_RESOURCE_REFRESH_MAX_ATTEMPTS`.
 - The consistent response set is applied through one trusted resource scope.
   The settings, collections, and characters state objects keep their own
   revision/status/error metadata. The character list contains message-free chat
@@ -54,7 +55,7 @@ explicit server-owned mutation routes.
 | Path                                              | Role                                                                                                                                 |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/ts/server/bootstrap.ts`                      | Validates the small runtime bootstrap and exposes writer-intent/read-only variants.                                                  |
-| `src/ts/server/resourceReads.ts`                  | Browser wrappers and response validation for settings, collections, and character reads.                                             |
+| `src/ts/server/resourceReads.ts`                  | Browser wrappers and response validation for settings, collections, characters, and the inlay catalog.                               |
 | `src/ts/server/resourceCache.ts`                  | Disposable, non-authoritative SHA-256 manifests and verified IndexedDB values used only after authenticated hash confirmation.       |
 | `src/ts/server/pendingMutationOutbox.ts`          | AES-GCM-encrypted intent payloads plus plaintext scope/order indexes and durable receipt-acknowledgement rows.                       |
 | `src/ts/server/durableMutationDispatch.ts`        | Persists an intent before dispatch, classifies replay outcomes, and completes accepted intents before acknowledging server receipts. |
@@ -68,12 +69,14 @@ explicit server-owned mutation routes.
 | `src/ts/server/characterShellHydration.svelte.ts` | Fetches a full character row when a consumer encounters a shell row.                                                                 |
 | `src/ts/server/promptTemplateHydration.ts`        | Fetches the template owned by a selected or explicitly requested prompt preset.                                                      |
 | `src/ts/server/messageTranslationJobs.ts`         | Tracks detached raw-message translation rows from bootstrap and refresh polling.                                                     |
+| `src/ts/server/inlayCatalog.ts`                   | Standalone browser projection and revision-aware writes for inlay metadata.                                                          |
 | `src/ts/process/reattach.ts`                      | Reattaches running durable generation jobs reported by bootstrap.                                                                    |
 
-`getResourceDatabase()` and the `getDatabase()` adapter compose the three
-resource owners into a transitional aggregate `Database` view. This view is not
-a second persistence layer. New code should read or update the owning resource
-slice whenever practical, and all durable writes still go through API commands.
+`getResourceDatabase()` and the `getDatabase()` adapter compose the settings,
+collections, and characters owners into a transitional aggregate `Database`
+view. The inlay catalog remains standalone. Neither is a second persistence
+layer. New code should read or update the owning resource slice whenever
+practical, and all durable writes still go through API commands.
 
 ## Durable Mutation Recovery, Command Queue, And Local Acknowledgements
 
@@ -115,7 +118,7 @@ ids match. Effects that depend on an unchanged optimistic target also carry the
 relevant settings-group, collection, character-row/lorebook, lorebook-page, or
 prompt-owner projection epoch and reject tainted targets.
 
-The acknowledgement path now covers settings patches; character, selection,
+The acknowledgement path covers settings patches; character, selection,
 order, chat-structure, chat-message, and translation mutations; plugin storage
 and plugin/module collections; prompt items and split/legacy presets; Agent
 Preset, persona, translator-preset, loadout, lorebook, and script-definition
@@ -125,6 +128,11 @@ an epoch change, a revision gap, or a foreign event falls back to authoritative
 resource invalidation. A complete refresh advances the destructive-refresh
 token before applying its first slice, so even a partial failed apply cannot
 later acknowledge stale optimism.
+
+Mutation-facing UI must distinguish `accepted`, `queued`, and `failed` helper
+outcomes. `queued` means recoverable local intent was retained, not that the
+server accepted it; callers should keep newer drafts, surface the outcome, and
+must not close an editor or announce success merely because dispatch began.
 
 ## Event Invalidation And Recovery
 
@@ -158,11 +166,13 @@ coalesced event batch, then converts each resource key into concrete reads:
 - Prompt-item events refresh their explicit modern prompt-preset owner (or the
   top-level compatibility collection); prompt-preset selection/update/delete
   events refresh the selected owner when ownership may have changed.
+- Inlay-catalog events read `/api/v1/inlay-assets`; catalog entries are a
+  standalone projection and are not folded into the aggregate database view.
 - Asset events require no application-data read; the applied revision still
   advances.
 - Broad `state`/`lorebook` events, unknown resources, missing required owner
   ids, and event revision gaps use a complete
-  settings/collections/characters refresh.
+  settings/collections/characters/inlay-catalog refresh.
 
 Targeted responses must be at least as new as the invalidating event. Per-slice,
 per-collection, character-list, character-row, hydrated-body, and prompt-owner
@@ -208,6 +218,11 @@ cached data is never used offline or without an authenticated server response
 confirming its hash. It is separate from the mutation outbox, whose retained
 encrypted intents represent unsent local work and must not be cleared as a cache.
 
+The inlay catalog intentionally bypasses the hash cache. Its read joins
+`inlay_catalog` metadata to authoritative `assets` metadata; revisioned PUT and
+DELETE commands are documented in
+[Assets And Saves](assets-and-saves.md#inlay-catalog).
+
 | Data                                               | Endpoint                                                                                         | Browser owner                                       |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
 | Persisted settings fields                          | Cache `POST /api/v1/settings`; full `GET` fallback                                               | `resourceReads.ts`, `settingsResourceState`         |
@@ -215,6 +230,7 @@ encrypted intents represent unsent local work and must not be cleared as a cache
 | Every split collection                             | Cache `POST /api/v1/collections`; full `GET` fallback                                            | `resourceReads.ts`, `collectionsResourceState`      |
 | One split collection                               | Cache `POST /api/v1/collections/:name`; full `GET` fallback                                      | Event-driven targeted invalidation                  |
 | Message-free character list/order/current          | Cache `POST /api/v1/characters`; full `GET` fallback                                             | `resourceReads.ts`, `charactersResourceState`       |
+| Inlay metadata catalog                             | `GET /api/v1/inlay-assets`                                                                       | `inlayCatalog.ts`                                   |
 | Character order only                               | `GET /api/v1/characters/order`                                                                   | Character-order invalidation                        |
 | Character selection/interaction                    | `GET /api/v1/characters/:id/selection`                                                           | Character-selection invalidation                    |
 | One character row                                  | `GET /api/v1/characters/:id`                                                                     | Targeted invalidation and character-shell hydration |
@@ -314,7 +330,7 @@ that affect rendered state should follow the visible-state policy in
 | File                               | Role                                                                                                                                                                                 |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `bridgeFlush.ts`                   | Flushes pending bridge patches on `pagehide` / hidden visibility with `keepalive`.                                                                                                   |
-| `pendingBridgeFlushRegistry.ts`    | Registers lazily loaded/component-owned pending writes for page-exit and owner-targeted flushes without importing every feature at bootstrap.                                      |
+| `pendingBridgeFlushRegistry.ts`    | Registers lazily loaded/component-owned pending writes for page-exit and owner-targeted flushes without importing every feature at bootstrap.                                        |
 | `settingsBridge.svelte.ts`         | Debounced settings groups through `PATCH /commands/settings/:group`, equality-noop suppression, rollback-aware patches.                                                              |
 | `characterBridge.svelte.ts`        | Character profile/draft bridging through `PATCH /commands/characters/:id`.                                                                                                           |
 | `chatBridge.svelte.ts`             | Chat metadata and chat-folder bridging through `PATCH /commands/chats/:id` and chat-folder routes.                                                                                   |

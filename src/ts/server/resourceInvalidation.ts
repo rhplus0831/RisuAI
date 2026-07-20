@@ -182,7 +182,7 @@ export async function loadInitialServerResources(
 
 /**
  * Refresh all database resources at one common server revision. If concurrent
- * writes make the three reads disagree, retry the complete read set a bounded
+ * writes make the four reads disagree, retry the complete read set a bounded
  * number of times. Nothing is applied until one consistent set is available.
  */
 export async function refreshAllServerResources(

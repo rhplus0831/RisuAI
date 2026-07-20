@@ -1,6 +1,6 @@
 # Assets And Saves
 
-Last audited: 2026-07-17.
+Last audited: 2026-07-20.
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -21,6 +21,7 @@ data. Save/import/export and user-upload flows should use server asset ids and
 | `server/fastify/src/assetGc.ts`                                             | Reference-counted asset garbage collection over a minimal SQLite reference shape.                 |
 | `server/fastify/src/risuSave/assetReferences.ts`                            | Known-field asset-reference walker for import/export/GC reports.                                  |
 | `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`                     | Browser upload/read adapters, asset URL normalization, and private bulk-upload existence probing. |
+| `src/ts/server/inlayCatalog.ts`                                             | Browser catalog projection plus revisioned metadata upsert/delete helpers.                        |
 | `src/ts/server/settingsMediaAssetUpload.ts`, `src/ts/process/stableDiff.ts` | Durable image-setting asset references and lazy provider-request base64 materialization.          |
 
 Asset ids are lowercase sha256 hex strings. Metadata lives in SQLite `assets`;
@@ -50,7 +51,7 @@ provider request. Imported base64-only settings and inline fallbacks for an
 unreadable imported asset reference remain supported.
 
 `runAssetGc()` walks known asset-reference fields across a minimal SQLite
-reference shape and scans `messages.data` for inlay references, then removes
+reference shape, the `inlay_catalog`, and `messages.data` inlay references, then removes
 unreferenced metadata and stray files. The minimal GC shape currently loads
 settings, module assets, persona icons, bot preset images, character/chat
 reference fields, and active message inlays rather than a full repository
@@ -59,6 +60,22 @@ images; those split preset images are not part of the minimal GC shape
 today, so keep `assetGc.ts` in sync when adding reference-bearing split tables.
 A grace window protects upload-then-reference races. GC does not bump the
 revision or emit command events.
+
+### Inlay Catalog
+
+`inlay_catalog` is revisioned metadata over authoritative `assets` rows. Each
+entry is keyed by `asset_id` and stores a display name, optional dimensions,
+and aliases; the read joins in extension, size, and the derived
+image/audio/video/signature type. `GET /api/v1/inlay-assets` returns the complete
+authenticated catalog. `PUT /api/v1/commands/inlay-assets/:assetId` and
+`DELETE /api/v1/commands/inlay-assets/:assetId` emit `inlayCatalog.upserted` or
+`inlayCatalog.deleted` and update only this targeted table. The browser keeps
+the catalog outside the aggregate compatibility database and refreshes it as a
+fourth root resource. See
+[Server Resources And Bridges](server-resources-and-bridges.md#bootstrap-and-initial-resources)
+for reconciliation behavior. Persistence and client projection behavior are
+guarded by `server/fastify/__tests__/inlayCatalog.test.ts` and
+`src/ts/server/inlayCatalog.test.ts`.
 
 ## `.risu` And Bundle Routes
 
@@ -109,6 +126,25 @@ before persistence, including custom or fallback non-sha256 media filenames.
 `src/ts/server/backups.ts` uses the `x-risu-estimated-backup-bytes` progress
 header when present; UI-facing wrappers live in `src/ts/storage/backup.ts`.
 
+## Client Content Exchange
+
+Portable client formats outside whole-database saves remain browser workflows:
+
+| Owner                                                                                            | Exchange contract                                                                                                                        |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/ts/storage/exportAsDataset.ts`                                                              | Dataset JSON export strictly hydrates every chat and character lorebook before serialization; any incomplete hydration fails the export. |
+| `src/ts/characters.ts`                                                                           | Chat import/export.                                                                                                                      |
+| `src/ts/characterCards.ts`                                                                       | Character-card import/export, including packaged card assets.                                                                            |
+| `src/ts/persona.ts`                                                                              | Persona PNG import/export.                                                                                                               |
+| `src/ts/storage/database.svelte.ts`                                                              | Legacy and split preset exchange, including `.risup`.                                                                                    |
+| `src/ts/process/lorebook.svelte.ts`, `src/ts/process/scripts.ts`, `src/ts/translator/presets.ts` | Lorebook, regex-script, and `.risutl` translator-preset exchange.                                                                        |
+
+Module and MCP-bearing `.risum` exchange is owned by
+[Plugins And MCP](plugins-and-mcp.md#fastify-mode-limits). Dataset/chat guards
+are `src/ts/storage/exportAsDataset.test.ts`,
+`src/ts/characters.exportChat.test.ts`, and
+`src/ts/characters.importChat.test.ts`.
+
 ## Realm Import
 
 `POST /api/v1/import/realm-character` accepts JSON with a Realm id, fetches
@@ -156,6 +192,7 @@ store.
 | `server/fastify/src/routes/backups.ts`                                                                | Create/list/restore/delete backup routes.                              |
 | `server/fastify/src/repository.ts`                                                                    | Snapshot creation, manifest writing, SQLite table restore, file swaps. |
 | `src/ts/server/backups.ts`                                                                            | Browser adapter for backup/import/export routes and progress headers.  |
+| `src/ts/server/replacementDatabaseOwnership.ts`                                                       | Adopts replacement lineage/writer ownership before refreshing state.   |
 | `src/ts/storage/backup.ts`, `src/ts/globalApi.svelte.ts`, `src/lib/Setting/Pages/UserSettings.svelte` | UI-facing backup/import/export wrappers and settings flows.            |
 
 Backups live under `data/backups/<id>/`. Current backups contain
@@ -171,7 +208,7 @@ Restore swaps asset/save directories and restores SQLite tables through the
 restore swaps tables from the copied backup DB with `ATTACH`, operational tables
 can be present in the backup file but ignored on restore if they are not allowlisted.
 Keep that allowlist in sync when adding durable tables; split model/prompt
-preset rows are included. `database_metadata`, `command_mutation_receipts`,
+preset rows and `inlay_catalog` are included. `database_metadata`, `command_mutation_receipts`,
 `generation_finalization_retries`, `push_subscriptions`, and
 `memory_legacy_summary_tombstones` may be present in the physical copy but are
 not restored, and Web Push key files are outside the snapshot contract.
@@ -180,19 +217,10 @@ mutation receipts, so a browser outbox scoped to the previous lineage cannot
 replay across that boundary. Older backups containing `db.json` are restored by
 copying the file into the data dir and running `ensureDbJsonImported()`.
 
-Both ordinary and MCP module `.risum` imports are supported in Fastify-backed
-browser mode through the codec in `src/ts/process/modules.ts`. The client decodes
-the envelope, applies the shared import predicate to any embedded MCP
-identifier, and asks for low-level-access confirmation before asset writes only
-when `module.lowLevelAccess` is requested. It uploads embedded assets through
-the server asset adapter and creates the global module through the
-command-backed module route. Stored MCP rows remain special: normal patch and
-enable reject them, generic delete is a revisioned no-op, and
-character/chat/loadout links exclude them. The module
-asset tuple retains its declared filename. For upload classification, supported
-source extensions are reused; non-empty unsupported legacy filename tokens are
-normalized by sniffing PNG/JPEG/WebP/GIF/AVIF bytes and fall back to PNG. A blank
-filename passes through and defaults to PNG in the asset saver.
+Restore and bundle import call `adoptReplacementDatabaseOwnership()` before a
+complete refresh. A changed lineage/writer epoch retires the old projection,
+pending bridge ownership, and registered mutation settlements before the outbox
+admits writes against the replacement database.
 
-See [Plugins And MCP](plugins-and-mcp.md) for the canonical identifier,
-transport, and stored-row lifecycle rules.
+Module `.risum` import, embedded module assets, and MCP stored-row rules are
+owned by [Plugins And MCP](plugins-and-mcp.md).

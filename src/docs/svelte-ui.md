@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-07-17.
+Last audited: 2026-07-20.
 
 The frontend is a Svelte 5 SPA. There is no SvelteKit `src/routes/` tree:
 navigation is URL parsing plus Svelte stores, and `src/App.svelte` chooses the
@@ -15,33 +15,34 @@ commands, generation, assets, storage, Realm import, plugins, or MCP.
 
 ## Fast Triage
 
-| Symptom                                                                              | Inspect first                                                                                                   | Then inspect                                                                                                                             |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| App is stuck on legal, loading, settings, grid, or chat                              | `src/App.svelte`, `src/main.ts`, `src/ts/bootstrap.ts`                                                          | `src/ts/stores.svelte.ts`, `src/ts/router.ts`, `src/styles.css`                                                                          |
-| URL, back/forward, settings section, playground tool, or character route is wrong    | `src/ts/router.ts`, `src/App.svelte` route effects                                                              | `src/ts/router.test.ts`, `src/App.routeEffect.dom.test.ts`                                                                               |
-| Theme, motion, spacing, clipping, colors, font, UI scale, or custom CSS is wrong     | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/animation.ts`, `src/ts/gui/guisize.ts`               | `src/lib/Setting/Pages/DisplaySettings.svelte`, `src/ts/setting/accessibilitySettingsData.ts`                                            |
-| A settings page or left-nav item is wrong                                            | `src/lib/Setting/Settings.svelte`, `src/ts/router.ts` setting slug maps                                         | The concrete `src/lib/Setting/Pages/*.svelte` page                                                                                       |
-| Agent Preset authoring, status, or chat selection is wrong                           | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte` | `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetReferences.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts`, `server/fastify/src/commands/agentPresets.ts` |
-| A model role/profile summary, inherited role, or provider panel visibility is wrong  | `src/lib/Setting/Pages/Model/ModelSettingsShell.svelte`, `ModelProfileRoleList.svelte`, `ModelProfileList.svelte`, `ModelProviderPanel.svelte`, `src/ts/model/modelProfileUiState.ts` | `src/ts/model/modelProfileResolver.ts`, legacy `ModelRoleList.svelte` inside Advanced Legacy Settings, `docs/structure/providers-and-models.md` |
-| A data-driven setting row is missing, hidden, stale, or not saving                   | `src/lib/Setting/SettingRenderer.svelte`, `src/ts/setting/*SettingsData*`, `src/ts/setting/utils.ts`            | `src/lib/Setting/Wrappers/*`, `src/ts/server/settingsBridge.svelte.ts`                                                                   |
-| A shared input/control is visually or behaviorally wrong                             | The primitive in `src/lib/UI/GUI/`                                                                              | The wrapper in `src/lib/Setting/Wrappers/` if it only breaks in settings                                                                 |
-| Chat transcript, composer, send buttons, scroll, or hydration state is wrong         | `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/Chats.svelte`                              | `src/ts/server/chatMessageHydration.svelte.ts`, `src/ts/chatCommands.ts`                                                                 |
-| Message HTML, translation, parser, inlays, or partial edit is wrong                  | `src/lib/ChatScreens/Chat.svelte`, `src/lib/ChatScreens/ChatBody.svelte`, `src/lib/ChatScreens/ChatBodyParseMemo.ts` | `src/ts/parser/`, `src/ts/process/files/`, `src/ts/globalApi.svelte.ts`                                                               |
-| Sidebar, character list, chat list, folders, reorder, or character config is wrong   | `src/lib/SideBars/Sidebar.svelte`, `src/lib/SideBars/SideChatList.svelte`, `src/lib/SideBars/CharConfig.svelte` | `sidebarOrganizer.ts`, `sidebarDrag.ts`, `sidebarCharList.ts`, `chatFolderGrouping.ts`, and the character/chat command helpers           |
-| Alert, popup, bookmark, Hypa V3, loadout, Iris, or plugin warning hides or blocks UI | `src/App.svelte`, `src/lib/Others/AlertComp.svelte`, `src/ts/alert.ts`                                          | The specific modal plus `src/ts/gui/modalFocusTrap.ts`                                                                                   |
-| Grid/mobile character picker is wrong                                                | `src/lib/Others/GridCatalog.svelte`, `src/lib/Mobile/MobileCharacters.svelte`                                   | `src/ts/stores.svelte.ts` mobile stores                                                                                                  |
-| Playground menu/tool routing is wrong                                                | `src/lib/Playground/PlaygroundMenu.svelte`, `src/ts/router.ts`, `src/ts/playground.ts`                          | The specific `src/lib/Playground/*.svelte` tool                                                                                          |
+| Symptom                                                                              | Inspect first                                                                                                                                                                         | Then inspect                                                                                                                                                                |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App is stuck on legal, loading, settings, grid, or chat                              | `src/App.svelte`, `src/main.ts`, `src/ts/bootstrap.ts`                                                                                                                                | `src/ts/stores.svelte.ts`, `src/ts/router.ts`, `src/styles.css`                                                                                                             |
+| URL, back/forward, settings section, playground tool, or character route is wrong    | `src/ts/router.ts`, `src/App.svelte` route effects                                                                                                                                    | `src/ts/router.test.ts`, `src/App.routeEffect.dom.test.ts`                                                                                                                  |
+| Theme, motion, spacing, clipping, colors, font, UI scale, or custom CSS is wrong     | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/animation.ts`, `src/ts/gui/guisize.ts`                                                                                     | `src/lib/Setting/Pages/DisplaySettings.svelte`, `src/ts/setting/accessibilitySettingsData.ts`                                                                               |
+| The whole document moved or window scrolling appeared                                | `src/ts/gui/viewportScrollGuard.ts`, `src/main.ts`, `src/styles.css`                                                                                                                  | Find code that scrolls `window`, `document.scrollingElement`, or an app-root ancestor                                                                                       |
+| A settings page or left-nav item is wrong                                            | `src/lib/Setting/Settings.svelte`, `src/ts/router.ts` setting slug maps                                                                                                               | The concrete `src/lib/Setting/Pages/*.svelte` page                                                                                                                          |
+| Agent Preset authoring, status, or chat selection is wrong                           | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte`                  | `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetReferences.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts`, `server/fastify/src/commands/agentPresets.ts` |
+| A model role/profile summary, inherited role, or provider panel visibility is wrong  | `src/lib/Setting/Pages/Model/ModelSettingsShell.svelte`, `ModelProfileRoleList.svelte`, `ModelProfileList.svelte`, `ModelProviderPanel.svelte`, `src/ts/model/modelProfileUiState.ts` | `src/ts/model/modelProfileResolver.ts`, legacy `ModelRoleList.svelte` inside Advanced Legacy Settings, `docs/structure/providers-and-models.md`                             |
+| A data-driven setting row is missing, hidden, stale, or not saving                   | `src/lib/Setting/SettingRenderer.svelte`, `src/ts/setting/*SettingsData*`, `src/ts/setting/utils.ts`                                                                                  | `src/lib/Setting/Wrappers/*`, `src/ts/server/settingsBridge.svelte.ts`                                                                                                      |
+| A shared input/control is visually or behaviorally wrong                             | The primitive in `src/lib/UI/GUI/`                                                                                                                                                    | The wrapper in `src/lib/Setting/Wrappers/` if it only breaks in settings                                                                                                    |
+| Chat transcript, composer, send buttons, scroll, or hydration state is wrong         | `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/Chats.svelte`                                                                                                    | `src/ts/server/chatMessageHydration.svelte.ts`, `src/ts/chatCommands.ts`                                                                                                    |
+| Message HTML, translation, parser, inlays, or partial edit is wrong                  | `src/lib/ChatScreens/Chat.svelte`, `src/lib/ChatScreens/ChatBody.svelte`, `src/lib/ChatScreens/ChatBodyParseMemo.ts`                                                                  | `src/ts/parser/`, `src/ts/process/files/`, `src/ts/globalApi.svelte.ts`                                                                                                     |
+| Sidebar, character list, chat list, folders, reorder, or character config is wrong   | `src/lib/SideBars/Sidebar.svelte`, `src/lib/SideBars/SideChatList.svelte`, `src/lib/SideBars/CharConfig.svelte`                                                                       | `sidebarOrganizer.ts`, `sidebarDrag.ts`, `sidebarCharList.ts`, `chatFolderGrouping.ts`, and the character/chat command helpers                                              |
+| Alert, popup, bookmark, Hypa V3, loadout, Iris, or plugin warning hides or blocks UI | `src/App.svelte`, `src/lib/Others/AlertComp.svelte`, `src/ts/alert.ts`                                                                                                                | The specific modal plus `src/ts/gui/modalFocusTrap.ts`                                                                                                                      |
+| Grid/mobile character picker is wrong                                                | `src/lib/Others/GridCatalog.svelte`, `src/lib/Mobile/MobileCharacters.svelte`                                                                                                         | `src/ts/stores.svelte.ts` mobile stores                                                                                                                                     |
+| Playground menu/tool routing is wrong                                                | `src/lib/Playground/PlaygroundMenu.svelte`, `src/ts/router.ts`, `src/ts/playground.ts`                                                                                                | The specific `src/lib/Playground/*.svelte` tool                                                                                                                             |
 
 ## Entrypoints And Shell
 
-| Path                  | Role                                                                                                                                                                                                     |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `index.html`          | Mounts `#app` and loads `/src/main.ts`.                                                                                                                                                                  |
-| `src/main.ts`         | Imports polyfills/storage state, installs the store router, mounts `App.svelte`, optionally installs the Fastify browser smoke hook, calls `loadData()`, initializes hotkeys, and removes `#preloading`. |
-| `src/App.svelte`      | Main render switch and overlay host. It owns legal/loading/settings/grid/sidebar/chat priority and global modal mounting.                                                                                |
-| `src/styles.css`      | Tailwind v4 import, theme variable defaults, full-height app CSS, global chat text CSS, and Tailwind compatibility base rules.                                                                           |
-| `src/ts/bootstrap.ts` | Browser startup coordinator. It loads Fastify resources, starts hydration/events/bridges, then updates UI-derived CSS state.                                                                            |
-| `src/ts/platform.ts`  | Fastify-only platform flag. `isFastifyServer` is hard-coded true.                                                                                                                                        |
+| Path                  | Role                                                                                                                                                                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.html`          | Mounts `#app` and loads `/src/main.ts`.                                                                                                                                                                                            |
+| `src/main.ts`         | Imports polyfills/storage state, installs the store router and viewport scroll guard, mounts `App.svelte`, optionally installs the Fastify browser smoke hook, calls `loadData()`, initializes hotkeys, and removes `#preloading`. |
+| `src/App.svelte`      | Main render switch and overlay host. It owns legal/loading/settings/grid/sidebar/chat priority and global modal mounting.                                                                                                          |
+| `src/styles.css`      | Tailwind v4 import, theme variable defaults, full-height app CSS, global chat text CSS, and Tailwind compatibility base rules.                                                                                                     |
+| `src/ts/bootstrap.ts` | Browser startup coordinator. It loads Fastify resources, starts hydration/events/bridges, then updates UI-derived CSS state.                                                                                                       |
+| `src/ts/platform.ts`  | Fastify-only platform flag. `isFastifyServer` is hard-coded true.                                                                                                                                                                  |
 
 `src/LiteMain.svelte` exists but is not the live entrypoint. Live lite behavior
 comes from `VITE_RISU_LITE`, `src/ts/lite.ts`, and consumers in settings/theme
@@ -50,6 +51,9 @@ and legacy mobile code.
 `src/App.svelte` also owns app-level drag/drop import. Dropped `.risup` files
 import presets, `.risum` files import modules through the Fastify-backed browser
 module path, and other supported files fall through to character/card import.
+Dataset, chat, character-card, persona, preset, lorebook, regex, module, and
+translator-preset exchange entrypoints are mapped in
+[Assets And Saves](../../docs/structure/assets-and-saves.md#client-content-exchange).
 
 ## App Render Priority
 
@@ -67,6 +71,8 @@ Global overlays mount after the main branch. The common blockers are
 `AlertComp`, Realm popup/frame, preset/persona lists, bookmarks, Hypa V3 modal
 and progress, save popup icon, plugin alert modal, popup list, EasyPanel,
 popup editor, loadout modal, Iris modal, and custom sidebar config.
+The saved-toggle management dialog is also app-hosted through
+`src/lib/SideBars/ChatGenerationTogglePresetDialog.svelte`.
 
 If the expected screen is missing, first confirm no higher-priority branch or
 overlay is mounted.
@@ -84,17 +90,17 @@ Routing is implemented in `src/ts/router.ts`. It parses `window.location`, keeps
 `currentRoute`, applies URL changes to stores, and syncs store changes back to
 the URL. Route changes are not file-system based.
 
-| Route                               | Store effect                                                  |
-| ----------------------------------- | ------------------------------------------------------------- |
-| `/`                                 | Home, `selectedCharID = -1`, settings/playground closed.      |
+| Route                               | Store effect                                                                              |
+| ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| `/`                                 | Home, `selectedCharID = -1`, settings/playground closed.                                  |
 | `/settings`                         | Opens settings; split layout auto-selects model settings, mobile shows the settings list. |
-| `/settings/:section`                | Opens settings and maps section slugs to `SettingsMenuIndex`. |
-| `/grid` and `/characters`           | Opens the character grid.                                     |
-| `/character/:chaId/:chatId?`        | Selects the character and optionally selects a chat.          |
-| `/characters/:chaId/chats/:chatId?` | Legacy character/chat route shape.                            |
-| `/playground/:tool`                 | Maps tool slugs to `PlaygroundStore`.                         |
-| `/inlay` or `/inlays`               | Opens the inlay explorer through `PlaygroundStore = 14`.      |
-| Other unknown roots                 | Parse as `not-found` and close route-owned surfaces.          |
+| `/settings/:section`                | Opens settings and maps section slugs to `SettingsMenuIndex`.                             |
+| `/grid` and `/characters`           | Opens the character grid.                                                                 |
+| `/character/:chaId/:chatId?`        | Selects the character and optionally selects a chat.                                      |
+| `/characters/:chaId/chats/:chatId?` | Legacy character/chat route shape.                                                        |
+| `/playground/:tool`                 | Maps tool slugs to `PlaygroundStore`.                                                     |
+| `/inlay` or `/inlays`               | Opens the inlay explorer through `PlaygroundStore = 14`.                                  |
+| Other unknown roots                 | Parse as `not-found` and close route-owned surfaces.                                      |
 
 Unknown `/settings/:section` and `/playground/:tool` slugs fall back to their
 default menus; they are not general not-found routes.
@@ -140,21 +146,25 @@ Important route/store facts:
 
 ## Component Ownership
 
-| Path                        | Visible ownership                                                                                                                                                          |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/ChatScreens/`      | Main chat workflow: themed chat frame, transcript, composer, message rows, parser/translation HTML, suggestions, assets, partial edit, resize/emotion displays.            |
-| `src/lib/SideBars/`         | Desktop navigation and side-panel workflows: characters, folders, chat list, chat folders, character config, lorebook, scripts, quick settings, dev tools, custom sidebar. |
-| `src/lib/Setting/`          | Settings shell, renderer, row wrappers, concrete pages, bot presets, persona lists, lore presets.                                                                          |
-| `src/lib/Setting/Wrappers/` | Data-driven setting row renderers for check/text/number/textarea/slider/select/segmented/color/header/button/accordion/custom rows.                                        |
-| `src/lib/Setting/Pages/`    | Concrete settings pages. Some are thin `SettingRenderer` hosts; others are large stateful pages.                                                                           |
-| `src/lib/UI/`               | Shared higher-level UI: accordions, menus, model pickers, provider pickers, prompt rows, Realm UI.                                                                         |
+| Path                        | Visible ownership                                                                                                                                                                                                                 |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/ChatScreens/`      | Main chat workflow: themed chat frame, transcript, composer, message rows, parser/translation HTML, suggestions, assets, partial edit, resize/emotion displays.                                                                   |
+| `src/lib/SideBars/`         | Desktop navigation and side-panel workflows: characters, folders, chat list, chat folders, character config, lorebook, scripts, quick settings, dev tools, custom sidebar.                                                        |
+| `src/lib/Setting/`          | Settings shell, renderer, row wrappers, concrete pages, bot presets, persona lists, lore presets.                                                                                                                                 |
+| `src/lib/Setting/Wrappers/` | Data-driven setting row renderers for check/text/number/textarea/slider/select/segmented/color/header/button/accordion/custom rows.                                                                                               |
+| `src/lib/Setting/Pages/`    | Concrete settings pages. Some are thin `SettingRenderer` hosts; others are large stateful pages.                                                                                                                                  |
+| `src/lib/UI/`               | Shared higher-level UI: accordions, menus, model pickers, provider pickers, prompt rows, Realm UI.                                                                                                                                |
 | `src/lib/UI/GUI/`           | Shared primitive controls: buttons/icon buttons, text/optional/number/textarea/resizable textarea/syntax-highlighted textarea/select/option/slider/color inputs, segmented control, portals, multilingual fields, sidebar arrows. |
-| `src/lib/Others/`           | Global modals and miscellaneous UI: alerts, grid catalog, bookmark/chat-list modals, Hypa V3, plugin alerts, popup editor, loadout, Iris, legal/setup.                     |
-| `src/lib/Playground/`       | Playground menu and tools for parser/tokenizer/MCP/image/translation/subtitles/inlays/tool conversion.                                                                     |
-| `src/lib/Mobile/`           | Mobile components. `MobileCharacters` is active through `GridCatalog`; the full mobile shell files are currently not mounted by `App.svelte`.                              |
-| `src/lib/LiteUI/`           | Lite/hub card support. `LiteMain.svelte` is not the live app entrypoint.                                                                                                   |
-| `src/lang/`                 | UI string contract. Add frontend strings here rather than hard-coding labels.                                                                                              |
-| `src/etc/`                  | Bundled docs/media/tokenizer seed data imported by client code.                                                                                                            |
+| `src/lib/Others/`           | Global modals and miscellaneous UI: alerts, grid catalog, bookmark/chat-list modals, Hypa V3, plugin alerts, popup editor, loadout, Iris, legal/setup.                                                                            |
+| `src/lib/Playground/`       | Playground menu and tools for parser/tokenizer/MCP/image/translation/subtitles/inlays/tool conversion.                                                                                                                            |
+| `src/lib/Mobile/`           | Mobile components. `MobileCharacters` is active through `GridCatalog`; the full mobile shell files are currently not mounted by `App.svelte`.                                                                                     |
+| `src/lib/LiteUI/`           | Lite/hub card support. `LiteMain.svelte` is not the live app entrypoint.                                                                                                                                                          |
+| `src/lang/`                 | UI string contract. Add frontend strings here rather than hard-coding labels.                                                                                                                                                     |
+| `src/etc/`                  | Bundled docs/media/tokenizer seed data imported by client code.                                                                                                                                                                   |
+
+Plugin V3 can inject settings, floating-action, hamburger, and chat-menu
+surfaces into these owners. Registration/replacement/unload semantics are
+canonical in [Plugins And MCP](../../docs/structure/plugins-and-mcp.md#ui-surfaces).
 
 ## Chat UI
 
@@ -189,6 +199,13 @@ High-risk chat areas:
 - `ChatBodyParseMemo.ts` owns parser/LLM-detection memoization and dependency
   signatures for the active chat, character, modules, settings, CBS state, and
   reload epochs; stale HTML or expensive rerenders can originate there.
+- `src/ts/parser/parser.svelte.ts` emits `x-hl-lang` and
+  `risu-ctrl="bgm___…"` markers. `src/ts/observer.svelte.ts` turns highlighted
+  code into copy/download context-menu targets, starts BGM, retries blocked
+  autoplay on the next user activation, and stops playback on chat change.
+  `src/ts/observer.svelte.test.ts` guards the DOM contract; see the
+  [client runtime map](client-runtime.md#client-typescript-areas) for runtime
+  ownership.
 - UI mutations should route through `src/ts/chatCommands.ts` and command/bridge
   helpers in Fastify mode.
 - Generation-visible state starts in `DefaultChatScreen.svelte` but durable send
@@ -223,6 +240,13 @@ quick settings, dev tool, and character config switching. It uses
 chats, creating/deleting/forking chats, chat folders, reordering, exports, and
 server-backed metadata watchers.
 
+Its branch-graph action strictly hydrates every chat, abandons the result if the
+character owner changes during hydration, then passes a view-only graph of
+hashed greetings/message prefixes from `src/ts/gui/branches.ts` to the alert
+modal. `src/lib/Others/AlertComp.svelte` exposes branch details on pointer hover
+and keyboard focus. Guards are `src/lib/SideBars/SideChatList.svelte.test.ts`
+and `src/lib/Others/AlertComp.branches.test.ts`.
+
 When a concrete chat route is open, `SideChatList` enters a chat-open mode with
 back/author-note/toggle controls and tears down Sortable until it returns to the
 list. Chat-scoped generation controls live in
@@ -232,6 +256,27 @@ regenerate reads the effective overlay in `server/fastify/src/prompt/`.
 Queued generation-settings saves are optimistic and serialized per chat.
 The chat generation-settings freshness guard prevents a differing character-row
 response from rolling that visible value back before the save settles.
+
+Saved Toggles is a captioned state button in
+`src/lib/SideBars/ChatGenerationTogglePresets.svelte`. Its label distinguishes
+unused, unlinked, preset-shape mismatch, edited, and matched states. It opens
+`src/lib/SideBars/ChatGenerationTogglePresetDialog.svelte`; row selection changes
+only the comparison target until the user explicitly applies or selects. The
+dialog can save/overwrite, rename, delete, unselect, apply, or pick a complete
+compatible value set from one active prompt-preset/module source. Display order
+is frozen when the dialog opens and sorts by toggle-key-set similarity,
+active-count distance, `updatedAt`, then name. The selected id persists as
+`generationSettings.togglePresetId`; loadouts preserve it. Preset records and
+comparison/pick/sort logic live in
+`src/ts/chatGenerationTogglePresetRecords.ts` and
+`src/ts/chatGenerationTogglePresets.ts`; behavior is guarded by
+`src/ts/chatGenerationTogglePresets.test.ts` and
+`src/lib/SideBars/chatGenerationSettingsControls.test.ts`.
+
+`src/lib/Others/LoadoutModal.svelte` exposes selective loadout apply and its
+pending/queued/failure states. Apply does not navigate to a recorded character;
+the fenced durable sequence is owned by
+[Client Runtime](client-runtime.md#loadout-apply-sequencing).
 
 Risk areas:
 
@@ -266,27 +311,27 @@ Settings have two layers:
 
 Current settings indexes:
 
-| Index | Primary slug       | Page/component behavior                                     |
-| ----- | ------------------ | ----------------------------------------------------------- |
-| `0`   | `backup`           | `UserSettings`.                                             |
-| `1`   | `bot-preset`       | Legacy `BotSettings` when legacy bot presets exist; otherwise model settings. |
-| `2`   | `other-bots`       | `OtherBotSettings`.                                        |
-| `3`   | `display`          | `DisplaySettings`.                                         |
-| `4`   | `plugins`          | `PluginSettings`.                                          |
-| `6`   | `advanced`         | `AdvancedSettings`.                                        |
-| `7`   | `communities`      | `Communities`.                                             |
-| `8`   | `global-lorebook`  | `GlobalLoreBookSettings`.                                  |
-| `9`   | `global-regex`     | `GlobalRegex`.                                             |
-| `10`  | `language`         | `LanguageSettings`.                                        |
-| `11`  | `accessibility`    | `AccessibilitySettings`.                                   |
-| `12`  | `persona`          | `PersonaSettings`.                                         |
-| `13`  | `prompt`           | Prompt-template editing through `PromptSettings`.           |
-| `14`  | `modules`          | `ModuleSettings`.                                          |
-| `15`  | `hotkeys`          | `HotkeySettings`.                                          |
-| `17`  | `model`            | Profile-first model settings.                              |
-| `18`  | `prompt-settings`  | Prompt preset/settings shell.                              |
-| `19`  | `agent-presets`    | `AgentPresetSettings`.                                     |
-| `77`  | `supporter`        | `ThanksPage`.                                              |
+| Index | Primary slug      | Page/component behavior                                                                       |
+| ----- | ----------------- | --------------------------------------------------------------------------------------------- |
+| `0`   | `backup`          | `UserSettings`.                                                                               |
+| `1`   | `bot-preset`      | Legacy `BotSettings` when legacy bot presets exist; otherwise model settings.                 |
+| `2`   | `other-bots`      | `OtherBotSettings`.                                                                           |
+| `3`   | `display`         | `DisplaySettings`.                                                                            |
+| `4`   | `plugins`         | `PluginSettings`.                                                                             |
+| `6`   | `advanced`        | `AdvancedSettings`.                                                                           |
+| `7`   | `communities`     | `Communities`.                                                                                |
+| `8`   | `global-lorebook` | Legacy `GlobalLoreBookSettings`; nav hidden unless the advanced visibility toggle is enabled. |
+| `9`   | `global-regex`    | Legacy `GlobalRegex`; nav hidden unless the advanced visibility toggle is enabled.            |
+| `10`  | `language`        | `LanguageSettings`.                                                                           |
+| `11`  | `accessibility`   | `AccessibilitySettings`.                                                                      |
+| `12`  | `persona`         | `PersonaSettings`.                                                                            |
+| `13`  | `prompt`          | Prompt-template editing through `PromptSettings`.                                             |
+| `14`  | `modules`         | `ModuleSettings`.                                                                             |
+| `15`  | `hotkeys`         | `HotkeySettings`.                                                                             |
+| `17`  | `model`           | Profile-first model settings.                                                                 |
+| `18`  | `prompt-settings` | Prompt preset/settings shell.                                                                 |
+| `19`  | `agent-presets`   | `AgentPresetSettings`.                                                                        |
+| `77`  | `supporter`       | `ThanksPage`.                                                                                 |
 
 When `enableRisuaiProTools` is on, Settings also shows an Easy Panel nav button.
 It opens the global `easyPanelStore` overlay instead of a routed
@@ -329,6 +374,16 @@ conditions aligned when changing these sections.
 Prompt template editing and enable/disable controls belong to the selected
 modern prompt preset; legacy bot-preset prompt templates remain compatibility UI
 for old saves and explicit extraction paths.
+
+Legacy global lorebook and regex nav buttons are hidden by default through
+`showGlobalLorebookAndRegex`, defined in
+`src/ts/setting/advancedSettingsData.ts`. They also remain hidden in lite mode.
+This visibility flag controls navigation, not execution of imported legacy
+global data. New global functionality should be implemented as modules, not
+added to those legacy global pages. Visibility/default behavior is guarded by
+`src/lib/Setting/Settings.svelte.test.ts`,
+`src/ts/setting/advancedSettingsData.test.ts`, and
+`server/fastify/__tests__/databaseDefaults.test.ts`.
 
 Model settings are profile-first:
 
@@ -390,6 +445,17 @@ Value binding and persistence are centralized in `src/ts/setting/utils.ts`:
   whose optimistic value is still current; successful responses can adopt the
   server's canonical value.
 
+Workflow components must surface `accepted`, `queued`, and `failed` outcomes;
+`queued` is retained intent, not server success. The canonical caller contract
+is in
+[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
+
+`src/lib/Setting/Pages/Display/NotificationToggle.svelte` also renders the
+serialized push coordinator's setup compensation, pending cleanup/local
+inspection, retry-storage, and retry-operation states. Device/server ordering
+and the reload-persistent retry ledger are owned by
+[Client Runtime](client-runtime.md#push-notification-coordinator).
+
 Custom data-driven rows escape through `src/ts/setting/customComponents.ts`.
 Use this for complex controls such as display editors, translator presets,
 separate parameters, custom models, custom sidebar config, and export buttons.
@@ -412,6 +478,14 @@ Settings risk areas:
   writeback.
 - `TextAreaInput.svelte` is complex: highlighting, autocomplete, popup editor,
   context menu, contenteditable mode, and cleanup share one primitive.
+- `src/lib/Others/PopupEditor.svelte` snapshots the device-specific
+  `useMonacoEditorOnDesktop` or `useMonacoEditorOnMobile` setting when a popup
+  session opens. Accessibility settings own both toggles; disabled mode renders
+  a textarea instead of lazy-loading Monaco. See
+  `src/lib/Others/PopupEditor.svelte.test.ts`.
+- Fullscreen is browser-session state rendered by
+  `src/lib/Setting/Pages/Display/FullscreenToggle.svelte`, not a persisted
+  settings field.
 - `SliderInput.svelte` uses disabled sentinels and expects sane `min`/`max`.
 - Display/theme tabs have repeated compact class patterns in
   `DisplaySettings.svelte`, `BotSettings.svelte`, and `OtherBotSettings.svelte`;
@@ -442,6 +516,12 @@ hatch.
 When adding strings that appear in frontend UI, add an English key under
 `src/lang/en.ts`. Other locale omissions fall back to English.
 
+Language settings retain translation-cache import/export. The old UI-translation
+template download is intentionally absent; its regression guard is
+`src/ts/setting/languageSettingsData.test.ts`. The broader retired-settings
+inventory is in
+[Generated Files And Legacy Caveats](../../docs/structure/generated-and-legacy.md#stale-or-no-port-surfaces).
+
 `src/lib/Others/Help.svelte` renders Markdown from `language.help`.
 
 ## Styling, Theme, And Layout
@@ -464,9 +544,15 @@ effects call `updateReducedMotion()`; `src/styles.css` and progress components
 key reduced transitions/shimmers from the root class. It is not inferred from
 the operating-system media preference.
 
-The body is overflow-hidden and full-height. Layout clipping, double scrollbars,
-or invisible content often starts with `src/styles.css`, route branch height
-classes, or a child container missing `min-w-0`/overflow constraints.
+The body is overflow-hidden and full-height, and `#app` uses `overflow: clip`.
+`src/ts/gui/viewportScrollGuard.ts` pins the document root at scroll origin;
+installing it before mount prevents browser focus, `scrollIntoView`, custom CSS,
+or automation from shifting the fixed app shell. Scroll inner containers only.
+Never add code that scrolls the window or document root. Layout clipping,
+double scrollbars, or invisible content often starts with `src/styles.css`,
+route branch height classes, or a child container missing
+`min-w-0`/overflow constraints. Root pinning is guarded by
+`src/ts/gui/viewportScrollGuard.test.ts`.
 
 ## Mobile And Lite
 

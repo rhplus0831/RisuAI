@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-07-17.
+Last audited: 2026-07-20.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -151,8 +151,8 @@ metadata; it is rejected for required fields and full plugin creation records.
 Module record patches use the same compact contract for optional module
 metadata, including CJS and asset references. `POST /api/v1/commands/modules`
 independently applies the shared MCP import predicate at creation. Stored MCP
-rows cannot be patched, enabled, or linked; generic delete is the acknowledged
-no-op described below.
+rows can be globally enabled or durably deleted, but cannot be patched or
+linked to character, chat, or loadout scopes.
 
 - `POST /api/v1/commands/plugins`
 - `PATCH /api/v1/commands/plugins/:pluginId`
@@ -212,7 +212,9 @@ server provider boundary.
 Runtime MCP identifier forms:
 
 - `internal:*` for bundled clients such as Risu access, AI access, filesystem,
-  Google search, graph memory, and dice.
+  Google search, graph memory, and dice. The parser still recognizes
+  `internal:googlesearch`, but the direct import picker does not offer it
+  because Google Search credentials are unsupported in server-backed web mode.
 - `plugin:*` for MCP modules registered by Plugin V3 code.
 - Raw `http://` or `https://` identifiers for remote MCP servers using
   Streamable HTTP first and legacy SSE fallback.
@@ -255,12 +257,17 @@ uses the same command-backed create path. The server repeats the predicate on
 creation; the `stdio:` limitation above still applies.
 
 Stored MCP rows remain a special module kind, not generally editable modules.
-Normal module patch/enable, script/lorebook/trigger definition, and
-character/chat/loadout link operations target non-MCP rows. Patch and enable
-therefore return not-found for an MCP id. Generic delete reports a revisioned
-success but deliberately leaves the MCP row in place. The module UI displays
-imported MCP rows and hides edit/export; its generic enable/delete controls are
-not working MCP lifecycle support.
+Normal module patch, script/lorebook/trigger definition, and
+character/chat/loadout link operations target non-MCP rows. Global enable and
+generic delete explicitly admit MCP ids: enable updates `enabledModules`, and
+delete removes the stored row plus references through the ordinary revisioned
+module commands. The module UI displays imported MCP rows, supports those two
+global lifecycle actions, hides edit/export, and hides unsupported scoped-link
+controls. Server behavior is guarded by
+`server/fastify/__tests__/commands.test.ts`; UI restrictions are guarded by
+`src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts` and
+`src/lib/Setting/Pages/Module/ModuleChatMenu.svelte.test.ts`. The import picker exclusion is guarded by
+`src/ts/process/mcp/mcp.test.ts`.
 Command-based stdio MCPs remain unsupported by the browser runtime; only a
 parseable URL-wrapped `stdio:{...}` row can initialize.
 
@@ -287,10 +294,21 @@ command stores them.
 
 ## UI Surfaces
 
+Plugin V3 registers four visible surface families through
+`src/ts/stores.svelte.ts`: `additionalSettingsMenu`,
+`additionalFloatingActionButtons`, `additionalHamburgerMenu`, and
+`additionalChatMenu`. `src/ts/plugins/apiV3/v3.svelte.ts` replaces an existing
+entry from the same plugin owner and removes owned entries on unload/reset;
+`src/lib/Setting/Settings.svelte`, `src/lib/SideBars/Sidebar.svelte`, and
+`src/lib/ChatScreens/DefaultChatScreen.svelte` consume the stores.
+`src/ts/plugins/apiV3/v3.svelte.test.ts` guards registration, replacement, and
+cleanup. UI placement is mapped in
+[Svelte UI](../../src/docs/svelte-ui.md#component-ownership).
+
 - `src/lib/Setting/Pages/PluginSettings.svelte` manages installed plugins and
   plugin arguments.
 - `src/lib/Playground/PlaygroundMCP.svelte` lists MCP metadata/tools and can run
   tool calls for debugging.
 - `src/lib/Setting/Pages/Module/ModuleSettings.svelte` exposes validated direct
-  MCP import and displays stored MCP rows. Edit/export is disabled, while the
-  generic enable/delete controls cannot enable or remove an MCP row.
+  MCP import and displays stored MCP rows. Global enable/delete works for MCP
+  rows; edit/export and scoped linking remain unavailable.

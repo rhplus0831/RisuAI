@@ -1,6 +1,6 @@
 # Frontend Map
 
-Last audited: 2026-07-17.
+Last audited: 2026-07-20.
 
 Moved: current frontend documentation lives under `src/docs/`.
 
@@ -13,9 +13,9 @@ Start with:
   component ownership, settings, shared controls, chat/sidebar/mobile/playground
   UI, accessibility, styling, localization, and visible-state testing.
 - [`src/docs/client-runtime.md`](../../src/docs/client-runtime.md) for browser
-  runtime touchpoints: Fastify bootstrap, encrypted crash-durable mutation
-  replay, REST resource state/hydration, command reconciliation, generation and
-  progress streams, provider/media adapters, assets, storage, plugins, and MCP.
+  coordination: Fastify startup, root-resource ownership, async freshness,
+  generation/reattach, fixed server-operation adapters, and links to canonical
+  backend/assets/provider/plugin owners.
 
 This file remains only as a compatibility pointer for older archive links. Do
 not add current frontend guidance here.

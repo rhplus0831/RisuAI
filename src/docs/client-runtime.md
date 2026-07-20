@@ -1,28 +1,29 @@
 # Client Runtime Guide
 
-Last audited: 2026-07-17.
+Last audited: 2026-07-20.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
 
 The runtime is Fastify-backed. The browser loads durable settings, collections,
-and character rows through REST resources, renders Svelte UI from reactive
-resource state, sends command mutations to Fastify, listens for invalidation
-events, and fetches large bodies such as chat messages on demand.
+character rows, and the standalone inlay catalog through REST resources,
+renders Svelte UI from reactive resource state, sends command mutations to
+Fastify, listens for invalidation events, and fetches large bodies such as chat
+messages on demand.
 
 ## Client TypeScript Areas
 
-| Path                                                                                                                                                                           | Runtime ownership                                                                                                                                                                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Path                                                                                                                                                                           | Runtime ownership                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: runtime bootstrap, encrypted pending-mutation outbox/replay, REST resource reads, resource state/invalidation, commands, hydration, events, active writer, provider/media operations, assets, backups, Realm import, bridge watchers, push notifications, stale-operation guards, diagnostics, smoke hooks. |
-| `src/ts/storage/`                                                                                                                                                              | Server-backed auth/storage compatibility, resource-database accessors, `.risu` helpers, backup helpers, and auto-storage selection.                                                                            |
-| `src/ts/process/`                                                                                                                                                              | `sendChat`, server-backed generation bridge, durable reattach, files/MCP/memory/embedding/post-generation helpers, retained parity helpers.                                                                  |
-| `src/ts/process/request/`                                                                                                                                                      | Provider/server-routing classifiers, chat/completion/memory request adapters, SSE parsing, message patch helpers.                                                                                            |
-| `src/ts/model/`, `src/ts/horde/`                                                                                                                                               | Browser model registry, durable profile records/resolver/UI state, and provider catalog helpers used by settings and generation preflight.                                                                   |
-| `src/ts/plugins/`                                                                                                                                                              | Browser plugin loading/runtime and Plugin V3 API host. Fastify stores plugin records but does not execute plugins.                                                                                           |
-| `src/ts/process/mcp/`                                                                                                                                                          | Browser MCP clients, internal tools, Risu access tools, and plugin MCP clients.                                                                                                                              |
-| `src/ts/media/`, `src/ts/parser/`, `src/ts/gui/`, `src/ts/setting/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/`                                    | Focused helper domains that feed visible UI and tests.                                                                                                                                                       |
-| `src/ts/stores.svelte.ts`, `src/ts/globalApi.svelte.ts`, `src/ts/characters.ts`, `src/ts/characterCards.ts`, `src/ts/hotkey.ts`, `src/ts/lite.ts`, `src/ts/observer.svelte.ts` | Cross-cutting browser stores, compatibility helpers, hotkeys, lite mode, observers, and character/card utilities.                                                                                            |
+| `src/ts/storage/`                                                                                                                                                              | Server-backed auth/storage compatibility, resource-database accessors, `.risu` helpers, backup helpers, and auto-storage selection.                                                                                                                                                                                                   |
+| `src/ts/process/`                                                                                                                                                              | `sendChat`, server-backed generation bridge, durable reattach, files/MCP/memory/embedding/post-generation helpers, retained parity helpers.                                                                                                                                                                                           |
+| `src/ts/process/request/`                                                                                                                                                      | Provider/server-routing classifiers, chat/completion/memory request adapters, SSE parsing, message patch helpers.                                                                                                                                                                                                                     |
+| `src/ts/model/`, `src/ts/horde/`                                                                                                                                               | Browser model registry, durable profile records/resolver/UI state, and provider catalog helpers used by settings and generation preflight.                                                                                                                                                                                            |
+| `src/ts/plugins/`                                                                                                                                                              | Browser plugin loading/runtime and Plugin V3 API host. Fastify stores plugin records but does not execute plugins.                                                                                                                                                                                                                    |
+| `src/ts/process/mcp/`                                                                                                                                                          | Browser MCP clients, internal tools, Risu access tools, and plugin MCP clients.                                                                                                                                                                                                                                                       |
+| `src/ts/media/`, `src/ts/parser/`, `src/ts/gui/`, `src/ts/setting/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/`                                    | Focused helper domains that feed visible UI and tests.                                                                                                                                                                                                                                                                                |
+| `src/ts/stores.svelte.ts`, `src/ts/globalApi.svelte.ts`, `src/ts/characters.ts`, `src/ts/characterCards.ts`, `src/ts/hotkey.ts`, `src/ts/lite.ts`, `src/ts/observer.svelte.ts` | Cross-cutting browser stores, compatibility helpers, hotkeys, lite mode, observers, and character/card utilities.                                                                                                                                                                                                                     |
 
 Retained compatibility and parity helpers still exist under `src/ts/process/`,
 but they are not a selectable browser-local runtime. `src/ts/platform.ts`
@@ -33,47 +34,40 @@ hard-codes Fastify mode.
 Browser code must use the fixed authenticated Fastify adapters when an operation
 needs stored credentials or a server-owned upstream contract:
 
-| Adapter | Endpoint and ownership |
-| ------- | ---------------------- |
-| `src/ts/server/providerOperations.ts` | `/api/v1/provider-operations`; provider catalog/account operations send an operation id and credential reference. |
-| `src/ts/server/embeddingOperations.ts` | `/api/v1/embedding-operations`; memory/embedding callers use bounded, validated operation payloads. |
-| `src/ts/server/imageGeneration.ts` | `/api/v1/image-generation`; validates returned image type and size before producing a data URL. |
-| `src/ts/server/openAITranscription.ts` | `/api/v1/media/openai/transcriptions`; bounds the upload and validates the returned WebVTT. |
-| `src/ts/server/tts.ts` | `/api/v1/tts/synthesize`; posts fixed synthesis operations and validates bounded audio. |
-| `src/ts/server/mcpOAuthRefresh.ts` | `/api/v1/mcp/oauth/refresh`; exchanges a stable MCP identity for a bounded stored-token refresh result. |
-
-Fastify owns the fixed upstream URL, method, and headers. Raw persisted secrets
-stay server-side; resource reads expose only a masked sentinel that lets an
-adapter select the stored credential. An intentional caller-owned draft key is
-scoped to the requested operation. For TTS, `src/ts/process/tts.ts` also cancels
-superseded/stopped requests and ignores late audio before playback.
+`src/ts/server/providerOperations.ts`, `embeddingOperations.ts`,
+`imageGeneration.ts`, `openAITranscription.ts`, `tts.ts`, and
+`mcpOAuthRefresh.ts` are the browser boundaries. `src/ts/process/tts.ts` also
+cancels superseded/stopped requests and ignores late audio before playback.
+Endpoint, credential, provider, limit, and result contracts belong in
+[Providers And Models](../../docs/structure/providers-and-models.md#server-owned-provider-and-media-operations).
 
 ## Startup Sequence
 
-`src/main.ts` installs the router, mounts `App.svelte`, optionally installs the
-Fastify browser smoke hook, calls `loadData()`, initializes hotkeys, and removes
-the preloading element.
+`src/main.ts` installs the document-root viewport scroll guard before it mounts
+`App.svelte`, installs the router, optionally installs the Fastify browser smoke
+hook, calls `loadData()`, initializes hotkeys, and removes the preloading
+element.
 
 `loadData()` in `src/ts/bootstrap.ts` performs the visible startup work:
 
 1. Adopt the sole pending-mutation writer identity, if one exists, then fetch
    `/api/v1/bootstrap` for initialization, revision, database-lineage/writer
-   metadata, active generation jobs, and active message translations.
+   metadata, active generation jobs, and message-translation recovery rows.
 2. If SQLite is uninitialized, issue the initialization command. The winning
    client reuses the returned revision; only a client that lost the
    initialization race refetches read-only bootstrap metadata.
 3. Prepare the encrypted pending-mutation outbox for the authenticated writer
    epoch and database lineage, flush saved receipt acknowledgements, and replay
    its dependency-ordered commands. Startup stops if retryable rows remain.
-4. Fetch `/api/v1/settings`, `/api/v1/collections`, and `/api/v1/characters` in
-   parallel through hash-aware POSTs when IndexedDB/Web Crypto are available,
-   otherwise use their full GET forms. Retry the complete set when revisions do
-   not match, then apply the consistent set to reactive resource state.
+4. Fetch `/api/v1/settings`, `/api/v1/collections`, `/api/v1/characters`, and
+   `/api/v1/inlay-assets` in parallel. The first three use hash-aware POSTs when
+   IndexedDB/Web Crypto are available and otherwise fall back to full GETs.
+   Retry all four when revisions do not match, then apply the consistent set.
 5. Seed selected-character state, reset body hydration, record already-resident
    lorebook coverage, and hydrate the selected prompt-template owner before
    caching the common resource revision.
 6. Enable guarded resource writes and command-event reconciliation.
-7. Seed active generation jobs and active message translations, then start
+7. Seed active generation jobs and message-translation recovery rows, then start
    translation refresh and durable generation reattach.
 8. Start chat-message hydration, fetch the active chat body, start bridge patch
    lifecycle flushing, and subscribe to server events.
@@ -90,100 +84,34 @@ Visible startup bugs often sit at the boundary between `loadedStore`,
 `selectedCharID`, resource application, route application, lazy body reads, and
 CSS variable updates.
 
-### Durable mutation outbox
+## Server Resources And Durable Mutations
 
-`src/ts/server/pendingMutationOutbox.ts` stores an eligible command payload
-AES-GCM encrypted in IndexedDB before it is sent. Scope/order indexes and
-receipt-ACK rows remain plaintext. The intent is scoped to the active writer
-session, writer epoch, and database lineage; semantic dependency lanes prevent
-related mutations from overtaking an earlier retained mutation.
-`durableMutationDispatch.ts` freezes and dispatches the staged intent, while
-`pendingMutationReplay.ts` drains retained rows before initial resource
-hydration. If IndexedDB or Web Crypto is unavailable, the ordinary command
-still runs without durable receipt headers.
+Fastify is durable truth. The browser composes its compatibility database from
+settings, collections, and characters in
+`src/ts/server/resourceState.svelte.ts`; the inlay catalog in
+`src/ts/server/inlayCatalog.ts` is a fourth, standalone root projection. Large
+chat, lorebook, legacy-preset, and prompt-template bodies hydrate only when a
+workflow needs them.
 
-Keep these three acknowledgements distinct when debugging a save:
+The main client boundaries are:
 
-- **Persisted intent:** encrypted client-side command input that survives a
-  crash or reload until it is accepted, terminally rejected, or superseded.
-- **Server receipt:** lineage-bound replay metadata that deduplicates an
-  accepted command. Acceptance converts the client outbox row into durable
-  receipt-ACK work; cleanup is retried at bootstrap.
-- **Local-effect acknowledgement:** response-owned keys, digests,
-  certificates, and any canonical differences checked against the optimistic
-  resource projection. It can advance the local resource fence without a GET,
-  but it is neither the outbox record nor the server replay receipt.
+| Path                                                                                                                                   | Responsibility                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `src/ts/server/resourceReads.ts`, `resourceCache.ts`                                                                                   | Root/targeted reads and the disposable authenticated-hash cache.            |
+| `src/ts/server/hydrationReads.ts`, `chatMessageHydration.svelte.ts`, `characterShellHydration.svelte.ts`, `promptTemplateHydration.ts` | Lazy owner-body and shell hydration.                                        |
+| `src/ts/server/commands.ts`, `events.ts`, `resourceInvalidation.ts`, `resourceRefresh.ts`                                              | Serialized commands, SSE reconciliation, targeted reads, and full recovery. |
+| `src/ts/server/pendingMutationOutbox.ts`, `durableMutationDispatch.ts`, `pendingMutationReplay.ts`                                     | Encrypted crash-recovery intents and pre-hydration replay.                  |
+| `src/ts/server/resourceWriteGuard.svelte.ts`                                                                                           | Guards direct writes to the compatibility view.                             |
+| `src/ts/server/*Bridge.svelte.ts`                                                                                                      | Converts compatibility/UI mutations into command-backed writes.             |
 
-Transient transport/conflict failures retain the intent and its optimistic
-projection. Exact invalid/missing requests are terminal and are discarded;
-authoritative hydration or guarded rollback then removes rejected state. The
-disposable resource cache described below never stores optimistic mutation
-state. See
-[`server-resources-and-bridges.md`](../../docs/structure/server-resources-and-bridges.md)
-for the canonical resource and reconciliation contract.
-
-## Resource State, Invalidation, And Hydration
-
-Fastify is the source of durable truth. The browser composes a compatibility
-database view from three reactive resources: settings, collections, and
-characters. User mutations go through command helpers. A response-confirmed,
-contiguous command can acknowledge an already-applied optimistic change and
-advance its resource fence without a read; foreign SSE events, revision gaps,
-response loss, and commands without a complete local effect still invalidate
-and refetch concrete resources.
-
-Important files:
-
-- `src/ts/server/resourceState.svelte.ts` owns settings, collections, and
-  character resource state and composes the compatibility database view.
-- `src/ts/server/resourceReads.ts` reads `/api/v1/settings`, optional settings
-  groups, `/api/v1/collections`, optional named collections,
-  `/api/v1/characters`, narrow character order/selection resources, and
-  individual character rows.
-- `src/ts/server/resourceCache.ts` owns the disposable IndexedDB cache. It keeps
-  bounded per-resource SHA-256 manifests plus content-addressed JSON values,
-  verifies stored bytes before advertising a hash, reconstructs protocol-v2
-  tagged array responses, and prunes unreferenced entries.
-- `src/ts/server/hydrationReads.ts` reads chat-message, character-lorebook,
-  legacy-preset, and prompt-preset-template bodies from concrete endpoints.
-- `src/ts/server/resourceInvalidation.ts` maps command events to targeted REST
-  reads and falls back to a consistent three-resource refresh for gaps or
-  unknown/sprawling invalidations.
-- `src/ts/server/resourceRefresh.ts` coalesces authoritative full refreshes after
-  imports, restores, and replay gaps.
-- `src/ts/server/resourceWriteGuard.svelte.ts` limits direct mutation of
-  server-owned resource state to trusted compatibility paths.
-- `src/ts/server/commands.ts` sends revision-checked command mutations.
-- `src/ts/server/events.ts` subscribes to `/api/v1/events`.
-- Grouped `settings.updated` events identify their group in `event.id`, so a
-  contiguous reconcile refetches only `/api/v1/settings/:group`. Events from
-  older servers or retained history without a recognized group safely request
-  a full resource refresh instead.
-- `src/ts/server/chatMessageHydration.svelte.ts` hydrates active chat messages
-  and transcript windows.
-- `src/ts/server/characterShellHydration.svelte.ts` hydrates selected inactive
-  character shell rows.
-- Accepted ordinary character patches, character selections, and chat
-  metadata/selections reconcile their optimistic state as local resource
-  effects, so they do not re-read the changed character row or selection.
-  Accepted chat generation-settings commands also return and apply their
-  canonical persisted value without a follow-up character read. These effects
-  preserve newer queued edits while fencing stale in-flight responses.
-- Accepted plugin record and provider mutations likewise fence the already
-  visible optimistic value instead of re-downloading plugin scripts or provider
-  settings. Foreign plugin events use collection-only, provider-group-only, or
-  combined collection/provider invalidation according to their actual writes.
-- `src/ts/server/promptTemplateHydration.ts` hydrates stripped prompt-template
-  and preset prompt bodies with owner-keyed state for selected/requested prompt
-  presets.
-- `src/ts/server/lorebookBridge.svelte.ts`, `chatBridge.svelte.ts`,
-  `characterBridge.svelte.ts`, `promptTemplateBridge.svelte.ts`,
-  `scriptDefinitionBridge.svelte.ts`, and `settingsBridge.svelte.ts` bridge
-  visible UI state to command-backed server changes.
+[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md)
+owns the cache protocol, resource endpoints, command queue, durable
+intent/receipt distinction, local-effect acknowledgements, event invalidation,
+hydration, and bridge contracts.
 
 If a component shows stale or missing data, confirm whether the data is:
 
-- absent from the settings/collections/characters response by design;
+- absent from the settings/collections/characters/inlay-catalog response by design;
 - waiting on a chat, lorebook, character row, legacy preset, or prompt-template
   endpoint;
 - hidden by a route/store condition;
@@ -191,27 +119,6 @@ If a component shows stale or missing data, confirm whether the data is:
 - retained for replay after a retryable command failure, or rolled back after a
   terminal/non-durable failure;
 - superseded by an SSE-triggered targeted read or full resource refresh.
-
-Hash-aware reads are an authenticated transfer optimization, not an offline or
-authoritative browser database. The transport adapter verifies cached bytes and
-reconstructs an ordinary full payload at the current revision before resource
-or hydration callers see it. Missing/corrupt data, unsupported cache POSTs,
-malformed responses, quota/privacy failures, or unavailable crypto fall back to
-the compatible GET. Optimistic command state is never written to this cache.
-The exact tagged-response protocol and storage/request caps are canonical in
-[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#read-and-hydration-endpoints).
-
-The root settings value, every split collection (including modules, plugins,
-prompt presets, personas, loadouts, lorebooks, and plugin custom storage), and
-message-free character rows participate. The selected/requested prompt-template
-body, legacy preset body, and single-character lorebook hydration use the same
-mechanism because those large bodies are intentionally absent from their shells.
-Chat messages remain on their existing lazy/ranged protocol rather than entering
-the persistent cache.
-
-The concrete resource modules above are the authoritative guide for startup,
-targeted invalidation, hydration, SSE reconciliation, guarded compatibility
-writes, and bridge watchers.
 
 Chat/message compatibility writes in `src/ts/chatCommands.ts` classify a list
 change into the narrowest safe command: append, single-message update, prefix
@@ -223,53 +130,23 @@ fully loaded transcript, but persists those backfilled ids only when they form a
 contiguous suffix following a persisted anchor. Other shapes remain local for
 that send.
 
-Chat generation-settings saves are serialized per chat and optimistically
-applied. A successful response applies the server-normalized value and advances
-the affected character-row revision without another GET. Ordinary character
-patches, character selection, and chat metadata/selection changes likewise
-acknowledge their already-visible optimistic values and advance the owning row
-or selection fence. While a newer save is queued, the generation-settings
-freshness guard prevents a differing character-row response from rolling the
-visible value back. Foreign events, replay, response loss, gaps, and effects
-whose event ownership does not match still use authoritative resource
-invalidation.
+Mutation-facing UI must consume the helper outcome instead of assuming that an
+awaited dispatch means success. `queued` is retained local intent, not server
+acceptance; keep the user's newer draft and surface `accepted`, `queued`, or
+`failed` without prematurely closing the surface.
 
-Prompt template resource notes:
+### Loadout Apply Sequencing
 
-- A modern prompt preset's `promptTemplate` field is the normal owner for its
-  prompt-template data. Prompt Settings reads and edits the selected modern
-  prompt preset first.
-- `promptTemplateHydration.ts` can hydrate the selected/global owner or an
-  explicitly requested prompt preset, such as a chat-scoped
-  `generationSettings.promptPresetId`.
-- Prompt-item events apply to the `parentId` preset row. Only an event for the
-  currently selected owner may update the top-level compatibility mirror.
-- The top-level `promptTemplate` collection is retained as a compatibility
-  mirror for legacy callers and bridge reconciliation. It should not be treated
-  as the normal editing or generation owner when a modern prompt preset
-  resolves.
-- Legacy `botPresets[].promptTemplate` remains compatibility data for import,
-  export, prompt diff, and explicit extraction into prompt presets; legacy bot
-  preset selection does not normally apply it into the active top-level
-  collection.
-
-Model profile resource notes:
-
-- `modelProfiles` and `modelRoleProfiles` are durable Fastify-backed settings.
-  Client and server defaults normalize them, and command patches validate their
-  record, role-binding, provider option, runtime option, and fallback-ref shapes.
-- `modelRuntimeDefaults` is the profile-system runtime default setting. It uses
-  the same runtime option schema as profile `runtimeOptions`.
-- Preset, split-preset, loadout, import, and resource-read paths preserve these
-  durable fields while still accepting legacy flat data.
-- Provider secret masking covers profile-local `apiKey` values and Vertex
-  `providerOptions.vertex.privateKey` values by stable profile id. Masked
-  placeholders are resolved server-side during settings writes.
-- Settings -> Model has a live command-backed authoring UI. The shell edits role
-  bindings, profile rows, runtime defaults, first-class provider fields,
-  fallbacks, and profile-local secret placeholders through dedicated model
-  profile commands. Legacy flat settings remain available behind Advanced
-  Legacy Settings and as compatibility/conversion data.
+`src/ts/loadout.ts` applies selected loadout scopes only after flushing pending
+owner writes. It fences the target, runs the required durable commands as one
+ordered sequence, and rolls back or reapplies still-owned projections according
+to accepted, queued, or failed outcomes;
+`src/ts/server/loadoutCanonical.ts` validates canonical response state.
+`characterIds` records recent character use only: applying a loadout does not
+select or navigate to a character. Guards are `src/ts/loadout.test.ts` and
+`src/lib/Others/LoadoutModal.svelte.test.ts`. The shared queue/outcome contract
+is owned by
+[Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
 
 ## Async Freshness And Import Guards
 
@@ -298,6 +175,26 @@ surfaces:
 These guards are client-side freshness checks. Server persistence still happens
 through asset upload routes, command helpers, or settings patches after the
 freshness check passes.
+
+## Push Notification Coordinator
+
+The notification setting is a serialized device/server transaction owned by
+`src/ts/server/pushNotificationSetting.ts`. It registers or removes browser and
+server subscriptions through `src/ts/server/pushNotifications.ts`; failed setup
+compensates the durable setting back to disabled. Unresolved cleanup endpoints
+and local-subscription-inspection state persist in IndexedDB through
+`src/ts/server/pushNotificationRetryStorage.ts`, then hydrate and retry after
+reload. `public/service-worker.js` owns notification display and click
+navigation.
+
+The guard set is `src/ts/server/pushNotificationSetting.test.ts`,
+`src/ts/server/pushNotificationRetryStorage.test.ts`,
+`src/ts/server/pushNotifications.test.ts`,
+`src/ts/server/serviceWorker.test.ts`, and
+`src/lib/Setting/Pages/Display/NotificationToggle.svelte.test.ts`. The visible
+states belong in [Svelte UI](svelte-ui.md#settings-and-shared-controls); server
+subscription persistence remains in
+[Backend Map](../../docs/structure/backend.md#route-families).
 
 ## Generation Client
 
@@ -346,122 +243,21 @@ error as a failed terminal result. Generation results are persisted server-side,
 so the browser suppresses the old generation-result command in server-backed
 paths.
 
-Agent Preset step instructions can place selected prepared inputs through
-matching placeholders such as `{{currentUserMessage}}` and can consume an
-eligible completed step output through `{{agent::outputKey}}`. Before-main
-steps can reference earlier before-main dependency levels; after-main steps can
-also reference completed before-main outputs. Missing, same-level, disabled, or
-otherwise unavailable output references make the preset `incomplete`. The
-settings UI surfaces that status, and server prompt assembly blocks it before
-provider dispatch.
-
-Generation profile resolution happens before provider dispatch. Durable profile
-records can own selected model ids, request/wire model ids, provider
-options/endpoints, profile-local API keys, runtime options, and fallback profile
-refs. Role bindings can select profile mode, legacy mode, or supported inherit
-mode. When no durable profile context applies, the resolver falls back to
-legacy flat fields for compatibility. Static and legacy fallback model ids still
-use the flat `staticModel` path. Memory summaries use memory-role profile
-resolution, while memory embeddings remain outside chat profiles on the
-Hypa/Voyage/custom embedding contract.
-
-Active durable profiles with incomplete or unsupported status are generation
-guardrails. Browser preflight and request dispatch reject them before fetch, and
-Fastify generation routes reject them before accepting SSE/jobs or reaching a
-provider adapter. Compatibility profiles without `providerId` can still
-generate when routable, but unsupported `providerId` placeholders are preserved
-for editing and blocked for active durable generation.
-
-Server chat assembly is profile-bound. The browser sends raw chat inputs; the
-server resolves the effective model-runtime config, overlays the selected
-profile model/request model/provider options/runtime settings, materializes
-chat-scoped Agent Preset readiness, jailbreak, prompt-preset module integration,
-and sidebar toggle state, then budgets and dispatches with that profile context.
-This keeps profile runtime defaults and profile overrides in the server path
-instead of borrowing stale `db.aiModel` or legacy flat parameter assumptions.
-
-Prompt-template assembly uses the same modern-owner precedence on browser
-preflight/parity paths and server generation: chat
-`generationSettings.promptPresetId`, then selected/global prompt preset, then
-top-level compatibility fallback only when no modern owner resolves.
+Provider/profile resolution, prompt-owner precedence, Agent Preset execution,
+and memory provider behavior are canonical in
+[Providers And Models](../../docs/structure/providers-and-models.md).
 
 When generation UI is wrong, inspect both the Svelte surface
 `src/lib/ChatScreens/DefaultChatScreen.svelte` and the runtime files above.
 
-## Assets, Storage, Realm, Plugins, MCP
+## Adjacent Runtime Owners
 
-Assets:
-
-- Single uploads go through `/api/v1/assets`.
-- Bulk uploads go through `/api/v1/assets/bulk`.
-- Browser helpers live in `src/ts/server/assets.ts` and
-  `src/ts/globalApi.svelte.ts`.
-- Visible asset URLs normalize to `/api/v1/assets/:id`.
-
-Storage:
-
-- `src/ts/storage/fastifyStorage.ts` backs `/api/v1/storage/*` compatibility
-  endpoints.
-- `src/ts/storage/autoStorage.ts` selects the server-backed storage adapter.
-- `FastifyStorage` write/remove calls carry `risu-writer-session` and surface
-  `423 active_writer_stale`; read/list/exists calls are authenticated read-only.
-- `.risu` and backup helpers remain under `src/ts/storage/`, but device backup
-  export/import helpers call server routes rather than browser-local storage.
-
-Realm import:
-
-- `src/ts/server/realmImport.ts` handles Realm character import, progress SSE,
-  and resource reconciliation after commit.
-- Visible Realm UI is under `src/lib/UI/Realm/`.
-
-Push notifications:
-
-- `src/ts/server/pushNotifications.ts` registers `public/service-worker.js`,
-  fetches `/api/v1/push/vapid-public-key`, and creates/deletes subscriptions
-  through `/api/v1/push/subscriptions`.
-- `src/lib/Setting/Pages/Display/NotificationToggle.svelte` owns the visible
-  setting flow. Startup re-enables push registration when
-  the `notification` setting is true.
-- The worker is scoped to Web Push chat-completion notifications; it is not the
-  old offline/share/file-handler service worker surface.
-
-Plugins and modules:
-
-- Browser plugin code executes only in the browser runtime under
-  `src/ts/plugins/`.
-- Fastify stores plugin records/storage but does not execute plugin code.
-- Plugin UI can register extra settings/menu/chat/floating controls through
-  stores in `src/ts/stores.svelte.ts`.
-- Ordinary and MCP-bearing module `.risum` imports are supported in
-  Fastify-backed browser mode. The browser decodes the module envelope, uploads
-  embedded assets through server asset helpers, normalizes and applies the
-  shared syntactic import predicate to any MCP identifier, and creates the
-  module through command helpers.
-  Supported source filename extensions are retained for upload. Non-empty
-  unsupported legacy filename tokens are classified from
-  PNG/JPEG/WebP/GIF/AVIF signatures, with PNG as the fallback upload type, while
-  the original tuple filename stays in module metadata. A blank filename is
-  passed through and defaults to PNG in the asset saver.
-- `src/ts/process/mcp/mcp.ts#importMCPModule` also supports direct interactive
-  import of predicate-checked internal/remote MCP identifiers. It performs a handshake,
-  records server metadata, and creates the module through the same durable
-  command flow.
-- Stored MCP rows remain outside ordinary patch, enable, and
-  character/chat/loadout link commands. Patch/enable reject an MCP id; generic
-  delete reports success but leaves the row in place. The module page hides
-  edit/export, and its generic enable/delete controls cannot enable or remove an
-  MCP row. Command-based stdio MCP processes are not supported at runtime.
-
-The shared import predicate does not parse `stdio:` payloads. Direct import
-handshakes before creation, but `.risum` and the server create route can persist
-an unusable/malformed or command-based wrapper that runtime initialization later
-rejects. The canonical identifier and transport distinctions are in
-[Plugins And MCP](../../docs/structure/plugins-and-mcp.md#mcp-runtime).
-
-MCP:
-
-- Browser MCP clients and tools live under `src/ts/process/mcp/`.
-- Playground MCP UI lives in `src/lib/Playground/PlaygroundMCP.svelte`.
+| Topic                                                        | Browser entrypoints                                                                                                           | Canonical guide                                                                    |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Assets, inlay catalog, saves, backups, Realm, legacy storage | `src/ts/server/assets.ts`, `inlayCatalog.ts`, `backups.ts`, `realmImport.ts`; `src/ts/storage/backup.ts`, `fastifyStorage.ts` | [Assets And Saves](../../docs/structure/assets-and-saves.md)                       |
+| Plugins, modules, MCP                                        | `src/ts/plugins/`, `src/ts/process/modules.ts`, `src/ts/process/mcp/`                                                         | [Plugins And MCP](../../docs/structure/plugins-and-mcp.md)                         |
+| Providers and model profiles                                 | `src/ts/model/`, `src/ts/process/request/`                                                                                    | [Providers And Models](../../docs/structure/providers-and-models.md)               |
+| Retired/browser-local surfaces                               | `src/ts/platform.ts`                                                                                                          | [Generated Files And Legacy Caveats](../../docs/structure/generated-and-legacy.md) |
 
 ## Runtime Risks For UI Work
 
@@ -494,9 +290,8 @@ pnpm coverage:ui-map
 pnpm smoke:fastify-browser
 ```
 
-For server TypeScript checks after client type changes that server imports use:
+For the client declaration, server, and browser-smoke TypeScript lane:
 
 ```sh
-pnpm exec tsc -p tsconfig.client-lib.json
-pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+pnpm check:server
 ```
