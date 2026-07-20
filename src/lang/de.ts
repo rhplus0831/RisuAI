@@ -215,6 +215,8 @@ export const languageGerman = {
       'Die Anweisung, die für die Übersetzung verwendet wird. Wenn sie leer ist, wird die Standardanweisung verwendet. Sie können auch ChatML-Formatierung mit {{slot}} für die Zielsprache, {{solt::content}} für den Inhalt und {{slot::tnote}} für die Übersetzungsnotiz verwenden.',
     translateBeforeHTMLFormatting:
       'Wenn aktiviert, wird der Text vor Regex-Skripten und HTML-Formatierung übersetzt. Dies könnte die Token verringern, aber die Formatierung beeinträchtigen.',
+    translatorSendTextAsIs:
+      'Wenn aktiviert, sendet die Ax.-Modell-Übersetzung den Nachrichtentext genau wie geschrieben an das Modell – in einer einzigen Anfrage, ohne Zeilenschutz, Aufteilung oder Stilplatzhalter – und verwendet die Antwort des Modells unverändert als Übersetzungsergebnis.',
     autoTranslateCachedOnly:
       "Wenn zusammen mit der Option 'Automatische Übersetzung' aktiviert, werden automatisch nur die Nachrichten übersetzt, die der Benutzer zuvor übersetzt hat.",
     presetChain:
@@ -1262,6 +1264,7 @@ export const languageGerman = {
   reSummarizationPrompt: 'Wiederholte Zusammenfassungsanweisung',
   translatorPrompt: 'Übersetzungsanweisung',
   translateBeforeHTMLFormatting: 'Vor HTML-Formatierung übersetzen',
+  translatorSendTextAsIs: 'Text unverändert senden',
   retranslate: 'Neu übersetzen',
   editTranslation: 'Übersetzung bearbeiten',
   editTranslationSave: 'Übersetzung speichern',

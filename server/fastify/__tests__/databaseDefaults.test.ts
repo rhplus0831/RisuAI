@@ -26,6 +26,7 @@ describe('database defaults', () => {
     ])
     expect(database.reducedMotion).toBe(false)
     expect(database.chatScreenWidth).toBe(900)
+    expect(database.translatorSendTextAsIs).toBe(false)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
     expect(database.loreBook).toEqual([
@@ -70,6 +71,12 @@ describe('database defaults', () => {
     const database = normalizeDatabaseDefaults({ chatScreenWidth: 1240 }, { providerDefaults: false })
 
     expect(database.chatScreenWidth).toBe(1240)
+  })
+
+  it('preserves an enabled send-text-as-is translation preference', () => {
+    const database = normalizeDatabaseDefaults({ translatorSendTextAsIs: true }, { providerDefaults: false })
+
+    expect(database.translatorSendTextAsIs).toBe(true)
   })
 
   it('normalizes old model maps without dropping script roles', () => {

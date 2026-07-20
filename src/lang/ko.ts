@@ -213,6 +213,8 @@ export const languageKorean = {
       '번역에 사용되는 프롬프트입니다. 비어있으면 기본 프롬프트를 사용합니다. 목적 언어에 대해 {{slot}}, 콘텐츠에 대해 {{slot::content}}, 번역자 노트에 대해 {{slot::tnote}}를 사용하여 ChatML 형식을 사용할 수도 있습니다.',
     translateBeforeHTMLFormatting:
       '활성화하면 정규식 스크립트와 HTML 포맷팅 전에 텍스트를 번역합니다. 토큰이 줄어들 수 있지만 포맷이 깨질 수 있습니다.',
+    translatorSendTextAsIs:
+      '활성화하면 Ax. Model 번역이 메시지 텍스트를 작성된 그대로 모델에 전송합니다. 줄 보호, 분할 또는 스타일 자리표시자 없이 단일 요청으로 전송하며, 모델의 응답을 수정 없이 번역 결과로 사용합니다.',
     autoTranslateCachedOnly: '활성화하면 자동 번역을 켠 채팅은 저장된 번역만 표시하고 새 LLM 번역을 요청하지 않습니다.',
     presetChain:
       '비어있지 않으면 사용자가 메시지를 보낼 때마다 이 입력의 프리셋 목록에서 무작위로 프리셋이 변경 및 적용됩니다. 프리셋 목록은 쉼표로 구분해야 합니다. 예: `preset1,preset2`.',
@@ -1264,6 +1266,7 @@ export const languageKorean = {
   reSummarizationPrompt: '재요약 프롬프트',
   translatorPrompt: '번역 프롬프트',
   translateBeforeHTMLFormatting: 'HTML 포맷 전 번역',
+  translatorSendTextAsIs: '텍스트 원문 그대로 전송',
   retranslate: '다시 번역',
   editTranslation: '번역 수정',
   editTranslationSave: '번역 저장',

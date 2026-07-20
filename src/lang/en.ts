@@ -391,6 +391,8 @@ export const languageEnglish = {
       'The prompt that is used for translation. If it is blank, it will use the default prompt. You can also use ChatML formating with {{slot}} for the dest language, {{slot::content}} for the content, and {{slot::tnote}} for the translator note.',
     translateBeforeHTMLFormatting:
       'If enabled, it will translate the text before Regex scripts and HTML formatting. This could make the token lesser but could break the formatting.',
+    translatorSendTextAsIs:
+      "If enabled, Ax. Model translation sends the message text to the model exactly as written — in a single request, with no line protection, splitting, or style placeholders — and the model's response is used verbatim as the translation result.",
     autoTranslateCachedOnly:
       "If enabled, chats with Auto Translation on display stored translations but don't request new LLM translations.",
     presetChain:
@@ -1701,6 +1703,7 @@ export const languageEnglish = {
   reSummarizationPrompt: 'Re-Summarizaion Prompt',
   translatorPrompt: 'Translation Prompt',
   translateBeforeHTMLFormatting: 'Translate Before HTML Formatting',
+  translatorSendTextAsIs: 'Send Text As-Is',
   retranslate: 'Retranslate',
   editTranslation: 'Edit Translation',
   editTranslationSave: 'Save Translation',

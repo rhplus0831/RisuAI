@@ -43,4 +43,12 @@ describe('language settings actions', () => {
   it('does not offer the retired global auto-translate setting', () => {
     expect(languageSettingsItems.find((item) => item.id === 'lang.autoTranslate')).toBeUndefined()
   })
+
+  it('renders send-text-as-is as disabled when an existing database has no stored value', () => {
+    const item = languageSettingsItems.find((candidate) => candidate.id === 'lang.translatorSendTextAsIs')
+
+    expect(item?.bindKey).toBe('translatorSendTextAsIs')
+    expect(item?.getValue?.({ translatorSendTextAsIs: undefined } as never)).toBe(false)
+    expect(item?.getValue?.({ translatorSendTextAsIs: true } as never)).toBe(true)
+  })
 })

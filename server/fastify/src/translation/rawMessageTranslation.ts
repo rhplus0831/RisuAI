@@ -104,6 +104,7 @@ function translatorSettingsHash(input: {
       inputLanguage: input.inputLanguage,
       translatorPrompt: stringValue(input.settings.translatorPrompt),
       translatorMaxResponse: finiteNumber(input.settings.translatorMaxResponse, 1000),
+      translatorSendTextAsIs: input.settings.translatorSendTextAsIs === true,
       translatorNote: translatorNote(input.character),
       aiModel: stringValue(input.settings.aiModel),
       modelProfiles: input.settings.modelProfiles ?? null,
@@ -393,9 +394,13 @@ export async function translateRawMessageData(input: RawMessageTranslationInput)
     }
     return translateWithLlm(input.settings, input.character, chunk, inputLanguage, targetLanguage, input.signal)
   }
+  const translatedText =
+    translatorType === 'llm' && input.settings.translatorSendTextAsIs === true
+      ? await translateWithLlm(input.settings, input.character, input.text, inputLanguage, targetLanguage, input.signal)
+      : await translatePreservingRawBlocks(input.text, translateChunk)
 
   return {
-    text: await translatePreservingRawBlocks(input.text, translateChunk),
+    text: translatedText,
     source: 'raw',
     sourceHash: sha256(input.text),
     targetLanguage,

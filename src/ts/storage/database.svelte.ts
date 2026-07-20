@@ -3170,6 +3170,7 @@ export function setDatabase(data: Database) {
   data.stabilityModel ??= 'sd3-large'
   data.stabllityStyle ??= ''
   data.legacyTranslation ??= false
+  data.translatorSendTextAsIs ??= false
   data.comfyUiUrl ??= 'http://localhost:8188'
   data.comfyConfig ??= {
     workflow: '',
@@ -4029,6 +4030,7 @@ export interface Database {
     overrides: Record<string, SeparateParameters>
   }
   translateBeforeHTMLFormatting: boolean
+  translatorSendTextAsIs: boolean
   autoTranslateCachedOnly: boolean
   notification: boolean
   customFlags: LLMFlags[]

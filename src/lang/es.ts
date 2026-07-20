@@ -206,6 +206,8 @@ export const languageSpanish = {
       'El prompt que se utiliza para la traducción. Si está en blanco, utilizará el prompt predeterminado. También puedes usar el formato ChatML con {{slot}} para el idioma de destino, {{solt::content}} para el contenido y {{slot::tnote}} para la nota del traductor.',
     translateBeforeHTMLFormatting:
       'Si está habilitado, traducirá el texto antes de los scripts Regex y el formateo HTML. Esto podría reducir los tokens pero podría romper el formateo.',
+    translatorSendTextAsIs:
+      'Si se habilita, la traducción con Ax. Model envía el texto del mensaje al modelo exactamente como está escrito — en una sola solicitud, sin protección de líneas, división ni marcadores de posición de estilo — y utiliza la respuesta del modelo sin modificar como resultado de la traducción.',
     autoTranslateCachedOnly:
       'Si está habilitado con la opción de Traducción Automática activada, traducirá automáticamente solo los mensajes que el usuario haya traducido previamente.',
     presetChain:
@@ -1242,6 +1244,7 @@ export const languageSpanish = {
   reSummarizationPrompt: 'Prompt de Re-Resumen',
   translatorPrompt: 'Prompt de Traducción',
   translateBeforeHTMLFormatting: 'Traducir Antes del Formateo HTML',
+  translatorSendTextAsIs: 'Enviar texto tal cual',
   retranslate: 'Retraducir',
   editTranslation: 'Editar traducción',
   editTranslationSave: 'Guardar traducción',

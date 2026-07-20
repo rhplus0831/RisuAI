@@ -125,6 +125,7 @@ import {
   __translatorTestHooks,
   getLLMCache,
   getCurrentTranslatorPreset,
+  runTranslator,
   setLLMCache,
   translate,
   translateHTML,
@@ -136,6 +137,7 @@ function resetDatabase() {
     translator: 'ko',
     translatorInputLanguage: 'ja',
     translatorType: 'google',
+    translatorSendTextAsIs: false,
     aiModel: 'openai',
     subModel: 'echo_model',
     modelRoles: {},
@@ -347,6 +349,66 @@ describe('auto-translate cache', () => {
     expect(second).toBe('<p>llm:fr</p>')
     expect(firstAgain).toBe(first)
     expect(testState.requestChatData).toHaveBeenCalledTimes(2)
+  })
+
+  it('separates LLM translation caches between normal and send-text-as-is modes', async () => {
+    testState.db.translatorType = 'llm'
+    testState.requestChatData.mockImplementation(async () => ({
+      type: 'success',
+      result: testState.db.translatorSendTextAsIs ? '  as-is response\n' : 'normal response',
+    }))
+
+    const normal = await translateHTML('same source', false, '', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.translatorSendTextAsIs = true
+    const asIs = await translateHTML('same source', false, '', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.translatorSendTextAsIs = false
+    const normalAgain = await translateHTML('same source', false, '', 0)
+
+    expect(normal).toBe('normal response')
+    expect(asIs).toBe('  as-is response\n')
+    expect(normalAgain).toBe(normal)
+    expect(testState.requestChatData).toHaveBeenCalledTimes(2)
+  })
+
+  it('sends protected lines in one untouched runTranslator LLM request when send-text-as-is is enabled', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.translatorSendTextAsIs = true
+    const text = ['  before', '{{img::assets/image.png}}', '', '{{raw::keep this}}', 'after  '].join('\n')
+    const rawResponse = '  one raw response\n\n'
+    testState.requestChatData.mockResolvedValue({ type: 'success', result: rawResponse })
+
+    const result = await runTranslator(text, false, 'ko', 'en')
+
+    expect(result).toBe(rawResponse)
+    expect(testState.requestChatData).toHaveBeenCalledTimes(1)
+    expect(testState.requestChatData.mock.calls[0][0].formated).toContainEqual({ role: 'user', content: text })
+    expect(__translatorTestHooks.getTranslateCacheEntries()).toContainEqual([expect.any(String), rawResponse])
+  })
+
+  it('uses untouched LLM input and output without style placeholders or edit-translation regexes in as-is mode', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.translatorSendTextAsIs = true
+    testState.db.characters[0].customscript = [
+      {
+        id: 'must-not-run',
+        comment: '',
+        in: 'RAW',
+        out: 'EDITED',
+        type: 'edittrans',
+        flag: '',
+        ableFlag: false,
+      },
+    ]
+    const text = '<risu-style>color:red</risu-style> source'
+    const rawResponse = '  RAW <style-data style-index="0"></style-data>\n'
+    testState.requestChatData.mockResolvedValue({ type: 'success', result: rawResponse })
+
+    const result = await translateHTML(text, false, 'char-a', 0)
+
+    expect(testState.requestChatData.mock.calls[0][0].formated).toContainEqual({ role: 'user', content: text })
+    expect(result).toBe(rawResponse)
   })
 
   it('phase5: keys LLM translation cache entries by the resolved translate profile', async () => {

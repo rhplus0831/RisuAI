@@ -211,6 +211,17 @@ export const languageSettingsItems: SettingItem[] = [
   },
 
   {
+    id: 'lang.translatorSendTextAsIs',
+    type: 'check',
+    labelKey: 'translatorSendTextAsIs',
+    bindKey: 'translatorSendTextAsIs',
+    helpKey: 'translatorSendTextAsIs',
+    getValue: (db) => db.translatorSendTextAsIs ?? false,
+    classes: 'mt-4',
+    condition: (ctx) => !!ctx.db.translator && ctx.db.translatorType === 'llm',
+  },
+
+  {
     id: 'lang.autoTranslateCachedOnly',
     type: 'check',
     labelKey: 'autoTranslateCachedOnly',

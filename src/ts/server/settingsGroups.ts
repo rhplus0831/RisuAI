@@ -312,6 +312,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   top_k: 'runtime',
   top_p: 'runtime',
   translateBeforeHTMLFormatting: 'language',
+  translatorSendTextAsIs: 'language',
   translator: 'language',
   translatorInputLanguage: 'language',
   translatorMaxResponse: 'language',

@@ -1,4 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const rawTranslationMocks = vi.hoisted(() => ({
+  dispatchChatProvider: vi.fn(),
+}))
+
+vi.mock('../src/prompt/chatDispatch.js', () => ({
+  dispatchChatProvider: rawTranslationMocks.dispatchChatProvider,
+}))
+
 import { translateRawMessageData, type RawMessageTranslatorType } from '../src/translation/rawMessageTranslation.js'
 
 type FetchInput = Parameters<typeof fetch>[0]
@@ -46,6 +55,22 @@ function settingsFor(translatorType: Exclude<RawMessageTranslatorType, 'llm'>): 
     }
   }
   return settings
+}
+
+function llmSettings(translatorSendTextAsIs: boolean): Record<string, unknown> {
+  return {
+    translatorType: 'llm',
+    translator: 'ko',
+    translatorInputLanguage: 'en',
+    aiModel: 'echo_model',
+    translatorSendTextAsIs,
+  }
+}
+
+function textFrames(text: string) {
+  return (async function* () {
+    yield { kind: 'token' as const, content: text }
+  })()
 }
 
 const providerCases: ProviderCase[] = [
@@ -111,6 +136,7 @@ const providerCases: ProviderCase[] = [
 ]
 
 afterEach(() => {
+  rawTranslationMocks.dispatchChatProvider.mockReset()
   vi.unstubAllGlobals()
 })
 
@@ -283,5 +309,54 @@ describe('translateRawMessageData', () => {
         'AFTER',
       ].join('\n'),
     )
+  })
+
+  it('sends one untouched LLM request and stores its response verbatim when send-text-as-is is enabled', async () => {
+    const text = ['  before', '{{img::assets/image.png}}', '', '<risu-style>color:red</risu-style>', 'after  '].join(
+      '\n',
+    )
+    const rawResponse = '  translated exactly\n\n'
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames(rawResponse))
+
+    const result = await translateRawMessageData({
+      settings: llmSettings(true),
+      text,
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider).toHaveBeenCalledTimes(1)
+    const request = rawTranslationMocks.dispatchChatProvider.mock.calls[0][0]
+    expect(request.formated).toContainEqual({ role: 'user', content: text })
+    expect(result.text).toBe(rawResponse)
+  })
+
+  it('keeps LLM chunk protection when send-text-as-is is false and changes the settings hash when toggled', async () => {
+    const text = ['before', '{{img::assets/image.png}}', '', 'after'].join('\n')
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async ({ formated }) => {
+      const content = formated.at(-1)?.content ?? ''
+      return textFrames(`  ${content.toUpperCase()}  `)
+    })
+
+    const chunked = await translateRawMessageData({
+      settings: llmSettings(false),
+      text,
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider).toHaveBeenCalledTimes(2)
+    expect(
+      rawTranslationMocks.dispatchChatProvider.mock.calls.map(([request]) => request.formated.at(-1)?.content),
+    ).toEqual(['before', 'after'])
+    expect(chunked.text).toBe(['BEFORE', '{{img::assets/image.png}}', '', '', 'AFTER'].join('\n'))
+
+    rawTranslationMocks.dispatchChatProvider.mockReset()
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('whole response'))
+    const asIs = await translateRawMessageData({
+      settings: llmSettings(true),
+      text,
+      signal: new AbortController().signal,
+    })
+
+    expect(asIs.settingsHash).not.toBe(chunked.settingsHash)
   })
 })

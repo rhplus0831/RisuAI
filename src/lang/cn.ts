@@ -174,6 +174,8 @@ export const languageChinese = {
       '用于翻译的提示词。留空将使用默认提示。你还可以使用带有 {{slot}} 的 ChatML 格式表示目标语言：用 {{slot::content}} 表示内容，用 {{slot::tnote}} 表示翻译注释。',
     translateBeforeHTMLFormatting:
       '激活后，将在正则脚本和 HTML 格式化之前翻译文本。这可能减少 Token 数，但可能破坏格式。',
+    translatorSendTextAsIs:
+      '启用后，Ax. Model 翻译会将消息文本完全按原样发送给模型——仅发送一次请求，不保护行、不拆分，也不使用样式占位符——并将模型的响应原封不动地用作翻译结果。',
     autoTranslateCachedOnly: '如果在启用自动翻译的情况下启用，则仅会自动翻译用户之前已翻译过的消息。',
     presetChain:
       '如果不为空，每次用户在此输入框预设列表中的消息时，预设将会更改并随机应用。预设列表应以逗号分隔，例如 `preset1,preset2`。',
@@ -1173,6 +1175,7 @@ export const languageChinese = {
   reSummarizationPrompt: '重新摘要提示词',
   translatorPrompt: '翻译提示词',
   translateBeforeHTMLFormatting: '於 HTML 格式化前翻译',
+  translatorSendTextAsIs: '按原样发送文本',
   retranslate: '重新翻译',
   editTranslation: '编辑翻译',
   editTranslationSave: '保存翻译',

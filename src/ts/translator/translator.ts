@@ -218,6 +218,7 @@ function getTranslateProfileCacheSignature(db = getDatabase()) {
   const customModel = profile.providerOptions.customModel
 
   return {
+    translatorSendTextAsIs: db.translatorSendTextAsIs === true,
     profileId: profile.profileId,
     source: {
       kind: profile.source.kind,
@@ -672,6 +673,18 @@ export async function runTranslator(
 
     translatorNote: exarg?.translatorNote,
   }
+  const db = getDatabase()
+  if (db.translatorType === 'llm' && db.translatorSendTextAsIs === true) {
+    const result = await translateMain(text, arg)
+
+    if (result.startsWith('ERR::')) {
+      alertError(result)
+      return text
+    }
+
+    writeTranslateCache(reverse, text, result, cacheScope, cacheKey)
+    return result
+  }
   const texts = text.split('\n')
   let chunks: [string, boolean][] = [['', true]]
 
@@ -858,6 +871,7 @@ export async function translateHTML(
     }
   }
   let db = getDatabase()
+  const sendTextAsIs = db.translatorType === 'llm' && db.translatorSendTextAsIs === true
   let DoingChat = get(doingChat)
   if (DoingChat) {
     if (!(db.translatorType === 'llm' && (await getLLMCache(html)) !== null)) {
@@ -884,7 +898,7 @@ export async function translateHTML(
       audio.play().catch(() => {})
     }
 
-    return cacheTranslateHTMLResult(applyEdittransRegex(r, charArg, alwaysExistChar))
+    return cacheTranslateHTMLResult(sendTextAsIs ? r : applyEdittransRegex(r, charArg, alwaysExistChar))
   }
   const dom = new DOMParser().parseFromString(html, 'text/html')
 
@@ -1085,6 +1099,7 @@ async function translateLLM(
 ): Promise<string> {
   const originalText = text
   const db = getDatabase()
+  const sendTextAsIs = db.translatorSendTextAsIs === true
   const charIndex = get(selectedCharID)
   const currentChar = db.characters[charIndex]
   const translatorNote = resolveTranslatorNote(arg.translatorNote, currentChar)
@@ -1099,10 +1114,12 @@ async function translateLLM(
   }
   const styleDecodeRegex = /\<risu-style\>(.+?)\<\/risu-style\>/gms
   let styleDecodes: string[] = []
-  text = text.replace(styleDecodeRegex, (match, p1) => {
-    styleDecodes.push(p1)
-    return `<style-data style-index="${styleDecodes.length - 1}"></style-data>`
-  })
+  if (!sendTextAsIs) {
+    text = text.replace(styleDecodeRegex, (match, p1) => {
+      styleDecodes.push(p1)
+      return `<style-data style-index="${styleDecodes.length - 1}"></style-data>`
+    })
+  }
 
   let formated: OpenAIChat[] = []
   let prompt = preset.prompt || defaultTranslatorPrompt
@@ -1151,11 +1168,13 @@ async function translateLLM(
     alertError('Unexpected response type')
     return text
   }
-  const result = rq.result
-    .replace(/<style-data style-index="(\d+)" ?\/?>/g, (match, p1) => {
-      return styleDecodes[parseInt(p1)] ?? ''
-    })
-    .replace(/<\/style-data>/g, '')
+  const result = sendTextAsIs
+    ? rq.result
+    : rq.result
+        .replace(/<style-data style-index="(\d+)" ?\/?>/g, (match, p1) => {
+          return styleDecodes[parseInt(p1)] ?? ''
+        })
+        .replace(/<\/style-data>/g, '')
   await writeLLMCacheEntry(cacheKey, result)
   return result
 }
