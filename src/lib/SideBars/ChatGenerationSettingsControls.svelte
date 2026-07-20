@@ -152,7 +152,6 @@
           <option value={preset.id}>{preset.name}</option>
         {/each}
       </SelectInput>
-      <span class="truncate text-xs text-textcolor2">{agentPresetName}</span>
       {#if selectedAgentPresetMissing}
         <span class="text-xs text-draculared" data-risu-generation-picker-agent-preset-error>
           {language.agentPresets.missingSelected(selectedAgentPresetId)}
@@ -176,8 +175,12 @@
       </div>
     </Button>
     {#if personaNote}
-      <span class="mt-1 text-sm opacity-75 whitespace-pre-wrap break-words" data-risu-generation-picker-persona-note
-        >{personaNote}</span>
+      <div class="mt-1 flex flex-col gap-0.5 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5">
+        <span class="text-xs font-medium text-textcolor2">{language.personaNote}</span>
+        <span
+          class="text-xs whitespace-pre-wrap break-words"
+          data-risu-generation-picker-persona-note>{personaNote}</span>
+      </div>
     {/if}
   </div>
 </div>
