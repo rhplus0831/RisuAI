@@ -11,6 +11,7 @@
     type simpleCharacterArgument,
   } from '../../ts/parser/parser.svelte'
   import { translateHTML } from '../../ts/translator/translator'
+  import { pruneEmptyBilingualPairs } from '../../ts/translator/bilingualInterleave'
   import { getModuleAssets } from 'src/ts/process/modules'
   import { getCurrentCharacter, getCurrentChat, getDatabase } from 'src/ts/storage/database.svelte'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
@@ -75,6 +76,10 @@
   function reportParsingError(error: unknown) {
     const parsingError = error instanceof Error ? error : new Error(typeof error === 'string' ? error : String(error))
     alertError(`Error while parsing chat message: ${translated}, ${parsingError.message}, ${parsingError.stack}`)
+  }
+
+  function renderParsedChatBody(html: string): string {
+    return addMetadataToElement(pruneEmptyBilingualPairs(trimMarkdown(html)), modelShortName)
   }
 
   function automaticClientTranslationEnabled(): boolean {
@@ -431,7 +436,7 @@
 </script>
 
 {#await markParsingResult}
-  {@html addMetadataToElement(trimMarkdown(lastParsed), modelShortName)}
+  {@html renderParsedChatBody(lastParsed)}
 {:then md}
-  {@html addMetadataToElement(trimMarkdown(md), modelShortName)}
+  {@html renderParsedChatBody(md)}
 {/await}

@@ -2,6 +2,10 @@ export const BILINGUAL_TRANSLATION_CLASS = 'x-risu-bilingual-translation'
 export const BILINGUAL_PAIR_CLASS = 'x-risu-bilingual-pair'
 export const BILINGUAL_MUTED_CLASS = 'x-risu-bilingual-muted'
 
+const BILINGUAL_SIDE_SELECTOR = `.${BILINGUAL_TRANSLATION_CLASS}, .${BILINGUAL_MUTED_CLASS}`
+const VISUAL_CONTENT_SELECTOR =
+  'img, svg, video, audio, iframe, canvas, embed, object, picture, hr, [style*="background"]'
+
 export interface BilingualInterleaveOptions {
   emphasize?: 'original' | 'translation'
 }
@@ -58,6 +62,31 @@ function pairedUnit(
     }
   }
   return wrappedUnit(sides.join('\n\n'), [BILINGUAL_PAIR_CLASS])
+}
+
+function hasBilingualRenderedContent(element: Element): boolean {
+  return (
+    (element.textContent ?? '').trim().length > 0 ||
+    element.matches(VISUAL_CONTENT_SELECTOR) ||
+    element.querySelector(VISUAL_CONTENT_SELECTOR) !== null
+  )
+}
+
+export function pruneEmptyBilingualPairs(html: string): string {
+  if (!html.includes(BILINGUAL_PAIR_CLASS)) return html
+
+  const document = new DOMParser().parseFromString(html, 'text/html')
+  const pairs = document.body.querySelectorAll(`.${BILINGUAL_PAIR_CLASS}`)
+
+  for (const pair of pairs) {
+    for (const side of pair.querySelectorAll(BILINGUAL_SIDE_SELECTOR)) {
+      if (!hasBilingualRenderedContent(side)) side.remove()
+    }
+
+    if (!hasBilingualRenderedContent(pair)) pair.remove()
+  }
+
+  return document.body.innerHTML
 }
 
 export function bilingualInterleave(

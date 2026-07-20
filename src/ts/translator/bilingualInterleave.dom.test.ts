@@ -5,6 +5,7 @@ import {
   BILINGUAL_PAIR_CLASS,
   BILINGUAL_TRANSLATION_CLASS,
   bilingualInterleave,
+  pruneEmptyBilingualPairs,
 } from './bilingualInterleave'
 
 vi.mock('../storage/database.svelte', () => ({
@@ -87,5 +88,88 @@ describe('bilingual interleave rendered markup', () => {
     expect(translated?.classList.contains(BILINGUAL_MUTED_CLASS)).toBe(true)
     expect(pair?.children[0]?.querySelector('strong')?.textContent).toBe('Original')
     expect(translated?.querySelector('em')?.textContent).toBe('Translated')
+  })
+})
+
+describe('pruneEmptyBilingualPairs', () => {
+  function parsePruned(html: string): HTMLDivElement {
+    const root = document.createElement('div')
+    root.innerHTML = pruneEmptyBilingualPairs(html)
+    return root
+  }
+
+  it('removes a pair when both wrapped sides are empty', () => {
+    const root = parsePruned(`
+      <div class="${BILINGUAL_PAIR_CLASS}">
+        <div class="${BILINGUAL_TRANSLATION_CLASS}"><p> &nbsp; </p></div>
+        <div class="${BILINGUAL_MUTED_CLASS}"><!-- consumed status data --></div>
+      </div>
+      <p>Following content</p>
+    `)
+
+    expect(root.querySelector(`.${BILINGUAL_PAIR_CLASS}`)).toBeNull()
+    expect(root.textContent?.trim()).toBe('Following content')
+  })
+
+  it('removes only the empty side when the other side has text', () => {
+    const root = parsePruned(`
+      <div class="${BILINGUAL_PAIR_CLASS}">
+        <div class="${BILINGUAL_TRANSLATION_CLASS}">Translated status</div>
+        <div class="${BILINGUAL_MUTED_CLASS}"> &nbsp; </div>
+      </div>
+    `)
+    const pair = root.querySelector(`.${BILINGUAL_PAIR_CLASS}`)
+
+    expect(pair).not.toBeNull()
+    expect(pair?.querySelector(`.${BILINGUAL_TRANSLATION_CLASS}`)?.textContent).toBe('Translated status')
+    expect(pair?.querySelector(`.${BILINGUAL_MUTED_CLASS}`)).toBeNull()
+  })
+
+  it('keeps image-only sides that use background images', () => {
+    const root = parsePruned(`
+      <div class="${BILINGUAL_PAIR_CLASS}">
+        <div class="${BILINGUAL_TRANSLATION_CLASS}">
+          <div class="x-risu-image-container" style="background-image: url(translation.png)"></div>
+        </div>
+        <div class="${BILINGUAL_MUTED_CLASS}">
+          <div class="x-risu-image-container" style="background-image: url(original.png)"></div>
+        </div>
+      </div>
+    `)
+    const pair = root.querySelector(`.${BILINGUAL_PAIR_CLASS}`)
+
+    expect(pair).not.toBeNull()
+    expect(pair?.querySelector(`.${BILINGUAL_TRANSLATION_CLASS}`)).not.toBeNull()
+    expect(pair?.querySelector(`.${BILINGUAL_MUTED_CLASS}`)).not.toBeNull()
+    expect(pair?.querySelectorAll('.x-risu-image-container')).toHaveLength(2)
+  })
+
+  it('keeps an original-emphasis pair when its bare original is empty but its translation is not', () => {
+    const root = parsePruned(`
+      <div class="${BILINGUAL_PAIR_CLASS}">
+        <p class="consumed-original"> &nbsp; </p>
+        <div class="${BILINGUAL_TRANSLATION_CLASS} ${BILINGUAL_MUTED_CLASS}">Translated status</div>
+      </div>
+    `)
+    const pair = root.querySelector(`.${BILINGUAL_PAIR_CLASS}`)
+
+    expect(pair).not.toBeNull()
+    expect(pair?.querySelector('.consumed-original')).not.toBeNull()
+    expect(pair?.querySelector(`.${BILINGUAL_TRANSLATION_CLASS}`)?.textContent).toBe('Translated status')
+  })
+
+  it('returns input without bilingual pair markers unchanged without parsing', () => {
+    const html = '<p>Ordinary <strong>chat</strong> content</p>'
+    const domParser = vi.fn(() => {
+      throw new Error('DOMParser should not run for ordinary chat HTML')
+    })
+    vi.stubGlobal('DOMParser', domParser)
+
+    try {
+      expect(pruneEmptyBilingualPairs(html)).toBe(html)
+      expect(domParser).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
