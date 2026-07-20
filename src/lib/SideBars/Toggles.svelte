@@ -12,6 +12,7 @@
   import ChatGenerationSettingsControls from './ChatGenerationSettingsControls.svelte'
   import ChatGenerationResetDefaultsButton from './ChatGenerationResetDefaultsButton.svelte'
   import ChatGenerationTogglePresets from './ChatGenerationTogglePresets.svelte'
+  import ChatDraftHookSelector from './ChatDraftHookSelector.svelte'
   import CustomSideBar from './CustomSidebar.svelte'
   import {
     compareChatGenerationTogglePresetToActiveState,
@@ -444,6 +445,7 @@
     {/if}
     <ChatGenerationResetDefaultsButton />
     <ChatGenerationTogglePresets />
+    <ChatDraftHookSelector />
   </div>
 {:else}
   <ChatGenerationSettingsControls />
@@ -486,5 +488,6 @@
     </div>
   {/if}
   <ChatGenerationTogglePresets />
+  <ChatDraftHookSelector />
   <ChatGenerationResetDefaultsButton />
 {/if}

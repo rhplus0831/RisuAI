@@ -160,6 +160,21 @@ function stubCommandFetch(): CapturedFetch[] {
           prunedSidebarToggleKeys: [],
         } satisfies ServerCommandResult<{ chatId: string }> & Record<string, unknown>)
       }
+      if (url === '/api/v1/commands/chats/chat-a') {
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'chat.updated',
+            revision,
+            resource: 'characterRow',
+            id: 'chat-a',
+            parentId: 'char-a',
+          },
+          chatId: 'chat-a',
+          selectedChatId: 'chat-a',
+        })
+      }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
   )
@@ -396,6 +411,16 @@ function togglePresetRoot(): HTMLElement {
 function togglePresetStateButton(): HTMLButtonElement {
   const button = togglePresetRoot().querySelector<HTMLButtonElement>('button')
   expect(button, 'toggle preset state button').toBeTruthy()
+  return button!
+}
+
+function draftHookRoot(): HTMLElement {
+  return elementBySelector<HTMLElement>('[data-risu-draft-hook-selector]', 'draft hook selector')
+}
+
+function draftHookButton(): HTMLButtonElement {
+  const button = draftHookRoot().querySelector<HTMLButtonElement>('button')
+  expect(button, 'draft hook selector button').toBeTruthy()
   return button!
 }
 
@@ -1627,6 +1652,37 @@ describe('sidebar chat generation settings controls', () => {
     const resetDefaults = elementBySelector<HTMLElement>('[data-risu-generation-reset-defaults]', 'reset defaults')
 
     expect(hypaMemoryToggle.compareDocumentPosition(resetDefaults) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('selects a draft hook for a fresh chat from beside Saved Toggles in the sidebar', async () => {
+    const calls = stubCommandFetch()
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    testDatabaseState().inputHooks = [hook]
+
+    mountToggles()
+    await tick()
+
+    expect(togglePresetRoot().compareDocumentPosition(draftHookRoot()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(draftHookButton().textContent).toContain(language.inputHookNone)
+
+    draftHookButton().click()
+    await tick()
+    elementBySelector<HTMLButtonElement>(
+      '[data-testid="default-chat-input-hook-option-draft-hook"]',
+      'draft hook picker option',
+    ).click()
+
+    await vi.waitFor(() => expect(activeChat().selectedDraftHookId).toBe(hook.id))
+    await vi.waitFor(() => expect(draftHookButton().textContent).toContain(hook.name))
+    await waitForFetchCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        patch: { selectedDraftHookId: hook.id },
+        select: false,
+      },
+    })
   })
 
   it('derives the Saved Toggles button label with unlinked and mismatch precedence', async () => {

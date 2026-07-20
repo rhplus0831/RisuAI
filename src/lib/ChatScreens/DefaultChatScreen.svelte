@@ -96,7 +96,6 @@
     appendCurrentChatUserMessageForSend,
     captureActiveChatTarget,
     isActiveChatTargetFresh,
-    setCurrentChatSelectedDraftHookId,
     setCurrentChatGreetingIndex,
     type ActiveChatTarget,
   } from 'src/ts/chatCommands'
@@ -178,7 +177,7 @@
   let loadPages = $state(normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount))
   let doingDraftHook = $state(false)
   let doingBtwHook = $state(false)
-  let hookDialogKind: 'draft' | 'btw' | null = $state(null)
+  let showBtwHookDialog = $state(false)
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
   let showNewMessageButton = $state(false)
@@ -235,9 +234,7 @@
     if (!selectedId) return undefined
     return draftHooks.find((hook) => hook.id === selectedId)
   })
-  let showDraftArea = $derived(
-    Boolean(draftHooks.length > 0 || btwHooks.length > 0 || draftText.length > 0 || btwText.length > 0),
-  )
+  let showDraftArea = $derived(Boolean(selectedDraftHook || draftText.length > 0 || btwText.length > 0))
   let hookRunActive = $derived(doingDraftHook || doingBtwHook)
   let canContinueFromMenu = $derived(currentChat.length >= 2 && currentChat[currentChat.length - 1]?.role === 'char')
   let currentChatOwnsGeneration = $derived.by(() => {
@@ -914,13 +911,8 @@
     }
   }
 
-  function selectDraftHook(hook: InputHook | null): void {
-    setCurrentChatSelectedDraftHookId(hook?.id ?? null)
-    hookDialogKind = null
-  }
-
   async function selectBtwHook(hook: InputHook | null): Promise<void> {
-    hookDialogKind = null
+    showBtwHookDialog = false
     if (hook) await runBtwHook(hook)
   }
 
@@ -1814,22 +1806,11 @@
           <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              data-testid="default-chat-draft-hook-select"
-              aria-label={language.inputHookSelectDraft}
-              aria-busy={doingDraftHook}
-              disabled={$doingChat || preparingSend || hookRunActive}
-              class="rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-selected disabled:cursor-not-allowed disabled:opacity-50"
-              onclick={() => (hookDialogKind = 'draft')}>
-              {#if doingDraftHook}<LoaderCircleIcon size={16} class="risu-ongoing-pulse inline animate-spin" />{/if}
-              {selectedDraftHook?.name ?? language.inputHookNone}
-            </button>
-            <button
-              type="button"
               data-testid="default-chat-btw-button"
               aria-busy={doingBtwHook}
               disabled={$doingChat || preparingSend || hookRunActive}
               class="rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-selected disabled:cursor-not-allowed disabled:opacity-50"
-              onclick={() => (hookDialogKind = 'btw')}>
+              onclick={() => (showBtwHookDialog = true)}>
               {#if doingBtwHook}<LoaderCircleIcon size={16} class="risu-ongoing-pulse inline animate-spin" />{/if}
               {language.inputHookBtw}
             </button>
@@ -2264,13 +2245,8 @@
   {/if}
 </div>
 
-{#if hookDialogKind}
-  <InputHookPickerDialog
-    kind={hookDialogKind}
-    hooks={hookDialogKind === 'draft' ? draftHooks : btwHooks}
-    selectedId={selectedDraftHook?.id}
-    close={() => (hookDialogKind = null)}
-    select={hookDialogKind === 'draft' ? selectDraftHook : selectBtwHook} />
+{#if showBtwHookDialog}
+  <InputHookPickerDialog kind="btw" hooks={btwHooks} close={() => (showBtwHookDialog = false)} select={selectBtwHook} />
 {/if}
 
 {#if additionalFloatingActionButtons.length > 0}
