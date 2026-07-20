@@ -167,6 +167,23 @@ export const displaySizeSettingsItems: SettingItem[] = [
     keywords: ['line', 'height', 'spacing'],
   },
   {
+    id: 'display.chatScreenWidth',
+    type: 'slider',
+    labelKey: 'chatScreenWidth',
+    bindKey: 'chatScreenWidth',
+    // Server databases that predate this key serve it as undefined; the boot
+    // hydration path skips setDatabase() migrations, so fall back at the read
+    // site like other post-launch scalar settings.
+    getValue: (db) => db.chatScreenWidth ?? 900,
+    options: {
+      min: 500,
+      max: 2000,
+      step: 10,
+      customText: (value) => `${value}px`,
+    },
+    keywords: ['chat', 'screen', 'width'],
+  },
+  {
     id: 'display.iconsize',
     type: 'slider',
     labelKey: 'iconSize',

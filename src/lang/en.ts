@@ -1598,6 +1598,7 @@ export const languageEnglish = {
   },
   font: 'Font',
   customFont: 'Custom Font',
+  chatScreenWidth: 'Chat Screen Width',
   lineHeight: 'Line Height',
   notCharxWarn:
     'This character uses multiple assets. It is recommended to export this character as a CharX format for better compatibility.',

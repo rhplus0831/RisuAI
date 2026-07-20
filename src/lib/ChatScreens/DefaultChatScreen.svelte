@@ -1652,6 +1652,8 @@
   {:else}
     <div
       class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
+      style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px`}
+      data-default-chat-screen-width
       onscroll={(e) => {
         //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
         const scrolled = e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop
@@ -1675,7 +1677,7 @@
       <div
         class="{getDatabase().fixedChatTextarea
           ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor'
-          : 'mt-2 mb-2'} flex items-stretch w-full"
+          : 'mt-2 mb-2'} chat-screen-content-width flex items-stretch w-full"
         style={getDatabase().fixedChatTextarea ? 'z-index:29;' : ''}>
         {#if getDatabase().useChatSticker}
           <button
@@ -1763,7 +1765,7 @@
 
       {#if showDraftArea && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
         <div
-          class="mx-2 flex w-auto self-stretch flex-col gap-2 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5 text-textcolor"
+          class="chat-screen-content-width flex flex-col gap-2 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5 text-textcolor"
           data-testid="default-chat-draft-area"
           data-risu-draft-hook-pending={doingDraftHook}
           data-risu-btw-hook-pending={doingBtwHook}>
@@ -1827,7 +1829,7 @@
         </div>
       {/if}
       {#if getDatabase().useAutoTranslateInput && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
-        <div class="flex items-center mt-2 mb-2">
+        <div class="chat-screen-content-width flex items-center mt-2 mb-2">
           <label for="messageInputTranslate" class="text-textcolor ml-4">
             <LanguagesIcon />
           </label>
@@ -1858,7 +1860,8 @@
       {/if}
 
       {#if fileInput.length > 0}
-        <div class="flex items-center ml-4 flex-wrap p-2 m-2 border-darkborderc border rounded-md">
+        <div
+          class="chat-screen-content-width flex items-center ml-4 flex-wrap p-2 m-2 border-darkborderc border rounded-md">
           {#each fileInput as file, i}
             {#await getInlayAsset(file) then inlayAsset}
               <div class="relative">
@@ -1901,7 +1904,7 @@
       {/if}
 
       {#if toggleStickers}
-        <div class="ml-4 flex flex-wrap">
+        <div class="chat-screen-content-width ml-4 flex flex-wrap">
           <AssetInput
             {currentCharacter}
             onSelect={(additionalAsset) => {
@@ -1935,12 +1938,12 @@
 
       {#if getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}
         {#await preLoadChat($selectedCharID, getDatabase().characters[$selectedCharID].chatPage)}
-          <div class="w-full flex justify-center text-textcolor2 italic mb-12">
+          <div class="chat-screen-content-width w-full flex justify-center text-textcolor2 italic mb-12">
             {language.loadingChatData}
           </div>
         {:then recovered}
           {#if !recovered}
-            <div class="w-full flex justify-center text-red-400 italic mb-12" role="alert">
+            <div class="chat-screen-content-width w-full flex justify-center text-red-400 italic mb-12" role="alert">
               {language.errors.coldStorageRecoveryFailed}
               ({getDatabase().characters[$selectedCharID].chats[
                 getDatabase().characters[$selectedCharID].chatPage
@@ -1950,7 +1953,7 @@
         {/await}
       {:else}
         {#if chatFoldedStateMessageIndex.index !== -1}
-          <div class="w-full flex justify-center max-w-full p-4">
+          <div class="chat-screen-content-width w-full flex justify-center max-w-full p-4">
             <Button
               className="max-w-xl w-full"
               onclick={async () => {
@@ -1979,8 +1982,12 @@
           </div>
         {/if}
 
-        <AgentPresetProgress />
-        <PostGenerationScriptProgress characterId={currentCharacter.chaId} chatId={currentChatId} />
+        <div class="chat-screen-content-width" data-default-chat-agent-progress-column>
+          <AgentPresetProgress />
+        </div>
+        <div class="chat-screen-content-width" data-default-chat-post-generation-progress-column>
+          <PostGenerationScriptProgress characterId={currentCharacter.chaId} chatId={currentChatId} />
+        </div>
 
         <div class="contents" data-default-chat-chats-container>
           <Chats
@@ -2046,7 +2053,8 @@
             ].fmIndex ?? -1) + 2}
             totalPages={getDatabase().characters[$selectedCharID].alternateGreetings.length + 1} />
           {#if aiLawApplies() && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length === 0}
-            <div class="ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
+            <div
+              class="chat-screen-content-width ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
               {language.aiGenerationWarning}
             </div>
           {/if}

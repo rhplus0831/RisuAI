@@ -170,7 +170,7 @@
   })
 </script>
 
-<div class="flex flex-col-reverse" bind:this={chatBody}>
+<div class="chat-screen-content-width flex flex-col-reverse" bind:this={chatBody}>
   {#each chatRows as row (row.key)}
     <div class="chat-message-container">
       <Chat

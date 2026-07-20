@@ -46,6 +46,11 @@ describe('settings group parity', () => {
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.advanced).toContain('inputHooks')
   })
 
+  it('keeps chat screen width in the display settings projection', () => {
+    expect(SETTINGS_GROUP_KEYS.display).toContain('chatScreenWidth')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('chatScreenWidth')
+  })
+
   it('does not accept the retired Claude batching setting', () => {
     expect(SETTINGS_GROUP_KEYS.providers).not.toContain('claudeBatching')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).not.toContain('claudeBatching')

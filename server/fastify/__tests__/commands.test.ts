@@ -863,6 +863,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     const revision = await importDatabase(harness.app, assertion, {
       theme: 'dark',
       zoomsize: 100,
+      chatScreenWidth: 900,
       greeting: 'hi',
     })
 
@@ -870,7 +871,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       method: 'PATCH',
       url: '/api/v1/commands/settings/display',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, patch: { theme: 'light', zoomsize: 88 } },
+      payload: { baseRevision: revision, patch: { theme: 'light', zoomsize: 88, chatScreenWidth: 1240 } },
     })
 
     expect(res.statusCode).toBe(200)
@@ -882,7 +883,7 @@ describe('Phase 9-2a scalar settings groups', () => {
         resource: 'settings',
         id: 'display',
       },
-      acknowledgedKeys: ['theme', 'zoomsize'],
+      acknowledgedKeys: ['theme', 'zoomsize', 'chatScreenWidth'],
       settings: {},
     })
 
@@ -895,6 +896,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(bootstrap.json().database).toMatchObject({
       theme: 'light',
       zoomsize: 88,
+      chatScreenWidth: 1240,
       greeting: 'hi',
     })
   })

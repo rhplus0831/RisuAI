@@ -3017,6 +3017,7 @@ export function setDatabase(data: Database) {
     },
   ]
   data.classicMaxWidth ??= false
+  data.chatScreenWidth ??= 900
   data.ooba ??= safeStructuredClone(defaultOoba)
   data.ainconfig ??= safeStructuredClone(defaultAIN)
   data.openrouterKey ??= ''
@@ -3326,6 +3327,7 @@ export function setDatabase(data: Database) {
 
 export function applyServerResourceDatabase(data: Database, revision?: number) {
   const result = withServerResourceApply(() => {
+    data.chatScreenWidth ??= 900
     data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
     data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
     normalizeAgentPresetSettings(data)
@@ -3847,6 +3849,7 @@ export interface Database {
     kei?: boolean
   }
   classicMaxWidth: boolean
+  chatScreenWidth: number
   useChatSticker: boolean
   useAdditionalAssetsPreview: boolean
   usePlainFetch: boolean

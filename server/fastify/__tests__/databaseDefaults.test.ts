@@ -25,6 +25,7 @@ describe('database defaults', () => {
       },
     ])
     expect(database.reducedMotion).toBe(false)
+    expect(database.chatScreenWidth).toBe(900)
     expect(database.showGlobalLorebookAndRegex).toBe(false)
     expect(database.loreBook).toEqual([
       expect.objectContaining({ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }),
@@ -62,6 +63,12 @@ describe('database defaults', () => {
     const database = normalizeDatabaseDefaults({ reducedMotion: true }, { providerDefaults: false })
 
     expect(database.reducedMotion).toBe(true)
+  })
+
+  it('preserves an existing chat screen width', () => {
+    const database = normalizeDatabaseDefaults({ chatScreenWidth: 1240 }, { providerDefaults: false })
+
+    expect(database.chatScreenWidth).toBe(1240)
   })
 
   it('normalizes old model maps without dropping script roles', () => {

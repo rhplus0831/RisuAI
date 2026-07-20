@@ -98,6 +98,14 @@ describe('database compatibility accessors over resource state', () => {
     expect(getServerResourceApplyEpoch()).toBeGreaterThan(beforeApplyEpoch)
   })
 
+  it('backfills chat screen width when an authoritative database predates the setting', () => {
+    const database = databaseFixture()
+
+    applyServerResourceDatabase(database)
+
+    expect(getDatabase().chatScreenWidth).toBe(900)
+  })
+
   it('removes unsupported legacy database-key sidebar rows during resource normalization', () => {
     const database = databaseFixture()
     database.customSidebarItems = [

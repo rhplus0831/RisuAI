@@ -212,6 +212,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'currentPluginProvider', '')
   setDefault(database, 'plugins', [])
   setDefault(database, 'zoomsize', 100)
+  setDefault(database, 'chatScreenWidth', 900)
   setDefault(database, 'chatDisplayTailCount', DEFAULT_CHAT_DISPLAY_TAIL_COUNT)
   setDefault(database, 'customBackground', '')
   if (providerDefaults) {

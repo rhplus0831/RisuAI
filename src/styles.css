@@ -539,6 +539,18 @@ html.risu-reduced-motion .risu-ongoing-pulse {
   overflow-wrap: anywhere;
 }
 
+.chat-message-body {
+  display: block;
+  width: calc(100% - 0.5rem);
+}
+
+.chat-screen-content-width,
+.default-chat-screen > .risu-chat {
+  width: min(var(--chat-screen-width, 900px), 100%);
+  margin-inline: auto;
+  flex-shrink: 0;
+}
+
 .chat-message-container .dyna-icon {
   display: none;
 }

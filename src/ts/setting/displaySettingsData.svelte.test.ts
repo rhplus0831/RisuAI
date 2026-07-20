@@ -15,7 +15,11 @@ vi.mock('src/ts/process/modules', () => ({
   moduleUpdate: vi.fn(),
 }))
 
-import { displayOtherSettingsItems, displayThemeSettingsItems } from './displaySettingsData.svelte'
+import {
+  displayOtherSettingsItems,
+  displaySizeSettingsItems,
+  displayThemeSettingsItems,
+} from './displaySettingsData.svelte'
 import type { SettingContext } from './types'
 
 function contextForTheme(theme: string): SettingContext {
@@ -57,5 +61,35 @@ describe('display theme settings data', () => {
 
   it('does not advertise the disconnected legacy saving indicator', () => {
     expect(displayOtherSettingsItems.some((item) => item.bindKey === 'showSavingIcon')).toBe(false)
+  })
+})
+
+describe('display size settings data', () => {
+  it('exposes the fixed chat screen width slider in pixels', () => {
+    const chatScreenWidth = displaySizeSettingsItems.find((item) => item.id === 'display.chatScreenWidth')
+
+    expect(chatScreenWidth).toMatchObject({
+      type: 'slider',
+      labelKey: 'chatScreenWidth',
+      bindKey: 'chatScreenWidth',
+      options: {
+        min: 500,
+        max: 2000,
+        step: 10,
+      },
+      keywords: ['chat', 'screen', 'width'],
+    })
+    expect(
+      typeof chatScreenWidth?.options?.customText === 'function'
+        ? chatScreenWidth.options.customText(900)
+        : chatScreenWidth?.options?.customText,
+    ).toBe('900px')
+  })
+
+  it('falls back to 900 for databases that predate the chat screen width key', () => {
+    const chatScreenWidth = displaySizeSettingsItems.find((item) => item.id === 'display.chatScreenWidth')
+
+    expect(chatScreenWidth?.getValue?.({} as never)).toBe(900)
+    expect(chatScreenWidth?.getValue?.({ chatScreenWidth: 1240 } as never)).toBe(1240)
   })
 })

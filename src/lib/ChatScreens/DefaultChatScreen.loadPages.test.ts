@@ -379,6 +379,7 @@ function seedDatabase(messageCounts: number[]) {
     autoScrollToNewMessage: false,
     characters: messageCounts.map((count, index) => makeCharacter(index, count)),
     chatDisplayTailCount: 30,
+    chatScreenWidth: 900,
     enableRisuaiProTools: false,
     fixedChatTextarea: false,
     hypaV3: false,
@@ -745,6 +746,40 @@ describe('DefaultChatScreen floating action accessibility', () => {
     pluginButton.click()
 
     expect(callback).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DefaultChatScreen content width', () => {
+  it('centers the transcript and composer in one reactively sized fixed-width column', async () => {
+    seedDatabase([1])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-default-chat-screen-width]')).toBeTruthy()
+      expect(target.querySelector('.chat-message-container')).toBeTruthy()
+    })
+
+    const screen = target.querySelector<HTMLElement>('[data-default-chat-screen-width]')!
+    const composer = target.querySelector<HTMLElement>('[data-testid="default-chat-composer"]')!
+    const messageRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const composerRow = composer.closest<HTMLElement>('.chat-screen-content-width')
+    const transcript = messageRow.closest<HTMLElement>('.chat-screen-content-width')
+
+    expect(screen.style.getPropertyValue('--chat-screen-width')).toBe('900px')
+    expect(composerRow).toBeTruthy()
+    expect(transcript).toBeTruthy()
+    expect(composerRow).not.toBe(transcript)
+    expect(target.querySelector('[data-default-chat-agent-progress-column]')?.classList).toContain(
+      'chat-screen-content-width',
+    )
+    expect(target.querySelector('[data-default-chat-post-generation-progress-column]')?.classList).toContain(
+      'chat-screen-content-width',
+    )
+
+    getResourceDatabase().chatScreenWidth = 1240
+    await tick()
+
+    expect(screen.style.getPropertyValue('--chat-screen-width')).toBe('1240px')
   })
 })
 
@@ -1328,7 +1363,7 @@ describe('DefaultChatScreen transcript window state', () => {
     const draftArea = target.querySelector<HTMLElement>('[data-testid="default-chat-draft-area"]')!
     const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
     const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
-    expect(draftArea.classList).toContain('self-stretch')
+    expect(draftArea.classList).toContain('chat-screen-content-width')
     expect(draft.classList).toContain('w-full')
     draft.value = 'Earlier draft'
     draft.dispatchEvent(new Event('input', { bubbles: true }))
