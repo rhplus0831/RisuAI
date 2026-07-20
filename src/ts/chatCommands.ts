@@ -169,6 +169,7 @@ export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'autoTranslate',
   'autoTranslateBotOnly',
   'bilingualDisplay',
+  'bilingualEmphasis',
   'folderId',
   'lastDate',
   'bookmarks',
@@ -3032,11 +3033,19 @@ export function setCurrentChatSelectedDraftHookId(
   return true
 }
 
-export type ChatTranslationSettingField = 'autoTranslate' | 'autoTranslateBotOnly' | 'bilingualDisplay'
+export type ChatTranslationSettingField =
+  | 'autoTranslate'
+  | 'autoTranslateBotOnly'
+  | 'bilingualDisplay'
+  | 'bilingualEmphasis'
 
-export function setCurrentChatTranslationSettingWithOutcome(
-  field: ChatTranslationSettingField,
-  value: boolean,
+export type ChatTranslationSettingValueByField = {
+  [Field in ChatTranslationSettingField]-?: Exclude<Chat[Field], undefined>
+}
+
+export function setCurrentChatTranslationSettingWithOutcome<Field extends ChatTranslationSettingField>(
+  field: Field,
+  value: ChatTranslationSettingValueByField[Field],
 ): Promise<ChatMutationOutcome> | undefined {
   const selectedChar = get(selectedCharID)
   const character = getDatabase().characters?.[selectedChar]
@@ -3056,7 +3065,8 @@ export function setCurrentChatTranslationSettingWithOutcome(
     const liveCharacter = getDatabase().characters?.[selectedChar]
     const liveChat = liveCharacter?.chats?.[selectedChat]
     if (!liveChat || liveCharacter?.chaId !== character.chaId || liveChat.id !== chatId) return
-    liveChat[field] = value
+    const liveTranslationSettings = liveChat as ChatTranslationSettingValueByField
+    liveTranslationSettings[field] = value
     applied = true
   })
   if (!applied) return

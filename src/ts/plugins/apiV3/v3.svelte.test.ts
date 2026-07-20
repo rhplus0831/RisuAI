@@ -191,6 +191,7 @@ vi.mock('src/ts/chatCommands', () => ({
     'autoTranslate',
     'autoTranslateBotOnly',
     'bilingualDisplay',
+    'bilingualEmphasis',
     'folderId',
     'lastDate',
     'bookmarks',

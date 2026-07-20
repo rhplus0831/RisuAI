@@ -1,12 +1,19 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import { alertError, alertNormal } from 'src/ts/alert'
-  import { setCurrentChatTranslationSettingWithOutcome, type ChatTranslationSettingField } from 'src/ts/chatCommands'
+  import {
+    setCurrentChatTranslationSettingWithOutcome,
+    type ChatTranslationSettingField,
+    type ChatTranslationSettingValueByField,
+  } from 'src/ts/chatCommands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
+  import OptionInput from '../UI/GUI/OptionInput.svelte'
+  import SelectInput from '../UI/GUI/SelectInput.svelte'
 
   type PersistenceStatus = 'pending' | 'queued' | 'failed'
+  type BooleanChatTranslationSettingField = Exclude<ChatTranslationSettingField, 'bilingualEmphasis'>
 
   let saveOperation = 0
   let saveStates = $state<
@@ -21,7 +28,10 @@
     return saveStates[field]?.status ?? 'idle'
   }
 
-  async function saveSetting(field: ChatTranslationSettingField, value: boolean): Promise<void> {
+  async function saveSetting<Field extends ChatTranslationSettingField>(
+    field: Field,
+    value: ChatTranslationSettingValueByField[Field],
+  ): Promise<void> {
     if (saveStates[field]?.status === 'pending') return
     const operation = ++saveOperation
     saveStates[field] = { operation, status: 'pending' }
@@ -57,7 +67,15 @@
   }
 </script>
 
-{#snippet setting(field: ChatTranslationSettingField, label: string)}
+{#snippet persistenceMessage(field: ChatTranslationSettingField)}
+  {#if persistenceStatus(field) === 'queued' || persistenceStatus(field) === 'failed'}
+    <span class="text-xs text-textcolor2" role="status">
+      {persistenceStatus(field) === 'queued' ? language.mutationStatusQueued : language.mutationStatusFailed}
+    </span>
+  {/if}
+{/snippet}
+
+{#snippet setting(field: BooleanChatTranslationSettingField, label: string)}
   <div
     class="flex w-full items-center gap-2"
     data-risu-chat-translation-setting={field}
@@ -68,11 +86,7 @@
       name={label}
       disabled={!currentChat || persistenceStatus(field) === 'pending'}
       onChange={(value) => void saveSetting(field, value)} />
-    {#if persistenceStatus(field) === 'queued' || persistenceStatus(field) === 'failed'}
-      <span class="text-xs text-textcolor2" role="status">
-        {persistenceStatus(field) === 'queued' ? language.mutationStatusQueued : language.mutationStatusFailed}
-      </span>
-    {/if}
+    {@render persistenceMessage(field)}
   </div>
 {/snippet}
 
@@ -81,5 +95,30 @@
     {@render setting('autoTranslate', language.autoTranslation)}
     {@render setting('autoTranslateBotOnly', language.autoTranslateBotOnly)}
     {@render setting('bilingualDisplay', language.bilingualDisplay)}
+    {#if currentChat?.bilingualDisplay === true}
+      <div
+        class="flex w-full items-end gap-2"
+        data-risu-chat-translation-setting="bilingualEmphasis"
+        data-risu-persistence-status={persistenceStatus('bilingualEmphasis')}
+        aria-busy={persistenceStatus('bilingualEmphasis') === 'pending'}>
+        <label class="flex min-w-0 flex-1 flex-col gap-1 text-left text-sm">
+          <span class="text-xs font-medium text-textcolor2">{language.bilingualEmphasis}</span>
+          <SelectInput
+            value={currentChat.bilingualEmphasis ?? 'original'}
+            className="w-full"
+            disabled={persistenceStatus('bilingualEmphasis') === 'pending'}
+            onchange={(event) => {
+              const value = event.currentTarget.value
+              if (value === 'original' || value === 'translation') {
+                void saveSetting('bilingualEmphasis', value)
+              }
+            }}>
+            <OptionInput value="original">{language.bilingualEmphasisOriginal}</OptionInput>
+            <OptionInput value="translation">{language.bilingualEmphasisTranslation}</OptionInput>
+          </SelectInput>
+        </label>
+        {@render persistenceMessage('bilingualEmphasis')}
+      </div>
+    {/if}
   </div>
 {/if}

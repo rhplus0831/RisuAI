@@ -7989,6 +7989,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
           autoTranslate: true,
           autoTranslateBotOnly: true,
           bilingualDisplay: true,
+          bilingualEmphasis: 'translation',
           bookmarks: ['msg-a'],
           bookmarkNames: { 'msg-a': 'Pinned' },
         },
@@ -8023,9 +8024,68 @@ describe('Phase 9-3b chat record and folder commands', () => {
       autoTranslate: true,
       autoTranslateBotOnly: true,
       bilingualDisplay: true,
+      bilingualEmphasis: 'translation',
       bookmarks: ['msg-a'],
       bookmarkNames: { 'msg-a': 'Pinned' },
     })
+  })
+
+  it('validates and persists sparse bilingual emphasis chat patches', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    let revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    for (const value of ['original', 'translation', null] as const) {
+      const updated = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/chats/chat-a',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          patch: { bilingualEmphasis: value },
+        },
+      })
+      expect(updated.statusCode).toBe(200)
+      revision = updated.json().revision
+
+      const persisted = loadPersistedFromDir(harness.dataDir) as {
+        database: { characters: Array<{ chats: Array<Record<string, unknown>> }> }
+      }
+      expect(persisted.database.characters[0].chats[0]).toHaveProperty('bilingualEmphasis', value)
+    }
+
+    for (const value of ['translated', 1]) {
+      const rejected = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/chats/chat-a',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          patch: { bilingualEmphasis: value },
+        },
+      })
+      expect(rejected.statusCode).toBe(400)
+      expect(rejected.json().error).toBe(
+        "patch.bilingualEmphasis must be 'original', 'translation', null, or undefined",
+      )
+    }
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
   })
 
   it('persists chat generation settings with explicit off values and prunes stale toggles', async () => {

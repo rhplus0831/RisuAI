@@ -650,6 +650,7 @@ export type ChatSnapshot = Record<string, unknown> & {
   autoTranslate?: boolean | null
   autoTranslateBotOnly?: boolean | null
   bilingualDisplay?: boolean | null
+  bilingualEmphasis?: 'original' | 'translation' | null
   bookmarks?: string[]
   bookmarkNames?: Record<string, string>
   modules?: string[]

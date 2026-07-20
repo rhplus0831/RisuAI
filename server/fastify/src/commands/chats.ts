@@ -32,6 +32,7 @@ export interface ChatRecord extends JsonRecord {
   autoTranslate?: boolean
   autoTranslateBotOnly?: boolean
   bilingualDisplay?: boolean
+  bilingualEmphasis?: 'original' | 'translation'
   modules?: string[]
   generationSettings?: ChatGenerationSettings
 }
@@ -77,6 +78,7 @@ const ALLOWED_CHAT_PATCH_KEYS = new Set([
   'autoTranslate',
   'autoTranslateBotOnly',
   'bilingualDisplay',
+  'bilingualEmphasis',
   'folderId',
   'lastDate',
   'bookmarks',
@@ -837,6 +839,15 @@ function validateChatRecord(record: JsonRecord, label: string, options: { partia
     ) {
       throw new ValidationError(`${label}.${field} must be a boolean, null, or undefined`)
     }
+  }
+  if (
+    'bilingualEmphasis' in record &&
+    record.bilingualEmphasis !== undefined &&
+    record.bilingualEmphasis !== null &&
+    record.bilingualEmphasis !== 'original' &&
+    record.bilingualEmphasis !== 'translation'
+  ) {
+    throw new ValidationError(`${label}.bilingualEmphasis must be 'original', 'translation', null, or undefined`)
   }
   if (
     'lastDate' in record &&

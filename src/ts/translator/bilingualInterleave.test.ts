@@ -1,12 +1,33 @@
 import { describe, expect, it } from 'vitest'
-import { BILINGUAL_TRANSLATION_CLASS, bilingualInterleave } from './bilingualInterleave'
+import {
+  BILINGUAL_MUTED_CLASS,
+  BILINGUAL_PAIR_CLASS,
+  BILINGUAL_TRANSLATION_CLASS,
+  bilingualInterleave,
+} from './bilingualInterleave'
 
-const translated = (text: string) => `<div class="${BILINGUAL_TRANSLATION_CLASS}">\n\n${text}\n\n</div>`
+const wrapped = (text: string, classes: readonly string[]) => `<div class="${classes.join(' ')}">\n\n${text}\n\n</div>`
+const pair = (...sides: string[]) => wrapped(sides.join('\n\n'), [BILINGUAL_PAIR_CLASS])
+const translated = (text: string, muted = false) =>
+  wrapped(text, [BILINGUAL_TRANSLATION_CLASS, ...(muted ? [BILINGUAL_MUTED_CLASS] : [])])
+const muted = (text: string) => wrapped(text, [BILINGUAL_MUTED_CLASS])
 
 describe('bilingualInterleave', () => {
-  it('pairs equal non-empty line counts in original/translation order', () => {
+  it('pairs equal non-empty line counts with original emphasized by default', () => {
     expect(bilingualInterleave('Hello\nBye', '안녕하세요\n안녕히 가세요')).toBe(
-      ['Hello', translated('안녕하세요'), 'Bye', translated('안녕히 가세요')].join('\n'),
+      [pair('Hello', translated('안녕하세요', true)), pair('Bye', translated('안녕히 가세요', true))].join('\n'),
+    )
+  })
+
+  it('uses the same output for the default and explicit original emphasis', () => {
+    expect(bilingualInterleave('Original', 'Translation')).toBe(
+      bilingualInterleave('Original', 'Translation', { emphasize: 'original' }),
+    )
+  })
+
+  it('puts emphasized translations first and wraps the original as muted', () => {
+    expect(bilingualInterleave('Original', 'Translation', { emphasize: 'translation' })).toBe(
+      pair(translated('Translation'), muted('Original')),
     )
   })
 
@@ -18,25 +39,33 @@ describe('bilingualInterleave', () => {
       ),
     ).toBe(
       [
-        'Hello',
-        translated('안녕하세요'),
-        "I'm Claude",
-        translated('저는 클로드입니다. 잘가! 나중에 봐요!'),
-        'Bye!',
-        'See you later!',
+        pair('Hello', translated('안녕하세요', true)),
+        pair("I'm Claude", translated('저는 클로드입니다. 잘가! 나중에 봐요!', true)),
+        pair('Bye!'),
+        pair('See you later!'),
       ].join('\n'),
     )
   })
 
-  it('appends unmatched translated lines when the translation is longer', () => {
+  it('puts each unmatched translated line in its own muted pair under original emphasis', () => {
     expect(bilingualInterleave('One', '하나\n둘\n셋')).toBe(
-      ['One', translated('하나'), translated('둘'), translated('셋')].join('\n'),
+      [pair('One', translated('하나', true)), pair(translated('둘', true)), pair(translated('셋', true))].join('\n'),
+    )
+  })
+
+  it('keeps unmatched translated lines emphasized under translation emphasis', () => {
+    expect(bilingualInterleave('One', '하나\n둘', { emphasize: 'translation' })).toBe(
+      [pair(translated('하나'), muted('One')), pair(translated('둘'))].join('\n'),
     )
   })
 
   it("preserves the original's blank-line paragraph separation", () => {
     expect(bilingualInterleave('First paragraph\n\nSecond paragraph', '첫 문단\n\n둘째 문단')).toBe(
-      ['First paragraph', translated('첫 문단'), '', 'Second paragraph', translated('둘째 문단')].join('\n'),
+      [
+        pair('First paragraph', translated('첫 문단', true)),
+        '',
+        pair('Second paragraph', translated('둘째 문단', true)),
+      ].join('\n'),
     )
   })
 
@@ -46,8 +75,8 @@ describe('bilingualInterleave', () => {
     const composite = bilingualInterleave(`Before\n${originalFence}\nAfter`, `이전\n${translatedFence}\n이후`)
 
     expect(composite).toContain(originalFence)
-    expect(composite).toContain(translated(translatedFence))
-    expect(composite.indexOf(originalFence)).toBeLessThan(composite.indexOf(translated(translatedFence)))
-    expect(composite.indexOf(translated(translatedFence))).toBeLessThan(composite.indexOf('After'))
+    expect(composite).toContain(translated(translatedFence, true))
+    expect(composite.indexOf(originalFence)).toBeLessThan(composite.indexOf(translated(translatedFence, true)))
+    expect(composite.indexOf(translated(translatedFence, true))).toBeLessThan(composite.indexOf('After'))
   })
 })

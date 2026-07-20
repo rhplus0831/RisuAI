@@ -4698,6 +4698,7 @@ export interface Chat {
   autoTranslate?: boolean
   autoTranslateBotOnly?: boolean
   bilingualDisplay?: boolean
+  bilingualEmphasis?: 'original' | 'translation'
   hypaV3Data?: SerializableHypaV3Data
   folderId?: string
   lastDate?: number

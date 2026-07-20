@@ -1298,7 +1298,9 @@
     const rawTranslation = activeRawTranslation()
     if (!translated || !rawTranslation) return message
     return currentLiveChat()?.bilingualDisplay === true
-      ? bilingualInterleave(message, rawTranslation.text)
+      ? bilingualInterleave(message, rawTranslation.text, {
+          emphasize: currentLiveChat()?.bilingualEmphasis ?? 'original',
+        })
       : rawTranslation.text
   })
   let normalizedGenerationStage = $derived(normalizeChatGenerationLoadingStage(generationStage))
@@ -3024,8 +3026,38 @@
     animation: none;
   }
 
-  :global(.chat-message-body .x-risu-bilingual-translation) {
-    color: var(--risu-theme-textcolor2);
-    opacity: 0.88;
+  :global(.chat-message-body .x-risu-bilingual-pair) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2em;
+    margin: 0;
+  }
+
+  :global(.chat-message-body .x-risu-bilingual-pair + .x-risu-bilingual-pair) {
+    margin-top: 1.3em;
+  }
+
+  :global(.chat-message-body .x-risu-bilingual-pair > *) {
+    margin-block: 0;
+  }
+
+  :global(.chat-message-body .x-risu-bilingual-pair > div > :first-child) {
+    margin-top: 0;
+  }
+
+  :global(.chat-message-body .x-risu-bilingual-pair > div > :last-child) {
+    margin-bottom: 0;
+  }
+
+  :global(.chat-message-body .x-risu-bilingual-muted) {
+    padding-left: 0.6rem;
+    border-left: 2px solid var(--risu-theme-darkborderc);
+    border-radius: 0;
+    font-size: 0.875em;
+    filter: saturate(0.4) opacity(0.7);
+  }
+
+  :global(.chat-message-body .x-risu-bilingual-muted pre) {
+    font-size: 1.142857em;
   }
 </style>

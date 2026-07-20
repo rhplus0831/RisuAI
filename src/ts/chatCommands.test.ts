@@ -745,10 +745,38 @@ describe('chat command projection helpers', () => {
         select: false,
       },
     })
-    expect(sanitizeChatPatch({ autoTranslate: false, autoTranslateBotOnly: true, bilingualDisplay: true })).toEqual({
+    expect(
+      sanitizeChatPatch({
+        autoTranslate: false,
+        autoTranslateBotOnly: true,
+        bilingualDisplay: true,
+        bilingualEmphasis: 'translation',
+      }),
+    ).toEqual({
       autoTranslate: false,
       autoTranslateBotOnly: true,
       bilingualDisplay: true,
+      bilingualEmphasis: 'translation',
+    })
+  })
+
+  it('patches the string-valued bilingual emphasis through the guarded chat-scoped path', async () => {
+    const calls = stubCommandFetch()
+    setResourceWriteGuardEnabled(true)
+
+    const persistence = setCurrentChatTranslationSettingWithOutcome('bilingualEmphasis', 'translation')
+    expect(getDatabase().characters[0].chats[0].bilingualEmphasis).toBe('translation')
+    await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { bilingualEmphasis: 'translation' },
+        select: false,
+      },
     })
   })
 
