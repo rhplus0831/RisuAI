@@ -1697,7 +1697,8 @@
         <textarea
           data-testid="default-chat-composer"
           aria-label={language.messageInput}
-          class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
+          class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
+          class:ml-4={getDatabase().useChatSticker}
           bind:value={messageInput}
           bind:this={inputEle}
           onkeydown={(e) => {
@@ -1748,7 +1749,7 @@
             aria-haspopup="menu"
             aria-controls="default-chat-overflow-menu"
             onclick={toggleChatMenu}
-            class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
+            class="peer-focus:border-textcolor flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
             style:height={inputHeight}>
             <MenuIcon />
           </button>
@@ -1757,7 +1758,7 @@
             type="button"
             aria-label={language.addEmptyMessage}
             onclick={() => appendCurrentChatEmptyCharMessage()}
-            class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
+            class="peer-focus:border-textcolor flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
             style:height={inputHeight}>
             <Plus />
           </button>

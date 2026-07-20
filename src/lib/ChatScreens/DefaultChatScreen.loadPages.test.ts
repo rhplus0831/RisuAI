@@ -769,6 +769,8 @@ describe('DefaultChatScreen content width', () => {
     expect(composerRow).toBeTruthy()
     expect(transcript).toBeTruthy()
     expect(composerRow).not.toBe(transcript)
+    expect(composer.classList).not.toContain('ml-4')
+    expect(target.querySelector('[data-testid="default-chat-menu-button"]')?.classList).not.toContain('mr-2')
     expect(target.querySelector('[data-default-chat-agent-progress-column]')?.classList).toContain(
       'chat-screen-content-width',
     )
