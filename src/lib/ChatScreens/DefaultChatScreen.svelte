@@ -235,7 +235,9 @@
     if (!selectedId) return undefined
     return draftHooks.find((hook) => hook.id === selectedId)
   })
-  let showDraftArea = $derived(Boolean(selectedDraftHook || draftText.length > 0 || btwText.length > 0))
+  let showDraftArea = $derived(
+    Boolean(draftHooks.length > 0 || btwHooks.length > 0 || draftText.length > 0 || btwText.length > 0),
+  )
   let hookRunActive = $derived(doingDraftHook || doingBtwHook)
   let canContinueFromMenu = $derived(currentChat.length >= 2 && currentChat[currentChat.length - 1]?.role === 'char')
   let currentChatOwnsGeneration = $derived.by(() => {

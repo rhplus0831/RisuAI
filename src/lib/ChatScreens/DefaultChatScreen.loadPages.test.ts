@@ -1347,6 +1347,24 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 
+  it('allows a draft hook to be selected in a fresh chat', async () => {
+    seedDatabase([1])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-draft-hook-select"]')).toBeTruthy())
+    const selector = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-draft-hook-select"]')!
+    expect(selector.textContent).toContain('inputHookNone')
+
+    selector.click()
+    await tick()
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-input-hook-option-draft-hook"]')!.click()
+
+    await waitFor(() => expect(selector.textContent).toContain('Draft Hook'))
+    expect(getResourceDatabase().characters[0].chats[0].selectedDraftHookId).toBe(hook.id)
+  })
+
   it('discards a draft-hook result after the active chat target changes', async () => {
     seedDatabase([1, 1])
     const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
