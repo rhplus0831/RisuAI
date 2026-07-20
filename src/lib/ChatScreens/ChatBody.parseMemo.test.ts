@@ -117,8 +117,16 @@ function makeCharacter(): character {
   } as unknown as character
 }
 
-function seedDb(overrides: Partial<Database> = {}) {
+type SeedDbOverrides = Partial<Database> & {
+  autoTranslate?: boolean
+  autoTranslateBotOnly?: boolean
+}
+
+function seedDb(overrides: SeedDbOverrides = {}) {
+  const { autoTranslate, autoTranslateBotOnly, ...databaseOverrides } = overrides
   const char = makeCharacter()
+  if (autoTranslate !== undefined) char.chats[0].autoTranslate = autoTranslate
+  if (autoTranslateBotOnly !== undefined) char.chats[0].autoTranslateBotOnly = autoTranslateBotOnly
   selectedCharID.set(0)
   ReloadChatPointer.set({})
   ReloadGUIPointer.set(0)
@@ -140,7 +148,6 @@ function seedDb(overrides: Partial<Database> = {}) {
     translator: '',
     translatorInputLanguage: 'en',
     translatorType: 'none',
-    autoTranslate: false,
     autoTranslateCachedOnly: false,
     translateBeforeHTMLFormatting: false,
     legacyTranslation: false,
@@ -157,7 +164,7 @@ function seedDb(overrides: Partial<Database> = {}) {
     assetMaxDifference: 3,
     legacyMediaFindings: false,
     returnCSSError: false,
-    ...overrides,
+    ...databaseOverrides,
   } as unknown as Database)
   return char
 }

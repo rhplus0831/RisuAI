@@ -135,6 +135,7 @@
   import { characterRoutePath, navigate } from 'src/ts/router'
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import { rekeyClonedChat } from 'src/ts/chatFork'
+  import { bilingualInterleave } from 'src/ts/translator/bilingualInterleave'
 
   let translating = $state(false)
   let editMode = $state(false)
@@ -168,9 +169,12 @@
     totalPages?: number
     isComment?: boolean
     isGenerationLoading?: boolean
+    isChatGenerating?: boolean
     isGenerationPersistenceQueued?: boolean
     generationStage?: number
     disabled?: boolean | 'allBefore'
+    autoTranslateOnReady?: boolean
+    onAutoTranslationEligibilityConsumed?: () => void
   }
 
   interface CapturedChatButtonTriggerTarget {
@@ -216,9 +220,12 @@
     totalPages = 1,
     isComment = false,
     isGenerationLoading = false,
+    isChatGenerating = false,
     isGenerationPersistenceQueued = false,
     generationStage = 0,
     disabled = false,
+    autoTranslateOnReady = false,
+    onAutoTranslationEligibilityConsumed = () => {},
   }: Props = $props()
   let autoPopupMessageEditorOpen = $state(false)
   let autoPopupTranslationEditorOpen = $state(false)
@@ -259,6 +266,8 @@
 
   let msgDisplay = $state('')
   let translated = $state(false)
+  let suppressAutomaticTranslationDisplay = $state(false)
+  let automaticTranslationEligibilityConsumed = $state(false)
   let partialEditEnabled = $state(true)
   let lastDisplayParseKey = ''
   let rerollMenuButtonId = Math.random()
@@ -799,6 +808,24 @@
     return character.chats?.[chatPage]?.message?.[idx] ?? null
   }
 
+  function currentLiveChat(): Chat | null {
+    const character = getDatabase().characters?.[selIdState.selId]
+    const chatPage = character?.chatPage
+    if (chatPage === undefined || chatPage === null) return null
+    return character.chats?.[chatPage] ?? null
+  }
+
+  function automaticTranslationEnabled(): boolean {
+    const chat = currentLiveChat()
+    return chat?.autoTranslate === true && !(chat.autoTranslateBotOnly === true && role === 'user')
+  }
+
+  function consumeAutomaticTranslationEligibility(): void {
+    if (automaticTranslationEligibilityConsumed) return
+    automaticTranslationEligibilityConsumed = true
+    onAutoTranslationEligibilityConsumed()
+  }
+
   function captureTranslationMessageTarget(): TranslationMessageTarget | null {
     const liveMessage = currentLiveMessage()
     const messageId = liveMessage?.chatId || messageRowId
@@ -984,6 +1011,10 @@
       } else {
         setStatusMessage(result.error, 3000)
       }
+    } catch (error) {
+      if (isRenderingTranslationMessageTarget(target)) translated = false
+      const detail = error instanceof Error ? error.message : String(error)
+      setStatusMessage(language.playground.translationRunFailed(detail), 5000)
     } finally {
       clearMessageTranslationJob(jobId)
       translating = false
@@ -1265,7 +1296,10 @@
   let sawServerTranslationInProgress = $state(false)
   let displayMessage = $derived.by(() => {
     const rawTranslation = activeRawTranslation()
-    return translated && rawTranslation ? rawTranslation.text : message
+    if (!translated || !rawTranslation) return message
+    return currentLiveChat()?.bilingualDisplay === true
+      ? bilingualInterleave(message, rawTranslation.text)
+      : rawTranslation.text
   })
   let normalizedGenerationStage = $derived(normalizeChatGenerationLoadingStage(generationStage))
   let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationStage)])
@@ -1315,6 +1349,45 @@
       if (!ownsSucceededServerTranslation(jobId, target, isCancelled)) return
     }
   }
+
+  $effect(() => {
+    if (automaticTranslationEnabled() && activeRawTranslation() && !suppressAutomaticTranslationDisplay) {
+      translated = true
+    }
+  })
+
+  $effect(() => {
+    if (!autoTranslateOnReady || automaticTranslationEligibilityConsumed) return
+    if (!automaticTranslationEnabled()) {
+      consumeAutomaticTranslationEligibility()
+      return
+    }
+    if (idx < 0 || isComment) {
+      consumeAutomaticTranslationEligibility()
+      return
+    }
+    if (activeRawTranslation()) {
+      consumeAutomaticTranslationEligibility()
+      return
+    }
+    const liveChat = currentLiveChat()
+    if (liveChat?.isStreaming || isChatGenerating || isGenerationLoading || translationInProgress) return
+    if (message.trim().length === 0) {
+      consumeAutomaticTranslationEligibility()
+      return
+    }
+    if (!supportsServerRawTranslation()) {
+      consumeAutomaticTranslationEligibility()
+      return
+    }
+    if (getDatabase().autoTranslateCachedOnly && getDatabase().translatorType === 'llm') {
+      consumeAutomaticTranslationEligibility()
+      return
+    }
+
+    consumeAutomaticTranslationEligibility()
+    void requestServerRawTranslation()
+  })
 
   $effect(() => {
     const job = serverTranslationJob
@@ -1891,7 +1964,10 @@
             role={role ?? null}
             bind:translated
             bind:translating
-            bind:retranslate />
+            bind:retranslate
+            allowClientTranslation={idx < 0 &&
+              getDatabase().translator !== '' &&
+              getDatabase().translatorType !== 'none'} />
         {/if}
       {/key}
       {#if idx >= 0 && !editMode && !translationInProgress && partialEditEnabled && (getDatabase().enableBlockPartialEdit || getDatabase().enableDragPartialEdit)}
@@ -2294,7 +2370,7 @@
 {/snippet}
 
 {#snippet translationButton(showNames = false)}
-  {#if getDatabase().translator !== '' && getDatabase().translatorType !== 'bergamot' && !blankMessage}
+  {#if getDatabase().translator !== '' && getDatabase().translatorType !== 'none' && !blankMessage}
     <button
       class={'flex items-center cursor-pointer hover:text-blue-500 transition-colors button-icon-translate ' +
         (translated && !translationInProgress ? 'text-blue-400' : '') +
@@ -2311,10 +2387,12 @@
         }
         if (translated) {
           translated = false
+          suppressAutomaticTranslationDisplay = true
           editTranslationMode = false
           return
         }
         if (activeRawTranslation()) {
+          suppressAutomaticTranslationDisplay = false
           translated = true
           return
         }
@@ -2944,5 +3022,10 @@
 
   :global(html.risu-reduced-motion) .chat-generation-loading-fill::after {
     animation: none;
+  }
+
+  :global(.chat-message-body .x-risu-bilingual-translation) {
+    color: var(--risu-theme-textcolor2);
+    opacity: 0.88;
   }
 </style>

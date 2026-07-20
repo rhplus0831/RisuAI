@@ -29,6 +29,9 @@ export interface ChatRecord extends JsonRecord {
   scriptstate?: Record<string, string | number | boolean>
   folderId?: string | null
   selectedDraftHookId?: string
+  autoTranslate?: boolean
+  autoTranslateBotOnly?: boolean
+  bilingualDisplay?: boolean
   modules?: string[]
   generationSettings?: ChatGenerationSettings
 }
@@ -71,6 +74,9 @@ const ALLOWED_CHAT_PATCH_KEYS = new Set([
   'bindedPersona',
   'fmIndex',
   'selectedDraftHookId',
+  'autoTranslate',
+  'autoTranslateBotOnly',
+  'bilingualDisplay',
   'folderId',
   'lastDate',
   'bookmarks',
@@ -821,6 +827,16 @@ function validateChatRecord(record: JsonRecord, label: string, options: { partia
     (typeof record.selectedDraftHookId !== 'string' || record.selectedDraftHookId.trim() === '')
   ) {
     throw new ValidationError(`${label}.selectedDraftHookId must be a non-empty string, null, or undefined`)
+  }
+  for (const field of ['autoTranslate', 'autoTranslateBotOnly', 'bilingualDisplay'] as const) {
+    if (
+      field in record &&
+      record[field] !== undefined &&
+      record[field] !== null &&
+      typeof record[field] !== 'boolean'
+    ) {
+      throw new ValidationError(`${label}.${field} must be a boolean, null, or undefined`)
+    }
   }
   if (
     'lastDate' in record &&

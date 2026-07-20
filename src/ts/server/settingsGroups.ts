@@ -43,7 +43,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   assetWidth: 'display',
   authRefreshes: 'providers',
   autoScrollToNewMessage: 'sidebar',
-  autoTranslate: 'language',
   autoTranslateCachedOnly: 'language',
   automaticCachePoint: 'runtime',
   autofillRequestUrl: 'advanced',

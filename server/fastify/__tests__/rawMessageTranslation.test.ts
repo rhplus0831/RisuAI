@@ -208,9 +208,9 @@ describe('translateRawMessageData', () => {
       error: 'deeplOptions.key is required for DeepL translation',
     },
     {
-      name: 'browser-only Bergamot translator',
-      settings: { translatorType: 'bergamot', translator: 'ko' },
-      error: 'Firefox/Bergamot translation is not supported by server-side raw message translation',
+      name: 'unknown translator',
+      settings: { translatorType: 'unknown-translator', translator: 'ko' },
+      error: 'Unsupported translator type: unknown-translator',
     },
     {
       name: 'disabled translator',

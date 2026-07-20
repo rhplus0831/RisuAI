@@ -39,4 +39,8 @@ describe('language settings actions', () => {
   it('does not offer the removed translation-template download action', () => {
     expect(languageSettingsItems.find((item) => item.id === 'lang.downloadTemplate')).toBeUndefined()
   })
+
+  it('does not offer the retired global auto-translate setting', () => {
+    expect(languageSettingsItems.find((item) => item.id === 'lang.autoTranslate')).toBeUndefined()
+  })
 })

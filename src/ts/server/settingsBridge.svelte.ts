@@ -1921,7 +1921,6 @@ function buildOnboardingSettingsPatch(options: ApplyOnboardingServerBackedSettin
   }
 
   if (options.chatLang === 1) {
-    patch.autoTranslate = true
     patch.translatorType = 'google'
     patch.useAutoTranslateInput = true
   }

@@ -87,4 +87,9 @@ describe('settings group parity', () => {
     expect(SETTINGS_GROUP_KEYS.runtime).not.toContain('googleClaudeTokenizing')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('googleClaudeTokenizing')
   })
+
+  it('does not expose the retired global auto-translate setting', () => {
+    expect(SETTINGS_GROUP_KEYS.language).not.toContain('autoTranslate')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.language).not.toContain('autoTranslate')
+  })
 })

@@ -42,7 +42,6 @@
     "@adobe/css-tools": "4.4.4",
     "@aws-crypto/sha256-js": "^5.2.0",
     "@breezystack/lamejs": "^1.2.7",
-    "@browsermt/bergamot-translator": "^0.4.9",
     "@dqbd/tiktoken": "^1.0.22",
     "@fastify/compress": "^8.3.1",
     "@fastify/multipart": "^10.0.0",

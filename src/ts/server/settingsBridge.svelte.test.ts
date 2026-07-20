@@ -155,7 +155,6 @@ vi.mock('./commands', () => ({
     return new Set([
       'aiModel',
       'apiType',
-      'autoTranslate',
       'banCharacterset',
       'claudeCachingExperimental',
       'customModels',
@@ -453,7 +452,6 @@ describe('settingsBridge coalescing', () => {
       subModel: 'old-sub-model',
       openrouterRequestModel: 'old/openrouter',
       translator: 'en',
-      autoTranslate: false,
       translatorType: 'deepl',
       useAutoTranslateInput: false,
       didFirstSetup: false,
@@ -509,7 +507,6 @@ describe('settingsBridge coalescing', () => {
           textTheme: 'highcontrast',
           claudeCachingExperimental: true,
           translator: 'zh',
-          autoTranslate: true,
           translatorType: 'google',
           useAutoTranslateInput: true,
           didFirstSetup: true,

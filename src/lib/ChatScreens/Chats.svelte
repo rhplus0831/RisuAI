@@ -14,6 +14,7 @@
   import { scrollElementToContainerStart } from './chatScroll'
   import { isMemoryLimitMessage } from './memoryLimitMarker'
   import { queuedGenerationPersistences } from 'src/ts/process/generationPersistenceState'
+  import { newlyAppendedMessageIds } from './newMessageTranslationEligibility'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -133,7 +134,13 @@
 
   let previousLength = 0
   let previousChatRoomId: string | null = null
+  let previousMessageIds: (string | null)[] = []
+  let automaticTranslationMessageIds = $state<string[]>([])
   let wasAtBottomBeforeUpdate = true
+
+  function consumeAutomaticTranslationEligibility(messageId: string): void {
+    automaticTranslationMessageIds = automaticTranslationMessageIds.filter((candidate) => candidate !== messageId)
+  }
 
   $effect.pre(() => {
     chatRows
@@ -146,6 +153,19 @@
     const isSameChat = currentChatRoomId === previousChatRoomId
     if (didChatOwnerChange(previousChatRoomId, currentChatRoomId)) {
       hasNewUnreadMessage = false
+      automaticTranslationMessageIds = []
+    } else {
+      const residentMessageIds = new Set(messages.map((message) => message.chatId).filter((id): id is string => !!id))
+      const retainedIds = untrack(() => automaticTranslationMessageIds).filter((id) => residentMessageIds.has(id))
+      const currentChat = currentCharacter.chats?.[currentCharacter.chatPage]
+      const appendedIds = newlyAppendedMessageIds({
+        previousChatId: previousChatRoomId,
+        currentChatId: currentChatRoomId,
+        previousMessageIds,
+        messages,
+        autoTranslate: currentChat?.autoTranslate === true,
+      })
+      automaticTranslationMessageIds = [...new Set([...retainedIds, ...appendedIds])]
     }
 
     // Only auto-scroll if it's the same chat and new messages were added
@@ -166,6 +186,7 @@
       }
     }
     previousLength = messages.length
+    previousMessageIds = messages.map((message) => message.chatId ?? null)
     previousChatRoomId = currentChatRoomId
   })
 </script>
@@ -195,6 +216,10 @@
           row.idx === messages.length - 1 &&
           row.message.role === 'char' &&
           row.message.data === ''}
+        isChatGenerating={isGenerationActive}
+        autoTranslateOnReady={typeof row.message.chatId === 'string' &&
+          automaticTranslationMessageIds.includes(row.message.chatId)}
+        onAutoTranslationEligibilityConsumed={() => consumeAutomaticTranslationEligibility(row.message.chatId ?? '')}
         isGenerationPersistenceQueued={row.isGenerationPersistenceQueued}
         generationStage={$chatProcessStage}
         disabled={row.message.disabled ?? false} />

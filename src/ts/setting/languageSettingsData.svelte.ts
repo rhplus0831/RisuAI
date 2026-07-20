@@ -181,15 +181,6 @@ export const languageSettingsItems: SettingItem[] = [
 
   // General Translation Options
   {
-    id: 'lang.autoTranslate',
-    type: 'check',
-    labelKey: 'autoTranslation',
-    bindKey: 'autoTranslate',
-    classes: 'mt-2',
-    condition: (ctx) => !!ctx.db.translator,
-  },
-
-  {
     id: 'lang.combineTranslation',
     type: 'check',
     labelKey: 'combineTranslation',

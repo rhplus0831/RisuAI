@@ -647,6 +647,9 @@ export type ChatSnapshot = Record<string, unknown> & {
   generationSettings?: ChatGenerationSettings
   folderId?: string | null
   bindedPersona?: string
+  autoTranslate?: boolean | null
+  autoTranslateBotOnly?: boolean | null
+  bilingualDisplay?: boolean | null
   bookmarks?: string[]
   bookmarkNames?: Record<string, string>
   modules?: string[]

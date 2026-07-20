@@ -109,6 +109,7 @@ import {
   setChatNoteValue,
   setChatScriptstateValue,
   setCurrentChatSelectedDraftHookId,
+  setCurrentChatTranslationSettingWithOutcome,
   stageChatNoteMutation,
   waitForPendingChatGenerationSettingsSave,
 } from './chatCommands'
@@ -723,6 +724,31 @@ describe('chat command projection helpers', () => {
         patch: { selectedDraftHookId: null },
         select: false,
       },
+    })
+  })
+
+  it('patches sparse per-chat translation settings through the guarded chat-scoped path', async () => {
+    const calls = stubCommandFetch()
+    setResourceWriteGuardEnabled(true)
+
+    const persistence = setCurrentChatTranslationSettingWithOutcome('autoTranslate', true)
+    expect(getDatabase().characters[0].chats[0].autoTranslate).toBe(true)
+    await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { autoTranslate: true },
+        select: false,
+      },
+    })
+    expect(sanitizeChatPatch({ autoTranslate: false, autoTranslateBotOnly: true, bilingualDisplay: true })).toEqual({
+      autoTranslate: false,
+      autoTranslateBotOnly: true,
+      bilingualDisplay: true,
     })
   })
 

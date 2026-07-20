@@ -219,7 +219,6 @@ export function normalizeDatabaseDefaults(
     setDefault(database, 'textgenWebUIStreamURL', 'wss://localhost/api/')
     setDefault(database, 'textgenWebUIBlockingURL', 'https://localhost/api/')
   }
-  setDefault(database, 'autoTranslate', false)
   setDefault(database, 'fullScreen', false)
   setDefault(database, 'playMessage', false)
   setDefault(database, 'iconsize', 100)

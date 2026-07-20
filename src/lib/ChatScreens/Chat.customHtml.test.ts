@@ -446,6 +446,9 @@ function mountCustomHtmlRows(
     unReroll: () => void
     onNewReroll: () => void
     onSelectRerollCandidate: (index: number) => void
+    autoTranslateOnReady: boolean
+    onAutoTranslationEligibilityConsumed: () => void
+    isChatGenerating: boolean
   }> = {},
   startIndex = 0,
 ) {
@@ -1377,6 +1380,156 @@ describe('message action target freshness', () => {
 })
 
 describe('server raw translation controls', () => {
+  it('auto-displays a stored translation once without overriding a manual return to the original', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'google'
+    chat.autoTranslate = true
+    chat.message[0].translation = {
+      source: 'raw',
+      text: 'stored automatic translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    mountCustomHtmlRows(1)
+    await settle()
+
+    expect(target.textContent).toContain('stored automatic translation')
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).not.toContain('stored automatic translation')
+  })
+
+  it('skips automatic display for user rows in bot-only mode while retaining the manual toggle', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'google'
+    chat.autoTranslate = true
+    chat.autoTranslateBotOnly = true
+    chat.message[0].translation = {
+      source: 'raw',
+      text: 'manual user translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    mountCustomHtmlRows(1, 'user')
+    await settle()
+
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).not.toContain('manual user translation')
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).toContain('manual user translation')
+  })
+
+  it('consumes one-shot append eligibility only after streaming finishes and attempts translation once', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'google'
+    chat.autoTranslate = true
+    chat.isStreaming = true
+    const consumed = vi.fn()
+    mountCustomHtmlRows(1, 'char', {
+      autoTranslateOnReady: true,
+      onAutoTranslationEligibilityConsumed: consumed,
+    })
+    await settle()
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+
+    chat.isStreaming = false
+    await settle()
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
+    expect(consumed).toHaveBeenCalledOnce()
+    expect(target.textContent).toContain('translated raw')
+
+    await settle()
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
+  })
+
+  it('does not auto-request uncached LLM translations in cached-only mode', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.autoTranslateCachedOnly = true
+    chat.autoTranslate = true
+    const consumed = vi.fn()
+    mountCustomHtmlRows(1, 'char', {
+      autoTranslateOnReady: true,
+      onAutoTranslationEligibilityConsumed: consumed,
+    })
+    await settle()
+
+    expect(consumed).toHaveBeenCalledOnce()
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+    expect(target.textContent).toContain('visible message 0')
+  })
+
+  it('surfaces one failed automatic attempt and leaves the message original without retrying', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    customHtmlMocks.translateMessageCommand.mockResolvedValueOnce({
+      status: 'error',
+      error: 'automatic provider failure',
+    } as never)
+    seedDatabase(1, null as unknown as string)
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'google'
+    chat.autoTranslate = true
+    mountCustomHtmlRows(1, 'char', { autoTranslateOnReady: true })
+    await settle()
+
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
+    expect(target.textContent).toContain('automatic provider failure')
+    expect(target.textContent).toContain('visible message 0')
+    await settle()
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
+  })
+
+  it('uses the bilingual display composite without changing the stored raw translation', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'google'
+    chat.bilingualDisplay = true
+    chat.message[0].translation = {
+      source: 'raw',
+      text: '번역된 메시지',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    mountCustomHtmlRows(1)
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).toContain('번역된 메시지')
+    expect(target.textContent).toContain('x-risu-bilingual-translation')
+    expect(chat.message[0].translation?.text).toBe('번역된 메시지')
+  })
+
   it('clears a cached raw translation when the source message is edited', async () => {
     const translation = {
       source: 'raw' as const,

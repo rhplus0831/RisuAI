@@ -131,11 +131,10 @@
 
   let { send, messageInput }: Props = $props()
   const initialCharacter = getDatabase().characters[$selectedCharID]
-  let suggestMessages: string[] | undefined = $state(
-    initialCharacter?.chats[initialCharacter.chatPage]?.suggestMessages,
-  )
+  const initialChat = initialCharacter?.chats[initialCharacter.chatPage]
+  let suggestMessages: string[] | undefined = $state(initialChat?.suggestMessages)
   let suggestMessagesTranslated: string[] = $state()
-  let toggleTranslate: boolean = $state(getDatabase().autoTranslate)
+  let toggleTranslate: boolean = $state(initialChat?.autoTranslate === true)
   let progress: boolean = $state()
   let abortController: AbortController | undefined
   let chatPage: number | undefined = $state()

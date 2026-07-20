@@ -12,7 +12,7 @@
   } from '../../ts/parser/parser.svelte'
   import { translateHTML } from '../../ts/translator/translator'
   import { getModuleAssets } from 'src/ts/process/modules'
-  import { getCurrentCharacter, getDatabase } from 'src/ts/storage/database.svelte'
+  import { getCurrentCharacter, getCurrentChat, getDatabase } from 'src/ts/storage/database.svelte'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
   import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
   import {
@@ -75,6 +75,11 @@
   function reportParsingError(error: unknown) {
     const parsingError = error instanceof Error ? error : new Error(typeof error === 'string' ? error : String(error))
     alertError(`Error while parsing chat message: ${translated}, ${parsingError.message}, ${parsingError.stack}`)
+  }
+
+  function automaticClientTranslationEnabled(): boolean {
+    const chat = getCurrentChat()
+    return chat?.autoTranslate === true && !(chat.autoTranslateBotOnly === true && role === 'user')
   }
 
   async function parseWithRetry(
@@ -160,7 +165,7 @@
         let translateText = false
         try {
           const database = getDatabase()
-          if (database.autoTranslate) {
+          if (automaticClientTranslationEnabled()) {
             if (database.autoTranslateCachedOnly && database.translatorType === 'llm') {
               translateText = await getChatBodyCachedOnlyLlmDecision({
                 data,

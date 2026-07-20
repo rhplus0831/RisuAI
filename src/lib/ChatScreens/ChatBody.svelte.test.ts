@@ -9,6 +9,7 @@ const chatBodyMocks = vi.hoisted(() => ({
     additionalAssets: [],
     prebuiltAssetStyle: 'none',
   })),
+  getCurrentChat: vi.fn(() => ({ autoTranslate: true })),
   getDistance: vi.fn(() => 0),
   getFileSrc: vi.fn(async (src: string) => src),
   getLLMCache: vi.fn(async () => null),
@@ -58,6 +59,7 @@ vi.mock('src/ts/process/scripts', () => ({
 
 vi.mock('src/ts/storage/database.svelte', () => ({
   getCurrentCharacter: chatBodyMocks.getCurrentCharacter,
+  getCurrentChat: chatBodyMocks.getCurrentChat,
   getDatabase: chatBodyMocks.getDatabase,
 }))
 
@@ -79,7 +81,6 @@ async function flushComponentPromises() {
 
 function setChatBodyDatabase(overrides: Record<string, unknown> = {}) {
   testDatabaseState.db = {
-    autoTranslate: true,
     autoTranslateCachedOnly: false,
     legacyTranslation: false,
     newImageHandlingBeta: false,
@@ -172,5 +173,26 @@ describe('ChatBody translation parse bounds', () => {
     expect(parseInputs).toEqual(['translated html', 'translated html', 'translated html', 'translated html'])
     expect(chatBodyMocks.alertError).not.toHaveBeenCalled()
     expect(target.textContent).toContain('parsed:translated html')
+  })
+
+  it('skips client-path auto-translation for user rows in active-chat bot-only mode', async () => {
+    chatBodyMocks.getCurrentChat.mockReturnValue({ autoTranslate: true, autoTranslateBotOnly: true } as never)
+    component = mount(ChatBody, {
+      target,
+      props: {
+        idx: -1,
+        modelShortName: '',
+        msgDisplay: 'preview user message',
+        role: 'user',
+        translated: false,
+        translating: false,
+        retranslate: false,
+      },
+    })
+    flushSync()
+    await flushComponentPromises()
+
+    expect(chatBodyMocks.translateHTML).not.toHaveBeenCalled()
+    expect(target.textContent).toContain('preview user message')
   })
 })

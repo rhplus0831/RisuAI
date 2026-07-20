@@ -145,7 +145,6 @@ export function seedRenderCostMessages(messageCount: number): RenderCostSeed {
     memoryLimitThickness: 0,
     translator: '',
     translatorType: 'none',
-    autoTranslate: false,
     autoTranslateCachedOnly: false,
     translateBeforeHTMLFormatting: false,
     legacyTranslation: false,

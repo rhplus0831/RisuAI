@@ -268,6 +268,7 @@ function seedDb(): void {
     chatGenerationTogglePresets: [],
     lastLoadedLoadoutName: '',
     hypaV3: false,
+    translator: '',
     personas: [
       {
         id: 'persona-a',
@@ -1683,6 +1684,42 @@ describe('sidebar chat generation settings controls', () => {
         select: false,
       },
     })
+  })
+
+  it('shows and persists the three active-chat translation settings only when translation is configured', async () => {
+    const calls = stubCommandFetch()
+    mountToggles()
+    await tick()
+    expect(target.querySelector('[data-risu-chat-translation-settings]')).toBeNull()
+    await unmount(component!)
+    component = undefined
+
+    testDatabaseState().translator = 'ko'
+    mountToggles()
+    await tick()
+
+    const settings = elementBySelector<HTMLElement>(
+      '[data-risu-chat-translation-settings]',
+      'chat translation settings',
+    )
+    expect(settings.querySelectorAll('[data-risu-chat-translation-setting]')).toHaveLength(3)
+    const autoTranslate = elementBySelector<HTMLElement>(
+      '[data-risu-chat-translation-setting="autoTranslate"]',
+      'auto-translate setting',
+    )
+    autoTranslate.querySelector<HTMLInputElement>('input')!.click()
+
+    await vi.waitFor(() => expect(activeChat().autoTranslate).toBe(true))
+    await waitForFetchCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        patch: { autoTranslate: true },
+        select: false,
+      },
+    })
+    await vi.waitFor(() => expect(autoTranslate.dataset.risuPersistenceStatus).toBe('idle'))
   })
 
   it('derives the Saved Toggles button label with unlinked and mismatch precedence', async () => {

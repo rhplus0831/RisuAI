@@ -2729,9 +2729,6 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.textgenWebUIBlockingURL)) {
     data.textgenWebUIBlockingURL = 'https://localhost/api/'
   }
-  if (checkNullish(data.autoTranslate)) {
-    data.autoTranslate = false
-  }
   if (checkNullish(data.fullScreen)) {
     data.fullScreen = false
   }
@@ -3749,7 +3746,6 @@ export interface Database {
   customBackground: string
   textgenWebUIStreamURL: string
   textgenWebUIBlockingURL: string
-  autoTranslate: boolean
   fullScreen: boolean
   playMessage: boolean
   iconsize: number
@@ -3893,7 +3889,7 @@ export interface Database {
   mancerHeader: string
   emotionProcesser: 'submodel' | 'embedding'
   showMenuChatList?: boolean
-  translatorType: 'google' | 'deepl' | 'none' | 'llm' | 'deeplX' | 'bergamot'
+  translatorType: 'google' | 'deepl' | 'none' | 'llm' | 'deeplX'
   translatorInputLanguage?: string
   htmlTranslation?: boolean
   NAIadventure?: boolean
@@ -4697,6 +4693,9 @@ export interface Chat {
   bindedPersona?: string
   fmIndex?: number
   selectedDraftHookId?: string
+  autoTranslate?: boolean
+  autoTranslateBotOnly?: boolean
+  bilingualDisplay?: boolean
   hypaV3Data?: SerializableHypaV3Data
   folderId?: string
   lastDate?: number

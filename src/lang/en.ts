@@ -392,7 +392,7 @@ export const languageEnglish = {
     translateBeforeHTMLFormatting:
       'If enabled, it will translate the text before Regex scripts and HTML formatting. This could make the token lesser but could break the formatting.',
     autoTranslateCachedOnly:
-      'If enabled with Auto Translation option on, it will automatically translate only the messages that the user has translated previously.',
+      "If enabled, chats with Auto Translation on display stored translations but don't request new LLM translations.",
     presetChain:
       'If it is not blank, the preset will be changed and applied randomly every time when user sends a message in the preset list in this input. Preset list should be seperated by comma, for example, `preset1,preset2`.',
     agentPresetPreparedInputs:
@@ -1048,6 +1048,8 @@ export const languageEnglish = {
   useCustomBackground: 'Custom Background',
   translateInput: 'Translate Input',
   autoTranslation: 'Auto Translation',
+  autoTranslateBotOnly: 'Translate bot messages only',
+  bilingualDisplay: 'Bilingual Mode',
   fullscreen: 'Fullscreen',
   playMessage: 'Play Message Audio',
   iconSize: 'Icon Size',

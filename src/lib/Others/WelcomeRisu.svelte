@@ -26,7 +26,6 @@
     'subModel',
     'openrouterRequestModel',
     'translator',
-    'autoTranslate',
     'translatorType',
     'useAutoTranslateInput',
     'didFirstSetup',

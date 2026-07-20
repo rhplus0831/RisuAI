@@ -196,6 +196,13 @@ High-risk chat areas:
   folded-message state all affect scroll behavior.
 - Message HTML crosses parser, translation, custom HTML templates, inlays,
   additional assets, module assets, and optional partial edit.
+- Durable message translation is server-raw for persisted transcript rows.
+  `Chats.svelte` baselines the active transcript and grants one-shot automatic
+  eligibility only to an appended tail; `Chat.svelte` waits for generation to
+  finish, applies the active chat's `autoTranslate`/bot-only policy, and renders
+  `bilingualDisplay` through `x-risu-bilingual-translation` blocks. The legacy
+  `ChatBody.svelte` HTML translation path remains only for non-persisted
+  previews/greetings and reads the same active-chat automatic policy.
 - `ChatBodyParseMemo.ts` owns parser/LLM-detection memoization and dependency
   signatures for the active chat, character, modules, settings, CBS state, and
   reload epochs; stale HTML or expensive rerenders can originate there.
@@ -220,6 +227,8 @@ High-risk chat areas:
 
 Relevant tests include `src/lib/ChatScreens/ChatBody.svelte.test.ts`,
 `src/lib/ChatScreens/ChatBody.parseMemo.test.ts`,
+`src/lib/ChatScreens/newMessageTranslationEligibility.test.ts`,
+`src/ts/translator/bilingualInterleave{,.dom}.test.ts`,
 `src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`,
 `src/lib/ChatScreens/Suggestion.svelte.test.ts`, and
 `src/lib/ChatScreens/PartialEditController.sharedHover.test.ts`. Parser,
@@ -284,6 +293,9 @@ Risk areas:
   notes above.
 - Character and chat reorders are optimistic command flows. Confirm rollback
   and resource reconciliation paths when the visible order changes.
+- `ChatTranslationSettings.svelte` owns the three sparse active-chat
+  translation toggles in the sidebar and exposes pending/queued/failed status
+  from the chat-scoped durable update flow.
 - Sortable setup/teardown and folder grouping live outside the main Svelte
   markup in `dropList.ts`, `sidebarCharList.ts`, and `chatFolderGrouping.ts`.
   `sidebarDrag.ts` validates pointer-drag ownership against the captured order.
@@ -516,8 +528,10 @@ hatch.
 When adding strings that appear in frontend UI, add an English key under
 `src/lang/en.ts`. Other locale omissions fall back to English.
 
-Language settings retain translation-cache import/export. The old UI-translation
-template download is intentionally absent; its regression guard is
+Language settings retain translation-cache import/export and the global
+cached-only/input-translation controls. Automatic message translation is
+chat-scoped in the sidebar rather than a language setting. The old
+UI-translation template download is intentionally absent; its regression guard is
 `src/ts/setting/languageSettingsData.test.ts`. The broader retired-settings
 inventory is in
 [Generated Files And Legacy Caveats](../../docs/structure/generated-and-legacy.md#stale-or-no-port-surfaces).

@@ -7986,6 +7986,9 @@ describe('Phase 9-3b chat record and folder commands', () => {
         patch: {
           name: 'A renamed',
           note: 'metadata only',
+          autoTranslate: true,
+          autoTranslateBotOnly: true,
+          bilingualDisplay: true,
           bookmarks: ['msg-a'],
           bookmarkNames: { 'msg-a': 'Pinned' },
         },
@@ -8017,6 +8020,9 @@ describe('Phase 9-3b chat record and folder commands', () => {
       id: 'chat-a',
       name: 'A renamed',
       note: 'metadata only',
+      autoTranslate: true,
+      autoTranslateBotOnly: true,
+      bilingualDisplay: true,
       bookmarks: ['msg-a'],
       bookmarkNames: { 'msg-a': 'Pinned' },
     })

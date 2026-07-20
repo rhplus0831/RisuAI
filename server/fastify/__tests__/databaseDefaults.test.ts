@@ -26,6 +26,7 @@ describe('database defaults', () => {
     ])
     expect(database.reducedMotion).toBe(false)
     expect(database.chatScreenWidth).toBe(900)
+    expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
     expect(database.loreBook).toEqual([
       expect.objectContaining({ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }),

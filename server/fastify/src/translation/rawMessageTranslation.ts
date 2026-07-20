@@ -69,9 +69,6 @@ function translatorTypeFromSettings(settings: Record<string, unknown>): RawMessa
   if (SUPPORTED_TRANSLATORS.has(translatorType as RawMessageTranslatorType)) {
     return translatorType as RawMessageTranslatorType
   }
-  if (translatorType === 'bergamot') {
-    throw new ValidationError('Firefox/Bergamot translation is not supported by server-side raw message translation')
-  }
   if (translatorType === 'none') {
     throw new ValidationError('Translation is disabled')
   }

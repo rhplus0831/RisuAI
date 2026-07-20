@@ -121,7 +121,6 @@ function seedSuggestionDatabase(suggestMessages: string[] = ['Take the lead'], t
   replaceResourceDatabase({
     autoSuggestClean: false,
     autoSuggestPrompt: '',
-    autoTranslate: false,
     characters: [
       {
         chaId: 'character-a',
@@ -131,6 +130,7 @@ function seedSuggestionDatabase(suggestMessages: string[] = ['Take the lead'], t
           {
             id: 'chat-a',
             name: 'Chat A',
+            autoTranslate: false,
             message: [{ role: 'char', data: 'Hello', chatId: 'message-a' }],
             suggestMessages,
           },
@@ -147,7 +147,6 @@ function seedSuggestionDatabaseWithTwoChats() {
   replaceResourceDatabase({
     autoSuggestClean: false,
     autoSuggestPrompt: '',
-    autoTranslate: false,
     characters: [
       {
         chaId: 'character-a',
@@ -157,6 +156,7 @@ function seedSuggestionDatabaseWithTwoChats() {
           {
             id: 'chat-a',
             name: 'Chat A',
+            autoTranslate: false,
             message: [{ role: 'char', data: 'Hello from A', chatId: 'message-a' }],
             suggestMessages: ['Take the lead'],
           },
@@ -196,6 +196,24 @@ describe('Suggestion controls', () => {
       expect(target.querySelector(`button[aria-label="${language.reroll}"]`)).toBeTruthy()
       expect(target.querySelector('button[aria-label="Take the lead"]')).toBeTruthy()
       expect(target.querySelector(`button[aria-label="${language.copy}: Take the lead"]`)).toBeTruthy()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
+  it("defaults the translation toggle from the active chat's auto-translate setting", async () => {
+    seedSuggestionDatabase(['Take the lead'], 'google')
+    getResourceDatabase().characters[0].chats[0].autoTranslate = true
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(target.querySelector(`button[aria-label="${language.translate}"]`)?.getAttribute('aria-pressed')).toBe(
+        'true',
+      )
     } finally {
       unmount(component)
       target.remove()

@@ -17,9 +17,6 @@ importers:
       '@breezystack/lamejs':
         specifier: ^1.2.7
         version: 1.2.7
-      '@browsermt/bergamot-translator':
-        specifier: ^0.4.9
-        version: 0.4.9
       '@dqbd/tiktoken':
         specifier: ^1.0.22
         version: 1.0.22
@@ -349,9 +346,6 @@ packages:
 
   '@breezystack/lamejs@1.2.7':
     resolution: {integrity: sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==}
-
-  '@browsermt/bergamot-translator@0.4.9':
-    resolution: {integrity: sha512-bNuuCwM/JnsIYQCKXcYKFT4Qc5vLMoB8Nbvz8ReIgs7xzebK8Sa+R8iEK8mLvNBe/WaZ6zrPaUQilLsRT/ea8Q==}
 
   '@codemirror/autocomplete@6.20.0':
     resolution: {integrity: sha512-bOwvTOIJcG5FVo5gUUupiwYh8MioPLQ4UcqbcRf7UQ98X90tCa9E1kZ3Z7tqwpZxYyOvh1YTYbmZE9RTfTp5hg==}
@@ -2837,8 +2831,6 @@ snapshots:
   '@bcoe/v8-coverage@1.0.2': {}
 
   '@breezystack/lamejs@1.2.7': {}
-
-  '@browsermt/bergamot-translator@0.4.9': {}
 
   '@codemirror/autocomplete@6.20.0':
     dependencies:

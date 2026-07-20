@@ -470,8 +470,10 @@ export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
 
 function getTranslateSettingsSignature() {
   const db = getDatabase() as Partial<Database>
+  const chat = getCurrentChat()
   return {
-    autoTranslate: db.autoTranslate,
+    autoTranslate: chat?.autoTranslate,
+    autoTranslateBotOnly: chat?.autoTranslateBotOnly,
     autoTranslateCachedOnly: db.autoTranslateCachedOnly,
     translatorType: db.translatorType,
     translator: db.translator,

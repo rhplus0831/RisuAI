@@ -213,8 +213,7 @@ export const languageKorean = {
       '번역에 사용되는 프롬프트입니다. 비어있으면 기본 프롬프트를 사용합니다. 목적 언어에 대해 {{slot}}, 콘텐츠에 대해 {{slot::content}}, 번역자 노트에 대해 {{slot::tnote}}를 사용하여 ChatML 형식을 사용할 수도 있습니다.',
     translateBeforeHTMLFormatting:
       '활성화하면 정규식 스크립트와 HTML 포맷팅 전에 텍스트를 번역합니다. 토큰이 줄어들 수 있지만 포맷이 깨질 수 있습니다.',
-    autoTranslateCachedOnly:
-      '자동 번역 옵션이 켜진 상태에서 활성화하면, 사용자가 이전에 번역한 메시지만 자동으로 번역됩니다.',
+    autoTranslateCachedOnly: '활성화하면 자동 번역을 켠 채팅은 저장된 번역만 표시하고 새 LLM 번역을 요청하지 않습니다.',
     presetChain:
       '비어있지 않으면 사용자가 메시지를 보낼 때마다 이 입력의 프리셋 목록에서 무작위로 프리셋이 변경 및 적용됩니다. 프리셋 목록은 쉼표로 구분해야 합니다. 예: `preset1,preset2`.',
     legacyMediaFindings: '활성화하면 추가 검색 알고리즘을 사용하지 않고 기존 방식으로 미디어 에셋을 찾습니다.',
@@ -759,6 +758,8 @@ export const languageKorean = {
   useCustomBackground: '커스텀 배경',
   translateInput: '입력창 번역하기',
   autoTranslation: '자동 번역',
+  autoTranslateBotOnly: '봇 메시지만 번역',
+  bilingualDisplay: '이중 언어 모드',
   fullscreen: '전체 화면',
   playMessage: '메시지 소리 출력',
   iconSize: '아이콘 크기',

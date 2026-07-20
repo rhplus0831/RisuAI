@@ -166,6 +166,9 @@ export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'bindedPersona',
   'fmIndex',
   'selectedDraftHookId',
+  'autoTranslate',
+  'autoTranslateBotOnly',
+  'bilingualDisplay',
   'folderId',
   'lastDate',
   'bookmarks',
@@ -3027,6 +3030,38 @@ export function setCurrentChatSelectedDraftHookId(
     dispatchUpdateChatScoped(chatId, { selectedDraftHookId: hookId }, previous)
   }
   return true
+}
+
+export type ChatTranslationSettingField = 'autoTranslate' | 'autoTranslateBotOnly' | 'bilingualDisplay'
+
+export function setCurrentChatTranslationSettingWithOutcome(
+  field: ChatTranslationSettingField,
+  value: boolean,
+): Promise<ChatMutationOutcome> | undefined {
+  const selectedChar = get(selectedCharID)
+  const character = getDatabase().characters?.[selectedChar]
+  const selectedChat = character?.chatPage
+  const chat = character?.chats?.[selectedChat]
+  const chatId = chat?.id
+  if (!character || selectedChat === undefined || selectedChat === null || !chat || !chatId) return
+
+  const previous: ChatScopedSnapshot = {
+    selectedCharID: selectedChar,
+    characterId: character.chaId,
+    chatId,
+    chat: cloneJsonValue(chat),
+  }
+  let applied = false
+  withTrustedResourceWrite(() => {
+    const liveCharacter = getDatabase().characters?.[selectedChar]
+    const liveChat = liveCharacter?.chats?.[selectedChat]
+    if (!liveChat || liveCharacter?.chaId !== character.chaId || liveChat.id !== chatId) return
+    liveChat[field] = value
+    applied = true
+  })
+  if (!applied) return
+
+  return dispatchUpdateChatScopedWithOutcome(chatId, { [field]: value }, previous)
 }
 
 function settledChatGenerationSettingsSaveOperation(
