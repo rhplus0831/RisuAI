@@ -1763,7 +1763,7 @@
 
       {#if showDraftArea && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
         <div
-          class="mx-2 flex flex-col gap-2 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5 text-textcolor"
+          class="mx-2 flex w-auto self-stretch flex-col gap-2 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5 text-textcolor"
           data-testid="default-chat-draft-area"
           data-risu-draft-hook-pending={doingDraftHook}
           data-risu-btw-hook-pending={doingBtwHook}>
@@ -1793,7 +1793,7 @@
           <textarea
             id="default-chat-draft-input"
             data-testid="default-chat-draft-input"
-            class="min-w-0 resize-none overflow-y-hidden rounded-md border border-darkborderc bg-transparent p-2 text-base text-textcolor outline-hidden transition-colors placeholder:text-sm focus:border-textcolor"
+            class="w-full min-w-0 resize-none overflow-y-hidden rounded-md border border-darkborderc bg-transparent p-2 text-base text-textcolor outline-hidden transition-colors placeholder:text-sm focus:border-textcolor"
             bind:value={draftText}
             bind:this={draftInputEle}
             oninput={() => {

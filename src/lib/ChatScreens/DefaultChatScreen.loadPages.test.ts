@@ -1325,8 +1325,11 @@ describe('DefaultChatScreen transcript window state', () => {
     mountScreen()
 
     await waitFor(() => expect(target.querySelector('[data-testid="default-chat-draft-input"]')).toBeTruthy())
+    const draftArea = target.querySelector<HTMLElement>('[data-testid="default-chat-draft-area"]')!
     const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
     const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    expect(draftArea.classList).toContain('self-stretch')
+    expect(draft.classList).toContain('w-full')
     draft.value = 'Earlier draft'
     draft.dispatchEvent(new Event('input', { bubbles: true }))
     composer.value = 'Composer source'
