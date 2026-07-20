@@ -363,12 +363,6 @@ export interface CharacterSupaMemorySnapshot {
   supaMemory: boolean | undefined
 }
 
-export interface CharacterInputTranslationHookSnapshot {
-  characterId: string
-  hadUseInputTranslationHook: boolean
-  useInputTranslationHook: boolean | undefined
-}
-
 interface CharacterOrderPlacement {
   characterId: string
   rootIndex?: number
@@ -409,18 +403,6 @@ export function currentCharacterSupaMemorySnapshot(characterId: string): Charact
     characterId,
     hadSupaMemory: Object.prototype.hasOwnProperty.call(character, 'supaMemory'),
     supaMemory: character.supaMemory,
-  }
-}
-
-export function currentCharacterInputTranslationHookSnapshot(
-  characterId: string,
-): CharacterInputTranslationHookSnapshot | null {
-  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-  if (!character) return null
-  return {
-    characterId,
-    hadUseInputTranslationHook: Object.prototype.hasOwnProperty.call(character, 'useInputTranslationHook'),
-    useInputTranslationHook: character.useInputTranslationHook,
   }
 }
 
@@ -489,18 +471,6 @@ export function restoreCharacterSupaMemory(snapshot: CharacterSupaMemorySnapshot
       character.supaMemory = snapshot.supaMemory
     } else {
       delete character.supaMemory
-    }
-  })
-}
-
-export function restoreCharacterInputTranslationHook(snapshot: CharacterInputTranslationHookSnapshot): void {
-  withTrustedResourceWrite(() => {
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === snapshot.characterId)
-    if (!character) return
-    if (snapshot.hadUseInputTranslationHook) {
-      character.useInputTranslationHook = snapshot.useInputTranslationHook
-    } else {
-      delete character.useInputTranslationHook
     }
   })
 }
@@ -1303,48 +1273,6 @@ function prepareUpdateCharacterSupaMemory(
         ...previous,
         hadSupaMemory: rebased.hadValue,
         supaMemory: rebased.value as boolean | undefined,
-      })
-    },
-  )
-}
-
-export function dispatchUpdateCharacterInputTranslationHook(
-  characterId: string,
-  enabled: boolean,
-  previous: CharacterInputTranslationHookSnapshot,
-): Promise<ServerCommandResult> | undefined {
-  return prepareUpdateCharacterInputTranslationHook(characterId, enabled, previous)?.promise
-}
-
-export function dispatchUpdateCharacterInputTranslationHookWithOutcome(
-  characterId: string,
-  enabled: boolean,
-  previous: CharacterInputTranslationHookSnapshot,
-): Promise<CharacterMutationOutcome> | undefined {
-  const execution = prepareUpdateCharacterInputTranslationHook(characterId, enabled, previous)
-  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
-}
-
-function prepareUpdateCharacterInputTranslationHook(
-  characterId: string,
-  enabled: boolean,
-  previous: CharacterInputTranslationHookSnapshot,
-): PendingCharacterMutationExecution | undefined {
-  const baseline = {
-    hadValue: previous.hadUseInputTranslationHook,
-    value: previous.useInputTranslationHook,
-  }
-  return prepareDurableCharacterPatchExecution(
-    characterId,
-    { useInputTranslationHook: enabled },
-    new Map([['useInputTranslationHook', baseline]]),
-    (attempt) => {
-      if (!isCharacterFieldMutationAttemptCurrent(characterId, 'useInputTranslationHook', enabled, attempt)) return
-      const rebased = characterFieldMutationBaseline(attempt, 'useInputTranslationHook', baseline)
-      restoreCharacterInputTranslationHook({
-        ...previous,
-        hadUseInputTranslationHook: rebased.hadValue,
-        useInputTranslationHook: rebased.value as boolean | undefined,
       })
     },
   )
@@ -2364,38 +2292,6 @@ function startCharacterSupaMemoryMutation(
     character.supaMemory = enabled
     if (previous) {
       return prepareUpdateCharacterSupaMemory(characterId, enabled, previous)
-    }
-  })
-}
-
-export function setCharacterInputTranslationHook(
-  characterId: string,
-  enabled: boolean,
-): Promise<ServerCommandResult> | undefined {
-  return startCharacterInputTranslationHookMutation(characterId, enabled)?.promise
-}
-
-export function setCharacterInputTranslationHookWithOutcome(
-  characterId: string,
-  enabled: boolean,
-): Promise<CharacterMutationOutcome> | undefined {
-  const execution = startCharacterInputTranslationHookMutation(characterId, enabled)
-  return execution ? compatibleCharacterMutationOutcome(execution) : undefined
-}
-
-function startCharacterInputTranslationHookMutation(
-  characterId: string,
-  enabled: boolean,
-): PendingCharacterMutationExecution | undefined {
-  if (!characterId) return
-  return withTrustedResourceWrite(() => {
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-    if (!character || Boolean(character.useInputTranslationHook) === enabled) return
-
-    const previous = canUseServerCommands() ? currentCharacterInputTranslationHookSnapshot(characterId) : null
-    character.useInputTranslationHook = enabled
-    if (previous) {
-      return prepareUpdateCharacterInputTranslationHook(characterId, enabled, previous)
     }
   })
 }

@@ -1,12 +1,7 @@
 import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type {
-  ActiveChatTarget,
-  AppendCurrentChatUserMessageResult,
-  DeleteMessageScopedFinalResult,
-  DeleteMessageScopedResult,
-} from 'src/ts/chatCommands'
+import type { ActiveChatTarget, AppendCurrentChatUserMessageResult } from 'src/ts/chatCommands'
 
 const loadPageMocks = vi.hoisted(() => ({
   abortActiveGeneration: vi.fn(),
@@ -27,7 +22,6 @@ const loadPageMocks = vi.hoisted(() => ({
   chatFoldedStateMessageIndex: { index: -1 },
   clearActiveGenerationAbortController: vi.fn(),
   createActiveGenerationAbortController: vi.fn(() => ({ signal: new AbortController().signal })),
-  dispatchDeleteMessageScoped: vi.fn(async (): Promise<DeleteMessageScopedResult> => ({ status: 'accepted' })),
   downloadFile: vi.fn(async () => undefined),
   getCharImage: vi.fn(() => ''),
   getInlayAsset: vi.fn(async () => null),
@@ -70,7 +64,15 @@ vi.mock('../../lang', () => ({
   language: new Proxy(
     {},
     {
-      get: (_target, property) => String(property),
+      get: (_target, property) =>
+        property === 'errors'
+          ? {
+              emptyText: 'emptyText',
+              chatGenerationSettingsIncomplete: 'Chat generation settings are incomplete.',
+              chatGenerationSettingsIncompleteWithMissing: (missing: string) =>
+                `Chat generation settings are incomplete. Missing: ${missing}.`,
+            }
+          : String(property),
     },
   ),
 }))
@@ -93,8 +95,11 @@ vi.mock('../../ts/util', async (importActual) => {
 
 vi.mock('../../ts/translator/translator', () => ({
   isExpTranslator: () => false,
-  runInputTranslator: vi.fn(async (message: string) => message),
   translate: vi.fn(async (message: string) => message),
+}))
+
+vi.mock('src/ts/process/inputHooks', () => ({
+  runInputHook: vi.fn(async (_hook: unknown, slots: { content: string }) => slots.content),
 }))
 
 vi.mock('../../ts/process/modules', () => ({
@@ -189,13 +194,20 @@ vi.mock('src/ts/chatCommands', () => ({
   appendCurrentChatUserMessageForSend: loadPageMocks.appendCurrentChatUserMessageForSend,
   captureActiveChatTarget: loadPageMocks.captureActiveChatTarget,
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
-  currentChatScopedSnapshot: vi.fn(() => ({ before: 'chat-scoped' })),
   currentChatStateSnapshot: vi.fn(() => ({ before: 'chat-state' })),
-  dispatchDeleteMessageScoped: loadPageMocks.dispatchDeleteMessageScoped,
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchSaveChatGenerationSettings: vi.fn(() => true),
   dispatchUpdateChat: vi.fn(),
   isActiveChatTargetFresh: loadPageMocks.isActiveChatTargetFresh,
+  setCurrentChatSelectedDraftHookId: vi.fn((hookId: string | null) => {
+    const selectedChar = get(selectedCharID)
+    const character = getResourceDatabase().characters?.[selectedChar]
+    const chat = character?.chats?.[character.chatPage]
+    if (!chat) return false
+    if (hookId === null) delete chat.selectedDraftHookId
+    else chat.selectedDraftHookId = hookId
+    return true
+  }),
 }))
 
 vi.mock('src/ts/activeChatGenerationSettings', async (importActual) => {
@@ -263,8 +275,8 @@ import {
   createActiveChatGenerationSettingsIncompleteMessage,
   resolveActiveChatGenerationSettings,
 } from 'src/ts/activeChatGenerationSettings'
-import { currentChatScopedSnapshot, dispatchDeleteMessageScoped } from 'src/ts/chatCommands'
-import { runInputTranslator, translate } from '../../ts/translator/translator'
+import { translate } from '../../ts/translator/translator'
+import { runInputHook } from 'src/ts/process/inputHooks'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -370,6 +382,7 @@ function seedDatabase(messageCounts: number[]) {
     enableRisuaiProTools: false,
     fixedChatTextarea: false,
     hypaV3: false,
+    inputHooks: [],
     newMessageButtonStyle: 'bottom-center',
     personas: [{ name: 'User', icon: '', largePortrait: false, personaPrompt: '' }],
     playMessage: false,
@@ -521,9 +534,16 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AA==')
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   vi.clearAllMocks()
+  loadPageMocks.appendCurrentChatUserMessageForSend.mockReset()
+  loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValue({ status: 'ok', messageId: 'message-a' })
+  loadPageMocks.sendChat.mockReset()
+  loadPageMocks.sendChat.mockResolvedValue(true)
+  loadPageMocks.postChatFile.mockReset()
+  loadPageMocks.postChatFile.mockResolvedValue([])
   loadPageMocks.captureActiveChatTarget.mockImplementation(captureActiveChatTargetForTest)
   loadPageMocks.isActiveChatTargetFresh.mockImplementation(isActiveChatTargetFreshForTest)
-  vi.mocked(runInputTranslator).mockImplementation(async (message: string) => message)
+  vi.mocked(runInputHook).mockReset()
+  vi.mocked(runInputHook).mockImplementation(async (_hook, slots) => slots.content)
   vi.mocked(translate).mockImplementation(async (message: string) => message)
   loadPageMocks.toCanvas.mockReset()
   loadPageMocks.toCanvas.mockImplementation(async () => createCanvas())
@@ -531,7 +551,6 @@ beforeEach(() => {
   loadPageMocks.hydrateActiveChatWindow.mockClear()
   loadPageMocks.guardActiveChatGenerationSettingsForSend.mockReturnValue({ status: 'ok' })
   loadPageMocks.preflightChatSendBeforeMutation.mockReturnValue({ type: 'server' })
-  loadPageMocks.dispatchDeleteMessageScoped.mockImplementation(async () => ({ status: 'accepted' }))
 })
 
 afterEach(() => {
@@ -1297,276 +1316,184 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.applySuccessfulSendChatEffects).not.toHaveBeenCalled()
   })
 
-  it('translates hook-enabled input into a user message without starting generation', async () => {
+  it('runs the selected draft hook into the draft area while preserving the composer', async () => {
     seedDatabase([1])
-    getResourceDatabase().characters[0].useInputTranslationHook = true
-    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: '{{slot::content}}' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    vi.mocked(runInputHook).mockResolvedValueOnce('  Refined draft  ')
     mountScreen()
 
-    await waitFor(() => {
-      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
-    })
-    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
-    textarea.value = '원문'
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    await tick()
-
-    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
-    expect(sendButton).toBeTruthy()
-    sendButton!.click()
-
-    await waitFor(() => {
-      expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
-    })
-
-    expect(runInputTranslator).toHaveBeenCalledWith('원문', expect.any(Object))
-    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
-      expect.objectContaining({
-        role: 'user',
-        data: 'Translated draft',
-      }),
-      expect.objectContaining({
-        expectedTarget: expectedActiveTarget(0),
-      }),
-    )
-    expect(textarea.value).toBe('')
-    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
-  })
-
-  it('clears translated input and stops before generation when its append is durably queued', async () => {
-    seedDatabase([1])
-    getResourceDatabase().characters[0].useInputTranslationHook = true
-    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated queued draft')
-    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
-      status: 'queued',
-      messageId: 'translated-queued-message',
-    })
-    mountScreen()
-
-    await waitFor(() => {
-      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
-    })
-    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
-    textarea.value = '대기할 원문'
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-draft-input"]')).toBeTruthy())
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    draft.value = 'Earlier draft'
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
+    composer.value = 'Composer source'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
 
     target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
 
-    await waitFor(() => {
-      expect(loadPageMocks.alertNormal).toHaveBeenCalledWith('pendingChatMessageQueued')
-    })
+    await waitFor(() => expect(draft.value).toBe('Refined draft'))
+    expect(runInputHook).toHaveBeenCalledWith(
+      hook,
+      { content: 'Composer source', draft: 'Earlier draft' },
+      expect.any(Object),
+    )
+    expect(composer.value).toBe('Composer source')
+    expect(loadPageMocks.preflightChatSendBeforeMutation).not.toHaveBeenCalled()
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('discards a draft-hook result after the active chat target changes', async () => {
+    seedDatabase([1, 1])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    const pending = createDeferred<string>()
+    vi.mocked(runInputHook).mockReturnValueOnce(pending.promise)
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    composer.value = 'Source'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+    await waitFor(() => expect(runInputHook).toHaveBeenCalledTimes(1))
+
+    switchToCharacterChat(1)
+    await settle()
+    pending.resolve('Stale result')
+    await settle()
+    switchToCharacterChat(0)
+    await settle()
+
+    expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')?.value).toBe('')
+  })
+
+  it('reports an empty draft-hook result and preserves the composer', async () => {
+    seedDatabase([1])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    vi.mocked(runInputHook).mockResolvedValueOnce('   ')
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    composer.value = 'Keep me'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => expect(loadPageMocks.alertError).toHaveBeenCalledWith('emptyText'))
+    expect(composer.value).toBe('Keep me')
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
+  })
+
+  it('sends a draft as a user message, starts generation, and clears draft state on success', async () => {
+    seedDatabase([1])
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-draft-input"]')).toBeTruthy())
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    composer.value = 'Preserved until success'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    draft.value = '  Ready draft  '
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-draft-send"]')!.click()
+
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
     expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'user', data: 'Translated queued draft' }),
+      expect.objectContaining({ role: 'user', data: '  Ready draft  ' }),
       expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
     )
-    expect(textarea.value).toBe('')
-    expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeNull()
-    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
-    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(composer.value).toBe('')
+      expect(draft.value).toBe('')
+    })
   })
 
-  it('restores original hook input and removes the translated message from the rollback button', async () => {
+  it('clears a durably queued draft and does not start generation', async () => {
     seedDatabase([1])
-    getResourceDatabase().characters[0].useInputTranslationHook = true
-    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
     loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
-      status: 'ok',
-      messageId: 'translated-message',
-    })
-    mountScreen()
-
-    await waitFor(() => {
-      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
-    })
-    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
-    textarea.value = '원문'
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    await tick()
-
-    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
-    expect(sendButton).toBeTruthy()
-    sendButton!.click()
-
-    let rollbackButton: HTMLButtonElement | null = null
-    await waitFor(() => {
-      rollbackButton = target.querySelector<HTMLButtonElement>(
-        '[data-testid="default-chat-input-translation-rollback"]',
-      )
-      expect(rollbackButton).toBeTruthy()
-    })
-    expect(textarea.value).toBe('')
-
-    rollbackButton!.click()
-    await tick()
-
-    expect(textarea.value).toBe('원문')
-    expect(currentChatScopedSnapshot).toHaveBeenCalledTimes(1)
-    expect(dispatchDeleteMessageScoped).toHaveBeenCalledWith('translated-message', { before: 'chat-scoped' })
-    expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeNull()
-    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
-  })
-
-  it('keeps the optimistic composer restore while an accepted translated-message delete is deferred', async () => {
-    seedDatabase([1])
-    getResourceDatabase().characters[0].useInputTranslationHook = true
-    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
-    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
-      status: 'ok',
-      messageId: 'translated-message',
-    })
-    const deletion = createDeferred<DeleteMessageScopedResult>()
-    loadPageMocks.dispatchDeleteMessageScoped.mockReturnValueOnce(deletion.promise)
-    mountScreen()
-
-    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
-    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
-    textarea.value = '원문'
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
-
-    await waitFor(() =>
-      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy(),
-    )
-    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-input-translation-rollback"]')!.click()
-    await settle()
-
-    expect(textarea.value).toBe('원문')
-    expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeNull()
-    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
-
-    deletion.resolve({ status: 'accepted' })
-    await settle()
-    expect(textarea.value).toBe('원문')
-    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
-  })
-
-  it('atomically restores the transcript, prior composer, and rollback affordance when delete fails', async () => {
-    seedDatabase([1])
-    getResourceDatabase().characters[0].useInputTranslationHook = true
-    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated visible row')
-    loadPageMocks.appendCurrentChatUserMessageForSend.mockImplementationOnce(async (message?: unknown) => {
-      getResourceDatabase().characters[0].chats[0].message.push({
-        ...(message as Record<string, unknown>),
-        chatId: 'translated-message',
-      } as never)
-      return { status: 'ok', messageId: 'translated-message' }
-    })
-    const deletion = createDeferred<DeleteMessageScopedResult>()
-    loadPageMocks.dispatchDeleteMessageScoped.mockImplementationOnce(() => {
-      const messages = getResourceDatabase().characters[0].chats[0].message
-      const index = messages.findIndex((message) => message.chatId === 'translated-message')
-      const [removed] = index >= 0 ? messages.splice(index, 1) : []
-      return deletion.promise.then((result) => {
-        if (result.status === 'failed' && removed) messages.splice(index, 0, removed)
-        return result
-      })
-    })
-    mountScreen()
-
-    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
-    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
-    textarea.value = '원문'
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
-
-    await waitFor(() => {
-      expect(target.textContent).toContain('Translated visible row')
-      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy()
-    })
-    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-input-translation-rollback"]')!.click()
-    await waitFor(() => expect(target.textContent).not.toContain('Translated visible row'))
-    expect(textarea.value).toBe('원문')
-
-    deletion.resolve({ status: 'failed', error: 'delete failed' })
-    await waitFor(() => {
-      expect(target.textContent).toContain('Translated visible row')
-      expect(textarea.value).toBe('')
-      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy()
-      expect(loadPageMocks.alertError).toHaveBeenCalledWith('inputTranslationRollbackFailed')
-    })
-  })
-
-  it('labels a retained undo as queued and preserves newer typing if final settlement fails', async () => {
-    seedDatabase([1])
-    getResourceDatabase().characters[0].useInputTranslationHook = true
-    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated queued undo')
-    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
-      status: 'ok',
-      messageId: 'translated-message',
-    })
-    const finalSettlement = createDeferred<DeleteMessageScopedFinalResult>()
-    loadPageMocks.dispatchDeleteMessageScoped.mockResolvedValueOnce({
       status: 'queued',
-      mutationId: 'delete-translated-message',
-      settlement: finalSettlement.promise,
+      messageId: 'queued-draft',
     })
     mountScreen()
 
-    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
-    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
-    textarea.value = '원문'
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
-
-    await waitFor(() =>
-      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy(),
-    )
-    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-input-translation-rollback"]')!.click()
-    await waitFor(() => expect(loadPageMocks.alertNormal).toHaveBeenCalledWith('inputTranslationRollbackQueued'))
-    expect(textarea.value).toBe('원문')
-
-    textarea.value = 'Newer draft typed while delete is queued'
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-draft-input"]')).toBeTruthy())
+    const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    draft.value = 'Queued draft'
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
-    finalSettlement.resolve({ status: 'failed', error: 'writer stale' })
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-draft-send"]')!.click()
 
-    await waitFor(() => {
-      expect(loadPageMocks.alertError).toHaveBeenCalledWith('inputTranslationRollbackFailed')
-      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy()
-    })
-    expect(textarea.value).toBe('Newer draft typed while delete is queued')
+    await waitFor(() => expect(loadPageMocks.alertNormal).toHaveBeenCalledWith('pendingChatMessageQueued'))
+    expect(draft.value).toBe('')
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 
-  it('clears stored original hook input when generation starts', async () => {
+  it('preserves the draft when its append fails', async () => {
     seedDatabase([1])
-    getResourceDatabase().characters[0].useInputTranslationHook = true
-    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
-    const send = createDeferred<boolean>()
-    loadPageMocks.sendChat.mockReturnValueOnce(send.promise)
-    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
-      status: 'ok',
-      messageId: 'translated-message',
-    })
+    const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({ status: 'error', error: 'append failed' })
     mountScreen()
 
-    await waitFor(() => {
-      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
-    })
-    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
-    textarea.value = '원문'
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-draft-input"]')).toBeTruthy())
+    const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    draft.value = 'Retry this draft'
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-draft-send"]')!.click()
 
-    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
-    expect(sendButton).toBeTruthy()
-    sendButton!.click()
-
-    await waitFor(() => {
-      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy()
-    })
+    await waitFor(() => expect(loadPageMocks.alertError).toHaveBeenCalledWith('append failed'))
+    expect(draft.value).toBe('Retry this draft')
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
 
-    const confirmedSendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
-    expect(confirmedSendButton).toBeTruthy()
-    confirmedSendButton!.click()
+  it('runs a BTW hook into a dismissible result panel', async () => {
+    seedDatabase([1])
+    const draftHook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'draft' }
+    const btwHook = { id: 'btw-hook', name: 'BTW Hook', type: 'btw' as const, prompt: 'btw' }
+    getResourceDatabase().inputHooks = [draftHook, btwHook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = draftHook.id
+    vi.mocked(runInputHook).mockResolvedValueOnce('  BTW answer  ')
+    mountScreen()
 
-    await waitFor(() => {
-      expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1)
-      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeNull()
-    })
-    send.resolve(true)
-    await settle()
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-btw-button"]')).toBeTruthy())
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    const draft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    composer.value = 'Question'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    draft.value = 'Current draft'
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-btw-button"]')!.click()
+    await tick()
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-input-hook-option-btw-hook"]')!.click()
+
+    await waitFor(() =>
+      expect(target.querySelector('[data-testid="default-chat-btw-result"]')?.textContent).toContain('BTW answer'),
+    )
+    expect(runInputHook).toHaveBeenCalledWith(
+      btwHook,
+      { content: 'Question', draft: 'Current draft' },
+      expect.any(Object),
+    )
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-btw-dismiss"]')!.click()
+    await tick()
+    expect(target.querySelector('[data-testid="default-chat-btw-result"]')).toBeNull()
   })
 
   it('shrinks the composer back after sending a tall draft', async () => {
@@ -2121,6 +2048,12 @@ describe('DefaultChatScreen transcript window state', () => {
 
   it('keeps composer drafts scoped to their chat', async () => {
     seedDatabase([1, 1])
+    const draftHook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'draft' }
+    const btwHook = { id: 'btw-hook', name: 'BTW Hook', type: 'btw' as const, prompt: 'btw' }
+    getResourceDatabase().inputHooks = [draftHook, btwHook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = draftHook.id
+    getResourceDatabase().characters[1].chats[0].selectedDraftHookId = draftHook.id
+    vi.mocked(runInputHook).mockResolvedValueOnce('First BTW').mockResolvedValueOnce('Second BTW')
     mountScreen()
 
     await waitFor(() => {
@@ -2129,7 +2062,15 @@ describe('DefaultChatScreen transcript window state', () => {
     const firstTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
     firstTextarea.value = 'First chat draft'
     firstTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    const firstHookDraft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    firstHookDraft.value = 'First hook draft'
+    firstHookDraft.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-btw-button"]')!.click()
     await tick()
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-input-hook-option-btw-hook"]')!.click()
+    await waitFor(() =>
+      expect(target.querySelector('[data-testid="default-chat-btw-result"]')?.textContent).toContain('First BTW'),
+    )
 
     switchToCharacterChat(1)
     await waitFor(() => {
@@ -2138,13 +2079,25 @@ describe('DefaultChatScreen transcript window state', () => {
     const secondTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
     secondTextarea.value = 'Second chat draft'
     secondTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    const secondHookDraft = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')!
+    secondHookDraft.value = 'Second hook draft'
+    secondHookDraft.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-btw-button"]')!.click()
     await tick()
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-input-hook-option-btw-hook"]')!.click()
+    await waitFor(() =>
+      expect(target.querySelector('[data-testid="default-chat-btw-result"]')?.textContent).toContain('Second BTW'),
+    )
 
     switchToCharacterChat(0)
     await waitFor(() => {
       expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')?.value).toBe(
         'First chat draft',
       )
+      expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')?.value).toBe(
+        'First hook draft',
+      )
+      expect(target.querySelector('[data-testid="default-chat-btw-result"]')?.textContent).toContain('First BTW')
     })
 
     switchToCharacterChat(1)
@@ -2152,6 +2105,10 @@ describe('DefaultChatScreen transcript window state', () => {
       expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')?.value).toBe(
         'Second chat draft',
       )
+      expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-draft-input"]')?.value).toBe(
+        'Second hook draft',
+      )
+      expect(target.querySelector('[data-testid="default-chat-btw-result"]')?.textContent).toContain('Second BTW')
     })
   })
 

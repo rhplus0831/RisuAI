@@ -27,6 +27,7 @@
   import PluginSettings from './Pages/PluginSettings.svelte'
   import AdvancedSettings from './Pages/AdvancedSettings.svelte'
   import AgentPresetSettings from './Pages/AgentPresetSettings.svelte'
+  import InputHookSettings from './Pages/InputHookSettings.svelte'
   import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import Communities from './Pages/Communities.svelte'
@@ -134,6 +135,14 @@
               }}>
               <WorkflowIcon size={20} />
               <span>{language.settingsNavAgentPresets}</span>
+            </button>
+            <button
+              class={navButtonClass($SettingsMenuIndex === 20)}
+              onclick={() => {
+                navigate('/settings/input-hooks')
+              }}>
+              <WorkflowIcon size={20} />
+              <span>{language.settingsNavInputHooks}</span>
             </button>
             {#if getDatabase().botPresets?.length > 0}
               <button
@@ -377,6 +386,8 @@
               }} />
           {:else if $SettingsMenuIndex === 19}
             <AgentPresetSettings />
+          {:else if $SettingsMenuIndex === 20}
+            <InputHookSettings />
           {:else if $SettingsMenuIndex === 77}
             <ThanksPage />
           {/if}

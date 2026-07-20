@@ -158,6 +158,25 @@ describe('router initial application', () => {
     expect(get(SettingsMenuIndex)).toBe(19)
   })
 
+  it('routes the Input Hooks settings section', async () => {
+    const router = await importRouterAt('/settings/input-hooks')
+    const stores = await import('./stores.svelte')
+    const { SettingsMenuIndex, settingsOpen } = stores
+
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/input-hooks',
+      section: 'input-hooks',
+      index: 20,
+    })
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(get(settingsOpen)).toBe(true)
+    expect(get(SettingsMenuIndex)).toBe(20)
+  })
+
   it('does not route the removed context agent settings slug', async () => {
     const router = await importRouterAt('/settings/context-agent')
 
@@ -184,6 +203,26 @@ describe('router initial application', () => {
       path: '/settings/agent-presets',
       section: 'agent-presets',
       index: 19,
+    })
+  })
+
+  it('serializes the Input Hooks settings section', async () => {
+    const router = await importRouterAt('/')
+
+    router.syncRouteFromState({
+      currentRouteKind: 'home',
+      settingsOpen: true,
+      settingsMenuIndex: 20,
+      selectedCharID: -1,
+      playgroundStore: 0,
+    })
+
+    expect(window.location.pathname).toBe('/settings/input-hooks')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/input-hooks',
+      section: 'input-hooks',
+      index: 20,
     })
   })
 })

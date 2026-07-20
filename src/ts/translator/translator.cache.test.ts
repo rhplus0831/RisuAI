@@ -125,7 +125,6 @@ import {
   __translatorTestHooks,
   getLLMCache,
   getCurrentTranslatorPreset,
-  runInputTranslator,
   setLLMCache,
   translate,
   translateHTML,
@@ -155,7 +154,6 @@ function resetDatabase() {
     combineTranslation: false,
     htmlTranslation: false,
     playMessageOnTranslateEnd: false,
-    inputTranslatorPrompt: '',
     translatorMaxResponse: 1000,
     deeplOptions: { freeApi: true, key: '' },
     deeplXOptions: { url: '', token: '' },
@@ -192,39 +190,6 @@ function stubGoogleFetch() {
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }
-
-describe('input translation hook translator', () => {
-  beforeEach(() => {
-    resetDatabase()
-    testState.requestChatData.mockReset()
-  })
-
-  it('routes input hook prompts through the translate model role', async () => {
-    const signal = new AbortController().signal
-    testState.db.inputTranslatorPrompt = 'Rewrite into English: {{slot::content}}'
-    testState.db.translatorMaxResponse = 123
-    testState.requestChatData.mockResolvedValueOnce({ type: 'success', result: 'translated hello' })
-
-    await expect(runInputTranslator('hola', signal)).resolves.toBe('translated hello')
-
-    expect(testState.requestChatData).toHaveBeenCalledWith(
-      {
-        formated: [
-          {
-            role: 'user',
-            content: 'Rewrite into English: hola',
-          },
-        ],
-        bias: {},
-        useStreaming: false,
-        noMultiGen: true,
-        maxTokens: 123,
-      },
-      'translate',
-      signal,
-    )
-  })
-})
 
 describe('auto-translate cache', () => {
   beforeEach(() => {

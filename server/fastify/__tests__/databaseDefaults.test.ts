@@ -15,6 +15,15 @@ describe('database defaults', () => {
     expect(database.modelRuntimeDefaults).toEqual({})
     expect(database.agentPresets).toEqual([])
     expect(database.agentPresetDefaultId).toBeUndefined()
+    expect(database.inputHooks).toEqual([
+      {
+        id: 'default-translate',
+        name: 'Translate',
+        type: 'draft',
+        prompt:
+          'Translate the following user message into English. Preserve names, commands, markdown, and inlay tags. Output only the translated message.',
+      },
+    ])
     expect(database.reducedMotion).toBe(false)
     expect(database.showGlobalLorebookAndRegex).toBe(false)
     expect(database.loreBook).toEqual([

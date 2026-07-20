@@ -20,6 +20,8 @@ describe('DefaultChatScreen composer draft cache', () => {
       messageInput: 'Draft',
       messageInputTranslate: 'Translated draft',
       fileInput: ['asset-a'],
+      draftText: 'Hook draft',
+      btwText: 'BTW result',
     }
 
     writeDefaultChatComposerDraft('chat-a', draft)
@@ -30,6 +32,8 @@ describe('DefaultChatScreen composer draft cache', () => {
       messageInput: 'Draft',
       messageInputTranslate: 'Translated draft',
       fileInput: ['asset-a'],
+      draftText: 'Hook draft',
+      btwText: 'BTW result',
     })
 
     firstRead?.fileInput.push('mutated-after-read')
@@ -42,6 +46,8 @@ describe('DefaultChatScreen composer draft cache', () => {
         messageInput: `Draft ${index}`,
         messageInputTranslate: '',
         fileInput: [],
+        draftText: '',
+        btwText: '',
       })
     }
 
@@ -50,6 +56,8 @@ describe('DefaultChatScreen composer draft cache', () => {
       messageInput: 'Newest draft',
       messageInputTranslate: '',
       fileInput: [],
+      draftText: '',
+      btwText: '',
     })
 
     expect(readDefaultChatComposerDraft('chat-0')?.messageInput).toBe('Draft 0')

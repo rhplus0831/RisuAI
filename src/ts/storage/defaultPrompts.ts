@@ -31,3 +31,14 @@ Let's read these guidelines step by step three times to be sure we have accurate
 
 export const defaultInputTranslatorPrompt =
   'Translate the following user message into English. Preserve names, commands, markdown, and inlay tags. Output only the translated message.'
+
+export function createDefaultInputHooks() {
+  return [
+    {
+      id: 'default-translate',
+      name: 'Translate',
+      type: 'draft' as const,
+      prompt: defaultInputTranslatorPrompt,
+    },
+  ]
+}

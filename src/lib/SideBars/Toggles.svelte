@@ -17,10 +17,7 @@
     compareChatGenerationTogglePresetToActiveState,
     getChatGenerationTogglePresets,
   } from 'src/ts/chatGenerationTogglePresets'
-  import {
-    setCharacterInputTranslationHookWithOutcome,
-    setCharacterSupaMemoryWithOutcome,
-  } from 'src/ts/characterCommands'
+  import { setCharacterSupaMemoryWithOutcome } from 'src/ts/characterCommands'
   import {
     ensureActiveChatSidebarToggleDefaults,
     resolveActiveChatGenerationSettings,
@@ -55,19 +52,16 @@
 
   let { chara, noContainer }: Props = $props()
 
-  type CharacterToggleField = 'supaMemory' | 'inputTranslationHook'
+  type CharacterToggleField = 'supaMemory'
   type CharacterToggleStatus = 'idle' | 'queued' | 'failed'
   let characterToggleAttempts = $state<Record<CharacterToggleField, number>>({
     supaMemory: 0,
-    inputTranslationHook: 0,
   })
   let characterTogglePending = $state<Record<CharacterToggleField, boolean>>({
     supaMemory: false,
-    inputTranslationHook: false,
   })
   let characterToggleStatus = $state<Record<CharacterToggleField, CharacterToggleStatus>>({
     supaMemory: 'idle',
-    inputTranslationHook: 'idle',
   })
   let generationSettingsSaveOperation = 0
   let generationSettingsSaveStates = $state<
@@ -211,16 +205,6 @@
     settleCharacterToggle('supaMemory', characterId, attempt, outcome?.status)
   }
 
-  async function setInputTranslationHookValue(value: boolean): Promise<void> {
-    if (!chara?.chaId) return
-    const characterId = chara.chaId
-    const attempt = ++characterToggleAttempts.inputTranslationHook
-    characterTogglePending.inputTranslationHook = true
-    characterToggleStatus.inputTranslationHook = 'idle'
-    const outcome = await setCharacterInputTranslationHookWithOutcome(characterId, value)
-    settleCharacterToggle('inputTranslationHook', characterId, attempt, outcome?.status)
-  }
-
   function settleCharacterToggle(
     field: CharacterToggleField,
     characterId: string,
@@ -231,13 +215,9 @@
     characterTogglePending[field] = false
     characterToggleStatus[field] = status === 'queued' ? 'queued' : status === 'failed' ? 'failed' : 'idle'
     if (status === 'queued') {
-      alertNormal(
-        field === 'supaMemory' ? language.hypaMemoryMutationQueued : language.inputTranslationHookMutationQueued,
-      )
+      alertNormal(language.hypaMemoryMutationQueued)
     } else if (status === 'failed') {
-      alertError(
-        field === 'supaMemory' ? language.hypaMemoryMutationFailed : language.inputTranslationHookMutationFailed,
-      )
+      alertError(language.hypaMemoryMutationFailed)
     }
   }
 
@@ -462,28 +442,6 @@
         {/if}
       </div>
     {/if}
-    {#if chara}
-      <div
-        class="flex mt-2 items-center w-full gap-2"
-        class:justify-end={$MobileGUI}
-        data-risu-input-translation-hook-toggle
-        data-risu-mutation-status={characterToggleStatus.inputTranslationHook}
-        aria-busy={characterTogglePending.inputTranslationHook}>
-        <CheckInput
-          check={chara.useInputTranslationHook}
-          reverse
-          name={language.useInputTranslationHook}
-          onChange={setInputTranslationHookValue}
-          disabled={characterTogglePending.inputTranslationHook} />
-        {#if characterToggleStatus.inputTranslationHook !== 'idle'}
-          <span class="text-xs text-textcolor2" role="status">
-            {characterToggleStatus.inputTranslationHook === 'queued'
-              ? language.mutationStatusQueued
-              : language.mutationStatusFailed}
-          </span>
-        {/if}
-      </div>
-    {/if}
     <ChatGenerationResetDefaultsButton />
     <ChatGenerationTogglePresets />
   </div>
@@ -521,26 +479,6 @@
       {#if characterToggleStatus.supaMemory !== 'idle'}
         <span class="text-xs text-textcolor2" role="status">
           {characterToggleStatus.supaMemory === 'queued'
-            ? language.mutationStatusQueued
-            : language.mutationStatusFailed}
-        </span>
-      {/if}
-    </div>
-  {/if}
-  {#if chara}
-    <div
-      class="flex mt-2 items-center gap-2"
-      data-risu-input-translation-hook-toggle
-      data-risu-mutation-status={characterToggleStatus.inputTranslationHook}
-      aria-busy={characterTogglePending.inputTranslationHook}>
-      <CheckInput
-        check={chara.useInputTranslationHook}
-        name={language.useInputTranslationHook}
-        onChange={setInputTranslationHookValue}
-        disabled={characterTogglePending.inputTranslationHook} />
-      {#if characterToggleStatus.inputTranslationHook !== 'idle'}
-        <span class="text-xs text-textcolor2" role="status">
-          {characterToggleStatus.inputTranslationHook === 'queued'
             ? language.mutationStatusQueued
             : language.mutationStatusFailed}
         </span>

@@ -59,8 +59,6 @@ import {
   sanitizeCharacterPatch,
   setCharacterSupaMemory,
   setCharacterSupaMemoryWithOutcome,
-  setCharacterInputTranslationHook,
-  setCharacterInputTranslationHookWithOutcome,
   updateCharacterOrderFolder,
 } from './characterCommands'
 import { setCharacterByIndex, type Database, type folder } from './storage/database.svelte'
@@ -2307,105 +2305,6 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     }
   })
 
-  it('fences an older terminal input-translation rollback behind a later toggle', async () => {
-    vi.stubGlobal('indexedDB', new IDBFactory())
-    resetPendingMutationOutboxForTests()
-    await preparePendingMutationOutbox({
-      writerSessionId: 'writer-character-input-translation',
-      writerEpoch: 1,
-      databaseLineage: 'lineage-character-input-translation',
-      requestedWriterWasActive: true,
-    })
-    setCachedServerCommandRevision(10)
-    testDatabaseState.db.characters[0].useInputTranslationHook = false
-    const firstResponse = deferredResponse()
-    const patches: Array<Record<string, unknown>> = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
-        const url = String(input)
-        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
-        if (url === '/api/v1/commands/characters/char-a') {
-          const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
-          patches.push(body)
-          if (patches.length === 1) return firstResponse.promise
-          return jsonResponse({
-            revision: 11,
-            event: { type: 'character.updated', revision: 11, resource: 'character', id: 'char-a' },
-            characterId: 'char-a',
-          })
-        }
-        return jsonResponse({ error: `unexpected ${url}` }, 404)
-      }) as unknown as typeof fetch,
-    )
-
-    try {
-      const first = setCharacterInputTranslationHook('char-a', true)
-      const second = setCharacterInputTranslationHook('char-a', false)
-      await vi.waitFor(() => expect(patches).toHaveLength(1))
-      firstResponse.resolve(jsonResponse({ error: 'invalid translation toggle' }, 400))
-
-      await expect(first).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
-      await expect(second).resolves.toMatchObject({ status: 'ok' })
-      expect(testDatabaseState.db.characters[0].useInputTranslationHook).toBe(false)
-      expect(patches.map((body) => body.patch)).toEqual([
-        { useInputTranslationHook: true },
-        { useInputTranslationHook: false },
-      ])
-      expect(await listPendingMutations()).toEqual([])
-    } finally {
-      await clearPendingMutationOutbox()
-      resetPendingMutationOutboxForTests()
-    }
-  })
-
-  it('rebases a later input-translation rollback when both queued toggles fail terminally', async () => {
-    vi.stubGlobal('indexedDB', new IDBFactory())
-    resetPendingMutationOutboxForTests()
-    await preparePendingMutationOutbox({
-      writerSessionId: 'writer-character-input-translation-chain',
-      writerEpoch: 1,
-      databaseLineage: 'lineage-character-input-translation-chain',
-      requestedWriterWasActive: true,
-    })
-    setCachedServerCommandRevision(10)
-    testDatabaseState.db.characters[0].useInputTranslationHook = false
-    const firstResponse = deferredResponse()
-    const patches: Array<Record<string, unknown>> = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
-        const url = String(input)
-        if (url === '/api/v1/commands/characters/char-a') {
-          const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
-          patches.push(body)
-          if (patches.length === 1) return firstResponse.promise
-          return jsonResponse({ error: 'second toggle rejected' }, 400)
-        }
-        return jsonResponse({ error: `unexpected ${url}` }, 404)
-      }) as unknown as typeof fetch,
-    )
-
-    try {
-      const first = setCharacterInputTranslationHook('char-a', true)
-      const second = setCharacterInputTranslationHook('char-a', false)
-      await vi.waitFor(() => expect(patches).toHaveLength(1))
-      firstResponse.resolve(jsonResponse({ error: 'first toggle rejected' }, 400))
-
-      await expect(first).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
-      await expect(second).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
-      expect(testDatabaseState.db.characters[0].useInputTranslationHook).toBe(false)
-      expect(patches.map((body) => body.patch)).toEqual([
-        { useInputTranslationHook: true },
-        { useInputTranslationHook: false },
-      ])
-      expect(await listPendingMutations()).toEqual([])
-    } finally {
-      await clearPendingMutationOutbox()
-      resetPendingMutationOutboxForTests()
-    }
-  })
-
   it('L34: supaMemory snapshots are scalar and restore only the target flag', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(1)
@@ -2536,38 +2435,6 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     expect(testDatabaseState.db.characters[0].name).toBe('Same row concurrent edit')
     expect(testDatabaseState.db.characters[1].name).toBe('Sibling concurrent edit')
     expect(get(selectedCharID)).toBe(1)
-  })
-
-  it('classifies a retained input-translation toggle without rolling back its optimistic value', async () => {
-    vi.stubGlobal('indexedDB', new IDBFactory())
-    resetPendingMutationOutboxForTests()
-    await preparePendingMutationOutbox({
-      writerSessionId: 'writer-character-input-translation-retained',
-      writerEpoch: 1,
-      databaseLineage: 'lineage-character-input-translation-retained',
-      requestedWriterWasActive: true,
-    })
-    setCachedServerCommandRevision(10)
-    testDatabaseState.db.characters[0].useInputTranslationHook = false
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        if (String(input) === '/api/v1/commands/characters/char-a') {
-          return jsonResponse({ error: 'temporarily unavailable' }, 500)
-        }
-        return jsonResponse({ error: `unexpected ${String(input)}` }, 404)
-      }) as unknown as typeof fetch,
-    )
-
-    try {
-      await expect(setCharacterInputTranslationHookWithOutcome('char-a', true)).resolves.toMatchObject({
-        status: 'queued',
-      })
-      expect(testDatabaseState.db.characters[0].useInputTranslationHook).toBe(true)
-    } finally {
-      await clearPendingMutationOutbox()
-      resetPendingMutationOutboxForTests()
-    }
   })
 
   it('L34: selectedCharID auto-enable uses one-field patch without full row clone', async () => {

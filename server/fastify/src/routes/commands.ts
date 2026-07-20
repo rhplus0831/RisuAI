@@ -1464,7 +1464,6 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'translateBeforeHTMLFormatting',
     'autoTranslateCachedOnly',
     'useAutoTranslateInput',
-    'inputTranslatorPrompt',
     'translatorPrompt',
     'translatorMaxResponse',
     'deeplOptions',
@@ -1530,6 +1529,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
   modules: ['enabledModules'],
   agents: ['agentPresets', 'agentPresetDefaultId'],
   advanced: [
+    'inputHooks',
     'loreBookDepth',
     'loreBookToken',
     'additionalPrompt',
@@ -1830,7 +1830,6 @@ const STRING_SETTING_KEYS = new Set([
   'ImagenImageSize',
   'ImagenModel',
   'ImagenPersonGeneration',
-  'inputTranslatorPrompt',
   'instructChatTemplate',
   'JinjaTemplate',
   'keepSessionAlive',
@@ -1905,6 +1904,7 @@ const ARRAY_SETTING_KEYS = new Set([
   'modelProfiles',
   'modelTools',
   'hypaV3Presets',
+  'inputHooks',
 ])
 
 const ARRAY_OR_NULL_SETTING_KEYS = new Set(['localStopStrings'])

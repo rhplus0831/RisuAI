@@ -165,6 +165,7 @@ export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'suggestMessages',
   'bindedPersona',
   'fmIndex',
+  'selectedDraftHookId',
   'folderId',
   'lastDate',
   'bookmarks',
@@ -957,6 +958,10 @@ export interface MutateChatScopedOptions {
 }
 
 export interface SetCurrentChatGreetingIndexOptions extends MutateChatScopedOptions {
+  dispatch?: boolean
+}
+
+export interface SetCurrentChatSelectedDraftHookIdOptions extends MutateChatScopedOptions {
   dispatch?: boolean
 }
 
@@ -2978,6 +2983,48 @@ export function setCurrentChatGreetingIndex(
 
   if (chatId && previous) {
     dispatchUpdateChat(chatId, { fmIndex }, previous)
+  }
+  return true
+}
+
+export function setCurrentChatSelectedDraftHookId(
+  hookId: string | null,
+  options: SetCurrentChatSelectedDraftHookIdOptions = {},
+): boolean {
+  const selectedChar = options.selectedChar ?? get(selectedCharID)
+  const character = getDatabase().characters?.[selectedChar]
+  if (!character?.chats) return false
+  const selectedChat = options.selectedChat ?? character.chatPage
+  const chat = character.chats?.[selectedChat]
+  if (!chat) return false
+  const chatId = chat.id
+
+  const shouldDispatch = options.dispatch !== false
+  const previous: ChatScopedSnapshot | null =
+    shouldDispatch && chatId
+      ? {
+          selectedCharID: selectedChar,
+          characterId: character.chaId,
+          chatId,
+          chat: cloneJsonValue(chat),
+        }
+      : null
+  let applied = false
+  withTrustedResourceWrite(() => {
+    const liveCharacter = getDatabase().characters?.[selectedChar]
+    const liveChat = liveCharacter?.chats?.[selectedChat]
+    if (!liveChat || (chatId && liveChat.id !== chatId)) return
+    if (hookId === null) {
+      delete liveChat.selectedDraftHookId
+    } else {
+      liveChat.selectedDraftHookId = hookId
+    }
+    applied = true
+  })
+  if (!applied) return false
+
+  if (chatId && previous) {
+    dispatchUpdateChatScoped(chatId, { selectedDraftHookId: hookId }, previous)
   }
   return true
 }

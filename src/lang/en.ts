@@ -8,10 +8,6 @@ export const languageEnglish = {
   messageMutationStale: 'The message changed before this action could be saved. Review it and try again.',
   hypaMemoryMutationQueued: 'The Hypa Memory change is saved on this device and queued. It will retry automatically.',
   hypaMemoryMutationFailed: 'The Hypa Memory change could not be saved. The previous setting was restored.',
-  inputTranslationHookMutationQueued:
-    'The input translation hook change is saved on this device and queued. It will retry automatically.',
-  inputTranslationHookMutationFailed:
-    'The input translation hook change could not be saved. The previous setting was restored.',
   characterRemovalPending: (name: string) => `Moving ${name} to the trash…`,
   characterRemovalQueued: (name: string) =>
     `${name} was moved to the trash on this device and the change is queued. It will retry automatically.`,
@@ -393,8 +389,6 @@ export const languageEnglish = {
       'The prompt that is used for summarization. If it is blank, it will use the default prompt. You can also use ChatML formating with {{slot}} for the chat data.',
     translatorPrompt:
       'The prompt that is used for translation. If it is blank, it will use the default prompt. You can also use ChatML formating with {{slot}} for the dest language, {{slot::content}} for the content, and {{slot::tnote}} for the translator note.',
-    inputTranslatorPrompt:
-      'The prompt used by the input translation hook. If it is blank, the default prompt is used. You can use ChatML formatting and {{slot::content}} for the message being translated.',
     translateBeforeHTMLFormatting:
       'If enabled, it will translate the text before Regex scripts and HTML formatting. This could make the token lesser but could break the formatting.',
     autoTranslateCachedOnly:
@@ -1158,6 +1152,24 @@ export const languageEnglish = {
   settingsNavModelProfiles: 'AI Models & Keys',
   settingsNavPromptPresets: 'Prompts & Templates',
   settingsNavAgentPresets: 'Agent Presets',
+  settingsNavInputHooks: 'Input Hooks',
+  inputHooks: 'Input Hooks',
+  inputHookTypeDraft: 'Draft',
+  inputHookTypeBtw: 'BTW',
+  inputHookAdd: 'Add Hook',
+  inputHookName: 'Hook Name',
+  inputHookPrompt: 'Hook Prompt',
+  inputHookDelete: 'Delete Hook',
+  inputHookDraftLabel: 'Draft',
+  inputHookDraftPlaceholder: 'Hook output will appear here. You can edit it before sending.',
+  inputHookSelectDraft: 'Select Draft Hook',
+  inputHookDraftDialogTitle: 'Select Draft Hook',
+  inputHookNone: 'None',
+  inputHookBtw: 'BTW',
+  inputHookBtwDialogTitle: 'Run BTW Hook',
+  inputHookBtwResult: 'BTW Result',
+  inputHookBtwDismiss: 'Dismiss BTW Result',
+  inputHookSendDraft: 'Send Draft',
   settingsNavLegacyBotPresets: 'Legacy Bot Presets',
   settingsNavUserPersona: 'User Persona',
   settingsNavMediaMemory: 'Media, Voice & Memory',
@@ -1242,12 +1254,6 @@ export const languageEnglish = {
   useAdditionalAssetsPreview: 'Use Additional Assets Preview',
   autoTranslateInput: 'Auto Translate Input',
   enterMessageForTranslateToEnglish: 'Enter Message for Translate to English',
-  useInputTranslationHook: 'Use Input Translation Hook',
-  rollbackInputTranslation: 'Restore Original Input',
-  inputTranslationRollbackQueued:
-    'Restoring the original input is saved on this device and queued. It will retry automatically.',
-  inputTranslationRollbackFailed:
-    'The original input could not be restored because the translated message was not deleted. You can try again.',
   recent: 'Recent',
   downloads: 'Downloads',
   trending: 'Trending',
@@ -1691,7 +1697,6 @@ export const languageEnglish = {
   summarizationPrompt: 'Summarization Prompt',
   reSummarizationPrompt: 'Re-Summarizaion Prompt',
   translatorPrompt: 'Translation Prompt',
-  inputTranslatorPrompt: 'Input Translator Prompt',
   translateBeforeHTMLFormatting: 'Translate Before HTML Formatting',
   retranslate: 'Retranslate',
   editTranslation: 'Edit Translation',

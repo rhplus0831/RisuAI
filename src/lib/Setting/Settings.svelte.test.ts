@@ -199,6 +199,7 @@ describe('Settings supporter tab', () => {
     expect(settingsButton(language.settingsNavModelProfiles)).toBeTruthy()
     expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavAgentPresets)).toBeTruthy()
+    expect(settingsButton(language.settingsNavInputHooks)).toBeTruthy()
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeUndefined()
   })
 
@@ -239,6 +240,7 @@ describe('Settings supporter tab', () => {
     expect(settingsButton(language.settingsNavModelProfiles)).toBeTruthy()
     expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavAgentPresets)).toBeTruthy()
+    expect(settingsButton(language.settingsNavInputHooks)).toBeTruthy()
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeTruthy()
   })
 
@@ -261,6 +263,27 @@ describe('Settings supporter tab', () => {
     expect(get(SettingsMenuIndex)).toBe(19)
     expect(target.textContent).toContain(language.agentPresets.settingsTitle)
     expect(target.textContent).toContain(language.agentPresets.emptyState)
+  })
+
+  it('opens the Input Hooks page from the settings nav', async () => {
+    const inputHooksButton = settingsButton(language.settingsNavInputHooks)
+    expect(inputHooksButton).toBeTruthy()
+
+    inputHooksButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/input-hooks',
+      section: 'input-hooks',
+      index: 20,
+    })
+
+    await applyNavigatedRoute()
+
+    expect(get(SettingsMenuIndex)).toBe(20)
+    expect(target.textContent).toContain(language.inputHooks)
+    expect(target.querySelector('[data-risu-input-hook-settings]')).toBeTruthy()
   })
 
   it('hides the legacy global lorebook and regex settings items by default', () => {

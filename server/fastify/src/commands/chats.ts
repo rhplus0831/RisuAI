@@ -28,6 +28,7 @@ export interface ChatRecord extends JsonRecord {
   localLore: unknown[]
   scriptstate?: Record<string, string | number | boolean>
   folderId?: string | null
+  selectedDraftHookId?: string
   modules?: string[]
   generationSettings?: ChatGenerationSettings
 }
@@ -69,6 +70,7 @@ const ALLOWED_CHAT_PATCH_KEYS = new Set([
   'suggestMessages',
   'bindedPersona',
   'fmIndex',
+  'selectedDraftHookId',
   'folderId',
   'lastDate',
   'bookmarks',
@@ -811,6 +813,14 @@ function validateChatRecord(record: JsonRecord, label: string, options: { partia
     (typeof record.fmIndex !== 'number' || !Number.isFinite(record.fmIndex))
   ) {
     throw new ValidationError(`${label}.fmIndex must be a finite number, null, or undefined`)
+  }
+  if (
+    'selectedDraftHookId' in record &&
+    record.selectedDraftHookId !== undefined &&
+    record.selectedDraftHookId !== null &&
+    (typeof record.selectedDraftHookId !== 'string' || record.selectedDraftHookId.trim() === '')
+  ) {
+    throw new ValidationError(`${label}.selectedDraftHookId must be a non-empty string, null, or undefined`)
   }
   if (
     'lastDate' in record &&

@@ -2,6 +2,8 @@ export interface DefaultChatComposerDraft {
   messageInput: string
   messageInputTranslate: string
   fileInput: string[]
+  draftText: string
+  btwText: string
 }
 
 export const DEFAULT_CHAT_COMPOSER_DRAFT_LIMIT = 50
@@ -43,5 +45,7 @@ function cloneComposerDraft(draft: DefaultChatComposerDraft): DefaultChatCompose
     messageInput: draft.messageInput,
     messageInputTranslate: draft.messageInputTranslate,
     fileInput: [...draft.fileInput],
+    draftText: draft.draftText,
+    btwText: draft.btwText,
   }
 }

@@ -103,6 +103,7 @@ const settingIndexBySlug = new Map<string, number>([
   ['prompt-template', 13],
   ['agent-preset', 19],
   ['agent-presets', 19],
+  ['input-hooks', 20],
   ['prompt-settings', 18],
   ['prompt-preset', 18],
   ['prompt-presets', 18],
@@ -134,6 +135,7 @@ const settingSlugByIndex = new Map<number, string>([
   [17, 'model'],
   [18, 'prompt-settings'],
   [19, 'agent-presets'],
+  [20, 'input-hooks'],
   [77, 'supporter'],
 ])
 

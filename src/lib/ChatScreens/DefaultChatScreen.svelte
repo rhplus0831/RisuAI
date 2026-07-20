@@ -8,6 +8,7 @@
     ImagePlusIcon,
     LanguagesIcon,
     Laugh,
+    LoaderCircleIcon,
     MenuIcon,
     MicOffIcon,
     PackageIcon,
@@ -16,7 +17,6 @@
     ReplyIcon,
     Send,
     StepForwardIcon,
-    Undo2Icon,
     XIcon,
     BrainIcon,
     ArrowDown,
@@ -40,7 +40,7 @@
     getCharacterByIndex,
     isServerCharacterShell,
     setCharacterByIndex,
-    type character,
+    type InputHook,
     type Message,
   } from '../../ts/storage/database.svelte'
   import { getCharImage } from '../../ts/characters'
@@ -55,7 +55,7 @@
   } from '../../ts/process/index.svelte'
   import { getUserDisplayName, getUserIcon, getUserIconProtrait, sleep } from '../../ts/util'
   import { language } from '../../lang'
-  import { isExpTranslator, runInputTranslator, translate } from '../../ts/translator/translator'
+  import { isExpTranslator, translate } from '../../ts/translator/translator'
   import {
     alertError,
     alertNormal,
@@ -95,12 +95,10 @@
     appendCurrentChatEmptyCharMessage,
     appendCurrentChatUserMessageForSend,
     captureActiveChatTarget,
-    currentChatScopedSnapshot,
-    dispatchDeleteMessageScoped,
     isActiveChatTargetFresh,
+    setCurrentChatSelectedDraftHookId,
     setCurrentChatGreetingIndex,
     type ActiveChatTarget,
-    type DeleteMessageScopedFinalResult,
   } from 'src/ts/chatCommands'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import {
@@ -124,6 +122,8 @@
     writeDefaultChatComposerDraft,
     type DefaultChatComposerDraft,
   } from './DefaultChatScreen.composerDrafts'
+  import { runInputHook } from 'src/ts/process/inputHooks'
+  import InputHookPickerDialog from './InputHookPickerDialog.svelte'
 
   const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
   const composerFileOperationGuard = createLatestOperationGuard<string>()
@@ -135,8 +135,8 @@
     targetIdentity: string
     invalidationVersion: number
   }
-  type ComposerOperationKind = 'send' | 'continue'
-  type ComposerDraftField = 'message' | 'translation' | 'files'
+  type ComposerOperationKind = 'send' | 'continue' | 'draft-send' | 'btw'
+  type ComposerDraftField = 'message' | 'translation' | 'files' | 'draft' | 'btw'
   type ComposerTextField = 'message' | 'translation'
   type ComposerOperation = {
     token: ReturnType<typeof composerOperationGuard.issue>
@@ -146,6 +146,8 @@
     messageInput: string
     messageInputTranslate: string
     fileInput: string[]
+    draftText: string
+    btwText: string
   }
   type AutoTranslateOperation = {
     sourceField: ComposerTextField
@@ -153,19 +155,6 @@
     sourceText: string
     targetVersion: number
     targetIdentity: string | null
-  }
-  type InputTranslationRollback = {
-    target: ActiveChatTarget
-    transcriptIdentity: string
-    messageId: string
-    originalText: string
-    fileInput: string[]
-  }
-  type InputTranslationUndoAttempt = {
-    rollback: InputTranslationRollback
-    previousComposer: DefaultChatComposerDraft
-    appliedComposer: DefaultChatComposerDraft
-    appliedComposerVersion: number
   }
   type ScreenshotOperation = {
     target: ActiveChatTarget
@@ -181,11 +170,15 @@
 
   let messageInput: string = $state('')
   let messageInputTranslate: string = $state('')
+  let draftText: string = $state('')
+  let btwText: string = $state('')
   let openMenu = $state(false)
   let chatMenuButton: HTMLButtonElement | null = $state(null)
   let chatMenuElement: HTMLDivElement | null = $state(null)
   let loadPages = $state(normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount))
-  let doingChatInputTranslate = $state(false)
+  let doingDraftHook = $state(false)
+  let doingBtwHook = $state(false)
+  let hookDialogKind: 'draft' | 'btw' | null = $state(null)
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
   let showNewMessageButton = $state(false)
@@ -201,8 +194,6 @@
   let activeTranscriptWindowConfiguredPages: number | null = $state(null)
   let transcriptWindowConfigurationRun = 0
   let activeBgmObserverIdentity: string | null = $state(null)
-  let lastInputTranslationRollback: InputTranslationRollback | null = $state(null)
-  const recoverableInputTranslationRollbacks = new Map<string, InputTranslationRollback>()
   let activeScreenshotOperation: ScreenshotOperation | null = null
   let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
 
@@ -236,6 +227,16 @@
   })
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
   let currentChatId = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.id)
+  let currentChatRecord = $derived(currentCharacter?.chats[currentCharacter.chatPage])
+  let draftHooks = $derived((getDatabase().inputHooks ?? []).filter((hook) => hook.type === 'draft'))
+  let btwHooks = $derived((getDatabase().inputHooks ?? []).filter((hook) => hook.type === 'btw'))
+  let selectedDraftHook = $derived.by(() => {
+    const selectedId = currentChatRecord?.selectedDraftHookId
+    if (!selectedId) return undefined
+    return draftHooks.find((hook) => hook.id === selectedId)
+  })
+  let showDraftArea = $derived(Boolean(selectedDraftHook || draftText.length > 0 || btwText.length > 0))
+  let hookRunActive = $derived(doingDraftHook || doingBtwHook)
   let canContinueFromMenu = $derived(currentChat.length >= 2 && currentChat[currentChat.length - 1]?.role === 'char')
   let currentChatOwnsGeneration = $derived.by(() => {
     const target = $activeGenerationTarget
@@ -394,7 +395,7 @@
   }
 
   function markComposerDraftChanged(
-    fields: ComposerDraftField | ComposerDraftField[] = ['message', 'translation', 'files'],
+    fields: ComposerDraftField | ComposerDraftField[] = ['message', 'translation', 'files', 'draft', 'btw'],
   ) {
     const changedFields = Array.isArray(fields) ? fields : [fields]
     composerMutationVersion += 1
@@ -412,7 +413,13 @@
   }
 
   function storeComposerDraft(identity: string): void {
-    if (messageInput === '' && messageInputTranslate === '' && fileInput.length === 0) {
+    if (
+      messageInput === '' &&
+      messageInputTranslate === '' &&
+      fileInput.length === 0 &&
+      draftText === '' &&
+      btwText === ''
+    ) {
       deleteDefaultChatComposerDraft(identity)
       return
     }
@@ -421,6 +428,8 @@
       messageInput,
       messageInputTranslate,
       fileInput: [...fileInput],
+      draftText,
+      btwText,
     } satisfies DefaultChatComposerDraft)
   }
 
@@ -429,6 +438,8 @@
     messageInput = draft?.messageInput ?? ''
     messageInputTranslate = draft?.messageInputTranslate ?? ''
     fileInput = [...(draft?.fileInput ?? [])]
+    draftText = draft?.draftText ?? ''
+    btwText = draft?.btwText ?? ''
     markComposerDraftChanged()
     void tick().then(updateInputSizeAll)
   }
@@ -464,6 +475,8 @@
       messageInput,
       messageInputTranslate,
       fileInput: [...fileInput],
+      draftText,
+      btwText,
     }
   }
 
@@ -481,6 +494,8 @@
     messageInput = operation.messageInput
     messageInputTranslate = operation.messageInputTranslate
     fileInput = [...operation.fileInput]
+    draftText = operation.draftText
+    btwText = operation.btwText
     markComposerDraftChanged()
     updateInputSizeAll()
     return true
@@ -492,6 +507,20 @@
     messageInput = ''
     messageInputTranslate = ''
     fileInput = []
+    composerFileInvalidationVersion += 1
+    markComposerDraftChanged()
+    updateInputSizeAll()
+    return true
+  }
+
+  function clearComposerAndDraftForCurrentOperation(operation: ComposerOperation): boolean {
+    if (!isCurrentComposerOperation(operation)) return false
+
+    messageInput = ''
+    messageInputTranslate = ''
+    fileInput = []
+    draftText = ''
+    btwText = ''
     composerFileInvalidationVersion += 1
     markComposerDraftChanged()
     updateInputSizeAll()
@@ -539,23 +568,6 @@
     markComposerDraftChanged(['message', 'files'])
     updateInputSizeAll()
     return true
-  }
-
-  function clearStaleInputTranslationRollback() {
-    if (!lastInputTranslationRollback) return
-    if (
-      !isActiveChatTargetFresh(lastInputTranslationRollback.target) ||
-      getActiveTranscriptWindowIdentity() !== lastInputTranslationRollback.transcriptIdentity
-    ) {
-      lastInputTranslationRollback = null
-    }
-  }
-
-  function clearInputTranslationRollbackForGenerationStart() {
-    clearStaleInputTranslationRollback()
-    if (lastInputTranslationRollback) {
-      lastInputTranslationRollback = null
-    }
   }
 
   function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
@@ -694,14 +706,6 @@
 
     if (previousIdentity !== null) {
       resetTranscriptWindowForChatSwitch()
-    }
-    if (previousIdentity !== nextIdentity) {
-      lastInputTranslationRollback = null
-      const recoverableRollback = nextIdentity ? recoverableInputTranslationRollbacks.get(nextIdentity) : undefined
-      if (recoverableRollback && isActiveChatTargetFresh(recoverableRollback.target)) {
-        recoverableInputTranslationRollbacks.delete(nextIdentity!)
-        lastInputTranslationRollback = recoverableRollback
-      }
     }
   })
 
@@ -870,178 +874,91 @@
     return getDatabase().sendWithEnter ? !event.shiftKey : event.shiftKey
   }
 
-  function shouldRunInputTranslationHook(
-    continueResponse: boolean,
-    currentCharacter: character | undefined,
-    sourceText: string,
-  ): boolean {
-    return !continueResponse && currentCharacter?.useInputTranslationHook === true && sourceText.trim().length > 0
-  }
-
   function appendInlayMarkers(files: string[]): string {
     return files.map((file) => `{{inlayed::${file}}}`).join('')
   }
 
-  async function runInputTranslationHookForSend(input: {
+  async function runDraftHookForSend(input: {
+    hook: InputHook
     composerOperation: ComposerOperation
     activeTarget: ActiveChatTarget
-    sourceText: string
-    fileSuffix: string
   }): Promise<void> {
     const abortController = createActiveGenerationAbortController()
-    doingChatInputTranslate = true
+    doingDraftHook = true
     try {
-      const translated = await runInputTranslator(input.sourceText, abortController.signal)
+      const result = await runInputHook(
+        input.hook,
+        { content: input.composerOperation.messageInput, draft: input.composerOperation.draftText },
+        abortController.signal,
+      )
       if (!isActiveChatTargetFresh(input.activeTarget) || !isCurrentComposerOperation(input.composerOperation)) {
         return
       }
-      if (translated.trim().length === 0) {
+      const nextDraft = result.trim()
+      if (nextDraft.length === 0) {
         alertError(language.errors.emptyText)
         return
       }
-      const userMessage: Message = {
-        role: 'user',
-        data: `${translated}${input.fileSuffix}`,
-        time: Date.now(),
-        name: null,
-      }
-      const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: input.activeTarget })
-      if (!isActiveChatTargetFresh(input.activeTarget)) {
-        return
-      }
-      if (appended.status === 'queued') {
-        clearComposerForCurrentOperation(input.composerOperation)
-        alertNormal(language.pendingChatMessageQueued)
-        await sleep(10)
-        updateInputSizeAll()
-        return
-      }
-      if (appended.status !== 'ok') {
-        restoreComposerForCurrentOperation(input.composerOperation)
-        alertError(appended.error)
-        await sleep(10)
-        return
-      }
-      lastInputTranslationRollback = {
-        target: input.activeTarget,
-        transcriptIdentity: input.composerOperation.targetIdentity,
-        messageId: appended.messageId,
-        originalText: input.sourceText,
-        fileInput: [...input.composerOperation.fileInput],
-      }
-      clearComposerForCurrentOperation(input.composerOperation)
-      await sleep(10)
+      draftText = nextDraft
+      markComposerDraftChanged('draft')
       updateInputSizeAll()
     } catch (error) {
       if (!abortController.signal.aborted) {
-        restoreComposerForCurrentOperation(input.composerOperation)
         alertError(error)
-        await sleep(10)
       }
     } finally {
-      doingChatInputTranslate = false
+      doingDraftHook = false
       clearActiveGenerationAbortController(abortController)
     }
   }
 
-  function composerDraftMatches(left: DefaultChatComposerDraft | undefined, right: DefaultChatComposerDraft): boolean {
-    return (
-      left?.messageInput === right.messageInput &&
-      left.messageInputTranslate === right.messageInputTranslate &&
-      JSON.stringify(left.fileInput) === JSON.stringify(right.fileInput)
-    )
+  function selectDraftHook(hook: InputHook | null): void {
+    setCurrentChatSelectedDraftHookId(hook?.id ?? null)
+    hookDialogKind = null
   }
 
-  function restoreComposerAfterFailedInputTranslationUndo(attempt: InputTranslationUndoAttempt): void {
-    const activeIdentity = getActiveTranscriptWindowIdentity()
-    if (
-      activeIdentity === attempt.rollback.transcriptIdentity &&
-      composerMutationVersion === attempt.appliedComposerVersion
-    ) {
-      messageInput = attempt.previousComposer.messageInput
-      messageInputTranslate = attempt.previousComposer.messageInputTranslate
-      fileInput = [...attempt.previousComposer.fileInput]
-      markComposerDraftChanged()
-      updateInputSizeAll()
-      return
-    }
+  async function selectBtwHook(hook: InputHook | null): Promise<void> {
+    hookDialogKind = null
+    if (hook) await runBtwHook(hook)
+  }
 
-    if (activeIdentity !== attempt.rollback.transcriptIdentity) {
-      const storedDraft = readDefaultChatComposerDraft(attempt.rollback.transcriptIdentity)
-      if (composerDraftMatches(storedDraft, attempt.appliedComposer)) {
-        if (
-          attempt.previousComposer.messageInput === '' &&
-          attempt.previousComposer.messageInputTranslate === '' &&
-          attempt.previousComposer.fileInput.length === 0
-        ) {
-          deleteDefaultChatComposerDraft(attempt.rollback.transcriptIdentity)
-        } else {
-          writeDefaultChatComposerDraft(attempt.rollback.transcriptIdentity, attempt.previousComposer)
-        }
+  function dismissBtwResult(): void {
+    btwText = ''
+    markComposerDraftChanged('btw')
+  }
+
+  async function runBtwHook(hook: InputHook): Promise<void> {
+    if ($doingChat || preparingSend || hookRunActive) return
+    const activeTarget = captureActiveChatTarget()
+    if (!activeTarget || !isActiveChatTargetFresh(activeTarget)) return
+    const composerOperation = beginComposerOperation('btw')
+    if (!composerOperation) return
+
+    preparingSend = true
+    doingBtwHook = true
+    const abortController = createActiveGenerationAbortController()
+    try {
+      const result = await runInputHook(
+        hook,
+        { content: composerOperation.messageInput, draft: composerOperation.draftText },
+        abortController.signal,
+      )
+      if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
+      const nextBtw = result.trim()
+      if (nextBtw.length === 0) {
+        alertError(language.errors.emptyText)
+        return
       }
+      btwText = nextBtw
+      markComposerDraftChanged('btw')
+    } catch (error) {
+      if (!abortController.signal.aborted) alertError(error)
+    } finally {
+      doingBtwHook = false
+      preparingSend = false
+      composerOperationGuard.clear(composerOperation.token)
+      clearActiveGenerationAbortController(abortController)
     }
-  }
-
-  function reconcileInputTranslationUndo(
-    attempt: InputTranslationUndoAttempt,
-    result: DeleteMessageScopedFinalResult,
-  ): void {
-    if (result.status === 'accepted') {
-      recoverableInputTranslationRollbacks.delete(attempt.rollback.transcriptIdentity)
-      return
-    }
-
-    restoreComposerAfterFailedInputTranslationUndo(attempt)
-    if (
-      getActiveTranscriptWindowIdentity() === attempt.rollback.transcriptIdentity &&
-      isActiveChatTargetFresh(attempt.rollback.target)
-    ) {
-      if (!lastInputTranslationRollback || lastInputTranslationRollback.messageId === attempt.rollback.messageId) {
-        lastInputTranslationRollback = attempt.rollback
-      }
-    } else {
-      recoverableInputTranslationRollbacks.set(attempt.rollback.transcriptIdentity, attempt.rollback)
-    }
-    alertError(language.inputTranslationRollbackFailed)
-  }
-
-  async function rollbackLastInputTranslation() {
-    clearStaleInputTranslationRollback()
-    const rollback = lastInputTranslationRollback
-    if (!rollback) return
-
-    const previous = currentChatScopedSnapshot()
-    const previousComposer: DefaultChatComposerDraft = {
-      messageInput,
-      messageInputTranslate,
-      fileInput: [...fileInput],
-    }
-    const appliedComposer: DefaultChatComposerDraft = {
-      messageInput: rollback.originalText,
-      messageInputTranslate: '',
-      fileInput: [...rollback.fileInput],
-    }
-    lastInputTranslationRollback = null
-    const deletion = dispatchDeleteMessageScoped(rollback.messageId, previous)
-    messageInput = rollback.originalText
-    messageInputTranslate = ''
-    fileInput = [...rollback.fileInput]
-    markComposerDraftChanged()
-    updateInputSizeAll()
-
-    const attempt: InputTranslationUndoAttempt = {
-      rollback,
-      previousComposer,
-      appliedComposer,
-      appliedComposerVersion: composerMutationVersion,
-    }
-    const result = await deletion
-    if (result.status === 'queued') {
-      alertNormal(language.inputTranslationRollbackQueued)
-      reconcileInputTranslationUndo(attempt, await result.settlement)
-      return
-    }
-    reconcileInputTranslationUndo(attempt, result)
   }
 
   async function sendMain(continueResponse: boolean) {
@@ -1093,6 +1010,19 @@
         }
       }
 
+      const selectedHookId = currentChatRecord.selectedDraftHookId
+      const liveDraftHook = getDatabase().inputHooks?.find(
+        (hook) => hook.id === selectedHookId && hook.type === 'draft',
+      )
+      if (!continueResponse && composerBeforeSend.trim().length > 0 && liveDraftHook) {
+        await runDraftHookForSend({
+          hook: liveDraftHook,
+          composerOperation,
+          activeTarget,
+        })
+        return
+      }
+
       const fileSuffix = appendInlayMarkers(filesBeforeSend)
       let messageForSend = composerBeforeSend + fileSuffix
 
@@ -1129,16 +1059,6 @@
         alertError(preflight.reason)
         await sleep(10)
         updateInputSizeAll()
-        return
-      }
-
-      if (shouldRunInputTranslationHook(continueResponse, getDatabase().characters[selectedChar], composerBeforeSend)) {
-        await runInputTranslationHookForSend({
-          composerOperation,
-          activeTarget,
-          sourceText: composerBeforeSend,
-          fileSuffix,
-        })
         return
       }
 
@@ -1181,6 +1101,71 @@
       if (composerOperation) {
         composerOperationGuard.clear(composerOperation.token)
       }
+      preparingSend = false
+    }
+  }
+
+  async function sendDraft(): Promise<void> {
+    if ($doingChat || preparingSend || hookRunActive || draftText.trim().length === 0) return
+    const activeTarget = captureActiveChatTarget()
+    if (!activeTarget || !isActiveChatTargetFresh(activeTarget)) return
+    const composerOperation = beginComposerOperation('draft-send')
+    if (!composerOperation) return
+
+    preparingSend = true
+    try {
+      const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
+      if (generationSettingsGuard.status === 'error') {
+        alertError(generationSettingsGuard.error)
+        return
+      }
+
+      resetRerollOnCharChange()
+      await hydrateActiveChatFully()
+      if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
+
+      const selectedCharacter = getDatabase().characters[activeTarget.selectedCharID]
+      const liveChat = selectedCharacter?.chats[activeTarget.chatPage]
+      if (!liveChat) return
+      const userMessage: Message = {
+        role: 'user',
+        data: `${composerOperation.draftText}${appendInlayMarkers(composerOperation.fileInput)}`,
+        time: Date.now(),
+        name: null,
+      }
+      const preflight = preflightChatSendBeforeMutation({
+        currentChar: selectedCharacter,
+        currentChat: liveChat,
+        continue: false,
+        pendingUserMessage: userMessage,
+      })
+      if (preflight.type === 'unsupported') {
+        alertError(preflight.reason)
+        return
+      }
+
+      const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: activeTarget })
+      if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
+      if (appended.status === 'queued') {
+        clearComposerAndDraftForCurrentOperation(composerOperation)
+        alertNormal(language.pendingChatMessageQueued)
+        return
+      }
+      if (appended.status !== 'ok') {
+        alertError(appended.error)
+        return
+      }
+
+      // The user message is durably appended at this point; clear before generation
+      // (like the composer send path) so a failed generation cannot re-send the draft.
+      clearComposerAndDraftForCurrentOperation(composerOperation)
+      await sleep(10)
+      // Clearing invalidates the composer operation snapshot, so only target
+      // freshness gates generation from here (same as the composer send path).
+      if (!isActiveChatTargetFresh(activeTarget)) return
+      await sendChatMain(false, undefined, true, composerOperation, activeTarget)
+    } finally {
+      composerOperationGuard.clear(composerOperation.token)
       preparingSend = false
     }
   }
@@ -1259,12 +1244,11 @@
       return false
     }
     let previousLength = currentChatRecord.message.length
-    if (!continued) {
+    if (!continued && composerOperation?.kind !== 'draft-send') {
       clearMessageInputForCurrentOperation(composerOperation)
     }
     const abortController = createActiveGenerationAbortController()
     try {
-      clearInputTranslationRollbackForGenerationStart()
       const ok = await sendChat(-1, {
         signal: abortController.signal,
         continue: continued,
@@ -1315,10 +1299,21 @@
   let inputEle: HTMLTextAreaElement = $state()
   let inputTranslateHeight = $state('44px')
   let inputTranslateEle: HTMLTextAreaElement = $state()
+  let draftInputHeight = $state('72px')
+  let draftInputEle: HTMLTextAreaElement = $state()
 
   function updateInputSizeAll() {
     updateInputSize()
     updateInputTranslateSize()
+    updateDraftInputSize()
+  }
+
+  function updateDraftInputSize() {
+    if (draftInputEle) {
+      draftInputEle.style.height = '0'
+      draftInputHeight = Math.max(72, draftInputEle.scrollHeight) + 'px'
+      draftInputEle.style.height = draftInputHeight
+    }
   }
 
   function updateInputTranslateSize() {
@@ -1339,10 +1334,19 @@
   $effect(() => {
     const hasMessageInput = messageInput.length > 0
     const hasMessageInputTranslate = messageInputTranslate.length > 0
+    const hasDraftInput = draftText.length > 0
     const hasInputEle = Boolean(inputEle)
     const hasInputTranslateEle = Boolean(inputTranslateEle)
+    const hasDraftInputEle = Boolean(draftInputEle)
 
-    if (hasMessageInput || hasMessageInputTranslate || hasInputEle || hasInputTranslateEle) {
+    if (
+      hasMessageInput ||
+      hasMessageInputTranslate ||
+      hasDraftInput ||
+      hasInputEle ||
+      hasInputTranslateEle ||
+      hasDraftInputEle
+    ) {
       updateInputSizeAll()
     }
   })
@@ -1665,8 +1669,7 @@
           void expandTranscriptWindow(loadPages + 15)
         }
         const chatTarget = e.target as HTMLElement
-        const chatsContainer =
-          getDatabase().fixedChatTextarea && chatTarget.children[1] ? chatTarget.children[1] : chatTarget.children[0]
+        const chatsContainer = chatTarget.querySelector<HTMLElement>('[data-default-chat-chats-container]')
         const lastEl = chatsContainer?.firstElementChild
         const isAtBottom = lastEl
           ? lastEl.getBoundingClientRect().top <= chatTarget.getBoundingClientRect().bottom + 100
@@ -1718,7 +1721,7 @@
           }}
           style:height={inputHeight}></textarea>
 
-        {#if currentChatOwnsGeneration || doingChatInputTranslate}
+        {#if currentChatOwnsGeneration || hookRunActive}
           <button
             data-testid="default-chat-cancel-button"
             aria-label={language.cancelGeneration}
@@ -1763,17 +1766,81 @@
           </button>
         {/if}
       </div>
-      {#if lastInputTranslationRollback && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
-        <div class="flex justify-end mr-2">
-          <button
-            data-testid="default-chat-input-translation-rollback"
-            class="flex items-center gap-2 rounded-md border border-darkborderc px-3 py-2 text-sm text-textcolor transition-colors hover:border-textcolor hover:bg-selected"
-            title={language.rollbackInputTranslation}
-            aria-label={language.rollbackInputTranslation}
-            onclick={rollbackLastInputTranslation}>
-            <Undo2Icon size={16} />
-            <span>{language.rollbackInputTranslation}</span>
-          </button>
+
+      {#if showDraftArea && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
+        <div
+          class="mx-2 flex flex-col gap-2 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5 text-textcolor"
+          data-testid="default-chat-draft-area"
+          data-risu-draft-hook-pending={doingDraftHook}
+          data-risu-btw-hook-pending={doingBtwHook}>
+          {#if btwText.length > 0}
+            <div class="flex flex-col gap-1 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-medium text-textcolor2">{language.inputHookBtwResult}</span>
+                <button
+                  type="button"
+                  data-testid="default-chat-btw-dismiss"
+                  class="ml-auto text-textcolor2 transition-colors hover:text-draculared"
+                  aria-label={language.inputHookBtwDismiss}
+                  title={language.inputHookBtwDismiss}
+                  onclick={dismissBtwResult}>
+                  <XIcon size={16} />
+                </button>
+              </div>
+              <div class="whitespace-pre-wrap break-words text-sm" data-testid="default-chat-btw-result">
+                {btwText}
+              </div>
+            </div>
+          {/if}
+
+          <label for="default-chat-draft-input" class="text-xs font-medium text-textcolor2">
+            {language.inputHookDraftLabel}
+          </label>
+          <textarea
+            id="default-chat-draft-input"
+            data-testid="default-chat-draft-input"
+            class="min-w-0 resize-none overflow-y-hidden rounded-md border border-darkborderc bg-transparent p-2 text-base text-textcolor outline-hidden transition-colors placeholder:text-sm focus:border-textcolor"
+            bind:value={draftText}
+            bind:this={draftInputEle}
+            oninput={() => {
+              markComposerDraftChanged('draft')
+              updateDraftInputSize()
+            }}
+            placeholder={language.inputHookDraftPlaceholder}
+            style:height={draftInputHeight}></textarea>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="default-chat-draft-hook-select"
+              aria-label={language.inputHookSelectDraft}
+              aria-busy={doingDraftHook}
+              disabled={$doingChat || preparingSend || hookRunActive}
+              class="rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-selected disabled:cursor-not-allowed disabled:opacity-50"
+              onclick={() => (hookDialogKind = 'draft')}>
+              {#if doingDraftHook}<LoaderCircleIcon size={16} class="risu-ongoing-pulse inline animate-spin" />{/if}
+              {selectedDraftHook?.name ?? language.inputHookNone}
+            </button>
+            <button
+              type="button"
+              data-testid="default-chat-btw-button"
+              aria-busy={doingBtwHook}
+              disabled={$doingChat || preparingSend || hookRunActive}
+              class="rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-selected disabled:cursor-not-allowed disabled:opacity-50"
+              onclick={() => (hookDialogKind = 'btw')}>
+              {#if doingBtwHook}<LoaderCircleIcon size={16} class="risu-ongoing-pulse inline animate-spin" />{/if}
+              {language.inputHookBtw}
+            </button>
+            <button
+              type="button"
+              data-testid="default-chat-draft-send"
+              disabled={draftText.trim().length === 0 || $doingChat || preparingSend || hookRunActive}
+              class="ml-auto flex items-center gap-2 rounded-md border border-darkborderc px-3 py-2 text-sm transition-colors hover:border-textcolor hover:bg-blue-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              onclick={sendDraft}>
+              <Send size={18} />
+              <span>{language.inputHookSendDraft}</span>
+            </button>
+          </div>
         </div>
       {/if}
       {#if getDatabase().useAutoTranslateInput && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
@@ -1932,20 +1999,22 @@
         <AgentPresetProgress />
         <PostGenerationScriptProgress characterId={currentCharacter.chaId} chatId={currentChatId} />
 
-        <Chats
-          bind:this={chatsInstance}
-          messages={currentChat}
-          {loadPages}
-          onReroll={reroll}
-          {unReroll}
-          onNewReroll={newReroll}
-          onSelectRerollCandidate={selectRerollCandidate}
-          {currentCharacter}
-          {currentUsername}
-          {userIcon}
-          {userIconPortrait}
-          isGenerationActive={currentChatOwnsGeneration}
-          bind:hasNewUnreadMessage={showNewMessageButton} />
+        <div class="contents" data-default-chat-chats-container>
+          <Chats
+            bind:this={chatsInstance}
+            messages={currentChat}
+            {loadPages}
+            onReroll={reroll}
+            {unReroll}
+            onNewReroll={newReroll}
+            onSelectRerollCandidate={selectRerollCandidate}
+            {currentCharacter}
+            {currentUsername}
+            {userIcon}
+            {userIconPortrait}
+            isGenerationActive={currentChatOwnsGeneration}
+            bind:hasNewUnreadMessage={showNewMessageButton} />
+        </div>
 
         <!-- A bootstrap shell strips firstMessage/alternateGreetings (not in
              BOOTSTRAP_CHARACTER_SHELL_FIELDS); skip the greeting render until the
@@ -2192,6 +2261,15 @@
     </div>
   {/if}
 </div>
+
+{#if hookDialogKind}
+  <InputHookPickerDialog
+    kind={hookDialogKind}
+    hooks={hookDialogKind === 'draft' ? draftHooks : btwHooks}
+    selectedId={selectedDraftHook?.id}
+    close={() => (hookDialogKind = null)}
+    select={hookDialogKind === 'draft' ? selectDraftHook : selectBtwHook} />
+{/if}
 
 {#if additionalFloatingActionButtons.length > 0}
   <div class="fixed top-4 right-4 flex flex-col gap-3 z-50">

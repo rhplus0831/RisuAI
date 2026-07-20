@@ -79,7 +79,6 @@ vi.mock('../../ts/util', async (importActual) => {
 
 vi.mock('../../ts/translator/translator', () => ({
   isExpTranslator: () => false,
-  runInputTranslator: vi.fn(async (message: string) => message),
   translate: vi.fn(async (message: string) => message),
 }))
 

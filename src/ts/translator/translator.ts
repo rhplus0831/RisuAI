@@ -1,7 +1,6 @@
 import { get } from 'svelte/store'
 import { parseChatML } from '../parser/chatML'
 import { getDatabase, type character, type customscript } from '../storage/database.svelte'
-import { defaultInputTranslatorPrompt } from '../storage/defaultPrompts'
 import { defaultTranslatorPrompt, getCurrentTranslatorPresetFromState, type TranslatorPreset } from './presets'
 import { globalFetch } from '../globalApi.svelte'
 import { alertError } from '../alert'
@@ -623,56 +622,6 @@ function getCurrentLLMTranslationCacheKey(text: string): string | null {
 
 function finiteNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-export async function runInputTranslator(text: string, abortSignal?: AbortSignal | null): Promise<string> {
-  const db = getDatabase()
-  const promptTemplate =
-    typeof db.inputTranslatorPrompt === 'string' && db.inputTranslatorPrompt.trim()
-      ? db.inputTranslatorPrompt
-      : defaultInputTranslatorPrompt
-  const promptWithContent = promptTemplate.replaceAll('{{solt::content}}', text).replaceAll('{{slot::content}}', text)
-  const parsedPrompt = parseChatML(promptWithContent)
-  const hasContentSlot = promptTemplate.includes('{{slot::content}}') || promptTemplate.includes('{{solt::content}}')
-  const formated: OpenAIChat[] =
-    parsedPrompt ??
-    (hasContentSlot
-      ? [
-          {
-            role: 'user',
-            content: promptWithContent,
-          },
-        ]
-      : [
-          {
-            role: 'system',
-            content: promptTemplate,
-          },
-          {
-            role: 'user',
-            content: text,
-          },
-        ])
-  const maxTokens = finiteNumber(db.translatorMaxResponse, 1000)
-  const rq = await requestChatData(
-    {
-      formated,
-      bias: {},
-      useStreaming: false,
-      noMultiGen: true,
-      maxTokens,
-    },
-    'translate',
-    abortSignal ?? null,
-  )
-
-  if (rq.type === 'fail') {
-    throw new Error(rq.result)
-  }
-  if (rq.type === 'streaming' || rq.type === 'multiline') {
-    throw new Error('Unexpected response type')
-  }
-  return rq.result.trim()
 }
 
 let waitTrans = 0

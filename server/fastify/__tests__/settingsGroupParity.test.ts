@@ -41,6 +41,11 @@ describe('settings group parity', () => {
     }
   })
 
+  it('keeps Input Hooks in the advanced settings projection', () => {
+    expect(SETTINGS_GROUP_KEYS.advanced).toContain('inputHooks')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.advanced).toContain('inputHooks')
+  })
+
   it('does not accept the retired Claude batching setting', () => {
     expect(SETTINGS_GROUP_KEYS.providers).not.toContain('claudeBatching')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).not.toContain('claudeBatching')

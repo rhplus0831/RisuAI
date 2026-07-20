@@ -158,15 +158,6 @@ export const languageSettingsItems: SettingItem[] = [
   },
 
   {
-    id: 'lang.inputTranslatorPrompt',
-    type: 'textarea',
-    labelKey: 'inputTranslatorPrompt',
-    bindKey: 'inputTranslatorPrompt',
-    helpKey: 'inputTranslatorPrompt',
-    classes: 'mt-4',
-  },
-
-  {
     id: 'lang.googleSourceLang',
     type: 'select',
     labelKey: 'sourceLanguage',

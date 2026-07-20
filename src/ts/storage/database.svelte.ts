@@ -6,8 +6,8 @@ import type { RisuPlugin } from '../plugins/plugins.svelte'
 import type { triggerscript as triggerscriptMain } from '../process/triggers'
 import { downloadFile, saveAsset as saveImageGlobal } from '../globalApi.svelte'
 import {
+  createDefaultInputHooks,
   defaultAutoSuggestPrompt,
-  defaultInputTranslatorPrompt,
   defaultJailbreak,
   defaultMainPrompt,
 } from './defaultPrompts'
@@ -2705,8 +2705,8 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.translatorMaxResponse)) {
     data.translatorMaxResponse = 1000
   }
-  if (checkNullish(data.inputTranslatorPrompt)) {
-    data.inputTranslatorPrompt = defaultInputTranslatorPrompt
+  if (checkNullish(data.inputHooks)) {
+    data.inputHooks = createDefaultInputHooks()
   }
   if (checkNullish(data.currentPluginProvider)) {
     data.currentPluginProvider = ''
@@ -3689,6 +3689,13 @@ export interface DynamicOutput {
   dynamicRequest: boolean
 }
 
+export type InputHook = {
+  id: string
+  name: string
+  type: 'draft' | 'btw'
+  prompt: string
+}
+
 export interface Database {
   characters: character[]
   apiType: string
@@ -3908,7 +3915,7 @@ export interface Database {
   fishSpeechKey: string
   allowAllExtentionFiles?: boolean
   translatorPrompt: string
-  inputTranslatorPrompt: string
+  inputHooks: InputHook[]
   translatorMaxResponse: number
   translatorPresets: TranslatorPreset[]
   translatorPresetId: number
@@ -4352,7 +4359,6 @@ export interface character {
     normalize: boolean
   }
   supaMemory?: boolean
-  useInputTranslationHook?: boolean
   additionalAssets?: [string, string, string][]
   ttsReadOnlyQuoted?: boolean
   replaceGlobalNote: string
@@ -4687,6 +4693,7 @@ export interface Chat {
   id?: string
   bindedPersona?: string
   fmIndex?: number
+  selectedDraftHookId?: string
   hypaV3Data?: SerializableHypaV3Data
   folderId?: string
   lastDate?: number

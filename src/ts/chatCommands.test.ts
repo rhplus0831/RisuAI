@@ -108,6 +108,7 @@ import {
   sanitizeChatPatch,
   setChatNoteValue,
   setChatScriptstateValue,
+  setCurrentChatSelectedDraftHookId,
   stageChatNoteMutation,
   waitForPendingChatGenerationSettingsSave,
 } from './chatCommands'
@@ -686,6 +687,45 @@ afterEach(() => {
 })
 
 describe('chat command projection helpers', () => {
+  it('patches the selected draft hook through the chat-scoped command path', async () => {
+    const calls = stubCommandFetch()
+    setResourceWriteGuardEnabled(true)
+
+    expect(setCurrentChatSelectedDraftHookId('draft-hook-a')).toBe(true)
+    expect(getDatabase().characters[0].chats[0].selectedDraftHookId).toBe('draft-hook-a')
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { selectedDraftHookId: 'draft-hook-a' },
+        select: false,
+      },
+    })
+  })
+
+  it('clears the selected draft hook with a nullable chat patch', async () => {
+    setCurrentChatSelectedDraftHookId('draft-hook-a', { dispatch: false })
+    const calls = stubCommandFetch()
+    setResourceWriteGuardEnabled(true)
+
+    expect(setCurrentChatSelectedDraftHookId(null)).toBe(true)
+    expect(getDatabase().characters[0].chats[0]).not.toHaveProperty('selectedDraftHookId')
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { selectedDraftHookId: null },
+        select: false,
+      },
+    })
+  })
+
   it('optimistically inserts and selects a command-created chat under the resource guard', () => {
     setResourceWriteGuardEnabled(true)
     const previous = currentChatStateSnapshot()
