@@ -72,6 +72,29 @@ function hasBilingualRenderedContent(element: Element): boolean {
   )
 }
 
+function collapseVisualOnlyPair(pair: Element): void {
+  if ((pair.textContent ?? '').trim().length > 0) return
+
+  const sides = [...pair.querySelectorAll(BILINGUAL_SIDE_SELECTOR)]
+  if (sides.length === 0) return
+
+  const hasBareOriginal = [...pair.children].some(
+    (child) => !child.matches(BILINGUAL_SIDE_SELECTOR) && hasBilingualRenderedContent(child),
+  )
+  const kept = hasBareOriginal
+    ? null
+    : (sides.find(
+        (side) =>
+          side.classList.contains(BILINGUAL_MUTED_CLASS) &&
+          !side.classList.contains(BILINGUAL_TRANSLATION_CLASS),
+      ) ?? sides[0])
+
+  for (const side of sides) {
+    if (side !== kept) side.remove()
+  }
+  kept?.classList.remove(BILINGUAL_MUTED_CLASS)
+}
+
 export function pruneEmptyBilingualPairs(html: string): string {
   if (!html.includes(BILINGUAL_PAIR_CLASS)) return html
 
@@ -83,7 +106,12 @@ export function pruneEmptyBilingualPairs(html: string): string {
       if (!hasBilingualRenderedContent(side)) side.remove()
     }
 
-    if (!hasBilingualRenderedContent(pair)) pair.remove()
+    if (!hasBilingualRenderedContent(pair)) {
+      pair.remove()
+      continue
+    }
+
+    collapseVisualOnlyPair(pair)
   }
 
   return document.body.innerHTML

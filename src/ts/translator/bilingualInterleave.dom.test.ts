@@ -125,7 +125,7 @@ describe('pruneEmptyBilingualPairs', () => {
     expect(pair?.querySelector(`.${BILINGUAL_MUTED_CLASS}`)).toBeNull()
   })
 
-  it('keeps image-only sides that use background images', () => {
+  it('collapses a textless visual-only pair to the original side, unmuted', () => {
     const root = parsePruned(`
       <div class="${BILINGUAL_PAIR_CLASS}">
         <div class="${BILINGUAL_TRANSLATION_CLASS}">
@@ -137,11 +137,61 @@ describe('pruneEmptyBilingualPairs', () => {
       </div>
     `)
     const pair = root.querySelector(`.${BILINGUAL_PAIR_CLASS}`)
+    const images = pair?.querySelectorAll('.x-risu-image-container')
 
     expect(pair).not.toBeNull()
-    expect(pair?.querySelector(`.${BILINGUAL_TRANSLATION_CLASS}`)).not.toBeNull()
+    expect(images).toHaveLength(1)
+    expect(images?.[0]?.getAttribute('style')).toContain('original.png')
+    expect(pair?.querySelector(`.${BILINGUAL_MUTED_CLASS}`)).toBeNull()
+    expect(pair?.querySelector(`.${BILINGUAL_TRANSLATION_CLASS}`)).toBeNull()
+  })
+
+  it('drops the duplicated side of an original-emphasis visual-only pair', () => {
+    const root = parsePruned(`
+      <div class="${BILINGUAL_PAIR_CLASS}">
+        <div class="x-risu-image-container" style="background-image: url(original.png)"></div>
+        <div class="${BILINGUAL_TRANSLATION_CLASS} ${BILINGUAL_MUTED_CLASS}">
+          <div class="x-risu-image-container" style="background-image: url(original.png)"></div>
+        </div>
+      </div>
+    `)
+    const pair = root.querySelector(`.${BILINGUAL_PAIR_CLASS}`)
+    const images = pair?.querySelectorAll('.x-risu-image-container')
+
+    expect(pair).not.toBeNull()
+    expect(images).toHaveLength(1)
+    expect(pair?.querySelector(`.${BILINGUAL_MUTED_CLASS}`)).toBeNull()
+  })
+
+  it('unmutes a translation-only visual pair instead of removing its content', () => {
+    const root = parsePruned(`
+      <div class="${BILINGUAL_PAIR_CLASS}">
+        <div class="${BILINGUAL_TRANSLATION_CLASS} ${BILINGUAL_MUTED_CLASS}">
+          <div class="x-risu-image-container" style="background-image: url(translation.png)"></div>
+        </div>
+      </div>
+    `)
+    const pair = root.querySelector(`.${BILINGUAL_PAIR_CLASS}`)
+
+    expect(pair?.querySelectorAll('.x-risu-image-container')).toHaveLength(1)
+    expect(pair?.querySelector(`.${BILINGUAL_MUTED_CLASS}`)).toBeNull()
+  })
+
+  it('keeps both sides when a visual pair also carries text', () => {
+    const root = parsePruned(`
+      <div class="${BILINGUAL_PAIR_CLASS}">
+        <div class="${BILINGUAL_TRANSLATION_CLASS}">
+          <p>번역된 설명 <img src="translation.png" alt=""></p>
+        </div>
+        <div class="${BILINGUAL_MUTED_CLASS}">
+          <p>Original caption <img src="original.png" alt=""></p>
+        </div>
+      </div>
+    `)
+    const pair = root.querySelector(`.${BILINGUAL_PAIR_CLASS}`)
+
+    expect(pair?.querySelectorAll('img')).toHaveLength(2)
     expect(pair?.querySelector(`.${BILINGUAL_MUTED_CLASS}`)).not.toBeNull()
-    expect(pair?.querySelectorAll('.x-risu-image-container')).toHaveLength(2)
   })
 
   it('keeps an original-emphasis pair when its bare original is empty but its translation is not', () => {
