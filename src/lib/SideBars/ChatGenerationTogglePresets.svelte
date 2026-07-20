@@ -49,6 +49,9 @@
   data-risu-generation-toggle-presets
   data-risu-toggle-preset-state={state}
   data-risu-persistence-status={persistenceStatus}>
+  <div class="mb-1 text-xs font-medium text-textcolor2" data-risu-generation-toggle-preset-caption>
+    {language.chatGenerationTogglePresetCaption}
+  </div>
   <Button
     className="flex w-full min-w-0 justify-start text-left"
     disabled={!activeGenerationSettings.identity.chatId}

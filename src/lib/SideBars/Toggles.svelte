@@ -547,6 +547,6 @@
       {/if}
     </div>
   {/if}
-  <ChatGenerationResetDefaultsButton />
   <ChatGenerationTogglePresets />
+  <ChatGenerationResetDefaultsButton />
 {/if}

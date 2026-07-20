@@ -1718,6 +1718,17 @@ describe('sidebar chat generation settings controls', () => {
     expect(togglePresetStateButton().textContent).toContain('Saved Alpha')
   })
 
+  it('renders the localized toggle preset caption', async () => {
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const caption = elementBySelector<HTMLElement>(
+      '[data-risu-generation-toggle-preset-caption]',
+      'toggle preset caption',
+    )
+    expect(caption.textContent).toContain(language.chatGenerationTogglePresetCaption)
+  })
+
   it('selects a preset row without applying values and explicitly unselects it', async () => {
     const calls = stubCommandFetch()
     testDatabaseState().chatGenerationTogglePresets = [

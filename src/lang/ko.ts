@@ -1,4 +1,5 @@
 export const languageKorean = {
+  chatGenerationTogglePresetCaption: '토글 프리셋',
   chatGenerationTogglePresetUnused: '저장된 토글: 사용 안 함',
   chatGenerationTogglePresetUnlinked: '저장된 토글: 연결 끊김',
   chatGenerationTogglePresetMismatch: '저장된 토글: 구조 불일치',

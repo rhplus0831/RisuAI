@@ -944,6 +944,7 @@ export const languageEnglish = {
   chatGenerationPersonaUnconfigured: 'Select chat persona',
   chatGenerationResetDefaults: 'Reset toggle defaults',
   chatGenerationResetDefaultsConfirm: 'Are you sure you want to reset toggle defaults?',
+  chatGenerationTogglePresetCaption: 'Toggle preset',
   chatGenerationTogglePresetSelect: 'Select saved toggles',
   chatGenerationTogglePresetSave: 'Save',
   chatGenerationTogglePresetApply: 'Apply',
