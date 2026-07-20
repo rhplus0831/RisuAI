@@ -1652,6 +1652,7 @@
   {:else}
     <div
       class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
+      class:fastify-chat-theme={getDatabase().theme === 'fastify'}
       style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px`}
       data-default-chat-screen-width
       onscroll={(e) => {
