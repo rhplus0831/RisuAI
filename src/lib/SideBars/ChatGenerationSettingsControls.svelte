@@ -177,9 +177,8 @@
     {#if personaNote}
       <div class="mt-1 flex flex-col gap-0.5 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5">
         <span class="text-xs font-medium text-textcolor2">{language.personaNote}</span>
-        <span
-          class="text-xs whitespace-pre-wrap break-words"
-          data-risu-generation-picker-persona-note>{personaNote}</span>
+        <span class="text-xs whitespace-pre-wrap break-words" data-risu-generation-picker-persona-note
+          >{personaNote}</span>
       </div>
     {/if}
   </div>
