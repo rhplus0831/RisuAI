@@ -1,10 +1,6 @@
 import { parseChatML } from '../parser/chatML'
-import { getDatabase, type InputHook } from '../storage/database.svelte'
+import type { InputHook } from '../storage/database.svelte'
 import { requestChatData } from './request/request'
-
-function finiteNumber(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
 
 export async function runInputHook(
   hook: InputHook,
@@ -35,16 +31,14 @@ export async function runInputHook(
             content: slots.content,
           },
         ])
-  const maxTokens = finiteNumber(getDatabase().translatorMaxResponse, 1000)
   const rq = await requestChatData(
     {
       formated,
       bias: {},
       useStreaming: false,
       noMultiGen: true,
-      maxTokens,
     },
-    'translate',
+    'otherAx',
     abortSignal ?? null,
   )
 

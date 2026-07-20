@@ -2,13 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InputHook } from '../storage/database.svelte'
 
 const testState = vi.hoisted(() => ({
-  db: { translatorMaxResponse: 321 },
   parseChatML: vi.fn(),
   requestChatData: vi.fn(),
-}))
-
-vi.mock('../storage/database.svelte', () => ({
-  getDatabase: () => testState.db,
 }))
 
 vi.mock('../parser/chatML', () => ({
@@ -36,7 +31,6 @@ function requestMessages(): OpenAIChat[] {
 
 describe('runInputHook', () => {
   beforeEach(() => {
-    testState.db.translatorMaxResponse = 321
     testState.parseChatML.mockReset()
     testState.parseChatML.mockReturnValue(null)
     testState.requestChatData.mockReset()
@@ -62,9 +56,8 @@ describe('runInputHook', () => {
         bias: {},
         useStreaming: false,
         noMultiGen: true,
-        maxTokens: 321,
       },
-      'translate',
+      'otherAx',
       signal,
     )
   })
