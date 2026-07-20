@@ -89,13 +89,14 @@ export function detectAssetContentType(bytes: Uint8Array): string | null {
   return null
 }
 
-function validateDeclaredAssetContentType(asset: AddAssetInput): void {
+/**
+ * Cards in the wild routinely lie about asset extensions (e.g. WebP bytes in a
+ * `.png` asset), so a declared type that disagrees with recognizable magic
+ * bytes is coerced to the detected type instead of rejected.
+ */
+function resolveEffectiveAssetContentType(asset: AddAssetInput): string {
   const detectedContentType = detectAssetContentType(asset.bytes)
-  if (detectedContentType && detectedContentType !== asset.contentType) {
-    throw new ValidationError(
-      `Asset content-type mismatch: declared ${asset.contentType}, detected ${detectedContentType}`,
-    )
-  }
+  return detectedContentType ?? asset.contentType
 }
 
 export function isValidAssetId(id: string): boolean {
@@ -2206,12 +2207,13 @@ export function addAsset(db: DatabaseSync, dataDir: string, args: AddAssetInput)
 }
 
 export function addAssets(db: DatabaseSync, dataDir: string, assets: readonly AddAssetInput[]): AddAssetResult[] {
-  for (const asset of assets) {
+  const normalizedAssets = assets.map((asset) => {
     if (!CONTENT_TYPE_EXTENSIONS[asset.contentType]) {
       throw new ValidationError(`Unsupported content-type: ${asset.contentType}`)
     }
-    validateDeclaredAssetContentType(asset)
-  }
+    const effectiveContentType = resolveEffectiveAssetContentType(asset)
+    return effectiveContentType === asset.contentType ? asset : { ...asset, contentType: effectiveContentType }
+  })
 
   const createdResults: AddAssetResult[] = []
   const results: AddAssetResult[] = []
@@ -2219,7 +2221,7 @@ export function addAssets(db: DatabaseSync, dataDir: string, assets: readonly Ad
   const createdFiles: Array<{ file: string; existedBefore: boolean }> = []
   let transactionOpen = false
   try {
-    for (const asset of assets) {
+    for (const asset of normalizedAssets) {
       const ext = CONTENT_TYPE_EXTENSIONS[asset.contentType]
       const sha256 = createHash('sha256').update(asset.bytes).digest('hex')
       const existing = getAssetMetadataById(db, sha256)

@@ -258,7 +258,7 @@ describe('Phase 2C assets', () => {
     expect(Buffer.from(readFileSync(onDisk))).toEqual(PNG_BYTES)
   })
 
-  it('rejects a recognizable JPEG body declared as PNG before persistence', async () => {
+  it('stores a recognizable JPEG body declared as PNG under its detected type', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
       method: 'POST',
@@ -267,11 +267,18 @@ describe('Phase 2C assets', () => {
       payload: JPEG_BYTES,
     })
 
-    expect(res.statusCode).toBe(400)
+    expect(res.statusCode).toBe(201)
     expect(res.json()).toEqual({
-      error: 'Asset content-type mismatch: declared image/png, detected image/jpeg',
+      assetId: JPEG_SHA,
+      size: JPEG_BYTES.length,
+      contentType: 'image/jpeg',
+      revision: 0,
     })
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${JPEG_SHA}.jpg`))).toBe(true)
     expect(existsSync(path.join(harness.dataDir, 'assets', `${JPEG_SHA}.png`))).toBe(false)
+
+    const read = await harness.app.inject({ method: 'GET', url: `/api/v1/assets/${JPEG_SHA}` })
+    expect(read.headers['content-type']).toBe('image/jpeg')
   })
 
   it('persists JPEG and AAC uploads with their detected media metadata', async () => {
