@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { openDatabase } from '../src/db.js'
+import { MessageTranslationJobRegistry } from '../src/messageTranslationJobs.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
   enqueueGenerationFinalizationRetry,
@@ -531,6 +532,7 @@ function retryQueuedFinalizationsOnce(): ReturnType<typeof retryQueuedGeneration
       dataDir: harness.dataDir,
       eventSink: createCommandEventSink(),
       maxPerSweep: 10,
+      messageTranslationJobs: new MessageTranslationJobRegistry(),
     })
   } finally {
     db.close()

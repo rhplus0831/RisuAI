@@ -3015,6 +3015,7 @@ export function setDatabase(data: Database) {
   ]
   data.classicMaxWidth ??= false
   data.chatScreenWidth ??= 900
+  data.autoTranslateNotificationDeferCapSeconds ??= 180
   data.ooba ??= safeStructuredClone(defaultOoba)
   data.ainconfig ??= safeStructuredClone(defaultAIN)
   data.openrouterKey ??= ''
@@ -3326,6 +3327,7 @@ export function setDatabase(data: Database) {
 export function applyServerResourceDatabase(data: Database, revision?: number) {
   const result = withServerResourceApply(() => {
     data.chatScreenWidth ??= 900
+    data.autoTranslateNotificationDeferCapSeconds ??= 180
     data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
     data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
     normalizeAgentPresetSettings(data)
@@ -4033,6 +4035,7 @@ export interface Database {
   translatorSendTextAsIs: boolean
   autoTranslateCachedOnly: boolean
   notification: boolean
+  autoTranslateNotificationDeferCapSeconds: number
   customFlags: LLMFlags[]
   enableCustomFlags: boolean
   googleClaudeTokenizing: boolean

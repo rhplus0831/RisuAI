@@ -3,7 +3,6 @@ import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
 import { decompress as fflateDecompress } from 'fflate'
 import type { AuthState } from '../auth.js'
-import { getSchemaState } from '../db.js'
 import {
   COMMAND_EVENT_CATALOG,
   PRESET_COLLECTION_WITH_POINTER_RESOURCE,
@@ -329,8 +328,6 @@ import {
   extractSettings,
   initializeDefaultDatabase,
   insertCharacterChatRow,
-  loadPersistedForChatMutation,
-  loadSettingsFromSqlite,
   replacePluginStorage,
   RevisionMismatchError,
   ValidationError,
@@ -346,14 +343,9 @@ import {
   writeSingleCollectionRow,
   writeSingleCollectionTable,
 } from '../repository.js'
-import { createDetachedAbort } from '../requestAbort.js'
 import { readLegacyStorageValue } from './legacyStorage.js'
-import { translateRawMessageData, type RawMessageTranslation } from '../translation/rawMessageTranslation.js'
-import {
-  MessageTranslationAlreadyRunningError,
-  type MessageTranslationJobHandle,
-  type MessageTranslationJobRegistry,
-} from '../messageTranslationJobs.js'
+import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
+import { runServerMessageTranslation } from '../translation/serverMessageTranslation.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
   const writerSessionId = readActiveWriterSessionId(req)
@@ -455,32 +447,6 @@ function readCommandMutationReceiptAcknowledgement(body: unknown): {
 function emitCommandEventForRequest(req: FastifyRequest, eventSink: CommandEventSink, event: CommandEvent): void {
   const origin = commandEventOrigin(req)
   eventSink.emit(origin ? { ...event, origin } : event)
-}
-
-function readLiveMessageSource(
-  db: DatabaseSync,
-  messageId: string,
-): {
-  chatId: string
-  data: string
-  translation: unknown
-} {
-  const resolved = resolveActiveMessageLocationById(db, messageId)
-  if (resolved.ok === false) {
-    if (resolved.reason === 'ambiguous') {
-      throw new ValidationError(`Ambiguous message id: ${messageId}`)
-    }
-    throw new EntityNotFoundError(`Message not found: ${messageId}`)
-  }
-  const data = resolved.location.message.data
-  if (typeof data !== 'string') {
-    throw new ValidationError(`Message data for ${messageId} must be a string`)
-  }
-  return {
-    chatId: resolved.location.chatId,
-    data,
-    translation: structuredClone(resolved.location.message.translation),
-  }
 }
 
 /** Coerce a value to an array for a collection-table write (mirrors the broad
@@ -1444,6 +1410,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'customQuotesData',
     'menuSideBar',
     'notification',
+    'autoTranslateNotificationDeferCapSeconds',
     'useChatSticker',
     'customCSS',
     'customGUI',
@@ -1748,6 +1715,7 @@ const NUMBER_SETTING_KEYS = new Set([
   'assetMaxDifference',
   'assetWidth',
   'autoContinueMinTokens',
+  'autoTranslateNotificationDeferCapSeconds',
   'chatDisplayTailCount',
   'chatScreenWidth',
   'complexRegexInputTimeoutMs',
@@ -6442,10 +6410,6 @@ export function registerCommandRoutes(
   app.post('/api/v1/commands/messages/:messageId/translate', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
-    // Translation is a server-side command mutation and should finish even if
-    // the browser tab that started it disconnects before the provider returns.
-    const { signal, cleanup } = createDetachedAbort()
-    let translationJob: MessageTranslationJobHandle | undefined
     try {
       const messageId = readMessageId((req.params as { messageId?: unknown }).messageId)
       const body = (req.body ?? {}) as MessageCommandBody
@@ -6455,103 +6419,24 @@ export function registerCommandRoutes(
       // unrelated edit made while translation is running.
       readBaseRevision(body)
       const requestedJobId = readOptionalMessageTranslationJobId(body.jobId)
-      const source = readLiveMessageSource(db, messageId)
-      translationJob = messageTranslationJobs?.register({
-        chatId: source.chatId,
-        messageId,
-        ...(requestedJobId ? { jobId: requestedJobId } : {}),
-      })
-      const settings = loadSettingsFromSqlite(db)
-      if (settings === null) {
-        throw new ValidationError('database is not initialized')
-      }
-
-      const persisted = loadPersistedForChatMutation(db, dataDir, { messageId })
-      const characters = normalizeAllCharacterChats(persisted.database)
-      const { character } = requireChatLocation(characters, source.chatId)
-      const translation = await translateRawMessageData({
-        settings,
-        character,
-        text: source.data,
-        signal,
-      })
-
-      const result = applyTargetedCommandMutation<{
-        chatId: string
-        messageId: string
-        translation: RawMessageTranslation
-      }>({
+      return await runServerMessageTranslation({
         db,
         dataDir,
-        // No await occurs between this read and the synchronous transaction.
-        // Rebase onto the current domain revision, then reject only if the
-        // target message disappeared or its source text changed below.
-        baseRevision: getSchemaState(db).revision,
+        messageTranslationJobs,
+        messageId,
+        ...(requestedJobId ? { jobId: requestedJobId } : {}),
         ...commandMutationContext(req, eventSink),
-        mutationPath: 'targeted-message',
-        chatScopedRead: { messageId },
-        mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const resolved = resolveActiveMessageLocationById(targetDb, messageId)
-          if (resolved.ok === false) {
-            if (resolved.reason === 'ambiguous') {
-              throw new ValidationError(`Ambiguous message id: ${messageId}`)
-            }
-            throw new EntityNotFoundError(`Message not found: ${messageId}`)
-          }
-          const { location } = resolved
-          requireChatLocation(characters, location.chatId)
-          if (translationJob && !translationJob.isCurrent()) {
-            throw new ValidationError(`Message translation is no longer current: ${messageId}`)
-          }
-          if (location.message.data !== source.data) {
-            throw new ValidationError(`Message changed before translation could be saved: ${messageId}`)
-          }
-          if (!isDeepStrictEqual(location.message.translation, source.translation)) {
-            throw new ValidationError(`Message translation changed before translation could be saved: ${messageId}`)
-          }
-          const updated = updateActiveMessageById(targetDb, messageId, { translation })
-          if (updated.ok === false) {
-            if (updated.reason === 'ambiguous') {
-              throw new ValidationError(`Ambiguous message id: ${messageId}`)
-            }
-            throw new EntityNotFoundError(`Message not found: ${messageId}`)
-          }
-          return {
-            event: {
-              ...COMMAND_EVENT_CATALOG.messageUpdated,
-              id: messageId,
-              parentId: updated.chatId,
-            },
-            extra: { chatId: updated.chatId, messageId, translation },
-          }
-        },
       })
-
-      translationJob?.succeed()
-      return {
-        revision: result.revision,
-        event: result.event,
-        jobId: translationJob?.jobId ?? requestedJobId,
-        ...result.extra,
-      }
     } catch (err) {
-      translationJob?.fail(err)
       if (
         err instanceof RevisionMismatchError ||
         err instanceof ValidationError ||
-        err instanceof EntityNotFoundError ||
-        err instanceof MessageTranslationAlreadyRunningError
+        err instanceof EntityNotFoundError
       ) {
-        return sendCommandError(
-          reply,
-          err instanceof MessageTranslationAlreadyRunningError ? new ValidationError(err.message) : err,
-        )
+        return sendCommandError(reply, err)
       }
       const message = err instanceof Error && err.message.length > 0 ? err.message : String(err)
       return sendCommandError(reply, new ValidationError(message || 'Message translation failed'))
-    } finally {
-      cleanup()
     }
   })
 

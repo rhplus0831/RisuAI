@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from '../../../src/ts/server/settingsGroups.js'
 import { READABLE_SETTINGS_GROUPS, SETTINGS_GROUP_KEYS, SETTINGS_GROUPS } from '../src/routes/commands.js'
+import { SERVER_RAW_TRANSLATOR_TYPES } from '../src/translation/serverAutoTranslationEligibility.js'
 
 describe('settings group parity', () => {
   it('assigns every generically writable setting to exactly one canonical group', () => {
@@ -49,6 +52,23 @@ describe('settings group parity', () => {
   it('keeps chat screen width in the display settings projection', () => {
     expect(SETTINGS_GROUP_KEYS.display).toContain('chatScreenWidth')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('chatScreenWidth')
+  })
+
+  it('keeps the translation-notification defer cap in the display settings projection', () => {
+    expect(SETTINGS_GROUP_KEYS.display).toContain('autoTranslateNotificationDeferCapSeconds')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('autoTranslateNotificationDeferCapSeconds')
+  })
+
+  it('documents server automatic-translation parity with the Chat.svelte guards', () => {
+    const chatSource = readFileSync(path.join(process.cwd(), 'src/lib/ChatScreens/Chat.svelte'), 'utf8')
+
+    expect(chatSource).toContain('chat?.autoTranslate === true')
+    expect(chatSource).toContain('message.trim().length === 0')
+    expect(chatSource).toContain("getDatabase().translator !== ''")
+    for (const translatorType of SERVER_RAW_TRANSLATOR_TYPES) {
+      expect(chatSource).toContain(`getDatabase().translatorType === '${translatorType}'`)
+    }
+    expect(chatSource).toContain("getDatabase().autoTranslateCachedOnly && getDatabase().translatorType === 'llm'")
   })
 
   it('does not accept the retired Claude batching setting', () => {

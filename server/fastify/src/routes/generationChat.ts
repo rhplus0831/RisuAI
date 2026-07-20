@@ -101,6 +101,11 @@ import {
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
 import { REQUEST_UID_HEADER } from '../requestTrace.js'
 import type { ChatCompletionNotificationContext, PushNotificationService } from '../pushNotifications.js'
+import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
+import {
+  handleGeneratedChatCompletion,
+  type ServerMessageTranslationRunner,
+} from '../translation/generationCompletionTranslation.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
@@ -168,6 +173,7 @@ export type ChatProviderDispatcher = (
 export interface GenerationChatRouteOptions {
   dispatchProvider?: ChatProviderDispatcher
   pushNotifications?: false | PushNotificationService
+  runMessageTranslation?: ServerMessageTranslationRunner
   finalizationRetry?:
     | false
     | {
@@ -1759,6 +1765,52 @@ function notifyChatCompletion(
   })
 }
 
+export function generationJobHasOpenClient(job: Pick<StreamJob, 'clients'>): boolean {
+  return [...job.clients].some((client) => client.open)
+}
+
+export function directGenerationResponseIsWritable(raw: {
+  writable?: boolean
+  writableEnded: boolean
+  destroyed?: boolean
+}): boolean {
+  return raw.writable !== false && !raw.writableEnded && raw.destroyed !== true
+}
+
+function handlePersistedGenerationCompletion(args: {
+  db: DatabaseSync
+  dataDir: string
+  eventSink: CommandEventSink
+  messageTranslationJobs: MessageTranslationJobRegistry
+  message: Message
+  targetMessageId?: string
+  chatId: string
+  characterId?: string
+  completedAt: number
+  disconnected: boolean
+  pushNotifications?: false | PushNotificationService
+  runMessageTranslation?: ServerMessageTranslationRunner
+}): void {
+  const messageId = args.targetMessageId ?? args.message.chatId
+  if (typeof messageId !== 'string' || messageId.trim().length === 0) {
+    notifyChatCompletion(args.pushNotifications, { characterId: args.characterId, chatId: args.chatId })
+    return
+  }
+  handleGeneratedChatCompletion({
+    db: args.db,
+    dataDir: args.dataDir,
+    eventSink: args.eventSink,
+    messageTranslationJobs: args.messageTranslationJobs,
+    messageId,
+    chatId: args.chatId,
+    ...(args.characterId ? { characterId: args.characterId } : {}),
+    completedAt: args.completedAt,
+    disconnected: args.disconnected,
+    pushNotifications: args.pushNotifications,
+    runMessageTranslation: args.runMessageTranslation,
+  })
+}
+
 /**
  * Run the server post-generation pass over the provider's completion text,
  * persist the result server-side, and build the `done.postGeneration` frame.
@@ -1781,9 +1833,13 @@ async function buildPostGenerationFrame(args: {
   promptInfo?: Record<string, unknown>
   emit?: (event: PromptChatEvent) => void
   pushNotifications?: false | PushNotificationService
+  messageTranslationJobs: MessageTranslationJobRegistry
+  disconnected: () => boolean
+  runMessageTranslation?: ServerMessageTranslationRunner
   generationTrace?: GenerationTraceOptions
   metricContext?: PromptAssemblyMetricContext
 }): Promise<ProviderPostGenerationResult | undefined> {
+  const completedAt = Date.now()
   const {
     postGen,
     postGenError,
@@ -1855,7 +1911,20 @@ async function buildPostGenerationFrame(args: {
       ...(postGenError ? { context: { error: postGenError } } : {}),
     })
   }
-  notifyChatCompletion(args.pushNotifications, { characterId: args.input.characterId, chatId: args.input.chatId })
+  handlePersistedGenerationCompletion({
+    db: args.db,
+    dataDir: args.dataDir,
+    eventSink: args.eventSink,
+    messageTranslationJobs: args.messageTranslationJobs,
+    message,
+    targetMessageId,
+    chatId: args.input.chatId,
+    characterId: args.input.characterId,
+    completedAt,
+    disconnected: args.disconnected(),
+    pushNotifications: args.pushNotifications,
+    runMessageTranslation: args.runMessageTranslation,
+  })
   return { frame: buildPostGenerationFrameBody(revision, postGen), alternates: alternateTexts }
 }
 
@@ -1875,6 +1944,7 @@ async function streamAssembly(
   dataDir: string,
   eventSink: CommandEventSink,
   clientCapabilities: GenerationClientCapabilities,
+  messageTranslationJobs: MessageTranslationJobRegistry,
   options: GenerationChatRouteOptions = {},
   generationTrace?: GenerationTraceOptions,
   preparedAssembly?: PromptAssemblyRun,
@@ -2051,6 +2121,9 @@ async function streamAssembly(
                       promptInfo: successfulResult.prompt.promptInfo,
                       emit,
                       pushNotifications: options.pushNotifications,
+                      messageTranslationJobs,
+                      disconnected: () => !directGenerationResponseIsWritable(reply.raw),
+                      runMessageTranslation: options.runMessageTranslation,
                       generationTrace,
                       metricContext,
                     })
@@ -2120,7 +2193,7 @@ function makeSseJobClient(reply: FastifyReply): JobClient {
       }
     },
     get open() {
-      return !reply.raw.writableEnded
+      return directGenerationResponseIsWritable(reply.raw)
     },
     get bufferedBytes() {
       return getWritableBufferedBytes(reply.raw)
@@ -2630,6 +2703,8 @@ export function retryQueuedGenerationFinalizations(args: {
   logger?: GenerationFinalizationRetryLogger
   maxPerSweep?: number
   pushNotifications?: false | PushNotificationService
+  messageTranslationJobs: MessageTranslationJobRegistry
+  runMessageTranslation?: ServerMessageTranslationRunner
 }): { attempted: number; persisted: number; terminal: number; retryable: number } {
   // Shutdown guard a sweep that fires while `onClose` is tearing
   // down must not touch the closed handle.
@@ -2651,7 +2726,19 @@ export function retryQueuedGenerationFinalizations(args: {
       })
       deleteGenerationFinalizationRetry(args.db, attempt.generationId)
       persisted += 1
-      notifyChatCompletion(args.pushNotifications, { chatId: attempt.chatId })
+      handlePersistedGenerationCompletion({
+        db: args.db,
+        dataDir: args.dataDir,
+        eventSink: args.eventSink,
+        messageTranslationJobs: args.messageTranslationJobs,
+        message: attempt.message,
+        targetMessageId: attempt.targetMessageId,
+        chatId: attempt.chatId,
+        completedAt: Date.now(),
+        disconnected: true,
+        pushNotifications: args.pushNotifications,
+        runMessageTranslation: args.runMessageTranslation,
+      })
       emitProtocolMetric('generation_persistence_retry', {
         status: 'ok',
         generationId: attempt.generationId,
@@ -2728,9 +2815,13 @@ async function buildDurablePostGeneration(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   pushNotifications?: false | PushNotificationService
+  messageTranslationJobs: MessageTranslationJobRegistry
+  job: StreamJob
+  runMessageTranslation?: ServerMessageTranslationRunner
   generationTrace?: GenerationTraceOptions
   metricContext?: PromptAssemblyMetricContext
 }): Promise<ProviderPostGenerationResult | undefined> {
+  const completedAt = Date.now()
   const {
     postGen,
     postGenError,
@@ -2817,7 +2908,20 @@ async function buildDurablePostGeneration(args: {
       message: 'server post-generation derivation failed; persisted the raw provider text.',
       ...(postGenError ? { context: { error: postGenError } } : {}),
     })
-    notifyChatCompletion(args.pushNotifications, { characterId: args.input.characterId, chatId: args.input.chatId })
+    handlePersistedGenerationCompletion({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      messageTranslationJobs: args.messageTranslationJobs,
+      message,
+      targetMessageId,
+      chatId: args.input.chatId,
+      characterId: args.input.characterId,
+      completedAt,
+      disconnected: !generationJobHasOpenClient(args.job),
+      pushNotifications: args.pushNotifications,
+      runMessageTranslation: args.runMessageTranslation,
+    })
     return { frame: { revision }, alternates: alternateTexts }
   }
 
@@ -2828,7 +2932,20 @@ async function buildDurablePostGeneration(args: {
     revision,
     durationMs: protocolDurationMs(persistStartedAt),
   })
-  notifyChatCompletion(args.pushNotifications, { characterId: args.input.characterId, chatId: args.input.chatId })
+  handlePersistedGenerationCompletion({
+    db: args.db,
+    dataDir: args.dataDir,
+    eventSink: args.eventSink,
+    messageTranslationJobs: args.messageTranslationJobs,
+    message,
+    targetMessageId,
+    chatId: args.input.chatId,
+    characterId: args.input.characterId,
+    completedAt,
+    disconnected: !generationJobHasOpenClient(args.job),
+    pushNotifications: args.pushNotifications,
+    runMessageTranslation: args.runMessageTranslation,
+  })
   return { frame: buildPostGenerationFrameBody(revision, postGen), alternates: alternateTexts }
 }
 
@@ -2900,6 +3017,7 @@ async function runGenerationJob(args: {
   eventSink: CommandEventSink
   clientCapabilities: GenerationClientCapabilities
   options: GenerationChatRouteOptions
+  messageTranslationJobs: MessageTranslationJobRegistry
   generationTrace?: GenerationTraceOptions
   preparedAssembly?: PromptAssemblyRun
   deferredFailure?: AssemblyDeferredFailure
@@ -2914,6 +3032,7 @@ async function runGenerationJob(args: {
     eventSink,
     clientCapabilities,
     options,
+    messageTranslationJobs,
     generationTrace,
     preparedAssembly,
     deferredFailure,
@@ -3075,6 +3194,9 @@ async function runGenerationJob(args: {
                   generationInfo,
                   promptInfo: successfulResult.prompt.promptInfo,
                   pushNotifications: options.pushNotifications,
+                  messageTranslationJobs,
+                  job,
+                  runMessageTranslation: options.runMessageTranslation,
                   generationTrace,
                   metricContext,
                 })
@@ -3164,6 +3286,7 @@ function startDurableGeneration(args: {
   options: GenerationChatRouteOptions
   generationTrace?: GenerationTraceOptions
   generationJobs: GenerationJobRegistry
+  messageTranslationJobs: MessageTranslationJobRegistry
   preparedAssembly?: PromptAssemblyRun
   deferredFailure?: AssemblyDeferredFailure
   metricContext: PromptAssemblyMetricContext
@@ -3203,6 +3326,7 @@ function startDurableGeneration(args: {
       clientCapabilities: args.clientCapabilities,
       options: args.options,
       generationTrace: args.generationTrace,
+      messageTranslationJobs: args.messageTranslationJobs,
       preparedAssembly: args.preparedAssembly,
       deferredFailure: args.deferredFailure,
       metricContext: {
@@ -3221,6 +3345,7 @@ export function registerGenerationChatRoutes(
   dataDir: string,
   eventSink: CommandEventSink,
   generationJobs: GenerationJobRegistry,
+  messageTranslationJobs: MessageTranslationJobRegistry,
   options: GenerationChatRouteOptions = {},
   generationTrace?: GenerationTraceOptions,
 ): void {
@@ -3264,6 +3389,7 @@ export function registerGenerationChatRoutes(
         options,
         generationTrace,
         generationJobs,
+        messageTranslationJobs,
         deferredFailure: preflight.status === 'defer' ? preflight.failure : undefined,
         metricContext,
       })
@@ -3279,6 +3405,7 @@ export function registerGenerationChatRoutes(
       dataDir,
       eventSink,
       clientCapabilities,
+      messageTranslationJobs,
       options,
       generationTrace,
       undefined,

@@ -1743,6 +1743,7 @@ export const languageEnglish = {
   characterHasLorebook: 'This character includes a lorebook',
   autoTranslateCachedOnly: 'Auto-translate Cached Messages Only',
   notification: 'Notification',
+  autoTranslateNotificationDeferCapSeconds: 'Delay completion notification for translation (seconds, 0 = no limit)',
   permissionDenied: 'Permission Denied by Your Browser or OS',
   pushNotifications: {
     hydrating: 'Checking pending notification cleanup…',

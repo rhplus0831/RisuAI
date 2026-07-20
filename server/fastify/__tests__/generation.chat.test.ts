@@ -27,6 +27,7 @@ import { emitProviderChunks } from '../src/prompt/providerTransport.js'
 import { summarizePromptRows, type PromptRowSummary } from '../src/prompt/promptSummary.js'
 import type { PromptChatEvent } from '../src/prompt/sseEvents.js'
 import type { GenerationTraceOptions, GenerationTraceSidecarEntry } from '../src/generation/generationTraceSidecar.js'
+import { runServerMessageTranslation } from '../src/translation/serverMessageTranslation.js'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
 const subtle = webcrypto.subtle
@@ -499,6 +500,8 @@ async function readStreamingEvents(
     }
   } catch {
     // The test may intentionally abort the client after the terminal proof.
+  } finally {
+    reader.releaseLock()
   }
 
   return events
@@ -3199,6 +3202,92 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(doneFrame(parseEvents(res.body)).postGeneration?.revision).toBe(2)
     expect(sendChatCompletionNotification).toHaveBeenCalledWith({ characterId: 'char-1', chatId: 'chat-1' })
   })
+
+  it('translates a durable completion after its last viewer disconnects and pushes after persistence', async () => {
+    let releaseProvider!: () => void
+    const providerCanFinish = new Promise<void>((resolve) => {
+      releaseProvider = resolve
+    })
+    const sendChatCompletionNotification = vi.fn(async () => {})
+    const runMessageTranslation = vi.fn(runServerMessageTranslation)
+    await restartHarness({
+      dispatchProvider: () =>
+        (async function* (): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'raw generated reply' }
+          await providerCanFinish
+          yield { kind: 'done', finishReason: 'stop' }
+        })(),
+      pushNotifications: {
+        publicKey: () => 'test-public-key',
+        upsertSubscription: vi.fn(),
+        deleteSubscription: vi.fn(),
+        sendChatCompletionNotification,
+      },
+      runMessageTranslation,
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const database = dbWithServerDispatch({}) as Record<string, unknown>
+    const characters = database.characters as Array<{ chats: Array<Record<string, unknown>> }>
+    characters[0]!.chats[0]!.autoTranslate = true
+    await seedDatabase(harness.app, assertion, {
+      ...database,
+      notification: true,
+      translator: 'ko',
+      translatorType: 'llm',
+      translatorInputLanguage: 'en',
+      translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
+      translatorMaxResponse: 128,
+      autoTranslateNotificationDeferCapSeconds: 30,
+      echoMessage: 'translated generated reply',
+    })
+    const before = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(before.json().database).toMatchObject({
+      notification: true,
+      translator: 'ko',
+      translatorType: 'llm',
+      characters: [{ chats: [{ id: 'chat-1', autoTranslate: true }] }],
+    })
+    const baseUrl = await listenHarness()
+    const submitController = new AbortController()
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/generate/chat`, {
+        method: 'POST',
+        headers: authHeaders(assertion, { 'content-type': 'application/json' }),
+        body: JSON.stringify({ ...basePayload, durable: true }),
+        signal: submitController.signal,
+      })
+      expect(res.status).toBe(200)
+      const initialEvents = await readStreamingEvents(res, (event) => event.type === 'token')
+      expect(initialEvents.some((event) => event.type === 'token')).toBe(true)
+
+      await res.body?.cancel()
+      submitController.abort()
+      await new Promise<void>((resolve) => setTimeout(resolve, 100))
+      releaseProvider()
+
+      await vi.waitFor(() => expect(runMessageTranslation).toHaveBeenCalledTimes(1))
+
+      await vi.waitFor(
+        async () => {
+          const messages = (await readPersistedMessages(assertion)) as Array<{
+            translation?: { text?: string }
+          }>
+          expect(messages.at(-1)?.translation?.text).toBe('translated generated reply')
+        },
+        { timeout: 3_000, interval: 25 },
+      )
+      expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
+      expect(sendChatCompletionNotification).toHaveBeenCalledWith({ characterId: 'char-1', chatId: 'chat-1' })
+    } finally {
+      submitController.abort()
+      releaseProvider()
+    }
+  }, 8_000)
 
   it('surfaces low-level output-trigger resend on done without a post-generation patch (A-16)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)

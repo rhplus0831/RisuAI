@@ -104,6 +104,7 @@ describe('database compatibility accessors over resource state', () => {
     applyServerResourceDatabase(database)
 
     expect(getDatabase().chatScreenWidth).toBe(900)
+    expect(getDatabase().autoTranslateNotificationDeferCapSeconds).toBe(180)
   })
 
   it('removes unsupported legacy database-key sidebar rows during resource normalization', () => {

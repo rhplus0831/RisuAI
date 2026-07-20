@@ -62,6 +62,21 @@ describe('display theme settings data', () => {
   it('does not advertise the disconnected legacy saving indicator', () => {
     expect(displayOtherSettingsItems.some((item) => item.bindKey === 'showSavingIcon')).toBe(false)
   })
+
+  it('places the translation notification defer cap next to the notification toggle', () => {
+    const notificationIndex = displayOtherSettingsItems.findIndex((item) => item.id === 'display.notification')
+    const deferCap = displayOtherSettingsItems[notificationIndex + 1]
+
+    expect(deferCap).toMatchObject({
+      id: 'display.autoTranslateNotificationDeferCapSeconds',
+      type: 'number',
+      labelKey: 'autoTranslateNotificationDeferCapSeconds',
+      bindKey: 'autoTranslateNotificationDeferCapSeconds',
+      options: { min: 0, step: 1 },
+    })
+    expect(deferCap?.getValue?.({} as never)).toBe(180)
+    expect(deferCap?.getValue?.({ autoTranslateNotificationDeferCapSeconds: 0 } as never)).toBe(0)
+  })
 })
 
 describe('display size settings data', () => {

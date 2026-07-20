@@ -44,6 +44,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   authRefreshes: 'providers',
   autoScrollToNewMessage: 'sidebar',
   autoTranslateCachedOnly: 'language',
+  autoTranslateNotificationDeferCapSeconds: 'display',
   automaticCachePoint: 'runtime',
   autofillRequestUrl: 'advanced',
   allowAllExtentionFiles: 'advanced',

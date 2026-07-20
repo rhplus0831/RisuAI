@@ -23,13 +23,6 @@ export interface MessageTranslationJobHandle {
   fail(error: unknown): void
 }
 
-export class MessageTranslationAlreadyRunningError extends Error {
-  constructor(readonly job: MessageTranslationJob) {
-    super(`Message translation is already running: ${job.messageId}`)
-    this.name = 'MessageTranslationAlreadyRunningError'
-  }
-}
-
 const TERMINAL_RETENTION_MS = 10 * 60_000
 const MAX_TERMINAL_JOBS = 128
 const MAX_ERROR_LENGTH = 500
@@ -42,11 +35,6 @@ export class MessageTranslationJobRegistry {
   register(
     input: Pick<MessageTranslationJob, 'chatId' | 'messageId'> & { jobId?: string },
   ): MessageTranslationJobHandle {
-    const active = this.activeByMessage.get(input.messageId)
-    if (active) {
-      const { token: _token, ...job } = active
-      throw new MessageTranslationAlreadyRunningError(job)
-    }
     const token = randomUUID()
     const jobId = input.jobId ?? randomUUID()
     this.terminalByMessage.delete(input.messageId)

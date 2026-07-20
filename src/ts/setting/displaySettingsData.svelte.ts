@@ -493,6 +493,18 @@ export const displayOtherSettingsItems: SettingItem[] = [
     keywords: ['notification'],
   },
   {
+    id: 'display.autoTranslateNotificationDeferCapSeconds',
+    type: 'number',
+    labelKey: 'autoTranslateNotificationDeferCapSeconds',
+    bindKey: 'autoTranslateNotificationDeferCapSeconds',
+    // Existing server settings rows predate this scalar and hydrate without
+    // running the full client normalization path.
+    getValue: (db) => db.autoTranslateNotificationDeferCapSeconds ?? 180,
+    options: { min: 0, step: 1 },
+    classes: 'mt-2',
+    keywords: ['notification', 'translation', 'delay', 'seconds'],
+  },
+  {
     id: 'display.useChatSticker',
     type: 'check',
     labelKey: 'useChatSticker',

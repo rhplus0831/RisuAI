@@ -864,6 +864,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       theme: 'dark',
       zoomsize: 100,
       chatScreenWidth: 900,
+      autoTranslateNotificationDeferCapSeconds: 180,
       greeting: 'hi',
     })
 
@@ -871,7 +872,15 @@ describe('Phase 9-2a scalar settings groups', () => {
       method: 'PATCH',
       url: '/api/v1/commands/settings/display',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, patch: { theme: 'light', zoomsize: 88, chatScreenWidth: 1240 } },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          theme: 'light',
+          zoomsize: 88,
+          chatScreenWidth: 1240,
+          autoTranslateNotificationDeferCapSeconds: 0,
+        },
+      },
     })
 
     expect(res.statusCode).toBe(200)
@@ -883,7 +892,7 @@ describe('Phase 9-2a scalar settings groups', () => {
         resource: 'settings',
         id: 'display',
       },
-      acknowledgedKeys: ['theme', 'zoomsize', 'chatScreenWidth'],
+      acknowledgedKeys: ['theme', 'zoomsize', 'chatScreenWidth', 'autoTranslateNotificationDeferCapSeconds'],
       settings: {},
     })
 
@@ -897,6 +906,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       theme: 'light',
       zoomsize: 88,
       chatScreenWidth: 1240,
+      autoTranslateNotificationDeferCapSeconds: 0,
       greeting: 'hi',
     })
   })
@@ -10207,7 +10217,7 @@ describe('Phase 9-3c message history commands', () => {
     })
   })
 
-  it('rejects a second raw translation while one operation owns the message', async () => {
+  it('lets a newer raw translation supersede the operation that previously owned the message', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importMessageTranslationFixture(harness.app, assertion, {
       echoMessage: 'only translation result',
@@ -10225,19 +10235,18 @@ describe('Phase 9-3c message history commands', () => {
       messageId: 'msg-a',
     })
 
-    const duplicate = await harness.app.inject({
+    const newer = harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/messages/msg-a/translate',
       headers: { 'risu-auth': assertion },
       payload: { baseRevision: revision, jobId: 'translation-job-b' },
     })
-    expect(duplicate.statusCode).toBe(400)
-    expect(duplicate.json().error).toBe('Message translation is already running: msg-a')
-
-    const translated = await first
-    expect(translated.statusCode).toBe(200)
-    expect(translated.json()).toMatchObject({
-      jobId: 'translation-job-a',
+    const [olderResult, newerResult] = await Promise.all([first, newer])
+    expect(olderResult.statusCode).toBe(400)
+    expect(olderResult.json().error).toBe('Message translation is no longer current: msg-a')
+    expect(newerResult.statusCode).toBe(200)
+    expect(newerResult.json()).toMatchObject({
+      jobId: 'translation-job-b',
       translation: { text: 'only translation result' },
     })
     expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([

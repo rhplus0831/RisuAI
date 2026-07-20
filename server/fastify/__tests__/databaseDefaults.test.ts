@@ -26,6 +26,7 @@ describe('database defaults', () => {
     ])
     expect(database.reducedMotion).toBe(false)
     expect(database.chatScreenWidth).toBe(900)
+    expect(database.autoTranslateNotificationDeferCapSeconds).toBe(180)
     expect(database.translatorSendTextAsIs).toBe(false)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
@@ -71,6 +72,15 @@ describe('database defaults', () => {
     const database = normalizeDatabaseDefaults({ chatScreenWidth: 1240 }, { providerDefaults: false })
 
     expect(database.chatScreenWidth).toBe(1240)
+  })
+
+  it('preserves an existing translation-notification defer cap', () => {
+    const database = normalizeDatabaseDefaults(
+      { autoTranslateNotificationDeferCapSeconds: 0 },
+      { providerDefaults: false },
+    )
+
+    expect(database.autoTranslateNotificationDeferCapSeconds).toBe(0)
   })
 
   it('preserves an enabled send-text-as-is translation preference', () => {

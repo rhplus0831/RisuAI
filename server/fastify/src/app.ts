@@ -302,6 +302,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     config.dataDir,
     commandEventSink,
     generationJobRegistry,
+    messageTranslationJobRegistry,
     { ...opts.generationChat, pushNotifications: opts.generationChat?.pushNotifications ?? pushNotifications },
     config.generationTrace,
   )
@@ -316,6 +317,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
         logger: app.log,
         maxPerSweep: finalizationRetryOptions !== false ? finalizationRetryOptions.maxPerSweep : undefined,
         pushNotifications,
+        messageTranslationJobs: messageTranslationJobRegistry,
+        runMessageTranslation: opts.generationChat?.runMessageTranslation,
       })
     } catch (err) {
       app.log.error({ err }, 'generation finalization retry sweep failed')

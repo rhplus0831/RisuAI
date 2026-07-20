@@ -111,7 +111,7 @@ export function createPushNotificationService(
       deletePushSubscription(db, endpoint)
     },
     async sendChatCompletionNotification(context) {
-      if (!notificationSettingEnabled(db)) return
+      if (!chatCompletionNotificationSettingEnabled(db)) return
       const resolvedContext = resolveContext(db, context)
       await sendPushNotificationToAll(
         db,
@@ -412,7 +412,7 @@ function clearPushSubscriptionFailure(db: DatabaseSync, endpoint: string): void 
   ).run(endpoint)
 }
 
-function notificationSettingEnabled(db: DatabaseSync): boolean {
+export function chatCompletionNotificationSettingEnabled(db: DatabaseSync): boolean {
   try {
     const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
     if (!row) return false
