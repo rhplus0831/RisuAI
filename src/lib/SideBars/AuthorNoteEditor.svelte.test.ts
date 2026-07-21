@@ -72,7 +72,7 @@ vi.mock('src/ts/tokenizer', () => ({
   tokenizeAccurate: authorNoteMocks.tokenizeAccurate,
 }))
 
-vi.mock('src/ts/util', () => ({
+vi.mock('src/ts/utilState', () => ({
   getAuthorNoteDefaultText: () => '',
 }))
 

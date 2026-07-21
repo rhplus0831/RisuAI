@@ -28,8 +28,9 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 vi.mock('src/ts/util', () => ({
   asBuffer: (data: ArrayBuffer | Uint8Array) =>
     data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data,
-  selectSingleFile: vi.fn(),
 }))
+
+vi.mock('src/ts/filePicker', () => ({ selectSingleFile: vi.fn() }))
 
 interface StubSource {
   buffer: AudioBuffer | null

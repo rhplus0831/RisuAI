@@ -70,6 +70,24 @@ vi.mock('../alert', () => ({
 
 vi.mock('../util', () => createUtilMock())
 vi.mock('src/ts/util', () => createUtilMock())
+vi.mock('../filePicker', () => ({
+  selectFileByDom: vi.fn(async () => []),
+  selectMultipleFile: pluginImportMocks.selectMultipleFile,
+  selectSingleFile: pluginImportMocks.selectSingleFile,
+}))
+vi.mock('../utilState', () => ({
+  getAuthorNoteDefaultText: vi.fn(() => ''),
+  getPersonaPrompt: vi.fn(() => ''),
+  getUserDisplayName: vi.fn(() => 'User'),
+  getUserIcon: vi.fn(() => ''),
+  getUserIconProtrait: vi.fn(() => false),
+  getUserName: vi.fn(() => 'User'),
+  replacePlaceholders: vi.fn((text: string) => text),
+}))
+vi.mock('../characterState', () => ({
+  findCharacterIndexbyId: vi.fn(() => -1),
+  findCharacterbyId: vi.fn((id: string) => ({ chaId: id, name: id, chats: [], chatPage: 0 })),
+}))
 
 vi.mock('./apiV3/v3.svelte', () => ({
   loadV3Plugins: vi.fn(async () => undefined),

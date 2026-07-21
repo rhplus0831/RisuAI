@@ -30,7 +30,7 @@
   import { language } from '../../lang'
   import SidebarAvatar from './SidebarAvatar.svelte'
   import BaseRoundedButton from '../UI/BaseRoundedButton.svelte'
-  import { selectSingleFile } from 'src/ts/util'
+  import { selectSingleFile } from 'src/ts/filePicker'
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
   import { alertError, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
   import SideChatList from './SideChatList.svelte'

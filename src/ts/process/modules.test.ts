@@ -99,8 +99,11 @@ vi.mock('../globalApi.svelte', () => ({
 }))
 
 vi.mock('../util', () => ({
-  selectSingleFile: vi.fn(async () => selectedFileState.file),
   sleep,
+}))
+
+vi.mock('../filePicker', () => ({
+  selectSingleFile: vi.fn(async () => selectedFileState.file),
 }))
 
 vi.mock('./lorebook.svelte', () => ({

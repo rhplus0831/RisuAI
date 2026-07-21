@@ -24,7 +24,8 @@ import {
   appVer,
   type Database,
 } from './storage/database.svelte'
-import { checkNullish, decryptBuffer, isKnownUri, selectFileByDom, sleep } from './util'
+import { checkNullish, decryptBuffer, isKnownUri, sleep } from './util'
+import { selectFileByDom } from './filePicker'
 // @ts-ignore - resolved by Vite bundler path mapping
 import { language } from 'src/lang'
 import { v4 as uuidv4, v4 } from 'uuid'

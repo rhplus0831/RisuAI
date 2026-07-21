@@ -2,7 +2,7 @@
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { language } from 'src/lang'
   import Help from 'src/lib/Others/Help.svelte'
-  import { selectSingleFile } from 'src/ts/util'
+  import { selectSingleFile } from 'src/ts/filePicker'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { saveAsset, downloadFile } from 'src/ts/globalApi.svelte'

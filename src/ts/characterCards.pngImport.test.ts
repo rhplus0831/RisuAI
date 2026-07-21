@@ -115,6 +115,8 @@ vi.mock('./util', () => ({
   sleep: vi.fn(),
 }))
 
+vi.mock('./filePicker', () => ({ selectFileByDom: vi.fn() }))
+
 vi.mock('src/lang', () => ({
   language: {
     errors: {

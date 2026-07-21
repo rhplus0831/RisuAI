@@ -53,7 +53,8 @@
     doingChat,
     sendChat,
   } from '../../ts/process/index.svelte'
-  import { getUserDisplayName, getUserIcon, getUserIconProtrait, sleep } from '../../ts/util'
+  import { sleep } from '../../ts/util'
+  import { getUserDisplayName, getUserIcon, getUserIconProtrait } from '../../ts/utilState'
   import { language } from '../../lang'
   import { isExpTranslator, translate } from '../../ts/translator/translator'
   import {

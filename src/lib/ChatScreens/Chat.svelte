@@ -53,7 +53,8 @@
     openPopupEditorSession,
     popUpEditorStore,
   } from 'src/ts/stores.svelte'
-  import { capitalize, getUserDisplayName, getUserIcon, sleep } from 'src/ts/util'
+  import { capitalize, sleep } from 'src/ts/util'
+  import { getUserDisplayName, getUserIcon } from 'src/ts/utilState'
   import { v4 as uuidv4, v4 } from 'uuid'
   import { language } from '../../lang'
   import {

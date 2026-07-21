@@ -35,7 +35,7 @@
   import ChatFormatSettings from './ChatFormatSettings.svelte'
   import PromptSettings from './PromptSettings.svelte'
   import { openPresetListModal } from 'src/ts/stores.svelte'
-  import { selectSingleFile } from 'src/ts/util'
+  import { selectSingleFile } from 'src/ts/filePicker'
   import { getDatabase, updatePromptPreset, type PromptPreset } from 'src/ts/storage/database.svelte'
   import { alertError } from 'src/ts/alert'
   import { getModelInfo, LLMFlags, LLMFormat } from 'src/ts/model/modellist'

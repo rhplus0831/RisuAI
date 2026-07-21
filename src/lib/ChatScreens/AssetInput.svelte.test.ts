@@ -24,7 +24,7 @@ vi.mock('src/ts/stores.svelte', async () => {
   return { selectedCharID: writable(0) }
 })
 
-vi.mock('src/ts/util', () => ({
+vi.mock('src/ts/filePicker', () => ({
   selectMultipleFile: vi.fn(),
 }))
 

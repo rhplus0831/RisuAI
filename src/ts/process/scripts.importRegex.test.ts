@@ -22,7 +22,7 @@ vi.mock('../globalApi.svelte', async (importActual) => {
 import '../stores.svelte'
 import { importRegex, importRegexRows } from './scripts'
 import type { customscript } from '../storage/database.svelte'
-import type { selectSingleFile } from 'src/ts/util'
+import type { selectSingleFile } from 'src/ts/filePicker'
 
 function script(id: string): customscript {
   return {

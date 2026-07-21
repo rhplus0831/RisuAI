@@ -2,7 +2,7 @@
   import { language } from 'src/lang'
   import { saveImage } from 'src/ts/storage/database.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
-  import { selectSingleFile } from 'src/ts/util'
+  import { selectSingleFile } from 'src/ts/filePicker'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import { alertError } from 'src/ts/alert'

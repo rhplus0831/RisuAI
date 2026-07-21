@@ -19,7 +19,7 @@ vi.mock('src/ts/globalApi.svelte', () => ({
   downloadFile: vi.fn(),
 }))
 
-vi.mock('src/ts/util', () => ({
+vi.mock('src/ts/filePicker', () => ({
   selectSingleFile: vi.fn(),
 }))
 

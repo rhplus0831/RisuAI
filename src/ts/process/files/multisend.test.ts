@@ -85,6 +85,9 @@ vi.mock('../memory/hypamemory', () => ({
 
 vi.mock('src/ts/util', () => ({
   BufferToText: (data: Uint8Array) => new TextDecoder().decode(data),
+}))
+
+vi.mock('src/ts/filePicker', () => ({
   selectMultipleFile: testState.selectMultipleFileSpy,
 }))
 

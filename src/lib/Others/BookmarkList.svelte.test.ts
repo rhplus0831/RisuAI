@@ -21,10 +21,11 @@ vi.mock('src/ts/characters', () => ({
   getCharImage: vi.fn(() => ''),
 }))
 
-vi.mock('src/ts/util', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('src/ts/util')>()),
+vi.mock('src/ts/utilState', () => ({
+  getPersonaPrompt: vi.fn(() => ''),
   getUserDisplayName: vi.fn(() => 'User'),
   getUserIcon: vi.fn(() => ''),
+  getUserName: vi.fn(() => 'User'),
 }))
 
 vi.mock('src/ts/process/modules', async (importOriginal) => ({

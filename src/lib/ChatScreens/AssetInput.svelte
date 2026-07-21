@@ -4,7 +4,7 @@
   import { getDatabase, setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
-  import { selectMultipleFile } from 'src/ts/util'
+  import { selectMultipleFile } from 'src/ts/filePicker'
   import {
     appendFreshCharacterAdditionalAssets,
     beginCharacterAdditionalAssetUpload,

@@ -1,7 +1,7 @@
 <script>
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { CharEmotion } from '../../ts/stores.svelte'
-  import { getEmotion } from '../../ts/util'
+  import { getEmotion } from '../../ts/characterState'
 </script>
 
 {#await getEmotion(getDatabase(), $CharEmotion, 'contain') then images}

@@ -7,7 +7,7 @@ const alertTestState = vi.hoisted(() => ({
   getDatabase: vi.fn(() => ({ usePlainFetch: false })),
 }))
 
-vi.mock('./stores.svelte', () => ({
+vi.mock('./stores/coreStores.svelte', () => ({
   CurrentTriggerIdStore: {
     subscribe: vi.fn(),
   },
@@ -85,6 +85,7 @@ import {
   alertStore,
   updateAlertWait,
 } from './alert'
+import { registerAlertDatabaseAccessor } from './alertDatabase'
 
 beforeEach(() => {
   vi.unstubAllEnvs()
@@ -93,6 +94,7 @@ beforeEach(() => {
   alertTestState.alertStoreSet.mockClear()
   alertTestState.getDatabase.mockClear()
   alertTestState.getDatabase.mockReturnValue({ usePlainFetch: false })
+  registerAlertDatabaseAccessor(alertTestState.getDatabase as never)
   localStorage.clear()
 })
 

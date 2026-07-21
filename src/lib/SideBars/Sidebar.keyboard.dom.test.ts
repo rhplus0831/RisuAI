@@ -57,9 +57,12 @@ vi.mock('src/ts/util', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/util')>()
   return {
     ...actual,
-    selectSingleFile: sidebarKeyboardMocks.selectSingleFile,
   }
 })
+
+vi.mock('src/ts/filePicker', () => ({
+  selectSingleFile: sidebarKeyboardMocks.selectSingleFile,
+}))
 
 import Sidebar from './Sidebar.svelte'
 import { language } from 'src/lang'

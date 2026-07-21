@@ -20,10 +20,13 @@ vi.mock('src/ts/util', async (importActual) => {
   return {
     ...actual,
     jsonOutputTrimmer: (value: string) => value.trim(),
-    selectSingleFile: imageMocks.selectSingleFile,
     sleep: vi.fn(async () => {}),
   }
 })
+
+vi.mock('src/ts/filePicker', () => ({
+  selectSingleFile: imageMocks.selectSingleFile,
+}))
 
 vi.mock('src/ts/process/request/request', () => ({
   requestChatData: imageMocks.requestChatData,

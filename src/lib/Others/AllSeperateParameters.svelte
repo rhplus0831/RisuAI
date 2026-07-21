@@ -7,7 +7,7 @@
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
   import { downloadFile } from 'src/ts/globalApi.svelte'
   import { FileDownIcon, FileUpIcon } from '@lucide/svelte'
-  import { selectSingleFile } from 'src/ts/util'
+  import { selectSingleFile } from 'src/ts/filePicker'
   import { getModelInfo } from 'src/ts/model/modellist'
   import { normalizeModelRole, resolveModelForRole } from 'src/ts/model/modelRoles'
   import {

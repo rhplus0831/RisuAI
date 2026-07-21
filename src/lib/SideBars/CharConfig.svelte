@@ -33,7 +33,7 @@
   import { addingEmotion, getCharImage, removeChar, selectCharacterAvatarImage } from '../../ts/characters'
   import LoreBook from './LoreBook/LoreBookSetting.svelte'
   import BarIcon from './BarIcon.svelte'
-  import { selectMultipleFile, selectSingleFile } from '../../ts/util'
+  import { selectMultipleFile, selectSingleFile } from '../../ts/filePicker'
   import Help from '../Others/Help.svelte'
   import { exportChar } from 'src/ts/characterCards'
   import {

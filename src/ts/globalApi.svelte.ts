@@ -38,7 +38,6 @@ import { currentChatSelectionSnapshot, dispatchSelectChat } from './chatCommands
 import {
   readServerAssetBytes,
   serverAssetContentType,
-  serverAssetUrl,
   uploadServerAsset,
   SERVER_ASSET_CONTENT_TYPES,
 } from './server/assets'
@@ -52,6 +51,8 @@ import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { normalizeCharacterOrder } from './characterCommands'
 import { triggerOpenChatGenerationReattach } from './process/reattach'
 import { language } from '../lang'
+
+export { getFileSrc } from './fileSource'
 
 export const forageStorage = new AutoStorage()
 
@@ -116,25 +117,6 @@ interface PreparedServerAssetUpload {
   assetId: string
   data: Uint8Array
   contentType: string
-}
-
-/**
- * Gets the source URL of a file.
- *
- * @param {string} loc - The location of the file.
- * @returns {Promise<string>} - A promise that resolves to the source URL of the file.
- */
-export async function getFileSrc(loc: string) {
-  // A4EC7 / B8: in Fastify mode the Fastify branch must only return URLs
-  // for shapes the server-projection asset gate documents. Unknown shapes
-  // (including raw http://https:// values from a poisoned projection) are
-  // rejected with an empty string so an <img src=""> renders broken
-  // instead of fetching the attacker-controlled origin.
-  if (loc.startsWith('/api/v1/assets/') || loc.startsWith('data:') || loc.startsWith('blob:')) {
-    return loc
-  }
-  const resolved = serverAssetUrl(loc)
-  return resolved ?? ''
 }
 
 /**

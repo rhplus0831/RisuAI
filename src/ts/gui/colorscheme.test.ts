@@ -50,6 +50,9 @@ vi.mock('../stores.svelte', () => ({
 
 vi.mock('../util', () => ({
   BufferToText: (data: Uint8Array) => new TextDecoder().decode(data),
+}))
+
+vi.mock('../filePicker', () => ({
   selectSingleFile: colorSchemeMocks.selectSingleFile,
 }))
 

@@ -29,7 +29,7 @@ vi.mock('./process/index.svelte', async () => {
   }
 })
 
-vi.mock('./util', () => ({
+vi.mock('./characterState', () => ({
   findCharacterIndexbyId: routerMocks.findCharacterIndexbyId,
 }))
 

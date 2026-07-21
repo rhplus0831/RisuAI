@@ -1,7 +1,7 @@
 import { getDatabase, type Chat, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import { risuChatParser } from '../scripts'
-import { getAuthorNoteDefaultText, getPersonaPrompt } from '../../util'
+import { getAuthorNoteDefaultText, getPersonaPrompt } from '../../utilState'
 
 const COT_INSTRUCTION =
   '<instruction> - before respond everything, Think step by step as a ai assistant how would you respond inside <Thoughts> xml tag. this must be less than 5 paragraphs.</instruction>'

@@ -36,10 +36,8 @@ const fileSelection = vi.hoisted(() => ({
   calls: 0,
 }))
 
-vi.mock('../../util', async (importActual) => {
-  const actual = await importActual<typeof import('../../util')>()
+vi.mock('../../filePicker', () => {
   return {
-    ...actual,
     selectSingleFile: async () => {
       fileSelection.calls += 1
       await fileSelection.beforeResolve?.()

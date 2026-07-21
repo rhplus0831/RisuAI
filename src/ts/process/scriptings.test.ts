@@ -166,20 +166,20 @@ vi.mock('../util', async (importActual) => {
   const actual = await importActual<typeof import('../util')>()
   return {
     ...actual,
-    getPersonaPrompt: mediaMock.getPersonaPrompt,
-    getUserIcon: mediaMock.getUserIcon,
-    getUserName: mediaMock.getUserName,
   }
 })
+
+vi.mock('../utilState', () => ({
+  getPersonaPrompt: mediaMock.getPersonaPrompt,
+  getUserIcon: mediaMock.getUserIcon,
+  getUserName: mediaMock.getUserName,
+}))
 
 vi.mock('src/ts/util', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/util')>()
   return {
     ...actual,
     asBuffer: (data: Uint8Array) => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
-    getPersonaPrompt: mediaMock.getPersonaPrompt,
-    getUserIcon: mediaMock.getUserIcon,
-    getUserName: mediaMock.getUserName,
   }
 })
 

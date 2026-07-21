@@ -14,7 +14,7 @@ const playgroundMocks = vi.hoisted(() => ({
   dispatchSelectCharacter: vi.fn(),
 }))
 
-vi.mock('./util', () => ({
+vi.mock('./characterState', () => ({
   findCharacterIndexbyId: (characterId: string) =>
     playgroundState.database.characters.findIndex((character) => character.chaId === characterId),
 }))

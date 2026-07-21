@@ -10,7 +10,7 @@ import {
 import { downloadFile } from '../globalApi.svelte'
 import { alertError, alertNormal } from '../alert'
 import { language } from 'src/lang'
-import { selectSingleFile } from 'src/ts/util'
+import { selectSingleFile } from 'src/ts/filePicker'
 import {
   assetRegex,
   type CbsConditions,

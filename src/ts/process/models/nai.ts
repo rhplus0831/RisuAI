@@ -1,5 +1,5 @@
 import { getDatabase } from 'src/ts/storage/database.svelte'
-import { getUserName } from 'src/ts/util'
+import { getUserName } from 'src/ts/utilState'
 import type { OpenAIChat } from '../index.svelte'
 
 export function stringlizeNAIChat(formated: OpenAIChat[], char: string, continued: boolean) {

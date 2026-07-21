@@ -9,7 +9,7 @@ vi.mock('./process/modules', () => ({
 }))
 
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
-import { selectFileByDom } from './util'
+import { selectFileByDom } from './filePicker'
 
 beforeEach(() => {
   testDatabaseState.db = { allowAllExtentionFiles: false } as never

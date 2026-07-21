@@ -3,7 +3,7 @@
   import { onDestroy, untrack } from 'svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
-  import { getUserDisplayName, getUserIcon } from 'src/ts/util'
+  import { getUserDisplayName, getUserIcon } from 'src/ts/utilState'
   import { createSimpleCharacter, bookmarkListOpen, selectedCharID } from 'src/ts/stores.svelte'
   import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
   import { language } from 'src/lang'

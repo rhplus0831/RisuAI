@@ -22,13 +22,7 @@ const otherBotMocks = vi.hoisted(() => ({
   tokenizePreset: vi.fn(),
 }))
 
-vi.mock('src/ts/util', async (importActual) => {
-  const actual = await importActual<typeof import('src/ts/util')>()
-  return {
-    ...actual,
-    selectSingleFile: otherBotMocks.selectSingleFile,
-  }
-})
+vi.mock('src/ts/filePicker', () => ({ selectSingleFile: otherBotMocks.selectSingleFile }))
 
 vi.mock('src/ts/process/modules', () => ({
   getModuleAssets: vi.fn(() => []),

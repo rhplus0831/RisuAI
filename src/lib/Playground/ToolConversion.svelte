@@ -1,7 +1,7 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import Button from '../UI/GUI/Button.svelte'
-  import { selectMultipleFile } from 'src/ts/util'
+  import { selectMultipleFile } from 'src/ts/filePicker'
   import { detectPromptJSONType, promptConvertion } from 'src/ts/process/prompt'
 
   let files: { name: string; content: string; type: string }[] = $state([])

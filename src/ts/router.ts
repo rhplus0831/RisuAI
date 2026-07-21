@@ -4,7 +4,7 @@ import { changeChar } from './characters'
 import { changeChatTo } from './globalApi.svelte'
 import { openPlaygroundChat, PLAYGROUND_CHARACTER_ID } from './playground'
 import { activeGenerationTarget, doingChat } from './process/index.svelte'
-import { findCharacterIndexbyId } from './util'
+import { findCharacterIndexbyId } from './characterState'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import {
   CharEmotion,

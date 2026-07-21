@@ -1,13 +1,15 @@
 import { writable } from 'svelte/store'
 import type { character, customscript } from './storage/database.svelte'
 import { type simpleCharacterArgument } from './parser/parser.svelte'
-import type { alertData } from './alert'
 import { moduleUpdate } from './process/modules'
 import { resetScriptCache } from './process/scripts'
 import type { hubType } from './characterCards'
 import type { PluginSafetyErrors } from './plugins/pluginSafety'
 import type { ActiveChatTarget } from './chatCommands'
 import { getResourceDatabase } from './server/resourceState.svelte'
+import { alertStore, selectedCharID } from './stores/coreStores.svelte'
+
+export { alertStore, selectedCharID } from './stores/coreStores.svelte'
 
 function updateSize() {
   SizeStore.set({
@@ -26,7 +28,6 @@ export const loadedStore = writable(false)
 export const DynamicGUI = writable(false)
 export const sideBarClosing = writable(false)
 export const sideBarStore = writable(window.innerWidth > 1024)
-export const selectedCharID = writable(-1)
 export const CurrentTriggerIdStore = writable<string | null>(null)
 export const CharEmotion = writable({} as { [key: string]: [string, string, number][] })
 export const ViewBoxsize = writable({ width: 12 * 16, height: 12 * 16 }) // Default width and height in pixels
@@ -69,10 +70,6 @@ export const SafeModeStore = writable(false)
 export const MobileSearch = writable('')
 export const CharConfigSubMenu = writable(0)
 export const CustomGUISettingMenuStore = writable(false)
-export const alertStore = writable({
-  type: 'none',
-  msg: 'n',
-} as alertData)
 export const hypaV3ModalOpen = writable(false)
 export const hypaV3ProgressStore = writable({
   open: false,

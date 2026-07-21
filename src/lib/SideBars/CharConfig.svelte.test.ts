@@ -180,11 +180,8 @@ vi.mock('../../ts/characters', async () => {
   }
 })
 
-vi.mock('../../ts/util', async (importActual) => {
-  const actual = await importActual<typeof import('../../ts/util')>()
-
+vi.mock('../../ts/filePicker', () => {
   return {
-    ...actual,
     selectMultipleFile: vi.fn(
       async (_extensions: string[], options: { onFilesSelected?: (files: File[]) => void } = {}) => {
         const queued = selectedFileState.multipleQueue.shift()

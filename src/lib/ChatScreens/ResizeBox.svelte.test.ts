@@ -14,7 +14,7 @@ vi.mock('src/ts/storage/database.svelte', () => ({
   getDatabase: () => ({}),
 }))
 
-vi.mock('../../ts/util', () => ({
+vi.mock('../../ts/characterState', () => ({
   getEmotion: () => [],
 }))
 

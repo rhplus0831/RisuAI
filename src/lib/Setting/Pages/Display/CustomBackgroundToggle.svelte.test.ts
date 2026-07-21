@@ -32,9 +32,12 @@ vi.mock('src/ts/util', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/util')>()
   return {
     ...actual,
-    selectSingleFile: backgroundMocks.selectSingleFile,
   }
 })
+
+vi.mock('src/ts/filePicker', () => ({
+  selectSingleFile: backgroundMocks.selectSingleFile,
+}))
 
 vi.mock('src/ts/alert', () => ({
   alertError: backgroundMocks.alertError,

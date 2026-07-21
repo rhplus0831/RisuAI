@@ -122,6 +122,40 @@ vi.mock('./util', () => {
   }
 })
 
+vi.mock('./utilState', () => ({
+  getPersonaPrompt: vi.fn(() => ''),
+  getUserIcon: vi.fn(() => ''),
+  getUserName: vi.fn(() => 'User'),
+}))
+vi.mock('./characterState', () => ({ findCharacterbyId: vi.fn(() => ({ name: 'Character' })) }))
+
+vi.mock('./filePicker', () => ({
+  selectMultipleFile: vi.fn(
+    async (_extensions: string[], options: { onFilesSelected?: (files: File[]) => void } = {}) => {
+      const queued = selectedFileState.multipleQueue.shift()
+      if (queued && typeof queued === 'object' && 'selected' in queued && 'result' in queued) {
+        if (queued.selected.length > 0) options.onFilesSelected?.(queued.selected as unknown as File[])
+        return queued.result ? await queued.result : queued.result
+      }
+      const selected = queued ? await queued : queued
+      if (Array.isArray(selected) && selected.length > 0) {
+        options.onFilesSelected?.(selected as unknown as File[])
+      }
+      return selected
+    },
+  ),
+  selectSingleFile: vi.fn(async (_extensions: string[], options: { onFileSelected?: (file: File) => void } = {}) => {
+    const queued = selectedFileState.singleQueue.shift()
+    if (queued && typeof queued === 'object' && 'selected' in queued && 'result' in queued) {
+      if (queued.selected) options.onFileSelected?.(queued.selected as unknown as File)
+      return queued.result ? await queued.result : queued.result
+    }
+    const selected = queued ? await queued : queued
+    if (selected) options.onFileSelected?.(selected as unknown as File)
+    return selected
+  }),
+}))
+
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'

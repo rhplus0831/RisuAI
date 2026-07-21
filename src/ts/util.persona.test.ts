@@ -8,7 +8,7 @@ import {
   getUserIcon,
   getUserIconProtrait,
   getUserName,
-} from './util'
+} from './utilState'
 
 function seedPersonaDisplayState(chatPatch: Record<string, unknown>): void {
   selectedCharID.set(0)

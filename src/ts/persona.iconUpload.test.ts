@@ -73,6 +73,19 @@ vi.mock('./util', () => {
   }
 })
 
+vi.mock('./filePicker', () => ({
+  selectFileByDom: vi.fn(),
+  selectMultipleFile: vi.fn(async () => []),
+  selectSingleFile: vi.fn(async (_ext: string[], options: { onFileSelected?: (file: File) => void } = {}) => {
+    const selected = selectedFileState.queue.shift() ?? null
+    if (!selected) return null
+    options.onFileSelected?.({ name: selected.name } as File)
+    return selected
+  }),
+}))
+
+vi.mock('./characterState', () => ({ findCharacterbyId: vi.fn(() => ({ name: 'Character' })) }))
+
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import { language } from 'src/lang'

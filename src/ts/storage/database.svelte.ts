@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { checkNullish, decryptBuffer, encryptBuffer, selectSingleFile } from '../util'
+import { checkNullish, decryptBuffer, encryptBuffer } from '../util'
 import { createNonSecurityUuid } from '../nonSecurityUuid'
 import { changeLanguage, language } from '../../lang'
 import type { RisuPlugin } from '../plugins/plugins.svelte'
@@ -12,6 +12,7 @@ import {
   defaultMainPrompt,
 } from './defaultPrompts'
 import { alertError, alertNormal } from '../alert'
+import { registerAlertDatabaseAccessor } from '../alertDatabase'
 import type { NAISettings } from '../process/models/nai'
 import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templates'
 import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme'
@@ -3606,6 +3607,8 @@ export function getDatabase(options: getDatabaseOptions = {}): Database {
   return getResourceDatabase(options)
 }
 
+registerAlertDatabaseAccessor(getDatabase)
+
 export function getCurrentCharacter(options: getDatabaseOptions = {}): character {
   const db = getDatabase(options)
   if (!db.characters) {
@@ -6832,6 +6835,7 @@ export async function importPreset(
   } | null = null,
 ): Promise<PresetImportOutcome | null> {
   if (!f) {
+    const { selectSingleFile } = await import('../filePicker')
     f = await selectSingleFile(['json', 'preset', 'risupreset', 'risup'])
   }
   if (!f) {

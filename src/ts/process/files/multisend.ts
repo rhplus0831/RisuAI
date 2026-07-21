@@ -4,7 +4,8 @@ import { get } from 'svelte/store'
 import { sendChat } from '../index.svelte'
 import { downloadFile } from 'src/ts/globalApi.svelte'
 import { HypaProcesser } from '../memory/hypamemory'
-import { BufferToText as BufferToText, selectMultipleFile } from 'src/ts/util'
+import { BufferToText as BufferToText } from 'src/ts/util'
+import { selectMultipleFile } from 'src/ts/filePicker'
 import { postInlayAsset } from './inlays'
 import {
   appendCurrentChatUserMessageForSend,

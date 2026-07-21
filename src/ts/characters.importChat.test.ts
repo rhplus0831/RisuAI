@@ -43,6 +43,25 @@ vi.mock('./util', () => ({
   sleep: vi.fn(),
 }))
 
+vi.mock('./utilState', () => ({
+  getPersonaPrompt: vi.fn(() => ''),
+  getUserIcon: vi.fn(() => ''),
+  getUserName: vi.fn(() => 'User'),
+}))
+
+vi.mock('./characterState', () => ({ findCharacterbyId: vi.fn(() => ({ name: 'Character' })) }))
+
+vi.mock('./filePicker', () => ({
+  selectFileByDom: vi.fn(),
+  selectMultipleFile: vi.fn(),
+  selectSingleFile: vi.fn(async () => {
+    const queuedFile = selectedFileState.queuedFiles.shift()
+    if (queuedFile) return await queuedFile
+    await selectedFileState.beforeResolve?.()
+    return selectedFileState.file
+  }),
+}))
+
 vi.mock('./alert', async (importActual) => {
   const actual = await importActual<typeof import('./alert')>()
   return {

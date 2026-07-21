@@ -1,7 +1,7 @@
 import { language } from '../../lang'
 import { getDatabase, type character, type Chat, type MessagePresetInfo } from '../storage/database.svelte'
 import type { ChatTokenizer } from '../tokenizer'
-import { findCharacterbyId } from '../util'
+import { findCharacterbyId } from '../characterState'
 import { risuChatParser } from './scripts'
 import { buildDescription } from './promptAssembly/buildDescription'
 import { buildPlainPromptSections } from './promptAssembly/buildPlainPromptSections'

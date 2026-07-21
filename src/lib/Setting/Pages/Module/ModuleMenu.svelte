@@ -134,7 +134,7 @@
   import { getFileSrc, saveAsset, downloadFile } from 'src/ts/globalApi.svelte'
   import { alertNormal, alertError } from 'src/ts/alert'
   import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
-  import { selectMultipleFile } from 'src/ts/util'
+  import { selectMultipleFile } from 'src/ts/filePicker'
 
   import { v4 } from 'uuid'
   import { untrack } from 'svelte'

@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { findCharacterIndexbyId } from './util'
+import { findCharacterIndexbyId } from './characterState'
 import { characterFormatUpdate, createBlankChar } from './characters'
 import { getDatabase, setCharacterByIndex, type character } from './storage/database.svelte'
 import { PlaygroundStore, selectedCharID } from './stores.svelte'

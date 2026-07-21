@@ -6,10 +6,20 @@ const { processScriptFullSpy, runInlayScreenSpy, sayTTSSpy } = vi.hoisted(() => 
   sayTTSSpy: vi.fn(),
 }))
 
-vi.mock('../scripts', async (importActual) => {
-  const actual = await importActual<typeof import('../scripts')>()
-  return { ...actual, processScriptFull: processScriptFullSpy }
-})
+vi.mock('../scripts', () => ({
+  cacheBestMatchForTesting: vi.fn(),
+  exportRegex: vi.fn(),
+  getBestMatchCacheSizeForTesting: vi.fn(() => 0),
+  getBestMatchForTesting: vi.fn(),
+  getCompiledRegex: (source: string, flags: string) => new RegExp(source, flags),
+  hasProcessScriptCacheEntryForTesting: vi.fn(() => false),
+  importRegex: vi.fn(),
+  importRegexRows: vi.fn(),
+  processScript: vi.fn(async (_char: unknown, data: string) => data),
+  processScriptFull: processScriptFullSpy,
+  resetScriptCache: vi.fn(),
+  risuChatParser: vi.fn((text: string) => text),
+}))
 
 vi.mock('../inlayScreen', () => ({
   runInlayScreen: runInlayScreenSpy,

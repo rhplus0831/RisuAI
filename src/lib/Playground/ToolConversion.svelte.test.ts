@@ -7,7 +7,7 @@ const conversionMocks = vi.hoisted(() => ({
   selectMultipleFile: vi.fn(),
 }))
 
-vi.mock('src/ts/util', () => ({
+vi.mock('src/ts/filePicker', () => ({
   selectMultipleFile: conversionMocks.selectMultipleFile,
 }))
 

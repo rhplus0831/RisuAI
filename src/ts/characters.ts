@@ -12,11 +12,13 @@ import {
 } from './storage/database.svelte'
 import { alertAddCharacter, alertConfirm, alertError, alertNormal, alertSelect, alertStore, alertWait } from './alert'
 import { language } from '../lang'
-import { checkNullish, findCharacterbyId, getUserName, selectMultipleFile, selectSingleFile } from './util'
+import { checkNullish } from './util'
+import { selectMultipleFile, selectSingleFile } from './filePicker'
+import { getUserName } from './utilState'
 import { v4 as uuidv4, v4 } from 'uuid'
 import { getImageType } from './media'
 import { MobileGUIStack, OpenRealmStore, botMakerMode, selectedCharID } from './stores.svelte'
-import { AppendableBuffer, downloadFile, getFileSrc, requiresFullEncoderReload } from './globalApi.svelte'
+import { AppendableBuffer, downloadFile, requiresFullEncoderReload } from './globalApi.svelte'
 import { updateInlayScreen } from './process/inlayScreen'
 import { parseMarkdownSafe } from './parser/parser.svelte'
 import { translateHTML } from './translator/translator'
@@ -59,6 +61,11 @@ import {
   type CharacterEmotionUploadOperation,
 } from './server/characterEmotionUpload'
 import { rekeyClonedChat } from './chatFork'
+import { createBlankChar } from './characterDefaults'
+import { getCharImage } from './characterImage'
+
+export { createBlankChar } from './characterDefaults'
+export { getCharImage } from './characterImage'
 
 type SelectedSingleFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
 type SelectedMultipleFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>
@@ -67,6 +74,15 @@ interface CharacterAvatarSnapshot {
   image: string | undefined
   ccAssets: character['ccAssets'] | undefined
   pngExif: unknown
+}
+
+function findCharacterForExportById(id: string): character {
+  const character = getDatabase().characters.find((candidate) => candidate.chaId === id)
+  if (character) return character
+
+  const unknown = createBlankChar()
+  unknown.name = 'Unknown Character'
+  return unknown
 }
 
 const characterAvatarUploadGuard = createLatestOperationGuard<string>()
@@ -159,35 +175,6 @@ export function createNewCharacter(
     dispatchCreateCharacter(character, previous)
   }
   return index
-}
-
-export async function getCharImage(loc: string, type: 'plain' | 'css' | 'contain' | 'lgcss') {
-  const db = getDatabase()
-
-  // Return placeholder when hideAllImages is enabled
-  if (db.hideAllImages) {
-    if (type === 'plain') {
-      return '/none.webp'
-    }
-    return '' // For CSS types, return empty to show default ? icon
-  }
-
-  if (!loc || loc === '') {
-    if (type === 'css') {
-      return ''
-    }
-    return null
-  }
-  const filesrc = await getFileSrc(loc)
-  if (type === 'plain') {
-    return filesrc
-  } else if (type === 'css') {
-    return `background: url("${filesrc}");background-size: cover;`
-  } else if (type === 'lgcss') {
-    return `background: url("${filesrc}");background-size: cover;height: 10.66rem;`
-  } else {
-    return `background: url("${filesrc}");background-size: contain;background-repeat: no-repeat;background-position: center;`
-  }
 }
 
 export interface CharacterAvatarImageSelection {
@@ -537,7 +524,7 @@ export async function exportChat(target: ChatExportTarget): Promise<void> {
       for (const v of chat.message) {
         alertWait(`Translating... ${i++}/${chat.message.length}`)
         const name = v.saying
-          ? findCharacterbyId(v.saying).name
+          ? findCharacterForExportById(v.saying).name
           : v.role === 'char'
             ? char.name
             : anonymous
@@ -615,7 +602,7 @@ export async function exportChat(target: ChatExportTarget): Promise<void> {
       for (const v of chat.message) {
         alertWait(`Translating... ${i++}/${chat.message.length}`)
         const name = v.saying
-          ? findCharacterbyId(v.saying).name
+          ? findCharacterForExportById(v.saying).name
           : v.role === 'char'
             ? char.name
             : anonymous
@@ -656,7 +643,7 @@ export async function exportChat(target: ChatExportTarget): Promise<void> {
       let stringl = chat.message
         .map((v) => {
           if (v.saying) {
-            return `--${findCharacterbyId(v.saying).name}\n${v.data}`
+            return `--${findCharacterForExportById(v.saying).name}\n${v.data}`
           } else {
             return `--${v.role === 'char' ? char.name : getUserName()}\n${v.data}`
           }
@@ -1207,70 +1194,6 @@ export function updateLorebooks(book: loreBook[]) {
     v.bookVersion = 2
     return v
   })
-}
-
-export function createBlankChar(): character {
-  return {
-    name: '',
-    displayName: '',
-    notificationImage: '',
-    firstMessage: '',
-    customNotificationMessage: '',
-    desc: '',
-    notes: '',
-    chats: [
-      {
-        message: [],
-        note: '',
-        name: 'Chat 1',
-        localLore: [],
-      },
-    ],
-    chatFolders: [],
-    chatPage: 0,
-    emotionImages: [],
-    bias: [],
-    viewScreen: 'none',
-    globalLore: [],
-    chaId: uuidv4(),
-    type: 'character',
-    sdData: defaultSdDataFunc(),
-    utilityBot: false,
-    customscript: [],
-    exampleMessage: '',
-    creatorNotes: '',
-    systemPrompt: '',
-    postHistoryInstructions: '',
-    alternateGreetings: [],
-    tags: [],
-    creator: '',
-    characterVersion: '',
-    personality: '',
-    scenario: '',
-    firstMsgIndex: -1,
-    replaceGlobalNote: '',
-    triggerscript: [
-      {
-        comment: '',
-        type: 'manual',
-        conditions: [],
-        effect: [
-          {
-            type: 'v2Header',
-            code: '',
-            indent: 0,
-          },
-        ],
-      },
-      {
-        comment: 'New Event',
-        type: 'manual',
-        conditions: [],
-        effect: [],
-      },
-    ],
-    additionalText: '',
-  }
 }
 
 const pendingCharacterRemovalIds = new Set<string>()

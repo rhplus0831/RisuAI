@@ -1,6 +1,6 @@
 import { getDatabase, setCurrentChat, type Chat, type Message, type character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
-import { getUserName } from '../../util'
+import { getUserName } from '../../utilState'
 import { exampleMessage } from '../exampleMessages'
 import type { OpenAIChat } from '../index.svelte'
 import type { LoreActive } from './buildLorebookContext'

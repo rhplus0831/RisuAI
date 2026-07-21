@@ -184,9 +184,14 @@ vi.mock('src/ts/server/commands', () => ({
 
 vi.mock('src/ts/util', () => ({
   capitalize: (value: string) => value.charAt(0).toUpperCase() + value.slice(1),
+  sleep: vi.fn(async () => undefined),
+}))
+
+vi.mock('src/ts/utilState', () => ({
+  getPersonaPrompt: () => '',
+  getUserDisplayName: () => 'User',
   getUserIcon: () => '',
   getUserName: () => 'User',
-  sleep: vi.fn(async () => undefined),
 }))
 
 import ChatParserDependenciesHarness, { type ParserDependencyRow } from './Chat.parserDependenciesHarness.svelte'

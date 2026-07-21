@@ -83,7 +83,7 @@ import { selectedCharID } from 'src/ts/stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import type { Database } from 'src/ts/storage/database.svelte'
 import { defaultAutoSuggestPrompt } from 'src/ts/storage/defaultPrompts'
-import { replacePlaceholders } from 'src/ts/util'
+import { replacePlaceholders } from 'src/ts/utilState'
 
 function deferred<T>() {
   let resolve!: (value: T) => void

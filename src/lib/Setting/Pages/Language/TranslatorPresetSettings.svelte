@@ -73,7 +73,7 @@
     type TranslatorPreset,
     type TranslatorPresetStep,
   } from 'src/ts/translator/presets'
-  import { selectSingleFile } from 'src/ts/util'
+  import { selectSingleFile } from 'src/ts/filePicker'
   import { language } from 'src/lang'
   import { onDestroy, untrack } from 'svelte'
 

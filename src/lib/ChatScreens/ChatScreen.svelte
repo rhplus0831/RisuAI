@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getCustomBackground, getEmotion } from '../../ts/util'
+  import { getCustomBackground, getEmotion } from '../../ts/characterState'
 
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { CharEmotion, selectedCharID } from '../../ts/stores.svelte'

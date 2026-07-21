@@ -1,7 +1,8 @@
 import { get, writable } from 'svelte/store'
 import { language } from '../lang'
-import { getDatabase, type MessageGenerationInfo } from './storage/database.svelte'
-import { alertStore as alertStoreImported, selectedCharID } from './stores.svelte'
+import type { MessageGenerationInfo } from './storage/database.svelte'
+import { alertStore as alertStoreImported, selectedCharID } from './stores/coreStores.svelte'
+import { getAlertDatabase } from './alertDatabase'
 
 export interface alertData {
   type:
@@ -442,7 +443,7 @@ export function resolveAlertWorkflow(owner: AlertDialogHandle | undefined, value
 
 export function alertError(msg: unknown) {
   console.error(msg)
-  const db = getDatabase()
+  const db = getAlertDatabase()
 
   let stackTrace: string | undefined = undefined
   let message: string
@@ -470,7 +471,7 @@ export function alertError(msg: unknown) {
 
   //check if it's a known error
   if (message.includes('Failed to fetch') || message.includes('NetworkError when attempting to fetch resource.')) {
-    submsg = db.usePlainFetch ? language.errors.networkFetchPlain : language.errors.networkFetch
+    submsg = db?.usePlainFetch ? language.errors.networkFetchPlain : language.errors.networkFetch
   }
 
   setPassiveAlert({
@@ -722,7 +723,7 @@ export async function alertModuleSelect() {
 }
 
 export function alertRequestData(info: AlertGenerationInfoStoreData) {
-  const character = getDatabase().characters?.[get(selectedCharID)]
+  const character = getAlertDatabase()?.characters?.[get(selectedCharID)]
   const chat = character?.chats?.[character.chatPage]
   const messages = chat?.message ?? []
   const indexedMessage = messages[info.idx]

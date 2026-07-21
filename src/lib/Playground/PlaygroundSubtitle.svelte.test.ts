@@ -47,10 +47,13 @@ vi.mock('src/ts/util', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/util')>()
   return {
     ...actual,
-    selectFileByDom: subtitleMocks.selectFileByDom,
-    selectSingleFile: subtitleMocks.selectSingleFile,
   }
 })
+
+vi.mock('src/ts/filePicker', () => ({
+  selectFileByDom: subtitleMocks.selectFileByDom,
+  selectSingleFile: subtitleMocks.selectSingleFile,
+}))
 
 vi.mock('src/ts/server/openAITranscription', () => ({
   requestOpenAITranscription: subtitleMocks.requestOpenAITranscription,

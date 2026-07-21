@@ -10,7 +10,8 @@ import {
   type triggerscript,
 } from '../storage/database.svelte'
 import { AppendableBuffer, downloadFile, forageStorage, readImage, saveAssets } from '../globalApi.svelte'
-import { selectSingleFile, sleep } from '../util'
+import { sleep } from '../util'
+import { selectSingleFile } from '../filePicker'
 import { v4 } from 'uuid'
 import { convertExternalLorebook } from './lorebook.svelte'
 import { compressImage } from '../media'

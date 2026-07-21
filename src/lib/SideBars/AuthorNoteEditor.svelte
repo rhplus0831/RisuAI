@@ -15,7 +15,7 @@
   } from 'src/ts/chatCommands'
   import type { character } from 'src/ts/storage/database.svelte'
   import { tokenizeAccurate } from 'src/ts/tokenizer'
-  import { getAuthorNoteDefaultText } from 'src/ts/util'
+  import { getAuthorNoteDefaultText } from 'src/ts/utilState'
   import type { ServerCommandTransportOptions } from 'src/ts/server/commands'
   import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
   import { syncServerBackedChatMetadataBaselines } from 'src/ts/server/chatBridge.svelte'

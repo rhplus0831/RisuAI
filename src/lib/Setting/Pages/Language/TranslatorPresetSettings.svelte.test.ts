@@ -265,13 +265,7 @@ vi.mock('src/ts/globalApi.svelte', async (importActual) => {
   }
 })
 
-vi.mock('src/ts/util', async (importActual) => {
-  const actual = await importActual<typeof import('src/ts/util')>()
-  return {
-    ...actual,
-    selectSingleFile: vi.fn(async () => null),
-  }
-})
+vi.mock('src/ts/filePicker', () => ({ selectSingleFile: vi.fn(async () => null) }))
 
 vi.mock('src/ts/translator/presets', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/translator/presets')>()
@@ -307,7 +301,7 @@ import {
 } from 'src/ts/server/pendingMutationOutbox'
 import { dispatchDurableMutationReplay } from 'src/ts/server/durableMutationDispatch'
 import type { TranslatorPreset } from 'src/ts/translator/presets'
-import { selectSingleFile } from 'src/ts/util'
+import { selectSingleFile } from 'src/ts/filePicker'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

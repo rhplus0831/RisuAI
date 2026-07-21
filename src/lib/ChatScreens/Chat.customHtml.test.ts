@@ -278,9 +278,14 @@ vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
 
 vi.mock('src/ts/util', () => ({
   capitalize: (value: string) => value.charAt(0).toUpperCase() + value.slice(1),
+  sleep: customHtmlMocks.sleep,
+}))
+
+vi.mock('src/ts/utilState', () => ({
+  getPersonaPrompt: () => '',
+  getUserDisplayName: () => 'User',
   getUserIcon: () => '',
   getUserName: () => 'User',
-  sleep: customHtmlMocks.sleep,
 }))
 
 import Chat from './Chat.svelte'

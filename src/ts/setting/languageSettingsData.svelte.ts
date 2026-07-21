@@ -10,7 +10,7 @@ import { changeLanguage, language } from 'src/lang'
 import { sleep } from '../util'
 import { alertNormal, alertConfirm, alertError, alertWait } from '../alert'
 import { downloadFile } from '../globalApi.svelte'
-import { selectFileByDom } from '../util'
+import { selectFileByDom } from '../filePicker'
 import { exportLLMCacheAsJSON, importLLMCacheFromJSON, clearLLMCache } from '../translator/translator'
 
 export const langState = $state({ changed: false })
