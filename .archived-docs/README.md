@@ -11,10 +11,10 @@ codebase whenever an archived line number or contract has drifted.
 | Topic                                                              | Contents                                                                                                                          |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | [Architecture and migration](architecture-and-migration/README.md) | Fastify migration history, client-thinning closeout, and dated original-versus-Fastify behavior audit.                            |
-| [Protocol and persistence](protocol-and-persistence/README.md)     | Server/client protocol audits, SQLite migration, lazy projection, projection-removal review, and mutation-range narrowing.        |
+| [Protocol and persistence](protocol-and-persistence/README.md)     | Server/client protocol audits, SQLite migration, projection work, asset coercion, mutation narrowing, and writer takeover.         |
 | [Performance and stability](performance-and-stability/README.md)   | Frontend clone narrowing and the four chronological stability/performance audits.                                                 |
-| [Generation and models](generation-and-models/README.md)           | Durable generation, chat-scoped settings, Agent Presets, model profiles, prompt-template ownership, and generation observability. |
-| [UI and user input](ui-and-user-input/README.md)                   | Visible-state contracts and audits, persistence audits, stale-state reviews, and user-input hardening.                            |
+| [Generation and models](generation-and-models/README.md)           | Durable generation, translation decisions, chat-scoped settings, Agent Presets, model profiles, and prompt-template ownership.    |
+| [UI and user input](ui-and-user-input/README.md)                   | Visible-state and persistence audits, input hooks, chat/settings controls, stale-state reviews, and input hardening.               |
 | [Deferred work](deferred-work/README.md)                           | The consolidated deferred-feature inventory/progress record and the older Fastify leftover snapshot.                              |
 
 ## Archive Conventions

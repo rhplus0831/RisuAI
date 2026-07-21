@@ -1,7 +1,7 @@
 # Protocol And Persistence Archive
 
-Historical server/client contracts, resource projection work, and persistence
-migrations.
+Historical server/client contracts, active-writer behavior, resource projection
+work, asset handling, and persistence migrations.
 
 | Record                                                            | Scope                                                                                                                             |
 | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -10,6 +10,8 @@ migrations.
 | [`lazy-projection/`](lazy-projection/README.md)                   | Chat-shell bootstrap, on-demand hydration, server-owned generation writes, and related projection work.                           |
 | [`mutation-range-narrowing/`](mutation-range-narrowing/README.md) | Command mutation-range narrowing and verification budgets.                                                                        |
 | [`remove-projection-final-review.md`](remove-projection-final-review.md) | Branch-specific 2026-07-14 review of the projection-removal work before merge.                                                   |
+| [`asset-content-type-coercion-2026-07-20.md`](asset-content-type-coercion-2026-07-20.md) | Decision to coerce mislabeled uploaded assets to detected magic-byte types.                                                      |
+| [`writer-takeover-offline-mode-2026-07-21.md`](writer-takeover-offline-mode-2026-07-21.md) | Writer-ownership SSE, stale-writer latch, offline freeze, reload-only recovery, and validation limits.                           |
 
 ## Protocol Source Audits
 
