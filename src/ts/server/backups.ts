@@ -372,7 +372,7 @@ async function importServerBundleImplementation(input: {
   }
 
   if (!response.ok) {
-    handleActiveWriterStaleResponse(response)
+    handleActiveWriterStaleResponse(response, body)
     const unsupportedGroups = readUnsupportedBackupGroups(body)
     if (unsupportedGroups) return unsupportedGroups
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
@@ -696,7 +696,7 @@ async function requestServerBackupJson<T, R extends Record<string, unknown>>(
   }
 
   if (!response.ok) {
-    handleActiveWriterStaleResponse(response)
+    handleActiveWriterStaleResponse(response, body)
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
 

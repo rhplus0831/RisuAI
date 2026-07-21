@@ -162,6 +162,7 @@ vi.mock('./server/durableMutationDispatch', () => ({
   countRegisteredDurableMutationSettlements: ownershipApi.count,
   discardRegisteredDurableMutationSettlements: ownershipApi.discard,
   flushPendingMutationReceiptAcknowledgements: pendingMutationApi.flushAcknowledgements,
+  setPendingMutationDiscardNotifier: vi.fn(),
 }))
 vi.mock('./process/reattach', () => ({
   setActiveGenerationJobs: runtimeApi.setActiveGenerationJobs,
@@ -565,12 +566,12 @@ describe('API-backed client bootstrap', () => {
     expect(resourceApi.loadInitial).not.toHaveBeenCalled()
   })
 
-  it('warns when stale-writer drafts are quarantined during ownership preparation', async () => {
+  it('warns when unsafe drafts are discarded during ownership preparation', async () => {
     pendingMutationApi.prepare.mockResolvedValue({ discarded: 2 })
 
     await loadWebInitialDatabase()
 
-    expect(alertError).toHaveBeenCalledWith(expect.stringContaining('older editing session'))
+    expect(alertError).toHaveBeenCalledWith(expect.stringContaining('pending changes'))
   })
 
   it('initializes a fresh server without refetching unchanged runtime metadata', async () => {

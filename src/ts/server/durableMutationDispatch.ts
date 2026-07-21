@@ -27,6 +27,7 @@ import {
 } from './pendingMutationOutbox'
 
 const localMutationLockTails = new Map<string, Promise<void>>()
+const locallyClaimedMutationIds = new Set<string>()
 export type DurableMutationFinalSettlement = 'accepted' | 'discarded'
 export interface DurableMutationFinalSettlementDetails {
   result?: DurableMutationReplayResult
@@ -36,6 +37,13 @@ type DurableMutationSettlementListener = (
   details: DurableMutationFinalSettlementDetails,
 ) => void
 const durableMutationSettlementListeners = new Map<string, Set<DurableMutationSettlementListener>>()
+export type PendingMutationDiscardNotifier = (key: string, error: string) => void | Promise<void>
+let pendingMutationDiscardNotifier: PendingMutationDiscardNotifier | null = null
+
+/** Install the UI-owned notifier before durable replay or live mutation dispatch begins. */
+export function setPendingMutationDiscardNotifier(notifier: PendingMutationDiscardNotifier | null): void {
+  pendingMutationDiscardNotifier = notifier
+}
 
 /** Observe replay/predecessor settlement for an optimistic projection retained in this page. */
 export function registerDurableMutationSettlementListener(
@@ -141,7 +149,12 @@ export function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
   }
   // Freeze synchronously before the caller can stage a successor, and enqueue
   // the command synchronously so later structural actions cannot overtake it.
-  const readiness = beginPendingMutationDispatch(handle)
+  // IndexedDB transactions begin asynchronously, so claim the exact ID in
+  // memory first to guarantee that duplicate same-page callers cannot race and
+  // let the later caller become the durable dispatcher.
+  const ownsLocalClaim = !locallyClaimedMutationIds.has(handle.mutationId)
+  if (ownsLocalClaim) locallyClaimedMutationIds.add(handle.mutationId)
+  const readiness = ownsLocalClaim ? beginPendingMutationDispatch(handle) : Promise.resolve('superseded' as const)
   let settlement: DurableMutationSettlement = 'unavailable'
   const executionWrapper: ServerCommandExecutionWrapper = async (execute) => {
     try {
@@ -170,12 +183,23 @@ export function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
       throw error
     }
   }
-  return dispatch({
-    mutationId: handle.mutationId,
-    databaseLineage: handle.databaseLineage,
-    executionWrapper,
-    failureRollbackDisposition: () => (settlement === 'retained' ? 'retain' : 'rollback'),
-  })
+  let dispatched: Promise<ServerCommandResult<T>>
+  try {
+    dispatched = dispatch({
+      mutationId: handle.mutationId,
+      databaseLineage: handle.databaseLineage,
+      executionWrapper,
+      failureRollbackDisposition: () => (settlement === 'retained' ? 'retain' : 'rollback'),
+    })
+  } catch (error) {
+    if (ownsLocalClaim) locallyClaimedMutationIds.delete(handle.mutationId)
+    throw error
+  }
+  return ownsLocalClaim
+    ? dispatched.finally(() => {
+        locallyClaimedMutationIds.delete(handle.mutationId)
+      })
+    : dispatched
 }
 
 /**
@@ -311,16 +335,11 @@ export interface DurableMutationReplayOutcome {
 }
 
 function isTerminalRequestRejection(reason: ServerCommandErrorReason | undefined): boolean {
-  return reason === 'invalid-request' || reason === 'not-found'
+  return reason === 'invalid-request' || reason === 'not-found' || reason === 'unrecognized-rejection'
 }
 
 function shouldDiscardDurableMutation(reason: ServerCommandErrorReason | undefined): boolean {
-  return (
-    isTerminalRequestRejection(reason) ||
-    reason === 'stale-writer' ||
-    reason === 'database-lineage' ||
-    reason === 'mutation-id-conflict'
-  )
+  return isTerminalRequestRejection(reason) || reason === 'database-lineage' || reason === 'mutation-id-conflict'
 }
 
 export async function dispatchDurableMutationReplay(
@@ -347,7 +366,10 @@ export async function dispatchDurableMutationReplay(
     }
     if (result.status === 'error' && shouldDiscardDurableMutation(result.reason)) {
       const discarded = await discardPendingMutation(handle)
-      if (discarded === 'deleted') publishDurableMutationFinalSettlement(handle.mutationId, 'discarded', { result })
+      if (discarded === 'deleted') {
+        publishDurableMutationFinalSettlement(handle.mutationId, 'discarded', { result })
+        if (isTerminalRequestRejection(result.reason)) await notifyPendingMutationDiscarded(handle.key, result.error)
+      }
       return { disposition: 'discarded', result }
     }
     return { disposition: 'retained', result }
@@ -390,6 +412,9 @@ async function drainPendingMutationPredecessors(handle: PendingMutationHandle): 
           if (discarded !== 'deleted' && discarded !== 'superseded') return false
           if (discarded === 'deleted') {
             publishDurableMutationFinalSettlement(predecessor.handle.mutationId, 'discarded', { result })
+            if (isTerminalRequestRejection(result.reason)) {
+              await notifyPendingMutationDiscarded(predecessor.handle.key, result.error)
+            }
             // The request was rejected and the durable row is gone, but this
             // page no longer owns the predecessor's optimistic rollback. Stop
             // the successor and let startup replay it before hydrating the
@@ -411,9 +436,10 @@ async function drainPendingMutationPredecessors(handle: PendingMutationHandle): 
 
 /**
  * Accepted requests atomically become durable receipt-ACK work. Exact requests
- * rejected as invalid or missing cannot recover unchanged, so they are dropped
- * before the command runner decides whether to restore its projection. Ownership,
- * lineage, and receipt-id failures remain terminal; all other failures retry.
+ * rejected as invalid, missing, or carrying an unrecognized permanent-status
+ * envelope are dropped with an explicit user-visible notice. A genuine stale
+ * writer rejection remains queued for a same-session ownership reclaim.
+ * Lineage and receipt-id failures remain terminal; all other failures retry.
  */
 export async function settleDurableMutation(
   handle: PendingMutationHandle,
@@ -437,7 +463,10 @@ export async function settleDurableMutation(
     const persistence = await handle.ready
     if (persistence !== 'persisted') return persistence
     const discarded = await discardPendingMutation(handle)
-    if (discarded === 'deleted') return 'discarded'
+    if (discarded === 'deleted') {
+      if (isTerminalRequestRejection(result.reason)) await notifyPendingMutationDiscarded(handle.key, result.error)
+      return 'discarded'
+    }
     if (discarded === 'superseded') return 'superseded'
     // Never restore a projection while an exact terminal row may still be
     // durable. Startup replay will discard it before authoritative hydration.
@@ -446,6 +475,10 @@ export async function settleDurableMutation(
   const persistence = await handle.ready
   if (persistence === 'persisted') return 'retained'
   return persistence
+}
+
+async function notifyPendingMutationDiscarded(key: string, error: string): Promise<void> {
+  await pendingMutationDiscardNotifier?.(key, error)
 }
 
 /** Retry crash-safe receipt cleanup after authenticated bootstrap. */

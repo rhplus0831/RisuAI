@@ -85,17 +85,23 @@ intent. Before network dispatch, the browser stages the intent in the encrypted
 outbox and waits for that generation to persist; plaintext scope and ordering
 metadata keeps dependency lanes replayable. Accepted mutations atomically remove
 their intent and queue the server-receipt acknowledgement. Transient transport
-or server failures retain the encrypted intent for replay, while terminal
-ownership, lineage, or invalid receipt-id failures discard it. Clearing this
-non-authoritative journal can therefore lose unsent local edits even though it
-never represents server state.
+or server failures retain the encrypted intent for replay. A genuine
+stale-writer rejection also remains encrypted so the same browser writer
+session can reclaim a newer epoch and replay it. Conclusive validation/not-found,
+database-lineage, invalid receipt-id, and malformed permanent-status responses
+discard the intent only with an explicit user-visible notice naming the affected
+mutation scope. Clearing this non-authoritative journal can therefore lose
+unsent local edits even though it never represents server state, so disposal is
+never silent.
 
 Authenticated startup reads any single unambiguous pending owner before taking
-writer ownership, prepares the outbox against the returned writer session,
-epoch, and database lineage, flushes retained receipt acknowledgements, and
-replays pending mutations before resource hydration. Transient intents remain
-encrypted for a later retry. Any retained or unreadable raw row stops startup
-from hydrating resources on top of unresolved local work.
+writer ownership, prepares the outbox against the returned writer session and
+database lineage, flushes retained receipt acknowledgements, and replays pending
+mutations before resource hydration. Older epochs belonging to that same writer
+session remain eligible after a reclaim; other writer sessions and database
+lineages do not cross the scope. Transient intents remain encrypted for a later
+retry. Any retained or unreadable raw row stops startup from hydrating resources
+on top of unresolved local work.
 
 Stale clients receive 409. Browser command helpers cache the latest revision
 from bootstrap, command responses, and event reconciliation.

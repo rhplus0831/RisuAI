@@ -56,6 +56,7 @@ import {
   type PendingMutationHandle,
 } from '../server/pendingMutationOutbox'
 import { registerPendingSettingsProjectionOverlay } from '../server/settingsPendingProjection'
+import { reportWriterAccessLostMutation } from '../server/activeWriterSession'
 
 /**
  * Sentinel value representing an uninitialized local state in wrapper components.
@@ -196,6 +197,7 @@ export function getSettingValue(item: SettingItem, ctx: SettingContext): any {
 }
 
 export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
+  if (reportWriterAccessLostMutation()) return
   const previousValue = getSettingValue(item, ctx)
   const commandPatch = buildServerSettingsPatch(item)
   const serverTarget = commandPatch ? resolveDeferredServerSettingTarget(commandPatch.key) : null
@@ -240,6 +242,15 @@ export function setDeferredSettingValue(
   ctx: SettingContext,
   options: { delayMs?: number } = {},
 ): DeferredSettingWriteResult {
+  if (reportWriterAccessLostMutation()) {
+    return {
+      ownerKey: localSettingOwnerKey(item),
+      queued: false,
+      rootKey: settingRootKey(item),
+      path: deferredSettingPath(item),
+      splitPresetProjection: ctx.presetMirrorTarget === 'promptModelOverrides' ? 'presetRow' : 'selectedSettings',
+    }
+  }
   const target = resolveDeferredSettingTarget(item, ctx)
   const previousRoot = target ? currentDeferredSettingTargetValue(target) : undefined
   const optimisticProjectionEpochs =

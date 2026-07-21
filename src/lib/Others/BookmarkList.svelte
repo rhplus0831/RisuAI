@@ -15,6 +15,7 @@
     dispatchUpdateChatScopedWithOutcome,
     type ChatMutationOutcome,
   } from 'src/ts/chatCommands'
+  import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import { canUseServerCommands } from 'src/ts/server/commands'
   import {
     rollbackServerBackedChatRowMetadata,
@@ -99,11 +100,11 @@
     bookmarkMutations[key] = { chatId, messageId, operation, label, status: 'pending' }
     try {
       const outcome = await action()
-      if (!outcome || outcome.status === 'accepted') {
+      if (outcome?.status === 'accepted') {
         delete bookmarkMutations[key]
         return
       }
-      bookmarkMutations[key] = { chatId, messageId, operation, label, status: outcome.status }
+      bookmarkMutations[key] = { chatId, messageId, operation, label, status: outcome?.status ?? 'failed' }
       const message = bookmarkMutationMessage(bookmarkMutations[key])
       if (outcome.status === 'queued') alertNormal(message)
       else alertError(message)
@@ -292,6 +293,7 @@
     const previousName = chat.bookmarkNames?.[chatId] || ''
     const newName = await alertInput(language.bookmarkAskNameOrCancel, [], previousName)
     if (newName && newName.trim() !== '') {
+      if (reportWriterAccessLostMutation()) return
       if (canUseServerCommands()) {
         if (!chat.id) return
         await runBookmarkMutation(chat.id, chatId, 'rename', previousName || newName, () => {
@@ -328,6 +330,7 @@
     const bookmarks = chat.bookmarks ?? []
     const index = bookmarks.indexOf(chatId)
     if (index > -1) {
+      if (reportWriterAccessLostMutation()) return
       if (canUseServerCommands()) {
         if (!chat.id) return
         const bookmarkLabel = chat.bookmarkNames?.[chatId] || chatId

@@ -2047,6 +2047,8 @@ export const languageKorean = {
   writerTakeoverStayOffline: '이 페이지에 머무르기 (오프라인)',
   writerOfflineBanner: '오프라인/읽기 전용: 이 세션에서는 변경 사항을 저장할 수 없습니다.',
   writerOfflineRefresh: '새로고침',
+  writerAccessLostMutation:
+    '이 탭에 더 이상 쓰기 권한이 없어 변경 사항이 저장되지 않았습니다. 새로고침하여 쓰기 권한을 되찾은 후 다시 시도하세요.',
   pendingMutationRecoveryReload:
     '대기 중인 변경 사항을 안전하게 적용할 수 없습니다. 최신 서버 상태를 복원하기 위해 새로고침하는 중...',
   pendingChatMessageQueued:
@@ -2054,7 +2056,8 @@ export const languageKorean = {
   pendingMutationReplayRetained:
     '일부 대기 중인 변경 사항을 아직 서버에 전달하지 못했습니다. 이 기기에 계속 저장되어 있으며 앱을 불러오기 전에 다시 시도해야 합니다.',
   pendingMutationDiscarded:
-    '일부 저장되지 않은 변경 사항은 이전 편집 세션에서 만들어져 안전하게 적용할 수 없습니다. 영향을 받은 항목을 확인하세요.',
+    '하나 이상의 대기 중인 변경 사항을 안전하게 적용할 수 없어 폐기했습니다. 최근 편집 내용을 확인하세요.',
+  pendingMutationDiscardedDetail: (scope: string, error: string) => `영향을 받은 범위: ${scope}\n서버 응답: ${error}`,
   serverDatabaseDamaged:
     '서버 데이터베이스가 손상된 것으로 보여 안전하게 초기화할 수 없습니다. risu.db 또는 데이터베이스 백업을 복원한 후 서버를 다시 시작하세요.',
   personaImportQueued:

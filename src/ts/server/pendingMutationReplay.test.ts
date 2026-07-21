@@ -35,11 +35,11 @@ describe('pending mutation replay', () => {
     expect(summary).toEqual({ attempted: 2, discarded: 0, retained: 1, succeeded: 1 })
   })
 
-  it('counts terminal ownership failures as discarded instead of retrying forever', async () => {
-    outboxApi.list.mockResolvedValue([entry('settings:runtime', 'stale-a')])
+  it('counts terminal mutation-id failures as discarded instead of retrying forever', async () => {
+    outboxApi.list.mockResolvedValue([entry('settings:runtime', 'conflict-a')])
     durableApi.replay.mockResolvedValue({
       disposition: 'discarded',
-      result: { status: 'error', error: 'active_writer_stale', reason: 'stale-writer' },
+      result: { status: 'error', error: 'mutation_id_conflict', reason: 'mutation-id-conflict' },
     })
 
     await expect(replayPendingMutations()).resolves.toEqual({

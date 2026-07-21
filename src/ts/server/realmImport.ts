@@ -170,7 +170,7 @@ async function readRealmImportJsonResponse(response: Response): Promise<ServerRe
     }
   }
 
-  if (handleActiveWriterStaleResponse(response)) {
+  if (handleActiveWriterStaleResponse(response, body)) {
     return { status: 'error', error: errorMessageFromBody(body, 'HTTP 423') }
   }
 

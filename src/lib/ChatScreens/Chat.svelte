@@ -108,6 +108,7 @@
     dispatchUpdateMessageScoped,
     ensureMessageId,
   } from 'src/ts/chatCommands'
+  import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import { canUseServerCommands, getServerCommandBaseRevision, translateMessageCommand } from 'src/ts/server/commands'
   import {
     activeMessageTranslations,
@@ -532,6 +533,7 @@
   }
 
   function localChatMutation(callback: () => void) {
+    if (reportWriterAccessLostMutation()) return
     if (!canUseServerCommands()) {
       callback()
     }
@@ -1252,8 +1254,11 @@
   }
 
   function observeMessageMutation(outcome: Promise<ObservableMessageMutationOutcome> | null | undefined): void {
-    if (!outcome) return
     const run = ++messageMutationStatusRun
+    if (!outcome) {
+      reportMessageMutationFailure(run)
+      return
+    }
     setStatusMessage(language.messageMutationPending)
     void outcome.then(
       (settled) => settleObservedMessageMutation(run, settled),
@@ -1683,6 +1688,7 @@
     const chat = getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
 
     if (!chat.message[idx]) return
+    if (reportWriterAccessLostMutation()) return
 
     const useServerCommands = canUseServerCommands()
     const nextMessages = useServerCommands ? cloneMessagesWithIds(chat) : null

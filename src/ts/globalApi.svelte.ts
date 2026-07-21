@@ -296,7 +296,11 @@ async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUploa
   }
 
   if (!response.ok) {
-    handleActiveWriterStaleResponse(response)
+    const activeWriterBody = await response
+      .clone()
+      .json()
+      .catch(() => null)
+    handleActiveWriterStaleResponse(response, activeWriterBody)
     const body = await response.text().catch(() => '')
     throw new Error(body || `Failed to upload server assets: ${response.status}`)
   }

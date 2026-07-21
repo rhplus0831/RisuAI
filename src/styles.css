@@ -368,6 +368,17 @@ body {
   overflow: clip;
 }
 
+/* Block the async gap between a writer-loss frame and the takeover dialog
+   mounting. The alert overlay opts back in so Refresh/Stay Offline remain the
+   only pointer-accessible actions until the user decides. */
+#app.risu-writer-takeover-pending {
+  pointer-events: none;
+}
+
+#app.risu-writer-takeover-pending [data-modal-root] {
+  pointer-events: auto;
+}
+
 #app.risu-offline-frozen :not(.risu-offline-banner, .risu-offline-banner *) {
   user-select: text !important;
 }

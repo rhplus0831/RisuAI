@@ -19,6 +19,7 @@
     dispatchDeleteChatWithOutcome,
     dispatchUpdateChatWithOutcome,
   } from 'src/ts/chatCommands'
+  import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import { canUseServerCommands } from 'src/ts/server/commands'
   import {
     rollbackServerBackedChatRowMetadata,
@@ -253,6 +254,7 @@
     const liveTargetChat = character?.chats?.find((candidate) => candidate.id === chat?.id)
     if (!character || !liveTargetChat?.id || liveTargetChat.name === name || isChatMutationPending(liveTargetChat.id))
       return
+    if (reportWriterAccessLostMutation()) return
     if (!canUseServerCommands()) {
       liveTargetChat.name = name
       return

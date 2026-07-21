@@ -24,12 +24,14 @@ routes.
   client reuses the runtime metadata and accepted revision it already has; a
   read-only bootstrap retry is needed only when another client won the
   initialization race.
-- After bootstrap/initialization, startup prepares the mutation outbox
-  against the writer session, writer epoch, and database lineage, flushes its
-  durable server-receipt acknowledgements, and replays pending intents. Transient
-  failures retain their encrypted intents; terminal ownership, lineage, or
-  receipt-id failures discard them. Any retained or unreadable raw row blocks
-  root-resource hydration so unresolved local work is not hidden by fresh reads.
+- After bootstrap/initialization, startup prepares the mutation outbox against
+  the writer session and database lineage, flushes its durable server-receipt
+  acknowledgements, and replays pending intents. Same-session rows survive a
+  writer-epoch reclaim. Transient and genuine stale-writer failures retain their
+  encrypted intents; conclusive request, lineage, receipt-id, and malformed
+  permanent-status failures discard them only with an explicit user-visible
+  notice. Any retained or unreadable raw row blocks root-resource hydration so
+  unresolved local work is not hidden by fresh reads.
 - `loadInitialServerResources()` concurrently reads settings, collections, and
   characters through their hash-aware POST resources (with compatible full GET
   fallback), plus `/api/v1/inlay-assets`. All four responses must report one

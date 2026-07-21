@@ -218,7 +218,7 @@ async function requestMemoryJson<T>(
   }
 
   if (!response.ok) {
-    handleActiveWriterStaleResponse(response)
+    handleActiveWriterStaleResponse(response, body)
     return {
       status: 'error',
       error: errorMessageFromBody(body, `HTTP ${response.status}`),

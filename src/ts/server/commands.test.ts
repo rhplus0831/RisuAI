@@ -8,6 +8,7 @@ import {
   serializePersonaProfileDigestInput,
 } from '../personaMutationCertificate'
 import { serializeScriptDefinitionCollectionDigestInput } from './scriptDefinitionMutations'
+import { resetWriterAccessLostForTests } from './activeWriterSession'
 
 vi.mock('../platform', () => ({ isFastifyServer: true }))
 
@@ -249,6 +250,7 @@ function canonicalLoadoutSnapshot(id = 'loadout-a') {
 }
 
 beforeEach(() => {
+  resetWriterAccessLostForTests()
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
   setServerCommandConflictGapHandler(null)
@@ -256,6 +258,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetWriterAccessLostForTests()
   vi.unstubAllGlobals()
 })
 
@@ -1914,6 +1917,31 @@ describe('server command API adapter', () => {
       ...(reason ? { reason } : {}),
     })
   })
+
+  it.each([400, 404, 423])(
+    'marks an HTTP %s with a non-command error envelope for explicit durable disposal',
+    async (status) => {
+      const commandFetch = makeCommandFetch(() =>
+        jsonResponse(
+          { statusCode: status, error: status === 423 ? 'Locked' : 'Not Found', message: 'proxy response' },
+          status,
+        ),
+      )
+      vi.stubGlobal('fetch', commandFetch.fetch)
+
+      await expect(
+        patchRuntimeSettings({
+          baseRevision: 1,
+          patch: { streamGeminiThoughts: true },
+        }),
+      ).resolves.toEqual({
+        status: 'error',
+        error: status === 423 ? 'Locked' : 'Not Found',
+        reason: 'unrecognized-rejection',
+      })
+      resetWriterAccessLostForTests()
+    },
+  )
 
   it('patches mixed server-backed settings by group with the latest revision', async () => {
     const commandFetch = makeCommandFetch((url) => {

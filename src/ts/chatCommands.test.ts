@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
 
+const writerAccessMocks = vi.hoisted(() => ({
+  lost: false,
+  report: vi.fn(() => writerAccessMocks.lost),
+}))
+
 vi.mock('./platform', async (importActual) => {
   const actual = await importActual<typeof import('./platform')>()
   return {
@@ -12,6 +17,11 @@ vi.mock('./platform', async (importActual) => {
 vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'chat-command-token',
 }))
+
+vi.mock('./server/activeWriterSession', async (importActual) => {
+  const actual = await importActual<typeof import('./server/activeWriterSession')>()
+  return { ...actual, reportWriterAccessLostMutation: writerAccessMocks.report }
+})
 
 import {
   clearAppliedServerResourceRevision,
@@ -138,6 +148,7 @@ import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRe
 import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from './server/chatBridge.svelte'
 import { PERSONA_SELECTION_MUTATION_KEY } from './server/personaMutationKeys'
 import { reapplyRetainedChatBodyProjections } from './server/chatRetainedProjection'
+import { language } from '../lang'
 
 interface CapturedFetch {
   url: string
@@ -653,6 +664,8 @@ function seedReadyActiveChatGenerationSettings(): void {
 
 beforeEach(() => {
   resetWriterAccessLostForTests()
+  writerAccessMocks.lost = false
+  writerAccessMocks.report.mockClear()
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
@@ -690,6 +703,38 @@ afterEach(() => {
 })
 
 describe('chat command projection helpers', () => {
+  it('rolls back and fails loudly when a latched translation setting write is attempted', async () => {
+    setResourceWriteGuardEnabled(true)
+    writerAccessMocks.lost = true
+
+    const persistence = setCurrentChatTranslationSettingWithOutcome('autoTranslate', true)
+
+    await expect(persistence).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'error', error: language.writerAccessLostMutation },
+    })
+    expect(getDatabase().characters[0].chats[0].autoTranslate).toBeUndefined()
+    expect(writerAccessMocks.report).toHaveBeenCalledOnce()
+  })
+
+  it('does not apply chat generation settings locally after writer access is lost', async () => {
+    setResourceWriteGuardEnabled(true)
+    writerAccessMocks.lost = true
+
+    const operation = dispatchSaveChatGenerationSettingsWithOutcome('chat-a', {
+      configured: true,
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    })
+
+    await expect(operation?.settlement).resolves.toEqual({
+      status: 'failed',
+      error: language.writerAccessLostMutation,
+    })
+    expect(getDatabase().characters[0].chats[0].generationSettings).toBeUndefined()
+    expect(writerAccessMocks.report).toHaveBeenCalledOnce()
+  })
+
   it('patches the selected draft hook through the chat-scoped command path', async () => {
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
@@ -5923,7 +5968,7 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
         })
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/messages/m-1' && init.method === 'DELETE') {
-          return jsonResponse({ error: 'Message not found: m-1', reason: 'not-found' }, 404)
+          return jsonResponse({ error: 'Message not found: m-1' }, 404)
         }
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
@@ -5961,7 +6006,7 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
         if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
         if (url === '/api/v1/commands/messages/m-1' && init.method === 'DELETE') {
           return replaying
-            ? jsonResponse({ error: 'Message not found: m-1', reason: 'not-found' }, 404)
+            ? jsonResponse({ error: 'Message not found: m-1' }, 404)
             : jsonResponse({ error: 'temporarily unavailable' }, 500)
         }
         return jsonResponse({ error: `unexpected ${url}` }, 404)

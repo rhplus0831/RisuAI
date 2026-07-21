@@ -48,7 +48,10 @@ import {
   preparePendingMutationOutbox,
   readSinglePendingMutationOwner,
 } from './server/pendingMutationOutbox'
-import { flushPendingMutationReceiptAcknowledgements } from './server/durableMutationDispatch'
+import {
+  flushPendingMutationReceiptAcknowledgements,
+  setPendingMutationDiscardNotifier,
+} from './server/durableMutationDispatch'
 import {
   acknowledgeCreatedChatTranscriptLocalEffect,
   acknowledgeMessageMutationLocalEffect,
@@ -146,6 +149,10 @@ import {
 import { setSettingsRuntimeProjectionHook } from './server/settingsRuntimeProjectionHooks'
 import { updateHeightMode } from './gui/heightMode'
 import { normalizeLegacyCustomBackgroundSetting } from './server/customBackgroundSetting'
+
+setPendingMutationDiscardNotifier((key, error) => {
+  alertError(`${language.pendingMutationDiscarded}\n\n${language.pendingMutationDiscardedDetail(key, error)}`)
+})
 
 const COLOR_SCHEME_RUNTIME_KEYS = new Set(['colorScheme', 'colorSchemeName', 'customBackground'])
 const TEXT_THEME_RUNTIME_KEYS = new Set(['textTheme', 'customTextTheme', 'font', 'customFont', 'customCSS'])

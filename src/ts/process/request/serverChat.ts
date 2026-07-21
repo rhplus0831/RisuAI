@@ -290,8 +290,9 @@ async function openChatResponse(
   if (!response.ok) {
     const statusText = response.statusText.trim()
     let reason = `HTTP ${response.status}${statusText ? ` ${statusText}` : ''}`
+    let body: unknown = null
     try {
-      const body = (await response.json()) as {
+      body = (await response.json()) as {
         error?: unknown
         message?: unknown
         reason?: unknown
@@ -300,7 +301,7 @@ async function openChatResponse(
     } catch {
       // ignore parse failure
     }
-    handleActiveWriterStaleResponse(response)
+    handleActiveWriterStaleResponse(response, body)
     debugServerChat('server-chat-response-error', { requestUid, status: response.status, error: reason })
     return {
       status: 'error',

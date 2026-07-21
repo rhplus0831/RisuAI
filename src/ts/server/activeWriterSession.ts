@@ -7,9 +7,12 @@ const ACTIVE_WRITER_SESSION_ID_MAX_LENGTH = 128
 let activeWriterSessionId: string | null = null
 let forcedServerStateReloadScheduled = false
 let writerAccessLost = false
+let writerAccessLostMutationReported = false
+let writerAccessLostMutationNotifier: (() => void) | null = null
 let offlineFreezeObserver: MutationObserver | null = null
 
 const OFFLINE_FROZEN_CLASS = 'risu-offline-frozen'
+const WRITER_TAKEOVER_PENDING_CLASS = 'risu-writer-takeover-pending'
 const OFFLINE_BANNER_ID = 'risu-offline-frozen-banner'
 const NON_TEXT_INPUT_TYPES = new Set([
   'button',
@@ -56,17 +59,41 @@ export function isWriterAccessLost(): boolean {
 /** The lost-writer latch is process-global; tests that simulate 423 replies must clear it between cases. */
 export function resetWriterAccessLostForTests(): void {
   writerAccessLost = false
+  writerAccessLostMutationReported = false
+  writerAccessLostMutationNotifier = null
+  setWriterTakeoverInteractionBlocked(false)
 }
 
 export function enterWriterTakeoverFlow(): void {
   if (writerAccessLost) return
   writerAccessLost = true
+  setWriterTakeoverInteractionBlocked(true)
   void runWriterTakeoverFlow()
 }
 
-export function handleActiveWriterStaleResponse(response: Response): boolean {
-  if (response.status !== 423) return false
+export function isActiveWriterStaleErrorBody(body: unknown): boolean {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false
+  const record = body as Record<string, unknown>
+  return Object.keys(record).length === 1 && record.error === 'active_writer_stale'
+}
+
+export function handleActiveWriterStaleResponse(response: Response, body: unknown): boolean {
+  if (response.status !== 423 || !isActiveWriterStaleErrorBody(body)) return false
   enterWriterTakeoverFlow()
+  return true
+}
+
+/**
+ * Reject a mutation attempt after writer ownership was lost and arrange one
+ * explicit notice. Alert plumbing defers the passive error until the takeover
+ * dialog settles.
+ */
+export function reportWriterAccessLostMutation(): boolean {
+  if (!writerAccessLost) return false
+  if (!writerAccessLostMutationReported) {
+    writerAccessLostMutationReported = true
+    writerAccessLostMutationNotifier?.()
+  }
   return true
 }
 
@@ -125,34 +152,50 @@ async function notifyServerStateReload(reason: 'pending-mutation' | 'stale-sessi
 }
 
 async function runWriterTakeoverFlow(): Promise<void> {
-  const [bootstrap, messageTranslations, generationReattach, chatHydration, { language }, { alertRequiredSelect }] =
-    await Promise.all([
-      import('../bootstrap'),
-      import('./messageTranslationJobs'),
-      import('../process/reattach'),
-      import('./chatMessageHydration.svelte'),
-      import('../../lang'),
-      import('../alert'),
-    ])
+  const [
+    bootstrap,
+    messageTranslations,
+    generationReattach,
+    chatHydration,
+    { language },
+    { alertError, alertRequiredSelect },
+  ] = await Promise.all([
+    import('../bootstrap'),
+    import('./messageTranslationJobs'),
+    import('../process/reattach'),
+    import('./chatMessageHydration.svelte'),
+    import('../../lang'),
+    import('../alert'),
+  ])
 
   bootstrap.stopServerResourceEvents()
   messageTranslations.stopActiveMessageTranslationRefresh()
   generationReattach.stopActiveGenerationReattach()
   chatHydration.stopChatMessageHydration()
 
-  const selection = await alertRequiredSelect(
+  writerAccessLostMutationNotifier = () => alertError(language.writerAccessLostMutation)
+  const selectionPromise = alertRequiredSelect(
     [language.writerTakeoverRefreshNow, language.writerTakeoverStayOffline],
     language.writerTakeoverBody,
     language.writerTakeoverTitle,
   )
+  if (writerAccessLostMutationReported) writerAccessLostMutationNotifier()
+
+  const selection = await selectionPromise
   if (selection === '0') {
     globalThis.location?.reload()
     return
   }
+  setWriterTakeoverInteractionBlocked(false)
   enterFrozenOfflineState({
     message: language.writerOfflineBanner,
     refresh: language.writerOfflineRefresh,
   })
+}
+
+function setWriterTakeoverInteractionBlocked(blocked: boolean): void {
+  if (typeof document === 'undefined') return
+  document.getElementById('app')?.classList.toggle(WRITER_TAKEOVER_PENDING_CLASS, blocked)
 }
 
 function enterFrozenOfflineState(labels: { message: string; refresh: string }): void {

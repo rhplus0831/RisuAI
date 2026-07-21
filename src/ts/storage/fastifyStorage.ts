@@ -168,7 +168,11 @@ export class FastifyStorage {
       },
     })
     if (da.status < 200 || da.status >= 300) {
-      handleActiveWriterStaleResponse(da)
+      const body = await da
+        .clone()
+        .json()
+        .catch(() => null)
+      handleActiveWriterStaleResponse(da, body)
       throw 'setItem Error'
     }
     const data = await da.json()
@@ -243,7 +247,11 @@ export class FastifyStorage {
       },
     })
     if (da.status < 200 || da.status >= 300) {
-      handleActiveWriterStaleResponse(da)
+      const body = await da
+        .clone()
+        .json()
+        .catch(() => null)
+      handleActiveWriterStaleResponse(da, body)
       throw 'removeItem Error'
     }
     const data = await da.json()

@@ -8,13 +8,16 @@ vi.mock('../storage/fastifyStorage', () => ({
 }))
 
 const recoveryApi = vi.hoisted(() => ({ scheduleReload: vi.fn() }))
+const activeWriterApi = vi.hoisted(() => ({ handleStale: vi.fn() }))
+const discardAlertApi = vi.hoisted(() => ({ alertError: vi.fn() }))
 vi.mock('./activeWriterSession', () => ({
   activeWriterSessionHeader: () => ({}),
-  handleActiveWriterStaleResponse: () => false,
+  handleActiveWriterStaleResponse: activeWriterApi.handleStale,
   isWriterAccessLost: () => false,
   schedulePendingMutationRecoveryReload: recoveryApi.scheduleReload,
   scheduleServerOwnershipReload: vi.fn(),
 }))
+vi.mock('../alert', () => ({ alertError: discardAlertApi.alertError }))
 
 import {
   clearAppliedServerResourceRevision,
@@ -27,7 +30,7 @@ import {
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './commands'
-import { dispatchDurableMutation } from './durableMutationDispatch'
+import { dispatchDurableMutation, setPendingMutationDiscardNotifier } from './durableMutationDispatch'
 import {
   clearPendingMutationOutbox,
   listPendingMutations,
@@ -37,16 +40,33 @@ import {
   type DurableMutationIntent,
 } from './pendingMutationOutbox'
 import { replayPendingMutations } from './pendingMutationReplay'
+import { language } from '../../lang'
 
 const databaseLineage = 'database-terminal-rejection'
 
 beforeEach(async () => {
   recoveryApi.scheduleReload.mockReset()
+  discardAlertApi.alertError.mockReset()
+  activeWriterApi.handleStale.mockReset()
+  activeWriterApi.handleStale.mockImplementation(
+    (response: Response, body: unknown) =>
+      response.status === 423 &&
+      !!body &&
+      typeof body === 'object' &&
+      !Array.isArray(body) &&
+      Object.keys(body as Record<string, unknown>).length === 1 &&
+      (body as { error?: unknown }).error === 'active_writer_stale',
+  )
   vi.stubGlobal('indexedDB', new IDBFactory())
   resetPendingMutationOutboxForTests()
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
+  setPendingMutationDiscardNotifier((key, error) => {
+    discardAlertApi.alertError(
+      `${language.pendingMutationDiscarded}\n\n${language.pendingMutationDiscardedDetail(key, error)}`,
+    )
+  })
   await preparePendingMutationOutbox({
     writerSessionId: 'writer-terminal-rejection',
     writerEpoch: 1,
@@ -56,6 +76,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  setPendingMutationDiscardNotifier(null)
   await clearPendingMutationOutbox()
   resetPendingMutationOutboxForTests()
   clearAppliedServerResourceRevision()
@@ -94,6 +115,107 @@ describe('durable mutation terminal request rejection', () => {
     })
     expect(rollback).toHaveBeenCalledOnce()
     expect(await listPendingMutations()).toEqual([])
+    expect(discardAlertApi.alertError).toHaveBeenCalledWith(
+      `${language.pendingMutationDiscarded}\n\n${language.pendingMutationDiscardedDetail(
+        'settings:runtime',
+        'maxContext must be positive',
+      )}`,
+    )
+  })
+
+  it.each([
+    { status: 400, error: 'Bad Request' },
+    { status: 404, error: 'Not Found' },
+    { status: 423, error: 'Locked' },
+  ])('explicitly reports and disposes an unrecognized HTTP $status envelope', async ({ status, error }) => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 12_000 } } }],
+    }
+    const handle = stagePendingMutation('settings:runtime', intent)
+    const rollback = vi.fn()
+    setCachedServerCommandRevision(10)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({ statusCode: status, error, message: 'non-command response' }, status),
+      ) as unknown as typeof fetch,
+    )
+
+    const result = await dispatchDurableMutation(handle, intent, (options) =>
+      runServerCommand({
+        ...options,
+        rollback,
+        command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxContext: 12_000 } }),
+      }),
+    )
+
+    expect(result).toEqual({ status: 'error', error, reason: 'unrecognized-rejection' })
+    expect(rollback).toHaveBeenCalledOnce()
+    expect(await listPendingMutations()).toEqual([])
+    expect(discardAlertApi.alertError).toHaveBeenCalledWith(
+      `${language.pendingMutationDiscarded}\n\n${language.pendingMutationDiscardedDetail('settings:runtime', error)}`,
+    )
+  })
+
+  it('retains a genuine stale-writer intent and replays it after the same session reclaims a new epoch', async () => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 12_000 } } }],
+    }
+    const handle = stagePendingMutation('settings:runtime', intent)
+    const rollback = vi.fn()
+    setCachedServerCommandRevision(10)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ error: 'active_writer_stale' }, 423)) as unknown as typeof fetch,
+    )
+
+    await expect(
+      dispatchDurableMutation(handle, intent, (options) =>
+        runServerCommand({
+          ...options,
+          rollback,
+          command: (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxContext: 12_000 } }),
+        }),
+      ),
+    ).resolves.toEqual({ status: 'error', error: 'active_writer_stale', reason: 'stale-writer' })
+    expect(rollback).not.toHaveBeenCalled()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([handle.mutationId])
+
+    resetPendingMutationOutboxForTests()
+    await expect(
+      preparePendingMutationOutbox({
+        writerSessionId: 'writer-terminal-rejection',
+        writerEpoch: 2,
+        databaseLineage,
+        requestedWriterWasActive: false,
+      }),
+    ).resolves.toEqual({ discarded: 0 })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/commands/mutation-receipts/ack') {
+          return jsonResponse({ acknowledged: 1, requested: 1 })
+        }
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'settings.updated', revision: 11, resource: 'settings', id: 'runtime' },
+          acknowledgedKeys: ['maxContext'],
+          settings: {},
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 1,
+      discarded: 0,
+      retained: 0,
+      succeeded: 1,
+    })
+    expect(await listPendingMutations()).toEqual([])
+    expect(discardAlertApi.alertError).not.toHaveBeenCalled()
   })
 
   it('keeps the optimistic projection with a persisted row after a retryable live failure', async () => {

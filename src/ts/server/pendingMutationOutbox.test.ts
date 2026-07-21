@@ -410,7 +410,7 @@ describe('pending mutation outbox', () => {
     expect(await listPendingMutationReceiptAcknowledgements()).toEqual([])
   })
 
-  it('quarantines this writer drafts when bootstrap says another writer owned the server', async () => {
+  it('keeps this writer drafts replayable when the same session reclaims a newer epoch', async () => {
     const rejected = stagePendingMutation('settings:runtime', settingsIntent('stale-tab-edit'))
     await expect(rejected.ready).resolves.toBe('persisted')
 
@@ -422,12 +422,12 @@ describe('pending mutation outbox', () => {
       requestedWriterWasActive: false,
     })
 
-    expect(preparation).toEqual({ discarded: 1 })
-    expect(await listPendingMutations()).toEqual([])
-    expect(await readRawMutation(rejected.mutationId)).toBeUndefined()
+    expect(preparation).toEqual({ discarded: 0 })
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([rejected.mutationId])
+    expect(await readRawMutation(rejected.mutationId)).toBeDefined()
   })
 
-  it('recovers only an unambiguous durable owner before writer bootstrap', async () => {
+  it('recovers the remaining durable owner after another writer session is discarded', async () => {
     const pending = stagePendingMutation('settings:runtime', settingsIntent('recover-owner'))
     await pending.ready
     resetPendingMutationOutboxForTests()
@@ -447,7 +447,11 @@ describe('pending mutation outbox', () => {
     const other = stagePendingMutation('settings:other', settingsIntent('other-owner'))
     await other.ready
     resetPendingMutationOutboxForTests()
-    await expect(readSinglePendingMutationOwner()).resolves.toBeNull()
+    await expect(readSinglePendingMutationOwner()).resolves.toEqual({
+      writerSessionId: 'writer-b',
+      writerEpoch: 1,
+      databaseLineage: 'database-a',
+    })
   })
 
   it('deletes rows and receipt ACKs belonging to a different database lineage', async () => {

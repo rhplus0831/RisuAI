@@ -24,6 +24,7 @@ vi.mock('../../lang', () => ({
     writerTakeoverStayOffline: 'stay offline',
     writerOfflineBanner: 'offline and read-only',
     writerOfflineRefresh: 'refresh',
+    writerAccessLostMutation: 'writer mutation blocked',
   },
 }))
 vi.mock('../bootstrap', () => ({ stopServerResourceEvents: takeoverMocks.stopEvents }))
@@ -124,8 +125,14 @@ describe('active writer browser session', () => {
     vi.stubGlobal('location', { reload })
     const activeWriterSession = await importActiveWriterSession()
 
-    expect(activeWriterSession.handleActiveWriterStaleResponse(new Response(null, { status: 423 }))).toBe(true)
+    document.body.innerHTML = '<div id="app"><button>background action</button></div>'
+    expect(
+      activeWriterSession.handleActiveWriterStaleResponse(new Response(null, { status: 423 }), {
+        error: 'active_writer_stale',
+      }),
+    ).toBe(true)
     expect(activeWriterSession.isWriterAccessLost()).toBe(true)
+    expect(document.getElementById('app')?.classList.contains('risu-writer-takeover-pending')).toBe(true)
     const { canUseServerCommands } = await import('./commands')
     const { canUseServerEvents } = await import('./events')
     expect(canUseServerCommands()).toBe(false)
@@ -134,6 +141,33 @@ describe('active writer browser session', () => {
     await vi.waitFor(() => expect(takeoverMocks.alertRequiredSelect).toHaveBeenCalledOnce())
     await vi.advanceTimersByTimeAsync(1_000)
     expect(reload).not.toHaveBeenCalled()
+    activeWriterSession.resetWriterAccessLostForTests()
+  })
+
+  it('does not latch an unrecognized 423 response body', async () => {
+    const activeWriterSession = await importActiveWriterSession()
+
+    expect(
+      activeWriterSession.handleActiveWriterStaleResponse(new Response(null, { status: 423 }), {
+        error: 'resource_locked',
+      }),
+    ).toBe(false)
+    expect(activeWriterSession.isWriterAccessLost()).toBe(false)
+    expect(takeoverMocks.alertRequiredSelect).not.toHaveBeenCalled()
+    activeWriterSession.resetWriterAccessLostForTests()
+  })
+
+  it('reports a latched mutation attempt loudly only once', async () => {
+    const activeWriterSession = await importActiveWriterSession()
+    activeWriterSession.handleActiveWriterStaleResponse(new Response(null, { status: 423 }), {
+      error: 'active_writer_stale',
+    })
+
+    expect(activeWriterSession.reportWriterAccessLostMutation()).toBe(true)
+    expect(activeWriterSession.reportWriterAccessLostMutation()).toBe(true)
+    await vi.waitFor(() => expect(takeoverMocks.alertError).toHaveBeenCalledWith('writer mutation blocked'))
+    expect(takeoverMocks.alertError).toHaveBeenCalledOnce()
+    activeWriterSession.resetWriterAccessLostForTests()
   })
 
   it('starts the writer takeover flow only once', async () => {
@@ -170,6 +204,7 @@ describe('active writer browser session', () => {
     expect(document.getElementById('editor')?.getAttribute('contenteditable')).toBe('false')
     expect(document.getElementById('risu-offline-frozen-banner')?.textContent).toContain('offline and read-only')
     expect(reload).not.toHaveBeenCalled()
+    expect(document.getElementById('app')?.classList.contains('risu-writer-takeover-pending')).toBe(false)
 
     const laterTextarea = document.createElement('textarea')
     document.getElementById('app')?.appendChild(laterTextarea)

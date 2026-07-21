@@ -491,7 +491,9 @@ export async function readSinglePendingMutationOwner(): Promise<PendingMutationO
         writerEpoch: mutation.writerEpoch,
         databaseLineage: mutation.databaseLineage,
       }
-      owners.set(`${owner.writerSessionId}\u0000${owner.writerEpoch}\u0000${owner.databaseLineage}`, owner)
+      const ownerKey = `${owner.writerSessionId}\u0000${owner.databaseLineage}`
+      const existing = owners.get(ownerKey)
+      if (!existing || owner.writerEpoch > existing.writerEpoch) owners.set(ownerKey, owner)
       if (owners.size > 1) return null
     }
     return owners.values().next().value ?? null
@@ -503,8 +505,10 @@ export async function readSinglePendingMutationOwner(): Promise<PendingMutationO
 
 /**
  * Bind subsequent staging and replay to the authenticated writer and the
- * concrete server database. A writer takeover quarantines that writer's old
- * drafts instead of replaying a mutation that was already rejected with 423.
+ * concrete server database. A same-session ownership reclaim keeps older-epoch
+ * rows replayable: mutation receipts are lineage-scoped, and the current
+ * active-writer header still gates every replay request. Rows from another
+ * writer session or database lineage remain unsafe and are discarded.
  */
 export async function preparePendingMutationOutbox(
   input: PreparePendingMutationOutboxInput,
@@ -535,10 +539,8 @@ export async function preparePendingMutationOutbox(
     ])
     for (const mutation of mutations) {
       const lineageMismatch = mutation.databaseLineage !== scope.databaseLineage
-      const writerEpochMismatch = mutation.writerEpoch !== scope.writerEpoch
-      const rejectedWriterDraft =
-        !input.requestedWriterWasActive && mutation.ownerWriterSessionId === scope.writerSessionId
-      if (lineageMismatch || writerEpochMismatch || rejectedWriterDraft) {
+      const writerSessionMismatch = mutation.ownerWriterSessionId !== scope.writerSessionId
+      if (lineageMismatch || writerSessionMismatch) {
         mutationStore.delete(mutation.mutationId)
         discardedMutationIds.push(mutation.mutationId)
       }
@@ -805,7 +807,6 @@ export async function listPendingMutations(): Promise<PendingMutationOutboxEntry
       (candidate) =>
         candidate.ownerWriterSessionId === scope.writerSessionId && candidate.databaseLineage === scope.databaseLineage,
     )
-    .filter((candidate) => candidate.writerEpoch === scope.writerEpoch)
     .sort((left, right) => left.order - right.order)) {
     try {
       const intent = await decryptIntent(record, encryptionKey)
@@ -845,9 +846,7 @@ export async function countPendingMutationRecords(): Promise<number | null> {
     await transactionDone(transaction)
     return stored.filter(
       (candidate) =>
-        candidate.ownerWriterSessionId === scope.writerSessionId &&
-        candidate.writerEpoch === scope.writerEpoch &&
-        candidate.databaseLineage === scope.databaseLineage,
+        candidate.ownerWriterSessionId === scope.writerSessionId && candidate.databaseLineage === scope.databaseLineage,
     ).length
   } catch (error) {
     reportPersistenceWarning('Unable to count pending server mutations', error)

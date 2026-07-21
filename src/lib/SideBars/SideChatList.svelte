@@ -52,6 +52,7 @@
     dispatchUpdateChatWithOutcome,
     type ChatMutationOutcome,
   } from 'src/ts/chatCommands'
+  import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import { canUseServerCommands, type ServerCommandResult } from 'src/ts/server/commands'
   import {
     rollbackServerBackedChatFolderRowMetadata,
@@ -808,6 +809,7 @@
   }
 
   async function updateChatName(chat: Chat, name: string): Promise<void> {
+    if (chat.name === name || reportWriterAccessLostMutation()) return
     if (canUseServerCommands()) {
       const chatId = chat.id
       const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)

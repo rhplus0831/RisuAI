@@ -37,7 +37,8 @@
     saveStates[field] = { operation, status: 'pending' }
     const persistence = setCurrentChatTranslationSettingWithOutcome(field, value)
     if (!persistence) {
-      if (saveStates[field]?.operation === operation) delete saveStates[field]
+      if (saveStates[field]?.operation === operation) saveStates[field]!.status = 'failed'
+      alertError(language.messageMutationFailed)
       return
     }
 

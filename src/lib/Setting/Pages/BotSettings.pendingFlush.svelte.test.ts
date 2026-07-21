@@ -60,7 +60,7 @@ vi.mock('src/ts/server/commands', () => ({
     botSettingsMocks.networkOrder.push('toggle-live')
     if (botSettingsMocks.failNextEnableTerminal) {
       botSettingsMocks.failNextEnableTerminal = false
-      return { status: 'error', error: 'stale owner', reason: 'stale-writer' }
+      return { status: 'error', error: 'invalid prompt owner', reason: 'invalid-request' }
     }
     if (botSettingsMocks.failNextEnableTransient) {
       botSettingsMocks.failNextEnableTransient = false
@@ -712,7 +712,7 @@ describe('BotSettings pending prompt persistence', () => {
     }
   })
 
-  it('rolls back a disabled prompt template and discards its terminal durable mutation', async () => {
+  it('rolls back a disabled prompt template and explicitly discards its terminal durable mutation', async () => {
     vi.useRealTimers()
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -768,7 +768,7 @@ describe('BotSettings pending prompt persistence', () => {
       expect(getDatabase().promptTemplate).toEqual(originalTemplate)
       expect(promptTemplateToggle()?.checked).toBe(true)
       expect(target.querySelector('[data-testid="prompt-template-toggle-mutation-status"]')?.textContent).toContain(
-        'stale owner',
+        'invalid prompt owner',
       )
       await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
     } finally {

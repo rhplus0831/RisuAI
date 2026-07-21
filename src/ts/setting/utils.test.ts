@@ -12,10 +12,19 @@ const durableSettingState = vi.hoisted(() => ({
 const settingAlertMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
 }))
+const writerAccessMocks = vi.hoisted(() => ({
+  lost: false,
+  report: vi.fn(() => writerAccessMocks.lost),
+}))
 
 vi.mock('../alert', async (importActual) => {
   const actual = await importActual<typeof import('../alert')>()
   return { ...actual, alertError: settingAlertMocks.alertError }
+})
+
+vi.mock('../server/activeWriterSession', async (importActual) => {
+  const actual = await importActual<typeof import('../server/activeWriterSession')>()
+  return { ...actual, reportWriterAccessLostMutation: writerAccessMocks.report }
 })
 
 vi.mock('../server/pendingMutationOutbox', () => ({
@@ -242,6 +251,8 @@ beforeEach(() => {
   durableSettingState.acknowledgements.length = 0
   durableSettingState.settlementListeners.clear()
   settingAlertMocks.alertError.mockReset()
+  writerAccessMocks.lost = false
+  writerAccessMocks.report.mockClear()
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
@@ -257,6 +268,26 @@ afterEach(() => {
 })
 
 describe('server-backed data-driven settings', () => {
+  it('rejects immediate and deferred renderer writes after writer access is lost', () => {
+    replaceResourceDatabase({ notification: false } as any)
+    const item: SettingItem = {
+      id: 'notification',
+      type: 'check',
+      bindKey: 'notification' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+    writerAccessMocks.lost = true
+
+    setSettingValue(item, true, ctx)
+    const deferred = setDeferredSettingValue(item, true, ctx)
+
+    expect(getResourceDatabase().notification).toBe(false)
+    expect(deferred.queued).toBe(false)
+    expect(durableSettingState.stages).toEqual([])
+    expect(durableSettingState.dispatches).toEqual([])
+    expect(writerAccessMocks.report).toHaveBeenCalledTimes(2)
+  })
+
   it('maps every data-driven SettingRenderer binding to a server command group', () => {
     const missing = settingRendererItemSets.flatMap(collectSettingItems).flatMap((item) => {
       const key = serverCommandKeyForSetting(item)

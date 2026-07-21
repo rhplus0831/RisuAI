@@ -83,7 +83,11 @@ export async function uploadServerAssetBytes(data: Uint8Array, contentType: stri
     body: uploadBody,
   })
   if (!response.ok) {
-    handleActiveWriterStaleResponse(response)
+    const activeWriterBody = await response
+      .clone()
+      .json()
+      .catch(() => null)
+    handleActiveWriterStaleResponse(response, activeWriterBody)
     const body = await response.text().catch(() => '')
     throw new Error(body || `Failed to upload server asset: ${response.status}`)
   }

@@ -1662,6 +1662,8 @@ export const languageEnglish = {
   writerTakeoverStayOffline: 'Stay on this page (offline)',
   writerOfflineBanner: 'Offline/read-only: this session cannot save changes.',
   writerOfflineRefresh: 'Refresh',
+  writerAccessLostMutation:
+    'This change was not saved because this tab no longer has write access. Refresh to reclaim write access and try again.',
   pendingMutationRecoveryReload:
     'A queued change could not be applied safely. Reloading to restore the latest server state...',
   pendingChatMessageQueued:
@@ -1669,7 +1671,9 @@ export const languageEnglish = {
   pendingMutationReplayRetained:
     'Some pending changes still could not reach the server. They remain saved on this device and must be retried before the app can load.',
   pendingMutationDiscarded:
-    'Some unsaved changes came from an older editing session and could not be applied safely. Please review the affected fields.',
+    'One or more pending changes could not be applied safely and were discarded. Please review your recent edits.',
+  pendingMutationDiscardedDetail: (scope: string, error: string) =>
+    `Affected scope: ${scope}\nServer response: ${error}`,
   serverDatabaseDamaged:
     'The server database appears damaged and cannot be initialized safely. Restore risu.db or a database backup, then restart the server.',
   personaImportQueued:

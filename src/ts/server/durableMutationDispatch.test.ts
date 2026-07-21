@@ -9,6 +9,7 @@ const commandApi = vi.hoisted(() => ({
   withReceipt: vi.fn(<T>(execute: () => Promise<T>) => execute()),
 }))
 const recoveryApi = vi.hoisted(() => ({ scheduleReload: vi.fn() }))
+const discardAlertApi = vi.hoisted(() => ({ alertError: vi.fn() }))
 
 vi.mock('./commands', () => ({
   acknowledgeServerMutationReceipts: commandApi.acknowledge,
@@ -20,11 +21,13 @@ vi.mock('./commands', () => ({
 vi.mock('./activeWriterSession', () => ({
   schedulePendingMutationRecoveryReload: recoveryApi.scheduleReload,
 }))
+vi.mock('../alert', () => ({ alertError: discardAlertApi.alertError }))
 
 import {
   dispatchDurableMutation,
   executePreparedDurableMutationWithinQueue,
   registerDurableMutationSettlementListener,
+  setPendingMutationDiscardNotifier,
 } from './durableMutationDispatch'
 import {
   beginPendingMutationDispatch,
@@ -52,6 +55,8 @@ beforeEach(async () => {
   commandApi.withoutReceipt.mockClear()
   commandApi.withReceipt.mockClear()
   recoveryApi.scheduleReload.mockReset()
+  discardAlertApi.alertError.mockReset()
+  setPendingMutationDiscardNotifier((_key, error) => discardAlertApi.alertError(error))
   await preparePendingMutationOutbox({
     writerSessionId: 'writer-a',
     writerEpoch: 1,
@@ -61,6 +66,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  setPendingMutationDiscardNotifier(null)
   await clearPendingMutationOutbox()
   resetPendingMutationOutboxForTests()
   vi.restoreAllMocks()
@@ -134,7 +140,7 @@ describe('durable mutation dispatch', () => {
     expect(await listPendingMutations()).toEqual([])
   })
 
-  it('retains transient failures but discards a terminal stale-writer rejection', async () => {
+  it('retains transient failures and a genuine stale-writer rejection', async () => {
     const transient = stagePendingMutation('settings:runtime', intent)
     await dispatchDurableMutation(
       transient,
@@ -153,7 +159,8 @@ describe('durable mutation dispatch', () => {
         reason: 'stale-writer',
       })),
     )
-    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).not.toContain(stale.mutationId)
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toContain(stale.mutationId)
+    expect(discardAlertApi.alertError).not.toHaveBeenCalled()
   })
 
   it('evaluates a shared failure only after an earlier same-key durable lock releases', async () => {

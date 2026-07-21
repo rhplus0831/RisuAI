@@ -96,6 +96,7 @@ import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGener
 import { registerRetainedChatProjection, type RetainedChatProjectionTarget } from './server/chatRetainedProjection'
 import { alertError } from './alert'
 import { language } from '../lang'
+import { reportWriterAccessLostMutation } from './server/activeWriterSession'
 
 export interface ChatStateSnapshot {
   characters: character[]
@@ -282,6 +283,13 @@ function failedChatMutationResult(error: unknown): Exclude<ServerCommandResult, 
     error: error instanceof Error ? error.message : 'Unable to save the chat change',
     reason: 'invalid-request',
   }
+}
+
+function writerAccessLostChatMutationOutcome(): Promise<ChatMutationOutcome> {
+  return Promise.resolve({
+    status: 'failed',
+    result: { status: 'error', error: language.writerAccessLostMutation },
+  })
 }
 
 async function chatMutationOutcome(
@@ -2649,8 +2657,12 @@ export function dispatchUpdateChatWithOutcome(
 ): Promise<ChatMutationOutcome> | undefined {
   const commandPatch = sanitizeFrozenChatPatch(patch)
   if (Object.keys(commandPatch).length === 0 && !select) return
-  if (!canUseServerCommands()) return
   const rollback = chatMetadataRollbackFromPatch(chatId, commandPatch, previous)
+  if (reportWriterAccessLostMutation()) {
+    if (rollback) rollbackRowMetadata(rollback)
+    return writerAccessLostChatMutationOutcome()
+  }
+  if (!canUseServerCommands()) return
   const characterId = characterIdForChatInState(previous, chatId)
   const previousChat = locateChatInState(previous, chatId)?.chat as Chat | undefined
   const projectionTargets = Object.prototype.hasOwnProperty.call(commandPatch, 'modules')
@@ -2810,8 +2822,12 @@ export function dispatchUpdateChatScopedWithOutcome(
 ): Promise<ChatMutationOutcome> | undefined {
   const commandPatch = sanitizeFrozenChatPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
-  if (!canUseServerCommands()) return
   const rollback = chatScopedMetadataRollbackFromPatch(chatId, commandPatch, previous)
+  if (reportWriterAccessLostMutation()) {
+    if (rollback) rollbackRowMetadata(rollback)
+    return writerAccessLostChatMutationOutcome()
+  }
+  if (!canUseServerCommands()) return
   const body = freezeDurableChatRequestBody({ patch: commandPatch, select: false })
   const intent = durableChatMutationIntent('PATCH', `/chats/${encodeURIComponent(chatId)}`, body)
   const projectionTargets = Object.prototype.hasOwnProperty.call(commandPatch, 'modules')
@@ -3111,6 +3127,12 @@ export function dispatchSaveChatGenerationSettingsWithOutcome(
     commandSettings,
   )
   if (!intent) return settledChatGenerationSettingsSaveOperation({ status: 'accepted' })
+  if (reportWriterAccessLostMutation()) {
+    return settledChatGenerationSettingsSaveOperation({
+      status: 'failed',
+      error: language.writerAccessLostMutation,
+    })
+  }
   const rollback: ChatGenerationSettingsSnapshot = {
     ...rollbackSnapshot,
     attemptedGenerationSettings: commandSettings,
@@ -3125,46 +3147,47 @@ export function dispatchSaveChatGenerationSettingsWithOutcome(
   })
   if (!applied) return null
 
-  if (canUseServerCommands()) {
-    let state = pendingChatGenerationSettingsSaves.get(chatId)
-    if (!state) {
-      state = {
-        confirmed: cloneJsonValue(rollbackSnapshot),
-        jobs: [],
-        tail: Promise.resolve(null),
-      }
-      pendingChatGenerationSettingsSaves.set(chatId, state)
+  if (!canUseServerCommands()) {
+    restoreChatGenerationSettings(rollback)
+    return settledChatGenerationSettingsSaveOperation({
+      status: 'failed',
+      error: language.writerAccessLostMutation,
+    })
+  }
+  let state = pendingChatGenerationSettingsSaves.get(chatId)
+  if (!state) {
+    state = {
+      confirmed: cloneJsonValue(rollbackSnapshot),
+      jobs: [],
+      tail: Promise.resolve(null),
     }
-    const durableIntent = chatGenerationSettingsFullDurableIntent(chatId, commandSettings)
-    const durableKey = chatResourceOwnerMutationKey(chatId, rollback.characterId)
-    const operation = pendingChatGenerationSettingsSaveOperation()
-    let outbox: PendingMutationHandle
-    try {
-      outbox = stagePendingMutation(durableKey, durableIntent)
-    } catch (error) {
-      restoreChatGenerationSettings(rollback)
-      if (state.jobs.length === 0) pendingChatGenerationSettingsSaves.delete(chatId)
-      operation.settle({ status: 'failed', error: error instanceof Error ? error.message : String(error) })
-      return operation
-    }
-    const job: PendingChatGenerationSettingsJob = {
-      intent,
-      originalTarget: commandSettings,
-      fallbackRollback: rollback,
-      options,
-      pendingSave: registerPendingChatGenerationSettingsSave(chatId, commandSettings),
-      durableIntent,
-      outbox,
-      settle: operation.settle,
-    }
-    state.jobs.push(job)
-    enqueueChatGenerationSettingsSave(chatId, state, job)
+    pendingChatGenerationSettingsSaves.set(chatId, state)
+  }
+  const durableIntent = chatGenerationSettingsFullDurableIntent(chatId, commandSettings)
+  const durableKey = chatResourceOwnerMutationKey(chatId, rollback.characterId)
+  const operation = pendingChatGenerationSettingsSaveOperation()
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(durableKey, durableIntent)
+  } catch (error) {
+    restoreChatGenerationSettings(rollback)
+    if (state.jobs.length === 0) pendingChatGenerationSettingsSaves.delete(chatId)
+    operation.settle({ status: 'failed', error: error instanceof Error ? error.message : String(error) })
     return operation
   }
-  return settledChatGenerationSettingsSaveOperation({
-    status: 'failed',
-    error: 'Server commands are unavailable.',
-  })
+  const job: PendingChatGenerationSettingsJob = {
+    intent,
+    originalTarget: commandSettings,
+    fallbackRollback: rollback,
+    options,
+    pendingSave: registerPendingChatGenerationSettingsSave(chatId, commandSettings),
+    durableIntent,
+    outbox,
+    settle: operation.settle,
+  }
+  state.jobs.push(job)
+  enqueueChatGenerationSettingsSave(chatId, state, job)
+  return operation
 }
 
 export function dispatchSaveChatGenerationSettings(

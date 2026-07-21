@@ -509,6 +509,7 @@ export type ServerCommandErrorReason =
   | 'mutation-id-conflict'
   | 'not-found'
   | 'stale-writer'
+  | 'unrecognized-rejection'
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
@@ -5532,11 +5533,11 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
         : { status: 'conflict', currentRevision }
     }
 
-    if (handleActiveWriterStaleResponse(response)) {
+    if (handleActiveWriterStaleResponse(response, body)) {
       return { status: 'error', error: errorMessageFromBody(body, 'HTTP 423'), reason: 'stale-writer' }
     }
 
-    if (response.status === 400) {
+    if (response.status === 400 && isStableCommandErrorBody(body)) {
       return {
         status: 'error',
         error: errorMessageFromBody(body, 'HTTP 400'),
@@ -5544,11 +5545,19 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
       }
     }
 
-    if (response.status === 404) {
+    if (response.status === 404 && isStableCommandErrorBody(body)) {
       return {
         status: 'error',
         error: errorMessageFromBody(body, 'HTTP 404'),
         reason: 'not-found',
+      }
+    }
+
+    if (response.status === 400 || response.status === 404 || response.status === 423) {
+      return {
+        status: 'error',
+        error: errorMessageFromBody(body, `HTTP ${response.status}`),
+        reason: 'unrecognized-rejection',
       }
     }
 
@@ -8413,6 +8422,15 @@ function isMutationIdConflict(body: unknown): boolean {
 
 function isInitializeConflict(body: unknown): boolean {
   return !!body && typeof body === 'object' && (body as { error?: unknown }).error === 'initialize_conflict'
+}
+
+/** Validation/not-found command handlers return exactly `{ error: string }`.
+ * Fastify route misses and proxy/deployment-skew errors use other envelopes and
+ * must not be mistaken for a conclusive command rejection. */
+function isStableCommandErrorBody(body: unknown): boolean {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false
+  const record = body as Record<string, unknown>
+  return Object.keys(record).length === 1 && typeof record.error === 'string' && record.error.trim().length > 0
 }
 
 function errorMessageFromBody(body: unknown, fallback: string): string {

@@ -671,7 +671,7 @@ describe('module command projection helpers', () => {
         if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
         commands.push(url)
         if (url === '/api/v1/commands/chats/chat-a') {
-          return jsonResponse({ error: 'chat no longer exists', reason: 'not-found' }, 404)
+          return jsonResponse({ error: 'chat no longer exists' }, 404)
         }
         throw new Error('terminally rejected batch sent a later request')
       }) as unknown as typeof fetch,
