@@ -5,7 +5,7 @@ import {
   EntityNotFoundError,
   ValidationError,
   loadPersistedForChatMutation,
-  loadSettingsFromSqlite,
+  loadSettingsWithTranslatorPresetsFromSqlite,
 } from '../repository.js'
 import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventOrigin, type CommandEventSink } from '../commands/events.js'
@@ -67,7 +67,7 @@ export async function runServerMessageTranslation(input: RunServerMessageTransla
       messageId: input.messageId,
       ...(input.jobId ? { jobId: input.jobId } : {}),
     })
-    const settings = loadSettingsFromSqlite(input.db)
+    const settings = loadSettingsWithTranslatorPresetsFromSqlite(input.db)
     if (settings === null) {
       throw new ValidationError('database is not initialized')
     }

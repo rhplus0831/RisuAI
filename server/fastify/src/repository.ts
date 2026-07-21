@@ -321,6 +321,21 @@ export function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown
   return isRecord(parsed) ? parsed : null
 }
 
+export function loadSettingsWithTranslatorPresetsFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) return null
+
+  const rows = db.prepare('SELECT data_json FROM translator_presets ORDER BY position').all() as unknown as Array<{
+    data_json: string
+  }>
+  if (rows.length > 0) {
+    settings.translatorPresets = rows.map((row) => JSON.parse(row.data_json))
+  }
+  // Mirror `loadCollectionsFromSqlite`: an empty table keeps any embedded
+  // legacy value or leaves the collection absent so preset fallback still works.
+  return settings
+}
+
 export function loadServerIntentCompletionSettings(db: DatabaseSync): Record<string, unknown> | null {
   return loadSettingsFromSqlite(db)
 }
