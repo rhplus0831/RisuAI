@@ -3,7 +3,14 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import type { CommandEventSink } from '../commands/events.js'
 import { requireAuth } from '../http.js'
-import { EntityNotFoundError, createBackup, deleteBackup, listBackups, restoreBackup } from '../repository.js'
+import {
+  BackupDatabaseValidationError,
+  EntityNotFoundError,
+  createBackup,
+  deleteBackup,
+  listBackups,
+  restoreBackup,
+} from '../repository.js'
 
 interface CreateBody {
   label?: unknown
@@ -47,6 +54,10 @@ export function registerBackupRoutes(
       if (err instanceof EntityNotFoundError) {
         reply.code(404)
         return { error: err.message }
+      }
+      if (err instanceof BackupDatabaseValidationError) {
+        reply.code(400)
+        return { error: err.code }
       }
       throw err
     }

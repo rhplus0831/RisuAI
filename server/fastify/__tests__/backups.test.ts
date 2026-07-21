@@ -300,6 +300,104 @@ describe('Phase 2D backups', () => {
     expect(afterRestore.json().revision).toBe(revisionAfter)
   })
 
+  it.each([
+    {
+      name: 'manifest-only backup',
+      id: '2026-07-21-01-02-03-a0a0a0',
+      expectedError: 'backup_database_missing',
+      prepareDatabasePayload: (_backupRoot: string) => {},
+    },
+    {
+      name: 'zero-byte SQLite backup',
+      id: '2026-07-21-01-02-04-b0b0b0',
+      expectedError: 'backup_database_invalid',
+      prepareDatabasePayload: (backupRoot: string) => {
+        writeFileSync(path.join(backupRoot, 'risu.db'), '')
+      },
+    },
+    {
+      name: 'SQLite backup without core tables',
+      id: '2026-07-21-01-02-05-c0c0c0',
+      expectedError: 'backup_database_invalid',
+      prepareDatabasePayload: (backupRoot: string) => {
+        const guttedDb = new DatabaseSync(path.join(backupRoot, 'risu.db'))
+        try {
+          guttedDb.exec('CREATE TABLE unrelated (id INTEGER PRIMARY KEY)')
+        } finally {
+          guttedDb.close()
+        }
+      },
+    },
+    {
+      name: 'legacy backup whose database is not an object',
+      id: '2026-07-21-01-02-06-d0d0d0',
+      expectedError: 'backup_database_invalid',
+      prepareDatabasePayload: (backupRoot: string) => {
+        writeFileSync(path.join(backupRoot, 'db.json'), JSON.stringify({ database: [] }))
+      },
+    },
+  ])('rejects a $name before touching live data or restore staging', async (testCase) => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const liveTag = `live-before-${testCase.id}`
+    await importDb(harness.app, assertion, { tag: liveTag })
+
+    const liveAssetFile = path.join(assetsDir(harness.dataDir), 'live-sentinel.bin')
+    const liveSaveFile = path.join(harness.dataDir, 'save', 'live-sentinel')
+    mkdirSync(path.dirname(liveAssetFile), { recursive: true })
+    mkdirSync(path.dirname(liveSaveFile), { recursive: true })
+    writeFileSync(liveAssetFile, 'live-asset')
+    writeFileSync(liveSaveFile, 'live-save')
+
+    const backupRoot = path.join(harness.dataDir, 'backups', testCase.id)
+    mkdirSync(backupRoot, { recursive: true })
+    writeFileSync(
+      path.join(backupRoot, 'manifest.json'),
+      JSON.stringify({ id: testCase.id, createdAt: '2026-07-21T01:02:03.000Z' }),
+    )
+    testCase.prepareDatabasePayload(backupRoot)
+
+    const restoreScratchDirs = [
+      path.join(harness.dataDir, `.assets-${testCase.id}.tmp`),
+      path.join(harness.dataDir, `.assets-${testCase.id}.old`),
+      path.join(harness.dataDir, `.save-${testCase.id}.tmp`),
+      path.join(harness.dataDir, `.save-${testCase.id}.old`),
+    ]
+    for (const scratchDir of restoreScratchDirs) {
+      mkdirSync(scratchDir, { recursive: true })
+      writeFileSync(path.join(scratchDir, 'untouched'), 'sentinel')
+    }
+
+    const before = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const revisionBefore = before.json().revision as number
+    harness.commandEvents.clear()
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${testCase.id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(400)
+    expect(restored.json()).toEqual({ error: testCase.expectedError })
+
+    const after = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(after.json().revision).toBe(revisionBefore)
+    expect(after.json().database).toMatchObject({ tag: liveTag })
+    expect(readFileSync(liveAssetFile, 'utf8')).toBe('live-asset')
+    expect(readFileSync(liveSaveFile, 'utf8')).toBe('live-save')
+    for (const scratchDir of restoreScratchDirs) {
+      expect(readFileSync(path.join(scratchDir, 'untouched'), 'utf8')).toBe('sentinel')
+    }
+    expect(harness.commandEvents.list()).toEqual([])
+  })
+
   it('repairs stable lorebook ids while restoring a pre-v23 SQLite backup', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const legacyEntry = {
@@ -721,7 +819,7 @@ describe('Phase 2D backups', () => {
     expect(list.json().backups.map((m: { id: string }) => m.id)).toEqual([a.json().id])
   })
 
-  it('rolls a failed legacy db.json re-import back atomically, with no restore event (L28)', async () => {
+  it('rejects an unreadable legacy db.json before restore staging, with no restore event (L28)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'live-before-broken-legacy' })
     const before = await harness.app.inject({
@@ -732,8 +830,7 @@ describe('Phase 2D backups', () => {
     const revisionBefore = before.json().revision as number
     harness.commandEvents.clear()
 
-    // A legacy-only backup (db.json, no risu.db) whose snapshot is unreadable:
-    // the re-import throws inside the restore transaction.
+    // A legacy-only backup (db.json, no risu.db) whose snapshot is unreadable.
     const backupId = '2026-06-05-02-03-04-abcdef'
     const backupRoot = path.join(harness.dataDir, 'backups', backupId)
     mkdirSync(backupRoot, { recursive: true })
@@ -744,11 +841,11 @@ describe('Phase 2D backups', () => {
       url: `/api/v1/backups/${backupId}/restore`,
       headers: { 'risu-auth': assertion },
     })
-    expect(restored.statusCode).toBe(500)
+    expect(restored.statusCode).toBe(400)
+    expect(restored.json()).toEqual({ error: 'backup_database_invalid' })
 
-    // Atomic: no partial table wipe survived and no restore event was emitted
-    // or persisted (pre-fix the tables were already swapped + the event row
-    // committed before the import ran).
+    // Validation happens before the table clear and no restore event is emitted
+    // or persisted.
     expect(harness.commandEvents.list()).toEqual([])
     const after = await harness.app.inject({
       method: 'GET',

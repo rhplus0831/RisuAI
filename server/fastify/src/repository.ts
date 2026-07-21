@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 import { createInitialDatabase } from './databaseDefaults.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
 import { getSchemaState } from './db.js'
@@ -1056,6 +1056,15 @@ export class ValidationError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'ValidationError'
+  }
+}
+
+export type BackupDatabaseValidationErrorCode = 'backup_database_missing' | 'backup_database_invalid'
+
+export class BackupDatabaseValidationError extends ValidationError {
+  constructor(readonly code: BackupDatabaseValidationErrorCode) {
+    super(code)
+    this.name = 'BackupDatabaseValidationError'
   }
 }
 
@@ -2441,6 +2450,78 @@ const SQLITE_BACKUP_TABLES = [
   'settings',
 ] as const
 
+const REQUIRED_SQLITE_BACKUP_TABLES = [
+  'schema_version',
+  'settings',
+] as const satisfies readonly (typeof SQLITE_BACKUP_TABLES)[number][]
+
+type BackupDatabasePayloadStatus = 'missing' | 'invalid' | 'usable'
+
+interface UsableBackupDatabasePayloads {
+  legacyJson: boolean
+  sqlite: boolean
+}
+
+function validateBackupSqlite(backupDbPath: string): BackupDatabasePayloadStatus {
+  if (!fs.existsSync(backupDbPath)) return 'missing'
+
+  try {
+    const stat = fs.statSync(backupDbPath)
+    if (!stat.isFile() || stat.size === 0) return 'invalid'
+
+    const backupDb = new DatabaseSync(backupDbPath, { readOnly: true })
+    try {
+      const rows = backupDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
+        name: string
+      }>
+      const tables = new Set(rows.map((row) => row.name))
+      return REQUIRED_SQLITE_BACKUP_TABLES.every((table) => tables.has(table)) ? 'usable' : 'invalid'
+    } finally {
+      backupDb.close()
+    }
+  } catch {
+    return 'invalid'
+  }
+}
+
+function validateBackupLegacyJson(legacySnapshotPath: string): BackupDatabasePayloadStatus {
+  if (!fs.existsSync(legacySnapshotPath)) return 'missing'
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(legacySnapshotPath, 'utf8')) as unknown
+    return isRecord(parsed) && isRecord(parsed.database) ? 'usable' : 'invalid'
+  } catch {
+    return 'invalid'
+  }
+}
+
+function validateBackupDatabasePayloads(
+  backupDbPath: string,
+  legacySnapshotPath: string,
+): UsableBackupDatabasePayloads {
+  const sqlite = validateBackupSqlite(backupDbPath)
+  const legacyJson = validateBackupLegacyJson(legacySnapshotPath)
+
+  // A present legacy snapshot is always imported during restore, including
+  // when a SQLite snapshot is also present, so it must be valid before any
+  // live directories are staged or moved.
+  if (legacyJson === 'invalid') {
+    throw new BackupDatabaseValidationError('backup_database_invalid')
+  }
+  if (sqlite === 'usable') {
+    return { sqlite: true, legacyJson: legacyJson === 'usable' }
+  }
+  if (legacyJson === 'usable') {
+    // Some transitional backups may contain a bad or empty risu.db beside a
+    // valid legacy snapshot. Restore those through the legacy-only path.
+    return { sqlite: false, legacyJson: true }
+  }
+  if (sqlite === 'missing' && legacyJson === 'missing') {
+    throw new BackupDatabaseValidationError('backup_database_missing')
+  }
+  throw new BackupDatabaseValidationError('backup_database_invalid')
+}
+
 function checkpointWal(db: DatabaseSync): void {
   // After TRUNCATE the WAL file is removed; the main `risu.db` file contains
   // the committed state. Safe to file-copy after this call.
@@ -2508,12 +2589,12 @@ export function listBackups(dataDir: string): BackupManifest[] {
   return manifests
 }
 
-function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string, beforeCommit?: () => void): string {
+function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string | null, beforeCommit?: () => void): string {
   // Use ATTACH + table-level swap so the existing `db` handle stays valid
   // (file-rename would orphan open file descriptors and break every other
   // active route holding the same handle). The transaction is atomic with
   // respect to other queries on this connection.
-  if (!fs.existsSync(backupDbPath)) {
+  if (backupDbPath === null) {
     // No SQLite backup payload: clear live SQLite-backed state before importing
     // any legacy db.json, so rows absent from the snapshot do not survive
     // restore.
@@ -2597,6 +2678,9 @@ export function restoreBackup(
     throw new EntityNotFoundError(`Backup not found: ${id}`)
   }
 
+  const backupSqlite = path.join(backupDir(dataDir, id), 'risu.db')
+  const usableDatabasePayloads = validateBackupDatabasePayloads(backupSqlite, legacySnapshot)
+
   const liveAssets = assetsDir(dataDir)
   const backupAssets = path.join(backupDir(dataDir, id), 'assets')
   const tmpAssets = path.join(dataDir, `.assets-${id}.tmp`)
@@ -2605,7 +2689,6 @@ export function restoreBackup(
   const backupSave = path.join(backupDir(dataDir, id), 'save')
   const tmpSave = path.join(dataDir, `.save-${id}.tmp`)
   const oldSave = path.join(dataDir, `.save-${id}.old`)
-  const backupSqlite = path.join(backupDir(dataDir, id), 'risu.db')
 
   rmDirectoryIfPresent(tmpAssets)
   rmDirectoryIfPresent(oldAssets)
@@ -2633,10 +2716,10 @@ export function restoreBackup(
   let event: CommandEvent | undefined
   let databaseLineage: string | undefined
   try {
-    databaseLineage = restoreSqliteFromBackup(db, backupSqlite, () => {
+    databaseLineage = restoreSqliteFromBackup(db, usableDatabasePayloads.sqlite ? backupSqlite : null, () => {
       // If the backup carries a legacy db.json, import it into SQLite inside the
       // restore transaction so a failed re-import rolls the whole restore back.
-      if (fs.existsSync(legacySnapshot)) {
+      if (usableDatabasePayloads.legacyJson) {
         fs.copyFileSync(legacySnapshot, dbJsonPath(dataDir))
         ensureDbJsonImported(db, dataDir)
       }
