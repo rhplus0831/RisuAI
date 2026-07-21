@@ -14,6 +14,7 @@ export default defineConfig({
   },
   test: {
     allowOnly: false,
+    pool: 'threads',
     environment: 'happy-dom',
     setupFiles: ['vitest.setup.ts'],
     exclude: ['**/node_modules/**', 'server/**', ...(includeExplicitGates ? [] : explicitGateTests)],
