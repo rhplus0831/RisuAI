@@ -1,29 +1,42 @@
 #!/usr/bin/env python3
-"""Run a codex turn through the local app-server daemon so it shows up in the
-remote-connected Codex app (threads land as interactive `vscode`-source sessions
-and stream live to every connected client).
-
-Talks JSON-RPC over a WebSocket on the daemon's unix control socket
-(~/.codex/app-server-control/app-server-control.sock). Stdlib only.
+"""Run a codex turn, preferring the local app-server daemon so the session
+shows up in the remote-connected Codex app (threads land as interactive
+`vscode`-source sessions and stream live to every connected client). When the
+daemon is unreachable BEFORE any prompt has been submitted, falls back to
+`codex exec` automatically. Stdlib only.
 
 Usage:
-  appserver_run.py run  [--cwd DIR] [--model M] [--effort E] [--name NAME]
-                        [-o FILE] [--timeout SECS] [PROMPT | -]
-  appserver_run.py run  --thread-id ID [same flags] PROMPT     # follow-up turn
-  appserver_run.py list [--source-kinds cli,vscode,exec] [--limit N]
+  codex_run.py run  [--cwd DIR] [--model M] [--effort E] [--name NAME]
+                    [--file PATH] [-o FILE] [--meta FILE] [--timeout SECS]
+                    [PROMPT | -]
+  codex_run.py run  --thread-id ID [same flags] PROMPT   # follow-up turn
+                    # (daemon only — never falls back to exec)
+  codex_run.py list [--source-kinds cli,vscode,exec] [--limit N]
+
+Prompt precedence: positional PROMPT, else --file, else stdin ('-' forces
+stdin). Passing both PROMPT and --file is an error.
 
 Progress goes to stderr; the final agent message goes to stdout (and -o FILE).
-Exit codes: 0 turn completed, 2 turn failed/interrupted, 3 protocol error,
-124 timeout (turn/interrupt is sent best-effort).
+Stable metadata lines on stderr: `mode: appserver` + `thread id: <UUID>`, or
+`mode: exec (fallback)` + `session id: <UUID>`. --meta FILE gets the same as
+JSON: {mode, fallback, fallback_reason, thread_id, session_id, exit_code}.
+
+Exit codes: 0 turn completed, 2 turn failed/interrupted, 3 neither mode
+usable / protocol error / bad usage, 124 timeout (turn interrupt / kill is
+sent best-effort).
 """
 
 import argparse
 import base64
 import json
 import os
+import re
+import select
 import socket
 import struct
+import subprocess
 import sys
+import tempfile
 import time
 
 DEFAULT_SOCK = os.path.expanduser("~/.codex/app-server-control/app-server-control.sock")
@@ -205,14 +218,20 @@ def describe_item(item, phase):
     return None
 
 
-def cmd_run(args):
-    prompt = args.prompt
-    if prompt is None or prompt == "-":
-        prompt = sys.stdin.read()
-    if not prompt.strip():
-        log("error: empty prompt")
-        return 3
+def emit_final(text, output_last_message):
+    sys.stdout.write(text if not text or text.endswith("\n") else text + "\n")
+    sys.stdout.flush()
+    if output_last_message:
+        with open(output_last_message, "w") as f:
+            f.write(text)
 
+
+def appserver_start(args):
+    """Connect to the daemon and create/resume the thread.
+
+    Everything in here runs before any prompt is submitted, so a failure at
+    this stage is safe to recover from by falling back to `codex exec`.
+    """
     client = AppServerClient(args.sock)
     client.request("initialize", {
         "clientInfo": {"name": "claude_code", "title": "Claude Code", "version": "1.0"},
@@ -237,8 +256,11 @@ def cmd_run(args):
             params["model"] = args.model
         result = client.request("thread/start", params)
     thread_id = (result.get("thread") or {}).get("id") or args.thread_id
-    log(f"thread id: {thread_id}")
+    return client, thread_id
 
+
+def appserver_turn(client, thread_id, args, prompt):
+    """Submit the prompt and pump the turn to completion. No fallback past here."""
     if args.name and not args.thread_id:
         try:
             client.request("thread/name/set", {"threadId": thread_id, "name": args.name})
@@ -292,12 +314,150 @@ def cmd_run(args):
         return 124
 
     if last_agent_message is not None:
-        print(last_agent_message)
-        if args.output_last_message:
-            with open(args.output_last_message, "w") as f:
-                f.write(last_agent_message)
+        emit_final(last_agent_message, args.output_last_message)
     log(f"turn status: {final_status}" + (f" — {final_error}" if final_error else ""))
     return 0 if final_status == "completed" else 2
+
+
+def exec_run(args, prompt, meta):
+    """`codex exec` fallback. The child's stdin is closed, so background runs
+    can't hit the exec-blocks-on-open-stdin footgun."""
+    cmd = ["codex", "exec"]
+    if args.sandbox == "danger-full-access":
+        cmd.append("--yolo")
+    else:
+        cmd += ["--sandbox", args.sandbox]
+    cmd += ["--cd", args.cwd]
+    if args.model:
+        cmd += ["--model", args.model]
+    if args.effort:
+        cmd += ["-c", f"model_reasoning_effort={args.effort}"]
+    if args.name:
+        log("(--name is appserver-only; ignored in exec mode)")
+
+    out_file = args.output_last_message
+    tmp_out = None
+    if not out_file:
+        fd, tmp_out = tempfile.mkstemp(prefix="codex-exec-", suffix=".txt")
+        os.close(fd)
+        out_file = tmp_out
+    cmd += ["-o", out_file, prompt]
+
+    log("$ " + " ".join(cmd[:-1]) + " <prompt>")
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    deadline = time.monotonic() + args.timeout
+    session_re = re.compile(rb"session id:\s*([0-9a-fA-F-]{8,})")
+    scan = b""
+    timed_out = False
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                break
+            ready, _, _ = select.select([proc.stdout], [], [], min(remaining, 30))
+            if not ready:
+                continue
+            chunk = os.read(proc.stdout.fileno(), 65536)
+            if not chunk:
+                break
+            sys.stderr.buffer.write(chunk)
+            sys.stderr.buffer.flush()
+            if meta["session_id"] is None:
+                scan += chunk
+                m = session_re.search(scan)
+                if m:
+                    meta["session_id"] = m.group(1).decode()
+                    log(f"session id: {meta['session_id']}")
+                else:
+                    scan = scan[-16384:]
+
+        if timed_out:
+            log(f"timeout after {args.timeout}s; killing codex exec")
+            proc.kill()
+            proc.wait()
+            return 124
+        try:
+            rc = proc.wait(timeout=max(deadline - time.monotonic(), 10))
+        except subprocess.TimeoutExpired:
+            log("codex exec closed its output but did not exit; killing")
+            proc.kill()
+            proc.wait()
+            return 124
+
+        final = ""
+        try:
+            with open(out_file, encoding="utf-8") as f:
+                final = f.read()
+        except OSError:
+            pass
+        if final:
+            emit_final(final, None)  # codex already wrote -o itself
+        if rc != 0:
+            log(f"codex exec exited {rc}")
+            return 2
+        return 0
+    finally:
+        if tmp_out:
+            try:
+                os.unlink(tmp_out)
+            except OSError:
+                pass
+
+
+def cmd_run(args):
+    meta = {"mode": None, "fallback": False, "fallback_reason": None,
+            "thread_id": None, "session_id": None, "exit_code": None}
+    try:
+        rc = _cmd_run_inner(args, meta)
+    except (ConnectionError, TimeoutError, RuntimeError, OSError) as e:
+        log(f"error: {e}")
+        rc = 3
+    meta["exit_code"] = rc
+    if args.meta:
+        with open(args.meta, "w") as f:
+            json.dump(meta, f, indent=2)
+            f.write("\n")
+    return rc
+
+
+def _cmd_run_inner(args, meta):
+    if args.file and args.prompt is not None:
+        log("error: pass PROMPT or --file, not both")
+        return 3
+    if args.prompt is not None and args.prompt != "-":
+        prompt = args.prompt
+    elif args.file:
+        with open(args.file, encoding="utf-8") as f:
+            prompt = f.read()
+    else:
+        prompt = sys.stdin.read()
+    if not prompt.strip():
+        log("error: empty prompt")
+        return 3
+
+    try:
+        client, thread_id = appserver_start(args)
+    except Exception as e:
+        # Nothing has been submitted yet, so falling back cannot replay work.
+        reason = str(e) or e.__class__.__name__
+        if args.thread_id:
+            log(f"error: app-server unavailable ({reason}); NOT falling back — "
+                "thread follow-ups only exist on the daemon and exec would start cold")
+            return 3
+        log(f"app-server unavailable ({reason}); falling back to codex exec")
+        meta["mode"] = "exec"
+        meta["fallback"] = True
+        meta["fallback_reason"] = reason
+        log("mode: exec (fallback)")
+        return exec_run(args, prompt, meta)
+
+    meta["mode"] = "appserver"
+    meta["thread_id"] = thread_id
+    log("mode: appserver")
+    log(f"thread id: {thread_id}")
+    return appserver_turn(client, thread_id, args, prompt)
 
 
 def cmd_list(args):
@@ -322,19 +482,25 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
 
     run_p = sub.add_parser("run", help="run one codex turn (new thread or --thread-id follow-up)")
+    # accepted before or after the subcommand; SUPPRESS keeps a pre-subcommand
+    # value from being clobbered by a subparser default
+    run_p.add_argument("--sock", default=argparse.SUPPRESS)
     run_p.add_argument("prompt", nargs="?", help="prompt text, or '-' / omitted to read stdin")
+    run_p.add_argument("--file", help="read the prompt from this file")
     run_p.add_argument("--cwd", default=os.getcwd())
     run_p.add_argument("--thread-id", help="continue an existing thread instead of starting one")
     run_p.add_argument("--model")
     run_p.add_argument("--effort", choices=["none", "low", "medium", "high", "xhigh"])
     run_p.add_argument("--sandbox", default="danger-full-access",
                        choices=["read-only", "workspace-write", "danger-full-access"])
-    run_p.add_argument("--name", help="set a thread name shown in the Codex app")
+    run_p.add_argument("--name", help="set a thread name shown in the Codex app (appserver mode only)")
     run_p.add_argument("-o", "--output-last-message")
+    run_p.add_argument("--meta", help="write run metadata JSON (mode, fallback, ids, exit code) here")
     run_p.add_argument("--timeout", type=float, default=3600)
     run_p.set_defaults(func=cmd_run)
 
-    list_p = sub.add_parser("list", help="list threads as the app sees them")
+    list_p = sub.add_parser("list", help="list threads as the app sees them (daemon only)")
+    list_p.add_argument("--sock", default=argparse.SUPPRESS)
     list_p.add_argument("--source-kinds", help="comma-separated, e.g. exec or cli,vscode")
     list_p.add_argument("--limit", type=int, default=15)
     list_p.set_defaults(func=cmd_list)
