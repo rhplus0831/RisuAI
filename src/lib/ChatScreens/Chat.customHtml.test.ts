@@ -16,7 +16,7 @@ const customHtmlMocks = vi.hoisted(() => {
   return {
     templates,
     alertClear: vi.fn(),
-    alertConfirm: vi.fn(async () => false),
+    alertConfirm: vi.fn(async () => true),
     alertError: vi.fn(),
     alertInput: vi.fn(async () => ''),
     alertNormal: vi.fn(),
@@ -1126,6 +1126,28 @@ describe('message action target freshness', () => {
     expect(customHtmlMocks.changeChatTo).toHaveBeenCalledWith(0)
     expect(character.chats[character.chatPage].id).toBe(branchedChat?.id)
     expect(customHtmlMocks.navigate).toHaveBeenCalledWith(`/character/custom-html-character/${branchedChat?.id}`)
+  })
+
+  it('does not branch when the confirmation is declined', async () => {
+    seedDatabase(1, null as unknown as string)
+    customHtmlMocks.alertConfirm.mockResolvedValueOnce(false)
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    buttonByText('branch')?.click()
+    await settle()
+
+    expect(customHtmlMocks.alertConfirm).toHaveBeenCalled()
+    const character = testDatabaseState.db.characters[0]
+    const branchedChat = character.chats.find((chat) =>
+      chat.message.some((message) => message.data.includes('{{specialcomment::branchedfrom::')),
+    )
+    expect(branchedChat).toBeUndefined()
+    expect(dispatchForkChat).not.toHaveBeenCalled()
+    expect(customHtmlMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(customHtmlMocks.navigate).not.toHaveBeenCalled()
   })
 
   it('hydrates unloaded history before dispatching a server-backed branch', async () => {

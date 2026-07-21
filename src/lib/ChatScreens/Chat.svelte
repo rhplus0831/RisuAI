@@ -539,15 +539,10 @@
     }
   }
 
-  async function branchFromCurrentMessage(): Promise<void> {
-    const capturedCharacter = getDatabase().characters?.[selIdState.selId]
-    const capturedChat = capturedCharacter?.chats?.[capturedCharacter.chatPage]
-    const capturedMessage = capturedChat?.message?.[idx]
-    if (!capturedCharacter || !capturedChat || !capturedMessage) return
-
-    const sourceCharacterId = capturedCharacter.chaId
-    const sourceChatId = capturedChat.id
-    const sourceMessageId = capturedMessage.chatId
+  async function branchFromCurrentMessage(target: MessageEditorTarget): Promise<void> {
+    const sourceCharacterId = target.characterId
+    const sourceChatId = target.chatId
+    const sourceMessageId = target.messageId
 
     if (canUseServerCommands()) {
       if (!sourceCharacterId || !sourceChatId || !sourceMessageId) {
@@ -562,20 +557,21 @@
       }
     }
 
-    const currentCharacter = getDatabase().characters?.[selIdState.selId]
-    const currentChat = currentCharacter?.chats?.[currentCharacter.chatPage]
-    if (
-      !currentCharacter ||
-      !currentChat ||
-      (sourceCharacterId && currentCharacter.chaId !== sourceCharacterId) ||
-      (sourceChatId && currentChat.id !== sourceChatId)
-    ) {
+    // Resolve the branch source from the target captured at interaction time so a chat switch
+    // during the confirm/hydration await cannot retarget the branch to whatever chat is now active.
+    const currentCharacter = getDatabase().characters?.find((candidate) =>
+      sourceCharacterId ? candidate.chaId === sourceCharacterId : candidate === target.characterReference,
+    )
+    const currentChat = currentCharacter?.chats?.find((candidate) =>
+      sourceChatId ? candidate.id === sourceChatId : candidate === target.chatReference,
+    )
+    if (!currentCharacter || !currentChat) {
       return
     }
 
     const branchIndex = sourceMessageId
       ? currentChat.message.findIndex((candidate) => candidate.chatId === sourceMessageId)
-      : idx
+      : currentChat.message.findIndex((candidate) => candidate === target.messageReference)
     const currentMessage = currentChat.message[branchIndex]
     if (branchIndex < 0 || !currentMessage) {
       alertError(language.chatDataLoadFailed)
@@ -2528,8 +2524,10 @@
     aria-label={language.branch}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={async () => {
+      const target = captureMessageEditorTarget()
+      if (!target) return
       if (!(await alertConfirm(language.branchConfirm))) return
-      void branchFromCurrentMessage()
+      void branchFromCurrentMessage(target)
     }}>
     <SplitIcon size={20} />
     {#if showNames}
