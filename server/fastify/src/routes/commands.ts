@@ -315,6 +315,7 @@ import {
   deleteChatMessages,
   getChatMessages,
   replaceActiveChatMessages,
+  resolveChatMessageIndexById,
   resolveActiveMessageLocationById,
   setChatHypaV3,
   truncateActiveChatMessages,
@@ -979,6 +980,15 @@ function readRecoveredCharacterArchive(archive: unknown, characterId: string): C
   if (archiveCharacterId !== characterId) {
     throw new ValidationError(`Cold-storage archive belongs to another character: ${archiveCharacterId}`)
   }
+  if (!Array.isArray(rawCharacter.chats)) {
+    throw new ValidationError('archive.character.chats must be an array')
+  }
+  rawCharacter.chats.forEach((rawChat, index) => {
+    const chat = readJsonObject(rawChat, `archive.character.chats[${index}]`)
+    if (!Array.isArray(chat.message)) {
+      throw new ValidationError(`archive.character.chats[${index}].message must be an array`)
+    }
+  })
 
   const recovered = repairCharacterCollectionRow(rawCharacter)
   delete recovered.coldstorage
@@ -995,6 +1005,7 @@ function readRecoveredCharacterArchive(archive: unknown, characterId: string): C
 function readRecoveredChatArchive(current: ChatRecord, archive: unknown): ChatRecord {
   const isLegacyMessageArray = Array.isArray(archive)
   const envelope = isLegacyMessageArray ? null : readJsonObject(archive, 'archive')
+  const hasHypaV3Data = envelope !== null && Object.prototype.hasOwnProperty.call(envelope, 'hypaV3Data')
   const messages = isLegacyMessageArray ? archive : envelope!.message
   if (!Array.isArray(messages)) {
     throw new ValidationError('archive.message must be an array')
@@ -1011,7 +1022,7 @@ function readRecoveredChatArchive(current: ChatRecord, archive: unknown): ChatRe
       ...(envelope
         ? {
             hypaV2Data: envelope.hypaV2Data,
-            hypaV3Data: envelope.hypaV3Data,
+            ...(hasHypaV3Data ? { hypaV3Data: envelope.hypaV3Data } : {}),
             scriptstate: readChatScriptstatePatch(envelope.scriptstate),
             localLore: envelope.localLore ?? [],
           }
@@ -1019,6 +1030,7 @@ function readRecoveredChatArchive(current: ChatRecord, archive: unknown): ChatRe
     },
     'archive.chat',
   )
+  if (!hasHypaV3Data) delete recovered.hypaV3Data
   ensureChatMessages(recovered)
   return recovered
 }
@@ -5329,10 +5341,18 @@ export function registerCommandRoutes(
             }
           }
 
-          for (const chat of ensureCharacterChats(current)) {
+          const currentChats = ensureCharacterChats(current)
+          const recoveredChatById = new Map(recoveredChats.map((chat) => [chat.id, chat]))
+          const preservedHypaChatIds = new Set<string>()
+          for (const chat of currentChats) {
             deleteCharacterChatRow(innerDb, chat.id, characterId)
             deleteChatMessages(innerDb, chat.id)
-            deleteChatHypaV3(innerDb, chat.id)
+            const recoveredChat = recoveredChatById.get(chat.id)
+            if (recoveredChat && !Object.prototype.hasOwnProperty.call(recoveredChat, 'hypaV3Data')) {
+              preservedHypaChatIds.add(chat.id)
+            } else {
+              deleteChatHypaV3(innerDb, chat.id)
+            }
           }
 
           characters[characterIndex] = recoveredCharacter
@@ -5349,6 +5369,8 @@ export function registerCommandRoutes(
             replaceActiveChatMessages(innerDb, chat.id, messages)
             if (chat.hypaV3Data !== undefined && chat.hypaV3Data !== null) {
               setChatHypaV3(innerDb, chat.id, chat.hypaV3Data)
+            } else if (!preservedHypaChatIds.has(chat.id)) {
+              deleteChatHypaV3(innerDb, chat.id)
             }
           }
 
@@ -5700,10 +5722,12 @@ export function registerCommandRoutes(
 
           writeSingleChatRow(innerDb, chatId, recoveredChat)
           replaceActiveChatMessages(innerDb, chatId, messages)
-          if (recoveredChat.hypaV3Data !== undefined && recoveredChat.hypaV3Data !== null) {
-            setChatHypaV3(innerDb, chatId, recoveredChat.hypaV3Data)
-          } else {
-            deleteChatHypaV3(innerDb, chatId)
+          if (Object.prototype.hasOwnProperty.call(recoveredChat, 'hypaV3Data')) {
+            if (recoveredChat.hypaV3Data !== undefined && recoveredChat.hypaV3Data !== null) {
+              setChatHypaV3(innerDb, chatId, recoveredChat.hypaV3Data)
+            } else {
+              deleteChatHypaV3(innerDb, chatId)
+            }
           }
 
           const characterId = character.chaId as string
@@ -6500,7 +6524,7 @@ export function registerCommandRoutes(
       const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
-      const afterMessageId = readTruncateAfterMessageId(body.afterMessageId)
+      const afterMessageId = readTruncateAfterMessageId(body)
       const preserveRemovedAsAlternates = readOptionalBooleanFlag(
         body.preserveRemovedAsAlternates,
         'preserveRemovedAsAlternates',
@@ -6523,15 +6547,24 @@ export function registerCommandRoutes(
           const removedAlternates: unknown[] = []
           if (preserveRemovedAsAlternates) {
             const base = getChatMessages(targetDb, chatId)
-            const keepCount =
-              afterMessageId === null ? 0 : base.findIndex((message) => message.chatId === afterMessageId) + 1
-            if (afterMessageId !== null && keepCount === 0) {
-              throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${afterMessageId}`)
+            let keepCount = 0
+            if (afterMessageId !== null) {
+              const resolved = resolveChatMessageIndexById(base, afterMessageId)
+              if (resolved.ok === false) {
+                if (resolved.reason === 'ambiguous') {
+                  throw new ValidationError(`Ambiguous message id: ${afterMessageId}`)
+                }
+                throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${afterMessageId}`)
+              }
+              keepCount = resolved.index + 1
             }
             removedAlternates.push(...base.slice(keepCount).filter((message) => message.role === 'char'))
           }
           const truncated = truncateActiveChatMessages(targetDb, chatId, afterMessageId)
           if (truncated.ok === false) {
+            if (truncated.reason === 'ambiguous-after') {
+              throw new ValidationError(`Ambiguous message id: ${truncated.afterMessageId}`)
+            }
             throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${truncated.afterMessageId}`)
           }
           for (const message of removedAlternates) {
@@ -6562,7 +6595,7 @@ export function registerCommandRoutes(
       const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
-      const afterMessageId = readTruncateAfterMessageId(body.afterMessageId)
+      const afterMessageId = readTruncateAfterMessageId(body)
       const replacement = readReplacementMessages(body.messages)
       const result = applyTargetedCommandMutation<{
         chatId: string
@@ -6580,10 +6613,16 @@ export function registerCommandRoutes(
           const characters = normalizeAllCharacterChats(database)
           const { chat } = requireChatLocation(characters, chatId)
           const base = getChatMessages(targetDb, chatId)
-          const keepCount =
-            afterMessageId === null ? 0 : base.findIndex((message) => message.chatId === afterMessageId) + 1
-          if (afterMessageId !== null && keepCount === 0) {
-            throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${afterMessageId}`)
+          let keepCount = 0
+          if (afterMessageId !== null) {
+            const resolved = resolveChatMessageIndexById(base, afterMessageId)
+            if (resolved.ok === false) {
+              if (resolved.reason === 'ambiguous') {
+                throw new ValidationError(`Ambiguous message id: ${afterMessageId}`)
+              }
+              throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${afterMessageId}`)
+            }
+            keepCount = resolved.index + 1
           }
           const next = [...base.slice(0, keepCount), ...replacement]
           validateUniqueMessageIds(next as MessageRecord[])
@@ -6690,9 +6729,11 @@ export function registerCommandRoutes(
                 throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${write.targetMessageId}`)
               case 'duplicate':
                 throw new ValidationError(`Duplicate message id: ${write.messageId}`)
+              case 'ambiguous':
+                throw new ValidationError(`Ambiguous message id: ${write.messageId}`)
             }
           }
-          if (generationResult.targetMessageId) {
+          if (generationResult.targetMessageId || write.displaced) {
             if (write.displaced) addAlternateMessage(targetDb, chatId, write.displaced)
             addAlternateMessage(targetDb, chatId, generationResult.message)
           } else {

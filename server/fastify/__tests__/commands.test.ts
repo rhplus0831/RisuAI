@@ -12,6 +12,7 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { applyJsonCommandMutation, applyMessageFreeJsonCommandMutation } from '../src/commands/mutations.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
+import { addAlternateMessage } from '../src/messageStore.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
@@ -275,6 +276,16 @@ async function persistedChatAlternates(
   })
   expect(res.statusCode).toBe(200)
   return res.json().alternates as Array<Record<string, unknown>>
+}
+
+async function persistedChatHypaV3(app: FastifyInstance, assertion: string, chatId: string): Promise<unknown> {
+  const res = await app.inject({
+    method: 'GET',
+    url: `/api/v1/chats/${encodeURIComponent(chatId)}/messages`,
+    headers: { 'risu-auth': assertion },
+  })
+  expect(res.statusCode).toBe(200)
+  return res.json().hypaV3Data
 }
 
 async function projectedCharacterRow(
@@ -10088,6 +10099,157 @@ describe('Phase 9-3c message history commands', () => {
     ])
   })
 
+  it('requires truncate and tail anchors to be present while accepting explicit null', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [
+                { role: 'user', data: 'one', chatId: 'msg-1' },
+                { role: 'char', data: 'two', chatId: 'msg-2' },
+              ],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const omittedTruncate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages/truncate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    expect(omittedTruncate.statusCode).toBe(400)
+    expect(omittedTruncate.json().error).toBe('afterMessageId is required')
+
+    const omittedTail = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages/tail',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, messages: [] },
+    })
+    expect(omittedTail.statusCode).toBe(400)
+    expect(omittedTail.json().error).toBe('afterMessageId is required')
+    expect((await persistedChatMessages(harness.app, assertion, 'chat-a')).map((message) => message.chatId)).toEqual([
+      'msg-1',
+      'msg-2',
+    ])
+
+    const explicitNull = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages/truncate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, afterMessageId: null },
+    })
+    expect(explicitNull.statusCode).toBe(200)
+    expect(explicitNull.json()).toMatchObject({
+      afterMessageId: null,
+      removedCount: 2,
+    })
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([])
+  })
+
+  it('rejects ambiguous duplicate UIDs for truncate, tail replacement, and generation results', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [
+                { role: 'user', data: 'first', chatId: 'duplicate-id' },
+                { role: 'char', data: 'second', chatId: 'original-second-id' },
+              ],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const db = openDatabase(harness.dataDir)
+    try {
+      const row = db.prepare("SELECT json FROM messages WHERE chat_id = 'chat-a' AND seq = 1").get() as {
+        json: string
+      }
+      const message = JSON.parse(row.json) as Record<string, unknown>
+      message.chatId = 'duplicate-id'
+      db.prepare("UPDATE messages SET uid = 'duplicate-id', json = ? WHERE chat_id = 'chat-a' AND seq = 1").run(
+        JSON.stringify(message),
+      )
+    } finally {
+      db.close()
+    }
+
+    const truncate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages/truncate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, afterMessageId: 'duplicate-id' },
+    })
+    expect(truncate.statusCode).toBe(400)
+    expect(truncate.json().error).toBe('Ambiguous message id: duplicate-id')
+
+    const tail = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages/tail',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, afterMessageId: 'duplicate-id', messages: [] },
+    })
+    expect(tail.statusCode).toBe(400)
+    expect(tail.json().error).toBe('Ambiguous message id: duplicate-id')
+
+    const generation = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationResult: {
+          message: {
+            role: 'char',
+            data: 'collision',
+            chatId: 'duplicate-id',
+            promptInfo: {},
+            generationInfo: { generationId: 'duplicate-id' },
+          },
+        },
+      },
+    })
+    expect(generation.statusCode).toBe(400)
+    expect(generation.json().error).toBe('Ambiguous message id: duplicate-id')
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
+      { role: 'user', data: 'first', chatId: 'duplicate-id' },
+      { role: 'char', data: 'second', chatId: 'duplicate-id' },
+    ])
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+  })
+
   it('can preserve truncated assistant tail rows as reroll alternates', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -11007,6 +11169,92 @@ describe('Phase 9-3d generation persistence command', () => {
       id: 'gen-2',
       parentId: 'chat-a',
     })
+  })
+
+  it('preserves a targetless same-UID displaced row and the existing alternate buffer', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [
+                { role: 'user', data: 'hello', chatId: 'msg-a' },
+                {
+                  role: 'char',
+                  data: 'displaced answer',
+                  chatId: 'generation-id',
+                  promptInfo: { promptName: 'Old preset' },
+                  generationInfo: { generationId: 'generation-id', model: 'old-model' },
+                },
+              ],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const db = openDatabase(harness.dataDir)
+    try {
+      addAlternateMessage(db, 'chat-a', {
+        role: 'char',
+        data: 'pre-existing alternate',
+        chatId: 'pre-existing-alternate',
+      })
+    } finally {
+      db.close()
+    }
+
+    const result = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/generation-result',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationResult: {
+          message: {
+            role: 'char',
+            data: 'replacement answer',
+            chatId: 'generation-id',
+            promptInfo: { promptName: 'New preset' },
+            generationInfo: { generationId: 'generation-id', model: 'new-model' },
+          },
+        },
+      },
+    })
+
+    expect(result.statusCode).toBe(200)
+    expect((await persistedChatMessages(harness.app, assertion, 'chat-a')).at(-1)).toEqual({
+      role: 'char',
+      data: 'replacement answer',
+      chatId: 'generation-id',
+      promptInfo: { promptName: 'New preset' },
+      generationInfo: { generationId: 'generation-id', model: 'new-model' },
+    })
+    expect(await persistedChatAlternates(harness.app, assertion, 'chat-a')).toEqual(
+      expect.arrayContaining([
+        {
+          role: 'char',
+          data: 'displaced answer',
+          chatId: 'generation-id',
+          promptInfo: { promptName: 'Old preset' },
+          generationInfo: { generationId: 'generation-id', model: 'old-model' },
+        },
+        {
+          role: 'char',
+          data: 'pre-existing alternate',
+          chatId: 'pre-existing-alternate',
+        },
+      ]),
+    )
   })
 
   it('rejects malformed generation results without bumping revision', async () => {
@@ -14628,6 +14876,133 @@ describe('legacy cold-storage recovery commands', () => {
     expect(() => readJsonRow('chats', 'shell-chat')).toThrow()
   })
 
+  it('rejects character archives with missing chat arrays before changing live rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-cold',
+          name: 'Live character',
+          coldstorage: 'malformed-character-archive',
+          chats: [
+            {
+              id: 'live-chat',
+              name: 'Live chat',
+              note: 'must survive',
+              localLore: [],
+              hypaV3Data: { summaries: [{ text: 'live memory' }] },
+              message: [{ role: 'char', data: 'live transcript', chatId: 'live-message' }],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-cold'],
+    })
+
+    writeColdStorageSidecar(harness.dataDir, 'malformed-character-archive', {
+      character: { chaId: 'char-cold', name: 'Missing chats' },
+    })
+    const missingChats = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-cold/recover-cold-storage',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, key: 'malformed-character-archive' },
+    })
+    expect(missingChats.statusCode).toBe(400)
+    expect(missingChats.json().error).toBe('archive.character.chats must be an array')
+
+    writeColdStorageSidecar(harness.dataDir, 'malformed-character-archive', {
+      character: {
+        chaId: 'char-cold',
+        name: 'Missing messages',
+        chats: [{ id: 'recovered-chat', name: 'Recovered chat', note: '', localLore: [] }],
+      },
+    })
+    const missingMessages = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-cold/recover-cold-storage',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, key: 'malformed-character-archive' },
+    })
+    expect(missingMessages.statusCode).toBe(400)
+    expect(missingMessages.json().error).toBe('archive.character.chats[0].message must be an array')
+
+    expect(readJsonRow('characters', 'char-cold')).toMatchObject({
+      name: 'Live character',
+      coldstorage: 'malformed-character-archive',
+    })
+    expect(readJsonRow('chats', 'live-chat')).toMatchObject({ name: 'Live chat', note: 'must survive' })
+    expect(await persistedChatMessages(harness.app, assertion, 'live-chat')).toEqual([
+      { role: 'char', data: 'live transcript', chatId: 'live-message' },
+    ])
+    expect(await persistedChatHypaV3(harness.app, assertion, 'live-chat')).toEqual({
+      summaries: [{ text: 'live memory' }],
+    })
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('preserves live Hypa V3 data when a character archive omits it', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-cold',
+          name: 'Archived shell',
+          coldstorage: 'character-without-hypa',
+          chats: [
+            {
+              id: 'shared-chat',
+              name: 'Shell chat',
+              note: '',
+              localLore: [],
+              hypaV3Data: { summaries: [{ text: 'live character memory' }] },
+              message: [{ role: 'char', data: 'shell', chatId: 'shell-message' }],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-cold'],
+    })
+    writeColdStorageSidecar(harness.dataDir, 'character-without-hypa', {
+      character: {
+        chaId: 'char-cold',
+        name: 'Recovered character',
+        chats: [
+          {
+            id: 'shared-chat',
+            name: 'Recovered chat',
+            note: '',
+            localLore: [],
+            message: [{ role: 'char', data: 'recovered', chatId: 'recovered-message' }],
+          },
+        ],
+        chatFolders: [],
+        chatPage: 0,
+      },
+    })
+
+    const recovered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-cold/recover-cold-storage',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, key: 'character-without-hypa' },
+    })
+
+    expect(recovered.statusCode).toBe(200)
+    expect(await persistedChatHypaV3(harness.app, assertion, 'shared-chat')).toEqual({
+      summaries: [{ text: 'live character memory' }],
+    })
+  })
+
   it('recovers an archived chat transcript and metadata without deleting its sidecar', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -14699,6 +15074,53 @@ describe('legacy cold-storage recovery commands', () => {
       localLore: [{ key: 'archive lore' }],
     })
     expect(existsSync(sidecarPath)).toBe(true)
+  })
+
+  it('preserves live Hypa V3 data when a legacy chat archive omits it', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-cold',
+              name: 'Archived chat',
+              note: '',
+              localLore: [],
+              hypaV3Data: { summaries: [{ text: 'live chat memory' }] },
+              message: [
+                {
+                  role: 'char',
+                  data: `${LEGACY_COLD_STORAGE_HEADER}legacy-array-archive`,
+                  chatId: 'pointer-message',
+                },
+              ],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    writeColdStorageSidecar(harness.dataDir, 'legacy-array-archive', [
+      { role: 'user', data: 'Recovered question', chatId: 'message-a' },
+      { role: 'char', data: 'Recovered answer', chatId: 'message-b' },
+    ])
+
+    const recovered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-cold/recover-cold-storage',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, key: 'legacy-array-archive' },
+    })
+
+    expect(recovered.statusCode).toBe(200)
+    expect(await persistedChatHypaV3(harness.app, assertion, 'chat-cold')).toEqual({
+      summaries: [{ text: 'live chat memory' }],
+    })
   })
 
   it('keeps an authoritative chat pointer when its archive is missing or corrupt', async () => {

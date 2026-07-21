@@ -329,15 +329,40 @@ export function deleteActiveMessageById(
   return { ok: true, chatId: location.chatId }
 }
 
+export type ChatMessageIndexResult = { ok: true; index: number } | { ok: false; reason: 'missing' | 'ambiguous' }
+
+export function resolveChatMessageIndexById(
+  messages: readonly JsonRecord[],
+  messageId: string,
+): ChatMessageIndexResult {
+  let index = -1
+  for (let candidate = 0; candidate < messages.length; candidate++) {
+    if (messages[candidate].chatId !== messageId) continue
+    if (index !== -1) return { ok: false, reason: 'ambiguous' }
+    index = candidate
+  }
+  return index === -1 ? { ok: false, reason: 'missing' } : { ok: true, index }
+}
+
 export function truncateActiveChatMessages(
   db: DatabaseSync,
   chatId: string,
   afterMessageId: string | null,
-): { ok: true; removedCount: number } | { ok: false; reason: 'missing-after'; afterMessageId: string } {
+):
+  | { ok: true; removedCount: number }
+  | { ok: false; reason: 'missing-after' | 'ambiguous-after'; afterMessageId: string } {
   const base = getChatMessages(db, chatId)
-  const keepCount = afterMessageId === null ? 0 : base.findIndex((message) => message.chatId === afterMessageId) + 1
-  if (afterMessageId !== null && keepCount === 0) {
-    return { ok: false, reason: 'missing-after', afterMessageId }
+  let keepCount = 0
+  if (afterMessageId !== null) {
+    const resolved = resolveChatMessageIndexById(base, afterMessageId)
+    if (resolved.ok === false) {
+      return {
+        ok: false,
+        reason: resolved.reason === 'ambiguous' ? 'ambiguous-after' : 'missing-after',
+        afterMessageId,
+      }
+    }
+    keepCount = resolved.index + 1
   }
 
   const next = base.slice(0, keepCount)
@@ -353,6 +378,7 @@ export type GenerationMessageWriteResult =
   | { ok: true; messageId: string; displaced?: JsonRecord }
   | { ok: false; reason: 'missing-target'; targetMessageId: string }
   | { ok: false; reason: 'duplicate'; messageId: string }
+  | { ok: false; reason: 'ambiguous'; messageId: string }
 
 export function writeGenerationChatMessage(
   db: DatabaseSync,
@@ -363,9 +389,13 @@ export function writeGenerationChatMessage(
   const message = readMessageObject(raw)
   const row = toRow(message)
   const lookupMessageId = targetMessageId ?? row.uid
-  const existing = db
-    .prepare('SELECT seq, json FROM messages WHERE chat_id = ? AND uid = ? AND alternate = 0 LIMIT 1')
-    .get(chatId, lookupMessageId) as { seq: number; json: string } | undefined
+  const existingRows = db
+    .prepare('SELECT seq, json FROM messages WHERE chat_id = ? AND uid = ? AND alternate = 0 ORDER BY seq LIMIT 2')
+    .all(chatId, lookupMessageId) as Array<{ seq: number; json: string }>
+  if (existingRows.length > 1) {
+    return { ok: false, reason: 'ambiguous', messageId: lookupMessageId }
+  }
+  const existing = existingRows[0]
 
   if (!existing && targetMessageId) {
     return { ok: false, reason: 'missing-target', targetMessageId }

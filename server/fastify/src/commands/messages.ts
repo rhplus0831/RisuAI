@@ -148,9 +148,12 @@ export function readGenerationResult(input: unknown): GenerationResultRecord {
   return { ...result, message, targetMessageId }
 }
 
-export function readTruncateAfterMessageId(value: unknown): string | null {
-  if (value === null || value === undefined) return null
-  return readMessageId(value, 'afterMessageId')
+export function readTruncateAfterMessageId(input: { afterMessageId?: unknown }): string | null {
+  if (!Object.prototype.hasOwnProperty.call(input, 'afterMessageId')) {
+    throw new ValidationError('afterMessageId is required')
+  }
+  if (input.afterMessageId === null) return null
+  return readMessageId(input.afterMessageId, 'afterMessageId')
 }
 
 export function requireMessageLocation(characters: readonly CharacterRecord[], messageId: string): MessageLocation {

@@ -2575,6 +2575,8 @@ function persistServerGenerationResult(args: {
               throw new EntityNotFoundError(`Message not found for chat ${args.chatId}: ${write.targetMessageId}`)
             case 'duplicate':
               throw new ValidationError(`Duplicate message id: ${write.messageId}`)
+            case 'ambiguous':
+              throw new ValidationError(`Ambiguous message id: ${write.messageId}`)
           }
         }
         // Reroll buffer ("don't lose a rerolled result"):
@@ -2586,9 +2588,13 @@ function persistServerGenerationResult(args: {
         //    hydration). Dedup by `uid` keeps it
         //    replay-idempotent and free of duplicates as candidates accumulate.
         //  - send / continue is the confirm boundary — drop the chat's reroll buffer.
+        //    A targetless same-uid collision is anomalous, however, so preserve
+        //    both versions instead of silently discarding the displaced row.
         // Both run inside this mutation's transaction (atomic with the message write).
         const preservesRerollCandidate =
-          !!args.targetMessageId || (args.mode === 'regenerate' && countAlternateMessages(targetDb, args.chatId) > 0)
+          !!args.targetMessageId ||
+          !!write.displaced ||
+          (args.mode === 'regenerate' && countAlternateMessages(targetDb, args.chatId) > 0)
         if (providerAlternates.length > 0) {
           if (!preservesRerollCandidate) clearAlternateMessages(targetDb, args.chatId)
           if (preservesRerollCandidate && write.displaced) addAlternateMessage(targetDb, args.chatId, write.displaced)
