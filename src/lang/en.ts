@@ -1670,6 +1670,8 @@ export const languageEnglish = {
     'Some pending changes still could not reach the server. They remain saved on this device and must be retried before the app can load.',
   pendingMutationDiscarded:
     'Some unsaved changes came from an older editing session and could not be applied safely. Please review the affected fields.',
+  serverDatabaseDamaged:
+    'The server database appears damaged and cannot be initialized safely. Restore risu.db or a database backup, then restart the server.',
   personaImportQueued:
     'The persona is saved on this device and queued. It will finish importing when the server is available.',
   personaImportFailed: 'Could not import the persona. Please try again.',

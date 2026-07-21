@@ -151,6 +151,8 @@ const COLOR_SCHEME_RUNTIME_KEYS = new Set(['colorScheme', 'colorSchemeName', 'cu
 const TEXT_THEME_RUNTIME_KEYS = new Set(['textTheme', 'customTextTheme', 'font', 'customFont', 'customCSS'])
 const GUI_SIZE_RUNTIME_KEYS = new Set(['textAreaSize', 'textAreaTextSize', 'sideBarSize'])
 
+class FatalBootstrapError extends Error {}
+
 function hasProjectedRuntimeKey(keys: readonly string[], candidates: ReadonlySet<string>): boolean {
   return keys.some((key) => candidates.has(key))
 }
@@ -244,6 +246,7 @@ export async function loadData(): Promise<void> {
     } catch (error) {
       alertError(error)
       await waitAlert()
+      if (error instanceof FatalBootstrapError) return
       if (!get(loadedStore)) await loadData()
     }
   }
@@ -363,6 +366,10 @@ async function initializeFreshServerDatabase(initialRuntime: ServerBootstrapRunt
       throw new Error('Initial server database seed failed: server is still uninitialized')
     }
     return bootstrap.bootstrap
+  }
+
+  if (result.status === 'error' && result.reason === 'initialize-conflict') {
+    throw new FatalBootstrapError(language.serverDatabaseDamaged)
   }
 
   throw new Error(`Initial server database seed failed: ${serverCommandFailureMessage(result)}`)

@@ -6,6 +6,7 @@ import { createInitialDatabase } from './databaseDefaults.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
 import { getSchemaState } from './db.js'
+import { assessDatabaseInitialization, InitializeConflictError } from './databaseInitialization.js'
 import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent } from './commands/events.js'
 import { getDatabaseWriterMetadata, rotateDatabaseLineage } from './databaseLineage.js'
 import { recordTableWrite } from './protocolMetrics.js'
@@ -2275,22 +2276,26 @@ export function applyImport(
  * First-run seed: write the server-owned default database to SQLite ONLY when
  * no database exists yet.
  *
- * Idempotent and clobber-safe — if a database is already present (a non-null
- * object), this is a no-op that returns the current revision without writing or
- * bumping. The presence check runs inside the same `BEGIN IMMEDIATE`
- * transaction as the write, so two clients opening the same fresh server (a
- * second tab, a reload race) can never seed twice or overwrite real data.
+ * Idempotent and clobber-safe — a valid settings object is a no-op, while
+ * durable domain rows or revision history without one are a conflict. The
+ * classification runs inside the same `BEGIN IMMEDIATE` transaction as the
+ * write, so two clients opening the same fresh server (a second tab, a reload
+ * race) can never seed twice or overwrite real data.
  */
-export function initializeDefaultDatabase(
-  db: DatabaseSync,
-  dataDir: string,
-): { revision: number; initialized: boolean; event?: CommandEvent } {
+export function initializeDefaultDatabase(db: DatabaseSync): {
+  revision: number
+  initialized: boolean
+  event?: CommandEvent
+} {
   let transactionOpen = false
   db.exec('BEGIN IMMEDIATE')
   transactionOpen = true
   try {
-    const current = loadPersisted(db, dataDir)
-    if (current.database !== null && current.database !== undefined) {
+    const initialization = assessDatabaseInitialization(db)
+    if (initialization.state === 'conflict') {
+      throw new InitializeConflictError(initialization.evidence)
+    }
+    if (initialization.state === 'initialized') {
       // Already initialized → never overwrite. Report the live revision so the
       // caller can sync its cursor.
       const { revision } = getSchemaState(db)

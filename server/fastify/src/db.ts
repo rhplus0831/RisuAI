@@ -20,6 +20,25 @@ import {
 
 export const CURRENT_SCHEMA_VERSION = 26
 
+export interface OpenDatabaseOptions {
+  allowMissingDatabase?: boolean
+}
+
+export class MissingDatabaseRefusalError extends Error {
+  constructor(
+    readonly databasePath: string,
+    readonly evidence: readonly string[],
+  ) {
+    super(
+      `Refusing to create a new RisuAI database at "${databasePath}" because the data directory contains ` +
+        `evidence of a prior installation: ${evidence.join(', ')}. Restore the expected risu.db file at ` +
+        `"${databasePath}" or restore a database backup. If starting fresh is intentional, set ` +
+        'RISU_API_ALLOW_MISSING_DATABASE=1.',
+    )
+    this.name = 'MissingDatabaseRefusalError'
+  }
+}
+
 export interface MigrationStep {
   version: number
   name: string
@@ -258,9 +277,38 @@ function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
   return rows.some((row) => row.name === column)
 }
 
-export function openDatabase(dataDir: string): DatabaseSync {
+function priorInstallEvidence(dataDir: string): string[] {
+  if (!fs.existsSync(dataDir)) return []
+
+  const entries = fs.readdirSync(dataDir).sort()
+  const evidence = entries.filter(
+    (entry) => entry === 'db.json.migrated' || /^db\.json(?:\.migrated)?\.invalid(?:\.\d+)?$/.test(entry),
+  )
+
+  for (const directory of ['backups', 'assets', 'save']) {
+    const directoryPath = path.join(dataDir, directory)
+    if (
+      fs.existsSync(directoryPath) &&
+      fs.statSync(directoryPath).isDirectory() &&
+      fs.readdirSync(directoryPath).length
+    ) {
+      evidence.push(`${directory}/`)
+    }
+  }
+
+  if (fs.existsSync(path.join(dataDir, '__password'))) evidence.push('__password')
+  return evidence
+}
+
+export function openDatabase(dataDir: string, options: OpenDatabaseOptions = {}): DatabaseSync {
+  const databasePath = path.join(dataDir, 'risu.db')
+  if (!fs.existsSync(databasePath) && !options.allowMissingDatabase) {
+    const evidence = priorInstallEvidence(dataDir)
+    if (evidence.length > 0) throw new MissingDatabaseRefusalError(databasePath, evidence)
+  }
+
   fs.mkdirSync(dataDir, { recursive: true })
-  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  const db = new DatabaseSync(databasePath)
   try {
     db.exec('PRAGMA journal_mode = WAL')
     // WAL with NORMAL keeps database consistency crash-safe while accepting

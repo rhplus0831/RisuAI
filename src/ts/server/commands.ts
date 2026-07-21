@@ -504,6 +504,7 @@ export type ServerCommandLocalEffect = (
 
 export type ServerCommandErrorReason =
   | 'database-lineage'
+  | 'initialize-conflict'
   | 'invalid-request'
   | 'mutation-id-conflict'
   | 'not-found'
@@ -5509,6 +5510,14 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
       }
     }
 
+    if (response.status === 409 && isInitializeConflict(body)) {
+      return {
+        status: 'error',
+        error: 'initialize_conflict',
+        reason: 'initialize-conflict',
+      }
+    }
+
     if (response.status === 409) {
       const currentRevision = readCurrentRevision(body)
       if (currentRevision !== null) {
@@ -8400,6 +8409,10 @@ function isDatabaseLineageConflict(body: unknown): boolean {
 
 function isMutationIdConflict(body: unknown): boolean {
   return !!body && typeof body === 'object' && (body as { error?: unknown }).error === 'mutation_id_conflict'
+}
+
+function isInitializeConflict(body: unknown): boolean {
+  return !!body && typeof body === 'object' && (body as { error?: unknown }).error === 'initialize_conflict'
 }
 
 function errorMessageFromBody(body: unknown, fallback: string): string {

@@ -6,6 +6,8 @@ export interface AppConfig {
   host: string
   port: number
   dataDir: string
+  /** Explicitly accept creating risu.db when the data directory shows prior-use evidence. */
+  allowMissingDatabase?: boolean
   bodyLimit: number
   /**
    * Max upload size for device backup imports (`.risu.zip` / legacy `.bin`).
@@ -163,6 +165,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     host: env.RISU_API_HOST ?? '0.0.0.0',
     port: parsePort(env.RISU_API_PORT, 6002),
     dataDir,
+    allowMissingDatabase: parseBoolean(env.RISU_API_ALLOW_MISSING_DATABASE),
     bodyLimit: parseBodyLimit(env.RISU_API_BODY_LIMIT, 100 * 1024 * 1024),
     importMaxBytes: parseImportMaxBytes(env.RISU_API_IMPORT_MAX_BYTES, Number.POSITIVE_INFINITY),
     automaticBackupRetention: parsePositiveInteger(

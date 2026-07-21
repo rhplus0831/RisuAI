@@ -9,6 +9,7 @@ import { getSchemaState } from '../db.js'
 import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
 import { getDatabaseLineage, getDatabaseWriterMetadata } from '../databaseLineage.js'
+import { assessDatabaseInitialization } from '../databaseInitialization.js'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
 
@@ -29,7 +30,10 @@ export function registerBootstrapRoutes(
     }
     const { version, revision } = getSchemaState(db)
     const response = {
-      initialized: db.prepare('SELECT 1 FROM settings WHERE id = 1').get() !== undefined,
+      // A damaged database with durable user data must never invite the client
+      // to run first-use initialization. The initialize command uses this same
+      // classifier and returns a conflict if a race reaches it anyway.
+      initialized: assessDatabaseInitialization(db).state !== 'uninitialized',
       revision,
       schemaVersion: version,
       databaseLineage: getDatabaseLineage(db),

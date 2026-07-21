@@ -70,6 +70,20 @@ function failCommandEventPersistence(dataDir: string): void {
   }
 }
 
+function readAllDatabaseRows(dataDir: string): Record<string, unknown[]> {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{
+      name: string
+    }>
+    return Object.fromEntries(
+      tables.map(({ name }) => [name, db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all() as unknown[]]),
+    )
+  } finally {
+    db.close()
+  }
+}
+
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-commands-'))
@@ -777,6 +791,117 @@ describe('first-run database seed', () => {
     expect(reloaded.json().database.loreBook).toEqual([
       expect.objectContaining({ id: defaultLorebookId, data: [expect.objectContaining({ id: entry.id })] }),
     ])
+  })
+
+  it('preserves the single-winner behavior when two clients initialize concurrently', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    harness.commandEvents.clear()
+
+    const responses = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        harness.app.inject({
+          method: 'POST',
+          url: '/api/v1/commands/state/initialize',
+          headers: { 'risu-auth': assertion },
+          payload: {},
+        }),
+      ),
+    )
+
+    expect(responses.map((response) => response.statusCode)).toEqual([200, 200])
+    expect(responses.map((response) => response.json().initialized).sort()).toEqual([false, true])
+    expect(responses.map((response) => response.json().revision)).toEqual([1, 1])
+    expect(harness.commandEvents.list()).toHaveLength(1)
+    expect(harness.commandEvents.list()[0]).toMatchObject({ type: 'state.initialized', revision: 1 })
+  })
+
+  it('reports a non-object settings row as uninitialized and safely replaces it when no user data exists', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      db.prepare("INSERT INTO settings (id, data_json) VALUES (1, '[]')").run()
+    } finally {
+      db.close()
+    }
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().initialized).toBe(false)
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/state/initialize',
+      headers: { 'risu-auth': assertion },
+      payload: {},
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({ revision: 1, initialized: true })
+  })
+
+  it('returns initialize_conflict for characters without settings and reports bootstrap initialized', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      db.prepare(
+        'INSERT INTO characters (id, position, data_json) VALUES (\'char-preserved\', 0, \'{"chaId":"char-preserved","name":"Preserved"}\')',
+      ).run()
+      db.prepare('INSERT INTO modules (position, data_json) VALUES (0, \'{"id":"module-preserved"}\')').run()
+    } finally {
+      db.close()
+    }
+    const before = readAllDatabaseRows(harness.dataDir)
+    harness.commandEvents.clear()
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().initialized).toBe(true)
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/state/initialize',
+      headers: { 'risu-auth': assertion },
+      payload: {},
+    })
+
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toEqual({ error: 'initialize_conflict' })
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(before)
+    expect(harness.commandEvents.list()).toEqual([])
+  })
+
+  it('returns initialize_conflict for orphaned messages without touching any table', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      db.prepare(
+        "INSERT INTO messages (chat_id, seq, uid, role, data, json) VALUES ('chat-lost', 0, 'message-preserved', 'user', 'hello', '{\"uid\":\"message-preserved\"}')",
+      ).run()
+    } finally {
+      db.close()
+    }
+    const before = readAllDatabaseRows(harness.dataDir)
+    harness.commandEvents.clear()
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/state/initialize',
+      headers: { 'risu-auth': assertion },
+      payload: {},
+    })
+
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toEqual({ error: 'initialize_conflict' })
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(before)
+    expect(harness.commandEvents.list()).toEqual([])
   })
 
   it('does not seed database or bump revision when initialization event persistence fails', async () => {

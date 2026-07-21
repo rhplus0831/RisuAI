@@ -8,6 +8,15 @@ import { DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES } from '../src/generation/gener
 
 const BASE_ENV = { RISU_API_DATA_DIR: '/tmp/risu-config-test' }
 
+describe('loadConfig missing database override', () => {
+  it('requires an explicit truthy value', () => {
+    expect(loadConfig({ ...BASE_ENV }).allowMissingDatabase).toBe(false)
+    expect(loadConfig({ ...BASE_ENV, RISU_API_ALLOW_MISSING_DATABASE: '1' }).allowMissingDatabase).toBe(true)
+    expect(loadConfig({ ...BASE_ENV, RISU_API_ALLOW_MISSING_DATABASE: 'true' }).allowMissingDatabase).toBe(true)
+    expect(loadConfig({ ...BASE_ENV, RISU_API_ALLOW_MISSING_DATABASE: '0' }).allowMissingDatabase).toBe(false)
+  })
+})
+
 describe('loadConfig importMaxBytes', () => {
   it('defaults to unlimited so large backups import without per-deployment tuning', () => {
     expect(loadConfig({ ...BASE_ENV }).importMaxBytes).toBe(Number.POSITIVE_INFINITY)

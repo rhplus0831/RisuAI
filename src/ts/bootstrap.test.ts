@@ -604,6 +604,27 @@ describe('API-backed client bootstrap', () => {
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([])
   })
 
+  it('shows a fatal damaged-database alert and does not retry an initialize conflict', async () => {
+    bootstrapApi.fetch.mockResolvedValue(runtimeBootstrap({ initialized: false, revision: 0 }))
+    commandApi.initialize.mockResolvedValue({
+      status: 'error',
+      error: 'initialize_conflict',
+      reason: 'initialize-conflict',
+    })
+
+    await loadData()
+
+    expect(commandApi.initialize).toHaveBeenCalledTimes(1)
+    expect(bootstrapApi.fetch).toHaveBeenCalledTimes(1)
+    expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
+    expect(resourceApi.loadInitial).not.toHaveBeenCalled()
+    expect(get(loadedStore)).toBe(false)
+    expect(alertError).toHaveBeenCalledTimes(1)
+    expect(alertError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('database appears damaged') }),
+    )
+  })
+
   it('rejects unavailable bootstrap and failed resource reads without starting events', async () => {
     bootstrapApi.fetch.mockResolvedValueOnce({ status: 'unavailable' })
     await expect(loadWebInitialDatabase()).rejects.toThrow('Server bootstrap is unavailable')

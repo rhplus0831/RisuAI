@@ -33,6 +33,7 @@ import {
   type CommandMutationReceiptKey,
 } from '../commandMutationReceipts.js'
 import { DATABASE_LINEAGE_HEADER, DatabaseLineageConflictError } from '../databaseLineage.js'
+import { InitializeConflictError } from '../databaseInitialization.js'
 import { maskProviderSecrets, resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   normalizeLegacyFallbackModels,
@@ -1978,7 +1979,7 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(body, 'database')) {
         throw new ValidationError('database payload is no longer accepted for state initialization')
       }
-      const result = initializeDefaultDatabase(db, dataDir)
+      const result = initializeDefaultDatabase(db)
       if (!result.initialized) {
         // Already initialized: report the live revision so the client can sync
         // its cursor; no write happened, so no event is emitted.
@@ -9125,6 +9126,10 @@ function sendCommandError(
   if (err instanceof RevisionMismatchError) {
     reply.code(409)
     return { error: 'revision_conflict', currentRevision: err.currentRevision }
+  }
+  if (err instanceof InitializeConflictError) {
+    reply.code(409)
+    return { error: err.code }
   }
   if (err instanceof ValidationError) {
     reply.code(400)

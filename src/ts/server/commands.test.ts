@@ -365,6 +365,17 @@ describe('server command API adapter', () => {
     expect(peekCachedServerCommandRevision()).toBe(8)
   })
 
+  it('preserves initialize_conflict as a distinct command failure', async () => {
+    const commandFetch = makeCommandFetch(() => jsonResponse({ error: 'initialize_conflict' }, 409))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(initializeServerDatabase()).resolves.toEqual({
+      status: 'error',
+      error: 'initialize_conflict',
+      reason: 'initialize-conflict',
+    })
+  })
+
   it('sends onboarding preset owners and settings through one command request', async () => {
     const event = { type: 'onboarding.completed', revision: 3, resource: 'legacyBotPreset' }
     const commandFetch = makeCommandFetch(() => ({
