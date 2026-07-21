@@ -1,6 +1,7 @@
 interface ChatStructureHydrationHooks {
   markCreatedTranscript: (chatId: string) => boolean
   invalidateTranscript: (chatId: string) => void
+  isTranscriptHydrated: (chatId: string) => boolean
 }
 
 let hooks: ChatStructureHydrationHooks | null = null
@@ -15,4 +16,8 @@ export function markOptimisticCreatedChatTranscript(chatId: string): boolean {
 
 export function invalidateOptimisticCreatedChatTranscript(chatId: string): void {
   hooks?.invalidateTranscript(chatId)
+}
+
+export function isKnownHydratedChatTranscript(chatId: string): boolean {
+  return hooks?.isTranscriptHydrated(chatId) ?? false
 }

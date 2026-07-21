@@ -45,6 +45,7 @@ import { fetchServerCharacter } from './server/resourceReads'
 import { isServerChatMessagePlaceholder } from './server/chatMessagePlaceholders'
 import {
   invalidateOptimisticCreatedChatTranscript,
+  isKnownHydratedChatTranscript,
   markOptimisticCreatedChatTranscript,
 } from './server/chatStructureHydrationHooks'
 import {
@@ -3761,12 +3762,16 @@ function buildCompatibleChatUpdateScopedSteps(
     })
   }
 
-  const messageUpdate = buildCompatibleMessageListUpdate(chatId, previousChat.message ?? [], nextChat.message ?? [])
+  const previousMessages = previousChat.message ?? []
+  const nextMessages = nextChat.message ?? []
+  const messagesChanged = snapshotJson(previousMessages) !== snapshotJson(nextMessages)
+  const messageUpdate = buildCompatibleMessageListUpdate(chatId, previousMessages, nextMessages)
   const rejectedMessages =
     !messageUpdate &&
-    snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? []) &&
-    hasServerChatMessagePlaceholders(nextChat.message ?? [])
-      ? cloneJsonValue(nextChat.message ?? [])
+    messagesChanged &&
+    ((previousMessages.length === 0 && !isKnownHydratedChatTranscript(chatId)) ||
+      hasServerChatMessagePlaceholders(nextMessages))
+      ? cloneJsonValue(nextMessages)
       : null
   if (messageUpdate) {
     steps.push({
@@ -3817,6 +3822,12 @@ function buildCompatibleMessageListUpdate(
     optimisticChatBodyProjectionEpoch,
   )
   if (narrowUpdate) return narrowUpdate
+  // Bootstrap resources deliberately represent every unopened transcript as
+  // an unmarked empty array. A broad replacement diffed from that shell would
+  // make the server delete its real rows. The one-message append above is safe:
+  // its server command appends after the persisted tail without consulting the
+  // incomplete local prefix.
+  if (previousMessages.length === 0 && !isKnownHydratedChatTranscript(chatId)) return null
   if (hasServerChatMessagePlaceholders(nextMessages)) return null
 
   for (const message of nextMessages) {

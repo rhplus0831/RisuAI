@@ -54,6 +54,11 @@ const mockLegacyPluginApis = vi.hoisted(() => ({
   setArg: vi.fn(async () => null),
 }))
 
+const mockChatHydration = vi.hoisted(() => ({
+  hydrateChatMessages: vi.fn(async () => undefined),
+  isChatMessageTranscriptHydrated: vi.fn(() => false),
+}))
+
 const mockPermissionForage = vi.hoisted(() => {
   const values = new Map<string, unknown>()
   return {
@@ -155,6 +160,8 @@ vi.mock('src/ts/server/commands', () => ({
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   dispatchDurableServerBackedSettingsPatch: vi.fn(),
 }))
+
+vi.mock('src/ts/server/chatMessageHydration.svelte', () => mockChatHydration)
 
 vi.mock('src/ts/characterCommands', () => ({
   CHARACTER_PATCH_EXCLUDED_KEYS: new Set([
@@ -314,6 +321,7 @@ import {
   additionalSettingsMenu,
 } from 'src/ts/stores.svelte'
 import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
+import { hydrateChatMessages, isChatMessageTranscriptHydrated } from 'src/ts/server/chatMessageHydration.svelte'
 import { dispatchUpdatePlugin } from 'src/ts/pluginCommands'
 import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
@@ -371,6 +379,10 @@ beforeEach(async () => {
   }
   vi.mocked(prepareCompatibleCharacterUpdateScoped).mockClear()
   vi.mocked(prepareCompatibleChatUpdateScoped).mockClear()
+  vi.mocked(hydrateChatMessages).mockReset()
+  vi.mocked(hydrateChatMessages).mockResolvedValue(undefined)
+  vi.mocked(isChatMessageTranscriptHydrated).mockReset()
+  vi.mocked(isChatMessageTranscriptHydrated).mockReturnValue(false)
   vi.mocked(appendCurrentChatUserMessageForSend).mockReset()
   vi.mocked(processSendChat).mockReset()
   vi.mocked(dispatchUpdatePlugin).mockReset()
@@ -680,6 +692,173 @@ describe('V3 chat command bridge', () => {
     expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('queued from plugin')
     expect(processSendChat).not.toHaveBeenCalled()
     expect(mockDbState.db.characters['char-a'].chats[0].message).toEqual([])
+  })
+
+  it('getChatFromIndex waits for strict hydration and never returns the bootstrap shell', async () => {
+    mockServerCommands.canUse = true
+    const hydration = deferred<void>()
+    mockDbState.db.characters = {
+      0: {
+        chaId: 'char-a',
+        chats: [{ id: 'chat-a', message: [] }],
+      },
+    }
+    vi.mocked(hydrateChatMessages).mockImplementationOnce(async () => {
+      await hydration.promise
+      mockDbState.db.characters[0].chats[0].message = [
+        { role: 'user', data: 'persisted history', chatId: 'message-existing' },
+      ]
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    let resolved = false
+    const read = api.getChatFromIndex(0, 0).then((chat: any) => {
+      resolved = true
+      return chat
+    })
+    await Promise.resolve()
+
+    expect(hydrateChatMessages).toHaveBeenCalledWith('chat-a', { strict: true })
+    expect(resolved).toBe(false)
+
+    hydration.resolve()
+    await expect(read).resolves.toMatchObject({
+      id: 'chat-a',
+      message: [{ role: 'user', data: 'persisted history', chatId: 'message-existing' }],
+    })
+  })
+
+  it('setChatToIndex hydrates before diffing and preserves hydrated rows in a get/edit/set round trip', async () => {
+    mockServerCommands.canUse = true
+    const persisted = { role: 'user', data: 'persisted history', chatId: 'message-existing' }
+    mockDbState.db.characters = {
+      0: {
+        chaId: 'char-a',
+        chats: [{ id: 'chat-a', message: [] }],
+      },
+    }
+    vi.mocked(hydrateChatMessages).mockImplementation(async () => {
+      mockDbState.db.characters[0].chats[0].message = [persisted]
+    })
+    const dispatchAsync = vi.fn(async () => ({ status: 'ok' as const, acceptedCount: 1 }))
+    vi.mocked(prepareCompatibleChatUpdateScoped).mockReturnValueOnce({
+      commandCount: 1,
+      dispatch: vi.fn(),
+      dispatchAsync,
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+    const pluginChat = await api.getChatFromIndex(0, 0)
+    pluginChat.message.push(
+      { role: 'char', data: 'plugin one', chatId: 'message-plugin-1' },
+      { role: 'user', data: 'plugin two', chatId: 'message-plugin-2' },
+    )
+
+    await expect(api.setChatToIndex(0, 0, pluginChat)).resolves.toBeUndefined()
+
+    expect(hydrateChatMessages).toHaveBeenCalledTimes(2)
+    expect(prepareCompatibleChatUpdateScoped).toHaveBeenCalledWith(
+      expect.objectContaining({ message: [persisted] }),
+      expect.objectContaining({
+        message: [
+          persisted,
+          { role: 'char', data: 'plugin one', chatId: 'message-plugin-1' },
+          { role: 'user', data: 'plugin two', chatId: 'message-plugin-2' },
+        ],
+      }),
+      expect.objectContaining({ chatId: 'chat-a' }),
+    )
+    expect(dispatchAsync).toHaveBeenCalledOnce()
+  })
+
+  it('setChatToIndex rejects a message-bearing write when strict hydration fails', async () => {
+    mockServerCommands.canUse = true
+    const existingChat = { id: 'chat-a', message: [] }
+    mockDbState.db.characters = {
+      0: {
+        chaId: 'char-a',
+        chats: [existingChat],
+      },
+    }
+    vi.mocked(hydrateChatMessages).mockRejectedValueOnce(new Error('Chat hydration incomplete for: chat-a'))
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    await expect(
+      api.setChatToIndex(0, 0, {
+        ...existingChat,
+        message: [
+          { role: 'user', data: 'plugin one', chatId: 'message-plugin-1' },
+          { role: 'char', data: 'plugin two', chatId: 'message-plugin-2' },
+        ],
+      }),
+    ).rejects.toThrow('Chat hydration incomplete for: chat-a')
+
+    expect(mockDbState.db.characters[0].chats[0]).toBe(existingChat)
+    expect(prepareCompatibleChatUpdateScoped).not.toHaveBeenCalled()
+  })
+
+  it('setChatToIndex rejects messages synthesized from a shell after hydration reveals persisted rows', async () => {
+    mockServerCommands.canUse = true
+    const existingChat = { id: 'chat-a', name: 'Chat', message: [] }
+    const persisted = { role: 'user', data: 'persisted history', chatId: 'message-existing' }
+    mockDbState.db.characters = {
+      0: {
+        chaId: 'char-a',
+        chats: [existingChat],
+      },
+    }
+    vi.mocked(hydrateChatMessages).mockImplementationOnce(async () => {
+      mockDbState.db.characters[0].chats[0].message = [persisted]
+      mockDbState.db.characters[0].chats[0].hypaV3Data = { memory: 'persisted' }
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    await expect(
+      api.setChatToIndex(0, 0, {
+        ...existingChat,
+        message: [
+          { role: 'user', data: 'plugin one', chatId: 'message-plugin-1' },
+          { role: 'char', data: 'plugin two', chatId: 'message-plugin-2' },
+        ],
+      }),
+    ).rejects.toThrow(/cannot replace messages from an unhydrated chat snapshot/)
+
+    expect(mockDbState.db.characters[0].chats[0].message).toEqual([persisted])
+    expect(prepareCompatibleChatUpdateScoped).not.toHaveBeenCalled()
+  })
+
+  it('setChatToIndex preserves hydrated rows when a stale shell only changes metadata', async () => {
+    mockServerCommands.canUse = true
+    const existingChat = { id: 'chat-a', name: 'Old chat', message: [] }
+    const persisted = { role: 'user', data: 'persisted history', chatId: 'message-existing' }
+    mockDbState.db.characters = {
+      0: {
+        chaId: 'char-a',
+        chats: [existingChat],
+      },
+    }
+    vi.mocked(hydrateChatMessages).mockImplementationOnce(async () => {
+      mockDbState.db.characters[0].chats[0].message = [persisted]
+      mockDbState.db.characters[0].chats[0].hypaV3Data = { memory: 'persisted' }
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    await expect(api.setChatToIndex(0, 0, { ...existingChat, name: 'New chat' })).resolves.toBeUndefined()
+
+    expect(mockDbState.db.characters[0].chats[0]).toMatchObject({
+      id: 'chat-a',
+      name: 'New chat',
+      message: [persisted],
+      hypaV3Data: { memory: 'persisted' },
+    })
+    expect(prepareCompatibleChatUpdateScoped).toHaveBeenCalledWith(
+      expect.objectContaining({ message: [persisted] }),
+      expect.objectContaining({
+        name: 'New chat',
+        message: [persisted],
+        hypaV3Data: { memory: 'persisted' },
+      }),
+      expect.objectContaining({ chatId: 'chat-a' }),
+    )
   })
 
   it('setChatToIndex rejects unsupported chat fields before projection mutation', async () => {

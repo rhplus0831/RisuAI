@@ -653,9 +653,15 @@ export function acknowledgeCreatedChatTranscriptLocalEffect(chatId: string): boo
   return true
 }
 
+/** True only when this session has the complete transcript resident for the chat. */
+export function isChatMessageTranscriptHydrated(chatId: string | undefined): boolean {
+  return !!chatId && hydratedChatIds.has(chatId)
+}
+
 setChatStructureHydrationHooks({
   markCreatedTranscript: acknowledgeCreatedChatTranscriptLocalEffect,
   invalidateTranscript: invalidateChatHydration,
+  isTranscriptHydrated: isChatMessageTranscriptHydrated,
 })
 
 /**

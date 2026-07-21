@@ -148,6 +148,7 @@ import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRe
 import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from './server/chatBridge.svelte'
 import { PERSONA_SELECTION_MUTATION_KEY } from './server/personaMutationKeys'
 import { reapplyRetainedChatBodyProjections } from './server/chatRetainedProjection'
+import { acknowledgeCreatedChatTranscriptLocalEffect, resetChatHydration } from './server/chatMessageHydration.svelte'
 import { language } from '../lang'
 
 interface CapturedFetch {
@@ -668,6 +669,7 @@ beforeEach(() => {
   writerAccessMocks.report.mockClear()
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
+  resetChatHydration()
   setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   setDatabaseLite({
@@ -700,6 +702,7 @@ afterEach(() => {
   setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
+  resetChatHydration()
 })
 
 describe('chat command projection helpers', () => {
@@ -5402,6 +5405,79 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     )
   })
 
+  it('rejects a two-message full replacement from an unhydrated bootstrap shell without emitting a PUT', () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousChat = jsonClone(getDatabase().characters[0].chats[0])
+    const previous = currentChatScopedSnapshot()
+    const nextChat: Chat = {
+      ...jsonClone(previousChat),
+      message: [
+        { role: 'user', data: 'plugin one', chatId: 'message-plugin-1' },
+        { role: 'char', data: 'plugin two', chatId: 'message-plugin-2' },
+      ],
+    }
+    getDatabase().characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+
+    expect(prepared.commandCount).toBe(0)
+    prepared.dispatch()
+    expect(getDatabase().characters[0].chats[0].message).toEqual([])
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
+  })
+
+  it('keeps an unhydrated empty-shell single append on the non-destructive POST path', async () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousChat = jsonClone(getDatabase().characters[0].chats[0])
+    const previous = currentChatScopedSnapshot()
+    const nextChat: Chat = {
+      ...jsonClone(previousChat),
+      message: [{ role: 'user', data: 'safe append', chatId: 'message-appended' }],
+    }
+    getDatabase().characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+
+    expect(prepared.commandCount).toBe(1)
+    prepared.dispatch()
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/messages',
+      method: 'POST',
+      body: { message: { data: 'safe append', chatId: 'message-appended' } },
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
+  })
+
+  it('allows a full replacement from a known-complete empty created transcript', async () => {
+    const calls = stubMessagePersistenceFetch()
+    expect(acknowledgeCreatedChatTranscriptLocalEffect('chat-a')).toBe(true)
+    const previousChat = jsonClone(getDatabase().characters[0].chats[0])
+    const previous = currentChatScopedSnapshot()
+    const nextChat: Chat = {
+      ...jsonClone(previousChat),
+      message: [
+        { role: 'user', data: 'created one', chatId: 'message-created-1' },
+        { role: 'char', data: 'created two', chatId: 'message-created-2' },
+      ],
+    }
+    getDatabase().characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+
+    expect(prepared.commandCount).toBe(1)
+    prepared.dispatch()
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/messages',
+      method: 'PUT',
+    })
+  })
+
   it('persists a fully hydrated single message edit with updateMessageCommand', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousChat: Chat = {
@@ -5705,6 +5781,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     const previousChat = jsonClone(getDatabase().characters[0].chats[0])
     previousChat.message = [{ role: 'user', data: 'before', chatId: 'm-before' }]
     getDatabase().characters[0].chats[0] = jsonClone(previousChat)
+    expect(acknowledgeCreatedChatTranscriptLocalEffect('chat-a')).toBe(true)
     const previous = currentChatScopedSnapshot()
     const nextChat: Chat = {
       ...jsonClone(previousChat),

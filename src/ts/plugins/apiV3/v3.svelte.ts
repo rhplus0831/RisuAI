@@ -61,6 +61,7 @@ import {
   type TTSHookFn,
 } from 'src/ts/process/ttsHooks'
 import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
+import { hydrateChatMessages, isChatMessageTranscriptHydrated } from 'src/ts/server/chatMessageHydration.svelte'
 import { assertNoUnsupportedCharacterChanges, assertNoUnsupportedChatChanges } from '../unsupportedServerWriteGuard'
 import { applyAttemptedFieldRollback } from 'src/ts/server/staleStateGuards'
 import { clearInMemoryPluginPermissions, getPluginPermission } from '../pluginPermissions'
@@ -1308,13 +1309,24 @@ const makeRisuaiAPIV3 = (
         requirePluginV3Mutation(await preparation.dispatchAsync())
       }
     },
-    getChatFromIndex: (characterIndex: number, chatIndex: number) => {
+    getChatFromIndex: async (characterIndex: number, chatIndex: number) => {
       const db = getDatabase()
       const charIds = Object.keys(db.characters)
       const charId = charIds[characterIndex]
       if (charId) {
         const chats = db.characters[charId].chats
         if (chats && chats[chatIndex]) {
+          const chatId = chats[chatIndex].id
+          if (canUseServerCommands()) {
+            if (!chatId) throw new Error('getChatFromIndex cannot hydrate a chat without an id')
+            await hydrateChatMessages(chatId, { strict: true })
+            assertV3InstanceCurrent(instance)
+            const hydratedChat = getDatabase().characters[charId]?.chats?.[chatIndex]
+            if (!hydratedChat || hydratedChat.id !== chatId) {
+              throw new Error('getChatFromIndex target changed during chat hydration')
+            }
+            return $state.snapshot(hydratedChat)
+          }
           return $state.snapshot(chats[chatIndex])
         }
       }
@@ -1327,9 +1339,49 @@ const makeRisuaiAPIV3 = (
       if (charId) {
         const chats = db.characters[charId].chats
         if (chats && chats[chatIndex]) {
-          const previousChat = getDatabase().characters[charId].chats[chatIndex]
+          const targetChatId = chats[chatIndex].id
+          const residentMessages = cloneJsonValue(chats[chatIndex].message ?? [])
+          const residentHadHypaV3Data = Object.prototype.hasOwnProperty.call(chats[chatIndex], 'hypaV3Data')
+          const residentHypaV3Data = cloneJsonValue(chats[chatIndex].hypaV3Data)
+          const startedFromUnhydratedBootstrapShell =
+            canUseServerCommands() &&
+            !!targetChatId &&
+            residentMessages.length === 0 &&
+            !isChatMessageTranscriptHydrated(targetChatId)
           if (canUseServerCommands()) {
-            assertNoUnsupportedChatChanges(previousChat, chat, 'setChatToIndex')
+            if (!targetChatId) throw new Error('setChatToIndex cannot hydrate a chat without an id')
+            await hydrateChatMessages(targetChatId, { strict: true })
+            assertV3InstanceCurrent(instance)
+          }
+          const previousChat = getDatabase().characters[charId]?.chats?.[chatIndex]
+          if (!previousChat || (targetChatId && previousChat.id !== targetChatId)) {
+            throw new Error('setChatToIndex target changed during chat hydration')
+          }
+          let attemptedChat = chat
+          if (startedFromUnhydratedBootstrapShell && (previousChat.message?.length ?? 0) > 0) {
+            if (JSON.stringify(chat?.message ?? []) !== JSON.stringify(residentMessages)) {
+              throw new Error(
+                'setChatToIndex cannot replace messages from an unhydrated chat snapshot; call getChatFromIndex before retrying',
+              )
+            }
+            attemptedChat = {
+              ...chat,
+              message: cloneJsonValue(previousChat.message),
+            }
+            const incomingHadHypaV3Data = Object.prototype.hasOwnProperty.call(chat ?? {}, 'hypaV3Data')
+            const incomingHypaV3DataWasUnchanged =
+              incomingHadHypaV3Data === residentHadHypaV3Data &&
+              JSON.stringify(chat?.hypaV3Data) === JSON.stringify(residentHypaV3Data)
+            if (incomingHypaV3DataWasUnchanged) {
+              if (Object.prototype.hasOwnProperty.call(previousChat, 'hypaV3Data')) {
+                attemptedChat.hypaV3Data = cloneJsonValue(previousChat.hypaV3Data)
+              } else {
+                delete attemptedChat.hypaV3Data
+              }
+            }
+          }
+          if (canUseServerCommands()) {
+            assertNoUnsupportedChatChanges(previousChat, attemptedChat, 'setChatToIndex')
           }
           const previousChatSnapshot = $state.snapshot(previousChat)
           const previous = {
@@ -1339,10 +1391,10 @@ const makeRisuaiAPIV3 = (
             chat: previousChatSnapshot,
           }
           withTrustedResourceWrite(() => {
-            getDatabase().characters[charId].chats[chatIndex] = chat
+            getDatabase().characters[charId].chats[chatIndex] = attemptedChat
           })
           requirePluginV3BatchMutation(
-            await prepareCompatibleChatUpdateScoped(previousChatSnapshot, chat, previous).dispatchAsync(),
+            await prepareCompatibleChatUpdateScoped(previousChatSnapshot, attemptedChat, previous).dispatchAsync(),
           )
         }
       }

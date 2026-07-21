@@ -1296,7 +1296,8 @@ interface RisuaiPluginAPI {
   setCharacterToIndex(index: number, character: any): Promise<void>
 
   /**
-   * Gets a chat by index
+   * Gets a chat by index. In server-backed mode, resolves only after the full
+   * chat transcript has been loaded.
    * @param characterIndex - Character index
    * @param chatIndex - Chat index
    * @returns Chat object or null if not found
