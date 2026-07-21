@@ -8,6 +8,14 @@ function cloneWithFunctions<T>(value: T): T {
   return value
 }
 
+function leafPaths(value: unknown, prefix = ''): string[] {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.entries(value).flatMap(([key, item]) => leafPaths(item, prefix ? `${prefix}.${key}` : key))
+  }
+
+  return [prefix]
+}
+
 async function loadLanguageModule() {
   vi.resetModules()
 
@@ -122,42 +130,51 @@ describe('changeLanguage same-code cache', () => {
     expect(cloneSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('L37: non-English languages inherit model profile shell strings from English', async () => {
-    const { langModule, languageEnglish } = await loadLanguageModule()
+  it('L37: Korean uses translated model profile shell strings', async () => {
+    const { langModule, languageEnglish, languageKorean } = await loadLanguageModule()
 
     langModule.changeLanguage('ko')
 
-    expect(langModule.language.modelProfiles.settingsTitle).toBe(languageEnglish.modelProfiles.settingsTitle)
-    expect(langModule.language.modelProfiles.rolesTab).toBe(languageEnglish.modelProfiles.rolesTab)
+    expect(langModule.language.modelProfiles.settingsTitle).toBe(languageKorean.modelProfiles.settingsTitle)
+    expect(langModule.language.modelProfiles.settingsTitle).not.toBe(languageEnglish.modelProfiles.settingsTitle)
+    expect(langModule.language.modelProfiles.rolesTab).toBe(languageKorean.modelProfiles.rolesTab)
     expect(langModule.language.modelProfiles.bindingModes.profile).toBe(
-      languageEnglish.modelProfiles.bindingModes.profile,
+      languageKorean.modelProfiles.bindingModes.profile,
     )
     expect(langModule.language.modelProfiles.providerNames['custom-api']).toBe(
-      languageEnglish.modelProfiles.providerNames['custom-api'],
+      languageKorean.modelProfiles.providerNames['custom-api'],
     )
     expect(langModule.language.modelProfiles.providerNames['debug-echo']).toBe(
-      languageEnglish.modelProfiles.providerNames['debug-echo'],
+      languageKorean.modelProfiles.providerNames['debug-echo'],
     )
     expect(langModule.language.modelProfiles.statusReasons['profile-model-missing']).toBe(
-      languageEnglish.modelProfiles.statusReasons['profile-model-missing'],
+      languageKorean.modelProfiles.statusReasons['profile-model-missing'],
     )
     expect(langModule.language.modelProfiles.runtimeFields.maxContext).toBe(
-      languageEnglish.modelProfiles.runtimeFields.maxContext,
+      languageKorean.modelProfiles.runtimeFields.maxContext,
     )
   })
 
-  it('L37: non-English languages inherit provider operation error strings and formatters from English', async () => {
-    const { langModule, languageEnglish } = await loadLanguageModule()
+  it('L37: Korean uses translated provider operation strings and formatters', async () => {
+    const { langModule, languageEnglish, languageKorean } = await loadLanguageModule()
 
     langModule.changeLanguage('ko')
 
     expect(langModule.language.errors.imageGenerationResponseMalformed).toBe(
+      languageKorean.errors.imageGenerationResponseMalformed,
+    )
+    expect(langModule.language.errors.imageGenerationResponseMalformed).not.toBe(
       languageEnglish.errors.imageGenerationResponseMalformed,
     )
-    expect(langModule.language.errors.imageGenerationFailed(502)).toBe(
-      languageEnglish.errors.imageGenerationFailed(502),
-    )
-    expect(langModule.language.waveSpeedCatalogModelsLoaded(3)).toBe(languageEnglish.waveSpeedCatalogModelsLoaded(3))
+    expect(langModule.language.errors.imageGenerationFailed(502)).toBe(languageKorean.errors.imageGenerationFailed(502))
+    expect(langModule.language.waveSpeedCatalogModelsLoaded(3)).toBe(languageKorean.waveSpeedCatalogModelsLoaded(3))
+  })
+
+  it('defines every English translation path directly in Korean', async () => {
+    const { languageEnglish, languageKorean } = await loadLanguageModule()
+    const koreanPaths = new Set(leafPaths(languageKorean))
+
+    expect(leafPaths(languageEnglish).filter((path) => !koreanPaths.has(path))).toEqual([])
   })
 
   it('renders Vietnamese inlay counts without a stray template-literal dollar sign', async () => {
