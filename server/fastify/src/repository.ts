@@ -1100,6 +1100,134 @@ function dbJsonPath(dataDir: string): string {
   return path.join(dataDir, 'db.json')
 }
 
+export interface LegacyDatabaseImportLogger {
+  warn(bindings: Record<string, unknown>, message: string): void
+  error(bindings: Record<string, unknown>, message: string): void
+}
+
+class LegacyDatabaseSnapshotParseError extends Error {
+  constructor(
+    readonly filePath: string,
+    cause: unknown,
+  ) {
+    super(
+      `Legacy database snapshot at ${filePath} could not be parsed. Repair or move the file, then restart the server.`,
+      { cause },
+    )
+    this.name = 'LegacyDatabaseSnapshotParseError'
+  }
+}
+
+class LegacyDatabaseSnapshotEnvelopeError extends Error {
+  constructor(readonly filePath: string) {
+    super(`Legacy database snapshot at ${filePath} does not contain an object database`)
+    this.name = 'LegacyDatabaseSnapshotEnvelopeError'
+  }
+}
+
+function logLegacyDatabaseImportWarning(
+  logger: LegacyDatabaseImportLogger | undefined,
+  bindings: Record<string, unknown>,
+  message: string,
+): void {
+  if (logger) {
+    logger.warn(bindings, message)
+  } else {
+    console.warn(message, bindings)
+  }
+}
+
+function logLegacyDatabaseImportError(
+  logger: LegacyDatabaseImportLogger | undefined,
+  bindings: Record<string, unknown>,
+  message: string,
+): void {
+  if (logger) {
+    logger.error(bindings, message)
+  } else {
+    console.error(message, bindings)
+  }
+}
+
+function readLegacyDatabaseSnapshot(filePath: string): Persisted {
+  const raw = fs.readFileSync(filePath, 'utf8')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    throw new LegacyDatabaseSnapshotParseError(filePath, err)
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.database)) {
+    throw new LegacyDatabaseSnapshotEnvelopeError(filePath)
+  }
+  return {
+    _version: typeof parsed._version === 'number' ? parsed._version : PERSISTED_VERSION,
+    database: parsed.database,
+    assets: Array.isArray(parsed.assets) ? (parsed.assets as PersistedAsset[]) : [],
+  }
+}
+
+/**
+ * Import one legacy snapshot from its current path without moving or rewriting
+ * it. The caller owns the surrounding transaction so restore can compose these
+ * writes with its table swap and boot can make the full migration atomic.
+ */
+function importLegacyDatabaseSnapshot(db: DatabaseSync, filePath: string): void {
+  const parsed = readLegacyDatabaseSnapshot(filePath)
+  const database = parsed.database as JsonRecord
+
+  repairPersistedGlobalLorebookIds(database)
+  replaceAllSettingsInTable(db, database)
+  replaceAllCharactersInTable(db, database)
+  replaceAllCollectionsInTable(db, database)
+
+  repairChatIds(database)
+  const chats: { chatId: string; messages: unknown[] }[] = []
+  const hypa: { chatId: string; hypaV3Data: unknown }[] = []
+  eachChat(database, (chat) => {
+    const messages = Array.isArray(chat.message) ? chat.message : []
+    const chatId = chat.id as string
+    if (messages.length > 0) chats.push({ chatId, messages })
+    if (chat.hypaV3Data !== undefined) hypa.push({ chatId, hypaV3Data: chat.hypaV3Data })
+  })
+  if (chats.length > 0) replaceAllChatMessages(db, chats)
+  if (hypa.length > 0) replaceAllChatHypaV3(db, hypa)
+
+  if (parsed.assets.length > 0) insertAssetMetadataBatch(db, parsed.assets)
+}
+
+function nextLegacyDatabaseQuarantinePath(filePath: string): string {
+  const base = `${filePath}.invalid`
+  if (!fs.existsSync(base)) return base
+  let suffix = 1
+  while (fs.existsSync(`${base}.${suffix}`)) suffix += 1
+  return `${base}.${suffix}`
+}
+
+function quarantineInvalidLegacyDatabaseSnapshot(
+  filePath: string,
+  logger: LegacyDatabaseImportLogger | undefined,
+): void {
+  const quarantinePath = nextLegacyDatabaseQuarantinePath(filePath)
+  try {
+    fs.renameSync(filePath, quarantinePath)
+    logLegacyDatabaseImportWarning(
+      logger,
+      { filePath, quarantinePath },
+      'Legacy database snapshot has an invalid envelope and was quarantined without being imported',
+    )
+  } catch (err) {
+    // An invalid envelope must not crash-loop the server even when the data
+    // directory cannot be renamed. Ignore it for this boot and keep the source
+    // untouched so an operator can repair the filesystem problem.
+    logLegacyDatabaseImportWarning(
+      logger,
+      { err, filePath, quarantinePath },
+      'Legacy database snapshot has an invalid envelope but could not be quarantined; it was ignored for this boot',
+    )
+  }
+}
+
 export function emptyPersisted(): Persisted {
   return { _version: PERSISTED_VERSION, database: null, assets: [] }
 }
@@ -1721,39 +1849,43 @@ export function stripChatMessages(next: Persisted): Persisted {
 
 /**
  * One-time boot migration: if a legacy `db.json` still exists, import all its
- * data into SQLite (settings, characters, collections, assets, messages) and
- * rename the file to `db.json.migrated`. Idempotent and safe to call on every
- * boot — a no-op once the file is gone.
+ * data into SQLite (settings, characters, collections, assets, messages) and,
+ * only after the commit is checkpointed to the main database file, rename the
+ * source to `db.json.migrated`. A crash after the durable commit but before the
+ * rename leaves `db.json` in place for a harmless replacement import on the
+ * next boot, before API writes can interleave. Once renamed, later boots are a
+ * no-op.
  */
-export function ensureDbJsonImported(db: DatabaseSync, dataDir: string): void {
+export function ensureDbJsonImported(db: DatabaseSync, dataDir: string, logger?: LegacyDatabaseImportLogger): void {
   const file = dbJsonPath(dataDir)
   if (!fs.existsSync(file)) return
-  const raw = fs.readFileSync(file, 'utf8')
-  const parsed = JSON.parse(raw) as Partial<Persisted>
-  const database = parsed.database
 
-  if (isRecord(database)) {
-    repairPersistedGlobalLorebookIds(database)
-    replaceAllSettingsInTable(db, database)
-    replaceAllCharactersInTable(db, database)
-    replaceAllCollectionsInTable(db, database)
-
-    repairChatIds(database)
-    const chats: { chatId: string; messages: unknown[] }[] = []
-    const hypa: { chatId: string; hypaV3Data: unknown }[] = []
-    eachChat(database, (chat) => {
-      const messages = Array.isArray(chat.message) ? chat.message : []
-      const chatId = chat.id as string
-      if (messages.length > 0) chats.push({ chatId, messages })
-      if (chat.hypaV3Data !== undefined) hypa.push({ chatId, hypaV3Data: chat.hypaV3Data })
-    })
-    if (chats.length > 0) replaceAllChatMessages(db, chats)
-    if (hypa.length > 0) replaceAllChatHypaV3(db, hypa)
+  let transactionOpen = false
+  try {
+    db.exec('BEGIN IMMEDIATE')
+    transactionOpen = true
+    importLegacyDatabaseSnapshot(db, file)
+    db.exec('COMMIT')
+    transactionOpen = false
+  } catch (err) {
+    if (transactionOpen) db.exec('ROLLBACK')
+    if (err instanceof LegacyDatabaseSnapshotEnvelopeError) {
+      quarantineInvalidLegacyDatabaseSnapshot(file, logger)
+      return
+    }
+    if (err instanceof LegacyDatabaseSnapshotParseError) {
+      logLegacyDatabaseImportError(
+        logger,
+        { err: err.cause, filePath: file },
+        'Legacy database snapshot could not be parsed. Repair or move the file, then restart the server; the file was left untouched',
+      )
+    }
+    throw err
   }
 
-  const legacyAssets = Array.isArray(parsed.assets) ? (parsed.assets as PersistedAsset[]) : []
-  if (legacyAssets.length > 0) insertAssetMetadataBatch(db, legacyAssets)
-
+  // WAL + synchronous=NORMAL can lose the newest commit on power failure.
+  // Force the committed import into risu.db before retiring its only source.
+  checkpointWal(db)
   fs.renameSync(file, `${file}.migrated`)
 }
 
@@ -2810,9 +2942,10 @@ export function restoreBackup(
     databaseLineage = restoreSqliteFromBackup(db, usableDatabasePayloads.sqlite ? backupSqlite : null, () => {
       // If the backup carries a legacy db.json, import it into SQLite inside the
       // restore transaction so a failed re-import rolls the whole restore back.
+      // Read it directly from the backup: restore must never stage a stale
+      // db.json in the live data directory, and the backup remains untouched.
       if (usableDatabasePayloads.legacyJson) {
-        fs.copyFileSync(legacySnapshot, dbJsonPath(dataDir))
-        ensureDbJsonImported(db, dataDir)
+        importLegacyDatabaseSnapshot(db, legacySnapshot)
       }
       event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
       fs.renameSync(tmpAssets, liveAssets)

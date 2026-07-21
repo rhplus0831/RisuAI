@@ -40,25 +40,41 @@ interface Harness {
   commandEvents: CommandEventSink
 }
 
+function harnessConfig(dataDir: string, automaticBackupRetention?: number) {
+  return {
+    host: '127.0.0.1',
+    port: 0,
+    dataDir,
+    bodyLimit: 1024 * 1024,
+    importMaxBytes: Infinity,
+    automaticBackupRetention,
+    trustProxy: false,
+    hubUrl: 'https://sv.risuai.xyz',
+  }
+}
+
 async function startHarness(automaticBackupRetention?: number): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-'))
   const commandEvents = createCommandEventSink()
   const { app } = await buildApp({
-    config: {
-      host: '127.0.0.1',
-      port: 0,
-      dataDir,
-      bodyLimit: 1024 * 1024,
-      importMaxBytes: Infinity,
-      automaticBackupRetention,
-      trustProxy: false,
-      hubUrl: 'https://sv.risuai.xyz',
-    },
+    config: harnessConfig(dataDir, automaticBackupRetention),
     commandEvents,
   })
   installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir, commandEvents }
+}
+
+async function restartHarness(harness: Harness): Promise<void> {
+  await harness.app.close()
+  const commandEvents = createCommandEventSink()
+  const { app } = await buildApp({
+    config: harnessConfig(harness.dataDir),
+    commandEvents,
+  })
+  installResourceDatabaseBootstrapAdapter(app)
+  harness.app = app
+  harness.commandEvents = commandEvents
 }
 
 async function stopHarness(h: Harness): Promise<void> {
@@ -860,10 +876,10 @@ describe('Phase 2D backups', () => {
         },
       ],
     }
-    writeFileSync(
-      path.join(backupRoot, 'db.json'),
-      JSON.stringify({ _version: 1, database: legacyDatabase, assets: [legacyAsset] }),
-    )
+    const legacySnapshotPath = path.join(backupRoot, 'db.json')
+    const legacySnapshotRaw = JSON.stringify({ _version: 1, database: legacyDatabase, assets: [legacyAsset] })
+    writeFileSync(legacySnapshotPath, legacySnapshotRaw)
+    const copyFileSpy = vi.spyOn(fs, 'copyFileSync')
 
     const restored = await harness.app.inject({
       method: 'POST',
@@ -871,7 +887,12 @@ describe('Phase 2D backups', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(restored.statusCode).toBe(200)
-    expect(existsSync(path.join(harness.dataDir, 'db.json.migrated'))).toBe(true)
+    expect(existsSync(path.join(harness.dataDir, 'db.json'))).toBe(false)
+    expect(existsSync(path.join(harness.dataDir, 'db.json.migrated'))).toBe(false)
+    expect(readFileSync(legacySnapshotPath, 'utf8')).toBe(legacySnapshotRaw)
+    expect(
+      copyFileSpy.mock.calls.some(([, destination]) => String(destination) === path.join(harness.dataDir, 'db.json')),
+    ).toBe(false)
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -908,6 +929,78 @@ describe('Phase 2D backups', () => {
     } finally {
       verify.close()
     }
+  })
+
+  it('rolls back a transient legacy import failure without staging a live db.json or poisoning the next boot', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'live-before-failed-legacy-restore' })
+
+    const backupId = '2026-06-03-02-03-04-fedcba'
+    const backupRoot = path.join(harness.dataDir, 'backups', backupId)
+    mkdirSync(backupRoot, { recursive: true })
+    const legacySnapshotPath = path.join(backupRoot, 'db.json')
+    const failingAssetId = 'c'.repeat(64)
+    writeFileSync(
+      legacySnapshotPath,
+      JSON.stringify({
+        _version: 1,
+        database: {
+          tag: 'stale-legacy-restore',
+          characters: [],
+        },
+        assets: [{ id: failingAssetId, ext: 'png', size: 1, contentType: 'image/png' }],
+      }),
+    )
+
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const injectFailure = new DatabaseSync(liveDbPath)
+    try {
+      injectFailure.exec(`
+        CREATE TRIGGER fail_legacy_restore_asset_import
+        BEFORE INSERT ON assets
+        WHEN NEW.id = '${failingAssetId}'
+        BEGIN
+          SELECT RAISE(FAIL, 'injected transient legacy restore import failure');
+        END;
+      `)
+    } finally {
+      injectFailure.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(500)
+    expect(existsSync(path.join(harness.dataDir, 'db.json'))).toBe(false)
+    expect(existsSync(path.join(harness.dataDir, 'db.json.migrated'))).toBe(false)
+    expect(existsSync(legacySnapshotPath)).toBe(true)
+
+    const afterFailure = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterFailure.json().database).toMatchObject({ tag: 'live-before-failed-legacy-restore' })
+
+    const removeFailure = new DatabaseSync(liveDbPath)
+    try {
+      removeFailure.exec('DROP TRIGGER fail_legacy_restore_asset_import')
+    } finally {
+      removeFailure.close()
+    }
+    await importDb(harness.app, assertion, { tag: 'newer-write-after-failed-restore' })
+
+    await restartHarness(harness)
+    const afterRestart = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterRestart.statusCode).toBe(200)
+    expect(afterRestart.json().database).toMatchObject({ tag: 'newer-write-after-failed-restore' })
+    expect(existsSync(path.join(harness.dataDir, 'db.json'))).toBe(false)
   })
 
   it('skips a corrupt manifest instead of failing the whole backups list (L27)', async () => {

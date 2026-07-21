@@ -167,7 +167,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // Proactively import any legacy db.json into SQLite and retire the file.
   // No-op once converged. Must run after the backfill above, which needs the
   // embedded messages before boot import retires a legacy db.json.
-  ensureDbJsonImported(db, config.dataDir)
+  ensureDbJsonImported(db, config.dataDir, app.log)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {
     if (opts.memoryEvents) {
