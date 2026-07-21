@@ -11,6 +11,7 @@ const recoveryApi = vi.hoisted(() => ({ scheduleReload: vi.fn() }))
 vi.mock('./activeWriterSession', () => ({
   activeWriterSessionHeader: () => ({}),
   handleActiveWriterStaleResponse: () => false,
+  isWriterAccessLost: () => false,
   schedulePendingMutationRecoveryReload: recoveryApi.scheduleReload,
   scheduleServerOwnershipReload: vi.fn(),
 }))

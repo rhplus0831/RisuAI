@@ -24,6 +24,7 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from './server/chatMessagePlaceholders'
+import { resetWriterAccessLostForTests } from './server/activeWriterSession'
 import { createDestructiveRefreshToken } from './server/staleStateGuards'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { setChatVar } from './parser/chatVar.svelte'
@@ -651,6 +652,7 @@ function seedReadyActiveChatGenerationSettings(): void {
 }
 
 beforeEach(() => {
+  resetWriterAccessLostForTests()
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)

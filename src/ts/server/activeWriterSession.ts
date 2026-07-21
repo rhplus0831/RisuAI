@@ -53,6 +53,11 @@ export function isWriterAccessLost(): boolean {
   return writerAccessLost
 }
 
+/** The lost-writer latch is process-global; tests that simulate 423 replies must clear it between cases. */
+export function resetWriterAccessLostForTests(): void {
+  writerAccessLost = false
+}
+
 export function enterWriterTakeoverFlow(): void {
   if (writerAccessLost) return
   writerAccessLost = true
