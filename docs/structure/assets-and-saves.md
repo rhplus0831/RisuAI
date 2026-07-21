@@ -202,6 +202,16 @@ and delete are authenticated and active-writer guarded; list is authenticated
 read-only. Concrete routes are `POST /api/v1/backups`, `GET /api/v1/backups`,
 `POST /api/v1/backups/:id/restore`, and `DELETE /api/v1/backups/:id`.
 
+Before an initialized database is replaced by a `.risu`, bundle, legacy local
+backup, or server-backup restore, the repository creates a fail-closed automatic
+safety snapshot. These manifests use `kind: "automatic"` and the stable
+`Automatic safety snapshot` label, so they remain visible and restorable through
+the ordinary backup API and UI. Automatic snapshots retain the newest three by
+default (`RISU_API_AUTOMATIC_BACKUP_RETENTION`); retention never counts or
+deletes manual backups. First-run imports skip the snapshot only when no
+`settings` row exists. Restore validates its source database payload before
+creating the safety snapshot or touching restore staging directories.
+
 Restore swaps asset/save directories and restores SQLite tables through the
 `SQLITE_BACKUP_TABLES` allowlist in `repository.ts`, then emits
 `state.restored` and triggers a complete browser resource refresh. Because

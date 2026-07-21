@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES, loadConfig } from '../src/config.js'
+import {
+  DEFAULT_AUTOMATIC_BACKUP_RETENTION,
+  DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES,
+  loadConfig,
+} from '../src/config.js'
 import { DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES } from '../src/generation/generationTraceSidecar.js'
 
 const BASE_ENV = { RISU_API_DATA_DIR: '/tmp/risu-config-test' }
@@ -46,6 +50,25 @@ describe('loadConfig Realm import max expanded bytes', () => {
     for (const raw of ['0', '-1', '1.5', 'abc']) {
       expect(() => loadConfig({ ...BASE_ENV, RISU_REALM_IMPORT_MAX_EXPANDED_BYTES: raw })).toThrow(
         /Invalid RISU_REALM_IMPORT_MAX_EXPANDED_BYTES/,
+      )
+    }
+  })
+})
+
+describe('loadConfig automatic backup retention', () => {
+  it('defaults to three automatic safety snapshots', () => {
+    expect(loadConfig({ ...BASE_ENV }).automaticBackupRetention).toBe(DEFAULT_AUTOMATIC_BACKUP_RETENTION)
+    expect(DEFAULT_AUTOMATIC_BACKUP_RETENTION).toBe(3)
+  })
+
+  it('accepts a positive integer override', () => {
+    expect(loadConfig({ ...BASE_ENV, RISU_API_AUTOMATIC_BACKUP_RETENTION: '5' }).automaticBackupRetention).toBe(5)
+  })
+
+  it('rejects invalid retention caps', () => {
+    for (const raw of ['0', '-1', '1.5', 'abc']) {
+      expect(() => loadConfig({ ...BASE_ENV, RISU_API_AUTOMATIC_BACKUP_RETENTION: raw })).toThrow(
+        /Invalid RISU_API_AUTOMATIC_BACKUP_RETENTION/,
       )
     }
   })

@@ -4,6 +4,7 @@ import type { AuthState } from '../auth.js'
 import type { CommandEventSink } from '../commands/events.js'
 import { requireAuth } from '../http.js'
 import {
+  AutomaticBackupError,
   BackupDatabaseValidationError,
   EntityNotFoundError,
   createBackup,
@@ -22,6 +23,7 @@ export function registerBackupRoutes(
   authState: AuthState,
   dataDir: string,
   eventSink: CommandEventSink,
+  options: { automaticBackupRetention?: number } = {},
 ): void {
   app.post('/api/v1/backups', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -47,7 +49,9 @@ export function registerBackupRoutes(
   app.post<{ Params: { id: string } }>('/api/v1/backups/:id/restore', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     try {
-      const { revision, event, databaseLineage, writerEpoch } = restoreBackup(db, dataDir, req.params.id)
+      const { revision, event, databaseLineage, writerEpoch } = restoreBackup(db, dataDir, req.params.id, {
+        automaticBackupRetention: options.automaticBackupRetention,
+      })
       eventSink.emit(event)
       return { revision, event, databaseLineage, writerEpoch }
     } catch (err) {
@@ -57,6 +61,10 @@ export function registerBackupRoutes(
       }
       if (err instanceof BackupDatabaseValidationError) {
         reply.code(400)
+        return { error: err.code }
+      }
+      if (err instanceof AutomaticBackupError) {
+        reply.code(500)
         return { error: err.code }
       }
       throw err

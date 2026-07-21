@@ -1416,6 +1416,7 @@ export const languageEnglish = {
   webdeeplwarn: 'This option can cause CORS errors.',
   saveServerBackup: 'Save Server Backup',
   loadServerBackup: 'Load Server Backup',
+  automaticSafetySnapshot: 'Automatic safety snapshot',
   saveBackupLocal: 'Save local backup',
   saveBackupLocalZipStyle: 'Save local backup in ZIP style (not recommended).',
   loadBackupLocal: 'Load Backup Locally',

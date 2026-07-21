@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
-import { assetsDir, getAllAssetMetadata, loadPersistedWithMessages } from '../src/repository.js'
+import { assetsDir, getAllAssetMetadata, listBackups, loadPersistedWithMessages } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
@@ -40,7 +40,7 @@ interface Harness {
   commandEvents: CommandEventSink
 }
 
-async function startHarness(): Promise<Harness> {
+async function startHarness(automaticBackupRetention?: number): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-'))
   const commandEvents = createCommandEventSink()
@@ -51,6 +51,7 @@ async function startHarness(): Promise<Harness> {
       dataDir,
       bodyLimit: 1024 * 1024,
       importMaxBytes: Infinity,
+      automaticBackupRetention,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
     },
@@ -117,6 +118,16 @@ async function importDb(app: FastifyInstance, assertion: string, database: unkno
   return res.json().revision as number
 }
 
+function readBackupDatabase(dataDir: string, id: string): Record<string, unknown> {
+  const backupRoot = path.join(dataDir, 'backups', id)
+  const backupDb = new DatabaseSync(path.join(backupRoot, 'risu.db'), { readOnly: true })
+  try {
+    return loadPersistedWithMessages(backupDb, backupRoot).database as Record<string, unknown>
+  } finally {
+    backupDb.close()
+  }
+}
+
 let harness: Harness
 
 beforeEach(async () => {
@@ -124,6 +135,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await stopHarness(harness)
 })
 
@@ -158,6 +170,7 @@ describe('Phase 2D backups', () => {
     expect(manifest).toMatchObject({
       _version: 1,
       label: null,
+      kind: 'manual',
       revision: 0,
       assetCount: 0,
     })
@@ -300,6 +313,111 @@ describe('Phase 2D backups', () => {
     expect(afterRestore.json().revision).toBe(revisionAfter)
   })
 
+  it('snapshots pre-restore state and also protects restores of automatic snapshots', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'A' })
+    await importDb(harness.app, assertion, { tag: 'B' })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await importDb(harness.app, assertion, { tag: 'C' })
+
+    const beforeRestore = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
+    const automaticA = beforeRestore.find((backup) => readBackupDatabase(harness.dataDir, backup.id).tag === 'A')
+    expect(automaticA).toMatchObject({
+      kind: 'automatic',
+      label: 'Automatic safety snapshot',
+    })
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${automaticA!.id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const afterRestore = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterRestore.json().database).toMatchObject({ tag: 'A' })
+
+    const automaticAfter = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
+    expect(automaticAfter.some((backup) => backup.id === automaticA!.id)).toBe(true)
+    expect(automaticAfter.some((backup) => readBackupDatabase(harness.dataDir, backup.id).tag === 'C')).toBe(true)
+  })
+
+  it('prunes only the oldest automatic snapshots beyond the configured cap', async () => {
+    const capped = await startHarness(2)
+    try {
+      const { assertion } = await setupAuthedClient(capped.app)
+      await importDb(capped.app, assertion, { tag: 'A' })
+      const manual = await capped.app.inject({
+        method: 'POST',
+        url: '/api/v1/backups',
+        headers: { 'risu-auth': assertion },
+        payload: { label: 'manual A' },
+      })
+      expect(manual.statusCode).toBe(201)
+
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      await importDb(capped.app, assertion, { tag: 'B' })
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      await importDb(capped.app, assertion, { tag: 'C' })
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      await importDb(capped.app, assertion, { tag: 'D' })
+
+      const backups = listBackups(capped.dataDir)
+      expect(backups.find((backup) => backup.id === manual.json().id)).toMatchObject({
+        kind: 'manual',
+        label: 'manual A',
+      })
+      const automatic = backups.filter((backup) => backup.kind === 'automatic')
+      expect(automatic).toHaveLength(2)
+      expect(automatic.map((backup) => readBackupDatabase(capped.dataDir, backup.id).tag).sort()).toEqual(['B', 'C'])
+    } finally {
+      await stopHarness(capped)
+    }
+  })
+
+  it('fails restore closed when its safety snapshot cannot be created', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'A' })
+    const manual = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'restore target A' },
+    })
+    expect(manual.statusCode).toBe(201)
+    await importDb(harness.app, assertion, { tag: 'B' })
+
+    const liveSqlite = path.join(harness.dataDir, 'risu.db')
+    const originalCopyFileSync = fs.copyFileSync.bind(fs)
+    vi.spyOn(fs, 'copyFileSync').mockImplementation((source, destination, mode) => {
+      if (String(source) === liveSqlite && String(destination).includes(`${path.sep}backups${path.sep}`)) {
+        throw new Error('injected automatic backup copy failure')
+      }
+      return originalCopyFileSync(source, destination, mode)
+    })
+
+    const automaticBefore = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${manual.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(500)
+    expect(restored.json()).toEqual({ error: 'automatic_backup_failed' })
+
+    const after = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(after.json().database).toMatchObject({ tag: 'B' })
+    expect(listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')).toEqual(automaticBefore)
+  })
+
   it.each([
     {
       name: 'manifest-only backup',
@@ -382,6 +500,7 @@ describe('Phase 2D backups', () => {
     })
     expect(restored.statusCode).toBe(400)
     expect(restored.json()).toEqual({ error: testCase.expectedError })
+    expect(listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')).toEqual([])
 
     const after = await harness.app.inject({
       method: 'GET',

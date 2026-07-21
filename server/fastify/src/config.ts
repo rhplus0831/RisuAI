@@ -19,6 +19,11 @@ export interface AppConfig {
    * `RISU_API_IMPORT_MAX_BYTES` to a positive byte count to impose a ceiling.
    */
   importMaxBytes: number
+  /**
+   * Maximum number of automatic safety snapshots retained before destructive
+   * whole-database imports/restores. Manual backups are never counted.
+   */
+  automaticBackupRetention?: number
   realmImportMaxExpandedBytes?: number
   trustProxy: boolean | number | string
   staticRoot?: string | null
@@ -47,6 +52,7 @@ export interface AppConfig {
 
 export type RequestTraceMode = 'agent' | 'human'
 
+export const DEFAULT_AUTOMATIC_BACKUP_RETENTION = 3
 export const DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES = 310 * 1024 * 1024
 
 function repoRoot(): string {
@@ -71,7 +77,7 @@ function parseBodyLimit(raw: string | undefined, fallback: number): number {
   return Math.floor(n)
 }
 
-function parsePositiveIntegerBytes(raw: string | undefined, fallback: number, envName: string): number {
+function parsePositiveInteger(raw: string | undefined, fallback: number, envName: string): number {
   if (!raw) return fallback
   const n = Number(raw)
   if (!Number.isInteger(n) || n <= 0) {
@@ -147,7 +153,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const dataDir = env.RISU_API_DATA_DIR ? path.resolve(env.RISU_API_DATA_DIR) : path.join(repoRoot(), 'data')
   const requestTraceMode = parseRequestTraceMode(env.RISU_API_TRACE_MODE)
   const generationTraceFullPrompt = env.RISU_GENERATION_TRACE_FULL_PROMPT === '1'
-  const generationTraceMaxGzipBytes = parsePositiveIntegerBytes(
+  const generationTraceMaxGzipBytes = parsePositiveInteger(
     env.RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES,
     DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES,
     'RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES',
@@ -159,7 +165,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dataDir,
     bodyLimit: parseBodyLimit(env.RISU_API_BODY_LIMIT, 100 * 1024 * 1024),
     importMaxBytes: parseImportMaxBytes(env.RISU_API_IMPORT_MAX_BYTES, Number.POSITIVE_INFINITY),
-    realmImportMaxExpandedBytes: parsePositiveIntegerBytes(
+    automaticBackupRetention: parsePositiveInteger(
+      env.RISU_API_AUTOMATIC_BACKUP_RETENTION,
+      DEFAULT_AUTOMATIC_BACKUP_RETENTION,
+      'RISU_API_AUTOMATIC_BACKUP_RETENTION',
+    ),
+    realmImportMaxExpandedBytes: parsePositiveInteger(
       env.RISU_REALM_IMPORT_MAX_EXPANDED_BYTES,
       DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES,
       'RISU_REALM_IMPORT_MAX_EXPANDED_BYTES',

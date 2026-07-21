@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import fs, { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -9,7 +9,7 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
-import { insertAssetMetadataBatch, loadPersisted } from '../src/repository.js'
+import { insertAssetMetadataBatch, listBackups, loadPersisted, loadPersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { listMemoryChunks, listMemorySummaries } from '../src/memoryRepository.js'
@@ -117,6 +117,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await stopHarness(harness)
 })
 
@@ -126,6 +127,16 @@ function authedInject(opts: Record<string, unknown>) {
     ...opts,
     headers: { 'risu-auth': assertion, ...headers },
   })
+}
+
+function readBackupDatabase(dataDir: string, id: string): Record<string, unknown> {
+  const backupRoot = path.join(dataDir, 'backups', id)
+  const backupDb = new DatabaseSync(path.join(backupRoot, 'risu.db'), { readOnly: true })
+  try {
+    return loadPersistedWithMessages(backupDb, backupRoot).database as Record<string, unknown>
+  } finally {
+    backupDb.close()
+  }
 }
 
 describe('Phase 9-8a multipart .risu import route', () => {
@@ -149,6 +160,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
     expect(harness.commandEvents.list()).toEqual([imported.json().event])
+    expect(listBackups(harness.dataDir)).toEqual([])
 
     const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     expectExportRequiredShape(bootstrap.json().database)
@@ -158,6 +170,80 @@ describe('Phase 9-8a multipart .risu import route', () => {
       url: '/api/v1/export/risusave?envelope=risusave-blocks',
     })
     expect(exported.statusCode).toBe(200)
+  })
+
+  it('takes a pre-import safety snapshot for JSON database replacements', async () => {
+    const baseline = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: { tag: 'before-json-import' } },
+    })
+    expect(baseline.statusCode).toBe(200)
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: { tag: 'after-json-import' } },
+    })
+    expect(imported.statusCode).toBe(200)
+
+    const automatic = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
+    expect(automatic).toHaveLength(1)
+    expect(automatic[0]).toMatchObject({ kind: 'automatic', label: 'Automatic safety snapshot' })
+    expect(readBackupDatabase(harness.dataDir, automatic[0].id)).toMatchObject({ tag: 'before-json-import' })
+  })
+
+  it('takes a pre-import safety snapshot for multipart .risu replacements', async () => {
+    const baseline = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: { tag: 'before-multipart-import' } },
+    })
+    expect(baseline.statusCode).toBe(200)
+
+    const upload = multipartRisuSave(fixtureBytes('legacy-raw-basic'))
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+    expect(imported.statusCode).toBe(200)
+
+    const automatic = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
+    expect(automatic).toHaveLength(1)
+    expect(readBackupDatabase(harness.dataDir, automatic[0].id)).toMatchObject({ tag: 'before-multipart-import' })
+  })
+
+  it('fails import closed when its safety snapshot cannot be created', async () => {
+    const baseline = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: { tag: 'preserved-after-snapshot-failure' } },
+    })
+    expect(baseline.statusCode).toBe(200)
+
+    const liveSqlite = path.join(harness.dataDir, 'risu.db')
+    const originalCopyFileSync = fs.copyFileSync.bind(fs)
+    vi.spyOn(fs, 'copyFileSync').mockImplementation((source, destination, mode) => {
+      if (String(source) === liveSqlite && String(destination).includes(`${path.sep}backups${path.sep}`)) {
+        throw new Error('injected automatic backup copy failure')
+      }
+      return originalCopyFileSync(source, destination, mode)
+    })
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: { tag: 'must-not-be-imported' } },
+    })
+    expect(imported.statusCode).toBe(500)
+    expect(imported.json()).toEqual({ error: 'automatic_backup_failed' })
+    expect(listBackups(harness.dataDir)).toEqual([])
+
+    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.json().database).toMatchObject({ tag: 'preserved-after-snapshot-failure' })
+    expect(after.json().revision).toBe(baseline.json().revision)
   })
 
   it.each([...EXPORT_REQUIRED_ARRAY_FAMILIES, 'pluginCustomStorage'] as const)(

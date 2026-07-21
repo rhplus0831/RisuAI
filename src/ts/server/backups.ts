@@ -19,6 +19,7 @@ export interface ServerBackupManifest {
   _version: number
   id: string
   label: string | null
+  kind?: 'manual' | 'automatic'
   createdAt: string
   revision: number
   assetCount: number
@@ -713,6 +714,7 @@ function readBackupManifest(value: unknown): ServerBackupManifest | null {
   if (record._version !== 1) return null
   if (typeof record.id !== 'string') return null
   if (record.label !== null && typeof record.label !== 'string') return null
+  if (record.kind !== undefined && record.kind !== 'manual' && record.kind !== 'automatic') return null
   if (typeof record.createdAt !== 'string') return null
   if (!Number.isInteger(record.revision) || (record.revision as number) < 0) return null
   if (!Number.isInteger(record.assetCount) || (record.assetCount as number) < 0) return null

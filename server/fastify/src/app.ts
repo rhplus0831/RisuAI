@@ -7,7 +7,12 @@ import rateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import { createActiveWriterState, registerActiveWriterGuard } from './activeWriter.js'
-import { DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES, type AppConfig, loadConfig } from './config.js'
+import {
+  DEFAULT_AUTOMATIC_BACKUP_RETENTION,
+  DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES,
+  type AppConfig,
+  loadConfig,
+} from './config.js'
 import { createAuthState } from './auth.js'
 import { createCommandEventSink, type CommandEventSink } from './commands/events.js'
 import { openDatabase } from './db.js'
@@ -269,6 +274,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink, {
     maxExpandedImportBytes: config.bodyLimit,
     importMaxBytes: config.importMaxBytes,
+    automaticBackupRetention: config.automaticBackupRetention ?? DEFAULT_AUTOMATIC_BACKUP_RETENTION,
   })
   registerRealmImportRoutes(app, db, authState, config.dataDir, commandEventSink, {
     hubUrl: config.hubUrl,
@@ -279,7 +285,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink, messageTranslationJobRegistry)
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus, activeWriterState)
   registerAssetsRoutes(app, db, authState, config.dataDir, activeWriterState)
-  registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
+  registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink, {
+    automaticBackupRetention: config.automaticBackupRetention ?? DEFAULT_AUTOMATIC_BACKUP_RETENTION,
+  })
   registerPushNotificationRoutes(app, authState, pushNotifications)
   registerMcpOAuthRefreshRoutes(app, db, authState, config.dataDir, commandEventSink, opts.mcpOAuthRefresh)
   registerOpenAITranscriptionRoutes(app, db, authState, opts.openAITranscription)

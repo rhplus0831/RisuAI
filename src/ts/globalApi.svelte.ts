@@ -1685,7 +1685,8 @@ export async function loadInternalBackup(options: LoadInternalBackupOptions = {}
     percent: 15,
   })
   const selectOptions = list.backups.map((backup) => {
-    const label = backup.label ? `${backup.label} - ` : ''
+    const displayLabel = backup.kind === 'automatic' ? language.automaticSafetySnapshot : backup.label
+    const label = displayLabel ? `${displayLabel} - ` : ''
     return `${label}${new Date(backup.createdAt).toLocaleString()}`
   })
   const selection = await alertSelect(selectOptions)

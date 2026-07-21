@@ -10,6 +10,7 @@ import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import {
+  AutomaticBackupError,
   ValidationError,
   applyImport,
   assetPath,
@@ -81,7 +82,11 @@ export function registerSaveRoutes(
   authState: AuthState,
   dataDir: string,
   eventSink: CommandEventSink,
-  options: { maxExpandedImportBytes?: number; importMaxBytes?: number } = {},
+  options: {
+    maxExpandedImportBytes?: number
+    importMaxBytes?: number
+    automaticBackupRetention?: number
+  } = {},
 ): void {
   const importMaxBytes = options.importMaxBytes ?? DEFAULT_IMPORT_MAX_BYTES
   // Use the explicit import ceiling when set; otherwise use the ordinary
@@ -100,6 +105,7 @@ export function registerSaveRoutes(
           db,
           dataDir,
           snapshot.database,
+          { automaticBackupRetention: options.automaticBackupRetention },
         )
         eventSink.emit(event)
         return {
@@ -125,6 +131,7 @@ export function registerSaveRoutes(
         dataDir,
         database,
         {
+          automaticBackupRetention: options.automaticBackupRetention,
           cloneBeforeMessageSplit: false,
         },
       )
@@ -138,6 +145,10 @@ export function registerSaveRoutes(
       if (err instanceof ValidationError) {
         reply.code(400)
         return { error: err.message }
+      }
+      if (err instanceof AutomaticBackupError) {
+        reply.code(500)
+        return { error: err.code }
       }
       throw err
     }
@@ -175,6 +186,7 @@ export function registerSaveRoutes(
         dataDir,
         importedDatabase,
         {
+          automaticBackupRetention: options.automaticBackupRetention,
           beforeRevision: () => {
             const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
             assetsCreated = assetResults.some((result) => result.created)
@@ -206,6 +218,10 @@ export function registerSaveRoutes(
       if (err instanceof ValidationError) {
         reply.code(400)
         return { error: err.message }
+      }
+      if (err instanceof AutomaticBackupError) {
+        reply.code(500)
+        return { error: err.code }
       }
       throw err
     } finally {
@@ -503,6 +519,7 @@ function applyImportedDatabase(
   database: unknown,
   options: {
     cloneBeforeMessageSplit?: boolean
+    automaticBackupRetention?: number
     beforeRevision?: (db: DatabaseSync) => void
     onImportRollback?: () => void
   } = {},
@@ -516,6 +533,7 @@ function applyImportedDatabase(
   let result: ReturnType<typeof applyImport>
   try {
     result = applyImport(db, dataDir, database, {
+      automaticBackupRetention: options.automaticBackupRetention,
       cloneBeforeMessageSplit: options.cloneBeforeMessageSplit,
       beforeRevision: () => {
         replaceLegacyHypaV3MemoryRowsInTransaction(db, database)

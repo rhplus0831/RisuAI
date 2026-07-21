@@ -4,6 +4,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { createInitialDatabase } from './databaseDefaults.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
+import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
 import { getSchemaState } from './db.js'
 import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent } from './commands/events.js'
 import { getDatabaseWriterMetadata, rotateDatabaseLineage } from './databaseLineage.js'
@@ -1068,6 +1069,17 @@ export class BackupDatabaseValidationError extends ValidationError {
   }
 }
 
+export const AUTOMATIC_BACKUP_ERROR = 'automatic_backup_failed'
+
+export class AutomaticBackupError extends Error {
+  readonly code = AUTOMATIC_BACKUP_ERROR
+
+  constructor(cause: unknown) {
+    super(AUTOMATIC_BACKUP_ERROR, { cause })
+    this.name = 'AutomaticBackupError'
+  }
+}
+
 export class RevisionMismatchError extends Error {
   readonly currentRevision: number
   constructor(currentRevision: number, message = 'Revision mismatch') {
@@ -2077,11 +2089,13 @@ export function applyImport(
   options: {
     beforeRevision?: (db: DatabaseSync) => void
     cloneBeforeMessageSplit?: boolean
+    automaticBackupRetention?: number
   } = {},
 ): { revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number } {
   if (database === null || database === undefined) {
     throw new ValidationError('database payload missing')
   }
+  createAutomaticSafetyBackup(db, dataDir, options.automaticBackupRetention)
   // The imported payload carries embedded `message[]`; split them into the
   // messages table and persist the message-free domain tables. By default we
   // persist a *clone* so the caller's `database` object is left fully hydrated —
@@ -2368,6 +2382,8 @@ export interface BackupManifest {
   _version: number
   id: string
   label: string | null
+  /** Missing on backups created before backup kinds were introduced. */
+  kind?: 'manual' | 'automatic'
   createdAt: string
   revision: number
   assetCount: number
@@ -2535,32 +2551,51 @@ function checkpointWal(db: DatabaseSync): void {
   }
 }
 
-export function createBackup(db: DatabaseSync, dataDir: string, label: string | null = null): BackupManifest {
+export const AUTOMATIC_BACKUP_LABEL = 'Automatic safety snapshot'
+
+export function createBackup(
+  db: DatabaseSync,
+  dataDir: string,
+  label: string | null = null,
+  options: { kind?: 'manual' | 'automatic' } = {},
+): BackupManifest {
   const { revision } = getSchemaState(db)
   const id = generateBackupId()
   const dir = backupDir(dataDir, id)
-  fs.mkdirSync(dir, { recursive: true })
+  try {
+    fs.mkdirSync(dir, { recursive: true })
 
-  copyDirectoryIfPresent(assetsDir(dataDir), path.join(dir, 'assets'))
-  // SQLite: flush WAL then file-copy.
-  checkpointWal(db)
-  const liveSqlite = sqliteDbPath(dataDir)
-  if (fs.existsSync(liveSqlite)) {
-    fs.copyFileSync(liveSqlite, path.join(dir, 'risu.db'))
-  }
-  // Legacy storage directory.
-  copyDirectoryIfPresent(saveDir(dataDir), path.join(dir, 'save'))
+    copyDirectoryIfPresent(assetsDir(dataDir), path.join(dir, 'assets'))
+    // SQLite: flush WAL then file-copy.
+    checkpointWal(db)
+    const liveSqlite = sqliteDbPath(dataDir)
+    if (fs.existsSync(liveSqlite)) {
+      fs.copyFileSync(liveSqlite, path.join(dir, 'risu.db'))
+    }
+    // Legacy storage directory.
+    copyDirectoryIfPresent(saveDir(dataDir), path.join(dir, 'save'))
 
-  const manifest: BackupManifest = {
-    _version: BACKUP_MANIFEST_VERSION,
-    id,
-    label,
-    createdAt: new Date().toISOString(),
-    revision,
-    assetCount: getAssetMetadataCount(db),
+    const manifest: BackupManifest = {
+      _version: BACKUP_MANIFEST_VERSION,
+      id,
+      label,
+      kind: options.kind ?? 'manual',
+      createdAt: new Date().toISOString(),
+      revision,
+      assetCount: getAssetMetadataCount(db),
+    }
+    fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest))
+    return manifest
+  } catch (err) {
+    // A manifest is written last, but remove partial payloads too so failed
+    // snapshots never accumulate as hidden, unusable backup directories.
+    try {
+      fs.rmSync(dir, { recursive: true, force: true })
+    } catch {
+      // Preserve the creation failure; callers fail closed on that cause.
+    }
+    throw err
   }
-  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest))
-  return manifest
 }
 
 export function listBackups(dataDir: string): BackupManifest[] {
@@ -2582,11 +2617,57 @@ export function listBackups(dataDir: string): BackupManifest[] {
     } catch {
       continue
     }
-    if (!parsed || typeof parsed !== 'object' || typeof parsed.createdAt !== 'string') continue
+    if (!parsed || typeof parsed !== 'object' || parsed.id !== id || typeof parsed.createdAt !== 'string') continue
     manifests.push(parsed)
   }
   manifests.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   return manifests
+}
+
+function liveDatabaseIsInitialized(db: DatabaseSync): boolean {
+  return db.prepare('SELECT 1 FROM settings WHERE id = 1').get() !== undefined
+}
+
+function pruneAutomaticBackups(dataDir: string, retention: number, protectedIds: ReadonlySet<string>): void {
+  if (!Number.isInteger(retention) || retention <= 0) {
+    throw new Error('automatic backup retention must be a positive integer')
+  }
+
+  const automatic = listBackups(dataDir)
+    .filter((manifest) => manifest.kind === 'automatic')
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+  let excess = automatic.length - retention
+  for (const manifest of automatic) {
+    if (excess <= 0) break
+    if (protectedIds.has(manifest.id)) continue
+    deleteBackup(dataDir, manifest.id)
+    excess -= 1
+  }
+}
+
+/**
+ * Capture initialized live state before a whole-database replacement. All work
+ * is synchronous, so creation, retention, and the destructive transaction form
+ * one event-loop critical section. A restore target can be protected from
+ * retention until its payload is no longer in use.
+ */
+function createAutomaticSafetyBackup(
+  db: DatabaseSync,
+  dataDir: string,
+  retention = DEFAULT_AUTOMATIC_BACKUP_RETENTION,
+  protectedBackupIds: readonly string[] = [],
+): BackupManifest | null {
+  // First-run imports intentionally do not snapshot the empty schema. The
+  // settings row is the same initialization authority used by loadPersisted.
+  if (!liveDatabaseIsInitialized(db)) return null
+
+  try {
+    const manifest = createBackup(db, dataDir, AUTOMATIC_BACKUP_LABEL, { kind: 'automatic' })
+    pruneAutomaticBackups(dataDir, retention, new Set([...protectedBackupIds, manifest.id]))
+    return manifest
+  } catch (err) {
+    throw new AutomaticBackupError(err)
+  }
 }
 
 function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string | null, beforeCommit?: () => void): string {
@@ -2668,6 +2749,7 @@ export function restoreBackup(
   db: DatabaseSync,
   dataDir: string,
   id: string,
+  options: { automaticBackupRetention?: number } = {},
 ): { revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number } {
   if (!isValidBackupId(id)) {
     throw new EntityNotFoundError(`Backup not found: ${id}`)
@@ -2680,6 +2762,15 @@ export function restoreBackup(
 
   const backupSqlite = path.join(backupDir(dataDir, id), 'risu.db')
   const usableDatabasePayloads = validateBackupDatabasePayloads(backupSqlite, legacySnapshot)
+
+  const automaticBackup = createAutomaticSafetyBackup(
+    db,
+    dataDir,
+    options.automaticBackupRetention,
+    // Retention must not delete an automatic snapshot while it is the active
+    // restore source. The newly created snapshot is protected by the helper.
+    [id],
+  )
 
   const liveAssets = assetsDir(dataDir)
   const backupAssets = path.join(backupDir(dataDir, id), 'assets')
@@ -2749,6 +2840,22 @@ export function restoreBackup(
   }
   if (!databaseLineage) {
     throw new Error('restore did not return database lineage')
+  }
+  if (automaticBackup) {
+    try {
+      // A retention cap of one temporarily needs both the restore source and
+      // its safety snapshot. Once restore is complete, the old source may be
+      // pruned without racing the operation; always retain the new snapshot.
+      pruneAutomaticBackups(
+        dataDir,
+        options.automaticBackupRetention ?? DEFAULT_AUTOMATIC_BACKUP_RETENTION,
+        new Set([automaticBackup.id]),
+      )
+    } catch {
+      // The safety snapshot already exists and the restore has committed. Do
+      // not report a false restore failure for post-operation housekeeping;
+      // the next safety snapshot will retry bounded retention.
+    }
   }
   return {
     revision: event.revision,

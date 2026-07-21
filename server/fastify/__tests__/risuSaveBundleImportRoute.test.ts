@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import * as fflate from 'fflate'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
@@ -13,6 +14,7 @@ import {
   assetsDir,
   insertAssetMetadataBatch,
   getAssetMetadataById,
+  listBackups,
   loadPersistedWithMessages,
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
@@ -231,6 +233,16 @@ async function expectNoImportedAssetSideEffects(h: Harness): Promise<void> {
   }
 }
 
+function readBackupDatabase(dataDir: string, id: string): Record<string, unknown> {
+  const backupRoot = path.join(dataDir, 'backups', id)
+  const backupDb = new DatabaseSync(path.join(backupRoot, 'risu.db'), { readOnly: true })
+  try {
+    return loadPersistedWithMessages(backupDb, backupRoot).database as Record<string, unknown>
+  } finally {
+    backupDb.close()
+  }
+}
+
 describe('repository .risu bundle import route', () => {
   it('restores the database and bundled assets into a fresh instance', async () => {
     persistDatabaseWithAsset(harness.dataDir)
@@ -298,8 +310,55 @@ describe('repository .risu bundle import route', () => {
       // are intentionally not emitted for staged backup assets.
       expect(fresh.commandEvents.list().some((event) => event.type === 'state.imported')).toBe(true)
       expect(fresh.commandEvents.list().some((event) => event.type === 'asset.created')).toBe(false)
+      expect(listBackups(fresh.dataDir)).toEqual([])
     } finally {
       await stopHarness(fresh)
+    }
+  })
+
+  it('takes pre-import safety snapshots for zip and legacy .bin replacements', async () => {
+    persistDatabaseWithAsset(harness.dataDir)
+    const zip = await exportBundleZip()
+    const exported = await authedInject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=legacy-compressed',
+    })
+    expect(exported.statusCode).toBe(200)
+    const legacyBin = buildLegacyBin([
+      { name: 'database.risudat', data: exported.rawPayload },
+      { name: `${ASSET_ID}.png`, data: ASSET_BYTES },
+    ])
+
+    for (const [bytes, filename, baselineTag] of [
+      [zip, 'database.risu.zip', 'before-zip-import'],
+      [legacyBin, 'database.bin', 'before-bin-import'],
+    ] as const) {
+      const target = await startHarness()
+      try {
+        const { assertion: targetAssertion } = await setupAuthedClient(target.app)
+        const baseline = await target.app.inject({
+          method: 'POST',
+          url: '/api/v1/import/risusave',
+          headers: { 'risu-auth': targetAssertion },
+          payload: { database: { tag: baselineTag } },
+        })
+        expect(baseline.statusCode).toBe(200)
+
+        const upload = multipartBundle(bytes, filename)
+        const imported = await target.app.inject({
+          method: 'POST',
+          url: '/api/v1/import/bundle',
+          headers: { 'risu-auth': targetAssertion, 'content-type': upload.contentType },
+          payload: upload.payload,
+        })
+        expect(imported.statusCode).toBe(200)
+
+        const automatic = listBackups(target.dataDir).filter((backup) => backup.kind === 'automatic')
+        expect(automatic).toHaveLength(1)
+        expect(readBackupDatabase(target.dataDir, automatic[0].id)).toMatchObject({ tag: baselineTag })
+      } finally {
+        await stopHarness(target)
+      }
     }
   })
 

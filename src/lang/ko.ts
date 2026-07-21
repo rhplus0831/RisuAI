@@ -1049,6 +1049,7 @@ const languageKoreanBase = {
   webdeeplwarn: '이 옵션은 CORS 오류를 일으킬 수 있습니다.',
   saveServerBackup: '서버 백업 저장',
   loadServerBackup: '서버 백업 불러오기',
+  automaticSafetySnapshot: '자동 안전 스냅샷',
   saveBackupLocal: '로컬 백업 저장',
   saveBackupLocalZipStyle: 'ZIP 형식 로컬 백업 저장 (권장하지 않음)',
   loadBackupLocal: '로컬 백업 불러오기',
