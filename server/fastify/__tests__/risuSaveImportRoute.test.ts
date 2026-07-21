@@ -9,6 +9,7 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
+import { RISUSAVE_EMPTY_DATABASE_ERROR, RISUSAVE_INCOMPLETE_BLOCKS_ERROR } from '../src/risuSave/importSnapshot.js'
 import { insertAssetMetadataBatch, listBackups, loadPersisted, loadPersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
@@ -144,7 +145,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
-      payload: { database: { v: 1 } },
+      payload: { database: { version: 1 } },
     })
 
     expect(imported.statusCode).toBe(200)
@@ -176,14 +177,14 @@ describe('Phase 9-8a multipart .risu import route', () => {
     const baseline = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
-      payload: { database: { tag: 'before-json-import' } },
+      payload: { database: { version: 1, tag: 'before-json-import' } },
     })
     expect(baseline.statusCode).toBe(200)
 
     const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
-      payload: { database: { tag: 'after-json-import' } },
+      payload: { database: { version: 1, tag: 'after-json-import' } },
     })
     expect(imported.statusCode).toBe(200)
 
@@ -197,7 +198,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     const baseline = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
-      payload: { database: { tag: 'before-multipart-import' } },
+      payload: { database: { version: 1, tag: 'before-multipart-import' } },
     })
     expect(baseline.statusCode).toBe(200)
 
@@ -219,7 +220,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     const baseline = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
-      payload: { database: { tag: 'preserved-after-snapshot-failure' } },
+      payload: { database: { version: 1, tag: 'preserved-after-snapshot-failure' } },
     })
     expect(baseline.statusCode).toBe(200)
 
@@ -235,7 +236,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
-      payload: { database: { tag: 'must-not-be-imported' } },
+      payload: { database: { version: 1, tag: 'must-not-be-imported' } },
     })
     expect(imported.statusCode).toBe(500)
     expect(imported.json()).toEqual({ error: 'automatic_backup_failed' })
@@ -662,13 +663,80 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(harness.commandEvents.list()).toEqual([])
   })
 
+  it('rejects hollow JSON and decoded .risu databases before snapshots or live mutations', async () => {
+    const seeded = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          version: 1,
+          tag: 'preserve-live-data',
+          characters: [{ chaId: 'live-char', name: 'Live Character', chats: [] }],
+          modules: [{ id: 'live-module', name: 'Live Module' }],
+        },
+      },
+    })
+    expect(seeded.statusCode).toBe(200)
+    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(listBackups(harness.dataDir)).toEqual([])
+
+    const jsonImport = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: {} },
+    })
+    expect(jsonImport.statusCode).toBe(400)
+    expect(jsonImport.json()).toEqual({ error: RISUSAVE_EMPTY_DATABASE_ERROR })
+
+    const upload = multipartRisuSave(encodeLegacyRisuSaveEnvelope({}, 'legacy-raw'))
+    const fileImport = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+    expect(fileImport.statusCode).toBe(400)
+    expect(fileImport.json()).toEqual({ error: RISUSAVE_EMPTY_DATABASE_ERROR })
+
+    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.json()).toMatchObject({
+      revision: before.json().revision,
+      databaseLineage: before.json().databaseLineage,
+      database: before.json().database,
+    })
+    expect(listBackups(harness.dataDir)).toEqual([])
+    expect(harness.commandEvents.list()).toEqual([seeded.json().event])
+  })
+
+  it('imports zero-character current and collection-only legacy databases', async () => {
+    const current = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: { formatversion: 5, username: 'Zero Character User', characters: [] } },
+    })
+    expect(current.statusCode).toBe(200)
+
+    const legacyUpload = multipartRisuSave(encodeLegacyRisuSaveEnvelope({ characters: [] }, 'legacy-compressed'))
+    const legacy = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': legacyUpload.contentType },
+      payload: legacyUpload.payload,
+    })
+    expect(legacy.statusCode).toBe(200)
+
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.json().database.characters).toEqual([])
+    expectExportRequiredShape(bootstrap.json().database)
+  })
+
   it('does not write imported state when command event persistence fails', async () => {
     failCommandEventPersistence(harness.dataDir)
 
     const imported = await authedInject({
       method: 'POST',
       url: '/api/v1/import/risusave',
-      payload: { database: { v: 1 } },
+      payload: { database: { version: 1 } },
     })
 
     expect(imported.statusCode).toBe(500)
@@ -902,6 +970,66 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
     expect(imported.json()).not.toHaveProperty('envelope')
     expect(imported.json().importReport).not.toHaveProperty('unsupportedReferences')
+  })
+
+  it('rejects a block upload truncated exactly after a complete block before taking a snapshot', async () => {
+    const seeded = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          version: 1,
+          tag: 'preserve-after-truncation',
+          characters: [{ chaId: 'live-char', name: 'Live Character', chats: [] }],
+          modules: [{ id: 'live-module', name: 'Live Module' }],
+        },
+      },
+    })
+    expect(seeded.statusCode).toBe(200)
+    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+
+    const blocks = [
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({ version: 2, __directory: ['preset', 'modules', 'config'] }),
+      },
+      {
+        name: 'preset',
+        type: RisuSaveBlockType.BOTPRESET,
+        data: JSON.stringify([]),
+      },
+      {
+        name: 'modules',
+        type: RisuSaveBlockType.MODULES,
+        data: JSON.stringify([]),
+      },
+      {
+        name: 'config',
+        type: RisuSaveBlockType.CONFIG,
+        data: JSON.stringify({ version: 1 }),
+      },
+    ]
+    const complete = encodeRisuSaveBlockEnvelope(blocks)
+    const boundary = encodeRisuSaveBlockEnvelope(blocks.slice(0, 2)).byteLength
+    const upload = multipartRisuSave(complete.slice(0, boundary))
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json()).toEqual({ error: RISUSAVE_INCOMPLETE_BLOCKS_ERROR })
+    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.json()).toMatchObject({
+      revision: before.json().revision,
+      databaseLineage: before.json().databaseLineage,
+      database: before.json().database,
+    })
+    expect(listBackups(harness.dataDir)).toEqual([])
+    expect(harness.commandEvents.list()).toEqual([seeded.json().event])
   })
 
   it('rejects block uploads whose expanded payload exceeds the import limit', async () => {

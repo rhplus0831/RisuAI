@@ -170,7 +170,9 @@ async function importDatabase(
     method: 'POST',
     url: '/api/v1/import/risusave',
     headers: { 'risu-auth': assertion },
-    payload: { database },
+    // Minimal fixtures need one recognized core key to pass the
+    // risusave_empty_database import guard.
+    payload: { database: { characters: [], ...database } },
   })
   expect(imported.statusCode).toBe(200)
   return imported.json().revision as number

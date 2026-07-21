@@ -10,7 +10,11 @@ import {
   RisuSaveBlockType,
 } from '../src/risuSave/blockCodec.js'
 import { decodeLegacyRisuSaveEnvelope, encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
-import { UnsupportedGroupCharactersError, decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
+import {
+  RISUSAVE_INCOMPLETE_BLOCKS_ERROR,
+  UnsupportedGroupCharactersError,
+  decodeRisuSaveImportSnapshot,
+} from '../src/risuSave/importSnapshot.js'
 import {
   buildRisuSaveExportBlocks,
   encodeRepositoryRisuSaveBlockExport,
@@ -297,7 +301,7 @@ describe('server .risu fixture harness', () => {
     })
   })
 
-  it('reports unsupported remote and cache-only references without local storage fallback', () => {
+  it('reports explicit remote references but rejects missing directory blocks', () => {
     const remote = risuSaveFixtureCases.find((item) => item.name === 'risusave-remote-reference')
     const cacheOnly = risuSaveFixtureCases.find((item) => item.name === 'risusave-cache-only-reference')
     expect(remote).toBeDefined()
@@ -306,9 +310,41 @@ describe('server .risu fixture harness', () => {
     expect(decodeRisuSaveImportSnapshot(remote!.bytes).unsupportedReferences).toEqual([
       { name: 'remote-char', type: RisuSaveBlockType.REMOTE, kind: 'remote' },
     ])
-    expect(decodeRisuSaveImportSnapshot(cacheOnly!.bytes).unsupportedReferences).toEqual([
-      { name: 'cache-only-char', type: RisuSaveBlockType.REMOTE, kind: 'cache-only' },
+    expect(() => decodeRisuSaveImportSnapshot(cacheOnly!.bytes)).toThrow(RISUSAVE_INCOMPLETE_BLOCKS_ERROR)
+  })
+
+  it('rejects a block save truncated exactly after a complete block', () => {
+    const blocks = [
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({ version: 1, __directory: ['preset', 'modules', 'config'] }),
+      },
+      {
+        name: 'preset',
+        type: RisuSaveBlockType.BOTPRESET,
+        data: JSON.stringify([]),
+      },
+      {
+        name: 'modules',
+        type: RisuSaveBlockType.MODULES,
+        data: JSON.stringify([{ id: 'module-a', name: 'Module A' }]),
+      },
+      {
+        name: 'config',
+        type: RisuSaveBlockType.CONFIG,
+        data: JSON.stringify({ version: 1 }),
+      },
+    ]
+    const complete = encodeRisuSaveBlockEnvelope(blocks)
+    const boundary = encodeRisuSaveBlockEnvelope(blocks.slice(0, 2)).byteLength
+    const truncated = complete.slice(0, boundary)
+
+    expect(decodeRisuSaveBlockEnvelope(truncated).unsupportedReferences).toEqual([
+      { name: 'modules', type: RisuSaveBlockType.REMOTE, kind: 'cache-only' },
+      { name: 'config', type: RisuSaveBlockType.REMOTE, kind: 'cache-only' },
     ])
+    expect(() => decodeRisuSaveImportSnapshot(truncated)).toThrow(RISUSAVE_INCOMPLETE_BLOCKS_ERROR)
   })
 
   it('rejects malformed decoded import rows', () => {

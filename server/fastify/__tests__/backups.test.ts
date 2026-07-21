@@ -112,7 +112,9 @@ async function importDb(app: FastifyInstance, assertion: string, database: unkno
     method: 'POST',
     url: '/api/v1/import/risusave',
     headers: { 'risu-auth': assertion },
-    payload: { database },
+    // Minimal fixtures need one recognized core key to pass the
+    // risusave_empty_database import guard.
+    payload: { database: { characters: [], ...(database as Record<string, unknown>) } },
   })
   expect(res.statusCode).toBe(200)
   return res.json().revision as number

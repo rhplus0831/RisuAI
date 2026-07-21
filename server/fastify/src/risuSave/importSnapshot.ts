@@ -5,7 +5,7 @@ import {
   decodeLegacyRisuSaveEnvelope,
 } from './legacyEnvelopeCodec.js'
 import type { ExpandedSizeLimitOptions } from './importLimits.js'
-import { ValidationError } from '../repository.js'
+import { COLLECTION_FIELDS, ValidationError } from '../repository.js'
 import { normalizePresetCollection } from '../commands/presets.js'
 import { normalizePromptTemplateCollection } from '../commands/prompts.js'
 import { normalizePersonaCollection } from '../commands/personas.js'
@@ -21,6 +21,7 @@ import { normalizeScriptDefinitionCollection } from '../commands/scriptDefinitio
 import { normalizeDatabaseDefaults } from '../databaseDefaults.js'
 import { normalizeStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
 import { CHAT_GENERATION_SETTINGS_FIELD } from '../../../../src/ts/chatGenerationSettings.js'
+import { SERVER_SETTINGS_KEYS_BY_GROUP } from '../../../../src/ts/server/settingsGroups.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -32,6 +33,25 @@ const ROOT_COMPONENT_RESERVED_KEYS = new Set([
   'plugins',
   'pluginCustomStorage',
   '__directory',
+])
+
+export const RISUSAVE_EMPTY_DATABASE_ERROR = 'risusave_empty_database'
+export const RISUSAVE_INCOMPLETE_BLOCKS_ERROR = 'risusave_incomplete_blocks'
+
+const RECOGNIZED_IMPORT_DATABASE_KEYS = new Set([
+  // Current and historical database-level format markers.
+  'formatversion',
+  'version',
+  // Whole-database resource families. Presence is intentional: legacy saves
+  // may legitimately carry an empty collection or a malformed collection that
+  // the compatibility normalizer repairs below.
+  'characters',
+  'pluginCustomStorage',
+  ...COLLECTION_FIELDS,
+  // The browser/server settings ownership catalog is the authoritative list of
+  // persisted settings-bearing keys, including provider, prompt, display,
+  // account, model-profile, and agent-preset settings.
+  ...Object.values(SERVER_SETTINGS_KEYS_BY_GROUP).flat(),
 ])
 
 export interface RisuSaveImportUnsupportedReference {
@@ -95,6 +115,9 @@ export function decodeRisuSaveImportSnapshot(
   }
 
   const decoded = decodeEnvelopeAsValidation(() => decodeRisuSaveBlockEnvelope(data, options))
+  if (decoded.unsupportedReferences.some((reference) => reference.kind === 'cache-only')) {
+    throw new ValidationError(RISUSAVE_INCOMPLETE_BLOCKS_ERROR)
+  }
   return {
     envelope,
     ...normalizeImportDatabase(assembleBlockDatabase(decoded.blocks)),
@@ -195,11 +218,19 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
 }
 
 function normalizeImportDatabase(database: unknown): RisuSaveImportDatabaseNormalization {
+  assertRecognizedImportDatabase(database)
   rejectUnsupportedGroupCharacters(database)
   const target = normalizeImportDatabaseShape(database)
   return {
     database: target,
     incompleteChatCount: normalizeImportedChatGenerationSettings(target),
+  }
+}
+
+function assertRecognizedImportDatabase(database: unknown): void {
+  const record = readJsonObject(database, 'database')
+  if (!Object.keys(record).some((key) => RECOGNIZED_IMPORT_DATABASE_KEYS.has(key))) {
+    throw new ValidationError(RISUSAVE_EMPTY_DATABASE_ERROR)
   }
 }
 

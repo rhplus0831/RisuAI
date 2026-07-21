@@ -20,6 +20,9 @@ import {
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
+import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
+import { RISUSAVE_EMPTY_DATABASE_ERROR, RISUSAVE_INCOMPLETE_BLOCKS_ERROR } from '../src/risuSave/importSnapshot.js'
 
 interface Harness {
   app: FastifyInstance
@@ -153,6 +156,29 @@ function persistDatabaseWithGroup(dataDir: string): void {
   }
 }
 
+function persistLiveDatabase(dataDir: string): void {
+  const db = openDatabase(dataDir)
+  try {
+    writePersistedWithMessages(db, dataDir, {
+      _version: 1,
+      database: {
+        version: 1,
+        tag: 'preserve-live-bundle-data',
+        characters: [{ chaId: 'live-char', name: 'Live Character', chats: [] }],
+        characterOrder: ['live-char'],
+        botPresets: [],
+        modules: [{ id: 'live-module', name: 'Live Module' }],
+        loadouts: [],
+        plugins: [],
+        pluginCustomStorage: {},
+      },
+      assets: [],
+    })
+  } finally {
+    db.close()
+  }
+}
+
 /** Build the original app's LocalWriter `.bin` blob: [u32-LE nameLen][name][u32-LE dataLen][data] records. */
 function buildLegacyBin(records: { name: string; data: Uint8Array }[]): Buffer {
   const parts: Buffer[] = []
@@ -165,6 +191,14 @@ function buildLegacyBin(records: { name: string; data: Uint8Array }[]): Buffer {
     parts.push(nameLen, name, dataLen, Buffer.from(record.data))
   }
   return Buffer.concat(parts)
+}
+
+function buildBundleZip(databaseBytes: Uint8Array): Uint8Array {
+  return fflate.zipSync({
+    'database.risu': databaseBytes,
+    'manifest.json': new TextEncoder().encode(JSON.stringify({ version: 1 })),
+    [`assets/${ASSET_ID}.png`]: ASSET_BYTES,
+  })
 }
 
 function multipartBundle(bytes: Uint8Array, filename = 'database.risu.zip') {
@@ -340,7 +374,7 @@ describe('repository .risu bundle import route', () => {
           method: 'POST',
           url: '/api/v1/import/risusave',
           headers: { 'risu-auth': targetAssertion },
-          payload: { database: { tag: baselineTag } },
+          payload: { database: { version: 1, tag: baselineTag } },
         })
         expect(baseline.statusCode).toBe(200)
 
@@ -669,6 +703,90 @@ describe('repository .risu bundle import route', () => {
     } finally {
       await stopHarness(fresh)
     }
+  })
+
+  it('rejects hollow bundle and legacy .bin databases before snapshots, assets, or live mutations', async () => {
+    persistLiveDatabase(harness.dataDir)
+    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const hollowDatabase = encodeLegacyRisuSaveEnvelope({}, 'legacy-compressed')
+    const inputs = [
+      { bytes: buildBundleZip(hollowDatabase), filename: 'hollow.risu.zip' },
+      {
+        bytes: buildLegacyBin([
+          { name: 'database.risudat', data: hollowDatabase },
+          { name: `${ASSET_ID}.png`, data: ASSET_BYTES },
+        ]),
+        filename: 'hollow.bin',
+      },
+    ]
+
+    for (const input of inputs) {
+      const upload = multipartBundle(input.bytes, input.filename)
+      const imported = await authedInject({
+        method: 'POST',
+        url: '/api/v1/import/bundle',
+        headers: { 'content-type': upload.contentType },
+        payload: upload.payload,
+      })
+      expect(imported.statusCode).toBe(400)
+      expect(imported.json()).toEqual({ error: RISUSAVE_EMPTY_DATABASE_ERROR })
+    }
+
+    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.json()).toMatchObject({
+      revision: before.json().revision,
+      databaseLineage: before.json().databaseLineage,
+      database: before.json().database,
+    })
+    expect(listBackups(harness.dataDir)).toEqual([])
+    await expectNoImportedAssetSideEffects(harness)
+  })
+
+  it('rejects an exact-block-boundary truncated bundle before snapshots, assets, or live mutations', async () => {
+    persistLiveDatabase(harness.dataDir)
+    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const blocks = [
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({ version: 2, __directory: ['preset', 'modules', 'config'] }),
+      },
+      {
+        name: 'preset',
+        type: RisuSaveBlockType.BOTPRESET,
+        data: JSON.stringify([]),
+      },
+      {
+        name: 'modules',
+        type: RisuSaveBlockType.MODULES,
+        data: JSON.stringify([]),
+      },
+      {
+        name: 'config',
+        type: RisuSaveBlockType.CONFIG,
+        data: JSON.stringify({ version: 1 }),
+      },
+    ]
+    const complete = encodeRisuSaveBlockEnvelope(blocks)
+    const boundary = encodeRisuSaveBlockEnvelope(blocks.slice(0, 2)).byteLength
+    const upload = multipartBundle(buildBundleZip(complete.slice(0, boundary)), 'truncated.risu.zip')
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json()).toEqual({ error: RISUSAVE_INCOMPLETE_BLOCKS_ERROR })
+    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.json()).toMatchObject({
+      revision: before.json().revision,
+      databaseLineage: before.json().databaseLineage,
+      database: before.json().database,
+    })
+    expect(listBackups(harness.dataDir)).toEqual([])
+    await expectNoImportedAssetSideEffects(harness)
   })
 
   it('accepts an upload larger than the global body limit', async () => {
