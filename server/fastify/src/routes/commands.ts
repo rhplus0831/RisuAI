@@ -119,6 +119,7 @@ import {
   type LegacyBotPresetExtractionMode,
 } from '../commands/splitPresets.js'
 import {
+  applyTranslatorPresetRecordPatch,
   createTranslatorPresetRecord,
   ensureDatabaseObject as ensureTranslatorPresetDatabaseObject,
   ensureTranslatorPresetCollection,
@@ -4719,11 +4720,7 @@ export function registerCommandRoutes(
             rawPrompt === target.translatorPrompt &&
             rawMaxResponse === target.translatorMaxResponse
           const index = requireTranslatorPresetIndex(presets, presetId)
-          presets[index] = {
-            ...presets[index],
-            ...patch,
-            id: presetId,
-          }
+          presets[index] = applyTranslatorPresetRecordPatch(presets[index], patch)
           if (target.translatorPresetId === index) {
             syncSelectedTranslatorPresetToLegacyFields(target, presets)
           }

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+import { decode as decodeMsgpack } from 'msgpackr/index-no-eval'
+import { decompressSync } from 'fflate'
 
 vi.mock('src/ts/util', () => ({
   encryptBuffer: async (data: Uint8Array) => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
@@ -17,6 +19,7 @@ import {
   getCurrentTranslatorPresetFromState,
   getTranslatorPresetDownloadName,
   normalizeTranslatorPresetState,
+  TRANSLATOR_PRESET_MAX_STEPS,
   translatorPresetImportExtensions,
   type TranslatorPresetStateLike,
 } from './presets'
@@ -36,6 +39,16 @@ describe('normalizeTranslatorPresetState', () => {
         name: 'Default',
         prompt: 'Translate to {{slot}}.',
         maxResponse: 321,
+        steps: [
+          {
+            id: expect.any(String),
+            name: 'Step 1',
+            enabled: true,
+            prompt: 'Translate to {{slot}}.',
+            maxResponse: 321,
+            model: { mode: 'inheritTranslate' },
+          },
+        ],
       },
     ])
     expect(state.translatorPresetId).toBe(0)
@@ -84,6 +97,50 @@ describe('normalizeTranslatorPresetState', () => {
     expect(ids?.[1]).not.toBe('preset-a')
     expect(ids?.[2]).toEqual(expect.any(String))
   })
+
+  it('normalizes step ids and output keys, caps the pipeline, and mirrors the first step', () => {
+    const state: TranslatorPresetStateLike = {
+      translatorPresets: [
+        {
+          id: 'preset-a',
+          name: 'Pipeline',
+          prompt: 'stale prompt',
+          maxResponse: 999,
+          steps: Array.from({ length: TRANSLATOR_PRESET_MAX_STEPS + 2 }, (_, index) => ({
+            id: index < 2 ? 'duplicate' : '',
+            name: index === 0 ? '' : `Named ${index + 1}`,
+            enabled: index !== 1,
+            prompt: `Step prompt ${index + 1}`,
+            maxResponse: index === 1 ? Number.NaN : index + 100,
+            model:
+              index === 2
+                ? { mode: 'modelProfile', profileId: ' profile-a ' }
+                : index === 3
+                  ? { mode: 'modelProfile', profileId: '' }
+                  : { mode: 'inheritTranslate' },
+            outputKey: index < 2 ? 'shared' : index === 2 ? 'invalid-key!' : `key_${index}`,
+          })),
+        },
+      ],
+      translatorPresetId: 0,
+    }
+
+    normalizeTranslatorPresetState(state)
+
+    const preset = state.translatorPresets?.[0] as any
+    expect(preset.steps).toHaveLength(TRANSLATOR_PRESET_MAX_STEPS)
+    expect(new Set(preset.steps.map((step: { id: string }) => step.id)).size).toBe(TRANSLATOR_PRESET_MAX_STEPS)
+    expect(preset.steps[0]).toMatchObject({ name: 'Step 1', outputKey: 'shared' })
+    expect(preset.steps[1].outputKey).toBeUndefined()
+    expect(preset.steps[1].maxResponse).toBe(1000)
+    expect(preset.steps[2].outputKey).toBeUndefined()
+    expect(preset.steps[2].model).toEqual({ mode: 'modelProfile', profileId: 'profile-a' })
+    expect(preset.steps[3].model).toEqual({ mode: 'inheritTranslate' })
+    expect(preset.prompt).toBe('Step prompt 1')
+    expect(preset.maxResponse).toBe(100)
+    expect(state.translatorPrompt).toBe('Step prompt 1')
+    expect(state.translatorMaxResponse).toBe(100)
+  })
 })
 
 describe('getCurrentTranslatorPresetFromState', () => {
@@ -119,7 +176,7 @@ describe('translator preset file codec', () => {
     expect(translatorPresetImportExtensions).toEqual(['risutl'])
   })
 
-  it('round-trips the new encrypted .risutl file payload', async () => {
+  it('round-trips a trivial pipeline through a version 1 .risutl payload', async () => {
     const preset = createTranslatorPreset('My Preset', {
       prompt: 'Translate into {{slot}}.',
       maxResponse: 256,
@@ -128,11 +185,56 @@ describe('translator preset file codec', () => {
     const encoded = await encodeTranslatorPresetFile(preset)
     const decoded = await decodeTranslatorPresetFile(encoded)
 
-    expect(decoded).toEqual(preset)
+    const container = decodeMsgpack(decompressSync(encoded)) as { translatorPresetVersion: number }
+    expect(container.translatorPresetVersion).toBe(1)
+    expect(decoded).toMatchObject({
+      name: preset.name,
+      prompt: preset.prompt,
+      maxResponse: preset.maxResponse,
+      steps: [
+        {
+          enabled: true,
+          prompt: preset.prompt,
+          maxResponse: preset.maxResponse,
+          model: { mode: 'inheritTranslate' },
+        },
+      ],
+    })
     expect(() => JSON.parse(new TextDecoder().decode(encoded))).toThrow()
     expect(getTranslatorPresetDownloadName('My/Translator:Preset')).toBe(
       'translator_preset_My_Translator_Preset.risutl',
     )
+  })
+
+  it('round-trips a multi-step pipeline through a version 2 .risutl payload', async () => {
+    const preset = createTranslatorPreset('Pipeline', {
+      steps: [
+        {
+          id: 'draft',
+          name: 'Draft',
+          enabled: true,
+          prompt: 'Draft {{slot::content}}',
+          maxResponse: 200,
+          model: { mode: 'inheritTranslate' },
+          outputKey: 'draft',
+        },
+        {
+          id: 'refine',
+          name: 'Refine',
+          enabled: true,
+          prompt: 'Refine {{slot::prev}}',
+          maxResponse: 300,
+          model: { mode: 'modelProfile', profileId: 'profile-a' },
+        },
+      ],
+    })
+
+    const encoded = await encodeTranslatorPresetFile(preset)
+    const container = decodeMsgpack(decompressSync(encoded)) as { translatorPresetVersion: number }
+    const decoded = await decodeTranslatorPresetFile(encoded)
+
+    expect(container.translatorPresetVersion).toBe(2)
+    expect(decoded).toEqual(preset)
   })
 
   it('rejects plain JSON translator preset payloads', async () => {

@@ -393,8 +393,10 @@ async function clickCreatePreset(): Promise<void> {
   await tick()
 }
 
-async function selectTranslatorPresetImportFile(preset: TranslatorPreset): Promise<void> {
-  translatorPresetFileSpies.decodeTranslatorPresetFile.mockResolvedValueOnce(preset)
+async function selectTranslatorPresetImportFile(
+  preset: TranslatorPreset | Omit<TranslatorPreset, 'steps'>,
+): Promise<void> {
+  translatorPresetFileSpies.decodeTranslatorPresetFile.mockResolvedValueOnce(preset as TranslatorPreset)
   vi.mocked(selectSingleFile).mockResolvedValueOnce({
     name: 'imported.risu-translator-preset',
     data: new Uint8Array([1, 2, 3]),
@@ -456,7 +458,7 @@ async function applyTranslatorPresetProjection(input: {
     applyCollectionsResource(
       {
         revision,
-        collections: { translatorPresets: input.presets.map((preset) => ({ ...preset })) },
+        collections: { translatorPresets: input.presets.map((preset) => ({ ...preset })) as any },
       },
       'translatorPresets',
     )
@@ -482,7 +484,7 @@ async function appendPresetC(): Promise<void> {
   withTrustedResourceWrite(() => {
     getDatabase().translatorPresets = [
       ...getDatabase().translatorPresets,
-      { id: 'preset-c', name: 'Preset C', prompt: 'old prompt C', maxResponse: 300 },
+      { id: 'preset-c', name: 'Preset C', prompt: 'old prompt C', maxResponse: 300 } as any,
     ]
   })
   await tick()
@@ -620,6 +622,75 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       `${language.import}: ${language.presets}`,
     ])
     expect(buttons.every((button) => button.type === 'button')).toBe(true)
+  })
+
+  it('adds, duplicates, reorders, removes, and caps translator steps', async () => {
+    const button = (label: string) =>
+      Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+        (candidate) => candidate.getAttribute('aria-label') === label,
+      )!
+
+    button(language.translatorPipeline.addStep).click()
+    await tick()
+    expect(getDatabase().translatorPresets[0].steps).toHaveLength(2)
+
+    const secondStepId = getDatabase().translatorPresets[0].steps[1].id
+    button(language.translatorPipeline.duplicateStep).click()
+    await tick()
+    expect(getDatabase().translatorPresets[0].steps).toHaveLength(3)
+    expect(new Set(getDatabase().translatorPresets[0].steps.map((step) => step.id)).size).toBe(3)
+
+    const secondSection = target.querySelector<HTMLElement>(`[data-translator-step="${secondStepId}"]`)!
+    secondSection
+      .querySelector<HTMLButtonElement>(`button[aria-label="${language.translatorPipeline.moveUp}"]`)!
+      .click()
+    await tick()
+    expect(getDatabase().translatorPresets[0].steps[1].id).toBe(secondStepId)
+
+    target
+      .querySelector<HTMLElement>(`[data-translator-step="${secondStepId}"]`)!
+      .querySelector<HTMLButtonElement>(`button[aria-label="${language.translatorPipeline.removeStep}"]`)!
+      .click()
+    await tick()
+    expect(getDatabase().translatorPresets[0].steps).toHaveLength(2)
+
+    while (getDatabase().translatorPresets[0].steps.length < 5) {
+      button(language.translatorPipeline.addStep).click()
+      await tick()
+    }
+    expect(button(language.translatorPipeline.addStep).disabled).toBe(true)
+  })
+
+  it('validates output keys inline and persists a per-step model profile selection', async () => {
+    withTrustedResourceWrite(() => {
+      getDatabase().modelProfiles = [{ id: 'translator-profile', name: 'Translator Profile', modelId: 'echo_model' }]
+    })
+    await tick()
+    const outputKeyInput = Array.from(target.querySelectorAll<HTMLInputElement>('input[type="text"]')).find((input) =>
+      input.getAttribute('aria-label')?.startsWith(language.translatorPipeline.outputKey),
+    )!
+
+    outputKeyInput.value = 'bad-key!'
+    outputKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    expect(target.textContent).toContain(language.translatorPipeline.invalidOutputKey)
+    expect(getDatabase().translatorPresets[0].steps?.[0]?.outputKey).toBeUndefined()
+
+    outputKeyInput.value = 'draft'
+    outputKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    expect(getDatabase().translatorPresets[0].steps[0].outputKey).toBe('draft')
+
+    const modelSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).find((select) =>
+      select.getAttribute('aria-label')?.startsWith(language.translatorPipeline.model),
+    )!
+    modelSelect.value = 'translator-profile'
+    modelSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    expect(getDatabase().translatorPresets[0].steps[0].model).toEqual({
+      mode: 'modelProfile',
+      profileId: 'translator-profile',
+    })
   })
 
   it('optimistically updates resource-backed state before the debounced command is sent', async () => {
@@ -1122,7 +1193,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       getDatabase().translatorPresets = [
         { ...getDatabase().translatorPresets[0], name: 'Preset A Edited', prompt: 'newer prompt A' },
         { ...getDatabase().translatorPresets[1] },
-        { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 },
+        { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 } as any,
       ]
       getDatabase().translatorPresetId = 2
       getDatabase().translatorPrompt = 'new prompt C'
@@ -1540,6 +1611,16 @@ describe('TranslatorPresetSettings server-backed edits', () => {
               name: 'New Preset',
               prompt: '',
               maxResponse: 1000,
+              steps: [
+                {
+                  id: expect.any(String),
+                  name: 'Step 1',
+                  enabled: true,
+                  prompt: '',
+                  maxResponse: 1000,
+                  model: { mode: 'inheritTranslate' },
+                },
+              ],
             },
             select: true,
           },
@@ -2136,7 +2217,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
           prompt: 'newer prompt B',
           maxResponse: 222,
         },
-        { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 },
+        { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 } as any,
       ]
       getDatabase().translatorPresetId = 1
       getDatabase().translatorPrompt = 'new prompt C'
@@ -2240,7 +2321,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
                   maxResponse: 111,
                 },
                 { id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 },
-              ],
+              ] as any,
             },
           },
           'translatorPresets',

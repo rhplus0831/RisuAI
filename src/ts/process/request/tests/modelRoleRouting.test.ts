@@ -314,6 +314,48 @@ describe('requestChatDataMain model-role routing', () => {
     })
   })
 
+  it('uses a first-class profile override as the primary request target', async () => {
+    seedDb({
+      aiModel: 'echo_model',
+      modelProfiles: [
+        {
+          id: 'translator-step-profile',
+          name: 'Translator Step',
+          modelId: 'openrouter',
+          providerOptions: { requestModel: 'step/provider-model', apiKey: 'step-key' },
+        },
+      ],
+      fallbackModels: {
+        model: [],
+        memory: [],
+        emotion: [],
+        translate: ['role-fallback-model'],
+        otherAx: [],
+        scriptMain: [],
+        scriptAux: [],
+      } as Database['fallbackModels'],
+      requestRetrys: 0,
+    } as Partial<Database>)
+    const fetchSpy = installSuccessFetch()
+
+    const result = await requestChatData(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+        profileIdOverride: 'translator-step-profile',
+      },
+      'translate',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'ok', model: 'openrouter' })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body as string)).toMatchObject({
+      mode: 'translate',
+      staticModel: '',
+      fallbackProfileId: 'translator-step-profile',
+    })
+  })
+
   it('continues to raw model fallbacks when the active durable profile config is incomplete', async () => {
     seedDb({
       modelProfiles: [

@@ -1,4 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import {
+  normalizeTranslatorPreset,
+  TRANSLATOR_PRESET_MAX_STEPS,
+  type TranslatorPresetStep,
+} from '../../../../src/ts/translator/presets.js'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 
 type JsonRecord = Record<string, unknown>
@@ -8,6 +13,7 @@ export interface TranslatorPresetRecord extends JsonRecord {
   name: string
   prompt: string
   maxResponse: number
+  steps: TranslatorPresetStep[]
 }
 
 export function ensureDatabaseObject(database: unknown): JsonRecord {
@@ -36,6 +42,7 @@ export function ensureTranslatorPresetCollection(database: JsonRecord): Translat
       name: typeof preset.name === 'string' && preset.name.trim().length > 0 ? preset.name : `Preset ${index + 1}`,
       prompt: preset.prompt,
       maxResponse: preset.maxResponse,
+      steps: preset.steps,
     })
     if (seen.has(record.id)) {
       record.id = randomUUID()
@@ -66,11 +73,10 @@ export function normalizeTranslatorPresetCollection(database: unknown): void {
 
 export function createTranslatorPresetRecord(input: unknown): TranslatorPresetRecord {
   const preset = readJsonObject(input, 'translatorPreset')
+  const normalized = normalizeTranslatorPreset(preset)
   const record: TranslatorPresetRecord = {
+    ...normalized,
     id: readTranslatorPresetId(preset.id, 'translatorPreset.id'),
-    name: typeof preset.name === 'string' && preset.name.trim() ? preset.name : 'New Preset',
-    prompt: typeof preset.prompt === 'string' ? preset.prompt : '',
-    maxResponse: numberValue(preset.maxResponse, 1000),
   }
   validateTranslatorPresetRecord(record, 'translatorPreset')
   return record
@@ -78,11 +84,10 @@ export function createTranslatorPresetRecord(input: unknown): TranslatorPresetRe
 
 function repairTranslatorPresetRecord(input: unknown): TranslatorPresetRecord {
   const preset = readJsonObject(input, 'translatorPreset')
+  const normalized = normalizeTranslatorPreset(preset)
   const record: TranslatorPresetRecord = {
+    ...normalized,
     id: typeof preset.id === 'string' && preset.id.trim() ? preset.id : randomUUID(),
-    name: typeof preset.name === 'string' && preset.name.trim() ? preset.name : 'New Preset',
-    prompt: typeof preset.prompt === 'string' ? preset.prompt : '',
-    maxResponse: numberValue(preset.maxResponse, 1000),
   }
   validateTranslatorPresetRecord(record, 'translatorPreset')
   return record
@@ -93,8 +98,47 @@ export function readTranslatorPresetPatch(input: unknown): JsonRecord {
   if (Object.keys(patch).length === 0) {
     throw new ValidationError('patch must include at least one translator preset field')
   }
+  const allowedFields = new Set(['id', 'name', 'prompt', 'maxResponse', 'steps'])
+  for (const key of Object.keys(patch)) {
+    if (!allowedFields.has(key)) throw new ValidationError(`patch.${key} is not a translator preset field`)
+  }
+  if ('steps' in patch) {
+    if (!Array.isArray(patch.steps) || patch.steps.length === 0 || patch.steps.length > TRANSLATOR_PRESET_MAX_STEPS) {
+      throw new ValidationError(`patch.steps must contain between 1 and ${TRANSLATOR_PRESET_MAX_STEPS} steps`)
+    }
+    const normalized = normalizeTranslatorPreset({
+      name: typeof patch.name === 'string' ? patch.name : 'Patched Preset',
+      prompt: typeof patch.prompt === 'string' ? patch.prompt : '',
+      maxResponse: numberValue(patch.maxResponse, 1000),
+      steps: patch.steps,
+    })
+    patch.steps = normalized.steps
+    patch.prompt = normalized.prompt
+    patch.maxResponse = normalized.maxResponse
+  }
   validateTranslatorPresetRecord(patch, 'patch')
   return patch
+}
+
+export function applyTranslatorPresetRecordPatch(
+  preset: TranslatorPresetRecord,
+  patch: JsonRecord,
+): TranslatorPresetRecord {
+  const steps = patch.steps
+    ? patch.steps
+    : preset.steps.map((step, index) =>
+        index === 0
+          ? {
+              ...step,
+              ...('prompt' in patch ? { prompt: patch.prompt } : {}),
+              ...('maxResponse' in patch ? { maxResponse: patch.maxResponse } : {}),
+            }
+          : step,
+      )
+  const normalized = normalizeTranslatorPreset({ ...preset, ...patch, steps })
+  const record: TranslatorPresetRecord = { ...normalized, id: preset.id }
+  validateTranslatorPresetRecord(record, 'translatorPreset')
+  return record
 }
 
 export function readTranslatorPresetId(value: unknown, label = 'presetId'): string {
@@ -163,6 +207,15 @@ function validateTranslatorPresetRecord(record: JsonRecord, label: string): void
   }
   if ('maxResponse' in record && (typeof record.maxResponse !== 'number' || !Number.isFinite(record.maxResponse))) {
     throw new ValidationError(`${label}.maxResponse must be a finite number`)
+  }
+  if ('steps' in record) {
+    if (
+      !Array.isArray(record.steps) ||
+      record.steps.length === 0 ||
+      record.steps.length > TRANSLATOR_PRESET_MAX_STEPS
+    ) {
+      throw new ValidationError(`${label}.steps must contain between 1 and ${TRANSLATOR_PRESET_MAX_STEPS} steps`)
+    }
   }
 }
 

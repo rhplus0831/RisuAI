@@ -1,21 +1,21 @@
 import { get } from 'svelte/store'
-import { parseChatML } from '../parser/chatML'
 import { getDatabase, type character, type customscript } from '../storage/database.svelte'
-import { defaultTranslatorPrompt, getCurrentTranslatorPresetFromState, type TranslatorPreset } from './presets'
+import { getCurrentTranslatorPresetFromState, type TranslatorPreset } from './presets'
 import { globalFetch } from '../globalApi.svelte'
 import { alertError } from '../alert'
 import { requestChatData } from '../process/request/request'
-import { doingChat, type OpenAIChat } from '../process/index.svelte'
+import { doingChat } from '../process/index.svelte'
 import { applyMarkdownToNode, type simpleCharacterArgument } from '../parser/parser.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { getModuleRegexScripts } from '../process/modules'
 import { getActivePromptPresetRegexScripts } from '../process/promptPresetRegex'
 import { getNodetextToSentence, sleep } from '../util'
 import { processScriptFull } from '../process/scripts'
-import { resolveModelProfile } from '../model/modelProfileResolver'
+import { resolveModelProfile, resolveModelProfileByProfileId } from '../model/modelProfileResolver'
 import localforage from 'localforage'
 import sendSound from '../../etc/send.mp3'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
+import { resolveTranslatorPipeline, runTranslatorPipeline, translatorPipelineSignature } from './pipeline'
 
 export const TRANSLATE_CACHE_MAX_ENTRIES = 256
 export const TRANSLATE_HTML_OUTPUT_MEMO_MAX_ENTRIES = 64
@@ -174,6 +174,7 @@ function getTranslatorSettingsSignature(db = getDatabase()) {
   const presetIndex =
     typeof db.translatorPresetId === 'number' && Number.isInteger(db.translatorPresetId) ? db.translatorPresetId : -1
   const selectedPreset = Array.isArray(db.translatorPresets) ? db.translatorPresets[presetIndex] : undefined
+  const pipeline = db.translatorType === 'llm' ? resolveTranslatorPipeline(db) : null
   return {
     translatorType: db.translatorType,
     translator: db.translator,
@@ -184,16 +185,7 @@ function getTranslatorSettingsSignature(db = getDatabase()) {
       db.translatorType === 'llm'
         ? {
             presetId: typeof selectedPreset?.id === 'string' ? selectedPreset.id : null,
-            prompt:
-              typeof selectedPreset?.prompt === 'string'
-                ? selectedPreset.prompt
-                : typeof db.translatorPrompt === 'string'
-                  ? db.translatorPrompt
-                  : '',
-            maxResponse:
-              typeof selectedPreset?.maxResponse === 'number' && Number.isFinite(selectedPreset.maxResponse)
-                ? selectedPreset.maxResponse
-                : finiteNumber(db.translatorMaxResponse, 1000),
+            pipeline: translatorPipelineSignature(pipeline ?? []),
             characterId: selectedCharacter?.chaId ?? null,
             translatorNote:
               selectedCharacter?.type === 'character' && typeof selectedCharacter.translatorNote === 'string'
@@ -320,7 +312,7 @@ function getTranslateHTMLMemoKey(
       combineTranslation: db.combineTranslation,
       playMessageOnTranslateEnd: db.playMessageOnTranslateEnd,
       noWaitForTranslate: db.noWaitForTranslate,
-      preset: preset ? { prompt: preset.prompt, maxResponse: preset.maxResponse } : null,
+      preset: preset ? translatorPipelineSignature(preset.steps) : null,
       llmCacheMutationEpoch: db.translatorType === 'llm' ? llmCacheMutationEpoch : 0,
     },
     scripts: getRelevantScriptSignature(db, alwaysExistChar),
@@ -583,10 +575,7 @@ function getLLMTranslationCacheKey(
     from: arg.from,
     to: arg.to,
     translatorNote,
-    preset: {
-      prompt: preset.prompt,
-      maxResponse: preset.maxResponse,
-    },
+    preset: translatorPipelineSignature(preset.steps),
     char: {
       selectedCharID: get(selectedCharID),
       chaId: currentChar?.chaId ?? null,
@@ -617,10 +606,6 @@ function getCurrentLLMTranslationCacheKey(text: string): string | null {
     currentChar,
     translateProfile,
   )
-}
-
-function finiteNumber(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
 let waitTrans = 0
@@ -1121,56 +1106,49 @@ async function translateLLM(
     })
   }
 
-  let formated: OpenAIChat[] = []
-  let prompt = preset.prompt || defaultTranslatorPrompt
-  let parsedPrompt = parseChatML(
-    prompt
-      .replaceAll('{{slot::from}}', arg.from)
-      .replaceAll('{{slot}}', arg.to)
-      .replaceAll('{{solt::content}}', text)
-      .replaceAll('{{slot::content}}', text)
-      .replaceAll('{{slot::tnote}}', translatorNote),
-  )
-  if (parsedPrompt) {
-    formated = parsedPrompt
-  } else {
-    prompt = prompt
-      .replaceAll('{{slot}}', arg.to)
-      .replaceAll('{{slot::tnote}}', translatorNote)
-      .replaceAll('{{slot::from}}', arg.from)
-    formated = [
+  let pipelineResult: string
+  try {
+    pipelineResult = await runTranslatorPipeline(
       {
-        role: 'system',
-        content: prompt,
+        steps: preset.steps,
+        sourceText: text,
+        to: arg.to,
+        from: arg.from,
+        translatorNote,
       },
-      {
-        role: 'user',
-        content: text,
+      async ({ messages, maxResponse, model, signal }) => {
+        const profileIdOverride =
+          model.mode === 'modelProfile' &&
+          resolveModelProfileByProfileId({ database: db, role: 'translate', profileId: model.profileId })
+            ? model.profileId
+            : undefined
+        const response = await requestChatData(
+          {
+            formated: messages,
+            bias: {},
+            useStreaming: false,
+            noMultiGen: true,
+            maxTokens: maxResponse,
+            profileIdOverride,
+          },
+          'translate',
+          signal ?? null,
+        )
+        if (response.type === 'fail') throw new Error(response.result)
+        if (response.type === 'streaming' || response.type === 'multiline') {
+          throw new Error('Unexpected response type')
+        }
+        return response.result
       },
-    ]
+    )
+  } catch (error) {
+    alertError(error instanceof Error ? error.message : String(error))
+    return originalText
   }
-  const rq = await requestChatData(
-    {
-      formated,
-      bias: {},
-      useStreaming: false,
-      noMultiGen: true,
-      maxTokens: preset.maxResponse,
-    },
-    'translate',
-  )
 
-  if (rq.type === 'fail') {
-    alertError(rq.result)
-    return text
-  }
-  if (rq.type === 'streaming' || rq.type === 'multiline') {
-    alertError('Unexpected response type')
-    return text
-  }
   const result = sendTextAsIs
-    ? rq.result
-    : rq.result
+    ? pipelineResult
+    : pipelineResult
         .replace(/<style-data style-index="(\d+)" ?\/?>/g, (match, p1) => {
           return styleDecodes[parseInt(p1)] ?? ''
         })

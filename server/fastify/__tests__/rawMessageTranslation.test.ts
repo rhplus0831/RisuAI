@@ -330,6 +330,87 @@ describe('translateRawMessageData', () => {
     expect(result.text).toBe(rawResponse)
   })
 
+  it('runs an LLM translator pipeline sequentially with per-step limits, named outputs, and model profiles', async () => {
+    const settings = {
+      ...llmSettings(true),
+      modelProfiles: [
+        {
+          id: 'refine-profile',
+          name: 'Refine Profile',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: { baseUrl: 'debug://refine', requestModel: 'refine-model' },
+        },
+      ],
+      translatorPresets: [
+        {
+          id: 'pipeline',
+          name: 'Pipeline',
+          prompt: 'Draft {{slot::content}}',
+          maxResponse: 111,
+          steps: [
+            {
+              id: 'draft',
+              name: 'Draft',
+              enabled: true,
+              prompt: 'Draft {{slot::content}}',
+              maxResponse: 111,
+              model: { mode: 'inheritTranslate' },
+              outputKey: 'draft',
+            },
+            {
+              id: 'refine',
+              name: 'Refine',
+              enabled: true,
+              prompt: 'Refine {{slot::prev}} / {{slot::out::draft}} / {{slot::content}}',
+              maxResponse: 222,
+              model: { mode: 'modelProfile', profileId: 'refine-profile' },
+            },
+          ],
+        },
+      ],
+      translatorPresetId: 0,
+    }
+    rawTranslationMocks.dispatchChatProvider
+      .mockImplementationOnce(async () => textFrames('draft output'))
+      .mockImplementationOnce(async () => textFrames('final output'))
+
+    const result = await translateRawMessageData({
+      settings,
+      text: 'original source',
+      signal: new AbortController().signal,
+    })
+
+    expect(result.text).toBe('final output')
+    expect(rawTranslationMocks.dispatchChatProvider).toHaveBeenCalledTimes(2)
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0]).toMatchObject({
+      outputTokens: 111,
+      profile: { modelId: 'echo_model' },
+      formated: [{ role: 'system', content: 'Draft original source' }],
+    })
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[1][0]).toMatchObject({
+      outputTokens: 222,
+      profile: { modelId: 'debug-echo', profileId: 'refine-profile' },
+      formated: [
+        {
+          role: 'system',
+          content: 'Refine draft output / draft output / original source',
+        },
+      ],
+    })
+
+    rawTranslationMocks.dispatchChatProvider.mockReset()
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('changed output'))
+    const editedSettings = structuredClone(settings)
+    ;(editedSettings.translatorPresets[0].steps[1] as { enabled: boolean }).enabled = false
+    const edited = await translateRawMessageData({
+      settings: editedSettings,
+      text: 'original source',
+      signal: new AbortController().signal,
+    })
+    expect(edited.settingsHash).not.toBe(result.settingsHash)
+  })
+
   it('keeps LLM chunk protection when send-text-as-is is false and changes the settings hash when toggled', async () => {
     const text = ['before', '{{img::assets/image.png}}', '', 'after'].join('\n')
     rawTranslationMocks.dispatchChatProvider.mockImplementation(async ({ formated }) => {

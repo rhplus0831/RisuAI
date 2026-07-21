@@ -58,6 +58,7 @@ interface requestDataArgument {
   previewBody?: boolean
   staticModel?: string
   fallbackProfileId?: string
+  profileIdOverride?: string
   escape?: boolean
   tools?: MCPTool[]
   toolRounds?: ServerToolRound[]
@@ -583,8 +584,12 @@ export async function requestChatData(
 ): Promise<requestDataResponse> {
   const db = getDatabase()
   const resolvedProfile = resolveModelProfile({ database: db, role: model })
-  const fallbackAttempts = resolveRequestFallbackAttempts(db, model, resolvedProfile.fallbacks)
-  fallbackAttempts.push({ staticModel: '' })
+  const overrideProfile = arg.profileIdOverride
+    ? resolveModelProfileByProfileId({ database: db, role: model, profileId: arg.profileIdOverride })
+    : null
+  const fallbackAttempts: RequestFallbackAttempt[] = overrideProfile
+    ? [{ staticModel: '', fallbackProfileId: arg.profileIdOverride, modelId: overrideProfile.modelId }]
+    : [...resolveRequestFallbackAttempts(db, model, resolvedProfile.fallbacks), { staticModel: '' }]
   let da: requestDataResponse
 
   if (arg.escape) {

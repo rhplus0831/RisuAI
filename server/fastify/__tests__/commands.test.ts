@@ -6057,12 +6057,20 @@ describe('Phase 9-2e translator preset commands', () => {
       translatorPrompt: 'translate to A',
       translatorMaxResponse: 100,
     })
-    expect(bootstrap.json().database.translatorPresets).toEqual([
+    expect(bootstrap.json().database.translatorPresets).toMatchObject([
       {
         id: 'translator-a',
         name: 'A',
         prompt: 'translate to A',
         maxResponse: 100,
+      },
+    ])
+    expect(bootstrap.json().database.translatorPresets[0].steps).toMatchObject([
+      {
+        enabled: true,
+        prompt: 'translate to A',
+        maxResponse: 100,
+        model: { mode: 'inheritTranslate' },
       },
     ])
   })
@@ -6204,7 +6212,7 @@ describe('Phase 9-2e translator preset commands', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.translatorPresets[1]).toEqual({
+    expect(bootstrap.json().database.translatorPresets[1]).toMatchObject({
       id: 'translator-b',
       name: 'Preset 2',
       prompt: 'b prompt',

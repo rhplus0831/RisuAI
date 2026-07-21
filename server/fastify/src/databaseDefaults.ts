@@ -18,6 +18,7 @@ import {
   normalizeModelRoleProfiles,
 } from '../../../src/ts/model/modelProfileRecords.js'
 import { normalizeAgentPresetDefaultId, normalizeAgentPresets } from '../../../src/ts/agentPresetRecords.js'
+import { normalizeTranslatorPresetState, type TranslatorPresetStateLike } from '../../../src/ts/translator/presets.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
 
 type JsonRecord = Record<string, unknown>
@@ -835,40 +836,7 @@ function normalizeHypaV3Presets(database: JsonRecord): void {
 }
 
 function normalizeTranslatorPresets(database: JsonRecord): void {
-  if (!Array.isArray(database.translatorPresets) || database.translatorPresets.length === 0) {
-    database.translatorPresets = [
-      {
-        id: 'default-translator-preset',
-        name: 'Default',
-        prompt: typeof database.translatorPrompt === 'string' ? database.translatorPrompt : '',
-        maxResponse: isFiniteNumber(database.translatorMaxResponse) ? database.translatorMaxResponse : 1000,
-      },
-    ]
-  }
-
-  const seen = new Set<string>()
-  database.translatorPresets = (database.translatorPresets as unknown[]).map((preset, index) => {
-    const source = isRecord(preset) ? preset : {}
-    const requestedId = typeof source.id === 'string' && source.id.trim() ? source.id : ''
-    const id = requestedId && !seen.has(requestedId) ? requestedId : `translator-preset-${index + 1}`
-    seen.add(id)
-    return {
-      id,
-      name: typeof source.name === 'string' ? source.name : `Preset ${index + 1}`,
-      prompt: typeof source.prompt === 'string' ? source.prompt : '',
-      maxResponse: isFiniteNumber(source.maxResponse) ? source.maxResponse : 1000,
-    }
-  })
-
-  if (!Number.isInteger(database.translatorPresetId)) database.translatorPresetId = 0
-  const selected = Math.min(
-    Math.max(database.translatorPresetId as number, 0),
-    Math.max((database.translatorPresets as unknown[]).length - 1, 0),
-  )
-  database.translatorPresetId = selected
-  const preset = (database.translatorPresets as JsonRecord[])[selected]
-  database.translatorPrompt = typeof preset?.prompt === 'string' ? preset.prompt : ''
-  database.translatorMaxResponse = isFiniteNumber(preset?.maxResponse) ? preset.maxResponse : 1000
+  normalizeTranslatorPresetState(database as TranslatorPresetStateLike)
 }
 
 function normalizeHypaCustomSettings(database: JsonRecord): void {

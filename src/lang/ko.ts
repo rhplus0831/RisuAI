@@ -210,7 +210,7 @@ const languageKoreanBase = {
     summarizationPrompt:
       '요약에 사용되는 프롬프트입니다. 비어있으면 기본 프롬프트를 사용합니다. 채팅 데이터에 대해 {{slot}}을 사용하여 ChatML 형식을 사용할 수도 있습니다.',
     translatorPrompt:
-      '번역에 사용되는 프롬프트입니다. 비어있으면 기본 프롬프트를 사용합니다. 목적 언어에 대해 {{slot}}, 콘텐츠에 대해 {{slot::content}}, 번역자 노트에 대해 {{slot::tnote}}를 사용하여 ChatML 형식을 사용할 수도 있습니다.',
+      '번역에 사용되는 프롬프트입니다. 비어 있으면 기본 프롬프트를 사용하며 ChatML을 지원합니다. {{slot}}은 대상 언어, {{slot::from}}은 원본 언어, {{slot::tnote}}는 번역자 메모, {{slot::content}}는 모든 단계의 원문, {{slot::prev}}는 이전 활성 단계의 출력(첫 단계에서는 원문), {{slot::out::key}}는 이전의 이름 있는 출력입니다.',
     translateBeforeHTMLFormatting:
       '활성화하면 정규식 스크립트와 HTML 포맷팅 전에 텍스트를 번역합니다. 토큰이 줄어들 수 있지만 포맷이 깨질 수 있습니다.',
     translatorSendTextAsIs:
@@ -2066,6 +2066,24 @@ export const languageKorean = {
     saving: '번역기 프리셋 변경 사항을 저장하는 중...',
     queued: '번역기 프리셋 변경 사항이 이 기기에 저장되어 대기열에 추가되었습니다. 자동으로 다시 시도합니다.',
     failed: '번역기 프리셋 변경 사항을 저장할 수 없습니다. 다시 시도하세요.',
+  },
+  translatorPipeline: {
+    steps: '번역 단계',
+    addStep: '단계 추가',
+    duplicateStep: '단계 복제',
+    removeStep: '단계 제거',
+    moveUp: '단계 위로 이동',
+    moveDown: '단계 아래로 이동',
+    stepName: '단계 이름',
+    enabled: '활성화',
+    model: '모델',
+    inheritTranslateModel: '번역 모델 상속',
+    outputKey: '출력 키 (선택 사항)',
+    outputKeyPlaceholder: 'draft',
+    invalidOutputKey: '영문자 또는 밑줄로 시작하고 영문자, 숫자, 밑줄만 포함하는 고유한 키를 64자 이내로 입력하세요.',
+    slotHelp:
+      '{{slot::content}}는 항상 원문을, {{slot::prev}}는 이전 단계의 출력을, {{slot::out::key}}는 이전의 이름 있는 출력을 삽입합니다.',
+    copySuffix: '복사본',
   },
   presetImportQueued:
     '프리셋이 이 기기에 저장되어 대기열에 추가되었습니다. 서버를 사용할 수 있게 되면 가져오기를 완료합니다.',

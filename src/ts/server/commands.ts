@@ -51,6 +51,7 @@ import {
 } from './commandLocalEffectEvents'
 import type { DurableMutationRequest } from './pendingMutationOutbox'
 import type { ServerInlayCatalogEntry } from './inlayCatalog'
+import type { TranslatorPresetStep } from '../translator/presets'
 
 export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffectApplied }
 
@@ -600,6 +601,7 @@ export type TranslatorPresetSnapshot = Record<string, unknown> & {
   name?: string
   prompt?: string
   maxResponse?: number
+  steps?: TranslatorPresetStep[]
 }
 
 export type LoadoutSnapshot = Record<string, unknown> & {
@@ -6484,7 +6486,7 @@ function readTranslatorPresetPatchLocalEffect(
 
   const acknowledgedKeys = record.acknowledgedKeys
   const attemptedKeys = Object.keys(input.attemptedPatch).sort()
-  const allowedKeys = new Set(['name', 'prompt', 'maxResponse'])
+  const allowedKeys = new Set(['name', 'prompt', 'maxResponse', 'steps'])
   if (
     !isUniqueStringArray(acknowledgedKeys) ||
     attemptedKeys.length === 0 ||
@@ -6762,14 +6764,65 @@ function canonicalFieldsMatchNormalizedRecord(
 function isCanonicalTranslatorPreset(value: unknown): value is TranslatorPresetSnapshot & { id: string } {
   if (!isPlainJsonRecord(value)) return false
   const record = value as Record<string, unknown>
-  return (
-    isJsonValueEqual(Object.keys(record).sort(), ['id', 'maxResponse', 'name', 'prompt']) &&
-    nonEmptyString(record.id) &&
-    typeof record.name === 'string' &&
-    typeof record.prompt === 'string' &&
-    typeof record.maxResponse === 'number' &&
-    Number.isFinite(record.maxResponse)
-  )
+  const keys = Object.keys(record).sort()
+  if (
+    (!isJsonValueEqual(keys, ['id', 'maxResponse', 'name', 'prompt']) &&
+      !isJsonValueEqual(keys, ['id', 'maxResponse', 'name', 'prompt', 'steps'])) ||
+    !nonEmptyString(record.id) ||
+    typeof record.name !== 'string' ||
+    typeof record.prompt !== 'string' ||
+    typeof record.maxResponse !== 'number' ||
+    !Number.isFinite(record.maxResponse)
+  ) {
+    return false
+  }
+  if (!Object.prototype.hasOwnProperty.call(record, 'steps')) return true
+  if (!Array.isArray(record.steps) || record.steps.length === 0 || record.steps.length > 5) return false
+  const stepIds = new Set<string>()
+  const outputKeys = new Set<string>()
+  for (const value of record.steps) {
+    if (!isPlainJsonRecord(value)) return false
+    const step = value as Record<string, unknown>
+    const expectedKeys =
+      step.outputKey === undefined
+        ? ['enabled', 'id', 'maxResponse', 'model', 'name', 'prompt']
+        : ['enabled', 'id', 'maxResponse', 'model', 'name', 'outputKey', 'prompt']
+    if (
+      !isJsonValueEqual(Object.keys(step).sort(), expectedKeys) ||
+      !nonEmptyString(step.id) ||
+      stepIds.has(step.id) ||
+      !nonEmptyString(step.name) ||
+      typeof step.enabled !== 'boolean' ||
+      typeof step.prompt !== 'string' ||
+      typeof step.maxResponse !== 'number' ||
+      !Number.isFinite(step.maxResponse) ||
+      !isPlainJsonRecord(step.model)
+    ) {
+      return false
+    }
+    stepIds.add(step.id)
+    const model = step.model as Record<string, unknown>
+    if (
+      (model.mode === 'inheritTranslate' && !isJsonValueEqual(Object.keys(model), ['mode'])) ||
+      (model.mode === 'modelProfile' &&
+        (!isJsonValueEqual(Object.keys(model).sort(), ['mode', 'profileId']) || !nonEmptyString(model.profileId))) ||
+      (model.mode !== 'inheritTranslate' && model.mode !== 'modelProfile')
+    ) {
+      return false
+    }
+    if (step.outputKey !== undefined) {
+      if (
+        typeof step.outputKey !== 'string' ||
+        !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(step.outputKey) ||
+        outputKeys.has(step.outputKey)
+      ) {
+        return false
+      }
+      outputKeys.add(step.outputKey)
+    }
+  }
+  const firstStep = record.steps[0] as Record<string, unknown>
+  return record.prompt === firstStep.prompt && record.maxResponse === firstStep.maxResponse
 }
 
 function readSplitPresetPatchLocalEffect(

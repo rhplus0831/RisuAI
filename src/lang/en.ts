@@ -388,7 +388,7 @@ export const languageEnglish = {
     summarizationPrompt:
       'The prompt that is used for summarization. If it is blank, it will use the default prompt. You can also use ChatML formating with {{slot}} for the chat data.',
     translatorPrompt:
-      'The prompt that is used for translation. If it is blank, it will use the default prompt. You can also use ChatML formating with {{slot}} for the dest language, {{slot::content}} for the content, and {{slot::tnote}} for the translator note.',
+      'The prompt used for translation. If blank, the default prompt is used. ChatML is supported. {{slot}} is the target language, {{slot::from}} the source language, {{slot::tnote}} the translator note, {{slot::content}} the original source in every step, {{slot::prev}} the previous enabled step output (or source in the first step), and {{slot::out::key}} a prior named output.',
     translateBeforeHTMLFormatting:
       'If enabled, it will translate the text before Regex scripts and HTML formatting. This could make the token lesser but could break the formatting.',
     translatorSendTextAsIs:
@@ -1681,6 +1681,25 @@ export const languageEnglish = {
     saving: 'Saving translator preset changes...',
     queued: 'The translator preset change is saved on this device and queued. It will retry automatically.',
     failed: 'Could not save the translator preset change. Please try again.',
+  },
+  translatorPipeline: {
+    steps: 'Translation steps',
+    addStep: 'Add step',
+    duplicateStep: 'Duplicate step',
+    removeStep: 'Remove step',
+    moveUp: 'Move step up',
+    moveDown: 'Move step down',
+    stepName: 'Step name',
+    enabled: 'Enabled',
+    model: 'Model',
+    inheritTranslateModel: 'Inherit translate model',
+    outputKey: 'Output key (optional)',
+    outputKeyPlaceholder: 'draft',
+    invalidOutputKey:
+      'Use a unique key up to 64 characters, beginning with a letter or underscore and containing only letters, numbers, or underscores.',
+    slotHelp:
+      '{{slot::content}} always inserts the original source; {{slot::prev}} inserts the previous step; {{slot::out::key}} inserts a prior named output.',
+    copySuffix: 'Copy',
   },
   presetImportQueued:
     'The preset is saved on this device and queued. It will finish importing when the server is available.',

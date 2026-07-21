@@ -156,7 +156,10 @@ function resetDatabase() {
     combineTranslation: false,
     htmlTranslation: false,
     playMessageOnTranslateEnd: false,
+    translatorPrompt: '',
     translatorMaxResponse: 1000,
+    translatorPresets: undefined,
+    translatorPresetId: 0,
     deeplOptions: { freeApi: true, key: '' },
     deeplXOptions: { url: '', token: '' },
     characters: [
@@ -296,7 +299,7 @@ describe('auto-translate cache', () => {
     }))
 
     await expect(translate('same text', false)).resolves.toBe('translation-1')
-    testState.db.translatorPresets[0].prompt = 'Prompt B {{slot}}'
+    testState.db.translatorPresets[0].steps[0].prompt = 'Prompt B {{slot}}'
     await expect(translate('same text', false)).resolves.toBe('translation-2')
     testState.db.characters[0].translatorNote = 'Note B'
     await expect(translate('same text', false)).resolves.toBe('translation-3')
@@ -320,7 +323,7 @@ describe('auto-translate cache', () => {
 
     const first = translate('pending text', false)
     await vi.waitFor(() => expect(testState.requestChatData).toHaveBeenCalledTimes(1))
-    testState.db.translatorPresets[0].prompt = 'Prompt B {{slot}}'
+    testState.db.translatorPresets[0].steps[0].prompt = 'Prompt B {{slot}}'
     const second = translate('pending text', false)
     await vi.waitFor(() => expect(testState.requestChatData).toHaveBeenCalledTimes(2))
 
@@ -328,6 +331,55 @@ describe('auto-translate cache', () => {
     resolvers[1]({ type: 'success', result: 'second' })
     await expect(first).resolves.toBe('first')
     await expect(second).resolves.toBe('second')
+  })
+
+  it('invalidates every LLM cache layer for pipeline runtime edits but not unrelated settings', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.translatorPresets = [
+      createTranslatorPreset('Active', {
+        id: 'preset-a',
+        steps: [
+          {
+            id: 'step-a',
+            name: 'Draft',
+            enabled: true,
+            prompt: 'Prompt {{slot::prev}}',
+            maxResponse: 100,
+            model: { mode: 'inheritTranslate' },
+            outputKey: 'draft',
+          },
+        ],
+      }),
+    ]
+    testState.db.translatorPresetId = 0
+    let callCount = 0
+    testState.requestChatData.mockImplementation(async () => ({
+      type: 'success',
+      result: `pipeline-${++callCount}`,
+    }))
+
+    const mutations = [
+      (step: any) => (step.prompt = 'Changed prompt {{slot::prev}}'),
+      (step: any) => (step.maxResponse = 200),
+      (step: any) => (step.model = { mode: 'modelProfile', profileId: 'missing-profile' }),
+      (step: any) => (step.enabled = false),
+      (step: any) => (step.outputKey = 'renamed'),
+    ]
+
+    for (const [index, mutate] of mutations.entries()) {
+      const text = `<p>pipeline-signature-${index}</p>`
+      const beforeKey = __translatorTestHooks.getCurrentLLMTranslationCacheKey(text)
+      await translateHTML(text, false, '', 0)
+      mutate(testState.db.translatorPresets[0].steps[0])
+      const afterKey = __translatorTestHooks.getCurrentLLMTranslationCacheKey(text)
+      expect(afterKey).not.toBe(beforeKey)
+      await translateHTML(text, false, '', 0)
+      const callsAfterPipelineEdit = callCount
+      testState.db.backgroundHTML = `unrelated-${index}`
+      expect(__translatorTestHooks.getCurrentLLMTranslationCacheKey(text)).toBe(afterKey)
+      await translateHTML(text, false, '', 0)
+      expect(callCount).toBe(callsAfterPipelineEdit)
+    }
   })
 
   it('v4-L26: separates LLM translation cache entries by translator signature', async () => {
@@ -409,6 +461,56 @@ describe('auto-translate cache', () => {
 
     expect(testState.requestChatData.mock.calls[0][0].formated).toContainEqual({ role: 'user', content: text })
     expect(result).toBe(rawResponse)
+  })
+
+  it('runs multi-step LLM translation with one style encoding pass and a per-step profile override', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.modelProfiles = [{ id: 'refine-profile', name: 'Refine', modelId: 'echo_model' }]
+    testState.db.translatorPresets = [
+      createTranslatorPreset('Pipeline', {
+        id: 'pipeline',
+        steps: [
+          {
+            id: 'draft',
+            name: 'Draft',
+            enabled: true,
+            prompt: 'Draft {{slot::content}}',
+            maxResponse: 100,
+            model: { mode: 'inheritTranslate' },
+            outputKey: 'draft',
+          },
+          {
+            id: 'refine',
+            name: 'Refine',
+            enabled: true,
+            prompt: 'Refine {{slot::prev}} against {{slot::content}} and {{slot::out::draft}}',
+            maxResponse: 200,
+            model: { mode: 'modelProfile', profileId: 'refine-profile' },
+          },
+        ],
+      }),
+    ]
+    testState.db.translatorPresetId = 0
+    testState.requestChatData
+      .mockResolvedValueOnce({ type: 'success', result: 'draft <style-data style-index="0"></style-data>' })
+      .mockResolvedValueOnce({ type: 'success', result: '<style-data style-index="0"></style-data> translated' })
+
+    const result = await runTranslator('<risu-style>color:red</risu-style> source', false, 'ko', 'en')
+
+    expect(result).toBe('color:red translated')
+    expect(testState.requestChatData).toHaveBeenCalledTimes(2)
+    expect(testState.requestChatData.mock.calls[0][0]).toMatchObject({ maxTokens: 100 })
+    expect(testState.requestChatData.mock.calls[0][0].formated[0].content).toContain(
+      '<style-data style-index="0"></style-data>',
+    )
+    expect(testState.requestChatData.mock.calls[1][0]).toMatchObject({
+      maxTokens: 200,
+      profileIdOverride: 'refine-profile',
+    })
+    expect(testState.requestChatData.mock.calls[1][0].formated[0].content).toContain(
+      'draft <style-data style-index="0"></style-data>',
+    )
+    expect(testState.requestChatData.mock.calls[1][0].formated[0].content).not.toContain('<risu-style>')
   })
 
   it('phase5: keys LLM translation cache entries by the resolved translate profile', async () => {

@@ -3,7 +3,16 @@
 </script>
 
 <script lang="ts">
-  import { DownloadIcon, HardDriveUploadIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
+  import {
+    ArrowDownIcon,
+    ArrowUpIcon,
+    CopyIcon,
+    DownloadIcon,
+    HardDriveUploadIcon,
+    PencilIcon,
+    PlusIcon,
+    TrashIcon,
+  } from '@lucide/svelte'
   import Help from 'src/lib/Others/Help.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
@@ -55,16 +64,20 @@
     defaultTranslatorPrompt,
     encodeTranslatorPresetFile,
     getTranslatorPresetDownloadName,
+    isValidTranslatorPresetOutputKey,
+    normalizeTranslatorPreset,
     normalizeTranslatorPresetState,
     syncCurrentTranslatorPresetToLegacyFields,
+    TRANSLATOR_PRESET_MAX_STEPS,
     translatorPresetImportExtensions,
     type TranslatorPreset,
+    type TranslatorPresetStep,
   } from 'src/ts/translator/presets'
   import { selectSingleFile } from 'src/ts/util'
   import { language } from 'src/lang'
   import { onDestroy, untrack } from 'svelte'
 
-  type TranslatorPresetDirtyField = 'name' | 'prompt' | 'maxResponse'
+  type TranslatorPresetDirtyField = 'name' | 'prompt' | 'maxResponse' | 'steps'
 
   interface TranslatorPresetStateSnapshot {
     translatorPresets: TranslatorPreset[]
@@ -120,7 +133,12 @@
     | { kind: 'delete'; attempt: TranslatorPresetDeleteAttempt }
 
   const translatorPresetUpdateDelayMs = 250
-  const translatorPresetDirtyFieldNames: readonly TranslatorPresetDirtyField[] = ['name', 'prompt', 'maxResponse']
+  const translatorPresetDirtyFieldNames: readonly TranslatorPresetDirtyField[] = [
+    'name',
+    'prompt',
+    'maxResponse',
+    'steps',
+  ]
   const pendingTranslatorPresetUpdates = new Map<string, PendingTranslatorPresetUpdate>()
   const translatorPresetDirtyFieldsById = new Map<string, Map<TranslatorPresetDirtyField, unknown>>()
   const translatorPresetRollbackBaselinesById = new Map<string, Map<TranslatorPresetDirtyField, unknown>>()
@@ -132,6 +150,8 @@
   let nextTranslatorPresetFeedbackOperationId = 1
   let activeTranslatorPresetFeedbackOperationId = 0
   let translatorPresetPersistenceState = $state<TranslatorPresetPersistenceState>('idle')
+  let stepOutputKeyDrafts = $state<Record<string, string>>({})
+  let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
 
   async function runTranslatorPresetPersistenceAction(
     action: (feedbackOperationId: number) => Promise<TranslatorPresetPersistenceStatus>,
@@ -204,6 +224,32 @@
 
   function translatorPresetFromRecord(preset: Record<string, unknown>): TranslatorPreset {
     return preset as unknown as TranslatorPreset
+  }
+
+  function applyTranslatorPresetFieldPatch(
+    preset: Record<string, unknown>,
+    patch: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const next = { ...preset, ...patch }
+    if (Object.prototype.hasOwnProperty.call(patch, 'steps') || !Array.isArray(next.steps) || !next.steps[0]) {
+      return next
+    }
+    if (
+      !Object.prototype.hasOwnProperty.call(patch, 'prompt') &&
+      !Object.prototype.hasOwnProperty.call(patch, 'maxResponse')
+    ) {
+      return next
+    }
+    next.steps = next.steps.map((step, index) =>
+      index === 0 && step && typeof step === 'object' && !Array.isArray(step)
+        ? {
+            ...(step as Record<string, unknown>),
+            ...(Object.prototype.hasOwnProperty.call(patch, 'prompt') ? { prompt: patch.prompt } : {}),
+            ...(Object.prototype.hasOwnProperty.call(patch, 'maxResponse') ? { maxResponse: patch.maxResponse } : {}),
+          }
+        : step,
+    )
+    return next
   }
   let translatorPresetUpdateDispatchChain: Promise<ServerCommandResult> = Promise.resolve({ status: 'unavailable' })
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
@@ -336,11 +382,13 @@
   function updatePendingTranslatorPresetCreateDraft(presetId: string, patch: TranslatorPresetSnapshot): void {
     for (const mutation of pendingTranslatorPresetStructuralMutations) {
       if (mutation.kind !== 'create' || mutation.attempt.attemptedPreset.id !== presetId) continue
-      mutation.attempt.draftPreset = {
-        ...mutation.attempt.draftPreset,
-        ...cloneJsonValue(patch),
-        id: presetId,
-      }
+      mutation.attempt.draftPreset = translatorPresetFromRecord(
+        applyTranslatorPresetFieldPatch(
+          translatorPresetRecord(mutation.attempt.draftPreset),
+          cloneJsonValue(patch) as Record<string, unknown>,
+        ),
+      ) as TranslatorPreset & { id: string }
+      mutation.attempt.draftPreset.id = presetId
     }
   }
 
@@ -588,11 +636,14 @@
       }
 
       presets[presetIndex] = translatorPresetFromRecord(
-        mergeProjectionIntoDirtyDraft({
-          draft: dirtyDraft,
-          projection: translatorPresetRecord(projectionPreset),
-          dirtyFields: dirtyFieldSet,
-        }),
+        applyTranslatorPresetFieldPatch(
+          mergeProjectionIntoDirtyDraft({
+            draft: dirtyDraft,
+            projection: translatorPresetRecord(projectionPreset),
+            dirtyFields: dirtyFieldSet,
+          }),
+          Object.fromEntries(dirtyFields),
+        ),
       )
 
       if (getDatabase().translatorPresetId === presetIndex) {
@@ -662,7 +713,12 @@
       }) as TranslatorPresetDirtyField[]
       if (rolledBackFields.length === 0) return
 
-      nextPresets[presetIndex] = translatorPresetFromRecord(nextPreset)
+      nextPresets[presetIndex] = translatorPresetFromRecord(
+        applyTranslatorPresetFieldPatch(
+          nextPreset,
+          Object.fromEntries(rolledBackFields.map((field) => [field, nextPreset[field]])),
+        ),
+      )
       getDatabase().translatorPresets = nextPresets
 
       if (getDatabase().translatorPresetId === presetIndex) {
@@ -691,10 +747,12 @@
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) return
 
-      const nextPreset = {
-        ...presets[presetIndex],
-        ...cloneJsonValue(patch),
-      } as TranslatorPreset
+      const nextPreset = translatorPresetFromRecord(
+        applyTranslatorPresetFieldPatch(
+          translatorPresetRecord(presets[presetIndex]),
+          cloneJsonValue(patch) as Record<string, unknown>,
+        ),
+      )
       const nextPresets = [...presets]
       nextPresets[presetIndex] = nextPreset
       getDatabase().translatorPresets = nextPresets
@@ -723,6 +781,7 @@
           name: currentPreset.name,
           prompt: currentPreset.prompt,
           maxResponse: currentPreset.maxResponse,
+          ...(Array.isArray(currentPreset.steps) ? { steps: cloneJsonValue(currentPreset.steps) } : {}),
         }
       : null
     const attemptedKeys = Object.keys(pending.patch)
@@ -1604,7 +1663,9 @@
       typeof preset.name === 'string' &&
       typeof preset.prompt === 'string' &&
       typeof preset.maxResponse === 'number' &&
-      Number.isFinite(preset.maxResponse)
+      Number.isFinite(preset.maxResponse) &&
+      (!('steps' in preset) ||
+        (Array.isArray(preset.steps) && snapshotJson(preset) === snapshotJson(normalizeTranslatorPreset(preset))))
     )
   }
 
@@ -1615,7 +1676,10 @@
       fields.length === Object.keys(patch).length &&
       fields.every((field) => {
         const value = patch[field]
-        return field === 'maxResponse' ? typeof value === 'number' && Number.isFinite(value) : typeof value === 'string'
+        if (field === 'maxResponse') return typeof value === 'number' && Number.isFinite(value)
+        if (field === 'steps')
+          return Array.isArray(value) && value.length > 0 && value.length <= TRANSLATOR_PRESET_MAX_STEPS
+        return typeof value === 'string'
       })
     )
   }
@@ -1635,6 +1699,104 @@
       ],
       dependencyKeys: [TRANSLATOR_PRESET_SELECTION_MUTATION_KEY],
     }
+  }
+
+  function translatorPresetStepsForDisplay(preset: TranslatorPreset): TranslatorPresetStep[] {
+    return Array.isArray(preset.steps) && preset.steps.length > 0
+      ? preset.steps
+      : normalizeTranslatorPreset(preset).steps
+  }
+
+  function updateTranslatorPresetSteps(
+    preset: TranslatorPreset,
+    update: (steps: TranslatorPresetStep[]) => TranslatorPresetStep[],
+  ): void {
+    const presetId = preset.id
+    if (!presetId) return
+    const previous = currentTranslatorPresetStateSnapshot()
+    const currentPreset = currentTranslatorPresetById(presetId)
+    if (!currentPreset) return
+    const normalized = normalizeTranslatorPreset({
+      ...currentPreset,
+      steps: update(cloneJsonValue(translatorPresetStepsForDisplay(currentPreset))),
+    })
+    const patch: TranslatorPresetSnapshot = {
+      steps: normalized.steps,
+      prompt: normalized.prompt,
+      maxResponse: normalized.maxResponse,
+    }
+
+    if (!canUseServerCommands()) {
+      Object.assign(currentPreset, cloneJsonValue(patch))
+      getDatabase().translatorPresets = [...getDatabase().translatorPresets]
+      syncCurrentTranslatorPreset()
+    } else {
+      markTranslatorPresetDirtyFields(presetId, patch)
+      applyTranslatorPresetPatchToDatabase(presetId, patch)
+    }
+    queueTranslatorPresetUpdate(presetId, patch, previous)
+  }
+
+  function updateTranslatorPresetStep(
+    preset: TranslatorPreset,
+    stepIndex: number,
+    patch: Partial<TranslatorPresetStep>,
+  ): void {
+    updateTranslatorPresetSteps(preset, (steps) => {
+      if (!steps[stepIndex]) return steps
+      steps[stepIndex] = { ...steps[stepIndex], ...patch }
+      return steps
+    })
+  }
+
+  function createTranslatorPresetStep(index: number, source?: TranslatorPresetStep): TranslatorPresetStep {
+    return normalizeTranslatorPreset({
+      name: 'Step',
+      steps: [
+        {
+          ...(source ?? {}),
+          id: createNonSecurityUuid(),
+          name: source ? `${source.name} ${language.translatorPipeline.copySuffix}` : `Step ${index + 1}`,
+          outputKey: undefined,
+        },
+      ],
+    }).steps[0]
+  }
+
+  function moveTranslatorPresetStep(preset: TranslatorPreset, from: number, to: number): void {
+    updateTranslatorPresetSteps(preset, (steps) => {
+      if (from < 0 || from >= steps.length || to < 0 || to >= steps.length) return steps
+      const [step] = steps.splice(from, 1)
+      steps.splice(to, 0, step)
+      return steps
+    })
+  }
+
+  function outputKeyDraftValue(step: TranslatorPresetStep): string {
+    return Object.prototype.hasOwnProperty.call(stepOutputKeyDrafts, step.id)
+      ? stepOutputKeyDrafts[step.id]
+      : (step.outputKey ?? '')
+  }
+
+  function outputKeyIsValid(preset: TranslatorPreset, stepIndex: number, value: string): boolean {
+    const trimmed = value.trim()
+    if (!trimmed) return true
+    if (!isValidTranslatorPresetOutputKey(trimmed)) return false
+    return !translatorPresetStepsForDisplay(preset).some(
+      (step, index) => index !== stepIndex && outputKeyDraftValue(step).trim() === trimmed,
+    )
+  }
+
+  function setTranslatorPresetStepOutputKey(
+    preset: TranslatorPreset,
+    step: TranslatorPresetStep,
+    stepIndex: number,
+    value: string,
+  ): void {
+    stepOutputKeyDrafts = { ...stepOutputKeyDrafts, [step.id]: value }
+    if (!outputKeyIsValid(preset, stepIndex, value)) return
+    const outputKey = value.trim()
+    updateTranslatorPresetStep(preset, stepIndex, { outputKey: outputKey || undefined })
   }
 
   $effect(() => {
@@ -1909,46 +2071,189 @@
 
 {#if getDatabase().translatorPresets?.[getDatabase().translatorPresetId]}
   {@const preset = getDatabase().translatorPresets[getDatabase().translatorPresetId]}
-  <span class="text-textcolor mt-4">{language.translationResponseSize}</span>
-  <NumberInput
-    min={0}
-    max={2048}
-    marginBottom={true}
-    ariaLabel={language.translationResponseSize}
-    bind:value={
-      () => preset.maxResponse,
-      (value) => {
-        if (typeof value !== 'number' || !Number.isFinite(value)) return
+  {@const steps = translatorPresetStepsForDisplay(preset)}
+  <div class="mb-2 flex items-center justify-between gap-3">
+    <div>
+      <span class="text-textcolor">{language.translatorPipeline.steps}</span>
+      <p class="text-xs text-textcolor2">{language.translatorPipeline.slotHelp}</p>
+    </div>
+    <button
+      type="button"
+      class="inline-flex items-center gap-1 rounded-md border border-darkborderc px-2 py-1 text-sm text-textcolor2 hover:text-green-500 disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={steps.length >= TRANSLATOR_PRESET_MAX_STEPS}
+      aria-label={language.translatorPipeline.addStep}
+      onclick={() => {
+        updateTranslatorPresetSteps(preset, (currentSteps) => [
+          ...currentSteps,
+          createTranslatorPresetStep(currentSteps.length),
+        ])
+      }}>
+      <PlusIcon size={15} />
+      {language.translatorPipeline.addStep}
+    </button>
+  </div>
 
-        const previous = currentTranslatorPresetStateSnapshot()
-        const presetId = selectedTranslatorPresetId()
-        if (!canUseServerCommands()) {
-          preset.maxResponse = value
-          syncCurrentTranslatorPreset()
-        } else if (presetId) {
-          markTranslatorPresetDirtyFields(presetId, { maxResponse: value })
-          applyTranslatorPresetPatchToDatabase(presetId, { maxResponse: value })
-        }
-        if (presetId) queueTranslatorPresetUpdate(presetId, { maxResponse: value }, previous)
-      }
-    } />
-  <span class="text-textcolor mt-4">{language.translatorPrompt} <Help key="translatorPrompt" /></span>
-  <TextAreaInput
-    ariaLabel={language.translatorPrompt}
-    bind:value={
-      () => preset.prompt,
-      (value) => {
-        const previous = currentTranslatorPresetStateSnapshot()
-        const presetId = selectedTranslatorPresetId()
-        if (!canUseServerCommands()) {
-          preset.prompt = value
-          syncCurrentTranslatorPreset()
-        } else if (presetId) {
-          markTranslatorPresetDirtyFields(presetId, { prompt: value })
-          applyTranslatorPresetPatchToDatabase(presetId, { prompt: value })
-        }
-        if (presetId) queueTranslatorPresetUpdate(presetId, { prompt: value }, previous)
-      }
-    }
-    placeholder={defaultTranslatorPrompt} />
+  <div class="flex flex-col gap-3">
+    {#each steps as step, stepIndex (step.id)}
+      <section
+        class:border={steps.length > 1}
+        class:p-3={steps.length > 1}
+        class="rounded-md border-darkborderc"
+        data-translator-step={step.id}>
+        <div class="mb-2 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            class="min-w-40 flex-1 rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+            aria-label={language.translatorPipeline.stepName}
+            value={step.name}
+            oninput={(event) => updateTranslatorPresetStep(preset, stepIndex, { name: event.currentTarget.value })} />
+          <label class="inline-flex items-center gap-1 text-sm text-textcolor2">
+            <input
+              type="checkbox"
+              checked={step.enabled}
+              onchange={(event) =>
+                updateTranslatorPresetStep(preset, stepIndex, { enabled: event.currentTarget.checked })} />
+            {language.translatorPipeline.enabled}
+          </label>
+          <div class="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              class="text-textcolor2 hover:text-green-500 disabled:opacity-40"
+              disabled={stepIndex === 0}
+              aria-label={language.translatorPipeline.moveUp}
+              onclick={() => moveTranslatorPresetStep(preset, stepIndex, stepIndex - 1)}>
+              <ArrowUpIcon size={17} />
+            </button>
+            <button
+              type="button"
+              class="text-textcolor2 hover:text-green-500 disabled:opacity-40"
+              disabled={stepIndex === steps.length - 1}
+              aria-label={language.translatorPipeline.moveDown}
+              onclick={() => moveTranslatorPresetStep(preset, stepIndex, stepIndex + 1)}>
+              <ArrowDownIcon size={17} />
+            </button>
+            <button
+              type="button"
+              class="text-textcolor2 hover:text-green-500 disabled:opacity-40"
+              disabled={steps.length >= TRANSLATOR_PRESET_MAX_STEPS}
+              aria-label={language.translatorPipeline.duplicateStep}
+              onclick={() => {
+                updateTranslatorPresetSteps(preset, (currentSteps) => {
+                  currentSteps.splice(stepIndex + 1, 0, createTranslatorPresetStep(stepIndex + 1, step))
+                  return currentSteps
+                })
+              }}>
+              <CopyIcon size={17} />
+            </button>
+            <button
+              type="button"
+              class="text-textcolor2 hover:text-draculared disabled:opacity-40"
+              disabled={steps.length <= 1}
+              aria-label={language.translatorPipeline.removeStep}
+              onclick={() => {
+                updateTranslatorPresetSteps(preset, (currentSteps) =>
+                  currentSteps.filter((_candidate, index) => index !== stepIndex),
+                )
+              }}>
+              <TrashIcon size={17} />
+            </button>
+          </div>
+        </div>
+
+        <span class="text-textcolor mt-2">{language.translationResponseSize}</span>
+        <NumberInput
+          min={0}
+          max={2048}
+          marginBottom={true}
+          ariaLabel={steps.length === 1
+            ? language.translationResponseSize
+            : `${language.translationResponseSize}: ${step.name}`}
+          bind:value={
+            () => step.maxResponse,
+            (value) => {
+              if (typeof value !== 'number' || !Number.isFinite(value)) return
+              if (stepIndex > 0) {
+                updateTranslatorPresetStep(preset, stepIndex, { maxResponse: value })
+                return
+              }
+
+              const previous = currentTranslatorPresetStateSnapshot()
+              const presetId = selectedTranslatorPresetId()
+              if (!canUseServerCommands()) {
+                if (Array.isArray(preset.steps) && preset.steps[0]) preset.steps[0].maxResponse = value
+                preset.maxResponse = value
+                syncCurrentTranslatorPreset()
+              } else if (presetId) {
+                markTranslatorPresetDirtyFields(presetId, { maxResponse: value })
+                applyTranslatorPresetPatchToDatabase(presetId, { maxResponse: value })
+              }
+              if (presetId) queueTranslatorPresetUpdate(presetId, { maxResponse: value }, previous)
+            }
+          } />
+        <span class="text-textcolor mt-2">
+          {language.translatorPrompt}
+          <Help key="translatorPrompt" />
+        </span>
+        <TextAreaInput
+          ariaLabel={steps.length === 1 ? language.translatorPrompt : `${language.translatorPrompt}: ${step.name}`}
+          bind:value={
+            () => step.prompt,
+            (value) => {
+              if (stepIndex > 0) {
+                updateTranslatorPresetStep(preset, stepIndex, { prompt: value })
+                return
+              }
+
+              const previous = currentTranslatorPresetStateSnapshot()
+              const presetId = selectedTranslatorPresetId()
+              if (!canUseServerCommands()) {
+                if (Array.isArray(preset.steps) && preset.steps[0]) preset.steps[0].prompt = value
+                preset.prompt = value
+                syncCurrentTranslatorPreset()
+              } else if (presetId) {
+                markTranslatorPresetDirtyFields(presetId, { prompt: value })
+                applyTranslatorPresetPatchToDatabase(presetId, { prompt: value })
+              }
+              if (presetId) queueTranslatorPresetUpdate(presetId, { prompt: value }, previous)
+            }
+          }
+          placeholder={defaultTranslatorPrompt} />
+
+        <div class="mt-3 grid gap-3 md:grid-cols-2">
+          <label class="flex flex-col gap-1 text-sm text-textcolor">
+            {language.translatorPipeline.model}
+            <select
+              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-textcolor focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+              aria-label={`${language.translatorPipeline.model}: ${step.name}`}
+              value={step.model.mode === 'modelProfile' ? step.model.profileId : ''}
+              onchange={(event) => {
+                const profileId = event.currentTarget.value
+                updateTranslatorPresetStep(preset, stepIndex, {
+                  model: profileId ? { mode: 'modelProfile', profileId } : { mode: 'inheritTranslate' },
+                })
+              }}>
+              <option value="">{language.translatorPipeline.inheritTranslateModel}</option>
+              {#each modelProfiles as profile (profile.id)}
+                <option value={profile.id}>{profile.name ?? profile.id}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="flex flex-col gap-1 text-sm text-textcolor">
+            {language.translatorPipeline.outputKey}
+            <input
+              type="text"
+              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-textcolor focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+              aria-label={`${language.translatorPipeline.outputKey}: ${step.name}`}
+              value={outputKeyDraftValue(step)}
+              placeholder={language.translatorPipeline.outputKeyPlaceholder}
+              oninput={(event) =>
+                setTranslatorPresetStepOutputKey(preset, step, stepIndex, event.currentTarget.value)} />
+            {#if !outputKeyIsValid(preset, stepIndex, outputKeyDraftValue(step))}
+              <span class="text-xs text-draculared">{language.translatorPipeline.invalidOutputKey}</span>
+            {/if}
+          </label>
+        </div>
+      </section>
+    {/each}
+  </div>
 {/if}

@@ -1,10 +1,15 @@
 import { createHash } from 'node:crypto'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import {
   resolveModelProfile,
+  resolveModelProfileByProfileId,
   assertModelProfileGenerationReady,
 } from '../../../../src/ts/model/modelProfileResolver.js'
+import {
+  resolveTranslatorPipeline,
+  runTranslatorPipeline,
+  translatorPipelineSignature,
+} from '../../../../src/ts/translator/pipeline.js'
 import { dispatchChatProvider } from '../prompt/chatDispatch.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { ValidationError } from '../repository.js'
@@ -29,17 +34,10 @@ export interface RawMessageTranslationInput {
   signal: AbortSignal
 }
 
-const DEFAULT_TRANSLATOR_PROMPT =
-  'You are a translator. translate the following html or text into {{slot}}. do not output anything other than the translation.'
-
 const SUPPORTED_TRANSLATORS = new Set<RawMessageTranslatorType>(['google', 'deepl', 'deeplX', 'llm'])
 
 function stringValue(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback
-}
-
-function finiteNumber(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
 function recordValue(value: unknown): Record<string, unknown> {
@@ -102,8 +100,7 @@ function translatorSettingsHash(input: {
       translatorType: input.translatorType,
       targetLanguage: input.targetLanguage,
       inputLanguage: input.inputLanguage,
-      translatorPrompt: stringValue(input.settings.translatorPrompt),
-      translatorMaxResponse: finiteNumber(input.settings.translatorMaxResponse, 1000),
+      translatorPipeline: translatorPipelineSignature(resolveTranslatorPipeline(input.settings)),
       translatorSendTextAsIs: input.settings.translatorSendTextAsIs === true,
       translatorNote: translatorNote(input.character),
       aiModel: stringValue(input.settings.aiModel),
@@ -272,64 +269,6 @@ async function translateWithDeepLX(
   return translated
 }
 
-function parseTranslatorChatML(data: string): OpenAIChat[] | null {
-  const starter = '<|im_start|>'
-  const separator = '<|im_sep|>'
-  const ender = '<|im_end|>'
-  const trimmed = data.trim()
-  if (!trimmed.startsWith(starter)) return null
-  return trimmed
-    .split(starter)
-    .filter(Boolean)
-    .map((part) => {
-      let role: OpenAIChat['role'] = 'user'
-      let content = part
-      for (const candidate of ['system', 'user', 'assistant'] as const) {
-        if (content.startsWith(`${candidate}${separator}`)) {
-          role = candidate
-          content = content.slice(candidate.length + separator.length)
-          break
-        }
-        if (content.startsWith(`${candidate} `) || content.startsWith(`${candidate}\n`)) {
-          role = candidate
-          content = content.slice(candidate.length + 1)
-          break
-        }
-      }
-      content = content.trim()
-      if (content.endsWith(ender)) {
-        content = content.slice(0, -ender.length)
-      }
-      return { role, content: content.trim() }
-    })
-}
-
-function translatorPromptMessages(input: {
-  settings: Record<string, unknown>
-  text: string
-  targetLanguage: string
-  inputLanguage: string
-  translatorNote: string
-}): OpenAIChat[] {
-  const promptTemplate = stringValue(input.settings.translatorPrompt) || DEFAULT_TRANSLATOR_PROMPT
-  const prompt = promptTemplate
-    .replaceAll('{{slot::from}}', input.inputLanguage)
-    .replaceAll('{{slot}}', input.targetLanguage)
-    .replaceAll('{{solt::content}}', input.text)
-    .replaceAll('{{slot::content}}', input.text)
-    .replaceAll('{{slot::tnote}}', input.translatorNote)
-  const parsed = parseTranslatorChatML(prompt)
-  if (parsed) return parsed
-  const systemPrompt = promptTemplate
-    .replaceAll('{{slot}}', input.targetLanguage)
-    .replaceAll('{{slot::tnote}}', input.translatorNote)
-    .replaceAll('{{slot::from}}', input.inputLanguage)
-  return [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: input.text },
-  ]
-}
-
 async function collectFrames(frames: AsyncIterable<CompletionStreamFrame>): Promise<string> {
   let result = ''
   for await (const frame of frames) {
@@ -355,31 +294,41 @@ async function translateWithLlm(
     characters: character ? [character] : [],
     useStreaming: false,
   } as unknown as Database
-  let profile = resolveModelProfile({ database, role: 'translate' })
-  if (profile.modelId.length === 0) {
-    profile = resolveModelProfile({ database, role: 'translate', staticModel: 'echo_model' })
-  }
-  assertModelProfileGenerationReady(profile)
-  const maxResponse = finiteNumber(settings.translatorMaxResponse, profile.runtimeOptions.maxResponse ?? 1000)
-  const dispatchDatabase = {
-    ...database,
-    aiModel: profile.modelId,
-    maxResponse,
-  } as Database
-  return collectFrames(
-    await dispatchChatProvider({
-      database: dispatchDatabase,
-      formated: translatorPromptMessages({
-        settings,
-        text,
-        inputLanguage,
-        targetLanguage,
-        translatorNote: translatorNote(character),
-      }),
-      outputTokens: maxResponse,
-      profile,
+  const steps = resolveTranslatorPipeline(settings)
+  return runTranslatorPipeline(
+    {
+      steps,
+      sourceText: text,
+      to: targetLanguage,
+      from: inputLanguage,
+      translatorNote: translatorNote(character),
       signal,
-    }),
+    },
+    async ({ messages, maxResponse, model, signal: stepSignal }) => {
+      let profile =
+        model.mode === 'modelProfile'
+          ? resolveModelProfileByProfileId({ database, role: 'translate', profileId: model.profileId })
+          : null
+      profile ??= resolveModelProfile({ database, role: 'translate' })
+      if (profile.modelId.length === 0) {
+        profile = resolveModelProfile({ database, role: 'translate', staticModel: 'echo_model' })
+      }
+      assertModelProfileGenerationReady(profile)
+      const dispatchDatabase = {
+        ...database,
+        aiModel: profile.modelId,
+        maxResponse,
+      } as Database
+      return collectFrames(
+        await dispatchChatProvider({
+          database: dispatchDatabase,
+          formated: messages,
+          outputTokens: maxResponse,
+          profile,
+          signal: stepSignal ?? signal,
+        }),
+      )
+    },
   )
 }
 
