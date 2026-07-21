@@ -120,6 +120,7 @@ import {
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
+import { withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import {
   applyServerInlayCatalogResource,
   getServerInlayCatalogResource,
@@ -481,6 +482,120 @@ describe('API-backed resource invalidation', () => {
       chaId: 'char-a',
       name: 'Ada updated',
       chats: [{ message: [{ role: 'user', data: 'resident-a' }] }],
+    })
+  })
+
+  it('keeps an optimistic character-row edit when an older generic read completes', async () => {
+    seedResources(1)
+    const staleCharacter = metadataCharacter('char-a', 'Ada', 'chat-a')
+    staleCharacter.customscript = [{ id: 'script-a', out: 'server before edit' }] as never
+    applyCharacterResource({ revision: 1, character: staleCharacter })
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      character: character
+    }>()
+    api.character.mockReturnValue(response.promise)
+
+    const refresh = refreshInvalidatedServerResources(event(2, 'characterRow', { id: 'char-a' }), {
+      appliedRevision: 1,
+      hooks,
+    })
+    expect(api.character).toHaveBeenCalledWith('char-a', undefined)
+
+    withTrustedResourceWrite(() => {
+      const liveCharacter = getResourceDatabase().characters.find((candidate) => candidate.chaId === 'char-a')
+      if (!liveCharacter) throw new Error('Missing optimistic character')
+      liveCharacter.customscript = [{ id: 'script-a', out: 'newer optimistic edit' }] as never
+    })
+    response.resolve({ status: 'ok', revision: 2, character: staleCharacter })
+
+    await expect(refresh).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(getResourceDatabase().characters[0].customscript).toEqual([{ id: 'script-a', out: 'newer optimistic edit' }])
+  })
+
+  it('keeps an optimistic collection edit when an older generic read completes', async () => {
+    seedResources(1)
+    applyCollectionsResource({
+      revision: 1,
+      collections: { modules: [{ id: 'module-a', name: 'Before', regex: [] }] as never },
+    })
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      collections: { modules: unknown[] }
+    }>()
+    api.collection.mockReturnValue(response.promise)
+
+    const refresh = refreshInvalidatedServerResources(event(2, 'moduleUpdated', { id: 'module-a' }), {
+      appliedRevision: 1,
+      hooks,
+    })
+    expect(api.collection).toHaveBeenCalledWith('modules', undefined)
+
+    withTrustedResourceWrite(() => {
+      const live = getResourceDatabase()
+      live.modules = [{ id: 'module-a', name: 'Optimistic', regex: [] }] as never
+    })
+    response.resolve({
+      status: 'ok',
+      revision: 2,
+      collections: { modules: [{ id: 'module-a', name: 'Before', regex: [] }] },
+    })
+
+    await expect(refresh).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(getResourceDatabase().modules).toEqual([{ id: 'module-a', name: 'Optimistic', regex: [] }])
+  })
+
+  it('does not let a complete refresh replace a slice edited after the refresh started', async () => {
+    seedResources(1)
+    const settingsResponse = deferred<{
+      status: 'ok'
+      revision: number
+      settings: Record<string, unknown>
+    }>()
+    const collectionsResponse = deferred<{
+      status: 'ok'
+      revision: number
+      collections: ReturnType<typeof completeCollections>
+    }>()
+    const charactersResponse = deferred<{
+      status: 'ok'
+      revision: number
+      characters: character[]
+      characterOrder: string[]
+      currentChar: number
+    }>()
+    api.settings.mockReturnValue(settingsResponse.promise)
+    api.collections.mockReturnValue(collectionsResponse.promise)
+    api.characters.mockReturnValue(charactersResponse.promise)
+
+    const refresh = refreshAllServerResources({ hooks })
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.collections).toHaveBeenCalledOnce()
+    expect(api.characters).toHaveBeenCalledOnce()
+
+    withTrustedResourceWrite(() => {
+      const liveCharacter = getResourceDatabase().characters.find((candidate) => candidate.chaId === 'char-a')
+      if (!liveCharacter) throw new Error('Missing optimistic character')
+      liveCharacter.customscript = [{ id: 'script-a', out: 'optimistic during refresh' }] as never
+    })
+
+    settingsResponse.resolve({ status: 'ok', revision: 2, settings: { language: 'ko' } })
+    collectionsResponse.resolve({ status: 'ok', revision: 2, collections: completeCollections() })
+    charactersResponse.resolve({
+      status: 'ok',
+      revision: 2,
+      characters: [metadataCharacter('char-a', 'Ada restored', 'chat-a')],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    await expect(refresh).resolves.toEqual({ status: 'ok', revision: 2, scope: 'full' })
+    expect(getResourceDatabase().language).toBe('ko')
+    expect(getResourceDatabase().characters[0]).toMatchObject({
+      name: 'Ada',
+      customscript: [{ id: 'script-a', out: 'optimistic during refresh' }],
     })
   })
 

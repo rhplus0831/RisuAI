@@ -111,6 +111,7 @@ interface PendingCollectionReplacement {
   timer: ReturnType<typeof setTimeout> | null
   intent: DurableMutationIntent
   outbox: PendingMutationHandle
+  settlementCleanup?: () => void
   operations: PendingScopedLorebookMutationOperation[]
   command: (options?: ServerCommandTransportOptions) => Promise<ServerCommandResult<Record<string, unknown>>>
 }
@@ -275,6 +276,7 @@ const stubbedCharacterLorebooks = new SvelteSet<string>()
 export function resetServerBackedLorebookBridgeForTests(): void {
   for (const pending of pendingReplacements.values()) {
     if (pending.timer) clearTimeout(pending.timer)
+    pending.settlementCleanup?.()
     settleScopedLorebookMutationOperations(pending.operations, {
       status: 'failed',
       error: 'Lorebook mutation was cancelled.',
@@ -2789,8 +2791,7 @@ function queueReplacement(
   const existingProjectionIsCurrent = !!existing && !hasLorebookProjectionEpochChanged(existing.projectionEpochs)
   if (existing && !existingProjectionIsCurrent) {
     settleScopedLorebookMutationOperations(existing.operations, {
-      status: 'failed',
-      error: 'A newer server lorebook projection superseded this change.',
+      status: 'queued',
     })
   }
   const operations = [
@@ -2827,7 +2828,10 @@ function queueReplacement(
     correctionOnly = true
   }
   if (!plan) {
-    if (existing) void acknowledgePendingMutation(existing.outbox)
+    if (existing) {
+      existing.settlementCleanup?.()
+      void acknowledgePendingMutation(existing.outbox)
+    }
     pendingReplacements.delete(key)
     pendingEntryEditKeys.delete(key)
     flushedEntryEditSnapshots.delete(key)
@@ -2836,7 +2840,6 @@ function queueReplacement(
     return
   }
 
-  if (existing && !existingProjectionIsCurrent) void acknowledgePendingMutation(existing.outbox)
   const intent = lorebookDurableIntent(scope, plan)
   let outbox: PendingMutationHandle
   try {
@@ -2850,7 +2853,6 @@ function queueReplacement(
     pendingEntryEditKeys.delete(key)
     flushedEntryEditSnapshots.delete(key)
     flushedEntryEditClearSnapshots.delete(key)
-    if (existing) void acknowledgePendingMutation(existing.outbox)
     if (!hasLorebookProjectionEpochChanged(effectiveProjectionEpochs)) {
       rollbackLorebookReplacement(scope, effectivePrevious, attemptedEntries)
     }
@@ -2873,6 +2875,8 @@ function queueReplacement(
     command: (options = {}) => command(effectivePrevious, effectiveProjectionEpochs, plan, options),
     timer: null,
   }
+  if (existingProjectionIsCurrent) existing?.settlementCleanup?.()
+  trackPendingLorebookReplacementSettlement(pending, scope)
   if (effectiveSource === 'entry') {
     pendingEntryEditKeys.add(key)
     flushedEntryEditSnapshots.delete(key)
@@ -2888,6 +2892,33 @@ function queueReplacement(
   } else {
     pending.timer = setTimeout(() => runPendingReplacement(key), delay)
   }
+}
+
+function trackPendingLorebookReplacementSettlement(
+  pending: PendingCollectionReplacement,
+  scope: DiscreteLorebookEditScope,
+): void {
+  pending.settlementCleanup = registerDurableMutationSettlementListener(pending.outbox.mutationId, (settlement) => {
+    pending.settlementCleanup = undefined
+    if (pendingReplacements.get(pending.key)?.outbox.mutationId !== pending.outbox.mutationId) return
+    if (pending.timer) clearTimeout(pending.timer)
+    pendingReplacements.delete(pending.key)
+    pendingEntryEditKeys.delete(pending.key)
+    flushedEntryEditSnapshots.delete(pending.key)
+    flushedEntryEditClearSnapshots.delete(pending.key)
+
+    if (settlement === 'accepted') {
+      settleScopedLorebookMutationOperations(pending.operations, { status: 'accepted' })
+      return
+    }
+    if (!hasLorebookProjectionEpochChanged(pending.projectionEpochs)) {
+      rollbackLorebookReplacement(scope, pending.previous, pending.attemptedEntries)
+    }
+    settleScopedLorebookMutationOperations(pending.operations, {
+      status: 'failed',
+      error: 'The queued lorebook change was rejected by the server.',
+    })
+  })
 }
 
 function isLorebookCollectionReplacementSource(
@@ -2929,10 +2960,11 @@ function runPendingReplacement(key: string, options: ServerCommandTransportOptio
     (pending.source === 'watchedCollection' && !hasStableUniqueLorebookEntryIds(watchedEntries))
   ) {
     pendingEntryEditKeys.delete(key)
-    void acknowledgePendingMutation(pending.outbox)
+    // Projection replacement only proves that this page's optimistic baseline
+    // is stale. The encrypted intent remains pending until its exact mutation id
+    // is accepted/discarded or bootstrap replays it.
     settleScopedLorebookMutationOperations(pending.operations, {
-      status: 'failed',
-      error: 'A newer server lorebook projection superseded this change.',
+      status: 'queued',
     })
     return
   }
@@ -2953,6 +2985,8 @@ function runPendingReplacement(key: string, options: ServerCommandTransportOptio
       }
     }
   }
+  pending.settlementCleanup?.()
+  pending.settlementCleanup = undefined
   const dispatch = dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
     pending.command({ ...options, ...transport }),
   )

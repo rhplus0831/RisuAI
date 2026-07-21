@@ -1329,7 +1329,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     resetPromptTemplateSelectionDirtyState()
   })
 
-  it('drops a debounced prompt item update when the selected prompt preset owner changes', async () => {
+  it('retains a debounced prompt item intent when the selected prompt preset owner changes', async () => {
     seedTemplate()
     hydrationState.setOwner('prompt-a')
     let draftItems = draftCopy()
@@ -1347,7 +1347,7 @@ describe('flushPendingPromptTemplatePatches', () => {
 
     expect(commandState.commands).toHaveLength(0)
     expect(textOf(draftItems[0])).toBe('stale owner edit')
-    expect(durableState.acknowledgements).toEqual([durableState.stages[0].handle])
+    expect(durableState.acknowledgements).toEqual([])
   })
 
   it('L25: coalesced prompt item rollback restores the first pre-edit item', async () => {
@@ -3328,7 +3328,7 @@ describe('reconcilePromptTemplateDraft', () => {
     await flushPromptItemDirtyTestState(draftItems)
   })
 
-  it('selection reset clears dirty row merges and cancels pending item patches from the previous preset', async () => {
+  it('selection reset clears dirty row merges while retaining pending item intents for replay', async () => {
     resourceDatabase.current = {
       promptTemplate: [item('shared-row', 'old preset server')],
     }
@@ -3341,10 +3341,9 @@ describe('reconcilePromptTemplateDraft', () => {
     }
 
     queuePromptItemProjectionUpdate(binding, 'shared-row', item('shared-row', 'old preset server'), 500)
-    const stagedHandle = durableState.stages.at(-1)?.handle
     resetPromptTemplateSelectionDirtyState()
 
-    expect(durableState.acknowledgements).toEqual([stagedHandle])
+    expect(durableState.acknowledgements).toEqual([])
 
     getResourceDatabase().promptTemplate = [item('shared-row', 'new preset projection')]
     commandState.revision = 6

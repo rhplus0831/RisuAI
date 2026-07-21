@@ -35,9 +35,15 @@ import {
   applyLegacyPresetRowResource,
   applySettingsResource,
   applySettingsGroupResource,
+  SERVER_COLLECTION_NAMES,
+  captureCharacterListProjectionEpoch,
   captureCharacterLorebookBodyProjectionEpoch,
+  captureCharacterRowProjectionEpoch,
   captureChatBodyProjectionEpoch,
+  captureCollectionProjectionEpoch,
   captureLegacyPresetResourceBaseline,
+  captureSettingsGroupProjectionEpoch,
+  captureSettingsProjectionEpoch,
   charactersResourceState,
   collectionsResourceState,
   hasCharacterLorebookBodyProjectionEpochChanged,
@@ -148,22 +154,33 @@ type LegacyPresetCollectionReadResult =
   | { status: 'unavailable' }
 type InlayCatalogReadResult = Awaited<ReturnType<typeof fetchServerInlayCatalog>>
 
+interface ResourceReadFence {
+  /** True when this request no longer owns the resident projection it started from. */
+  isSuperseded(): boolean
+}
+
 type CompletedTargetedRead =
   | { kind: 'inlayCatalog'; result: InlayCatalogReadResult }
-  | { kind: 'settings'; result: SettingsReadResult }
-  | { kind: 'settingsGroup'; group: SettingsGroup; result: SettingsGroupReadResult }
-  | { kind: 'collection'; name: ServerCollectionName; result: CollectionReadResult }
+  | { kind: 'settings'; fence: ResourceReadFence; result: SettingsReadResult }
+  | { kind: 'settingsGroup'; group: SettingsGroup; fence: ResourceReadFence; result: SettingsGroupReadResult }
+  | { kind: 'collection'; name: ServerCollectionName; fence: ResourceReadFence; result: CollectionReadResult }
   | {
       kind: 'legacyPresetRow'
       presetId: string
       baseline: ServerLegacyPresetResourceBaseline
+      fence: ResourceReadFence
       result: LegacyPresetReadResult
     }
-  | { kind: 'legacyPresetCollection'; result: LegacyPresetCollectionReadResult }
-  | { kind: 'characters'; result: CharactersReadResult }
-  | { kind: 'character'; characterId: string; result: CharacterReadResult }
-  | { kind: 'characterOrder'; result: CharacterOrderReadResult }
-  | { kind: 'characterSelection'; characterId: string; result: CharacterSelectionReadResult }
+  | { kind: 'legacyPresetCollection'; fence: ResourceReadFence; result: LegacyPresetCollectionReadResult }
+  | { kind: 'characters'; fence: ResourceReadFence; result: CharactersReadResult }
+  | { kind: 'character'; characterId: string; fence: ResourceReadFence; result: CharacterReadResult }
+  | { kind: 'characterOrder'; fence: ResourceReadFence; result: CharacterOrderReadResult }
+  | {
+      kind: 'characterSelection'
+      characterId: string
+      fence: ResourceReadFence
+      result: CharacterSelectionReadResult
+    }
   | { kind: 'chat'; chatId: string; projectionEpoch: number; result: ChatReadResult }
   | { kind: 'lorebook'; characterId: string; projectionEpoch: number; result: LorebookReadResult }
   | {
@@ -188,6 +205,7 @@ export async function loadInitialServerResources(
 export async function refreshAllServerResources(
   options: ServerResourceRefreshOptions = {},
 ): Promise<ServerResourceRefreshResult> {
+  const requestFences = captureCompleteResourceReadFences()
   for (let attempt = 0; attempt < FULL_RESOURCE_REFRESH_MAX_ATTEMPTS; attempt += 1) {
     const [settings, collections, characters, inlayCatalog] = await Promise.all([
       fetchServerSettings(options.signal),
@@ -210,6 +228,14 @@ export async function refreshAllServerResources(
     // before touching the first slice so partial failures also fail closed.
     createDestructiveRefreshToken('full-server-resource-refresh')
     try {
+      // Compute every fence before applying any sibling. A successful settings
+      // apply, for example, must not make the collections response from the
+      // same consistent read set appear superseded.
+      const superseded = {
+        settings: requestFences.settings.isSuperseded(),
+        collections: requestFences.collections.isSuperseded(),
+        characters: requestFences.characters.isSuperseded(),
+      }
       const mergedSettings = withPendingAgentPresetSettings(
         withPendingPluginProvider(settings, options.hooks?.mergePendingPluginProvider),
         options.hooks?.mergePendingAgentPresetSettings,
@@ -219,13 +245,15 @@ export async function refreshAllServerResources(
       const { settingsApplied, collectionsApplied, charactersApplied, inlayCatalogApplied } = withServerResourceApply(
         () => {
           const applied = {
-            settingsApplied: applySettingsResource(mergedSettings),
-            collectionsApplied: applyCollectionsResource(mergedCollections),
+            settingsApplied: !superseded.settings && applySettingsResource(mergedSettings),
+            collectionsApplied: !superseded.collections && applyCollectionsResource(mergedCollections),
             // A complete refresh is used for startup, revision gaps, restores, and
             // unknown resources. Character reads intentionally omit transcripts,
             // so retaining same-id resident bodies here could preserve stale chat
             // data across a restore. Leave the chats as API-hydration stubs.
-            charactersApplied: applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false }),
+            charactersApplied:
+              !superseded.characters &&
+              applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false }),
             inlayCatalogApplied: applyServerInlayCatalogResource(inlayCatalog, { force: true }),
           }
           options.hooks?.reapplyPendingPresetProjections?.()
@@ -235,9 +263,9 @@ export async function refreshAllServerResources(
       )
       if (collectionsApplied) resetPromptTemplateHydration()
       if (
-        (!settingsApplied && !settingsFullAlreadyAtLeast(revision)) ||
-        (!collectionsApplied && !collectionsAlreadyAtLeast(revision)) ||
-        (!charactersApplied && !charactersAlreadyAtLeast(revision)) ||
+        (!superseded.settings && !settingsApplied && !settingsFullAlreadyAtLeast(revision)) ||
+        (!superseded.collections && !collectionsApplied && !collectionsAlreadyAtLeast(revision)) ||
+        (!superseded.characters && !charactersApplied && !charactersAlreadyAtLeast(revision)) ||
         !inlayCatalogApplied
       ) {
         return { status: 'error', error: 'Failed to apply a complete server resource refresh' }
@@ -329,7 +357,7 @@ async function executeTargetedRefreshPlan(
   // Snapshot supersession before applying any sibling result. Character-shell
   // applies advance their own projection epochs, but must not make a body read
   // from this same completed batch appear stale.
-  const bodyReadSupersessions = snapshotTargetedBodyReadSupersessions(completed)
+  const readSupersessions = snapshotTargetedReadSupersessions(completed)
   const failed = firstFailedTargetedRead(completed)
   if (failed) return failed
 
@@ -348,7 +376,7 @@ async function executeTargetedRefreshPlan(
       const failedApply = withServerResourceApply(() => {
         for (const entry of completed) {
           if (entry.result.status !== 'ok') continue
-          if (!applyTargetedRead(entry, bodyReadSupersessions, options.hooks)) return targetedReadLabel(entry)
+          if (!applyTargetedRead(entry, readSupersessions, options.hooks)) return targetedReadLabel(entry)
         }
         options.hooks?.reapplyPendingPresetProjections?.()
         options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
@@ -829,6 +857,123 @@ function isWellFormedAgentPresetDeleteEvent(event: CommandEvent): boolean {
   return event.type === 'agentPreset.deleted' && nonEmptyString(event.id) && event.parentId === undefined
 }
 
+interface CompleteResourceReadFences {
+  settings: ResourceReadFence
+  collections: ResourceReadFence
+  characters: ResourceReadFence
+}
+
+function captureCompleteResourceReadFences(): CompleteResourceReadFences {
+  return {
+    settings: captureSettingsReadFence(),
+    collections: captureResourceReadFence(
+      () => SERVER_COLLECTION_NAMES.map((name) => [name, captureCollectionProjectionEpoch(name)] as const),
+      () => snapshotFields(collectionsResourceState.values as Record<string, unknown>, SERVER_COLLECTION_NAMES),
+    ),
+    characters: captureCharactersReadFence({ preserveResidentBodies: false }),
+  }
+}
+
+function captureSettingsReadFence(): ResourceReadFence {
+  return captureResourceReadFence(
+    () => captureSettingsProjectionEpoch(),
+    () => settingsResourceState.value,
+  )
+}
+
+function captureSettingsGroupReadFence(group: SettingsGroup): ResourceReadFence {
+  const keys = SERVER_SETTINGS_KEYS_BY_GROUP[group]
+  return captureResourceReadFence(
+    () => captureSettingsGroupProjectionEpoch(group),
+    () => snapshotFields(settingsResourceState.value as Record<string, unknown>, keys),
+  )
+}
+
+function captureCollectionReadFence(name: ServerCollectionName): ResourceReadFence {
+  return captureResourceReadFence(
+    () => captureCollectionProjectionEpoch(name),
+    () => snapshotFields(collectionsResourceState.values as Record<string, unknown>, [name]),
+  )
+}
+
+function captureCharactersReadFence(options: { preserveResidentBodies: boolean }): ResourceReadFence {
+  return captureResourceReadFence(
+    () => [
+      captureCharacterListProjectionEpoch(),
+      ...charactersResourceState.characters
+        .filter((candidate) => nonEmptyString(candidate?.chaId))
+        .map((candidate) => [candidate.chaId, captureCharacterRowProjectionEpoch(candidate.chaId)] as const),
+    ],
+    () => ({
+      characters: options.preserveResidentBodies
+        ? charactersResourceState.characters.map(characterRowSnapshotWithoutResidentBodies)
+        : charactersResourceState.characters,
+      characterOrder: charactersResourceState.characterOrder,
+      currentChar: charactersResourceState.currentChar,
+    }),
+  )
+}
+
+function captureCharacterReadFence(characterId: string): ResourceReadFence {
+  return captureResourceReadFence(
+    () => [captureCharacterListProjectionEpoch(), captureCharacterRowProjectionEpoch(characterId)],
+    () =>
+      charactersResourceState.characters
+        .filter((candidate) => candidate?.chaId === characterId)
+        .map(characterRowSnapshotWithoutResidentBodies),
+  )
+}
+
+function captureCharacterOrderReadFence(): ResourceReadFence {
+  return captureResourceReadFence(
+    () => captureCharacterListProjectionEpoch(),
+    () => charactersResourceState.characterOrder,
+  )
+}
+
+function captureCharacterSelectionReadFence(characterId: string): ResourceReadFence {
+  return captureResourceReadFence(
+    () => [captureCharacterListProjectionEpoch(), captureCharacterRowProjectionEpoch(characterId)],
+    () => ({
+      currentChar: charactersResourceState.currentChar,
+      rows: charactersResourceState.characters
+        .filter((candidate) => candidate?.chaId === characterId)
+        .map((candidate) => ({ chaId: candidate.chaId, lastInteraction: candidate.lastInteraction })),
+    }),
+  )
+}
+
+function captureResourceReadFence(readProjection: () => unknown, readResident: () => unknown): ResourceReadFence {
+  const projectionSnapshot = snapshotJson(readProjection())
+  const residentSnapshot = snapshotJson(readResident())
+  return {
+    isSuperseded: () =>
+      projectionSnapshot === null ||
+      residentSnapshot === null ||
+      snapshotJson(readProjection()) !== projectionSnapshot ||
+      snapshotJson(readResident()) !== residentSnapshot,
+  }
+}
+
+function snapshotFields(record: Record<string, unknown>, keys: readonly string[]): unknown[] {
+  return keys.map((key) => [key, Object.prototype.hasOwnProperty.call(record, key), record[key]])
+}
+
+function characterRowSnapshotWithoutResidentBodies(candidate: ServerCharactersResourcePayload['characters'][number]) {
+  return {
+    ...candidate,
+    chats: candidate.chats?.map(({ message: _message, hypaV3Data: _hypaV3Data, ...chat }) => chat),
+  }
+}
+
+function snapshotJson(value: unknown): string | null {
+  try {
+    return JSON.stringify(value) ?? 'undefined'
+  } catch {
+    return null
+  }
+}
+
 async function runTargetedReads(
   plan: RefreshPlan,
   signal: AbortSignal | null | undefined,
@@ -838,27 +983,35 @@ async function runTargetedReads(
     reads.push(fetchServerInlayCatalog(signal).then((result) => ({ kind: 'inlayCatalog' as const, result })))
   }
   if (plan.settings) {
-    reads.push(fetchServerSettings(signal).then((result) => ({ kind: 'settings' as const, result })))
+    const fence = captureSettingsReadFence()
+    reads.push(fetchServerSettings(signal).then((result) => ({ kind: 'settings' as const, fence, result })))
   }
   for (const group of plan.settingsGroups) {
+    const fence = captureSettingsGroupReadFence(group)
     reads.push(
       fetchServerSettingsGroup(group, signal).then((result) => ({
         kind: 'settingsGroup' as const,
         group,
+        fence,
         result,
       })),
     )
   }
   for (const name of plan.collections) {
     if (name === 'botPresets') continue
-    reads.push(fetchServerCollection(name, signal).then((result) => ({ kind: 'collection' as const, name, result })))
+    const fence = captureCollectionReadFence(name)
+    reads.push(
+      fetchServerCollection(name, signal).then((result) => ({ kind: 'collection' as const, name, fence, result })),
+    )
   }
   const legacyPresetIds = [...plan.legacyPresetIds]
   const legacyPresetBaseline = captureLegacyPresetResourceBaseline(legacyPresetIds)
+  const legacyPresetFence = captureCollectionReadFence('botPresets')
   if (plan.collections.has('botPresets')) {
     reads.push(
       readLegacyPresetCollection(legacyPresetIds, legacyPresetBaseline, signal).then((result) => ({
         kind: 'legacyPresetCollection' as const,
+        fence: legacyPresetFence,
         result,
       })),
     )
@@ -869,31 +1022,40 @@ async function runTargetedReads(
           kind: 'legacyPresetRow' as const,
           presetId,
           baseline: legacyPresetBaseline,
+          fence: legacyPresetFence,
           result,
         })),
       )
     }
   }
   if (plan.allCharacters) {
-    reads.push(fetchServerCharacters(signal).then((result) => ({ kind: 'characters' as const, result })))
+    const fence = captureCharactersReadFence({ preserveResidentBodies: true })
+    reads.push(fetchServerCharacters(signal).then((result) => ({ kind: 'characters' as const, fence, result })))
   } else {
     for (const characterId of plan.characterIds) {
+      const fence = captureCharacterReadFence(characterId)
       reads.push(
         fetchServerCharacter(characterId, signal).then((result) => ({
           kind: 'character' as const,
           characterId,
+          fence,
           result,
         })),
       )
     }
     if (plan.characterOrder) {
-      reads.push(fetchServerCharacterOrder(signal).then((result) => ({ kind: 'characterOrder' as const, result })))
+      const fence = captureCharacterOrderReadFence()
+      reads.push(
+        fetchServerCharacterOrder(signal).then((result) => ({ kind: 'characterOrder' as const, fence, result })),
+      )
     }
     for (const characterId of plan.characterSelectionIds) {
+      const fence = captureCharacterSelectionReadFence(characterId)
       reads.push(
         fetchServerCharacterSelection(characterId, signal).then((result) => ({
           kind: 'characterSelection' as const,
           characterId,
+          fence,
           result,
         })),
       )
@@ -1008,19 +1170,22 @@ function uniqueLegacyPresetIds(rows: readonly unknown[]): Set<string> | null {
   return ids
 }
 
-interface TargetedBodyReadSupersessions {
+interface TargetedReadSupersessions {
+  generic: Set<CompletedTargetedRead>
   chatIds: Set<string>
   characterLorebookIds: Set<string>
 }
 
-function snapshotTargetedBodyReadSupersessions(
-  completed: readonly CompletedTargetedRead[],
-): TargetedBodyReadSupersessions {
-  const supersessions: TargetedBodyReadSupersessions = {
+function snapshotTargetedReadSupersessions(completed: readonly CompletedTargetedRead[]): TargetedReadSupersessions {
+  const supersessions: TargetedReadSupersessions = {
+    generic: new Set(),
     chatIds: new Set(),
     characterLorebookIds: new Set(),
   }
   for (const entry of completed) {
+    if ('fence' in entry && entry.fence.isSuperseded()) {
+      supersessions.generic.add(entry)
+    }
     if (entry.kind === 'chat') {
       if (hasChatBodyProjectionEpochChanged(entry.chatId, entry.projectionEpoch)) {
         supersessions.chatIds.add(entry.chatId)
@@ -1049,7 +1214,7 @@ function snapshotTargetedBodyReadSupersessions(
 
 function applyTargetedRead(
   entry: CompletedTargetedRead,
-  bodyReadSupersessions: TargetedBodyReadSupersessions,
+  supersessions: TargetedReadSupersessions,
   hooks: Partial<ServerResourceInvalidationHooks> | undefined,
 ): boolean {
   switch (entry.kind) {
@@ -1060,6 +1225,7 @@ function applyTargetedRead(
         (getServerInlayCatalogResource()?.revision ?? -1) >= entry.result.revision
       )
     case 'settings': {
+      if (supersessions.generic.has(entry)) return true
       const payload = withPendingAgentPresetSettings(
         withPendingPluginProvider(entry.result, hooks?.mergePendingPluginProvider),
         hooks?.mergePendingAgentPresetSettings,
@@ -1067,6 +1233,8 @@ function applyTargetedRead(
       return payload.status !== 'ok' || applySettingsResource(payload) || settingsFullAlreadyAtLeast(payload.revision)
     }
     case 'settingsGroup': {
+      if (entry.result.status === 'ok' && entry.result.group !== entry.group) return false
+      if (supersessions.generic.has(entry)) return true
       const providerPayload =
         entry.group === 'providers'
           ? withPendingPluginProvider(entry.result, hooks?.mergePendingPluginProvider)
@@ -1083,6 +1251,7 @@ function applyTargetedRead(
     }
     case 'collection': {
       if (entry.result.status !== 'ok') return true
+      if (supersessions.generic.has(entry)) return true
       const payload =
         entry.name === 'pluginCustomStorage' || entry.name === 'plugins' || entry.name === 'loadouts'
           ? withPendingCollections(entry.result, hooks)
@@ -1098,6 +1267,7 @@ function applyTargetedRead(
     case 'legacyPresetRow':
       if (entry.result.status !== 'ok') return true
       if (entry.result.presetId !== entry.presetId || entry.result.preset.id !== entry.presetId) return false
+      if (supersessions.generic.has(entry)) return true
       return (
         applyLegacyPresetRowResource({
           revision: entry.result.revision,
@@ -1109,14 +1279,18 @@ function applyTargetedRead(
     case 'legacyPresetCollection':
       return (
         entry.result.status !== 'ok' ||
+        supersessions.generic.has(entry) ||
         applyLegacyPresetCollectionResource(entry.result) ||
         (collectionsResourceState.revisions.botPresets ?? -1) > entry.result.revision
       )
     case 'characters': {
+      if (supersessions.generic.has(entry)) return true
       const payload = withPendingAgentPresetCharacters(entry.result, hooks)
       return payload.status !== 'ok' || applyCharactersResource(payload) || charactersAlreadyAtLeast(payload.revision)
     }
     case 'character': {
+      if (entry.result.status === 'ok' && entry.result.character?.chaId !== entry.characterId) return false
+      if (supersessions.generic.has(entry)) return true
       const payload = withPendingAgentPresetCharacter(entry.result, hooks)
       return (
         payload.status !== 'ok' ||
@@ -1127,12 +1301,15 @@ function applyTargetedRead(
     case 'characterOrder':
       return (
         entry.result.status !== 'ok' ||
+        supersessions.generic.has(entry) ||
         applyCharacterOrderResource(entry.result) ||
         (charactersResourceState.orderRevision ?? -1) >= entry.result.revision
       )
     case 'characterSelection':
+      if (entry.result.status === 'ok' && entry.result.characterId !== entry.characterId) return false
       return (
         entry.result.status !== 'ok' ||
+        supersessions.generic.has(entry) ||
         applyCharacterSelectionResource(entry.result) ||
         characterSelectionAlreadyAtLeast(entry.characterId, entry.result.revision)
       )
@@ -1140,19 +1317,19 @@ function applyTargetedRead(
       return (
         entry.result.status !== 'ok' ||
         (entry.result.chatId === entry.chatId &&
-          applyChatMessages(entry.result, bodyReadSupersessions.chatIds.has(entry.chatId), hooks))
+          applyChatMessages(entry.result, supersessions.chatIds.has(entry.chatId), hooks))
       )
     case 'lorebook':
       return (
         entry.result.status !== 'ok' ||
-        applyCharacterLorebook(entry.result, bodyReadSupersessions.characterLorebookIds.has(entry.characterId), hooks)
+        applyCharacterLorebook(entry.result, supersessions.characterLorebookIds.has(entry.characterId), hooks)
       )
     case 'lorebooks': {
       const result = entry.result
       if (result.status !== 'ok') return true
       const missing = new Set(result.missing)
       return entry.characterIds.every((characterId) => {
-        const superseded = bodyReadSupersessions.characterLorebookIds.has(characterId)
+        const superseded = supersessions.characterLorebookIds.has(characterId)
         if (missing.has(characterId)) return superseded
         const character = result.characters.find((candidate) => candidate.characterId === characterId)
         return character

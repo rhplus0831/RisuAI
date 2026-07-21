@@ -37,7 +37,7 @@ import {
   type ScriptDefinitionCollectionMutation,
   type ScriptDefinitionMutationPlan,
 } from './scriptDefinitionMutations'
-import { dispatchDurableMutation } from './durableMutationDispatch'
+import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './durableMutationDispatch'
 import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import {
   acknowledgePendingMutation,
@@ -99,6 +99,7 @@ interface PendingCollectionReplacement {
   plan: Exclude<ScriptDefinitionMutationPlan, { kind: 'none' }>
   intent: DurableMutationIntent
   outbox: PendingMutationHandle
+  settlementCleanup?: () => void
   validateCurrent?: () => boolean
 }
 
@@ -978,12 +979,14 @@ function queueReplacement(
     }
   }
   if (plan.kind === 'none') {
-    if (existing) void acknowledgePendingMutation(existing.outbox)
+    if (existing) {
+      existing.settlementCleanup?.()
+      void acknowledgePendingMutation(existing.outbox)
+    }
     pendingReplacements.delete(key)
     return
   }
 
-  if (existing && !sameProjection) void acknowledgePendingMutation(existing.outbox)
   const intent = scriptDefinitionDurableIntent(mutation, plan)
   const outbox = stagePendingMutation(
     scriptDefinitionOwnerMutationKey(key, mutation),
@@ -1004,6 +1007,8 @@ function queueReplacement(
     ...(mutation.validateCurrent ? { validateCurrent: mutation.validateCurrent } : {}),
     timer: null,
   }
+  if (existing && sameProjection) existing.settlementCleanup?.()
+  trackPendingScriptDefinitionSettlement(pending)
   pendingReplacements.set(key, pending)
   if (correctionOnly) {
     runPendingScriptDefinitionReplacement(key)
@@ -1865,6 +1870,16 @@ function scriptDefinitionPendingFence(pending: PendingCollectionReplacement): Sc
     : { kind: 'settings', group: 'advanced', epoch: pending.settingsGroupProjectionEpoch }
 }
 
+function trackPendingScriptDefinitionSettlement(pending: PendingCollectionReplacement): void {
+  pending.settlementCleanup = registerDurableMutationSettlementListener(pending.outbox.mutationId, () => {
+    pending.settlementCleanup = undefined
+    if (pendingReplacements.get(pending.key)?.outbox.mutationId !== pending.outbox.mutationId) return
+    if (pending.timer) clearTimeout(pending.timer)
+    pendingReplacements.delete(pending.key)
+    discardQueuedScriptDefinitionSafetyState(pending.key)
+  })
+}
+
 export function flushPendingServerBackedScriptDefinitionPatches(options: ServerCommandTransportOptions = {}): void {
   for (const key of Array.from(pendingReplacements.keys())) {
     runPendingScriptDefinitionReplacement(key, options)
@@ -1898,7 +1913,8 @@ function runPendingScriptDefinitionReplacement(key: string, options: ServerComma
       pending.characterRowProjection.epoch,
     )
   ) {
-    void acknowledgePendingMutation(pending.outbox)
+    // A projection epoch can invalidate local rollback/acknowledgement safety,
+    // but it cannot prove that this exact durable mutation reached the server.
     discardQueuedScriptDefinitionSafetyState(key)
     return
   }
@@ -1906,7 +1922,6 @@ function runPendingScriptDefinitionReplacement(key: string, options: ServerComma
     pending.moduleCollectionProjectionEpoch !== undefined &&
     hasCollectionProjectionEpochChanged('modules', pending.moduleCollectionProjectionEpoch)
   ) {
-    void acknowledgePendingMutation(pending.outbox)
     discardQueuedScriptDefinitionSafetyState(key)
     return
   }
@@ -1914,15 +1929,17 @@ function runPendingScriptDefinitionReplacement(key: string, options: ServerComma
     pending.settingsGroupProjectionEpoch !== undefined &&
     hasSettingsGroupProjectionEpochChanged('advanced', pending.settingsGroupProjectionEpoch)
   ) {
-    void acknowledgePendingMutation(pending.outbox)
     discardQueuedScriptDefinitionSafetyState(key)
     return
   }
   if (pending.validateCurrent && !pending.validateCurrent()) {
+    pending.settlementCleanup?.()
     void acknowledgePendingMutation(pending.outbox)
     discardQueuedScriptDefinitionSafetyState(key)
     return
   }
+  pending.settlementCleanup?.()
+  pending.settlementCleanup = undefined
   void dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
     pending.command(pending.previous, pending.plan, { ...options, ...transport }),
   )

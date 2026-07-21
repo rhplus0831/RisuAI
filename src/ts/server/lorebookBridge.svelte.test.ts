@@ -24,6 +24,7 @@ const durableRecorded = vi.hoisted(() => ({
   staged: [] as Array<{ key: string; intent: Record<string, unknown>; mutationId: string }>,
   dispatched: [] as Array<{ intent: Record<string, unknown>; mutationId: string }>,
   acknowledged: [] as string[],
+  settlementListeners: new Map<string, Set<(settlement: 'accepted' | 'discarded') => void>>(),
 }))
 
 vi.mock('./pendingMutationOutbox', () => ({
@@ -47,7 +48,18 @@ vi.mock('./pendingMutationOutbox', () => ({
 }))
 
 vi.mock('./durableMutationDispatch', () => ({
-  registerDurableMutationSettlementListener: () => () => {},
+  registerDurableMutationSettlementListener: (
+    mutationId: string,
+    listener: (settlement: 'accepted' | 'discarded') => void,
+  ) => {
+    const listeners = durableRecorded.settlementListeners.get(mutationId) ?? new Set()
+    listeners.add(listener)
+    durableRecorded.settlementListeners.set(mutationId, listeners)
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) durableRecorded.settlementListeners.delete(mutationId)
+    }
+  },
   dispatchDurableMutation: async (
     handle: { mutationId: string; phase: string },
     intent: Record<string, unknown>,
@@ -286,6 +298,12 @@ function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T) => void
   return { promise, resolve }
 }
 
+function publishLorebookSettlement(mutationId: string, settlement: 'accepted' | 'discarded'): void {
+  const listeners = [...(durableRecorded.settlementListeners.get(mutationId) ?? [])]
+  durableRecorded.settlementListeners.delete(mutationId)
+  for (const listener of listeners) listener(settlement)
+}
+
 function exportedFunctionSource(source: string, name: string): string {
   const start = source.indexOf(`export function ${name}`)
   expect(start).toBeGreaterThanOrEqual(0)
@@ -311,6 +329,7 @@ beforeEach(() => {
   durableRecorded.staged.length = 0
   durableRecorded.dispatched.length = 0
   durableRecorded.acknowledged.length = 0
+  durableRecorded.settlementListeners.clear()
 })
 
 afterEach(() => {
@@ -2659,7 +2678,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     })
   })
 
-  it('discards the staged mutation after an authoritative lorebook replacement', async () => {
+  it('retains the staged mutation after an authoritative lorebook replacement until exact settlement', async () => {
     setupK4EditorDb()
     const scope = { kind: 'character', characterId: 'c-k4' } as const
     const queuedLorebookEpoch = captureCharacterLorebookProjectionEpoch('c-k4')
@@ -2673,8 +2692,12 @@ describe('K4 lorebook editor entry draft scope', () => {
 
     expect(queuedLorebookEpoch).toBeGreaterThanOrEqual(0)
     expect(characterEntryCommands()).toEqual([])
-    expect(durableRecorded.acknowledged).toEqual(['lore-mutation-1'])
+    expect(durableRecorded.acknowledged).toEqual([])
+    expect(durableRecorded.settlementListeners.has('lore-mutation-1')).toBe(true)
     expect((getDatabase().characters[0].globalLore as Entry[])[2].content).toBe('attempted edit')
+
+    publishLorebookSettlement('lore-mutation-1', 'accepted')
+    expect(durableRecorded.settlementListeners.has('lore-mutation-1')).toBe(false)
   })
 
   it('starts a new coalesced rollback baseline after the relevant projection epoch changes', async () => {

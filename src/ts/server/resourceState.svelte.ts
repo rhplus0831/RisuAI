@@ -18,6 +18,7 @@ import { reapplyRetainedCharacterProjections } from './chatRetainedProjection'
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
 const characterRowProjectionEpochs = new Map<string, number>()
+let characterListProjectionEpoch = 0
 const chatBodyResourceRevisions = new Map<string, number>()
 let nextChatBodyProjectionEpoch = 0
 let chatBodyProjectionBaseline = 0
@@ -56,6 +57,18 @@ export function captureCharacterRowProjectionEpoch(characterId: string): number 
 
 export function hasCharacterRowProjectionEpochChanged(characterId: string, epoch: number): boolean {
   return captureCharacterRowProjectionEpoch(characterId) !== epoch
+}
+
+export function captureCharacterListProjectionEpoch(): number {
+  return characterListProjectionEpoch
+}
+
+export function hasCharacterListProjectionEpochChanged(epoch: number): boolean {
+  return captureCharacterListProjectionEpoch() !== epoch
+}
+
+function advanceCharacterListProjectionEpoch(): void {
+  characterListProjectionEpoch += 1
 }
 
 /** Whether a newer authoritative transcript body has already been applied. */
@@ -2074,6 +2087,7 @@ export function applyCharactersResource(
   charactersResourceState.rowErrors = {}
   charactersResourceState.status = 'ready'
   charactersResourceState.error = null
+  advanceCharacterListProjectionEpoch()
   advanceAllCharacterRowProjectionEpochs()
   if (!preserveResidentChatBodies) advanceAllChatBodyProjectionEpochs()
   if (!preserveResidentChatBodies) advanceAllCharacterLorebookBodyProjectionEpochs()
@@ -2145,6 +2159,7 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
     charactersResourceState.characters[index] = nextCharacter
   } else {
     charactersResourceState.characters.push(nextCharacter)
+    advanceCharacterListProjectionEpoch()
   }
   if (previousCharacter) {
     markRemovedCharacterBodyProjections([previousCharacter], [nextCharacter])
@@ -2373,6 +2388,7 @@ export function resetServerResourceState(): void {
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
   resetCharacterBodyResourceRevisions()
+  advanceCharacterListProjectionEpoch()
   advanceAllSettingsProjectionEpochs()
   advanceSettingsProjectionEpoch({ authoritativeFull: true })
   advanceLorebookPageProjectionEpoch()
@@ -2410,6 +2426,7 @@ export function resetServerResourceRevisionFencesForDatabaseReplacement(): void 
   charactersResourceState.rowRevisions = {}
 
   resetCharacterBodyResourceRevisions()
+  advanceCharacterListProjectionEpoch()
   advanceAllSettingsProjectionEpochs()
   advanceSettingsProjectionEpoch({ authoritativeFull: true })
   advanceLorebookPageProjectionEpoch()
@@ -2490,6 +2507,7 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   )
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
+  advanceCharacterListProjectionEpoch()
   advanceAllSettingsProjectionEpochs()
   advanceSettingsProjectionEpoch({ authoritativeFull: true })
   advanceLorebookPageProjectionEpoch()
@@ -2637,6 +2655,7 @@ function setResourceDatabaseField(property: string, value: unknown): void {
   if (property === 'characters') {
     charactersResourceState.characters = value as character[]
     charactersResourceState.status = 'ready'
+    advanceCharacterListProjectionEpoch()
     return
   }
   if (isServerCollectionName(property)) {
@@ -2656,6 +2675,7 @@ function deleteResourceDatabaseField(property: string): void {
     charactersResourceState.rowRevisions = {}
     charactersResourceState.rowStatuses = {}
     charactersResourceState.rowErrors = {}
+    advanceCharacterListProjectionEpoch()
     return
   }
   if (isServerCollectionName(property)) {

@@ -144,6 +144,7 @@ interface PendingPromptItemUpdate {
   sparseUpdate: SparsePromptItemUpdate
   intent: DurableMutationIntent
   outbox: PendingMutationHandle
+  settlementCleanup?: () => void
 }
 
 export interface StagedPromptItemDeleteMutation {
@@ -706,7 +707,10 @@ export function queuePromptItemProjectionUpdate(
   const correctiveUpdate = existing ? sparsePromptItemUpdate(existing.attemptedItem, attemptedItem) : null
   const sparseUpdate = mergeSparsePromptItemUpdates(netUpdate, correctiveUpdate)
   if (!sparseUpdate) {
-    if (existing) void acknowledgePendingMutation(existing.outbox)
+    if (existing) {
+      existing.settlementCleanup?.()
+      void acknowledgePendingMutation(existing.outbox)
+    }
     pendingPromptItemUpdates.delete(pendingKey)
     return
   }
@@ -723,6 +727,8 @@ export function queuePromptItemProjectionUpdate(
     intent,
     outbox: stagePendingMutation(promptItemMutationKey(promptPresetId, itemId), intent, existing?.outbox),
   }
+  existing?.settlementCleanup?.()
+  trackPendingPromptItemSettlement(pendingKey, pending)
   const requiresImmediateCorrection = netUpdate === null && correctiveUpdate !== null
   if (!requiresImmediateCorrection && delayMs !== null) {
     pending.timer = setTimeout(() => runPendingPromptItemUpdate(pendingKey), delayMs)
@@ -732,6 +738,17 @@ export function queuePromptItemProjectionUpdate(
   // already be immutable. Reserve it now so a following structural mutation
   // cannot overtake the value that restores the retained baseline.
   if (requiresImmediateCorrection) runPendingPromptItemUpdate(pendingKey)
+}
+
+function trackPendingPromptItemSettlement(pendingKey: string, pending: PendingPromptItemUpdate): void {
+  pending.settlementCleanup = registerDurableMutationSettlementListener(pending.outbox.mutationId, (settlement) => {
+    pending.settlementCleanup = undefined
+    if (pendingPromptItemUpdates.get(pendingKey)?.outbox.mutationId !== pending.outbox.mutationId) return
+    if (pending.timer) clearTimeout(pending.timer)
+    pendingPromptItemUpdates.delete(pendingKey)
+    if (settlement === 'accepted') clearDirtyPromptItemFieldsAcknowledgedByAttempt(pending)
+    else promptItemDirtyFieldsByOwnerAndId.delete(pendingKey)
+  })
 }
 
 /**
@@ -824,7 +841,7 @@ export function flushPendingPromptTemplatePatches(options: ServerCommandTranspor
 export function resetPromptTemplateSelectionDirtyState(): void {
   for (const pending of pendingPromptItemUpdates.values()) {
     if (pending.timer) clearTimeout(pending.timer)
-    void acknowledgePendingMutation(pending.outbox)
+    pending.settlementCleanup?.()
   }
   pendingPromptItemUpdates.clear()
   promptItemDirtyFieldsByOwnerAndId.clear()
@@ -914,7 +931,6 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
 
   if (!isCurrentPromptTemplateOwner(pending.ownerId)) {
     promptItemDirtyFieldsByOwnerAndId.delete(pendingKey)
-    void acknowledgePendingMutation(pending.outbox)
     return
   }
 
@@ -922,6 +938,8 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
 }
 
 function dispatchPromptItemUpdate(pending: PendingPromptItemUpdate, options: ServerCommandTransportOptions = {}): void {
+  pending.settlementCleanup?.()
+  pending.settlementCleanup = undefined
   const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(pending.projectionFence)
   const attempt = registerPromptItemAttempt(pending)
 

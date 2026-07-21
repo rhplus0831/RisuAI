@@ -47,6 +47,7 @@ const durableRecorded = vi.hoisted(() => ({
   staged: [] as Array<{ key: string; intent: Record<string, unknown>; mutationId: string }>,
   dispatched: [] as Array<{ intent: Record<string, unknown>; mutationId: string }>,
   acknowledged: [] as string[],
+  settlementListeners: new Map<string, Set<(settlement: 'accepted' | 'discarded') => void>>(),
 }))
 
 vi.mock('./pendingMutationOutbox', () => ({
@@ -69,6 +70,18 @@ vi.mock('./pendingMutationOutbox', () => ({
 }))
 
 vi.mock('./durableMutationDispatch', () => ({
+  registerDurableMutationSettlementListener: (
+    mutationId: string,
+    listener: (settlement: 'accepted' | 'discarded') => void,
+  ) => {
+    const listeners = durableRecorded.settlementListeners.get(mutationId) ?? new Set()
+    listeners.add(listener)
+    durableRecorded.settlementListeners.set(mutationId, listeners)
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) durableRecorded.settlementListeners.delete(mutationId)
+    }
+  },
   dispatchDurableMutation: async (
     handle: { mutationId: string; phase: string },
     intent: Record<string, unknown>,
@@ -316,6 +329,12 @@ function createDeferred<T>(): {
     resolve = promiseResolve
   })
   return { promise, resolve }
+}
+
+function publishScriptDefinitionSettlement(mutationId: string, settlement: 'accepted' | 'discarded'): void {
+  const listeners = [...(durableRecorded.settlementListeners.get(mutationId) ?? [])]
+  durableRecorded.settlementListeners.delete(mutationId)
+  for (const listener of listeners) listener(settlement)
 }
 
 async function drainDefinitionCommandMicrotasks(): Promise<void> {
@@ -614,6 +633,7 @@ beforeEach(() => {
   durableRecorded.staged.length = 0
   durableRecorded.dispatched.length = 0
   durableRecorded.acknowledged.length = 0
+  durableRecorded.settlementListeners.clear()
 })
 
 afterEach(async () => {
@@ -1060,7 +1080,7 @@ describe('character script definition draft bridge', () => {
     ])
   })
 
-  it('drops a queued definition write after an authoritative character row projection', async () => {
+  it('retains a queued definition intent after an authoritative character row projection until exact settlement', async () => {
     setupScriptDefinitions()
     const previous = {
       kind: 'characterScripts' as const,
@@ -1076,7 +1096,12 @@ describe('character script definition draft bridge', () => {
     await drainDefinitionCommandMicrotasks()
 
     expect(recorded.commands).toEqual([])
+    expect(durableRecorded.acknowledged).toEqual([])
+    expect(durableRecorded.settlementListeners.has('script-mutation-1')).toBe(true)
     expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'authoritative')])
+
+    publishScriptDefinitionSettlement('script-mutation-1', 'accepted')
+    expect(durableRecorded.settlementListeners.has('script-mutation-1')).toBe(false)
   })
 
   it('starts a new coalesced rollback baseline after an authoritative row epoch', async () => {
@@ -1117,7 +1142,7 @@ describe('character script definition draft bridge', () => {
 })
 
 describe('module script definition projection fencing', () => {
-  it('drops a queued replacement after an authoritative module collection projection', async () => {
+  it('retains a queued module intent after an authoritative collection projection', async () => {
     setupScriptDefinitions()
     moduleCollectionProjectionState.epoch = 3
     getDatabase().modules[0].regex = [script('module-script-1', 'attempted')]
@@ -1139,6 +1164,7 @@ describe('module script definition projection fencing', () => {
 
     expect(recorded.moduleDefinitionCalls).toEqual([])
     expect(recorded.commands).toEqual([])
+    expect(durableRecorded.acknowledged).toEqual([])
 
     expect(getDatabase().modules[0].regex).toEqual([script('module-script-1', 'authoritative')])
   })

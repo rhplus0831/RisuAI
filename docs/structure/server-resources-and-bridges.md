@@ -184,6 +184,16 @@ map until their command promises finish. Chat-generation-settings also keeps a
 pending-value guard so an older authoritative character row cannot replace a
 newer edit while its serialized save is in flight.
 
+Generic settings, collection, character-list, and character-row reads also
+capture their owner projection epochs and resident JSON at request start. A
+response is left unapplied when either fence changes while it is in flight, so
+an optimistic bridge edit cannot be rewound merely because its cached server
+revision has not advanced yet. Complete refreshes use the same per-slice fence:
+unaffected slices still refresh, while a concurrently edited slice and its
+unsettled durable intent remain available for dispatch or next-bootstrap
+replay. Projection replacement alone is never treated as proof that a staged
+mutation was accepted; mutation-id settlement is the acknowledgement signal.
+
 After a complete refresh, chat and lorebook hydration identities reset because
 the character endpoint intentionally carries message-free chat rows. The active
 chat is fetched again, selected-character identity is preserved by stable id
