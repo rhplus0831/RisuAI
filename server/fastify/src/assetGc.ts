@@ -13,6 +13,7 @@ import {
   type RisuSaveAssetReport,
   type RisuSaveAssetReferenceSource,
   buildRisuSaveAssetReport,
+  collectInlayAssetReferenceSources,
   collectMessageInlayReferences,
 } from './risuSave/assetReferences.js'
 
@@ -27,7 +28,7 @@ export const ASSET_GC_INTERVAL_MS = 15 * 60_000
 export const ASSET_GC_GRACE_MS = 60 * 60_000
 
 export interface AssetGcOptions {
-  /** SQLite connection used to hydrate chat-message references. */
+  /** SQLite connection used to project all durable reference surfaces. */
   db?: DatabaseSync
   /** Minimum age (by file mtime) before an unreferenced asset may be deleted. */
   graceMs?: number
@@ -62,6 +63,16 @@ interface CharacterReferenceRow {
   vitsFilesJson: unknown
   prebuiltAssetExcludeJson: unknown
   gptSoVitsAssetId: unknown
+  firstMessage: unknown
+  alternateGreetingsJson: unknown
+  backgroundHTML: unknown
+  creatorNotes: unknown
+  name: unknown
+  nickname: unknown
+  desc: unknown
+  personality: unknown
+  scenario: unknown
+  exampleMessage: unknown
 }
 
 interface ChatReferenceRow {
@@ -139,7 +150,17 @@ function loadCharacterReferenceRows(db: DatabaseSync): CharacterReferenceRow[] {
         json_extract(data_json, '$.ccAssets') AS ccAssetsJson,
         json_extract(data_json, '$.vits.files') AS vitsFilesJson,
         json_extract(data_json, '$.prebuiltAssetExclude') AS prebuiltAssetExcludeJson,
-        json_extract(data_json, '$.gptSoVitsConfig.ref_audio_data.assetId') AS gptSoVitsAssetId
+        json_extract(data_json, '$.gptSoVitsConfig.ref_audio_data.assetId') AS gptSoVitsAssetId,
+        json_extract(data_json, '$.firstMessage') AS firstMessage,
+        json_extract(data_json, '$.alternateGreetings') AS alternateGreetingsJson,
+        json_extract(data_json, '$.backgroundHTML') AS backgroundHTML,
+        json_extract(data_json, '$.creatorNotes') AS creatorNotes,
+        json_extract(data_json, '$.name') AS name,
+        json_extract(data_json, '$.nickname') AS nickname,
+        json_extract(data_json, '$.desc') AS desc,
+        json_extract(data_json, '$.personality') AS personality,
+        json_extract(data_json, '$.scenario') AS scenario,
+        json_extract(data_json, '$.exampleMessage') AS exampleMessage
       FROM characters
       ORDER BY position
     `,
@@ -176,12 +197,22 @@ function buildMinimalCharacter(row: CharacterReferenceRow, chats: unknown[]): Js
   if (row.gptSoVitsAssetId !== null && row.gptSoVitsAssetId !== undefined) {
     character.gptSoVitsConfig = { ref_audio_data: { assetId: row.gptSoVitsAssetId } }
   }
+  setIfPresent(character, 'firstMessage', row.firstMessage)
+  setIfPresent(character, 'alternateGreetings', readJsonFragment(row.alternateGreetingsJson))
+  setIfPresent(character, 'backgroundHTML', row.backgroundHTML)
+  setIfPresent(character, 'creatorNotes', row.creatorNotes)
+  setIfPresent(character, 'name', row.name)
+  setIfPresent(character, 'nickname', row.nickname)
+  setIfPresent(character, 'desc', row.desc)
+  setIfPresent(character, 'personality', row.personality)
+  setIfPresent(character, 'scenario', row.scenario)
+  setIfPresent(character, 'exampleMessage', row.exampleMessage)
   return character
 }
 
 function buildMinimalChat(row: ChatReferenceRow): JsonRecord {
   const chat: JsonRecord = {}
-  if (typeof row.dataId === 'string') chat.id = row.dataId
+  chat.id = typeof row.dataId === 'string' ? row.dataId : row.id
   const message = readJsonFragment(row.messageJson)
   if (message !== undefined) chat.message = message
   return chat
@@ -200,6 +231,15 @@ function loadAssetGcReferenceDatabase(db: DatabaseSync): unknown {
     icon,
   }))
   applyCollectionOverride(database, 'botPresets', collectionRows(db, 'bot_presets', '$.image'), (image) => ({ image }))
+  applyCollectionOverride(database, 'modelPresets', collectionRows(db, 'model_presets', '$.image'), (image) => ({
+    image,
+  }))
+  applyCollectionOverride(database, 'promptPresets', collectionRows(db, 'prompt_presets', '$.image'), (image) => ({
+    image,
+  }))
+
+  const pluginCustomStorage = loadPluginCustomStorageReferenceShape(db)
+  if (pluginCustomStorage !== null) database.pluginCustomStorage = pluginCustomStorage
 
   const characterRows = loadCharacterReferenceRows(db)
   if (characterRows.length > 0 || !Array.isArray(settings.characters)) {
@@ -225,7 +265,22 @@ export function buildAssetGcRisuSaveAssetReport(
   return buildRisuSaveAssetReport(database, assets, [
     ...collectMessageInlayReferences(db, database),
     ...collectInlayCatalogReferences(db),
+    ...collectPendingFinalizationInlayReferences(db),
   ])
+}
+
+function loadPluginCustomStorageReferenceShape(db: DatabaseSync): JsonRecord | null {
+  const rows = db.prepare('SELECT key, value_json FROM plugin_custom_storage ORDER BY key').all() as Array<{
+    key: string
+    value_json: string
+  }>
+  if (rows.length === 0) return null
+  const storage: JsonRecord = {}
+  for (const row of rows) {
+    const value = readJsonFragment(row.value_json)
+    if (value !== undefined) storage[row.key] = value
+  }
+  return storage
 }
 
 function collectInlayCatalogReferences(db: DatabaseSync): RisuSaveAssetReferenceSource[] {
@@ -236,10 +291,55 @@ function collectInlayCatalogReferences(db: DatabaseSync): RisuSaveAssetReference
   }))
 }
 
+function collectPendingFinalizationInlayReferences(db: DatabaseSync): RisuSaveAssetReferenceSource[] {
+  const messageRows = db
+    .prepare(
+      `
+        SELECT generation_id, json_extract(message_json, '$.data') AS data
+        FROM generation_finalization_retries
+        WHERE status = 'pending'
+        ORDER BY generation_id
+      `,
+    )
+    .all() as Array<{ generation_id: string; data: unknown }>
+  const alternateRows = db
+    .prepare(
+      `
+        SELECT
+          retries.generation_id,
+          CAST(alternates.key AS INTEGER) AS message_index,
+          CASE
+            WHEN alternates.type = 'object' THEN json_extract(alternates.value, '$.data')
+            ELSE NULL
+          END AS data
+        FROM generation_finalization_retries AS retries,
+          json_each(retries.alternate_messages_json) AS alternates
+        WHERE retries.status = 'pending'
+        ORDER BY retries.generation_id, CAST(alternates.key AS INTEGER)
+      `,
+    )
+    .all() as Array<{ generation_id: string; message_index: number; data: unknown }>
+
+  return [
+    ...messageRows.flatMap((row) =>
+      collectInlayAssetReferenceSources(
+        row.data,
+        `generationFinalizationRetries[${JSON.stringify(row.generation_id)}].message.data`,
+      ),
+    ),
+    ...alternateRows.flatMap((row) =>
+      collectInlayAssetReferenceSources(
+        row.data,
+        `generationFinalizationRetries[${JSON.stringify(row.generation_id)}].alternateMessages[${row.message_index}].data`,
+      ),
+    ),
+  ]
+}
+
 /**
  * Reference-counted, server-side asset garbage collection.
  *
- * Walks a minimal, message-free reference projection to compute the referenced
+ * Walks a minimal reference projection to compute the referenced
  * asset set (via the same walker `risuSave` uses for its orphan report), then
  * deletes content-addressed assets that nothing references — reference-counting
  * across the whole corpus, so a `sha256`-shared asset is only reclaimed at zero
@@ -249,7 +349,7 @@ function collectInlayCatalogReferences(db: DatabaseSync): RisuSaveAssetReference
  * atomic with respect to every other request handler in this single-threaded
  * process — the same property the command mutation path relies on. No revision
  * bump and no command event: an orphaned asset is by definition unreferenced by
- * the projected `Database`, so no client-visible state changes.
+ * the complete reference corpus, so no client-visible state changes.
  */
 export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcResult {
   const graceMs = opts.graceMs ?? ASSET_GC_GRACE_MS
@@ -264,11 +364,11 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
 
   if (!opts.db) return result
 
-  // Message inlay references come from a column-only `messages.data` token scan
-  // — no whole-corpus message hydrate / per-row JSON.parse on this
+  // Message and pending-finalization inlays come from column-only SQL token
+  // scans — no whole-corpus message hydrate / per-row body JSON.parse on this
   // periodic synchronous sweep. The scoped reference projection covers every
-  // other field the broad report walker used to inspect, without loading assets
-  // twice or hydrating the character/chat corpus into a persisted Database.
+  // other shared-walker field without loading assets twice or hydrating the
+  // character/chat corpus into a persisted Database.
   const assets = getAllAssetMetadata(opts.db)
   const report = buildAssetGcRisuSaveAssetReport(opts.db, assets)
   result.scannedOrphans = report.orphaned.length

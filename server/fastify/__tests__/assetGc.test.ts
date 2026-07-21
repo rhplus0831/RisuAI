@@ -15,7 +15,11 @@ import {
   type PersistedAsset,
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
-import { replaceAllChatMessages } from '../src/messageStore.js'
+import {
+  enqueueGenerationFinalizationRetry,
+  markGenerationFinalizationRetryFailure,
+} from '../src/generationFinalizationRetry.js'
+import { addAlternateMessage, replaceAllChatMessages } from '../src/messageStore.js'
 import { buildRepositoryRisuSaveAssetReport, buildRisuSaveAssetReport } from '../src/risuSave/assetReferences.js'
 import { CORPUS_TABLES, assertScopedLoadOnHotPath } from './helpers/loadCostHarness.js'
 
@@ -31,6 +35,18 @@ const CHARACTER_REF = '3'.repeat(64)
 const CHAT_ROW_REF = '4'.repeat(64)
 const MESSAGE_REF = '5'.repeat(64)
 const NOTIFICATION_IMAGE_REF = '6'.repeat(64)
+const NAI_I2I_REF = '7'.repeat(64)
+const NAI_CHARACTER_REF = '8'.repeat(64)
+const WAVESPEED_REF = '9'.repeat(64)
+const MODEL_PRESET_REF = '01'.repeat(32)
+const PROMPT_PRESET_REF = '02'.repeat(32)
+const ALTERNATE_MESSAGE_REF = '03'.repeat(32)
+const FIRST_MESSAGE_REF = '04'.repeat(32)
+const ALTERNATE_GREETING_REF = '05'.repeat(32)
+const PENDING_MESSAGE_REF = '06'.repeat(32)
+const PENDING_ALTERNATE_REF = '07'.repeat(32)
+const PLUGIN_STORAGE_REF = '08'.repeat(32)
+const CHARACTER_RENDERED_TEXT_REF = '09'.repeat(32)
 
 const GRACE_MS = 60 * 60_000
 const NOW = 10_000_000_000
@@ -65,6 +81,26 @@ function embedChatRowMessage(chatId: string, messageData: string): void {
   const chat = JSON.parse(row.data_json) as Record<string, unknown>
   chat.message = [{ chatId: `${chatId}-embedded-message`, role: 'user', data: messageData }]
   db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chat), chatId)
+}
+
+function runGcAndExpectReferencesSurvive(
+  referenceIds: readonly string[],
+  options: { repositoryParity?: boolean } = {},
+): void {
+  const referencedFiles = referenceIds.map((id) => writeAssetFile(id, OLD_MTIME))
+  const orphanFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
+
+  if (options.repositoryParity !== false) {
+    expect(buildAssetGcRisuSaveAssetReport(db, getAllAssetMetadata(db))).toEqual(
+      buildRepositoryRisuSaveAssetReport(dataDir, db),
+    )
+  }
+
+  const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+
+  expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
+  for (const file of referencedFiles) expect(existsSync(file)).toBe(true)
+  expect(existsSync(orphanFile)).toBe(false)
 }
 
 beforeEach(() => {
@@ -328,5 +364,138 @@ describe('runAssetGc', () => {
     expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
     expect(existsSync(referencedFile)).toBe(true)
     expect(existsSync(orphanFile)).toBe(false)
+  })
+
+  it('keeps assets referenced only by nested NovelAI and WaveSpeed image settings', () => {
+    seedDatabase(
+      {
+        NAIImgConfig: {
+          image: NAI_I2I_REF,
+          character_image: `assets/${NAI_CHARACTER_REF}.png`,
+        },
+        wavespeedImage: { reference_image: WAVESPEED_REF },
+      },
+      [asset(NAI_I2I_REF), asset(NAI_CHARACTER_REF), asset(WAVESPEED_REF), asset(ORPHAN_OLD)],
+    )
+
+    runGcAndExpectReferencesSurvive([NAI_I2I_REF, NAI_CHARACTER_REF, WAVESPEED_REF])
+  })
+
+  it('keeps an asset referenced only by a split model preset image', () => {
+    seedDatabase({ modelPresets: [{ id: 'model-preset', image: MODEL_PRESET_REF }] }, [
+      asset(MODEL_PRESET_REF),
+      asset(ORPHAN_OLD),
+    ])
+
+    runGcAndExpectReferencesSurvive([MODEL_PRESET_REF])
+  })
+
+  it('keeps an asset referenced only by a split prompt preset image', () => {
+    seedDatabase({ promptPresets: [{ id: 'prompt-preset', image: `assets/${PROMPT_PRESET_REF}.webp` }] }, [
+      asset(PROMPT_PRESET_REF),
+      asset(ORPHAN_OLD),
+    ])
+
+    runGcAndExpectReferencesSurvive([PROMPT_PRESET_REF])
+  })
+
+  it('keeps an asset referenced only by a durable alternate-row inlay', () => {
+    seedDatabase({ characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a' }] }] }, [
+      asset(ALTERNATE_MESSAGE_REF),
+      asset(ORPHAN_OLD),
+    ])
+    addAlternateMessage(db, 'chat-a', {
+      chatId: 'alternate-a',
+      role: 'char',
+      data: `rerolled {{inlayed::${ALTERNATE_MESSAGE_REF}}}`,
+    })
+
+    runGcAndExpectReferencesSurvive([ALTERNATE_MESSAGE_REF])
+  })
+
+  it('keeps assets referenced only by first-message and alternate-greeting inlays', () => {
+    seedDatabase(
+      {
+        characters: [
+          {
+            chaId: 'char-a',
+            firstMessage: `hello {{inlay::${FIRST_MESSAGE_REF}}}`,
+            alternateGreetings: [`alternate {{inlayeddata::${ALTERNATE_GREETING_REF}}}`],
+          },
+        ],
+      },
+      [asset(FIRST_MESSAGE_REF), asset(ALTERNATE_GREETING_REF), asset(ORPHAN_OLD)],
+    )
+
+    runGcAndExpectReferencesSurvive([FIRST_MESSAGE_REF, ALTERNATE_GREETING_REF])
+  })
+
+  it('keeps inlays in other character text fields that feed rendered markdown', () => {
+    seedDatabase(
+      {
+        characters: [
+          {
+            chaId: 'char-a',
+            backgroundHTML: `background {{inlay::${CHARACTER_RENDERED_TEXT_REF}}}`,
+            creatorNotes: `notes {{inlayed::${CHARACTER_RENDERED_TEXT_REF}}}`,
+            desc: `description {{inlayeddata::${CHARACTER_RENDERED_TEXT_REF}}}`,
+          },
+        ],
+      },
+      [asset(CHARACTER_RENDERED_TEXT_REF), asset(ORPHAN_OLD)],
+    )
+
+    runGcAndExpectReferencesSurvive([CHARACTER_RENDERED_TEXT_REF])
+  })
+
+  it('keeps inlays referenced only by pending generation-finalization payloads', () => {
+    seedDatabase({ characters: [] }, [asset(PENDING_MESSAGE_REF), asset(PENDING_ALTERNATE_REF), asset(ORPHAN_OLD)])
+    enqueueGenerationFinalizationRetry(db, {
+      generationId: 'generation-a',
+      chatId: 'chat-a',
+      mode: 'send',
+      message: {
+        chatId: 'pending-message',
+        role: 'char',
+        data: `pending {{inlay::${PENDING_MESSAGE_REF}}}`,
+      } as never,
+      alternateMessages: [
+        {
+          chatId: 'pending-alternate',
+          role: 'char',
+          data: `pending alternate {{inlayeddata::${PENDING_ALTERNATE_REF}}}`,
+        } as never,
+      ],
+      chatVarMutations: [],
+    })
+    enqueueGenerationFinalizationRetry(db, {
+      generationId: 'generation-terminal',
+      chatId: 'chat-a',
+      mode: 'send',
+      message: {
+        chatId: 'terminal-message',
+        role: 'char',
+        data: `terminal {{inlay::${ORPHAN_OLD}}}`,
+      } as never,
+      chatVarMutations: [],
+    })
+    markGenerationFinalizationRetryFailure(db, 'generation-terminal', 'terminal fixture', true)
+
+    runGcAndExpectReferencesSurvive([PENDING_MESSAGE_REF, PENDING_ALTERNATE_REF], { repositoryParity: false })
+  })
+
+  it('keeps an asset referenced only by nested plugin custom storage JSON', () => {
+    seedDatabase(
+      {
+        pluginCustomStorage: {
+          pluginA: {
+            nested: [{ retainedAsset: `assets/${PLUGIN_STORAGE_REF}.png` }],
+          },
+        },
+      },
+      [asset(PLUGIN_STORAGE_REF), asset(ORPHAN_OLD)],
+    )
+
+    runGcAndExpectReferencesSurvive([PLUGIN_STORAGE_REF])
   })
 })

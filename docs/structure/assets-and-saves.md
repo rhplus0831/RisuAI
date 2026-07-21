@@ -38,7 +38,9 @@ revision but do not bump it or emit a command event. Re-uploading existing
 bytes is idempotent and can heal a missing file. Browser upload helpers request
 `Prefer: return=minimal`; compact single and bulk acknowledgements return
 `{ assetId, revision }` and `{ assetIds, revision }` respectively, while callers
-that omit the preference retain the fuller compatibility response.
+that omit the preference retain the fuller compatibility response. A dedup hit
+also refreshes the existing file's mtime on a best-effort basis, restarting the
+GC grace window before the upload's later reference mutation commits.
 
 `GET` and `HEAD /api/v1/assets/:id` are public immutable reads for ids present
 in metadata and on disk. `POST /api/v1/assets/exists` is a public read-only POST
@@ -50,16 +52,25 @@ field. `stableDiff.ts` reads and encodes the asset only while constructing the
 provider request. Imported base64-only settings and inline fallbacks for an
 unreadable imported asset reference remain supported.
 
-`runAssetGc()` walks known asset-reference fields across a minimal SQLite
-reference shape, the `inlay_catalog`, and `messages.data` inlay references, then removes
-unreferenced metadata and stray files. The minimal GC shape currently loads
-settings, module assets, persona icons, bot preset images, character/chat
-reference fields, and active message inlays rather than a full repository
-load. The broader save-report walker also knows split model/prompt preset
-images; those split preset images are not part of the minimal GC shape
-today, so keep `assetGc.ts` in sync when adding reference-bearing split tables.
-A grace window protects upload-then-reference races. GC does not bump the
-revision or emit command events.
+`runAssetGc()` walks known asset-reference fields through the shared save-report
+walker, using a minimal SQLite reference shape rather than a full repository
+load. That shape covers root and nested image settings (including NovelAI I2I,
+NovelAI character reference, and WaveSpeed reference image), module assets,
+persona icons, bot/model/prompt preset images, character/chat reference fields,
+and inlay tokens in character-rendered text. Column-only scans add active and
+durable alternate `messages.data` inlays, pending generation-finalization
+message/alternate payloads, and `inlay_catalog` membership. Plugin custom
+storage is the deliberate arbitrary-JSON exception: GC loads only its
+`value_json` columns and deeply scans strings, while the shared walker applies
+the same sha256-id/`assets/<id>.<ext>` validation used everywhere else.
+
+The shared walker is authoritative for known database fields, so save/bundle
+reports and GC must gain those fields together. Operational-only references
+(pending finalization rows and catalog membership) are appended only in the GC
+report because they are not part of an exported database; message-table scans
+are shared by repository export reports and GC. A grace window protects
+upload-then-reference races. GC remains revision-free and emits no command
+events.
 
 ### Inlay Catalog
 

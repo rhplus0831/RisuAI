@@ -688,6 +688,31 @@ describe('Phase 2C assets', () => {
     })
   })
 
+  it('refreshes an existing deduplicated asset mtime on re-upload', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const first = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+    expect(first.statusCode).toBe(201)
+
+    const onDisk = path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`)
+    const oldMtime = new Date('2000-01-01T00:00:00.000Z')
+    fs.utimesSync(onDisk, oldMtime, oldMtime)
+
+    const second = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+
+    expect(second.statusCode).toBe(200)
+    expect(fs.statSync(onDisk).mtimeMs).toBeGreaterThan(oldMtime.getTime())
+  })
+
   it('heals a missing blob when the same asset is re-uploaded', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const first = await harness.app.inject({

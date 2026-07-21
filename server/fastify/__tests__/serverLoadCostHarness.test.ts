@@ -1684,7 +1684,15 @@ describe('server load-count harness on the large-corpus fixture', () => {
       expect(observed.loadCountByTable.bot_presets ?? 0).toBe(0)
       expect(observed.loadCountByTable.messages ?? 0).toBe(0)
       expect(observed.loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
-      expect(observed.corpusLoads.filter((load) => load.table !== 'assets').map((load) => load.table)).toEqual([])
+      // Plugin storage is the bounded arbitrary-JSON exception: GC must scan
+      // every value_json string candidate, while all structured corpus tables
+      // stay on scalar json_extract projections.
+      expect(observed.loadCountByTable.plugin_custom_storage).toBe(1)
+      expect(
+        observed.corpusLoads
+          .filter((load) => load.table !== 'assets' && load.table !== 'plugin_custom_storage')
+          .map((load) => load.table),
+      ).toEqual([])
     } finally {
       db.close()
     }

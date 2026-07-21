@@ -27,10 +27,10 @@ export interface RisuSaveAssetReport {
 const INLAY_TOKEN_RE = /\{\{(inlay|inlayed|inlayeddata)::(.+?)\}\}/g
 
 export function buildRepositoryRisuSaveAssetReport(dataDir: string, db: DatabaseSync): RisuSaveAssetReport {
-  // Message inlay references come from a column-only `messages.data` scan
-  // instead of hydrating every chat's message JSON; the message-free
-  // `loadPersisted` projection covers all non-message references and supplies
-  // the chat path labels, so the report is identical to the hydrated walk.
+  // Active and alternate message inlay references come from a column-only
+  // `messages.data` scan instead of hydrating every chat's message JSON. The
+  // message-free `loadPersisted` projection covers non-message references and
+  // supplies the stable chat path labels.
   const persisted = loadPersisted(db, dataDir)
   const assets = getAllAssetMetadata(db)
   return buildRisuSaveAssetReport(persisted.database, assets, collectMessageInlayReferences(db, persisted.database))
@@ -66,11 +66,11 @@ export function summarizeRisuSaveAssetReport(
 }
 
 /**
- * Inlay-token references from the messages table, without hydrating any chat
- * a column-only scan of `messages.data` in `seq` order, labeled
- * via each chat's position in the projected database so the paths match the
- * hydrated walker byte-for-byte. Rows whose chat is not in the projection are
- * skipped, mirroring the hydrate-then-walk behavior.
+ * Inlay-token references from the messages table, without hydrating any chat:
+ * a column-only scan of `messages.data` in `seq` order, labeled via each chat's
+ * position in the projected database. Active paths match the hydrated walker
+ * byte-for-byte; durable reroll candidates use the hydration payload's
+ * `alternates` label. Rows whose chat is not in the projection are skipped.
  */
 export function collectMessageInlayReferences(db: DatabaseSync, database: unknown): RisuSaveAssetReferenceSource[] {
   // chatId → every `database.characters[i].chats[j]` label that carries it
@@ -91,21 +91,27 @@ export function collectMessageInlayReferences(db: DatabaseSync, database: unknow
   if (chatLabels.size === 0) return []
 
   const rows = db
-    .prepare('SELECT chat_id, data FROM messages WHERE alternate = 0 ORDER BY chat_id, seq')
-    .all() as Array<{ chat_id: string; data: string }>
+    .prepare('SELECT chat_id, data, alternate FROM messages ORDER BY chat_id, alternate, seq')
+    .all() as Array<{ chat_id: string; data: string; alternate: number }>
 
   const references: RisuSaveAssetReferenceSource[] = []
   const messageIndexByChat = new Map<string, number>()
+  const alternateIndexByChat = new Map<string, number>()
   for (const row of rows) {
     const labels = chatLabels.get(row.chat_id)
-    const messageIndex = messageIndexByChat.get(row.chat_id) ?? 0
-    messageIndexByChat.set(row.chat_id, messageIndex + 1)
+    const isAlternate = row.alternate === 1
+    const indexByChat = isAlternate ? alternateIndexByChat : messageIndexByChat
+    const messageIndex = indexByChat.get(row.chat_id) ?? 0
+    indexByChat.set(row.chat_id, messageIndex + 1)
     if (!labels || typeof row.data !== 'string') continue
-    for (const match of row.data.matchAll(INLAY_TOKEN_RE)) {
+    for (const reference of collectInlayAssetReferenceSources(
+      row.data,
+      isAlternate ? `alternates[${messageIndex}].data` : `message[${messageIndex}].data`,
+    )) {
       for (const label of labels) {
         references.push({
-          value: match[2],
-          path: `${label}.message[${messageIndex}].data.${match[1]}`,
+          value: reference.value,
+          path: `${label}.${reference.path}`,
         })
       }
     }
@@ -123,6 +129,17 @@ function collectRisuSaveAssetReferences(
 
   addReference(found, root.userIcon, 'database.userIcon')
   addReference(found, root.customBackground, 'database.customBackground')
+
+  const naiImgConfig = readRecord(root.NAIImgConfig)
+  if (naiImgConfig) {
+    addReference(found, naiImgConfig.image, 'database.NAIImgConfig.image')
+    addReference(found, naiImgConfig.character_image, 'database.NAIImgConfig.character_image')
+  }
+
+  const wavespeedImage = readRecord(root.wavespeedImage)
+  if (wavespeedImage) {
+    addReference(found, wavespeedImage.reference_image, 'database.wavespeedImage.reference_image')
+  }
 
   readArray(root.personas).forEach((persona, index) => {
     const record = readRecord(persona)
@@ -174,9 +191,12 @@ function collectRisuSaveAssetReferences(
     addVitsReferences(found, record.vits, `${prefix}.vits.files`)
     addReferenceList(found, record.prebuiltAssetExclude, `${prefix}.prebuiltAssetExclude`)
     addGptSoVitsReference(found, record.gptSoVitsConfig, `${prefix}.gptSoVitsConfig`)
+    addCharacterTextInlayReferences(found, record, prefix)
   })
 
-  addMessageInlayReferenceSources(found, extraReferences)
+  addReferenceSources(found, collectDeepAssetReferenceSources(root.pluginCustomStorage, 'database.pluginCustomStorage'))
+
+  addReferenceSources(found, extraReferences)
 
   return [...found.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -184,11 +204,10 @@ function collectRisuSaveAssetReferences(
 }
 
 /**
- * Merge table-scanned message inlay references from message `data`. These are
- * free-text regex candidates, so each one still passes `addReference` id
- * validation before it is included.
+ * Merge references collected by targeted table scans. These are candidates,
+ * so each one still passes the walker's `addReference` id/path validation.
  */
-function addMessageInlayReferenceSources(
+function addReferenceSources(
   found: Map<string, Set<string>>,
   extraReferences: readonly RisuSaveAssetReferenceSource[],
 ): void {
@@ -204,13 +223,73 @@ function addChatInlayReferences(found: Map<string, Set<string>>, value: unknown,
     readArray(chatRecord.message).forEach((message, messageIndex) => {
       const messageRecord = readRecord(message)
       if (typeof messageRecord?.data !== 'string') return
-      for (const match of messageRecord.data.matchAll(INLAY_TOKEN_RE)) {
-        const tag = match[1]
-        const id = match[2]
-        addReference(found, id, `${label}[${chatIndex}].message[${messageIndex}].data.${tag}`)
-      }
+      addReferenceSources(
+        found,
+        collectInlayAssetReferenceSources(messageRecord.data, `${label}[${chatIndex}].message[${messageIndex}].data`),
+      )
     })
   })
+}
+
+function addCharacterTextInlayReferences(found: Map<string, Set<string>>, record: JsonRecord, label: string): void {
+  // These fields are either rendered directly through ParseMarkdown or can be
+  // interpolated by parser callbacks into a rendered greeting/background.
+  const textFields = [
+    'firstMessage',
+    'backgroundHTML',
+    'creatorNotes',
+    'name',
+    'nickname',
+    'desc',
+    'personality',
+    'scenario',
+    'exampleMessage',
+  ] as const
+  for (const field of textFields) {
+    addReferenceSources(found, collectInlayAssetReferenceSources(record[field], `${label}.${field}`))
+  }
+  readArray(record.alternateGreetings).forEach((greeting, index) => {
+    addReferenceSources(found, collectInlayAssetReferenceSources(greeting, `${label}.alternateGreetings[${index}]`))
+  })
+}
+
+/** Extract inlay-token candidates from one known renderable string. Asset-id
+ * validation remains centralized in `addReference` when the sources merge. */
+export function collectInlayAssetReferenceSources(value: unknown, label: string): RisuSaveAssetReferenceSource[] {
+  if (typeof value !== 'string') return []
+  return [...value.matchAll(INLAY_TOKEN_RE)].map((match) => ({
+    value: match[2],
+    path: `${label}.${match[1]}`,
+  }))
+}
+
+/** Deeply enumerate string candidates in one explicitly arbitrary JSON store.
+ * The caller chooses the bounded root; the shared walker still decides which
+ * strings are sha256 ids or legacy `assets/<id>.<ext>` references. */
+export function collectDeepAssetReferenceSources(value: unknown, label: string): RisuSaveAssetReferenceSource[] {
+  const references: RisuSaveAssetReferenceSource[] = []
+  const seen = new WeakSet<object>()
+
+  const visit = (candidate: unknown, path: string): void => {
+    if (typeof candidate === 'string') {
+      references.push({ value: candidate, path })
+      return
+    }
+    if (!candidate || typeof candidate !== 'object') return
+    if (seen.has(candidate)) return
+    seen.add(candidate)
+
+    if (Array.isArray(candidate)) {
+      candidate.forEach((entry, index) => visit(entry, `${path}[${index}]`))
+      return
+    }
+    for (const [key, entry] of Object.entries(candidate as JsonRecord)) {
+      visit(entry, `${path}[${JSON.stringify(key)}]`)
+    }
+  }
+
+  visit(value, label)
+  return references
 }
 
 function addTupleReferences(found: Map<string, Set<string>>, value: unknown, label: string): void {

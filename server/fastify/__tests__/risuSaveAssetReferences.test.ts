@@ -167,11 +167,65 @@ describe('Phase 9-8c RISUSAVE asset reference walker', () => {
     })
   })
 
+  it('walks nested image settings, split presets, character text inlays, and plugin storage', () => {
+    const report = buildRisuSaveAssetReport(
+      {
+        NAIImgConfig: {
+          image: CHAR_IMAGE,
+          character_image: `assets/${EMOTION}.png`,
+          base64image: 'data:image/png;base64,ignored',
+        },
+        wavespeedImage: { reference_image: ADDITIONAL, reference_base64image: 'ignored-inline-data' },
+        modelPresets: [{ image: VITS }],
+        promptPresets: [{ image: CC_ASSET }],
+        characters: [
+          {
+            firstMessage: `{{inlay::${USER_ICON}}}`,
+            alternateGreetings: [`{{inlayed::${CUSTOM_BACKGROUND}}}`],
+            backgroundHTML: `{{inlayeddata::${PERSONA_ICON}}}`,
+            creatorNotes: `{{inlay::${FOLDER_IMG}}}`,
+            desc: `{{inlay::${FOLDER_IMG_FILE}}}`,
+          },
+        ],
+        pluginCustomStorage: {
+          'plugin-a': { nested: [{ retained: `assets/${MODULE_ASSET}.webp` }] },
+        },
+      },
+      [
+        asset(CHAR_IMAGE),
+        asset(EMOTION),
+        asset(ADDITIONAL),
+        asset(VITS),
+        asset(CC_ASSET),
+        asset(USER_ICON),
+        asset(CUSTOM_BACKGROUND),
+        asset(PERSONA_ICON),
+        asset(FOLDER_IMG),
+        asset(FOLDER_IMG_FILE),
+        asset(MODULE_ASSET),
+      ],
+    )
+
+    expect(summarizeRisuSaveAssetReport(report)).toEqual({
+      referencedCount: 11,
+      missingCount: 0,
+      orphanedCount: 0,
+    })
+    expect(report.referenced).toContainEqual({
+      id: MODULE_ASSET,
+      paths: ['database.pluginCustomStorage["plugin-a"]["nested"][0]["retained"]'],
+    })
+    expect(report.referenced).toContainEqual({
+      id: USER_ICON,
+      paths: ['database.characters[0].firstMessage.inlay'],
+    })
+  })
+
   it('ignores non-server asset strings instead of recursively over-including arbitrary JSON', () => {
     const report = buildRisuSaveAssetReport(
       {
         customBackground: 'assets/not-a-server-id.png',
-        pluginCustomStorage: { arbitrary: CHAR_IMAGE },
+        unrelatedJson: { arbitrary: CHAR_IMAGE },
         characters: [
           {
             chaId: 'char-a',

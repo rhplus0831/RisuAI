@@ -2395,6 +2395,16 @@ export function addAssets(db: DatabaseSync, dataDir: string, assets: readonly Ad
         if (!fs.existsSync(file)) {
           fs.mkdirSync(assetsDir(dataDir), { recursive: true })
           fs.writeFileSync(file, asset.bytes)
+        } else {
+          // A deduplicated upload is a fresh adoption attempt. Restart the GC
+          // grace window so a previously old orphan cannot be reclaimed before
+          // the caller's subsequent reference mutation lands.
+          try {
+            const now = new Date()
+            fs.utimesSync(file, now, now)
+          } catch {
+            // Best effort: the existing bytes are still valid and readable.
+          }
         }
         results.push({ entry: existing, created: false, revision: currentRevision })
         continue
