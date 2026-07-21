@@ -508,7 +508,10 @@ export async function readSinglePendingMutationOwner(): Promise<PendingMutationO
  * concrete server database. A same-session ownership reclaim keeps older-epoch
  * rows replayable: mutation receipts are lineage-scoped, and the current
  * active-writer header still gates every replay request. Rows from another
- * writer session or database lineage remain unsafe and are discarded.
+ * writer session in the same lineage stay encrypted and dormant so their owner
+ * can reclaim them later; listing and startup replay remain scoped to the
+ * current session. A database-lineage change is the conclusive disposal
+ * boundary because those intents can never be valid against the replacement.
  */
 export async function preparePendingMutationOutbox(
   input: PreparePendingMutationOutboxInput,
@@ -539,8 +542,7 @@ export async function preparePendingMutationOutbox(
     ])
     for (const mutation of mutations) {
       const lineageMismatch = mutation.databaseLineage !== scope.databaseLineage
-      const writerSessionMismatch = mutation.ownerWriterSessionId !== scope.writerSessionId
-      if (lineageMismatch || writerSessionMismatch) {
+      if (lineageMismatch) {
         mutationStore.delete(mutation.mutationId)
         discardedMutationIds.push(mutation.mutationId)
       }

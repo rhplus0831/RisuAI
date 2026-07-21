@@ -224,13 +224,16 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
     expect(baseline.statusCode).toBe(200)
 
-    const liveSqlite = path.join(harness.dataDir, 'risu.db')
-    const originalCopyFileSync = fs.copyFileSync.bind(fs)
-    vi.spyOn(fs, 'copyFileSync').mockImplementation((source, destination, mode) => {
-      if (String(source) === liveSqlite && String(destination).includes(`${path.sep}backups${path.sep}`)) {
-        throw new Error('injected automatic backup copy failure')
+    const originalWriteFileSync = fs.writeFileSync.bind(fs)
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((file, data, options) => {
+      if (
+        String(file).endsWith(`${path.sep}manifest.json`) &&
+        String(file).includes(`${path.sep}backups${path.sep}`) &&
+        String(data).includes('"kind":"automatic"')
+      ) {
+        throw new Error('injected automatic backup manifest failure')
       }
-      return originalCopyFileSync(source, destination, mode)
+      return originalWriteFileSync(file, data, options)
     })
 
     const imported = await authedInject({

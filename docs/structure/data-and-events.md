@@ -98,10 +98,18 @@ Authenticated startup reads any single unambiguous pending owner before taking
 writer ownership, prepares the outbox against the returned writer session and
 database lineage, flushes retained receipt acknowledgements, and replays pending
 mutations before resource hydration. Older epochs belonging to that same writer
-session remain eligible after a reclaim; other writer sessions and database
-lineages do not cross the scope. Transient intents remain encrypted for a later
-retry. Any retained or unreadable raw row stops startup from hydrating resources
-on top of unresolved local work.
+session remain eligible after a reclaim. Other sessions in the current lineage
+remain encrypted and dormant: they are excluded from this tab's replay, list,
+and raw-row startup count, so only the owning tab blocks on them and can reclaim
+them later. Multiple dormant owners make pre-bootstrap owner adoption ambiguous
+and are left untouched. There is deliberately no age-based purge because a
+frozen/offline tab cannot be proven dead; the encrypted payload cap and browser
+storage quota bound retention, while explicit outbox clearing and database
+lineage rotation are the only disposal boundaries. Different lineages do not
+cross the scope and are conclusively discarded during preparation. Transient
+intents remain encrypted for a later retry. Any retained or unreadable raw row
+owned by the current session stops startup from hydrating resources on top of
+unresolved local work.
 
 Stale clients receive 409. Browser command helpers cache the latest revision
 from bootstrap, command responses, and event reconciliation.
@@ -234,9 +242,9 @@ not ordinary browser `/commands/*` resource endpoints:
   domain revision. They are authenticated runtime state, not application
   resource state.
 - Backup create/delete mutate backup files without a domain revision; restore
-  replaces repository state and emits `state.restored`. Backup creation
-  file-copies the whole `risu.db` after a WAL checkpoint, but restore swaps only
-  the SQLite table allowlist in `repository.ts` via `ATTACH`. Operational tables
+  replaces repository state and emits `state.restored`. Backup creation uses
+  the online `node:sqlite` backup API after a checked WAL checkpoint, but restore
+  swaps only the SQLite table allowlist in `repository.ts` via `ATTACH`. Operational tables
   may therefore exist in the physical copy without being restored. Destructive
   import and restore rotate the current database lineage and clear server
   mutation receipts, so receipt and browser-outbox scopes from the old lineage

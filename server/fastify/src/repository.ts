@@ -1,14 +1,14 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import { backup as backupSqliteDatabase, DatabaseSync } from 'node:sqlite'
 import { createInitialDatabase } from './databaseDefaults.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
 import { getSchemaState } from './db.js'
 import { assessDatabaseInitialization, InitializeConflictError } from './databaseInitialization.js'
 import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent } from './commands/events.js'
-import { getDatabaseWriterMetadata, rotateDatabaseLineage } from './databaseLineage.js'
+import { getDatabaseLineage, getDatabaseWriterMetadata, rotateDatabaseLineage } from './databaseLineage.js'
 import { recordTableWrite } from './protocolMetrics.js'
 import {
   applyChatMessageDiff,
@@ -1078,6 +1078,15 @@ export class AutomaticBackupError extends Error {
   constructor(cause: unknown) {
     super(AUTOMATIC_BACKUP_ERROR, { cause })
     this.name = 'AutomaticBackupError'
+  }
+}
+
+export class WalCheckpointError extends Error {
+  readonly code = 'backup_wal_checkpoint_failed'
+
+  constructor(message: string, options: { cause?: unknown } = {}) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause })
+    this.name = 'WalCheckpointError'
   }
 }
 
@@ -2215,7 +2224,7 @@ function getCharacterRowsByIds(db: DatabaseSync, characterIds: readonly string[]
   return byId
 }
 
-export function applyImport(
+export async function applyImport(
   db: DatabaseSync,
   dataDir: string,
   database: unknown,
@@ -2224,11 +2233,11 @@ export function applyImport(
     cloneBeforeMessageSplit?: boolean
     automaticBackupRetention?: number
   } = {},
-): { revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number } {
+): Promise<{ revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number }> {
   if (database === null || database === undefined) {
     throw new ValidationError('database payload missing')
   }
-  createAutomaticSafetyBackup(db, dataDir, options.automaticBackupRetention)
+  await createAutomaticSafetyBackup(db, dataDir, options.automaticBackupRetention)
   // The imported payload carries embedded `message[]`; split them into the
   // messages table and persist the message-free domain tables. By default we
   // persist a *clone* so the caller's `database` object is left fully hydrated —
@@ -2565,10 +2574,10 @@ export function backupDir(dataDir: string, id: string): string {
 //   - 'assets'   : content-addressed asset bytes. Copied as a directory.
 //   - 'risu.db'  : SQLite database containing schema/revision state, domain tables,
 //                  asset metadata, command events, chat-history tables, and Hypa
-//                  V3 memory tables. Backed up after a WAL
-//                  checkpoint; restored via ATTACH so the live `DatabaseSync` handle
-//                  stays valid. Every table that must survive restore is listed in
-//                  SQLITE_BACKUP_TABLES.
+//                  V3 memory tables. Backed up through node:sqlite's online backup
+//                  API after a checked WAL checkpoint; restored via ATTACH so the
+//                  live `DatabaseSync` handle stays valid. Every table that must
+//                  survive restore is listed in SQLITE_BACKUP_TABLES.
 //   - 'save'     : legacy storage directory written by /api/v1/storage/*.
 export const KNOWN_DATA_DIR_CHILDREN = ['assets', 'risu.db', 'save'] as const
 
@@ -2576,13 +2585,10 @@ function saveDir(dataDir: string): string {
   return path.join(dataDir, 'save')
 }
 
-function sqliteDbPath(dataDir: string): string {
-  return path.join(dataDir, 'risu.db')
-}
-
 // Tables that must survive a backup/restore round-trip. Kept in sync with every
-// SQLite table created by the server DDL; `createBackup` file-copies all of
-// risu.db, but `restoreBackup` swaps tables one-by-one via ATTACH. A table
+// SQLite table created by the server DDL; `createBackup` copies all of risu.db
+// through the online backup API, but `restoreBackup` swaps tables one-by-one via
+// ATTACH. A table
 // absent here would not be restored, leaving live rows desynced from the restored
 // SQLite snapshot.
 const SQLITE_BACKUP_TABLES = [
@@ -2685,42 +2691,80 @@ function validateBackupDatabasePayloads(
   throw new BackupDatabaseValidationError('backup_database_invalid')
 }
 
+interface WalCheckpointResult {
+  busy: number
+  log: number
+  checkpointed: number
+}
+
+const WAL_CHECKPOINT_ATTEMPTS = 5
+const WAL_CHECKPOINT_RETRY_DELAY_MS = 20
+const WAL_CHECKPOINT_RETRY_SIGNAL = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT))
+
 function checkpointWal(db: DatabaseSync): void {
-  // After TRUNCATE the WAL file is removed; the main `risu.db` file contains
-  // the committed state. Safe to file-copy after this call.
-  try {
-    db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
-  } catch {
-    // Non-WAL databases (or unsupported pragma in some builds) — fall back to
-    // a passive checkpoint and proceed; the copied bytes still represent the
-    // committed state at this point because no writers are racing.
-    db.exec('PRAGMA wal_checkpoint')
+  let lastResult: WalCheckpointResult | undefined
+  for (let attempt = 1; attempt <= WAL_CHECKPOINT_ATTEMPTS; attempt += 1) {
+    let result: WalCheckpointResult
+    try {
+      result = db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get() as unknown as WalCheckpointResult
+    } catch (cause) {
+      throw new WalCheckpointError('SQLite WAL checkpoint failed before backup', { cause })
+    }
+    if (
+      !result ||
+      !Number.isInteger(result.busy) ||
+      !Number.isInteger(result.log) ||
+      !Number.isInteger(result.checkpointed)
+    ) {
+      throw new WalCheckpointError('SQLite WAL checkpoint returned an invalid result')
+    }
+    lastResult = result
+    if (result.busy === 0 && result.checkpointed >= result.log) return
+    if (attempt < WAL_CHECKPOINT_ATTEMPTS) {
+      Atomics.wait(WAL_CHECKPOINT_RETRY_SIGNAL, 0, 0, WAL_CHECKPOINT_RETRY_DELAY_MS)
+    }
   }
+
+  throw new WalCheckpointError(
+    `SQLite WAL checkpoint remained busy after ${WAL_CHECKPOINT_ATTEMPTS} attempts ` +
+      `(busy=${lastResult?.busy ?? 'unknown'}, log=${lastResult?.log ?? 'unknown'}, ` +
+      `checkpointed=${lastResult?.checkpointed ?? 'unknown'}); backup was not created`,
+  )
 }
 
 export const AUTOMATIC_BACKUP_LABEL = 'Automatic safety snapshot'
 
-export function createBackup(
+export async function createBackup(
   db: DatabaseSync,
   dataDir: string,
   label: string | null = null,
   options: { kind?: 'manual' | 'automatic' } = {},
-): BackupManifest {
-  const { revision } = getSchemaState(db)
+): Promise<BackupManifest> {
   const id = generateBackupId()
   const dir = backupDir(dataDir, id)
   try {
     fs.mkdirSync(dir, { recursive: true })
 
-    copyDirectoryIfPresent(assetsDir(dataDir), path.join(dir, 'assets'))
-    // SQLite: flush WAL then file-copy.
+    // Fail before copying any payload when a reader prevents committed WAL
+    // frames from reaching the main database. Node's online backup API then
+    // produces a transactionally consistent SQLite destination even if another
+    // connection writes after this preflight checkpoint.
     checkpointWal(db)
-    const liveSqlite = sqliteDbPath(dataDir)
-    if (fs.existsSync(liveSqlite)) {
-      fs.copyFileSync(liveSqlite, path.join(dir, 'risu.db'))
-    }
-    // Legacy storage directory.
+    const backupSqlite = path.join(dir, 'risu.db')
+    await backupSqliteDatabase(db, backupSqlite)
+
+    copyDirectoryIfPresent(assetsDir(dataDir), path.join(dir, 'assets'))
     copyDirectoryIfPresent(saveDir(dataDir), path.join(dir, 'save'))
+
+    let revision: number
+    let assetCount: number
+    const snapshotDb = new DatabaseSync(backupSqlite, { readOnly: true })
+    try {
+      revision = getSchemaState(snapshotDb).revision
+      assetCount = getAssetMetadataCount(snapshotDb)
+    } finally {
+      snapshotDb.close()
+    }
 
     const manifest: BackupManifest = {
       _version: BACKUP_MANIFEST_VERSION,
@@ -2729,7 +2773,7 @@ export function createBackup(
       kind: options.kind ?? 'manual',
       createdAt: new Date().toISOString(),
       revision,
-      assetCount: getAssetMetadataCount(db),
+      assetCount,
     }
     fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest))
     return manifest
@@ -2793,23 +2837,24 @@ function pruneAutomaticBackups(dataDir: string, retention: number, protectedIds:
 }
 
 /**
- * Capture initialized live state before a whole-database replacement. All work
- * is synchronous, so creation, retention, and the destructive transaction form
- * one event-loop critical section. A restore target can be protected from
- * retention until its payload is no longer in use.
+ * Capture initialized live state before a whole-database replacement. The
+ * online SQLite copy may yield, but mutations through the same DatabaseSync are
+ * incorporated by node:sqlite; after it resolves, retention and the destructive
+ * transaction continue in the same microtask. A restore target can be protected
+ * from retention until its payload is no longer in use.
  */
-function createAutomaticSafetyBackup(
+async function createAutomaticSafetyBackup(
   db: DatabaseSync,
   dataDir: string,
   retention = DEFAULT_AUTOMATIC_BACKUP_RETENTION,
   protectedBackupIds: readonly string[] = [],
-): BackupManifest | null {
+): Promise<BackupManifest | null> {
   // First-run imports intentionally do not snapshot the empty schema. The
   // settings row is the same initialization authority used by loadPersisted.
   if (!liveDatabaseIsInitialized(db)) return null
 
   try {
-    const manifest = createBackup(db, dataDir, AUTOMATIC_BACKUP_LABEL, { kind: 'automatic' })
+    const manifest = await createBackup(db, dataDir, AUTOMATIC_BACKUP_LABEL, { kind: 'automatic' })
     pruneAutomaticBackups(dataDir, retention, new Set([...protectedBackupIds, manifest.id]))
     return manifest
   } catch (err) {
@@ -2817,7 +2862,324 @@ function createAutomaticSafetyBackup(
   }
 }
 
-function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string | null, beforeCommit?: () => void): string {
+const RESTORE_SWAP_JOURNAL_VERSION = 1
+const RESTORE_SWAP_JOURNAL_RE = new RegExp(`^\\.restore-journal-(${BACKUP_ID_RE.source.slice(1, -1)})\\.json$`)
+const RESTORE_SWAP_PHASES = [
+  'prepared',
+  'assets-parked',
+  'save-parked',
+  'assets-installed',
+  'save-installed',
+  'committing',
+  'committed',
+  'rolled-back',
+] as const
+
+type RestoreSwapPhase = (typeof RESTORE_SWAP_PHASES)[number]
+
+interface RestoreSwapComponentJournal {
+  livePath: string
+  backupPath: string
+  tmpPath: string
+  oldPath: string
+  hadLiveDirectory: boolean
+  backupHadDirectory: boolean
+}
+
+interface RestoreSwapJournal {
+  _version: typeof RESTORE_SWAP_JOURNAL_VERSION
+  restoreId: string
+  phase: RestoreSwapPhase
+  expectedDatabaseLineage: string | null
+  assets: RestoreSwapComponentJournal
+  save: RestoreSwapComponentJournal
+}
+
+export interface RestoreRecoveryLogger {
+  info?(bindings: Record<string, unknown>, message: string): void
+  warn(bindings: Record<string, unknown>, message: string): void
+  error(bindings: Record<string, unknown>, message: string): void
+}
+
+function restoreJournalPath(dataDir: string, id: string): string {
+  return path.join(dataDir, `.restore-journal-${id}.json`)
+}
+
+function createRestoreSwapJournal(dataDir: string, id: string): RestoreSwapJournal {
+  const backupRoot = backupDir(dataDir, id)
+  const liveAssets = assetsDir(dataDir)
+  const backupAssets = path.join(backupRoot, 'assets')
+  const liveSave = saveDir(dataDir)
+  const backupSave = path.join(backupRoot, 'save')
+  return {
+    _version: RESTORE_SWAP_JOURNAL_VERSION,
+    restoreId: id,
+    phase: 'prepared',
+    expectedDatabaseLineage: null,
+    assets: {
+      livePath: liveAssets,
+      backupPath: backupAssets,
+      tmpPath: path.join(dataDir, `.assets-${id}.tmp`),
+      oldPath: path.join(dataDir, `.assets-${id}.old`),
+      hadLiveDirectory: fs.existsSync(liveAssets),
+      backupHadDirectory: fs.existsSync(backupAssets),
+    },
+    save: {
+      livePath: liveSave,
+      backupPath: backupSave,
+      tmpPath: path.join(dataDir, `.save-${id}.tmp`),
+      oldPath: path.join(dataDir, `.save-${id}.old`),
+      hadLiveDirectory: fs.existsSync(liveSave),
+      backupHadDirectory: fs.existsSync(backupSave),
+    },
+  }
+}
+
+function restoreSwapComponentMatches(
+  value: unknown,
+  expected: RestoreSwapComponentJournal,
+): value is RestoreSwapComponentJournal {
+  if (!isRecord(value)) return false
+  return (
+    value.livePath === expected.livePath &&
+    value.backupPath === expected.backupPath &&
+    value.tmpPath === expected.tmpPath &&
+    value.oldPath === expected.oldPath &&
+    typeof value.hadLiveDirectory === 'boolean' &&
+    typeof value.backupHadDirectory === 'boolean'
+  )
+}
+
+function readRestoreSwapJournal(dataDir: string, journalFile: string, id: string): RestoreSwapJournal {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(fs.readFileSync(journalFile, 'utf8'))
+  } catch (cause) {
+    throw new Error(`Restore journal is unreadable: ${journalFile}`, { cause })
+  }
+  const expected = createRestoreSwapJournal(dataDir, id)
+  if (
+    !isRecord(parsed) ||
+    parsed._version !== RESTORE_SWAP_JOURNAL_VERSION ||
+    parsed.restoreId !== id ||
+    !RESTORE_SWAP_PHASES.includes(parsed.phase as RestoreSwapPhase) ||
+    !(
+      parsed.expectedDatabaseLineage === null ||
+      (typeof parsed.expectedDatabaseLineage === 'string' && parsed.expectedDatabaseLineage.length > 0)
+    ) ||
+    !restoreSwapComponentMatches(parsed.assets, expected.assets) ||
+    !restoreSwapComponentMatches(parsed.save, expected.save)
+  ) {
+    throw new Error(`Restore journal is invalid or contains unexpected paths: ${journalFile}`)
+  }
+  return parsed as unknown as RestoreSwapJournal
+}
+
+function writeRestoreSwapJournal(journalFile: string, journal: RestoreSwapJournal, initial = false): void {
+  const serialized = JSON.stringify(journal)
+  if (initial) {
+    fs.writeFileSync(journalFile, serialized, { flag: 'wx' })
+    return
+  }
+  const pendingFile = `${journalFile}.writing`
+  fs.writeFileSync(pendingFile, serialized)
+  fs.renameSync(pendingFile, journalFile)
+}
+
+function updateRestoreSwapJournal(
+  journalFile: string,
+  journal: RestoreSwapJournal,
+  update: Partial<Pick<RestoreSwapJournal, 'phase' | 'expectedDatabaseLineage'>>,
+): void {
+  const next = { ...journal, ...update }
+  writeRestoreSwapJournal(journalFile, next)
+  Object.assign(journal, update)
+}
+
+function stageRestoreSwapComponent(component: RestoreSwapComponentJournal): void {
+  if (fs.existsSync(component.tmpPath)) return
+  if (component.backupHadDirectory) {
+    if (!fs.existsSync(component.backupPath)) {
+      throw new Error(`Restore source directory disappeared: ${component.backupPath}`)
+    }
+    fs.cpSync(component.backupPath, component.tmpPath, { recursive: true })
+  } else {
+    fs.mkdirSync(component.tmpPath, { recursive: true })
+  }
+}
+
+function ensureRestoreComponentForward(component: RestoreSwapComponentJournal): void {
+  if (fs.existsSync(component.livePath) && !fs.existsSync(component.tmpPath)) return
+  if (!fs.existsSync(component.tmpPath)) stageRestoreSwapComponent(component)
+
+  if (fs.existsSync(component.livePath)) {
+    if (fs.existsSync(component.oldPath) || !component.hadLiveDirectory) {
+      throw new Error(`Cannot identify the live restore directory safely: ${component.livePath}`)
+    }
+    fs.renameSync(component.livePath, component.oldPath)
+  }
+  fs.renameSync(component.tmpPath, component.livePath)
+}
+
+function restoreComponentBackward(component: RestoreSwapComponentJournal): void {
+  if (component.hadLiveDirectory) {
+    if (fs.existsSync(component.oldPath)) {
+      rmDirectoryIfPresent(component.livePath)
+      fs.cpSync(component.oldPath, component.livePath, { recursive: true })
+      return
+    }
+    // Parked copies are retained until a full forward/rollback completes. If no
+    // parked copy exists before commit, this live directory was never moved and
+    // is still the original, including a crash during temporary staging.
+    if (fs.existsSync(component.livePath)) return
+    throw new Error(`Original restore directory is unavailable: ${component.livePath}`)
+  }
+
+  if (fs.existsSync(component.oldPath)) {
+    throw new Error(`Unexpected parked restore directory requires manual inspection: ${component.oldPath}`)
+  }
+  if (fs.existsSync(component.tmpPath)) {
+    if (fs.existsSync(component.livePath)) {
+      throw new Error(`Unexpected live directory appeared during restore rollback: ${component.livePath}`)
+    }
+    return
+  }
+  rmDirectoryIfPresent(component.livePath)
+}
+
+function collectRestoreRecoveryError(errors: unknown[], operation: () => void): void {
+  try {
+    operation()
+  } catch (error) {
+    errors.push(error)
+  }
+}
+
+function throwRestoreRecoveryErrors(errors: unknown[], message: string): void {
+  if (errors.length === 0) return
+  throw new AggregateError(errors, message)
+}
+
+function cleanupRestoreSwapArtifacts(journalFile: string, journal: RestoreSwapJournal, message: string): void {
+  const errors: unknown[] = []
+  for (const component of [journal.assets, journal.save]) {
+    collectRestoreRecoveryError(errors, () => rmDirectoryIfPresent(component.oldPath))
+    collectRestoreRecoveryError(errors, () => rmDirectoryIfPresent(component.tmpPath))
+  }
+  collectRestoreRecoveryError(errors, () => fs.rmSync(`${journalFile}.writing`, { force: true }))
+  throwRestoreRecoveryErrors(errors, message)
+  fs.rmSync(journalFile, { force: true })
+}
+
+function completeRestoreSwapForward(journalFile: string, journal: RestoreSwapJournal): void {
+  const errors: unknown[] = []
+  collectRestoreRecoveryError(errors, () => ensureRestoreComponentForward(journal.assets))
+  collectRestoreRecoveryError(errors, () => ensureRestoreComponentForward(journal.save))
+  throwRestoreRecoveryErrors(errors, 'Unable to complete the committed restore directory swap')
+  if (!fs.existsSync(journal.assets.livePath) || !fs.existsSync(journal.save.livePath)) {
+    throw new Error('Committed restore directories are incomplete')
+  }
+  if (journal.phase !== 'committed') {
+    updateRestoreSwapJournal(journalFile, journal, { phase: 'committed' })
+  }
+  cleanupRestoreSwapArtifacts(journalFile, journal, 'Unable to clean up the committed restore directory swap')
+}
+
+function completeRestoreSwapBackward(journalFile: string, journal: RestoreSwapJournal): void {
+  if (journal.phase !== 'rolled-back') {
+    const errors: unknown[] = []
+    collectRestoreRecoveryError(errors, () => restoreComponentBackward(journal.assets))
+    collectRestoreRecoveryError(errors, () => restoreComponentBackward(journal.save))
+    throwRestoreRecoveryErrors(errors, 'Unable to roll back the interrupted restore directory swap')
+    if (
+      journal.assets.hadLiveDirectory !== fs.existsSync(journal.assets.livePath) ||
+      journal.save.hadLiveDirectory !== fs.existsSync(journal.save.livePath)
+    ) {
+      throw new Error('Interrupted restore rollback did not reproduce the original directory layout')
+    }
+    updateRestoreSwapJournal(journalFile, journal, { phase: 'rolled-back' })
+  }
+  cleanupRestoreSwapArtifacts(journalFile, journal, 'Unable to clean up the rolled-back restore directory swap')
+}
+
+function restoreJournalDatabaseCommitted(db: DatabaseSync, journal: RestoreSwapJournal): boolean {
+  if (journal.phase === 'committed') return true
+  return journal.expectedDatabaseLineage !== null && journal.expectedDatabaseLineage === getDatabaseLineage(db)
+}
+
+function logRestoreRecovery(
+  logger: RestoreRecoveryLogger | undefined,
+  level: 'info' | 'warn' | 'error',
+  bindings: Record<string, unknown>,
+  message: string,
+): void {
+  const method = logger?.[level]
+  if (method) {
+    method.call(logger, bindings, message)
+    return
+  }
+  if (level === 'error') console.error(message, bindings)
+  else if (level === 'warn') console.warn(message, bindings)
+}
+
+/** Recover every interrupted restore before any API route or background worker starts. */
+export function recoverInterruptedRestoreSwaps(
+  db: DatabaseSync,
+  dataDir: string,
+  logger?: RestoreRecoveryLogger,
+): void {
+  if (!fs.existsSync(dataDir)) return
+  const journals = fs
+    .readdirSync(dataDir)
+    .map((name) => ({ name, match: RESTORE_SWAP_JOURNAL_RE.exec(name) }))
+    .filter((entry): entry is { name: string; match: RegExpExecArray } => entry.match !== null)
+    .sort((left, right) => left.name.localeCompare(right.name))
+
+  for (const { name, match } of journals) {
+    const id = match[1]!
+    const journalFile = path.join(dataDir, name)
+    const journal = readRestoreSwapJournal(dataDir, journalFile, id)
+    const committed = restoreJournalDatabaseCommitted(db, journal)
+    try {
+      if (committed) completeRestoreSwapForward(journalFile, journal)
+      else completeRestoreSwapBackward(journalFile, journal)
+      logRestoreRecovery(
+        logger,
+        'warn',
+        { restoreId: id, direction: committed ? 'forward' : 'backward' },
+        'Recovered an interrupted backup restore directory swap',
+      )
+    } catch (error) {
+      logRestoreRecovery(logger, 'error', { err: error, restoreId: id }, 'Interrupted backup restore recovery failed')
+      throw error
+    }
+  }
+}
+
+function assertRestoreScratchIsUnused(journal: RestoreSwapJournal): void {
+  for (const scratchPath of [
+    journal.assets.tmpPath,
+    journal.assets.oldPath,
+    journal.save.tmpPath,
+    journal.save.oldPath,
+  ]) {
+    if (fs.existsSync(scratchPath)) {
+      throw new Error(`Refusing to overwrite unjournaled restore recovery data: ${scratchPath}`)
+    }
+  }
+}
+
+interface RestoreSqliteHooks {
+  beforeCommit?: (databaseLineage: string) => void
+  afterCommit?: (databaseLineage: string) => void
+  onPostCommitError?: (error: unknown) => void
+}
+
+function restoreSqliteFromBackup(
+  db: DatabaseSync,
+  backupDbPath: string | null,
+  hooks: RestoreSqliteHooks = {},
+): string {
   // Use ATTACH + table-level swap so the existing `db` handle stays valid
   // (file-rename would orphan open file descriptors and break every other
   // active route holding the same handle). The transaction is atomic with
@@ -2827,19 +3189,33 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string | null, 
     // any legacy db.json, so rows absent from the snapshot do not survive
     // restore.
     db.exec('BEGIN')
+    let databaseLineage: string
+    let committed = false
     try {
       for (const table of SQLITE_BACKUP_TABLES) {
         if (table === 'schema_version') continue
         db.exec(`DELETE FROM ${table}`)
       }
-      const databaseLineage = rotateDatabaseLineage(db)
-      beforeCommit?.()
+      databaseLineage = rotateDatabaseLineage(db)
+      hooks.beforeCommit?.(databaseLineage)
       db.exec('COMMIT')
-      return databaseLineage
+      committed = true
     } catch (err) {
-      db.exec('ROLLBACK')
+      if (!committed) {
+        try {
+          db.exec('ROLLBACK')
+        } catch (rollbackError) {
+          throw new AggregateError([err, rollbackError], 'SQLite restore and rollback both failed')
+        }
+      }
       throw err
     }
+    try {
+      hooks.afterCommit?.(databaseLineage)
+    } catch (error) {
+      hooks.onPostCommitError?.(error)
+    }
+    return databaseLineage
   }
 
   // ATTACH expects a SQL string literal; the path is constructed locally and
@@ -2847,6 +3223,8 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string | null, 
   const sqlLiteralPath = backupDbPath.replaceAll("'", "''")
   db.exec(`ATTACH DATABASE '${sqlLiteralPath}' AS bak`)
   let databaseLineage: string | undefined
+  let committed = false
+  let operationError: unknown
   try {
     db.exec('BEGIN')
     try {
@@ -2877,27 +3255,49 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string | null, 
       }
       repairPersistedGlobalLorebookIdsInSqlite(db)
       databaseLineage = rotateDatabaseLineage(db)
-      beforeCommit?.()
+      hooks.beforeCommit?.(databaseLineage)
       db.exec('COMMIT')
+      committed = true
     } catch (err) {
-      db.exec('ROLLBACK')
+      if (!committed) {
+        try {
+          db.exec('ROLLBACK')
+        } catch (rollbackError) {
+          throw new AggregateError([err, rollbackError], 'SQLite restore and rollback both failed')
+        }
+      }
       throw err
     }
-  } finally {
-    db.exec('DETACH DATABASE bak')
+  } catch (error) {
+    operationError = error
   }
+  if (committed && databaseLineage) {
+    try {
+      hooks.afterCommit?.(databaseLineage)
+    } catch (error) {
+      hooks.onPostCommitError?.(error)
+    }
+  }
+  try {
+    db.exec('DETACH DATABASE bak')
+  } catch (detachError) {
+    if (committed) hooks.onPostCommitError?.(detachError)
+    else if (operationError) operationError = new AggregateError([operationError, detachError], 'SQLite restore failed')
+    else operationError = detachError
+  }
+  if (operationError) throw operationError
   if (!databaseLineage) {
     throw new Error('restore did not rotate database lineage')
   }
   return databaseLineage
 }
 
-export function restoreBackup(
+export async function restoreBackup(
   db: DatabaseSync,
   dataDir: string,
   id: string,
   options: { automaticBackupRetention?: number } = {},
-): { revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number } {
+): Promise<{ revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number }> {
   if (!isValidBackupId(id)) {
     throw new EntityNotFoundError(`Backup not found: ${id}`)
   }
@@ -2910,7 +3310,14 @@ export function restoreBackup(
   const backupSqlite = path.join(backupDir(dataDir, id), 'risu.db')
   const usableDatabasePayloads = validateBackupDatabasePayloads(backupSqlite, legacySnapshot)
 
-  const automaticBackup = createAutomaticSafetyBackup(
+  // A prior failed attempt is recovered before a safety snapshot or new
+  // staging work. Validation intentionally remains the first mutating guard.
+  recoverInterruptedRestoreSwaps(db, dataDir)
+  const journal = createRestoreSwapJournal(dataDir, id)
+  const journalFile = restoreJournalPath(dataDir, id)
+  assertRestoreScratchIsUnused(journal)
+
+  const automaticBackup = await createAutomaticSafetyBackup(
     db,
     dataDir,
     options.automaticBackupRetention,
@@ -2919,69 +3326,91 @@ export function restoreBackup(
     [id],
   )
 
-  const liveAssets = assetsDir(dataDir)
-  const backupAssets = path.join(backupDir(dataDir, id), 'assets')
-  const tmpAssets = path.join(dataDir, `.assets-${id}.tmp`)
-  const oldAssets = path.join(dataDir, `.assets-${id}.old`)
-  const liveSave = saveDir(dataDir)
-  const backupSave = path.join(backupDir(dataDir, id), 'save')
-  const tmpSave = path.join(dataDir, `.save-${id}.tmp`)
-  const oldSave = path.join(dataDir, `.save-${id}.old`)
-
-  rmDirectoryIfPresent(tmpAssets)
-  rmDirectoryIfPresent(oldAssets)
-  rmDirectoryIfPresent(tmpSave)
-  rmDirectoryIfPresent(oldSave)
-
-  if (fs.existsSync(backupAssets)) {
-    fs.cpSync(backupAssets, tmpAssets, { recursive: true })
-  } else {
-    fs.mkdirSync(tmpAssets, { recursive: true })
-  }
-  if (fs.existsSync(backupSave)) {
-    fs.cpSync(backupSave, tmpSave, { recursive: true })
-  } else {
-    fs.mkdirSync(tmpSave, { recursive: true })
-  }
-
-  if (fs.existsSync(liveAssets)) {
-    fs.renameSync(liveAssets, oldAssets)
-  }
-  if (fs.existsSync(liveSave)) {
-    fs.renameSync(liveSave, oldSave)
+  writeRestoreSwapJournal(journalFile, journal, true)
+  try {
+    stageRestoreSwapComponent(journal.assets)
+    stageRestoreSwapComponent(journal.save)
+  } catch (error) {
+    try {
+      completeRestoreSwapBackward(journalFile, journal)
+    } catch (recoveryError) {
+      throw new AggregateError([error, recoveryError], 'Restore staging failed and cleanup is incomplete')
+    }
+    throw error
   }
 
   let event: CommandEvent | undefined
   let databaseLineage: string | undefined
+  let sqliteCommitted = false
   try {
-    databaseLineage = restoreSqliteFromBackup(db, usableDatabasePayloads.sqlite ? backupSqlite : null, () => {
-      // If the backup carries a legacy db.json, import it into SQLite inside the
-      // restore transaction so a failed re-import rolls the whole restore back.
-      // Read it directly from the backup: restore must never stage a stale
-      // db.json in the live data directory, and the backup remains untouched.
-      if (usableDatabasePayloads.legacyJson) {
-        importLegacyDatabaseSnapshot(db, legacySnapshot)
-      }
-      event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
-      fs.renameSync(tmpAssets, liveAssets)
-      fs.renameSync(tmpSave, liveSave)
-    })
-  } catch (err) {
-    rmDirectoryIfPresent(liveAssets)
-    if (fs.existsSync(oldAssets)) {
-      fs.renameSync(oldAssets, liveAssets)
-    }
-    rmDirectoryIfPresent(liveSave)
-    if (fs.existsSync(oldSave)) {
-      fs.renameSync(oldSave, liveSave)
-    }
-    rmDirectoryIfPresent(tmpAssets)
-    rmDirectoryIfPresent(tmpSave)
-    throw err
-  }
+    if (journal.assets.hadLiveDirectory) fs.renameSync(journal.assets.livePath, journal.assets.oldPath)
+    updateRestoreSwapJournal(journalFile, journal, { phase: 'assets-parked' })
+    if (journal.save.hadLiveDirectory) fs.renameSync(journal.save.livePath, journal.save.oldPath)
+    updateRestoreSwapJournal(journalFile, journal, { phase: 'save-parked' })
 
-  rmDirectoryIfPresent(oldAssets)
-  rmDirectoryIfPresent(oldSave)
+    databaseLineage = restoreSqliteFromBackup(db, usableDatabasePayloads.sqlite ? backupSqlite : null, {
+      beforeCommit: (nextDatabaseLineage) => {
+        // Retain the transaction's lineage in memory too, so an ambiguous COMMIT
+        // error that is resolved as committed can still return the correct
+        // replacement ownership after finishing forward.
+        databaseLineage = nextDatabaseLineage
+        // If the backup carries a legacy db.json, import it into SQLite inside
+        // the restore transaction so a failed re-import rolls everything back.
+        if (usableDatabasePayloads.legacyJson) importLegacyDatabaseSnapshot(db, legacySnapshot)
+        event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
+
+        fs.renameSync(journal.assets.tmpPath, journal.assets.livePath)
+        updateRestoreSwapJournal(journalFile, journal, { phase: 'assets-installed' })
+        fs.renameSync(journal.save.tmpPath, journal.save.livePath)
+        updateRestoreSwapJournal(journalFile, journal, { phase: 'save-installed' })
+        // This lineage is transactionally visible iff COMMIT succeeds. Boot can
+        // therefore resolve a crash before the post-COMMIT phase write.
+        updateRestoreSwapJournal(journalFile, journal, {
+          phase: 'committing',
+          expectedDatabaseLineage: nextDatabaseLineage,
+        })
+      },
+      afterCommit: () => {
+        sqliteCommitted = true
+        updateRestoreSwapJournal(journalFile, journal, { phase: 'committed' })
+      },
+      onPostCommitError: (error) => {
+        sqliteCommitted = true
+        logRestoreRecovery(
+          undefined,
+          'error',
+          { err: error, restoreId: id },
+          'Backup restore committed; finishing the directory swap forward after a post-commit error',
+        )
+      },
+    })
+    sqliteCommitted = true
+    completeRestoreSwapForward(journalFile, journal)
+  } catch (err) {
+    const committed = sqliteCommitted || restoreJournalDatabaseCommitted(db, journal)
+    if (committed) {
+      logRestoreRecovery(
+        undefined,
+        'error',
+        { err, restoreId: id },
+        'Backup restore committed; completing the directory swap forward',
+      )
+      completeRestoreSwapForward(journalFile, journal)
+    } else {
+      try {
+        completeRestoreSwapBackward(journalFile, journal)
+      } catch (recoveryError) {
+        logRestoreRecovery(
+          undefined,
+          'error',
+          { err: recoveryError, restoreId: id },
+          'Backup restore rollback is incomplete and will be retried on boot',
+        )
+        throw new AggregateError([err, recoveryError], 'Backup restore failed and directory rollback is incomplete')
+      }
+      throw err
+    }
+  }
 
   if (!event) {
     throw new Error('restore did not produce a command event')

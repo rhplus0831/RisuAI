@@ -101,7 +101,7 @@ export function registerSaveRoutes(
         const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req), {
           maxExpandedBytes: options.maxExpandedImportBytes,
         })
-        const { revision, event, databaseLineage, writerEpoch, assetReport } = applyImportedDatabase(
+        const { revision, event, databaseLineage, writerEpoch, assetReport } = await applyImportedDatabase(
           db,
           dataDir,
           snapshot.database,
@@ -126,7 +126,7 @@ export function registerSaveRoutes(
       // `normalizeRisuSaveImportDatabase` returns a request-body-isolated
       // throwaway object for JSON bodies, so the repository can split
       // message rows in place without a second full-corpus clone.
-      const { revision, event, databaseLineage, writerEpoch, assetReport } = applyImportedDatabase(
+      const { revision, event, databaseLineage, writerEpoch, assetReport } = await applyImportedDatabase(
         db,
         dataDir,
         database,
@@ -181,7 +181,7 @@ export function registerSaveRoutes(
         decoded.format === 'legacy-local-backup'
           ? normalizeLegacyLocalBackupImportDatabase(snapshot.database, decoded.assetReferenceAliases)
           : snapshot.database
-      const { revision, event, databaseLineage, writerEpoch, assetReport } = applyImportedDatabase(
+      const { revision, event, databaseLineage, writerEpoch, assetReport } = await applyImportedDatabase(
         db,
         dataDir,
         importedDatabase,
@@ -513,7 +513,7 @@ async function streamUploadToTempFile(req: FastifyRequest, maxBytes: number): Pr
   return target
 }
 
-function applyImportedDatabase(
+async function applyImportedDatabase(
   db: DatabaseSync,
   dataDir: string,
   database: unknown,
@@ -523,16 +523,16 @@ function applyImportedDatabase(
     beforeRevision?: (db: DatabaseSync) => void
     onImportRollback?: () => void
   } = {},
-): {
+): Promise<{
   revision: number
-  event: ReturnType<typeof applyImport>['event']
+  event: Awaited<ReturnType<typeof applyImport>>['event']
   databaseLineage: string
   writerEpoch: number
   assetReport: ReturnType<typeof summarizeRisuSaveAssetReport>
-} {
-  let result: ReturnType<typeof applyImport>
+}> {
+  let result: Awaited<ReturnType<typeof applyImport>>
   try {
-    result = applyImport(db, dataDir, database, {
+    result = await applyImport(db, dataDir, database, {
       automaticBackupRetention: options.automaticBackupRetention,
       cloneBeforeMessageSplit: options.cloneBeforeMessageSplit,
       beforeRevision: () => {

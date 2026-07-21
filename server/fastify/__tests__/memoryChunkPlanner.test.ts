@@ -86,9 +86,11 @@ describe('Hypa V3 chunk/job planning bridge', () => {
       expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual(
         result.planned.map((entry) => entry.chunk.id),
       )
-      expect(listMemoryJobs(db, { chatId: 'chat-1', kind: 'summarize' }).map((row) => row.id)).toEqual(
-        result.planned.map((entry) => entry.job?.id),
-      )
+      expect(
+        listMemoryJobs(db, { chatId: 'chat-1', kind: 'summarize' })
+          .map((row) => row.id)
+          .sort(),
+      ).toEqual(result.planned.map((entry) => entry.job?.id).sort())
     } finally {
       db.close()
     }

@@ -207,9 +207,13 @@ store.
 | `src/ts/storage/backup.ts`, `src/ts/globalApi.svelte.ts`, `src/lib/Setting/Pages/UserSettings.svelte` | UI-facing backup/import/export wrappers and settings flows.            |
 
 Backups live under `data/backups/<id>/`. Current backups contain
-`manifest.json`, a file copy of the whole `risu.db`, assets when present, and
-optional legacy `save/`; new backups do not write `db.json`. Create, restore,
-and delete are authenticated and active-writer guarded; list is authenticated
+`manifest.json`, an online `node:sqlite` backup of the whole `risu.db`, assets
+when present, and optional legacy `save/`; new backups do not write `db.json`.
+Creation first reads the `wal_checkpoint(TRUNCATE)` result row and requires
+`busy = 0` with every logged frame checkpointed after bounded retries. A busy
+manual checkpoint returns `backup_wal_checkpoint_failed`; the same failure in a
+safety snapshot is wrapped as `automatic_backup_failed`. Create, restore, and
+delete are authenticated and active-writer guarded; list is authenticated
 read-only. Concrete routes are `POST /api/v1/backups`, `GET /api/v1/backups`,
 `POST /api/v1/backups/:id/restore`, and `DELETE /api/v1/backups/:id`.
 
@@ -236,7 +240,22 @@ not restored, and Web Push key files are outside the snapshot contract.
 Destructive import and restore rotate the live database lineage and clear server
 mutation receipts, so a browser outbox scoped to the previous lineage cannot
 replay across that boundary. Older backups containing `db.json` are restored by
-copying the file into the data dir and running `ensureDbJsonImported()`.
+importing the backup file directly inside the restore transaction; it is never
+staged as a live `data/db.json`.
+
+Each directory swap is protected by
+`data/.restore-journal-<backup-id>.json`. The journal records the exact live,
+staged, parked, and backup paths plus each phase before canonical directories
+move. Immediately before SQLite COMMIT it also records the replacement lineage;
+boot compares that marker with `database_metadata.lineage` to resolve the crash
+window before the post-COMMIT phase write. `buildApp()` recovers every journal
+before backfills, legacy import, routes, or workers start: a committed database
+finishes forward, while an uncommitted database restores both old directories.
+Recovery attempts both directory components even if one operation fails and
+keeps the journal and parked copies for the next boot. Old/staged directories
+are deleted only after both canonical directories are verified. A new restore
+recovers a valid prior journal first and refuses unjournaled `.old`/`.tmp`
+scratch paths rather than overwriting a possible sole surviving copy.
 
 Restore and bundle import call `adoptReplacementDatabaseOwnership()` before a
 complete refresh. A changed lineage/writer epoch retires the old projection,

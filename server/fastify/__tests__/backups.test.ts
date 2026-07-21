@@ -233,6 +233,71 @@ describe('Phase 2D backups', () => {
     expect(res.json().assetCount).toBe(0)
   })
 
+  it('fails a manual backup clearly when a reader keeps the WAL checkpoint busy', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'checkpoint-source' })
+    const backupsBefore = listBackups(harness.dataDir).map((backup) => backup.id)
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const reader = new DatabaseSync(liveDbPath)
+    const writer = new DatabaseSync(liveDbPath)
+    try {
+      reader.exec('BEGIN')
+      reader.prepare('SELECT revision FROM schema_version WHERE id = 1').get()
+      writer.exec('UPDATE schema_version SET revision = revision + 1 WHERE id = 1')
+
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/backups',
+        headers: { 'risu-auth': assertion },
+        payload: { label: 'must fail busy' },
+      })
+
+      expect(response.statusCode).toBe(503)
+      expect(response.json()).toMatchObject({ error: 'backup_wal_checkpoint_failed' })
+      expect(response.json().detail).toContain('remained busy')
+      expect(listBackups(harness.dataDir).map((backup) => backup.id)).toEqual(backupsBefore)
+    } finally {
+      reader.exec('ROLLBACK')
+      reader.close()
+      writer.close()
+    }
+  })
+
+  it('routes a busy safety-snapshot checkpoint through AutomaticBackupError and leaves the import unapplied', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'before-busy-safety-snapshot' })
+    const automaticBefore = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const reader = new DatabaseSync(liveDbPath)
+    const writer = new DatabaseSync(liveDbPath)
+    try {
+      reader.exec('BEGIN')
+      reader.prepare('SELECT revision FROM schema_version WHERE id = 1').get()
+      writer.exec('UPDATE schema_version SET revision = revision + 1 WHERE id = 1')
+
+      const imported = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        headers: { 'risu-auth': assertion },
+        payload: { database: { characters: [], tag: 'must-not-import' } },
+      })
+
+      expect(imported.statusCode).toBe(500)
+      expect(imported.json()).toEqual({ error: 'automatic_backup_failed' })
+      const bootstrap = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': assertion },
+      })
+      expect(bootstrap.json().database).toMatchObject({ tag: 'before-busy-safety-snapshot' })
+      expect(listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')).toEqual(automaticBefore)
+    } finally {
+      reader.exec('ROLLBACK')
+      reader.close()
+      writer.close()
+    }
+  })
+
   it('lists backups newest-first', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const a = await harness.app.inject({
@@ -409,13 +474,16 @@ describe('Phase 2D backups', () => {
     expect(manual.statusCode).toBe(201)
     await importDb(harness.app, assertion, { tag: 'B' })
 
-    const liveSqlite = path.join(harness.dataDir, 'risu.db')
-    const originalCopyFileSync = fs.copyFileSync.bind(fs)
-    vi.spyOn(fs, 'copyFileSync').mockImplementation((source, destination, mode) => {
-      if (String(source) === liveSqlite && String(destination).includes(`${path.sep}backups${path.sep}`)) {
-        throw new Error('injected automatic backup copy failure')
+    const originalWriteFileSync = fs.writeFileSync.bind(fs)
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((file, data, options) => {
+      if (
+        String(file).endsWith(`${path.sep}manifest.json`) &&
+        String(file).includes(`${path.sep}backups${path.sep}`) &&
+        String(data).includes('"kind":"automatic"')
+      ) {
+        throw new Error('injected automatic backup manifest failure')
       }
-      return originalCopyFileSync(source, destination, mode)
+      return originalWriteFileSync(file, data, options)
     })
 
     const automaticBefore = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
@@ -533,6 +601,39 @@ describe('Phase 2D backups', () => {
       expect(readFileSync(path.join(scratchDir, 'untouched'), 'utf8')).toBe('sentinel')
     }
     expect(harness.commandEvents.list()).toEqual([])
+  })
+
+  it('refuses to overwrite an unjournaled parked directory from an earlier restore attempt', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'restore-source-A' })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'unjournaled scratch target' },
+    })
+    const backupId = backup.json().id as string
+    await importDb(harness.app, assertion, { tag: 'live-B' })
+
+    const parkedAssets = path.join(harness.dataDir, `.assets-${backupId}.old`)
+    mkdirSync(parkedAssets, { recursive: true })
+    writeFileSync(path.join(parkedAssets, 'only-surviving-copy'), 'preserve-me')
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+
+    expect(restored.statusCode).toBe(500)
+    expect(readFileSync(path.join(parkedAssets, 'only-surviving-copy'), 'utf8')).toBe('preserve-me')
+    expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({ tag: 'live-B' })
   })
 
   it('repairs stable lorebook ids while restoring a pre-v23 SQLite backup', async () => {
@@ -724,6 +825,225 @@ describe('Phase 2D backups', () => {
       plugins: [],
       pluginCustomStorage: {},
     })
+  })
+
+  it('recovers backward on boot after a crash between the live-directory renames', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'restore-source-A' })
+    const liveAssetFile = path.join(harness.dataDir, 'assets', 'swap-sentinel')
+    const liveSaveFile = path.join(harness.dataDir, 'save', 'swap-sentinel')
+    mkdirSync(path.dirname(liveAssetFile), { recursive: true })
+    mkdirSync(path.dirname(liveSaveFile), { recursive: true })
+    writeFileSync(liveAssetFile, 'asset-A')
+    writeFileSync(liveSaveFile, 'save-A')
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'directory swap A' },
+    })
+    const backupId = backup.json().id as string
+
+    await importDb(harness.app, assertion, { tag: 'live-B' })
+    writeFileSync(liveAssetFile, 'asset-B')
+    writeFileSync(liveSaveFile, 'save-B')
+    const oldAssets = path.join(harness.dataDir, `.assets-${backupId}.old`)
+    const oldSave = path.join(harness.dataDir, `.save-${backupId}.old`)
+    const originalRenameSync = fs.renameSync.bind(fs)
+    const originalCpSync = fs.cpSync.bind(fs)
+    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation((source, destination) => {
+      if (String(source) === path.dirname(liveSaveFile) && String(destination) === oldSave) {
+        throw new Error('injected crash between live-directory renames')
+      }
+      return originalRenameSync(source, destination)
+    })
+    const cpSpy = vi.spyOn(fs, 'cpSync').mockImplementation((source, destination, options) => {
+      if (String(source) === oldAssets && String(destination) === path.dirname(liveAssetFile)) {
+        throw new Error('injected interrupted rollback')
+      }
+      return originalCpSync(source, destination, options)
+    })
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(500)
+    expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(true)
+    expect(existsSync(oldAssets)).toBe(true)
+
+    renameSpy.mockRestore()
+    cpSpy.mockRestore()
+    await restartHarness(harness)
+
+    const afterBoot = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterBoot.json().database).toMatchObject({ tag: 'live-B' })
+    expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-B')
+    expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-B')
+    expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
+    expect(existsSync(oldAssets)).toBe(false)
+    expect(existsSync(oldSave)).toBe(false)
+  })
+
+  it('recovers forward on boot after the database commits but old-directory cleanup crashes', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'restore-source-A' })
+    const liveAssetFile = path.join(harness.dataDir, 'assets', 'forward-sentinel')
+    const liveSaveFile = path.join(harness.dataDir, 'save', 'forward-sentinel')
+    mkdirSync(path.dirname(liveAssetFile), { recursive: true })
+    mkdirSync(path.dirname(liveSaveFile), { recursive: true })
+    writeFileSync(liveAssetFile, 'asset-A')
+    writeFileSync(liveSaveFile, 'save-A')
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'committed swap A' },
+    })
+    const backupId = backup.json().id as string
+
+    await importDb(harness.app, assertion, { tag: 'live-B' })
+    writeFileSync(liveAssetFile, 'asset-B')
+    writeFileSync(liveSaveFile, 'save-B')
+    const oldAssets = path.join(harness.dataDir, `.assets-${backupId}.old`)
+    const originalRmSync = fs.rmSync.bind(fs)
+    const rmSpy = vi.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
+      if (String(target) === oldAssets) throw new Error('injected crash after SQLite commit')
+      return originalRmSync(target, options)
+    })
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(500)
+    expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(true)
+    expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-A')
+    expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-A')
+
+    rmSpy.mockRestore()
+    await restartHarness(harness)
+
+    const afterBoot = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterBoot.json().database).toMatchObject({ tag: 'restore-source-A' })
+    expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-A')
+    expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-A')
+    expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
+    expect(existsSync(oldAssets)).toBe(false)
+  })
+
+  it('uses the committed lineage on boot when the post-COMMIT journal marker was not written', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'lineage-source-A' })
+    const liveAssetFile = path.join(harness.dataDir, 'assets', 'lineage-sentinel')
+    const liveSaveFile = path.join(harness.dataDir, 'save', 'lineage-sentinel')
+    mkdirSync(path.dirname(liveAssetFile), { recursive: true })
+    mkdirSync(path.dirname(liveSaveFile), { recursive: true })
+    writeFileSync(liveAssetFile, 'asset-A')
+    writeFileSync(liveSaveFile, 'save-A')
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'lineage marker A' },
+    })
+    const backupId = backup.json().id as string
+    await importDb(harness.app, assertion, { tag: 'live-B' })
+    writeFileSync(liveAssetFile, 'asset-B')
+    writeFileSync(liveSaveFile, 'save-B')
+
+    const journalFile = path.join(harness.dataDir, `.restore-journal-${backupId}.json`)
+    const journalWritingFile = `${journalFile}.writing`
+    const originalRenameSync = fs.renameSync.bind(fs)
+    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation((source, destination) => {
+      if (String(source) === journalWritingFile && String(destination) === journalFile) {
+        const pending = JSON.parse(readFileSync(journalWritingFile, 'utf8')) as { phase?: string }
+        if (pending.phase === 'committed') throw new Error('injected crash before post-COMMIT journal marker')
+      }
+      return originalRenameSync(source, destination)
+    })
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(500)
+    expect(JSON.parse(readFileSync(journalFile, 'utf8'))).toMatchObject({
+      phase: 'committing',
+      expectedDatabaseLineage: expect.any(String),
+    })
+
+    renameSpy.mockRestore()
+    await restartHarness(harness)
+
+    const afterBoot = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterBoot.json().database).toMatchObject({ tag: 'lineage-source-A' })
+    expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-A')
+    expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-A')
+    expect(existsSync(journalFile)).toBe(false)
+    expect(existsSync(journalWritingFile)).toBe(false)
+  })
+
+  it('keeps the committed database and new directories when DETACH reports a post-commit failure', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'restore-source-A' })
+    const liveAssetFile = path.join(harness.dataDir, 'assets', 'detach-sentinel')
+    const liveSaveFile = path.join(harness.dataDir, 'save', 'detach-sentinel')
+    mkdirSync(path.dirname(liveAssetFile), { recursive: true })
+    mkdirSync(path.dirname(liveSaveFile), { recursive: true })
+    writeFileSync(liveAssetFile, 'asset-A')
+    writeFileSync(liveSaveFile, 'save-A')
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'detach A' },
+    })
+    const backupId = backup.json().id as string
+    await importDb(harness.app, assertion, { tag: 'live-B' })
+    writeFileSync(liveAssetFile, 'asset-B')
+    writeFileSync(liveSaveFile, 'save-B')
+
+    const originalExec = DatabaseSync.prototype.exec
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const execSpy = vi.spyOn(DatabaseSync.prototype, 'exec').mockImplementation(function (this: DatabaseSync, sql) {
+      const result = originalExec.call(this, sql)
+      if (sql === 'DETACH DATABASE bak') throw new Error('injected post-commit DETACH failure')
+      return result
+    })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    execSpy.mockRestore()
+    consoleError.mockRestore()
+
+    expect(restored.statusCode).toBe(200)
+    const after = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(after.json().database).toMatchObject({ tag: 'restore-source-A' })
+    expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-A')
+    expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-A')
+    expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
   })
 
   it('round-trips chat messages and per-chat hypaV3Data (SQLite tables) with backup/restore', async () => {

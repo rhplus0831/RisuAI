@@ -263,7 +263,7 @@ function isJsonRecord(value: unknown): value is JsonRecord {
 async function seedDatabase(_app: FastifyInstance, _assertion: string, database: unknown): Promise<number> {
   const db = openDatabase(harness.dataDir)
   try {
-    const result = applyImport(
+    const result = await applyImport(
       db,
       harness.dataDir,
       normalizeRisuSaveSnapshotDatabase(normalizeGenerationFixtureDatabase(database)),

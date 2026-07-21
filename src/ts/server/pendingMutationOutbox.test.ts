@@ -427,7 +427,7 @@ describe('pending mutation outbox', () => {
     expect(await readRawMutation(rejected.mutationId)).toBeDefined()
   })
 
-  it('recovers the remaining durable owner after another writer session is discarded', async () => {
+  it('quarantines another writer session and lets each owner reclaim only its own rows', async () => {
     const pending = stagePendingMutation('settings:runtime', settingsIntent('recover-owner'))
     await pending.ready
     resetPendingMutationOutboxForTests()
@@ -438,20 +438,43 @@ describe('pending mutation outbox', () => {
       databaseLineage: 'database-a',
     })
 
-    await preparePendingMutationOutbox({
-      writerSessionId: 'writer-b',
-      writerEpoch: 1,
-      databaseLineage: 'database-a',
-      requestedWriterWasActive: true,
-    })
+    await expect(
+      preparePendingMutationOutbox({
+        writerSessionId: 'writer-b',
+        writerEpoch: 2,
+        databaseLineage: 'database-a',
+        requestedWriterWasActive: false,
+      }),
+    ).resolves.toEqual({ discarded: 0 })
+    expect(await listPendingMutations()).toEqual([])
+    expect(await countPendingMutationRecords()).toBe(0)
+    expect(await readRawMutation(pending.mutationId)).toBeDefined()
+
     const other = stagePendingMutation('settings:other', settingsIntent('other-owner'))
     await other.ready
     resetPendingMutationOutboxForTests()
-    await expect(readSinglePendingMutationOwner()).resolves.toEqual({
-      writerSessionId: 'writer-b',
-      writerEpoch: 1,
+    await expect(readSinglePendingMutationOwner()).resolves.toBeNull()
+
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 3,
       databaseLineage: 'database-a',
+      requestedWriterWasActive: false,
     })
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([pending.mutationId])
+    expect(await countPendingMutationRecords()).toBe(1)
+    expect(await readRawMutation(other.mutationId)).toBeDefined()
+
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-b',
+      writerEpoch: 4,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: false,
+    })
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([other.mutationId])
+    expect(await countPendingMutationRecords()).toBe(1)
+    expect(await readRawMutation(pending.mutationId)).toBeDefined()
   })
 
   it('deletes rows and receipt ACKs belonging to a different database lineage', async () => {

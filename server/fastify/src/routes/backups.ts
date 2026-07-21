@@ -7,6 +7,7 @@ import {
   AutomaticBackupError,
   BackupDatabaseValidationError,
   EntityNotFoundError,
+  WalCheckpointError,
   createBackup,
   deleteBackup,
   listBackups,
@@ -36,9 +37,17 @@ export function registerBackupRoutes(
       }
       label = body.label
     }
-    const manifest = createBackup(db, dataDir, label)
-    reply.code(201)
-    return manifest
+    try {
+      const manifest = await createBackup(db, dataDir, label)
+      reply.code(201)
+      return manifest
+    } catch (err) {
+      if (err instanceof WalCheckpointError) {
+        reply.code(503)
+        return { error: err.code, detail: err.message }
+      }
+      throw err
+    }
   })
 
   app.get('/api/v1/backups', async (req, reply) => {
@@ -49,7 +58,7 @@ export function registerBackupRoutes(
   app.post<{ Params: { id: string } }>('/api/v1/backups/:id/restore', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     try {
-      const { revision, event, databaseLineage, writerEpoch } = restoreBackup(db, dataDir, req.params.id, {
+      const { revision, event, databaseLineage, writerEpoch } = await restoreBackup(db, dataDir, req.params.id, {
         automaticBackupRetention: options.automaticBackupRetention,
       })
       eventSink.emit(event)

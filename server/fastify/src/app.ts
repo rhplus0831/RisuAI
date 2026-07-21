@@ -50,7 +50,12 @@ import { registerRealmImportRoutes } from './routes/realmImport.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import { registerTtsRoutes, type TtsSynthesisRouteOptions } from './routes/tts.js'
-import { SUPPORTED_ASSET_CONTENT_TYPES, ensureDbJsonImported, loadPersistedWithMessages } from './repository.js'
+import {
+  SUPPORTED_ASSET_CONTENT_TYPES,
+  ensureDbJsonImported,
+  loadPersistedWithMessages,
+  recoverInterruptedRestoreSwaps,
+} from './repository.js'
 import { ASSET_GC_INTERVAL_MS, type AssetGcOptions, runAssetGc } from './assetGc.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import { GenerationJobRegistry } from './generationJobs.js'
@@ -159,6 +164,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   })
 
   const db = openDatabase(config.dataDir, { allowMissingDatabase: config.allowMissingDatabase })
+  // Directory swaps are journaled around the SQLite restore transaction. Finish
+  // an interrupted swap before any backfill, import, route, or worker can
+  // observe a database/filesystem mixture.
+  recoverInterruptedRestoreSwaps(db, config.dataDir, app.log)
   const activeWriterState = createActiveWriterState(db)
   // Legacy memory backfill reads chat.message[]; hydrate from the table (or the
   // still-embedded legacy db.json before boot import retires it) so it sees the
