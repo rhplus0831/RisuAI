@@ -277,7 +277,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     ...opts.realmImport,
   })
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink, messageTranslationJobRegistry)
-  registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus)
+  registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus, activeWriterState)
   registerAssetsRoutes(app, db, authState, config.dataDir, activeWriterState)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerPushNotificationRoutes(app, authState, pushNotifications)

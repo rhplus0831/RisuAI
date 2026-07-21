@@ -1654,6 +1654,13 @@ export const languageEnglish = {
   strictJsonSchema: 'Strict Schema',
   extractJson: 'Extract JSON',
   reloadSession: 'Newer version of save data is found. Reloading the session...',
+  writerTakeoverTitle: 'Write access moved to another session',
+  writerTakeoverBody:
+    'Another browser session took over write access. This page can no longer save changes. Refresh to take write access back, or stay here in offline read-only mode so you can copy your work.',
+  writerTakeoverRefreshNow: 'Refresh now',
+  writerTakeoverStayOffline: 'Stay on this page (offline)',
+  writerOfflineBanner: 'Offline/read-only: this session cannot save changes.',
+  writerOfflineRefresh: 'Refresh',
   pendingMutationRecoveryReload:
     'A queued change could not be applied safely. Reloading to restore the latest server state...',
   pendingChatMessageQueued:

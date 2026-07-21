@@ -11,7 +11,14 @@ vi.mock('src/ts/process/modules', async (importActual) => {
 })
 
 import AlertComp from './AlertComp.svelte'
-import { alertAddCharacter, alertConfirm, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
+import {
+  alertAddCharacter,
+  alertConfirm,
+  alertInput,
+  alertNormal,
+  alertRequiredSelect,
+  alertSelect,
+} from 'src/ts/alert'
 import { language } from 'src/lang'
 import { alertStore } from 'src/ts/stores.svelte'
 
@@ -231,6 +238,39 @@ describe('AlertComp select dialog', () => {
         .querySelector<HTMLElement>('[role="dialog"]')
         ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
       await expect(escapedResult).resolves.toBeNull()
+    } finally {
+      unmount(component)
+      target.remove()
+      alertStore.set({ type: 'none', msg: '' })
+    }
+  })
+
+  it('keeps a required selection open until one of its choices is selected', async () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(AlertComp, { target })
+
+    try {
+      const result = alertRequiredSelect(['Refresh now', 'Stay offline'], 'Another session took over.', 'Write access')
+      await tick()
+
+      const modalRoot = target.querySelector<HTMLElement>('[data-modal-root]')
+      const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+      expect(dialog?.textContent).toContain('Write access')
+      expect(dialog?.textContent).toContain('Another session took over.')
+      expect(
+        Array.from(target.querySelectorAll('button')).some((button) => button.textContent === language.cancel),
+      ).toBe(false)
+
+      dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      modalRoot?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await tick()
+      expect(get(alertStore)).toMatchObject({ type: 'select', dismissible: false, title: 'Write access' })
+
+      Array.from(target.querySelectorAll('button'))
+        .find((button) => button.textContent?.trim() === 'Stay offline')
+        ?.click()
+      await expect(result).resolves.toBe('1')
     } finally {
       unmount(component)
       target.remove()

@@ -187,6 +187,21 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error('timed out waiting for condition')
 }
 
+function parseSseJsonEvents(text: string, eventName: string): unknown[] {
+  return text.split('\n\n').flatMap((frame) => {
+    const lines = frame.split('\n')
+    if (!lines.includes(`event: ${eventName}`)) return []
+    const dataLine = lines.find((line) => line.startsWith('data: '))
+    return dataLine ? [JSON.parse(dataLine.slice('data: '.length))] : []
+  })
+}
+
+function commandDataLine(text: string): string | undefined {
+  return text
+    .split('\n')
+    .find((line) => line.startsWith('data: ') && line.includes('"type"') && line.includes('"revision"'))
+}
+
 let harness: Harness
 
 beforeEach(async () => {
@@ -331,7 +346,79 @@ describe('Phase 9-5a command events stream', () => {
       expect(res.status).toBe(200)
       expect(res.headers.get('content-type')).toContain('text/event-stream')
       const text = await readUntil(reader!, (chunk) => chunk.includes(': connected\n\n'))
+      expect(parseSseJsonEvents(text, 'writer')).toEqual([{ sessionId: null, epoch: 0 }])
+      expect(text).not.toContain('id: ')
       expect(text).toContain(': connected\n\n')
+    } finally {
+      abort.abort()
+      reader?.releaseLock()
+    }
+  })
+
+  it('broadcasts a new writer takeover to an open event stream', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseUrl = await listen(harness.app)
+    const abort = new AbortController()
+    const res = await fetch(`${baseUrl}/api/v1/events`, {
+      headers: { 'risu-auth': assertion },
+      signal: abort.signal,
+    })
+    const reader = res.body?.getReader()
+    expect(reader).toBeDefined()
+    await readUntil(reader!, (chunk) => chunk.includes(': connected\n\n'))
+
+    const takeover = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-new' },
+    })
+    expect(takeover.statusCode).toBe(200)
+
+    try {
+      const text = await readUntil(reader!, (chunk) => chunk.includes('writer-new'))
+      expect(parseSseJsonEvents(text, 'writer')).toEqual([{ sessionId: 'writer-new', epoch: 1 }])
+    } finally {
+      abort.abort()
+      reader?.releaseLock()
+    }
+  })
+
+  it('does not broadcast a same-session re-latch', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const firstWriter = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+    })
+    expect(firstWriter.statusCode).toBe(200)
+
+    const baseUrl = await listen(harness.app)
+    const abort = new AbortController()
+    const res = await fetch(`${baseUrl}/api/v1/events`, {
+      headers: { 'risu-auth': assertion },
+      signal: abort.signal,
+    })
+    const reader = res.body?.getReader()
+    expect(reader).toBeDefined()
+    const initial = await readUntil(reader!, (chunk) => chunk.includes(': connected\n\n'))
+    expect(parseSseJsonEvents(initial, 'writer')).toEqual([{ sessionId: 'writer-a', epoch: 1 }])
+
+    const sameWriter = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+    })
+    expect(sameWriter.statusCode).toBe(200)
+    const nextWriter = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-b' },
+    })
+    expect(nextWriter.statusCode).toBe(200)
+
+    try {
+      const text = await readUntil(reader!, (chunk) => chunk.includes('writer-b'))
+      expect(parseSseJsonEvents(text, 'writer')).toEqual([{ sessionId: 'writer-b', epoch: 2 }])
     } finally {
       abort.abort()
       reader?.releaseLock()
@@ -366,7 +453,7 @@ describe('Phase 9-5a command events stream', () => {
       const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
       expect(text).toContain('id: 2')
       expect(text).toContain('event: command')
-      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      const dataLine = commandDataLine(text)
       expect(dataLine).toBeDefined()
       expect(JSON.parse(dataLine!.slice('data: '.length))).toEqual({
         type: 'settings.updated',
@@ -408,7 +495,7 @@ describe('Phase 9-5a command events stream', () => {
       const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
       expect(text).toContain(`id: ${nextRevision}`)
       expect(text).toContain('event: command')
-      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      const dataLine = commandDataLine(text)
       expect(dataLine).toBeDefined()
       expect(JSON.parse(dataLine!.slice('data: '.length))).toEqual({
         type: 'settings.updated',
@@ -463,7 +550,7 @@ describe('Phase 9-5a command events stream', () => {
     expect(reader).toBeDefined()
     try {
       const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
-      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      const dataLine = commandDataLine(text)
       expect(dataLine).toBeDefined()
       expect(JSON.parse(dataLine!.slice('data: '.length))).toEqual({
         type: 'settings.updated',
@@ -509,7 +596,7 @@ describe('Phase 9-5a command events stream', () => {
       expect(res.status).toBe(200)
       const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
       expect(text).toContain(`id: ${nextRevision}`)
-      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      const dataLine = commandDataLine(text)
       expect(dataLine).toBeDefined()
       expect(JSON.parse(dataLine!.slice('data: '.length))).toEqual({
         type: 'settings.updated',
@@ -560,7 +647,7 @@ describe('Phase 9-5a command events stream', () => {
       expect(res.status).toBe(200)
       const text = await readUntil(reader!, (chunk) => chunk.includes('settings.updated'))
       expect(text).toContain(`id: ${setupEvent.revision}`)
-      const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
+      const dataLine = commandDataLine(text)
       expect(dataLine).toBeDefined()
       expect(JSON.parse(dataLine!.slice('data: '.length))).toEqual(setupEvent)
       expect(emittedDuringSetup).toBe(true)

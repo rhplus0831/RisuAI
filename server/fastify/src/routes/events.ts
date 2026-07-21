@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
+import type { ActiveWriterState } from '../activeWriter.js'
 import type { AuthState } from '../auth.js'
 import {
   listPersistedCommandEventHistory,
@@ -12,6 +13,7 @@ import { requireAuth } from '../http.js'
 import type { MemoryEvent, MemoryEventBus } from '../memoryEvents.js'
 import { emitProtocolMetric, protocolMetricsEnabled } from '../protocolMetrics.js'
 import { writeBoundedRaw } from '../streamBackpressure.js'
+import type { WriterEvent } from '../writerEvents.js'
 
 function formatSseComment(comment: string): string {
   return `: ${comment}\n\n`
@@ -25,12 +27,17 @@ function formatMemoryEvent(event: MemoryEvent): string {
   return `event: memory\ndata: ${JSON.stringify(event)}\n\n`
 }
 
+function formatWriterEvent(event: { sessionId: string | null; epoch: number }): string {
+  return `event: writer\ndata: ${JSON.stringify(event)}\n\n`
+}
+
 export function registerEventsRoutes(
   app: FastifyInstance,
   db: DatabaseSync,
   authState: AuthState,
   commandEvents: CommandEventSink,
   memoryEvents: MemoryEventBus,
+  activeWriterState: ActiveWriterState,
 ): void {
   app.get('/api/v1/events', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -45,10 +52,13 @@ export function registerEventsRoutes(
     }
 
     let liveCommandDelivery = false
+    let liveWriterDelivery = false
     const queuedCommandEvents: CommandEvent[] = []
+    const queuedWriterEvents: WriterEvent[] = []
     let heartbeat: NodeJS.Timeout | null = null
     let unsubscribeCommand: (() => void) | null = null
     let unsubscribeMemory: (() => void) | null = null
+    let unsubscribeWriter: (() => void) | null = null
     let cleanedUp = false
     const cleanup = (): void => {
       if (cleanedUp) return
@@ -58,6 +68,7 @@ export function registerEventsRoutes(
       }
       unsubscribeCommand?.()
       unsubscribeMemory?.()
+      unsubscribeWriter?.()
     }
     const sendFrame = (text: string): boolean => writeBoundedRaw(reply.raw, text, { onOverflow: cleanup })
     unsubscribeCommand = commandEvents.subscribe((event) => {
@@ -69,6 +80,19 @@ export function registerEventsRoutes(
       }
       queuedCommandEvents.push(event)
     })
+    unsubscribeWriter = activeWriterState.events.subscribe((event) => {
+      if (liveWriterDelivery) {
+        if (!reply.raw.writableEnded) {
+          sendFrame(formatWriterEvent(event))
+        }
+        return
+      }
+      queuedWriterEvents.push(event)
+    })
+    const initialWriterEvent = {
+      sessionId: activeWriterState.sessionId,
+      epoch: activeWriterState.epoch,
+    }
     req.raw.once('close', cleanup)
 
     const currentRevision = getSchemaState(db).revision
@@ -127,7 +151,15 @@ export function registerEventsRoutes(
       connection: 'keep-alive',
       'x-accel-buffering': 'no',
     })
+    sendFrame(formatWriterEvent(initialWriterEvent))
     sendFrame(formatSseComment('connected'))
+    for (const event of queuedWriterEvents) {
+      if (!reply.raw.writableEnded) {
+        sendFrame(formatWriterEvent(event))
+      }
+    }
+    queuedWriterEvents.length = 0
+    liveWriterDelivery = true
     for (const event of replay.events) {
       if (!reply.raw.writableEnded) {
         sendFrame(formatCommandEvent(event))

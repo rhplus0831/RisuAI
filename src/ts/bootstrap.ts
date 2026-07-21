@@ -37,6 +37,7 @@ import {
 } from './server/commands'
 import {
   adoptPendingMutationWriterSessionId,
+  enterWriterTakeoverFlow,
   getActiveWriterSessionId,
   peekActiveWriterSessionId,
 } from './server/activeWriterSession'
@@ -408,6 +409,11 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
     sinceRevision: peekAppliedServerResourceRevision(),
     onCommandEvent: handleServerCommandEvent,
     onMemoryEvent: applyServerMemoryEvent,
+    onWriterEvent: (event) => {
+      if (event.sessionId !== null && event.sessionId !== getActiveWriterSessionId()) {
+        enterWriterTakeoverFlow()
+      }
+    },
     onFrame: (frame) =>
       recordServerResourceEventFrame(eventEpoch, frame.event === 'message' && frame.data.length === 0),
     onError: (error) => {

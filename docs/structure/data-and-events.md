@@ -257,9 +257,15 @@ The active-writer guard is separate. Any authenticated bootstrap carrying
 `risu-writer-session` latches the latest writer durably and advances a monotonic
 writer epoch when ownership changes; routes whose manifest decision is
 `active-writer` reject stale sessions with `423 active_writer_stale` even after
-a server restart.
-Read-only bootstrap, resource-read, and event routes do not need writer
-ownership.
+a server restart. Ownership changes are also published through a live-only
+writer event bus. A stale browser shows a refresh-or-stay dialog: refresh
+reclaims ownership with the same session id, while stay closes server
+communication and freezes the page offline/read-only so unfinished text remains
+selectable and copyable. Refresh is the only exit from that frozen state, and a
+`423` response provides the same flow when the live event was missed.
+Pending-mutation rollback recovery and database-lineage changes still force an
+alert plus reload. Read-only bootstrap, resource-read, and event routes do not
+need writer ownership.
 
 `server/fastify/src/routeManifest.ts` is the source of truth for auth,
 active-writer, streaming, public exceptions, and read-only POST decisions.
@@ -296,9 +302,12 @@ lineage, writer, and event implications.
 
 ## SSE And Streaming
 
-`GET /api/v1/events` replays SQLite `command_events` for cursor reconnects,
-then streams live command-sink events plus live memory events. Clients subscribe
-with `sinceRevision` or `Last-Event-ID`; replay gaps return
+`GET /api/v1/events` first sends a `writer` frame with the current
+`{ sessionId, epoch }` state (`sessionId` is null before the first writer is
+latched), replays SQLite `command_events` for cursor reconnects, then streams
+live command-sink, memory, and writer-change events. Writer frames have no
+revision semantics and are never replayed. Clients subscribe with
+`sinceRevision` or `Last-Event-ID`; replay gaps return
 `409 event_replay_unavailable`, after which the browser performs a read-only
 complete resource refresh before resubscribing. SQLite replay keeps a
 1000-revision window

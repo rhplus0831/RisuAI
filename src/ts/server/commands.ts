@@ -35,6 +35,7 @@ import {
 import {
   activeWriterSessionHeader,
   handleActiveWriterStaleResponse,
+  isWriterAccessLost,
   scheduleServerOwnershipReload,
 } from './activeWriterSession'
 import { isCanonicalLoadout } from './loadoutCanonical'
@@ -1991,7 +1992,7 @@ export async function withDirectServerCommandEventReconciliation<T>(
 }
 
 export function canUseServerCommands(): boolean {
-  return true
+  return !isWriterAccessLost()
 }
 
 export function settingsGroupForKey(key: string): SettingsGroup | null {

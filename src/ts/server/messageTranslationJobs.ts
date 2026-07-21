@@ -12,6 +12,7 @@ export const activeMessageTranslations = writable<ActiveMessageTranslation[]>([]
 
 let refreshWired = false
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let stopRefreshSubscription: (() => void) | null = null
 const locallyStartedTranslationJobIds = new Set<string>()
 
 export function setActiveMessageTranslations(jobs: readonly ActiveMessageTranslation[]): void {
@@ -68,11 +69,21 @@ export function clearMessageTranslationJob(jobId: string): void {
 export function startActiveMessageTranslationRefresh(): void {
   if (refreshWired) return
   refreshWired = true
-  activeMessageTranslations.subscribe(scheduleActiveMessageTranslationRefresh)
+  stopRefreshSubscription = activeMessageTranslations.subscribe(scheduleActiveMessageTranslationRefresh)
+}
+
+export function stopActiveMessageTranslationRefresh(): void {
+  refreshWired = false
+  stopRefreshSubscription?.()
+  stopRefreshSubscription = null
+  if (refreshTimer) {
+    clearTimeout(refreshTimer)
+    refreshTimer = null
+  }
 }
 
 function scheduleActiveMessageTranslationRefresh(jobs: readonly ActiveMessageTranslation[]): void {
-  if (!jobs.some((job) => job.status === 'running') || refreshTimer) return
+  if (!refreshWired || !jobs.some((job) => job.status === 'running') || refreshTimer) return
   refreshTimer = setTimeout(() => {
     refreshTimer = null
     void refreshActiveMessageTranslations()
@@ -90,6 +101,6 @@ async function refreshActiveMessageTranslations(): Promise<void> {
   } catch (error) {
     console.warn('Message translation pending refresh failed', error)
   } finally {
-    scheduleActiveMessageTranslationRefresh(get(activeMessageTranslations))
+    if (refreshWired) scheduleActiveMessageTranslationRefresh(get(activeMessageTranslations))
   }
 }

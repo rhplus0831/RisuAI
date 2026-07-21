@@ -2039,6 +2039,13 @@ export const languageKorean = {
   chatScreenWidth: '채팅 화면 너비',
   personaBindingFailed: '페르소나 연결을 업데이트할 수 없습니다. 다시 시도하세요.',
   personaBindingQueued: '페르소나 연결이 이 기기에 저장되어 대기열에 추가되었습니다. 자동으로 다시 시도합니다.',
+  writerTakeoverTitle: '다른 세션으로 쓰기 권한이 이동했습니다',
+  writerTakeoverBody:
+    '다른 브라우저 세션이 쓰기 권한을 가져갔습니다. 이 페이지에서는 더 이상 변경 사항을 저장할 수 없습니다. 새로고침하여 쓰기 권한을 다시 가져오거나, 작성 중인 내용을 복사할 수 있도록 오프라인 읽기 전용 상태로 이 페이지에 머무르세요.',
+  writerTakeoverRefreshNow: '지금 새로고침',
+  writerTakeoverStayOffline: '이 페이지에 머무르기 (오프라인)',
+  writerOfflineBanner: '오프라인/읽기 전용: 이 세션에서는 변경 사항을 저장할 수 없습니다.',
+  writerOfflineRefresh: '새로고침',
   pendingMutationRecoveryReload:
     '대기 중인 변경 사항을 안전하게 적용할 수 없습니다. 최신 서버 상태를 복원하기 위해 새로고침하는 중...',
   pendingChatMessageQueued:

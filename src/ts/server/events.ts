@@ -7,6 +7,7 @@ import type {
   ServerMemoryJobKind,
   ServerMemoryJobStatus,
 } from '../process/request/serverMemory'
+import { isWriterAccessLost } from './activeWriterSession'
 
 const EVENTS_ENDPOINT = '/api/v1/events'
 
@@ -25,9 +26,17 @@ export interface ServerMemoryJobEvent {
 export type ServerMemoryEvent = ServerMemoryJobEvent
 export type ServerMemoryEventHandler = (event: ServerMemoryEvent) => void
 
+export interface ServerWriterEvent {
+  sessionId: string | null
+  epoch: number
+}
+
+export type ServerWriterEventHandler = (event: ServerWriterEvent) => void
+
 export interface SubscribeServerCommandEventsInput {
   onCommandEvent: ServerCommandEventHandler
   onMemoryEvent?: ServerMemoryEventHandler
+  onWriterEvent?: ServerWriterEventHandler
   onFrame?: (frame: { event: string; data: string; id?: string }) => void
   onError?: (error: string) => void
   onClose?: () => void
@@ -48,7 +57,7 @@ export type ServerCommandEventSubscriptionResult =
   | { status: 'unavailable' }
 
 export function canUseServerEvents(): boolean {
-  return true
+  return !isWriterAccessLost()
 }
 
 export async function subscribeServerCommandEvents(
@@ -131,6 +140,9 @@ export async function subscribeServerCommandEvents(
         } else if (frame.event === 'memory') {
           const event = parseMemoryEvent(frame.data)
           if (event) input.onMemoryEvent?.(event)
+        } else if (frame.event === 'writer') {
+          const event = parseWriterEvent(frame.data)
+          if (event) input.onWriterEvent?.(event)
         }
       }
       completed = true
@@ -150,6 +162,32 @@ export async function subscribeServerCommandEvents(
   return {
     status: 'ok',
     unsubscribe: stop,
+  }
+}
+
+function parseWriterEvent(data: string): ServerWriterEvent | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(data)
+  } catch {
+    return null
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const record = parsed as Record<string, unknown>
+  if (
+    record.sessionId !== null &&
+    (typeof record.sessionId !== 'string' ||
+      record.sessionId.trim() !== record.sessionId ||
+      record.sessionId.length === 0 ||
+      record.sessionId.length > 128)
+  ) {
+    return null
+  }
+  if (!Number.isSafeInteger(record.epoch) || (record.epoch as number) < 0) return null
+  return {
+    sessionId: record.sessionId as string | null,
+    epoch: record.epoch as number,
   }
 }
 

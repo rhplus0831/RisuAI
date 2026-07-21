@@ -1,15 +1,40 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const STORAGE_KEY = 'risu:active-writer-session-id'
-const reloadNotice = vi.hoisted(() => ({ alertError: vi.fn() }))
+const takeoverMocks = vi.hoisted(() => ({
+  alertError: vi.fn(),
+  alertRequiredSelect: vi.fn(),
+  stopEvents: vi.fn(),
+  stopTranslations: vi.fn(),
+  stopReattach: vi.fn(),
+  stopHydration: vi.fn(),
+}))
 
-vi.mock('../alert', () => ({ alertError: reloadNotice.alertError }))
+vi.mock('../alert', () => ({
+  alertError: takeoverMocks.alertError,
+  alertRequiredSelect: takeoverMocks.alertRequiredSelect,
+}))
 vi.mock('../../lang', () => ({
   language: {
     pendingMutationRecoveryReload: 'pending mutation recovery',
     reloadSession: 'stale writer recovery',
+    writerTakeoverTitle: 'write access moved',
+    writerTakeoverBody: 'another session took over',
+    writerTakeoverRefreshNow: 'refresh now',
+    writerTakeoverStayOffline: 'stay offline',
+    writerOfflineBanner: 'offline and read-only',
+    writerOfflineRefresh: 'refresh',
   },
 }))
+vi.mock('../bootstrap', () => ({ stopServerResourceEvents: takeoverMocks.stopEvents }))
+vi.mock('../storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: async () => 'active-writer-test-auth',
+}))
+vi.mock('./messageTranslationJobs', () => ({
+  stopActiveMessageTranslationRefresh: takeoverMocks.stopTranslations,
+}))
+vi.mock('../process/reattach', () => ({ stopActiveGenerationReattach: takeoverMocks.stopReattach }))
+vi.mock('./chatMessageHydration.svelte', () => ({ stopChatMessageHydration: takeoverMocks.stopHydration }))
 
 function stubSessionStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial))
@@ -34,11 +59,22 @@ async function importActiveWriterSession() {
   return await import('./activeWriterSession')
 }
 
+beforeEach(() => {
+  takeoverMocks.alertRequiredSelect.mockReset()
+  takeoverMocks.alertRequiredSelect.mockImplementation(() => new Promise(() => {}))
+  takeoverMocks.alertError.mockReset()
+  takeoverMocks.stopEvents.mockReset()
+  takeoverMocks.stopTranslations.mockReset()
+  takeoverMocks.stopReattach.mockReset()
+  takeoverMocks.stopHydration.mockReset()
+  document.body.innerHTML = ''
+})
+
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.resetModules()
-  reloadNotice.alertError.mockReset()
+  document.body.innerHTML = ''
 })
 
 describe('active writer browser session', () => {
@@ -82,6 +118,64 @@ describe('active writer browser session', () => {
     expect(activeWriterSession.getActiveWriterSessionId()).toBe('storage-blocked-writer')
   })
 
+  it('latches a 423 takeover without scheduling a reload and gates server commands', async () => {
+    vi.useFakeTimers()
+    const reload = vi.fn()
+    vi.stubGlobal('location', { reload })
+    const activeWriterSession = await importActiveWriterSession()
+
+    expect(activeWriterSession.handleActiveWriterStaleResponse(new Response(null, { status: 423 }))).toBe(true)
+    expect(activeWriterSession.isWriterAccessLost()).toBe(true)
+    const { canUseServerCommands } = await import('./commands')
+    const { canUseServerEvents } = await import('./events')
+    expect(canUseServerCommands()).toBe(false)
+    expect(canUseServerEvents()).toBe(false)
+
+    await vi.waitFor(() => expect(takeoverMocks.alertRequiredSelect).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('starts the writer takeover flow only once', async () => {
+    const activeWriterSession = await importActiveWriterSession()
+
+    activeWriterSession.enterWriterTakeoverFlow()
+    activeWriterSession.enterWriterTakeoverFlow()
+
+    await vi.waitFor(() => expect(takeoverMocks.alertRequiredSelect).toHaveBeenCalledOnce())
+    expect(takeoverMocks.stopEvents).toHaveBeenCalledOnce()
+    expect(takeoverMocks.stopTranslations).toHaveBeenCalledOnce()
+    expect(takeoverMocks.stopReattach).toHaveBeenCalledOnce()
+    expect(takeoverMocks.stopHydration).toHaveBeenCalledOnce()
+  })
+
+  it('freezes editable content after the user stays offline', async () => {
+    takeoverMocks.alertRequiredSelect.mockResolvedValue('1')
+    const reload = vi.fn()
+    vi.stubGlobal('location', { reload })
+    document.body.innerHTML = `
+      <div id="app">
+        <input id="draft" type="text" value="draft">
+        <textarea id="message">message</textarea>
+        <div id="editor" contenteditable="true">editable</div>
+      </div>
+    `
+    const activeWriterSession = await importActiveWriterSession()
+
+    activeWriterSession.enterWriterTakeoverFlow()
+
+    await vi.waitFor(() => expect(document.getElementById('app')?.classList.contains('risu-offline-frozen')).toBe(true))
+    expect(document.getElementById('draft')).toHaveProperty('readOnly', true)
+    expect(document.getElementById('message')).toHaveProperty('readOnly', true)
+    expect(document.getElementById('editor')?.getAttribute('contenteditable')).toBe('false')
+    expect(document.getElementById('risu-offline-frozen-banner')?.textContent).toContain('offline and read-only')
+    expect(reload).not.toHaveBeenCalled()
+
+    const laterTextarea = document.createElement('textarea')
+    document.getElementById('app')?.appendChild(laterTextarea)
+    await vi.waitFor(() => expect(laterTextarea.readOnly).toBe(true))
+  })
+
   it('notifies once and reloads when a terminal durable predecessor loses its rollback', async () => {
     vi.useFakeTimers()
     const reload = vi.fn()
@@ -92,8 +186,23 @@ describe('active writer browser session', () => {
     activeWriterSession.scheduleServerOwnershipReload()
     await vi.advanceTimersByTimeAsync(100)
 
-    expect(reloadNotice.alertError).toHaveBeenCalledOnce()
-    expect(reloadNotice.alertError).toHaveBeenCalledWith('pending mutation recovery')
+    expect(takeoverMocks.alertError).toHaveBeenCalledOnce()
+    expect(takeoverMocks.alertError).toHaveBeenCalledWith('pending mutation recovery')
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
+  it('keeps database-lineage ownership recovery on the forced reload path', async () => {
+    vi.useFakeTimers()
+    const reload = vi.fn()
+    vi.stubGlobal('location', { reload })
+    const activeWriterSession = await importActiveWriterSession()
+
+    activeWriterSession.scheduleServerOwnershipReload()
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(takeoverMocks.alertError).toHaveBeenCalledOnce()
+    expect(takeoverMocks.alertError).toHaveBeenCalledWith('stale writer recovery')
+    expect(takeoverMocks.alertRequiredSelect).not.toHaveBeenCalled()
     expect(reload).toHaveBeenCalledOnce()
   })
 })

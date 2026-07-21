@@ -16,16 +16,19 @@ import {
   isCurrentMessageTranslationJob,
   setActiveMessageTranslations,
   startActiveMessageTranslationRefresh,
+  stopActiveMessageTranslationRefresh,
 } from './messageTranslationJobs'
 
 describe('active message translation refresh', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    stopActiveMessageTranslationRefresh()
     bootstrapMocks.fetchServerBootstrapReadOnly.mockReset()
     setActiveMessageTranslations([])
   })
 
   afterEach(() => {
+    stopActiveMessageTranslationRefresh()
     for (const job of get(activeMessageTranslations)) clearMessageTranslationJob(job.jobId)
     setActiveMessageTranslations([])
     vi.useRealTimers()
@@ -90,5 +93,15 @@ describe('active message translation refresh', () => {
 
     await vi.advanceTimersByTimeAsync(10_000)
     expect(bootstrapMocks.fetchServerBootstrapReadOnly).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels the pending refresh timer when stopped', async () => {
+    startActiveMessageTranslationRefresh()
+    setActiveMessageTranslations([{ chatId: 'chat-a', messageId: 'msg-a', jobId: 'job-a', status: 'running' }])
+
+    stopActiveMessageTranslationRefresh()
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(bootstrapMocks.fetchServerBootstrapReadOnly).not.toHaveBeenCalled()
   })
 })

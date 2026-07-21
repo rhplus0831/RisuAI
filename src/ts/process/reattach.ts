@@ -78,7 +78,7 @@ let stopWaitingForGenerationIdle: (() => void) | null = null
  * updates, and full resyncs into one guarded `maybeReattachOpenChatGeneration`.
  */
 export function triggerOpenChatGenerationReattach(): void {
-  if (reattachQueued) return
+  if (reattachDisabled || reattachQueued) return
   reattachQueued = true
   queueMicrotask(() => {
     reattachQueued = false
@@ -92,6 +92,7 @@ export function triggerOpenChatGenerationReattach(): void {
  * generation is already in flight locally. Each job is reattached at most once.
  */
 export async function maybeReattachOpenChatGeneration(): Promise<void> {
+  if (reattachDisabled) return
   if (reattaching) {
     reattachDeferred = true
     return
@@ -167,7 +168,7 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
     // Re-arm a probe requested mid-stream targets whatever chat is
     // open NOW — without this, switching between two chats with live jobs left
     // the second un-reattached until another selection change.
-    if (reattachDeferred) {
+    if (!reattachDisabled && reattachDeferred) {
       reattachDeferred = false
       triggerOpenChatGenerationReattach()
     }
@@ -175,22 +176,35 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
 }
 
 let wired = false
+let reattachDisabled = false
 let runtimeJobRefresh: Promise<void> | null = null
+let stopSelectedCharacterSubscription: (() => void) | null = null
+
+const handleGenerationVisibilityChange = (): void => {
+  if (!reattachDisabled && document.visibilityState === 'visible') void refreshRuntimeJobsAndTriggerReattach()
+}
+const handleGenerationPageShow = (): void => {
+  if (!reattachDisabled) void refreshRuntimeJobsAndTriggerReattach()
+}
+const handleGenerationOnline = (): void => {
+  if (!reattachDisabled) void refreshRuntimeJobsAndTriggerReattach()
+}
 
 async function refreshRuntimeJobsAndTriggerReattach(): Promise<void> {
+  if (reattachDisabled) return
   if (runtimeJobRefresh) return runtimeJobRefresh
   runtimeJobRefresh = (async () => {
     try {
       const { fetchServerBootstrapReadOnly } = await import('../server/bootstrap')
       const runtime = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
-      if (runtime.status === 'ok') {
+      if (!reattachDisabled && runtime.status === 'ok') {
         setActiveGenerationJobs(runtime.bootstrap.activeGenerationJobs ?? [])
       }
     } catch {
       // Keep the locally remembered job; a later lifecycle event can retry.
     } finally {
       runtimeJobRefresh = null
-      triggerOpenChatGenerationReattach()
+      if (!reattachDisabled) triggerOpenChatGenerationReattach()
     }
   })()
   return runtimeJobRefresh
@@ -204,7 +218,8 @@ async function refreshRuntimeJobsAndTriggerReattach(): Promise<void> {
 export function startActiveGenerationReattach(): void {
   if (wired) return
   wired = true
-  selectedCharID.subscribe(() => {
+  reattachDisabled = false
+  stopSelectedCharacterSubscription = selectedCharID.subscribe(() => {
     triggerOpenChatGenerationReattach()
   })
 
@@ -212,12 +227,28 @@ export function startActiveGenerationReattach(): void {
   // Refresh the server's active-job projection when the page or network returns
   // so even a request dropped before its job-id header arrived can recover.
   if (typeof document !== 'undefined') {
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') void refreshRuntimeJobsAndTriggerReattach()
-    })
+    document.addEventListener('visibilitychange', handleGenerationVisibilityChange)
   }
   if (typeof window !== 'undefined') {
-    window.addEventListener('pageshow', () => void refreshRuntimeJobsAndTriggerReattach())
-    window.addEventListener('online', () => void refreshRuntimeJobsAndTriggerReattach())
+    window.addEventListener('pageshow', handleGenerationPageShow)
+    window.addEventListener('online', handleGenerationOnline)
+  }
+}
+
+export function stopActiveGenerationReattach(): void {
+  reattachDisabled = true
+  wired = false
+  reattachQueued = false
+  reattachDeferred = false
+  stopWaitingForGenerationIdle?.()
+  stopWaitingForGenerationIdle = null
+  stopSelectedCharacterSubscription?.()
+  stopSelectedCharacterSubscription = null
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleGenerationVisibilityChange)
+  }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('pageshow', handleGenerationPageShow)
+    window.removeEventListener('online', handleGenerationOnline)
   }
 }

@@ -24,6 +24,7 @@ const eventApi = vi.hoisted(() => ({
     sinceRevision?: number | null
     onCommandEvent: (event: TestCommandEvent) => void
     onMemoryEvent?: (event: TestMemoryEvent) => void
+    onWriterEvent?: (event: TestWriterEvent) => void
     onFrame?: (frame?: { event: string; data: string }) => void
     onError?: (error: string) => void
     onClose?: () => void
@@ -76,6 +77,7 @@ const pendingMutationApi = vi.hoisted(() => ({
 }))
 const ownershipApi = vi.hoisted(() => ({ count: vi.fn(() => 0), discard: vi.fn(), reset: vi.fn() }))
 const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyProgress: vi.fn() }))
+const activeWriterApi = vi.hoisted(() => ({ enterTakeover: vi.fn() }))
 const pushApi = vi.hoisted(() => ({
   initialize: vi.fn(async () => undefined),
   reconcile: vi.fn(async () => ({ status: 'applied' })),
@@ -95,6 +97,11 @@ interface TestMemoryEvent {
   chatId: string
   job: { id: string; kind: string; status: string; attemptCount: number; maxAttempts: number }
   sideEffect?: { kind: 'hypav3_progress'; payload: unknown }
+}
+
+interface TestWriterEvent {
+  sessionId: string | null
+  epoch: number
 }
 
 vi.mock('./server/bootstrap', () => ({
@@ -122,6 +129,10 @@ vi.mock('./server/resourceRefresh', () => ({
 }))
 
 vi.mock('./server/events', () => ({ subscribeServerCommandEvents: eventApi.subscribe }))
+vi.mock('./server/activeWriterSession', async (importActual) => {
+  const actual = await importActual<typeof import('./server/activeWriterSession')>()
+  return { ...actual, enterWriterTakeoverFlow: activeWriterApi.enterTakeover }
+})
 vi.mock('./server/chatMessageHydration.svelte', () => hydrationApi)
 vi.mock('./server/lorebookBridge.svelte', () => lorebookApi)
 vi.mock('./server/promptTemplateHydration', () => ({
@@ -4414,6 +4425,18 @@ describe('API-backed client bootstrap', () => {
     expect(memoryApi.applyProgress).toHaveBeenCalledWith({ progress: 0.5 })
     expect(memoryApi.publish).toHaveBeenCalledWith(event)
     expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+  })
+
+  it('enters the takeover flow only for a different non-null writer session', async () => {
+    await loadWebInitialDatabase()
+    const ownSessionId = getActiveWriterSessionId()
+
+    eventApi.subscriptions[0].onWriterEvent?.({ sessionId: null, epoch: 0 })
+    eventApi.subscriptions[0].onWriterEvent?.({ sessionId: ownSessionId, epoch: 1 })
+    expect(activeWriterApi.enterTakeover).not.toHaveBeenCalled()
+
+    eventApi.subscriptions[0].onWriterEvent?.({ sessionId: 'different-writer', epoch: 2 })
+    expect(activeWriterApi.enterTakeover).toHaveBeenCalledOnce()
   })
 
   it('stops the resource event subscription and bridge flush', async () => {

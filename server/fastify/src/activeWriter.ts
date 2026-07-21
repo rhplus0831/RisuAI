@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import { getDatabaseWriterMetadata, registerDatabaseWriterSession } from './databaseLineage.js'
 import { routeRequiresActiveWriter } from './routeManifest.js'
+import { createWriterEventBus, type WriterEventBus } from './writerEvents.js'
 
 export const ACTIVE_WRITER_SESSION_HEADER = 'risu-writer-session'
 
@@ -9,19 +10,25 @@ export interface ActiveWriterState {
   sessionId: string | null
   epoch: number
   db: DatabaseSync
+  events: WriterEventBus
 }
 
 export function createActiveWriterState(db: DatabaseSync): ActiveWriterState {
   const metadata = getDatabaseWriterMetadata(db)
-  return { ...metadata, db }
+  return { ...metadata, db, events: createWriterEventBus() }
 }
 
 export function registerActiveWriterSession(state: ActiveWriterState, req: FastifyRequest): void {
   const sessionId = readActiveWriterSessionId(req)
   if (sessionId !== null) {
+    const previousSessionId = state.sessionId
+    const previousEpoch = state.epoch
     const metadata = registerDatabaseWriterSession(state.db, sessionId)
     state.sessionId = metadata.sessionId
     state.epoch = metadata.epoch
+    if (metadata.sessionId !== previousSessionId || metadata.epoch !== previousEpoch) {
+      state.events.emit({ sessionId, epoch: metadata.epoch })
+    }
   }
 }
 

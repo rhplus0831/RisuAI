@@ -8,7 +8,7 @@ vi.mock('../storage/fastifyStorage', () => ({
 
 import { subscribeServerCommandEvents } from './events'
 import type { CommandEvent } from './commands'
-import type { ServerMemoryEvent } from './events'
+import type { ServerMemoryEvent, ServerWriterEvent } from './events'
 
 interface CapturedFetch {
   url: string
@@ -61,7 +61,7 @@ afterEach(() => {
 })
 
 describe('server command event subscription helper', () => {
-  it('fetches the event stream with auth and emits command and memory events', async () => {
+  it('fetches the event stream with auth and emits command, memory, and writer events', async () => {
     const commandEvent: CommandEvent = {
       type: 'settings.updated',
       revision: 3,
@@ -90,9 +90,13 @@ describe('server command event subscription helper', () => {
         },
       },
     }
+    const writerEvent: ServerWriterEvent = { sessionId: 'writer-b', epoch: 2 }
     const calls = stubEventsFetch(
       [
         ': connected',
+        '',
+        'event: writer',
+        `data: ${JSON.stringify(writerEvent)}`,
         '',
         'event: command',
         `data: ${JSON.stringify(commandEvent)}`,
@@ -110,23 +114,59 @@ describe('server command event subscription helper', () => {
     )
     const seen: CommandEvent[] = []
     const memorySeen: ServerMemoryEvent[] = []
+    const writerSeen: ServerWriterEvent[] = []
 
     const subscription = await subscribeServerCommandEvents({
       onCommandEvent: (event) => seen.push(event),
       onMemoryEvent: (event) => memorySeen.push(event),
+      onWriterEvent: (event) => writerSeen.push(event),
     })
 
     expect(subscription.status).toBe('ok')
     await waitFor(() => seen.length === 1)
     await waitFor(() => memorySeen.length === 1)
+    await waitFor(() => writerSeen.length === 1)
     expect(seen).toEqual([commandEvent])
     expect(memorySeen).toEqual([memoryEvent])
+    expect(writerSeen).toEqual([writerEvent])
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
       url: '/api/v1/events',
       method: 'GET',
       authHeader: 'events-auth-token',
     })
+  })
+
+  it('ignores malformed writer frames', async () => {
+    stubEventsFetch(
+      [
+        'event: writer',
+        'data: {"sessionId":"writer-a"}',
+        '',
+        'event: writer',
+        'data: {"sessionId":12,"epoch":1}',
+        '',
+        'event: writer',
+        'data: {"sessionId":"","epoch":1}',
+        '',
+        'event: writer',
+        'data: {"sessionId":null,"epoch":-1}',
+        '',
+        'event: writer',
+        'data: not-json',
+        '',
+      ].join('\n'),
+    )
+    const onWriterEvent = vi.fn()
+
+    const subscription = await subscribeServerCommandEvents({
+      onCommandEvent: vi.fn(),
+      onWriterEvent,
+    })
+
+    expect(subscription.status).toBe('ok')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(onWriterEvent).not.toHaveBeenCalled()
   })
 
   it('reports malformed command events instead of dropping them', async () => {

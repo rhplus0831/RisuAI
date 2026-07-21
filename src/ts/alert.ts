@@ -29,6 +29,7 @@ export interface alertData {
     | 'pluginconfirm'
     | 'requestlogs'
   msg: string
+  title?: string
   submsg?: string
   datalist?: [string, string][]
   stackTrace?: string
@@ -36,6 +37,7 @@ export interface alertData {
   progress?: number | null
   waitOwner?: AlertWaitHandle
   dialogOwner?: AlertDialogHandle
+  dismissible?: boolean
 }
 
 export type AlertWaitHandle = symbol
@@ -56,6 +58,8 @@ interface SelectionRequest {
   owner: AlertDialogHandle
   options: string[]
   display?: string
+  title?: string
+  dismissible: boolean
   resolve: (selection: string | null) => void
 }
 
@@ -212,7 +216,13 @@ function displayResultDialog(request: ResultDialogRequest): void {
     return
   }
   if (request.kind === 'selection') {
-    alertStoreImported.set({ type: 'select', msg: selectionMessage(request), dialogOwner: request.owner })
+    alertStoreImported.set({
+      type: 'select',
+      msg: selectionMessage(request),
+      dialogOwner: request.owner,
+      dismissible: request.dismissible,
+      ...(request.title === undefined ? {} : { title: request.title }),
+    })
     return
   }
   if (request.kind === 'input') {
@@ -303,12 +313,18 @@ function queueConfirmation(type: ConfirmationAlertType, msg: string): Promise<bo
   }))
 }
 
-function queueSelection(options: string[], display?: string): Promise<string | null> {
+function queueSelection(
+  options: string[],
+  display?: string,
+  settings: { dismissible?: boolean; title?: string } = {},
+): Promise<string | null> {
   return queueResultDialog<string | null>((resolve) => ({
     kind: 'selection',
     owner: Symbol('alert-dialog'),
     options: [...options],
     display,
+    dismissible: settings.dismissible !== false,
+    ...(settings.title === undefined ? {} : { title: settings.title }),
     resolve,
   }))
 }
@@ -513,6 +529,10 @@ export async function alertLogin() {
 
 export async function alertSelect(msg: string[], display?: string): Promise<string | null> {
   return queueSelection(msg, display)
+}
+
+export async function alertRequiredSelect(msg: string[], display: string, title: string): Promise<string> {
+  return (await queueSelection(msg, display, { dismissible: false, title })) ?? ''
 }
 
 export async function alertErrorWait(msg: string) {

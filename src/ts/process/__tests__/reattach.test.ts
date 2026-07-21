@@ -56,6 +56,7 @@ import {
   rememberActiveGenerationJob,
   setActiveGenerationJobs,
   startActiveGenerationReattach,
+  stopActiveGenerationReattach,
   triggerOpenChatGenerationReattach,
 } from '../reattach'
 
@@ -342,5 +343,18 @@ describe('reattach open-chat generation (Phase 4)', () => {
       expect(h.fetchRuntimeJobs).toHaveBeenCalledWith(null, { cacheRevision: false })
       expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-online' }))
     })
+  })
+
+  it('stops lifecycle probes from reconnecting to the server', async () => {
+    openChat('chat-1')
+    startActiveGenerationReattach()
+    stopActiveGenerationReattach()
+    h.fetchRuntimeJobs.mockClear()
+
+    window.dispatchEvent(new Event('online'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(h.fetchRuntimeJobs).not.toHaveBeenCalled()
+    expect(h.sendChat).not.toHaveBeenCalled()
   })
 })

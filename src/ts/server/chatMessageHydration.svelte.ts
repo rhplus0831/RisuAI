@@ -987,6 +987,7 @@ export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {})
 }
 
 let wired = false
+let stopChatHydrationWiring: (() => void) | null = null
 // Reactive mirror of the selected character index. `selectedCharID` is a store
 // (not $state), so the hydration effect can't track it directly; this mirror is
 // updated by a store subscription and read inside the effect, so the effect
@@ -1003,10 +1004,10 @@ let selectedCharMirror = $state(-1)
 export function startChatMessageHydration(): void {
   if (wired || !canUseServerResourceReads()) return
   wired = true
-  selectedCharID.subscribe((value) => {
+  const stopSelectedCharacterSubscription = selectedCharID.subscribe((value) => {
     selectedCharMirror = value
   })
-  $effect.root(() => {
+  const stopHydrationEffect = $effect.root(() => {
     $effect(() => {
       if (selectedCharMirror < 0) return
       const character = getDatabase().characters?.[selectedCharMirror]
@@ -1017,4 +1018,20 @@ export function startChatMessageHydration(): void {
       if (character?.chaId) void hydrateActiveCharacterLorebook()
     })
   })
+  stopChatHydrationWiring = () => {
+    stopSelectedCharacterSubscription()
+    stopHydrationEffect()
+  }
+}
+
+export function stopChatMessageHydration(): void {
+  if (!wired) return
+  wired = false
+  stopChatHydrationWiring?.()
+  stopChatHydrationWiring = null
+  chatHydrationGeneration += 1
+  charLorebookHydrationGeneration += 1
+  inFlight.clear()
+  charLorebookInFlight.clear()
+  pendingChatHydrationFreshness.clear()
 }

@@ -110,6 +110,7 @@
       : 'dialog',
   )
   const alertDialogTitle = $derived.by(() => {
+    if ($alertStore.title) return $alertStore.title
     if ($alertStore.type === 'error') return language.error
     if ($alertStore.type === 'ask') return language.confirm
     if ($alertStore.type === 'pluginconfirm') return language.pluginImport
@@ -333,7 +334,7 @@
   }
 
   function cancelSelectAlert() {
-    if ($alertStore.type !== 'select') return
+    if ($alertStore.type !== 'select' || $alertStore.dismissible === false) return
     resolveAlertSelection($alertStore.dialogOwner, null)
   }
 
@@ -374,7 +375,9 @@
       tabindex="-1"
       class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl max-h-full overflow-y-auto">
       <h2 id="risu-alert-dialog-title" class="sr-only">{alertDialogTitle}</h2>
-      {#if $alertStore.type === 'error'}
+      {#if $alertStore.title}
+        <h2 class="text-green-700 mt-0 mb-2 max-w-full">{$alertStore.title}</h2>
+      {:else if $alertStore.type === 'error'}
         <h2 class="text-red-700 mt-0 mb-2 w-40 max-w-full">{language.error}</h2>
       {:else if $alertStore.type === 'ask'}
         <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">{language.confirm}</h2>
@@ -557,7 +560,9 @@
               }}>{n}</Button>
           {/each}
         {/if}
-        <Button className="mt-4" styled="outlined" onclick={cancelSelectAlert}>{language.cancel}</Button>
+        {#if $alertStore.dismissible !== false}
+          <Button className="mt-4" styled="outlined" onclick={cancelSelectAlert}>{language.cancel}</Button>
+        {/if}
       {:else if $alertStore.type === 'error' || $alertStore.type === 'normal' || $alertStore.type === 'markdown'}
         <Button
           className="mt-4"
