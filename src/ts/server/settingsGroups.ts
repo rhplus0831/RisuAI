@@ -210,6 +210,8 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   newOAIHandle: 'runtime',
   noWaitForTranslate: 'language',
   notification: 'display',
+  paragraphBreakBySentences: 'display',
+  paragraphBreakSentenceCount: 'display',
   novelai: 'providers',
   novellistAPI: 'providers',
   OaiCompAPIKeys: 'providers',

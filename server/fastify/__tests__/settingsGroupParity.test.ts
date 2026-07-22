@@ -59,6 +59,13 @@ describe('settings group parity', () => {
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('autoTranslateNotificationDeferCapSeconds')
   })
 
+  it('keeps sentence paragraph preferences in the display settings projection', () => {
+    for (const key of ['paragraphBreakBySentences', 'paragraphBreakSentenceCount']) {
+      expect(SETTINGS_GROUP_KEYS.display).toContain(key)
+      expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain(key)
+    }
+  })
+
   it('documents server automatic-translation parity with the Chat.svelte guards', () => {
     const chatSource = readFileSync(path.join(process.cwd(), 'src/lib/ChatScreens/Chat.svelte'), 'utf8')
 

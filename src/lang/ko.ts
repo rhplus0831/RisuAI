@@ -1204,6 +1204,8 @@ const languageKoreanBase = {
   successApplyModule: '모듈이 성공적으로 적용되었습니다.',
   font: '폰트',
   lineHeight: '줄간격',
+  paragraphBreakBySentences: '문장 수 기준 문단 나누기',
+  paragraphBreakSentenceCount: '문단당 문장 수',
   notCharxWarn:
     '이 캐릭터는 여러 에셋을 사용합니다. 더 나은 호환성을 위해 이 캐릭터를 CharX 포맷으로 엑스포트하는 것이 좋습니다.',
   noPlugins: '설치된 플러그인이 없습니다.',

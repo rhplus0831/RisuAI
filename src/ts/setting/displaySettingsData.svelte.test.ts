@@ -1,3 +1,4 @@
+import { get } from 'svelte/store'
 import { describe, expect, it, vi } from 'vitest'
 
 const globalApiSpies = vi.hoisted(() => ({
@@ -21,6 +22,7 @@ import {
   displayThemeSettingsItems,
 } from './displaySettingsData.svelte'
 import type { SettingContext } from './types'
+import { RegexDisplayReloadPointer } from '../process/regexDisplayReload'
 
 function contextForTheme(theme: string): SettingContext {
   return {
@@ -76,6 +78,43 @@ describe('display theme settings data', () => {
     })
     expect(deferCap?.getValue?.({} as never)).toBe(180)
     expect(deferCap?.getValue?.({ autoTranslateNotificationDeferCapSeconds: 0 } as never)).toBe(0)
+  })
+
+  it('exposes sentence paragraph controls with legacy fallbacks and display reloads', () => {
+    const toggle = displayOtherSettingsItems.find((item) => item.id === 'display.paragraphBreakBySentences')
+    const count = displayOtherSettingsItems.find((item) => item.id === 'display.paragraphBreakSentenceCount')
+    const previousReload = get(RegexDisplayReloadPointer)
+
+    expect(toggle).toMatchObject({
+      type: 'check',
+      labelKey: 'paragraphBreakBySentences',
+      bindKey: 'paragraphBreakBySentences',
+      keywords: ['paragraph', 'sentence', 'break', 'readability'],
+    })
+    expect(toggle?.getValue?.({} as never)).toBe(false)
+    expect(toggle?.getValue?.({ paragraphBreakBySentences: true } as never)).toBe(true)
+
+    expect(count).toMatchObject({
+      type: 'slider',
+      labelKey: 'paragraphBreakSentenceCount',
+      bindKey: 'paragraphBreakSentenceCount',
+      options: { min: 1, max: 10, step: 1 },
+      keywords: ['paragraph', 'sentence', 'break', 'readability'],
+    })
+    expect(count?.getValue?.({} as never)).toBe(3)
+    expect(count?.getValue?.({ paragraphBreakSentenceCount: 7 } as never)).toBe(7)
+    expect(count?.condition?.({ ...contextForTheme('fastify'), db: {} as any })).toBe(false)
+    expect(count?.condition?.({ ...contextForTheme('fastify'), db: { paragraphBreakBySentences: true } as any })).toBe(
+      true,
+    )
+
+    try {
+      toggle?.onChange?.(true, contextForTheme('fastify'))
+      count?.onChange?.(4, contextForTheme('fastify'))
+      expect(get(RegexDisplayReloadPointer)).toBe(previousReload + 2)
+    } finally {
+      RegexDisplayReloadPointer.set(previousReload)
+    }
   })
 })
 

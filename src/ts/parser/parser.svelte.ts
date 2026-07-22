@@ -45,6 +45,7 @@ import {
   risuUnescape,
   type CbsConditions,
 } from './risuChatParserHelpers'
+import { insertSentenceParagraphBreaks } from './sentenceBreaks'
 
 export { dateTimeFormat, makeArray, parseArray, parseDict, risuEscape, risuUnescape }
 export type { CbsConditions }
@@ -939,6 +940,13 @@ export async function ParseMarkdown(
   data = await parseInlayAssets(data ?? '')
 
   data = parseThoughtsAndTools(data)
+
+  if (mode === 'normal' || mode === 'notrim') {
+    const database = getDatabase()
+    if (database.paragraphBreakBySentences ?? false) {
+      data = insertSentenceParagraphBreaks(data, database.paragraphBreakSentenceCount ?? 3)
+    }
+  }
 
   data = encodeStyle(data)
   if (mode === 'normal' || mode === 'notrim') {

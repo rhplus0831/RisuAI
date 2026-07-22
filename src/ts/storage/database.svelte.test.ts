@@ -682,6 +682,26 @@ describe('accessibility database normalization', () => {
   })
 })
 
+describe('sentence paragraph database normalization', () => {
+  it('defaults legacy databases and preserves existing display preferences', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete legacyData.paragraphBreakBySentences
+    delete legacyData.paragraphBreakSentenceCount
+
+    setDatabase(legacyData)
+    expect(getDatabase().paragraphBreakBySentences).toBe(false)
+    expect(getDatabase().paragraphBreakSentenceCount).toBe(3)
+
+    const configuredData = clonePlain(getDatabase())
+    configuredData.paragraphBreakBySentences = true
+    configuredData.paragraphBreakSentenceCount = 6
+    setDatabase(configuredData)
+    expect(getDatabase().paragraphBreakBySentences).toBe(true)
+    expect(getDatabase().paragraphBreakSentenceCount).toBe(6)
+  })
+})
+
 function seedPresetDatabase(patch: Partial<Database> = {}): void {
   setDatabaseLite({
     characters: [],

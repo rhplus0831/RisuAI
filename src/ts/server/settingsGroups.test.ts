@@ -40,4 +40,11 @@ describe('settings group contracts', () => {
     expect(SERVER_SETTINGS_GROUP_BY_KEY.reducedMotion).toBe('display')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('reducedMotion')
   })
+
+  it('persists sentence paragraph preferences through the display settings group', () => {
+    for (const key of ['paragraphBreakBySentences', 'paragraphBreakSentenceCount']) {
+      expect(SERVER_SETTINGS_GROUP_BY_KEY[key]).toBe('display')
+      expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain(key)
+    }
+  })
 })

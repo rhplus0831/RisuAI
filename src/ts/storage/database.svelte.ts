@@ -3169,6 +3169,8 @@ export function setDatabase(data: Database) {
   data.font ??= 'default'
   data.customFont ??= ''
   data.lineHeight ??= 1.25
+  data.paragraphBreakBySentences ??= false
+  data.paragraphBreakSentenceCount ??= 3
   data.stabilityModel ??= 'sd3-large'
   data.stabllityStyle ??= ''
   data.legacyTranslation ??= false
@@ -3985,6 +3987,8 @@ export interface Database {
   font: string
   customFont: string
   lineHeight: number
+  paragraphBreakBySentences?: boolean
+  paragraphBreakSentenceCount?: number
   stabilityModel: string
   stabilityKey: string
   stabllityStyle: string

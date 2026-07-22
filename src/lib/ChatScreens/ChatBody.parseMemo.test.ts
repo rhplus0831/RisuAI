@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { character, Database } from '../../ts/storage/database.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import { ReloadChatPointer, ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../../ts/stores.svelte'
-import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
+import { RegexDisplayReloadPointer, reloadRegexDisplay } from '../../ts/process/regexDisplayReload'
 import { withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
 
 const moduleMockState = vi.hoisted(() => ({
@@ -160,6 +160,8 @@ function seedDb(overrides: SeedDbOverrides = {}) {
     hideAllImages: false,
     dynamicAssets: false,
     dynamicAssetsEditDisplay: false,
+    paragraphBreakBySentences: false,
+    paragraphBreakSentenceCount: 3,
     assetWidth: -1,
     assetMaxDifference: 3,
     legacyMediaFindings: false,
@@ -184,6 +186,14 @@ async function waitForText(target: HTMLElement, expectedText: string) {
     }
   }
   throw new Error(`Expected rendered text "${expectedText}", got "${target.textContent ?? ''}"`)
+}
+
+async function waitForParagraphCount(target: HTMLElement, expectedCount: number) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await settleRenderWork()
+    if (target.querySelectorAll('p').length === expectedCount) return
+  }
+  throw new Error(`Expected ${expectedCount} paragraphs, got ${target.querySelectorAll('p').length}`)
 }
 
 async function loadChatBodyWithParseSpy() {
@@ -430,6 +440,35 @@ describe('ChatBody content-keyed parse memo', () => {
       moduleSignatureBuilds: 5,
       settingsSignatureBuilds: 6,
     })
+  })
+
+  it('includes both sentence paragraph preferences in parser memo keys with legacy fallbacks', async () => {
+    seedDb()
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'Sentence paragraph memo body',
+      charArg: getResourceDatabase().characters[0].chaId,
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+    const database = getResourceDatabase()
+
+    delete database.paragraphBreakBySentences
+    delete database.paragraphBreakSentenceCount
+    const legacyKey = memoModule.getChatBodyParseMemoKey(input)
+
+    database.paragraphBreakBySentences = false
+    database.paragraphBreakSentenceCount = 3
+    expect(memoModule.getChatBodyParseMemoKey(input)).toBe(legacyKey)
+
+    database.paragraphBreakBySentences = true
+    const enabledKey = memoModule.getChatBodyParseMemoKey(input)
+    expect(enabledKey).not.toBe(legacyKey)
+
+    database.paragraphBreakSentenceCount = 4
+    expect(memoModule.getChatBodyParseMemoKey(input)).not.toBe(enabledKey)
   })
 
   it('keys parser settings from the active chat selected prompt regex', async () => {
@@ -754,6 +793,35 @@ describe('ChatBody content-keyed parse memo', () => {
     await waitForText(target, 'activated body')
 
     expect(parseSpy).toHaveBeenCalledOnce()
+    unmount(component)
+  })
+
+  it('re-renders an open message when sentence paragraph display settings change', async () => {
+    const char = seedDb({
+      paragraphBreakBySentences: false,
+      paragraphBreakSentenceCount: 2,
+    })
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const { ChatBody, parseSpy } = await loadChatBodyWithParseSpy()
+    const component = mountChatBody(ChatBody, target, {
+      character: char.chaId,
+      msgDisplay: 'First sentence. Second sentence. Third sentence.',
+    })
+
+    await waitForParagraphCount(target, 1)
+    parseSpy.mockClear()
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().paragraphBreakBySentences = true
+    })
+    reloadRegexDisplay()
+    await waitForParagraphCount(target, 2)
+
+    expect(parseSpy).toHaveBeenCalledOnce()
+    expect([...target.querySelectorAll('p')].map((paragraph) => paragraph.textContent)).toEqual([
+      'First sentence. Second sentence.',
+      'Third sentence.',
+    ])
     unmount(component)
   })
 

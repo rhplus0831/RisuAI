@@ -1003,6 +1003,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       zoomsize: 100,
       chatScreenWidth: 900,
       autoTranslateNotificationDeferCapSeconds: 180,
+      paragraphBreakBySentences: false,
+      paragraphBreakSentenceCount: 3,
       greeting: 'hi',
     })
 
@@ -1017,6 +1019,8 @@ describe('Phase 9-2a scalar settings groups', () => {
           zoomsize: 88,
           chatScreenWidth: 1240,
           autoTranslateNotificationDeferCapSeconds: 0,
+          paragraphBreakBySentences: true,
+          paragraphBreakSentenceCount: 5,
         },
       },
     })
@@ -1030,7 +1034,14 @@ describe('Phase 9-2a scalar settings groups', () => {
         resource: 'settings',
         id: 'display',
       },
-      acknowledgedKeys: ['theme', 'zoomsize', 'chatScreenWidth', 'autoTranslateNotificationDeferCapSeconds'],
+      acknowledgedKeys: [
+        'theme',
+        'zoomsize',
+        'chatScreenWidth',
+        'autoTranslateNotificationDeferCapSeconds',
+        'paragraphBreakBySentences',
+        'paragraphBreakSentenceCount',
+      ],
       settings: {},
     })
 
@@ -1045,6 +1056,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       zoomsize: 88,
       chatScreenWidth: 1240,
       autoTranslateNotificationDeferCapSeconds: 0,
+      paragraphBreakBySentences: true,
+      paragraphBreakSentenceCount: 5,
       greeting: 'hi',
     })
   })

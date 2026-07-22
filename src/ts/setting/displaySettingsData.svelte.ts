@@ -10,6 +10,7 @@ import { guiSizeText, updateGuisize } from '../gui/guisize'
 import { updateTextThemeAndCSS } from '../gui/colorscheme'
 import { CustomGUISettingMenuStore } from '../stores.svelte'
 import { MAX_CHAT_DISPLAY_TAIL_COUNT, MIN_CHAT_DISPLAY_TAIL_COUNT } from '../chatDisplayTailCount'
+import { reloadRegexDisplay } from '../process/regexDisplayReload'
 
 /** Display fields edited by custom controls rather than SettingRenderer wrappers. */
 export const displayNonRendererServerSettingKeys = [
@@ -405,6 +406,26 @@ export const displayOtherSettingsItems: SettingItem[] = [
     labelKey: 'useLegacyGUI',
     bindKey: 'useLegacyGUI',
     keywords: ['legacy', 'gui'],
+  },
+  {
+    id: 'display.paragraphBreakBySentences',
+    type: 'check',
+    labelKey: 'paragraphBreakBySentences',
+    bindKey: 'paragraphBreakBySentences',
+    getValue: (db) => db.paragraphBreakBySentences ?? false,
+    onChange: () => reloadRegexDisplay(),
+    keywords: ['paragraph', 'sentence', 'break', 'readability'],
+  },
+  {
+    id: 'display.paragraphBreakSentenceCount',
+    type: 'slider',
+    labelKey: 'paragraphBreakSentenceCount',
+    bindKey: 'paragraphBreakSentenceCount',
+    getValue: (db) => db.paragraphBreakSentenceCount ?? 3,
+    condition: (ctx) => ctx.db.paragraphBreakBySentences === true,
+    onChange: () => reloadRegexDisplay(),
+    options: { min: 1, max: 10, step: 1 },
+    keywords: ['paragraph', 'sentence', 'break', 'readability'],
   },
   {
     id: 'display.unformatQuotes',

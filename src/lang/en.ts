@@ -1610,6 +1610,8 @@ export const languageEnglish = {
   customFont: 'Custom Font',
   chatScreenWidth: 'Chat Screen Width',
   lineHeight: 'Line Height',
+  paragraphBreakBySentences: 'Paragraph Break Every N Sentences',
+  paragraphBreakSentenceCount: 'Sentences Per Paragraph',
   notCharxWarn:
     'This character uses multiple assets. It is recommended to export this character as a CharX format for better compatibility.',
   noPlugins: 'No Plugins Installed',

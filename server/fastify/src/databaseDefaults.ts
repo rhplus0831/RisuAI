@@ -386,6 +386,8 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'font', 'default')
   setDefault(database, 'customFont', '')
   setDefault(database, 'lineHeight', 1.25)
+  setDefault(database, 'paragraphBreakBySentences', false)
+  setDefault(database, 'paragraphBreakSentenceCount', 3)
   setDefault(database, 'stabilityModel', 'sd3-large')
   setDefault(database, 'stabllityStyle', '')
   setDefault(database, 'legacyTranslation', false)

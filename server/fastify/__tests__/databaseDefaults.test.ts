@@ -27,6 +27,8 @@ describe('database defaults', () => {
     expect(database.reducedMotion).toBe(false)
     expect(database.chatScreenWidth).toBe(900)
     expect(database.autoTranslateNotificationDeferCapSeconds).toBe(180)
+    expect(database.paragraphBreakBySentences).toBe(false)
+    expect(database.paragraphBreakSentenceCount).toBe(3)
     expect(database.translatorSendTextAsIs).toBe(false)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
@@ -81,6 +83,16 @@ describe('database defaults', () => {
     )
 
     expect(database.autoTranslateNotificationDeferCapSeconds).toBe(0)
+  })
+
+  it('preserves existing sentence paragraph display preferences', () => {
+    const database = normalizeDatabaseDefaults(
+      { paragraphBreakBySentences: true, paragraphBreakSentenceCount: 7 },
+      { providerDefaults: false },
+    )
+
+    expect(database.paragraphBreakBySentences).toBe(true)
+    expect(database.paragraphBreakSentenceCount).toBe(7)
   })
 
   it('preserves an enabled send-text-as-is translation preference', () => {

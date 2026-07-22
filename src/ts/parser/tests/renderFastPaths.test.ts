@@ -1,7 +1,14 @@
 import { writable } from 'svelte/store'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { language } from '../../../lang'
-import { parseThoughtsAndTools, risuChatParser } from '../parser.svelte'
+import { ParseMarkdown, parseThoughtsAndTools, risuChatParser } from '../parser.svelte'
+
+const mocks = vi.hoisted(() => ({
+  db: {
+    paragraphBreakBySentences: false,
+    paragraphBreakSentenceCount: 3,
+  },
+}))
 
 vi.mock(
   import('../../storage/database.svelte'),
@@ -9,7 +16,7 @@ vi.mock(
     ({
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
-      getDatabase: () => ({}),
+      getDatabase: () => mocks.db,
       reapplyPendingPresetProjections: () => {},
     }) as typeof import('../../storage/database.svelte'),
 )
@@ -36,8 +43,27 @@ const toolCallHtml = (payload: string) =>
     payload.split('\uf100')?.[1] ?? 'unknown',
   )}</div>\n\n`
 
+beforeEach(() => {
+  mocks.db.paragraphBreakBySentences = false
+  mocks.db.paragraphBreakSentenceCount = 3
+})
+
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+describe('ParseMarkdown sentence paragraph mode gating', () => {
+  it('applies paragraph breaks in notrim mode but not pretranslate or back mode', async () => {
+    const input = 'First sentence. Second sentence. Third sentence.'
+    mocks.db.paragraphBreakBySentences = true
+    mocks.db.paragraphBreakSentenceCount = 2
+
+    await expect(ParseMarkdown(input, null, 'notrim')).resolves.toContain(
+      '<p>First sentence. Second sentence.</p>\n<p>Third sentence.</p>',
+    )
+    await expect(ParseMarkdown(input, null, 'pretranslate')).resolves.toBe(input)
+    await expect(ParseMarkdown(input, null, 'back')).resolves.toBe(input)
+  })
 })
 
 describe('parseThoughtsAndTools render fast paths (L39)', () => {
