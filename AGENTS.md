@@ -7,13 +7,14 @@
 - Use `pnpm dev:agent` when you need a full-stack development server.
 - The frontend is available at `http://localhost:6418`; Fastify runs on port `6419` and is proxied through `/api` on the frontend server.
 - `pnpm dev:agent` bypasses password authentication and Terms of Service confirmation for agent-run browser sessions.
+- `pnpm dev:agent` runs against a disposable sandbox data directory (`data-agent/`) that is re-cloned from the human `data/` directory on every launch. Mutate state freely: nothing you do through `dev:agent` can touch the human database, and the sandbox is discarded on the next launch. Set `RISU_AGENT_DATA_MODE=keep` to reuse the previous sandbox across launches, or `RISU_AGENT_DATA_MODE=fresh` to start from an empty database.
 - Stop the dev server when you are done using it.
 
 # Dev Trace Logs
 
-- `pnpm dev:agent` writes API request traces to `data/trace/agent.jsonl`; `pnpm dev:human` writes them to `data/trace/human.jsonl`. Each mode keeps the newest 5,000 trace entries and trims older entries.
-- When tracing is enabled, each response has an `X-Request-UID` header. Use `rg "<uid>" data/trace/*.jsonl` to find the matching JSONL entry.
-- Trace entries inline small text bodies; larger captured text bodies are stored as `.gz` sidecars under `data/trace/bodies/<mode>/` when the compressed sidecar is at most 10 MiB.
+- `pnpm dev:agent` writes API request traces to `data-agent/trace/agent.jsonl`; `pnpm dev:human` writes them to `data/trace/human.jsonl`. Each mode keeps the newest 5,000 trace entries and trims older entries.
+- When tracing is enabled, each response has an `X-Request-UID` header. Use `rg "<uid>" data-agent/trace/*.jsonl` (or `data/trace/*.jsonl` for human mode) to find the matching JSONL entry.
+- Trace entries inline small text bodies; larger captured text bodies are stored as `.gz` sidecars under `trace/bodies/<mode>/` inside the same data directory when the compressed sidecar is at most 10 MiB.
 
 ## Available Tools
 

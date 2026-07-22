@@ -7,6 +7,8 @@ description: Launch the RisuAI fastify app and drive it in a headless browser (P
 
 Launch `pnpm dev:agent` (frontend `http://127.0.0.1:6418`, Fastify on 6419 proxied at `/api`; auth + TOS bypassed) and drive it with headless Playwright. Stop the dev server when done — but only yours: a separate vite on **port 6002** is often the user's own session; never `pkill -f vite` broadly, match your port instead.
 
+`dev:agent` serves a **disposable sandbox** (`data-agent/`, cloned from the human `data/` at launch): create/edit/delete anything without worrying about the user's data, and don't bother cleaning up state you created — the next launch re-clones. If a scenario must survive a dev-server restart, relaunch with `RISU_AGENT_DATA_MODE=keep`. Traces land in `data-agent/trace/agent.jsonl`.
+
 ## Playwright script setup
 
 - `@playwright/test` resolves from the **script file's location**, not cwd. A script in the session scratchpad cannot import it — write the script as `scripts/temp-<name>.mjs` inside the repo and **delete it before committing**. Run with plain `node scripts/temp-<name>.mjs`.

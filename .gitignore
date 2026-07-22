@@ -12,6 +12,7 @@ node_modules
 dist/
 save/
 data/
+data-agent/
 dist-web/
 dist-ssr
 *.local

@@ -124,5 +124,7 @@ past decisions but are not sources of current behavior.
   emits client-library declarations, then typechecks strict Fastify and
   Playwright browser-smoke sources.
 - `pnpm dev:agent` runs the trace-enabled full stack on ports 6418/6419 with
-  agent auth/TOS bypass. Stop it when finished. `pnpm dev:human` uses
-  ports 6002/6001 with normal password auth defaults.
+  agent auth/TOS bypass, against a disposable `data-agent/` sandbox cloned
+  from `data/` at launch (`RISU_AGENT_DATA_MODE=keep|fresh|clone` controls
+  the reset policy). Stop it when finished. `pnpm dev:human` uses
+  ports 6002/6001 with normal password auth defaults and the real `data/`.

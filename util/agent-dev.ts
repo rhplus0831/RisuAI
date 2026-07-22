@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import path from 'node:path'
+import { parseAgentDataSandboxMode, prepareAgentDataSandbox } from '../server/fastify/src/agentDataSandbox.js'
 
 const repoRoot = process.cwd()
 const frontendPort = parsePort(process.env.RISU_AGENT_DEV_PORT, 6418, 'RISU_AGENT_DEV_PORT')
@@ -8,6 +10,11 @@ const apiPort = parsePort(process.env.RISU_AGENT_API_PORT, 6419, 'RISU_AGENT_API
 const host = process.env.RISU_AGENT_DEV_HOST ?? '127.0.0.1'
 const traceMode = process.env.RISU_API_TRACE_MODE?.trim().toLowerCase()
 const defaultAuthBypass = traceMode === 'human' ? 'FALSE' : 'TRUE'
+// Agent mode runs against a disposable clone of the human data dir so
+// agent-driven sessions can mutate state freely. An explicit RISU_API_DATA_DIR
+// is honored as-is (no cloning); human mode keeps the server default (data/).
+const sandboxDataDir =
+  traceMode === 'human' || process.env.RISU_API_DATA_DIR ? undefined : path.join(repoRoot, 'data-agent')
 const shutdownGraceMs = 5_000
 
 type ManagedProcess = {
@@ -85,8 +92,21 @@ async function shutdown(exitCode: number): Promise<void> {
 log(`frontend: http://localhost:${frontendPort}`)
 log(`api: http://localhost:${apiPort} (proxied through /api on ${frontendPort})`)
 
+if (sandboxDataDir) {
+  // Prepared here (not in the server) so tsx-watch restarts of the API child
+  // reuse the same sandbox for the whole dev session.
+  const sandboxMode = parseAgentDataSandboxMode(process.env.RISU_AGENT_DATA_MODE)
+  const summary = await prepareAgentDataSandbox({
+    sourceDataDir: path.join(repoRoot, 'data'),
+    sandboxDataDir,
+    mode: sandboxMode,
+  })
+  log(`data sandbox (${sandboxMode}): ${summary}`)
+}
+
 spawnManaged('api', 'pnpm', ['exec', 'tsx', 'watch', 'server/fastify/src/index.ts'], {
   ...process.env,
+  ...(sandboxDataDir ? { RISU_API_DATA_DIR: sandboxDataDir } : {}),
   RISU_API_HOST: host,
   RISU_API_PORT: String(apiPort),
   RISU_API_STATIC_ROOT: process.env.RISU_API_STATIC_ROOT ?? 'none',
