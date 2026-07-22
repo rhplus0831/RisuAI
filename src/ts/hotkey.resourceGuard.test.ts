@@ -220,6 +220,28 @@ describe('hotkey handling under the resource guard', () => {
     expect(hotkey.shift).toBeUndefined()
   })
 
+  it('treats keydown inside a Monaco EditContext editor as editable', () => {
+    // Monaco ≥0.53 focuses a plain div.native-edit-context, so the unmodified
+    // Space→focusInput hotkey must be rejected via the .monaco-editor guard.
+    const editorRoot = document.createElement('div')
+    editorRoot.className = 'monaco-editor'
+    const editContext = document.createElement('div')
+    editContext.className = 'native-edit-context'
+    editorRoot.appendChild(editContext)
+    document.body.appendChild(editorRoot)
+    try {
+      const hotkey = { key: ' ', action: 'focusInput' } as any
+      let matched: boolean | null = null
+      editContext.addEventListener('keydown', (ev) => {
+        matched = hotkeyMatches(hotkey, ev)
+      })
+      editContext.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+      expect(matched).toBe(false)
+    } finally {
+      editorRoot.remove()
+    }
+  })
+
   it('rejects mismatched modifiers without mutation', () => {
     setResourceWriteGuardEnabled(true)
 

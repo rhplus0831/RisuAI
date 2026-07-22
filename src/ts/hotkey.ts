@@ -421,7 +421,11 @@ function isEditableHotkeyTarget(event: KeyboardEvent): boolean {
     .find((candidate): candidate is HTMLElement => candidate instanceof HTMLElement)
   const target = eventTarget ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
   if (!target) return false
-  return !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+  // Monaco ≥0.53 with EditContext enabled focuses a plain `div.native-edit-context`
+  // (not a textarea, not contenteditable), so match the editor container too.
+  return !!target.closest(
+    'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .monaco-editor',
+  )
 }
 
 export function adjacentCharacterIndex(
