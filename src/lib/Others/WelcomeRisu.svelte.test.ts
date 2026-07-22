@@ -249,7 +249,7 @@ describe('WelcomeRisu onboarding setup completion', () => {
     expect(target.querySelector('textarea')).toBeNull()
   })
 
-  it('waits for the selected persona owner before advancing from the name step', async () => {
+  it('keeps the username field editable but ignores a second Enter while persistence is pending', async () => {
     const persistence = createDeferred<'accepted' | 'queued' | 'failed'>()
     welcomeMocks.updateSelectedPersonaFieldWithOutcome.mockReturnValueOnce(persistence.promise)
     await mountWelcome()
@@ -259,7 +259,12 @@ describe('WelcomeRisu onboarding setup completion', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
     sendButton().click()
-    sendButton().click()
+    await tick()
+
+    expect(textInput().disabled).toBe(false)
+    input.value = 'Grace'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     await tick()
 
     expect(welcomeMocks.updateSelectedPersonaFieldWithOutcome).toHaveBeenCalledOnce()

@@ -138,12 +138,33 @@
     return `chat-order:${ownerCharacterId ?? `index:${ownerSelectedCharIndex}`}`
   }
 
-  function hasConflictingMutation(conflictKeys) {
-    return Object.values(chatMutations).some(
-      (mutation) =>
+  function hasConflictingMutation(conflictKeys, ignoredMutationKey) {
+    return Object.entries(chatMutations).some(
+      ([key, mutation]) =>
+        (!ignoredMutationKey || (key !== ignoredMutationKey && !key.startsWith(`${ignoredMutationKey}:`))) &&
         mutation.status === 'pending' &&
         mutation.conflictKeys.some((conflictKey) => conflictKeys.includes(conflictKey)),
     )
+  }
+
+  function mutationKeyBelongsToGroup(key, groupKey) {
+    return key === groupKey || key.startsWith(`${groupKey}:`)
+  }
+
+  function clearFailedMutations(groupKey) {
+    for (const [key, mutation] of Object.entries(chatMutations)) {
+      if (mutationKeyBelongsToGroup(key, groupKey) && mutation.status === 'failed') delete chatMutations[key]
+    }
+  }
+
+  function clearAcceptedMutation(key, run, groupKey) {
+    if (!groupKey) {
+      clearMutation(key, run)
+      return
+    }
+    for (const [candidateKey, mutation] of Object.entries(chatMutations)) {
+      if (mutationKeyBelongsToGroup(candidateKey, groupKey) && mutation.run <= run) delete chatMutations[candidateKey]
+    }
   }
 
   function isChatMutationPending(chatId) {
@@ -179,12 +200,12 @@
     navigate(characterRoutePath(characterId, replacementChatId), { replace: true })
   }
 
-  function settleQueuedMutation(key, run, targetId, action, conflictKeys, settlement, onFinal) {
+  function settleQueuedMutation(key, run, targetId, action, conflictKeys, settlement, onFinal, mutationGroupKey) {
     void settlement.then(
       (finalOutcome) => {
         if (!isCurrentMutation(key, run)) return
         if (finalOutcome.status === 'accepted') {
-          clearMutation(key, run)
+          clearAcceptedMutation(key, run, mutationGroupKey)
           onFinal?.(finalOutcome)
           return
         }
@@ -207,7 +228,16 @@
     return language.chatStructureFailed(mutation.action)
   }
 
-  async function settleMutation(key, targetId, action, conflictKeys, dispatch, queuedMessage, onFinal) {
+  async function settleMutation(
+    key,
+    targetId,
+    action,
+    conflictKeys,
+    dispatch,
+    queuedMessage,
+    onFinal,
+    mutationGroupKey,
+  ) {
     const run = ++nextMutationRun
     setMutation(key, targetId, action, conflictKeys, run, 'pending')
     try {
@@ -221,10 +251,10 @@
       if (outcome.status === 'queued') {
         setMutation(key, targetId, action, conflictKeys, run, 'queued')
         alertNormal(queuedMessage ?? language.chatStructureQueued(action))
-        settleQueuedMutation(key, run, targetId, action, conflictKeys, outcome.settlement, onFinal)
+        settleQueuedMutation(key, run, targetId, action, conflictKeys, outcome.settlement, onFinal, mutationGroupKey)
         return 'queued'
       }
-      clearMutation(key, run)
+      clearAcceptedMutation(key, run, mutationGroupKey)
       return 'accepted'
     } catch {
       if (isCurrentMutation(key, run)) {
@@ -252,8 +282,9 @@
   async function updateChatName(chat, name) {
     const character = resolveActiveOwnerCharacter()
     const liveTargetChat = character?.chats?.find((candidate) => candidate.id === chat?.id)
-    if (!character || !liveTargetChat?.id || liveTargetChat.name === name || isChatMutationPending(liveTargetChat.id))
-      return
+    if (!character || !liveTargetChat?.id || liveTargetChat.name === name) return
+    const key = mutationKey('rename', liveTargetChat.id)
+    if (hasConflictingMutation([chatConflictKey(liveTargetChat.id)], key)) return
     if (reportWriterAccessLostMutation()) return
     if (!canUseServerCommands()) {
       liveTargetChat.name = name
@@ -277,10 +308,24 @@
     })
     if (!applied) return
     syncServerBackedChatMetadataBaselines()
+    clearFailedMutations(key)
     const action = `${language.edit}: ${name}`
-    const key = mutationKey('rename', liveTargetChat.id)
-    await settleMutation(key, liveTargetChat.id, action, [chatConflictKey(liveTargetChat.id)], () =>
-      dispatchUpdateChatWithOutcome(liveTargetChat.id, { name }, previous, false, rollbackServerBackedChatRowMetadata),
+    await settleMutation(
+      `${key}:${v4()}`,
+      liveTargetChat.id,
+      action,
+      [chatConflictKey(liveTargetChat.id)],
+      () =>
+        dispatchUpdateChatWithOutcome(
+          liveTargetChat.id,
+          { name },
+          previous,
+          false,
+          rollbackServerBackedChatRowMetadata,
+        ),
+      undefined,
+      undefined,
+      key,
     )
   }
 
@@ -496,7 +541,6 @@
             <TextInput
               bind:value={chatNameDrafts[chat.id]}
               padding={false}
-              disabled={isChatMutationPending(chat.id)}
               onchange={() => {
                 void updateChatName(chat, chatNameDrafts[chat.id])
               }} />

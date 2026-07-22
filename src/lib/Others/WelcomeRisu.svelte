@@ -466,7 +466,6 @@
                 style:height={'44px'} />
             {:else}
               <textarea
-                disabled={step === 1 && usernamePersistencePending}
                 class="peer focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full"
                 bind:value={input}
                 onkeydown={(e) => {

@@ -1469,6 +1469,211 @@ describe('SideChatList DOM contract harness', () => {
     expect(sidebarMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps folder, foldered-chat, and unfiled-chat rename inputs enabled while saves are pending', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    setResourceWriteGuardEnabled(true)
+    const folderedRename = sidebarMocks.createDeferredUpdateCommand()
+    const unfiledRename = sidebarMocks.createDeferredUpdateCommand()
+    const folderRename = sidebarMocks.createDeferredUpdateCommand()
+    sidebarMocks.dispatchUpdateChatWithOutcome
+      .mockImplementationOnce(() => folderedRename.promise as Promise<any>)
+      .mockImplementationOnce(() => unfiledRename.promise as Promise<any>)
+    sidebarMocks.dispatchUpdateChatFolderWithOutcome.mockImplementationOnce(() => folderRename.promise as Promise<any>)
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+    editButtonForRow(rowByChatId('chat-foldered')).click()
+    await tick()
+
+    const folderedInput = inputIn(rowByChatId('chat-foldered'), 'foldered chat name input')
+    const unfiledInput = inputIn(rowByChatId('chat-root-a'), 'unfiled chat name input')
+    const folderInput = inputIn(folderElementById('folder-a'), 'folder name input')
+    for (const [input, value] of [
+      [folderedInput, 'Pending Foldered Chat'],
+      [unfiledInput, 'Pending Root Chat'],
+      [folderInput, 'Pending Folder'],
+    ] as const) {
+      await setTextInputValue(input, value)
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await tick()
+      expect(input.disabled).toBe(false)
+      input.focus()
+      expect(document.activeElement).toBe(input)
+    }
+
+    expect(sidebarMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledTimes(2)
+    expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome).toHaveBeenCalledOnce()
+
+    folderedRename.resolve({ status: 'accepted', result: { revision: 1, status: 'ok' } })
+    unfiledRename.resolve({ status: 'accepted', result: { revision: 2, status: 'ok' } })
+    folderRename.resolve({ status: 'accepted', result: { revision: 3, status: 'ok' } })
+    await flushCommandWork()
+  })
+
+  it('supersedes pending chat and folder renames while preserving the latest draft on an older failure', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    setResourceWriteGuardEnabled(true)
+    const firstChatRename = sidebarMocks.createDeferredUpdateCommand()
+    const finalChatRename = sidebarMocks.createDeferredUpdateCommand()
+    const firstFolderRename = sidebarMocks.createDeferredUpdateCommand()
+    sidebarMocks.rollbackServerBackedChatRowMetadata.mockImplementationOnce(restoreChatRowMetadata)
+    sidebarMocks.dispatchUpdateChatWithOutcome
+      .mockImplementationOnce(async (chatId, patch, previous, _select, rollback) => {
+        const outcome = (await firstChatRename.promise) as any
+        if (outcome.status === 'failed') {
+          const previousChat = previous.characters[0].chats.find((candidate) => candidate.id === chatId)
+          rollback({
+            selectedCharID: previous.selectedCharID,
+            characterId: previous.characters[0].chaId,
+            chatId,
+            metadata: { name: previousChat?.name },
+            attempted: patch,
+          })
+        }
+        return outcome
+      })
+      .mockImplementationOnce(() => finalChatRename.promise as Promise<any>)
+    sidebarMocks.dispatchUpdateChatFolderWithOutcome
+      .mockImplementationOnce(() => firstFolderRename.promise as Promise<any>)
+      .mockResolvedValueOnce({ status: 'accepted', result: { revision: 4, status: 'ok' } })
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+    editButtonForRow(rowByChatId('chat-root-a')).click()
+    await tick()
+
+    const chatInput = inputIn(rowByChatId('chat-root-a'), 'chat name input')
+    await setTextInputValue(chatInput, 'First Sidebar Rename')
+    chatInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    await setTextInputValue(chatInput, 'Final Sidebar Rename')
+    chatInput.dispatchEvent(new Event('change', { bubbles: true }))
+
+    const folderInput = inputIn(folderElementById('folder-a'), 'folder name input')
+    await setTextInputValue(folderInput, 'First Folder Rename')
+    folderInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    await setTextInputValue(folderInput, 'Final Folder Rename')
+    folderInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushCommandWork()
+
+    expect(sidebarMocks.dispatchUpdateChatWithOutcome.mock.calls.map((call) => call[1])).toEqual([
+      { name: 'First Sidebar Rename' },
+      { name: 'Final Sidebar Rename' },
+    ])
+    expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome.mock.calls.map((call) => call[1])).toEqual([
+      { name: 'First Folder Rename' },
+      { name: 'Final Folder Rename' },
+    ])
+
+    firstChatRename.resolve({ status: 'failed', result: { status: 'error', error: 'rename failed' } })
+    firstFolderRename.resolve({ status: 'accepted', result: { revision: 3, status: 'ok' } })
+    await flushCommandWork()
+
+    expect(selectedCharacter().chats[0].name).toBe('Final Sidebar Rename')
+    expect(selectedCharacter().chatFolders[0].name).toBe('Final Folder Rename')
+    expect(inputIn(rowByChatId('chat-root-a'), 'chat name input').value).toBe('Final Sidebar Rename')
+    expect(inputIn(folderElementById('folder-a'), 'folder name input').value).toBe('Final Folder Rename')
+    expect(sidebarMocks.alertError).toHaveBeenCalledWith('Edit: First Sidebar Rename failed')
+    expect(sidebarRoot().querySelector('[role="alert"]')?.textContent).toContain('Edit: First Sidebar Rename failed')
+    expect(
+      sidebarRoot().querySelectorAll(
+        '[data-risu-chat-mutation][data-risu-chat-mutation-status="pending"][role="status"]',
+      ),
+    ).toHaveLength(1)
+
+    finalChatRename.resolve({ status: 'accepted', result: { revision: 2, status: 'ok' } })
+    await flushCommandWork()
+
+    expect(sidebarRoot().querySelector('[role="alert"]')).toBeNull()
+    expect(
+      sidebarRoot().querySelectorAll('[data-risu-chat-mutation][data-risu-chat-mutation-status="failed"]'),
+    ).toHaveLength(0)
+    expect(rowByChatId('chat-root-a').dataset.risuChatMutationStatus).toBe('')
+  })
+
+  it('clears failed chat and folder rename entries when later retries succeed', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    setResourceWriteGuardEnabled(true)
+    const failedChatRename = sidebarMocks.createDeferredUpdateCommand()
+    const failedFolderRename = sidebarMocks.createDeferredUpdateCommand()
+    sidebarMocks.dispatchUpdateChatWithOutcome.mockImplementationOnce(() => failedChatRename.promise as Promise<any>)
+    sidebarMocks.dispatchUpdateChatFolderWithOutcome.mockImplementationOnce(
+      () => failedFolderRename.promise as Promise<any>,
+    )
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+    editButtonForRow(rowByChatId('chat-root-a')).click()
+    await tick()
+
+    const chatInput = inputIn(rowByChatId('chat-root-a'), 'chat name input')
+    const folderInput = inputIn(folderElementById('folder-a'), 'folder name input')
+    await setTextInputValue(chatInput, 'Failed Sidebar Rename')
+    chatInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await setTextInputValue(folderInput, 'Failed Folder Rename')
+    folderInput.dispatchEvent(new Event('change', { bubbles: true }))
+    failedChatRename.resolve({ status: 'failed', result: { status: 'error', error: 'chat rename failed' } })
+    failedFolderRename.resolve({ status: 'failed', result: { status: 'error', error: 'folder rename failed' } })
+    await flushCommandWork()
+
+    expect(sidebarRoot().querySelectorAll('[data-risu-chat-mutation-status="failed"][role="alert"]')).toHaveLength(2)
+
+    await setTextInputValue(chatInput, 'Successful Sidebar Retry')
+    chatInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await setTextInputValue(folderInput, 'Successful Folder Retry')
+    folderInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushCommandWork()
+
+    expect(sidebarRoot().querySelector('[role="alert"]')).toBeNull()
+    expect(
+      sidebarRoot().querySelectorAll('[data-risu-chat-mutation][data-risu-chat-mutation-status="failed"]'),
+    ).toHaveLength(0)
+    expect(rowByChatId('chat-root-a').dataset.risuChatMutationStatus).toBe('')
+    expect(folderElementById('folder-a').dataset.risuChatMutationStatus).toBe('')
+  })
+
+  it('does not clear a newer pending rename when an older attempt succeeds', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    setResourceWriteGuardEnabled(true)
+    const firstRename = sidebarMocks.createDeferredUpdateCommand()
+    const secondRename = sidebarMocks.createDeferredUpdateCommand()
+    sidebarMocks.dispatchUpdateChatWithOutcome
+      .mockImplementationOnce(() => firstRename.promise as Promise<any>)
+      .mockImplementationOnce(() => secondRename.promise as Promise<any>)
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+    editButtonForRow(rowByChatId('chat-root-a')).click()
+    await tick()
+
+    const input = inputIn(rowByChatId('chat-root-a'), 'chat name input')
+    await setTextInputValue(input, 'Older Sidebar Rename')
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    await setTextInputValue(input, 'Newer Pending Sidebar Rename')
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    firstRename.resolve({ status: 'accepted', result: { revision: 1, status: 'ok' } })
+    await flushCommandWork()
+
+    expect(
+      sidebarRoot().querySelectorAll(
+        '[data-risu-chat-mutation][data-risu-chat-mutation-status="pending"][role="status"]',
+      ),
+    ).toHaveLength(1)
+    expect(rowByChatId('chat-root-a').dataset.risuChatMutationStatus).toBe('pending')
+
+    secondRename.resolve({ status: 'accepted', result: { revision: 2, status: 'ok' } })
+    await flushCommandWork()
+    expect(rowByChatId('chat-root-a').dataset.risuChatMutationStatus).toBe('')
+  })
+
   it('allows folder creation and organizing chat B while a rename of chat A is pending', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)

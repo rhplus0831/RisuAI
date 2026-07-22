@@ -99,6 +99,7 @@ const chatListMocks = vi.hoisted(() => {
     createDeferredCreateCommand,
     createDeferredDeleteCommand,
     createDeferredSelectCommand,
+    createDeferredUpdateCommand: createDeferredCommand,
     deleteChatCommand: vi.fn((input: unknown) => {
       if (!pendingDeleteCommand) {
         throw new Error('No deferred delete-chat command was prepared')
@@ -282,7 +283,7 @@ vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
 
 import ChatList from './ChatList.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { currentChatSelectionSnapshot, dispatchSelectChat } from 'src/ts/chatCommands'
+import { currentChatSelectionSnapshot, dispatchSelectChat, restoreChatRowMetadata } from 'src/ts/chatCommands'
 import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
@@ -618,6 +619,149 @@ describe('ChatList DOM contract harness', () => {
     })
     expect(selectedCharacter().chats[1].name).toBe('Renamed Modal Chat B')
     expect(input!.value).toBe('Renamed Modal Chat B')
+  })
+
+  it('keeps a pending rename enabled and supersedes it without an older failure clobbering the draft', async () => {
+    seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
+    const firstRename = chatListMocks.createDeferredUpdateCommand()
+    const finalRename = chatListMocks.createDeferredUpdateCommand()
+    chatListMocks.rollbackServerBackedChatRowMetadata.mockImplementationOnce(restoreChatRowMetadata)
+    chatListMocks.dispatchUpdateChatWithOutcome
+      .mockImplementationOnce(async (chatId, patch, previous, _select, rollback) => {
+        const outcome = (await firstRename.promise) as any
+        if (outcome.status === 'failed') {
+          const previousChat = previous.characters[0].chats.find((candidate) => candidate.id === chatId)
+          rollback({
+            selectedCharID: previous.selectedCharID,
+            characterId: previous.characters[0].chaId,
+            chatId,
+            metadata: { name: previousChat?.name },
+            attempted: patch,
+          })
+        }
+        return outcome
+      })
+      .mockImplementationOnce(() => finalRename.promise as Promise<any>)
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+    editButton().click()
+    await tick()
+
+    const input = rowByChatId('chat-b').querySelector<HTMLInputElement>('input')!
+    input.value = 'First Modal Rename'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    expect(input.disabled).toBe(false)
+    input.focus()
+    expect(document.activeElement).toBe(input)
+
+    input.value = 'Final Modal Rename'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushCommandWork()
+
+    expect(chatListMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledTimes(2)
+    expect(chatListMocks.dispatchUpdateChatWithOutcome.mock.calls.map((call) => call[1])).toEqual([
+      { name: 'First Modal Rename' },
+      { name: 'Final Modal Rename' },
+    ])
+
+    firstRename.resolve({ status: 'failed', result: { status: 'error', error: 'rename failed' } })
+    await flushCommandWork()
+
+    expect(selectedCharacter().chats[1].name).toBe('Final Modal Rename')
+    expect(rowByChatId('chat-b').querySelector<HTMLInputElement>('input')?.value).toBe('Final Modal Rename')
+    expect(chatListMocks.alertError).toHaveBeenCalledWith('Edit: First Modal Rename failed')
+    expect(modalRoot().querySelector('[role="alert"]')?.textContent).toContain('Edit: First Modal Rename failed')
+    expect(
+      modalRoot().querySelectorAll(
+        '[data-risu-chat-mutation][data-risu-chat-mutation-status="pending"][role="status"]',
+      ),
+    ).toHaveLength(1)
+
+    finalRename.resolve({ status: 'accepted', result: { revision: 2, status: 'ok' } })
+    await flushCommandWork()
+
+    expect(modalRoot().querySelector('[role="alert"]')).toBeNull()
+    expect(
+      modalRoot().querySelectorAll('[data-risu-chat-mutation][data-risu-chat-mutation-status="failed"]'),
+    ).toHaveLength(0)
+    expect(rowByChatId('chat-b').dataset.risuChatMutationStatus).toBe('')
+  })
+
+  it('clears a failed rename ledger entry when a later retry succeeds', async () => {
+    seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
+    const failedRename = chatListMocks.createDeferredUpdateCommand()
+    chatListMocks.dispatchUpdateChatWithOutcome.mockImplementationOnce(() => failedRename.promise as Promise<any>)
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+    editButton().click()
+    await tick()
+
+    const input = rowByChatId('chat-b').querySelector<HTMLInputElement>('input')!
+    input.value = 'Failed Modal Rename'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    failedRename.resolve({ status: 'failed', result: { status: 'error', error: 'rename failed' } })
+    await flushCommandWork()
+
+    expect(modalRoot().querySelectorAll('[data-risu-chat-mutation-status="failed"][role="alert"]')).toHaveLength(1)
+
+    input.value = 'Successful Modal Retry'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushCommandWork()
+
+    expect(modalRoot().querySelector('[role="alert"]')).toBeNull()
+    expect(
+      modalRoot().querySelectorAll('[data-risu-chat-mutation][data-risu-chat-mutation-status="failed"]'),
+    ).toHaveLength(0)
+    expect(rowByChatId('chat-b').dataset.risuChatMutationStatus).toBe('')
+  })
+
+  it('does not clear a newer pending rename when an older attempt succeeds', async () => {
+    seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
+    const firstRename = chatListMocks.createDeferredUpdateCommand()
+    const secondRename = chatListMocks.createDeferredUpdateCommand()
+    chatListMocks.dispatchUpdateChatWithOutcome
+      .mockImplementationOnce(() => firstRename.promise as Promise<any>)
+      .mockImplementationOnce(() => secondRename.promise as Promise<any>)
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+    editButton().click()
+    await tick()
+
+    const input = rowByChatId('chat-b').querySelector<HTMLInputElement>('input')!
+    input.value = 'Older Modal Rename'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    input.value = 'Newer Pending Modal Rename'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    firstRename.resolve({ status: 'accepted', result: { revision: 1, status: 'ok' } })
+    await flushCommandWork()
+
+    expect(
+      modalRoot().querySelectorAll(
+        '[data-risu-chat-mutation][data-risu-chat-mutation-status="pending"][role="status"]',
+      ),
+    ).toHaveLength(1)
+    expect(rowByChatId('chat-b').dataset.risuChatMutationStatus).toBe('pending')
+
+    secondRename.resolve({ status: 'accepted', result: { revision: 2, status: 'ok' } })
+    await flushCommandWork()
+    expect(rowByChatId('chat-b').dataset.risuChatMutationStatus).toBe('')
   })
 
   it('preserves an unsaved row draft when another chat rename repaints metadata', async () => {

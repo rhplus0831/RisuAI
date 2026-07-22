@@ -159,10 +159,6 @@
     return `${operation}:${targetId}`
   }
 
-  function pendingStructureMutations(): ChatStructureMutationState[] {
-    return Object.values(chatStructureMutations).filter((mutation) => mutation.status === 'pending')
-  }
-
   function chatConflictKey(chatId: string): string {
     return `chat:${chatId}`
   }
@@ -179,10 +175,37 @@
     return `folder-order:${characterId ?? 'missing-owner'}`
   }
 
-  function hasConflictingStructureMutation(conflictKeys: readonly string[]): boolean {
-    return pendingStructureMutations().some((mutation) =>
-      mutation.conflictKeys.some((conflictKey) => conflictKeys.includes(conflictKey)),
+  function hasConflictingStructureMutation(conflictKeys: readonly string[], ignoredMutationKey?: string): boolean {
+    return Object.entries(chatStructureMutations).some(
+      ([key, mutation]) =>
+        (!ignoredMutationKey || (key !== ignoredMutationKey && !key.startsWith(`${ignoredMutationKey}:`))) &&
+        mutation.status === 'pending' &&
+        mutation.conflictKeys.some((conflictKey) => conflictKeys.includes(conflictKey)),
     )
+  }
+
+  function mutationKeyBelongsToGroup(key: string, groupKey: string): boolean {
+    return key === groupKey || key.startsWith(`${groupKey}:`)
+  }
+
+  function clearFailedStructureMutations(groupKey: string): void {
+    for (const [key, mutation] of Object.entries(chatStructureMutations)) {
+      if (mutationKeyBelongsToGroup(key, groupKey) && mutation.status === 'failed') {
+        delete chatStructureMutations[key]
+      }
+    }
+  }
+
+  function clearAcceptedStructureMutation(key: string, run: number, groupKey?: string): void {
+    if (!groupKey) {
+      if (chatStructureMutations[key]?.run === run) delete chatStructureMutations[key]
+      return
+    }
+    for (const [candidateKey, mutation] of Object.entries(chatStructureMutations)) {
+      if (mutationKeyBelongsToGroup(candidateKey, groupKey) && mutation.run <= run) {
+        delete chatStructureMutations[candidateKey]
+      }
+    }
   }
 
   function structureMutationForTarget(
@@ -234,6 +257,7 @@
     dispatch: () => Promise<ChatMutationOutcome> | undefined,
     queuedMessage?: string,
     onFinal?: (outcome: Awaited<Extract<ChatMutationOutcome, { status: 'queued' }>['settlement']>) => void,
+    mutationGroupKey?: string,
   ): Promise<ChatMutationOutcome['status']> {
     const run = ++nextStructureMutationRun
     chatStructureMutations[key] = { targetKind, targetId, action, conflictKeys, run, status: 'pending' }
@@ -252,7 +276,7 @@
           (finalOutcome) => {
             if (chatStructureMutations[key]?.run !== run) return
             if (finalOutcome.status === 'accepted') {
-              delete chatStructureMutations[key]
+              clearAcceptedStructureMutation(key, run, mutationGroupKey)
               onFinal?.(finalOutcome)
               return
             }
@@ -269,7 +293,7 @@
         )
         return 'queued'
       }
-      delete chatStructureMutations[key]
+      clearAcceptedStructureMutation(key, run, mutationGroupKey)
       return 'accepted'
     } catch {
       if (chatStructureMutations[key]?.run === run) {
@@ -813,17 +837,22 @@
     if (canUseServerCommands()) {
       const chatId = chat.id
       const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
-      if (!chatId || !liveChat || liveChat.name === name || hasConflictingStructureMutation([chatConflictKey(chatId)]))
-        return
+      if (!chatId || !liveChat || liveChat.name === name) return
+      const key = structureMutationKey('rename-chat', chatId)
+      if (hasConflictingStructureMutation([chatConflictKey(chatId)], key)) return
       const previous = currentChatStateSnapshot()
       if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.name = name))) return
+      clearFailedStructureMutations(key)
       await settleStructureMutation(
-        structureMutationKey('rename-chat', chatId),
+        `${key}:${v4()}`,
         'chat',
         chatId,
         `${language.edit}: ${name}`,
         [chatConflictKey(chatId)],
         () => dispatchUpdateChatWithOutcome(chatId, { name }, previous, false, rollbackServerBackedChatRowMetadata),
+        undefined,
+        undefined,
+        key,
       )
       return
     }
@@ -834,23 +863,23 @@
     if (canUseServerCommands()) {
       const folderId = folder.id
       const liveFolder = currentSidebarCharacter()?.chatFolders?.find((candidate) => candidate.id === folderId)
-      if (
-        !folderId ||
-        !liveFolder ||
-        liveFolder.name === name ||
-        hasConflictingStructureMutation([folderConflictKey(folderId)])
-      )
-        return
+      if (!folderId || !liveFolder || liveFolder.name === name) return
+      const key = structureMutationKey('rename-folder', folderId)
+      if (hasConflictingStructureMutation([folderConflictKey(folderId)], key)) return
       const previous = currentChatStateSnapshot()
       if (!applyDirectOptimisticFolderMetadata(folderId, (candidate) => (candidate.name = name))) return
+      clearFailedStructureMutations(key)
       await settleStructureMutation(
-        structureMutationKey('rename-folder', folderId),
+        `${key}:${v4()}`,
         'folder',
         folderId,
         `${language.edit}: ${name}`,
         [folderConflictKey(folderId)],
         () =>
           dispatchUpdateChatFolderWithOutcome(folderId, { name }, previous, rollbackServerBackedChatFolderRowMetadata),
+        undefined,
+        undefined,
+        key,
       )
       return
     }
@@ -1375,7 +1404,6 @@
                     bind:value={folderNameDrafts[folder.id]}
                     className="grow min-w-0"
                     ariaLabel={`${language.edit}: ${folder.name}`}
-                    disabled={isFolderStructurePending(folder.id)}
                     onchange={() => void updateFolderName(folder, folderNameDrafts[folder.id])}
                     padding={false} />
                 {:else}
@@ -1467,7 +1495,6 @@
                           bind:value={chatNameDrafts[chat.id ?? '']}
                           className="grow min-w-0"
                           ariaLabel={`${language.edit}: ${chat.name}`}
-                          disabled={isChatStructurePending(chat.id)}
                           onchange={() => void updateChatName(chat, chatNameDrafts[chat.id ?? ''])}
                           padding={false} />
                       {:else}
@@ -1592,7 +1619,6 @@
                   bind:value={chatNameDrafts[chat.id ?? '']}
                   className="grow min-w-0"
                   ariaLabel={`${language.edit}: ${chat.name}`}
-                  disabled={isChatStructurePending(chat.id)}
                   onchange={() => void updateChatName(chat, chatNameDrafts[chat.id ?? ''])}
                   padding={false} />
               {:else}
