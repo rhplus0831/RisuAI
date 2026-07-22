@@ -20,7 +20,7 @@ past decisions but are not sources of current behavior.
 | Change model profiles, prompt assembly, generation, or provider behavior                | [Providers and models](docs/structure/providers-and-models.md)                                                                                            |
 | Change modules, plugins, network permissions, or MCP                                    | [Plugins and MCP](docs/structure/plugins-and-mcp.md)                                                                                                      |
 | Change assets, the inlay catalog, imports, exports, saves, backups, or Realm conversion | [Assets and saves](docs/structure/assets-and-saves.md), then [server resources](docs/structure/server-resources-and-bridges.md) for browser catalog reads |
-| Run or extend checks, local dev, CI, or Docker                                          | [Testing and operations](docs/structure/testing-and-operations.md)                                                                                        |
+| Run or extend checks, local dev, or CI                                                  | [Testing and operations](docs/structure/testing-and-operations.md)                                                                                        |
 | Decide whether a path is generated, vendored, compatibility-only, or removed            | [Generated and legacy](docs/structure/generated-and-legacy.md)                                                                                            |
 
 ## Top-Level Map
@@ -35,7 +35,6 @@ past decisions but are not sources of current behavior.
 | `public/`, `resources/`                                                                 | Vite static sources and packaging icon/splash sources. Runtime assets live under `data/`, not here.                                      |
 | `util/`                                                                                 | Full-stack dev runners, database analyzer, tsserver wrapper, API-flag runner, and userscript bridge.                                     |
 | `tsconfig*.json`, `vitest*.ts`, `playwright*.ts`                                        | TypeScript, Vitest, and Playwright configuration.                                                                                        |
-| `Dockerfile`, `docker-compose.yml`, `.dockerignore`                                     | Container build and run path.                                                                                                            |
 | `.github/workflows/quality.yml`                                                         | Node 24 quality CI for pull requests and `main`; it runs the complete `pnpm test:all` lane.                                              |
 | `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.ignore`, `.prettier*`           | Editor, install, merge, search-ignore, and formatting policy.                                                                            |
 | `README.md`, `version.json`, `LICENSE`, `AGENTS.md`                                     | Project metadata and contributor/agent workflow.                                                                                         |

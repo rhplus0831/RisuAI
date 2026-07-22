@@ -17,7 +17,7 @@ plans belong in [`.archived-docs/`](../../.archived-docs/README.md).
 | [`assets-and-saves.md`](assets-and-saves.md)                         | Content-addressed assets, inlay-catalog persistence/GC, `.risu` formats, imports/exports, Realm conversion, and backup/restore |
 | [`plugins-and-mcp.md`](plugins-and-mcp.md)                           | Plugin host, permissions, storage/network boundaries, modules, MCP transports, and import/lifecycle boundaries                 |
 | [`providers-and-models.md`](providers-and-models.md)                 | Model profiles, capabilities, prompt assembly, provider dispatch, tools, and fixed provider/media operations                   |
-| [`testing-and-operations.md`](testing-and-operations.md)             | pnpm scripts, test lanes, local dev, environment, CI, tracing, TypeScript, and Docker                                          |
+| [`testing-and-operations.md`](testing-and-operations.md)             | pnpm scripts, test lanes, local dev, environment, CI, tracing, and TypeScript                                          |
 | [`domain-glossary.md`](domain-glossary.md)                           | Shared record names, mutation terms, runtime boundaries, and no-port concepts                                                  |
 | [`generated-and-legacy.md`](generated-and-legacy.md)                 | Generated, vendored, ignored, compatibility-only, retired-setting, and deliberately absent surfaces                            |
 | [`frontend.md`](frontend.md)                                         | Compatibility pointer to the current [`src/docs/`](../../src/docs/README.md) UI/client guides                                  |

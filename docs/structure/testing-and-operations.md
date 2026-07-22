@@ -4,8 +4,7 @@ Last audited: 2026-07-20.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
-pin a `packageManager`; the lockfile is pnpm lockfile v9 and Docker installs
-pnpm through Corepack.
+pin a `packageManager`; the lockfile is pnpm lockfile v9.
 
 ## Scripts
 
@@ -329,7 +328,7 @@ Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
 `RISU_ASSET_BYTE_SUMMARY`, `RISU_EXPORT_MATERIALIZE_SUMMARY`, and
 `RISU_GENERATION_METRIC_SUMMARY`.
 
-## CI And Docker
+## CI
 
 `.github/workflows/quality.yml` is the only current workflow. Pull requests and
 pushes to `main` use Node 24 and pnpm 10, install Chromium with Playwright
@@ -338,16 +337,6 @@ Svelte/browser checking, client-library declaration emission, strict Fastify
 and Playwright-source TypeScript checking, frontend tests, explicit gates, UI
 coverage, server tests, and browser smoke.
 
-`Dockerfile` uses Node 24 slim, installs pnpm through Corepack, builds the web
-client with plain `pnpm build` rather than `build:site`, copies `server/` and
-`dist/`, sets production data and static-root env vars, exposes `6002`, and
-persists `/app/data`. It does not bake in
-`VITE_RISU_LEGAL_CONFIGURED=TRUE` unless the build environment supplies it.
-
-`docker-compose.yml` uses `ghcr.io/kwaroran/risuai:latest`, maps `6002:6002`,
-and creates a `risuai-data` volume.
-
-`.dockerignore` currently ignores only `node_modules`, while the Dockerfile
-copies the repository into the builder. Keep local ignored artifacts such as
-`data/`, `dist/`, `test-results/`, `scripts/`, and `.env` out of the build
-context or expand `.dockerignore` before relying on local image builds.
+The container path (`Dockerfile`, `docker-compose.yml`, `.dockerignore`) was
+removed on 2026-07-22; the project does not currently ship a Docker image, and
+running from source is the only supported deployment.
