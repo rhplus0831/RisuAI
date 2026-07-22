@@ -9,6 +9,10 @@
 <h2 class="text-2xl font-bold mt-2">{language.supporterThanks}</h2>
 <span class="mb-2 text-textcolor2">{language.supporterThanksDesc}</span>
 
+<div class="mb-2 rounded-md border border-selected p-3 text-sm text-textcolor2">
+  {language.supporterOriginalProjectNotice}
+</div>
+
 <div class="flex items-center justify-center rounded-md flex-wrap gap-2">
   <button
     type="button"

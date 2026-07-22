@@ -1022,6 +1022,8 @@ const languageKoreanBase = {
   import: '임포트',
   supporterThanks: '후원자',
   supporterThanksDesc: '후원자분들에게 감사합니다!',
+  supporterOriginalProjectNotice:
+    '여기 표시된 후원자들은 원본 RisuAI 프로젝트의 후원자이며, 이 포크와는 관련이 없습니다. 아래 링크를 통한 후원은 원본 RisuAI 프로젝트로 전달됩니다.',
   donatorPatreonDesc:
     '기본적으로 개인정보 보호를 위해 목록에 표시되지 않습니다. 닉네임을 표시하려면 Risuai의 Patreon 페이지로 이동하여 링크 버튼을 누르세요.',
   useNamePrefix: '이름을 프리픽스로 사용',
@@ -1985,7 +1987,7 @@ export const languageKorean = {
   settingsNavBackups: '백업 및 복원',
   settingsNavKeyboardShortcuts: '키보드 단축키',
   settingsNavAdvanced: '고급',
-  settingsNavSupporters: '후원자',
+  settingsNavSupporters: 'RisuAI 후원자',
   settingsNavEasyPanel: '간편 패널',
   ttsCatalogError: 'TTS 음성 목록을 불러올 수 없습니다.',
   ttsAdvancedEndpoint: '고급 (OpenAI 호환 엔드포인트)',

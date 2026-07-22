@@ -1188,7 +1188,7 @@ export const languageEnglish = {
   settingsNavBackups: 'Backup & Restore',
   settingsNavKeyboardShortcuts: 'Keyboard Shortcuts',
   settingsNavAdvanced: 'Advanced',
-  settingsNavSupporters: 'Supporters',
+  settingsNavSupporters: 'RisuAI Supporters',
   settingsNavEasyPanel: 'Easy Panel',
   selective: 'Selective',
   SecondaryKeys: 'Secondary keys',
@@ -1390,6 +1390,8 @@ export const languageEnglish = {
   import: 'Import',
   supporterThanks: 'Supporter Thanks',
   supporterThanksDesc: 'Thank you for your support!',
+  supporterOriginalProjectNotice:
+    'The supporters listed here are patrons of the original RisuAI project and are not affiliated with this fork. Support given through the links below goes to the original RisuAI project.',
   donatorPatreonDesc:
     "For default, it will not be shown in the list for privacy. If you want to show your nickname, go to Risuai's patreon page and press the link button.",
   useNamePrefix: 'Use Name Prefix',
