@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-07-20.
+Last audited: 2026-07-23.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -11,7 +11,7 @@ pin a `packageManager`; the lockfile is pnpm lockfile v9.
 | Command                            | Purpose                                                                                                                                                                       |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm dev`                         | Start Vite client dev server on `0.0.0.0:5174`.                                                                                                                               |
-| `pnpm dev:agent`                   | Start full-stack agent dev server: frontend `6418`, Fastify `6419`, trace mode `agent`, auth/TOS bypass defaults.                                                             |
+| `pnpm dev:agent`                   | Start full-stack agent dev server: frontend `6418`, Fastify `6419`, trace mode `agent`, auth/TOS bypass, and disposable `data-agent/` sandbox defaults.                       |
 | `pnpm dev:human`                   | Start full-stack human trace server: frontend `6002`, Fastify `6001`, trace mode `human`, password auth enabled and TOS bypassed by default unless overridden.                |
 | `pnpm api:dev`                     | Start Fastify with `tsx watch server/fastify/src/index.ts`.                                                                                                                   |
 | `pnpm api:dev:flag`                | Start Fastify through `util/api-flag-dev.ts`; restarts only when `.risu-api-restart` is touched/created.                                                                      |
@@ -85,24 +85,33 @@ explicitly only when a wider bind is intentional.
 The spawned API uses `tsx watch`, so API source edits restart it; use
 `pnpm api:dev:flag` when you need edit-triggered restarts to be manual.
 
+In agent mode without an explicit `RISU_API_DATA_DIR`, the runner prepares
+`data-agent/` before spawning Fastify. Default `clone` mode takes an online
+SQLite snapshot and links or copies `assets/` and `save/`; it intentionally
+omits auth files, backups, traces, and Web Push keys. `fresh` starts empty, while
+`keep` reuses the existing sandbox. Human mode uses `data/` directly.
+
 Stop `pnpm dev:agent` when done so frontend port `6418` and API port `6419`
 are released for the next agent. Do the same for `pnpm dev:human` when using
 the human trace ports.
 
-Request tracing writes API request traces under `data/trace/<mode>.jsonl`. Every
-response receives `X-Request-UID`, but only API requests are appended to JSONL;
-search that UID in the trace file to correlate a visible failure to one API call.
+Request tracing writes under the active server data directory as
+`trace/<mode>.jsonl`. The standard runners therefore use
+`data-agent/trace/agent.jsonl` for `dev:agent` and `data/trace/human.jsonl` for
+`dev:human`. Every response receives `X-Request-UID`, but only API requests are
+appended to JSONL; search that UID in the trace file to correlate a visible
+failure to one API call.
 Each mode keeps the newest 5,000 entries and trims older entries, including
 their gzip body sidecars. Entries include route pattern, caller hints, redacted
 headers/query/body fields, and process/send timing. Text request/response bodies
 up to 4 KiB are inlined; larger captured text bodies are written as `.gz`
-sidecars under `data/trace/bodies/<mode>/` with a preview when the compressed
-sidecar is at most 10 MiB. Oversized compressed bodies, multipart, binary, SSE,
-and stream bodies are recorded as omitted metadata.
+sidecars under `<data-dir>/trace/bodies/<mode>/` with a preview when the
+compressed sidecar is at most 10 MiB. Oversized compressed bodies, multipart,
+binary, SSE, and stream bodies are recorded as omitted metadata.
 
 Generation trace sidecars are separate and opt in only when protocol metrics are
 enabled and `RISU_GENERATION_TRACE_FULL_PROMPT=1`. They write redacted prompt
-payloads under `data/trace/generation/`, capped by
+payloads under `<data-dir>/trace/generation/`, capped by
 `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES`.
 
 Post-generation Lua flow tracing also uses `RISU_PROTOCOL_METRICS=1`. When
@@ -111,9 +120,9 @@ Post-generation Lua flow tracing also uses `RISU_PROTOCOL_METRICS=1`. When
 run counts, `editOutput` text changed, transcript changed, Lua `log()` count,
 `LLM`/`axLLM` attempted/blocked/completed/failed counts, and `setChat` changed
 counts. Its `bodySidecar` points at a compressed JSON file under
-`data/trace/generation/` with the detailed chat body before/after each phase,
-`editOutput` text before/after, and captured Lua `log()` values. Use this when
-debugging whether post-generation Lua ran, whether `setChat` changed the
+`<data-dir>/trace/generation/` with the detailed chat body before/after each
+phase, `editOutput` text before/after, and captured Lua `log()` values. Use this
+when debugging whether post-generation Lua ran, whether `setChat` changed the
 assistant row, or whether low-level LLM calls were blocked.
 
 To serve a built SPA through Fastify:
@@ -149,12 +158,12 @@ Pick the smallest command that covers the changed area. On a fresh machine, run
 Fastify test directory; use it to find command/persistence, generation, memory,
 provider, job, asset/import, and platform/route coverage.
 
-Config details: root Vitest uses `happy-dom`, browser resolve conditions, the
-`src` alias, and `vitest.setup.ts` to mock `katex` and install the shared
-production `safeStructuredClone` helper. `vitest.setup.test.ts` protects its
-native, fallback, and global-restoration semantics. Root Vitest excludes
-explicit gate tests unless
-`RISU_TEST_INCLUDE_GATES=true` is set. `pnpm test:gates`, the
+Config details: root Vitest uses the threads pool, `happy-dom`, browser resolve
+conditions, the `src` alias, and `vitest.setup.ts` to mock `katex` and install
+the shared production `safeStructuredClone` helper. `vitest.setup.test.ts`
+protects its native, fallback, and global-restoration semantics. Root Vitest
+excludes explicit gate tests unless `RISU_TEST_INCLUDE_GATES=true` is set.
+`pnpm test:gates`, the
 `pnpm test:gates:*` sub-lanes, `pnpm test:frontend:all`, and
 `pnpm coverage:frontend` set that variable for the lanes that intentionally
 include those files. Server Vitest uses Node, forks, a 15s test timeout, and
@@ -278,14 +287,14 @@ Server:
 | -------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RISU_API_HOST`                                    | `0.0.0.0`                  | Fastify listen host.                                                                                                                                      |
 | `RISU_API_PORT`                                    | `6002`                     | Fastify listen port.                                                                                                                                      |
-| `RISU_API_DATA_DIR`                                | `<repo>/data`              | SQLite, asset bytes, backups, auth files, legacy import artifacts.                                                                                        |
-| `RISU_API_ALLOW_MISSING_DATABASE`                  | unset                      | Set to `1` only to accept creating a fresh `risu.db` when the data directory contains evidence of a prior installation.                                  |
+| `RISU_API_DATA_DIR`                                | `<repo>/data`              | SQLite, asset bytes, backups, auth files, traces, and legacy import artifacts.                                                                            |
+| `RISU_API_ALLOW_MISSING_DATABASE`                  | unset                      | Set to `1` only to accept creating a fresh `risu.db` when the data directory contains evidence of a prior installation.                                   |
 | `RISU_API_BODY_LIMIT`                              | `104857600`                | JSON/body and multipart file limit.                                                                                                                       |
 | `RISU_API_IMPORT_MAX_BYTES`                        | unlimited                  | Streamed device-backup import limit; positive byte count caps, `0`/`unlimited`/`none`/`infinity` opts out.                                                |
-| `RISU_API_AUTOMATIC_BACKUP_RETENTION`              | `3`                        | Positive count of automatic pre-import/pre-restore safety snapshots to retain; manual backups are never pruned.                                         |
+| `RISU_API_AUTOMATIC_BACKUP_RETENTION`              | `3`                        | Positive count of automatic pre-import/pre-restore safety snapshots to retain; manual backups are never pruned.                                           |
 | `RISU_REALM_IMPORT_MAX_EXPANDED_BYTES`             | `325058560`                | Expanded payload cap for streamed Realm `charx` imports and Realm-fetched asset totals.                                                                   |
 | `RISU_API_TRACE_MODE`                              | unset                      | Enables API request tracing when `agent` or `human`; `0`/`false`/`off`/`none` disable it.                                                                 |
-| `RISU_GENERATION_TRACE_FULL_PROMPT`                | unset                      | Set to `1` with protocol metrics enabled to write redacted generation prompt sidecars under `data/trace/generation/`.                                     |
+| `RISU_GENERATION_TRACE_FULL_PROMPT`                | unset                      | Set to `1` with protocol metrics enabled to write redacted prompt sidecars under `<data-dir>/trace/generation/`.                                          |
 | `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES` | `10485760`                 | Maximum compressed sidecar size for full-prompt generation traces.                                                                                        |
 | `RISU_WEB_PUSH_VAPID_PUBLIC_KEY`                   | unset                      | Optional Web Push VAPID public key. If public/private keys are omitted, the server can generate and persist keys under `data/__web_push_vapid_keys.json`. |
 | `RISU_WEB_PUSH_VAPID_PRIVATE_KEY`                  | unset                      | Optional Web Push VAPID private key. Must be supplied with the public key when using env-provided keys.                                                   |
@@ -300,17 +309,18 @@ Server:
 
 Local/dev:
 
-| Variable                         | Default                                         | Notes                                                                                                    |
-| -------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `RISU_API_RESTART_FLAG`          | `.risu-api-restart`                             | Flag file watched by `pnpm api:dev:flag`.                                                                |
-| `RISU_AGENT_DEV_HOST`            | `127.0.0.1`                                     | Host used by `pnpm dev:agent` / `pnpm dev:human` for both spawned processes.                             |
-| `RISU_AGENT_DEV_PORT`            | `6418`                                          | Frontend port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6002`.                                  |
-| `RISU_AGENT_API_PORT`            | `6419`                                          | Fastify port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6001`.                                   |
-| `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE` for `dev:agent`, `FALSE` for `dev:human` | Protected API routes ignore password auth when enabled.                                                  |
-| `RISU_TS_AGENT_TSSERVER_LOG`     | unset                                           | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                                   |
-| `RISU_TS_AGENT_TIMEOUT_MS`       | `30000`                                         | Default tsserver request timeout for `pnpm ts:agent`; `--timeout-ms` overrides it.                       |
-| `RISU_TS_AGENT_DEBUG`            | unset                                           | Echo tsserver stderr while debugging `pnpm ts:agent`.                                                    |
-| `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`                                          | Set by `pnpm dev:agent` / `pnpm dev:human`; `alertTOS()` returns accepted without showing the TOS modal. |
+| Variable                         | Default                                         | Notes                                                                                                                             |
+| -------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `RISU_API_RESTART_FLAG`          | `.risu-api-restart`                             | Flag file watched by `pnpm api:dev:flag`.                                                                                         |
+| `RISU_AGENT_DEV_HOST`            | `127.0.0.1`                                     | Host used by `pnpm dev:agent` / `pnpm dev:human` for both spawned processes.                                                      |
+| `RISU_AGENT_DEV_PORT`            | `6418`                                          | Frontend port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6002`.                                                           |
+| `RISU_AGENT_API_PORT`            | `6419`                                          | Fastify port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6001`.                                                            |
+| `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE` for `dev:agent`, `FALSE` for `dev:human` | Protected API routes ignore password auth when enabled.                                                                           |
+| `RISU_AGENT_DATA_MODE`           | `clone`                                         | Agent sandbox reset policy: `clone` snapshots selected state from `data/`, `fresh` starts empty, and `keep` reuses `data-agent/`. |
+| `RISU_TS_AGENT_TSSERVER_LOG`     | unset                                           | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                                                            |
+| `RISU_TS_AGENT_TIMEOUT_MS`       | `30000`                                         | Default tsserver request timeout for `pnpm ts:agent`; `--timeout-ms` overrides it.                                                |
+| `RISU_TS_AGENT_DEBUG`            | unset                                           | Echo tsserver stderr while debugging `pnpm ts:agent`.                                                                             |
+| `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`                                          | Set by `pnpm dev:agent` / `pnpm dev:human`; `alertTOS()` returns accepted without showing the TOS modal.                          |
 
 Client/build:
 

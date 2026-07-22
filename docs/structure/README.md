@@ -1,6 +1,6 @@
 # Structure Documentation Index
 
-Last audited: 2026-07-20.
+Last audited: 2026-07-23.
 
 Read [`STRUCTURE.md`](../../STRUCTURE.md) for the repository boundary and stable
 conventions. Then open only the document that owns the behavior you are
@@ -16,8 +16,8 @@ plans belong in [`.archived-docs/`](../../.archived-docs/README.md).
 | [`server-resources-and-bridges.md`](server-resources-and-bridges.md) | Browser root resources, inlay-catalog projection, hydration, durable mutation replay, invalidation, and settings/data bridges  |
 | [`assets-and-saves.md`](assets-and-saves.md)                         | Content-addressed assets, inlay-catalog persistence/GC, `.risu` formats, imports/exports, Realm conversion, and backup/restore |
 | [`plugins-and-mcp.md`](plugins-and-mcp.md)                           | Plugin host, permissions, storage/network boundaries, modules, MCP transports, and import/lifecycle boundaries                 |
-| [`providers-and-models.md`](providers-and-models.md)                 | Model profiles, capabilities, prompt assembly, provider dispatch, tools, and fixed provider/media operations                   |
-| [`testing-and-operations.md`](testing-and-operations.md)             | pnpm scripts, test lanes, local dev, environment, CI, tracing, and TypeScript                                          |
+| [`providers-and-models.md`](providers-and-models.md)                 | Model profiles, capabilities, prompt assembly, provider dispatch, translation, tools, and fixed provider/media operations      |
+| [`testing-and-operations.md`](testing-and-operations.md)             | pnpm scripts, test lanes, local dev, environment, CI, tracing, and TypeScript                                                  |
 | [`domain-glossary.md`](domain-glossary.md)                           | Shared record names, mutation terms, runtime boundaries, and no-port concepts                                                  |
 | [`generated-and-legacy.md`](generated-and-legacy.md)                 | Generated, vendored, ignored, compatibility-only, retired-setting, and deliberately absent surfaces                            |
 | [`frontend.md`](frontend.md)                                         | Compatibility pointer to the current [`src/docs/`](../../src/docs/README.md) UI/client guides                                  |
@@ -31,6 +31,7 @@ plans belong in [`.archived-docs/`](../../.archived-docs/README.md).
 | A persisted setting                   | Server defaults and group ownership, browser group ownership, parity tests, [setting UI](../../src/docs/svelte-ui.md#settings-and-shared-controls), and `src/lang/`                             |
 | An asset or inlay-catalog field       | Asset metadata/GC/backup ownership in [`assets-and-saves.md`](assets-and-saves.md), catalog commands/events, the full-refresh resource set, and the inlay explorer UI                           |
 | A model/provider capability           | Shared capability metadata, server assembly/dispatch, browser profile UI, provider tests, and [`providers-and-models.md`](providers-and-models.md)                                              |
+| Translation behavior                  | Translator preset normalization/pipeline, settings ownership, server message translation, generated-message follow-up, job recovery, and [`providers-and-models.md`](providers-and-models.md)   |
 | A module/MCP behavior                 | Import validation, command restrictions, runtime transport, plugin permissions, and [`plugins-and-mcp.md`](plugins-and-mcp.md)                                                                  |
 | An import/export or restore format    | Lineage/revision effects, asset reporting, bounded decoding, fixtures, and [`assets-and-saves.md`](assets-and-saves.md)                                                                         |
 | User-visible behavior                 | [`src/docs/svelte-ui.md`](../../src/docs/svelte-ui.md), relevant visible-state tests, and language keys                                                                                         |

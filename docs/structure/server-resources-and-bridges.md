@@ -1,6 +1,6 @@
 # Server Resources And Bridges
 
-Last audited: 2026-07-20.
+Last audited: 2026-07-23.
 
 Fastify owns durable state. The browser reads concrete REST resources into
 Svelte-owned settings, collections, and characters state plus a standalone
@@ -19,11 +19,12 @@ routes.
   Bootstrap is deliberately runtime-only metadata: initialization state,
   revision/schema version, database lineage, durable writer epoch, the
   pre-takeover writer verdict, asset base URL, running generation jobs, and
-  active message translations. It does not carry durable application data.
-- Empty state triggers `POST /api/v1/commands/state/initialize`. The winning
-  client reuses the runtime metadata and accepted revision it already has; a
-  read-only bootstrap retry is needed only when another client won the
-  initialization race.
+  active manual or generated-message translations. It does not carry durable
+  application data.
+- Only classifier-confirmed empty state triggers
+  `POST /api/v1/commands/state/initialize`. The winning client reuses the runtime
+  metadata and accepted revision it already has; a read-only bootstrap retry is
+  needed only when another client won the initialization race.
 - After bootstrap/initialization, startup prepares the mutation outbox against
   the writer session and database lineage, flushes its durable server-receipt
   acknowledgements, and replays pending intents. Same-session rows survive a
@@ -54,25 +55,28 @@ routes.
   effects can advance their resource fences without a read; authoritative reads
   still apply in command-event order for every other event.
 
-| Path                                              | Role                                                                                                                                 |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/ts/server/bootstrap.ts`                      | Validates the small runtime bootstrap and exposes writer-intent/read-only variants.                                                  |
-| `src/ts/server/resourceReads.ts`                  | Browser wrappers and response validation for settings, collections, characters, and the inlay catalog.                               |
-| `src/ts/server/resourceCache.ts`                  | Disposable, non-authoritative SHA-256 manifests and verified IndexedDB values used only after authenticated hash confirmation.       |
-| `src/ts/server/pendingMutationOutbox.ts`          | AES-GCM-encrypted intent payloads plus plaintext scope/order indexes and durable receipt-acknowledgement rows.                       |
-| `src/ts/server/durableMutationDispatch.ts`        | Persists an intent before dispatch, classifies replay outcomes, and completes accepted intents before acknowledging server receipts. |
-| `src/ts/server/pendingMutationReplay.ts`          | Replays staged mutations after authenticated bootstrap and before resource hydration.                                                |
-| `src/ts/server/resourceState.svelte.ts`           | Svelte resource owners, per-slice revisions/status/errors, and the aggregate compatibility view.                                     |
-| `src/ts/server/resourceInvalidation.ts`           | Initial/full reads, event-to-endpoint planning, targeted reads, revision checks, and applies.                                        |
-| `src/ts/server/resourceRefresh.ts`                | Coalesced complete refresh for replay gaps, restores, and other broad recovery paths.                                                |
-| `src/ts/server/commands.ts`                       | One global browser mutation queue, command response decoding, local-effect capture, and reconciliation batching.                     |
-| `src/ts/server/hydrationReads.ts`                 | Browser wrappers for chat, lorebook, legacy-preset, and prompt-template bodies.                                                      |
-| `src/ts/server/chatMessageHydration.svelte.ts`    | Active/ranged/bulk chat hydration and character-lorebook hydration.                                                                  |
-| `src/ts/server/characterShellHydration.svelte.ts` | Fetches a full character row when a consumer encounters a shell row.                                                                 |
-| `src/ts/server/promptTemplateHydration.ts`        | Fetches the template owned by a selected or explicitly requested prompt preset.                                                      |
-| `src/ts/server/messageTranslationJobs.ts`         | Tracks detached raw-message translation rows from bootstrap and refresh polling.                                                     |
-| `src/ts/server/inlayCatalog.ts`                   | Standalone browser projection and revision-aware writes for inlay metadata.                                                          |
-| `src/ts/process/reattach.ts`                      | Reattaches running durable generation jobs reported by bootstrap.                                                                    |
+| Path                                                       | Role                                                                                                                                 |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/ts/server/bootstrap.ts`                               | Validates the small runtime bootstrap and exposes writer-intent/read-only variants.                                                  |
+| `src/ts/server/resourceReads.ts`                           | Browser wrappers and response validation for settings, collections, characters, and the inlay catalog.                               |
+| `src/ts/server/resourceCache.ts`                           | Disposable, non-authoritative SHA-256 manifests and verified IndexedDB values used only after authenticated hash confirmation.       |
+| `src/ts/server/pendingMutationOutbox.ts`                   | AES-GCM-encrypted intent payloads plus plaintext scope/order indexes and durable receipt-acknowledgement rows.                       |
+| `src/ts/server/durableMutationDispatch.ts`                 | Persists an intent before dispatch, classifies replay outcomes, and completes accepted intents before acknowledging server receipts. |
+| `src/ts/server/pendingMutationReplay.ts`                   | Replays staged mutations after authenticated bootstrap and before resource hydration.                                                |
+| `src/ts/server/persistenceActivity.svelte.ts`              | Global saving signal covering queued commands and current-writer pending outbox rows, with a short anti-flicker linger.              |
+| `src/ts/server/resourceState.svelte.ts`                    | Svelte resource owners, per-slice revisions/status/errors, and the aggregate compatibility view.                                     |
+| `src/ts/server/resourceInvalidation.ts`                    | Initial/full reads, event-to-endpoint planning, targeted reads, revision checks, and applies.                                        |
+| `src/ts/server/resourceRefresh.ts`                         | Coalesced complete refresh for replay gaps, restores, and other broad recovery paths.                                                |
+| `src/ts/server/commands.ts`                                | One global browser mutation queue, command response decoding, local-effect capture, and reconciliation batching.                     |
+| `src/ts/server/hydrationReads.ts`                          | Browser wrappers for chat, lorebook, legacy-preset, and prompt-template bodies.                                                      |
+| `src/ts/server/chatMessageHydration.svelte.ts`             | Active/ranged/bulk chat hydration and character-lorebook hydration.                                                                  |
+| `src/ts/server/characterShellHydration.svelte.ts`          | Fetches a full character row when a consumer encounters a shell row.                                                                 |
+| `src/ts/server/promptTemplateHydration.ts`                 | Fetches the template owned by a selected or explicitly requested prompt preset.                                                      |
+| `src/ts/server/messageTranslationJobs.ts`                  | Tracks detached manual or generated-message translation rows from bootstrap and refresh polling.                                     |
+| `src/ts/process/serverGeneratedMessageTranslation.ts`      | Applies translation results embedded in generation completion and seeds the shared translation-job state for running/failure UI.     |
+| `src/ts/process/generatedMessageTranslationEligibility.ts` | Prevents the older rendered-row auto trigger from duplicating server-owned generated-message translation.                            |
+| `src/ts/server/inlayCatalog.ts`                            | Standalone browser projection and revision-aware writes for inlay metadata.                                                          |
+| `src/ts/process/reattach.ts`                               | Reattaches running durable generation jobs reported by bootstrap.                                                                    |
 
 `getResourceDatabase()` and the `getDatabase()` adapter compose the settings,
 collections, and characters owners into a transitional aggregate `Database`
@@ -137,6 +141,12 @@ Mutation-facing UI must distinguish `accepted`, `queued`, and `failed` helper
 outcomes. `queued` means recoverable local intent was retained, not that the
 server accepted it; callers should keep newer drafts, surface the outcome, and
 must not close an editor or announce success merely because dispatch began.
+The app-wide saving icon is the normal transient feedback channel: it stays
+active through command reconciliation and while the current writer still owns
+staged outbox work, then lingers for 500 ms to avoid flicker. Per-control status
+surfaces retain failures and action-specific busy/disabled semantics rather
+than duplicating generic saving/queued rows. The persisted `showSavingIcon`
+field defaults to `true` but remains an opt-out without a current settings UI.
 
 ## Event Invalidation And Recovery
 

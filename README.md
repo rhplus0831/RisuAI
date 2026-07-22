@@ -2,7 +2,7 @@
 
 [![Svelte](https://img.shields.io/badge/svelte-5-red?logo=svelte)](https://svelte.dev/) [![Typescript](https://img.shields.io/badge/typescript-5.9-blue?logo=typescript)](https://www.typescriptlang.org/) [![Vite](https://img.shields.io/badge/vite-8-%23646CFF?logo=vite)](https://vite.dev/) [![Tailwind CSS](https://img.shields.io/badge/tailwindcss-4-%2306B6D4?logo=tailwindcss)](https://tailwindcss.com/) [![Fastify](https://img.shields.io/badge/fastify-5-black?logo=fastify)](https://fastify.dev/)
 
-A self-hosted, server-backed fork of [RisuAI](https://github.com/kwaroran/RisuAI), re-architected so that a Fastify API server owns all data and the browser is a pure client.
+A self-hosted, server-backed fork of [RisuAI](https://github.com/kwaroran/RisuAI), re-architected so that a Fastify API server owns durable application data and the browser acts as its client.
 
 > [!IMPORTANT]
 > This is an **unofficial fork**. It is not affiliated with, or supported by, the upstream RisuAI project. If you are looking for the original application, use [kwaroran/RisuAI](https://github.com/kwaroran/RisuAI). Please report issues with this fork on [this repository's issue tracker](https://github.com/rhplus0831/risuai-fastify/issues), never to the upstream community.
@@ -27,7 +27,7 @@ Not present in this fork:
 - Desktop and mobile (Tauri) builds — this is a web application only.
 - Browser-local-only storage mode.
 - Google Drive / account sync (the server's database is the single source of truth).
-- The plugin (V2) system — Lua scripting and modules are the supported extension paths.
+- Plugin API 2.0 execution. Trusted API 2.1 compatibility plugins and Plugin V3 still run in the browser, while Lua scripting and modules remain supported extension paths.
 - Some text-generation backends: NovelAI, NovelList, WebLLM, plugin-provided providers, and the modern Ooba API (the legacy Ooba API still works). Their models are shown as unsupported.
 
 ## Features
@@ -44,6 +44,13 @@ Inherited from upstream RisuAI and still applicable:
 - **Customizable, Friendly UI**: Great Accessibility and mobile friendly
 - **TTS**: Use TTS to make the output text into voice.
 - **Additional Assets**: Embed your images, audios and videos to bot, and make it display at chat or background!
+
+## Architecture and contributor docs
+
+Start with [`STRUCTURE.md`](STRUCTURE.md) for the current codebase map. It links
+to focused backend, data, provider, plugin, asset, client-runtime, UI, and test
+guides. Historical reports under `.archived-docs/` record completed work but do
+not define current behavior.
 
 ## Running from source
 

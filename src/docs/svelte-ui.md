@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-07-20.
+Last audited: 2026-07-23.
 
 The frontend is a Svelte 5 SPA. There is no SvelteKit `src/routes/` tree:
 navigation is URL parsing plus Svelte stores, and `src/App.svelte` chooses the
@@ -18,6 +18,7 @@ commands, generation, assets, storage, Realm import, plugins, or MCP.
 | Symptom                                                                              | Inspect first                                                                                                                                                                         | Then inspect                                                                                                                                                                |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | App is stuck on legal, loading, settings, grid, or chat                              | `src/App.svelte`, `src/main.ts`, `src/ts/bootstrap.ts`                                                                                                                                | `src/ts/stores.svelte.ts`, `src/ts/router.ts`, `src/styles.css`                                                                                                             |
+| App reports writer takeover or becomes a frozen offline view                         | `src/ts/server/activeWriterSession.ts`, `src/ts/server/events.ts`                                                                                                                     | `src/styles.css`, `src/ts/bootstrap.ts`, `src/ts/server/commands.ts`                                                                                                        |
 | URL, back/forward, settings section, playground tool, or character route is wrong    | `src/ts/router.ts`, `src/App.svelte` route effects                                                                                                                                    | `src/ts/router.test.ts`, `src/App.routeEffect.dom.test.ts`                                                                                                                  |
 | Theme, motion, spacing, clipping, colors, font, UI scale, or custom CSS is wrong     | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/animation.ts`, `src/ts/gui/guisize.ts`                                                                                     | `src/lib/Setting/Pages/DisplaySettings.svelte`, `src/ts/setting/accessibilitySettingsData.ts`                                                                               |
 | The whole document moved or window scrolling appeared                                | `src/ts/gui/viewportScrollGuard.ts`, `src/main.ts`, `src/styles.css`                                                                                                                  | Find code that scrolls `window`, `document.scrollingElement`, or an app-root ancestor                                                                                       |
@@ -73,6 +74,12 @@ and progress, save popup icon, plugin alert modal, popup list, EasyPanel,
 popup editor, loadout modal, Iris modal, and custom sidebar config.
 The saved-toggle management dialog is also app-hosted through
 `src/lib/SideBars/ChatGenerationTogglePresetDialog.svelte`.
+
+Two app-level states do not come from the Svelte render switch. Writer takeover
+temporarily blocks interaction while the refresh/offline choice is open; the
+offline choice then freezes editable controls and mounts a reload banner from
+`src/ts/server/activeWriterSession.ts`. `SavePopupIcon.svelte` separately
+reflects aggregate persistence activity when `showSavingIcon` is enabled.
 
 If the expected screen is missing, first confirm no higher-priority branch or
 overlay is mounted.
@@ -197,9 +204,12 @@ High-risk chat areas:
 - Message HTML crosses parser, translation, custom HTML templates, inlays,
   additional assets, module assets, and optional partial edit.
 - Durable message translation is server-raw for persisted transcript rows.
-  `Chats.svelte` baselines the active transcript and grants one-shot automatic
-  eligibility only to an appended tail; `Chat.svelte` waits for generation to
-  finish, applies the active chat's `autoTranslate`/bot-only policy, and renders
+  The server owns automatic translation for newly generated messages and sends
+  the final translation outcome with the generation terminal frame;
+  `serverGeneratedMessageTranslation.ts` mirrors an embedded success or joins
+  the existing translation-job UI for running/failure states. `Chats.svelte`
+  still grants one-shot client eligibility to other appended rows, subject to
+  the active chat's `autoTranslate`/bot-only policy. `Chat.svelte` renders
   `bilingualDisplay` through `x-risu-bilingual-translation` blocks. The legacy
   `ChatBody.svelte` HTML translation path remains only for non-persisted
   previews/greetings and reads the same active-chat automatic policy.
@@ -220,6 +230,12 @@ High-risk chat areas:
 - `DefaultChatScreen.composerDrafts.ts` preserves composer text per chat across
   navigation. `src/ts/process/rerollNavigation.svelte.ts` owns reroll
   navigation fencing and rollback.
+- Input hooks are durable definitions edited at `/settings/input-hooks`.
+  `ChatDraftHookSelector.svelte` chooses a chat-scoped draft hook; sending runs
+  that hook before generation. The composer can also open
+  `InputHookPickerDialog.svelte` for an ad hoc BTW hook and retain/dismiss its
+  result independently of the message draft. Execution lives in
+  `src/ts/process/inputHooks.ts` and uses the `otherAx` model role.
 - `AgentPresetProgress.svelte` and `PostGenerationScriptProgress.svelte` render
   chat-scoped SSE state above the transcript. Their stores/parsing live in
   `src/ts/process/agentPresetProgress.ts`, `postGenerationProgress.ts`, and
@@ -228,6 +244,7 @@ High-risk chat areas:
 Relevant tests include `src/lib/ChatScreens/ChatBody.svelte.test.ts`,
 `src/lib/ChatScreens/ChatBody.parseMemo.test.ts`,
 `src/lib/ChatScreens/newMessageTranslationEligibility.test.ts`,
+`src/ts/process/serverGeneratedMessageTranslation.test.ts`,
 `src/ts/translator/bilingualInterleave{,.dom}.test.ts`,
 `src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`,
 `src/lib/ChatScreens/Suggestion.svelte.test.ts`, and
@@ -343,6 +360,7 @@ Current settings indexes:
 | `17`  | `model`           | Profile-first model settings.                                                                 |
 | `18`  | `prompt-settings` | Prompt preset/settings shell.                                                                 |
 | `19`  | `agent-presets`   | `AgentPresetSettings`.                                                                        |
+| `20`  | `input-hooks`     | Draft and BTW input-hook definitions through `InputHookSettings`.                             |
 | `77`  | `supporter`       | `ThanksPage`.                                                                                 |
 
 When `enableRisuaiProTools` is on, Settings also shows an Easy Panel nav button.
@@ -462,6 +480,12 @@ Workflow components must surface `accepted`, `queued`, and `failed` outcomes;
 is in
 [Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
 
+The global saving icon is driven by `src/ts/server/persistenceActivity.svelte.ts`
+and remains active for in-flight mutations or this writer's queued outbox
+intents. Controls still expose busy/disabled state and local failures;
+short-lived Saving/Queued text rows were removed in favor of this stable
+indicator plus the existing queued notifications.
+
 `src/lib/Setting/Pages/Display/NotificationToggle.svelte` also renders the
 serialized push coordinator's setup compensation, pending cleanup/local
 inspection, retry-storage, and retry-operation states. Device/server ordering
@@ -551,6 +575,10 @@ Display settings update CSS through:
 - `src/ts/gui/animation.ts` for animation speed and the app-owned
   `risu-reduced-motion` root class;
 - `CustomCSSStore` in `src/ts/stores.svelte.ts` for user custom CSS injection.
+
+`chatScreenWidth` is a durable display setting applied by
+`DefaultChatScreen.svelte` through `--chat-screen-width`; it constrains both the
+transcript and composer/draft card without changing the outer app shell.
 
 The Reduced Motion toggle is a durable Accessibility setting defined in
 `src/ts/setting/accessibilitySettingsData.ts`. Bootstrap and settings local

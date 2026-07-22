@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-07-20.
+Last audited: 2026-07-23.
 
 Fastify owns durable state. The browser reads authenticated REST resources and
 sends revision-checked commands or explicit server-owned mutation requests.
@@ -13,7 +13,7 @@ sends revision-checked commands or explicit server-owned mutation requests.
 | Asset bytes      | `data/assets/<sha256>.<ext>`                                                                       | Content-addressed supported binaries; metadata lives in SQLite `assets`.                                                                    |
 | Inlay catalog    | SQLite `inlay_catalog`                                                                             | Revisioned names, dimensions, and aliases keyed to immutable `assets` rows; the browser keeps a separate read projection.                   |
 | Backups          | `data/backups/<id>/`                                                                               | Database snapshot, manifest, assets, and legacy storage when present; restore uses an explicit table allowlist.                             |
-| Legacy `db.json` | `data/db.json`                                                                                     | Import-only input renamed to `db.json.migrated` after boot conversion.                                                                      |
+| Legacy `db.json` | `data/db.json`                                                                                     | Import-only input: valid snapshots commit/checkpoint before rename; invalid envelopes quarantine, while malformed JSON stops startup.       |
 | Legacy storage   | `data/save/<hex-key>`                                                                              | Compatibility bytes for `/api/v1/storage/*`; guarded writes do not bump the domain revision.                                                |
 | Auth files       | `data/__password`, `data/__known_public_key_hashes.json`, `data/__known_session_token_hashes.json` | Single-user password, registered browser-key hashes, and optional session-token hashes.                                                     |
 | Web Push keys    | `data/__web_push_vapid_keys.json`                                                                  | Generated VAPID keypair; subscription rows live in SQLite.                                                                                  |
@@ -32,8 +32,8 @@ reroll buffer for the appended path. Per-chat `hypaV3Data` lives in
 
 `CURRENT_SCHEMA_VERSION` is 26. SQLite includes settings; character, chat,
 message, and per-chat memory rows; split collections; assets; command events and
-mutation receipts; the inlay catalog; push subscriptions; Hypa V3 memory state; and generation
-finalization retries. Migration v22 drops the retired
+mutation receipts; the inlay catalog; push subscriptions; Hypa V3 memory state;
+and generation finalization retries. Migration v22 drops the retired
 `collection_body_revisions` and `projection_body_cache_state` tables; v23
 persists stable ids for legacy global lorebooks and entries; v24 adds durable
 command-mutation receipts; v25 adds persistent database lineage, durable active
@@ -223,18 +223,24 @@ not ordinary browser `/commands/*` resource endpoints:
   before provider dispatch. Final generation writes through targeted command
   mutation and emits `generation.persisted`. Assembly and finalization
   scriptstate changes write only the target `chats` row alongside any affected
-  `messages`, rather than rewriting unrelated database tables. Durable finalization attempts are
-  queued in SQLite for retry with target snapshots, pending/terminal status, and
-  retained terminal errors that the app prunes on later sweeps. Active durable
-  jobs themselves are process-local reattach state. Cancel can persist
-  streamed-so-far text through the raw cancel path.
+  `messages`, rather than rewriting unrelated database tables. Durable
+  finalization attempts are queued in SQLite for retry with target snapshots,
+  pending/terminal status, and retained terminal errors that the app prunes on
+  later sweeps. Active durable jobs themselves are process-local reattach state.
+  Cancel can persist streamed-so-far text through the raw cancel path.
 - Raw message translation uses
   `POST /api/v1/commands/messages/:messageId/translate`: the server detaches the
   provider work from the browser request and persists through a targeted message
   command event only when both the source message and its previous translation
   still match. Bootstrap `activeMessageTranslations` includes running and
   bounded recent terminal recovery rows; retention is owned by
-  [Backend Map](backend.md#generation-and-memory).
+  [Backend Map](backend.md#generation-translation-and-memory).
+- Generated-message automatic translation starts after the generation result is
+  persisted and uses the same targeted translation mutation/job registry. The
+  generation stream waits for settlement or the configured defer cap; a capped
+  translation remains detached and appears in `activeMessageTranslations`.
+  [Providers And Models](providers-and-models.md#translation-runtime) owns the
+  preset/pipeline and generated-message flow.
 - Memory job create/cancel writes durable memory-job state and emits memory
   events without a domain revision.
 - The startup push service loads or generates VAPID keys; push notification
@@ -244,12 +250,13 @@ not ordinary browser `/commands/*` resource endpoints:
 - Backup create/delete mutate backup files without a domain revision; restore
   replaces repository state and emits `state.restored`. Backup creation uses
   the online `node:sqlite` backup API after a checked WAL checkpoint, but restore
-  swaps only the SQLite table allowlist in `repository.ts` via `ATTACH`. Operational tables
-  may therefore exist in the physical copy without being restored. Destructive
-  import and restore rotate the current database lineage and clear server
-  mutation receipts, so receipt and browser-outbox scopes from the old lineage
-  do not cross that boundary. [Assets And Saves](assets-and-saves.md#backups)
-  owns the exact restored-table and file contract.
+  swaps only the SQLite table allowlist in `repository.ts` via `ATTACH`.
+  Operational tables may therefore exist in the physical copy without being
+  restored. Destructive import and restore rotate the current database lineage
+  and clear server mutation receipts, so receipt and browser-outbox scopes from
+  the old lineage do not cross that boundary.
+  [Assets And Saves](assets-and-saves.md#backups) owns the exact restored-table
+  and file contract.
 
 ## Auth And Active Writer
 
@@ -291,10 +298,13 @@ active-writer, streaming, public exceptions, and read-only POST decisions.
 `activeMessageTranslations`. Writer-intent requests also receive
 `requestedWriterWasActive`, computed before the request takes ownership;
 read-only requests omit it. Bootstrap does not return durable application data.
-If no database exists, the browser calls
+Only a genuinely empty initialization assessment makes the browser call
 `commands/state/initialize`; the winning client reuses the accepted runtime
 metadata/revision, while a client that lost the initialization race retries
-bootstrap read-only. Before it loads the four root resources, the browser
+bootstrap read-only. A missing or malformed settings row with
+character/chat/message rows or revision/event history is a fail-closed
+conflict, not permission to reseed.
+Before it loads the four root resources, the browser
 prepares the lineage-scoped mutation outbox, flushes durable receipt
 acknowledgements, and replays encrypted pending intents. Retained transient or
 unreadable intents block resource hydration; only a drained outbox proceeds to
@@ -324,8 +334,8 @@ revision semantics and are never replayed. Clients subscribe with
 `sinceRevision` or `Last-Event-ID`; replay gaps return
 `409 event_replay_unavailable`, after which the browser performs a read-only
 complete resource refresh before resubscribing. SQLite replay keeps a
-1000-revision window
-and persists `origin_writer_session_id` for own-echo suppression. The live
+1000-revision window and persists `origin_writer_session_id` for own-echo
+suppression. The live
 command sink can also carry non-replay notifications such as export events at
 the current revision. Memory events are never replayed.
 
@@ -335,8 +345,8 @@ applied-resource cursor, use verified local effects for contiguous command
 responses, and issue targeted REST reads for the remainder. Gaps, unknown
 resources, replay misses, or invalidation failures fall back to a complete
 settings/collections/characters/inlay-catalog refresh. The browser keeps
-separate known-server
-and applied-resource revision cursors: mutation base revisions and hydration
+separate known-server and applied-resource revision cursors: mutation base
+revisions and hydration
 freshness use the known cursor, while SSE replay, gap detection, and
 already-applied skips use only the applied cursor. An own-origin event that
 arrives before its command response is retained and can be upgraded with the
@@ -358,7 +368,10 @@ comments and can persist streamed-so-far text through raw cancel/finalization
 retry paths. Bootstrap `activeGenerationJobs` exposes
 running durable jobs, including mode and regenerate message id when relevant,
 while `activeMessageTranslations` exposes running plus bounded recent terminal
-raw-message translation rows for completion polling.
+manual or generated-message translation rows for completion polling.
+`post_generation_progress` can describe either Lua work or the server-owned
+automatic-translation wait. `done.postGeneration` carries the persisted message
+id and may embed a succeeded, failed, or still-running translation result.
 For a negotiated inline, non-replayable stream, `done.result` may be absent when
 non-empty token frames already delivered the same completion. Durable streams
 always retain the terminal result so their protected replay is self-contained.

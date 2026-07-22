@@ -1,6 +1,6 @@
 # Generated Files And Legacy Caveats
 
-Last audited: 2026-07-20.
+Last audited: 2026-07-23.
 
 These notes help avoid spending time in files that look important but are
 generated, local-only, historical, vendored, or intentionally no-port.
@@ -16,6 +16,7 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `blobs-for-test/`                                | Ignored local binary/test scratch payloads.                                                                                                                                                                                                                                                                 |
 | `*.tsbuildinfo`                                  | TypeScript incremental build artifacts. `tsconfig.client-lib.json` directs its generated artifact under `dist/client-types/`.                                                                                                                                                                               |
 | `data/`                                          | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, request/generation body sidecars and optional tsserver logs under `data/trace/`, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
+| `data-agent/`                                    | Disposable `pnpm dev:agent` runtime state cloned from `data/` by default. It is ignored local state, not a second source tree.                                                                                                                                                                              |
 | `scripts/` when present                          | Ignored local scratch/tooling directory.                                                                                                                                                                                                                                                                    |
 | `public/token/`                                  | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                                                                                                                                                                                 |
 | `public/plugin_start.7z`                         | Packaged starter plugin archive.                                                                                                                                                                                                                                                                            |
@@ -113,8 +114,14 @@ Do not remove these just because the name sounds old:
   unsupported on the server.
 
 `data/db.json` is also a legacy name now. If present, `ensureDbJsonImported()`
-imports it into SQLite and renames it to `db.json.migrated`; current runtime
-state is not written back to live `db.json`.
+imports a valid snapshot in one transaction, checkpoints SQLite, then renames
+it to `db.json.migrated`; current runtime state is not written back to live
+`db.json`. An invalid object envelope is quarantined as `db.json.invalid*`.
+Malformed JSON remains untouched and fails startup so it can be repaired. If
+`risu.db` later disappears while a migration/quarantine marker, a non-empty
+`backups/`, `assets/`, or `save/` directory, or the password file proves prior
+use, startup refuses to create a fresh database unless
+`RISU_API_ALLOW_MISSING_DATABASE=1` is explicit.
 
 Old UI strings may still mention `save/__password` or `save/__password.txt`.
 Fastify auth state actually lives under `data/__password`,
@@ -126,7 +133,7 @@ Fastify auth state actually lives under `data/__password`,
 The settings UI intentionally omits these imported/legacy keys:
 
 - `coldstorage`, `enableRemoteSaving`, `presetChain`, and `realmDirectOpen`;
-- `showPromptComparison` and `showSavingIcon`;
+- `showPromptComparison`;
 - `claudeBatching`, `claudeRetrivalCaching`, `forceProxyAsOpenAI`,
   `googleClaudeTokenizing`, `removePunctuationHypa`, and `antiServerOverloads`;
 - browser-only `localNetworkMode` and `localNetworkTimeoutSec`.
@@ -139,6 +146,11 @@ normalizers. That does not make them live controls. Absence is guarded by
 also intentionally omit the old UI-translation template download, guarded by
 `src/ts/setting/languageSettingsData.test.ts`; translation-cache import/export
 remains current.
+
+`showSavingIcon` is the exception to that no-control rule: it has no current
+settings UI, but it remains a live persisted opt-out. It defaults to `true` and
+gates `src/lib/Others/SavePopupIcon.svelte`, whose activity comes from the
+browser command queue and current-writer pending mutation outbox.
 
 The automatic cold-storage setting is retired, but recovery of imported legacy
 character/chat archives is live through `src/ts/process/coldstorage.svelte.ts`

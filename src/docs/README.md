@@ -1,14 +1,14 @@
 # Source Docs
 
-Last audited: 2026-07-20.
+Last audited: 2026-07-23.
 
 These notes are the current frontend/client documentation for agents working in
 `src/`. They replace the old compact frontend map under `docs/structure/`.
 
-| File                                     | Use                                                                                                                                                                                                   |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`svelte-ui.md`](svelte-ui.md)           | First stop for Svelte UI/UX work: app shell, routes/history, settings, Saved Toggles, popup editor, shared controls, chat/sidebar, viewport layout, mobile/lite, playground, and visible-state tests. |
-| [`client-runtime.md`](client-runtime.md) | Browser coordination that shapes visible UI: startup, root-resource ownership, async freshness, generation/reattach, fixed server-operation adapters, and links to adjacent canonical owners.         |
+| File                                     | Use                                                                                                                                                                                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`svelte-ui.md`](svelte-ui.md)           | First stop for Svelte UI/UX work: app shell, routes/history, settings, input hooks, Saved Toggles, popup editor, shared controls, chat/sidebar, viewport layout, mobile/lite, playground, and visible-state tests.                   |
+| [`client-runtime.md`](client-runtime.md) | Browser coordination that shapes visible UI: startup, active-writer loss, root-resource ownership, durable mutations, async freshness, generation/reattach, fixed server-operation adapters, and links to adjacent canonical owners. |
 
 Continue with the canonical focused notes instead of copying their contracts
 into frontend guides:

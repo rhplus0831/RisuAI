@@ -1,10 +1,10 @@
 # Providers And Models
 
-Last audited: 2026-07-20.
+Last audited: 2026-07-23.
 
 Provider/model behavior is split between browser model metadata, Fastify
-provider dispatch, and the shared capability table that decides whether a
-request shape can run on the server.
+provider dispatch, the translator pipeline, and the shared capability table
+that decides whether a request shape can run on the server.
 
 ## Browser Model Registry
 
@@ -179,6 +179,49 @@ create/update/duplicate/delete, role binding updates, create-and-bind,
 legacy-to-profile conversion, and runtime defaults updates. Whole-array settings
 patches remain compatibility paths for imports, presets, loadouts, and older
 callers.
+
+## Translation Runtime
+
+| Path                                                                | Role                                                                                                                               |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `src/ts/translator/presets.ts`, `src/ts/translator/pipeline.ts`     | Translator preset normalization/import/export and shared ordered-step prompt/output/history-slot execution.                        |
+| `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte`    | Multi-step translator preset editor and model-profile selection UI.                                                                |
+| `server/fastify/src/translation/rawMessageTranslation.ts`           | Google, DeepL, DeepLX, and LLM dispatch plus protected raw-block handling and server history-window rendering.                     |
+| `server/fastify/src/translation/serverMessageTranslation.ts`        | Detached provider work followed by source/previous-translation/job-fenced targeted message persistence.                            |
+| `server/fastify/src/translation/generationCompletionTranslation.ts` | Eligibility, wait-cap, completion-frame, and push-notification coordination for generated-message automatic translation.           |
+| `src/ts/server/messageTranslationJobs.ts`                           | Browser recovery state for detached translations reported by bootstrap or a generation completion frame.                           |
+| `src/ts/process/serverGeneratedMessageTranslation.ts`               | Applies embedded success and maps running/failure outcomes into the shared translation-job UI state.                               |
+| `src/ts/process/generatedMessageTranslationEligibility.ts`          | Prevents the rendered-message compatibility trigger from duplicating translation already owned by the server generation lifecycle. |
+
+Translator presets contain at most five ordered steps. Runtime executes the
+enabled steps in order, falling back to the first step when all are disabled.
+Each step can inherit the `translate` model role or name a durable model
+profile, consume the source text, previous step output, or a named prior output,
+and publish an optional named output for later steps. The first step remains
+mirrored into the legacy `translatorPrompt` and `translatorMaxResponse` fields
+for compatibility.
+The selected preset is collection-owned; its pointer and language settings are
+mirrored through `server/fastify/src/routes/commands.ts`,
+`server/fastify/src/databaseDefaults.ts`, and
+`src/ts/server/settingsGroups.ts`.
+
+For LLM "send text as-is" translation, server message translation also
+resolves `{{slot::history::N}}` and `{{slot::historytrans::N}}` for 1-50 prior
+rows. The window respects disabled/comment messages and greeting ownership,
+then drops oldest entries to stay under `translatorHistoryMaxTokens` (2,048 by
+default). Other translator modes preserve protected raw media/inlay blocks and
+translate only the surrounding text.
+
+Manual message translation and generated-message automatic translation share
+the same detached job registry and source-safe persistence path. Automatic
+translation begins only after a generated row is durably persisted. The chat
+stream emits translation progress and delays its terminal post-generation
+frame until translation settles or `autoTranslateNotificationDeferCapSeconds`
+(180 by default) expires; a capped job continues and remains visible through
+bootstrap recovery. A successful terminal frame can embed the translation for
+immediate display, while running and failed results reuse the shared job UI.
+`autoTranslateCachedOnly` disables automatic LLM translation because the
+server path does not use the browser translation cache.
 
 ## Agent Preset Model Flow
 
@@ -375,6 +418,7 @@ chat profiles on the separate Hypa/Voyage/custom embedding contract in
 | `src/ts/process/request/serverChatEvents.ts`             | Client-side chat SSE frame/message-patch contract types.                                                   |
 | `src/ts/process/request/durableGeneration.ts`            | Durable send/continue/regenerate request helpers.                                                          |
 | `src/ts/process/reattach.ts`                             | Bootstrap-driven reattach for active durable generation jobs.                                              |
+| `src/ts/process/serverGeneratedMessageTranslation.ts`    | Automatic-translation handling for terminal post-generation frame data.                                    |
 | `server/fastify/src/routes/generation.ts`                | Completion route boundary.                                                                                 |
 | `server/fastify/src/routes/generationChat.ts`            | Server-assembled chat generation, preview prompt, durable job lifecycle, and chat-settings/profile guards. |
 | `server/fastify/src/prompt/chatDispatch.ts`              | Shared server provider dispatch after profile/setting resolution.                                          |
@@ -412,6 +456,10 @@ Browser `serverChat.ts` sends
 text. `done.result` is therefore optional for negotiated inline streams, while
 durable jobs retain it so replay and reattach remain self-contained. Agent
 Preset execution emits `agent_preset_progress` frames on the same stream.
+After generation persistence, eligible assistant rows also run server-owned
+automatic translation. The stream emits `post_generation_progress` while it
+waits, and `done.postGeneration` carries the persisted message id plus the
+succeeded, failed, or still-running translation outcome.
 
 `generationChat.ts` wraps the provider dispatcher with retained request
 policies. Each attempt can run the server request trigger; failures before the

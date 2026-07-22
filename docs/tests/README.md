@@ -1,14 +1,14 @@
-# Test Suite Audit
+# Test Suite Guide
 
-Audit snapshot: **2026-07-17**. This documentation groups the suite by protected product behavior. File counts are unique within each runner; parameterized counts are runtime-expanded where the runner exposes them.
+This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
 ## Executive summary
 
-The suite is large, healthy, and unusually strong at the application's highest-risk state and protocol boundaries. The audit accounts for **543 test files and 7,435 collected cases**: 4,854 frontend/gate Vitest cases, 2,575 backend Vitest cases, and 6 Playwright cases. A clean audit run produced **7,434 passes and one normal-lane skip**. The skipped Realm 7,000-asset stress case passed in a direct-file run, so there was no known reproducible product failure at the end of the audit.
+The suite is strongest at the application's highest-risk state and protocol boundaries: durable writes, revisions, optimistic rollback, prompt assembly, provider wire contracts, streaming terminal behavior, bounded imports, backups, memory jobs, stale asynchronous UI work, and accessibility/focus behavior.
 
-The strongest coverage protects durable writes, revisions, optimistic rollback, prompt assembly, provider wire contracts, streaming terminal behavior, bounded imports, backups, memory jobs, stale asynchronous UI work, and accessibility/focus behavior. Assertions are commonly exact and stateful: request bodies and headers, SSE frame order, SQLite rows and revisions, IndexedDB outbox contents, rollback scope, visible DOM state, and resource cleanup are all checked.
+Assertions are commonly exact and stateful: request bodies and headers, SSE frame order, SQLite rows and revisions, IndexedDB outbox contents, rollback scope, visible DOM state, and resource cleanup are all checked.
 
-The main weakness is integration depth rather than raw case count. Most frontend tests run in happy-dom with mocked network/storage/browser APIs; most provider tests mock upstream services; and only six Playwright cases cross the built browser/Fastify/SQLite boundary. There is no normal composer-to-stream-to-durable-reload browser journey, no real crash/reload or two-tab outbox journey, and no destructive backup-restore/outbox-quarantine journey. CI also enforces only a deliberately small UI coverage sentinel, not the much broader frontend or backend coverage maps.
+The main weakness is integration depth rather than raw case count. Most frontend tests run in happy-dom with mocked network/storage/browser APIs; most provider tests mock upstream services; and the small serial Playwright suite covers only selected built-browser/Fastify/SQLite journeys. There is no normal composer-to-stream-to-durable-reload browser journey, no real crash/reload or two-tab outbox journey, and no destructive backup-restore/outbox-quarantine journey. CI also enforces only a deliberately small UI coverage sentinel, not the much broader frontend or backend coverage maps.
 
 ## Index
 
@@ -36,25 +36,24 @@ The main weakness is integration depth rather than raw case count. Most frontend
 - [Scripting, Parsing, and Automation](scripting-parsing-and-automation.md) — CBS, regex scripts, triggers, Lua, HTML/chat parsing, templates, and bounded execution.
 - [Plugins, Modules, and MCP](plugins-modules-and-mcp.md) — plugin permissions/sandboxing, module lifecycle, MCP transports/OAuth/tools, and RisuAccess resources.
 
-## Audit execution and coverage
+## Running the suite
 
-| Runner/lane                              |               Files | Collected cases | Audit result                         | What it proves                                                   |
-| ---------------------------------------- | ------------------: | --------------: | ------------------------------------ | ---------------------------------------------------------------- |
-| Frontend Vitest including explicit gates |                 415 |           4,854 | 4,854 passed                         | happy-dom component/state tests plus audit and performance gates |
-| Backend Vitest                           |                 125 |           2,575 | 2,574 passed, 1 skipped              | Node/Fastify/SQLite/repository/provider route behavior           |
-| Direct Realm stress run                  | 1 (already counted) |              26 | 26 passed                            | Includes the normally skipped 7,000-display-asset case           |
-| Playwright Chromium smoke                |                   3 |               6 | 6 passed                             | Built SPA + in-process Fastify + SQLite browser journeys         |
-| **Unique total**                         |             **543** |       **7,435** | **7,434 passed, 1 conditional skip** | The complete discovered suite                                    |
+| Command                  | Scope                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `pnpm test`              | Alias for the ordinary frontend Vitest lane                                                                   |
+| `pnpm test:frontend`     | Frontend happy-dom tests; excludes `src/ts/__tests__` and `src/lib/_audit`                                    |
+| `pnpm test:frontend:all` | Frontend tests including both explicit gate directories                                                       |
+| `pnpm test:gates`        | All explicit performance and audit gates                                                                      |
+| `pnpm test:gates:perf`   | The two named render/clone performance probes                                                                 |
+| `pnpm test:gates:audit`  | Static and mounted audit gates under `src/lib/_audit`                                                         |
+| `pnpm test:server`       | Node/Fastify/SQLite tests discovered by `server/fastify/vitest.config.ts`                                     |
+| `pnpm test:smoke`        | Serial Chromium tests under `server/fastify/browser-smoke`                                                    |
+| `pnpm test:all`          | The quality-workflow aggregate: formatting, both type checks, frontend, gates, UI map, server, and smoke      |
+| `pnpm coverage:frontend` | Broad frontend report, including gates; not part of `test:all`                                                |
+| `pnpm coverage:backend`  | Broad Fastify report; not part of `test:all`                                                                  |
+| `pnpm coverage:ui-map`   | Six-file repeated UI sentinel with aggregate line/statement/function/branch floors of 8%/7%/5%/4% respectively |
 
-The clean broad coverage runs reported:
-
-| Map                                               |  Lines | Statements | Functions | Branches | Enforcement                          |
-| ------------------------------------------------- | -----: | ---------: | --------: | -------: | ------------------------------------ |
-| Frontend (`src/**/*.{ts,svelte}`, `util/**/*.ts`) | 65.91% |     62.49% |    58.73% |   56.38% | Report only; no repository threshold |
-| Backend (`server/fastify/src/**/*.ts`)            | 86.04% |     83.72% |    91.81% |   72.93% | Report only; no repository threshold |
-| CI UI map (6 files / 121 repeated cases)          | 10.02% |      8.91% |     6.92% |    6.39% | Enforced minima: 8% / 7% / 5% / 4%   |
-
-`pnpm test:all`, used by the quality workflow, runs format checking, the root Svelte/browser type check, client-library declaration emission and strict Fastify/Playwright-source TypeScript projects through `pnpm check:server`, ordinary frontend tests, the four explicit gate files, the six-file/121-case UI coverage map, backend tests, and Playwright smoke. The UI-map cases already appear in the ordinary frontend lane and are repeated to collect focused coverage: CI encounters 7,556 definitions, versus 7,435 unique cases. Both Vitest configs always disable focused tests; Playwright sets `forbidOnly` in CI. The runners use no retries, and Playwright is serial. The broad `pnpm coverage:frontend` and `pnpm coverage:backend` maps are available but are not part of that CI command. CI does not upload retained Playwright traces/test results. The UI threshold is aggregate rather than per-file. Coverage figures are directional: declarations, compatibility paths, generated/static data, entrypoints, test harness/stub sources, and unmounted Svelte branches make global percentages less informative than the high-risk seams called out below.
+Both Vitest configurations reject focused tests. Playwright is serial, retains traces on failure, and sets `forbidOnly` in CI. The normally skipped 7,000-display-asset Realm stress case is enabled by running `realmImport.test.ts` directly. Broad frontend and backend coverage are report-only; only the focused UI map has thresholds.
 
 ## Major coverage strengths
 
@@ -67,9 +66,9 @@ The clean broad coverage runs reported:
 
 ## Major gaps
 
-- **Too few complete browser journeys.** Six serial Chromium cases cannot cover the number of independently tested layers. Missing high-value journeys include normal composer streaming and reload, crash/replay, two-tab writer transfer, profile creation-to-generation, Hypa jobs, multi-step loadouts/modules, and destructive backup restore with queued outbox work.
+- **Too few complete browser journeys.** The serial Chromium suite cannot cover the number of independently tested layers. Missing high-value journeys include normal composer streaming and reload, crash/replay, two-tab writer transfer, profile creation-to-generation, Hypa jobs, multi-step loadouts/modules, and destructive backup restore with queued outbox work.
 - **Mocked external and browser behavior.** Provider APIs, Web Push, Web Speech/AudioContext, image decoding/canvas/compression, workers, IndexedDB quota/upgrade failure, Web Locks, and most service-worker behavior are simulated. Deterministic unit tests should remain, but bounded opt-in canaries and a few real-browser media/storage cases are needed.
-- **Coverage and CI governance are narrow.** The enforced UI map samples six files and barely clears low aggregate thresholds; the much broader frontend/backend maps have no floors or changed-file policy. CI does not publish retained Playwright traces and test results. Important low-covered seams include browser Hypa implementations, plugin safety/sandbox branches, parsing/script orchestration, some provider adapters, backend CBS/lorebook/trigger effects, Realm card conversion, and several runtime/error branches.
+- **Coverage and CI governance are narrow.** The enforced UI map samples six files with low aggregate thresholds; the much broader frontend/backend maps have no floors or changed-file policy. CI does not publish retained Playwright traces and test results. Important low-covered seams include browser Hypa implementations, plugin safety/sandbox branches, parsing/script orchestration, some provider adapters, backend CBS/lorebook/trigger effects, Realm card conversion, and several runtime/error branches.
 - **Duplicated client/server contracts can drift.** Capability eligibility, command routes, SSE event names, prompt/lore behavior, preset schemas, asset-owner catalogs, and provider option matrices are hand-maintained on both sides. Independent tests provide defense in depth, but shared typed fixtures or parity checks are missing.
 - **Scale/stress is not consistently gated.** The 7,000-asset Realm case is skipped in ordinary CI, and the render-cost harness showed resource sensitivity when the audit initially ran it concurrently with other collectors. Large-corpus bounds deserve isolated, named scale/performance lanes.
 - **Some visible outcomes stop at internal state.** Many bridge and command tests assert projections and mocks but do not mount the consuming component. Translation, media, memory, optimistic rollback, and provider-profile changes need selective DOM/browser confirmation.
@@ -89,7 +88,7 @@ The clean broad coverage runs reported:
 - **Very large suites:** browser `commands.test.ts`, `chatCommands.test.ts`, `storage/database.svelte.test.ts`, `TranslatorPresetSettings.svelte.test.ts`, the `DefaultChatScreen*.test.ts` family, `SideChatList.svelte.test.ts`, and backend `generation.chat.test.ts`/`assemble.test.ts` combine many concerns and dense shared mocks. Their scenarios are mostly valuable, but failure diagnosis and safe fixture changes are difficult.
 - **Repeated race/focus matrices:** latest-operation upload tests, modal focus/Escape checks, dirty-field rollback, and route allow/deny tables repeat setup across domains. Consolidate shared contracts without deleting ownership-specific cases.
 - **Browser failure isolation:** the visible-state journeys now synchronize on command responses, applied revisions, lineage conflict, navigation, document reload, and settled DOM/store state, and attach recent console/page errors on failure. The first Fastify browser smoke remains a long, monolithic journey whose failure location can be hard to interpret.
-- **Conditional/resource-sensitive gates:** schedule the direct-only Realm stress case, and run render/load-cost harnesses with controlled concurrency. One overloaded audit attempt produced an opaque render-harness failure; the case passed alone and in the clean all-frontend coverage rerun.
+- **Conditional/resource-sensitive gates:** schedule the direct-only Realm stress case, and run render/load-cost harnesses with controlled concurrency.
 - **Narrow tests:** several icon/DropList/supporter/static token/source-presence checks prove only one mapping or markup fact. Keep them cheap, but do not count them as substitutes for interaction or accessibility-name computation.
 - **Global test doubles:** the Vitest baseline now installs the production clone helper, with native/fallback semantics and global-restoration behavior locked by tests. It still mocks KaTeX to an empty module; retain at least one non-mocked math-rendering integration.
 - **Shared browser fixture state:** two Playwright specs reuse one Fastify/SQLite fixture across their serial cases. This is efficient but order-coupled. A common fixture with explicit per-test state ownership/reset would make failures easier to reproduce.
@@ -107,4 +106,4 @@ The clean broad coverage runs reported:
 
 ## Reading the detailed documents
 
-Each feature document lists its primary inventory, groups individual and parameterized cases by behavior, explains the regression protected, and evaluates assertion strength, overlap, coupling, realism, and gaps. Cross-cutting tests may appear in more than one document—for example, a memory modal in both memory and character UI—but each inventory states its primary accounting boundary so overlap is not mistaken for additional tests.
+Each feature document lists its primary inventory, groups representative cases by behavior, explains the regression protected, and evaluates assertion strength, overlap, coupling, realism, and gaps. Cross-cutting tests may appear in more than one document—for example, a memory modal in both memory and character UI. Inventories name files rather than claiming a suite-wide count; use runner discovery when an exact current count is needed.

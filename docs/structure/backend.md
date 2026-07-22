@@ -1,10 +1,11 @@
 # Backend Map
 
-Last audited: 2026-07-20.
+Last audited: 2026-07-23.
 
 The backend is the Fastify server under `server/fastify`. It owns SQLite state,
-auth, provider secrets, prompt assembly, provider dispatch, Hypa V3 memory,
-imports/exports/backups, and the `/api/v1/*` route surface.
+auth, provider secrets, prompt assembly, provider dispatch, message
+translation, Hypa V3 memory, imports/exports/backups, and the `/api/v1/*` route
+surface.
 
 ## Key Files
 
@@ -14,6 +15,7 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/app.ts`                                                             | Composition root for plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA.                                                                              |
 | `server/fastify/src/config.ts`                                                          | Parses `RISU_API_*`, `TRUST_PROXY`, hub/Realm URLs, static root, trace mode, and agent auth bypass.                                                                                   |
 | `server/fastify/src/db.ts`, `databaseLineage.ts`, `commandMutationReceipts.ts`          | SQLite schema v26, migrations, `schema_version`, global revision, durable command-mutation receipts, database lineage, receipt acknowledgements, and durable writer ownership/epochs. |
+| `server/fastify/src/databaseInitialization.ts`                                          | Fail-closed first-run classifier: valid settings mean initialized; character/chat/message rows or revision/event history without settings mean conflict, never a fresh reseed.        |
 | `server/fastify/src/databaseDefaults.ts`                                                | Canonical first-run and import-normalization defaults; keep persisted setting groups aligned with the browser ownership map and parity test.                                          |
 | `server/fastify/src/repository.ts`                                                      | Broad/scoped/exact domain loaders, REST resource/hydration readers, targeted row/table writers, legacy `db.json` import, `applyImport`, assets, backups.                              |
 | `server/fastify/src/messageStore.ts`                                                    | Chat `messages`, reroll alternates, and per-chat `chat_hypa_v3` rows.                                                                                                                 |
@@ -25,8 +27,8 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/routeRateLimits.ts`                                                 | Per-route rate-limit presets.                                                                                                                                                         |
 | `server/fastify/src/protocolMetrics.ts`, `requestTrace.ts`                              | Opt-in protocol metrics, command table-write capture, and API request traces.                                                                                                         |
 | `server/fastify/src/generationJobs.ts`, `generationFinalizationRetry.ts`                | Process-local durable chat jobs, replay/reattach state, and SQLite-backed finalization retry rows.                                                                                    |
-| `server/fastify/src/messageTranslationJobs.ts`                                          | Process-local running jobs plus bounded terminal raw-message translation recovery rows exposed through runtime bootstrap.                                                             |
-| `server/fastify/src/translation/`                                                       | Raw message translation provider dispatch for Google, DeepL, DeepLX, and LLM translation.                                                                                             |
+| `server/fastify/src/messageTranslationJobs.ts`                                          | Process-local running jobs plus bounded terminal manual/generated-message translation recovery rows exposed through runtime bootstrap.                                                |
+| `server/fastify/src/translation/`                                                       | Google, DeepL, DeepLX, and LLM message translation, multi-step/history-aware translator execution, and generated-message automatic-translation follow-up.                             |
 | `server/fastify/src/pushNotifications.ts`                                               | Web Push VAPID key loading/generation, subscription persistence, and best-effort completion pushes.                                                                                   |
 | `server/fastify/src/assetGc.ts`                                                         | Periodic reference-counted asset garbage collection.                                                                                                                                  |
 | `server/fastify/src/streamJobs.ts`, `streamBackpressure.ts`                             | Process-local proxy stream jobs and bounded stream writes for slow clients.                                                                                                           |
@@ -56,13 +58,18 @@ device-backup import limits and generation trace sidecar controls.
 types, uses a 600s request-receive timeout, and honors `LOG_LEVEL=silent` for
 quiet logs.
 
-Startup opens SQLite, runs legacy Hypa V3 backfill, imports legacy
-`data/db.json` when present, starts the memory worker, creates command/memory
-event buses, creates proxy, durable generation, and message-translation
-registries, and starts GC/finalization retry timers. The proxy stream and
-durable-generation registries share a GC tick, asset GC is optional, and the
-generation finalization retry sweep runs once on startup then on a default 5s
-interval while also pruning retained terminal retry rows. Startup also calls
+Startup opens SQLite only after the missing-database guard accepts the data
+directory, recovers interrupted restore swaps, runs legacy Hypa V3 backfill,
+and atomically imports a valid legacy `data/db.json` when present. Prior-install
+evidence without `risu.db` refuses startup unless
+`RISU_API_ALLOW_MISSING_DATABASE=1`; invalid legacy envelopes are quarantined,
+while malformed JSON remains in place and stops startup for operator repair.
+It then starts the memory worker, creates command/memory event buses, creates
+proxy, durable-generation, and message-translation registries, and starts
+GC/finalization retry timers. The proxy stream and durable-generation
+registries share a GC tick, asset GC is optional, and the generation
+finalization retry sweep runs once on startup then on a default 5s interval
+while also pruning retained terminal retry rows. Startup also calls
 `bootPromptVariables()` so server-side CBS/chat-var parsing is wired before
 prompt assembly. When `RISU_API_TRACE_MODE` is `agent` or `human`, request
 tracing adds `X-Request-UID` and writes API traces under
@@ -175,7 +182,7 @@ write contracts. [Server Resources And Bridges](server-resources-and-bridges.md)
 owns browser command queuing, durable intents/receipts, optimistic
 acknowledgements, invalidation, and hydration.
 
-## Generation And Memory
+## Generation, Translation, And Memory
 
 The live chat path is server-owned. Browser `sendChat` preflights with
 `resolveServerPromptAssembly()` and posts raw inputs to
@@ -205,6 +212,20 @@ observe completion. Source-safe persistence lives in
 `server/fastify/src/translation/rawMessageTranslation.ts`. Guards are
 `server/fastify/__tests__/rawMessageTranslation.test.ts` and
 `server/fastify/__tests__/messageTranslationJobs.test.ts`.
+
+Automatic translation of newly persisted generated messages is server-owned.
+`server/fastify/src/translation/generationCompletionTranslation.ts` checks the
+chat and translator settings, starts the same fenced message-translation path,
+and holds the terminal `done.postGeneration` frame until translation settles or
+`autoTranslateNotificationDeferCapSeconds` expires (180 seconds by default).
+The stream emits translation progress while waiting; the terminal frame carries
+the persisted message id and a succeeded, failed, or still-running translation
+result. A capped job keeps running and remains recoverable through
+`activeMessageTranslations`. Chat-completion push delivery fires once when the
+translation settles or the cap expires. Browser handling lives in
+`src/ts/process/serverGeneratedMessageTranslation.ts`; guards include
+`server/fastify/__tests__/generationChatCompletionTranslation.test.ts` and
+`src/ts/process/serverGeneratedMessageTranslation.test.ts`.
 
 Only Hypa V3 is maintained. Legacy backfill lives in `memoryLegacyImport.ts`.
 Memory storage and queueing live in `memoryRepository.ts`; planning/selection

@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-07-20.
+Last audited: 2026-07-23.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
@@ -58,7 +58,9 @@ element.
    initialization race refetches read-only bootstrap metadata.
 3. Prepare the encrypted pending-mutation outbox for the authenticated writer
    epoch and database lineage, flush saved receipt acknowledgements, and replay
-   its dependency-ordered commands. Startup stops if retryable rows remain.
+   its dependency-ordered commands. Secure contexts use a non-extractable
+   WebCrypto key; plain-HTTP contexts use a separately stored raw AES key and
+   the fallback cipher. Startup stops if retryable or unreadable rows remain.
 4. Fetch `/api/v1/settings`, `/api/v1/collections`, `/api/v1/characters`, and
    `/api/v1/inlay-assets` in parallel. The first three use hash-aware POSTs when
    IndexedDB/Web Crypto are available and otherwise fall back to full GETs.
@@ -76,7 +78,8 @@ element.
 10. Load plugins and start plugin runtime synchronization.
 11. Update color scheme, text theme, reduced-motion/animation state, height mode, error
     handling, and GUI size CSS variables.
-12. Apply startup UI state such as `botSettingAtStart`.
+12. Show the one-time insecure-origin warning when the page lacks a secure
+    context, then apply startup UI state such as `botSettingAtStart`.
 13. Set `loadedStore`, select the persisted character, start DOM observers,
     register dynamic models, run module update, and show TOS as needed.
 
@@ -134,6 +137,13 @@ Mutation-facing UI must consume the helper outcome instead of assuming that an
 awaited dispatch means success. `queued` is retained local intent, not server
 acceptance; keep the user's newer draft and surface `accepted`, `queued`, or
 `failed` without prematurely closing the surface.
+
+`src/ts/server/persistenceActivity.svelte.ts` aggregates in-flight mutations
+and this writer's unacknowledged outbox rows. `SavePopupIcon.svelte` displays
+that shared state when the retained `showSavingIcon` preference permits it.
+Individual controls keep their disabled/busy state and failure feedback, while
+queued outcomes use the shared indicator and notification flow instead of
+mounting transient status rows throughout the UI.
 
 ### Loadout Apply Sequencing
 
@@ -195,6 +205,22 @@ The guard set is `src/ts/server/pushNotificationSetting.test.ts`,
 states belong in [Svelte UI](svelte-ui.md#settings-and-shared-controls); server
 subscription persistence remains in
 [Backend Map](../../docs/structure/backend.md#route-families).
+
+## Active Writer Loss
+
+`src/ts/server/activeWriterSession.ts` owns the browser response to another
+session taking the single-writer lease. A live `writer` SSE frame, or a
+validated `423 active_writer_stale` response, latches writer loss immediately,
+blocks new mutations, stops resource events, chat hydration, translation
+refresh, and generation reattach, then asks the user to refresh or stay
+offline. Refresh retakes ownership through normal bootstrap. Staying offline
+freezes editable controls and adds a reload banner while leaving text
+selectable for recovery.
+
+This flow is different from database-lineage and pending-mutation recovery
+failures, which still force a reload. When a mounted app suddenly stops all
+network work, inspect `activeWriterSession.ts`, `events.ts`, and the writer-loss
+styles in `src/styles.css` before treating each caller as independently broken.
 
 ## Generation Client
 
