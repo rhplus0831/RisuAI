@@ -1,3 +1,5 @@
+import { insertSentenceParagraphBreaks } from '../parser/sentenceBreaks'
+
 export const BILINGUAL_TRANSLATION_CLASS = 'x-risu-bilingual-translation'
 export const BILINGUAL_PAIR_CLASS = 'x-risu-bilingual-pair'
 export const BILINGUAL_MUTED_CLASS = 'x-risu-bilingual-muted'
@@ -8,6 +10,9 @@ const VISUAL_CONTENT_SELECTOR =
 
 export interface BilingualInterleaveOptions {
   emphasize?: 'original' | 'translation'
+  sentenceBreaks?: {
+    sentencesPerParagraph: number
+  }
 }
 
 interface BilingualUnit {
@@ -85,8 +90,7 @@ function collapseVisualOnlyPair(pair: Element): void {
     ? null
     : (sides.find(
         (side) =>
-          side.classList.contains(BILINGUAL_MUTED_CLASS) &&
-          !side.classList.contains(BILINGUAL_TRANSLATION_CLASS),
+          side.classList.contains(BILINGUAL_MUTED_CLASS) && !side.classList.contains(BILINGUAL_TRANSLATION_CLASS),
       ) ?? sides[0])
 
   for (const side of sides) {
@@ -123,8 +127,15 @@ export function bilingualInterleave(
   options: BilingualInterleaveOptions = {},
 ): string {
   const emphasize = options.emphasize ?? 'original'
-  const originalUnits = splitBilingualUnits(originalText)
-  const translatedUnits = splitBilingualUnits(translatedText).filter((unit) => !unit.blank)
+  const sentenceBreaks = options.sentenceBreaks
+  const preparedOriginalText = sentenceBreaks
+    ? insertSentenceParagraphBreaks(originalText, sentenceBreaks.sentencesPerParagraph)
+    : originalText
+  const preparedTranslatedText = sentenceBreaks
+    ? insertSentenceParagraphBreaks(translatedText, sentenceBreaks.sentencesPerParagraph)
+    : translatedText
+  const originalUnits = splitBilingualUnits(preparedOriginalText)
+  const translatedUnits = splitBilingualUnits(preparedTranslatedText).filter((unit) => !unit.blank)
   const composite: string[] = []
   let translatedIndex = 0
 

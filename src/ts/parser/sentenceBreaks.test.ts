@@ -90,6 +90,17 @@ describe('insertSentenceParagraphBreaks', () => {
     expect(output.match(/^<\/?div.*>$/gm)).toEqual(composite.match(/^<\/?div.*>$/gm))
   })
 
+  it('is a no-op on a bilingual composite whose sides were sentence-split before pairing', () => {
+    const original =
+      'Original one. Original two. Original three. Original four. Original five. Original six. Original seven.'
+    const translation = '번역 하나. 번역 둘. 번역 셋. 번역 넷. 번역 다섯. 번역 여섯. 번역 일곱.'
+    const composite = bilingualInterleave(original, translation, {
+      sentenceBreaks: { sentencesPerParagraph: 3 },
+    })
+
+    expect(insertSentenceParagraphBreaks(composite, 3)).toBe(composite)
+  })
+
   it('masks inline code, URLs, HTML tags, and CBS syntax before segmentation', () => {
     const input =
       'Use `alpha. beta? gamma!` with https://example.com/docs?v=1.2, <span title="Fake. Sentence?">inline</span>, and {{getvar::Fake. Sentence!}} safely. Second sentence. Third sentence.'
@@ -100,7 +111,7 @@ describe('insertSentenceParagraphBreaks', () => {
   })
 
   it('restores protected spans containing replacement-pattern dollar sequences literally', () => {
-    const input = 'Use `$& and $1 and $\'` here. Second sentence. Third sentence.'
+    const input = "Use `$& and $1 and $'` here. Second sentence. Third sentence."
 
     expect(insertSentenceParagraphBreaks(input, 2, 'en')).toBe(
       "Use `$& and $1 and $'` here. Second sentence.\n\nThird sentence.",

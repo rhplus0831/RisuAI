@@ -1299,11 +1299,16 @@
   let displayMessage = $derived.by(() => {
     const rawTranslation = activeRawTranslation()
     if (!translated || !rawTranslation) return message
-    return currentLiveChat()?.bilingualDisplay === true
-      ? bilingualInterleave(message, rawTranslation.text, {
-          emphasize: currentLiveChat()?.bilingualEmphasis ?? 'original',
-        })
-      : rawTranslation.text
+    const liveChat = currentLiveChat()
+    if (liveChat?.bilingualDisplay !== true) return rawTranslation.text
+
+    const database = getDatabase()
+    const paragraphBreakBySentences = database.paragraphBreakBySentences ?? false
+    const paragraphBreakSentenceCount = database.paragraphBreakSentenceCount ?? 3
+    return bilingualInterleave(message, rawTranslation.text, {
+      emphasize: liveChat.bilingualEmphasis ?? 'original',
+      sentenceBreaks: paragraphBreakBySentences ? { sentencesPerParagraph: paragraphBreakSentenceCount } : undefined,
+    })
   })
   let normalizedGenerationStage = $derived(normalizeChatGenerationLoadingStage(generationStage))
   let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationStage)])

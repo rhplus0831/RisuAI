@@ -322,6 +322,8 @@ import {
   clearMessageTranslationJob,
   setActiveMessageTranslations,
 } from 'src/ts/server/messageTranslationJobs'
+import { withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
+import { BILINGUAL_PAIR_CLASS } from '../../ts/translator/bilingualInterleave'
 
 const testDatabaseState = {
   get db() {
@@ -1555,6 +1557,41 @@ describe('server raw translation controls', () => {
     expect(target.textContent).toContain('번역된 메시지')
     expect(target.textContent).toContain('x-risu-bilingual-translation')
     expect(chat.message[0].translation?.text).toBe('번역된 메시지')
+  })
+
+  it('reactively pairs sentence chunks when sentence paragraph breaks are enabled', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    const original = '원문 하나. 원문 둘. 원문 셋. 원문 넷. 원문 다섯. 원문 여섯. 원문 일곱.'
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'google'
+    chat.bilingualDisplay = true
+    chat.message[0].translation = {
+      source: 'raw',
+      text: 'Translation one. Translation two. Translation three. Translation four. Translation five. Translation six. Translation seven.',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'en',
+      inputLanguage: 'ko',
+      translatorType: 'google',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    mountCustomHtmlRows(1, 'char', { message: original })
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+
+    const renderedPairCount = () => (target.textContent ?? '').split(BILINGUAL_PAIR_CLASS).length - 1
+    expect(renderedPairCount()).toBe(1)
+
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.paragraphBreakBySentences = true
+      testDatabaseState.db.paragraphBreakSentenceCount = 3
+    })
+    await settle()
+
+    expect(renderedPairCount()).toBe(3)
   })
 
   it('clears a cached raw translation when the source message is edited', async () => {

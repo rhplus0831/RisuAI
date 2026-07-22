@@ -69,6 +69,71 @@ describe('bilingualInterleave', () => {
     )
   })
 
+  it('sentence-splits both sides before pairing them positionally', () => {
+    const original = '원문 하나. 원문 둘. 원문 셋. 원문 넷. 원문 다섯. 원문 여섯. 원문 일곱. 원문 여덟.'
+    const translation =
+      'Translation one. Translation two. Translation three. Translation four. Translation five. Translation six. Translation seven. Translation eight.'
+
+    expect(
+      bilingualInterleave(original, translation, {
+        sentenceBreaks: { sentencesPerParagraph: 3 },
+      }),
+    ).toBe(
+      [
+        pair('원문 하나. 원문 둘. 원문 셋.', translated('Translation one. Translation two. Translation three.', true)),
+        '',
+        pair(
+          '원문 넷. 원문 다섯. 원문 여섯.',
+          translated('Translation four. Translation five. Translation six.', true),
+        ),
+        '',
+        pair('원문 일곱. 원문 여덟.', translated('Translation seven. Translation eight.', true)),
+      ].join('\n'),
+    )
+  })
+
+  it('keeps authored paragraph pairing when sentence breaks are not requested', () => {
+    const original = '원문 하나. 원문 둘. 원문 셋. 원문 넷.'
+    const translation = 'Translation one. Translation two. Translation three. Translation four.'
+
+    expect(bilingualInterleave(original, translation)).toBe(pair(original, translated(translation, true)))
+  })
+
+  it('keeps sentence-split tails unpaired when either side has more chunks', () => {
+    const sentenceBreaks = { sentenceBreaks: { sentencesPerParagraph: 3 } }
+
+    expect(
+      bilingualInterleave(
+        '원문 하나. 원문 둘. 원문 셋. 원문 넷. 원문 다섯. 원문 여섯. 원문 일곱.',
+        'Translation one. Translation two. Translation three. Translation four.',
+        sentenceBreaks,
+      ),
+    ).toBe(
+      [
+        pair('원문 하나. 원문 둘. 원문 셋.', translated('Translation one. Translation two. Translation three.', true)),
+        '',
+        pair('원문 넷. 원문 다섯. 원문 여섯.', translated('Translation four.', true)),
+        '',
+        pair('원문 일곱.'),
+      ].join('\n'),
+    )
+
+    expect(
+      bilingualInterleave(
+        '원문 하나. 원문 둘. 원문 셋. 원문 넷.',
+        'Translation one. Translation two. Translation three. Translation four. Translation five. Translation six. Translation seven.',
+        sentenceBreaks,
+      ),
+    ).toBe(
+      [
+        pair('원문 하나. 원문 둘. 원문 셋.', translated('Translation one. Translation two. Translation three.', true)),
+        '',
+        pair('원문 넷.', translated('Translation four. Translation five. Translation six.', true)),
+        pair(translated('Translation seven.', true)),
+      ].join('\n'),
+    )
+  })
+
   it('treats fenced code blocks as indivisible units on either side', () => {
     const originalFence = '```ts\nconst greeting = "hello"\nconst farewell = "bye"\n```'
     const translatedFence = '```ts\nconst greeting = "안녕"\n```'
