@@ -1293,6 +1293,8 @@ export interface PromptTemplateReconcileResult {
   revision: number | null
   /** A fresh draft value to adopt, or `null` when no reconcile is needed. */
   nextDraft: PromptItem[] | null
+  /** Whether adopting `nextDraft` changes the prompt-item ID sequence. */
+  structuralAdoption: boolean
 }
 
 /**
@@ -1312,28 +1314,36 @@ export function reconcilePromptTemplateDraft(
 ): PromptTemplateReconcileResult {
   const ownerId = currentPromptTemplateOwnerId()
   if (!isPromptTemplateHydrated(ownerId)) {
-    return { revision: previousRevision, nextDraft: null }
+    return { revision: previousRevision, nextDraft: null, structuralAdoption: false }
   }
   const serverValue = applyPendingPromptTemplateStructuralItems(ownerId, projectedItems)
   const revision = peekCachedServerCommandRevision()
-  if (revision === previousRevision) return { revision, nextDraft: null }
+  if (revision === previousRevision) return { revision, nextDraft: null, structuralAdoption: false }
   if (ownerDirtyFieldCount(ownerId) > 0) {
     clearDirtyPromptItemFieldsMatchingProjection(ownerId, draftItems ?? [], serverValue)
   }
   if (snapshotJson(serverValue) === snapshotJson(draftItems ?? [])) {
-    return { revision, nextDraft: null }
+    return { revision, nextDraft: null, structuralAdoption: false }
   }
   if (ownerDirtyFieldCount(ownerId) > 0) {
     const mergedDraft = mergePromptTemplateProjectionRows(ownerId, draftItems ?? [], serverValue)
     if (mergedDraft) {
       if (snapshotJson(mergedDraft) === snapshotJson(draftItems ?? [])) {
-        return { revision, nextDraft: null }
+        return { revision, nextDraft: null, structuralAdoption: false }
       }
-      return { revision, nextDraft: mergedDraft }
+      return { revision, nextDraft: mergedDraft, structuralAdoption: false }
     }
-    clearOwnerDirtyFields(ownerId)
+    return {
+      revision,
+      nextDraft: mergeDirtyPromptTemplateProjectionRows(ownerId, draftItems ?? [], serverValue),
+      structuralAdoption: true,
+    }
   }
-  return { revision, nextDraft: cloneJsonValue(serverValue) }
+  return {
+    revision,
+    nextDraft: cloneJsonValue(serverValue),
+    structuralAdoption: !samePromptItemIdSequence(draftItems ?? [], serverValue),
+  }
 }
 
 function promptItemStateKey(ownerId: string | null, itemId: string): string {
@@ -1532,6 +1542,14 @@ function mergePromptTemplateProjectionRows(
 ): PromptItem[] | null {
   if (!samePromptItemIdSequence(draftItems, serverItems)) return null
 
+  return mergeDirtyPromptTemplateProjectionRows(ownerId, draftItems, serverItems)
+}
+
+function mergeDirtyPromptTemplateProjectionRows(
+  ownerId: string | null,
+  draftItems: PromptItem[],
+  serverItems: PromptItem[],
+): PromptItem[] {
   const draftItemsById = promptItemsById(draftItems)
   return serverItems.map((serverItem) => {
     const itemId = promptItemIdValue(serverItem)
@@ -1562,13 +1580,6 @@ function ownerDirtyFieldCount(ownerId: string | null): number {
     if (dirtyKey.startsWith(prefix)) count += dirtyFields.size
   }
   return count
-}
-
-function clearOwnerDirtyFields(ownerId: string | null): void {
-  const prefix = `${ownerId ?? '__legacy__'}:`
-  for (const dirtyKey of Array.from(promptItemDirtyFieldsByOwnerAndId.keys())) {
-    if (dirtyKey.startsWith(prefix)) promptItemDirtyFieldsByOwnerAndId.delete(dirtyKey)
-  }
 }
 
 function samePromptItemIdSequence(leftItems: PromptItem[], rightItems: PromptItem[]): boolean {

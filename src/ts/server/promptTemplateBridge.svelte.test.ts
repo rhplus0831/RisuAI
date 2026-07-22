@@ -1673,6 +1673,62 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(commandState.commands).toHaveLength(1)
   })
 
+  it('keeps a focused prompt row mounted through a value-only sibling reconcile', async () => {
+    const focusedRow = promptItemFixture({ ...item('focused-row', 'server old'), name: 'Focused row' })
+    const siblingRow = promptItemFixture({ ...item('sibling-row', 'sibling old'), name: 'Sibling old' })
+    seedPromptSettings({ promptTemplate: [focusedRow, siblingRow] })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      promptRowToggle(target, 'Focused row').click()
+      await tick()
+      const focusedInput = target.querySelector<HTMLTextAreaElement>(
+        '[data-risu-prompt-item-id="focused-row"] textarea',
+      )
+      expect(focusedInput).toBeTruthy()
+      focusedInput!.value = 'local dirty text'
+      focusedInput!.dispatchEvent(new Event('input', { bubbles: true }))
+      await tick()
+      await flushMicrotasks()
+      await tick()
+      focusedInput!.focus()
+      focusedInput!.setSelectionRange(6, 6)
+      const stageCount = durableState.stages.length
+
+      commandState.revision = 2
+      await applyPromptSettingsProjection(() => {
+        getResourceDatabase().promptTemplate = [
+          cloneJsonValue(focusedRow),
+          promptItemFixture({ ...siblingRow, name: 'Sibling fresh' }),
+        ]
+      })
+
+      const reconciledInput = target.querySelector<HTMLTextAreaElement>(
+        '[data-risu-prompt-item-id="focused-row"] textarea',
+      )
+      expect(reconciledInput).toBe(focusedInput)
+      expect(document.activeElement).toBe(focusedInput)
+      expect(reconciledInput?.value).toBe('local dirty text')
+      expect(reconciledInput?.selectionStart).toBe(6)
+      expect(target.textContent).toContain('Sibling fresh')
+      expect(durableState.stages).toHaveLength(stageCount)
+    } finally {
+      if (component) await unmount(component)
+      resetPromptTemplateSelectionDirtyState()
+      target.remove()
+    }
+  })
+
   it.each(['create', 'reorder'] as const)('flushes an edited row before a durable legacy prompt %s', async (action) => {
     const first = promptItemFixture({ ...item('p-0', 'original first'), name: 'First row' })
     const second = promptItemFixture({ ...item('p-1', 'original second'), name: 'Second row' })
@@ -3198,6 +3254,21 @@ describe('reconcilePromptTemplateDraft', () => {
     expect(textOf(result.nextDraft?.[0])).toBe('small')
   })
 
+  it('marks a value-only reconcile with the same item-ID sequence as non-structural', () => {
+    resourceDatabase.current = {
+      promptTemplate: [item('p-a', 'server fresh'), item('p-b', 'sibling fresh')],
+    }
+    commandState.revision = 6
+    let draftItems = [item('p-a', 'server old'), item('p-b', 'sibling old')]
+
+    const result = reconcilePromptTemplateDraft(draftItems, 5)
+    if (result.nextDraft) draftItems = result.nextDraft
+
+    expect(result.structuralAdoption).toBe(false)
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-a', 'p-b'])
+    expect(draftItems.map(textOf)).toEqual(['server fresh', 'sibling fresh'])
+  })
+
   it('preserves dirty prompt item text while clean sibling rows refresh', async () => {
     resourceDatabase.current = {
       promptTemplate: [item('dirty-text', 'server old'), item('clean-sibling', 'sibling old')],
@@ -3223,6 +3294,47 @@ describe('reconcilePromptTemplateDraft', () => {
     expect(textOf(result.nextDraft?.[1])).toBe('sibling fresh')
 
     await flushPromptItemDirtyTestState(draftItems)
+  })
+
+  it('preserves dirty fields for surviving row IDs when structural adoption makes the row merge fail', () => {
+    const survivor = item('survivor', 'survivor server old')
+    const removed = item('removed', 'removed server old')
+    resourceDatabase.current = { promptTemplate: [survivor, removed] }
+    let draftItems = [item('survivor', 'survivor local dirty'), item('removed', 'removed local dirty')]
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    try {
+      queuePromptItemProjectionUpdate(binding, 'survivor', survivor, 500)
+      queuePromptItemProjectionUpdate(binding, 'removed', removed, 500)
+      getResourceDatabase().promptTemplate = [item('added', 'added server'), item('survivor', 'survivor server fresh')]
+      commandState.revision = 6
+
+      const adopted = reconcilePromptTemplateDraft(draftItems, 5)
+      if (adopted.nextDraft) draftItems = adopted.nextDraft
+
+      expect(adopted.structuralAdoption).toBe(true)
+      expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['added', 'survivor'])
+      expect(textOf(draftItems[1])).toBe('survivor local dirty')
+
+      getResourceDatabase().promptTemplate = [
+        item('added', 'added server'),
+        item('survivor', 'survivor server later'),
+        item('removed', 'removed server restored'),
+      ]
+      commandState.revision = 7
+      const restored = reconcilePromptTemplateDraft(draftItems, 6)
+      if (restored.nextDraft) draftItems = restored.nextDraft
+
+      expect(textOf(draftItems[1])).toBe('survivor local dirty')
+      expect(textOf(draftItems[2])).toBe('removed server restored')
+    } finally {
+      resetPromptTemplateSelectionDirtyState()
+    }
   })
 
   it('does not let an older PATCH acknowledge a newer debounced row edit', async () => {

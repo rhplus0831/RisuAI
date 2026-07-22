@@ -173,6 +173,7 @@
     value: isPromptTemplateHydrated() ? cloneSelectedPromptPresetTemplate() : [],
   })
   let promptTemplateDraftRenderEpoch = $state(0)
+  let suppressPromptTemplateDraftDispatch = false
   const promptTemplateDraftBinding: PromptTemplateDraftBinding = {
     getItems: () => promptTemplateDraft.value,
     setItems: (items) => {
@@ -695,7 +696,7 @@
   }
 
   function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem, originalIndex: number): void {
-    if (!promptTemplateHydrated) return
+    if (!promptTemplateHydrated || suppressPromptTemplateDraftDispatch) return
     const ownerId = currentPromptTemplateOwnerId()
     const projectionFence = capturePromptTemplateOwnerMutationFence(ownerId)
     const itemId = ensurePromptItemDraftId(promptItem, previousItem, originalIndex, ownerId)
@@ -1173,7 +1174,7 @@
     // keystroke. `reconcilePromptTemplateDraft` reads `getResourceDatabase().promptTemplate`
     // so this effect still re-runs on a projection change; the whole-template
     // stringify now happens only on a revision advance, never per keystroke.
-    const { revision, nextDraft } = reconcilePromptTemplateDraft(
+    const { revision, nextDraft, structuralAdoption } = reconcilePromptTemplateDraft(
       promptTemplateDraft.value,
       previousPromptTemplateRevision,
       cloneSelectedPromptPresetTemplate(),
@@ -1183,9 +1184,18 @@
       if (promptTemplateStructureSignature(nextDraft) !== promptTemplateStructureSignature(promptTemplateDraft.value)) {
         openedItemIndices = remapOpenedPromptItemIndices(promptTemplateDraft.value, nextDraft)
       }
+      if (!structuralAdoption) suppressPromptTemplateDraftDispatch = true
       promptTemplateDraft.value = nextDraft
       syncSelectedPromptPresetTemplateProjection(nextDraft)
-      promptTemplateDraftRenderEpoch += 1
+      if (structuralAdoption) {
+        promptTemplateDraftRenderEpoch += 1
+      } else {
+        // The retained PromptDataItem observes the adopted value and advances
+        // its change baseline, but must not redispatch that projection as an edit.
+        queueMicrotask(() => {
+          suppressPromptTemplateDraftDispatch = false
+        })
+      }
     }
   })
   $effect(() => {
