@@ -5,7 +5,7 @@ import { expandVariables, type ExpandContext } from './variables.js'
 import { processScriptAsync } from './scripts.js'
 import { getDepthPrompts, resolvePosition, type LoreEntryActive, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
-import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import { ensureTokenizerLoadedForDb, tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { runStartTrigger, type TriggerRunResult } from './triggers.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
@@ -81,8 +81,8 @@ type MaybePromise<T> = T | Promise<T>
  * config (encoding, per-message overhead, name accounting) is derived
  * from `db.aiModel` the same way `sendChatContext.ts` does:
  * `gpt*` → overhead 5, `useName: 'noName'`; everything else → overhead
- * 3, `useName: 'name'`. `encodingForModel` then picks `o200k_base` vs
- * `cl100k_base`.
+ * 3, `useName: 'name'`. `tokenizerOptionsFromDb` resolves the portable
+ * tokenizer family through the server-safe model catalog.
  *
  * Start-trigger handoff. After the first-message
  * push, `buildHistoryWindow` runs `runStartTrigger` (the `triggers.ts`
@@ -411,6 +411,7 @@ export async function buildHistoryWindow(
   editProcess: EditProcessHook = IDENTITY_EDIT_PROCESS,
   promptAssetTable?: PromptAssetTable,
 ): Promise<HistoryWindowResult> {
+  await ensureTokenizerLoadedForDb(ctx.database)
   const db = ctx.database
   const messages: OpenAIChat[] = []
   const assetTable =

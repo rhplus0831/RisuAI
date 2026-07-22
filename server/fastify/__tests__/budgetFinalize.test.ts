@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { finalizeRequestBudget } from '../src/prompt/budgetFinalize.js'
+import { ensureTokenizerLoadedForDb } from '../src/prompt/tokenizerConfig.js'
 
 function makeDb(aiModel = 'gpt4'): Database {
   return { aiModel } as unknown as Database
@@ -128,10 +129,12 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
 })
 
 describe('Phase 7-8c finalizeRequestBudget — tokenizer routing', () => {
-  it('uses overhead 3 + name accounting for non-gpt models', () => {
+  it('uses overhead 3 + name accounting for non-gpt models', async () => {
     const formated: OpenAIChat[] = [{ role: 'system', content: 'hello', name: 'hello' }]
+    const db = makeDb('claude-3-5-sonnet')
+    await ensureTokenizerLoadedForDb(db)
     const result = finalizeRequestBudget({
-      db: makeDb('claude-3-5-sonnet'),
+      db,
       formated,
       maxContextTokens: 1000,
       maxResponse: 100,

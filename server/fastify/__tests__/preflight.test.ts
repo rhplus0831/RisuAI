@@ -13,6 +13,7 @@ import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { preflightTemplateTokens, type PromptUnformatedSlots } from '../src/prompt/preflight.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
+import { ensureTokenizerLoadedForDb } from '../src/prompt/tokenizerConfig.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -600,8 +601,9 @@ describe('Phase 7-8b preflightTemplateTokens — postEverything', () => {
 })
 
 describe('Phase 7-8b preflightTemplateTokens — tokenizer routing', () => {
-  it('uses overhead 3 + name accounting for non-gpt models', () => {
+  it('uses overhead 3 + name accounting for non-gpt models', async () => {
     const db = makeDatabase({ aiModel: 'claude-3-5-sonnet' })
+    await ensureTokenizerLoadedForDb(db)
     const card: PromptItemTyped = { type: 'description' }
     const result = preflightTemplateTokens({
       ctx: ctxFor(db),

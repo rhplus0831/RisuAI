@@ -14,7 +14,8 @@ import type { ModelRole } from '../../../../src/ts/model/modelRoles.js'
 import { resolveModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
 import type { TriggerVarEngine } from './triggerVars.js'
 import { expandVariables } from './variables.js'
-import { tokenize, encodingForModel } from './tokens.js'
+import { tokenize } from './tokens.js'
+import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import { dispatchChatProvider } from './chatDispatch.js'
 import { getActiveModules, getModuleLorebooks } from './modules.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
@@ -1393,7 +1394,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   // ── Pure: tokens / cbs / hash (server adapters) ──
   declare('getTokens', async (id: string, value: string) => {
     if (!canWrite(id)) return
-    return tokenize(String(value ?? ''), encodingForModel(state.ctx.model))
+    return tokenize(String(value ?? ''), tokenizerEncodingFromDb(state.ctx.database))
   })
   declare(
     'cbs',
@@ -1817,6 +1818,7 @@ async function runStringWithTimeout(
  * on the result so callers can act on it.
  */
 export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRuntimeContext): Promise<ServerLuaResult> {
+  await ensureTokenizerLoadedForDb(ctx.database)
   const execTimeoutMs = opts.execTimeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS
   const data = opts.data ?? ''
   const meta = opts.meta ?? {}

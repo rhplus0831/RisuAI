@@ -38,6 +38,12 @@ describe('encodingForModel', () => {
 })
 
 describe('tokenize', () => {
+  it('throws loudly when a portable tokenizer was not warmed', () => {
+    expect(() => tokenize('hello world', 'glm5')).toThrow(
+      'Call await ensureTokenizerLoaded("glm5") before synchronous token counting',
+    )
+  })
+
   it('returns 0 for empty input', () => {
     expect(tokenize('')).toBe(0)
     expect(tokenize('', 'o200k_base')).toBe(0)

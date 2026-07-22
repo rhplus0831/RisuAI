@@ -32,6 +32,8 @@ import { emitProtocolMetric } from '../protocolMetrics.js'
 import { promptSummaryMetricFields, summarizePromptRows } from './promptSummary.js'
 import type { GenerationTraceContext } from '../generation/generationTraceSidecar.js'
 import { encodeTokens, encodingForModel } from './tokens.js'
+import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
+import type { TokenEncoding } from './tokens.js'
 import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
 import { appendOpenAIToolRounds } from '../generation/serverTools.js'
 import {
@@ -212,9 +214,13 @@ function resolveDeepSeekThinking(db: Database, flags: readonly number[]): Record
     : { type: 'disabled' }
 }
 
-export function resolveOpenAILogitBias(rows: readonly [string, number][], model: string): Record<string, number> {
+export function resolveOpenAILogitBias(
+  rows: readonly [string, number][],
+  model: string,
+  selectedEncoding?: TokenEncoding,
+): Record<string, number> {
   const bias: Record<string, number> = {}
-  const encoding = encodingForModel(model)
+  const encoding = selectedEncoding ?? encodingForModel(model)
   const assignTokens = (text: string, value: number): void => {
     for (const token of encodeTokens(text, encoding)) bias[String(token)] = value
   }
@@ -957,6 +963,7 @@ async function* resultFrames(
 
 export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<AsyncIterable<CompletionStreamFrame>> {
   const { database: db, outputTokens, signal, trace } = args
+  await ensureTokenizerLoadedForDb(db)
   const profile = args.profile ?? resolveModelProfile({ database: db })
   assertModelProfileGenerationReady(profile)
   const info = profile.modelInfo
@@ -1070,7 +1077,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       n: generationCount,
       useCompletionTokens: info.flags.includes(LLMFlags.OAICompletionTokens),
       thinking: resolveDeepSeekThinking(db, info.flags),
-      logitBias: resolveOpenAILogitBias(args.biases ?? [], model),
+      logitBias: resolveOpenAILogitBias(args.biases ?? [], model, tokenizerEncodingFromDb(db)),
       extraHeaders: variant.extraHeaders,
       additionalParams: variant.additionalParams,
       oobaSystemHoist: variant.oobaSystemHoist,
@@ -1115,7 +1122,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       n: generationCount,
       useCompletionTokens: info.flags.includes(LLMFlags.OAICompletionTokens),
       thinking: resolveDeepSeekThinking(db, info.flags),
-      logitBias: resolveOpenAILogitBias(args.biases ?? [], model),
+      logitBias: resolveOpenAILogitBias(args.biases ?? [], model, tokenizerEncodingFromDb(db)),
       extraHeaders: variant.extraHeaders,
       additionalParams: variant.additionalParams,
       oobaSystemHoist: variant.oobaSystemHoist,

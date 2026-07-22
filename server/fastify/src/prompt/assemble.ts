@@ -92,7 +92,7 @@ import {
 import { filterMemorySummariesForModel } from '../memorySummaryCompatibility.js'
 import { tokenize, tokenizeChat } from './tokens.js'
 import { tokenizeHypaV3PrefixChat } from './prefixTokenMemo.js'
-import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import { ensureTokenizerLoadedForDb, tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import { bumpAssemblyCbsHistoryGeneration, createAssemblyCbsCallbackMemo } from './cbsCallbackMemo.js'
 import { buildEffectiveGenerationConfig } from './effectiveGenerationConfig.js'
@@ -1475,6 +1475,7 @@ export function fillLorebookSlots(state: AssemblyState): void {
 }
 
 export async function fillLorebookSlotsAsync(state: AssemblyState): Promise<void> {
+  await ensureTokenizerLoadedForDb(state.database)
   const { currentChar, currentChat } = state
   const db = state.database
   let stickyChatVarDirty = false
@@ -1959,6 +1960,7 @@ function buildLuaEditRequest(state: AssemblyState): {
  * short-circuits before any rendering.
  */
 export async function renderAndBudget(state: AssemblyState): Promise<void> {
+  await ensureTokenizerLoadedForDb(state.database)
   if (state.stopSending) return
 
   const { ctx, currentChar, unformated } = state
@@ -2070,6 +2072,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     () => beginAssembly(input, deps),
   )
   state.recordAssemblyStageTiming = deps.recordAssemblyStageTiming
+  await ensureTokenizerLoadedForDb(state.database)
   await measureAssemblyStageAsync(state, 'submit_transforms', async () => {
     prepareRegenerateTranscript(state)
     // The submit-time input trigger runs before the user message is appended;

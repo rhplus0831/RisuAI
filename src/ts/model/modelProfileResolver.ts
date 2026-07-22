@@ -1016,6 +1016,16 @@ export function resolveServerSafeModelInfo(
   return withCustomFlags(database, unknownModel(id), durableRuntimeOptions)
 }
 
+/**
+ * Resolve the tokenizer family for a model without importing the browser-bound
+ * model registry. Server prompt budgeting uses this narrow helper to mirror
+ * the client's automatic tokenizer routing from the same static model data as
+ * profile resolution.
+ */
+export function resolveServerSafeTokenizerFamily(database: Database, modelId: string): LLMTokenizerValue {
+  return resolveServerSafeModelInfo(database, modelId).tokenizer
+}
+
 export function buildProfileProviderCapabilityInput(
   profile: Pick<ResolvedModelProfile, 'modelId' | 'modelInfo'> &
     Partial<Pick<ResolvedModelProfile, 'providerCapabilityInput'>> & {

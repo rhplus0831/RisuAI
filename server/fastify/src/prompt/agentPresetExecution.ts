@@ -18,6 +18,7 @@ import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetRefere
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { dispatchChatProvider } from './chatDispatch.js'
 import { activateLorebook } from './lorebook.js'
+import { ensureTokenizerLoadedForDb } from './tokenizerConfig.js'
 
 const DEFAULT_MAX_INPUT_CHARS = 24_000
 const DEFAULT_MAX_OUTPUT_CHARS = 1_200
@@ -406,6 +407,8 @@ export async function executeAgentPresetStep(
   if (input.dependencySkippedReason) {
     return skippedResult(input.step, 'dependency_skipped', startedAt, emptyCollection(input.step))
   }
+
+  await ensureTokenizerLoadedForDb(input.database)
 
   const preparedInputStep = stepWithReferencedPreparedInputScopes(input.step)
   const preparedInputs = collectAgentPresetPreparedInputs(preparedInputStep, input)

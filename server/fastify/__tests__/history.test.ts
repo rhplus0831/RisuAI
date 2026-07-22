@@ -1175,7 +1175,7 @@ describe('Phase 7-5e buildHistoryWindow token accumulation', () => {
   })
 
   it('uses non-gpt overhead 3 and counts `name` when present', async () => {
-    // claude → cl100k_base, overhead 3, useName 'name'. Example
+    // claude tokenizer, overhead 3, useName 'name'. Example
     // messages emit `name: 'example_user' | 'example_assistant'`,
     // which adds (name tokens + 1 separator) per row.
     const db = makeDatabase({
@@ -1200,11 +1200,11 @@ describe('Phase 7-5e buildHistoryWindow token accumulation', () => {
       }),
       makeChat({ fmIndex: 0 }),
     )
-    // example_user 'hi': 1 + 3 + (2 + 1) = 7
+    // example_user 'hi': 1 + 3 + (3 + 1) = 8
     // example_assistant 'hello': 1 + 3 + (3 + 1) = 8
     // empty first message: 0 + 3 = 3 (no name)
     // start-new-chat marker is trimmed via trimStartNewChat.
-    expect(result.addedTokens).toBe(7 + 8 + 3)
+    expect(result.addedTokens).toBe(8 + 8 + 3)
   })
 
   it('routes through o200k_base for the gpt-4o family', async () => {

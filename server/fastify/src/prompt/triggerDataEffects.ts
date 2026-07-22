@@ -2,7 +2,7 @@ import type { Chat, character } from '../../../../src/ts/storage/database.svelte
 import type { triggerEffect } from '../../../../src/ts/process/triggers'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { calcString } from '../../../../src/ts/process/infunctions'
-import { encodingForModel, tokenize } from './tokens.js'
+import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
 import {
   assertBoundedRegexHaystack,
   assertBoundedRegexReplacement,
@@ -81,6 +81,8 @@ export interface V2DataEffectDeps {
   char: character
   /** Model id for `v2Tokenize`'s encoder; defaults to `cl100k_base`. */
   model?: string | null
+  /** Database-resolved tokenizer used by production trigger runs. */
+  tokenizerEncoding?: TokenEncoding
   /** `display` / `request` runs that gate the state arms. */
   displayMode?: boolean
   /** Mutable per-run display/request state slot. */
@@ -576,7 +578,10 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     }
     case 'v2Tokenize': {
       const value = resolve(effect.value, effect.valueType === 'value')
-      engine.setVar(expand(effect.outputVar), tokenize(value, encodingForModel(deps.model)).toString())
+      engine.setVar(
+        expand(effect.outputVar),
+        tokenize(value, deps.tokenizerEncoding ?? encodingForModel(deps.model)).toString(),
+      )
       return true
     }
     case 'v2RegexTest': {

@@ -12,7 +12,8 @@ import {
   testBoundedRegex,
   testBoundedRegexWithCompatibility,
 } from './boundedRegex.js'
-import { encodingForModel, tokenize } from './tokens.js'
+import { tokenize } from './tokens.js'
+import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
 import { applyV2DataEffectAsync } from './triggerDataEffects.js'
 import { expandVariables, type ExpandContext } from './variables.js'
@@ -910,6 +911,7 @@ export async function runTrigger(
   if (triggers.length === 0) {
     return null
   }
+  await ensureTokenizerLoadedForDb(ctx.database)
   const triggerCache = arg.triggerCache ?? createTriggerRunCache()
   const needsPrivateTranscript = !arg.displayMode && selectedTriggersMayMutateMessages(selected, mode)
   const workingChar = arg.displayMode ? char : cloneTriggerCharacterEnvelope(char)
@@ -953,7 +955,7 @@ export async function runTrigger(
     // Terminal additional-system-prompt token accounting
     // (`triggers.ts`). Populated by `systemprompt` effects.
     let tokens = 0
-    const encoding = encodingForModel(ctx.model)
+    const encoding = tokenizerEncodingFromDb(ctx.database)
     if (additonalSysPrompt.start) tokens += tokenize(additonalSysPrompt.start, encoding)
     if (additonalSysPrompt.historyend) tokens += tokenize(additonalSysPrompt.historyend, encoding)
     if (additonalSysPrompt.promptend) tokens += tokenize(additonalSysPrompt.promptend, encoding)
@@ -1473,6 +1475,7 @@ export async function runTrigger(
             chat,
             char: workingChar,
             model: ctx.model,
+            tokenizerEncoding: tokenizerEncodingFromDb(ctx.database),
             displayMode: arg.displayMode,
             displayState,
             triggerCache,

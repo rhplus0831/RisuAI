@@ -13,7 +13,8 @@ import {
   testBoundedRegex,
   testBoundedRegexWithCompatibility,
 } from './boundedRegex.js'
-import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
+import { tokenize, type TokenEncoding } from './tokens.js'
+import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
@@ -90,7 +91,7 @@ export interface LoreEntryActive {
   priority: number
   /**
    * Token count of the decorator-stripped `prompt` under the
-   * encoding resolved by `encodingForModel(input.model)`. Populated
+   * encoding resolved from the active database tokenizer. Populated
    * so the priority-desc budget filter has something to
    * drop. Like the SPA (`lorebook.svelte.ts`), this is computed
    * once at activation time and not refreshed after `inject_lore`
@@ -123,10 +124,9 @@ export interface ActivateLorebookInput {
   currentChar: character
   currentChat: Chat
   /**
-   * Optional model id used to pick the tiktoken encoding for the
-   * per-entry `tokens` count. Resolved through `encodingForModel`;
-   * leaving it `undefined` falls back to `cl100k_base`, matching the
-   * SPA's `tikJS` default (`tokenizer.ts`).
+   * Retained for activation callers that also track their selected model.
+   * Token counts use `database` as the authoritative tokenizer config,
+   * matching the client's global `encode()` routing.
    */
   model?: string
   /**
@@ -591,7 +591,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
   // 800, so we fall back to the same value here when neither override
   // is present.
   const loreBudget = currentChar.loreSettings?.tokenBudget ?? database.loreBookToken ?? 800
-  const encoding: TokenEncoding = encodingForModel(input.model)
+  const encoding: TokenEncoding = tokenizerEncodingFromDb(database)
 
   // As in `loadLoreBookV3Prompt`, walk every unfired entry; if any new entry
   // activates with recursion enabled, flip `matching = true` for
@@ -944,6 +944,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
 }
 
 export async function activateLorebookAsync(input: ActivateLorebookInput): Promise<LorebookActivationReport> {
+  await ensureTokenizerLoadedForDb(input.database)
   const { database, currentChar, currentChat } = input
   const regexCompatibility = complexRegexCompatibilityOptions(database, 'input')
   if (!regexCompatibility.enabled) return activateLorebook(input)
@@ -960,7 +961,7 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
   const defaultFullWord = currentChar.loreSettings?.fullWordMatching ?? false
   const recursiveScanning = currentChar.loreSettings?.recursiveScanning ?? true
   const loreBudget = currentChar.loreSettings?.tokenBudget ?? database.loreBookToken ?? 800
-  const encoding: TokenEncoding = encodingForModel(input.model)
+  const encoding: TokenEncoding = tokenizerEncodingFromDb(database)
 
   let matching = true
   while (matching) {

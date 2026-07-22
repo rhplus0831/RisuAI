@@ -5130,7 +5130,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(cl100kTokens).toBeGreaterThan(o200kTokens)
   })
 
-  it('rejects an imported unsupported tokenizer instead of silently falling back', async () => {
+  it('warms and accepts an imported portable tokenizer', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, { ...fixtureDatabase, customTokenizer: 'claude' })
 
@@ -5141,8 +5141,8 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       payload: previewPayload,
     })
 
-    expect(response.statusCode).toBe(400)
-    expect(response.json().error).toContain('Tokenizer "claude" is not supported by Fastify prompt budgeting')
+    expect(response.statusCode).toBe(200)
+    expect(typeof response.json().promptInfo?.inputTokens).toBe('number')
   })
 
   it('returns the assembled prompt as JSON for a seeded database', async () => {

@@ -1155,7 +1155,7 @@ describe('Phase 7-7d activateLorebook — budget truncation', () => {
     expect(report.actives[0].tokens).toBe(3)
   })
 
-  it('routes to o200k_base when input.model is in the o200k prefix list', () => {
+  it('routes to o200k_base when the database model is in the o200k prefix list', () => {
     // `café résumé 漢字` diverges: cl100k_base → 9, o200k_base → 6.
     const lore = makeLore({ comment: 'a', content: 'café résumé 漢字' })
     const cl = activateLorebook({
@@ -1164,10 +1164,9 @@ describe('Phase 7-7d activateLorebook — budget truncation', () => {
       currentChat: makeChat(),
     })
     const o200 = activateLorebook({
-      database: makeDb(),
+      database: makeDb({ aiModel: 'gpt-4o' }),
       currentChar: makeChar({ globalLore: [lore] }),
       currentChat: makeChat(),
-      model: 'gpt-4o',
     })
     expect(cl.actives[0].tokens).toBe(9)
     expect(o200.actives[0].tokens).toBe(6)
