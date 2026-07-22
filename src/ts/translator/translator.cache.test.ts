@@ -424,19 +424,16 @@ describe('auto-translate cache', () => {
     expect(testState.requestChatData).toHaveBeenCalledTimes(2)
   })
 
-  it('sends protected lines in one untouched runTranslator LLM request when send-text-as-is is enabled', async () => {
+  it('rejects the removed client raw-translation fallback for LLM send-text-as-is', async () => {
     testState.db.translatorType = 'llm'
     testState.db.translatorSendTextAsIs = true
     const text = ['  before', '{{img::assets/image.png}}', '', '{{raw::keep this}}', 'after  '].join('\n')
-    const rawResponse = '  one raw response\n\n'
-    testState.requestChatData.mockResolvedValue({ type: 'success', result: rawResponse })
 
-    const result = await runTranslator(text, false, 'ko', 'en')
-
-    expect(result).toBe(rawResponse)
-    expect(testState.requestChatData).toHaveBeenCalledTimes(1)
-    expect(testState.requestChatData.mock.calls[0][0].formated).toContainEqual({ role: 'user', content: text })
-    expect(__translatorTestHooks.getTranslateCacheEntries()).toContainEqual([expect.any(String), rawResponse])
+    await expect(runTranslator(text, false, 'ko', 'en')).rejects.toThrow(
+      'LLM Send Text As-Is raw translation requires the server message translation command.',
+    )
+    expect(testState.requestChatData).not.toHaveBeenCalled()
+    expect(__translatorTestHooks.getTranslateCacheEntries()).toEqual([])
   })
 
   it('uses untouched LLM input and output without style placeholders or edit-translation regexes in as-is mode', async () => {

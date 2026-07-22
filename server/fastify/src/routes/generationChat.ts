@@ -1742,8 +1742,14 @@ async function resolvePostGenerationResult(args: {
 function buildPostGenerationFrameBody(
   revision: number,
   postGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined,
+  messageId?: string,
+  translation?: PostGenerationFrame['translation'],
 ): PostGenerationFrame {
-  const frame: PostGenerationFrame = { revision }
+  const frame: PostGenerationFrame = {
+    revision,
+    ...(messageId ? { messageId } : {}),
+    ...(translation ? { translation } : {}),
+  }
   if (postGen) {
     if (postGen.textChanged) frame.finalText = postGen.finalText
     if (postGen.mutations.chatVarMutations.length > 0 || postGen.mutations.messageMutations.length > 0) {
@@ -1765,10 +1771,6 @@ function notifyChatCompletion(
   })
 }
 
-export function generationJobHasOpenClient(job: Pick<StreamJob, 'clients'>): boolean {
-  return [...job.clients].some((client) => client.open)
-}
-
 export function directGenerationResponseIsWritable(raw: {
   writable?: boolean
   writableEnded: boolean
@@ -1787,16 +1789,16 @@ function handlePersistedGenerationCompletion(args: {
   chatId: string
   characterId?: string
   completedAt: number
-  disconnected: boolean
+  emit?: (event: PromptChatEvent) => void
   pushNotifications?: false | PushNotificationService
   runMessageTranslation?: ServerMessageTranslationRunner
-}): void {
+}): Promise<{ translation?: PostGenerationFrame['translation']; revision?: number }> {
   const messageId = args.targetMessageId ?? args.message.chatId
   if (typeof messageId !== 'string' || messageId.trim().length === 0) {
     notifyChatCompletion(args.pushNotifications, { characterId: args.characterId, chatId: args.chatId })
-    return
+    return Promise.resolve({})
   }
-  handleGeneratedChatCompletion({
+  return handleGeneratedChatCompletion({
     db: args.db,
     dataDir: args.dataDir,
     eventSink: args.eventSink,
@@ -1805,10 +1807,25 @@ function handlePersistedGenerationCompletion(args: {
     chatId: args.chatId,
     ...(args.characterId ? { characterId: args.characterId } : {}),
     completedAt: args.completedAt,
-    disconnected: args.disconnected,
     pushNotifications: args.pushNotifications,
     runMessageTranslation: args.runMessageTranslation,
-  })
+    onTranslationStarted: ({ jobId }) =>
+      args.emit?.({
+        type: 'post_generation_progress',
+        phase: 'translation',
+        status: 'translating',
+        runSeq: 0,
+        messageId,
+        jobId,
+        llmCallCount: 0,
+        pendingLlmCount: 0,
+        llmCallCounts: { LLM: 0, axLLM: 0 },
+        pendingLlmCounts: { LLM: 0, axLLM: 0 },
+      }),
+  }).then((followup) => ({
+    ...(followup.frame ? { translation: followup.frame } : {}),
+    ...(followup.revision !== undefined ? { revision: followup.revision } : {}),
+  }))
 }
 
 /**
@@ -1834,7 +1851,6 @@ async function buildPostGenerationFrame(args: {
   emit?: (event: PromptChatEvent) => void
   pushNotifications?: false | PushNotificationService
   messageTranslationJobs: MessageTranslationJobRegistry
-  disconnected: () => boolean
   runMessageTranslation?: ServerMessageTranslationRunner
   generationTrace?: GenerationTraceOptions
   metricContext?: PromptAssemblyMetricContext
@@ -1911,7 +1927,8 @@ async function buildPostGenerationFrame(args: {
       ...(postGenError ? { context: { error: postGenError } } : {}),
     })
   }
-  handlePersistedGenerationCompletion({
+  const messageId = targetMessageId ?? message.chatId
+  const translationFollowup = await handlePersistedGenerationCompletion({
     db: args.db,
     dataDir: args.dataDir,
     eventSink: args.eventSink,
@@ -1921,11 +1938,19 @@ async function buildPostGenerationFrame(args: {
     chatId: args.input.chatId,
     characterId: args.input.characterId,
     completedAt,
-    disconnected: args.disconnected(),
+    emit: args.emit,
     pushNotifications: args.pushNotifications,
     runMessageTranslation: args.runMessageTranslation,
   })
-  return { frame: buildPostGenerationFrameBody(revision, postGen), alternates: alternateTexts }
+  return {
+    frame: buildPostGenerationFrameBody(
+      translationFollowup.revision ?? revision,
+      postGen,
+      messageId,
+      translationFollowup.translation,
+    ),
+    alternates: alternateTexts,
+  }
 }
 
 /**
@@ -2122,7 +2147,6 @@ async function streamAssembly(
                       emit,
                       pushNotifications: options.pushNotifications,
                       messageTranslationJobs,
-                      disconnected: () => !directGenerationResponseIsWritable(reply.raw),
                       runMessageTranslation: options.runMessageTranslation,
                       generationTrace,
                       metricContext,
@@ -2732,7 +2756,7 @@ export function retryQueuedGenerationFinalizations(args: {
       })
       deleteGenerationFinalizationRetry(args.db, attempt.generationId)
       persisted += 1
-      handlePersistedGenerationCompletion({
+      void handlePersistedGenerationCompletion({
         db: args.db,
         dataDir: args.dataDir,
         eventSink: args.eventSink,
@@ -2741,9 +2765,10 @@ export function retryQueuedGenerationFinalizations(args: {
         targetMessageId: attempt.targetMessageId,
         chatId: attempt.chatId,
         completedAt: Date.now(),
-        disconnected: true,
         pushNotifications: args.pushNotifications,
         runMessageTranslation: args.runMessageTranslation,
+      }).catch(() => {
+        // Persistence already succeeded; follow-up translation/notification is best-effort.
       })
       emitProtocolMetric('generation_persistence_retry', {
         status: 'ok',
@@ -2822,7 +2847,6 @@ async function buildDurablePostGeneration(args: {
   promptInfo?: Record<string, unknown>
   pushNotifications?: false | PushNotificationService
   messageTranslationJobs: MessageTranslationJobRegistry
-  job: StreamJob
   runMessageTranslation?: ServerMessageTranslationRunner
   generationTrace?: GenerationTraceOptions
   metricContext?: PromptAssemblyMetricContext
@@ -2914,7 +2938,8 @@ async function buildDurablePostGeneration(args: {
       message: 'server post-generation derivation failed; persisted the raw provider text.',
       ...(postGenError ? { context: { error: postGenError } } : {}),
     })
-    handlePersistedGenerationCompletion({
+    const messageId = targetMessageId ?? message.chatId
+    const translationFollowup = await handlePersistedGenerationCompletion({
       db: args.db,
       dataDir: args.dataDir,
       eventSink: args.eventSink,
@@ -2924,11 +2949,19 @@ async function buildDurablePostGeneration(args: {
       chatId: args.input.chatId,
       characterId: args.input.characterId,
       completedAt,
-      disconnected: !generationJobHasOpenClient(args.job),
+      emit: args.emit,
       pushNotifications: args.pushNotifications,
       runMessageTranslation: args.runMessageTranslation,
     })
-    return { frame: { revision }, alternates: alternateTexts }
+    return {
+      frame: buildPostGenerationFrameBody(
+        translationFollowup.revision ?? revision,
+        undefined,
+        messageId,
+        translationFollowup.translation,
+      ),
+      alternates: alternateTexts,
+    }
   }
 
   emitProtocolMetric('generation_persistence', {
@@ -2938,7 +2971,8 @@ async function buildDurablePostGeneration(args: {
     revision,
     durationMs: protocolDurationMs(persistStartedAt),
   })
-  handlePersistedGenerationCompletion({
+  const messageId = targetMessageId ?? message.chatId
+  const translationFollowup = await handlePersistedGenerationCompletion({
     db: args.db,
     dataDir: args.dataDir,
     eventSink: args.eventSink,
@@ -2948,11 +2982,19 @@ async function buildDurablePostGeneration(args: {
     chatId: args.input.chatId,
     characterId: args.input.characterId,
     completedAt,
-    disconnected: !generationJobHasOpenClient(args.job),
+    emit: args.emit,
     pushNotifications: args.pushNotifications,
     runMessageTranslation: args.runMessageTranslation,
   })
-  return { frame: buildPostGenerationFrameBody(revision, postGen), alternates: alternateTexts }
+  return {
+    frame: buildPostGenerationFrameBody(
+      translationFollowup.revision ?? revision,
+      postGen,
+      messageId,
+      translationFollowup.translation,
+    ),
+    alternates: alternateTexts,
+  }
 }
 
 /**
@@ -3201,7 +3243,6 @@ async function runGenerationJob(args: {
                   promptInfo: successfulResult.prompt.promptInfo,
                   pushNotifications: options.pushNotifications,
                   messageTranslationJobs,
-                  job,
                   runMessageTranslation: options.runMessageTranslation,
                   generationTrace,
                   metricContext,

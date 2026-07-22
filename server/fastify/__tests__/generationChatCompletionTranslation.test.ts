@@ -31,6 +31,34 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject }
 }
 
+const persistedTranslation = {
+  source: 'raw' as const,
+  text: '번역됨',
+  sourceHash: 'source-hash',
+  targetLanguage: 'ko',
+  inputLanguage: 'en',
+  translatorType: 'google' as const,
+  settingsHash: 'settings-hash',
+  updatedAt: 123,
+}
+
+function translationResult(jobId = 'unused') {
+  return {
+    revision: 2,
+    event: {
+      type: 'messageUpdated' as const,
+      revision: 2,
+      resource: 'chatMessages',
+      id: 'message-a',
+      parentId: 'chat-a',
+    },
+    jobId,
+    chatId: 'chat-a',
+    messageId: 'message-a',
+    translation: persistedTranslation,
+  }
+}
+
 let dataDir: string
 let db: DatabaseSync
 let sendChatCompletionNotification: PushNotificationService['sendChatCompletionNotification']
@@ -78,7 +106,7 @@ function seedCompletion(
   })
 }
 
-function complete(disconnected: boolean, runMessageTranslation: ServerMessageTranslationRunner) {
+function complete(runMessageTranslation: ServerMessageTranslationRunner, completedAt?: number) {
   return handleGeneratedChatCompletion({
     db,
     dataDir,
@@ -87,7 +115,7 @@ function complete(disconnected: boolean, runMessageTranslation: ServerMessageTra
     messageId: 'message-a',
     chatId: 'chat-a',
     characterId: 'char-a',
-    disconnected,
+    completedAt,
     pushNotifications,
     runMessageTranslation,
   })
@@ -112,92 +140,118 @@ afterEach(() => {
 })
 
 describe('generated chat completion translation follow-up', () => {
-  it('keeps connected completion behavior immediate and client-driven', () => {
+  it('starts and holds a connected eligible completion, then returns the succeeded frame and pushes once', async () => {
     seedCompletion()
-    const runTranslation = vi.fn() as unknown as ServerMessageTranslationRunner
+    const translation = deferred<ReturnType<typeof translationResult>>()
+    const runTranslation = vi.fn((_input: Parameters<ServerMessageTranslationRunner>[0]) => translation.promise)
 
-    const followup = complete(false, runTranslation)
-
-    expect(followup).toMatchObject({ translationStarted: false, notification: 'immediate' })
-    expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
-    expect(runTranslation).not.toHaveBeenCalled()
-  })
-
-  it('defers a disconnected eligible completion push until translation settles', async () => {
-    seedCompletion()
-    const translation = deferred<never>()
-    const runTranslation = vi.fn(() => translation.promise) as unknown as ServerMessageTranslationRunner
-
-    const followup = complete(true, runTranslation)
-    expect(followup).toMatchObject({ translationStarted: true, notification: 'deferred' })
+    const completion = complete(runTranslation)
+    expect(runTranslation).toHaveBeenCalledTimes(1)
     expect(sendChatCompletionNotification).not.toHaveBeenCalled()
 
-    translation.resolve({} as never)
-    await followup.translation
+    const jobId = runTranslation.mock.calls[0]![0].jobId!
+    translation.resolve(translationResult(jobId))
+    const followup = await completion
 
+    expect(followup).toMatchObject({
+      translationStarted: true,
+      notification: 'deferred',
+      frame: { status: 'succeeded', jobId, translation: persistedTranslation },
+    })
     expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
   })
 
-  it('pushes immediately when the disconnected translation fails', async () => {
+  it('returns a failed frame and pushes exactly once when translation rejects', async () => {
     seedCompletion()
-    const translation = deferred<never>()
-    const runTranslation = vi.fn(() => translation.promise) as unknown as ServerMessageTranslationRunner
-    const followup = complete(true, runTranslation)
+    const translation = deferred<ReturnType<typeof translationResult>>()
+    const runTranslation = vi.fn((_input: Parameters<ServerMessageTranslationRunner>[0]) => translation.promise)
+    const completion = complete(runTranslation)
 
     translation.reject(new Error('provider failed'))
-    await expect(followup.translation).rejects.toThrow('provider failed')
+    const followup = await completion
 
+    expect(followup.frame).toMatchObject({ status: 'failed', error: 'provider failed' })
     expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
   })
 
-  it('fires the cap once while allowing translation persistence to finish later', async () => {
+  it('returns running at the cap, pushes once, and leaves translation running detached', async () => {
     vi.useFakeTimers()
     seedCompletion({ cap: 2 })
-    const translation = deferred<never>()
+    const translation = deferred<ReturnType<typeof translationResult>>()
     let translationPersisted = false
-    const runTranslation = vi.fn(async () => {
-      await translation.promise
+    const runTranslation = vi.fn(async (input: Parameters<ServerMessageTranslationRunner>[0]) => {
+      const result = await translation.promise
       translationPersisted = true
-      return {} as never
-    }) as unknown as ServerMessageTranslationRunner
-    const followup = complete(true, runTranslation)
+      return { ...result, jobId: input.jobId }
+    })
+    const completion = complete(runTranslation)
 
     await vi.advanceTimersByTimeAsync(2_000)
+    const followup = await completion
+    expect(followup.frame).toMatchObject({ status: 'running', jobId: runTranslation.mock.calls[0]![0].jobId })
     expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
     expect(translationPersisted).toBe(false)
 
-    translation.resolve({} as never)
+    translation.resolve(translationResult())
     await followup.translation
     expect(translationPersisted).toBe(true)
+    expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts the cap from completedAt', async () => {
+    vi.useFakeTimers()
+    seedCompletion({ cap: 2 })
+    const translation = deferred<ReturnType<typeof translationResult>>()
+    const runTranslation = vi.fn((_input: Parameters<ServerMessageTranslationRunner>[0]) => translation.promise)
+    const completion = complete(runTranslation, Date.now() - 1_500)
+
+    await vi.advanceTimersByTimeAsync(499)
+    expect(sendChatCompletionNotification).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect((await completion).frame?.status).toBe('running')
     expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
   })
 
   it('treats cap zero as unlimited and waits for settlement', async () => {
     vi.useFakeTimers()
     seedCompletion({ cap: 0 })
-    const translation = deferred<never>()
-    const runTranslation = vi.fn(() => translation.promise) as unknown as ServerMessageTranslationRunner
-    const followup = complete(true, runTranslation)
+    const translation = deferred<ReturnType<typeof translationResult>>()
+    const runTranslation = vi.fn((_input: Parameters<ServerMessageTranslationRunner>[0]) => translation.promise)
+    const completion = complete(runTranslation)
 
     await vi.advanceTimersByTimeAsync(60 * 60_000)
     expect(sendChatCompletionNotification).not.toHaveBeenCalled()
 
-    translation.resolve({} as never)
-    await followup.translation
+    translation.resolve(translationResult(runTranslation.mock.calls[0]![0].jobId))
+    expect((await completion).frame?.status).toBe('succeeded')
     expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
   })
 
-  it('still runs translation with push disabled and never calls the push service', async () => {
+  it('still holds and translates with notifications disabled', async () => {
     seedCompletion({ notification: false })
-    const translation = deferred<never>()
-    const runTranslation = vi.fn(() => translation.promise) as unknown as ServerMessageTranslationRunner
-    const followup = complete(true, runTranslation)
+    const runTranslation = vi.fn(async (input: Parameters<ServerMessageTranslationRunner>[0]) =>
+      translationResult(input.jobId),
+    )
 
-    expect(followup).toMatchObject({ translationStarted: true, notification: 'disabled' })
-    expect(runTranslation).toHaveBeenCalledTimes(1)
-    translation.resolve({} as never)
-    await followup.translation
+    const followup = await complete(runTranslation)
+
+    expect(followup).toMatchObject({
+      translationStarted: true,
+      notification: 'disabled',
+      frame: { status: 'succeeded' },
+    })
     expect(sendChatCompletionNotification).not.toHaveBeenCalled()
+  })
+
+  it('keeps non-eligible completion notification immediate and does not translate', async () => {
+    seedCompletion({ autoTranslate: false })
+    const runTranslation = vi.fn() as unknown as ServerMessageTranslationRunner
+
+    const followup = await complete(runTranslation)
+
+    expect(followup).toEqual({ translationStarted: false, notification: 'immediate' })
+    expect(runTranslation).not.toHaveBeenCalled()
+    expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
   })
 
   it('uses 180 seconds when the persisted scalar is missing', () => {

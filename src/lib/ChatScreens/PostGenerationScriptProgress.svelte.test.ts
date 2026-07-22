@@ -68,4 +68,27 @@ describe('PostGenerationScriptProgress', () => {
     await tick()
     expect(target.querySelector('[role="status"]')).toBeNull()
   })
+
+  it('renders the distinct generated-message translation stage', async () => {
+    updatePostGenerationProgress(session, {
+      type: 'post_generation_progress',
+      phase: 'translation',
+      status: 'translating',
+      runSeq: 0,
+      messageId: 'message-1',
+      jobId: 'translation-job-1',
+      llmCallCount: 0,
+      pendingLlmCount: 0,
+      llmCallCounts: { LLM: 0, axLLM: 0 },
+      pendingLlmCounts: { LLM: 0, axLLM: 0 },
+    })
+    component = mount(PostGenerationScriptProgress, {
+      target,
+      props: { characterId: 'char-1', chatId: 'chat-1' },
+    })
+    await tick()
+
+    expect(target.querySelector('[role="status"]')).toBeTruthy()
+    expect(target.textContent).toContain('Translating generated message')
+  })
 })

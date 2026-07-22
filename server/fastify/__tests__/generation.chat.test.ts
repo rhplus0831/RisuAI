@@ -22,12 +22,17 @@ import { saveSelectedPersonaSnapshot } from '../src/commands/personas.js'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../../../src/ts/model/types'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { expectNoSuccessDoneAfterAbort, parseEvents, type PromptChatFrame } from './helpers/terminalFrameAssertions.js'
-import { getChatMessageDiffInstrumentation, resetChatMessageDiffInstrumentation } from '../src/messageStore.js'
+import {
+  getChatMessageDiffInstrumentation,
+  resetChatMessageDiffInstrumentation,
+  resolveActiveMessageLocationById,
+} from '../src/messageStore.js'
 import { emitProviderChunks } from '../src/prompt/providerTransport.js'
 import { summarizePromptRows, type PromptRowSummary } from '../src/prompt/promptSummary.js'
 import type { PromptChatEvent } from '../src/prompt/sseEvents.js'
 import type { GenerationTraceOptions, GenerationTraceSidecarEntry } from '../src/generation/generationTraceSidecar.js'
 import { runServerMessageTranslation } from '../src/translation/serverMessageTranslation.js'
+import type { ServerMessageTranslationRunner } from '../src/translation/generationCompletionTranslation.js'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
 const subtle = webcrypto.subtle
@@ -3109,6 +3114,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     result?: string
     alternates?: string[]
     postGeneration?: {
+      messageId?: string
       finalText?: string
       revision?: number
       resendChat?: boolean
@@ -3121,6 +3127,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         varChanged?: boolean
         chatVarMutations?: Array<{ key: string; before: unknown; after: unknown }>
         messageMutations?: unknown[]
+      }
+      translation?: {
+        status: 'succeeded' | 'failed' | 'running'
+        jobId: string
+        translation?: { text?: string }
+        error?: string
       }
     }
   } {
@@ -3190,7 +3202,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       },
     })
     const { assertion } = await setupAuthedClient(harness.app)
-    await seedDatabase(harness.app, assertion, dbWithServerDispatch({}))
+    await seedDatabase(harness.app, assertion, { ...(dbWithServerDispatch({}) as object), notification: true })
 
     const res = await harness.app.inject({
       method: 'POST',
@@ -3201,6 +3213,95 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
     expect(doneFrame(parseEvents(res.body)).postGeneration?.revision).toBe(2)
     expect(sendChatCompletionNotification).toHaveBeenCalledWith({ characterId: 'char-1', chatId: 'chat-1' })
+  })
+
+  it('holds a connected done frame and notification until automatic translation succeeds', async () => {
+    let releaseTranslation!: () => void
+    const translationCanFinish = new Promise<void>((resolve) => {
+      releaseTranslation = resolve
+    })
+    const sendChatCompletionNotification = vi.fn(async () => {})
+    const runMessageTranslation = vi.fn(async (input: Parameters<ServerMessageTranslationRunner>[0]) => {
+      expect(resolveActiveMessageLocationById(input.db, input.messageId).ok).toBe(true)
+      await translationCanFinish
+      return {
+        revision: 3,
+        event: {
+          type: 'messageUpdated',
+          revision: 3,
+          resource: 'chatMessages',
+          id: input.messageId,
+          parentId: 'chat-1',
+        },
+        jobId: input.jobId,
+        chatId: 'chat-1',
+        messageId: input.messageId,
+        translation: {
+          source: 'raw' as const,
+          text: 'translated generated reply',
+          sourceHash: 'source-hash',
+          targetLanguage: 'ko',
+          inputLanguage: 'en',
+          translatorType: 'google' as const,
+          settingsHash: 'settings-hash',
+          updatedAt: 123,
+        },
+      }
+    })
+    await restartHarness({
+      pushNotifications: {
+        publicKey: () => 'test-public-key',
+        upsertSubscription: vi.fn(),
+        deleteSubscription: vi.fn(),
+        sendChatCompletionNotification,
+      },
+      runMessageTranslation,
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const database = dbWithServerDispatch({}) as Record<string, unknown>
+    const characters = database.characters as Array<{ chats: Array<Record<string, unknown>> }>
+    characters[0]!.chats[0]!.autoTranslate = true
+    await seedDatabase(harness.app, assertion, {
+      ...database,
+      notification: true,
+      translator: 'ko',
+      translatorType: 'google',
+      autoTranslateNotificationDeferCapSeconds: 30,
+    })
+
+    let responseSettled = false
+    const responsePromise = harness.app
+      .inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      .then((response) => {
+        responseSettled = true
+        return response
+      })
+
+    await vi.waitFor(() => expect(runMessageTranslation).toHaveBeenCalledTimes(1))
+    expect(responseSettled).toBe(false)
+    expect(sendChatCompletionNotification).not.toHaveBeenCalled()
+
+    releaseTranslation()
+    const response = await responsePromise
+    const events = parseEvents(response.body)
+    const progress = events.find(
+      (event) => event.type === 'post_generation_progress' && event.data.phase === 'translation',
+    )
+    expect(progress?.data).toMatchObject({ status: 'translating', messageId: expect.any(String) })
+    expect(doneFrame(events).postGeneration).toMatchObject({
+      messageId: expect.any(String),
+      translation: {
+        status: 'succeeded',
+        jobId: runMessageTranslation.mock.calls[0]![0].jobId,
+        translation: { text: 'translated generated reply' },
+      },
+    })
+    expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
   })
 
   it('translates a durable completion after its last viewer disconnects and pushes after persistence', async () => {
@@ -3262,6 +3363,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         signal: submitController.signal,
       })
       expect(res.status).toBe(200)
+      const durableJobId = res.headers.get('x-risu-generation-job-id')
+      expect(durableJobId).toBeTruthy()
       const initialEvents = await readStreamingEvents(res, (event) => event.type === 'token')
       expect(initialEvents.some((event) => event.type === 'token')).toBe(true)
 
@@ -3283,6 +3386,19 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       )
       expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
       expect(sendChatCompletionNotification).toHaveBeenCalledWith({ characterId: 'char-1', chatId: 'chat-1' })
+
+      const reattach = await fetch(`${baseUrl}/api/v1/generate/chat/${encodeURIComponent(durableJobId!)}/stream`, {
+        headers: authHeaders(assertion),
+      })
+      expect(reattach.status).toBe(200)
+      expect(doneFrame(parseEvents(await reattach.text())).postGeneration).toMatchObject({
+        messageId: expect.any(String),
+        translation: {
+          status: 'succeeded',
+          jobId: expect.any(String),
+          translation: { text: 'translated generated reply' },
+        },
+      })
     } finally {
       submitController.abort()
       releaseProvider()

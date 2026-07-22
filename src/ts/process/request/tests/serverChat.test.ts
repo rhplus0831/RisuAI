@@ -40,6 +40,16 @@ import {
   type ActiveAgentPresetProgress,
 } from '../../agentPresetProgress'
 import { activeGenerationJobs } from '../../reattach'
+import {
+  isClientAutomaticTranslationEligible,
+  replaceAutomaticTranslationMessageIds,
+  resetAutomaticTranslationEligibilityForTests,
+} from '../../generatedMessageTranslationEligibility'
+import {
+  activeMessageTranslations,
+  clearActiveMessageTranslation,
+  setActiveMessageTranslations,
+} from '../../../server/messageTranslationJobs'
 
 const baseInput: ServerChatInput = {
   chatId: 'chat-1',
@@ -105,6 +115,9 @@ describe('server chat SSE taxonomy', () => {
 beforeEach(() => {
   resetServerChatState()
   activeGenerationJobs.set([])
+  resetAutomaticTranslationEligibilityForTests()
+  clearActiveMessageTranslation('message-1')
+  setActiveMessageTranslations([])
   localStorage.removeItem('risu:protocol-debug')
   vi.mocked(handleActiveWriterStaleResponse).mockClear()
 })
@@ -112,6 +125,9 @@ beforeEach(() => {
 afterEach(() => {
   clearAgentPresetProgress()
   clearPostGenerationProgress()
+  resetAutomaticTranslationEligibilityForTests()
+  clearActiveMessageTranslation('message-1')
+  setActiveMessageTranslations([])
   vi.unstubAllGlobals()
 })
 
@@ -602,6 +618,41 @@ describe('requestServerChat', () => {
     expect(terminal.status).toBe('done')
     expect(terminal.done).toMatchObject({ generationId: 'gen-compact' })
     expect(Object.hasOwn(terminal.done ?? {}, 'result')).toBe(false)
+  })
+
+  it('parses a running translation frame and consumes generated-row client eligibility', async () => {
+    replaceAutomaticTranslationMessageIds(['message-1'])
+    setServerChatDispatchResult('server reply', { model: 'm' }, 'gen-translation', {
+      postGeneration: {
+        messageId: 'message-1',
+        translation: { status: 'running', jobId: 'translation-job-1' },
+      },
+    })
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const served = await requestServerChatGeneration(baseInput, null)
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok' || served.req.type !== 'streaming') return
+    const reader = served.req.result.getReader()
+    while (!(await reader.read()).done) {
+      // Drain through the terminal done frame.
+    }
+    await expect(served.terminal).resolves.toMatchObject({
+      status: 'done',
+      done: {
+        postGeneration: {
+          messageId: 'message-1',
+          translation: { status: 'running', jobId: 'translation-job-1' },
+        },
+      },
+    })
+    expect(isClientAutomaticTranslationEligible('message-1')).toBe(false)
+    expect(get(activeMessageTranslations)).toContainEqual({
+      chatId: 'chat-1',
+      messageId: 'message-1',
+      jobId: 'translation-job-1',
+      status: 'running',
+    })
   })
 
   it('uses done.result when a response has no token frames', async () => {

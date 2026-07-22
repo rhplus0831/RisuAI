@@ -2202,6 +2202,7 @@ export const languageKorean = {
   chatPostGenerationProgressWithComment: (owner: string, comment: string) => `${owner} · ${comment}`,
   chatPostGenerationProgressEditOutput: '출력 편집',
   chatPostGenerationProgressOnOutput: '출력 후 처리',
+  chatPostGenerationProgressTranslating: '생성된 메시지를 번역하는 중…',
   chatPostGenerationProgressLabel: (owner: string, phase: string, calls: number, waiting: number) =>
     `${owner} ${phase} · LLM 호출: ${calls} · 대기: ${waiting}`,
   hotkeyDesc: {

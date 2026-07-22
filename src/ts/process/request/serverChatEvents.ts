@@ -12,7 +12,7 @@
  * `agent_preset_progress` / `post_generation_progress` / `warning`.
  */
 
-import type { Message } from '../../storage/database.svelte'
+import type { Message, MessageTranslation } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 
 export type PromptChatStage = 'validate' | 'prompt' | 'provider' | 'done'
@@ -173,8 +173,8 @@ export interface AgentPresetProgressEvent {
 
 export type ServerChatSideEffect = Omit<SideEffectEvent, 'type'>
 
-export type PostGenerationProgressPhase = 'editOutput' | 'onOutput'
-export type PostGenerationProgressStatus = 'started' | 'running' | 'finished' | 'error'
+export type PostGenerationProgressPhase = 'editOutput' | 'onOutput' | 'translation'
+export type PostGenerationProgressStatus = 'started' | 'running' | 'finished' | 'error' | 'translating'
 export type PostGenerationProgressOwnerType = 'character' | 'module'
 export type PostGenerationProgressLlmFunction = 'LLM' | 'axLLM'
 
@@ -196,6 +196,8 @@ export interface PostGenerationProgressEvent {
   pendingLlmCount: number
   llmCallCounts: Record<PostGenerationProgressLlmFunction, number>
   pendingLlmCounts: Record<PostGenerationProgressLlmFunction, number>
+  messageId?: string
+  jobId?: string
 }
 
 export interface WarningEvent {
@@ -248,12 +250,19 @@ export interface ServerChatAgentPresetError {
  * reconciles `revision`, and re-issues on `resendChat`.
  */
 export interface ServerChatPostGeneration {
+  messageId?: string
   finalText?: string
   messagePatch?: ServerChatMessagePatch
   resendChat?: boolean
   agentPresetError?: ServerChatAgentPresetError
   revision?: number
+  translation?: ServerChatPostGenerationTranslation
 }
+
+export type ServerChatPostGenerationTranslation =
+  | { status: 'succeeded'; jobId: string; translation: MessageTranslation }
+  | { status: 'failed'; jobId: string; error: string }
+  | { status: 'running'; jobId: string }
 
 export interface DoneEvent {
   type: 'done'

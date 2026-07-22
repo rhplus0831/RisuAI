@@ -14,6 +14,12 @@
   import { scrollElementToContainerStart } from './chatScroll'
   import { isMemoryLimitMessage } from './memoryLimitMarker'
   import { queuedGenerationPersistences } from 'src/ts/process/generationPersistenceState'
+  import {
+    automaticTranslationMessageIds,
+    consumeAutomaticTranslationEligibility,
+    replaceAutomaticTranslationMessageIds,
+    serverOwnedGeneratedMessageIds,
+  } from 'src/ts/process/generatedMessageTranslationEligibility'
   import { newlyAppendedMessageIds } from './newMessageTranslationEligibility'
 
   const getCurrentChatRoomId = () => {
@@ -135,12 +141,7 @@
   let previousLength = 0
   let previousChatRoomId: string | null = null
   let previousMessageIds: (string | null)[] = []
-  let automaticTranslationMessageIds = $state<string[]>([])
   let wasAtBottomBeforeUpdate = true
-
-  function consumeAutomaticTranslationEligibility(messageId: string): void {
-    automaticTranslationMessageIds = automaticTranslationMessageIds.filter((candidate) => candidate !== messageId)
-  }
 
   $effect.pre(() => {
     chatRows
@@ -153,10 +154,12 @@
     const isSameChat = currentChatRoomId === previousChatRoomId
     if (didChatOwnerChange(previousChatRoomId, currentChatRoomId)) {
       hasNewUnreadMessage = false
-      automaticTranslationMessageIds = []
+      replaceAutomaticTranslationMessageIds([])
     } else {
       const residentMessageIds = new Set(messages.map((message) => message.chatId).filter((id): id is string => !!id))
-      const retainedIds = untrack(() => automaticTranslationMessageIds).filter((id) => residentMessageIds.has(id))
+      const retainedIds = untrack(() => $automaticTranslationMessageIds).filter(
+        (id) => residentMessageIds.has(id) && !$serverOwnedGeneratedMessageIds.has(id),
+      )
       const currentChat = currentCharacter.chats?.[currentCharacter.chatPage]
       const appendedIds = newlyAppendedMessageIds({
         previousChatId: previousChatRoomId,
@@ -165,7 +168,10 @@
         messages,
         autoTranslate: currentChat?.autoTranslate === true,
       })
-      automaticTranslationMessageIds = [...new Set([...retainedIds, ...appendedIds])]
+      replaceAutomaticTranslationMessageIds([
+        ...retainedIds,
+        ...appendedIds.filter((id) => !$serverOwnedGeneratedMessageIds.has(id)),
+      ])
     }
 
     // Only auto-scroll if it's the same chat and new messages were added
@@ -218,7 +224,8 @@
           row.message.data === ''}
         isChatGenerating={isGenerationActive}
         autoTranslateOnReady={typeof row.message.chatId === 'string' &&
-          automaticTranslationMessageIds.includes(row.message.chatId)}
+          $automaticTranslationMessageIds.includes(row.message.chatId) &&
+          !$serverOwnedGeneratedMessageIds.has(row.message.chatId)}
         onAutoTranslationEligibilityConsumed={() => consumeAutomaticTranslationEligibility(row.message.chatId ?? '')}
         isGenerationPersistenceQueued={row.isGenerationPersistenceQueued}
         generationStage={$chatProcessStage}

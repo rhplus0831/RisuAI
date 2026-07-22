@@ -31,6 +31,7 @@ import {
   type AgentPresetProgressSession,
 } from '../agentPresetProgress'
 import { forgetActiveGenerationJob, rememberActiveGenerationJob } from '../reattach'
+import { handleServerGeneratedMessageTranslation } from '../serverGeneratedMessageTranslation'
 import { iterateSseEvents } from './sseParse'
 import type {
   AgentPresetProgressEvent,
@@ -768,6 +769,7 @@ export async function requestServerChatGeneration(
                   if (typeof donePayload.postGeneration?.revision === 'number') {
                     setCachedServerCommandRevision(donePayload.postGeneration.revision)
                   }
+                  handleServerGeneratedMessageTranslation(input.chatId, donePayload.postGeneration)
                   maybeResolveReady()
                   if (!readyResolved) {
                     resolveReadyOnce({

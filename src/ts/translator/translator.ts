@@ -660,15 +660,7 @@ export async function runTranslator(
   }
   const db = getDatabase()
   if (db.translatorType === 'llm' && db.translatorSendTextAsIs === true) {
-    const result = await translateMain(text, arg)
-
-    if (result.startsWith('ERR::')) {
-      alertError(result)
-      return text
-    }
-
-    writeTranslateCache(reverse, text, result, cacheScope, cacheKey)
-    return result
+    throw new Error('LLM Send Text As-Is raw translation requires the server message translation command.')
   }
   const texts = text.split('\n')
   let chunks: [string, boolean][] = [['', true]]

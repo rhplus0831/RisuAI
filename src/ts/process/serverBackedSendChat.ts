@@ -692,6 +692,9 @@ export async function applyServerBackedTerminal(args: {
         ? liveChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
         : undefined)
     if (assistant) {
+      if (postGen?.translation?.status === 'succeeded' && postGen.messageId && assistant.chatId === postGen.messageId) {
+        assistant.translation = { ...postGen.translation.translation }
+      }
       const baseText = typeof postGen?.finalText === 'string' ? postGen.finalText : assistant.data
       const inlay = runInlayScreen(resolution.character, baseText)
       assistant.data = inlay.text

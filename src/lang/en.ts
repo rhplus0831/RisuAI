@@ -2040,6 +2040,7 @@ export const languageEnglish = {
   chatPostGenerationProgressWithComment: (owner: string, comment: string) => `${owner} · ${comment}`,
   chatPostGenerationProgressEditOutput: 'editOutput',
   chatPostGenerationProgressOnOutput: 'onOutput',
+  chatPostGenerationProgressTranslating: 'Translating generated message…',
   chatPostGenerationProgressLabel: (owner: string, phase: string, calls: number, waiting: number) =>
     `${owner} ${phase} · LLM calls: ${calls} · Waiting: ${waiting}`,
   outputImageModal: 'Output Image Modal',

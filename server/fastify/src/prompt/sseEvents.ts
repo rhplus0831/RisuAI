@@ -4,6 +4,7 @@ import type { AssembleMutationPayload } from './assemble.js'
 import type { AgentPresetGenerationErrorBody } from './agentPresetExecution.js'
 import type { AgentPresetProgress } from './agentPresetExecution.js'
 import type { PostGenerationLuaProgressEvent } from './luaPostGenerationProgress.js'
+import type { RawMessageTranslation } from '../translation/rawMessageTranslation.js'
 
 /**
  * SSE event taxonomy for `POST /api/v1/generate/chat`.
@@ -115,10 +116,30 @@ export interface ErrorEvent {
   }
 }
 
+export interface PostGenerationTranslationProgressEvent {
+  type: 'post_generation_progress'
+  phase: 'translation'
+  status: 'translating'
+  runSeq: 0
+  messageId: string
+  jobId: string
+  llmCallCount: 0
+  pendingLlmCount: 0
+  llmCallCounts: { LLM: 0; axLLM: 0 }
+  pendingLlmCounts: { LLM: 0; axLLM: 0 }
+}
+
+export type PostGenerationTranslationFrame =
+  | { status: 'succeeded'; jobId: string; translation: RawMessageTranslation }
+  | { status: 'failed'; jobId: string; error: string }
+  | { status: 'running'; jobId: string }
+
 /**
  * Server post-generation derivation surfaced on the terminal `done` frame.
  */
 export interface PostGenerationFrame {
+  /** Stable id of the persisted generated row (including continue/regenerate targets). */
+  messageId?: string
   /**
    * The `editoutput`'d + run-var'd assistant text (server-owned final text). The
    * browser writes it onto the just-streamed assistant message in place of its
@@ -145,6 +166,8 @@ export interface PostGenerationFrame {
    * generation-result command does not revision-conflict.
    */
   revision?: number
+  /** Server-owned automatic raw-message translation outcome at frame release. */
+  translation?: PostGenerationTranslationFrame
 }
 
 export interface DoneEvent {
@@ -173,6 +196,7 @@ export type PromptChatEvent =
   | SideEffectEvent
   | AgentPresetProgressEvent
   | PostGenerationLuaProgressEvent
+  | PostGenerationTranslationProgressEvent
   | WarningEvent
   | ErrorEvent
   | DoneEvent

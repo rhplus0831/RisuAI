@@ -259,6 +259,19 @@ function sseChatResponse(): Response {
         for (const sideEffect of state.sideEffects) {
           push('side_effect', sideEffect)
         }
+        if (postGeneration?.messageId && postGeneration.translation?.jobId) {
+          push('post_generation_progress', {
+            phase: 'translation',
+            status: 'translating',
+            runSeq: 0,
+            messageId: postGeneration.messageId,
+            jobId: postGeneration.translation.jobId,
+            llmCallCount: 0,
+            pendingLlmCount: 0,
+            llmCallCounts: { LLM: 0, axLLM: 0 },
+            pendingLlmCounts: { LLM: 0, axLLM: 0 },
+          })
+        }
         push('done', {
           result: state.dispatchResult,
           alternates: state.dispatchAlternates.length > 0 ? state.dispatchAlternates : undefined,

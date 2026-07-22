@@ -495,6 +495,45 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(staleIndexChat.scriptstate).toBeUndefined()
   })
 
+  it('applies an embedded succeeded translation before terminal generation UI settlement', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          postGeneration: {
+            messageId: 'gen-stable',
+            translation: {
+              status: 'succeeded',
+              jobId: 'translation-job-1',
+              translation: {
+                source: 'raw',
+                text: 'translated target',
+                sourceHash: 'source-hash',
+                targetLanguage: 'ko',
+                inputLanguage: 'en',
+                translatorType: 'google',
+                settingsHash: 'settings-hash',
+                updatedAt: 123,
+              },
+            },
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(target.message[0].translation?.text).toBe('translated target')
+  })
+
   it('mirrors a terminal patch before slow TTS and preserves a newer saved edit', async () => {
     const { char, target } = seedReorderedTerminalChats()
     const tts = deferred<void>()
