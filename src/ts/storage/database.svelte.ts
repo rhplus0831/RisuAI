@@ -3216,7 +3216,7 @@ export function setDatabase(data: Database) {
   data.customFlags ??= []
   data.enableCustomFlags ??= false
   data.assetMaxDifference ??= 4
-  data.showSavingIcon ??= false
+  data.showSavingIcon ??= true
   data.banCharacterset ??= []
   data.showPromptComparison ??= false
   data.OaiCompAPIKeys ??= {}

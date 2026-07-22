@@ -421,7 +421,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'customFlags', [])
   setDefault(database, 'enableCustomFlags', false)
   setDefault(database, 'assetMaxDifference', 4)
-  setDefault(database, 'showSavingIcon', false)
+  setDefault(database, 'showSavingIcon', true)
   setDefault(database, 'banCharacterset', [])
   setDefault(database, 'showPromptComparison', false)
   setDefault(database, 'OaiCompAPIKeys', {})

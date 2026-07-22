@@ -41,6 +41,11 @@ import {
   stagePendingMutation,
   type DurableMutationIntent,
 } from './pendingMutationOutbox'
+import {
+  PERSISTENCE_ACTIVITY_LINGER_MS,
+  persistenceSavingState,
+  resetPersistenceActivityForTests,
+} from './persistenceActivity.svelte'
 
 function settingsIntent(value: string): DurableMutationIntent {
   return {
@@ -58,6 +63,7 @@ function settingsIntent(value: string): DurableMutationIntent {
 beforeEach(async () => {
   vi.stubGlobal('indexedDB', new IDBFactory())
   resetPendingMutationOutboxForTests()
+  resetPersistenceActivityForTests()
   await preparePendingMutationOutbox({
     writerSessionId: 'writer-a',
     writerEpoch: 1,
@@ -67,13 +73,26 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.useRealTimers()
   await clearPendingMutationOutbox()
   resetPendingMutationOutboxForTests()
+  resetPersistenceActivityForTests()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
 describe('pending mutation outbox', () => {
+  it('keeps persistence activity visible while an unacknowledged intent remains in the outbox', async () => {
+    const handle = stagePendingMutation('settings:runtime', settingsIntent('held-intent'))
+    await expect(handle.ready).resolves.toBe('persisted')
+    expect(await countPendingMutationRecords()).toBe(1)
+
+    vi.useFakeTimers()
+    await vi.advanceTimersByTimeAsync(PERSISTENCE_ACTIVITY_LINGER_MS * 2)
+
+    expect(persistenceSavingState.state).toBe(true)
+  })
+
   it('roundtrips and counts raw-key intents without WebCrypto subtle', async () => {
     stubCryptoWithoutSubtle()
     resetPendingMutationOutboxForTests()

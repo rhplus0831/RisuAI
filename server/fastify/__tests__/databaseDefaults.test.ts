@@ -30,6 +30,7 @@ describe('database defaults', () => {
     expect(database.paragraphBreakBySentences).toBe(false)
     expect(database.paragraphBreakSentenceCount).toBe(3)
     expect(database.translatorSendTextAsIs).toBe(false)
+    expect(database.showSavingIcon).toBe(true)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
     expect(database.loreBook).toEqual([
@@ -68,6 +69,12 @@ describe('database defaults', () => {
     const database = normalizeDatabaseDefaults({ reducedMotion: true }, { providerDefaults: false })
 
     expect(database.reducedMotion).toBe(true)
+  })
+
+  it('preserves an explicit saving-icon opt-out', () => {
+    const database = normalizeDatabaseDefaults({ showSavingIcon: false }, { providerDefaults: false })
+
+    expect(database.showSavingIcon).toBe(false)
   })
 
   it('preserves an existing chat screen width', () => {

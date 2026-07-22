@@ -52,6 +52,7 @@ import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { normalizeCharacterOrder } from './characterCommands'
 import { triggerOpenChatGenerationReattach } from './process/reattach'
 import { language } from '../lang'
+import { persistenceSavingState } from './server/persistenceActivity.svelte'
 
 export { getFileSrc } from './fileSource'
 
@@ -338,9 +339,7 @@ export async function loadAsset(id: string) {
 }
 
 let lastSave = ''
-export let saving = $state({
-  state: false,
-})
+export let saving = persistenceSavingState
 
 /**
  * Saves the current state of the database.

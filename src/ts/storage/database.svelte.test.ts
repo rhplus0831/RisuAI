@@ -368,6 +368,20 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('defaults the saving icon on while preserving an explicit opt-out', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as Partial<Database>).showSavingIcon
+
+    setDatabase(legacyData)
+    expect(getDatabase().showSavingIcon).toBe(true)
+
+    const optedOutData = clonePlain(getDatabase())
+    optedOutData.showSavingIcon = false
+    setDatabase(optedOutData)
+    expect(getDatabase().showSavingIcon).toBe(false)
+  })
+
   it('rejects unsupported group rows instead of silently deleting them', () => {
     seedPresetDatabase()
     const before = clonePlain(getDatabase())

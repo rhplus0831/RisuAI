@@ -1,6 +1,7 @@
 import { gcm } from '@noble/ciphers/aes.js'
 
 import { clearRetainedChatProjections } from './chatRetainedProjection'
+import { beginPersistenceActivity, setPendingMutationOutboxActive } from './persistenceActivity.svelte'
 
 export type DurableMutationRequestMethod = 'DELETE' | 'PATCH' | 'POST' | 'PUT'
 
@@ -145,6 +146,8 @@ export const MAX_DURABLE_MUTATION_PAYLOAD_BYTES = 16 * 1024 * 1024
 const MAX_PENDING_MUTATION_KEY_LENGTH = 2_048
 const MUTATION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,96}$/
 const SCOPE_VALUE_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
+
+let pendingMutationActivityRefresh = 0
 
 const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   method: DurableMutationRequestMethod
@@ -539,7 +542,10 @@ export async function preparePendingMutationOutbox(
   }
   pendingMutationScope = scope
   const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
-  if (!database || !encryptionKey) return { discarded: 0 }
+  if (!database || !encryptionKey) {
+    await refreshPendingMutationActivity()
+    return { discarded: 0 }
+  }
 
   const discardedMutationIds: string[] = []
   try {
@@ -564,8 +570,10 @@ export async function preparePendingMutationOutbox(
     for (const mutationId of discardedMutationIds) publishPendingMutationDiscard(mutationId)
   } catch (error) {
     reportPersistenceWarning('Unable to prepare the pending-mutation outbox', error)
+    await refreshPendingMutationActivity()
     return { discarded: 0 }
   }
+  await refreshPendingMutationActivity()
   return { discarded: discardedMutationIds.length }
 }
 
@@ -631,6 +639,7 @@ export function stagePendingMutation(
       )
     : Promise.resolve('unavailable' as const)
   if (!scope) reportPersistenceWarning('Pending mutation staged before server database ownership was established')
+  const finishPersistenceActivity = scope ? beginPersistenceActivity() : null
 
   const handle: PendingMutationHandle = {
     key: semanticKey,
@@ -643,8 +652,14 @@ export function stagePendingMutation(
     ready,
   }
   recordPendingMutationProjectionTargets(handle, pendingMutationProjectionTargets(normalizedIntent))
-  void ready.then((status) => {
+  void ready.then(async (status) => {
     if (status !== 'persisted') retirePendingMutationProjectionGeneration(handle)
+    if (status === 'persisted') {
+      setPendingMutationOutboxActive(true)
+    } else {
+      await refreshPendingMutationActivity()
+    }
+    finishPersistenceActivity?.()
   })
   return handle
 }
@@ -749,6 +764,7 @@ export async function discardPendingMutation(handle: PendingMutationHandle): Pro
     if (matches) store.delete(handle.mutationId)
     await transactionDone(transaction)
     if (matches) retirePendingMutationProjectionGeneration(handle)
+    if (matches) void refreshPendingMutationActivity()
     return matches ? 'deleted' : 'superseded'
   } catch (error) {
     reportPersistenceWarning('Unable to discard a pending server mutation', error)
@@ -791,6 +807,7 @@ export async function completePendingMutation(
     }
     await transactionDone(transaction)
     if (matches) compactAcceptedPendingMutationProjectionGeneration(handle)
+    if (matches) void refreshPendingMutationActivity()
     return matches ? 'deleted' : 'superseded'
   } catch (error) {
     reportPersistenceWarning('Unable to complete a pending server mutation', error)
@@ -1013,6 +1030,8 @@ export async function clearPendingMutationOutbox(): Promise<void> {
   transaction.objectStore(OUTBOX_MUTATION_STORE).clear()
   transaction.objectStore(OUTBOX_RECEIPT_ACK_STORE).clear()
   await transactionDone(transaction)
+  pendingMutationActivityRefresh += 1
+  setPendingMutationOutboxActive(false)
 }
 
 export function resetPendingMutationOutboxForTests(): void {
@@ -1023,8 +1042,18 @@ export function resetPendingMutationOutboxForTests(): void {
   nextProjectionGenerationOrdinal = 0
   persistenceWarningReported = false
   pendingMutationScope = null
+  pendingMutationActivityRefresh += 1
+  setPendingMutationOutboxActive(false)
   clearLivePendingMutationProjectionGenerations()
   clearRetainedChatProjections()
+}
+
+async function refreshPendingMutationActivity(): Promise<void> {
+  const refresh = ++pendingMutationActivityRefresh
+  const count = await countPendingMutationRecords()
+  if (refresh === pendingMutationActivityRefresh && count !== null) {
+    setPendingMutationOutboxActive(count > 0)
+  }
 }
 
 async function persistPendingMutation(

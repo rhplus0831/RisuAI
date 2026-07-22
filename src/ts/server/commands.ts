@@ -53,6 +53,7 @@ import {
 import type { DurableMutationRequest } from './pendingMutationOutbox'
 import type { ServerInlayCatalogEntry } from './inlayCatalog'
 import type { TranslatorPresetStep } from '../translator/presets'
+import { beginPersistenceActivity } from './persistenceActivity.svelte'
 
 export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffectApplied }
 
@@ -1775,6 +1776,7 @@ export async function runServerCommandWithMutationReceipt<T>(
 }
 
 function enqueueServerCommandExecution<T>(task: (batch: ServerCommandReconciliationBatch) => Promise<T>): Promise<T> {
+  const finishPersistenceActivity = beginPersistenceActivity()
   const batch = getOrCreateServerCommandReconciliationBatch()
   queuedServerCommandExecutionCount += 1
 
@@ -1793,16 +1795,18 @@ function enqueueServerCommandExecution<T>(task: (batch: ServerCommandReconciliat
     () => undefined,
     () => undefined,
   )
-  return settledExecution.then(
-    async (value) => {
-      await batch.completion
-      return value
-    },
-    async (error) => {
-      await batch.completion
-      throw error
-    },
-  )
+  return settledExecution
+    .then(
+      async (value) => {
+        await batch.completion
+        return value
+      },
+      async (error) => {
+        await batch.completion
+        throw error
+      },
+    )
+    .finally(finishPersistenceActivity)
 }
 
 function getOrCreateServerCommandReconciliationBatch(): ServerCommandReconciliationBatch {
