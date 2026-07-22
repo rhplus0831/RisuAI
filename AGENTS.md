@@ -17,13 +17,6 @@
 - When tracing is enabled, each response has an `X-Request-UID` header. Use `rg "<uid>" data-agent/trace/*.jsonl` (or `data/trace/*.jsonl` for human mode) to find the matching JSONL entry.
 - Trace entries inline small text bodies; larger captured text bodies are stored as `.gz` sidecars under `trace/bodies/<mode>/` inside the same data directory when the compressed sidecar is at most 10 MiB.
 
-## Available Tools
-
-- `rg`
-- `fd`
-- `jq`
-- `yq`
-
 # Search Hygiene
 
 - The root `.ignore` file excludes tracked static/vendor payloads from broad
@@ -46,7 +39,3 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 # Language File
 
 When adding strings that appear in the frontend UI, create an appropriate key for them under `src/lang`.
-
-# Plain Risuai Code
-
-There is the original app code from before it was changed to Fastify in `/home/codex/Risuai`. Use it when needed.
