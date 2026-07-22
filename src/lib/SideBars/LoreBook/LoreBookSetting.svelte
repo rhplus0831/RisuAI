@@ -343,20 +343,14 @@
   {#each visibleLorebookMutationScopeKeys as scopeKey}
     {@const mutationState = findScopedLorebookCollectionMutationUiState($scopedLorebookMutationUiStates, scopeKey)}
     {@const status = mutationState?.status ?? 'idle'}
-    {#if status !== 'idle'}
+    {#if status === 'failed'}
       <p
-        class="m-0 mt-1 text-xs"
-        class:text-red-400={status === 'failed'}
-        class:text-textcolor2={status !== 'failed'}
+        class="m-0 mt-1 text-xs text-red-400"
         data-risu-lorebook-persistence={status}
         data-risu-lorebook-scope={scopeKey}
-        role={status === 'failed' ? 'alert' : 'status'}
-        aria-live={status === 'failed' ? 'assertive' : 'polite'}>
-        {status === 'pending'
-          ? language.scopedLorebookMutation.pending
-          : status === 'queued'
-            ? language.scopedLorebookMutation.queued
-            : language.scopedLorebookMutation.failed(mutationState?.error ?? '')}
+        role="alert"
+        aria-live="assertive">
+        {language.scopedLorebookMutation.failed(mutationState?.error ?? '')}
       </p>
     {/if}
   {/each}

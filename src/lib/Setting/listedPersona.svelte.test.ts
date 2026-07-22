@@ -156,7 +156,7 @@ describe('active-chat persona picker persistence', () => {
     await tick()
 
     expect(personaRow(1).disabled).toBe(true)
-    expect(target.querySelector('[role="status"]')?.textContent).toContain(language.chatGenerationSettingsSaving)
+    expect(target.querySelector('[role="status"]')).toBeNull()
     expect(pickerMocks.close).not.toHaveBeenCalled()
 
     persistence.resolve({ status: 'failed', error: 'selection rejected' })

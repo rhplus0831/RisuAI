@@ -209,16 +209,14 @@ describe('ModelRuntimeDefaultsEditor', () => {
     buttonByText(language.modelProfiles.save).click()
     await flushAsync()
 
-    expect(target.querySelector('[data-model-runtime-command-notice]')?.textContent).toContain(
-      language.modelProfiles.commandQueued,
-    )
+    expect(target.querySelector('[data-model-runtime-command-notice]')).toBeNull()
     expect(buttonByText(language.modelProfiles.edit).disabled).toBe(true)
     expect(commandSpies.updateModelRuntimeDefaultsDurably).toHaveBeenCalledTimes(1)
 
     getDatabase().modelRuntimeDefaults = { maxContext: 1 }
     await flushAsync()
     expect(buttonByText(language.modelProfiles.edit).disabled).toBe(true)
-    expect(target.querySelector('[data-model-runtime-command-notice]')).not.toBeNull()
+    expect(target.querySelector('[data-model-runtime-command-notice]')).toBeNull()
 
     getDatabase().modelRuntimeDefaults = {}
     await flushAsync()

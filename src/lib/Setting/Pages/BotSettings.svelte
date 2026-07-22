@@ -2230,20 +2230,9 @@
             name={language.usePromptTemplate}
             disabled={promptTemplateToggleMutationState === 'saving'}
             onChange={setSelectedPromptTemplateEnabled} />
-          {#if promptTemplateToggleMutationState !== 'idle'}
-            <div
-              class="mt-2 text-sm"
-              class:text-red-500={promptTemplateToggleMutationState === 'failed'}
-              class:text-textcolor2={promptTemplateToggleMutationState !== 'failed'}
-              role={promptTemplateToggleMutationState === 'failed' ? 'alert' : 'status'}
-              data-testid="prompt-template-toggle-mutation-status">
-              {#if promptTemplateToggleMutationState === 'saving'}
-                {language.promptTemplateMutation.saving}
-              {:else if promptTemplateToggleMutationState === 'queued'}
-                {language.promptTemplateMutation.queued}
-              {:else}
-                {promptTemplateToggleMutationError}
-              {/if}
+          {#if promptTemplateToggleMutationState === 'failed'}
+            <div class="mt-2 text-sm text-red-500" role="alert" data-testid="prompt-template-toggle-mutation-status">
+              {promptTemplateToggleMutationError}
             </div>
           {/if}
           {#if selectedPromptPresetOwnsPromptTemplate && submenu !== -1}

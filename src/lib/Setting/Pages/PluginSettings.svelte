@@ -491,13 +491,13 @@
     </div>
     {#if plugin.updateURL}
       {@const updateStatus = pluginUpdateState(plugin)}
-      {#if updateStatus.status !== 'idle'}
+      {#if updateStatus.status !== 'idle' && updateStatus.status !== 'queued'}
         <span class="text-textcolor2 mt-1 block w-full break-words text-xs" role="status">
           {pluginUpdateStatusText(updateStatus)}
         </span>
       {/if}
     {/if}
-    {#if pluginMutationStates[plugin.name]}
+    {#if pluginMutationStates[plugin.name]?.status === 'failed'}
       <span class="text-textcolor2 mt-1 block w-full break-words text-xs" role="status" aria-live="polite">
         {pluginMutationStatusText(plugin.name)}
       </span>
@@ -608,7 +608,7 @@
     class="hover:text-textcolor cursor-pointer">
     <PlusIcon />
   </button>
-  {#if pluginImportStatus !== 'idle'}
+  {#if pluginImportStatus === 'failed'}
     <span class="text-xs" role="status">{pluginImportStatusText()}</span>
   {/if}
 

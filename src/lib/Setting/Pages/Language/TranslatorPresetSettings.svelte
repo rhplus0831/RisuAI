@@ -2054,19 +2054,9 @@
   </button>
 </div>
 
-{#if translatorPresetPersistenceState !== 'idle'}
-  <p
-    class:text-draculared={translatorPresetPersistenceState === 'failed'}
-    class:text-textcolor2={translatorPresetPersistenceState !== 'failed'}
-    class="mb-3 text-sm"
-    role="status"
-    aria-live="polite"
-    data-translator-preset-persistence>
-    {translatorPresetPersistenceState === 'saving'
-      ? language.translatorPresetPersistence.saving
-      : translatorPresetPersistenceState === 'queued'
-        ? language.translatorPresetPersistence.queued
-        : language.translatorPresetPersistence.failed}
+{#if translatorPresetPersistenceState === 'failed'}
+  <p class="mb-3 text-sm text-draculared" role="status" aria-live="polite" data-translator-preset-persistence>
+    {language.translatorPresetPersistence.failed}
   </p>
 {/if}
 

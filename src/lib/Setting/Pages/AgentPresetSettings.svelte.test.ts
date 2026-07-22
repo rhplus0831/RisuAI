@@ -443,7 +443,7 @@ describe('AgentPresetSettings', () => {
     await flushAsyncWork()
 
     expect(target.querySelector('[data-risu-agent-preset-editor]')).toBeNull()
-    expect(target.textContent).toContain(language.agentPresets.commandQueued)
+    expect(target.textContent).not.toContain(language.agentPresets.commandQueued)
     expect(button('[data-risu-agent-preset-create]').disabled).toBe(true)
     button('[data-risu-agent-preset-create]').click()
     expect(agentPresetSpies.createAgentPreset).toHaveBeenCalledTimes(1)
@@ -454,7 +454,7 @@ describe('AgentPresetSettings', () => {
     agentPresetSpies.currentPendingAgentPresetGeneratedProjectionLatch.mockReturnValue(latch)
     mountPage()
     await tick()
-    expect(target.textContent).toContain(language.agentPresets.commandQueued)
+    expect(target.textContent).not.toContain(language.agentPresets.commandQueued)
     expect(button('[data-risu-agent-preset-create]').disabled).toBe(true)
 
     getDatabase().agentPresets = [
@@ -977,7 +977,7 @@ describe('AgentPresetSettings', () => {
     expect(nameInput().value).toBe('Unsaved Research Agent')
     expect(target.querySelector<HTMLFieldSetElement>('[data-risu-agent-preset-controls]')?.disabled).toBe(true)
     expect(window.confirm).not.toHaveBeenCalled()
-    expect(target.textContent).toContain(language.agentPresets.commandQueued)
+    expect(target.textContent).not.toContain(language.agentPresets.commandQueued)
     expect(button('[data-risu-agent-preset-create]').disabled).toBe(true)
 
     getDatabase().agentPresets = [

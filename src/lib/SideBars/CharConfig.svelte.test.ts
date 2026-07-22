@@ -1186,7 +1186,7 @@ describe('CharConfig draft-type-less character actions', () => {
     ])
   })
 
-  it('keeps a retained alternate greeting cascade visible and identifies it as queued', async () => {
+  it('keeps a retained alternate greeting cascade without rendering queued status text', async () => {
     serverCommandState.enabled = true
     alternateGreetingMutationState.outcomes.push('queued')
     await mountCharConfig(2, {
@@ -1202,7 +1202,7 @@ describe('CharConfig draft-type-less character actions', () => {
 
     expect(getDatabase().characters[0].alternateGreetings).toEqual(['One', 'Zero'])
     expect(getDatabase().characters[0].chats.map((chat) => chat.fmIndex)).toEqual([1, 0])
-    expect(target.querySelector('[role="status"]')?.textContent).toBe(language.alternateGreetingMutationQueued)
+    expect(target.querySelector('[role="status"]')).toBeNull()
 
     alternateGreetingMutationState.settleQueued[0]?.('accepted')
     await settleComponent()

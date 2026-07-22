@@ -199,9 +199,7 @@ describe('ModelPresetList', () => {
     buttonWithText(language.modelProfiles.saveCurrentRolesAsPreset).click()
     await settle()
 
-    expect(target.querySelector('[data-risu-preset-mutation-status]')?.textContent).toContain(
-      language.presetMutationQueued,
-    )
+    expect(target.querySelector('[data-risu-preset-mutation-status]')).toBeNull()
     expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.presetMutationQueued)
 
     settlement.resolve('failed')

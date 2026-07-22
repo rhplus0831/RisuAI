@@ -29,9 +29,6 @@
 
   let runtimeDefaults = $derived(normalizeModelRuntimeDefaults(getDatabase().modelRuntimeDefaults))
   let saveQueued = $derived(pendingMutations.length > 0)
-  let commandNotice = $derived(
-    pendingMutations.some((pending) => pending.phase !== 'dispatching') ? language.modelProfiles.commandQueued : '',
-  )
   let runtimeDefaultCount = $derived(Object.keys(runtimeDefaults).length)
   let draftRuntimeDefaultCount = $derived(Object.keys(normalizeModelRuntimeDefaults(draft)).length)
   let draftChanged = $derived(snapshot(draft) !== snapshot(runtimeDefaults))
@@ -214,12 +211,6 @@
     {#if commandError}
       <div class="mt-3 rounded-md border border-draculared p-2 text-sm text-draculared">{commandError}</div>
     {/if}
-    {#if commandNotice}
-      <div class="mt-3 rounded-md border border-selected p-2 text-sm text-textcolor" data-model-runtime-command-notice>
-        {commandNotice}
-      </div>
-    {/if}
-
     {#if editing}
       <div class="mt-4">
         <ModelRuntimeOptionsEditor bind:value={draft} />

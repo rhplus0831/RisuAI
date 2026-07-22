@@ -33,7 +33,6 @@
   let rowMutationOperation = 0
   let rowMutationStates = $state<Record<string, { operation: number; status: 'saving' | 'queued' }>>({})
   let rowMutationErrors = $state<Record<string, string>>({})
-  let latestRowMutationState = $derived(Object.values(rowMutationStates).at(-1))
   let latestRowMutationError = $derived(Object.values(rowMutationErrors).at(-1) ?? '')
 
   let presets = $derived(getDatabase().modelPresets ?? [])
@@ -347,13 +346,7 @@
                   onchange={(event) => renamePreset(index, event.currentTarget.value)}
                   fullwidth />
                 <span class="mt-1 block text-xs text-textcolor2">{preset.id ?? language.none}</span>
-                {#if rowMutationStates[presetMutationKey(preset, index)]}
-                  <span data-risu-preset-row-mutation-status role="status" class="mt-1 block text-xs text-textcolor2">
-                    {rowMutationStates[presetMutationKey(preset, index)].status === 'queued'
-                      ? language.presetMutationQueued
-                      : language.presetMutationSaving}
-                  </span>
-                {:else if rowMutationErrors[presetMutationKey(preset, index)]}
+                {#if rowMutationErrors[presetMutationKey(preset, index)]}
                   <span data-risu-preset-row-mutation-status role="alert" class="mt-1 block text-xs text-draculared">
                     {rowMutationErrors[presetMutationKey(preset, index)]}
                   </span>
@@ -426,18 +419,10 @@
     </div>
   {/if}
 
-  {#if selectionPendingIndex !== null}
-    <span data-risu-preset-selection-status role="status" class="text-sm text-textcolor2">
-      {language.presetSelectionSaving}
-    </span>
-  {:else if selectionError}
+  {#if selectionError}
     <span data-risu-preset-selection-status role="alert" class="text-sm text-draculared">{selectionError}</span>
   {/if}
-  {#if latestRowMutationState}
-    <span data-risu-preset-mutation-status role="status" class="text-sm text-textcolor2">
-      {latestRowMutationState.status === 'queued' ? language.presetMutationQueued : language.presetMutationSaving}
-    </span>
-  {:else if latestRowMutationError}
+  {#if latestRowMutationError}
     <span data-risu-preset-mutation-status role="alert" class="text-sm text-draculared">
       {latestRowMutationError}
     </span>

@@ -273,18 +273,15 @@ describe('BookmarkList hydration and navigation', () => {
 
     renameSettlement.resolve({ status: 'queued', result: { status: 'unavailable' } })
     await vi.waitFor(() =>
-      expect(target.querySelector('[data-risu-bookmark-mutation-status="queued"]')?.textContent).toContain(
-        language.bookmarkRenameQueued('Older bookmark'),
-      ),
+      expect(bookmarkMocks.alertNormal).toHaveBeenCalledWith(language.bookmarkRenameQueued('Older bookmark')),
     )
+    expect(target.querySelector('[data-risu-bookmark-mutation-status="queued"]')).toBeNull()
     expect(bookmarkMocks.alertNormal).toHaveBeenCalledWith(language.bookmarkRenameQueued('Older bookmark'))
 
     target.querySelector<HTMLButtonElement>('[data-risu-bookmark-action="remove"]')!.click()
     await vi.waitFor(() => expect(bookmarkMocks.dispatchUpdateChatScopedWithOutcome).toHaveBeenCalledTimes(2))
     expect(target.querySelector('[data-risu-bookmark-id="message-old"]')).toBeNull()
-    expect(target.querySelector('[data-risu-bookmark-mutation-status="pending"]')?.textContent).toContain(
-      language.bookmarkRemovePending('Renamed bookmark'),
-    )
+    expect(target.querySelector('[data-risu-bookmark-mutation-status="pending"]')).toBeNull()
 
     withTrustedResourceWrite(() => {
       const chat = getDatabase().characters[0].chats[0]

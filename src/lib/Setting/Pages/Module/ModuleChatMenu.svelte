@@ -220,7 +220,7 @@
                 {/if}
               </div>
             </div>
-            {#if !alertMode && scopedModuleMutationStatus(rmodule.id)}
+            {#if !alertMode && scopedModuleMutationStates[rmodule.id]?.status === 'failed'}
               <div
                 data-module-mutation-status={rmodule.id}
                 class={scopedModuleMutationStates[rmodule.id]?.status === 'failed'

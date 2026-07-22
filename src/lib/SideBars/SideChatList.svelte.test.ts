@@ -1582,7 +1582,8 @@ describe('SideChatList DOM contract harness', () => {
       sidebarRoot().querySelectorAll(
         '[data-risu-chat-mutation][data-risu-chat-mutation-status="pending"][role="status"]',
       ),
-    ).toHaveLength(1)
+    ).toHaveLength(0)
+    expect(rowByChatId('chat-root-a').dataset.risuChatMutationStatus).toBe('pending')
 
     finalChatRename.resolve({ status: 'accepted', result: { revision: 2, status: 'ok' } })
     await flushCommandWork()
@@ -1666,7 +1667,7 @@ describe('SideChatList DOM contract harness', () => {
       sidebarRoot().querySelectorAll(
         '[data-risu-chat-mutation][data-risu-chat-mutation-status="pending"][role="status"]',
       ),
-    ).toHaveLength(1)
+    ).toHaveLength(0)
     expect(rowByChatId('chat-root-a').dataset.risuChatMutationStatus).toBe('pending')
 
     secondRename.resolve({ status: 'accepted', result: { revision: 2, status: 'ok' } })
@@ -2084,7 +2085,7 @@ describe('SideChatList DOM contract harness', () => {
     expect(selectedCharacter().chats[0].id).toBe(createdChat.id)
     expect(sidebarMocks.alertNormal).toHaveBeenCalledWith(`${createdChat.name} is provisional`)
     expect(sidebarMocks.navigate).toHaveBeenCalledWith(`/character/char-a/${createdChat.id}`)
-    expect(sidebarRoot().querySelector('[data-risu-chat-mutation-status="queued"]')).toBeTruthy()
+    expect(sidebarRoot().querySelector('[data-risu-chat-mutation][data-risu-chat-mutation-status="queued"]')).toBeNull()
 
     resolveSettlement({ status: 'accepted' })
     await flushCommandWork()

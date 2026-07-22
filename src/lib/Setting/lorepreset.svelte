@@ -144,7 +144,7 @@
             </button>
           </div>
         </div>
-        {#if deleteState}
+        {#if deleteState?.status === 'failed'}
           <p
             class="m-0 mt-1 text-xs"
             class:text-red-400={deleteState.status === 'failed'}

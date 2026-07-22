@@ -1189,7 +1189,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorPrompt).toBe('')
     expect(getDatabase().translatorMaxResponse).toBe(1000)
     expect(toolbarButton(0).getAttribute('aria-busy')).toBe('true')
-    expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.saving)
+    expect(translatorPresetPersistenceStatus()).toBeNull()
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
     expect(presetSelect?.options).toHaveLength(3)
@@ -1380,7 +1380,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       await clickCreatePreset()
 
       await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.translatorPresetPersistence.queued))
-      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.queued)
+      expect(translatorPresetPersistenceStatus()).toBeNull()
       const createdPresetId = getDatabase().translatorPresets.at(-1)?.id
       expect(createdPresetId).toBeTruthy()
 
@@ -1426,7 +1426,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       expect(getDatabase().translatorPresets[0].prompt).toBe('queued prompt A')
       expect(getDatabase().translatorPrompt).toBe('queued prompt A')
       expect(promptTextarea().value).toBe('queued prompt A')
-      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.queued)
+      expect(translatorPresetPersistenceStatus()).toBeNull()
       expect(alertError).not.toHaveBeenCalled()
 
       const [retainedUpdate] = await listPendingMutations()
@@ -1477,7 +1477,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
       await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.translatorPresetPersistence.queued))
       expect(currentSelectedPresetId()).toBe('preset-b')
-      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.queued)
+      expect(translatorPresetPersistenceStatus()).toBeNull()
 
       const [retainedSelection] = await listPendingMutations()
       expect(retainedSelection).toBeTruthy()
@@ -1525,7 +1525,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
       await vi.waitFor(() => expect(alertNormal).toHaveBeenCalledWith(language.translatorPresetPersistence.queued))
       expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b'])
-      expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.queued)
+      expect(translatorPresetPersistenceStatus()).toBeNull()
 
       const [retainedDelete] = await listPendingMutations()
       expect(retainedDelete).toBeTruthy()
@@ -1727,7 +1727,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorPrompt).toBe('old prompt B')
     expect(getDatabase().translatorMaxResponse).toBe(200)
     expect(target.querySelector('select')?.getAttribute('aria-busy')).toBe('true')
-    expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.saving)
+    expect(translatorPresetPersistenceStatus()).toBeNull()
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
     expect(presetSelect?.value).toBe('1')
@@ -2209,7 +2209,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorPrompt).toBe('old prompt B')
     expect(getDatabase().translatorMaxResponse).toBe(200)
     expect(toolbarButton(2).getAttribute('aria-busy')).toBe('true')
-    expect(translatorPresetPersistenceStatus()?.textContent).toContain(language.translatorPresetPersistence.saving)
+    expect(translatorPresetPersistenceStatus()).toBeNull()
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
     expect(presetSelect?.options).toHaveLength(1)

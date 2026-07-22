@@ -41,9 +41,6 @@
   )
   let modelMutationPending = $derived(pendingMutations.length > 0)
   let conversionQueued = $derived(pendingMutations.some((pending) => pending.projection.kind === 'legacy-conversion'))
-  let commandNotice = $derived(
-    pendingMutations.some((pending) => pending.phase !== 'dispatching') ? language.modelProfiles.commandQueued : '',
-  )
   let legacyOnly = $derived(isClearlyLegacyOnly())
   let showConversionPrompt = $derived((legacyOnly || conversionQueued) && !conversionPromptDeclined)
   let showAdvancedLegacySettings = $derived(!modelProfileUiState.allRolesUseDurableProfiles)
@@ -167,13 +164,6 @@
       <p class="mt-1 text-sm text-textcolor2">{language.modelProfiles.convertPromptDescription}</p>
       {#if commandError}
         <div class="mt-3 rounded-md border border-draculared p-2 text-sm text-draculared">{commandError}</div>
-      {/if}
-      {#if commandNotice}
-        <div
-          class="mt-3 rounded-md border border-selected p-2 text-sm text-textcolor"
-          data-model-conversion-command-notice>
-          {commandNotice}
-        </div>
       {/if}
       <div class="mt-3 flex flex-wrap gap-2">
         <Button size="sm" disabled={converting || modelMutationPending} onclick={convertLegacyProfiles}>

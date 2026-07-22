@@ -569,7 +569,7 @@
       class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
       data-risu-sidebar-character-controls
       inert={menuMode === 1}>
-      {#each Object.entries(characterOrganizationActions) as [actionKey, action] (actionKey)}
+      {#each Object.entries(characterOrganizationActions).filter(([, action]) => action.status === 'failed') as [actionKey, action] (actionKey)}
         <span
           class="w-16 px-1 py-0.5 text-center text-[10px] leading-tight text-textcolor2"
           data-risu-character-organization-status={action.status}
@@ -577,11 +577,7 @@
           role="status"
           aria-live="polite"
           title={characterOrganizationActionMessage(action)}>
-          {action.status === 'pending'
-            ? language.characterOrganizationSaving
-            : action.status === 'queued'
-              ? language.mutationStatusQueued
-              : language.mutationStatusFailed}
+          {language.mutationStatusFailed}
         </span>
       {/each}
       <div

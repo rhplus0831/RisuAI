@@ -681,7 +681,8 @@ describe('ChatList DOM contract harness', () => {
       modalRoot().querySelectorAll(
         '[data-risu-chat-mutation][data-risu-chat-mutation-status="pending"][role="status"]',
       ),
-    ).toHaveLength(1)
+    ).toHaveLength(0)
+    expect(rowByChatId('chat-b').dataset.risuChatMutationStatus).toBe('pending')
 
     finalRename.resolve({ status: 'accepted', result: { revision: 2, status: 'ok' } })
     await flushCommandWork()
@@ -756,7 +757,7 @@ describe('ChatList DOM contract harness', () => {
       modalRoot().querySelectorAll(
         '[data-risu-chat-mutation][data-risu-chat-mutation-status="pending"][role="status"]',
       ),
-    ).toHaveLength(1)
+    ).toHaveLength(0)
     expect(rowByChatId('chat-b').dataset.risuChatMutationStatus).toBe('pending')
 
     secondRename.resolve({ status: 'accepted', result: { revision: 2, status: 'ok' } })
@@ -958,7 +959,7 @@ describe('ChatList DOM contract harness', () => {
     expect(chatListMocks.alertNormal).toHaveBeenCalledWith(`${createdChat.name} is provisional`)
     expect(chatListMocks.navigate).toHaveBeenCalledWith(`/character/char-a/${createdChat.id}`)
     expect(close).toHaveBeenCalledOnce()
-    expect(modalRoot().querySelector('[data-risu-chat-mutation-status="queued"]')).toBeTruthy()
+    expect(modalRoot().querySelector('[data-risu-chat-mutation][data-risu-chat-mutation-status="queued"]')).toBeNull()
 
     resolveSettlement({ status: 'accepted' })
     await flushCommandWork()

@@ -48,9 +48,6 @@
 
   let profiles = $derived(getDatabase().modelProfiles ?? [])
   let mutationQueued = $derived(pendingMutations.length > 0)
-  let commandNotice = $derived(
-    pendingMutations.some((pending) => pending.phase !== 'dispatching') ? language.modelProfiles.commandQueued : '',
-  )
   let editingProfile = $derived(
     editingProfileId ? profiles.find((profile) => profile.id === editingProfileId) : undefined,
   )
@@ -328,12 +325,6 @@
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
   {/if}
-  {#if commandNotice}
-    <div class="rounded-md border border-selected p-3 text-sm text-textcolor" data-model-profile-command-notice>
-      {commandNotice}
-    </div>
-  {/if}
-
   <div class="flex flex-wrap items-center justify-between gap-2">
     <div>
       <h3 class="text-lg font-semibold">{language.modelProfiles.profilesTabTitle}</h3>

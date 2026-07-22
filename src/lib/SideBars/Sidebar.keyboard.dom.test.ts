@@ -324,9 +324,9 @@ describe('Sidebar character folder context menu', () => {
     const folderRow = folderAvatar?.closest<HTMLElement>('[role="listitem"]')
     expect(folderRow?.getAttribute('aria-busy')).toBe('true')
     expect(folderRow?.getAttribute('draggable')).toBe('false')
-    expect(target.querySelector('[data-risu-character-organization-status="pending"]')?.textContent).toContain(
-      language.characterOrganizationSaving,
-    )
+    expect(
+      target.querySelector('[data-risu-character-organization-key][data-risu-character-organization-status="pending"]'),
+    ).toBeNull()
 
     openFolderContextMenu('Folder A')
     await tick()
@@ -339,9 +339,9 @@ describe('Sidebar character folder context menu', () => {
     await tick()
     await tick()
 
-    expect(target.querySelector('[data-risu-character-organization-status="queued"]')?.textContent).toContain(
-      language.mutationStatusQueued,
-    )
+    expect(
+      target.querySelector('[data-risu-character-organization-key][data-risu-character-organization-status="queued"]'),
+    ).toBeNull()
     expect(folderRow?.getAttribute('draggable')).toBe('true')
   })
 

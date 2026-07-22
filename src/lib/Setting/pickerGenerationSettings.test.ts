@@ -761,11 +761,8 @@ describe('generation settings picker mode', () => {
       input!.dispatchEvent(new Event('input', { bubbles: true }))
       flushRegisteredPendingBridgePatches({})
 
-      await vi.waitFor(() => {
-        expect(target.querySelector('[data-risu-preset-rename-status]')?.textContent).toContain(
-          language.presetRenameQueued,
-        )
-      })
+      await vi.waitFor(() => expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.presetRenameQueued))
+      expect(target.querySelector('[data-risu-preset-rename-status]')).toBeNull()
       expect(input!.value).toBe('Queued prompt name')
       expect(getDatabase().promptPresets[0].name).toBe('Queued prompt name')
       expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.presetRenameQueued)
@@ -1012,9 +1009,7 @@ describe('generation settings picker mode', () => {
       await waitForFetchCount(calls, 2)
 
       expect(close).not.toHaveBeenCalled()
-      expect(target.querySelector('[data-risu-preset-selection-status]')?.textContent).toContain(
-        language.presetSelectionSaving,
-      )
+      expect(target.querySelector('[data-risu-preset-selection-status]')).toBeNull()
 
       response.resolve(presetSelectionSuccess(kind))
       await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())

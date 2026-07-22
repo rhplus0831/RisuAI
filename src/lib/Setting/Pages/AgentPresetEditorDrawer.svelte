@@ -818,15 +818,6 @@
         {#if stepCommandError}
           <div class="mt-3 rounded-md border border-draculared p-3 text-sm text-draculared">{stepCommandError}</div>
         {/if}
-        {#if stepMutationState !== 'idle'}
-          <div
-            class="mt-3 rounded-md border border-darkborderc p-3 text-sm text-textcolor2"
-            role="status"
-            aria-live="polite">
-            {stepMutationState === 'saving' ? language.agentPresets.saving : language.agentPresets.commandQueued}
-          </div>
-        {/if}
-
         {#if stepEditorMode}
           <div class="mt-3 rounded-md border border-darkborderc p-3" data-risu-agent-preset-step-form>
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">

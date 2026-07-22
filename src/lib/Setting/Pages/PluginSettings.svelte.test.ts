@@ -200,7 +200,7 @@ describe('PluginSettings', () => {
     await tick()
 
     expect(enableButton?.disabled).toBe(true)
-    expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.saving)
+    expect(target.querySelector('[role="status"]')).toBeNull()
 
     mutation.resolve({
       status: 'queued',
@@ -208,9 +208,8 @@ describe('PluginSettings', () => {
       mutationId: 'plugin-mutation-a',
       settlement: settlement.promise,
     })
-    await vi.waitFor(() =>
-      expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.queued),
-    )
+    await vi.waitFor(() => expect(enableButton?.disabled).toBe(false))
+    expect(target.querySelector('[role="status"]')).toBeNull()
     expect(enableButton?.disabled).toBe(false)
 
     settlement.resolve({ status: 'accepted' })
@@ -230,9 +229,8 @@ describe('PluginSettings', () => {
       mutationId: 'plugin-mutation-a',
       settlement: settlement.promise,
     })
-    await vi.waitFor(() =>
-      expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.queued),
-    )
+    await tick()
+    expect(target.querySelector('[role="status"]')).toBeNull()
 
     settlement.resolve({ status: 'failed' })
     await vi.waitFor(() =>
@@ -260,7 +258,7 @@ describe('PluginSettings', () => {
 
     older.resolve({ status: 'failed', result: { status: 'error', error: 'rejected' } })
     await tick()
-    expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.saving)
+    expect(target.querySelector('[role="status"]')).toBeNull()
 
     newer.resolve({ status: 'accepted', result: { status: 'ok' } })
     await vi.waitFor(() => expect(target.textContent).not.toContain(language.pluginMutation.saving))
@@ -592,9 +590,9 @@ describe('PluginSettings', () => {
 
     target.querySelector<HTMLButtonElement>(`[aria-label="${language.import}: ${language.plugin}"]`)?.click()
 
-    await vi.waitFor(() => {
-      expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.queued)
-    })
+    await vi.waitFor(() => expect(pluginSettingsMocks.importPlugin).toHaveBeenCalledOnce())
+    await tick()
+    expect(target.querySelector('[role="status"]')).toBeNull()
     settlement.resolve({ status: 'accepted' })
     await vi.waitFor(() => {
       expect(target.querySelector('[role="status"]')?.textContent ?? '').not.toContain(language.pluginMutation.queued)
@@ -644,8 +642,9 @@ describe('PluginSettings', () => {
     installButton.click()
 
     await vi.waitFor(() => {
-      expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginMutation.queued)
+      expect(target.querySelector(`button[aria-label="${language.pluginMutation.queued}"]`)).toBeTruthy()
     })
+    expect(target.querySelector('[role="status"]')).toBeNull()
     settlement.resolve({ status: 'accepted' })
     await vi.waitFor(() => {
       expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pluginUpdateInstalled)

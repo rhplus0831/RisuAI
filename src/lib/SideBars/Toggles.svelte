@@ -435,11 +435,9 @@
           name={language.ToggleHypaMemory}
           onChange={setSupaMemoryValue}
           disabled={characterTogglePending.supaMemory} />
-        {#if characterToggleStatus.supaMemory !== 'idle'}
+        {#if characterToggleStatus.supaMemory === 'failed'}
           <span class="text-xs text-textcolor2" role="status">
-            {characterToggleStatus.supaMemory === 'queued'
-              ? language.mutationStatusQueued
-              : language.mutationStatusFailed}
+            {language.mutationStatusFailed}
           </span>
         {/if}
       </div>
@@ -480,11 +478,9 @@
         name={language.ToggleHypaMemory}
         onChange={setSupaMemoryValue}
         disabled={characterTogglePending.supaMemory} />
-      {#if characterToggleStatus.supaMemory !== 'idle'}
+      {#if characterToggleStatus.supaMemory === 'failed'}
         <span class="text-xs text-textcolor2" role="status">
-          {characterToggleStatus.supaMemory === 'queued'
-            ? language.mutationStatusQueued
-            : language.mutationStatusFailed}
+          {language.mutationStatusFailed}
         </span>
       {/if}
     </div>

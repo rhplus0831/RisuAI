@@ -267,9 +267,7 @@ describe('scoped lorebook persistence outcomes', () => {
     await tick()
 
     expect(add.disabled).toBe(true)
-    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')?.textContent).toContain(
-      'Saving lorebook changes',
-    )
+    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).toBeNull()
 
     const chatTab = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
       (button) => button.textContent?.trim() === 'Chat',
@@ -278,20 +276,14 @@ describe('scoped lorebook persistence outcomes', () => {
     await tick()
     const chatAdd = target.querySelector<HTMLButtonElement>('[aria-label="Add: Lorebook"]')!
     expect(chatAdd.disabled).toBe(false)
-    expect(
-      target
-        .querySelector('[data-risu-lorebook-scope="character:character-a"]')
-        ?.getAttribute('data-risu-lorebook-persistence'),
-    ).toBe('pending')
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')).toBeNull()
 
     editorActions.addLorebook.mockReturnValueOnce(chatDeferred.operation)
     chatAdd.click()
     await tick()
     expect(editorActions.addLorebook).toHaveBeenLastCalledWith(1)
     expect(chatAdd.disabled).toBe(true)
-    expect(
-      target.querySelector('[data-risu-lorebook-scope="chat:chat-a"]')?.getAttribute('data-risu-lorebook-persistence'),
-    ).toBe('pending')
+    expect(target.querySelector('[data-risu-lorebook-scope="chat:chat-a"]')).toBeNull()
 
     chatDeferred.resolve({ status: 'accepted' })
     await flushAsyncWork()
@@ -300,11 +292,7 @@ describe('scoped lorebook persistence outcomes', () => {
     deferred.resolve({ status: 'queued' })
     await flushAsyncWork()
     expect(alertSpies.alertNormal).toHaveBeenCalledWith('Lorebook change queued.')
-    expect(
-      target
-        .querySelector('[data-risu-lorebook-scope="character:character-a"]')
-        ?.getAttribute('data-risu-lorebook-persistence'),
-    ).toBe('queued')
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')).toBeNull()
   })
 
   it('tracks an imported collection until its exact operation is accepted', async () => {
@@ -316,7 +304,7 @@ describe('scoped lorebook persistence outcomes', () => {
     target.querySelector<HTMLButtonElement>('[aria-label="Import: Lorebook"]')!.click()
     await flushAsyncWork()
     expect(editorActions.importLoreBook).toHaveBeenCalledWith('global')
-    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).not.toBeNull()
+    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).toBeNull()
 
     deferred.resolve({ status: 'accepted' })
     await flushAsyncWork()
@@ -332,9 +320,7 @@ describe('scoped lorebook persistence outcomes', () => {
     target.querySelector<HTMLButtonElement>('[aria-label="Add: Lorebook"]')!.click()
     deferred.resolve({ status: 'queued' })
     await flushAsyncWork()
-    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')?.textContent).toContain(
-      'Lorebook change queued',
-    )
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')).toBeNull()
 
     unmount(component)
     component = undefined
@@ -343,9 +329,7 @@ describe('scoped lorebook persistence outcomes', () => {
     component = mount(LoreBookSetting, { target })
     await tick()
 
-    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')?.textContent).toContain(
-      'Lorebook change queued',
-    )
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')).toBeNull()
     expect(alertSpies.alertNormal).not.toHaveBeenCalled()
   })
 

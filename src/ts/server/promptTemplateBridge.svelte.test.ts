@@ -1827,9 +1827,7 @@ describe('flushPendingPromptTemplatePatches', () => {
       expect(
         target.querySelector<HTMLButtonElement>(`button[aria-label="${language.remove}: Existing row"]`)?.disabled,
       ).toBe(true)
-      expect(target.querySelector('[data-testid="prompt-template-structural-mutation-status"]')?.textContent).toContain(
-        language.promptTemplateMutation.saving,
-      )
+      expect(target.querySelector('[data-testid="prompt-template-structural-mutation-status"]')).toBeNull()
       expect(target.querySelectorAll('[data-risu-prompt-item-id]')).toHaveLength(2)
 
       pending.resolve({ status: 'ok' })
@@ -1874,9 +1872,7 @@ describe('flushPendingPromptTemplatePatches', () => {
         await flushMicrotasks()
         await tick()
 
-        expect(
-          target.querySelector('[data-testid="prompt-template-structural-mutation-status"]')?.textContent,
-        ).toContain(language.promptTemplateMutation.queued)
+        expect(target.querySelector('[data-testid="prompt-template-structural-mutation-status"]')).toBeNull()
         const attemptedIds = (getResourceDatabase().promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)
         if (action === 'create') expect(attemptedIds).toHaveLength(3)
         if (action === 'delete') expect(attemptedIds).toEqual(['p-b'])

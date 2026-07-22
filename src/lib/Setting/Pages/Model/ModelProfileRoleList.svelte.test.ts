@@ -250,9 +250,7 @@ describe('ModelProfileRoleList', () => {
     buttonByText(language.modelProfiles.apply).click()
     await flushAsync()
 
-    expect(target.querySelector('[data-model-role-command-notice]')?.textContent).toContain(
-      language.modelProfiles.commandQueued,
-    )
+    expect(target.querySelector('[data-model-role-command-notice]')).toBeNull()
     expect(buttonByText(language.modelProfiles.apply).disabled).toBe(true)
     expect(buttonByText(language.modelProfiles.cancel).disabled).toBe(true)
     expect(Array.from(target.querySelectorAll('select')).every((select) => select.disabled)).toBe(true)
@@ -265,7 +263,7 @@ describe('ModelProfileRoleList', () => {
       chatAux: { mode: 'profile', profileId: 'profile-1' },
     })
     await flushAsync()
-    expect(target.querySelector('[data-model-role-command-notice]')).not.toBeNull()
+    expect(target.querySelector('[data-model-role-command-notice]')).toBeNull()
     expect(Array.from(target.querySelectorAll('select')).every((select) => select.disabled)).toBe(true)
 
     getDatabase().modelRoleProfiles = normalizeModelRoleProfiles({

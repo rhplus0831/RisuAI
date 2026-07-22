@@ -144,10 +144,6 @@
       <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
         {mutationError}
       </div>
-    {:else if mutationPending && isChatGenerationSelectionMode}
-      <div class="mb-3 text-sm text-textcolor2" role="status">
-        {language.chatGenerationSettingsSaving}
-      </div>
     {/if}
     {#each getDatabase().personas as persona, i}
       <button

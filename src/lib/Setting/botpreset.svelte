@@ -57,7 +57,6 @@
   let rowMutationOperation = 0
   let rowMutationStates = $state<Record<string, { operation: number; status: 'saving' | 'queued' }>>({})
   let rowMutationErrors = $state<Record<string, string>>({})
-  let latestRowMutationState = $derived(Object.values(rowMutationStates).at(-1))
   let latestRowMutationError = $derived(Object.values(rowMutationErrors).at(-1) ?? '')
 
   interface Props {
@@ -485,13 +484,7 @@
                 ariaLabel={`${language.edit}: ${preset.name ?? `#${i + 1}`}`}
                 placeholder="string"
                 padding={false} />
-              {#if renameStates[presetDraftKey(preset, i)]}
-                <span data-risu-preset-rename-status role="status" class="block text-xs text-textcolor2">
-                  {renameStates[presetDraftKey(preset, i)].status === 'queued'
-                    ? language.presetRenameQueued
-                    : language.presetRenameSaving}
-                </span>
-              {:else if renameErrors[presetDraftKey(preset, i)]}
+              {#if renameErrors[presetDraftKey(preset, i)]}
                 <span data-risu-preset-rename-status role="alert" class="block text-xs text-draculared">
                   {renameErrors[presetDraftKey(preset, i)]}
                 </span>
@@ -538,13 +531,7 @@
             </button>
           </div>
         </div>
-        {#if rowMutationStates[presetDraftKey(preset, i)]}
-          <span data-risu-preset-row-mutation-status role="status" class="block px-2 text-xs text-textcolor2">
-            {rowMutationStates[presetDraftKey(preset, i)].status === 'queued'
-              ? language.presetMutationQueued
-              : language.presetMutationSaving}
-          </span>
-        {:else if rowMutationErrors[presetDraftKey(preset, i)]}
+        {#if rowMutationErrors[presetDraftKey(preset, i)]}
           <span data-risu-preset-row-mutation-status role="alert" class="block px-2 text-xs text-draculared">
             {rowMutationErrors[presetDraftKey(preset, i)]}
           </span>
@@ -599,18 +586,10 @@
         </button>
       </div>
       <span class="text-textcolor2 text-sm">{language.quickPreset}</span>
-      {#if selectionPendingKey}
-        <span data-risu-preset-selection-status role="status" class="text-textcolor2 text-sm">
-          {language.presetSelectionSaving}
-        </span>
-      {:else if selectionError}
+      {#if selectionError}
         <span data-risu-preset-selection-status role="alert" class="text-draculared text-sm">{selectionError}</span>
       {/if}
-      {#if latestRowMutationState}
-        <span data-risu-preset-mutation-status role="status" class="text-textcolor2 text-sm">
-          {latestRowMutationState.status === 'queued' ? language.presetMutationQueued : language.presetMutationSaving}
-        </span>
-      {:else if latestRowMutationError}
+      {#if latestRowMutationError}
         <span data-risu-preset-mutation-status role="alert" class="text-draculared text-sm">
           {latestRowMutationError}
         </span>

@@ -48,9 +48,6 @@
   let changedBindings = $derived.by(() => collectChangedBindings())
   let hasChanges = $derived(Object.keys(changedBindings).length > 0)
   let applyQueued = $derived(pendingMutations.length > 0)
-  let commandNotice = $derived(
-    pendingMutations.some((pending) => pending.phase !== 'dispatching') ? language.modelProfiles.commandQueued : '',
-  )
   let canApply = $derived(hasChanges && changedBindingsAreValid(changedBindings) && !applying && !applyQueued)
 
   $effect(() => {
@@ -297,12 +294,6 @@
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
   {/if}
-  {#if commandNotice}
-    <div class="rounded-md border border-selected p-3 text-sm text-textcolor" data-model-role-command-notice>
-      {commandNotice}
-    </div>
-  {/if}
-
   <div class="flex flex-wrap items-center justify-between gap-2">
     <span class="text-sm text-textcolor2">
       {hasChanges ? language.modelProfiles.unsavedRoleChanges : language.modelProfiles.noUnsavedRoleChanges}

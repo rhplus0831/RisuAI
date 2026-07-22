@@ -223,7 +223,7 @@
             fullwidth={true} />
         </div>
       </div>
-      {#each Object.entries(characterCatalogActions) as [actionId, state] (actionId)}
+      {#each Object.entries(characterCatalogActions).filter(([, state]) => state.status === 'failed') as [actionId, state] (actionId)}
         <p
           class="mt-2 text-sm text-textcolor2"
           data-risu-character-action-status={state.status}

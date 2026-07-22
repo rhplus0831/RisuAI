@@ -825,9 +825,7 @@ describe('BotSettings pending prompt persistence', () => {
       await vi.waitFor(() => expect(botSettingsMocks.enableInputs).toHaveLength(1))
       await botSettingsMocks.runTail
       await tick()
-      expect(target.querySelector('[data-testid="prompt-template-toggle-mutation-status"]')?.textContent).toContain(
-        language.promptTemplateMutation.queued,
-      )
+      expect(target.querySelector('[data-testid="prompt-template-toggle-mutation-status"]')).toBeNull()
       expect(getDatabase().promptPresets[0].promptTemplate).toBeUndefined()
 
       setDatabaseLite(database() as any)

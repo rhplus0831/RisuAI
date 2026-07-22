@@ -1813,13 +1813,9 @@
     aria-busy={characterRemovalPending}>
     <Button onclick={removeCurrentCharacter} disabled={characterRemovalPending} size="sm"
       >{language.removeCharacter}</Button>
-    {#if characterRemovalPending || characterRemovalStatus !== 'idle'}
+    {#if characterRemovalStatus === 'failed'}
       <span class="text-xs text-textcolor2" role="status" aria-live="polite">
-        {characterRemovalPending
-          ? language.characterRemovalPending(characterRemovalName)
-          : characterRemovalStatus === 'queued'
-            ? language.mutationStatusQueued
-            : language.mutationStatusFailed}
+        {language.mutationStatusFailed}
       </span>
     {/if}
   </div>
@@ -2381,9 +2377,7 @@
 
   <span class="text-textcolor mt-2">{language.altGreet}</span>
   <div class="w-full max-w-full border border-selected rounded-md p-2" aria-busy={alternateGreetingMutationPending}>
-    {#if alternateGreetingMutationStatus === 'queued'}
-      <p class="text-textcolor text-sm" role="status">{language.alternateGreetingMutationQueued}</p>
-    {:else if alternateGreetingMutationStatus === 'failed'}
+    {#if alternateGreetingMutationStatus === 'failed'}
       <p class="text-red-500 text-sm" role="alert">{language.alternateGreetingMutationFailed}</p>
     {/if}
     <table class="contain w-full max-w-full tabler mt-2">

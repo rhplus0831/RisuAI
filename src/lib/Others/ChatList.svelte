@@ -518,7 +518,7 @@
         </div>
       </div>
       <div aria-live="polite">
-        {#each Object.entries(chatMutations) as [key, mutation] (key)}
+        {#each Object.entries(chatMutations).filter(([, mutation]) => mutation.status === 'failed') as [key, mutation] (key)}
           <div
             data-risu-chat-mutation={key}
             data-risu-chat-mutation-status={mutation.status}

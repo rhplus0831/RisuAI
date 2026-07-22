@@ -69,9 +69,9 @@
 </script>
 
 {#snippet persistenceMessage(field: ChatTranslationSettingField)}
-  {#if persistenceStatus(field) === 'queued' || persistenceStatus(field) === 'failed'}
+  {#if persistenceStatus(field) === 'failed'}
     <span class="text-xs text-textcolor2" role="status">
-      {persistenceStatus(field) === 'queued' ? language.mutationStatusQueued : language.mutationStatusFailed}
+      {language.mutationStatusFailed}
     </span>
   {/if}
 {/snippet}

@@ -424,7 +424,7 @@
       </div>
     </div>
 
-    {#each Object.entries(bookmarkMutations).filter((entry) => entry[1].chatId === activeBookmarkChat()?.id) as mutationEntry (mutationEntry[0])}
+    {#each Object.entries(bookmarkMutations).filter((entry) => entry[1].chatId === activeBookmarkChat()?.id && entry[1].status === 'failed') as mutationEntry (mutationEntry[0])}
       {@const mutation = mutationEntry[1]}
       <p
         class="mb-2 text-sm text-textcolor2"

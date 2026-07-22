@@ -690,9 +690,7 @@ describe('LoreBookList', () => {
 
     deleteButtonForRow(rowByEntryId('delete-outcome-entry')).click()
     await flushAsyncWork()
-    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')?.textContent).toContain(
-      'Saving lorebook changes',
-    )
+    expect(target.querySelector('p[data-risu-lorebook-persistence="pending"]')).toBeNull()
     expect(deleteButtonForRow(rowByEntryId('delete-outcome-entry')).disabled).toBe(true)
 
     deferred.resolve({ status: 'failed', error: 'delete rejected' })
@@ -753,9 +751,7 @@ describe('LoreBookList', () => {
     const cleanupStatus = target.querySelector(
       '[data-risu-lorebook-mutation-context="local-activation-cleanup"][data-risu-lorebook-persistence="queued"]',
     )
-    expect(cleanupStatus?.textContent).toContain('Local activation cleanup queued')
-    expect(cleanupStatus?.getAttribute('data-risu-lorebook-mutation-scope')).toBe('chat:chat-delete-local-a')
-    expect(cleanupStatus?.getAttribute('data-risu-lorebook-mutation-entry')).toBe('delete-local-entry')
+    expect(cleanupStatus).toBeNull()
   })
 
   it('explains a failed local-activation cleanup after character deletion restores it', async () => {
@@ -842,14 +838,12 @@ describe('LoreBookList', () => {
       expect.objectContaining({ id: 'reorder-b' }),
       expect.objectContaining({ id: 'reorder-a' }),
     ])
-    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).not.toBeNull()
+    expect(target.querySelector('p[data-risu-lorebook-persistence="pending"]')).toBeNull()
 
     deferred.resolve({ status: 'queued' })
     await flushAsyncWork()
     expect(lorebookListMocks.alertNormal).toHaveBeenCalledWith('Lorebook change queued.')
-    expect(target.querySelector('[data-risu-lorebook-persistence="queued"]')?.textContent).toContain(
-      'Lorebook change queued',
-    )
+    expect(target.querySelector('p[data-risu-lorebook-persistence="queued"]')).toBeNull()
   })
 
   it('disables local chat activation until its owner-scoped operation settles', async () => {

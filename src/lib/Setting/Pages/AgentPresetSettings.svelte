@@ -245,12 +245,6 @@
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
   {/if}
-  {#if mutationState !== 'idle'}
-    <div class="rounded-md border border-darkborderc p-3 text-sm text-textcolor2" role="status" aria-live="polite">
-      {mutationState === 'saving' ? language.agentPresets.saving : language.agentPresets.commandQueued}
-    </div>
-  {/if}
-
   <div class="flex flex-wrap items-center gap-3 rounded-md border border-darkborderc p-3">
     <label class="flex min-w-64 flex-1 flex-col gap-1">
       <span class="text-sm font-medium">{language.agentPresets.globalDefault}</span>

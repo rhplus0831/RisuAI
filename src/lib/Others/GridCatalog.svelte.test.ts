@@ -364,18 +364,15 @@ describe('GridCatalog derived lists', () => {
 
     expect(deleteButton.disabled).toBe(true)
     expect(deleteButton.getAttribute('aria-busy')).toBe('true')
-    expect(target.querySelector('[data-risu-character-action-status="pending"]')?.textContent).toContain(
-      language.characterRemovalPending('AlphaHero'),
-    )
+    expect(target.querySelector('[data-risu-character-action-status="pending"]')).toBeNull()
 
     removal.resolve({ status: 'queued', result: { status: 'unavailable' } })
     await tick()
     await tick()
 
     expect(deleteButton.disabled).toBe(false)
-    expect(target.querySelector('[data-risu-character-action-status="queued"]')?.textContent).toContain(
-      language.characterRemovalQueued('AlphaHero'),
-    )
+    expect(target.querySelector('[data-risu-character-action-status="queued"]')).toBeNull()
+    expect(deleteButton.dataset.risuMutationStatus).toBe('queued')
 
     const restore = deferred<any>()
     characterCommandSpies.dispatchUpdateCharacterScopedWithOutcome.mockReturnValueOnce(restore.promise)
@@ -384,9 +381,7 @@ describe('GridCatalog derived lists', () => {
     restoreButton.click()
     await tick()
 
-    expect(target.querySelector('[data-risu-character-action-status="pending"]')?.textContent).toContain(
-      language.characterRestorePending('Beta Backlog'),
-    )
+    expect(target.querySelector('[data-risu-character-action-status="pending"]')).toBeNull()
     restore.resolve({ status: 'failed', result: { status: 'error', error: 'rejected' } })
     await tick()
     await tick()

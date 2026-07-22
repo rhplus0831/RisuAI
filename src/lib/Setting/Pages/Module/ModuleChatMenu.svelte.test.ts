@@ -152,9 +152,7 @@ describe('ModuleChatMenu modal behavior', () => {
     await settle()
 
     expect(toggle.disabled).toBe(true)
-    expect(target.querySelector('[data-module-mutation-status="module-a"]')?.textContent).toContain(
-      language.moduleSave.saving,
-    )
+    expect(target.querySelector('[data-module-mutation-status="module-a"]')).toBeNull()
 
     dispatch.resolve({ status: 'failed', result: { status: 'conflict', currentRevision: 12 } })
     await vi.waitFor(() =>
@@ -185,11 +183,8 @@ describe('ModuleChatMenu modal behavior', () => {
     if (!toggle) throw new Error('Character module toggle not found')
     toggle.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
 
-    await vi.waitFor(() =>
-      expect(target.querySelector('[data-module-mutation-status="module-a"]')?.textContent).toContain(
-        language.moduleSave.queued,
-      ),
-    )
+    await vi.waitFor(() => expect(moduleMenuAlertMocks.alertNormal).toHaveBeenCalledWith(language.moduleSave.queued))
+    expect(target.querySelector('[data-module-mutation-status="module-a"]')).toBeNull()
     expect(toggle.disabled).toBe(true)
     expect(moduleMenuAlertMocks.alertNormal).toHaveBeenCalledWith(language.moduleSave.queued)
 

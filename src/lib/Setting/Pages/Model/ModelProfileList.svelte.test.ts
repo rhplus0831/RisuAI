@@ -411,9 +411,7 @@ describe('ModelProfileList', () => {
     duplicate.click()
     await flushAsync()
 
-    expect(target.querySelector('[data-model-profile-command-notice]')?.textContent).toContain(
-      language.modelProfiles.commandQueued,
-    )
+    expect(target.querySelector('[data-model-profile-command-notice]')).toBeNull()
     expect(duplicate.disabled).toBe(true)
     expect(buttonByText(language.modelProfiles.createProfile).disabled).toBe(true)
     duplicate.click()
@@ -431,7 +429,7 @@ describe('ModelProfileList', () => {
     ]
     await flushAsync()
     expect(duplicate.disabled).toBe(true)
-    expect(target.querySelector('[data-model-profile-command-notice]')).not.toBeNull()
+    expect(target.querySelector('[data-model-profile-command-notice]')).toBeNull()
 
     getDatabase().modelProfiles = [
       ...getDatabase().modelProfiles,

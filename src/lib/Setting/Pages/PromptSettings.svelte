@@ -1548,20 +1548,9 @@
         )
       }}><PlusIcon /></button>
 
-    {#if promptTemplateStructuralMutationState !== 'idle'}
-      <div
-        class="mt-2 text-sm"
-        class:text-red-500={promptTemplateStructuralMutationState === 'failed'}
-        class:text-textcolor2={promptTemplateStructuralMutationState !== 'failed'}
-        role={promptTemplateStructuralMutationState === 'failed' ? 'alert' : 'status'}
-        data-testid="prompt-template-structural-mutation-status">
-        {#if promptTemplateStructuralMutationState === 'saving'}
-          {language.promptTemplateMutation.saving}
-        {:else if promptTemplateStructuralMutationState === 'queued'}
-          {language.promptTemplateMutation.queued}
-        {:else}
-          {promptTemplateStructuralMutationError}
-        {/if}
+    {#if promptTemplateStructuralMutationState === 'failed'}
+      <div class="mt-2 text-sm text-red-500" role="alert" data-testid="prompt-template-structural-mutation-status">
+        {promptTemplateStructuralMutationError}
       </div>
     {/if}
 

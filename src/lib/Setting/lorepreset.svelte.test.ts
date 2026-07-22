@@ -244,7 +244,7 @@ describe('global lorebook delete status', () => {
     await publishDeleteStates([{ lorebookId: 'g2', mutationId: 'delete-g2', status: 'queued' }])
 
     const queuedRow = target.querySelector<HTMLElement>('[data-risu-global-lorebook-delete-status="queued"]')
-    expect(queuedRow?.textContent).toContain(language.globalLorebookDelete.queued)
+    expect(queuedRow?.querySelector('[role="status"]')).toBeNull()
     expect(queuedRow?.getAttribute('aria-busy')).toBe('true')
     expect(deleteButton('Second').disabled).toBe(true)
     const selectButton = Array.from(queuedRow?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(

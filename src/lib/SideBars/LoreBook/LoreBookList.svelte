@@ -630,7 +630,7 @@
   })
 </script>
 
-{#each displayedMutationStates as mutationState (mutationState.key)}
+{#each displayedMutationStates.filter((mutationState) => mutationState.status === 'failed') as mutationState (mutationState.key)}
   <p
     class="m-0 mb-2 text-xs"
     class:text-red-400={mutationState.status === 'failed'}

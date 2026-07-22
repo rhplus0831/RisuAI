@@ -141,9 +141,7 @@ describe('ModelSettingsShell legacy conversion', () => {
     button.click()
     await flushAsync()
 
-    expect(target.querySelector('[data-model-conversion-command-notice]')?.textContent).toContain(
-      language.modelProfiles.commandQueued,
-    )
+    expect(target.querySelector('[data-model-conversion-command-notice]')).toBeNull()
     expect(conversionButtons().every((candidate) => candidate.disabled)).toBe(true)
     button.click()
     await flushAsync()
@@ -153,7 +151,7 @@ describe('ModelSettingsShell legacy conversion', () => {
       { id: 'unrelated-profile', name: 'Unrelated', providerId: 'debug-echo', modelId: 'echo_model' },
     ]
     await flushAsync()
-    expect(target.querySelector('[data-model-conversion-command-notice]')).not.toBeNull()
+    expect(target.querySelector('[data-model-conversion-command-notice]')).toBeNull()
     expect(conversionButtons().every((candidate) => candidate.disabled)).toBe(true)
 
     getDatabase().modelProfiles = [
@@ -182,7 +180,7 @@ describe('ModelSettingsShell legacy conversion', () => {
 
     conversionButtons()[0]?.click()
     await flushAsync()
-    expect(target.textContent).toContain(language.modelProfiles.commandQueued)
+    expect(target.textContent).not.toContain(language.modelProfiles.commandQueued)
 
     settlementMocks.listeners.get('discarded-conversion')?.('discarded')
     await flushAsync()
