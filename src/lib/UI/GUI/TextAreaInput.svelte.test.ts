@@ -346,6 +346,152 @@ describe('TextAreaInput popup editor finalization', () => {
   })
 })
 
+describe('TextAreaInput highlighted disabled behavior', () => {
+  it('blocks edits and popup interactions inside a disabled fieldset', async () => {
+    const onInput = vi.fn()
+    const onchange = vi.fn()
+    component = mount(TextAreaInputTestHost, {
+      target,
+      props: {
+        initialContext: 'disabled-fieldset',
+        initialValue: '{{cha',
+        highlight: true,
+        popupEditor: true,
+        fieldsetDisabled: true,
+        onInput,
+        onchange,
+      },
+    })
+    await tick()
+
+    const editor = highlightedEditor()
+    const beforeInput = new InputEvent('beforeinput', {
+      bubbles: true,
+      cancelable: true,
+      data: 'x',
+      inputType: 'insertText',
+    })
+    editor.dispatchEvent(beforeInput)
+    expect(beforeInput.defaultPrevented).toBe(true)
+
+    for (const type of ['paste', 'drop', 'compositionstart']) {
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      editor.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+    }
+
+    editor.textContent = '{{changed}}'
+    editor.dispatchEvent(new Event('input', { bubbles: true }))
+    editor.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    editor.dispatchEvent(enter)
+    await tick()
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(editor.textContent).toBe('{{cha')
+    expect((component as unknown as { getValue: () => string }).getValue()).toBe('{{cha')
+    expect(onInput).not.toHaveBeenCalled()
+    expect(onchange).not.toHaveBeenCalled()
+    expect(autocompleteSuggestion('char')).toBeNull()
+
+    target
+      .querySelector<HTMLButtonElement>('button[aria-label]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await tick()
+    expect(popUpEditorStore.open).toBe(false)
+  })
+
+  it('keeps highlighted interactions enabled inside an enabled fieldset', async () => {
+    const onInput = vi.fn()
+    const onchange = vi.fn()
+    component = mount(TextAreaInputTestHost, {
+      target,
+      props: {
+        initialContext: 'enabled-fieldset',
+        initialValue: 'before',
+        highlight: true,
+        popupEditor: true,
+        fieldsetDisabled: false,
+        onInput,
+        onchange,
+      },
+    })
+    await tick()
+
+    const editor = highlightedEditor()
+    const beforeInput = new InputEvent('beforeinput', {
+      bubbles: true,
+      cancelable: true,
+      data: 'x',
+      inputType: 'insertText',
+    })
+    editor.dispatchEvent(beforeInput)
+    expect(beforeInput.defaultPrevented).toBe(false)
+
+    editor.textContent = 'after'
+    editor.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    editor.dispatchEvent(enter)
+    await tick()
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(editor.textContent).toBe('after\n')
+    expect((component as unknown as { getValue: () => string }).getValue()).toBe('after\n')
+    expect(onInput).toHaveBeenCalledTimes(2)
+    expect(onchange).toHaveBeenCalledOnce()
+
+    target.querySelector<HTMLButtonElement>('button[aria-label]')?.click()
+    await tick()
+    expect(popUpEditorStore.open).toBe(true)
+  })
+
+  it('keeps the disabled prop blocking highlighted interactions', async () => {
+    const onInput = vi.fn()
+    const onchange = vi.fn()
+    component = mount(TextAreaInputTestHost, {
+      target,
+      props: {
+        initialContext: 'disabled-prop',
+        initialValue: 'before',
+        highlight: true,
+        popupEditor: true,
+        disabled: true,
+        onInput,
+        onchange,
+      },
+    })
+    await tick()
+
+    const editor = highlightedEditor()
+    expect(editor.getAttribute('aria-disabled')).toBe('true')
+    expect(editor.tabIndex).toBe(-1)
+
+    const beforeInput = new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText' })
+    editor.dispatchEvent(beforeInput)
+    editor.textContent = 'changed'
+    editor.dispatchEvent(new Event('input', { bubbles: true }))
+    editor.dispatchEvent(new Event('change', { bubbles: true }))
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    editor.dispatchEvent(enter)
+    target
+      .querySelector<HTMLButtonElement>('button[aria-label]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await tick()
+
+    expect(beforeInput.defaultPrevented).toBe(true)
+    expect(enter.defaultPrevented).toBe(true)
+    expect(editor.textContent).toBe('before')
+    expect((component as unknown as { getValue: () => string }).getValue()).toBe('before')
+    expect(onInput).not.toHaveBeenCalled()
+    expect(onchange).not.toHaveBeenCalled()
+    expect(popUpEditorStore.open).toBe(false)
+  })
+})
+
 describe('TextAreaInput autocomplete selection', () => {
   it('applies a clicked suggestion after focus moves out of the editor', async () => {
     const editor = await openAutocomplete()
