@@ -177,6 +177,8 @@ export const languageChineseTraditional = {
       '啟用後，將在正規表達式和 HTML 格式化之前翻譯文字。可能減少Token，但也可能破壞格式。',
     translatorSendTextAsIs:
       '啟用後，Ax. Model 翻譯會將訊息文字完全依原樣傳送給模型——僅傳送一次請求，不保護行、不拆分，也不使用樣式預留位置——並將模型的回應原封不動地用作翻譯結果。',
+    translatorHistoryMaxTokens:
+      '原文與譯文歷史提示詞插槽共用的近似最大權杖預算。超過限制時會從最舊的完整訊息開始移除。',
     autoTranslateCachedOnly: '啟用自動翻譯選項時，將只自動翻譯使用者先前已翻譯過的訊息。',
     presetChain:
       '若欄位不為空，則每次使用者發送訊息時，系統會從此輸入中的預設列表中，隨機變更並套用預設設定。預設列表應以逗號分隔，例如 `preset1,preset2`。',
@@ -1197,6 +1199,7 @@ export const languageChineseTraditional = {
   translatorPrompt: '翻譯提示詞',
   translateBeforeHTMLFormatting: '於 HTML 格式化前翻譯',
   translatorSendTextAsIs: '依原樣傳送文字',
+  translatorHistoryMaxTokens: '翻譯歷史最大權杖數',
   retranslate: '重新翻譯',
   editTranslation: '編輯翻譯',
   editTranslationSave: '儲存翻譯',

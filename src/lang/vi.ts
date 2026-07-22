@@ -204,6 +204,8 @@ export const languageVietnamese = {
       'Nếu được bật, nó sẽ dịch văn bản trước các tập lệnh Regex và định dạng HTML. Điều này có thể làm giảm token nhưng có thể phá vỡ định dạng.',
     translatorSendTextAsIs:
       'Nếu được bật, bản dịch bằng Ax. Model sẽ gửi văn bản tin nhắn đến mô hình đúng nguyên văn — trong một yêu cầu duy nhất, không bảo vệ dòng, chia nhỏ hoặc dùng phần giữ chỗ kiểu — và sử dụng nguyên vẹn phản hồi của mô hình làm kết quả dịch.',
+    translatorHistoryMaxTokens:
+      'Ngân sách token gần đúng tối đa dùng chung cho các khe lịch sử nguồn và bản dịch. Những tin nhắn cũ nhất sẽ được loại bỏ nguyên khối khi vượt giới hạn.',
     autoTranslateCachedOnly:
       'Nếu được bật cùng với tùy chọn Tự động dịch, nó sẽ tự động dịch chỉ những tin nhắn mà người dùng đã dịch trước đó.',
     presetChain:
@@ -1236,6 +1238,7 @@ export const languageVietnamese = {
   translatorPrompt: 'Lời nhắc dịch',
   translateBeforeHTMLFormatting: 'Dịch trước khi định dạng HTML',
   translatorSendTextAsIs: 'Gửi nguyên văn',
+  translatorHistoryMaxTokens: 'Token tối đa cho lịch sử dịch',
   retranslate: 'Dịch lại',
   editTranslation: 'Chỉnh sửa bản dịch',
   editTranslationSave: 'Lưu bản dịch',

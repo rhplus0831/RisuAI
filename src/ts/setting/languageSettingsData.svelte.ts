@@ -222,6 +222,21 @@ export const languageSettingsItems: SettingItem[] = [
   },
 
   {
+    id: 'lang.translatorHistoryMaxTokens',
+    type: 'number',
+    labelKey: 'translatorHistoryMaxTokens',
+    bindKey: 'translatorHistoryMaxTokens',
+    helpKey: 'translatorHistoryMaxTokens',
+    getValue: (db) => {
+      const value = db.translatorHistoryMaxTokens ?? 2048
+      return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 2048
+    },
+    classes: 'mt-4',
+    options: { min: 1, step: 1 },
+    condition: (ctx) => !!ctx.db.translator && ctx.db.translatorType === 'llm',
+  },
+
+  {
     id: 'lang.autoTranslateCachedOnly',
     type: 'check',
     labelKey: 'autoTranslateCachedOnly',

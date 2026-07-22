@@ -217,6 +217,8 @@ export const languageGerman = {
       'Wenn aktiviert, wird der Text vor Regex-Skripten und HTML-Formatierung übersetzt. Dies könnte die Token verringern, aber die Formatierung beeinträchtigen.',
     translatorSendTextAsIs:
       'Wenn aktiviert, sendet die Ax.-Modell-Übersetzung den Nachrichtentext genau wie geschrieben an das Modell – in einer einzigen Anfrage, ohne Zeilenschutz, Aufteilung oder Stilplatzhalter – und verwendet die Antwort des Modells unverändert als Übersetzungsergebnis.',
+    translatorHistoryMaxTokens:
+      'Maximales ungefähres Token-Budget für die Platzhalter des Quell- und Übersetzungsverlaufs. Bei Überschreitung werden die ältesten Nachrichten vollständig entfernt.',
     autoTranslateCachedOnly:
       "Wenn zusammen mit der Option 'Automatische Übersetzung' aktiviert, werden automatisch nur die Nachrichten übersetzt, die der Benutzer zuvor übersetzt hat.",
     presetChain:
@@ -1265,6 +1267,7 @@ export const languageGerman = {
   translatorPrompt: 'Übersetzungsanweisung',
   translateBeforeHTMLFormatting: 'Vor HTML-Formatierung übersetzen',
   translatorSendTextAsIs: 'Text unverändert senden',
+  translatorHistoryMaxTokens: 'Maximale Tokens im Übersetzungsverlauf',
   retranslate: 'Neu übersetzen',
   editTranslation: 'Übersetzung bearbeiten',
   editTranslationSave: 'Übersetzung speichern',

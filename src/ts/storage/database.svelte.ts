@@ -2706,6 +2706,9 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.translatorMaxResponse)) {
     data.translatorMaxResponse = 1000
   }
+  if (checkNullish(data.translatorHistoryMaxTokens)) {
+    data.translatorHistoryMaxTokens = 2048
+  }
   if (checkNullish(data.inputHooks)) {
     data.inputHooks = createDefaultInputHooks()
   }
@@ -3924,6 +3927,7 @@ export interface Database {
   translatorPrompt: string
   inputHooks: InputHook[]
   translatorMaxResponse: number
+  translatorHistoryMaxTokens: number
   translatorPresets: TranslatorPreset[]
   translatorPresetId: number
   top_p: number

@@ -73,6 +73,7 @@
     type TranslatorPreset,
     type TranslatorPresetStep,
   } from 'src/ts/translator/presets'
+  import { hasMalformedTranslatorHistorySlot } from 'src/ts/translator/pipeline'
   import { selectSingleFile } from 'src/ts/filePicker'
   import { language } from 'src/lang'
   import { onDestroy, untrack } from 'svelte'
@@ -2218,6 +2219,11 @@
             }
           }
           placeholder={defaultTranslatorPrompt} />
+        {#if hasMalformedTranslatorHistorySlot(step.prompt)}
+          <span class="text-xs text-draculaorange" role="status" data-translator-history-slot-warning>
+            {language.translatorPipeline.malformedHistorySlot}
+          </span>
+        {/if}
 
         <div class="mt-3 grid gap-3 md:grid-cols-2">
           <label class="flex flex-col gap-1 text-sm text-textcolor">

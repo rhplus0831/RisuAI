@@ -318,6 +318,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   translatorSendTextAsIs: 'language',
   translator: 'language',
   translatorInputLanguage: 'language',
+  translatorHistoryMaxTokens: 'language',
   translatorMaxResponse: 'language',
   translatorPrompt: 'language',
   translatorType: 'language',

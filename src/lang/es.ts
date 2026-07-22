@@ -208,6 +208,8 @@ export const languageSpanish = {
       'Si está habilitado, traducirá el texto antes de los scripts Regex y el formateo HTML. Esto podría reducir los tokens pero podría romper el formateo.',
     translatorSendTextAsIs:
       'Si se habilita, la traducción con Ax. Model envía el texto del mensaje al modelo exactamente como está escrito — en una sola solicitud, sin protección de líneas, división ni marcadores de posición de estilo — y utiliza la respuesta del modelo sin modificar como resultado de la traducción.',
+    translatorHistoryMaxTokens:
+      'Presupuesto máximo aproximado de tokens compartido por los espacios del historial original y traducido. Los mensajes completos más antiguos se eliminan al superar el límite.',
     autoTranslateCachedOnly:
       'Si está habilitado con la opción de Traducción Automática activada, traducirá automáticamente solo los mensajes que el usuario haya traducido previamente.',
     presetChain:
@@ -1245,6 +1247,7 @@ export const languageSpanish = {
   translatorPrompt: 'Prompt de Traducción',
   translateBeforeHTMLFormatting: 'Traducir Antes del Formateo HTML',
   translatorSendTextAsIs: 'Enviar texto tal cual',
+  translatorHistoryMaxTokens: 'Tokens máximos del historial de traducción',
   retranslate: 'Retraducir',
   editTranslation: 'Editar traducción',
   editTranslationSave: 'Guardar traducción',

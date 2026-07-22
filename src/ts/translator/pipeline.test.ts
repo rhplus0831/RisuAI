@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createTranslatorPreset, type TranslatorPresetStep } from './presets'
 import {
   buildTranslatorStepMessages,
+  hasMalformedTranslatorHistorySlot,
   resolveTranslatorPipeline,
   runTranslatorPipeline,
   translatorPipelineSignature,
@@ -97,6 +98,97 @@ describe('buildTranslatorStepMessages', () => {
       }),
     ).toEqual([{ role: 'system', content: 'Critique draft against source.' }])
   })
+
+  it('resolves valid history slots and removes invalid counts', () => {
+    const historyResolver = vi.fn((kind: 'source' | 'translated', n: number) => `${kind}-${n}`)
+
+    expect(
+      buildTranslatorStepMessages({
+        step: step({
+          prompt:
+            '{{slot::content}} {{slot::history::1}} {{slot::historytrans::50}} {{slot::history::0}} {{slot::history::-1}} {{slot::history::51}} {{slot::historytrans::many}} {{slot::history}}',
+        }),
+        sourceText: 'source',
+        prevOutput: 'draft',
+        outputsByKey: {},
+        to: 'ko',
+        from: 'en',
+        translatorNote: '',
+        historyResolver,
+      }),
+    ).toEqual([
+      {
+        role: 'system',
+        content: 'source source-1 translated-50     {{slot::history}}',
+      },
+    ])
+    expect(historyResolver.mock.calls).toEqual([
+      ['source', 1],
+      ['translated', 50],
+    ])
+  })
+
+  it('removes history slots when no resolver is supplied and does not treat them as embedded input', () => {
+    expect(
+      buildTranslatorStepMessages({
+        step: step({ prompt: 'Context: {{slot::history::2}} / {{slot::historytrans::2}}' }),
+        sourceText: 'source',
+        prevOutput: 'draft',
+        outputsByKey: {},
+        to: 'ko',
+        from: 'en',
+        translatorNote: '',
+      }),
+    ).toEqual([
+      { role: 'system', content: 'Context:  / ' },
+      { role: 'user', content: 'draft' },
+    ])
+  })
+
+  it('resolves multiple history window sizes independently', () => {
+    const historyResolver = vi.fn((kind: 'source' | 'translated', n: number) => `${kind}:${n}`)
+    const messages = buildTranslatorStepMessages({
+      step: step({ prompt: '{{slot::content}} {{slot::history::1}} | {{slot::history::3}}' }),
+      sourceText: 'source',
+      prevOutput: 'draft',
+      outputsByKey: {},
+      to: 'ko',
+      from: 'en',
+      translatorNote: '',
+      historyResolver,
+    })
+
+    expect(messages).toEqual([{ role: 'system', content: 'source source:1 | source:3' }])
+    expect(historyResolver.mock.calls).toEqual([
+      ['source', 1],
+      ['source', 3],
+    ])
+  })
+
+  it('does not apply other slot substitutions inside resolved history content', () => {
+    expect(
+      buildTranslatorStepMessages({
+        step: step({ prompt: '{{slot::content}} {{slot::history::1}}' }),
+        sourceText: 'source',
+        prevOutput: 'draft',
+        outputsByKey: {},
+        to: 'ko',
+        from: 'en',
+        translatorNote: 'note',
+        historyResolver: () => 'raw {{slot::tnote}} body',
+      }),
+    ).toEqual([{ role: 'system', content: 'source raw {{slot::tnote}} body' }])
+  })
+})
+
+describe('hasMalformedTranslatorHistorySlot', () => {
+  it('accepts valid history slots and flags malformed or out-of-range forms', () => {
+    expect(hasMalformedTranslatorHistorySlot('{{slot::history::1}} {{slot::historytrans::50}}')).toBe(false)
+    expect(hasMalformedTranslatorHistorySlot('{{slot::history}}')).toBe(true)
+    expect(hasMalformedTranslatorHistorySlot('{{slot::history::0}}')).toBe(true)
+    expect(hasMalformedTranslatorHistorySlot('{{slot::historytrans::51}}')).toBe(true)
+    expect(hasMalformedTranslatorHistorySlot('{{slot::history::oops}}')).toBe(true)
+  })
 })
 
 describe('runTranslatorPipeline', () => {
@@ -141,6 +233,30 @@ describe('runTranslatorPipeline', () => {
       ),
     ).resolves.toBe('forced')
     expect(runStep).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes the same history resolver through every enabled step', async () => {
+    const runStep = vi.fn().mockResolvedValueOnce('draft').mockResolvedValueOnce('final')
+    const historyResolver = vi.fn((kind: 'source' | 'translated', n: number) => `${kind}-${n}`)
+
+    await runTranslatorPipeline(
+      {
+        steps: [
+          step({ id: 'one', prompt: '{{slot::content}} {{slot::history::2}}' }),
+          step({ id: 'two', prompt: '{{slot::prev}} {{slot::history::2}} {{slot::historytrans::2}}' }),
+        ],
+        sourceText: 'source',
+        to: 'ko',
+        from: 'en',
+        translatorNote: '',
+        historyResolver,
+      },
+      runStep,
+    )
+
+    expect(runStep.mock.calls[0][0].messages).toEqual([{ role: 'system', content: 'source source-2' }])
+    expect(runStep.mock.calls[1][0].messages).toEqual([{ role: 'system', content: 'draft source-2 translated-2' }])
+    expect(historyResolver.mock.results.map((result) => result.value)).toEqual(['source-2', 'source-2', 'translated-2'])
   })
 })
 

@@ -687,6 +687,21 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     })
   })
 
+  it('warns about malformed history slots without blocking prompt edits', async () => {
+    await editPrompt('Context {{slot::history::0}} and {{slot::historytrans::many}}')
+
+    expect(target.querySelector('[data-translator-history-slot-warning]')?.textContent).toContain(
+      language.translatorPipeline.malformedHistorySlot,
+    )
+    expect(getDatabase().translatorPresets[0].prompt).toBe(
+      'Context {{slot::history::0}} and {{slot::historytrans::many}}',
+    )
+
+    await editPrompt('Context {{slot::history::1}} and {{slot::historytrans::50}}')
+
+    expect(target.querySelector('[data-translator-history-slot-warning]')).toBeNull()
+  })
+
   it('optimistically updates resource-backed state before the debounced command is sent', async () => {
     await editPrompt('new prompt A')
 

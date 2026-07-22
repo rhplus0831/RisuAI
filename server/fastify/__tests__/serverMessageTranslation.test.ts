@@ -24,6 +24,10 @@ function textFrames(text: string) {
   })()
 }
 
+function historyBlock(role: 'user' | 'char', body: string): string {
+  return `${role}: ${body}\n\n---\n\n`
+}
+
 let dataDir: string
 let db: DatabaseSync
 
@@ -138,5 +142,70 @@ describe('runServerMessageTranslation', () => {
         translatorType: 'llm',
       })
     }
+  })
+
+  it('supplies persisted message history and the chat-selected alternate greeting to raw translation', async () => {
+    writePersistedWithMessages(db, dataDir, {
+      _version: 1,
+      database: {
+        translator: 'ko',
+        translatorInputLanguage: 'en',
+        translatorType: 'llm',
+        translatorSendTextAsIs: true,
+        translatorHistoryMaxTokens: 2048,
+        aiModel: 'echo_model',
+        translatorPrompt:
+          'History:\n{{slot::history::2}}\nTranslations:\n{{slot::historytrans::2}}\nSource={{slot::content}}',
+        translatorMaxResponse: 111,
+        characters: [
+          {
+            chaId: 'char-a',
+            name: 'A',
+            firstMessage: 'primary greeting',
+            alternateGreetings: ['alternate greeting'],
+            chats: [
+              {
+                id: 'chat-a',
+                name: 'Chat',
+                note: '',
+                localLore: [],
+                fmIndex: 0,
+                message: [
+                  {
+                    role: 'user',
+                    data: 'prior source',
+                    chatId: 'message-prior',
+                    translation: { text: 'prior translated' },
+                  },
+                  { role: 'char', data: 'current source', chatId: 'message-current' },
+                ],
+              },
+            ],
+            chatPage: 0,
+            chatFolders: [],
+          },
+        ],
+        characterOrder: ['char-a'],
+      },
+      assets: [],
+    })
+    serverTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+
+    await runServerMessageTranslation({
+      db,
+      dataDir,
+      eventSink: createCommandEventSink(),
+      messageId: 'message-current',
+    })
+
+    expect(serverTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated).toEqual([
+      {
+        role: 'system',
+        content:
+          `History:\n${historyBlock('char', 'alternate greeting')}${historyBlock('user', 'prior source')}\n` +
+          `Translations:\n${historyBlock('char', '')}${historyBlock('user', 'prior translated')}\n` +
+          'Source=current source',
+      },
+    ])
   })
 })

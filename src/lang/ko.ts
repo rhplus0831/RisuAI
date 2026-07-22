@@ -215,6 +215,8 @@ const languageKoreanBase = {
       '활성화하면 정규식 스크립트와 HTML 포맷팅 전에 텍스트를 번역합니다. 토큰이 줄어들 수 있지만 포맷이 깨질 수 있습니다.',
     translatorSendTextAsIs:
       '활성화하면 Ax. Model 번역이 메시지 텍스트를 작성된 그대로 모델에 전송합니다. 줄 보호, 분할 또는 스타일 자리표시자 없이 단일 요청으로 전송하며, 모델의 응답을 수정 없이 번역 결과로 사용합니다.',
+    translatorHistoryMaxTokens:
+      '원문 및 번역 기록 프롬프트 슬롯이 함께 사용하는 최대 근사 토큰 예산입니다. 한도를 넘으면 가장 오래된 메시지부터 전체 단위로 제거합니다.',
     autoTranslateCachedOnly: '활성화하면 자동 번역을 켠 채팅은 저장된 번역만 표시하고 새 LLM 번역을 요청하지 않습니다.',
     presetChain:
       '비어있지 않으면 사용자가 메시지를 보낼 때마다 이 입력의 프리셋 목록에서 무작위로 프리셋이 변경 및 적용됩니다. 프리셋 목록은 쉼표로 구분해야 합니다. 예: `preset1,preset2`.',
@@ -1275,6 +1277,7 @@ const languageKoreanBase = {
   translatorPrompt: '번역 프롬프트',
   translateBeforeHTMLFormatting: 'HTML 포맷 전 번역',
   translatorSendTextAsIs: '텍스트 원문 그대로 전송',
+  translatorHistoryMaxTokens: '번역 기록 최대 토큰',
   retranslate: '다시 번역',
   editTranslation: '번역 수정',
   editTranslationSave: '번역 저장',
@@ -2093,6 +2096,8 @@ export const languageKorean = {
     outputKey: '출력 키 (선택 사항)',
     outputKeyPlaceholder: 'draft',
     invalidOutputKey: '영문자 또는 밑줄로 시작하고 영문자, 숫자, 밑줄만 포함하는 고유한 키를 64자 이내로 입력하세요.',
+    malformedHistorySlot:
+      '기록 슬롯은 {{slot::history::N}} 또는 {{slot::historytrans::N}} 형식이어야 하며 N은 1부터 50까지입니다.',
     slotHelp:
       '{{slot::content}}는 항상 원문을, {{slot::prev}}는 이전 단계의 출력을, {{slot::out::key}}는 이전의 이름 있는 출력을 삽입합니다.',
     copySuffix: '복사본',

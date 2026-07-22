@@ -9,6 +9,7 @@ vi.mock('../src/prompt/chatDispatch.js', () => ({
 }))
 
 import { translateRawMessageData, type RawMessageTranslatorType } from '../src/translation/rawMessageTranslation.js'
+import { tokenize } from '../src/prompt/tokens.js'
 
 type FetchInput = Parameters<typeof fetch>[0]
 
@@ -65,6 +66,17 @@ function llmSettings(translatorSendTextAsIs: boolean): Record<string, unknown> {
     aiModel: 'echo_model',
     translatorSendTextAsIs,
   }
+}
+
+function historyLlmSettings(count: number, translatorSendTextAsIs = true): Record<string, unknown> {
+  return {
+    ...llmSettings(translatorSendTextAsIs),
+    translatorPrompt: `History:\n{{slot::history::${count}}}\nTranslations:\n{{slot::historytrans::${count}}}\nSource={{slot::content}}`,
+  }
+}
+
+function historyBlock(role: 'user' | 'char', body: string): string {
+  return `${role}: ${body}\n\n---\n\n`
 }
 
 function textFrames(text: string) {
@@ -409,6 +421,142 @@ describe('translateRawMessageData', () => {
       signal: new AbortController().signal,
     })
     expect(edited.settingsHash).not.toBe(result.settingsHash)
+  })
+
+  it('selects visible history without comments or disabled messages and keeps source and translation blocks aligned', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+    const historyContext = {
+      messages: [
+        { role: 'user', data: 'old source', translation: { text: 'old translated', translatorType: 'google' } },
+        { role: 'char', data: 'comment', isComment: true },
+        { role: 'user', data: 'disabled', disabled: true },
+        { role: 'char', data: 'new source' },
+        { role: 'user', data: 'current source' },
+      ],
+      messageIndex: 4,
+      greeting: 'unused greeting',
+    }
+
+    await translateRawMessageData({
+      settings: historyLlmSettings(2),
+      text: 'current source',
+      historyContext,
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated).toEqual([
+      {
+        role: 'system',
+        content:
+          `History:\n${historyBlock('user', 'old source')}${historyBlock('char', 'new source')}\n` +
+          `Translations:\n${historyBlock('user', 'old translated')}${historyBlock('char', '')}\n` +
+          'Source=current source',
+      },
+    ])
+  })
+
+  it('treats allBefore as a reset boundary and does not restore the greeting behind it', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+
+    await translateRawMessageData({
+      settings: historyLlmSettings(5),
+      text: 'current source',
+      historyContext: {
+        messages: [
+          { role: 'user', data: 'hidden older' },
+          { role: 'char', data: 'reset', disabled: 'allBefore' },
+          { role: 'user', data: 'visible newer' },
+          { role: 'char', data: 'current source' },
+        ],
+        messageIndex: 3,
+        greeting: 'hidden greeting',
+      },
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated[0].content).toBe(
+      `History:\n${historyBlock('user', 'visible newer')}\n` +
+        `Translations:\n${historyBlock('user', '')}\n` +
+        'Source=current source',
+    )
+  })
+
+  it('prepends the greeting when history is exhausted and gives it an empty translation block', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+
+    await translateRawMessageData({
+      settings: historyLlmSettings(2),
+      text: 'current source',
+      historyContext: {
+        messages: [
+          { role: 'user', data: 'prior source', translation: { text: 'prior translated' } },
+          { role: 'char', data: 'current source' },
+        ],
+        messageIndex: 1,
+        greeting: 'selected greeting',
+      },
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated[0].content).toBe(
+      `History:\n${historyBlock('char', 'selected greeting')}${historyBlock('user', 'prior source')}\n` +
+        `Translations:\n${historyBlock('char', '')}${historyBlock('user', 'prior translated')}\n` +
+        'Source=current source',
+    )
+  })
+
+  it('drops whole oldest entries from both slots to meet the shared token limit', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+    const newestSource = historyBlock('char', 'new source')
+    const newestTranslation = historyBlock('char', 'new translated')
+    const settings = {
+      ...historyLlmSettings(2),
+      translatorHistoryMaxTokens: tokenize(newestSource) + tokenize(newestTranslation),
+    }
+
+    await translateRawMessageData({
+      settings,
+      text: 'current source',
+      historyContext: {
+        messages: [
+          { role: 'user', data: 'old source', translation: { text: 'old translated' } },
+          { role: 'char', data: 'new source', translation: { text: 'new translated' } },
+          { role: 'user', data: 'current source' },
+        ],
+        messageIndex: 2,
+        greeting: '',
+      },
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated[0].content).toBe(
+      `History:\n${newestSource}\nTranslations:\n${newestTranslation}\nSource=current source`,
+    )
+  })
+
+  it('resolves history slots to empty strings in non-as-is LLM mode', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+
+    await translateRawMessageData({
+      settings: historyLlmSettings(1, false),
+      text: 'current source',
+      historyContext: {
+        messages: [
+          { role: 'user', data: 'must not leak', translation: { text: 'must not leak translated' } },
+          { role: 'char', data: 'current source' },
+        ],
+        messageIndex: 1,
+        greeting: 'must not leak greeting',
+      },
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated).toEqual([
+      {
+        role: 'system',
+        content: 'History:\n\nTranslations:\n\nSource=current source',
+      },
+    ])
   })
 
   it('keeps LLM chunk protection when send-text-as-is is false and changes the settings hash when toggled', async () => {

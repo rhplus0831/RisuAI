@@ -393,6 +393,8 @@ export const languageEnglish = {
       'If enabled, it will translate the text before Regex scripts and HTML formatting. This could make the token lesser but could break the formatting.',
     translatorSendTextAsIs:
       "If enabled, Ax. Model translation sends the message text to the model exactly as written — in a single request, with no line protection, splitting, or style placeholders — and the model's response is used verbatim as the translation result.",
+    translatorHistoryMaxTokens:
+      'Maximum approximate token budget shared by the source and translated history prompt slots. Whole oldest messages are removed when the limit is exceeded.',
     autoTranslateCachedOnly:
       "If enabled, chats with Auto Translation on display stored translations but don't request new LLM translations.",
     presetChain:
@@ -1710,6 +1712,8 @@ export const languageEnglish = {
     outputKeyPlaceholder: 'draft',
     invalidOutputKey:
       'Use a unique key up to 64 characters, beginning with a letter or underscore and containing only letters, numbers, or underscores.',
+    malformedHistorySlot:
+      'History slots must use {{slot::history::N}} or {{slot::historytrans::N}}, where N is from 1 to 50.',
     slotHelp:
       '{{slot::content}} always inserts the original source; {{slot::prev}} inserts the previous step; {{slot::out::key}} inserts a prior named output.',
     copySuffix: 'Copy',
@@ -1746,6 +1750,7 @@ export const languageEnglish = {
   translatorPrompt: 'Translation Prompt',
   translateBeforeHTMLFormatting: 'Translate Before HTML Formatting',
   translatorSendTextAsIs: 'Send Text As-Is',
+  translatorHistoryMaxTokens: 'Translation History Max Tokens',
   retranslate: 'Retranslate',
   editTranslation: 'Edit Translation',
   editTranslationSave: 'Save Translation',

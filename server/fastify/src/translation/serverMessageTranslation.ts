@@ -10,7 +10,7 @@ import {
 import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventOrigin, type CommandEventSink } from '../commands/events.js'
 import { applyTargetedCommandMutation, type CommandMutationReceiptKey } from '../commands/mutations.js'
-import { resolveActiveMessageLocationById, updateActiveMessageById } from '../messageStore.js'
+import { getChatMessages, resolveActiveMessageLocationById, updateActiveMessageById } from '../messageStore.js'
 import { createDetachedAbort } from '../requestAbort.js'
 import type { MessageTranslationJobHandle, MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 import { translateRawMessageData, type RawMessageTranslation } from './rawMessageTranslation.js'
@@ -28,6 +28,7 @@ export interface RunServerMessageTranslationInput {
 
 interface LiveMessageSource {
   chatId: string
+  messageIndex: number
   data: string
   translation: unknown
 }
@@ -46,9 +47,21 @@ function readLiveMessageSource(db: DatabaseSync, messageId: string): LiveMessage
   }
   return {
     chatId: resolved.location.chatId,
+    messageIndex: resolved.location.seq,
     data,
     translation: structuredClone(resolved.location.message.translation),
   }
+}
+
+function selectedGreeting(character: Record<string, unknown>, chat: Record<string, unknown>): string {
+  const fmIndex = chat.fmIndex ?? -1
+  const greeting =
+    fmIndex === -1
+      ? character.firstMessage
+      : Array.isArray(character.alternateGreetings)
+        ? character.alternateGreetings[typeof fmIndex === 'number' ? fmIndex : -1]
+        : undefined
+  return typeof greeting === 'string' ? greeting : ''
 }
 
 /**
@@ -74,11 +87,16 @@ export async function runServerMessageTranslation(input: RunServerMessageTransla
 
     const persisted = loadPersistedForChatMutation(input.db, input.dataDir, { messageId: input.messageId })
     const characters = normalizeAllCharacterChats(persisted.database)
-    const { character } = requireChatLocation(characters, source.chatId)
+    const { character, chat } = requireChatLocation(characters, source.chatId)
     const translation = await translateRawMessageData({
       settings,
       character,
       text: source.data,
+      historyContext: {
+        messages: getChatMessages(input.db, source.chatId),
+        messageIndex: source.messageIndex,
+        greeting: selectedGreeting(character, chat),
+      },
       signal,
     })
 

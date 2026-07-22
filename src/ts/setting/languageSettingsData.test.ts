@@ -51,4 +51,14 @@ describe('language settings actions', () => {
     expect(item?.getValue?.({ translatorSendTextAsIs: undefined } as never)).toBe(false)
     expect(item?.getValue?.({ translatorSendTextAsIs: true } as never)).toBe(true)
   })
+
+  it('uses the default history token limit for missing or invalid existing values', () => {
+    const item = languageSettingsItems.find((candidate) => candidate.id === 'lang.translatorHistoryMaxTokens')
+
+    expect(item?.bindKey).toBe('translatorHistoryMaxTokens')
+    expect(item?.getValue?.({ translatorHistoryMaxTokens: undefined } as never)).toBe(2048)
+    expect(item?.getValue?.({ translatorHistoryMaxTokens: 0 } as never)).toBe(2048)
+    expect(item?.getValue?.({ translatorHistoryMaxTokens: Number.NaN } as never)).toBe(2048)
+    expect(item?.getValue?.({ translatorHistoryMaxTokens: 512 } as never)).toBe(512)
+  })
 })

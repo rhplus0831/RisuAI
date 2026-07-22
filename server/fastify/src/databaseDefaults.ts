@@ -209,6 +209,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'swipe', true)
   setDefault(database, 'translator', '')
   setDefault(database, 'translatorMaxResponse', 1000)
+  setDefault(database, 'translatorHistoryMaxTokens', 2048)
   setDefault(database, 'inputHooks', createDefaultInputHooks())
   setDefault(database, 'currentPluginProvider', '')
   setDefault(database, 'plugins', [])

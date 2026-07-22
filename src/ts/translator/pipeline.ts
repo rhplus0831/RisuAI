@@ -9,6 +9,10 @@ import {
 
 const TRANSLATOR_INPUT_SLOT_PATTERN = /{{(?:solt::content|slot::(?:content|prev|out::[^}]+))}}/
 const TRANSLATOR_OUTPUT_SLOT_PATTERN = /{{slot::out::([^}]+)}}/g
+const TRANSLATOR_HISTORY_SLOT_PATTERN = /{{slot::(history|historytrans)::([^}]*)}}/g
+const TRANSLATOR_HISTORY_SLOT_START_PATTERN = /{{slot::(?:historytrans|history)/g
+
+export type TranslatorHistoryResolver = (kind: 'source' | 'translated', n: number) => string
 
 export interface TranslatorPipelineSignature {
   steps: Array<{
@@ -112,6 +116,7 @@ export function buildTranslatorStepMessages(input: {
   to: string
   from: string
   translatorNote: string
+  historyResolver?: TranslatorHistoryResolver
 }): OpenAIChat[] {
   const promptTemplate = input.step.prompt || defaultTranslatorPrompt
   const hasEmbeddedInput = TRANSLATOR_INPUT_SLOT_PATTERN.test(promptTemplate)
@@ -123,6 +128,12 @@ export function buildTranslatorStepMessages(input: {
     .replaceAll('{{slot::prev}}', input.prevOutput)
     .replace(TRANSLATOR_OUTPUT_SLOT_PATTERN, (_match, key: string) => input.outputsByKey[key] ?? '')
     .replaceAll('{{slot::tnote}}', input.translatorNote)
+    .replace(TRANSLATOR_HISTORY_SLOT_PATTERN, (_match, slot: string, rawCount: string) => {
+      if (!/^\d+$/.test(rawCount)) return ''
+      const count = Number(rawCount)
+      if (!Number.isInteger(count) || count < 1 || count > 50) return ''
+      return input.historyResolver?.(slot === 'history' ? 'source' : 'translated', count) ?? ''
+    })
   const parsed = parseTranslatorChatML(prompt)
   if (parsed) return parsed
   if (hasEmbeddedInput) return [{ role: 'system', content: prompt }]
@@ -130,6 +141,18 @@ export function buildTranslatorStepMessages(input: {
     { role: 'system', content: prompt },
     { role: 'user', content: input.prevOutput },
   ]
+}
+
+export function hasMalformedTranslatorHistorySlot(prompt: string): boolean {
+  TRANSLATOR_HISTORY_SLOT_START_PATTERN.lastIndex = 0
+  for (const match of prompt.matchAll(TRANSLATOR_HISTORY_SLOT_START_PATTERN)) {
+    const candidate = prompt.slice(match.index)
+    const slot = /^{{slot::(?:historytrans|history)::([^}]*)}}/.exec(candidate)
+    if (!slot || !/^\d+$/.test(slot[1])) return true
+    const count = Number(slot[1])
+    if (!Number.isInteger(count) || count < 1 || count > 50) return true
+  }
+  return false
 }
 
 export function translatorPipelineSignature(steps: readonly TranslatorPresetStep[]): TranslatorPipelineSignature {
@@ -154,6 +177,7 @@ export async function runTranslatorPipeline(
     to: string
     from: string
     translatorNote: string
+    historyResolver?: TranslatorHistoryResolver
     signal?: AbortSignal | null
   },
   runStep: (input: TranslatorStepRunInput) => Promise<string>,
@@ -171,6 +195,7 @@ export async function runTranslatorPipeline(
         to: input.to,
         from: input.from,
         translatorNote: input.translatorNote,
+        historyResolver: input.historyResolver,
       }),
       maxResponse: step.maxResponse,
       model: step.model,
