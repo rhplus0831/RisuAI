@@ -236,6 +236,11 @@ export async function loadData(): Promise<void> {
         //for testing, leave empty
         localStorage.setItem('nightlyWarned', '')
       }
+      if (window.isSecureContext === false && localStorage.getItem('insecureOriginWarned') === null) {
+        alertMd(language.insecureOriginWarning)
+        await waitAlert()
+        localStorage.setItem('insecureOriginWarned', 'true')
+      }
       if (db.botSettingAtStart) {
         botMakerMode.set(true)
       }

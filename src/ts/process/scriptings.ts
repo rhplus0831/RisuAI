@@ -1,4 +1,5 @@
 import { asBuffer } from 'src/ts/util'
+import { sha256Hex } from '../sha256Fallback'
 import { getChatVar, getGlobalChatVar, setChatVar } from '../parser/chatVar.svelte'
 import { hasher, type simpleCharacterArgument, risuChatParser } from '../parser/parser.svelte'
 import { LuaEngine, LuaFactory } from 'wasmoon'
@@ -1291,21 +1292,7 @@ async function hashScriptingCode(code: string): Promise<string> {
     return cached
   }
 
-  let hash: string
-  const data = new TextEncoder().encode(code)
-  const digest = await globalThis.crypto?.subtle?.digest?.('SHA-256', data)
-  if (digest) {
-    hash = Array.from(new Uint8Array(digest))
-      .map((byte) => byte.toString(16).padStart(2, '0'))
-      .join('')
-  } else {
-    let fallbackHash = 2166136261
-    for (let i = 0; i < code.length; i++) {
-      fallbackHash ^= code.charCodeAt(i)
-      fallbackHash = Math.imul(fallbackHash, 16777619)
-    }
-    hash = `fnv1a-${(fallbackHash >>> 0).toString(16)}-${code.length}`
-  }
+  const hash = await sha256Hex(code)
 
   ScriptingCodeHashMemo.set(code, hash)
   while (ScriptingCodeHashMemo.size > CLIENT_LUA_CODE_HASH_MEMO_LIMIT) {

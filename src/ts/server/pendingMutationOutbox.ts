@@ -1,3 +1,5 @@
+import { gcm } from '@noble/ciphers/aes.js'
+
 import { clearRetainedChatProjections } from './chatRetainedProjection'
 
 export type DurableMutationRequestMethod = 'DELETE' | 'PATCH' | 'POST' | 'PUT'
@@ -104,6 +106,8 @@ interface LivePendingMutationProjectionGeneration {
   targetKeys: Set<string>
 }
 
+type OutboxKeyKind = 'raw' | 'subtle'
+
 interface StoredPendingMutation {
   mutationId: string
   semanticKey: string
@@ -115,6 +119,8 @@ interface StoredPendingMutation {
   writerEpoch: number
   databaseLineage: string
   updatedAt: number
+  /** Missing on legacy rows, which always use the WebCrypto key. */
+  keyKind?: OutboxKeyKind
   iv: ArrayBuffer
   ciphertext: ArrayBuffer
 }
@@ -123,6 +129,8 @@ interface EncryptedPendingMutationPayload {
   intent: DurableMutationIntent
 }
 
+type OutboxEncryptionKey = { keyKind: 'raw'; key: Uint8Array<ArrayBuffer> } | { keyKind: 'subtle'; key: CryptoKey }
+
 const OUTBOX_DATABASE_NAME = 'risu-pending-mutations-v1'
 const OUTBOX_DATABASE_VERSION = 3
 const OUTBOX_MUTATION_STORE = 'mutations'
@@ -130,6 +138,7 @@ const OUTBOX_KEY_STORE = 'keys'
 const OUTBOX_ORDER_STORE = 'orders'
 const OUTBOX_RECEIPT_ACK_STORE = 'receiptAcks'
 const OUTBOX_ENCRYPTION_KEY_ID = 'pending-mutation-aes-gcm-v1'
+const OUTBOX_RAW_ENCRYPTION_KEY_ID = 'pending-mutation-aes-gcm-raw-v1'
 const MAX_DURABLE_MUTATION_REQUESTS = 100
 const MAX_DURABLE_MUTATION_DEPENDENCY_KEYS = 32
 export const MAX_DURABLE_MUTATION_PAYLOAD_BYTES = 16 * 1024 * 1024
@@ -254,7 +263,8 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
 ]
 
 let outboxDatabasePromise: Promise<IDBDatabase | null> | null = null
-let outboxEncryptionKeyPromise: Promise<CryptoKey | null> | null = null
+let outboxRawEncryptionKeyPromise: Promise<OutboxEncryptionKey | null> | null = null
+let outboxSubtleEncryptionKeyPromise: Promise<OutboxEncryptionKey | null> | null = null
 let nextSequenceOffset = 0
 let nextProjectionGenerationOrdinal = 0
 let persistenceWarningReported = false
@@ -790,8 +800,8 @@ export async function completePendingMutation(
 
 export async function listPendingMutations(): Promise<PendingMutationOutboxEntry[]> {
   const scope = pendingMutationScope
-  const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
-  if (!database || !encryptionKey || !scope) return []
+  const database = await openOutboxDatabase()
+  if (!database || !scope) return []
 
   let stored: StoredPendingMutation[]
   try {
@@ -811,7 +821,7 @@ export async function listPendingMutations(): Promise<PendingMutationOutboxEntry
     )
     .sort((left, right) => left.order - right.order)) {
     try {
-      const intent = await decryptIntent(record, encryptionKey)
+      const intent = await decryptIntent(record)
       const handle: PendingMutationHandle = {
         key: record.semanticKey,
         mutationId: record.mutationId,
@@ -868,8 +878,8 @@ export async function listPendingMutationPredecessors(
 ): Promise<PendingMutationPredecessorResult> {
   const persistence = await handle.ready
   if (persistence !== 'persisted') return { status: persistence }
-  const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
-  if (!database || !encryptionKey) return { status: 'unavailable' }
+  const database = await openOutboxDatabase()
+  if (!database) return { status: 'unavailable' }
 
   let records: StoredPendingMutation[]
   try {
@@ -894,7 +904,7 @@ export async function listPendingMutationPredecessors(
     .sort((left, right) => left.order - right.order)
 
   try {
-    const currentIntent = await decryptIntent(current, encryptionKey)
+    const currentIntent = await decryptIntent(current)
     const orderCutoffByKey = new Map<string, number>([[current.semanticKey, current.order]])
     for (const dependencyKey of [
       ...(currentIntent.dependencyKeys ?? []),
@@ -912,7 +922,7 @@ export async function listPendingMutationPredecessors(
         const cutoff = orderCutoffByKey.get(record.semanticKey)
         if (cutoff === undefined || record.order >= cutoff) continue
 
-        const intent = await decryptIntent(record, encryptionKey)
+        const intent = await decryptIntent(record)
         selected.set(record.mutationId, {
           handle: {
             key: record.semanticKey,
@@ -1007,7 +1017,8 @@ export async function clearPendingMutationOutbox(): Promise<void> {
 
 export function resetPendingMutationOutboxForTests(): void {
   outboxDatabasePromise = null
-  outboxEncryptionKeyPromise = null
+  outboxRawEncryptionKeyPromise = null
+  outboxSubtleEncryptionKeyPromise = null
   nextSequenceOffset = 0
   nextProjectionGenerationOrdinal = 0
   persistenceWarningReported = false
@@ -1042,13 +1053,10 @@ async function persistPendingMutation(
       throw new RangeError('Pending mutation payload is too large')
     }
     const iv = globalThis.crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12)))
-    const ciphertext = await globalThis.crypto.subtle.encrypt(
-      {
-        name: 'AES-GCM',
-        iv,
-        additionalData: mutationAdditionalData(semanticKey, mutationId, sequence, order, scope),
-      },
+    const ciphertext = await encryptIntentPayload(
       encryptionKey,
+      iv,
+      mutationAdditionalData(semanticKey, mutationId, sequence, order, scope),
       payload,
     )
     const transaction = database.transaction(OUTBOX_MUTATION_STORE, 'readwrite')
@@ -1077,6 +1085,7 @@ async function persistPendingMutation(
       writerEpoch: scope.writerEpoch,
       databaseLineage: scope.databaseLineage,
       updatedAt: Date.now(),
+      keyKind: encryptionKey.keyKind,
       iv: iv.buffer,
       ciphertext,
     } satisfies StoredPendingMutation)
@@ -1131,19 +1140,10 @@ async function replacePendingMutationIntentExact(
       writerEpoch: candidate.writerEpoch,
       databaseLineage: candidate.databaseLineage,
     }
-    const ciphertext = await globalThis.crypto.subtle.encrypt(
-      {
-        name: 'AES-GCM',
-        iv,
-        additionalData: mutationAdditionalData(
-          candidate.semanticKey,
-          candidate.mutationId,
-          sequence,
-          candidate.order,
-          scope,
-        ),
-      },
+    const ciphertext = await encryptIntentPayload(
       encryptionKey,
+      iv,
+      mutationAdditionalData(candidate.semanticKey, candidate.mutationId, sequence, candidate.order, scope),
       payload,
     )
 
@@ -1163,6 +1163,7 @@ async function replacePendingMutationIntentExact(
       sequence,
       dispatchStarted: false,
       updatedAt: Date.now(),
+      keyKind: encryptionKey.keyKind,
       iv: iv.buffer,
       ciphertext,
     } satisfies StoredPendingMutation)
@@ -1186,20 +1187,22 @@ async function replacePendingMutationIntentExact(
   }
 }
 
-async function decryptIntent(record: StoredPendingMutation, encryptionKey: CryptoKey): Promise<DurableMutationIntent> {
-  const plaintext = await globalThis.crypto.subtle.decrypt(
-    {
-      name: 'AES-GCM',
-      iv: new Uint8Array(record.iv),
-      additionalData: mutationAdditionalData(record.semanticKey, record.mutationId, record.sequence, record.order, {
-        writerSessionId: record.ownerWriterSessionId,
-        writerEpoch: record.writerEpoch,
-        databaseLineage: record.databaseLineage,
-      }),
-    },
-    encryptionKey,
-    record.ciphertext,
-  )
+async function decryptIntent(record: StoredPendingMutation): Promise<DurableMutationIntent> {
+  const keyKind = record.keyKind ?? 'subtle'
+  const encryptionKey = await getOutboxEncryptionKey(keyKind)
+  // The envelope chooses its own key scheme. If that scheme is unavailable,
+  // callers report the row as unreadable and retain it for a compatible visit.
+  if (!encryptionKey) throw new Error(`Pending mutation ${keyKind} encryption is unavailable`)
+  const iv = new Uint8Array(record.iv)
+  const additionalData = mutationAdditionalData(record.semanticKey, record.mutationId, record.sequence, record.order, {
+    writerSessionId: record.ownerWriterSessionId,
+    writerEpoch: record.writerEpoch,
+    databaseLineage: record.databaseLineage,
+  })
+  const plaintext =
+    encryptionKey.keyKind === 'subtle'
+      ? await decryptSubtleIntent(encryptionKey.key, iv, additionalData, record.ciphertext)
+      : gcm(encryptionKey.key, iv, additionalData).decrypt(new Uint8Array(record.ciphertext))
   const parsed = JSON.parse(new TextDecoder().decode(plaintext)) as Partial<EncryptedPendingMutationPayload>
   return normalizeIntent(parsed.intent)
 }
@@ -1735,47 +1738,104 @@ function storedMutationMatchesHandle(
   )
 }
 
-async function getOutboxEncryptionKey(): Promise<CryptoKey | null> {
-  if (!globalThis.crypto?.subtle) return null
-  if (outboxEncryptionKeyPromise) return outboxEncryptionKeyPromise
-  outboxEncryptionKeyPromise = loadOrCreateOutboxEncryptionKey()
-  return outboxEncryptionKeyPromise
+function preferredOutboxKeyKind(): OutboxKeyKind | null {
+  if (globalThis.crypto?.subtle) return 'subtle'
+  return globalThis.crypto?.getRandomValues ? 'raw' : null
 }
 
-async function loadOrCreateOutboxEncryptionKey(): Promise<CryptoKey | null> {
+async function getOutboxEncryptionKey(
+  keyKind: OutboxKeyKind | null = preferredOutboxKeyKind(),
+): Promise<OutboxEncryptionKey | null> {
+  if (!keyKind || (keyKind === 'subtle' && !globalThis.crypto?.subtle)) return null
+  if (keyKind === 'raw') {
+    if (!outboxRawEncryptionKeyPromise) {
+      outboxRawEncryptionKeyPromise = loadOrCreateOutboxEncryptionKey('raw')
+    }
+    return outboxRawEncryptionKeyPromise
+  }
+  if (!outboxSubtleEncryptionKeyPromise) {
+    outboxSubtleEncryptionKeyPromise = loadOrCreateOutboxEncryptionKey('subtle')
+  }
+  return outboxSubtleEncryptionKeyPromise
+}
+
+async function loadOrCreateOutboxEncryptionKey(keyKind: OutboxKeyKind): Promise<OutboxEncryptionKey | null> {
   const database = await openOutboxDatabase()
   if (!database) return null
+  const keyId = keyKind === 'subtle' ? OUTBOX_ENCRYPTION_KEY_ID : OUTBOX_RAW_ENCRYPTION_KEY_ID
 
   try {
     const readTransaction = database.transaction(OUTBOX_KEY_STORE, 'readonly')
-    const existing = await requestResult<CryptoKey | undefined>(
-      readTransaction.objectStore(OUTBOX_KEY_STORE).get(OUTBOX_ENCRYPTION_KEY_ID),
-    )
+    const existing = await requestResult<unknown>(readTransaction.objectStore(OUTBOX_KEY_STORE).get(keyId))
     await transactionDone(readTransaction)
-    if (existing) return existing
+    const existingKey = normalizeStoredOutboxEncryptionKey(keyKind, existing)
+    if (existingKey) return existingKey
 
-    const generated = await globalThis.crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
-      'decrypt',
-      'encrypt',
-    ])
+    const cryptoApi = globalThis.crypto
+    const generated =
+      keyKind === 'subtle'
+        ? await cryptoApi?.subtle?.generateKey({ name: 'AES-GCM', length: 256 }, false, ['decrypt', 'encrypt'])
+        : cryptoApi?.getRandomValues(new Uint8Array(32))
+    const generatedKey = normalizeStoredOutboxEncryptionKey(keyKind, generated)
+    if (!generatedKey) return null
     try {
       const createTransaction = database.transaction(OUTBOX_KEY_STORE, 'readwrite')
-      createTransaction.objectStore(OUTBOX_KEY_STORE).add(generated, OUTBOX_ENCRYPTION_KEY_ID)
+      createTransaction.objectStore(OUTBOX_KEY_STORE).add(generated, keyId)
       await transactionDone(createTransaction)
-      return generated
+      return generatedKey
     } catch (error) {
       if (!(error instanceof DOMException) || error.name !== 'ConstraintError') throw error
       const retryTransaction = database.transaction(OUTBOX_KEY_STORE, 'readonly')
-      const raced = await requestResult<CryptoKey | undefined>(
-        retryTransaction.objectStore(OUTBOX_KEY_STORE).get(OUTBOX_ENCRYPTION_KEY_ID),
-      )
+      const raced = await requestResult<unknown>(retryTransaction.objectStore(OUTBOX_KEY_STORE).get(keyId))
       await transactionDone(retryTransaction)
-      return raced ?? null
+      return normalizeStoredOutboxEncryptionKey(keyKind, raced)
     }
   } catch (error) {
     reportPersistenceWarning('Unable to initialize pending-mutation encryption', error)
     return null
   }
+}
+
+function normalizeStoredOutboxEncryptionKey(keyKind: OutboxKeyKind, value: unknown): OutboxEncryptionKey | null {
+  if (keyKind === 'subtle') {
+    return value && typeof value === 'object' ? { keyKind, key: value as CryptoKey } : null
+  }
+  const key =
+    value instanceof Uint8Array
+      ? new Uint8Array(value)
+      : value instanceof ArrayBuffer
+        ? new Uint8Array(value.slice(0))
+        : null
+  return key?.byteLength === 32 ? { keyKind, key } : null
+}
+
+async function encryptIntentPayload(
+  encryptionKey: OutboxEncryptionKey,
+  iv: Uint8Array<ArrayBuffer>,
+  additionalData: Uint8Array<ArrayBuffer>,
+  plaintext: Uint8Array<ArrayBuffer>,
+): Promise<ArrayBuffer> {
+  if (encryptionKey.keyKind === 'subtle') {
+    const subtle = globalThis.crypto?.subtle
+    if (!subtle) throw new Error('Pending mutation subtle encryption is unavailable')
+    return subtle.encrypt({ name: 'AES-GCM', iv, additionalData }, encryptionKey.key, plaintext)
+  }
+  return uint8ArrayToArrayBuffer(gcm(encryptionKey.key, iv, additionalData).encrypt(plaintext))
+}
+
+async function decryptSubtleIntent(
+  encryptionKey: CryptoKey,
+  iv: Uint8Array<ArrayBuffer>,
+  additionalData: Uint8Array<ArrayBuffer>,
+  ciphertext: ArrayBuffer,
+): Promise<ArrayBuffer> {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) throw new Error('Pending mutation subtle encryption is unavailable')
+  return subtle.decrypt({ name: 'AES-GCM', iv, additionalData }, encryptionKey, ciphertext)
+}
+
+function uint8ArrayToArrayBuffer(value: Uint8Array): ArrayBuffer {
+  return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer
 }
 
 async function reservePendingMutationOrder(): Promise<number | null> {
@@ -1799,7 +1859,7 @@ async function reservePendingMutationOrder(): Promise<number | null> {
 }
 
 async function openOutboxDatabase(): Promise<IDBDatabase | null> {
-  if (!globalThis.indexedDB || !globalThis.crypto?.subtle) return null
+  if (typeof globalThis.indexedDB === 'undefined') return null
   if (outboxDatabasePromise) return outboxDatabasePromise
 
   const opening = new Promise<IDBDatabase | null>((resolve) => {
@@ -1830,7 +1890,8 @@ async function openOutboxDatabase(): Promise<IDBDatabase | null> {
         database.close()
         if (outboxDatabasePromise === opening) {
           outboxDatabasePromise = null
-          outboxEncryptionKeyPromise = null
+          outboxRawEncryptionKeyPromise = null
+          outboxSubtleEncryptionKeyPromise = null
         }
       }
       resolve(database)

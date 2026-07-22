@@ -1,4 +1,5 @@
 import { checkNullish } from './util'
+import { sha256Hex } from './sha256Fallback'
 import { get } from 'svelte/store'
 import { type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter } from './storage/database.svelte'
 import { checkRisuUpdate } from './update'
@@ -171,12 +172,6 @@ export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<str
   }
 
   return prepared.map((asset) => asset.assetId)
-}
-
-async function sha256Hex(data: Uint8Array): Promise<string> {
-  const bytes = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
-  return Buffer.from(digest).toString('hex')
 }
 
 async function findMissingServerAssetIds(assetIds: readonly string[]): Promise<Set<string>> {

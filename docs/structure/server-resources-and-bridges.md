@@ -101,7 +101,9 @@ Durable helpers stage before network dispatch (and before a debounced control
 waits to send). Semantic owner keys and explicit dependency keys preserve
 predecessor order across commands; Web Locks coordinate tabs when available and
 same-tab locks provide the local fallback. Only the allowlisted command shapes
-in `pendingMutationOutbox.ts` are eligible. If IndexedDB or Web Crypto is
+in `pendingMutationOutbox.ts` are eligible. Secure contexts store a
+non-extractable WebCrypto key; insecure contexts use a separately stored raw
+AES-GCM key and tagged envelopes. If IndexedDB or secure random generation is
 unavailable, the command still uses the ordinary unreceipted transport path,
 but it cannot rely on crash recovery.
 

@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify'
 import markdownit from 'markdown-it'
+import { sha256Hex } from '../sha256Fallback'
 import {
   getCurrentCharacter,
   getDatabase,
@@ -1159,7 +1160,7 @@ function decodeStyle(text: string) {
 }
 
 export async function hasher(data: Uint8Array) {
-  return Buffer.from(await crypto.subtle.digest('SHA-256', data as any)).toString('hex')
+  return sha256Hex(data)
 }
 
 export function applyMarkdownToNode(node: Node) {

@@ -74,6 +74,69 @@ afterEach(async () => {
 })
 
 describe('pending mutation outbox', () => {
+  it('roundtrips and counts raw-key intents without WebCrypto subtle', async () => {
+    stubCryptoWithoutSubtle()
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 1,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: true,
+    })
+    await expect(countPendingMutationRecords()).resolves.toBe(0)
+
+    const intent = settingsIntent('raw-key-roundtrip')
+    const handle = stagePendingMutation('settings:runtime', intent)
+
+    await expect(handle.ready).resolves.toBe('persisted')
+    await expect(countPendingMutationRecords()).resolves.toBe(1)
+    await expect(readRawMutation(handle.mutationId)).resolves.toMatchObject({ keyKind: 'raw' })
+
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 1,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: true,
+    })
+    const replayEntries = await listPendingMutations()
+    expect(replayEntries).toEqual([
+      expect.objectContaining({
+        intent,
+        handle: expect.objectContaining({ mutationId: handle.mutationId }),
+      }),
+    ])
+
+    const replayHandle = replayEntries[0]!.handle
+    await expect(beginPendingMutationDispatch(replayHandle)).resolves.toBe('persisted')
+    await expect(completePendingMutation(replayHandle, 1)).resolves.toBe('deleted')
+    await expect(countPendingMutationRecords()).resolves.toBe(0)
+  })
+
+  it('retains and counts subtle-key intents when subtle becomes unavailable', async () => {
+    const handle = stagePendingMutation('settings:runtime', settingsIntent('subtle-key-retained'))
+    await expect(handle.ready).resolves.toBe('persisted')
+    await expect(readRawMutation(handle.mutationId)).resolves.toMatchObject({ keyKind: 'subtle' })
+
+    stubCryptoWithoutSubtle()
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 1,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: true,
+    })
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(listPendingMutations()).resolves.toEqual([])
+    expect(warning).toHaveBeenCalledWith(
+      expect.stringContaining('Unable to decrypt pending server mutation'),
+      expect.any(Error),
+    )
+    await expect(countPendingMutationRecords()).resolves.toBe(1)
+    await expect(readRawMutation(handle.mutationId)).resolves.toBeDefined()
+  })
+
   it('counts scoped raw rows even when an encrypted intent cannot be decrypted', async () => {
     const handle = stagePendingMutation('settings:runtime', settingsIntent('unreadable'))
     await expect(handle.ready).resolves.toBe('persisted')
@@ -1007,6 +1070,14 @@ function deferred<T>() {
     reject = rejectPromise
   })
   return { promise, resolve, reject }
+}
+
+function stubCryptoWithoutSubtle(): void {
+  const cryptoApi = globalThis.crypto
+  vi.stubGlobal('crypto', {
+    getRandomValues: cryptoApi.getRandomValues.bind(cryptoApi),
+    randomUUID: cryptoApi.randomUUID.bind(cryptoApi),
+  })
 }
 
 async function readRawMutation(mutationId: string): Promise<Record<string, unknown> | undefined> {

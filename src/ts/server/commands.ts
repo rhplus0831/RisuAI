@@ -1,5 +1,6 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { Sha256 } from '@aws-crypto/sha256-js'
+import { sha256Hex as sharedSha256Hex } from '../sha256Fallback'
 import {
   CHAT_GENERATION_SETTINGS_KEYS,
   serializeChatGenerationSettingsDigestInput,
@@ -5716,8 +5717,7 @@ function readChatGenerationSettingsLocalEffect(
 }
 
 async function sha256HexUtf8(value: string): Promise<string> {
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return bytesToHex(new Uint8Array(digest))
+  return sharedSha256Hex(value)
 }
 
 export function sha256HexUtf8Sync(value: string): string {

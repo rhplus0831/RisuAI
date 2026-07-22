@@ -1672,6 +1672,8 @@ export const languageEnglish = {
     'Your message is saved on this device and queued. It will be sent when the server is available; generation has not started.',
   pendingMutationReplayRetained:
     'Some pending changes still could not reach the server. They remain saved on this device and must be retried before the app can load.',
+  insecureOriginWarning:
+    'RisuAI is being served over plain HTTP. Network traffic is not encrypted, and on-device autosave encryption is weaker. Use HTTPS or access it through localhost when possible.',
   pendingMutationDiscarded:
     'One or more pending changes could not be applied safely and were discarded. Please review your recent edits.',
   pendingMutationDiscardedDetail: (scope: string, error: string) =>

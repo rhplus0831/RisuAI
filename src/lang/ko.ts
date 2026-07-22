@@ -2057,6 +2057,8 @@ export const languageKorean = {
     '메시지가 이 기기에 저장되어 대기열에 추가되었습니다. 서버를 사용할 수 있게 되면 전송되며, 아직 생성은 시작되지 않았습니다.',
   pendingMutationReplayRetained:
     '일부 대기 중인 변경 사항을 아직 서버에 전달하지 못했습니다. 이 기기에 계속 저장되어 있으며 앱을 불러오기 전에 다시 시도해야 합니다.',
+  insecureOriginWarning:
+    'RisuAI가 일반 HTTP로 제공되고 있습니다. 네트워크 트래픽이 암호화되지 않으며 기기 내 자동 저장 암호화가 약해집니다. 가능하면 HTTPS 또는 localhost로 접속하세요.',
   pendingMutationDiscarded:
     '하나 이상의 대기 중인 변경 사항을 안전하게 적용할 수 없어 폐기했습니다. 최근 편집 내용을 확인하세요.',
   pendingMutationDiscardedDetail: (scope: string, error: string) => `영향을 받은 범위: ${scope}\n서버 응답: ${error}`,
