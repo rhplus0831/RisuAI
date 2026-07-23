@@ -160,13 +160,21 @@ describe('translateRawMessageData', () => {
   it('changes the server settings hash for every pipeline execution field but not step labels', () => {
     const createSettings = () => ({
       ...llmSettings(true),
+      providerCredentials: [
+        {
+          id: 'credential-a',
+          name: 'Credential A',
+          type: 'apiKey',
+          apiKey: 'secret-a',
+        },
+      ],
       modelProfiles: [
         {
           id: 'profile-a',
           name: 'Profile A',
           providerId: 'debug-echo',
           modelId: 'debug-echo',
-          providerOptions: {},
+          providerOptions: { credentialId: 'credential-a' },
         },
       ],
       translatorPresetId: 0,
@@ -205,6 +213,9 @@ describe('translateRawMessageData', () => {
       mutate(changed.translatorPresets[0].steps[0])
       expect(hash(changed)).not.toBe(baseline)
     }
+    const rotatedCredential = createSettings()
+    rotatedCredential.providerCredentials[0].apiKey = 'rotated-secret'
+    expect(hash(rotatedCredential)).not.toBe(baseline)
     const relabeled = createSettings()
     relabeled.translatorPresets[0].name = 'Renamed preset'
     relabeled.translatorPresets[0].steps[0].id = 'renamed-step-id'

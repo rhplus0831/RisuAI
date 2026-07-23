@@ -35,6 +35,7 @@ import {
   type ModelProfileRecordRuntimeOptions,
   type ModelRoleProfileMap,
 } from '../model/modelProfileRecords'
+import { normalizeProviderCredentials, type ProviderCredentialRecord } from '../model/providerCredentialRecords'
 import { normalizeAgentPresetDefaultId, normalizeAgentPresets, type AgentPresetRecord } from '../agentPresetRecords'
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
@@ -195,8 +196,9 @@ function normalizeModelRoleSettings(data: Partial<Pick<Database, 'modelRoles' | 
 }
 
 function normalizeModelProfileSettings(
-  data: Partial<Pick<Database, 'modelProfiles' | 'modelRoleProfiles' | 'modelRuntimeDefaults'>>,
+  data: Partial<Pick<Database, 'providerCredentials' | 'modelProfiles' | 'modelRoleProfiles' | 'modelRuntimeDefaults'>>,
 ): void {
+  data.providerCredentials = normalizeProviderCredentials(data.providerCredentials)
   data.modelProfiles = normalizeModelProfiles(data.modelProfiles)
   data.modelRoleProfiles = normalizeModelRoleProfiles(data.modelRoleProfiles)
   data.modelRuntimeDefaults = normalizeModelRuntimeDefaults(data.modelRuntimeDefaults)
@@ -3220,6 +3222,7 @@ export function setDatabase(data: Database) {
   data.banCharacterset ??= []
   data.showPromptComparison ??= false
   data.OaiCompAPIKeys ??= {}
+  data.providerCredentials ??= []
   data.reasoningEffort ??= 0
   data.hypaV3Presets ??= [
     createHypaV3Preset('Default', {
@@ -3723,6 +3726,7 @@ export interface Database {
   formatingOrder: FormatingOrderItem[]
   aiModel: string
   modelRoles: NormalizedModelRoleOverrides
+  providerCredentials: ProviderCredentialRecord[]
   modelProfiles: ModelProfileRecord[]
   modelRoleProfiles: ModelRoleProfileMap
   modelRuntimeDefaults: ModelProfileRecordRuntimeOptions

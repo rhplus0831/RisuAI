@@ -9,6 +9,7 @@ describe('database defaults', () => {
 
     expect(Object.keys(database.modelRoles as Record<string, unknown>)).toEqual([...MODEL_ROLES])
     expect(database.modelProfiles).toEqual([])
+    expect(database.providerCredentials).toEqual([])
     expect(database.modelRoleProfiles).toEqual(
       Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
     )
@@ -132,12 +133,19 @@ describe('database defaults', () => {
           scriptAux: { top_p: 0.7 },
           overrides: { 'model-a': { top_k: 20 } },
         },
+        providerCredentials: [
+          { id: ' credential-a ', name: ' Primary key ', type: 'apiKey', apiKey: ' profile-secret ' },
+        ],
         modelProfiles: [
           {
             id: 'profile-a',
             name: 'Primary',
             modelId: 'gpt-5',
-            providerOptions: { apiKey: ' profile-secret ', openAIKey: 'must-drop' },
+            providerOptions: {
+              credentialId: ' credential-a ',
+              apiKey: ' profile-secret ',
+              openAIKey: 'must-drop',
+            },
           },
           { id: 'profile-a', name: 'Duplicate' },
           { id: 'profile-b', name: 'Identity Only', modelId: '' },
@@ -189,8 +197,11 @@ describe('database defaults', () => {
       scriptAux: { top_p: 0.7 },
       overrides: { 'model-a': { top_k: 20 } },
     })
+    expect(database.providerCredentials).toEqual([
+      { id: 'credential-a', name: 'Primary key', type: 'apiKey', apiKey: 'profile-secret' },
+    ])
     expect(database.modelProfiles).toEqual([
-      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { apiKey: 'profile-secret' } },
+      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { credentialId: 'credential-a' } },
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
     ])

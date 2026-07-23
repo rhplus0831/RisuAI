@@ -39,6 +39,7 @@ import {
   createTranslatorPresetCommand,
   createAndBindModelProfileCommand,
   createModelProfileCommand,
+  createProviderCredentialCommand,
   createGlobalLorebookCommand,
   convertLegacyModelProfilesCommand,
   copyPresetCommand,
@@ -54,6 +55,7 @@ import {
   deleteLoadoutCommand,
   deleteMessageCommand,
   deleteModelProfileCommand,
+  deleteProviderCredentialCommand,
   deleteModuleCommand,
   deleteModuleLorebookEntryCommand,
   deletePersonaCommand,
@@ -144,6 +146,7 @@ import {
   updateLoadoutCommand,
   updateMessageCommand,
   updateModelProfileCommand,
+  updateProviderCredentialCommand,
   updateModelRoleProfilesCommand,
   updateModelRuntimeDefaultsCommand,
   updateModelPresetCommand,
@@ -1751,6 +1754,7 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('useInstructPrompt')).toBe('providers')
     expect(settingsGroupForKey('instructChatTemplate')).toBe('providers')
     expect(settingsGroupForKey('JinjaTemplate')).toBe('providers')
+    expect(settingsGroupForKey('providerCredentials')).toBe('providers')
     expect(settingsGroupForKey('modelProfiles')).toBe('providers')
     expect(settingsGroupForKey('modelRoleProfiles')).toBe('providers')
     expect(settingsGroupForKey('modelRuntimeDefaults')).toBe('providers')
@@ -2530,7 +2534,6 @@ describe('server command API adapter', () => {
       baseRevision: 3,
       profileId: 'source-profile',
       name: 'Copy',
-      includeSecrets: true,
     })
     await deleteModelProfileCommand({
       baseRevision: 4,
@@ -2579,7 +2582,6 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 3,
           name: 'Copy',
-          includeSecrets: true,
         },
       },
       {
@@ -2622,6 +2624,56 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 8,
         },
+      },
+    ])
+  })
+
+  it('dispatches provider credential commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 99,
+      event: { type: 'providerCredential.test', revision: 99, resource: 'providerCredential' },
+      credentialId: 'credential-a',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const credential = { id: 'credential-a', name: 'Credential A', type: 'apiKey' as const, apiKey: 'secret' }
+
+    await createProviderCredentialCommand({
+      baseRevision: 1,
+      credential: { name: credential.name, type: credential.type, apiKey: credential.apiKey },
+    })
+    await updateProviderCredentialCommand({
+      baseRevision: 2,
+      credentialId: 'credential/a',
+      credential,
+      expectedCredential: { ...credential, name: 'Old name' },
+    })
+    await deleteProviderCredentialCommand({
+      baseRevision: 3,
+      credentialId: 'credential/a',
+    })
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/provider-credentials',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          credential: { name: 'Credential A', type: 'apiKey', apiKey: 'secret' },
+        },
+      },
+      {
+        url: '/api/v1/commands/provider-credentials/credential%2Fa',
+        method: 'PATCH',
+        body: {
+          baseRevision: 2,
+          credential,
+          expectedCredential: { ...credential, name: 'Old name' },
+        },
+      },
+      {
+        url: '/api/v1/commands/provider-credentials/credential%2Fa',
+        method: 'DELETE',
+        body: { baseRevision: 3 },
       },
     ])
   })

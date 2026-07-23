@@ -42,6 +42,7 @@ import {
   type ModelProfileRecordProviderOptions,
   type ModelProfileRecordRuntimeOptions,
 } from './modelProfileRecords'
+import { normalizeProviderCredentials, type ProviderCredentialRecord } from './providerCredentialRecords'
 
 export type ModelProfileSourceKind =
   | 'staticModel'
@@ -83,6 +84,7 @@ export type ModelProfileStatusReason =
   | 'inferred-provider-id'
   | 'profile-not-found'
   | 'profile-model-missing'
+  | 'credential-missing'
   | 'api-key-missing'
   | 'base-url-missing'
   | 'request-model-missing'
@@ -238,12 +240,20 @@ interface ModelProfileSelection {
   modelId: string
   profileId?: string
   profileRequestModel?: string
-  profileProviderOptions?: ModelProfileRecordProviderOptions
+  profileProviderOptions?: EffectiveModelProfileRecordProviderOptions
   profileRuntimeOptions?: ModelProfileRecordRuntimeOptions
   profileFallbacks?: ModelProfileRecordFallbackRef[]
   profileProviderId?: string
   profileStatusReasons?: ModelProfileStatusReason[]
   source: ModelProfileResolutionSource
+}
+
+interface EffectiveModelProfileRecordProviderOptions extends ModelProfileRecordProviderOptions {
+  apiKey?: string
+  vertex?: NonNullable<ModelProfileRecordProviderOptions['vertex']> & {
+    clientEmail?: string
+    privateKey?: string
+  }
 }
 
 const DEFAULT_OPENAI_FLAGS = [LLMFlags.hasFullSystemPrompt, LLMFlags.hasStreaming]
@@ -579,26 +589,36 @@ function resolveModelProfileSelection({
   lookupModelInfo?: (database: Database, modelId: string) => LLMModel | null | undefined
 }): ResolvedModelProfile {
   const profileBound = selection.source.kind === 'durable-profile'
+  const effectiveSelection = profileBound ? resolveProfileCredential(database, selection) : selection
   const runtimeSource = profileBound
-    ? resolveProfileBoundRuntimeSource(database, selection.profileRuntimeOptions)
-    : selection.profileRuntimeOptions
-  const effectiveProvider = profileBound ? resolveEffectiveFirstClassProvider(selection) : null
-  const lookedUp = effectiveProvider ? undefined : lookupModelInfo?.(database, selection.modelId)
+    ? resolveProfileBoundRuntimeSource(database, effectiveSelection.profileRuntimeOptions)
+    : effectiveSelection.profileRuntimeOptions
+  const effectiveProvider = profileBound ? resolveEffectiveFirstClassProvider(effectiveSelection) : null
+  const lookedUp = effectiveProvider ? undefined : lookupModelInfo?.(database, effectiveSelection.modelId)
   const baseModelInfo = lookedUp
     ? withCustomFlags(database, cloneModelInfo(lookedUp), runtimeSource, { useLegacyFallback: !profileBound })
     : effectiveProvider
-      ? resolveFirstClassModelInfo(effectiveProvider.providerId, selection.modelId, selection.profileProviderOptions)
-      : resolveServerSafeModelInfo(database, selection.modelId, runtimeSource, {
+      ? resolveFirstClassModelInfo(
+          effectiveProvider.providerId,
+          effectiveSelection.modelId,
+          effectiveSelection.profileProviderOptions,
+        )
+      : resolveServerSafeModelInfo(database, effectiveSelection.modelId, runtimeSource, {
           useLegacyFallback: !profileBound,
         })
   const modelInfo = effectiveProvider
     ? withCustomFlags(database, baseModelInfo, runtimeSource, { useLegacyFallback: false })
-    : withDurableModelInfoOptions(selection.modelId, selection.profileProviderOptions, database, baseModelInfo)
+    : withDurableModelInfoOptions(
+        effectiveSelection.modelId,
+        effectiveSelection.profileProviderOptions,
+        database,
+        baseModelInfo,
+      )
   const requestModel = resolveProfileRequestModelFromParts(
     database,
-    selection.modelId,
+    effectiveSelection.modelId,
     modelInfo,
-    selection.profileRequestModel,
+    effectiveSelection.profileRequestModel,
     effectiveProvider?.providerId,
   )
   const providerOptions = effectiveProvider
@@ -606,29 +626,35 @@ function resolveModelProfileSelection({
         effectiveProvider.providerId,
         modelInfo,
         requestModel,
-        selection.profileProviderOptions,
+        effectiveSelection.profileProviderOptions,
       )
-    : resolveProviderOptions(database, selection.modelId, modelInfo, requestModel, selection.profileProviderOptions)
+    : resolveProviderOptions(
+        database,
+        effectiveSelection.modelId,
+        modelInfo,
+        requestModel,
+        effectiveSelection.profileProviderOptions,
+      )
   const runtimeOptions = resolveRuntimeOptions(database, modelInfo, runtimeSource, {
     useLegacyFallback: !profileBound,
   })
   const providerCapabilityInput = effectiveProvider
     ? buildFirstClassProviderCapabilityInput(
         effectiveProvider.providerId,
-        selection.modelId,
+        effectiveSelection.modelId,
         modelInfo,
         providerOptions,
       )
     : buildProfileProviderCapabilityInputForDatabase(
         database,
-        selection.modelId,
+        effectiveSelection.modelId,
         modelInfo,
         providerOptions,
-        selection.profileProviderOptions,
+        effectiveSelection.profileProviderOptions,
       )
   const providerCapability = resolveProviderCapability(providerCapabilityInput)
   const status = resolveModelProfileStatus({
-    selection,
+    selection: effectiveSelection,
     modelInfo,
     providerOptions,
     providerCapability,
@@ -644,20 +670,20 @@ function resolveModelProfileSelection({
     role: normalizedRole,
     legacyMode: selection.source.legacyMode,
     profileId:
-      'profileId' in selection && selection.profileId
-        ? selection.profileId
-        : `legacy:${selection.source.field ?? selection.source.kind}:${selection.modelId}`,
+      'profileId' in effectiveSelection && effectiveSelection.profileId
+        ? effectiveSelection.profileId
+        : `legacy:${effectiveSelection.source.field ?? effectiveSelection.source.kind}:${effectiveSelection.modelId}`,
     legacy: true,
-    source: selection.source,
-    modelId: selection.modelId,
+    source: effectiveSelection.source,
+    modelId: effectiveSelection.modelId,
     requestModel,
     modelInfo,
     providerOptions,
     runtimeOptions,
     fallbacks: staticModelId
       ? []
-      : selection.profileFallbacks
-        ? resolveDurableFallbackRefs(selection.profileFallbacks, normalizedRole)
+      : effectiveSelection.profileFallbacks
+        ? resolveDurableFallbackRefs(effectiveSelection.profileFallbacks, normalizedRole)
         : resolveLegacyFallbackRefs(database, normalizedRole),
   }
 
@@ -671,6 +697,44 @@ function resolveModelProfileSelection({
     providerCapability,
     status,
   }
+}
+
+function resolveProfileCredential(database: Database, selection: ModelProfileSelection): ModelProfileSelection {
+  const credentialId = nonBlankString(selection.profileProviderOptions?.credentialId)
+  if (!credentialId) return selection
+
+  const credential = normalizeProviderCredentials(database.providerCredentials ?? []).find(
+    (candidate) => candidate.id === credentialId,
+  )
+  if (!credential) {
+    return {
+      ...selection,
+      profileStatusReasons: uniqueReasons([...(selection.profileStatusReasons ?? []), 'credential-missing']),
+    }
+  }
+
+  return {
+    ...selection,
+    profileProviderOptions: mergeCredentialProviderOptions(selection.profileProviderOptions, credential),
+  }
+}
+
+function mergeCredentialProviderOptions(
+  stored: EffectiveModelProfileRecordProviderOptions | undefined,
+  credential: ProviderCredentialRecord,
+): EffectiveModelProfileRecordProviderOptions {
+  const options: EffectiveModelProfileRecordProviderOptions = { ...(stored ?? {}) }
+  if (credential.type === 'apiKey') {
+    options.apiKey = credential.apiKey
+    return options
+  }
+
+  options.vertex = {
+    ...(stored?.vertex ?? {}),
+    clientEmail: credential.vertex?.clientEmail,
+    privateKey: credential.vertex?.privateKey,
+  }
+  return options
 }
 
 function resolveDurableFallbackRefs(
@@ -1111,7 +1175,7 @@ function inferFirstClassProviderId(selection: ModelProfileSelection): FirstClass
 function resolveFirstClassModelInfo(
   providerId: FirstClassModelProfileProviderId,
   modelId: string,
-  providerOptions?: ModelProfileRecordProviderOptions,
+  providerOptions?: EffectiveModelProfileRecordProviderOptions,
 ): ResolvedModelProfileModelInfo {
   const id = nonBlankString(modelId) ?? ''
   if (!id) return unknownModel('')
@@ -1236,7 +1300,7 @@ function resolveFirstClassProviderOptions(
   providerId: FirstClassModelProfileProviderId,
   modelInfo: ResolvedModelProfileModelInfo,
   requestModel: string,
-  durableProviderOptions?: ModelProfileRecordProviderOptions,
+  durableProviderOptions?: EffectiveModelProfileRecordProviderOptions,
 ): ModelProfileProviderOptions {
   const base: ModelProfileProviderOptions = {
     requestModel,
@@ -1357,28 +1421,30 @@ function resolveModelProfileStatus({
   }
 
   const brokenReasons = selection.profileStatusReasons ?? []
-  if (brokenReasons.length > 0) {
-    return { bucket: 'incomplete', reasons: uniqueReasons(brokenReasons) }
+  const selectionBlockingReasons = brokenReasons.filter((reason) => reason !== 'credential-missing')
+  if (selectionBlockingReasons.length > 0) {
+    return { bucket: 'incomplete', reasons: uniqueReasons(selectionBlockingReasons) }
   }
 
   const rawProviderId = nonBlankString(selection.profileProviderId)
   if (rawProviderId && !isFirstClassProviderId(rawProviderId)) {
     return {
       bucket: 'unsupported',
-      reasons: ['unsupported-provider-id'],
+      reasons: uniqueReasons([...brokenReasons, 'unsupported-provider-id']),
       unsupportedProviderId: rawProviderId,
     }
   }
 
   if (!effectiveProvider) {
-    return { bucket: 'compatibility', reasons: ['missing-provider-id'] }
+    return brokenReasons.includes('credential-missing')
+      ? { bucket: 'incomplete', reasons: ['credential-missing'] }
+      : { bucket: 'compatibility', reasons: ['missing-provider-id'] }
   }
 
-  const incompleteReasons = firstClassIncompleteReasons(
-    effectiveProvider.providerId,
-    selection.modelId,
-    providerOptions,
-  )
+  const incompleteReasons = [
+    ...brokenReasons,
+    ...firstClassIncompleteReasons(effectiveProvider.providerId, selection.modelId, providerOptions),
+  ]
   if (effectiveProvider.source === 'inferred') incompleteReasons.push('inferred-provider-id')
   if (incompleteReasons.some((reason) => reason !== 'inferred-provider-id')) {
     return {
@@ -1704,7 +1770,7 @@ function buildProfileProviderCapabilityInputForDatabase(
   modelId: string,
   modelInfo: ResolvedModelProfileModelInfo,
   providerOptions?: ModelProfileProviderOptions,
-  durableProviderOptions?: ModelProfileRecordProviderOptions,
+  durableProviderOptions?: EffectiveModelProfileRecordProviderOptions,
 ): ProviderCapabilityInput {
   const durableReverseProxyUrl =
     modelId === 'reverse_proxy' ? nonBlankString(durableProviderOptions?.baseUrl) : undefined
@@ -1754,7 +1820,7 @@ function resolveProviderOptions(
   modelId: string,
   modelInfo: ResolvedModelProfileModelInfo,
   requestModel: string,
-  durableProviderOptions?: ModelProfileRecordProviderOptions,
+  durableProviderOptions?: EffectiveModelProfileRecordProviderOptions,
 ): ModelProfileProviderOptions {
   const base: ModelProfileProviderOptions = {
     requestModel,
@@ -2069,7 +2135,7 @@ function resolveBedrockWireModel(internalId: string): string {
 
 function withDurableModelInfoOptions(
   modelId: string,
-  providerOptions: ModelProfileRecordProviderOptions | undefined,
+  providerOptions: EffectiveModelProfileRecordProviderOptions | undefined,
   database: Database,
   modelInfo: ResolvedModelProfileModelInfo,
 ): ResolvedModelProfileModelInfo {

@@ -118,112 +118,101 @@ describe('provider secret masking', () => {
     ])
   })
 
-  it('masks and restores model profile API keys by profile id after reorder', () => {
+  it('masks and restores provider credentials by credential id after reorder', () => {
     const database = {
-      modelProfiles: [
-        { id: 'profile-a', name: 'A', providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-wire' } },
+      providerCredentials: [
+        { id: 'credential-a', name: 'A', type: 'apiKey', apiKey: 'credential-a-key' },
         {
-          id: 'profile-b',
+          id: 'credential-b',
           name: 'B',
-          providerOptions: {
-            apiKey: 'profile-b-key',
-            requestModel: 'b-wire',
-            vertex: { privateKey: 'profile-b-vertex-key', region: 'us-central1' },
-          },
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'b@example.com', privateKey: 'credential-b-private-key' },
         },
-        { id: 'profile-c', name: 'C', providerOptions: { apiKey: '', requestModel: 'c-wire' } },
+        { id: 'credential-c', name: 'C', type: 'apiKey', apiKey: '' },
       ],
     }
 
     expect(maskProviderSecrets(database)).toEqual({
-      modelProfiles: [
-        { id: 'profile-a', name: 'A', providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'a-wire' } },
+      providerCredentials: [
+        { id: 'credential-a', name: 'A', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
         {
-          id: 'profile-b',
+          id: 'credential-b',
           name: 'B',
-          providerOptions: {
-            apiKey: MASKED_PROVIDER_SECRET,
-            requestModel: 'b-wire',
-            vertex: { privateKey: MASKED_PROVIDER_SECRET, region: 'us-central1' },
-          },
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'b@example.com', privateKey: MASKED_PROVIDER_SECRET },
         },
-        { id: 'profile-c', name: 'C', providerOptions: { apiKey: '', requestModel: 'c-wire' } },
+        { id: 'credential-c', name: 'C', type: 'apiKey', apiKey: '' },
       ],
     })
 
     const resolved = resolveMaskedProviderSecretPlaceholders(database, {
-      modelProfiles: [
+      providerCredentials: [
         {
-          id: 'profile-b',
+          id: 'credential-b',
           name: 'B renamed',
-          providerOptions: {
-            apiKey: MASKED_PROVIDER_SECRET,
-            requestModel: 'b-new-wire',
-            vertex: { privateKey: MASKED_PROVIDER_SECRET, region: 'europe-west1' },
-          },
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'renamed@example.com', privateKey: MASKED_PROVIDER_SECRET },
         },
         {
-          id: 'profile-a',
+          id: 'credential-a',
           name: 'A renamed',
-          providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'a-new-wire' },
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
         },
       ],
     })
 
-    expect(resolved.modelProfiles).toEqual([
+    expect(resolved.providerCredentials).toEqual([
       {
-        id: 'profile-b',
+        id: 'credential-b',
         name: 'B renamed',
-        providerOptions: {
-          apiKey: 'profile-b-key',
-          requestModel: 'b-new-wire',
-          vertex: { privateKey: 'profile-b-vertex-key', region: 'europe-west1' },
-        },
+        type: 'vertexServiceAccount',
+        vertex: { clientEmail: 'renamed@example.com', privateKey: 'credential-b-private-key' },
       },
-      { id: 'profile-a', name: 'A renamed', providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-new-wire' } },
+      { id: 'credential-a', name: 'A renamed', type: 'apiKey', apiKey: 'credential-a-key' },
     ])
   })
 
-  it('rejects model profile masked placeholders without a profile id', () => {
+  it('rejects provider credential masked placeholders without a credential id', () => {
     expect(() =>
       resolveMaskedProviderSecretPlaceholders(
         {
-          modelProfiles: [{ id: 'profile-a', name: 'A', providerOptions: { apiKey: 'profile-a-key' } }],
+          providerCredentials: [{ id: 'credential-a', name: 'A', type: 'apiKey', apiKey: 'credential-a-key' }],
         },
         {
-          modelProfiles: [{ name: 'A without id', providerOptions: { apiKey: MASKED_PROVIDER_SECRET } }],
+          providerCredentials: [{ name: 'A without id', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET }],
         },
       ),
     ).toThrow('without id')
   })
 
-  it('rejects model profile masked placeholders for duplicate or unknown profile ids', () => {
+  it('rejects provider credential masked placeholders for duplicate or unknown credential ids', () => {
     expect(() =>
       resolveMaskedProviderSecretPlaceholders(
         {
-          modelProfiles: [{ id: 'profile-a', name: 'A', providerOptions: { apiKey: 'profile-a-key' } }],
+          providerCredentials: [{ id: 'credential-a', name: 'A', type: 'apiKey', apiKey: 'credential-a-key' }],
         },
         {
-          modelProfiles: [
-            { id: 'profile-a', name: 'A one', providerOptions: { apiKey: MASKED_PROVIDER_SECRET } },
-            { id: 'profile-a', name: 'A two', providerOptions: { apiKey: MASKED_PROVIDER_SECRET } },
+          providerCredentials: [
+            { id: 'credential-a', name: 'A one', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
+            { id: 'credential-a', name: 'A two', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
           ],
         },
       ),
-    ).toThrow('Duplicate modelProfiles row identity: profile-a')
+    ).toThrow('Duplicate providerCredentials row identity: credential-a')
 
     expect(() =>
       resolveMaskedProviderSecretPlaceholders(
         {
-          modelProfiles: [{ id: 'profile-a', name: 'A', providerOptions: { apiKey: 'profile-a-key' } }],
+          providerCredentials: [{ id: 'credential-a', name: 'A', type: 'apiKey', apiKey: 'credential-a-key' }],
         },
         {
-          modelProfiles: [
-            { id: 'profile-missing', name: 'Missing', providerOptions: { apiKey: MASKED_PROVIDER_SECRET } },
+          providerCredentials: [
+            { id: 'credential-missing', name: 'Missing', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
           ],
         },
       ),
-    ).toThrow('Cannot resolve masked provider secret for unknown modelProfiles row: profile-missing')
+    ).toThrow('Cannot resolve masked provider secret for unknown providerCredentials row: credential-missing')
   })
 })
 
@@ -234,8 +223,14 @@ describe('maskProviderSecretsInPlace (M4)', () => {
     OaiCompAPIKeys: { deepseek: 'ds-key' },
     botPresets: [{ id: 'preset-a', openAIKey: 'sk-preset', proxyKey: 'proxy-key' }],
     modelPresets: [{ id: 'model-a', openAIKey: 'sk-model-preset', proxyKey: 'model-proxy-key' }],
-    modelProfiles: [
-      { id: 'profile-a', providerOptions: { apiKey: 'sk-profile', vertex: { privateKey: 'vertex-key' } } },
+    providerCredentials: [
+      { id: 'credential-a', name: 'API', type: 'apiKey', apiKey: 'sk-credential' },
+      {
+        id: 'credential-v',
+        name: 'Vertex',
+        type: 'vertexServiceAccount',
+        vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-key' },
+      },
     ],
     customModels: [{ id: 'xcustom:::a', key: 'custom-key' }],
     characters: [{ chaId: 'char-a', name: 'Ada', oaiTTSConfig: { apiKey: 'tts-key' } }],
@@ -250,8 +245,8 @@ describe('maskProviderSecretsInPlace (M4)', () => {
     expect(inPlace.botPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.modelPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.modelPresets[0].proxyKey).toBe(MASKED_PROVIDER_SECRET)
-    expect(inPlace.modelProfiles[0].providerOptions.apiKey).toBe(MASKED_PROVIDER_SECRET)
-    expect(inPlace.modelProfiles[0].providerOptions.vertex.privateKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.providerCredentials[0].apiKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.providerCredentials[1].vertex?.privateKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.customModels[0].key).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.characters[0].oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.aiModel).toBe('gpt4o-chatgpt')

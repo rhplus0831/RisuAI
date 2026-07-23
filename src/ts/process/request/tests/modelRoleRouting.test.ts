@@ -254,6 +254,7 @@ describe('requestChatDataMain model-role routing', () => {
   it('sends durable fallback profile refs as profile fallback attempts', async () => {
     seedDb({
       aiModel: 'gpt-5',
+      providerCredentials: [{ id: 'credential-fallback', name: 'Fallback', type: 'apiKey', apiKey: 'fallback-key' }],
       modelProfiles: [
         {
           id: 'primary-profile',
@@ -269,8 +270,8 @@ describe('requestChatDataMain model-role routing', () => {
           name: 'Fallback Profile',
           modelId: 'openrouter',
           providerOptions: {
+            credentialId: 'credential-fallback',
             requestModel: 'fallback/provider-model',
-            apiKey: 'fallback-key',
           },
           runtimeOptions: {
             maxResponse: 123,
@@ -317,12 +318,13 @@ describe('requestChatDataMain model-role routing', () => {
   it('uses a first-class profile override as the primary request target', async () => {
     seedDb({
       aiModel: 'echo_model',
+      providerCredentials: [{ id: 'credential-translator', name: 'Translator', type: 'apiKey', apiKey: 'step-key' }],
       modelProfiles: [
         {
           id: 'translator-step-profile',
           name: 'Translator Step',
           modelId: 'openrouter',
-          providerOptions: { requestModel: 'step/provider-model', apiKey: 'step-key' },
+          providerOptions: { requestModel: 'step/provider-model', credentialId: 'credential-translator' },
         },
       ],
       fallbackModels: {

@@ -511,13 +511,21 @@ describe('dispatchChatProvider profile providerOptions', () => {
         aiModel: 'gpt-5',
         openrouterKey: 'sk-flat-openrouter',
         openrouterRequestModel: 'flat/openrouter',
+        providerCredentials: [
+          {
+            id: 'credential-openrouter',
+            name: 'OpenRouter',
+            type: 'apiKey',
+            apiKey: 'sk-durable-openrouter',
+          },
+        ],
         modelProfiles: [
           {
             id: 'openrouter-profile',
             name: 'OpenRouter Profile',
             modelId: 'openrouter',
             providerOptions: {
-              apiKey: 'sk-durable-openrouter',
+              credentialId: 'credential-openrouter',
               requestModel: 'profile/openrouter',
             },
           },
@@ -599,6 +607,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
       forceReplaceUrl: 'https://util.node.mephistopheles.moe/chat/risu',
       proxyKey: 'sk-flat-proxy',
       autofillRequestUrl: true,
+      providerCredentials: [{ id: 'credential-proxy', name: 'Proxy', type: 'apiKey', apiKey: 'sk-profile-proxy' }],
       modelProfiles: [
         {
           id: 'converted-custom-api',
@@ -606,7 +615,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
           providerId: 'custom-api',
           modelId: 'custom-api',
           providerOptions: {
-            apiKey: 'sk-profile-proxy',
+            credentialId: 'credential-proxy',
             baseUrl: 'https://util.node.mephistopheles.moe/chat/risu',
             requestModel: 'extension',
           },

@@ -504,6 +504,14 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     async (format, protocol, url) => {
       writeDatabase({
         aiModel: 'echo_model',
+        providerCredentials: [
+          {
+            id: 'credential-ollama',
+            name: 'Ollama Cloud',
+            type: 'apiKey',
+            apiKey: 'sk-server-profile-ollama',
+          },
+        ],
         modelProfiles: [
           {
             id: 'ollama-cloud-profile',
@@ -511,7 +519,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
             providerId: 'ollama',
             modelId: 'ollama-cloud',
             providerOptions: {
-              apiKey: 'sk-server-profile-ollama',
+              credentialId: 'credential-ollama',
               requestModel: 'server-profile-model',
               ollama: { requestFormat: format },
               extraHeaders: {
@@ -797,15 +805,18 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
   it('server-intent completion resolves fallbackProfileId from durable profile settings', async () => {
     writeDatabase({
       aiModel: 'echo_model',
+      providerCredentials: [
+        { id: 'credential-fallback', name: 'Fallback', type: 'apiKey', apiKey: 'sk-fallback-profile' },
+      ],
       modelProfiles: [
         {
           id: 'fallback-profile',
           name: 'Fallback Profile',
           modelId: 'reverse_proxy',
           providerOptions: {
+            credentialId: 'credential-fallback',
             requestModel: 'fallback-wire-model',
             baseUrl: 'https://fallback-profile.example.com/v1',
-            apiKey: 'sk-fallback-profile',
           },
           runtimeOptions: {
             maxResponse: 77,

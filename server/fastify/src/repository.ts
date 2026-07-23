@@ -262,6 +262,36 @@ export function repairPersistedGlobalLorebookIdsInSqlite(db: DatabaseSync): bool
   return changed
 }
 
+/**
+ * Model-profile credentials were historically persisted inline. Scrub those
+ * legacy fields before settings can reach a resource response or command
+ * baseline now that masking applies only to providerCredentials.
+ */
+export function repairPersistedModelProfileInlineSecrets(settings: unknown): boolean {
+  if (!isRecord(settings) || !Array.isArray(settings.modelProfiles)) return false
+
+  let changed = false
+  for (const rawProfile of settings.modelProfiles) {
+    if (!isRecord(rawProfile) || !isRecord(rawProfile.providerOptions)) continue
+    const providerOptions = rawProfile.providerOptions
+    if (Object.prototype.hasOwnProperty.call(providerOptions, 'apiKey')) {
+      delete providerOptions.apiKey
+      changed = true
+    }
+
+    if (!isRecord(providerOptions.vertex)) continue
+    if (Object.prototype.hasOwnProperty.call(providerOptions.vertex, 'clientEmail')) {
+      delete providerOptions.vertex.clientEmail
+      changed = true
+    }
+    if (Object.prototype.hasOwnProperty.call(providerOptions.vertex, 'privateKey')) {
+      delete providerOptions.vertex.privateKey
+      changed = true
+    }
+  }
+  return changed
+}
+
 function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, unknown>): Record<string, unknown> {
   const merged = { ...database }
   for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
@@ -324,7 +354,11 @@ export function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown
   const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
   if (!row) return null
   const parsed = JSON.parse(row.data_json)
-  return isRecord(parsed) ? parsed : null
+  if (!isRecord(parsed)) return null
+  if (repairPersistedModelProfileInlineSecrets(parsed)) {
+    db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(parsed))
+  }
+  return parsed
 }
 
 export function loadSettingsWithTranslatorPresetsFromSqlite(db: DatabaseSync): Record<string, unknown> | null {

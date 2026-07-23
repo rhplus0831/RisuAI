@@ -17,6 +17,7 @@ import {
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
 } from '../../../src/ts/model/modelProfileRecords.js'
+import { normalizeProviderCredentials } from '../../../src/ts/model/providerCredentialRecords.js'
 import { normalizeAgentPresetDefaultId, normalizeAgentPresets } from '../../../src/ts/agentPresetRecords.js'
 import { normalizeTranslatorPresetState, type TranslatorPresetStateLike } from '../../../src/ts/translator/presets.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
@@ -232,6 +233,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'modelRoles', createDefaultModelRoleOverrides())
   normalizeModelRoleSettings(database)
   setDefault(database, 'modelProfiles', [])
+  setDefault(database, 'providerCredentials', [])
   setDefault(database, 'modelRoleProfiles', createDefaultModelRoleProfiles())
   setDefault(database, 'modelRuntimeDefaults', {})
   normalizeModelProfileSettings(database)
@@ -780,6 +782,7 @@ function normalizeModelRoleSettings(database: JsonRecord): void {
 }
 
 function normalizeModelProfileSettings(database: JsonRecord): void {
+  database.providerCredentials = normalizeProviderCredentials(database.providerCredentials)
   database.modelProfiles = normalizeModelProfiles(database.modelProfiles)
   database.modelRoleProfiles = normalizeModelRoleProfiles(database.modelRoleProfiles)
   database.modelRuntimeDefaults = normalizeModelRuntimeDefaults(database.modelRuntimeDefaults)

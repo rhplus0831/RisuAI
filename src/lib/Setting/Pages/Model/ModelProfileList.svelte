@@ -28,9 +28,16 @@
     type PendingModelMutationProjection,
   } from 'src/ts/model/modelProfileMutations'
   import type { ModelProfileSnapshot, ServerCommandResult } from 'src/ts/server/commands'
+  import type { ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import ModelProfileEditorDrawer from './ModelProfileEditorDrawer.svelte'
   import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
+
+  interface Props {
+    onManageCredentials?: (type: ProviderCredentialType) => void
+  }
+
+  let { onManageCredentials = () => {} }: Props = $props()
 
   type EditorMode = 'create' | 'edit' | null
   type ProfileListPendingProjection = Extract<
@@ -47,6 +54,7 @@
   let commandError = $state('')
 
   let profiles = $derived(getDatabase().modelProfiles ?? [])
+  let credentials = $derived(getDatabase().providerCredentials ?? [])
   let mutationQueued = $derived(pendingMutations.length > 0)
   let editingProfile = $derived(
     editingProfileId ? profiles.find((profile) => profile.id === editingProfileId) : undefined,
@@ -248,11 +256,7 @@
       return
     }
     try {
-      const outcome = await duplicateModelProfileDurably(
-        profile.id,
-        language.modelProfiles.copyName(profile.name),
-        true,
-      )
+      const outcome = await duplicateModelProfileDurably(profile.id, language.modelProfiles.copyName(profile.name))
       if (outcome.status === 'accepted') {
         finishPendingModelMutation(pendingToken)
         return
@@ -409,12 +413,14 @@
         mode={editorMode}
         profile={editingProfileBaseline ?? editingProfile}
         {profiles}
+        {credentials}
         usedByRoles={editingProfile ? rolesUsingProfile(editingProfile.id) : []}
         statusText={editingProfile ? statusLabel(editingProfile) : language.modelProfiles.statusBuckets.incomplete}
         {busy}
         {commandError}
         onSave={saveEditor}
-        onCancel={closeEditor} />
+        onCancel={closeEditor}
+        {onManageCredentials} />
     {/key}
   {/if}
 </section>

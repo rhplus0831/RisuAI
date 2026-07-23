@@ -31,7 +31,12 @@ describe('settings group parity', () => {
   })
 
   it('keeps the model profile projection exact, read-only, and provider-write compatible', () => {
-    const modelProfileSettingsKeys = ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults']
+    const modelProfileSettingsKeys = [
+      'providerCredentials',
+      'modelProfiles',
+      'modelRoleProfiles',
+      'modelRuntimeDefaults',
+    ]
     expect(READABLE_SETTINGS_GROUPS).toContain('models')
     expect(SETTINGS_GROUPS).not.toContain('models')
     expect(SETTINGS_GROUP_KEYS.models).toEqual(modelProfileSettingsKeys)

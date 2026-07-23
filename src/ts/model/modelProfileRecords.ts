@@ -29,7 +29,7 @@ export type ModelProfileRecordFallbackRef =
     }
 
 export interface ModelProfileRecordProviderOptions {
-  apiKey?: string
+  credentialId?: string
   requestModel?: string
   baseUrl?: string
   extraHeaders?: Record<string, string>
@@ -62,8 +62,6 @@ export interface ModelProfileRecordProviderOptions {
   vertex?: {
     projectId?: string
     region?: string
-    clientEmail?: string
-    privateKey?: string
   }
   customApi?: {
     tokenizer?: LLMTokenizerValue
@@ -143,6 +141,7 @@ const MODEL_PROFILE_RECORD_KEYS = new Set([
 const MODEL_PROFILE_FALLBACK_REF_KEYS = new Set(['mode', 'profileId', 'modelId'])
 const MODEL_PROFILE_PROVIDER_OPTIONS_KEYS = new Set([
   'apiKey',
+  'credentialId',
   'requestModel',
   'baseUrl',
   'extraHeaders',
@@ -428,10 +427,10 @@ function readModelProfileFallbackRefs(value: unknown, path: string): ModelProfil
   return fallbacks.length > 0 ? fallbacks : undefined
 }
 
-function normalizeModelProfileProviderOptions(value: unknown): ModelProfileRecordProviderOptions | undefined {
+export function normalizeModelProfileProviderOptions(value: unknown): ModelProfileRecordProviderOptions | undefined {
   if (!isRecord(value)) return undefined
   const options: ModelProfileRecordProviderOptions = {}
-  const apiKey = stringOrBlank(value.apiKey)
+  const credentialId = stringOrBlank(value.credentialId)
   const requestModel = stringOrBlank(value.requestModel)
   const baseUrl = stringOrBlank(value.baseUrl)
   const extraHeaders = normalizeStringRecord(value.extraHeaders)
@@ -442,7 +441,7 @@ function normalizeModelProfileProviderOptions(value: unknown): ModelProfileRecor
   const ollama = normalizeOllamaOptions(value.ollama)
   const vertex = normalizeVertexOptions(value.vertex)
   const customApi = normalizeCustomApiOptions(value.customApi)
-  if (apiKey) options.apiKey = apiKey
+  if (credentialId) options.credentialId = credentialId
   if (requestModel) options.requestModel = requestModel
   if (baseUrl) options.baseUrl = baseUrl
   if (extraHeaders) options.extraHeaders = extraHeaders
@@ -456,7 +455,10 @@ function normalizeModelProfileProviderOptions(value: unknown): ModelProfileRecor
   return objectHasKeys(options) ? options : undefined
 }
 
-function readModelProfileProviderOptions(value: unknown, path: string): ModelProfileRecordProviderOptions | undefined {
+export function readModelProfileProviderOptions(
+  value: unknown,
+  path = 'providerOptions',
+): ModelProfileRecordProviderOptions | undefined {
   if (!isRecord(value)) {
     throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
   }
@@ -465,11 +467,18 @@ function readModelProfileProviderOptions(value: unknown, path: string): ModelPro
       throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
     }
   }
+  if (Object.prototype.hasOwnProperty.call(value, 'apiKey')) {
+    throw new ModelProfileRecordValidationError(
+      `${path}.apiKey is no longer supported; reference a credential via ${path}.credentialId`,
+    )
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'credentialId')) {
+    if (typeof value.credentialId !== 'string' || !stringOrBlank(value.credentialId)) {
+      throw new ModelProfileRecordValidationError(`${path}.credentialId must be a non-empty string when present`)
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(value, 'requestModel') && typeof value.requestModel !== 'string') {
     throw new ModelProfileRecordValidationError(`${path}.requestModel must be a string when present`)
-  }
-  if (Object.prototype.hasOwnProperty.call(value, 'apiKey') && typeof value.apiKey !== 'string') {
-    throw new ModelProfileRecordValidationError(`${path}.apiKey must be a string when present`)
   }
   if (Object.prototype.hasOwnProperty.call(value, 'baseUrl') && typeof value.baseUrl !== 'string') {
     throw new ModelProfileRecordValidationError(`${path}.baseUrl must be a string when present`)
@@ -664,12 +673,8 @@ function normalizeVertexOptions(value: unknown): NonNullable<ModelProfileRecordP
   const options: NonNullable<ModelProfileRecordProviderOptions['vertex']> = {}
   const projectId = stringOrBlank(value.projectId)
   const region = stringOrBlank(value.region)
-  const clientEmail = stringOrBlank(value.clientEmail)
-  const privateKey = stringOrBlank(value.privateKey)
   if (projectId) options.projectId = projectId
   if (region) options.region = region
-  if (clientEmail) options.clientEmail = clientEmail
-  if (privateKey) options.privateKey = privateKey
   return objectHasKeys(options) ? options : undefined
 }
 
@@ -685,10 +690,18 @@ function readVertexOptions(
       throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
     }
   }
+  if (Object.prototype.hasOwnProperty.call(value, 'clientEmail')) {
+    throw new ModelProfileRecordValidationError(
+      `${path}.clientEmail is no longer supported; reference a credential via providerOptions.credentialId`,
+    )
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'privateKey')) {
+    throw new ModelProfileRecordValidationError(
+      `${path}.privateKey is no longer supported; reference a credential via providerOptions.credentialId`,
+    )
+  }
   readOptionalString(value, 'projectId', `${path}.projectId`)
   readOptionalString(value, 'region', `${path}.region`)
-  readOptionalString(value, 'clientEmail', `${path}.clientEmail`)
-  readOptionalString(value, 'privateKey', `${path}.privateKey`)
   return normalizeVertexOptions(value)
 }
 

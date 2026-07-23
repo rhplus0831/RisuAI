@@ -17,11 +17,7 @@
     type ModelProfileRecordProviderOptions,
     type ModelProfileRecordRuntimeOptions,
   } from 'src/ts/model/modelProfileRecords'
-  import {
-    createModelProfileSecretDraft,
-    modelProfileSecretValueForSave,
-    type ModelProfileSecretDraft,
-  } from 'src/ts/model/modelProfileSecrets'
+  import type { ProviderCredentialRecord, ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import type { ModelRole } from 'src/ts/model/modelRoles'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { LLMFormat, type LLMFlags as LLMFlagValue, type LLMTokenizer as LLMTokenizerValue } from 'src/ts/model/types'
@@ -39,24 +35,28 @@
     mode: 'create' | 'edit'
     profile?: ModelProfileRecord
     profiles: ModelProfileRecord[]
+    credentials: ProviderCredentialRecord[]
     usedByRoles: ModelRole[]
     statusText: string
     busy?: boolean
     commandError?: string
     onSave: (profile: ModelProfileSnapshot) => void | Promise<void>
     onCancel: () => void
+    onManageCredentials: (type: ProviderCredentialType) => void
   }
 
   let {
     mode,
     profile,
     profiles = [],
+    credentials = [],
     usedByRoles = [],
     statusText,
     busy = false,
     commandError = '',
     onSave,
     onCancel,
+    onManageCredentials,
   }: Props = $props()
 
   const firstClassProviderIds = new Set<string>(FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS)
@@ -68,9 +68,7 @@
   let providerId = $state(initialProviderId())
   let modelId = $state(initialModelId())
   let requestModel = $state(initialProfile?.providerOptions?.requestModel ?? '')
-  let apiKeyDraft = $state<ModelProfileSecretDraft>(
-    createModelProfileSecretDraft(initialProfile?.providerOptions?.apiKey),
-  )
+  let credentialId = $state(initialProfile?.providerOptions?.credentialId ?? '')
   let baseUrl = $state(initialProfile?.providerOptions?.baseUrl ?? '')
   let extraHeadersRows = $state<KeyValueRow[]>(recordToRows(initialProfile?.providerOptions?.extraHeaders))
   let additionalParamRows = $state<KeyValueRow[]>(paramsToRows(initialProfile?.providerOptions?.additionalParams))
@@ -81,10 +79,6 @@
   let ollamaThinkingMode = $state(initialProfile?.providerOptions?.ollama?.thinkingMode ?? 'off')
   let vertexProjectId = $state(initialProfile?.providerOptions?.vertex?.projectId ?? '')
   let vertexRegion = $state(initialProfile?.providerOptions?.vertex?.region ?? '')
-  let vertexClientEmail = $state(initialProfile?.providerOptions?.vertex?.clientEmail ?? '')
-  let vertexPrivateKeyDraft = $state<ModelProfileSecretDraft>(
-    createModelProfileSecretDraft(initialProfile?.providerOptions?.vertex?.privateKey),
-  )
   let customTokenizer = $state(
     initialProfile?.providerOptions?.customApi?.tokenizer === undefined
       ? ''
@@ -171,9 +165,8 @@
   function setProviderId(nextProviderId: string): void {
     if (nextProviderId === providerId) return
 
-    const clearedCredential = secretDraftHasCredential(apiKeyDraft) || secretDraftHasCredential(vertexPrivateKeyDraft)
-    apiKeyDraft = clearedSecretDraft()
-    vertexPrivateKeyDraft = clearedSecretDraft()
+    const clearedCredential = credentialId !== ''
+    credentialId = ''
     if (clearedCredential) providerCredentialReset = true
 
     providerId = nextProviderId
@@ -187,31 +180,16 @@
     }
   }
 
-  function secretDraftHasCredential(draft: ModelProfileSecretDraft): boolean {
-    if (draft.disposition === 'preserve') return draft.hasExistingSecret
-    return draft.disposition === 'replace' && draft.value.trim().length > 0
-  }
-
-  function clearedSecretDraft(): ModelProfileSecretDraft {
-    return { value: '', disposition: 'clear', hasExistingSecret: false }
-  }
-
-  function secretValue(draft: ModelProfileSecretDraft): string | undefined {
-    return modelProfileSecretValueForSave(draft)
-  }
-
   function firstClassProviderOptionsForSave(
     nextProviderId: FirstClassModelProfileProviderId,
   ): ModelProfileRecordProviderOptions | undefined {
     if (nextProviderId === 'vertex') {
-      const privateKey = secretValue(vertexPrivateKeyDraft)
       const vertex: NonNullable<ModelProfileRecordProviderOptions['vertex']> = {}
       if (vertexProjectId.trim()) vertex.projectId = vertexProjectId.trim()
       if (vertexRegion.trim()) vertex.region = vertexRegion.trim()
-      if (vertexClientEmail.trim()) vertex.clientEmail = vertexClientEmail.trim()
-      if (privateKey) vertex.privateKey = privateKey
 
       const options: ModelProfileRecordProviderOptions = {}
+      if (credentialId.trim()) options.credentialId = credentialId.trim()
       if (requestModel.trim()) options.requestModel = requestModel.trim()
       if (Object.keys(vertex).length > 0) options.vertex = vertex
       return removeEmptyProviderOptions(options)
@@ -219,7 +197,6 @@
 
     if (nextProviderId === 'custom-api') {
       const options: ModelProfileRecordProviderOptions = {}
-      const apiKey = secretValue(apiKeyDraft)
       const headers = rowsToRecord(extraHeadersRows)
       const params = rowsToParams(additionalParamRows)
       const customApi: NonNullable<ModelProfileRecordProviderOptions['customApi']> = {}
@@ -228,7 +205,7 @@
       if (customFlags.length > 0) customApi.flags = customFlags
       if (baseUrl.trim()) options.baseUrl = baseUrl.trim()
       if (requestModel.trim()) options.requestModel = requestModel.trim()
-      if (apiKey) options.apiKey = apiKey
+      if (credentialId.trim()) options.credentialId = credentialId.trim()
       if (headers) options.extraHeaders = headers
       if (params) options.additionalParams = params
       if (Object.keys(customApi).length > 0) options.customApi = customApi
@@ -244,11 +221,10 @@
 
     if (nextProviderId === 'ollama') {
       const options: ModelProfileRecordProviderOptions = {}
-      const apiKey = secretValue(apiKeyDraft)
       const ollama: NonNullable<ModelProfileRecordProviderOptions['ollama']> = {}
       const requestFormatNumber = Number(ollamaRequestFormat)
       const isCloud = modelId === 'ollama-cloud'
-      if (apiKey) options.apiKey = apiKey
+      if (credentialId.trim()) options.credentialId = credentialId.trim()
       if (requestModel.trim()) options.requestModel = requestModel.trim()
       if (!isCloud && baseUrl.trim()) {
         options.baseUrl = baseUrl.trim()
@@ -270,8 +246,7 @@
     }
 
     const options: ModelProfileRecordProviderOptions = {}
-    const apiKey = secretValue(apiKeyDraft)
-    if (apiKey) options.apiKey = apiKey
+    if (credentialId.trim()) options.credentialId = credentialId.trim()
     if (requestModel.trim()) options.requestModel = requestModel.trim()
     return removeEmptyProviderOptions(options)
   }
@@ -338,6 +313,13 @@
     if (busy) return
     if (isDirty && !window.confirm(language.modelProfiles.discardProfileChangesConfirm)) return
     onCancel()
+  }
+
+  function manageCredentials(type: ProviderCredentialType): void {
+    if (busy) return
+    if (isDirty && !window.confirm(language.modelProfiles.discardProfileChangesConfirm)) return
+    onCancel()
+    onManageCredentials(type)
   }
 
   function handleDialogKeydown(event: KeyboardEvent): void {
@@ -454,7 +436,9 @@
           bind:providerId
           bind:modelId
           bind:requestModel
-          bind:apiKeyDraft
+          bind:credentialId
+          {credentials}
+          onCreateCredential={manageCredentials}
           bind:baseUrl
           bind:extraHeadersRows
           bind:additionalParamRows
@@ -463,8 +447,6 @@
           bind:ollamaThinkingMode
           bind:vertexProjectId
           bind:vertexRegion
-          bind:vertexClientEmail
-          bind:vertexPrivateKeyDraft
           bind:customTokenizer
           bind:customFlags />
       </section>

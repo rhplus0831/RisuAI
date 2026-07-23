@@ -1884,9 +1884,12 @@ describe('API-backed resource invalidation', () => {
     seedResources(1)
     api.settingsGroup.mockResolvedValue({
       status: 'ok',
-      revision: 4,
+      revision: 5,
       group: 'models',
       settings: {
+        providerCredentials: [
+          { id: 'credential-a', name: 'Credential A', type: 'apiKey', apiKey: '__RISU_SECRET_MASKED__' },
+        ],
         modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'model-a' }],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
         modelRuntimeDefaults: { maxContext: 8_192 },
@@ -1899,18 +1902,27 @@ describe('API-backed resource invalidation', () => {
           { type: 'modelProfile.updated', revision: 2, resource: 'modelProfile', id: 'profile-a' },
           { type: 'modelProfile.roles.updated', revision: 3, resource: 'modelProfile' },
           { type: 'modelProfile.runtimeDefaults.updated', revision: 4, resource: 'modelProfile' },
+          {
+            type: 'providerCredential.updated',
+            revision: 5,
+            resource: 'providerCredential',
+            id: 'credential-a',
+          },
         ],
         {
           appliedRevision: 1,
           hooks,
         },
       ),
-    ).resolves.toEqual({ status: 'ok', revision: 4, scope: 'targeted' })
+    ).resolves.toEqual({ status: 'ok', revision: 5, scope: 'targeted' })
 
     expect(api.settingsGroup).toHaveBeenCalledOnce()
     expect(api.settingsGroup).toHaveBeenCalledWith('models', undefined)
     expect(api.settings).not.toHaveBeenCalled()
     expect(getResourceDatabase()).toMatchObject({
+      providerCredentials: [
+        { id: 'credential-a', name: 'Credential A', type: 'apiKey', apiKey: '__RISU_SECRET_MASKED__' },
+      ],
       modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'model-a' }],
       modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
       modelRuntimeDefaults: { maxContext: 8_192 },

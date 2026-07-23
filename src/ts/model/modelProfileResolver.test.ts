@@ -102,14 +102,18 @@ describe('resolveModelProfile legacy role compatibility', () => {
       aiModel: 'flat-main-model',
       subModel: 'flat-aux-model',
       fallbackModels: { memory: ['legacy-memory-fallback'] } as unknown as Database['fallbackModels'],
+      providerCredentials: [
+        { id: 'credential-aux', name: 'Aux', type: 'apiKey', apiKey: 'aux-profile-key' },
+        { id: 'credential-main', name: 'Main', type: 'apiKey', apiKey: 'main-profile-key' },
+      ],
       modelProfiles: [
         {
           id: 'durable-aux',
           name: 'Durable Aux',
           modelId: 'openrouter',
           providerOptions: {
+            credentialId: 'credential-aux',
             requestModel: 'aux/wire',
-            apiKey: 'aux-profile-key',
             openrouter: {
               fallback: false,
               middleOut: true,
@@ -128,8 +132,8 @@ describe('resolveModelProfile legacy role compatibility', () => {
           name: 'Durable Main',
           modelId: 'gpt-5',
           providerOptions: {
+            credentialId: 'credential-main',
             requestModel: 'main/wire',
-            apiKey: 'main-profile-key',
           },
         },
         { id: 'durable-fallback', name: 'Durable Fallback', modelId: 'gpt-5-mini' },
@@ -436,6 +440,7 @@ describe('resolveModelProfile legacy role compatibility', () => {
 
   it('resolves a direct durable fallback profile without recursive fallback refs', () => {
     const database = db({
+      providerCredentials: [{ id: 'credential-fallback', name: 'Fallback', type: 'apiKey', apiKey: 'fallback-key' }],
       modelProfiles: [
         {
           id: 'fallback-profile',
@@ -443,7 +448,7 @@ describe('resolveModelProfile legacy role compatibility', () => {
           modelId: 'openrouter',
           providerOptions: {
             requestModel: 'fallback/wire',
-            apiKey: 'fallback-key',
+            credentialId: 'credential-fallback',
           },
           runtimeOptions: {
             maxResponse: 128,
@@ -847,19 +852,23 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
-  it('prefers durable providerOptions.apiKey over flat keys only for the selected profile', () => {
+  it('prefers dereferenced profile credentials over flat keys only for the selected profile', () => {
     const openrouter = resolveModelProfile({
       database: db({
         aiModel: 'flat-main-model',
         openrouterKey: 'flat-openrouter-key',
         openrouterRequestModel: 'flat/openrouter',
+        providerCredentials: [
+          { id: 'credential-openrouter', name: 'OpenRouter', type: 'apiKey', apiKey: ' profile-openrouter-key ' },
+          { id: 'credential-unused', name: 'Unused', type: 'apiKey', apiKey: 'must-not-borrow' },
+        ],
         modelProfiles: [
           {
             id: 'openrouter-profile',
             name: 'OpenRouter Profile',
             modelId: 'openrouter',
             providerOptions: {
-              apiKey: ' profile-openrouter-key ',
+              credentialId: 'credential-openrouter',
               requestModel: 'profile/openrouter',
             },
           },
@@ -868,7 +877,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
             name: 'Unused Profile',
             modelId: 'openrouter',
             providerOptions: {
-              apiKey: 'must-not-borrow',
+              credentialId: 'credential-unused',
               requestModel: 'unused/openrouter',
             },
           },
@@ -887,13 +896,14 @@ describe('resolveModelProfile provider/runtime normalization', () => {
         customAPIFormat: LLMFormat.OpenAICompatible,
         forceReplaceUrl: 'https://proxy.example.com/v1',
         proxyKey: 'flat-proxy-key',
+        providerCredentials: [{ id: 'credential-proxy', name: 'Proxy', type: 'apiKey', apiKey: 'profile-proxy-key' }],
         modelProfiles: [
           {
             id: 'proxy-profile',
             name: 'Proxy Profile',
             modelId: 'reverse_proxy',
             providerOptions: {
-              apiKey: 'profile-proxy-key',
+              credentialId: 'credential-proxy',
               requestModel: 'profile-proxy-model',
               baseUrl: 'https://profile-proxy.example.com/v1',
             },
@@ -914,12 +924,15 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       database: db({
         aiModel: 'flat-main-model',
         OaiCompAPIKeys: { deepseek: 'flat-deepseek-key' },
+        providerCredentials: [
+          { id: 'credential-deepseek', name: 'DeepSeek', type: 'apiKey', apiKey: 'profile-deepseek-key' },
+        ],
         modelProfiles: [
           {
             id: 'deepseek-profile',
             name: 'DeepSeek Profile',
             modelId: 'deepseek-chat',
-            providerOptions: { apiKey: 'profile-deepseek-key' },
+            providerOptions: { credentialId: 'credential-deepseek' },
           },
         ],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'deepseek-profile' } },
@@ -933,8 +946,8 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     expect(keyIdentifier.providerCapability).toEqual({ routable: true, provider: 'openai' })
   })
 
-  it('falls back to flat provider keys when durable providerOptions.apiKey is blank or missing', () => {
-    for (const providerOptions of [undefined, { apiKey: '   ' }]) {
+  it('falls back to flat provider keys when a durable profile credential reference is blank or missing', () => {
+    for (const providerOptions of [undefined, { credentialId: '   ' }]) {
       const profile = resolveModelProfile({
         database: db({
           aiModel: 'flat-main-model',
@@ -961,12 +974,15 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       aiModel: 'openrouter',
       openrouterKey: 'flat-openrouter-key',
       openrouterRequestModel: 'flat/openrouter',
+      providerCredentials: [
+        { id: 'credential-openrouter', name: 'OpenRouter', type: 'apiKey', apiKey: 'profile-openrouter-key' },
+      ],
       modelProfiles: [
         {
           id: 'openrouter-profile',
           name: 'OpenRouter Profile',
           modelId: 'openrouter',
-          providerOptions: { apiKey: 'profile-openrouter-key', requestModel: 'profile/openrouter' },
+          providerOptions: { credentialId: 'credential-openrouter', requestModel: 'profile/openrouter' },
         },
       ],
       modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openrouter-profile' } },
@@ -1382,20 +1398,35 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
-  it('normalizes Bedrock credential string and request model into provider options', () => {
+  it('dereferences a packed Bedrock credential string and normalizes its request model', () => {
     const profile = resolveModelProfile({
       database: db({
-        aiModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
-        claudeAPIKey: 'bedrock-access:bedrock-secret:ap-southeast-2',
+        providerCredentials: [
+          {
+            id: 'credential-bedrock',
+            name: 'Bedrock',
+            type: 'apiKey',
+            apiKey: 'bedrock-access:bedrock-secret:ap-southeast-2',
+          },
+        ],
+        modelProfiles: [
+          {
+            id: 'bedrock-profile',
+            name: 'Bedrock Profile',
+            modelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+            providerOptions: { credentialId: 'credential-bedrock' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'bedrock-profile' } },
       } as Partial<Database>),
     })
 
     expect(profile.modelInfo.format).toBe(LLMFormat.AWSBedrockClaude)
     expect(profile.providerCapability).toEqual({ routable: true, provider: 'bedrock' })
-    expect(profile.requestModel).toBe('global.anthropic.claude-sonnet-4-5-20250929-v1:0')
+    expect(profile.requestModel).toBe('anthropic.claude-sonnet-4-5-20250929-v1:0')
     expect(profile.providerOptions).toMatchObject({
       apiKey: 'bedrock-access:bedrock-secret:ap-southeast-2',
-      requestModel: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+      requestModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
     })
   })
 
@@ -1766,13 +1797,16 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     const ready = resolveModelProfile({
       database: db({
         openAIKey: 'flat-openai-key',
+        providerCredentials: [
+          { id: 'credential-openai', name: 'OpenAI', type: 'apiKey', apiKey: 'profile-openai-key' },
+        ],
         modelProfiles: [
           {
             id: 'openai-profile',
             name: 'OpenAI Profile',
             providerId: 'openai',
             modelId: 'gpt-5',
-            providerOptions: { apiKey: 'profile-openai-key' },
+            providerOptions: { credentialId: 'credential-openai' },
           },
         ],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openai-profile' } },
@@ -1810,17 +1844,42 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       providerId: 'openai',
       reasons: ['api-key-missing'],
     })
+
+    const danglingCredential = resolveModelProfile({
+      database: db({
+        modelProfiles: [
+          {
+            id: 'openai-profile',
+            name: 'OpenAI Profile',
+            providerId: 'openai',
+            modelId: 'gpt-5',
+            providerOptions: { credentialId: 'missing-credential' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openai-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(danglingCredential.status).toMatchObject({
+      bucket: 'incomplete',
+      providerId: 'openai',
+      reasons: ['credential-missing', 'api-key-missing'],
+    })
   })
 
   it('classifies inferred, compatibility, unsupported, Vertex, and Custom API profile statuses', () => {
     const inferredOpenAI = resolveModelProfile({
       database: db({
+        providerCredentials: [
+          { id: 'credential-openai', name: 'OpenAI', type: 'apiKey', apiKey: 'profile-openai-key' },
+        ],
         modelProfiles: [
           {
             id: 'inferred-openai',
             name: 'Inferred OpenAI',
             modelId: 'gpt-5',
-            providerOptions: { apiKey: 'profile-openai-key' },
+            providerOptions: { credentialId: 'credential-openai' },
           },
         ],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'inferred-openai' } },
@@ -1890,10 +1949,10 @@ describe('resolveModelProfile provider/runtime normalization', () => {
             providerId: 'vertex',
             modelId: 'gemini-2.5-pro-vertex',
             providerOptions: {
+              credentialId: 'missing-vertex-credential',
               vertex: {
                 projectId: 'profile-project',
                 region: 'profile-region',
-                clientEmail: 'profile-client@example.com',
               },
             },
           },
@@ -1906,14 +1965,52 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     expect(vertex.providerOptions.vertex).toEqual({
       projectId: 'profile-project',
       region: 'profile-region',
-      clientEmail: 'profile-client@example.com',
+      clientEmail: undefined,
       privateKey: undefined,
     })
     expect(vertex.status).toMatchObject({
       bucket: 'incomplete',
       providerId: 'vertex',
-      reasons: ['vertex-private-key-missing'],
+      reasons: ['credential-missing', 'vertex-client-email-missing', 'vertex-private-key-missing'],
     })
+
+    const readyVertex = resolveModelProfile({
+      database: db({
+        providerCredentials: [
+          {
+            id: 'credential-vertex',
+            name: 'Vertex',
+            type: 'vertexServiceAccount',
+            vertex: {
+              clientEmail: 'profile-client@example.com',
+              privateKey: 'profile-private-key',
+            },
+          },
+        ],
+        modelProfiles: [
+          {
+            id: 'vertex-profile',
+            name: 'Vertex Profile',
+            providerId: 'vertex',
+            modelId: 'gemini-2.5-pro-vertex',
+            providerOptions: {
+              credentialId: 'credential-vertex',
+              vertex: { projectId: 'profile-project', region: 'profile-region' },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'vertex-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(readyVertex.providerOptions.vertex).toEqual({
+      projectId: 'profile-project',
+      region: 'profile-region',
+      clientEmail: 'profile-client@example.com',
+      privateKey: 'profile-private-key',
+    })
+    expect(readyVertex.status.bucket).toBe('ready')
 
     const customApi = resolveModelProfile({
       database: db({

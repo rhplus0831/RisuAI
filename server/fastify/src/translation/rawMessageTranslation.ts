@@ -132,6 +132,7 @@ function translatorSettingsHash(input: {
       translatorHistoryMaxTokens: translatorHistoryMaxTokens(input.settings),
       translatorNote: translatorNote(input.character),
       aiModel: stringValue(input.settings.aiModel),
+      providerCredentials: input.settings.providerCredentials ?? null,
       modelProfiles: input.settings.modelProfiles ?? null,
       modelRoleProfiles: input.settings.modelRoleProfiles ?? null,
       modelRuntimeDefaults: input.settings.modelRuntimeDefaults ?? null,

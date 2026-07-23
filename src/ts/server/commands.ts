@@ -29,6 +29,7 @@ import type {
   ModelProfileRecordRuntimeOptions,
   ModelRoleProfileBinding,
 } from '../model/modelProfileRecords'
+import type { ProviderCredentialRecord } from '../model/providerCredentialRecords'
 import {
   serializeScriptDefinitionCollectionDigestInput,
   type ScriptDefinitionCollectionMutation,
@@ -953,7 +954,24 @@ export interface UpdateModelProfileCommandInput extends ModelProfileCommandInput
 export interface DuplicateModelProfileCommandInput extends ModelProfileCommandInput {
   profileId: string
   name?: string
-  includeSecrets?: boolean
+}
+
+export type ProviderCredentialSnapshot = Omit<ProviderCredentialRecord, 'id'> & {
+  id?: string
+}
+
+export interface CreateProviderCredentialCommandInput extends ModelProfileCommandInput {
+  credential: ProviderCredentialSnapshot
+}
+
+export interface UpdateProviderCredentialCommandInput extends ModelProfileCommandInput {
+  credentialId: string
+  credential: ProviderCredentialSnapshot
+  expectedCredential: ProviderCredentialSnapshot
+}
+
+export interface DeleteProviderCredentialCommandInput extends ModelProfileCommandInput {
+  credentialId: string
 }
 
 export interface DeleteModelProfileCommandInput extends ModelProfileCommandInput {
@@ -2848,7 +2866,48 @@ export async function duplicateModelProfileCommand(
     body: {
       baseRevision: input.baseRevision,
       name: input.name,
-      includeSecrets: input.includeSecrets,
+    },
+    signal,
+  })
+}
+
+export async function createProviderCredentialCommand(
+  input: CreateProviderCredentialCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ credentialId: string }>> {
+  return requestCommandJson('/provider-credentials', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      credential: input.credential,
+    },
+    signal,
+  })
+}
+
+export async function updateProviderCredentialCommand(
+  input: UpdateProviderCredentialCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ credentialId: string }>> {
+  return requestCommandJson(`/provider-credentials/${encodeURIComponent(input.credentialId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      credential: input.credential,
+      expectedCredential: input.expectedCredential,
+    },
+    signal,
+  })
+}
+
+export async function deleteProviderCredentialCommand(
+  input: DeleteProviderCredentialCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ credentialId: string }>> {
+  return requestCommandJson(`/provider-credentials/${encodeURIComponent(input.credentialId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
     },
     signal,
   })

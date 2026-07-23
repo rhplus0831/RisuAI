@@ -28,6 +28,7 @@ describe('model profile records', () => {
           providerId: ' openai ',
           modelId: ' gpt-5 ',
           providerOptions: {
+            credentialId: ' cred-primary ',
             requestModel: ' wire-model ',
             baseUrl: ' risu::https://proxy.example.com ',
             extraHeaders: { ' X-Key ': ' value ', '   ': 'drop', 'X-Bad': 7 },
@@ -141,7 +142,7 @@ describe('model profile records', () => {
         providerId: 'openai',
         modelId: 'gpt-5',
         providerOptions: {
-          apiKey: 'profile-api-key',
+          credentialId: 'cred-primary',
           requestModel: 'wire-model',
           baseUrl: 'risu::https://proxy.example.com',
           extraHeaders: { 'X-Key': 'value' },
@@ -176,8 +177,6 @@ describe('model profile records', () => {
           vertex: {
             projectId: 'project-a',
             region: 'us-central1',
-            clientEmail: 'svc@example.iam.gserviceaccount.com',
-            privateKey: '-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----',
           },
           customApi: {
             tokenizer: LLMTokenizer.Mistral,
@@ -236,8 +235,8 @@ describe('model profile records', () => {
           providerId: ' vertex ',
           modelId: ' gpt-5 ',
           providerOptions: {
+            credentialId: ' cred-vertex ',
             requestModel: ' wire ',
-            apiKey: ' profile-api-key ',
             baseUrl: ' https://proxy.example.com/v1 ',
             extraHeaders: { 'X-Test': ' yes ' },
             additionalParams: [[' header::X-Test ', ' true ']],
@@ -261,8 +260,6 @@ describe('model profile records', () => {
             vertex: {
               projectId: ' project-a ',
               region: ' us-central1 ',
-              clientEmail: ' svc@example.iam.gserviceaccount.com ',
-              privateKey: ' private-key ',
             },
             customApi: {
               tokenizer: LLMTokenizer.Cohere,
@@ -297,7 +294,7 @@ describe('model profile records', () => {
         providerId: 'vertex',
         modelId: 'gpt-5',
         providerOptions: {
-          apiKey: 'profile-api-key',
+          credentialId: 'cred-vertex',
           requestModel: 'wire',
           baseUrl: 'https://proxy.example.com/v1',
           extraHeaders: { 'X-Test': 'yes' },
@@ -322,8 +319,6 @@ describe('model profile records', () => {
           vertex: {
             projectId: 'project-a',
             region: 'us-central1',
-            clientEmail: 'svc@example.iam.gserviceaccount.com',
-            privateKey: 'private-key',
           },
           customApi: {
             tokenizer: LLMTokenizer.Cohere,
@@ -392,9 +387,15 @@ describe('model profile records', () => {
       ).toThrow(`modelProfiles[0].providerOptions.${field} is not supported`)
     }
 
-    expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 123 } }])).toThrow(
-      'modelProfiles[0].providerOptions.apiKey must be a string when present',
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 'legacy-secret' } }]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.apiKey is no longer supported; reference a credential via modelProfiles[0].providerOptions.credentialId',
     )
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { credentialId: '   ' } }]),
+    ).toThrow('modelProfiles[0].providerOptions.credentialId must be a non-empty string when present')
 
     expect(() => readModelProfiles([{ id: 'profile-a', name: '' }])).toThrow(
       'modelProfiles[0].name must be a non-empty string',
@@ -586,7 +587,21 @@ describe('model profile records', () => {
           providerOptions: { vertex: { privateKey: 42 } },
         },
       ]),
-    ).toThrow('modelProfiles[0].providerOptions.vertex.privateKey must be a string when present')
+    ).toThrow(
+      'modelProfiles[0].providerOptions.vertex.privateKey is no longer supported; reference a credential via providerOptions.credentialId',
+    )
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { vertex: { clientEmail: 'service@example.com' } },
+        },
+      ]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.vertex.clientEmail is no longer supported; reference a credential via providerOptions.credentialId',
+    )
 
     expect(() =>
       readModelProfiles([

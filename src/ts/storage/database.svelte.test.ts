@@ -436,6 +436,9 @@ describe('settings database normalization', () => {
 describe('model profile database normalization', () => {
   it('normalizes durable profile scaffold fields through setDatabase', () => {
     seedPresetDatabase({
+      providerCredentials: [
+        { id: ' credential-a ', name: ' Primary key ', type: 'apiKey', apiKey: ' profile-secret ' },
+      ],
       modelProfiles: [
         {
           id: ' profile-a ',
@@ -443,6 +446,7 @@ describe('model profile database normalization', () => {
           providerId: ' openai ',
           modelId: ' gpt-5 ',
           providerOptions: {
+            credentialId: ' credential-a ',
             requestModel: ' wire-model ',
             baseUrl: ' https://profile.example.com/v1 ',
             apiKey: ' profile-secret ',
@@ -485,6 +489,9 @@ describe('model profile database normalization', () => {
 
     setDatabase(data)
 
+    expect(getDatabase().providerCredentials).toEqual([
+      { id: 'credential-a', name: 'Primary key', type: 'apiKey', apiKey: 'profile-secret' },
+    ])
     expect(getDatabase().modelProfiles).toEqual([
       {
         id: 'profile-a',
@@ -492,9 +499,9 @@ describe('model profile database normalization', () => {
         providerId: 'openai',
         modelId: 'gpt-5',
         providerOptions: {
+          credentialId: 'credential-a',
           requestModel: 'wire-model',
           baseUrl: 'https://profile.example.com/v1',
-          apiKey: 'profile-secret',
           extraHeaders: { 'X-Test': 'yes' },
           additionalParams: [['header::X-Test', 'true']],
           openrouter: {
@@ -507,8 +514,6 @@ describe('model profile database normalization', () => {
           vertex: {
             projectId: 'project-a',
             region: 'us-central1',
-            clientEmail: 'svc@example.iam.gserviceaccount.com',
-            privateKey: 'private-key',
           },
           customApi: { tokenizer: LLMTokenizer.Mistral, flags: [LLMFlags.hasStreaming] },
         },
@@ -3884,7 +3889,7 @@ describe('preset command rollback (L21)', () => {
         id: 'model-profile',
         name: 'Model Profile',
         modelId: 'model-ai',
-        providerOptions: { requestModel: 'model-wire', apiKey: 'model-secret' },
+        providerOptions: { requestModel: 'model-wire' },
       },
     ])
     expect(getDatabase().modelRoleProfiles).toEqual(

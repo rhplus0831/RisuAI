@@ -1753,6 +1753,17 @@ describe('Phase 9-2a scalar settings groups', () => {
       payload: {
         baseRevision: revision,
         patch: {
+          providerCredentials: [
+            {
+              id: ' credential-vertex ',
+              name: ' Vertex ',
+              type: 'vertexServiceAccount',
+              vertex: {
+                clientEmail: ' svc@example.iam.gserviceaccount.com ',
+                privateKey: ' private-key ',
+              },
+            },
+          ],
           modelProfiles: [
             {
               id: ' profile-a ',
@@ -1760,15 +1771,13 @@ describe('Phase 9-2a scalar settings groups', () => {
               providerId: ' vertex ',
               modelId: ' gpt-5 ',
               providerOptions: {
+                credentialId: ' credential-vertex ',
                 requestModel: ' wire-model ',
-                apiKey: ' profile-api-key ',
                 extraHeaders: { 'X-Test': ' yes ' },
                 additionalParams: [[' header::X-Test ', ' true ']],
                 vertex: {
                   projectId: ' project-a ',
                   region: ' us-central1 ',
-                  clientEmail: ' svc@example.iam.gserviceaccount.com ',
-                  privateKey: ' private-key ',
                 },
               },
               runtimeOptions: {
@@ -1807,6 +1816,17 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(res.statusCode, res.body).toBe(200)
     expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       aiModel: 'flat-main-model',
+      providerCredentials: [
+        {
+          id: 'credential-vertex',
+          name: 'Vertex',
+          type: 'vertexServiceAccount',
+          vertex: {
+            clientEmail: 'svc@example.iam.gserviceaccount.com',
+            privateKey: 'private-key',
+          },
+        },
+      ],
       modelProfiles: [
         {
           id: 'profile-a',
@@ -1814,15 +1834,13 @@ describe('Phase 9-2a scalar settings groups', () => {
           providerId: 'vertex',
           modelId: 'gpt-5',
           providerOptions: {
+            credentialId: 'credential-vertex',
             requestModel: 'wire-model',
-            apiKey: 'profile-api-key',
             extraHeaders: { 'X-Test': 'yes' },
             additionalParams: [['header::X-Test', 'true']],
             vertex: {
               projectId: 'project-a',
               region: 'us-central1',
-              clientEmail: 'svc@example.iam.gserviceaccount.com',
-              privateKey: 'private-key',
             },
           },
           runtimeOptions: {
@@ -1878,7 +1896,8 @@ describe('Phase 9-2a scalar settings groups', () => {
         patch: {
           modelProfiles: [{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 42 } }],
         },
-        error: 'modelProfiles[0].providerOptions.apiKey must be a string when present',
+        error:
+          'modelProfiles[0].providerOptions.apiKey is no longer supported; reference a credential via modelProfiles[0].providerOptions.credentialId',
       },
       {
         patch: {
@@ -1996,6 +2015,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       modelProfiles: [],
+      providerCredentials: [{ id: 'credential-memory', name: 'Memory', type: 'apiKey', apiKey: 'memory-key' }],
     })
 
     const res = await harness.app.inject({
@@ -2009,7 +2029,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           name: 'Memory Profile',
           providerId: 'openai',
           modelId: 'gpt-5',
-          providerOptions: { apiKey: 'memory-key' },
+          providerOptions: { credentialId: 'credential-memory' },
         },
       },
     })
@@ -2033,7 +2053,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           name: 'Memory Profile',
           providerId: 'openai',
           modelId: 'gpt-5',
-          providerOptions: { apiKey: 'memory-key' },
+          providerOptions: { credentialId: 'credential-memory' },
         },
       ],
       modelRoleProfiles: {
@@ -2042,9 +2062,63 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('rejects missing credential references on profile create, update, and create-and-bind', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [],
+      modelProfiles: [{ id: 'profile-a', name: 'Profile A', providerId: 'openai', modelId: 'gpt-5' }],
+    })
+    const profile = {
+      name: 'Missing credential',
+      providerId: 'openai',
+      modelId: 'gpt-5',
+      providerOptions: { credentialId: 'credential-missing' },
+    }
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, profile },
+    })
+    expect(created.statusCode).toBe(400)
+    expect(created.json().error).toBe(
+      'profile.providerOptions.credentialId must reference an existing provider credential',
+    )
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-profiles/profile-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        expectedProfile: { id: 'profile-a', name: 'Profile A', providerId: 'openai', modelId: 'gpt-5' },
+        profile: { ...profile, id: 'profile-a' },
+      },
+    })
+    expect(updated.statusCode).toBe(400)
+    expect(updated.json().error).toBe(
+      'profile.providerOptions.credentialId must reference an existing provider credential',
+    )
+
+    const bound = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/create-and-bind',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, role: 'memory', profile },
+    })
+    expect(bound.statusCode).toBe(400)
+    expect(bound.json().error).toBe(
+      'profile.providerOptions.credentialId must reference an existing provider credential',
+    )
+  })
+
   it('updates role bindings and their selected model-preset mirror atomically', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [
+        { id: 'credential-anthropic', name: 'Anthropic', type: 'apiKey', apiKey: 'anthropic-secret' },
+      ],
       modelProfiles: [
         {
           id: 'profile-a',
@@ -2120,13 +2194,16 @@ describe('Phase 9-2a scalar settings groups', () => {
   it('rejects a memory role binding that the summary worker cannot execute', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [
+        { id: 'credential-anthropic', name: 'Anthropic', type: 'apiKey', apiKey: 'anthropic-secret' },
+      ],
       modelProfiles: [
         {
           id: 'anthropic-memory',
           name: 'Anthropic Memory',
           providerId: 'anthropic',
           modelId: 'claude-3-5-sonnet-latest',
-          providerOptions: { apiKey: 'anthropic-secret' },
+          providerOptions: { credentialId: 'credential-anthropic' },
         },
       ],
     })
@@ -2151,163 +2228,276 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
-  it('preserves masked profile secrets on update and clears omitted secrets on full-row save', async () => {
+  it('creates, renames, rotates, and deletes provider credentials with masked placeholder semantics', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      modelProfiles: [
-        {
-          id: 'profile-a',
-          name: 'Profile A',
-          providerId: 'vertex',
-          modelId: 'gemini-2.5-pro-vertex',
-          providerOptions: {
-            apiKey: 'profile-key',
-            requestModel: 'old-wire',
-            vertex: {
-              projectId: 'project-a',
-              region: 'us-central1',
-              clientEmail: 'svc@example.com',
-              privateKey: 'vertex-private',
-            },
-          },
-        },
-      ],
-    })
-
-    const preserved = await harness.app.inject({
-      method: 'PATCH',
-      url: '/api/v1/commands/model-profiles/profile-a',
-      headers: { 'risu-auth': assertion },
-      payload: {
-        baseRevision: revision,
-        expectedProfile: {
-          id: 'profile-a',
-          name: 'Profile A',
-          providerId: 'vertex',
-          modelId: 'gemini-2.5-pro-vertex',
-          providerOptions: {
-            apiKey: MASKED_PROVIDER_SECRET,
-            requestModel: 'old-wire',
-            vertex: {
-              projectId: 'project-a',
-              region: 'us-central1',
-              clientEmail: 'svc@example.com',
-              privateKey: MASKED_PROVIDER_SECRET,
-            },
-          },
-        },
-        profile: {
-          id: 'profile-a',
-          name: 'Profile A renamed',
-          providerId: 'vertex',
-          modelId: 'gemini-2.5-pro-vertex',
-          providerOptions: {
-            apiKey: MASKED_PROVIDER_SECRET,
-            requestModel: 'new-wire',
-            vertex: {
-              projectId: 'project-a',
-              region: 'europe-west1',
-              clientEmail: 'svc@example.com',
-              privateKey: MASKED_PROVIDER_SECRET,
-            },
-          },
-        },
-      },
-    })
-    expect(preserved.statusCode, preserved.body).toBe(200)
-    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
-      modelProfiles: [
-        {
-          id: 'profile-a',
-          name: 'Profile A renamed',
-          providerOptions: {
-            apiKey: 'profile-key',
-            requestModel: 'new-wire',
-            vertex: {
-              privateKey: 'vertex-private',
-              region: 'europe-west1',
-            },
-          },
-        },
-      ],
-    })
-
-    const cleared = await harness.app.inject({
-      method: 'PATCH',
-      url: '/api/v1/commands/model-profiles/profile-a',
-      headers: { 'risu-auth': assertion },
-      payload: {
-        baseRevision: preserved.json().revision,
-        expectedProfile: {
-          id: 'profile-a',
-          name: 'Profile A renamed',
-          providerId: 'vertex',
-          modelId: 'gemini-2.5-pro-vertex',
-          providerOptions: {
-            apiKey: MASKED_PROVIDER_SECRET,
-            requestModel: 'new-wire',
-            vertex: {
-              projectId: 'project-a',
-              region: 'europe-west1',
-              clientEmail: 'svc@example.com',
-              privateKey: MASKED_PROVIDER_SECRET,
-            },
-          },
-        },
-        profile: {
-          name: 'Profile A cleared',
-          providerId: 'vertex',
-          modelId: 'gemini-2.5-pro-vertex',
-          providerOptions: {
-            requestModel: 'new-wire',
-            vertex: {
-              projectId: 'project-a',
-              region: 'europe-west1',
-              clientEmail: 'svc@example.com',
-            },
-          },
-        },
-      },
-    })
-    expect(cleared.statusCode, cleared.body).toBe(200)
-    const profile = (
-      loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, unknown>> }
-    ).modelProfiles[0]
-    expect(profile.providerOptions).toEqual({
-      requestModel: 'new-wire',
-      vertex: {
-        projectId: 'project-a',
-        region: 'europe-west1',
-        clientEmail: 'svc@example.com',
-      },
-    })
-  })
-
-  it('rejects stale model profile rows even when the caller has the latest global revision', async () => {
-    const { assertion } = await setupAuthedClient(harness.app)
-    const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [{ id: 'credential-in-use', name: 'In use', type: 'apiKey', apiKey: 'in-use-secret' }],
       modelProfiles: [
         {
           id: 'profile-a',
           name: 'Profile A',
           providerId: 'openai',
           modelId: 'gpt-5',
-          providerOptions: { apiKey: 'profile-key', requestModel: 'wire-v1' },
+          providerOptions: { credentialId: 'credential-in-use' },
+        },
+      ],
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/provider-credentials',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        credential: { name: 'Created API key', type: 'apiKey', apiKey: 'created-secret' },
+      },
+    })
+    expect(created.statusCode, created.body).toBe(200)
+    const credentialId = created.json().credentialId as string
+    expect(credentialId).toMatch(/^cred_[0-9a-f]{20}$/)
+    expect(created.json().event).toMatchObject({
+      type: 'providerCredential.created',
+      resource: 'providerCredential',
+      id: credentialId,
+    })
+
+    const renamed = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/provider-credentials/${credentialId}`,
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        expectedCredential: {
+          id: credentialId,
+          name: 'Created API key',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+        credential: {
+          id: credentialId,
+          name: 'Renamed API key',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+      },
+    })
+    expect(renamed.statusCode, renamed.body).toBe(200)
+    expect(
+      (
+        loadPersistedFromDir(harness.dataDir).database as {
+          providerCredentials: Array<Record<string, unknown>>
+        }
+      ).providerCredentials,
+    ).toContainEqual({
+      id: credentialId,
+      name: 'Renamed API key',
+      type: 'apiKey',
+      apiKey: 'created-secret',
+    })
+
+    const rotated = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/provider-credentials/${credentialId}`,
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: renamed.json().revision,
+        expectedCredential: {
+          id: credentialId,
+          name: 'Renamed API key',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+        credential: {
+          id: credentialId,
+          name: 'Renamed API key',
+          type: 'apiKey',
+          apiKey: 'rotated-secret',
+        },
+      },
+    })
+    expect(rotated.statusCode, rotated.body).toBe(200)
+    expect(
+      (
+        loadPersistedFromDir(harness.dataDir).database as {
+          providerCredentials: Array<Record<string, unknown>>
+        }
+      ).providerCredentials,
+    ).toContainEqual({
+      id: credentialId,
+      name: 'Renamed API key',
+      type: 'apiKey',
+      apiKey: 'rotated-secret',
+    })
+
+    const stale = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/provider-credentials/${credentialId}`,
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: rotated.json().revision,
+        expectedCredential: {
+          id: credentialId,
+          name: 'Created API key',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+        credential: {
+          id: credentialId,
+          name: 'Stale rename',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+      },
+    })
+    expect(stale.statusCode, stale.body).toBe(409)
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/commands/provider-credentials/${credentialId}`,
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: rotated.json().revision },
+    })
+    expect(deleted.statusCode, deleted.body).toBe(200)
+
+    const inUse = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/provider-credentials/credential-in-use',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: deleted.json().revision },
+    })
+    expect(inUse.statusCode, inUse.body).toBe(400)
+    expect(inUse.json().error).toContain('Profile A (profile-a)')
+  })
+
+  it('rejects unresolved masked secrets when changing credential types', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [
+        { id: 'credential-api', name: 'API', type: 'apiKey', apiKey: 'api-secret' },
+        {
+          id: 'credential-vertex',
+          name: 'Vertex',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-secret' },
+        },
+      ],
+    })
+
+    const cases = [
+      {
+        credentialId: 'credential-api',
+        expectedCredential: {
+          id: 'credential-api',
+          name: 'API',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+        credential: {
+          id: 'credential-api',
+          name: 'API switched to Vertex',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'switched@example.com', privateKey: MASKED_PROVIDER_SECRET },
+        },
+      },
+      {
+        credentialId: 'credential-vertex',
+        expectedCredential: {
+          id: 'credential-vertex',
+          name: 'Vertex',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'vertex@example.com', privateKey: MASKED_PROVIDER_SECRET },
+        },
+        credential: {
+          id: 'credential-vertex',
+          name: 'Vertex switched to API',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+      },
+    ] as const
+
+    for (const testCase of cases) {
+      const response = await harness.app.inject({
+        method: 'PATCH',
+        url: `/api/v1/commands/provider-credentials/${testCase.credentialId}`,
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          expectedCredential: testCase.expectedCredential,
+          credential: testCase.credential,
+        },
+      })
+      expect(response.statusCode, response.body).toBe(400)
+      expect(response.json().error).toBe(
+        'Masked provider secret placeholders must resolve before a credential can be saved',
+      )
+    }
+
+    const unresolvedExpected = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/provider-credentials/credential-api',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        expectedCredential: {
+          id: 'credential-api',
+          name: 'Wrong expected type',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'wrong@example.com', privateKey: MASKED_PROVIDER_SECRET },
+        },
+        credential: {
+          id: 'credential-api',
+          name: 'API rotated',
+          type: 'apiKey',
+          apiKey: 'new-api-secret',
+        },
+      },
+    })
+    expect(unresolvedExpected.statusCode, unresolvedExpected.body).toBe(409)
+
+    expect(
+      (
+        loadPersistedFromDir(harness.dataDir).database as {
+          providerCredentials: Array<Record<string, unknown>>
+        }
+      ).providerCredentials,
+    ).toEqual([
+      { id: 'credential-api', name: 'API', type: 'apiKey', apiKey: 'api-secret' },
+      {
+        id: 'credential-vertex',
+        name: 'Vertex',
+        type: 'vertexServiceAccount',
+        vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-secret' },
+      },
+    ])
+  })
+
+  it('rejects stale model profile rows even when the caller has the latest global revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [{ id: 'credential-profile', name: 'Profile', type: 'apiKey', apiKey: 'profile-key' }],
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerId: 'openai',
+          modelId: 'gpt-5',
+          providerOptions: { credentialId: 'credential-profile', requestModel: 'wire-v1' },
           runtimeOptions: { temperature: 50 },
         },
       ],
     })
-    const originalMaskedProfile = {
+    const originalProfile = {
       id: 'profile-a',
       name: 'Profile A',
       providerId: 'openai',
       modelId: 'gpt-5',
-      providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'wire-v1' },
+      providerOptions: { credentialId: 'credential-profile', requestModel: 'wire-v1' },
       runtimeOptions: { temperature: 50 },
     }
-    const concurrentMaskedProfile = {
-      ...originalMaskedProfile,
-      providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'wire-v2' },
+    const concurrentProfile = {
+      ...originalProfile,
+      providerOptions: { credentialId: 'credential-profile', requestModel: 'wire-v2' },
       runtimeOptions: { temperature: 70 },
     }
 
@@ -2317,8 +2507,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: revision,
-        expectedProfile: originalMaskedProfile,
-        profile: concurrentMaskedProfile,
+        expectedProfile: originalProfile,
+        profile: concurrentProfile,
       },
     })
     expect(concurrent.statusCode, concurrent.body).toBe(200)
@@ -2330,8 +2520,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: concurrentRevision,
-        expectedProfile: originalMaskedProfile,
-        profile: { ...originalMaskedProfile, name: 'Locally renamed' },
+        expectedProfile: originalProfile,
+        profile: { ...originalProfile, name: 'Locally renamed' },
       },
     })
     expect(stale.statusCode, stale.body).toBe(409)
@@ -2341,7 +2531,7 @@ describe('Phase 9-2a scalar settings groups', () => {
         .modelProfiles[0],
     ).toMatchObject({
       name: 'Profile A',
-      providerOptions: { apiKey: 'profile-key', requestModel: 'wire-v2' },
+      providerOptions: { credentialId: 'credential-profile', requestModel: 'wire-v2' },
       runtimeOptions: { temperature: 70 },
     })
 
@@ -2351,9 +2541,9 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: concurrentRevision,
-        expectedProfile: concurrentMaskedProfile,
+        expectedProfile: concurrentProfile,
         profile: {
-          ...concurrentMaskedProfile,
+          ...concurrentProfile,
           providerOptions: { requestModel: 'wire-v2' },
         },
       },
@@ -2361,17 +2551,17 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(cleared.statusCode, cleared.body).toBe(200)
     const clearedRevision = cleared.json().revision as number
 
-    const staleMaskedSecret = await harness.app.inject({
+    const staleCredentialReference = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/model-profiles/profile-a',
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: clearedRevision,
-        expectedProfile: concurrentMaskedProfile,
-        profile: { ...concurrentMaskedProfile, name: 'Stale secret edit' },
+        expectedProfile: concurrentProfile,
+        profile: { ...concurrentProfile, name: 'Stale credential edit' },
       },
     })
-    expect(staleMaskedSecret.statusCode, staleMaskedSecret.body).toBe(409)
+    expect(staleCredentialReference.statusCode, staleCredentialReference.body).toBe(409)
     const persistedAfterClear = (
       loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, any>> }
     ).modelProfiles[0]
@@ -2379,9 +2569,17 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(persistedAfterClear.providerOptions).toEqual({ requestModel: 'wire-v2' })
   })
 
-  it('duplicates model profiles without secrets by default and includes them when requested', async () => {
+  it('duplicates model profiles while naturally preserving credential references', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [
+        {
+          id: 'credential-vertex',
+          name: 'Vertex',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'svc@example.com', privateKey: 'vertex-private' },
+        },
+      ],
       modelProfiles: [
         {
           id: 'profile-a',
@@ -2389,61 +2587,39 @@ describe('Phase 9-2a scalar settings groups', () => {
           providerId: 'vertex',
           modelId: 'gemini-2.5-pro-vertex',
           providerOptions: {
-            apiKey: 'profile-key',
+            credentialId: 'credential-vertex',
             requestModel: 'wire-model',
             vertex: {
               projectId: 'project-a',
               region: 'us-central1',
-              clientEmail: 'svc@example.com',
-              privateKey: 'vertex-private',
             },
           },
         },
       ],
     })
 
-    const withoutSecrets = await harness.app.inject({
+    const duplicated = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/model-profiles/profile-a/duplicate',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, name: 'No Secrets' },
+      payload: { baseRevision: revision, name: 'Profile Copy' },
     })
-    expect(withoutSecrets.statusCode, withoutSecrets.body).toBe(200)
-    const withoutSecretsId = withoutSecrets.json().profileId as string
-
-    const withSecrets = await harness.app.inject({
-      method: 'POST',
-      url: '/api/v1/commands/model-profiles/profile-a/duplicate',
-      headers: { 'risu-auth': assertion },
-      payload: { baseRevision: withoutSecrets.json().revision, name: 'With Secrets', includeSecrets: true },
-    })
-    expect(withSecrets.statusCode, withSecrets.body).toBe(200)
-    const withSecretsId = withSecrets.json().profileId as string
+    expect(duplicated.statusCode, duplicated.body).toBe(200)
+    const duplicatedId = duplicated.json().profileId as string
 
     const profiles = (loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, any>> })
       .modelProfiles
-    const copiedWithoutSecrets = profiles.find((profile) => profile.id === withoutSecretsId)
-    const copiedWithSecrets = profiles.find((profile) => profile.id === withSecretsId)
-    expect(copiedWithoutSecrets).toMatchObject({
-      id: withoutSecretsId,
-      name: 'No Secrets',
+    const copied = profiles.find((profile) => profile.id === duplicatedId)
+    expect(copied).toMatchObject({
+      id: duplicatedId,
+      name: 'Profile Copy',
       providerOptions: {
+        credentialId: 'credential-vertex',
         requestModel: 'wire-model',
         vertex: {
           projectId: 'project-a',
           region: 'us-central1',
-          clientEmail: 'svc@example.com',
         },
-      },
-    })
-    expect(copiedWithoutSecrets?.providerOptions).not.toHaveProperty('apiKey')
-    expect(copiedWithoutSecrets?.providerOptions.vertex).not.toHaveProperty('privateKey')
-    expect(copiedWithSecrets).toMatchObject({
-      id: withSecretsId,
-      name: 'With Secrets',
-      providerOptions: {
-        apiKey: 'profile-key',
-        vertex: { privateKey: 'vertex-private' },
       },
     })
   })
@@ -2563,6 +2739,9 @@ describe('Phase 9-2a scalar settings groups', () => {
       openAIKey: 'openai-key',
       claudeAPIKey: 'claude-key',
       google: { accessToken: 'google-key', projectId: 'vertex-project' },
+      vertexClientEmail: 'vertex@example.com',
+      vertexPrivateKey: 'vertex-private-key',
+      vertexRegion: 'us-central1',
       forceReplaceUrl: 'https://proxy.example.com/chat/risu',
       proxyKey: 'proxy-key',
       customProxyRequestModel: 'local-model',
@@ -2578,7 +2757,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
       seperateModelsForAxModels: true,
       seperateModels: {
-        translate: 'gemini-2.5-pro',
+        emotion: 'gemini-2.5-flash',
+        translate: 'gemini-2.5-pro-vertex',
         scriptAux: 'reverse_proxy',
       },
       seperateParametersEnabled: true,
@@ -2613,6 +2793,7 @@ describe('Phase 9-2a scalar settings groups', () => {
 
     const database = loadPersistedFromDir(harness.dataDir).database as {
       modelProfiles: Array<Record<string, any>>
+      providerCredentials: Array<Record<string, any>>
       modelRoleProfiles: Record<string, any>
       modelRuntimeDefaults: Record<string, unknown>
     }
@@ -2620,8 +2801,10 @@ describe('Phase 9-2a scalar settings groups', () => {
     const main = profileById.get(body.profileIdsByRole.chatMain)
     const aux = profileById.get(body.profileIdsByRole.chatAux)
     const memory = profileById.get(body.profileIdsByRole.memory)
+    const emotion = profileById.get(body.profileIdsByRole.emotion)
     const translate = profileById.get(body.profileIdsByRole.translate)
     const scriptAux = profileById.get(body.profileIdsByRole.scriptAux)
+    const credentialById = new Map(database.providerCredentials.map((credential) => [credential.id, credential]))
 
     expect(database.modelRuntimeDefaults).toMatchObject({
       maxContext: 12345,
@@ -2635,14 +2818,14 @@ describe('Phase 9-2a scalar settings groups', () => {
       name: 'Main Chat',
       providerId: 'openai',
       modelId: 'gpt-5',
-      providerOptions: { apiKey: 'openai-key' },
+      providerOptions: { credentialId: expect.stringMatching(/^cred_/) },
       fallbacks: [{ mode: 'model', modelId: 'fallback-main' }],
     })
     expect(aux).toMatchObject({
       name: 'Auxiliary',
       providerId: 'anthropic',
       modelId: 'claude-sonnet-4-5',
-      providerOptions: { apiKey: 'claude-key' },
+      providerOptions: { credentialId: expect.stringMatching(/^cred_/) },
       runtimeOptions: { temperature: 44 },
     })
     expect(memory).toMatchObject({
@@ -2652,23 +2835,69 @@ describe('Phase 9-2a scalar settings groups', () => {
       runtimeOptions: { temperature: 22, topP: 0.5 },
       fallbacks: [{ mode: 'model', modelId: 'fallback-memory' }],
     })
+    expect(memory?.providerOptions.credentialId).toBe(main?.providerOptions.credentialId)
+    expect(emotion).toMatchObject({
+      name: 'Emotion',
+      providerId: 'vertex',
+      modelId: 'gemini-2.5-flash',
+      providerOptions: {
+        credentialId: expect.stringMatching(/^cred_/),
+        vertex: { projectId: 'vertex-project', region: 'us-central1' },
+      },
+    })
     expect(translate).toMatchObject({
       name: 'Translate',
-      providerId: 'google',
-      modelId: 'gemini-2.5-pro',
-      providerOptions: { apiKey: 'google-key' },
+      providerId: 'vertex',
+      modelId: 'gemini-2.5-pro-vertex',
+      providerOptions: {
+        credentialId: expect.stringMatching(/^cred_/),
+        vertex: { projectId: 'vertex-project', region: 'us-central1' },
+      },
     })
+    expect(emotion?.providerOptions.credentialId).toBe(translate?.providerOptions.credentialId)
     expect(scriptAux).toMatchObject({
       name: 'Script Auxiliary',
       providerId: 'custom-api',
       modelId: 'custom-api',
       providerOptions: {
-        apiKey: 'proxy-key',
+        credentialId: expect.stringMatching(/^cred_/),
         baseUrl: 'https://proxy.example.com/chat/risu/v1',
         requestModel: 'local-model',
       },
       runtimeOptions: { topK: 5 },
     })
+    expect(credentialById.get(main?.providerOptions.credentialId)).toMatchObject({
+      name: 'OpenAI (imported)',
+      type: 'apiKey',
+      apiKey: 'openai-key',
+    })
+    expect(credentialById.get(aux?.providerOptions.credentialId)).toMatchObject({
+      name: 'Anthropic (imported)',
+      type: 'apiKey',
+      apiKey: 'claude-key',
+    })
+    expect(credentialById.get(emotion?.providerOptions.credentialId)).toMatchObject({
+      name: 'Vertex AI (imported)',
+      type: 'vertexServiceAccount',
+      vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-private-key' },
+    })
+    expect(credentialById.get(translate?.providerOptions.credentialId)).toMatchObject({
+      name: 'Vertex AI (imported)',
+      type: 'vertexServiceAccount',
+      vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-private-key' },
+    })
+    expect(credentialById.get(scriptAux?.providerOptions.credentialId)).toMatchObject({
+      name: 'Proxy (imported)',
+      type: 'apiKey',
+      apiKey: 'proxy-key',
+    })
+    expect(database.providerCredentials).toContainEqual(
+      expect.objectContaining({
+        name: 'Google (imported)',
+        type: 'apiKey',
+        apiKey: 'google-key',
+      }),
+    )
     expect(database.modelRoleProfiles).toMatchObject({
       chatMain: { mode: 'profile', profileId: body.profileIdsByRole.chatMain },
       chatAux: { mode: 'profile', profileId: body.profileIdsByRole.chatAux },
@@ -2818,16 +3047,13 @@ describe('Phase 9-2a scalar settings groups', () => {
         { id: 'xcustom:::a', name: 'Custom A', key: 'custom-a', url: 'https://a.example.com' },
         { id: 'xcustom:::b', name: 'Custom B', key: 'custom-b', url: 'https://b.example.com' },
       ],
-      modelProfiles: [
-        { id: 'profile-a', name: 'Profile A', providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-wire' } },
+      providerCredentials: [
+        { id: 'credential-a', name: 'Credential A', type: 'apiKey', apiKey: 'credential-a-key' },
         {
-          id: 'profile-b',
-          name: 'Profile B',
-          providerOptions: {
-            apiKey: 'profile-b-key',
-            requestModel: 'b-wire',
-            vertex: { privateKey: 'profile-b-vertex-key', region: 'us-central1' },
-          },
+          id: 'credential-b',
+          name: 'Credential B',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'b@example.com', privateKey: 'credential-b-private-key' },
         },
       ],
       authRefreshes: [
@@ -2869,20 +3095,18 @@ describe('Phase 9-2a scalar settings groups', () => {
               url: 'https://a2.example.com',
             },
           ],
-          modelProfiles: [
+          providerCredentials: [
             {
-              id: 'profile-b',
-              name: 'Profile B renamed',
-              providerOptions: {
-                apiKey: MASKED_PROVIDER_SECRET,
-                requestModel: 'b-new-wire',
-                vertex: { privateKey: MASKED_PROVIDER_SECRET, region: 'europe-west1' },
-              },
+              id: 'credential-b',
+              name: 'Credential B renamed',
+              type: 'vertexServiceAccount',
+              vertex: { clientEmail: 'b-renamed@example.com', privateKey: MASKED_PROVIDER_SECRET },
             },
             {
-              id: 'profile-a',
-              name: 'Profile A renamed',
-              providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'a-new-wire' },
+              id: 'credential-a',
+              name: 'Credential A renamed',
+              type: 'apiKey',
+              apiKey: MASKED_PROVIDER_SECRET,
             },
           ],
           authRefreshes: [
@@ -2921,20 +3145,18 @@ describe('Phase 9-2a scalar settings groups', () => {
           url: 'https://a2.example.com',
         },
       ],
-      modelProfiles: [
+      providerCredentials: [
         {
-          id: 'profile-b',
-          name: 'Profile B renamed',
-          providerOptions: {
-            apiKey: 'profile-b-key',
-            requestModel: 'b-new-wire',
-            vertex: { privateKey: 'profile-b-vertex-key', region: 'europe-west1' },
-          },
+          id: 'credential-b',
+          name: 'Credential B renamed',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'b-renamed@example.com', privateKey: 'credential-b-private-key' },
         },
         {
-          id: 'profile-a',
-          name: 'Profile A renamed',
-          providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-new-wire' },
+          id: 'credential-a',
+          name: 'Credential A renamed',
+          type: 'apiKey',
+          apiKey: 'credential-a-key',
         },
       ],
       authRefreshes: [
@@ -3966,7 +4188,6 @@ describe('Phase 9-2b bot preset commands', () => {
             name: 'Profile A',
             providerId: 'openai',
             modelId: 'gpt-5',
-            providerOptions: { apiKey: MASKED_PROVIDER_SECRET },
           },
         ],
       },
@@ -3975,7 +4196,7 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(updated.body).not.toContain('receipt-must-not-leak')
   })
 
-  it('resolves masked secrets in legacy preset PATCHes before persisting them', async () => {
+  it('resolves masked legacy scalar secrets in preset PATCHes before persisting them', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       botPresets: [
@@ -3984,13 +4205,6 @@ describe('Phase 9-2b bot preset commands', () => {
           name: 'A',
           openAIKey: 'stored-openai-secret',
           proxyKey: 'stored-proxy-secret',
-          modelProfiles: [
-            {
-              id: 'profile-a',
-              name: 'Profile A',
-              providerOptions: { apiKey: 'stored-profile-secret' },
-            },
-          ],
         },
       ],
       botPresetsId: 0,
@@ -4005,13 +4219,6 @@ describe('Phase 9-2b bot preset commands', () => {
         patch: {
           openAIKey: MASKED_PROVIDER_SECRET,
           proxyKey: MASKED_PROVIDER_SECRET,
-          modelProfiles: [
-            {
-              id: 'profile-a',
-              name: ' Renamed profile ',
-              providerOptions: { apiKey: MASKED_PROVIDER_SECRET },
-            },
-          ],
         },
       },
     })
@@ -4019,7 +4226,6 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(updated.statusCode, updated.body).toBe(200)
     expect(updated.body).not.toContain('stored-openai-secret')
     expect(updated.body).not.toContain('stored-proxy-secret')
-    expect(updated.body).not.toContain('stored-profile-secret')
     const persisted = loadPersistedFromDir(harness.dataDir).database as {
       botPresets: Array<Record<string, any>>
     }
@@ -4027,13 +4233,6 @@ describe('Phase 9-2b bot preset commands', () => {
       id: 'preset-a',
       openAIKey: 'stored-openai-secret',
       proxyKey: 'stored-proxy-secret',
-      modelProfiles: [
-        {
-          id: 'profile-a',
-          name: 'Renamed profile',
-          providerOptions: { apiKey: 'stored-profile-secret' },
-        },
-      ],
     })
   })
 

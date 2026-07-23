@@ -120,6 +120,7 @@ function luaUsesInteractiveApi(currentChar: character): boolean {
 }
 
 const MODEL_RUNTIME_DATABASE_EXTRA_FIELDS = [
+  'providerCredentials',
   'OaiCompAPIKeys',
   'google',
   'vertexRegion',

@@ -334,6 +334,18 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'modelProfile.runtimeDefaults.updated',
     resource: 'modelProfile',
   },
+  providerCredentialCreated: {
+    type: 'providerCredential.created',
+    resource: 'providerCredential',
+  },
+  providerCredentialUpdated: {
+    type: 'providerCredential.updated',
+    resource: 'providerCredential',
+  },
+  providerCredentialDeleted: {
+    type: 'providerCredential.deleted',
+    resource: 'providerCredential',
+  },
   agentPresetCreated: {
     type: 'agentPreset.created',
     resource: 'agentPreset',

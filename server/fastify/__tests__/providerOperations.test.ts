@@ -25,17 +25,21 @@ const storedSettings = {
   deeplXOptions: { token: 'stored-deeplx-token', url: 'http://127.0.0.1:1188/base/' },
   elevenLabKey: 'stored-elevenlabs-key',
   fishSpeechKey: 'stored-fish-key',
+  providerCredentials: [
+    { id: 'credential-openrouter', name: 'OpenRouter', type: 'apiKey', apiKey: 'profile-openrouter-key' },
+    { id: 'credential-google', name: 'Google', type: 'apiKey', apiKey: 'profile-google-key' },
+  ],
   modelProfiles: [
     {
       id: 'openrouter-profile',
       modelId: 'openrouter',
-      providerOptions: { apiKey: 'profile-openrouter-key' },
+      providerOptions: { credentialId: 'credential-openrouter' },
     },
     {
       id: 'google-profile',
       providerId: 'google',
       modelId: 'gemini-2.5-pro',
-      providerOptions: { apiKey: 'profile-google-key' },
+      providerOptions: { credentialId: 'credential-google' },
     },
     {
       id: 'openrouter-global-fallback',

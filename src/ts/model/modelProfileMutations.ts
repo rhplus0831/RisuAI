@@ -6,7 +6,6 @@ import {
   type ModelRoleProfileBinding,
 } from './modelProfileRecords'
 import { MODEL_ROLES, type ModelRole } from './modelRoles'
-import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 import {
   convertLegacyModelProfilesCommand,
   createModelProfileCommand,
@@ -16,10 +15,16 @@ import {
   updateModelProfileCommand,
   updateModelRoleProfilesCommand,
   updateModelRuntimeDefaultsCommand,
+  createProviderCredentialCommand,
+  deleteProviderCredentialCommand,
+  updateProviderCredentialCommand,
   type ModelProfileSnapshot,
+  type ProviderCredentialSnapshot,
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from '../server/commands'
+import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
+import type { ProviderCredentialRecord } from './providerCredentialRecords'
 import { dispatchDurableMutation, registerDurableMutationSettlementListener } from '../server/durableMutationDispatch'
 import {
   isPendingMutationCurrent,
@@ -29,8 +34,12 @@ import {
 
 const MODEL_PROFILE_MUTATION_KEY = 'model-profiles'
 const MODEL_RUNTIME_DEFAULTS_MUTATION_KEY = 'model-runtime-defaults'
+const PROVIDER_CREDENTIAL_MUTATION_KEY = 'provider-credentials'
 
-export type ModelMutationLane = typeof MODEL_PROFILE_MUTATION_KEY | typeof MODEL_RUNTIME_DEFAULTS_MUTATION_KEY
+export type ModelMutationLane =
+  | typeof MODEL_PROFILE_MUTATION_KEY
+  | typeof MODEL_RUNTIME_DEFAULTS_MUTATION_KEY
+  | typeof PROVIDER_CREDENTIAL_MUTATION_KEY
 
 export type PendingModelMutationProjection =
   | { kind: 'profile-create' | 'profile-duplicate'; baselineIds: string[]; attemptedFingerprint: string }
@@ -42,6 +51,9 @@ export type PendingModelMutationProjection =
     }
   | { kind: 'legacy-conversion'; baselineIds: string[] }
   | { kind: 'runtime-defaults'; runtimeDefaults: ModelProfileRecordRuntimeOptions }
+  | { kind: 'credential-create'; baselineIds: string[]; attemptedFingerprint: string }
+  | { kind: 'credential-update'; credentialId: string; attemptedFingerprint: string }
+  | { kind: 'credential-delete'; credentialId: string }
 
 export interface PendingModelMutation {
   token: string
@@ -55,6 +67,7 @@ export interface ModelMutationProjectionSnapshot {
   modelProfiles?: ModelProfileRecord[]
   modelRoleProfiles?: unknown
   modelRuntimeDefaults?: unknown
+  providerCredentials?: ProviderCredentialRecord[]
 }
 
 type PendingModelMutationListener = (pending: PendingModelMutation[]) => void
@@ -108,6 +121,24 @@ export function isPendingModelMutationProjectionApplied(
   projection: PendingModelMutationProjection,
   snapshot: ModelMutationProjectionSnapshot,
 ): boolean {
+  if (projection.kind === 'credential-delete') {
+    return !(snapshot.providerCredentials ?? []).some((credential) => credential.id === projection.credentialId)
+  }
+  if (projection.kind === 'credential-update') {
+    const credential = (snapshot.providerCredentials ?? []).find(
+      (candidate) => candidate.id === projection.credentialId,
+    )
+    return !!credential && providerCredentialProjectionFingerprint(credential) === projection.attemptedFingerprint
+  }
+  if (projection.kind === 'credential-create') {
+    const baseline = new Set(projection.baselineIds)
+    return (snapshot.providerCredentials ?? []).some(
+      (credential) =>
+        !baseline.has(credential.id) &&
+        providerCredentialProjectionFingerprint(credential, true) === projection.attemptedFingerprint,
+    )
+  }
+
   if (projection.kind === 'runtime-defaults') {
     return (
       jsonSnapshot(normalizeModelRuntimeDefaults(projection.runtimeDefaults)) ===
@@ -148,16 +179,21 @@ export function isPendingModelMutationProjectionApplied(
 export function modelProfileProjectionFingerprint(profile: ModelProfileSnapshot, omitId = false): string {
   const snapshot = cloneJsonValue(profile) as Record<string, unknown>
   if (omitId) delete snapshot.id
-  const providerOptions = snapshot.providerOptions
-  if (providerOptions && typeof providerOptions === 'object' && !Array.isArray(providerOptions)) {
-    const options = providerOptions as Record<string, unknown>
-    if (typeof options.apiKey === 'string' && options.apiKey !== '') options.apiKey = MASKED_PROVIDER_SECRET
-    const vertex = options.vertex
-    if (vertex && typeof vertex === 'object' && !Array.isArray(vertex)) {
-      const vertexOptions = vertex as Record<string, unknown>
-      if (typeof vertexOptions.privateKey === 'string' && vertexOptions.privateKey !== '') {
-        vertexOptions.privateKey = MASKED_PROVIDER_SECRET
-      }
+  return JSON.stringify(canonicalJsonValue(snapshot))
+}
+
+export function providerCredentialProjectionFingerprint(
+  credential: ProviderCredentialSnapshot,
+  omitId = false,
+): string {
+  const snapshot = cloneJsonValue(credential) as Record<string, unknown>
+  if (omitId) delete snapshot.id
+  if (typeof snapshot.apiKey === 'string' && snapshot.apiKey !== '') snapshot.apiKey = MASKED_PROVIDER_SECRET
+  const vertex = snapshot.vertex
+  if (vertex && typeof vertex === 'object' && !Array.isArray(vertex)) {
+    const vertexRecord = vertex as Record<string, unknown>
+    if (typeof vertexRecord.privateKey === 'string' && vertexRecord.privateKey !== '') {
+      vertexRecord.privateKey = MASKED_PROVIDER_SECRET
     }
   }
   return JSON.stringify(canonicalJsonValue(snapshot))
@@ -281,16 +317,15 @@ export async function updateModelProfileDurably(
 export async function duplicateModelProfileDurably(
   profileId: string,
   name: string,
-  includeSecrets: boolean,
 ): Promise<ModelProfileMutationOutcome<{ profileId: string; sourceProfileId: string }>> {
   try {
     const path = `/model-profiles/${encodeURIComponent(profileId)}/duplicate`
     return await dispatchModelProfileMutation(
       {
         version: 1,
-        requests: [{ method: 'POST', path, body: { name, includeSecrets } }],
+        requests: [{ method: 'POST', path, body: { name } }],
       },
-      (baseRevision) => duplicateModelProfileCommand({ baseRevision, profileId, name, includeSecrets }),
+      (baseRevision) => duplicateModelProfileCommand({ baseRevision, profileId, name }),
     )
   } catch {
     return unavailableModelMutationOutcome()
@@ -315,6 +350,76 @@ export async function deleteModelProfileDurably(
           profileId,
           reassignments: cloneJsonValue(frozenReassignments),
         }),
+    )
+  } catch {
+    return unavailableModelMutationOutcome()
+  }
+}
+
+export async function createProviderCredentialDurably(
+  credential: ProviderCredentialSnapshot,
+): Promise<ModelProfileMutationOutcome<{ credentialId: string }>> {
+  try {
+    const frozenCredential = cloneJsonValue(credential)
+    return await dispatchModelMutation(
+      PROVIDER_CREDENTIAL_MUTATION_KEY,
+      {
+        version: 1,
+        requests: [{ method: 'POST', path: '/provider-credentials', body: { credential: frozenCredential } }],
+      },
+      (baseRevision) => createProviderCredentialCommand({ baseRevision, credential: cloneJsonValue(frozenCredential) }),
+    )
+  } catch {
+    return unavailableModelMutationOutcome()
+  }
+}
+
+export async function updateProviderCredentialDurably(
+  credentialId: string,
+  credential: ProviderCredentialSnapshot,
+  expectedCredential: ProviderCredentialSnapshot,
+): Promise<ModelProfileMutationOutcome<{ credentialId: string }>> {
+  try {
+    const frozenCredential = cloneJsonValue(credential)
+    const frozenExpected = cloneJsonValue(expectedCredential)
+    const path = `/provider-credentials/${encodeURIComponent(credentialId)}`
+    return await dispatchModelMutation(
+      PROVIDER_CREDENTIAL_MUTATION_KEY,
+      {
+        version: 1,
+        requests: [
+          {
+            method: 'PATCH',
+            path,
+            body: { credential: frozenCredential, expectedCredential: frozenExpected },
+          },
+        ],
+      },
+      (baseRevision) =>
+        updateProviderCredentialCommand({
+          baseRevision,
+          credentialId,
+          credential: cloneJsonValue(frozenCredential),
+          expectedCredential: cloneJsonValue(frozenExpected),
+        }),
+    )
+  } catch {
+    return unavailableModelMutationOutcome()
+  }
+}
+
+export async function deleteProviderCredentialDurably(
+  credentialId: string,
+): Promise<ModelProfileMutationOutcome<{ credentialId: string }>> {
+  try {
+    const path = `/provider-credentials/${encodeURIComponent(credentialId)}`
+    return await dispatchModelMutation(
+      PROVIDER_CREDENTIAL_MUTATION_KEY,
+      {
+        version: 1,
+        requests: [{ method: 'DELETE', path, body: {} }],
+      },
+      (baseRevision) => deleteProviderCredentialCommand({ baseRevision, credentialId }),
     )
   } catch {
     return unavailableModelMutationOutcome()

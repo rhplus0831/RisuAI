@@ -3,13 +3,12 @@
   import { language } from 'src/lang'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS } from 'src/ts/model/modelProfileResolver'
-  import type { ModelProfileSecretDraft } from 'src/ts/model/modelProfileSecrets'
+  import type { ProviderCredentialRecord, ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { AnthropicModels } from 'src/ts/model/providers/anthropic'
   import { GoogleModels } from 'src/ts/model/providers/google'
   import { OpenAIModels } from 'src/ts/model/providers/openai'
   import { LLMFlags, LLMFormat, LLMTokenizer, type LLMFlags as LLMFlagValue } from 'src/ts/model/types'
   import KeyValueRowsEditor from './KeyValueRowsEditor.svelte'
-  import SecretField from './SecretField.svelte'
 
   interface KeyValueRow {
     key: string
@@ -25,7 +24,9 @@
     providerId: string
     modelId: string
     requestModel: string
-    apiKeyDraft: ModelProfileSecretDraft
+    credentialId: string
+    credentials: ProviderCredentialRecord[]
+    onCreateCredential: (type: ProviderCredentialType) => void
     baseUrl: string
     extraHeadersRows: KeyValueRow[]
     additionalParamRows: KeyValueRow[]
@@ -34,8 +35,6 @@
     ollamaThinkingMode: string
     vertexProjectId: string
     vertexRegion: string
-    vertexClientEmail: string
-    vertexPrivateKeyDraft: ModelProfileSecretDraft
     customTokenizer: string
     customFlags: LLMFlagValue[]
   }
@@ -44,7 +43,9 @@
     providerId = $bindable(),
     modelId = $bindable(),
     requestModel = $bindable(),
-    apiKeyDraft = $bindable(),
+    credentialId = $bindable(),
+    credentials = [],
+    onCreateCredential,
     baseUrl = $bindable(),
     extraHeadersRows = $bindable(),
     additionalParamRows = $bindable(),
@@ -53,8 +54,6 @@
     ollamaThinkingMode = $bindable(),
     vertexProjectId = $bindable(),
     vertexRegion = $bindable(),
-    vertexClientEmail = $bindable(),
-    vertexPrivateKeyDraft = $bindable(),
     customTokenizer = $bindable(),
     customFlags = $bindable(),
   }: Props = $props()
@@ -86,6 +85,13 @@
   }))
 
   let baseUrlIncludesSuffix = $derived(baseUrl.toLowerCase().includes('/chat/completions'))
+  let compatibleCredentialType = $derived<ProviderCredentialType>(
+    providerId === 'vertex' ? 'vertexServiceAccount' : 'apiKey',
+  )
+  let compatibleCredentials = $derived(credentials.filter((credential) => credential.type === compatibleCredentialType))
+  let selectedCredentialMissing = $derived(
+    !!credentialId && !compatibleCredentials.some((credential) => credential.id === credentialId),
+  )
 
   $effect(() => {
     if (fixedModelProviderIds.has(providerId) && modelId !== providerId) {
@@ -166,10 +172,6 @@
             bind:value={requestModel}
             placeholder={language.modelProfiles.requestModelPlaceholder} />
         </label>
-        <SecretField
-          label={language.modelProfiles.apiKeyLabel}
-          bind:value={apiKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
       </div>
     {:else if providerId === 'anthropic'}
       <div class="grid gap-3 md:grid-cols-2">
@@ -199,10 +201,6 @@
             bind:value={requestModel}
             placeholder={language.modelProfiles.requestModelPlaceholder} />
         </label>
-        <SecretField
-          label={language.modelProfiles.apiKeyLabel}
-          bind:value={apiKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
       </div>
     {:else if providerId === 'google'}
       <div class="grid gap-3 md:grid-cols-2">
@@ -232,10 +230,6 @@
             bind:value={requestModel}
             placeholder={language.modelProfiles.requestModelPlaceholder} />
         </label>
-        <SecretField
-          label={language.modelProfiles.apiKeyLabel}
-          bind:value={apiKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
       </div>
     {:else if providerId === 'vertex'}
       <div class="grid gap-3 md:grid-cols-2">
@@ -273,14 +267,6 @@
           <span class="text-sm text-textcolor2">{language.modelProfiles.vertexRegion}</span>
           <TextInput size="sm" fullwidth bind:value={vertexRegion} />
         </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.vertexClientEmail}</span>
-          <TextInput size="sm" fullwidth bind:value={vertexClientEmail} />
-        </label>
-        <SecretField
-          label={language.modelProfiles.vertexPrivateKey}
-          bind:value={vertexPrivateKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
       </div>
     {:else if providerId === 'custom-api'}
       <div class="grid gap-3 md:grid-cols-2">
@@ -302,10 +288,6 @@
             bind:value={requestModel}
             placeholder={language.modelProfiles.requestModelPlaceholder} />
         </label>
-        <SecretField
-          label={language.modelProfiles.apiKeyOptionalLabel}
-          bind:value={apiKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
       </div>
 
       <div class="grid gap-4 md:grid-cols-2">
@@ -386,10 +368,6 @@
             placeholder={language.modelProfiles.ollamaModelPlaceholder} />
         </label>
         {#if modelId === 'ollama-cloud'}
-          <SecretField
-            label={language.modelProfiles.apiKeyLabel}
-            bind:value={apiKeyDraft}
-            placeholder={language.modelProfiles.savedSecretPlaceholder} />
           <label class="flex flex-col gap-1">
             <span class="text-sm text-textcolor2">{language.modelProfiles.ollamaRequestFormat}</span>
             <select
@@ -418,10 +396,6 @@
               bind:value={baseUrl}
               placeholder={language.modelProfiles.ollamaBaseUrlPlaceholder} />
           </label>
-          <SecretField
-            label={language.modelProfiles.apiKeyOptionalLabel}
-            bind:value={apiKeyDraft}
-            placeholder={language.modelProfiles.savedSecretPlaceholder} />
         {/if}
         {#if modelId !== 'ollama-cloud' || ollamaRequestFormat === String(LLMFormat.Ollama)}
           <label class="flex flex-col gap-1">
@@ -452,6 +426,32 @@
             bind:value={requestModel}
             placeholder={language.modelProfiles.requestModelPlaceholder} />
         </label>
+      </div>
+    {/if}
+    {#if providerId !== 'debug-echo'}
+      <div class="flex flex-col gap-2 rounded-md border border-darkborderc p-3" data-provider-credential-picker>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.credentialLabel}</span>
+          <select
+            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+            bind:value={credentialId}>
+            <option value="" class="bg-darkbg">{language.modelProfiles.noCredential}</option>
+            {#if selectedCredentialMissing}
+              <option value={credentialId} class="bg-darkbg">
+                {language.modelProfiles.missingCredential(credentialId)}
+              </option>
+            {/if}
+            {#each compatibleCredentials as credential (credential.id)}
+              <option value={credential.id} class="bg-darkbg">{credential.name}</option>
+            {/each}
+          </select>
+        </label>
+        <button
+          type="button"
+          class="self-start text-sm text-selected underline underline-offset-2"
+          onclick={() => onCreateCredential(compatibleCredentialType)}>
+          {language.modelProfiles.createNewCredential}
+        </button>
       </div>
     {/if}
   </div>

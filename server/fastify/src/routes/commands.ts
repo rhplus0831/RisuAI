@@ -49,6 +49,11 @@ import {
   readModelRuntimeDefaults,
   readModelRoleProfiles,
 } from '../../../../src/ts/model/modelProfileRecords.js'
+import {
+  normalizeProviderCredentials,
+  ProviderCredentialRecordValidationError,
+  readProviderCredentials,
+} from '../../../../src/ts/model/providerCredentialRecords.js'
 import { normalizeChatGenerationTogglePresets } from '../../../../src/ts/chatGenerationTogglePresetRecords.js'
 import { normalizeAgentPresets } from '../../../../src/ts/agentPresetRecords.js'
 import {
@@ -262,6 +267,11 @@ import {
   updateModelRoleProfilesCommand,
   updateModelRuntimeDefaultsCommand,
 } from '../commands/modelProfiles.js'
+import {
+  createProviderCredentialCommand,
+  deleteProviderCredentialCommand,
+  updateProviderCredentialCommand,
+} from '../commands/providerCredentials.js'
 import {
   createAgentPresetCommand,
   createAgentPresetStepCommand,
@@ -1274,7 +1284,12 @@ export const READ_ONLY_SETTINGS_GROUPS = ['agents', 'models'] as const
 export const READABLE_SETTINGS_GROUPS = [...SETTINGS_GROUPS, ...READ_ONLY_SETTINGS_GROUPS] as const
 export type ReadableSettingsGroup = (typeof READABLE_SETTINGS_GROUPS)[number]
 type SettingValueKind = 'boolean' | 'number' | 'string' | 'stringOrNull' | 'object' | 'array' | 'arrayOrNull' | 'json'
-const MODEL_PROFILE_SETTINGS_KEYS = ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'] as const
+const MODEL_PROFILE_SETTINGS_KEYS = [
+  'providerCredentials',
+  'modelProfiles',
+  'modelRoleProfiles',
+  'modelRuntimeDefaults',
+] as const
 
 export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[]> = {
   providers: [
@@ -1287,6 +1302,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'subModel',
     'modelRoles',
     'modelProfiles',
+    'providerCredentials',
     'modelRoleProfiles',
     'modelRuntimeDefaults',
     'textgenWebUIStreamURL',
@@ -1917,6 +1933,7 @@ const ARRAY_SETTING_KEYS = new Set([
   'globalscript',
   'hotkeys',
   'modelProfiles',
+  'providerCredentials',
   'modelTools',
   'hypaV3Presets',
   'inputHooks',
@@ -2358,6 +2375,65 @@ export function registerCommandRoutes(
         event: result.event,
         ...result.extra,
       }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/provider-credentials', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = createProviderCredentialCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/provider-credentials/:credentialId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = updateProviderCredentialCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        credentialId: (req.params as { credentialId?: unknown }).credentialId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/provider-credentials/:credentialId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = deleteProviderCredentialCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        credentialId: (req.params as { credentialId?: unknown }).credentialId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
     } catch (err) {
       return sendCommandError(reply, err)
     }
@@ -9046,6 +9122,9 @@ function validateHypaV3PresetSummaryModels(value: unknown): void {
 }
 
 function sanitizeSettingValue(key: string, value: unknown): unknown {
+  if (key === 'providerCredentials') {
+    return readSettingsProviderCredentials(value)
+  }
   if (key === 'modelProfiles') {
     return readSettingsModelProfiles(value)
   }
@@ -9078,6 +9157,17 @@ function readSettingsModelProfiles(value: unknown): unknown {
     return readModelProfiles(value)
   } catch (error) {
     throwModelProfileValidationError(error)
+  }
+}
+
+function readSettingsProviderCredentials(value: unknown): unknown {
+  try {
+    return readProviderCredentials(value)
+  } catch (error) {
+    if (error instanceof ProviderCredentialRecordValidationError) {
+      throw new ValidationError(error.message)
+    }
+    throw error
   }
 }
 
@@ -9200,6 +9290,7 @@ function applySettingsPatch(database: unknown, patch: Record<string, unknown>): 
 }
 
 function normalizeSettingsPatchValue(key: string, value: unknown): unknown {
+  if (key === 'providerCredentials') return normalizeProviderCredentials(value)
   if (key === 'modelRoles') return normalizeModelRoleOverrides(value)
   if (key === 'modelProfiles') return normalizeModelProfiles(value)
   if (key === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)

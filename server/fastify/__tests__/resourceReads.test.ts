@@ -76,6 +76,15 @@ beforeEach(async () => {
         localNetworkMode: true,
         localNetworkTimeoutSec: 45,
         openAIKey: 'root-secret',
+        providerCredentials: [
+          { id: 'credential-api', name: 'API', type: 'apiKey', apiKey: 'profile-secret' },
+          {
+            id: 'credential-vertex',
+            name: 'Vertex',
+            type: 'vertexServiceAccount',
+            vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-secret' },
+          },
+        ],
         modelProfiles: [
           {
             id: 'profile-a',
@@ -83,10 +92,9 @@ beforeEach(async () => {
             providerId: 'vertex',
             modelId: 'model-a',
             providerOptions: {
-              apiKey: 'profile-secret',
+              credentialId: 'credential-vertex',
               vertex: {
                 projectId: 'project-a',
-                privateKey: 'vertex-secret',
               },
             },
           },
@@ -212,12 +220,15 @@ describe('authenticated resource read routes', () => {
       group: 'providers',
       settings: {
         openAIKey: MASKED_PROVIDER_SECRET,
+        providerCredentials: [
+          { id: 'credential-api', apiKey: MASKED_PROVIDER_SECRET },
+          { id: 'credential-vertex', vertex: { privateKey: MASKED_PROVIDER_SECRET } },
+        ],
         modelProfiles: [
           {
             id: 'profile-a',
             providerOptions: {
-              apiKey: MASKED_PROVIDER_SECRET,
-              vertex: { privateKey: MASKED_PROVIDER_SECRET },
+              credentialId: 'credential-vertex',
             },
           },
         ],
@@ -341,12 +352,15 @@ describe('authenticated resource read routes', () => {
       revision,
       group: 'models',
       settings: {
+        providerCredentials: [
+          { id: 'credential-api', apiKey: MASKED_PROVIDER_SECRET },
+          { id: 'credential-vertex', vertex: { privateKey: MASKED_PROVIDER_SECRET } },
+        ],
         modelProfiles: [
           {
             id: 'profile-a',
             providerOptions: {
-              apiKey: MASKED_PROVIDER_SECRET,
-              vertex: { privateKey: MASKED_PROVIDER_SECRET },
+              credentialId: 'credential-vertex',
             },
           },
         ],
@@ -355,7 +369,7 @@ describe('authenticated resource read routes', () => {
       },
     })
     expect(Object.keys(models.json().settings).sort()).toEqual(
-      ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'].sort(),
+      ['providerCredentials', 'modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'].sort(),
     )
     expect(models.json().settings).not.toHaveProperty('openAIKey')
 

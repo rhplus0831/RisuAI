@@ -541,6 +541,7 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       addSettingsGroup(event.id)
       return
     case 'modelProfile':
+    case 'providerCredential':
       addSettingsGroup('models')
       return
     case 'agentPreset':

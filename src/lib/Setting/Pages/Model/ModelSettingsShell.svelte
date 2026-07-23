@@ -7,6 +7,7 @@
   import { getModelInfo } from 'src/ts/model/modellist'
   import { normalizeLegacySeperateModels, normalizeModelRoleOverrides, MODEL_ROLES } from 'src/ts/model/modelRoles'
   import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
+  import type { ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
   import {
     beginPendingModelMutation,
@@ -23,8 +24,9 @@
   import LegacyModelRoleList from './ModelRoleList.svelte'
   import ModelProfileList from './ModelProfileList.svelte'
   import ModelProfileRoleList from './ModelProfileRoleList.svelte'
+  import ProviderCredentialList from './ProviderCredentialList.svelte'
 
-  type ModelSettingsTab = 'roles' | 'profiles'
+  type ModelSettingsTab = 'roles' | 'profiles' | 'credentials'
 
   let activeTab = $state<ModelSettingsTab>('roles')
   let conversionPromptDeclined = $state(false)
@@ -32,6 +34,8 @@
   let pendingMutations = $state(getPendingModelMutations('model-profiles'))
   let pendingRuntimeMutations = $state(getPendingModelMutations('model-runtime-defaults'))
   let commandError = $state('')
+  let initialCredentialType = $state<ProviderCredentialType | null>(null)
+  let credentialTabKey = $state(0)
 
   let modelProfileUiState = $derived.by(() =>
     resolveModelProfileUiState({
@@ -66,6 +70,10 @@
     return subscribePendingModelMutations('model-runtime-defaults', (pending) => {
       pendingRuntimeMutations = pending
     })
+  })
+
+  $effect(() => {
+    if (activeTab !== 'credentials') initialCredentialType = null
   })
 
   $effect(() => {
@@ -153,6 +161,12 @@
       converting = false
     }
   }
+
+  function manageCredentials(type: ProviderCredentialType): void {
+    initialCredentialType = type
+    credentialTabKey += 1
+    activeTab = 'credentials'
+  }
 </script>
 
 <h2 class="mb-2 mt-2 text-2xl font-bold">{language.modelProfiles.settingsTitle}</h2>
@@ -194,6 +208,7 @@
     options={[
       { value: 'roles', label: language.modelProfiles.rolesTab },
       { value: 'profiles', label: language.modelProfiles.profilesTab },
+      { value: 'credentials', label: language.modelProfiles.credentialsTab },
     ]} />
 
   {#if activeTab === 'roles'}
@@ -210,8 +225,12 @@
       </Button>
     </div>
     <ModelProfileRoleList />
+  {:else if activeTab === 'profiles'}
+    <ModelProfileList onManageCredentials={manageCredentials} />
   {:else}
-    <ModelProfileList />
+    {#key credentialTabKey}
+      <ProviderCredentialList initialCreateType={initialCredentialType} />
+    {/key}
   {/if}
 
   {#if showAdvancedLegacySettings}

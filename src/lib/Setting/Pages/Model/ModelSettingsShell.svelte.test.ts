@@ -76,7 +76,7 @@ async function flushAsync(): Promise<void> {
 }
 
 function clearPendingModelMutations(): void {
-  for (const lane of ['model-profiles', 'model-runtime-defaults'] as const) {
+  for (const lane of ['model-profiles', 'model-runtime-defaults', 'provider-credentials'] as const) {
     for (const pending of getPendingModelMutations(lane)) finishPendingModelMutation(pending.token)
   }
 }
@@ -89,6 +89,7 @@ beforeEach(() => {
   setDatabaseLite({
     aiModel: 'legacy-main',
     subModel: 'legacy-aux',
+    providerCredentials: [],
     modelProfiles: [],
     modelRoleProfiles: {},
     modelRuntimeDefaults: {},
@@ -112,6 +113,21 @@ afterEach(() => {
 })
 
 describe('ModelSettingsShell legacy conversion', () => {
+  it('opens the credential manager from the model settings tabs', async () => {
+    component = mount(ModelSettingsShell, { target })
+    await tick()
+
+    const credentialsTab = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(language.modelProfiles.credentialsTab),
+    )
+    expect(credentialsTab).toBeTruthy()
+    credentialsTab!.click()
+    await tick()
+
+    expect(target.textContent).toContain(language.modelProfiles.credentialsTabTitle)
+    expect(target.textContent).toContain(language.modelProfiles.createApiCredential)
+  })
+
   it('reports a terminal conversion failure and leaves conversion retryable', async () => {
     mutationMocks.convertLegacyModelProfilesDurably.mockResolvedValue({
       status: 'failed',

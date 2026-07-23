@@ -96,14 +96,9 @@ beforeEach(() => {
         name: 'Profile 1',
         providerId: 'debug-echo',
         modelId: 'debug-echo',
-        providerOptions: {
-          apiKey: 'secret-key',
-          vertex: {
-            privateKey: 'vertex-secret',
-          },
-        },
       },
     ],
+    providerCredentials: [{ id: 'credential-api', name: 'OpenAI', type: 'apiKey', apiKey: 'secret-key' }],
     modelRoleProfiles: {},
     modelRuntimeDefaults: {},
   } as any)
@@ -217,7 +212,7 @@ describe('ModelProfileList', () => {
         name: 'OpenAI profile',
         providerId: 'openai',
         modelId: 'gpt-5',
-        providerOptions: { apiKey: 'openai-secret' },
+        providerOptions: { credentialId: 'credential-api' },
       }
       component = mount(ModelProfileList, { target })
       await tick()
@@ -229,14 +224,15 @@ describe('ModelProfileList', () => {
 
       const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
       const providerSelect = dialog?.querySelector<HTMLSelectElement>('select')
+      const credentialSelect = dialog?.querySelector<HTMLSelectElement>('[data-provider-credential-picker] select')
       expect(providerSelect).toBeTruthy()
-      expect(dialog?.querySelector('[data-secret-saved-state]')).not.toBeNull()
+      expect(credentialSelect?.value).toBe('credential-api')
 
       providerSelect!.value = nextProviderId
       providerSelect!.dispatchEvent(new Event('change', { bubbles: true }))
       await tick()
 
-      expect(dialog?.querySelector('[data-secret-saved-state]')).toBeNull()
+      expect(dialog?.querySelector<HTMLSelectElement>('[data-provider-credential-picker] select')?.value).toBe('')
       expect(dialog?.querySelector('[data-model-profile-provider-secret-reset]')?.textContent).toContain(
         language.modelProfiles.providerChangeClearedCredential,
       )
@@ -247,7 +243,7 @@ describe('ModelProfileList', () => {
       expect(commandSpies.updateModelProfileDurably).toHaveBeenCalledOnce()
       const submitted = commandSpies.updateModelProfileDurably.mock.calls[0][1]
       expect(submitted.providerId).toBe(nextProviderId)
-      expect(submitted.providerOptions?.apiKey).toBeUndefined()
+      expect(submitted.providerOptions?.credentialId).toBeUndefined()
       expect(JSON.stringify(submitted)).not.toContain('__RISU_SECRET_MASKED__')
     },
   )
@@ -421,7 +417,7 @@ describe('ModelProfileList', () => {
     expect(target.querySelector('[role="dialog"]')).toBeNull()
   })
 
-  it('duplicates profiles with secrets for internal settings copies', async () => {
+  it('duplicates profiles while naturally preserving credential references', async () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
@@ -431,7 +427,6 @@ describe('ModelProfileList', () => {
     expect(commandSpies.duplicateModelProfileDurably).toHaveBeenCalledWith(
       'profile-1',
       language.modelProfiles.copyName('Profile 1'),
-      true,
     )
   })
 
@@ -488,10 +483,6 @@ describe('ModelProfileList', () => {
         ...JSON.parse(JSON.stringify(getDatabase().modelProfiles[0])),
         id: 'profile-copy',
         name: language.modelProfiles.copyName('Profile 1'),
-        providerOptions: {
-          apiKey: '__RISU_SECRET_MASKED__',
-          vertex: { privateKey: '__RISU_SECRET_MASKED__' },
-        },
       },
     ]
     await flushAsync()
@@ -528,10 +519,6 @@ describe('ModelProfileList', () => {
         ...JSON.parse(JSON.stringify(getDatabase().modelProfiles[0])),
         id: 'profile-copy-after-remount',
         name: language.modelProfiles.copyName('Profile 1'),
-        providerOptions: {
-          apiKey: '__RISU_SECRET_MASKED__',
-          vertex: { privateKey: '__RISU_SECRET_MASKED__' },
-        },
       },
     ]
     await flushAsync()

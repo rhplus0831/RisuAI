@@ -86,14 +86,18 @@ describe('SettingsExportButtons bug-report export', () => {
         key: 'optimistic-image-secret',
         model: 'image-model',
       },
-      modelProfiles: [
+      providerCredentials: [
         {
-          id: 'profile-a',
-          name: 'Profile A',
-          providerOptions: {
-            apiKey: 'optimistic-profile-secret',
-            vertex: { privateKey: 'optimistic-vertex-secret' },
-          },
+          id: 'credential-api',
+          name: 'API',
+          type: 'apiKey',
+          apiKey: 'optimistic-api-secret',
+        },
+        {
+          id: 'credential-vertex',
+          name: 'Vertex',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'vertex@example.com', privateKey: 'optimistic-vertex-secret' },
         },
       ],
     }
@@ -120,12 +124,12 @@ describe('SettingsExportButtons bug-report export', () => {
         key: MASKED_PROVIDER_SECRET,
         model: 'image-model',
       },
-      modelProfiles: [
+      providerCredentials: [
         {
-          providerOptions: {
-            apiKey: MASKED_PROVIDER_SECRET,
-            vertex: { privateKey: MASKED_PROVIDER_SECRET },
-          },
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+        {
+          vertex: { privateKey: MASKED_PROVIDER_SECRET },
         },
       ],
     })
