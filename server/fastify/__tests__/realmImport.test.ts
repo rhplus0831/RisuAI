@@ -396,7 +396,7 @@ function realmCard(
         token_budget: 800,
         recursive_scanning: true,
         extensions: {},
-        entries: [],
+        entries: [] as Array<Record<string, unknown>>,
       },
     },
   }
@@ -614,10 +614,27 @@ afterEach(async () => {
 
 describe('Realm character import route', () => {
   it('streams progress while importing JSON Realm cards', async () => {
+    const card = realmCard()
+    card.data.character_book.entries = [
+      {
+        keys: ['first'],
+        secondary_keys: [],
+        content: 'First realm lore row',
+        insertion_order: 1,
+        name: 'First',
+      },
+      {
+        keys: ['second'],
+        secondary_keys: [],
+        content: 'Second realm lore row',
+        insertion_order: 2,
+        name: 'Second',
+      },
+    ]
     echo.setResponder((req, res) => {
       if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ card: realmCard(), img: 'main-img' }))
+        res.end(JSON.stringify({ card, img: 'main-img' }))
         return
       }
       if (req.url === '/resource/main-img') {
@@ -668,6 +685,12 @@ describe('Realm character import route', () => {
     })
     expect(progressPercents(frames)).toEqual([...progressPercents(frames)].sort((a, b) => a - b))
     expect(progressPercents(frames).at(-1)).toBe(100)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
+    const importedLorebook = character.globalLore as Array<Record<string, unknown>>
+    expect(importedLorebook).toHaveLength(2)
+    expect(importedLorebook.every((entry) => typeof entry.id === 'string' && entry.id.length > 0)).toBe(true)
+    expect(new Set(importedLorebook.map((entry) => entry.id)).size).toBe(2)
   })
 
   it('streams low-level-access confirmation requests without writing assets', async () => {
@@ -749,12 +772,15 @@ describe('Realm character import route', () => {
 
   it('preserves scripts stored in Realm charx module metadata', async () => {
     const regex = regexScript('charx-regex')
+    const duplicateRegex = regexScript('charx-regex')
     const trigger = luaTrigger('charx-trigger')
+    const duplicateTrigger = luaTrigger('charx-trigger')
     const lorebook = moduleLorebookEntry('charx-lore')
+    const duplicateLorebook = moduleLorebookEntry('charx-lore')
     const moduleData = risuModuleForTest({
-      regex: [regex],
-      trigger: [trigger],
-      lorebook: [lorebook],
+      regex: [regex, duplicateRegex],
+      trigger: [trigger, duplicateTrigger],
+      lorebook: [lorebook, duplicateLorebook],
     })
 
     echo.setResponder((req, res) => {
@@ -780,9 +806,22 @@ describe('Realm character import route', () => {
     expect(res.statusCode).toBe(200)
     const persisted = loadPersistedFromDir(harness.dataDir)
     const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
-    expect(character.customscript).toEqual([regex])
-    expect(character.triggerscript).toEqual([trigger])
-    expect(character.globalLore).toEqual([lorebook])
+    const importedScripts = character.customscript as Array<Record<string, unknown>>
+    const importedTriggers = character.triggerscript as Array<Record<string, unknown>>
+    expect(importedScripts[0]).toEqual(regex)
+    expect(importedScripts[1]).toMatchObject({ ...duplicateRegex, id: expect.any(String) })
+    expect(importedScripts[1].id).not.toBe('charx-regex')
+    expect(new Set(importedScripts.map((script) => script.id)).size).toBe(2)
+    expect(importedTriggers[0]).toEqual(trigger)
+    expect(importedTriggers[1]).toMatchObject({ ...duplicateTrigger, id: expect.any(String) })
+    expect(importedTriggers[1].id).not.toBe('charx-trigger')
+    expect(new Set(importedTriggers.map((script) => script.id)).size).toBe(2)
+    const importedLorebook = character.globalLore as Array<Record<string, unknown>>
+    expect(importedLorebook).toHaveLength(2)
+    expect(importedLorebook[0]).toEqual(lorebook)
+    expect(importedLorebook[1]).toMatchObject({ ...duplicateLorebook, id: expect.any(String) })
+    expect(importedLorebook[1].id).not.toBe('charx-lore')
+    expect(new Set(importedLorebook.map((entry) => entry.id)).size).toBe(2)
   })
 
   it('fetches Realm assets server-side and creates the character in one client request', async () => {

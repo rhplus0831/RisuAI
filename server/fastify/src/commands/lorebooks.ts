@@ -287,6 +287,28 @@ export function repairLorebookEntries(input: unknown, label: string): LorebookEn
   })
 }
 
+/** Repair command-create payloads while making unexpected client regressions loud. */
+export function repairCreatedLorebookEntries(input: unknown, label: string): LorebookEntryRecord[] {
+  const mintedIds = lorebookEntryIdsNeedRepair(input)
+  const entries = repairLorebookEntries(input, label)
+  if (mintedIds) {
+    console.warn(`Command create minted missing or duplicate lorebook entry ids in ${label}`)
+  }
+  return entries
+}
+
+function lorebookEntryIdsNeedRepair(input: unknown): boolean {
+  if (!Array.isArray(input)) return false
+  const seen = new Set<string>()
+  for (const candidate of input) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return true
+    const id = (candidate as JsonRecord).id
+    if (typeof id !== 'string' || !id.trim() || seen.has(id)) return true
+    seen.add(id)
+  }
+  return false
+}
+
 export function normalizeSelectedCharacterLorebooks(
   database: unknown,
   characterId: string,

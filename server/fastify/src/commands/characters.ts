@@ -8,6 +8,7 @@ import {
   validateEmotionImageRefs,
   validateOptionalServerAssetRef,
 } from './assets.js'
+import { repairCreatedLorebookEntries } from './lorebooks.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -93,6 +94,10 @@ export function normalizeCharacterCollection(database: unknown): void {
 export function createCharacterRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): CharacterRecord {
   const character = readJsonObject(input, 'character') as CharacterRecord
   character.chaId = readCharacterId(character.chaId, 'character.chaId')
+  character.globalLore = repairCreatedLorebookEntries(
+    Array.isArray(character.globalLore) ? character.globalLore : [],
+    `character ${character.chaId}.globalLore`,
+  )
   validateCharacterRecord(character, 'character', options)
   validateCharacterCreateRecord(character, 'character')
   return character

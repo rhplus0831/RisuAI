@@ -17,6 +17,7 @@ import {
 } from '../../../../src/ts/chatGenerationSettings.js'
 import { repairStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
 import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
+import { repairCreatedLorebookEntries } from './lorebooks.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -179,7 +180,10 @@ export function createChatRecord(input: unknown, label = 'chat'): ChatRecord {
   chat.message = Array.isArray(chat.message) ? chat.message : []
   chat.note = typeof chat.note === 'string' ? chat.note : ''
   chat.name = typeof chat.name === 'string' && chat.name.trim() ? chat.name : 'New Chat'
-  chat.localLore = Array.isArray(chat.localLore) ? chat.localLore : []
+  chat.localLore = repairCreatedLorebookEntries(
+    Array.isArray(chat.localLore) ? chat.localLore : [],
+    `${label}.localLore`,
+  )
   validateChatRecord(chat, label)
   return chat
 }

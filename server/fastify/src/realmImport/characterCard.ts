@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { ValidationError } from '../repository.js'
+import { normalizeScriptDefinitionCollection } from '../commands/scriptDefinitions.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -167,6 +168,7 @@ export async function convertRealmCharacterCard(
     notes: '',
     chats: [
       {
+        id: randomUUID(),
         message: [],
         note: '',
         name: 'Chat 1',
@@ -236,6 +238,8 @@ export async function convertRealmCharacterCard(
     character.creation_date = typeof data.creation_date === 'number' ? data.creation_date : 0
     character.modification_date = typeof data.modification_date === 'number' ? data.modification_date : 0
   }
+
+  normalizeScriptDefinitionCollection({ characters: [character] })
 
   return character
 }
@@ -331,6 +335,7 @@ function convertCharbook(charbook: JsonRecord | null): {
     }
 
     lorebook.push({
+      id: randomUUID(),
       key: keys.join(', '),
       secondkey: secondaryKeys.join(', '),
       insertorder: typeof book.insertion_order === 'number' ? book.insertion_order : 0,

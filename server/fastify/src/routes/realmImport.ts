@@ -25,6 +25,7 @@ import {
 } from '../commands/mutations.js'
 import { createCharacterRecord, type CharacterRecord } from '../commands/characters.js'
 import { ensureCharacterChats } from '../commands/chats.js'
+import { repairLorebookEntries } from '../commands/lorebooks.js'
 import {
   ValidationError,
   addAsset,
@@ -962,7 +963,10 @@ async function importRealmCharx(args: {
       }),
   })
   if (moduleMetadata?.lorebook) {
-    character.globalLore = cloneJson(moduleMetadata.lorebook)
+    character.globalLore = repairLorebookEntries(
+      cloneJson(moduleMetadata.lorebook),
+      `character ${String(character.chaId)}.globalLore`,
+    )
   }
 
   args.reportProgress?.({ phase: 'commit', message: 'Saving character', percent: 92 })

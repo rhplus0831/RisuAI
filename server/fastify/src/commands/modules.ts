@@ -5,6 +5,7 @@ import { validateAssetTriples } from './assets.js'
 import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
 import { ensureCharacterChats } from './chats.js'
 import { isImportableMCPIdentifier } from '../../../../src/ts/process/mcp/mcpIdentifier.js'
+import { repairCreatedLorebookEntries } from './lorebooks.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -81,6 +82,9 @@ export function createModuleRecord(
   module.id = readModuleId(module.id, `${label}.id`)
   module.name = typeof module.name === 'string' && module.name.trim() ? module.name : 'New Module'
   module.description = typeof module.description === 'string' ? module.description : ''
+  if (Array.isArray(module.lorebook)) {
+    module.lorebook = repairCreatedLorebookEntries(module.lorebook, `${label}.lorebook`)
+  }
   validateModuleRecord(module, label, options, assetOptions)
   return module
 }

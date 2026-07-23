@@ -217,6 +217,7 @@ import {
   readLorebookId,
   readLorebookIdList,
   readModuleId,
+  repairLorebookEntries,
   reorderLorebookEntriesById,
   requireGlobalLorebookIndex,
   requireModule,
@@ -526,15 +527,22 @@ function readScriptDefinitionCommandTarget(database: unknown): Record<string, un
   return readJsonObject(database, 'database')
 }
 
-function readModuleCollectionCommandTarget(database: unknown): {
+function readModuleCollectionCommandTarget(
+  database: unknown,
+  options: { repairLorebook?: boolean } = {},
+): {
   target: Record<string, unknown>
   modules: LorebookModuleRecord[]
 } {
   const target = readJsonObject(database, 'database')
   const modules = Array.isArray(target.modules)
-    ? (target.modules.map((candidate, index) =>
-        readJsonObject(candidate, `module[${index}]`),
-      ) as LorebookModuleRecord[])
+    ? (target.modules.map((candidate, index) => {
+        const module = readJsonObject(candidate, `module[${index}]`) as LorebookModuleRecord
+        if (options.repairLorebook) {
+          module.lorebook = repairLorebookEntries(module.lorebook ?? [], `module ${module.id}.lorebook`)
+        }
+        return module
+      }) as LorebookModuleRecord[])
     : []
   target.modules = modules
   return { target, modules }
@@ -8275,7 +8283,7 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const { modules } = readModuleCollectionCommandTarget(database)
+          const { modules } = readModuleCollectionCommandTarget(database, { repairLorebook: true })
           const module = requireModule(modules, moduleId)
           module.lorebook = entries
           // One module's lorebook is a single-row edit; the in-memory child
@@ -8331,7 +8339,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const rawTarget = readJsonObject(database, 'database')
           const rawModule = cloneJsonForCommandCertificate(findJsonRecordById(rawTarget.modules, moduleId))
-          const { modules } = readModuleCollectionCommandTarget(database)
+          const { modules } = readModuleCollectionCommandTarget(database, { repairLorebook: true })
           const module = requireModule(modules, moduleId)
           module.lorebook ??= []
           const normalizationIdentity = isDeepStrictEqual(rawModule, module)
@@ -8385,7 +8393,7 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const { modules } = readModuleCollectionCommandTarget(database)
+          const { modules } = readModuleCollectionCommandTarget(database, { repairLorebook: true })
           const module = modules.find((candidate) => candidate.id === moduleId && !candidate.mcp)
           if (!module) {
             return {
@@ -8446,7 +8454,7 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const { modules } = readModuleCollectionCommandTarget(database)
+          const { modules } = readModuleCollectionCommandTarget(database, { repairLorebook: true })
           const module = requireModule(modules, moduleId)
           module.lorebook ??= []
           reorderLorebookEntriesById(module.lorebook, entryIds)

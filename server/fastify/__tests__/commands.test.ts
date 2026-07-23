@@ -11948,6 +11948,49 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(readJsonRow('modules', 'mod-b')).not.toHaveProperty('lorebook')
   })
 
+  it('repairs degraded module lorebook ids before applying an entry command', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const entry = (id: string, comment: string) => ({
+      id,
+      key: comment.toLowerCase(),
+      secondkey: '',
+      insertorder: 100,
+      comment,
+      content: `${comment} content`,
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    })
+    const revision = await importDatabase(harness.app, assertion, {
+      modules: [{ id: 'mod-a', name: 'Mod', lorebook: [entry('legacy-id', 'Legacy')] }],
+    })
+    const degraded = entry('legacy-id', 'Legacy') as Record<string, unknown>
+    delete degraded.id
+    writeJsonRow('modules', 'mod-a', {
+      ...readJsonRow('modules', 'mod-a'),
+      lorebook: [degraded],
+    })
+
+    const response = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/lorebooks/entries/new-entry',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, entry: entry('new-entry', 'New') },
+    })
+
+    expect(response.statusCode, JSON.stringify(response.json())).toBe(200)
+    expect(response.json()).toMatchObject({
+      moduleId: 'mod-a',
+      entryId: 'new-entry',
+      created: true,
+    })
+    const persisted = readJsonRow('modules', 'mod-a').lorebook as Array<{ id: string; comment: string }>
+    expect(persisted).toHaveLength(2)
+    expect(persisted.map((candidate) => candidate.comment)).toEqual(['Legacy', 'New'])
+    expect(persisted.every((candidate) => typeof candidate.id === 'string' && candidate.id.length > 0)).toBe(true)
+    expect(new Set(persisted.map((candidate) => candidate.id)).size).toBe(2)
+  })
+
   it('applies sparse lorebook entry patches in every scope without replacing unchanged fields or siblings', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const entry = (id: string, label: string) => ({
