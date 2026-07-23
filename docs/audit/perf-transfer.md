@@ -39,36 +39,28 @@ H2 tail-suffix commands; H3 sparse lorebook upsert/delete/reorder; M3+L8
 `perMessageDeflate`; the memory-job family L9–L12). Full per-ID table with
 evidence and fixing commits:
 [transfer-size-reverification-2026-07-23.md](transfer-size-reverification-2026-07-23.md).
-What remains:
+Implementation decisions recorded 2026-07-23 bring the remediated count to 24
+once the pending changes are committed. Current disposition:
 
-- `VERIFIED-OPEN` **L13** — memory events broadcast to every SSE client, no
-  chat/interest filtering (`server/fastify/src/memoryEvents.ts:44`,
-  `routes/events.ts:176`).
-- `VERIFIED-OPEN` **L14** — memory chunk/summary reads unbounded, no
-  cursor/limit (`routes/memoryReads.ts:46`, `:56`); workload-dependent —
-  current Hypa UI loads all summaries anyway; pagination is hardening for
-  very large histories.
-- `VERIFIED-OPEN` **L15** — SSE stream uncompressed (route hijacks the reply
-  and raw-writes, bypassing Fastify compression, `routes/events.ts:73`,
-  `:147`).
-- `VERIFIED-OPEN` **L16** — command SSE frames carry
-  `origin.writerSessionId`; note the field is *used* for own-echo detection
-  (`src/ts/bootstrap.ts:1847`) — removing it requires a different own-echo
-  protocol, so this is arguably ACCEPTED-shaped.
-- `VERIFIED-OPEN` **L18** — bulk endpoints unbounded (`readBulkIds` has no
-  max, `routes/resourceReads.ts:989`; `ensureAllChatsHydrated` sends every
-  unhydrated chat in one request).
-- `VERIFIED-OPEN` **L20** — realm import progress repeats
-  `phase`/`message`/`percent` on every frame (`routes/realmImport.ts:1790`;
-  client requires all three, so a delta format needs both sides).
-- `PARTIAL` **L2** — full-bootstrap recovery reframed: the database-bearing
-  bootstrap is gone and most large bodies are hash-substituted, but
-  replay-gap recovery still refreshes all four resource groups
-  (`src/ts/server/resourceInvalidation.ts:207`); no changes-since delta.
-- `PARTIAL`→likely `ACCEPTED` **L5** — inline streams omit the duplicate
-  terminal `done.result`; durable streams retain it deliberately (replay/
-  reattach needs a self-contained final result,
-  `serverChatEvents.ts:267`).
+- `MEASUREMENT LANDED; PROTOCOL EVIDENCE-GATED` **L13** —
+  opt-in `memory_event_fanout` metrics now quantify listener fanout and bytes;
+  scoped subscriptions remain deferred until captures show material cost.
+- `FIXED` **L14** — memory chunks and summaries use 200-row
+  keyset pages, while unpaged legacy reads fail explicitly above 1,000 rows.
+- `MEASUREMENT LANDED; PROTOCOL EVIDENCE-GATED` **L15** —
+  opt-in per-connection SSE byte/frame/lifetime/close metrics landed; streaming
+  compression remains deferred pending volume and proxy-latency evidence.
+- `ACCEPTED` **L16** (decided 2026-07-23) — the typical 68-byte origin field is
+  retained because replacing it requires a connection-specific own-echo protocol.
+- `FIXED` **L18** — both bulk hydration routes cap raw IDs at
+  32 and bodies at 64 KiB; whole-corpus callers drain sequential 32-ID batches.
+- `FIXED` **L20** — Realm clients negotiate
+  `realmProgressDelta`, retaining full progress frames for older clients.
+- `ACCEPTED` **L2** (decided 2026-07-23) — the four-resource replay-gap recovery
+  snapshot remains the rare correctness fallback until existing metrics show
+  recurring material cost.
+- `ACCEPTED` **L5** (decided 2026-07-23) — durable `done.result` remains the
+  self-contained replay/reattach result after droppable token frames are gone.
 - `EVIDENCE-GATED` (all four; metrics tooling live, `RISU_PROTOCOL_METRICS=1`
   + `pnpm analyze:db`) — prompt-construction narrowing, sprawling-resource
   bootstrap fallback, asset-byte fanout, `.risu` export streaming. Also the

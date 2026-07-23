@@ -126,7 +126,12 @@ describe('Realm import server adapter', () => {
         'risu-auth': 'realm-auth-token',
         'risu-writer-session': 'writer-a',
       },
-      body: { id: 'realm-id', baseRevision: 7, allowLowLevelAccess: false },
+      body: {
+        id: 'realm-id',
+        baseRevision: 7,
+        allowLowLevelAccess: false,
+        clientCapabilities: { realmProgressDelta: true },
+      },
     })
     expect(commandState.cachedRevision).toBe(9)
     expect(commandState.reconciledEvents).toEqual([
@@ -149,6 +154,68 @@ describe('Realm import server adapter', () => {
     expect(commandState.cachedRevision).toBe(11)
   })
 
+  it('reconstructs negotiated progress deltas and does not inherit a partial first frame', async () => {
+    stubRealmFetch(
+      new Response(
+        streamOf(
+          [
+            'event: progress',
+            'data: {"percent":1}',
+            '',
+            'event: progress',
+            'data: {"phase":"download","message":"Downloading","percent":5}',
+            '',
+            'event: progress',
+            'data: {"percent":12}',
+            '',
+            'event: progress',
+            'data: {"phase":"assets","percent":35}',
+            '',
+            'event: progress',
+            'data: {"message":"Saving assets","percent":50}',
+            '',
+            'event: done',
+            'data: {"revision":9,"event":{"type":"character.created","resource":"character","revision":9,"id":"char-delta"},"characterId":"char-delta"}',
+            '',
+            '',
+          ].join('\n'),
+        ),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      ),
+    )
+    const progress: unknown[] = []
+
+    await expect(
+      importRealmCharacterFromServer('realm-id', { onProgress: (frame) => progress.push(frame) }),
+    ).resolves.toMatchObject({ status: 'ok', characterId: 'char-delta' })
+    expect(progress).toEqual([
+      { phase: 'download', message: 'Downloading', percent: 5 },
+      { phase: 'download', message: 'Downloading', percent: 12 },
+      { phase: 'assets', message: 'Downloading', percent: 35 },
+      { phase: 'assets', message: 'Saving assets', percent: 50 },
+    ])
+
+    stubRealmFetch(
+      new Response(
+        streamOf(
+          [
+            'event: progress',
+            'data: {"percent":99}',
+            '',
+            'event: done',
+            'data: {"revision":10,"event":{"type":"character.created","resource":"character","revision":10,"id":"char-second"},"characterId":"char-second"}',
+            '',
+            '',
+          ].join('\n'),
+        ),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      ),
+    )
+    const secondProgress = vi.fn()
+    await importRealmCharacterFromServer('realm-id-2', { onProgress: secondProgress })
+    expect(secondProgress).not.toHaveBeenCalled()
+  })
+
   it('sends a pending import token with confirmed low-level retries', async () => {
     const calls = stubRealmFetch(
       jsonResponse({
@@ -169,6 +236,7 @@ describe('Realm import server adapter', () => {
       baseRevision: 7,
       allowLowLevelAccess: true,
       pendingImportToken: 'pending-token',
+      clientCapabilities: { realmProgressDelta: true },
     })
   })
 

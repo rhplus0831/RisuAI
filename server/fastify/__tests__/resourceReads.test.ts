@@ -10,6 +10,7 @@ import { COLLECTION_FIELDS } from '../src/repository.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { PROMPT_SETTINGS_KEYS } from '../../../src/ts/promptSettings.js'
+import { BULK_RESOURCE_MAX_BODY_BYTES, BULK_RESOURCE_MAX_IDS } from '../src/routes/resourceReads.js'
 
 interface Harness {
   app: FastifyInstance
@@ -1059,6 +1060,63 @@ describe('authenticated resource read routes', () => {
     })
     expect(invalidGenerationWindow.statusCode).toBe(400)
     expect(invalidGenerationWindow.json().error).toBe('invalid_chat_message_range')
+  })
+
+  it('bounds raw ids and request bodies on both bulk resource routes', async () => {
+    const routes = [
+      { url: '/api/v1/chats/messages/bulk', invalidError: 'invalid_chat_ids' },
+      { url: '/api/v1/characters/lorebooks/bulk', invalidError: 'invalid_character_lorebook_ids' },
+    ]
+
+    for (const route of routes) {
+      const exactIds = Array.from({ length: BULK_RESOURCE_MAX_IDS }, (_, index) => `missing-${index}`)
+      const exact = await harness.app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: authHeaders(),
+        payload: { ids: exactIds },
+      })
+      expect(exact.statusCode, route.url).toBe(200)
+      expect(exact.json().missing, route.url).toEqual(exactIds)
+
+      const deduplicated = await harness.app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: authHeaders(),
+        payload: { ids: Array(BULK_RESOURCE_MAX_IDS).fill(' missing-duplicate ') },
+      })
+      expect(deduplicated.statusCode, route.url).toBe(200)
+      expect(deduplicated.json().missing, route.url).toEqual(['missing-duplicate'])
+
+      const tooMany = await harness.app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: authHeaders(),
+        payload: { ids: Array(BULK_RESOURCE_MAX_IDS + 1).fill('duplicate-still-counts') },
+      })
+      expect(tooMany.statusCode, route.url).toBe(413)
+      expect(tooMany.json(), route.url).toEqual({
+        error: 'bulk_resource_limit_exceeded',
+        maxItems: BULK_RESOURCE_MAX_IDS,
+      })
+
+      const invalid = await harness.app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: authHeaders(),
+        payload: { ids: [''] },
+      })
+      expect(invalid.statusCode, route.url).toBe(400)
+      expect(invalid.json().error, route.url).toBe(route.invalidError)
+
+      const oversized = await harness.app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: { ...authHeaders(), 'content-type': 'application/json' },
+        payload: JSON.stringify({ ids: ['x'.repeat(BULK_RESOURCE_MAX_BODY_BYTES)] }),
+      })
+      expect(oversized.statusCode, route.url).toBe(413)
+    }
   })
 
   it('serves full single and bulk character lorebooks while character rows are stubbed', async () => {

@@ -150,6 +150,103 @@ function seedMemoryRows(dataDir: string): void {
   }
 }
 
+function seedPagedMemoryRows(dataDir: string, count: number): void {
+  const db = openDatabase(dataDir)
+  try {
+    db.exec('BEGIN')
+    for (let index = 0; index < count; index += 1) {
+      const suffix = String(index).padStart(4, '0')
+      createMemoryChunk(db, {
+        id: `paged-chunk-${suffix}`,
+        chatId: 'paged-chat',
+        rangeStartSeq: index * 2,
+        rangeEndSeq: index * 2 + 1,
+        text: `chunk ${index}`,
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: `paged-summary-${suffix}`,
+        chatId: 'paged-chat',
+        chunkId: `paged-chunk-${suffix}`,
+        model: index < 205 ? 'paged-model' : 'other-model',
+        text: `summary ${index}`,
+        tokens: index,
+      })
+    }
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  } finally {
+    db.close()
+  }
+}
+
+function seedLegacyCeilingRows(dataDir: string): void {
+  const db = openDatabase(dataDir)
+  try {
+    const chunk = db.prepare(`
+      INSERT INTO memory_chunks (
+        id, chat_id, range_start_seq, range_end_seq, text, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'summarized', ?, ?)
+    `)
+    const summary = db.prepare(`
+      INSERT INTO memory_summaries (id, chat_id, chunk_id, model, text, tokens, created_at)
+      VALUES (?, ?, ?, 'legacy-model', ?, ?, ?)
+    `)
+    db.exec('BEGIN')
+    for (const [chatId, count] of [
+      ['legacy-exact', 1_000],
+      ['legacy-over', 1_001],
+    ] as const) {
+      for (let index = 0; index < count; index += 1) {
+        const suffix = String(index).padStart(4, '0')
+        const chunkId = `${chatId}-chunk-${suffix}`
+        const timestamp = `2026-01-01T00:${String(Math.floor(index / 60) % 60).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}.000Z`
+        chunk.run(chunkId, chatId, index, index, `chunk ${index}`, timestamp, timestamp)
+        summary.run(`${chatId}-summary-${suffix}`, chatId, chunkId, `summary ${index}`, index, timestamp)
+      }
+    }
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  } finally {
+    db.close()
+  }
+}
+
+function seedOrphanedSummaryRows(dataDir: string): void {
+  const db = openDatabase(dataDir)
+  try {
+    createMemoryChunk(db, {
+      id: 'orphan-order-live-chunk',
+      chatId: 'orphan-order-chat',
+      rangeStartSeq: 9,
+      rangeEndSeq: 10,
+      text: 'live chunk',
+      status: 'summarized',
+    })
+    createMemorySummary(db, {
+      id: 'orphan-order-live-summary',
+      chatId: 'orphan-order-chat',
+      chunkId: 'orphan-order-live-chunk',
+      model: 'orphan-model',
+      text: 'live summary',
+      tokens: 1,
+    })
+    db.exec('PRAGMA foreign_keys = OFF')
+    const insert = db.prepare(`
+      INSERT INTO memory_summaries (id, chat_id, chunk_id, model, text, tokens, created_at)
+      VALUES (?, 'orphan-order-chat', ?, 'orphan-model', ?, 1, ?)
+    `)
+    insert.run('orphan-order-summary-a', 'missing-chunk-a', 'orphan a', '2026-01-02T00:00:00.000Z')
+    insert.run('orphan-order-summary-b', 'missing-chunk-b', 'orphan b', '2026-01-02T00:00:00.000Z')
+  } finally {
+    db.close()
+  }
+}
+
 let harness: Harness
 let assertion: string
 
@@ -254,6 +351,154 @@ describe('Phase 8-7a memory read routes', () => {
     expect((filtered.json() as { summaries: MemorySummary[] }).summaries).toMatchObject([
       { id: 'summary-a', chatId: 'chat-1', model: 'model-a' },
     ])
+  })
+
+  it('pages every chunk and filtered summary in stable keyset order', async () => {
+    seedPagedMemoryRows(harness.dataDir, 213)
+
+    const drain = async (path: string, key: 'chunks' | 'summaries') => {
+      const rows: Array<{ id: string }> = []
+      const pageSizes: number[] = []
+      let cursor: string | null = null
+      do {
+        const separator = path.includes('?') ? '&' : '?'
+        const res = await harness.app.inject({
+          method: 'GET',
+          url: `${path}${separator}limit=73${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+          headers: { 'risu-auth': assertion },
+        })
+        expect(res.statusCode).toBe(200)
+        const body = res.json() as Record<string, unknown>
+        const page = body[key] as Array<{ id: string }>
+        pageSizes.push(page.length)
+        rows.push(...page)
+        cursor = body.nextCursor as string | null
+      } while (cursor)
+      return { rows, pageSizes }
+    }
+
+    const chunks = await drain('/api/v1/memory/chunks/paged-chat', 'chunks')
+    expect(chunks.rows).toHaveLength(213)
+    expect(new Set(chunks.rows.map((row) => row.id)).size).toBe(213)
+    expect(chunks.rows.map((row) => row.id)).toEqual(
+      Array.from({ length: 213 }, (_, index) => `paged-chunk-${String(index).padStart(4, '0')}`),
+    )
+    expect(Math.max(...chunks.pageSizes)).toBeLessThanOrEqual(73)
+
+    const summaries = await drain('/api/v1/memory/summaries/paged-chat?model=paged-model', 'summaries')
+    expect(summaries.rows).toHaveLength(205)
+    expect(new Set(summaries.rows.map((row) => row.id)).size).toBe(205)
+    expect(summaries.rows.map((row) => row.id)).toEqual(
+      Array.from({ length: 205 }, (_, index) => `paged-summary-${String(index).padStart(4, '0')}`),
+    )
+    expect(Math.max(...summaries.pageSizes)).toBeLessThanOrEqual(73)
+
+    const terminal = await harness.app.inject({
+      method: 'GET',
+      url:
+        '/api/v1/memory/chunks/paged-chat?limit=200&cursor=' +
+        encodeURIComponent(
+          (
+            await harness.app.inject({
+              method: 'GET',
+              url: '/api/v1/memory/chunks/paged-chat?limit=200',
+              headers: { 'risu-auth': assertion },
+            })
+          ).json().nextCursor,
+        ),
+      headers: { 'risu-auth': assertion },
+    })
+    expect(terminal.statusCode).toBe(200)
+    expect(terminal.json()).toMatchObject({ nextCursor: null })
+  })
+
+  it('keeps live summaries before orphaned summaries across one-row pages', async () => {
+    seedOrphanedSummaryRows(harness.dataDir)
+    const ids: string[] = []
+    let cursor: string | null = null
+    do {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url:
+          '/api/v1/memory/summaries/orphan-order-chat?model=orphan-model&limit=1' +
+          (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),
+        headers: { 'risu-auth': assertion },
+      })
+      expect(res.statusCode).toBe(200)
+      ids.push(res.json().summaries[0].id)
+      cursor = res.json().nextCursor as string | null
+    } while (cursor)
+
+    expect(ids).toEqual(['orphan-order-live-summary', 'orphan-order-summary-a', 'orphan-order-summary-b'])
+  })
+
+  it('rejects invalid limits and cursors before serving a page', async () => {
+    seedPagedMemoryRows(harness.dataDir, 3)
+    for (const limit of ['0', '-1', '1.5', '201']) {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/v1/memory/chunks/paged-chat?limit=${encodeURIComponent(limit)}`,
+        headers: { 'risu-auth': assertion },
+      })
+      expect(res.statusCode, limit).toBe(400)
+    }
+    for (const cursor of ['not-json', 'a'.repeat(513)]) {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: `/api/v1/memory/chunks/paged-chat?limit=2&cursor=${cursor}`,
+        headers: { 'risu-auth': assertion },
+      })
+      expect(res.statusCode, cursor.slice(0, 20)).toBe(400)
+    }
+
+    const firstChunks = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/chunks/paged-chat?limit=1',
+      headers: { 'risu-auth': assertion },
+    })
+    const chunkCursor = firstChunks.json().nextCursor as string
+    const firstSummaries = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/summaries/paged-chat?model=paged-model&limit=1',
+      headers: { 'risu-auth': assertion },
+    })
+    const summaryCursor = firstSummaries.json().nextCursor as string
+    const mismatches = [
+      `/api/v1/memory/chunks/other-chat?limit=1&cursor=${encodeURIComponent(chunkCursor)}`,
+      `/api/v1/memory/summaries/paged-chat?model=other-model&limit=1&cursor=${encodeURIComponent(summaryCursor)}`,
+      `/api/v1/memory/summaries/paged-chat?model=paged-model&limit=1&cursor=${encodeURIComponent(chunkCursor)}`,
+      `/api/v1/memory/chunks/paged-chat?limit=1&cursor=${encodeURIComponent(summaryCursor)}`,
+      `/api/v1/memory/chunks/paged-chat?cursor=${encodeURIComponent(chunkCursor)}`,
+    ]
+    for (const url of mismatches) {
+      const res = await harness.app.inject({ method: 'GET', url, headers: { 'risu-auth': assertion } })
+      expect(res.statusCode, url).toBe(400)
+    }
+  })
+
+  it('keeps legacy envelopes through 1,000 rows and returns 413 at 1,001', async () => {
+    seedLegacyCeilingRows(harness.dataDir)
+    for (const [path, key] of [
+      ['/api/v1/memory/chunks', 'chunks'],
+      ['/api/v1/memory/summaries', 'summaries'],
+    ] as const) {
+      const exact = await harness.app.inject({
+        method: 'GET',
+        url: `${path}/legacy-exact`,
+        headers: { 'risu-auth': assertion },
+      })
+      expect(exact.statusCode, path).toBe(200)
+      expect(exact.json()[key], path).toHaveLength(1_000)
+      expect(exact.json(), path).not.toHaveProperty('nextCursor')
+
+      const over = await harness.app.inject({
+        method: 'GET',
+        url: `${path}/legacy-over`,
+        headers: { 'risu-auth': assertion },
+      })
+      expect(over.statusCode, path).toBe(413)
+      expect(over.json(), path).toEqual({ error: 'memory_read_requires_pagination', maxRows: 1_000 })
+    }
   })
 
   it('edits summary text and Important metadata without discarding job metadata', async () => {

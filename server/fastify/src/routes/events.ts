@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyBaseLogger, FastifyInstance } from 'fastify'
 import type { ActiveWriterState } from '../activeWriter.js'
 import type { AuthState } from '../auth.js'
 import {
@@ -11,7 +11,7 @@ import {
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import type { MemoryEvent, MemoryEventBus } from '../memoryEvents.js'
-import { emitProtocolMetric, protocolMetricsEnabled } from '../protocolMetrics.js'
+import { emitProtocolMetric, protocolDurationMs, protocolMetricsEnabled, protocolNowMs } from '../protocolMetrics.js'
 import { writeBoundedRaw } from '../streamBackpressure.js'
 import type { WriterEvent } from '../writerEvents.js'
 
@@ -29,6 +29,62 @@ function formatMemoryEvent(event: MemoryEvent): string {
 
 function formatWriterEvent(event: { sessionId: string | null; epoch: number }): string {
   return `event: writer\ndata: ${JSON.stringify(event)}\n\n`
+}
+
+type EventStreamFrameType = 'writer' | 'connected' | 'command' | 'memory' | 'heartbeat'
+type EventStreamCloseReason = 'normal_close' | 'client_abort' | 'slow_consumer_overflow' | 'replay_unavailable'
+
+interface EventStreamMetricTracker {
+  recordFrame(type: EventStreamFrameType, text: string): void
+  finish(reason: EventStreamCloseReason): void
+}
+
+export function createEventStreamMetricTracker(logger?: FastifyBaseLogger): EventStreamMetricTracker | null {
+  if (!protocolMetricsEnabled()) return null
+  const startedAt = protocolNowMs()
+  const frameCounts: Record<EventStreamFrameType, number> = {
+    writer: 0,
+    connected: 0,
+    command: 0,
+    memory: 0,
+    heartbeat: 0,
+  }
+  const frameBytes: Record<EventStreamFrameType, number> = {
+    writer: 0,
+    connected: 0,
+    command: 0,
+    memory: 0,
+    heartbeat: 0,
+  }
+  let rawBytes = 0
+  let frameCount = 0
+  let finished = false
+  return {
+    recordFrame(type, text) {
+      const bytes = Buffer.byteLength(text, 'utf8')
+      frameCounts[type] += 1
+      frameBytes[type] += bytes
+      frameCount += 1
+      rawBytes += bytes
+    },
+    finish(reason) {
+      if (finished) return
+      finished = true
+      emitProtocolMetric(
+        'event_stream_connection',
+        {
+          rawBytes,
+          frameCount,
+          frameCounts,
+          frameBytes,
+          connectionLifetimeMs: protocolDurationMs(startedAt),
+          closeReason: reason,
+          writeOverflow: reason === 'slow_consumer_overflow',
+        },
+        logger,
+      )
+    },
+  }
 }
 
 export function registerEventsRoutes(
@@ -60,7 +116,8 @@ export function registerEventsRoutes(
     let unsubscribeMemory: (() => void) | null = null
     let unsubscribeWriter: (() => void) | null = null
     let cleanedUp = false
-    const cleanup = (): void => {
+    let streamMetrics: EventStreamMetricTracker | null = null
+    const cleanup = (reason: EventStreamCloseReason): void => {
       if (cleanedUp) return
       cleanedUp = true
       if (heartbeat) {
@@ -69,12 +126,27 @@ export function registerEventsRoutes(
       unsubscribeCommand?.()
       unsubscribeMemory?.()
       unsubscribeWriter?.()
+      req.raw.off('aborted', onRequestAborted)
+      req.raw.off('close', onRequestClose)
+      reply.raw.off('finish', onResponseFinish)
+      reply.raw.off('close', onResponseClose)
+      streamMetrics?.finish(reason)
     }
-    const sendFrame = (text: string): boolean => writeBoundedRaw(reply.raw, text, { onOverflow: cleanup })
+    const onRequestAborted = (): void => cleanup('client_abort')
+    const onRequestClose = (): void => cleanup(reply.raw.writableEnded ? 'normal_close' : 'client_abort')
+    const onResponseFinish = (): void => cleanup('normal_close')
+    const onResponseClose = (): void => cleanup(reply.raw.writableEnded ? 'normal_close' : 'client_abort')
+    const sendFrame = (type: EventStreamFrameType, text: string): boolean => {
+      const written = writeBoundedRaw(reply.raw, text, {
+        onOverflow: () => cleanup('slow_consumer_overflow'),
+      })
+      if (written) streamMetrics?.recordFrame(type, text)
+      return written
+    }
     unsubscribeCommand = commandEvents.subscribe((event) => {
       if (liveCommandDelivery) {
         if (!reply.raw.writableEnded) {
-          sendFrame(formatCommandEvent(event))
+          sendFrame('command', formatCommandEvent(event))
         }
         return
       }
@@ -83,7 +155,7 @@ export function registerEventsRoutes(
     unsubscribeWriter = activeWriterState.events.subscribe((event) => {
       if (liveWriterDelivery) {
         if (!reply.raw.writableEnded) {
-          sendFrame(formatWriterEvent(event))
+          sendFrame('writer', formatWriterEvent(event))
         }
         return
       }
@@ -93,7 +165,10 @@ export function registerEventsRoutes(
       sessionId: activeWriterState.sessionId,
       epoch: activeWriterState.epoch,
     }
-    req.raw.once('close', cleanup)
+    req.raw.once('aborted', onRequestAborted)
+    req.raw.once('close', onRequestClose)
+    reply.raw.once('finish', onResponseFinish)
+    reply.raw.once('close', onResponseClose)
 
     const currentRevision = getSchemaState(db).revision
     // The full history read+map exists for replay — and for the opt-in
@@ -110,7 +185,7 @@ export function registerEventsRoutes(
         : selectCommandEventReplay(history, cursor.sinceRevision, currentRevision)
 
     if (replay.status === 'unavailable') {
-      cleanup()
+      cleanup('replay_unavailable')
       emitProtocolMetric(
         'event_replay',
         {
@@ -144,6 +219,7 @@ export function registerEventsRoutes(
       req.log,
     )
 
+    streamMetrics = createEventStreamMetricTracker(req.log)
     reply.hijack()
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
@@ -151,23 +227,23 @@ export function registerEventsRoutes(
       connection: 'keep-alive',
       'x-accel-buffering': 'no',
     })
-    sendFrame(formatWriterEvent(initialWriterEvent))
-    sendFrame(formatSseComment('connected'))
+    sendFrame('writer', formatWriterEvent(initialWriterEvent))
+    sendFrame('connected', formatSseComment('connected'))
     for (const event of queuedWriterEvents) {
       if (!reply.raw.writableEnded) {
-        sendFrame(formatWriterEvent(event))
+        sendFrame('writer', formatWriterEvent(event))
       }
     }
     queuedWriterEvents.length = 0
     liveWriterDelivery = true
     for (const event of replay.events) {
       if (!reply.raw.writableEnded) {
-        sendFrame(formatCommandEvent(event))
+        sendFrame('command', formatCommandEvent(event))
       }
     }
     for (const event of queuedCommandEvents) {
       if (!reply.raw.writableEnded && (cursor.sinceRevision === null || event.revision > currentRevision)) {
-        sendFrame(formatCommandEvent(event))
+        sendFrame('command', formatCommandEvent(event))
       }
     }
     queuedCommandEvents.length = 0
@@ -178,13 +254,13 @@ export function registerEventsRoutes(
       startHeartbeat: () =>
         setInterval(() => {
           if (!reply.raw.writableEnded) {
-            sendFrame(formatSseComment('heartbeat'))
+            sendFrame('heartbeat', formatSseComment('heartbeat'))
           }
         }, 25_000),
       subscribeMemory: () =>
         memoryEvents.subscribe((event) => {
           if (!reply.raw.writableEnded) {
-            sendFrame(formatMemoryEvent(event))
+            sendFrame('memory', formatMemoryEvent(event))
           }
         }),
     })

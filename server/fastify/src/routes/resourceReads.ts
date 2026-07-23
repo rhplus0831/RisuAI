@@ -32,6 +32,8 @@ const RESOURCE_CACHE_VERSION = 2 as const
 const RESOURCE_CACHE_ALGORITHM = 'sha256' as const
 const RESOURCE_CACHE_MAX_HASHES = 10_000
 const RESOURCE_CACHE_MAX_BODY_BYTES = 1024 * 1024
+export const BULK_RESOURCE_MAX_IDS = 32
+export const BULK_RESOURCE_MAX_BODY_BYTES = 64 * 1024
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/
 const RESOURCE_CACHE_METADATA = {
   version: RESOURCE_CACHE_VERSION,
@@ -449,16 +451,24 @@ export function registerResourceReadRoutes(
 
   app.post<{ Body: { ids?: unknown } }>(
     '/api/v1/chats/messages/bulk',
-    { onRequest: requireReadAuth },
+    { onRequest: requireReadAuth, bodyLimit: BULK_RESOURCE_MAX_BODY_BYTES },
     async (req, reply) => {
-      const chatIds = readBulkIds(req.body)
-      if (!chatIds) {
+      const result = readBulkIds(req.body)
+      if (result.status === 'invalid') {
         reply.code(400).send({
           error: 'invalid_chat_ids',
           reason: 'Expected body.ids to be an array of non-empty chat ids.',
         })
         return
       }
+      if (result.status === 'too-many') {
+        reply.code(413).send({
+          error: 'bulk_resource_limit_exceeded',
+          maxItems: BULK_RESOURCE_MAX_IDS,
+        })
+        return
+      }
+      const chatIds = result.ids
       const { revision } = getSchemaState(db)
       const hydration = loadChatHydrations(db, dataDir, chatIds, { includeAlternates: false })
       return metricResourceResponse(
@@ -524,16 +534,24 @@ export function registerResourceReadRoutes(
 
   app.post<{ Body: { ids?: unknown } }>(
     '/api/v1/characters/lorebooks/bulk',
-    { onRequest: requireReadAuth },
+    { onRequest: requireReadAuth, bodyLimit: BULK_RESOURCE_MAX_BODY_BYTES },
     async (req, reply) => {
-      const characterIds = readBulkIds(req.body)
-      if (!characterIds) {
+      const result = readBulkIds(req.body)
+      if (result.status === 'invalid') {
         reply.code(400).send({
           error: 'invalid_character_lorebook_ids',
           reason: 'Expected body.ids to be an array of non-empty character ids.',
         })
         return
       }
+      if (result.status === 'too-many') {
+        reply.code(413).send({
+          error: 'bulk_resource_limit_exceeded',
+          maxItems: BULK_RESOURCE_MAX_IDS,
+        })
+        return
+      }
+      const characterIds = result.ids
       const { revision } = getSchemaState(db)
       const hydration = loadCharacterLorebookHydrations(db, dataDir, characterIds)
       return metricResourceResponse(
@@ -986,19 +1004,22 @@ function isReadableCollectionName(value: string): value is ReadableCollectionNam
   return READABLE_COLLECTION_NAME_SET.has(value)
 }
 
-function readBulkIds(body: { ids?: unknown } | undefined): string[] | null {
-  if (!body || !Array.isArray(body.ids)) return null
+type BulkIdReadResult = { status: 'ok'; ids: string[] } | { status: 'invalid' } | { status: 'too-many' }
+
+function readBulkIds(body: { ids?: unknown } | undefined): BulkIdReadResult {
+  if (!body || !Array.isArray(body.ids)) return { status: 'invalid' }
+  if (body.ids.length > BULK_RESOURCE_MAX_IDS) return { status: 'too-many' }
   const ids: string[] = []
   const seen = new Set<string>()
   for (const raw of body.ids) {
-    if (typeof raw !== 'string') return null
+    if (typeof raw !== 'string') return { status: 'invalid' }
     const id = raw.trim()
-    if (!id) return null
+    if (!id) return { status: 'invalid' }
     if (seen.has(id)) continue
     ids.push(id)
     seen.add(id)
   }
-  return ids
+  return { status: 'ok', ids }
 }
 
 function readPositiveInteger(value: string | undefined): number | null {

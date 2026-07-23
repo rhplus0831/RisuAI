@@ -49,6 +49,36 @@ export interface MemorySummary {
   createdAt: string
 }
 
+export interface MemoryChunkPageCursor {
+  rangeStartSeq: number
+  rangeEndSeq: number
+  createdAt: string
+  id: string
+}
+
+export interface MemorySummaryPageCursor {
+  orphanSort: 0 | 1
+  rangeStartSort: number
+  rangeEndSort: number
+  createdAt: string
+  id: string
+}
+
+export interface MemoryChunkPage {
+  chunks: MemoryChunk[]
+  nextCursor: MemoryChunkPageCursor | null
+}
+
+export interface MemorySummaryPage {
+  summaries: MemorySummary[]
+  nextCursor: MemorySummaryPageCursor | null
+}
+
+// Orphaned summaries sort after summaries whose chunks still exist. Their
+// nullable joined sequence values are normalized to this same safe-integer
+// sentinel in both ORDER BY and keyset seek predicates.
+export const MEMORY_SUMMARY_ORPHAN_SEQUENCE_SENTINEL = Number.MAX_SAFE_INTEGER
+
 export interface CreateMemorySummaryInput {
   id: string
   chatId: string
@@ -192,6 +222,12 @@ interface MemorySummaryRow {
   metadata_json: string | null
   tokens: number
   created_at: string
+}
+
+interface MemorySummaryPageRow extends MemorySummaryRow {
+  orphan_sort: 0 | 1
+  range_start_sort: number
+  range_end_sort: number
 }
 
 interface MemoryEmbeddingRow {
@@ -565,6 +601,79 @@ export function listMemoryChunks(
   return rows.map(mapMemoryChunkRow)
 }
 
+export function listMemoryChunkPage(
+  db: DatabaseSync,
+  input: { chatId: string; limit: number; cursor?: MemoryChunkPageCursor },
+): MemoryChunkPage {
+  requireString(input.chatId, 'chat id')
+  requirePositiveInteger(input.limit, 'memory chunk page limit')
+  const values: SqlValue[] = [input.chatId]
+  let seek = ''
+  if (input.cursor) {
+    const cursor = input.cursor
+    requireNonNegativeInteger(cursor.rangeStartSeq, 'memory chunk cursor rangeStartSeq')
+    requireNonNegativeInteger(cursor.rangeEndSeq, 'memory chunk cursor rangeEndSeq')
+    requireString(cursor.createdAt, 'memory chunk cursor createdAt')
+    requireString(cursor.id, 'memory chunk cursor id')
+    seek = `
+      AND (
+        range_start_seq > ?
+        OR (range_start_seq = ? AND range_end_seq > ?)
+        OR (range_start_seq = ? AND range_end_seq = ? AND created_at > ?)
+        OR (range_start_seq = ? AND range_end_seq = ? AND created_at = ? AND id > ?)
+      )
+    `
+    values.push(
+      cursor.rangeStartSeq,
+      cursor.rangeStartSeq,
+      cursor.rangeEndSeq,
+      cursor.rangeStartSeq,
+      cursor.rangeEndSeq,
+      cursor.createdAt,
+      cursor.rangeStartSeq,
+      cursor.rangeEndSeq,
+      cursor.createdAt,
+      cursor.id,
+    )
+  }
+  values.push(input.limit + 1)
+  const rows = allRows<MemoryChunkRow>(
+    db.prepare(`
+      SELECT
+        id,
+        chat_id,
+        message_id,
+        range_start_seq,
+        range_end_seq,
+        text,
+        status,
+        created_at,
+        updated_at
+      FROM memory_chunks
+      WHERE chat_id = ?
+      ${seek}
+      ORDER BY range_start_seq, range_end_seq, created_at, id
+      LIMIT ?
+    `),
+    ...values,
+  )
+  const hasMore = rows.length > input.limit
+  const pageRows = hasMore ? rows.slice(0, input.limit) : rows
+  const last = pageRows.at(-1)
+  return {
+    chunks: pageRows.map(mapMemoryChunkRow),
+    nextCursor:
+      hasMore && last
+        ? {
+            rangeStartSeq: last.range_start_seq,
+            rangeEndSeq: last.range_end_seq,
+            createdAt: last.created_at,
+            id: last.id,
+          }
+        : null,
+  }
+}
+
 export function updateMemoryChunkStatus(db: DatabaseSync, id: string, status: MemoryChunkStatus): MemoryChunk | null {
   requireString(id, 'chunk id')
   runStatement(
@@ -695,6 +804,116 @@ export function listMemorySummaries(
     ...values,
   )
   return rows.map(mapMemorySummaryRow)
+}
+
+export function listMemorySummaryPage(
+  db: DatabaseSync,
+  input: { chatId: string; model?: string; limit: number; cursor?: MemorySummaryPageCursor },
+): MemorySummaryPage {
+  requireString(input.chatId, 'chat id')
+  requirePositiveInteger(input.limit, 'memory summary page limit')
+  const conditions = ['memory_summaries.chat_id = ?']
+  const values: SqlValue[] = [input.chatId]
+  if (input.model !== undefined) {
+    requireString(input.model, 'summary model')
+    conditions.push('memory_summaries.model = ?')
+    values.push(input.model)
+  }
+
+  const orphanSort = 'CASE WHEN memory_chunks.id IS NULL THEN 1 ELSE 0 END'
+  const rangeStartSort = `COALESCE(memory_chunks.range_start_seq, ${MEMORY_SUMMARY_ORPHAN_SEQUENCE_SENTINEL})`
+  const rangeEndSort = `COALESCE(memory_chunks.range_end_seq, ${MEMORY_SUMMARY_ORPHAN_SEQUENCE_SENTINEL})`
+  if (input.cursor) {
+    const cursor = input.cursor
+    if (cursor.orphanSort !== 0 && cursor.orphanSort !== 1) {
+      throw new ValidationError('memory summary cursor orphanSort must be 0 or 1')
+    }
+    requireNonNegativeInteger(cursor.rangeStartSort, 'memory summary cursor rangeStartSort')
+    requireNonNegativeInteger(cursor.rangeEndSort, 'memory summary cursor rangeEndSort')
+    requireString(cursor.createdAt, 'memory summary cursor createdAt')
+    requireString(cursor.id, 'memory summary cursor id')
+    conditions.push(`
+      (
+        ${orphanSort} > ?
+        OR (${orphanSort} = ? AND ${rangeStartSort} > ?)
+        OR (${orphanSort} = ? AND ${rangeStartSort} = ? AND ${rangeEndSort} > ?)
+        OR (
+          ${orphanSort} = ?
+          AND ${rangeStartSort} = ?
+          AND ${rangeEndSort} = ?
+          AND memory_summaries.created_at > ?
+        )
+        OR (
+          ${orphanSort} = ?
+          AND ${rangeStartSort} = ?
+          AND ${rangeEndSort} = ?
+          AND memory_summaries.created_at = ?
+          AND memory_summaries.id > ?
+        )
+      )
+    `)
+    values.push(
+      cursor.orphanSort,
+      cursor.orphanSort,
+      cursor.rangeStartSort,
+      cursor.orphanSort,
+      cursor.rangeStartSort,
+      cursor.rangeEndSort,
+      cursor.orphanSort,
+      cursor.rangeStartSort,
+      cursor.rangeEndSort,
+      cursor.createdAt,
+      cursor.orphanSort,
+      cursor.rangeStartSort,
+      cursor.rangeEndSort,
+      cursor.createdAt,
+      cursor.id,
+    )
+  }
+  values.push(input.limit + 1)
+  const rows = allRows<MemorySummaryPageRow>(
+    db.prepare(`
+      SELECT
+        memory_summaries.id,
+        memory_summaries.chat_id,
+        memory_summaries.chunk_id,
+        memory_summaries.model,
+        memory_summaries.text,
+        memory_summaries.metadata_json,
+        memory_summaries.tokens,
+        memory_summaries.created_at,
+        ${orphanSort} AS orphan_sort,
+        ${rangeStartSort} AS range_start_sort,
+        ${rangeEndSort} AS range_end_sort
+      FROM memory_summaries
+      LEFT JOIN memory_chunks ON memory_chunks.id = memory_summaries.chunk_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY
+        orphan_sort,
+        range_start_sort,
+        range_end_sort,
+        memory_summaries.created_at,
+        memory_summaries.id
+      LIMIT ?
+    `),
+    ...values,
+  )
+  const hasMore = rows.length > input.limit
+  const pageRows = hasMore ? rows.slice(0, input.limit) : rows
+  const last = pageRows.at(-1)
+  return {
+    summaries: pageRows.map(mapMemorySummaryRow),
+    nextCursor:
+      hasMore && last
+        ? {
+            orphanSort: last.orphan_sort,
+            rangeStartSort: last.range_start_sort,
+            rangeEndSort: last.range_end_sort,
+            createdAt: last.created_at,
+            id: last.id,
+          }
+        : null,
+  }
 }
 
 export function loadMemorySummarySnapshot(db: DatabaseSync, input: { chatId: string }): MemorySummarySnapshot {

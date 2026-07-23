@@ -81,6 +81,7 @@ interface RealmImportBody {
   baseRevision?: unknown
   allowLowLevelAccess?: unknown
   pendingImportToken?: unknown
+  clientCapabilities?: { realmProgressDelta?: unknown }
 }
 
 export type RealmImportProgressPhase = 'validate' | 'download' | 'extract' | 'assets' | 'convert' | 'commit'
@@ -208,23 +209,26 @@ export function registerRealmImportRoutes(
       const writerSessionId = readActiveWriterSessionId(req)
       const eventOrigin = writerSessionId ? { writerSessionId } : undefined
       if (acceptsProgressStream(req.headers.accept)) {
-        await streamRealmImport(reply, (reportProgress) =>
-          runRealmImport({
-            db,
-            dataDir,
-            eventSink,
-            eventOrigin,
-            body,
-            hubUrl,
-            realmUrl,
-            maxExpandedImportBytes: options.maxExpandedImportBytes,
-            maxDynamicJsonBytes: options.maxDynamicJsonBytes,
-            maxFetchedAssetBytes: options.maxFetchedAssetBytes,
-            maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
-            pendingCharxImports,
-            signal: abort.signal,
-            reportProgress,
-          }),
+        await streamRealmImport(
+          reply,
+          (reportProgress) =>
+            runRealmImport({
+              db,
+              dataDir,
+              eventSink,
+              eventOrigin,
+              body,
+              hubUrl,
+              realmUrl,
+              maxExpandedImportBytes: options.maxExpandedImportBytes,
+              maxDynamicJsonBytes: options.maxDynamicJsonBytes,
+              maxFetchedAssetBytes: options.maxFetchedAssetBytes,
+              maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
+              pendingCharxImports,
+              signal: abort.signal,
+              reportProgress,
+            }),
+          body.clientCapabilities?.realmProgressDelta === true,
         )
         return
       }
@@ -578,6 +582,7 @@ async function streamRealmImport(
   run: (
     reportProgress: RealmImportProgressReporter,
   ) => Promise<{ revision: number; event: unknown; characterId: string }>,
+  realmProgressDelta = false,
 ): Promise<void> {
   reply.hijack()
   reply.raw.writeHead(200, {
@@ -587,14 +592,30 @@ async function streamRealmImport(
     'x-accel-buffering': 'no',
   })
 
-  const write = (event: string, payload: unknown): void => {
+  const write = (event: string, payload: unknown): boolean => {
     if (!reply.raw.writableEnded) {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`)
+      return true
     }
+    return false
+  }
+
+  let lastProgress: RealmImportProgress | null = null
+  const writeProgress = (progress: RealmImportProgress): void => {
+    if (!realmProgressDelta || lastProgress === null) {
+      if (write('progress', progress)) lastProgress = progress
+      return
+    }
+    const payload: Partial<RealmImportProgress> & Pick<RealmImportProgress, 'percent'> = {
+      percent: progress.percent,
+    }
+    if (progress.phase !== lastProgress.phase) payload.phase = progress.phase
+    if (progress.message !== lastProgress.message) payload.message = progress.message
+    if (write('progress', payload)) lastProgress = progress
   }
 
   try {
-    const result = await run((progress) => write('progress', progress))
+    const result = await run(writeProgress)
     write('done', result)
   } catch (err) {
     if (err instanceof RevisionConflictError) {

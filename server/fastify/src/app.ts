@@ -177,7 +177,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // No-op once converged. Must run after the backfill above, which needs the
   // embedded messages before boot import retires a legacy db.json.
   ensureDbJsonImported(db, config.dataDir, app.log)
-  const memoryEventBus = createMemoryEventBus()
+  const memoryEventBus = createMemoryEventBus(app.log)
   const emitMemoryEvent: MemoryEventSink = (event) => {
     if (opts.memoryEvents) {
       emitMemoryEventSafely(opts.memoryEvents, event)

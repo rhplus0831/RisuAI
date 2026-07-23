@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -19,6 +19,24 @@ import {
 } from '../src/commands/events.js'
 import { bumpRevision, openDatabase } from '../src/db.js'
 import { createMemoryEventBus, type MemoryEvent, type MemoryEventSink } from '../src/memoryEvents.js'
+import { createEventStreamMetricTracker } from '../src/routes/events.js'
+
+interface CapturedProtocolMetric extends Record<string, unknown> {
+  metric: string
+}
+
+const capturedMetrics = vi.hoisted((): CapturedProtocolMetric[] => [])
+
+vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
+  return {
+    ...actual,
+    emitProtocolMetric: (name: string, fields: Record<string, unknown> | (() => Record<string, unknown>)) => {
+      if (!actual.protocolMetricsEnabled()) return
+      capturedMetrics.push({ metric: name, ...(typeof fields === 'function' ? fields() : fields) })
+    },
+  }
+})
 
 const subtle = webcrypto.subtle
 
@@ -203,13 +221,21 @@ function commandDataLine(text: string): string | undefined {
 }
 
 let harness: Harness
+const PREVIOUS_PROTOCOL_METRICS = process.env.RISU_PROTOCOL_METRICS
 
 beforeEach(async () => {
+  delete process.env.RISU_PROTOCOL_METRICS
+  capturedMetrics.length = 0
   harness = await startHarness()
 })
 
 afterEach(async () => {
   await stopHarness(harness)
+  if (PREVIOUS_PROTOCOL_METRICS === undefined) {
+    delete process.env.RISU_PROTOCOL_METRICS
+  } else {
+    process.env.RISU_PROTOCOL_METRICS = PREVIOUS_PROTOCOL_METRICS
+  }
 })
 
 describe('Phase 9-5a command events stream', () => {
@@ -315,6 +341,77 @@ describe('Phase 9-5a command events stream', () => {
 
     expect(() => bus.emit(event)).not.toThrow()
     expect(seen).toEqual([event])
+  })
+
+  it('emits one opt-in memory fanout metric per event and no metric when disabled', () => {
+    const event: MemoryEvent = {
+      type: 'memory.job',
+      chatId: 'chat-metric',
+      job: {
+        id: 'job-metric',
+        kind: 'summarize',
+        status: 'running',
+        attemptCount: 1,
+        maxAttempts: 3,
+      },
+      sideEffect: {
+        kind: 'hypav3_progress',
+        payload: { open: true, miniMsg: '1', msg: 'Summarizing', subMsg: '', status: 'running' },
+      },
+    }
+    const bus = createMemoryEventBus()
+    bus.subscribe(() => {})
+    bus.subscribe(() => {})
+
+    bus.emit(event)
+    expect(capturedMetrics).toEqual([])
+
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    bus.emit(event)
+
+    const metrics = capturedMetrics.filter((metric) => metric.metric === 'memory_event_fanout')
+    expect(metrics).toHaveLength(1)
+    const payloadBytes = Buffer.byteLength(JSON.stringify(event), 'utf8')
+    const frameBytes = Buffer.byteLength(`event: memory\ndata: ${JSON.stringify(event)}\n\n`, 'utf8')
+    expect(metrics[0]).toMatchObject({
+      payloadBytes,
+      frameBytes,
+      listenerCount: 2,
+      deliveredBytes: frameBytes * 2,
+      jobKind: 'summarize',
+      jobStatus: 'running',
+      hasSideEffect: true,
+    })
+  })
+
+  it('emits one body-free event-stream metric for normal cleanup and slow-consumer overflow', () => {
+    expect(createEventStreamMetricTracker()).toBeNull()
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    const normal = createEventStreamMetricTracker()
+    normal?.recordFrame('writer', 'event: writer\ndata: {"epoch":0}\n\n')
+    normal?.recordFrame('connected', ': connected\n\n')
+    normal?.finish('normal_close')
+    normal?.finish('client_abort')
+
+    const overflow = createEventStreamMetricTracker()
+    overflow?.recordFrame('memory', 'event: memory\ndata: {}\n\n')
+    overflow?.finish('slow_consumer_overflow')
+
+    const metrics = capturedMetrics.filter((metric) => metric.metric === 'event_stream_connection')
+    expect(metrics).toHaveLength(2)
+    expect(metrics[0]).toMatchObject({
+      frameCount: 2,
+      frameCounts: { writer: 1, connected: 1, command: 0, memory: 0, heartbeat: 0 },
+      closeReason: 'normal_close',
+      writeOverflow: false,
+      connectionLifetimeMs: expect.any(Number),
+    })
+    expect(metrics[1]).toMatchObject({
+      frameCount: 1,
+      closeReason: 'slow_consumer_overflow',
+      writeOverflow: true,
+    })
+    expect(metrics.every((metric) => !('body' in metric) && !('frames' in metric))).toBe(true)
   })
 
   it('rejects unauthenticated event streams once a password is set', async () => {
@@ -700,6 +797,8 @@ describe('Phase 9-5a command events stream', () => {
       streamGeminiThoughts: false,
     })
     clearPersistedCommandEvents(harness.dataDir)
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    capturedMetrics.length = 0
 
     const res = await harness.app.inject({
       method: 'GET',
@@ -713,6 +812,7 @@ describe('Phase 9-5a command events stream', () => {
       requestedRevision: 0,
       currentRevision: revision,
     })
+    expect(capturedMetrics.filter((metric) => metric.metric === 'event_stream_connection')).toEqual([])
   })
 
   it('reports replay unavailable when the cursor is ahead of the server revision', async () => {
@@ -866,6 +966,8 @@ describe('Phase 9-5a command events stream', () => {
 
   it('unsubscribes listeners when the stream closes', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    capturedMetrics.length = 0
     const baseUrl = await listen(harness.app)
     const abort = new AbortController()
 
@@ -880,6 +982,13 @@ describe('Phase 9-5a command events stream', () => {
 
     abort.abort()
     await waitFor(() => harness.commandEvents.activeListeners === 0)
+    await waitFor(() => capturedMetrics.some((metric) => metric.metric === 'event_stream_connection'))
+    expect(capturedMetrics.find((metric) => metric.metric === 'event_stream_connection')).toMatchObject({
+      frameCount: 2,
+      frameCounts: { writer: 1, connected: 1 },
+      closeReason: 'client_abort',
+      writeOverflow: false,
+    })
     reader?.releaseLock()
   })
 

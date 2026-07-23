@@ -1,4 +1,6 @@
+import type { FastifyBaseLogger } from 'fastify'
 import type { MemoryJob, MemoryJobListItem, MemoryJobStatus } from './memoryRepository.js'
+import { emitProtocolMetric, jsonPayloadBytes } from './protocolMetrics.js'
 
 export interface HypaV3ProgressPayload {
   open: boolean
@@ -41,10 +43,28 @@ export function emitMemoryEventSafely(sink: MemoryEventSink, event: MemoryEvent)
   }
 }
 
-export function createMemoryEventBus(): MemoryEventBus {
+export function createMemoryEventBus(logger?: FastifyBaseLogger): MemoryEventBus {
   const listeners = new Set<MemoryEventListener>()
   return {
     emit(event) {
+      emitProtocolMetric(
+        'memory_event_fanout',
+        () => {
+          const payloadBytes = jsonPayloadBytes(event)
+          const frameBytes =
+            payloadBytes === null ? null : payloadBytes + Buffer.byteLength('event: memory\ndata: \n\n', 'utf8')
+          return {
+            payloadBytes,
+            frameBytes,
+            listenerCount: listeners.size,
+            deliveredBytes: frameBytes === null ? null : frameBytes * listeners.size,
+            jobKind: event.job.kind,
+            jobStatus: event.job.status,
+            hasSideEffect: event.sideEffect !== undefined,
+          }
+        },
+        logger,
+      )
       for (const listener of listeners) {
         emitMemoryEventSafely(listener, event)
       }

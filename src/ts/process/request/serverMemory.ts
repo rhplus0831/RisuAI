@@ -3,6 +3,7 @@ import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { hypaV3ProgressStore } from '../../stores.svelte'
 
 const MEMORY_ENDPOINT = '/api/v1/memory'
+const MEMORY_READ_PAGE_LIMIT = 200
 
 export type ServerMemoryChunkStatus = 'pending' | 'summarized' | 'failed'
 export type ServerMemoryJobKind = 'chunk' | 'embed' | 'summarize'
@@ -172,6 +173,20 @@ function decodeArrayEnvelope<T>(body: unknown, key: string, isItem: (value: unkn
   return body[key]
 }
 
+function decodeMemoryListPage<T>(
+  body: unknown,
+  key: string,
+  isItem: (value: unknown) => value is T,
+): { items: T[]; nextCursor: string | null } | null {
+  const items = decodeArrayEnvelope(body, key, isItem)
+  if (!items || !isRecord(body)) return null
+  if (!Object.prototype.hasOwnProperty.call(body, 'nextCursor')) {
+    return { items, nextCursor: null }
+  }
+  if (body.nextCursor !== null && !isNonEmptyString(body.nextCursor)) return null
+  return { items, nextCursor: body.nextCursor as string | null }
+}
+
 function decodeSummaryId(body: unknown): { summaryId: string } | null {
   if (!isRecord(body) || !isNonEmptyString(body.summaryId)) return null
   return { summaryId: body.summaryId }
@@ -234,16 +249,28 @@ export async function listServerMemoryChunks(
   chatId: string,
   signal?: AbortSignal | null,
 ): Promise<ServerMemoryResult<{ chunks: ServerMemoryChunk[] }>> {
-  return requestMemoryJson<{ chunks: ServerMemoryChunk[] }>(
-    `${MEMORY_ENDPOINT}/chunks/${encodeURIComponent(chatId)}`,
-    { signal: signal ?? undefined },
-    {
-      decode: (body) => {
-        const chunks = decodeArrayEnvelope(body, 'chunks', isServerMemoryChunk)
-        return chunks ? { chunks } : null
-      },
-    },
-  )
+  const chunks: ServerMemoryChunk[] = []
+  const seenCursors = new Set<string>()
+  let cursor: string | undefined
+  do {
+    const page = await requestMemoryJson<{ items: ServerMemoryChunk[]; nextCursor: string | null }>(
+      appendQuery(`${MEMORY_ENDPOINT}/chunks/${encodeURIComponent(chatId)}`, {
+        limit: String(MEMORY_READ_PAGE_LIMIT),
+        cursor,
+      }),
+      { signal: signal ?? undefined },
+      { decode: (body) => decodeMemoryListPage(body, 'chunks', isServerMemoryChunk) },
+    )
+    if (page.status !== 'ok') return page
+    chunks.push(...page.items)
+    if (page.nextCursor === null) return { status: 'ok', chunks }
+    if (seenCursors.has(page.nextCursor)) {
+      return { status: 'error', error: 'Memory chunk pagination returned a repeated cursor' }
+    }
+    seenCursors.add(page.nextCursor)
+    cursor = page.nextCursor
+  } while (cursor)
+  return { status: 'ok', chunks }
 }
 
 export async function listServerMemorySummaries(
@@ -251,16 +278,29 @@ export async function listServerMemorySummaries(
   model?: string,
   signal?: AbortSignal | null,
 ): Promise<ServerMemoryResult<{ summaries: ServerMemorySummary[] }>> {
-  return requestMemoryJson<{ summaries: ServerMemorySummary[] }>(
-    appendQuery(`${MEMORY_ENDPOINT}/summaries/${encodeURIComponent(chatId)}`, { model }),
-    { signal: signal ?? undefined },
-    {
-      decode: (body) => {
-        const summaries = decodeArrayEnvelope(body, 'summaries', isServerMemorySummary)
-        return summaries ? { summaries } : null
-      },
-    },
-  )
+  const summaries: ServerMemorySummary[] = []
+  const seenCursors = new Set<string>()
+  let cursor: string | undefined
+  do {
+    const page = await requestMemoryJson<{ items: ServerMemorySummary[]; nextCursor: string | null }>(
+      appendQuery(`${MEMORY_ENDPOINT}/summaries/${encodeURIComponent(chatId)}`, {
+        model,
+        limit: String(MEMORY_READ_PAGE_LIMIT),
+        cursor,
+      }),
+      { signal: signal ?? undefined },
+      { decode: (body) => decodeMemoryListPage(body, 'summaries', isServerMemorySummary) },
+    )
+    if (page.status !== 'ok') return page
+    summaries.push(...page.items)
+    if (page.nextCursor === null) return { status: 'ok', summaries }
+    if (seenCursors.has(page.nextCursor)) {
+      return { status: 'error', error: 'Memory summary pagination returned a repeated cursor' }
+    }
+    seenCursors.add(page.nextCursor)
+    cursor = page.nextCursor
+  } while (cursor)
+  return { status: 'ok', summaries }
 }
 
 export async function patchServerMemorySummary(

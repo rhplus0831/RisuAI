@@ -24,7 +24,7 @@ import { selectedCharID } from '../stores.svelte'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './commands'
 import { isServerChatMessagePlaceholder, type Message } from '../storage/database.svelte'
 import {
-  BULK_HYDRATION_CONCURRENCY,
+  BULK_HYDRATION_BATCH_SIZE,
   ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW,
   acknowledgeCreatedChatTranscriptLocalEffect,
   acknowledgeMessageMutationLocalEffect,
@@ -412,35 +412,112 @@ describe('chat message hydration bridge', () => {
     expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'chat-1', chatId: 'm-chat-1' }])
   })
 
-  it('hydrates many chats with one bulk chat request', async () => {
-    seedManyStubChats(BULK_HYDRATION_CONCURRENCY * 3)
+  it('hydrates 65 chats in sequential 32-id bulk batches', async () => {
+    seedManyStubChats(BULK_HYDRATION_BATCH_SIZE * 2 + 1)
+    let active = 0
+    let maxActive = 0
+    projectionState.fetchBulkChat.mockImplementation(async (chatIds: string[]) => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      await Promise.resolve()
+      active -= 1
+      return okBulkResult(chatIds)
+    })
 
     await ensureAllChatsHydrated()
 
-    expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(1)
-    expect(projectionState.fetchBulkChat.mock.calls[0][0]).toHaveLength(BULK_HYDRATION_CONCURRENCY * 3)
+    expect(projectionState.fetchBulkChat.mock.calls.map(([ids]) => ids.length)).toEqual([32, 32, 1])
+    expect(projectionState.fetchBulkChat.mock.calls.flatMap(([ids]) => ids)).toEqual(
+      Array.from({ length: 65 }, (_, index) => `chat-${index + 1}`),
+    )
+    expect(maxActive).toBe(1)
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
+    expect(db().characters[0].chats.every((chat) => chat.message.length === 1)).toBe(true)
   })
 
   it('keeps all-chat hydration within the request-count budget', async () => {
-    seedManyStubChats(BULK_HYDRATION_CONCURRENCY * 3)
+    seedManyStubChats(BULK_HYDRATION_BATCH_SIZE * 2 + 1)
     const before = getProtocolDiagnosticsSnapshot().hydration.chat
 
     await ensureAllChatsHydrated()
 
     const afterBulk = getProtocolDiagnosticsSnapshot().hydration.chat
-    expect(afterBulk.requestsStarted - before.requestsStarted).toBe(1)
+    expect(afterBulk.requestsStarted - before.requestsStarted).toBe(3)
     expect(afterBulk.bulkRuns - before.bulkRuns).toBe(1)
-    expect(afterBulk.bulkIds - before.bulkIds).toBe(BULK_HYDRATION_CONCURRENCY * 3)
-    expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(1)
+    expect(afterBulk.bulkIds - before.bulkIds).toBe(65)
+    expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(3)
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
 
     await ensureAllChatsHydrated()
 
     const afterCached = getProtocolDiagnosticsSnapshot().hydration.chat
     expect(afterCached.requestsStarted).toBe(afterBulk.requestsStarted)
-    expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(1)
+    expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(3)
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
+  })
+
+  it('keeps failed chat batches retryable and makes strict runs stop at the failed batch', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      seedManyStubChats(65)
+      projectionState.fetchBulkChat
+        .mockImplementationOnce(async (ids: string[]) => okBulkResult(ids))
+        .mockResolvedValueOnce({ status: 'error', error: 'middle batch failed' })
+        .mockImplementationOnce(async (ids: string[]) => okBulkResult(ids))
+
+      await ensureAllChatsHydrated()
+
+      expect(projectionState.fetchBulkChat.mock.calls.map(([ids]) => ids.length)).toEqual([32, 32, 1])
+      expect(
+        db()
+          .characters[0].chats.slice(0, 32)
+          .every((chat) => chat.message.length === 1),
+      ).toBe(true)
+      expect(
+        db()
+          .characters[0].chats.slice(32, 64)
+          .every((chat) => chat.message.length === 0),
+      ).toBe(true)
+      expect(db().characters[0].chats[64].message).toHaveLength(1)
+
+      projectionState.fetchBulkChat.mockClear()
+      projectionState.fetchBulkChat.mockImplementation(async (ids: string[]) => okBulkResult(ids))
+      await ensureAllChatsHydrated()
+      expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(1)
+      expect(projectionState.fetchBulkChat.mock.calls[0][0]).toEqual(
+        Array.from({ length: 32 }, (_, index) => `chat-${index + 33}`),
+      )
+
+      resetChatHydration()
+      seedManyStubChats(65)
+      projectionState.fetchBulkChat.mockReset()
+      projectionState.fetchBulkChat
+        .mockImplementationOnce(async (ids: string[]) => okBulkResult(ids))
+        .mockResolvedValueOnce({ status: 'error', error: 'strict middle batch failed' })
+      await expect(ensureAllChatsHydrated({ strict: true })).rejects.toThrow(
+        'Bulk chat hydration failed: strict middle batch failed',
+      )
+      expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(2)
+      expect(db().characters[0].chats[64].message).toEqual([])
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('stops a non-strict chat batch run when its hydration generation resets', async () => {
+    seedManyStubChats(65)
+    const secondBatch = deferred<ReturnType<typeof okBulkResult>>()
+    projectionState.fetchBulkChat
+      .mockImplementationOnce(async (ids: string[]) => okBulkResult(ids))
+      .mockReturnValueOnce(secondBatch.promise)
+
+    const pending = ensureAllChatsHydrated()
+    await vi.waitFor(() => expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(2))
+    resetChatHydration()
+    secondBatch.resolve(okBulkResult(Array.from({ length: 32 }, (_, index) => `chat-${index + 33}`)))
+    await pending
+
+    expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(2)
   })
 
   it('resetChatHydration makes ensureAllChatsHydrated refetch re-stubbed chats', async () => {
@@ -1013,13 +1090,15 @@ describe('character globalLore hydration (Phase 5)', () => {
     expect((testDatabaseState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual(localLore)
   })
 
-  it('hydrates many character lorebooks with one bulk request', async () => {
-    seedManyLorebookStubCharacters(BULK_HYDRATION_CONCURRENCY * 3)
+  it('hydrates 65 character lorebooks in sequential 32-id bulk batches', async () => {
+    seedManyLorebookStubCharacters(BULK_HYDRATION_BATCH_SIZE * 2 + 1)
 
     await ensureAllCharacterLorebooksHydrated()
 
-    expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(1)
-    expect(projectionState.fetchBulkCharLore.mock.calls[0][0]).toHaveLength(BULK_HYDRATION_CONCURRENCY * 3)
+    expect(projectionState.fetchBulkCharLore.mock.calls.map(([ids]) => ids.length)).toEqual([32, 32, 1])
+    expect(projectionState.fetchBulkCharLore.mock.calls.flatMap(([ids]) => ids)).toEqual(
+      Array.from({ length: 65 }, (_, index) => `char-${index + 1}`),
+    )
     expect(projectionState.fetchCharLore).not.toHaveBeenCalled()
     expect((testDatabaseState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
       { key: 'char-1', content: 'lore' },
@@ -1047,24 +1126,81 @@ describe('character globalLore hydration (Phase 5)', () => {
   })
 
   it('keeps all-character lorebook hydration within the request-count budget', async () => {
-    seedManyLorebookStubCharacters(BULK_HYDRATION_CONCURRENCY * 3)
+    seedManyLorebookStubCharacters(BULK_HYDRATION_BATCH_SIZE * 2 + 1)
     const before = getProtocolDiagnosticsSnapshot().hydration.characterLorebook
 
     await ensureAllCharacterLorebooksHydrated()
 
     const afterBulk = getProtocolDiagnosticsSnapshot().hydration.characterLorebook
-    expect(afterBulk.requestsStarted - before.requestsStarted).toBe(1)
+    expect(afterBulk.requestsStarted - before.requestsStarted).toBe(3)
     expect(afterBulk.bulkRuns - before.bulkRuns).toBe(1)
-    expect(afterBulk.bulkIds - before.bulkIds).toBe(BULK_HYDRATION_CONCURRENCY * 3)
-    expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(1)
+    expect(afterBulk.bulkIds - before.bulkIds).toBe(65)
+    expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(3)
     expect(projectionState.fetchCharLore).not.toHaveBeenCalled()
 
     await ensureAllCharacterLorebooksHydrated()
 
     const afterCached = getProtocolDiagnosticsSnapshot().hydration.characterLorebook
     expect(afterCached.requestsStarted).toBe(afterBulk.requestsStarted)
-    expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(1)
+    expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(3)
     expect(projectionState.fetchCharLore).not.toHaveBeenCalled()
+  })
+
+  it('preserves a lorebook edited between sequential bulk batches', async () => {
+    seedManyLorebookStubCharacters(65)
+    const localLore = [{ key: 'local', content: 'edited between batches' }]
+    projectionState.fetchBulkCharLore.mockImplementationOnce(async (ids: string[]) => {
+      ;(testDatabaseState.db.characters[32] as { globalLore?: unknown[] }).globalLore = localLore
+      markCharacterLorebookProjectionApplied('char-33')
+      return okBulkLorebookResult(ids)
+    })
+
+    await ensureAllCharacterLorebooksHydrated()
+
+    expect((testDatabaseState.db.characters[32] as { globalLore?: unknown[] }).globalLore).toEqual(localLore)
+    expect(isCharacterLorebookHydrated('char-33')).toBe(false)
+    expect(projectionState.fetchBulkCharLore.mock.calls.map(([ids]) => ids.length)).toEqual([32, 32, 1])
+  })
+
+  it('keeps failed lorebook batches retryable and rejects a strict failed batch', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      seedManyLorebookStubCharacters(65)
+      projectionState.fetchBulkCharLore
+        .mockImplementationOnce(async (ids: string[]) => okBulkLorebookResult(ids))
+        .mockResolvedValueOnce({ status: 'error', error: 'middle lorebook batch failed' })
+        .mockImplementationOnce(async (ids: string[]) => okBulkLorebookResult(ids))
+
+      await ensureAllCharacterLorebooksHydrated()
+
+      expect(projectionState.fetchBulkCharLore.mock.calls.map(([ids]) => ids.length)).toEqual([32, 32, 1])
+      expect(isCharacterLorebookHydrated('char-1')).toBe(true)
+      expect(isCharacterLorebookHydrated('char-33')).toBe(false)
+      expect(isCharacterLorebookHydrated('char-65')).toBe(true)
+
+      projectionState.fetchBulkCharLore.mockClear()
+      projectionState.fetchBulkCharLore.mockImplementation(async (ids: string[]) => okBulkLorebookResult(ids))
+      await ensureAllCharacterLorebooksHydrated()
+      expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(1)
+      expect(projectionState.fetchBulkCharLore.mock.calls[0][0]).toEqual(
+        Array.from({ length: 32 }, (_, index) => `char-${index + 33}`),
+      )
+
+      resetChatHydration()
+      resetLorebookHydration()
+      seedManyLorebookStubCharacters(65)
+      projectionState.fetchBulkCharLore.mockReset()
+      projectionState.fetchBulkCharLore
+        .mockImplementationOnce(async (ids: string[]) => okBulkLorebookResult(ids))
+        .mockResolvedValueOnce({ status: 'error', error: 'strict lorebook batch failed' })
+      await expect(ensureAllCharacterLorebooksHydrated({ strict: true })).rejects.toThrow(
+        'Bulk character lorebook hydration failed: strict lorebook batch failed',
+      )
+      expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(2)
+      expect((testDatabaseState.db.characters[64] as { globalLore?: unknown[] }).globalLore).toEqual([])
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('skips missing bulk character lorebook entries without marking them hydrated', async () => {

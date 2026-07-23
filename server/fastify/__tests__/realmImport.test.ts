@@ -679,6 +679,13 @@ describe('Realm character import route', () => {
     expect(res.headers['content-type']).toContain('text/event-stream')
     const frames = parseSsePayload(res.payload)
     expect(frames.map((frame) => frame.event)).toContain('progress')
+    for (const frame of frames.filter((candidate) => candidate.event === 'progress')) {
+      expect(frame.data).toMatchObject({
+        phase: expect.any(String),
+        message: expect.any(String),
+        percent: expect.any(Number),
+      })
+    }
     expect(frames.at(-1)).toMatchObject({
       event: 'done',
       data: { characterId: expect.any(String), revision: expect.any(Number) },
@@ -691,6 +698,52 @@ describe('Realm character import route', () => {
     expect(importedLorebook).toHaveLength(2)
     expect(importedLorebook.every((entry) => typeof entry.id === 'string' && entry.id.length > 0)).toBe(true)
     expect(new Set(importedLorebook.map((entry) => entry.id)).size).toBe(2)
+  })
+
+  it('negotiates percent-only Realm progress deltas while preserving terminal frames', async () => {
+    echo.setResponder((req, res) => {
+      if (respondRealmJsonCard(req, res)) return
+      res.writeHead(404)
+      res.end()
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: {
+        accept: 'text/event-stream',
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+      },
+      payload: {
+        id: 'realm-id',
+        baseRevision,
+        clientCapabilities: { realmProgressDelta: true },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const frames = parseSsePayload(res.payload)
+    const progress = frames
+      .filter((frame) => frame.event === 'progress')
+      .map((frame) => frame.data as Record<string, unknown>)
+    expect(progress[0]).toEqual({ phase: 'validate', message: 'Preparing Realm import', percent: 1 })
+    expect(progress.some((frame) => Object.keys(frame).length === 1 && typeof frame.percent === 'number')).toBe(true)
+    expect(
+      progress.some(
+        (frame, index) =>
+          index > 0 &&
+          (Object.prototype.hasOwnProperty.call(frame, 'phase') ||
+            Object.prototype.hasOwnProperty.call(frame, 'message')),
+      ),
+    ).toBe(true)
+    expect(progressPercents(frames)).toEqual([...progressPercents(frames)].sort((a, b) => a - b))
+    expect(frames.at(-1)).toMatchObject({
+      event: 'done',
+      data: { characterId: expect.any(String), revision: expect.any(Number) },
+    })
   })
 
   it('streams low-level-access confirmation requests without writing assets', async () => {

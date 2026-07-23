@@ -39,7 +39,7 @@ import {
 import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
 import { acknowledgeHydratedGenerationPersistences } from '../process/generationPersistenceState'
 
-export const BULK_HYDRATION_CONCURRENCY = 4
+export const BULK_HYDRATION_BATCH_SIZE = 32
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_DISPLAY_TAIL_COUNT
 
 // The bootstrap ships chat *stubs* (empty message[]). This bridge hydrates a
@@ -413,63 +413,65 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
   if (!canUseServerResourceReads() || chatIds.length === 0) return
 
   const generation = chatHydrationGeneration
-  const baselineRevision = peekCachedServerCommandRevision()
   const freshnessByChat = new Map(
     chatIds.map((chatId) => [chatId, beginChatHydrationFreshness(chatId, { trackRerollState: false })]),
   )
   try {
-    const endRequest = beginHydrationRequest('chat')
-    const result = await fetchServerBulkChatMessages(chatIds).finally(endRequest)
-    if (result.status !== 'ok') {
-      const message = resultError(result, 'server projection unavailable')
-      hydrationWarning('bulk chat', message)
-      if (options.strict) throw new Error(`Bulk chat hydration failed: ${message}`)
-      return
-    }
-    if (generation !== chatHydrationGeneration) {
-      recordHydrationStaleDrop('chat', 'generation-reset')
-      if (options.strict) throw new Error('Bulk chat hydration result was stale after a reset')
-      return
-    }
-    if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
-      recordHydrationStaleDrop('chat', 'older-than-applied-revision')
-      if (options.strict) throw new Error('Bulk chat hydration result was older than local state')
-      return
-    }
+    for (const batch of bulkHydrationBatches(chatIds)) {
+      const baselineRevision = peekCachedServerCommandRevision()
+      const endRequest = beginHydrationRequest('chat')
+      const result = await fetchServerBulkChatMessages(batch).finally(endRequest)
+      if (result.status !== 'ok') {
+        const message = resultError(result, 'server projection unavailable')
+        hydrationWarning('bulk chat', message)
+        if (options.strict) throw new Error(`Bulk chat hydration failed: ${message}`)
+        continue
+      }
+      if (generation !== chatHydrationGeneration) {
+        recordHydrationStaleDrop('chat', 'generation-reset')
+        if (options.strict) throw new Error('Bulk chat hydration result was stale after a reset')
+        return
+      }
+      if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
+        recordHydrationStaleDrop('chat', 'older-than-applied-revision')
+        if (options.strict) throw new Error('Bulk chat hydration result was older than local state')
+        continue
+      }
 
-    const missing = new Set(result.missing)
-    const missingIds: string[] = []
-    for (const chatId of chatIds) {
-      if (missing.has(chatId)) {
-        missingIds.push(chatId)
-        continue
+      const missing = new Set(result.missing)
+      const missingIds: string[] = []
+      for (const chatId of batch) {
+        if (missing.has(chatId)) {
+          missingIds.push(chatId)
+          continue
+        }
+        const hydration = result.chats.find((chat) => chat.chatId === chatId)
+        if (!hydration) {
+          missingIds.push(chatId)
+          continue
+        }
+        const freshness = freshnessByChat.get(chatId)
+        const staleReason = freshness ? chatHydrationStaleReason(chatId, freshness) : 'missing-freshness-token'
+        if (staleReason) {
+          recordHydrationStaleDrop('chat', staleReason)
+          missingIds.push(chatId)
+          continue
+        }
+        const applied = hydrateServerChatMessages(chatId, hydration.message, hydration.hypaV3Data)
+        if (!applied) {
+          missingIds.push(chatId)
+          continue
+        }
+        markChatBodyResourceRevision(chatId, result.revision)
+        markChatBodyProjectionApplied(chatId)
+        reapplyRetainedChatBodyProjections(chatId)
+        acknowledgeHydratedGenerationPersistences(chatId, hydration.message as Message[])
+        hydratedChatIds.add(chatId)
+        refreshPendingFreshnessAfterHydration(chatId, freshness)
       }
-      const hydration = result.chats.find((chat) => chat.chatId === chatId)
-      if (!hydration) {
-        missingIds.push(chatId)
-        continue
+      if (options.strict && missingIds.length > 0) {
+        throw new Error(`Bulk chat hydration did not return messages for: ${missingIds.join(', ')}`)
       }
-      const freshness = freshnessByChat.get(chatId)
-      const staleReason = freshness ? chatHydrationStaleReason(chatId, freshness) : 'missing-freshness-token'
-      if (staleReason) {
-        recordHydrationStaleDrop('chat', staleReason)
-        missingIds.push(chatId)
-        continue
-      }
-      const applied = hydrateServerChatMessages(chatId, hydration.message, hydration.hypaV3Data)
-      if (!applied) {
-        missingIds.push(chatId)
-        continue
-      }
-      markChatBodyResourceRevision(chatId, result.revision)
-      markChatBodyProjectionApplied(chatId)
-      reapplyRetainedChatBodyProjections(chatId)
-      acknowledgeHydratedGenerationPersistences(chatId, hydration.message as Message[])
-      hydratedChatIds.add(chatId)
-      refreshPendingFreshnessAfterHydration(chatId, freshness)
-    }
-    if (options.strict && missingIds.length > 0) {
-      throw new Error(`Bulk chat hydration did not return messages for: ${missingIds.join(', ')}`)
     }
   } finally {
     for (const [chatId, freshness] of freshnessByChat) {
@@ -787,75 +789,88 @@ async function hydrateCharacterLorebooksBulk(
   for (const characterId of characterIds) {
     beginCharacterLorebookHydrationState(characterId)
   }
-  const baselineRevision = peekCachedServerCommandRevision()
   const projectionEpochs = new Map(
     characterIds.map((characterId) => [characterId, captureCharacterLorebookBodyProjectionEpoch(characterId)]),
   )
-  const endRequest = beginHydrationRequest('characterLorebook')
-  const result = await fetchServerBulkCharacterLorebooks(characterIds).finally(endRequest)
-  if (result.status !== 'ok') {
-    const message = resultError(result, 'server projection unavailable')
-    hydrationWarning('bulk character lorebook', message)
-    for (const characterId of characterIds) {
-      finishCharacterLorebookHydrationState(characterId, generation)
+  for (const batch of bulkHydrationBatches(characterIds)) {
+    const baselineRevision = peekCachedServerCommandRevision()
+    const endRequest = beginHydrationRequest('characterLorebook')
+    const result = await fetchServerBulkCharacterLorebooks(batch).finally(endRequest)
+    if (result.status !== 'ok') {
+      const message = resultError(result, 'server projection unavailable')
+      hydrationWarning('bulk character lorebook', message)
+      for (const characterId of batch) {
+        finishCharacterLorebookHydrationState(characterId, generation)
+      }
+      if (options.strict) throw new Error(`Bulk character lorebook hydration failed: ${message}`)
+      continue
     }
-    if (options.strict) throw new Error(`Bulk character lorebook hydration failed: ${message}`)
-    return
-  }
-  if (generation !== charLorebookHydrationGeneration) {
-    recordHydrationStaleDrop('characterLorebook', 'generation-reset')
-    if (options.strict) {
-      throw new Error('Bulk character lorebook hydration result was stale after a reset')
+    if (generation !== charLorebookHydrationGeneration) {
+      recordHydrationStaleDrop('characterLorebook', 'generation-reset')
+      if (options.strict) {
+        throw new Error('Bulk character lorebook hydration result was stale after a reset')
+      }
+      return
     }
-    return
-  }
-  if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
-    recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
-    for (const characterId of characterIds) {
-      finishCharacterLorebookHydrationState(characterId, generation)
+    if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
+      recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
+      for (const characterId of batch) {
+        finishCharacterLorebookHydrationState(characterId, generation)
+      }
+      if (options.strict) {
+        throw new Error('Bulk character lorebook hydration result was older than local state')
+      }
+      continue
     }
-    if (options.strict) {
-      throw new Error('Bulk character lorebook hydration result was older than local state')
-    }
-    return
-  }
 
-  const missing = new Set(result.missing)
-  const missingIds: string[] = []
-  for (const characterId of characterIds) {
-    if (missing.has(characterId)) {
-      missingIds.push(characterId)
+    const missing = new Set(result.missing)
+    const missingIds: string[] = []
+    for (const characterId of batch) {
+      if (missing.has(characterId)) {
+        missingIds.push(characterId)
+        finishCharacterLorebookHydrationState(characterId, generation)
+        continue
+      }
+      const hydration = result.characters.find((character) => character.characterId === characterId)
+      if (!hydration) {
+        missingIds.push(characterId)
+        finishCharacterLorebookHydrationState(characterId, generation)
+        continue
+      }
+      const projectionEpoch = projectionEpochs.get(characterId)
+      if (
+        projectionEpoch === undefined ||
+        hasCharacterLorebookBodyProjectionEpochChanged(characterId, projectionEpoch)
+      ) {
+        recordHydrationStaleDrop('characterLorebook', 'newer-character-lorebook-body-projection')
+        finishCharacterLorebookHydrationState(characterId, generation)
+        continue
+      }
+      const applied = hydrateServerCharacterLorebook(characterId, hydration.globalLore)
+      if (!applied) {
+        missingIds.push(characterId)
+        finishCharacterLorebookHydrationState(characterId, generation)
+        continue
+      }
+      recordCanonicalCharacterLorebookScopes([{ chaId: characterId, globalLore: hydration.globalLore }])
+      markCharacterLorebookBodyResourceRevision(characterId, result.revision)
+      markCharacterLorebookProjectionApplied(characterId)
+      markCharacterLorebookHydrated(characterId)
+      hydratedCharLorebookIds.add(characterId)
       finishCharacterLorebookHydrationState(characterId, generation)
-      continue
     }
-    const hydration = result.characters.find((character) => character.characterId === characterId)
-    if (!hydration) {
-      missingIds.push(characterId)
-      finishCharacterLorebookHydrationState(characterId, generation)
-      continue
+    if (options.strict && missingIds.length > 0) {
+      throw new Error(`Bulk character lorebook hydration did not return data for: ${missingIds.join(', ')}`)
     }
-    const projectionEpoch = projectionEpochs.get(characterId)
-    if (projectionEpoch === undefined || hasCharacterLorebookBodyProjectionEpochChanged(characterId, projectionEpoch)) {
-      recordHydrationStaleDrop('characterLorebook', 'newer-character-lorebook-body-projection')
-      finishCharacterLorebookHydrationState(characterId, generation)
-      continue
-    }
-    const applied = hydrateServerCharacterLorebook(characterId, hydration.globalLore)
-    if (!applied) {
-      missingIds.push(characterId)
-      finishCharacterLorebookHydrationState(characterId, generation)
-      continue
-    }
-    recordCanonicalCharacterLorebookScopes([{ chaId: characterId, globalLore: hydration.globalLore }])
-    markCharacterLorebookBodyResourceRevision(characterId, result.revision)
-    markCharacterLorebookProjectionApplied(characterId)
-    markCharacterLorebookHydrated(characterId)
-    hydratedCharLorebookIds.add(characterId)
-    finishCharacterLorebookHydrationState(characterId, generation)
   }
-  if (options.strict && missingIds.length > 0) {
-    throw new Error(`Bulk character lorebook hydration did not return data for: ${missingIds.join(', ')}`)
+}
+
+function bulkHydrationBatches(ids: readonly string[]): string[][] {
+  const batches: string[][] = []
+  for (let offset = 0; offset < ids.length; offset += BULK_HYDRATION_BATCH_SIZE) {
+    batches.push(ids.slice(offset, offset + BULK_HYDRATION_BATCH_SIZE))
   }
+  return batches
 }
 
 /** Hydrate the open character's `globalLore` when its resident projection is a stub. */
