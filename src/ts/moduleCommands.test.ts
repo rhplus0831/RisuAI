@@ -34,6 +34,7 @@ import {
   currentCharacterModuleStateSnapshot,
   currentGlobalModuleStateSnapshot,
   createGlobalModule,
+  createGlobalModuleWithOutcome,
   deleteGlobalModule,
   dispatchModuleInfoPatch,
   dispatchReorderModules,
@@ -41,6 +42,7 @@ import {
   rebaseModuleEditorDraftOntoLatest,
   restoreCharacterModuleState,
   saveGlobalModuleDraft,
+  saveGlobalModuleDraftWithOutcome,
   setGlobalModuleEnabled,
   toggledModuleIds,
   toggleSelectedCharacterModule,
@@ -1701,6 +1703,103 @@ describe('module command projection helpers', () => {
       recover = true
       await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
       expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('keeps an outcome-aware create queued until replay accepts the staged Save', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-module-create-outcome',
+      writerEpoch: 5,
+      databaseLineage: 'lineage-module-create-outcome',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    setResourceWriteGuardEnabled(true)
+    let recover = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/modules') {
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'module.created', revision: 11, resource: 'module', id: 'mod-new' },
+            moduleId: 'mod-new',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const outcome = await createGlobalModuleWithOutcome({
+        id: 'mod-new',
+        name: 'Queued module',
+        description: '',
+      })
+      expect(outcome).toMatchObject({ status: 'queued', mutationIds: [expect.any(String)] })
+      expect(getDatabase().modules.some((module) => module.id === 'mod-new')).toBe(true)
+      expect(await listPendingMutations()).toHaveLength(1)
+      if (outcome.status !== 'queued') throw new Error('Expected create Save to remain queued')
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      await expect(outcome.settlement).resolves.toEqual({ status: 'accepted' })
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('reports a queued editor Save as failed when replay permanently rejects it', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-module-edit-outcome',
+      writerEpoch: 6,
+      databaseLineage: 'lineage-module-edit-outcome',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    setResourceWriteGuardEnabled(true)
+    let replaying = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/modules/mod-a') {
+          return replaying
+            ? jsonResponse({ error: 'module edit is invalid' }, 400)
+            : jsonResponse({ error: 'temporarily unavailable' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const outcome = await saveGlobalModuleDraftWithOutcome('mod-a', {
+        ...getDatabase().modules[0],
+        name: 'Queued edit',
+      } as any)
+      expect(outcome).toMatchObject({ status: 'queued', mutationIds: [expect.any(String)] })
+      expect(getDatabase().modules[0].name).toBe('Queued edit')
+      if (outcome.status !== 'queued') throw new Error('Expected editor Save to remain queued')
+
+      replaying = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ discarded: 1, retained: 0 })
+      await expect(outcome.settlement).resolves.toMatchObject({
+        status: 'failed',
+        result: { status: 'error', error: 'module edit is invalid' },
+      })
     } finally {
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

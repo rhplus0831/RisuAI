@@ -683,6 +683,7 @@ describe('V3 chat command bridge', () => {
     vi.mocked(appendCurrentChatUserMessageForSend).mockResolvedValueOnce({
       status: 'queued',
       messageId: 'msg-plugin-queued',
+      settlement: Promise.resolve({ status: 'accepted' }),
     })
     const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
 

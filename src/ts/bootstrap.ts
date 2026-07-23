@@ -48,6 +48,7 @@ import {
   preparePendingMutationOutbox,
   readSinglePendingMutationOwner,
 } from './server/pendingMutationOutbox'
+import { initializeDraftRecoveryScope } from './server/draftRecoveryScope'
 import {
   flushPendingMutationReceiptAcknowledgements,
   setPendingMutationDiscardNotifier,
@@ -287,6 +288,10 @@ export async function loadWebInitialDatabase() {
   ) {
     throw new Error('Server bootstrap is missing durable mutation ownership metadata')
   }
+  initializeDraftRecoveryScope({
+    writerSessionId: getActiveWriterSessionId(),
+    databaseLineage,
+  })
   const pendingMutationPreparation = await preparePendingMutationOutbox({
     writerSessionId: getActiveWriterSessionId(),
     writerEpoch,
@@ -1825,6 +1830,10 @@ async function reconcileReplacementDatabaseOwnership(): Promise<{
     databaseLineage,
     writerEpoch,
   }
+  initializeDraftRecoveryScope({
+    writerSessionId: getActiveWriterSessionId(),
+    databaseLineage,
+  })
   const adoption = await adoptReplacementDatabaseOwnership(ownership)
   if (adoption.discarded > 0) alertError(language.backupQueuedChangesDiscarded)
   return { ownership, ownershipChanged: adoption.ownershipChanged }

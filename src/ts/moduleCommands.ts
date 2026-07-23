@@ -69,6 +69,20 @@ export type ModuleMutationOutcome =
   | { status: 'queued'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
   | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
 
+export type ModuleEditorSaveFinalOutcome =
+  | { status: 'accepted' }
+  | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+
+export type ModuleEditorSaveOutcome =
+  | { status: 'accepted'; result: Extract<ServerCommandResult, { status: 'ok' }> | null }
+  | {
+      status: 'queued'
+      result: Exclude<ServerCommandResult, { status: 'ok' }>
+      mutationIds: readonly string[]
+      settlement: Promise<ModuleEditorSaveFinalOutcome>
+    }
+  | { status: 'failed'; result: Exclude<ServerCommandResult, { status: 'ok' }> }
+
 export type ScopedModuleMutationOutcome =
   | { status: 'accepted'; result: null }
   | {
@@ -780,6 +794,87 @@ export async function createGlobalModule(module: RisuModule): Promise<ServerComm
   return null
 }
 
+/** Outcome-aware create used by explicit editors that must retain recovery drafts until acceptance. */
+export async function createGlobalModuleWithOutcome(module: RisuModule): Promise<ModuleEditorSaveOutcome> {
+  if (Array.isArray(module.lorebook)) ensureClientLorebookEntryIds(module.lorebook)
+  if (Array.isArray(module.regex)) ensureClientScriptDefinitionIds(module.regex)
+  if (Array.isArray(module.trigger)) ensureClientTriggerDefinitionIds(module.trigger)
+
+  if (!canUseServerCommands()) {
+    getDatabase().modules.push(module)
+    reloadGuiAfterDefinitionChange()
+    return { status: 'accepted', result: null }
+  }
+
+  const previous = currentGlobalModuleStateSnapshot()
+  applyOptimisticCreatedGlobalModule(module)
+  const moduleSnapshot = toModuleSnapshot(module)
+  const rollbackEntry = moduleCreateRollbackEntry(moduleSnapshot as RisuModule)
+  const operation = issueGlobalModuleOperation([rollbackEntry])
+  const intent: DurableMutationIntent = {
+    version: 1,
+    dependencyKeys: [MODULE_COLLECTION_MUTATION_KEY],
+    requests: [
+      {
+        method: 'POST',
+        path: '/modules',
+        body: { module: cloneJsonValue(moduleSnapshot) },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(moduleOwnerMutationKey(module.id), intent)
+  recordPendingMutationProjectionTargets(outbox, globalModuleProjectionTargets([rollbackEntry]))
+  let resolveSettlement!: (outcome: ModuleEditorSaveFinalOutcome) => void
+  const settlement = new Promise<ModuleEditorSaveFinalOutcome>((resolve) => {
+    resolveSettlement = resolve
+  })
+  const settlementCleanup = registerDurableMutationSettlementListener(outbox.mutationId, (final, details) => {
+    if (final === 'accepted') {
+      clearGlobalModuleOperation(operation)
+      resolveSettlement({ status: 'accepted' })
+      return
+    }
+    rollbackGlobalModuleEntries([rollbackEntry], operation)
+    resolveSettlement({ status: 'failed', result: moduleEditorFinalFailureResult(details.result) })
+  })
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  let result: ServerCommandResult
+  try {
+    result = await dispatchDurableMutation(outbox, intent, (transport) => {
+      failureRollbackDisposition = transport.failureRollbackDisposition
+      return runModuleCommand(
+        async (baseRevision) => {
+          const result = await createModuleCommand(
+            { baseRevision, module: cloneJsonValue(moduleSnapshot) },
+            transport.signal,
+            true,
+          )
+          if (result.status === 'ok') clearGlobalModuleOperation(operation)
+          return result
+        },
+        () => rollbackGlobalModuleEntries([rollbackEntry], operation),
+        transport,
+      )
+    })
+  } catch {
+    result = { status: 'unavailable' }
+  }
+  if (result.status === 'ok') {
+    settlementCleanup()
+    return { status: 'accepted', result }
+  }
+  if (failureRollbackDisposition?.(result) === 'retain') {
+    return {
+      status: 'queued',
+      result,
+      mutationIds: [outbox.mutationId],
+      settlement,
+    }
+  }
+  settlementCleanup()
+  return { status: 'failed', result }
+}
+
 export async function updateGlobalModule(moduleId: string, module: RisuModule): Promise<ServerCommandResult | null> {
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
@@ -804,20 +899,23 @@ export async function updateGlobalModule(moduleId: string, module: RisuModule): 
  * module value, while the durable batch retains per-field rollback fences and
  * serializes each server-owned slice against the same module owner.
  */
-export async function saveGlobalModuleDraft(moduleId: string, module: RisuModule): Promise<ServerCommandResult | null> {
+export async function saveGlobalModuleDraftWithOutcome(
+  moduleId: string,
+  module: RisuModule,
+): Promise<ModuleEditorSaveOutcome> {
   if (!canUseServerCommands()) {
     const index = getDatabase().modules.findIndex((candidate) => candidate.id === moduleId)
     if (index !== -1) {
       getDatabase().modules[index] = cloneJsonValue(module)
       reloadGuiAfterDefinitionChange()
     }
-    return null
+    return { status: 'accepted', result: null }
   }
 
   const previous = currentGlobalModuleStateSnapshot()
   const previousModule = previous.modules.find((candidate) => candidate.id === moduleId)
   if (!previousModule) {
-    return { status: 'error', error: 'Module no longer exists' }
+    return { status: 'failed', result: { status: 'error', error: 'Module no longer exists' } }
   }
 
   const target = cloneJsonValue(module)
@@ -936,9 +1034,22 @@ export async function saveGlobalModuleDraft(moduleId: string, module: RisuModule
   }
 
   const batch = runModuleCollectionPatchSteps(steps)
-  if (!batch) return null
+  if (!batch) return { status: 'accepted', result: null }
   const outcome = await batch
-  return outcome.status === 'failure' ? outcome.failure : null
+  if (outcome.status === 'ok') return { status: 'accepted', result: null }
+  if (outcome.status === 'failure') return { status: 'failed', result: outcome.failure }
+  if (!outcome.mutationIds || !outcome.settlement) return { status: 'failed', result: outcome.failure }
+  return {
+    status: 'queued',
+    result: outcome.failure,
+    mutationIds: outcome.mutationIds,
+    settlement: outcome.settlement,
+  }
+}
+
+export async function saveGlobalModuleDraft(moduleId: string, module: RisuModule): Promise<ServerCommandResult | null> {
+  const outcome = await saveGlobalModuleDraftWithOutcome(moduleId, module)
+  return outcome.status === 'failed' ? outcome.result : null
 }
 
 function applyOptimisticGlobalModulePatch(moduleId: string, patch: ModuleSnapshot): boolean {
@@ -983,6 +1094,16 @@ function moduleMutationOutcome(
   if (result.status === 'ok') return { status: 'accepted', result }
   if (failureRollbackDisposition?.(result) === 'retain') return { status: 'queued', result }
   return { status: 'failed', result }
+}
+
+function moduleEditorFinalFailureResult(result: unknown): Exclude<ServerCommandResult, { status: 'ok' }> {
+  if (result && typeof result === 'object') {
+    const candidate = result as Exclude<ServerCommandResult, { status: 'ok' }>
+    if (candidate.status === 'conflict' || candidate.status === 'unavailable' || candidate.status === 'error') {
+      return candidate
+    }
+  }
+  return { status: 'unavailable' }
 }
 
 function applyOptimisticGlobalModuleEnabled(moduleId: string, enabled: boolean): void {

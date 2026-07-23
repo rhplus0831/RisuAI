@@ -72,7 +72,12 @@ vi.mock('../../lang', () => ({
               chatGenerationSettingsIncompleteWithMissing: (missing: string) =>
                 `Chat generation settings are incomplete. Missing: ${missing}.`,
             }
-          : String(property),
+          : property === 'composerDraftRecovery'
+            ? {
+                storageFailed: 'composerDraftStorageFailed',
+                queuedSaveFailed: 'composerQueuedSaveFailed',
+              }
+            : String(property),
     },
   ),
 }))
@@ -260,7 +265,12 @@ vi.mock('html-to-image', () => ({
 }))
 
 import DefaultChatScreen from './DefaultChatScreen.svelte'
-import { clearDefaultChatComposerDrafts } from './DefaultChatScreen.composerDrafts'
+import {
+  clearDefaultChatComposerDrafts,
+  readDefaultChatComposerDraft,
+  resetDefaultChatComposerDraftRuntimeForTests,
+} from './DefaultChatScreen.composerDrafts'
+import { initializeDraftRecoveryScope, resetDraftRecoveryScopeForTests } from 'src/ts/server/draftRecoveryScope'
 import * as rerollNavigation from 'src/ts/process/rerollNavigation.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import {
@@ -523,7 +533,9 @@ function findButtonByText(text: string): HTMLButtonElement | undefined {
 }
 
 beforeEach(() => {
+  resetDraftRecoveryScopeForTests()
   clearDefaultChatComposerDrafts()
+  initializeDraftRecoveryScope({ databaseLineage: 'database-a', writerSessionId: 'writer-a' })
   target = document.createElement('div')
   document.body.appendChild(target)
   originalScrollIntoView = Element.prototype.scrollIntoView
@@ -571,6 +583,7 @@ afterEach(() => {
   target.remove()
   document.body.innerHTML = ''
   clearDefaultChatComposerDrafts()
+  resetDraftRecoveryScopeForTests()
 })
 
 describe('DefaultChatScreen overflow menu accessibility', () => {
@@ -1326,11 +1339,15 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 
-  it('clears the composer, notifies the user, and stops generation when a plain send is durably queued', async () => {
+  it('retains a plain-send draft while queued and clears only after final acceptance', async () => {
     seedDatabase([1])
+    const settlement = createDeferred<
+      { status: 'accepted' } | { status: 'failed'; result: { status: 'unavailable' } }
+    >()
     loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
       status: 'queued',
       messageId: 'queued-message',
+      settlement: settlement.promise,
     })
     mountScreen()
 
@@ -1344,13 +1361,64 @@ describe('DefaultChatScreen transcript window state', () => {
 
     target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
 
-    await waitFor(() => {
-      expect(loadPageMocks.alertNormal).toHaveBeenCalledWith('pendingChatMessageQueued')
-    })
-    expect(textarea.value).toBe('')
+    await waitFor(() => expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledOnce())
+    expect(textarea.value).toBe('Keep durably')
+    expect(loadPageMocks.alertNormal).not.toHaveBeenCalledWith('pendingChatMessageQueued')
     expect(loadPageMocks.alertError).not.toHaveBeenCalled()
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
     expect(loadPageMocks.applySuccessfulSendChatEffects).not.toHaveBeenCalled()
+
+    settlement.resolve({ status: 'accepted' })
+    await waitFor(() => expect(textarea.value).toBe(''))
+  })
+
+  it('retains a newer composer generation when an older queued send is accepted', async () => {
+    seedDatabase([1])
+    const settlement = createDeferred<
+      { status: 'accepted' } | { status: 'failed'; result: { status: 'unavailable' } }
+    >()
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
+      status: 'queued',
+      messageId: 'queued-message',
+      settlement: settlement.promise,
+    })
+    mountScreen()
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Older queued draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+    await waitFor(() => expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledOnce())
+
+    textarea.value = 'Newer unsent draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    settlement.resolve({ status: 'accepted' })
+    await settle()
+
+    expect(textarea.value).toBe('Newer unsent draft')
+  })
+
+  it('keeps typing editable and reports sessionStorage quota failure inline and globally', async () => {
+    seedDatabase([1])
+    mountScreen()
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const storageWrite = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Quota exceeded', 'QuotaExceededError')
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+
+    textarea.value = 'Still editable'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+
+    await waitFor(() =>
+      expect(target.querySelector('[data-testid="composer-draft-persistence-error"]')?.textContent).toContain(
+        'composerDraftStorageFailed',
+      ),
+    )
+    expect(textarea.value).toBe('Still editable')
+    expect(textarea.readOnly).toBe(false)
+    expect(loadPageMocks.alertError).toHaveBeenCalledWith('composerDraftStorageFailed')
+    storageWrite.mockRestore()
   })
 
   it('runs the selected draft hook into the draft area while preserving the composer', async () => {
@@ -1460,14 +1528,18 @@ describe('DefaultChatScreen transcript window state', () => {
     })
   })
 
-  it('clears a durably queued draft and does not start generation', async () => {
+  it('retains a durably queued hook draft and reports a final failure persistently', async () => {
     seedDatabase([1])
     const hook = { id: 'draft-hook', name: 'Draft Hook', type: 'draft' as const, prompt: 'prompt' }
     getResourceDatabase().inputHooks = [hook]
     getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    const settlement = createDeferred<
+      { status: 'accepted' } | { status: 'failed'; result: { status: 'unavailable' } }
+    >()
     loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
       status: 'queued',
       messageId: 'queued-draft',
+      settlement: settlement.promise,
     })
     mountScreen()
 
@@ -1478,9 +1550,18 @@ describe('DefaultChatScreen transcript window state', () => {
     await tick()
     target.querySelector<HTMLButtonElement>('[data-testid="default-chat-draft-send"]')!.click()
 
-    await waitFor(() => expect(loadPageMocks.alertNormal).toHaveBeenCalledWith('pendingChatMessageQueued'))
-    expect(draft.value).toBe('')
+    await waitFor(() => expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledOnce())
+    expect(draft.value).toBe('Queued draft')
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+
+    settlement.resolve({ status: 'failed', result: { status: 'unavailable' } })
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="composer-draft-persistence-error"]')?.textContent).toContain(
+        'composerQueuedSaveFailed',
+      )
+    })
+    expect(loadPageMocks.alertError).toHaveBeenCalledWith('composerQueuedSaveFailed')
+    expect(draft.value).toBe('Queued draft')
   })
 
   it('preserves the draft when its append fails', async () => {
@@ -1646,6 +1727,8 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
     expect(loadPageMocks.alertError).not.toHaveBeenCalled()
     expect(secondTextarea.value).toBe('Second chat draft')
+    expect(readDefaultChatComposerDraft('0:character-0:chat-0')).toBeUndefined()
+    expect(readDefaultChatComposerDraft('1:character-1:chat-1')?.messageInput).toBe('Second chat draft')
   })
 
   it('does not restore old text or files over a newer draft when a delayed append fails', async () => {
@@ -2152,7 +2235,7 @@ describe('DefaultChatScreen transcript window state', () => {
     })
   })
 
-  it('restores composer text and selected files after the screen remounts', async () => {
+  it('restores composer text and selected files after a fresh runtime reload', async () => {
     seedDatabase([1])
     loadPageMocks.postChatFile.mockResolvedValueOnce([{ type: 'asset', data: 'asset-a' }])
     mountScreen()
@@ -2171,6 +2254,7 @@ describe('DefaultChatScreen transcript window state', () => {
 
     unmount(component!)
     component = undefined
+    resetDefaultChatComposerDraftRuntimeForTests()
     mountScreen()
 
     await waitFor(() => {

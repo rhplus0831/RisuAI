@@ -1785,6 +1785,11 @@ export const languageKorean = {
   generationPersistenceQueued: '이 답변은 저장 대기 중이며 아직 임시 상태입니다.',
   composerFileResultDiscarded:
     '활성 메시지 입력창이 변경되어 업로드한 파일을 첨부할 수 없습니다. 파일을 다시 첨부하세요.',
+  composerDraftRecovery: {
+    storageFailed:
+      '새로고침 복구용 메시지 초안을 저장할 수 없습니다. 이 탭을 닫지 않거나 나가기 전에 텍스트를 복사하세요.',
+    queuedSaveFailed: '대기 중인 메시지가 적용되지 않았습니다. 다시 시도할 수 있도록 입력창 초안을 유지했습니다.',
+  },
   fileSelectionStale: '파일을 선택하는 동안 설정이 변경되었습니다. 다시 시도하려면 파일을 다시 선택하세요.',
   alternateGreetingMutationQueued:
     '대체 인사말 변경 사항이 이 기기에 저장되어 대기열에 추가되었습니다. 자동으로 다시 시도합니다.',
@@ -2014,6 +2019,13 @@ export const languageKorean = {
     commandConflict: '서버에 더 새로운 모듈 데이터가 있습니다. 작성 중인 내용은 유지했습니다. 확인 후 다시 시도하세요.',
     commandUnavailable: '모듈을 저장할 수 없습니다. 작성 중인 내용은 유지했습니다.',
     editTargetMissing: '편집하던 모듈이 더 이상 존재하지 않습니다. 작성 중인 내용은 유지했습니다.',
+    draftStorageFailed:
+      '새로고침 복구용 모듈 초안을 저장할 수 없습니다. 이 편집기를 닫지 않거나 나가기 전에 초안을 내보내세요.',
+    recoveredDraft: '복구된 모듈 초안',
+    copyDraft: '초안 복사',
+    exportDraft: '초안 내보내기',
+    discardDraft: '초안 버리기',
+    draftCopied: '복구된 모듈 초안을 복사했습니다.',
     commandError: (error: string) => `모듈 저장에 실패했습니다: ${error}`,
   },
   promptTemplateMutation: {

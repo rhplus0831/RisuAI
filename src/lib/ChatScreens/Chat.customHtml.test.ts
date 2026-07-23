@@ -1653,6 +1653,32 @@ describe('server raw translation controls', () => {
     expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
   })
 
+  it('treats a reload as cancel for an unsaved inline message edit', async () => {
+    seedDatabase(1, null as unknown as string)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    const textarea = target.querySelector<HTMLTextAreaElement>('.message-edit-area')
+    expect(textarea?.value).toBe('visible message 0')
+    textarea!.value = 'transient unsaved edit'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+
+    for (const mounted of components) unmount(mounted)
+    components = []
+    target.replaceChildren()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    expect(target.querySelector('.message-edit-area')).toBeNull()
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).not.toContain('transient unsaved edit')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
+    expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
+  })
+
   it('keeps translate pending state separate from completed translation UI', async () => {
     const translation = {
       source: 'raw',

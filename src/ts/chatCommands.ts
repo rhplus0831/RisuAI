@@ -106,7 +106,7 @@ export interface ChatStateSnapshot {
 
 export type AppendCurrentChatUserMessageResult =
   | { status: 'ok'; messageId: string }
-  | { status: 'queued'; messageId: string }
+  | { status: 'queued'; messageId: string; settlement: Promise<ChatMutationFinalOutcome> }
   | { status: 'error'; error: string }
 
 export type DeleteMessageScopedFinalResult = { status: 'accepted' } | { status: 'failed'; error: string }
@@ -5009,7 +5009,9 @@ export async function appendCurrentChatUserMessageForSend(
       ...transport,
     }),
   )
-  if (outcome.retained) return { status: 'queued', messageId }
+  if (outcome.retained && outcome.settlement) {
+    return { status: 'queued', messageId, settlement: outcome.settlement }
+  }
   const { result } = outcome
 
   if (result.status === 'ok') {

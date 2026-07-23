@@ -118,9 +118,12 @@
   import AgentPresetProgress from './AgentPresetProgress.svelte'
   import {
     deleteDefaultChatComposerDraft,
+    isDefaultChatComposerDraftGenerationCurrent,
     readDefaultChatComposerDraft,
+    registerDefaultChatComposerDraftStorageFailureListener,
     writeDefaultChatComposerDraft,
     type DefaultChatComposerDraft,
+    type DefaultChatComposerDraftGeneration,
   } from './DefaultChatScreen.composerDrafts'
   import { runInputHook } from 'src/ts/process/inputHooks'
   import InputHookPickerDialog from './InputHookPickerDialog.svelte'
@@ -148,6 +151,7 @@
     fileInput: string[]
     draftText: string
     btwText: string
+    draftGeneration: DefaultChatComposerDraftGeneration | null
   }
   type AutoTranslateOperation = {
     sourceField: ComposerTextField
@@ -185,6 +189,9 @@
   let chatsInstance: any = $state()
   let isScrollingToMessage = $state(false)
   let preparingSend = $state(false)
+  let composerDraftPersistenceError = $state('')
+  const composerDraftPersistenceAlerts = new Set<string>()
+  let composerComponentDestroyed = false
   let scrollToMessageRunId = 0
   let composerMutationVersion = 0
   let composerFileInvalidationVersion = 0
@@ -197,10 +204,16 @@
   let activeScreenshotOperation: ScreenshotOperation | null = null
   let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
 
+  const unregisterComposerDraftStorageFailure = registerDefaultChatComposerDraftStorageFailureListener(() => {
+    reportComposerDraftPersistenceError(language.composerDraftRecovery.storageFailed)
+  })
+
   onDestroy(() => {
     if (activeTranscriptWindowIdentity !== null) {
       storeComposerDraft(activeTranscriptWindowIdentity)
     }
+    composerComponentDestroyed = true
+    unregisterComposerDraftStorageFailure()
   })
 
   let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
@@ -412,7 +425,14 @@
     }
   }
 
-  function storeComposerDraft(identity: string): void {
+  function reportComposerDraftPersistenceError(message: string): void {
+    composerDraftPersistenceError = message
+    if (composerDraftPersistenceAlerts.has(message)) return
+    composerDraftPersistenceAlerts.add(message)
+    alertError(message)
+  }
+
+  function storeComposerDraft(identity: string): DefaultChatComposerDraftGeneration | null {
     if (
       messageInput === '' &&
       messageInputTranslate === '' &&
@@ -421,10 +441,10 @@
       btwText === ''
     ) {
       deleteDefaultChatComposerDraft(identity)
-      return
+      return null
     }
 
-    writeDefaultChatComposerDraft(identity, {
+    return writeDefaultChatComposerDraft(identity, {
       messageInput,
       messageInputTranslate,
       fileInput: [...fileInput],
@@ -467,6 +487,7 @@
     const targetIdentity = getActiveTranscriptWindowIdentity()
     if (!targetIdentity) return null
 
+    const draftGeneration = storeComposerDraft(targetIdentity)
     return {
       token: composerOperationGuard.issue(targetIdentity),
       kind,
@@ -477,15 +498,32 @@
       fileInput: [...fileInput],
       draftText,
       btwText,
+      draftGeneration,
     }
   }
 
   function isCurrentComposerOperation(operation: ComposerOperation): boolean {
     return (
+      !composerComponentDestroyed &&
       composerOperationGuard.isLatest(operation.token) &&
       getActiveTranscriptWindowIdentity() === operation.targetIdentity &&
       composerMutationVersion === operation.composerVersion
     )
+  }
+
+  function isCapturedComposerSurfaceCurrent(operation: ComposerOperation): boolean {
+    return (
+      !composerComponentDestroyed &&
+      getActiveTranscriptWindowIdentity() === operation.targetIdentity &&
+      composerMutationVersion === operation.composerVersion
+    )
+  }
+
+  function consumeAcceptedComposerDraftGeneration(operation: ComposerOperation): boolean {
+    if (!operation.draftGeneration) return true
+    if (!isDefaultChatComposerDraftGenerationCurrent(operation.draftGeneration)) return false
+    deleteDefaultChatComposerDraft(operation.targetIdentity, operation.draftGeneration)
+    return true
   }
 
   function restoreComposerForCurrentOperation(operation: ComposerOperation): boolean {
@@ -502,7 +540,8 @@
   }
 
   function clearComposerForCurrentOperation(operation: ComposerOperation): boolean {
-    if (!isCurrentComposerOperation(operation)) return false
+    const clearVisibleComposer = isCurrentComposerOperation(operation)
+    if (!consumeAcceptedComposerDraftGeneration(operation) || !clearVisibleComposer) return false
 
     messageInput = ''
     messageInputTranslate = ''
@@ -514,7 +553,8 @@
   }
 
   function clearComposerAndDraftForCurrentOperation(operation: ComposerOperation): boolean {
-    if (!isCurrentComposerOperation(operation)) return false
+    const clearVisibleComposer = isCurrentComposerOperation(operation)
+    if (!consumeAcceptedComposerDraftGeneration(operation) || !clearVisibleComposer) return false
 
     messageInput = ''
     messageInputTranslate = ''
@@ -534,6 +574,39 @@
     composerFileInvalidationVersion += 1
     markComposerDraftChanged('message')
     return true
+  }
+
+  function settleQueuedComposerOperation(operation: ComposerOperation, clearDraftFields: boolean): void {
+    const clearVisibleComposer = !composerComponentDestroyed && isCapturedComposerSurfaceCurrent(operation)
+    if (!consumeAcceptedComposerDraftGeneration(operation) || !clearVisibleComposer) return
+    if (clearDraftFields) {
+      messageInput = ''
+      messageInputTranslate = ''
+      fileInput = []
+      draftText = ''
+      btwText = ''
+    } else {
+      messageInput = ''
+      messageInputTranslate = ''
+      fileInput = []
+    }
+    composerFileInvalidationVersion += 1
+    markComposerDraftChanged()
+    updateInputSizeAll()
+  }
+
+  function retainQueuedComposerSettlement(
+    operation: ComposerOperation,
+    clearDraftFields: boolean,
+    settlement: Promise<import('src/ts/chatCommands').ChatMutationFinalOutcome>,
+  ): void {
+    void settlement.then((outcome) => {
+      if (outcome.status === 'accepted') {
+        settleQueuedComposerOperation(operation, clearDraftFields)
+        return
+      }
+      reportComposerDraftPersistenceError(language.composerDraftRecovery.queuedSaveFailed)
+    })
   }
 
   function applyChatFileResultsForCurrentComposer(
@@ -1059,13 +1132,13 @@
 
       if (userMessage) {
         const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: activeTarget })
-        if (!isActiveChatTargetFresh(activeTarget)) {
+        if (appended.status === 'queued') {
+          retainQueuedComposerSettlement(composerOperation, false, appended.settlement)
+          await sleep(10)
           return
         }
-        if (appended.status === 'queued') {
-          clearComposerForCurrentOperation(composerOperation)
-          alertNormal(language.pendingChatMessageQueued)
-          await sleep(10)
+        if (composerComponentDestroyed || !isActiveChatTargetFresh(activeTarget)) {
+          if (appended.status === 'ok') consumeAcceptedComposerDraftGeneration(composerOperation)
           return
         }
         if (appended.status !== 'ok') {
@@ -1140,10 +1213,12 @@
       }
 
       const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: activeTarget })
-      if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
       if (appended.status === 'queued') {
-        clearComposerAndDraftForCurrentOperation(composerOperation)
-        alertNormal(language.pendingChatMessageQueued)
+        retainQueuedComposerSettlement(composerOperation, true, appended.settlement)
+        return
+      }
+      if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) {
+        if (appended.status === 'ok') consumeAcceptedComposerDraftGeneration(composerOperation)
         return
       }
       if (appended.status !== 'ok') {
@@ -1676,6 +1751,14 @@
           showNewMessageButton = false
         }
       }}>
+      {#if composerDraftPersistenceError}
+        <div
+          class="chat-screen-content-width mb-2 rounded-md border border-draculared p-3 text-sm text-draculared"
+          role="alert"
+          data-testid="composer-draft-persistence-error">
+          {composerDraftPersistenceError}
+        </div>
+      {/if}
       <div
         class="{getDatabase().fixedChatTextarea
           ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor'

@@ -3481,7 +3481,11 @@ describe('chat command projection helpers', () => {
         name: null,
       })
 
-      expect(result).toEqual({ status: 'queued', messageId: expect.any(String) })
+      expect(result).toMatchObject({
+        status: 'queued',
+        messageId: expect.any(String),
+        settlement: expect.any(Promise),
+      })
       const projectedMessage = getDatabase().characters[0].chats[0].message.at(-1)
       expect(projectedMessage).toEqual({
         role: 'user',

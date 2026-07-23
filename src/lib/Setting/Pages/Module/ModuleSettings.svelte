@@ -51,18 +51,28 @@
   import { tooltip } from 'src/ts/gui/tooltip'
   import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
-  import { onDestroy } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { importMCPModule } from 'src/ts/process/mcp/mcp'
   import {
-    createGlobalModule,
+    createGlobalModuleWithOutcome,
     deleteGlobalModule,
     rebaseModuleEditorDraftOntoLatest,
-    saveGlobalModuleDraft,
+    saveGlobalModuleDraftWithOutcome,
     setGlobalModuleEnabled,
     type ModuleMutationOutcome,
+    type ModuleEditorSaveOutcome,
   } from 'src/ts/moduleCommands'
   import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
   import type { ServerCommandResult } from 'src/ts/server/commands'
+  import {
+    deleteModuleEditorDraft,
+    isModuleEditorDraftGenerationCurrent,
+    readLatestModuleEditorDraft,
+    registerModuleEditorDraftStorageFailureListener,
+    writeModuleEditorDraft,
+    type ModuleEditorDraftGeneration,
+    type ModuleEditorDraftInput,
+  } from 'src/ts/server/moduleEditorDraftStore'
 
   function cloneJsonValue<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T
@@ -78,12 +88,197 @@
   let mutationPending = $state(false)
   let mcpImportPending = $state(false)
   let mutationError = $state('')
+  let draftStorageError = $state('')
   let rowMutationPending = $state<Record<string, 'toggle' | 'delete'>>({})
   let rowMutationErrors = $state<Record<string, string>>({})
   let moduleSearch = $state('')
   let normalizedModuleSearch = $derived(normalizeModuleSearch(moduleSearch))
   let sortedModuleRows = $derived(sortModuleSettingsRows(getResourceDatabase().modules ?? [], normalizedModuleSearch))
   let moduleIntegrationNamespaces = $derived(parseModuleIntegrationNamespaces(getResourceDatabase().moduleIntergration))
+  let activeDraftGeneration: ModuleEditorDraftGeneration | null = null
+  let lastCapturedDraftFingerprint = ''
+  let restoreAttempt = 0
+  let saveAttempt = 0
+  let componentMounted = false
+  let mutationErrorAlerted = false
+  let draftStorageErrorAlerted = false
+  let editorFieldset: HTMLFieldSetElement | null = $state(null)
+
+  function reportDraftStorageFailure(): void {
+    draftStorageError = language.moduleSave.draftStorageFailed
+    if (draftStorageErrorAlerted) return
+    draftStorageErrorAlerted = true
+    alertError(draftStorageError)
+  }
+
+  const unregisterDraftStorageFailure = registerModuleEditorDraftStorageFailureListener(reportDraftStorageFailure)
+
+  function reportModuleSaveFailure(message: string): void {
+    mutationError = message
+    if (mutationErrorAlerted) return
+    mutationErrorAlerted = true
+    alertError(message)
+  }
+
+  function beginModuleSaveAttempt(): number {
+    mutationError = ''
+    mutationErrorAlerted = false
+    saveAttempt += 1
+    return saveAttempt
+  }
+
+  function editorDraftInput(): ModuleEditorDraftInput | null {
+    if (mode !== 1 && mode !== 2) return null
+    return {
+      mode: mode === 1 ? 'create' : 'edit',
+      moduleId: tempModule.id,
+      editBaseline: mode === 2 && editBaseline ? cloneJsonValue(editBaseline) : null,
+      tempModule: cloneJsonValue(tempModule),
+    }
+  }
+
+  function captureModuleEditorDraft(input: ModuleEditorDraftInput): ModuleEditorDraftGeneration | null {
+    const fingerprint = JSON.stringify(input)
+    if (fingerprint === lastCapturedDraftFingerprint && activeDraftGeneration) return activeDraftGeneration
+    const handle = writeModuleEditorDraft(input)
+    activeDraftGeneration = handle.generation
+    lastCapturedDraftFingerprint = fingerprint
+    void handle.ready.then((status) => {
+      if (status === 'unavailable') reportDraftStorageFailure()
+    })
+    return handle.generation
+  }
+
+  function captureCurrentModuleEditorDraft(): ModuleEditorDraftGeneration | null {
+    const input = editorDraftInput()
+    return input ? captureModuleEditorDraft(input) : null
+  }
+
+  function resetEditorDraftRuntime(): void {
+    activeDraftGeneration = null
+    lastCapturedDraftFingerprint = ''
+  }
+
+  function beginEditorInteraction(): void {
+    restoreAttempt += 1
+    mutationError = ''
+    mutationErrorAlerted = false
+    resetEditorDraftRuntime()
+  }
+
+  async function closeAcceptedModuleEditor(generation: ModuleEditorDraftGeneration | null): Promise<void> {
+    if (generation) await deleteModuleEditorDraft(generation)
+    if (!componentMounted) return
+    editBaseline = null
+    mode = 0
+    resetEditorDraftRuntime()
+  }
+
+  function retainQueuedModuleSave(
+    outcome: Extract<ModuleEditorSaveOutcome, { status: 'queued' }>,
+    generation: ModuleEditorDraftGeneration | null,
+    attempt: number,
+  ): void {
+    void outcome.settlement.then(async (settlement) => {
+      if (settlement.status === 'failed') {
+        if (!componentMounted || attempt !== saveAttempt) return
+        reportModuleSaveFailure(moduleMutationError(settlement.result))
+        return
+      }
+      if (!generation || !(await isModuleEditorDraftGenerationCurrent(generation))) return
+      await deleteModuleEditorDraft(generation)
+      if (
+        componentMounted &&
+        attempt === saveAttempt &&
+        activeDraftGeneration?.key === generation.key &&
+        activeDraftGeneration.sequence === generation.sequence
+      ) {
+        editBaseline = null
+        mode = 0
+        resetEditorDraftRuntime()
+      }
+    })
+  }
+
+  async function discardActiveModuleDraft(): Promise<void> {
+    restoreAttempt += 1
+    saveAttempt += 1
+    const generation = activeDraftGeneration
+    mode = 0
+    editBaseline = null
+    resetEditorDraftRuntime()
+    if (generation) await deleteModuleEditorDraft(generation)
+  }
+
+  async function restoreLatestModuleEditorDraft(attempt: number): Promise<void> {
+    const recovered = await readLatestModuleEditorDraft()
+    if (!recovered || !componentMounted || attempt !== restoreAttempt || mode !== 0) return
+    activeDraftGeneration = recovered.generation
+    lastCapturedDraftFingerprint = ''
+    mutationError = ''
+
+    if (recovered.mode === 'create') {
+      const canonical = getResourceDatabase().modules.find((candidate) => candidate.id === recovered.moduleId)
+      if (canonical && JSON.stringify(canonical) === JSON.stringify(recovered.tempModule)) {
+        await deleteModuleEditorDraft(recovered.generation)
+        resetEditorDraftRuntime()
+        return
+      }
+      tempModule = cloneJsonValue(recovered.tempModule)
+      editBaseline = null
+      mode = 1
+      return
+    }
+
+    const latest = getResourceDatabase().modules.find((candidate) => candidate.id === recovered.moduleId)
+    if (!latest || !recovered.editBaseline) {
+      tempModule = cloneJsonValue(recovered.tempModule)
+      editBaseline = recovered.editBaseline ? cloneJsonValue(recovered.editBaseline) : null
+      mutationError = language.moduleSave.editTargetMissing
+      mode = 3
+      return
+    }
+    const latestSnapshot = cloneJsonValue(latest)
+    const rebased = rebaseModuleEditorDraftOntoLatest(recovered.editBaseline, recovered.tempModule, latestSnapshot)
+    if (JSON.stringify(rebased) === JSON.stringify(latestSnapshot)) {
+      await deleteModuleEditorDraft(recovered.generation)
+      resetEditorDraftRuntime()
+      return
+    }
+    tempModule = rebased
+    editBaseline = latestSnapshot
+    mode = 2
+  }
+
+  function copyRecoveredModuleDraft(): void {
+    void globalThis.navigator?.clipboard
+      ?.writeText(JSON.stringify(tempModule, null, 2))
+      .then(() => alertNormal(language.moduleSave.draftCopied))
+      .catch((error) => alertError(error))
+  }
+
+  $effect(() => {
+    const currentMode = mode
+    const moduleSnapshot = cloneJsonValue(tempModule)
+    const baselineSnapshot = editBaseline ? cloneJsonValue(editBaseline) : null
+    if (currentMode !== 1 && currentMode !== 2) return
+    captureModuleEditorDraft({
+      mode: currentMode === 1 ? 'create' : 'edit',
+      moduleId: moduleSnapshot.id,
+      editBaseline: currentMode === 2 ? baselineSnapshot : null,
+      tempModule: moduleSnapshot,
+    })
+  })
+
+  $effect(() => {
+    const fieldset = editorFieldset
+    const disabled = mutationPending
+    if (!fieldset) return
+    for (const element of fieldset.querySelectorAll<HTMLElement>('[contenteditable]')) {
+      element.setAttribute('contenteditable', disabled ? 'false' : 'true')
+      element.setAttribute('aria-disabled', disabled ? 'true' : 'false')
+    }
+  })
 
   function isModuleEnabled(moduleId: string) {
     return getResourceDatabase().enabledModules.includes(moduleId)
@@ -165,17 +360,22 @@
     }
 
     const draft = cloneJsonValue(tempModule)
+    const generation = captureCurrentModuleEditorDraft()
+    const attempt = beginModuleSaveAttempt()
     mutationPending = true
-    mutationError = ''
     try {
-      const result = await createGlobalModule(draft)
-      if (result === null || result.status === 'ok') {
-        mode = 0
+      const outcome = await createGlobalModuleWithOutcome(draft)
+      if (outcome.status === 'accepted') {
+        await closeAcceptedModuleEditor(generation)
         return
       }
-      mutationError = moduleMutationError(result)
+      if (outcome.status === 'queued') {
+        retainQueuedModuleSave(outcome, generation, attempt)
+        return
+      }
+      reportModuleSaveFailure(moduleMutationError(outcome.result))
     } catch (error) {
-      mutationError = thrownMutationError(error)
+      reportModuleSaveFailure(thrownMutationError(error))
     } finally {
       mutationPending = false
     }
@@ -185,37 +385,57 @@
     if (mutationPending) return
 
     const draft = cloneJsonValue(tempModule)
-    mutationError = ''
+    const generation = captureCurrentModuleEditorDraft()
+    const attempt = beginModuleSaveAttempt()
     const latest = getResourceDatabase().modules.find((candidate) => candidate.id === draft.id)
     if (!latest || editBaseline?.id !== draft.id) {
-      mutationError = language.moduleSave.editTargetMissing
+      reportModuleSaveFailure(language.moduleSave.editTargetMissing)
       return
     }
     const rebasedDraft = rebaseModuleEditorDraftOntoLatest(editBaseline, draft, cloneJsonValue(latest))
 
     mutationPending = true
     try {
-      const result = await saveGlobalModuleDraft(draft.id, rebasedDraft)
-      if (result === null || result.status === 'ok') {
-        editBaseline = null
-        mode = 0
+      const outcome = await saveGlobalModuleDraftWithOutcome(draft.id, rebasedDraft)
+      if (outcome.status === 'accepted') {
+        await closeAcceptedModuleEditor(generation)
         return
       }
-      mutationError = moduleMutationError(result)
+      if (outcome.status === 'queued') {
+        retainQueuedModuleSave(outcome, generation, attempt)
+        return
+      }
+      reportModuleSaveFailure(moduleMutationError(outcome.result))
     } catch (error) {
-      mutationError = thrownMutationError(error)
+      reportModuleSaveFailure(thrownMutationError(error))
     } finally {
       mutationPending = false
     }
   }
 
+  onMount(() => {
+    componentMounted = true
+    const attempt = restoreAttempt
+    void restoreLatestModuleEditorDraft(attempt)
+  })
+
   onDestroy(() => {
+    componentMounted = false
+    restoreAttempt += 1
+    saveAttempt += 1
+    unregisterDraftStorageFailure()
     refreshModules()
   })
 </script>
 
 {#if mode === 0}
   <h2 class="mb-2 text-2xl font-bold mt-2">{language.modules}</h2>
+
+  {#if draftStorageError}
+    <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
+      {draftStorageError}
+    </div>
+  {/if}
 
   <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
 
@@ -280,6 +500,7 @@
                 use:tooltip={language.edit}
                 onclick={async (e) => {
                   e.stopPropagation()
+                  beginEditorInteraction()
                   const baseline = cloneJsonValue(rmodule)
                   tempModule = cloneJsonValue(baseline)
                   editBaseline = baseline
@@ -344,6 +565,7 @@
       aria-label={language.createModule}
       class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
       onclick={async () => {
+        beginEditorInteraction()
         tempModule = {
           name: '',
           description: '',
@@ -384,34 +606,68 @@
   </div>
 {:else if mode === 1}
   <h2 class="mb-2 text-2xl font-bold mt-2">{language.createModule}</h2>
-  {#if mutationError}
+  {#if mutationError || draftStorageError}
     <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
-      {mutationError}
+      {#if mutationError}<div>{mutationError}</div>{/if}
+      {#if draftStorageError}<div>{draftStorageError}</div>{/if}
     </div>
   {/if}
-  <fieldset class="contents" disabled={mutationPending} aria-busy={mutationPending}>
+  <fieldset bind:this={editorFieldset} class="contents" disabled={mutationPending} aria-busy={mutationPending}>
     <ModuleMenu bind:currentModule={tempModule} draftOnly />
-    <div class="contents" data-risu-module-action="submit-create">
-      <Button className="mt-6" disabled={mutationPending} onclick={createModuleFromDraft}>
-        {mutationPending ? language.moduleSave.saving : language.createModule}
-      </Button>
+    <div class="mt-6 flex gap-2">
+      <div class="contents" data-risu-module-action="submit-create">
+        <Button disabled={mutationPending} onclick={createModuleFromDraft}>{language.createModule}</Button>
+      </div>
+      <div class="contents" data-risu-module-action="discard-draft">
+        <Button disabled={mutationPending} onclick={discardActiveModuleDraft}
+          >{language.moduleSave.discardDraft}</Button>
+      </div>
     </div>
   </fieldset>
 {:else if mode === 2}
   <h2 class="mb-2 text-2xl font-bold mt-2">{language.editModule}</h2>
-  {#if mutationError}
+  {#if mutationError || draftStorageError}
     <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
-      {mutationError}
+      {#if mutationError}<div>{mutationError}</div>{/if}
+      {#if draftStorageError}<div>{draftStorageError}</div>{/if}
     </div>
   {/if}
-  <fieldset class="contents" disabled={mutationPending} aria-busy={mutationPending}>
+  <fieldset bind:this={editorFieldset} class="contents" disabled={mutationPending} aria-busy={mutationPending}>
     <ModuleMenu bind:currentModule={tempModule} draftOnly />
-    {#if tempModule.name !== ''}
-      <div class="contents" data-risu-module-action="submit-edit">
-        <Button className="mt-6" disabled={mutationPending} onclick={updateModuleFromDraft}>
-          {mutationPending ? language.moduleSave.saving : language.editModule}
-        </Button>
+    <div class="mt-6 flex gap-2">
+      {#if tempModule.name !== ''}
+        <div class="contents" data-risu-module-action="submit-edit">
+          <Button disabled={mutationPending} onclick={updateModuleFromDraft}>{language.editModule}</Button>
+        </div>
+      {/if}
+      <div class="contents" data-risu-module-action="discard-draft">
+        <Button disabled={mutationPending} onclick={discardActiveModuleDraft}
+          >{language.moduleSave.discardDraft}</Button>
       </div>
-    {/if}
+    </div>
   </fieldset>
+{:else if mode === 3}
+  <h2 class="mb-2 text-2xl font-bold mt-2">{language.moduleSave.recoveredDraft}</h2>
+  <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
+    {mutationError || language.moduleSave.editTargetMissing}
+  </div>
+  {#if draftStorageError}
+    <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
+      {draftStorageError}
+    </div>
+  {/if}
+  <pre
+    class="max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-darkborderc p-3 text-sm text-textcolor"
+    data-risu-recovered-module-draft>{JSON.stringify(tempModule, null, 2)}</pre>
+  <div class="mt-4 flex flex-wrap gap-2">
+    <div class="contents" data-risu-module-action="copy-recovered-draft">
+      <Button onclick={copyRecoveredModuleDraft}>{language.moduleSave.copyDraft}</Button>
+    </div>
+    <div class="contents" data-risu-module-action="export-recovered-draft">
+      <Button onclick={() => exportModule(cloneJsonValue(tempModule))}>{language.moduleSave.exportDraft}</Button>
+    </div>
+    <div class="contents" data-risu-module-action="discard-draft">
+      <Button onclick={discardActiveModuleDraft}>{language.moduleSave.discardDraft}</Button>
+    </div>
+  </div>
 {/if}

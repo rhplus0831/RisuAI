@@ -51,13 +51,31 @@ checklist for any new UI code:**
   steps now await outcome-aware durable receipts, advance on `accepted` or
   locally staged `queued`, retain queued settlement feedback, and fence stale
   or unmounted attempts (`src/lib/Others/WelcomeRisu.svelte`).
-- `PARTIAL / VERIFIED 2026-07-23` **E-5** — composer drafts live in an
-  in-memory Map (`DefaultChatScreen.composerDrafts.ts:11`), message edits in
-  transient component state (`Chat.svelte:1870`, `:374`), module edits in
-  `tempModule`/`draftOnly` until explicit Save (`ModuleSettings.svelte:71`,
-  `:400`): all reload-lost. Exception: lorebook drafts ARE durable
-  (`applyLorebookEntryDraftEdit` queues a replacement,
-  `LoreBookList.svelte:313` → `lorebookBridge.svelte.ts:687`).
+- `FIXED 2026-07-23` **E-5** — resolved per surface:
+  - `FIXED` **Composer** — drafts now use bounded, versioned,
+    per-transcript `sessionStorage` records scoped to the database lineage and
+    writer session.
+    All five composer fields restore after a same-tab reload; exact-generation
+    accepted sends clear them, while queued/failed sends and newer edits retain
+    them. The store preserves a 50-entry LRU, age/byte limits, corrupt-record
+    cleanup, and loud quota failure without blocking typing. This storage is
+    plaintext and intentionally promises neither cross-tab nor cross-device
+    recovery.
+  - `INTENTIONALLY TRANSIENT` **Message edit** — inline
+    message/translation edits remain transient. A focused regression test
+    documents reload/remount as cancel and verifies that the authoritative
+    message is rendered again.
+  - `FIXED` **Module editor** — create/edit drafts now use a
+    separate encrypted IndexedDB recovery store, never the pending mutation
+    outbox. Records are bounded,
+    lineage/writer scoped, sequence fenced, and restored only after hydration;
+    edit recovery rebases onto the latest module, create recovery preserves its
+    client id, and deleted targets open Copy/Export/Discard recovery UI. Save is
+    outcome-aware: only exact-generation acceptance clears/closes, queued saves
+    wait for final settlement, and failures remain editable and recoverable.
+    Recovery is same-database and same-writer-session only, with no cross-tab
+    merging or cross-device promise. Existing non-`draftOnly` lorebook
+    durability remains unchanged.
 - `ACCEPTED` — greeting/`historytrans` rendering gap lives in
   [translation.md](translation.md).
 

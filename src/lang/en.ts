@@ -52,6 +52,11 @@ export const languageEnglish = {
   generationPersistenceQueued: 'This reply is waiting to be saved and remains provisional.',
   composerFileResultDiscarded:
     'The uploaded file could not be attached because the active composer changed. Please attach it again.',
+  composerDraftRecovery: {
+    storageFailed:
+      'This composer draft could not be stored for reload recovery. Keep this tab open or copy the text before leaving.',
+    queuedSaveFailed: 'The queued message was not accepted. Your composer draft was kept so you can retry.',
+  },
   fileSelectionStale: 'Settings changed while you were choosing the file. Please choose it again to retry.',
   alternateGreetingMutationQueued:
     'The alternate greeting change is saved on this device and queued. It will retry automatically.',
@@ -1485,6 +1490,13 @@ export const languageEnglish = {
     commandConflict: 'The server has newer module data. Your draft was kept. Review it and try again.',
     commandUnavailable: 'Module saving is unavailable. Your draft was kept.',
     editTargetMissing: 'The module you were editing no longer exists. Your draft was kept.',
+    draftStorageFailed:
+      'This module draft could not be stored for reload recovery. Keep this editor open or export the draft before leaving.',
+    recoveredDraft: 'Recovered Module Draft',
+    copyDraft: 'Copy Draft',
+    exportDraft: 'Export Draft',
+    discardDraft: 'Discard Draft',
+    draftCopied: 'The recovered module draft was copied.',
     commandError: (error: string) => `Module save failed: ${error}`,
   },
   promptTemplateMutation: {
