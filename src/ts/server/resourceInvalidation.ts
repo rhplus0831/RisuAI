@@ -94,6 +94,8 @@ export interface ServerResourceInvalidationHooks {
   ): boolean
   applyCharacterLorebook(characterId: string, globalLore: unknown[]): boolean
   markCharacterLorebookHydrated(characterId: string): void
+  recordCanonicalCharacterLorebookScopes?(characters: ServerCharactersResourcePayload['characters']): void
+  recordCanonicalLorebookCollections?(names: readonly ServerCollectionName[]): void
   triggerOpenChatGenerationReattach(): void
   clearActiveMessageTranslation(messageId: string): void
 }
@@ -262,6 +264,8 @@ export async function refreshAllServerResources(
         },
       )
       if (collectionsApplied) resetPromptTemplateHydration()
+      if (collectionsApplied) options.hooks?.recordCanonicalLorebookCollections?.(SERVER_COLLECTION_NAMES)
+      if (charactersApplied) options.hooks?.recordCanonicalCharacterLorebookScopes?.(mergedCharacters.characters)
       if (
         (!superseded.settings && !settingsApplied && !settingsFullAlreadyAtLeast(revision)) ||
         (!superseded.collections && !collectionsApplied && !collectionsAlreadyAtLeast(revision)) ||
@@ -1257,6 +1261,7 @@ function applyTargetedRead(
           ? withPendingCollections(entry.result, hooks)
           : entry.result
       const applied = applyCollectionsResource(payload, entry.name)
+      if (applied) hooks?.recordCanonicalLorebookCollections?.([entry.name])
       if (applied && entry.name === 'promptPresets') resetPromptTemplateHydration()
       const alreadyApplied = (collectionsResourceState.revisions[entry.name] ?? -1) >= entry.result.revision
       if (applied && entry.name === 'promptTemplate') {
@@ -1286,17 +1291,19 @@ function applyTargetedRead(
     case 'characters': {
       if (supersessions.generic.has(entry)) return true
       const payload = withPendingAgentPresetCharacters(entry.result, hooks)
-      return payload.status !== 'ok' || applyCharactersResource(payload) || charactersAlreadyAtLeast(payload.revision)
+      if (payload.status !== 'ok') return true
+      const applied = applyCharactersResource(payload)
+      if (applied) hooks?.recordCanonicalCharacterLorebookScopes?.(payload.characters)
+      return applied || charactersAlreadyAtLeast(payload.revision)
     }
     case 'character': {
       if (entry.result.status === 'ok' && entry.result.character?.chaId !== entry.characterId) return false
       if (supersessions.generic.has(entry)) return true
       const payload = withPendingAgentPresetCharacter(entry.result, hooks)
-      return (
-        payload.status !== 'ok' ||
-        applyCharacterResource(payload) ||
-        characterAlreadyAtLeast(entry.characterId, payload.revision)
-      )
+      if (payload.status !== 'ok') return true
+      const applied = applyCharacterResource(payload)
+      if (applied) hooks?.recordCanonicalCharacterLorebookScopes?.([payload.character])
+      return applied || characterAlreadyAtLeast(entry.characterId, payload.revision)
     }
     case 'characterOrder':
       return (

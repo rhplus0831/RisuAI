@@ -182,6 +182,7 @@ import {
   flushPendingServerBackedLorebookPatches,
   mergeLorebookEntryProjectionDraft,
   markCharacterLorebookHydrated,
+  normalizeClientLorebookEntryIds,
   recordHydratedCharacterLorebooks,
   replaceCharacterLorebookCollection,
   replaceCharacterLorebookCollectionWithOutcome,
@@ -203,7 +204,14 @@ import {
 } from './lorebookBridge.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
-type Entry = { key?: string; content?: string; id?: string; folder?: string; comment?: string }
+type Entry = {
+  key?: string
+  content?: string
+  id?: string
+  folder?: string
+  comment?: string
+  alwaysActive?: boolean
+}
 type GlobalLorebookFixture = { id: string; name: string; data: Entry[] }
 
 const DELAY = 50
@@ -459,6 +467,109 @@ describe('Phase 2 lorebook entry dirty projection merge', () => {
     expect(clearIndex).toBeGreaterThan(valueChangedIndex)
     expect(clearIndex).toBeLessThan(draftMismatchIndex)
     expect(preMismatchSource).toContain('!targetChanged')
+  })
+})
+
+describe('lorebook identity normalization and lazy persistence', () => {
+  it('keeps the first stable id, remints duplicates and missing ids, and reports changes', () => {
+    const entries = [{ id: 'stable' }, { id: 'stable' }, {}] as any[]
+
+    expect(normalizeClientLorebookEntryIds(entries)).toBe(true)
+    expect(entries[0].id).toBe('stable')
+    expect(entries[1].id).not.toBe('stable')
+    expect(entries[2].id).toEqual(expect.any(String))
+    expect(new Set(entries.map((entry) => entry.id)).size).toBe(3)
+    expect(normalizeClientLorebookEntryIds(entries)).toBe(false)
+  })
+
+  it('uses one full replace for the first id-less entry edit, then returns to sparse entry updates', async () => {
+    setupCharacter([{ key: 'a', content: 'A', alwaysActive: false }] as Entry[])
+    markCharacterLorebookHydrated('c1')
+    const scope = { kind: 'character', characterId: 'c1' } as const
+    const firstDraft = { ...(getDatabase().characters[0].globalLore as Entry[])[0], alwaysActive: true }
+
+    expect(applyLorebookEntryDraftEdit(scope, 0, firstDraft as any, DELAY)).toBe(true)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(characterReplaceCommands()).toHaveLength(1)
+    expect(characterEntryCommands()).toHaveLength(0)
+    const persistedId = (getDatabase().characters[0].globalLore as Entry[])[0].id
+    expect(persistedId).toEqual(expect.any(String))
+
+    const secondDraft = { ...(getDatabase().characters[0].globalLore as Entry[])[0], content: 'B' }
+    expect(applyLorebookEntryDraftEdit(scope, 0, secondDraft as any, DELAY)).toBe(true)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(characterReplaceCommands()).toHaveLength(1)
+    expect(characterEntryCommands()).toHaveLength(1)
+    expect(characterEntryCommands()[0].a).toMatchObject({
+      characterId: 'c1',
+      entryId: persistedId,
+      sparseUpdate: { patch: { content: 'B' } },
+    })
+  })
+
+  it('keeps a reminted duplicate id when the editor submits its stale pre-normalization draft', async () => {
+    setupCharacter([
+      { id: 'duplicate', key: 'a', content: 'A' },
+      { id: 'duplicate', key: 'b', content: 'B' },
+    ] as Entry[])
+    markCharacterLorebookHydrated('c1')
+    const scope = { kind: 'character', characterId: 'c1' } as const
+    const staleDraft = { ...(getDatabase().characters[0].globalLore as Entry[])[1], content: 'Edited' }
+
+    expect(applyLorebookEntryDraftEdit(scope, 1, staleDraft as any, DELAY)).toBe(true)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const liveEntries = getDatabase().characters[0].globalLore as Entry[]
+    expect(liveEntries[0].id).toBe('duplicate')
+    expect(liveEntries[1].id).not.toBe('duplicate')
+    expect(characterReplaceCommands()).toHaveLength(1)
+    expect(characterReplaceCommands()[0].entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'duplicate', content: 'A' }),
+        expect.objectContaining({ id: liveEntries[1].id, content: 'Edited' }),
+      ]),
+    )
+  })
+
+  it('uses a full replace when adding to an identity-dirty collection', async () => {
+    setupCharacter([{ key: 'a', content: 'A' }] as Entry[])
+    markCharacterLorebookHydrated('c1')
+    const scope = { kind: 'character', characterId: 'c1' } as const
+    currentLorebookCollectionScopedSnapshot(scope)
+    const nextEntries = cloneEntries(getDatabase().characters[0].globalLore as Entry[])
+    nextEntries.push({ id: 'new-entry', key: 'new', content: 'New' })
+
+    expect(replaceCharacterLorebookCollection('c1', nextEntries as any, DELAY)).toBe(true)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(characterReplaceCommands()).toHaveLength(1)
+    expect(characterEntryCommands()).toHaveLength(0)
+  })
+
+  it('rolls a failed identity-dirty replace back as a collection and keeps the scope dirty', async () => {
+    setupCharacter([
+      { key: 'a', content: 'A' },
+      { key: 'b', content: 'B' },
+    ] as Entry[])
+    markCharacterLorebookHydrated('c1')
+    recorded.commandResults.push(Promise.resolve({ status: 'error', error: 'rejected' }))
+    const scope = { kind: 'character', characterId: 'c1' } as const
+    const draft = { ...(getDatabase().characters[0].globalLore as Entry[])[0], content: 'Attempted' }
+
+    expect(applyLorebookEntryDraftEdit(scope, 0, draft as any, DELAY)).toBe(true)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const rolledBack = getDatabase().characters[0].globalLore as Entry[]
+    expect(rolledBack.map((entry) => entry.content)).toEqual(['A', 'B'])
+    expect(new Set(rolledBack.map((entry) => entry.id)).size).toBe(2)
+
+    const retry = { ...rolledBack[0], content: 'Retry' }
+    expect(applyLorebookEntryDraftEdit(scope, 0, retry as any, DELAY)).toBe(true)
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(characterReplaceCommands()).toHaveLength(2)
+    expect(characterEntryCommands()).toHaveLength(0)
   })
 })
 

@@ -24,6 +24,8 @@ import {
 import {
   applyServerCharacterLorebookResource,
   markCharacterLorebookHydrated,
+  recordCanonicalCharacterLorebookScopes,
+  recordCanonicalLorebookCollections,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
 } from './lorebookBridge.svelte'
@@ -67,6 +69,8 @@ export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = 
   applyChatMessages: applyServerChatMessagesResource,
   applyCharacterLorebook: applyServerCharacterLorebookResource,
   markCharacterLorebookHydrated,
+  recordCanonicalCharacterLorebookScopes,
+  recordCanonicalLorebookCollections,
   triggerOpenChatGenerationReattach,
   clearActiveMessageTranslation,
 }

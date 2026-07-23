@@ -191,6 +191,8 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   flushPendingLorebookEntryDraftEdit: lorebookListMocks.flushPendingLorebookEntryDraftEdit,
   markCharacterLorebookHydrated: vi.fn(),
   mergeLorebookEntryProjectionDraft: lorebookListMocks.mergeLorebookEntryProjectionDraft,
+  recordCanonicalCharacterLorebookScopes: vi.fn(),
+  recordCanonicalLorebookCollections: vi.fn(),
   recordHydratedCharacterLorebooks: vi.fn(),
   replaceCharacterLorebookCollection: lorebookListMocks.replaceCharacterLorebookCollection,
   replaceCharacterLorebookCollectionWithOutcome: lorebookListMocks.replaceCharacterLorebookCollection,

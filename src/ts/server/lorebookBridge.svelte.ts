@@ -50,6 +50,7 @@ import {
   hasCharacterRowProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
   hasLorebookPageProjectionEpochChanged,
+  type ServerCollectionName,
 } from './resourceState.svelte'
 import {
   applyAttemptedFieldRollback,
@@ -113,6 +114,7 @@ interface PendingCollectionReplacement {
   outbox: PendingMutationHandle
   settlementCleanup?: () => void
   operations: PendingScopedLorebookMutationOperation[]
+  identityDirtyGeneration?: number
   command: (options?: ServerCommandTransportOptions) => Promise<ServerCommandResult<Record<string, unknown>>>
 }
 
@@ -125,6 +127,8 @@ interface PendingLorebookEntryAttempt {
 }
 
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
+const identityDirtyLorebookScopes = new Map<string, number>()
+let nextIdentityDirtyGeneration = 0
 const pendingLorebookEntryAttempts: PendingLorebookEntryAttempt[] = []
 const pendingGlobalLorebookDeleteProjections = new Map<string, PendingGlobalLorebookDeleteProjection>()
 const globalLorebookDeleteStates = new Map<string, GlobalLorebookDeleteState>()
@@ -284,6 +288,8 @@ export function resetServerBackedLorebookBridgeForTests(): void {
     void acknowledgePendingMutation(pending.outbox)
   }
   pendingReplacements.clear()
+  identityDirtyLorebookScopes.clear()
+  nextIdentityDirtyGeneration = 0
   pendingLorebookEntryAttempts.length = 0
   for (const pending of pendingGlobalLorebookDeleteProjections.values()) {
     pending.settled = true
@@ -309,6 +315,40 @@ export function markCharacterLorebookHydrated(characterId: string): void {
   if (!characterId) return
   hydratedCharacterLorebooks.add(characterId)
   stubbedCharacterLorebooks.delete(characterId)
+}
+
+/** Record an authoritative character projection after it was actually applied. */
+export function recordCanonicalCharacterLorebookScopes(
+  characters:
+    | ReadonlyArray<{
+        chaId?: string
+        globalLore?: unknown
+        chats?: ReadonlyArray<{ id?: string }>
+      }>
+    | undefined,
+): void {
+  for (const character of characters ?? []) {
+    if (typeof character.chaId === 'string' && character.chaId.trim() && Array.isArray(character.globalLore)) {
+      identityDirtyLorebookScopes.delete(`character:${character.chaId}`)
+    }
+    for (const chat of character.chats ?? []) {
+      if (typeof chat.id === 'string' && chat.id.trim()) {
+        identityDirtyLorebookScopes.delete(`chat:${chat.id}`)
+      }
+    }
+  }
+}
+
+/** Record authoritative whole-collection projections after they were applied. */
+export function recordCanonicalLorebookCollections(names: readonly ServerCollectionName[]): void {
+  if (names.includes('loreBook')) clearIdentityDirtyLorebookScopesWithPrefix('global:')
+  if (names.includes('modules')) clearIdentityDirtyLorebookScopesWithPrefix('module:')
+}
+
+function clearIdentityDirtyLorebookScopesWithPrefix(prefix: string): void {
+  for (const key of identityDirtyLorebookScopes.keys()) {
+    if (key.startsWith(prefix)) identityDirtyLorebookScopes.delete(key)
+  }
 }
 
 /** Whether a character's `globalLore` is hydrated (not a stub). */
@@ -459,79 +499,45 @@ export function restoreGlobalLorebookState(snapshot: GlobalLorebookStateSnapshot
   })
 }
 
-export function ensureClientLorebookEntryIds(entries: loreBook[]): loreBook[] {
+/**
+ * Give every lorebook row a stable, collection-unique client id.
+ *
+ * Returns whether any row changed so server-backed callers can remember that
+ * their resident projection no longer has the same identities as the server.
+ */
+export function normalizeClientLorebookEntryIds(entries: loreBook[]): boolean {
+  const seen = new Set<string>()
+  let changed = false
   for (const entry of entries ?? []) {
-    // Only write when an id is actually missing. An unconditional assignment
-    // would trip the read-only resource guard's set trap even when the value
-    // is unchanged, which breaks dispatch paths that pass projection-owned
-    // entry arrays.
-    if (typeof entry.id !== 'string' || !entry.id.trim()) {
-      entry.id = v4()
+    // Only write when an id is missing or repeats an earlier row. An
+    // unconditional assignment would trip the read-only resource guard's set
+    // trap even when the value is unchanged, which breaks dispatch paths that
+    // pass projection-owned entry arrays.
+    let id = typeof entry.id === 'string' && entry.id.trim() ? entry.id : ''
+    if (!id || seen.has(id)) {
+      do {
+        id = v4()
+      } while (seen.has(id))
+      entry.id = id
+      changed = true
     }
+    seen.add(id)
   }
+  return changed
+}
+
+export function ensureClientLorebookEntryIds(entries: loreBook[]): loreBook[] {
+  normalizeClientLorebookEntryIds(entries)
   return entries
 }
 
 function lorebookEntryIdsNeedNormalization(entries: loreBook[] | undefined): boolean {
-  return (entries ?? []).some((entry) => typeof entry.id !== 'string' || !entry.id.trim())
-}
-
-export function ensureAllClientLorebookIds(): void {
-  if (!allClientLorebookIdsNeedNormalization()) return
-
-  withTrustedResourceWrite(() => {
-    assignGlobalLorebookListIds()
-    for (const character of getDatabase().characters ?? []) {
-      // Only touch a HYDRATED character's globalLore — assigning ids to a stubbed
-      // one would default its absent globalLore to `[]` and mask the stub.
-      if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
-        if (!Array.isArray(character.globalLore)) {
-          character.globalLore = []
-        } else {
-          ensureClientLorebookEntryIds(character.globalLore)
-        }
-      }
-      // Chat localLore stays resident, not stubbed.
-      for (const chat of character.chats ?? []) {
-        if (!Array.isArray(chat.localLore)) {
-          chat.localLore = []
-        } else {
-          ensureClientLorebookEntryIds(chat.localLore)
-        }
-      }
-    }
-    for (const module of (getDatabase().modules ?? []) as RisuModule[]) {
-      if (Array.isArray(module.lorebook)) {
-        ensureClientLorebookEntryIds(module.lorebook)
-      }
-    }
-  })
-}
-
-function allClientLorebookIdsNeedNormalization(): boolean {
-  if (globalLorebookListIdsNeedNormalization()) return true
-
-  for (const character of getDatabase().characters ?? []) {
-    if (
-      character.chaId &&
-      hydratedCharacterLorebooks.has(character.chaId) &&
-      (!Array.isArray(character.globalLore) || lorebookEntryIdsNeedNormalization(character.globalLore))
-    ) {
-      return true
-    }
-    for (const chat of character.chats ?? []) {
-      if (!Array.isArray(chat.localLore) || lorebookEntryIdsNeedNormalization(chat.localLore)) {
-        return true
-      }
-    }
+  const seen = new Set<string>()
+  for (const entry of entries ?? []) {
+    const id = typeof entry.id === 'string' && entry.id.trim() ? entry.id : ''
+    if (!id || seen.has(id)) return true
+    seen.add(id)
   }
-
-  for (const module of (getDatabase().modules ?? []) as RisuModule[]) {
-    if (Array.isArray(module.lorebook) && lorebookEntryIdsNeedNormalization(module.lorebook)) {
-      return true
-    }
-  }
-
   return false
 }
 
@@ -539,13 +545,17 @@ function allClientLorebookIdsNeedNormalization(): boolean {
 // Must run inside a trusted write scope (it re-reads the resource-backed database itself).
 function assignGlobalLorebookListIds(): void {
   for (const lorebook of (getDatabase().loreBook ?? []) as GlobalLorebook[]) {
+    const hadStableBookId = typeof lorebook.id === 'string' && lorebook.id.trim()
     if (typeof lorebook.id !== 'string' || !lorebook.id.trim()) {
       lorebook.id = v4()
     }
     if (!Array.isArray(lorebook.data)) {
       lorebook.data = []
     } else {
-      ensureClientLorebookEntryIds(lorebook.data)
+      const changed = normalizeClientLorebookEntryIds(lorebook.data)
+      if (changed && hadStableBookId) {
+        markLorebookIdentityDirty({ kind: 'global', lorebookId: lorebook.id as string })
+      }
     }
   }
 }
@@ -695,7 +705,10 @@ export function applyLorebookEntryDraftEdit(
     entries = target.entries
     const current = target.entries[index]
     const next = cloneJsonValue(value)
-    if (current?.id && (typeof next.id !== 'string' || !next.id.trim())) {
+    // Entry editor drafts can be latched before lazy identity normalization.
+    // Keep the resident row's freshly repaired identity rather than copying a
+    // stale missing/duplicate id back over it with the edited fields.
+    if (current?.id && next.id !== current.id) {
       next.id = current.id
     }
     if (current) {
@@ -760,12 +773,14 @@ function getCurrentChatFromResources(): Chat | undefined {
 }
 
 export function applyServerCharacterLorebookResource(characterId: string, globalLore: unknown[]): boolean {
-  return withServerResourceApply(() => {
+  const applied = withServerResourceApply(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!character) return false
     character.globalLore = globalLore as typeof character.globalLore
     return true
   })
+  if (applied) identityDirtyLorebookScopes.delete(`character:${characterId}`)
+  return applied
 }
 
 export function setActiveChatLorebookLocalActivation(book: loreBook, active: boolean, delayMs = 250): boolean {
@@ -968,6 +983,7 @@ function assignLorebookCollection(scope: ReplaceableLorebookCollectionScope, ent
 function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
   if (!scopedClientLorebookIdsNeedNormalization(scope)) return
 
+  let changed = false
   withTrustedResourceWrite(() => {
     switch (scope.kind) {
       case 'character': {
@@ -979,7 +995,7 @@ function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
           if (!Array.isArray(character.globalLore)) {
             character.globalLore = []
           } else {
-            ensureClientLorebookEntryIds(character.globalLore)
+            changed = normalizeClientLorebookEntryIds(character.globalLore)
           }
         }
         return
@@ -990,7 +1006,7 @@ function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
           if (!Array.isArray(chat.localLore)) {
             chat.localLore = []
           } else {
-            ensureClientLorebookEntryIds(chat.localLore)
+            changed = normalizeClientLorebookEntryIds(chat.localLore)
           }
         }
         return
@@ -1003,7 +1019,7 @@ function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
           if (!Array.isArray(lorebook.data)) {
             lorebook.data = []
           } else {
-            ensureClientLorebookEntryIds(lorebook.data)
+            changed = normalizeClientLorebookEntryIds(lorebook.data)
           }
         }
         return
@@ -1011,12 +1027,13 @@ function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
       case 'module': {
         const module = findModule(scope.moduleId)
         if (module && Array.isArray(module.lorebook)) {
-          ensureClientLorebookEntryIds(module.lorebook)
+          changed = normalizeClientLorebookEntryIds(module.lorebook)
         }
         return
       }
     }
   })
+  if (changed) markLorebookIdentityDirty(scope)
 }
 
 function scopedClientLorebookIdsNeedNormalization(scope: DiscreteLorebookEditScope): boolean {
@@ -1047,6 +1064,7 @@ function scopedClientLorebookIdsNeedNormalization(scope: DiscreteLorebookEditSco
 }
 
 function ensureScopedClientLorebookEntryId(scope: DiscreteLorebookEditScope, index: number): void {
+  let changed = false
   withTrustedResourceWrite(() => {
     if (
       scope.kind === 'character' &&
@@ -1055,11 +1073,17 @@ function ensureScopedClientLorebookEntryId(scope: DiscreteLorebookEditScope, ind
     ) {
       return
     }
-    const entry = resolveLorebookCollection(scope)?.entries[index]
-    if (entry && (typeof entry.id !== 'string' || !entry.id.trim())) {
-      entry.id = v4()
-    }
+    const entries = resolveLorebookCollection(scope)?.entries
+    if (!entries?.[index]) return
+    changed = normalizeClientLorebookEntryIds(entries)
   })
+  if (changed) markLorebookIdentityDirty(scope)
+}
+
+function markLorebookIdentityDirty(scope: DiscreteLorebookEditScope): number {
+  const generation = ++nextIdentityDirtyGeneration
+  identityDirtyLorebookScopes.set(lorebookCollectionScopeKey(scope), generation)
+  return generation
 }
 
 function lorebookCollectionScopeKey(scope: DiscreteLorebookEditScope): string {
@@ -2138,6 +2162,9 @@ function planLorebookCommand(
   rollbackSnapshot: LorebookReplacementSnapshot,
   source: LorebookReplacementSource,
 ): PlannedLorebookCommand | null {
+  if (identityDirtyLorebookScopes.has(scopeKey)) {
+    return { kind: 'replace', entries: cloneLorebookEntriesForCommand(entries) }
+  }
   const hasEarlierEntryAttempt = pendingLorebookEntryAttempts.some((attempt) => attempt.scopeKey === scopeKey)
   if (
     !isLorebookEntryStateSnapshot(rollbackSnapshot) &&
@@ -2805,14 +2832,19 @@ function queueReplacement(
   const effectivePrevious = useExisting ? existing.previous : previous
   const effectiveSource = useExisting && existing?.source === 'collection' ? 'collection' : source
   const effectiveProjectionEpochs = useExisting ? existing.projectionEpochs : projectionEpochs
-  let plan = planLorebookCommand(key, attemptedEntries, effectivePrevious, effectiveSource)
+  const identityDirtyGeneration = identityDirtyLorebookScopes.get(key)
+  const rollbackPrevious =
+    identityDirtyGeneration !== undefined && isLorebookEntryStateSnapshot(effectivePrevious)
+      ? promoteEntryRollbackToCollectionSnapshot(scope, effectivePrevious)
+      : effectivePrevious
+  let plan = planLorebookCommand(key, attemptedEntries, rollbackPrevious, effectiveSource)
   let correctionOnly = false
   if (!plan && existingProjectionIsCurrent && existing?.source === 'entry' && source === 'entry') {
     // A different tab can freeze the staged edit between the local no-op check
     // and durable replacement. Keep a full baseline successor so an older
     // generation that still lands is explicitly corrected instead of silently
     // deleting the only recovery intent.
-    plan = planLorebookEntryNetRevertCorrection(attemptedEntries, effectivePrevious)
+    plan = planLorebookEntryNetRevertCorrection(attemptedEntries, rollbackPrevious)
     correctionOnly = plan !== null
   }
   if (
@@ -2854,7 +2886,7 @@ function queueReplacement(
     flushedEntryEditSnapshots.delete(key)
     flushedEntryEditClearSnapshots.delete(key)
     if (!hasLorebookProjectionEpochChanged(effectiveProjectionEpochs)) {
-      rollbackLorebookReplacement(scope, effectivePrevious, attemptedEntries)
+      rollbackLorebookReplacement(scope, rollbackPrevious, attemptedEntries)
     }
     settleScopedLorebookMutationOperations(operations, {
       status: 'failed',
@@ -2865,14 +2897,15 @@ function queueReplacement(
 
   const pending: PendingCollectionReplacement = {
     key,
-    previous: effectivePrevious,
+    previous: rollbackPrevious,
     attemptedEntries,
     source: effectiveSource,
     projectionEpochs: effectiveProjectionEpochs,
     intent,
     outbox,
     operations,
-    command: (options = {}) => command(effectivePrevious, effectiveProjectionEpochs, plan, options),
+    ...(identityDirtyGeneration !== undefined && plan.kind === 'replace' ? { identityDirtyGeneration } : {}),
+    command: (options = {}) => command(rollbackPrevious, effectiveProjectionEpochs, plan, options),
     timer: null,
   }
   if (existingProjectionIsCurrent) existing?.settlementCleanup?.()
@@ -2908,6 +2941,7 @@ function trackPendingLorebookReplacementSettlement(
     flushedEntryEditClearSnapshots.delete(pending.key)
 
     if (settlement === 'accepted') {
+      clearAcceptedLorebookIdentityDirty(pending)
       settleScopedLorebookMutationOperations(pending.operations, { status: 'accepted' })
       return
     }
@@ -3000,6 +3034,7 @@ async function settleDispatchedScopedLorebookReplacement(
   try {
     const result = await dispatch
     if (result.status === 'ok') {
+      clearAcceptedLorebookIdentityDirty(pending)
       settleScopedLorebookMutationOperations(pending.operations, { status: 'accepted' })
       return
     }
@@ -3020,6 +3055,13 @@ async function settleDispatchedScopedLorebookReplacement(
       status: 'failed',
       error: error instanceof Error ? error.message : String(error),
     })
+  }
+}
+
+function clearAcceptedLorebookIdentityDirty(pending: PendingCollectionReplacement): void {
+  if (pending.identityDirtyGeneration === undefined) return
+  if (identityDirtyLorebookScopes.get(pending.key) === pending.identityDirtyGeneration) {
+    identityDirtyLorebookScopes.delete(pending.key)
   }
 }
 

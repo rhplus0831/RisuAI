@@ -15,6 +15,7 @@ import {
   isCharacterLorebookHydrated,
   isCharacterLorebookMutationReady,
   markCharacterLorebookHydrated,
+  recordCanonicalCharacterLorebookScopes,
 } from './lorebookBridge.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import {
@@ -755,6 +756,7 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
 
       const applied = hydrateServerCharacterLorebook(characterId, result.globalLore)
       if (!applied) return
+      recordCanonicalCharacterLorebookScopes([{ chaId: characterId, globalLore: result.globalLore }])
       markCharacterLorebookBodyResourceRevision(characterId, result.revision)
       markCharacterLorebookProjectionApplied(characterId)
       // Mark hydrated so the lorebook watcher tracks (and persists) edits to it.
@@ -844,6 +846,7 @@ async function hydrateCharacterLorebooksBulk(
       finishCharacterLorebookHydrationState(characterId, generation)
       continue
     }
+    recordCanonicalCharacterLorebookScopes([{ chaId: characterId, globalLore: hydration.globalLore }])
     markCharacterLorebookBodyResourceRevision(characterId, result.revision)
     markCharacterLorebookProjectionApplied(characterId)
     markCharacterLorebookHydrated(characterId)
