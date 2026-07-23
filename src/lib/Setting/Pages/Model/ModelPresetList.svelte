@@ -316,106 +316,99 @@
       {language.modelProfiles.noModelPresets}
     </div>
   {:else}
-    <div class="overflow-x-auto rounded-md border border-darkborderc">
-      <table class="w-full min-w-[58rem] text-sm">
-        <thead class="bg-darkbg text-left text-xs uppercase text-textcolor2">
-          <tr>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.profileNameColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.chatRolesColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.roleBindingsColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.storedDataColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.actionsColumn}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each presets as preset, index (preset.id ?? index)}
-            <tr
-              class="cursor-pointer border-t border-darkborderc align-top hover:bg-darkbg"
-              class:bg-selected={index === selectedIndex}
-              role="button"
-              tabindex="0"
-              aria-busy={selectionPendingIndex === index ? 'true' : 'false'}
-              aria-disabled={selectionPendingIndex !== null ? 'true' : undefined}
-              onclick={() => applyPreset(index)}
-              onkeydown={(event) => applyPresetFromKeyboard(event, index)}>
-              <td class="px-3 py-3" onclick={(event) => event.stopPropagation()}>
-                <TextInput
-                  size="sm"
-                  value={presetName(preset, index)}
-                  ariaLabel={`${language.modelProfiles.profileNameColumn}: ${presetName(preset, index)}`}
-                  onchange={(event) => renamePreset(index, event.currentTarget.value)}
-                  fullwidth />
-                <span class="mt-1 block text-xs text-textcolor2">{preset.id ?? language.none}</span>
-                {#if rowMutationErrors[presetMutationKey(preset, index)]}
-                  <span data-risu-preset-row-mutation-status role="alert" class="mt-1 block text-xs text-draculared">
-                    {rowMutationErrors[presetMutationKey(preset, index)]}
-                  </span>
-                {/if}
-              </td>
-              <td class="px-3 py-3">{chatRoleSummary(preset)}</td>
-              <td class="px-3 py-3 text-textcolor2">{roleBindingSummary(preset)}</td>
-              <td class="px-3 py-3">
-                <div class="flex flex-wrap gap-1">
-                  {#each presetBadges(preset) as badge}
-                    <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs text-textcolor2">{badge}</span>
-                  {/each}
-                </div>
-              </td>
-              <td class="px-3 py-3">
-                <div class="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    onclick={(event) => {
-                      event.stopPropagation()
-                      duplicatePreset(index)
-                    }}>
-                    <span class="inline-flex items-center gap-1">
-                      <CopyIcon size={14} />{language.modelProfiles.duplicate}
-                    </span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    disabled={index === 0}
-                    onclick={(event) => {
-                      event.stopPropagation()
-                      movePresetUp(index)
-                    }}>
-                    <span class="inline-flex items-center gap-1">
-                      <ArrowUpIcon size={14} />{language.modelProfiles.moveUp}
-                    </span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    disabled={index >= presets.length - 1}
-                    onclick={(event) => {
-                      event.stopPropagation()
-                      movePresetDown(index)
-                    }}>
-                    <span class="inline-flex items-center gap-1">
-                      <ArrowDownIcon size={14} />{language.modelProfiles.moveDown}
-                    </span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="danger"
-                    disabled={presets.length <= 1}
-                    onclick={(event) => {
-                      event.stopPropagation()
-                      removePreset(index)
-                    }}>
-                    <span class="inline-flex items-center gap-1">
-                      <TrashIcon size={14} />{language.modelProfiles.delete}
-                    </span>
-                  </Button>
-                </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+    <div class="flex flex-col gap-2">
+      {#each presets as preset, index (preset.id ?? index)}
+        <div
+          class="flex cursor-pointer flex-col gap-3 rounded-md border border-darkborderc p-3 text-sm hover:bg-darkbg"
+          class:bg-selected={index === selectedIndex}
+          role="button"
+          tabindex="0"
+          aria-busy={selectionPendingIndex === index ? 'true' : 'false'}
+          aria-disabled={selectionPendingIndex !== null ? 'true' : undefined}
+          onclick={() => applyPreset(index)}
+          onkeydown={(event) => applyPresetFromKeyboard(event, index)}>
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div onclick={(event) => event.stopPropagation()}>
+            <TextInput
+              size="sm"
+              value={presetName(preset, index)}
+              ariaLabel={`${language.modelProfiles.profileNameColumn}: ${presetName(preset, index)}`}
+              onchange={(event) => renamePreset(index, event.currentTarget.value)}
+              fullwidth />
+            <span class="mt-1 block break-all text-xs text-textcolor2">{preset.id ?? language.none}</span>
+            {#if rowMutationErrors[presetMutationKey(preset, index)]}
+              <span data-risu-preset-row-mutation-status role="alert" class="mt-1 block text-xs text-draculared">
+                {rowMutationErrors[presetMutationKey(preset, index)]}
+              </span>
+            {/if}
+          </div>
+          <div class="flex flex-col gap-1 break-all text-xs text-textcolor2">
+            <span>
+              <span class="font-medium">{language.modelProfiles.chatRolesColumn}:</span>
+              {chatRoleSummary(preset)}
+            </span>
+            <span>
+              <span class="font-medium">{language.modelProfiles.roleBindingsColumn}:</span>
+              {roleBindingSummary(preset)}
+            </span>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            {#each presetBadges(preset) as badge}
+              <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs text-textcolor2">{badge}</span>
+            {/each}
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              styled="outlined"
+              onclick={(event) => {
+                event.stopPropagation()
+                duplicatePreset(index)
+              }}>
+              <span class="inline-flex items-center gap-1">
+                <CopyIcon size={14} />{language.modelProfiles.duplicate}
+              </span>
+            </Button>
+            <Button
+              size="sm"
+              styled="outlined"
+              disabled={index === 0}
+              onclick={(event) => {
+                event.stopPropagation()
+                movePresetUp(index)
+              }}>
+              <span class="inline-flex items-center gap-1">
+                <ArrowUpIcon size={14} />{language.modelProfiles.moveUp}
+              </span>
+            </Button>
+            <Button
+              size="sm"
+              styled="outlined"
+              disabled={index >= presets.length - 1}
+              onclick={(event) => {
+                event.stopPropagation()
+                movePresetDown(index)
+              }}>
+              <span class="inline-flex items-center gap-1">
+                <ArrowDownIcon size={14} />{language.modelProfiles.moveDown}
+              </span>
+            </Button>
+            <Button
+              size="sm"
+              styled="danger"
+              disabled={presets.length <= 1}
+              onclick={(event) => {
+                event.stopPropagation()
+                removePreset(index)
+              }}>
+              <span class="inline-flex items-center gap-1">
+                <TrashIcon size={14} />{language.modelProfiles.delete}
+              </span>
+            </Button>
+          </div>
+        </div>
+      {/each}
     </div>
   {/if}
 

@@ -344,66 +344,52 @@
       {language.modelProfiles.noProfiles}
     </div>
   {:else}
-    <div class="overflow-x-auto rounded-md border border-darkborderc">
-      <table class="w-full min-w-[52rem] text-sm">
-        <thead class="bg-darkbg text-left text-xs uppercase text-textcolor2">
-          <tr>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.profileNameColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.providerColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.modelColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.requestModelColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.fallbackColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.statusColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.usedByColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.actionsColumn}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each profiles as profile (profile.id)}
-            {@const usedByRoles = rolesUsingProfile(profile.id)}
-            <tr class="border-t border-darkborderc align-top">
-              <td class="px-3 py-3">
-                <span class="block font-medium">{profile.name}</span>
-                <span class="block text-xs text-textcolor2">{profile.id}</span>
-              </td>
-              <td class="px-3 py-3">{providerLabel(profile.providerId)}</td>
-              <td class="px-3 py-3">{modelLabel(profile)}</td>
-              <td class="px-3 py-3">{requestModelLabel(profile)}</td>
-              <td class="px-3 py-3 text-textcolor2">{fallbackCount(profile)}</td>
-              <td class="px-3 py-3">{statusLabel(profile)}</td>
-              <td class="px-3 py-3 text-textcolor2">{roleListLabel(usedByRoles)}</td>
-              <td class="px-3 py-3">
-                <div class="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    disabled={busy || mutationQueued}
-                    onclick={() => openEditEditor(profile)}>
-                    <span class="inline-flex items-center gap-1"
-                      ><PencilIcon size={14} />{language.modelProfiles.edit}</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    disabled={busy || mutationQueued}
-                    onclick={() => duplicateProfile(profile)}>
-                    <span class="inline-flex items-center gap-1"
-                      ><CopyIcon size={14} />{language.modelProfiles.duplicate}</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="danger"
-                    disabled={busy || mutationQueued}
-                    onclick={() => deleteProfile(profile)}>
-                    <span class="inline-flex items-center gap-1"
-                      ><TrashIcon size={14} />{language.modelProfiles.delete}</span>
-                  </Button>
-                </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+    <div class="flex flex-col gap-2">
+      {#each profiles as profile (profile.id)}
+        {@const usedByRoles = rolesUsingProfile(profile.id)}
+        <article class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 text-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-medium">{profile.name}</span>
+            <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs">
+              {statusLabel(profile)}
+            </span>
+            <div class="ml-auto flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                styled="outlined"
+                disabled={busy || mutationQueued}
+                onclick={() => openEditEditor(profile)}>
+                <span class="inline-flex items-center gap-1"
+                  ><PencilIcon size={14} />{language.modelProfiles.edit}</span>
+              </Button>
+              <Button
+                size="sm"
+                styled="outlined"
+                disabled={busy || mutationQueued}
+                onclick={() => duplicateProfile(profile)}>
+                <span class="inline-flex items-center gap-1"
+                  ><CopyIcon size={14} />{language.modelProfiles.duplicate}</span>
+              </Button>
+              <Button
+                size="sm"
+                styled="danger"
+                disabled={busy || mutationQueued}
+                onclick={() => deleteProfile(profile)}>
+                <span class="inline-flex items-center gap-1"
+                  ><TrashIcon size={14} />{language.modelProfiles.delete}</span>
+              </Button>
+            </div>
+          </div>
+          <span class="break-all text-xs text-textcolor2">{profile.id}</span>
+          <span class="break-all text-xs text-textcolor2">
+            {providerLabel(profile.providerId)} · {modelLabel(profile)} · {requestModelLabel(profile)} ·
+            {fallbackCount(profile)}
+          </span>
+          <span class="text-xs text-textcolor2">
+            {language.modelProfiles.usedByColumn}: {roleListLabel(usedByRoles)}
+          </span>
+        </article>
+      {/each}
     </div>
   {/if}
 

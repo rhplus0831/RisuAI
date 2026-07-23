@@ -308,73 +308,60 @@
     </div>
   </div>
 
-  <div class="overflow-x-auto rounded-md border border-darkborderc">
-    <table class="w-full min-w-[56rem] text-sm">
-      <thead class="bg-darkbg text-left text-xs uppercase text-textcolor2">
-        <tr>
-          <th class="px-3 py-2 font-medium">{language.modelProfiles.roleColumn}</th>
-          <th class="px-3 py-2 font-medium">{language.modelProfiles.bindingModeColumn}</th>
-          <th class="px-3 py-2 font-medium">{language.modelProfiles.inheritedSourceColumn}</th>
-          <th class="px-3 py-2 font-medium">{language.modelProfiles.effectiveProfileColumn}</th>
-          <th class="px-3 py-2 font-medium">{language.modelProfiles.providerModelColumn}</th>
-          <th class="px-3 py-2 font-medium">{language.modelProfiles.statusColumn}</th>
-          <th class="px-3 py-2 font-medium">{language.modelProfiles.fallbackColumn}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each MODEL_ROLES as role (role)}
-          {@const binding = bindingFor(role)}
-          {@const inheritedSource = modelRoleProfileInheritSource(role)}
-          <tr class="border-t border-darkborderc align-top">
-            <td class="px-3 py-3">
-              <span class="block font-medium">{roleLabel(role)}</span>
-              <span class="block text-xs text-textcolor2">{roleDescription(role)}</span>
-            </td>
-            <td class="px-3 py-3">
+  <div class="flex flex-col gap-2">
+    {#each MODEL_ROLES as role (role)}
+      {@const binding = bindingFor(role)}
+      {@const inheritedSource = modelRoleProfileInheritSource(role)}
+      <article class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 text-sm">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-medium">{roleLabel(role)}</span>
+          <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs">
+            {statusLabel(role)}
+          </span>
+          <span class="ml-auto text-xs text-textcolor2">{fallbackCount(role)}</span>
+        </div>
+        <span class="text-xs text-textcolor2">{roleDescription(role)}</span>
+        <div class="flex flex-wrap gap-2">
+          <div class="flex flex-1 basis-full sm:basis-0">
+            <SelectInput
+              size="sm"
+              className="w-full"
+              ariaLabel={`${roleLabel(role)}: ${language.modelProfiles.bindingModeColumn}`}
+              disabled={applying || applyQueued}
+              value={binding.mode}
+              onchange={(event) => setBindingMode(role, event.currentTarget.value as BindingMode)}>
+              <OptionInput value="profile">{language.modelProfiles.bindingModes.profile}</OptionInput>
+              {#if inheritedSource}
+                <OptionInput value="inherit">{language.modelProfiles.bindingModes.inherit}</OptionInput>
+              {/if}
+              <OptionInput value="legacy">{language.modelProfiles.bindingModes.legacy}</OptionInput>
+            </SelectInput>
+          </div>
+          {#if binding.mode === 'profile'}
+            <div class="flex flex-1 basis-full sm:basis-0">
               <SelectInput
                 size="sm"
-                ariaLabel={`${roleLabel(role)}: ${language.modelProfiles.bindingModeColumn}`}
+                className="w-full"
+                ariaLabel={`${roleLabel(role)}: ${language.modelProfiles.effectiveProfileColumn}`}
                 disabled={applying || applyQueued}
-                value={binding.mode}
-                onchange={(event) => setBindingMode(role, event.currentTarget.value as BindingMode)}>
-                <OptionInput value="profile">{language.modelProfiles.bindingModes.profile}</OptionInput>
-                {#if inheritedSource}
-                  <OptionInput value="inherit">{language.modelProfiles.bindingModes.inherit}</OptionInput>
+                value={binding.profileId}
+                onchange={(event) => setBindingProfile(role, event.currentTarget.value)}>
+                {#if profiles.length === 0}
+                  <OptionInput value="">{language.modelProfiles.noProfiles}</OptionInput>
                 {/if}
-                <OptionInput value="legacy">{language.modelProfiles.bindingModes.legacy}</OptionInput>
+                {#each profileOptionsForBinding(binding) as profile (profile.id)}
+                  <OptionInput value={profile.id}>{profile.name}</OptionInput>
+                {/each}
               </SelectInput>
-              {#if binding.mode === 'profile'}
-                <SelectInput
-                  size="sm"
-                  className="mt-2 w-full"
-                  ariaLabel={`${roleLabel(role)}: ${language.modelProfiles.effectiveProfileColumn}`}
-                  disabled={applying || applyQueued}
-                  value={binding.profileId}
-                  onchange={(event) => setBindingProfile(role, event.currentTarget.value)}>
-                  {#if profiles.length === 0}
-                    <OptionInput value="">{language.modelProfiles.noProfiles}</OptionInput>
-                  {/if}
-                  {#each profileOptionsForBinding(binding) as profile (profile.id)}
-                    <OptionInput value={profile.id}>{profile.name}</OptionInput>
-                  {/each}
-                </SelectInput>
-              {/if}
-            </td>
-            <td class="px-3 py-3 text-textcolor2">{inheritedSourceLabel(role)}</td>
-            <td class="px-3 py-3">
-              <span class="block">{effectiveProfileName(role)}</span>
-              <span class="block text-xs text-textcolor2">{uiState.resolvedProfiles[role].profileId}</span>
-            </td>
-            <td class="px-3 py-3">{providerModelSummary(role)}</td>
-            <td class="px-3 py-3">
-              <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs">
-                {statusLabel(role)}
-              </span>
-            </td>
-            <td class="px-3 py-3 text-textcolor2">{fallbackCount(role)}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+            </div>
+          {/if}
+        </div>
+        <span class="break-all text-xs text-textcolor2">
+          {effectiveProfileName(role)} ({uiState.resolvedProfiles[role].profileId}) · {providerModelSummary(role)}
+          {#if binding.mode === 'inherit'}
+            · {inheritedSourceLabel(role)}{/if}
+        </span>
+      </article>
+    {/each}
   </div>
 </section>

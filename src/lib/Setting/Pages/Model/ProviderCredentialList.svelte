@@ -318,60 +318,47 @@
       {language.modelProfiles.noCredentials}
     </div>
   {:else}
-    <div class="overflow-x-auto rounded-md border border-darkborderc">
-      <table class="w-full min-w-[36rem] text-sm">
-        <thead class="bg-darkbg text-left text-xs uppercase text-textcolor2">
-          <tr>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.credentialName}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.credentialType}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.usedByColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.actionsColumn}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each credentials as credential (credential.id)}
-            {@const references = referencingProfiles(credential.id)}
-            <tr class="border-t border-darkborderc align-top">
-              <td class="px-3 py-3">
-                <span class="block font-medium">{credential.name}</span>
-                <span class="block text-xs text-textcolor2">{credential.id}</span>
-              </td>
-              <td class="px-3 py-3">
-                {credential.type === 'apiKey'
-                  ? language.modelProfiles.apiKeyCredentialType
-                  : language.modelProfiles.vertexCredentialType}
-              </td>
-              <td class="px-3 py-3 text-textcolor2">
-                {references.length === 0
-                  ? language.modelProfiles.notUsedByProfiles
-                  : references.map((profile) => profile.name).join(', ')}
-              </td>
-              <td class="px-3 py-3">
-                <div class="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    disabled={busy || mutationPending}
-                    onclick={() => openEdit(credential)}>
-                    <span class="inline-flex items-center gap-1"
-                      ><PencilIcon size={14} />{language.modelProfiles.edit}</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="danger"
-                    disabled={busy || mutationPending || references.length > 0}
-                    onclick={() => deleteCredential(credential)}>
-                    <span
-                      class="inline-flex items-center gap-1"
-                      title={references.length > 0 ? language.modelProfiles.credentialInUseShort : ''}
-                      ><TrashIcon size={14} />{language.modelProfiles.delete}</span>
-                  </Button>
-                </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+    <div class="flex flex-col gap-2">
+      {#each credentials as credential (credential.id)}
+        {@const references = referencingProfiles(credential.id)}
+        <article class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 text-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-medium">{credential.name}</span>
+            <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs text-textcolor2">
+              {credential.type === 'apiKey'
+                ? language.modelProfiles.apiKeyCredentialType
+                : language.modelProfiles.vertexCredentialType}
+            </span>
+            <div class="ml-auto flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                styled="outlined"
+                disabled={busy || mutationPending}
+                onclick={() => openEdit(credential)}>
+                <span class="inline-flex items-center gap-1"
+                  ><PencilIcon size={14} />{language.modelProfiles.edit}</span>
+              </Button>
+              <Button
+                size="sm"
+                styled="danger"
+                disabled={busy || mutationPending || references.length > 0}
+                onclick={() => deleteCredential(credential)}>
+                <span
+                  class="inline-flex items-center gap-1"
+                  title={references.length > 0 ? language.modelProfiles.credentialInUseShort : ''}
+                  ><TrashIcon size={14} />{language.modelProfiles.delete}</span>
+              </Button>
+            </div>
+          </div>
+          <span class="break-all text-xs text-textcolor2">{credential.id}</span>
+          <span class="break-all text-xs text-textcolor2">
+            {language.modelProfiles.usedByColumn}:
+            {references.length === 0
+              ? language.modelProfiles.notUsedByProfiles
+              : references.map((profile) => profile.name).join(', ')}
+          </span>
+        </article>
+      {/each}
     </div>
   {/if}
 </section>

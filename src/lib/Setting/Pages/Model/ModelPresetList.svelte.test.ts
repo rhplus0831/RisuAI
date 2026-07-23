@@ -83,6 +83,12 @@ function buttonWithText(text: string, index = 0): HTMLButtonElement {
   return button
 }
 
+function presetNameInput(index = 0): HTMLInputElement {
+  const input = target.querySelectorAll<HTMLInputElement>('input[aria-label]')[index]
+  if (!input) throw new Error(`Preset name input not found at index ${index}`)
+  return input
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -132,8 +138,10 @@ describe('ModelPresetList', () => {
     component = mount(ModelPresetList, { target, props: { embedded: true, afterApply } })
     await tick()
 
-    const nameInput = target.querySelector('tbody input')
-    if (!(nameInput instanceof HTMLInputElement)) throw new Error('Preset name input not found')
+    expect(target.querySelector('table')).toBeNull()
+    expect(target.querySelectorAll('[role="button"]')).toHaveLength(2)
+
+    const nameInput = presetNameInput()
 
     const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
     nameInput.dispatchEvent(event)
@@ -150,8 +158,7 @@ describe('ModelPresetList', () => {
       'rename',
       () => {
         mutationSpies.updateModelPreset.mockResolvedValueOnce({ status: 'failed' })
-        const input = target.querySelector<HTMLInputElement>('tbody input')
-        if (!input) throw new Error('Preset name input not found')
+        const input = presetNameInput()
         input.value = 'Rejected rename'
         input.dispatchEvent(new Event('change', { bubbles: true }))
       },

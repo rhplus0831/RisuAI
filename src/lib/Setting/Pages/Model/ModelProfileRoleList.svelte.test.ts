@@ -26,6 +26,7 @@ import ModelProfileRoleList from './ModelProfileRoleList.svelte'
 import { language } from 'src/lang'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
+import { MODEL_ROLES } from 'src/ts/model/modelRoles'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -69,9 +70,24 @@ function setSelectValue(select: HTMLSelectElement, value: string): void {
 }
 
 function roleModeSelect(roleIndex: number): HTMLSelectElement {
-  const row = target.querySelectorAll('tbody tr')[roleIndex]
-  const select = row?.querySelector('select')
+  const role = MODEL_ROLES[roleIndex]
+  const ariaLabel = role ? `${language.modelRoles.roles[role]}: ${language.modelProfiles.bindingModeColumn}` : undefined
+  const select = Array.from(target.querySelectorAll('select')).find(
+    (candidate) => candidate.getAttribute('aria-label') === ariaLabel,
+  )
   if (!(select instanceof HTMLSelectElement)) throw new Error(`Role mode select not found at index ${roleIndex}`)
+  return select
+}
+
+function roleProfileSelect(roleIndex: number): HTMLSelectElement {
+  const role = MODEL_ROLES[roleIndex]
+  const ariaLabel = role
+    ? `${language.modelRoles.roles[role]}: ${language.modelProfiles.effectiveProfileColumn}`
+    : undefined
+  const select = Array.from(target.querySelectorAll('select')).find(
+    (candidate) => candidate.getAttribute('aria-label') === ariaLabel,
+  )
+  if (!(select instanceof HTMLSelectElement)) throw new Error(`Role profile select not found at index ${roleIndex}`)
   return select
 }
 
@@ -128,6 +144,9 @@ describe('ModelProfileRoleList', () => {
     component = mount(ModelProfileRoleList, { target })
     await tick()
 
+    expect(target.querySelector('table')).toBeNull()
+    expect(target.querySelectorAll('article')).toHaveLength(MODEL_ROLES.length)
+
     const modeSelects = Array.from(target.querySelectorAll<HTMLSelectElement>('select'))
     const modeNames = modeSelects.map((select) => select.getAttribute('aria-label'))
 
@@ -138,7 +157,7 @@ describe('ModelProfileRoleList', () => {
     setSelectValue(modeSelects[0], 'profile')
     await tick()
 
-    const chatMainSelects = Array.from(target.querySelectorAll<HTMLSelectElement>('tbody tr:first-child select'))
+    const chatMainSelects = [roleModeSelect(0), roleProfileSelect(0)]
     expect(chatMainSelects.map((select) => select.getAttribute('aria-label'))).toEqual([
       `${language.modelRoles.roles.chatMain}: ${language.modelProfiles.bindingModeColumn}`,
       `${language.modelRoles.roles.chatMain}: ${language.modelProfiles.effectiveProfileColumn}`,
@@ -338,9 +357,7 @@ describe('ModelProfileRoleList', () => {
     })
     await flushAsync()
 
-    const profileSelect = target.querySelector('tbody tr:first-child select:nth-of-type(2)')
-    expect(profileSelect).toBeInstanceOf(HTMLSelectElement)
-    expect((profileSelect as HTMLSelectElement).value).toBe('profile-1')
+    expect(roleProfileSelect(0).value).toBe('profile-1')
 
     buttonByText(language.modelProfiles.apply).click()
     await flushAsync()

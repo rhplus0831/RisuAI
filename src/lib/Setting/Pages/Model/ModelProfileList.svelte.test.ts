@@ -131,6 +131,9 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
+    expect(target.querySelector('table')).toBeNull()
+    expect(target.querySelectorAll('article')).toHaveLength(1)
+
     const editTrigger = buttonsByText(language.modelProfiles.edit).at(-1)
     if (!editTrigger) throw new Error('Profile edit button not found')
     editTrigger.click()

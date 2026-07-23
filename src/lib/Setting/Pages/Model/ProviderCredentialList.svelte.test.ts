@@ -102,6 +102,9 @@ describe('ProviderCredentialList', () => {
     component = mount(ProviderCredentialList, { target })
     await tick()
 
+    expect(target.querySelector('table')).toBeNull()
+    expect(target.querySelectorAll('article')).toHaveLength(1)
+
     const deleteButton = button(language.modelProfiles.delete)
     expect(deleteButton.disabled).toBe(true)
 
