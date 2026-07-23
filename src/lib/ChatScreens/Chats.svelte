@@ -119,6 +119,12 @@
     return rows
   })
 
+  // The row that reveals the dynamic (swipe) icons. Comment rows — e.g. the
+  // branch-provenance marker appended by branching — can occupy the newest
+  // slot but render no reroll controls, so anchoring on the newest row
+  // unconditionally would leave the chat with no visible swipe controls.
+  const dynaIconRowKey = $derived(chatRows.find((row) => !row.message.isComment)?.key ?? null)
+
   function checkIfAtBottom() {
     if (!chatBody || !chatBody.parentElement) return true
     const sc = chatBody.parentElement
@@ -199,7 +205,7 @@
 
 <div class="chat-screen-content-width flex flex-col-reverse" bind:this={chatBody}>
   {#each chatRows as row (row.key)}
-    <div class="chat-message-container">
+    <div class="chat-message-container" data-risu-dyna-icons={row.key === dynaIconRowKey ? 'true' : undefined}>
       <Chat
         message={row.message.data}
         translation={row.message.translation ?? null}

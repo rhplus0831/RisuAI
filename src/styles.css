@@ -639,7 +639,10 @@ html.risu-reduced-motion .risu-ongoing-pulse {
   display: none;
 }
 
-.chat-message-container:first-of-type .dyna-icon {
+/* Anchored by Chats.svelte on the newest non-comment row, not :first-of-type:
+   a branch-provenance comment row can sit newest but renders no swipe
+   controls, which would leave the chat without any visible reroll button. */
+.chat-message-container[data-risu-dyna-icons] .dyna-icon {
   display: block;
 }
 

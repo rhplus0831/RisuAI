@@ -300,6 +300,7 @@ import {
 } from 'src/ts/activeChatGenerationSettings'
 import { translate } from '../../ts/translator/translator'
 import { runInputHook } from 'src/ts/process/inputHooks'
+import { createBranchComment } from './branchComment'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -772,6 +773,53 @@ describe('DefaultChatScreen floating action accessibility', () => {
     pluginButton.click()
 
     expect(callback).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DefaultChatScreen dynamic icon anchor', () => {
+  it('anchors the swipe controls on the newest row by default', async () => {
+    seedDatabase([3])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('.chat-message-container')).toBeTruthy()
+    })
+
+    const containers = [...target.querySelectorAll<HTMLElement>('.chat-message-container')]
+    expect(containers.length).toBeGreaterThan(1)
+    expect(containers[0].hasAttribute('data-risu-dyna-icons')).toBe(true)
+    expect(containers.slice(1).some((container) => container.hasAttribute('data-risu-dyna-icons'))).toBe(false)
+  })
+
+  it('anchors the swipe controls on the newest non-comment row when a branch marker is newest', async () => {
+    seedDatabase([3])
+    // The marker row branchFromCurrentMessage appends to a freshly branched chat.
+    getResourceDatabase().characters[0].chats[0].message.push({
+      chatId: 'branch-marker',
+      role: 'char',
+      data: createBranchComment({
+        sourceChatId: 'chat-0',
+        sourceChatName: 'Chat 0',
+        sourceMessageId: 'message-1',
+      }),
+      isComment: true,
+      disabled: true,
+    })
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelectorAll('.chat-message-container').length).toBeGreaterThan(1)
+    })
+
+    const containers = [...target.querySelectorAll<HTMLElement>('.chat-message-container')]
+    // Chat.svelte is stubbed here; the anchor attribute computed by
+    // Chats.svelte is the contract under test (the stylesheet reveals the
+    // swipe controls inside the anchored container).
+    const markerRow = containers[0]
+    const newestRealRow = containers[1]
+    expect(markerRow.hasAttribute('data-risu-dyna-icons')).toBe(false)
+    expect(newestRealRow.hasAttribute('data-risu-dyna-icons')).toBe(true)
+    expect(containers.slice(2).some((container) => container.hasAttribute('data-risu-dyna-icons'))).toBe(false)
   })
 })
 
