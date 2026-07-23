@@ -466,6 +466,7 @@
             draggedPreset = { kind: presetKind, id: presetId }
             e.dataTransfer?.setData('text', 'preset')
             e.dataTransfer?.setData('presetId', presetId)
+            e.dataTransfer?.setData('application/x-risu-internal', 'true')
           }}
           ondragend={() => {
             isDragging = false
@@ -476,6 +477,14 @@
             e.preventDefault()
             const rect = e.currentTarget.getBoundingClientRect()
             dragOverIndex = e.clientY < rect.top + rect.height / 2 ? i : i + 1
+          }}
+          ondrop={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const dropIndex = e.clientY < rect.top + rect.height / 2 ? i : i + 1
+            const targetPresetId =
+              dropIndex >= modernPresets.length ? undefined : nonEmptyId(modernPresets[dropIndex]?.id)
+            handlePresetDrop(targetPresetId, e)
+            dragOverIndex = -1
           }}>
           {#if editMode}
             <div class="min-w-0 grow">

@@ -404,9 +404,15 @@ function createPresetDataTransfer(): DataTransfer {
   } as unknown as DataTransfer
 }
 
-function dispatchPresetDragEvent(element: Element, type: 'dragstart' | 'drop', dataTransfer: DataTransfer): Event {
+function dispatchPresetDragEvent(
+  element: Element,
+  type: 'dragstart' | 'dragover' | 'drop',
+  dataTransfer: DataTransfer,
+  clientY = 0,
+): Event {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+  Object.defineProperty(event, 'clientY', { value: clientY })
   element.dispatchEvent(event)
   return event
 }
@@ -857,6 +863,7 @@ describe('generation settings picker mode', () => {
     const dataTransfer = createPresetDataTransfer()
     dispatchPresetDragEvent(pickerRow('prompt', 'preset-b'), 'dragstart', dataTransfer)
     expect(dataTransfer.setData).toHaveBeenCalledWith('presetId', 'preset-b')
+    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-risu-internal', 'true')
 
     const [presetA, presetB] = getDatabase().promptPresets
     getDatabase().promptPresets = [presetB, presetC, presetA]
@@ -865,6 +872,72 @@ describe('generation settings picker mode', () => {
     const dropTargets = pickerRoot('prompt', 'global').querySelectorAll<HTMLElement>('[role="listitem"]')
     dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
 
+    expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
+    expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(0, 3)
+  })
+
+  it('drops on the top half of a preset row before that row', () => {
+    const presetC = {
+      ...getDatabase().promptPresets[0],
+      id: 'preset-c',
+      name: 'Preset C',
+    }
+    getDatabase().promptPresets.push(presetC)
+    mountPresetPicker('global')
+
+    const dataTransfer = createPresetDataTransfer()
+    dispatchPresetDragEvent(pickerRow('prompt', 'preset-c'), 'dragstart', dataTransfer)
+
+    const targetRow = pickerRow('prompt', 'preset-a')
+    vi.spyOn(targetRow, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      bottom: 140,
+      height: 40,
+      left: 0,
+      right: 100,
+      width: 100,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    })
+    const dragOver = dispatchPresetDragEvent(targetRow, 'dragover', dataTransfer, 110)
+    const drop = dispatchPresetDragEvent(targetRow, 'drop', dataTransfer, 110)
+
+    expect(dragOver.defaultPrevented).toBe(true)
+    expect(drop.defaultPrevented).toBe(true)
+    expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
+    expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(2, 0)
+  })
+
+  it('drops on the bottom half of the last preset row at the end of the list', () => {
+    const presetC = {
+      ...getDatabase().promptPresets[0],
+      id: 'preset-c',
+      name: 'Preset C',
+    }
+    getDatabase().promptPresets.push(presetC)
+    mountPresetPicker('global')
+
+    const dataTransfer = createPresetDataTransfer()
+    dispatchPresetDragEvent(pickerRow('prompt', 'preset-a'), 'dragstart', dataTransfer)
+
+    const targetRow = pickerRow('prompt', 'preset-c')
+    vi.spyOn(targetRow, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      bottom: 140,
+      height: 40,
+      left: 0,
+      right: 100,
+      width: 100,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    })
+    const dragOver = dispatchPresetDragEvent(targetRow, 'dragover', dataTransfer, 130)
+    const drop = dispatchPresetDragEvent(targetRow, 'drop', dataTransfer, 130)
+
+    expect(dragOver.defaultPrevented).toBe(true)
+    expect(drop.defaultPrevented).toBe(true)
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(0, 3)
   })
