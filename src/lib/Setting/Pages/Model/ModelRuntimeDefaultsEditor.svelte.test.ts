@@ -27,8 +27,9 @@ vi.mock('src/ts/process/modules', () => ({
 
 import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
 import { language } from 'src/lang'
+import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase, setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -41,6 +42,14 @@ function buttonByText(label: string): HTMLButtonElement {
   )
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`)
   return button
+}
+
+function runtimeNumberInput(label: string): HTMLInputElement {
+  const input = Array.from(target.querySelectorAll<HTMLLabelElement>('label'))
+    .find((candidate) => candidate.querySelector('span')?.textContent === label)
+    ?.querySelector<HTMLInputElement>('input[type="number"]')
+  if (!input) throw new Error(`Runtime number input not found: ${label}`)
+  return input
 }
 
 async function flushAsync(): Promise<void> {
@@ -69,7 +78,7 @@ beforeEach(() => {
   setDatabaseLite({
     modelRuntimeDefaults: {
       maxContext: 4096,
-      temperature: 0.7,
+      temperature: 70,
     },
   } as any)
   commandSpies.updateModelRuntimeDefaultsDurably.mockReset()
@@ -103,6 +112,76 @@ describe('ModelRuntimeDefaultsEditor', () => {
     await flushAsync()
 
     expect(commandSpies.updateModelRuntimeDefaultsDurably).toHaveBeenCalledWith({})
+  })
+
+  it('stores decimal temperature entry on the x100 scale and resolves it back to the effective decimal', async () => {
+    getDatabase().modelRuntimeDefaults = {}
+    component = mount(ModelRuntimeDefaultsEditor, { target })
+
+    buttonByText(language.modelProfiles.edit).click()
+    await tick()
+
+    const temperature = runtimeNumberInput(language.modelProfiles.runtimeFields.temperature)
+    expect(temperature.value).toBe('')
+    expect(temperature.min).toBe('0')
+    expect(temperature.max).toBe('2')
+    expect(temperature.step).toBe('0.01')
+
+    temperature.value = '0.7'
+    temperature.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    buttonByText(language.modelProfiles.save).click()
+    await flushAsync()
+
+    expect(commandSpies.updateModelRuntimeDefaultsDurably).toHaveBeenCalledWith({ temperature: 70 })
+
+    const submittedDefaults = commandSpies.updateModelRuntimeDefaultsDurably.mock.calls[0][0]
+    const database = {
+      ...getDatabase(),
+      modelProfiles: [
+        {
+          id: 'profile-runtime-defaults',
+          name: 'Runtime Defaults',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+        },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'profile-runtime-defaults' },
+      },
+      modelRuntimeDefaults: submittedDefaults,
+    } as Database
+
+    expect(resolveModelProfile({ database, role: 'chatMain' }).runtimeOptions.temperature).toBe(0.7)
+  })
+
+  it('clamps decimal-facing scaled samplers while preserving the disabled sentinel', async () => {
+    getDatabase().modelRuntimeDefaults = { presencePenalty: -1000 }
+    component = mount(ModelRuntimeDefaultsEditor, { target })
+
+    buttonByText(language.modelProfiles.edit).click()
+    await tick()
+
+    const temperature = runtimeNumberInput(language.modelProfiles.runtimeFields.temperature)
+    const frequencyPenalty = runtimeNumberInput(language.modelProfiles.runtimeFields.frequencyPenalty)
+    const presencePenalty = runtimeNumberInput(language.modelProfiles.runtimeFields.presencePenalty)
+    expect(presencePenalty.value).toBe('-1000')
+
+    temperature.value = '2.5'
+    temperature.dispatchEvent(new Event('input', { bubbles: true }))
+    frequencyPenalty.value = '-0.25'
+    frequencyPenalty.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    buttonByText(language.modelProfiles.save).click()
+    await flushAsync()
+
+    expect(commandSpies.updateModelRuntimeDefaultsDurably).toHaveBeenCalledWith({
+      temperature: 200,
+      frequencyPenalty: 0,
+      presencePenalty: -1000,
+    })
   })
 
   it('locks the runtime form until a deferred save failure settles', async () => {
@@ -179,7 +258,7 @@ describe('ModelRuntimeDefaultsEditor', () => {
       modelRuntimeDefaults: {
         maxContext: 4096,
         maxResponse: 2048,
-        temperature: 1.2,
+        temperature: 120,
       },
     } as any)
     await tick()
@@ -190,7 +269,7 @@ describe('ModelRuntimeDefaultsEditor', () => {
     expect(commandSpies.updateModelRuntimeDefaultsDurably).toHaveBeenCalledWith({
       maxContext: 8192,
       maxResponse: 2048,
-      temperature: 1.2,
+      temperature: 120,
     })
   })
 

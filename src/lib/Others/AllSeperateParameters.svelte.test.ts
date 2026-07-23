@@ -96,4 +96,42 @@ describe('separate parameter accessible names', () => {
     expect(new Set(checkboxNames)).toHaveProperty('size', checkboxNames.length)
     expect(sliderNames.some((name) => checkboxNames.includes(name))).toBe(false)
   })
+
+  it('displays x100-scaled penalties as decimals and changes them in whole stored units', async () => {
+    const value = {
+      temperature: 100,
+      top_k: 40,
+      repetition_penalty: 1,
+      min_p: 0.1,
+      top_a: 0.1,
+      top_p: 0.9,
+      frequency_penalty: 70,
+      presence_penalty: 80,
+      thinking_type: 'budget',
+      thinking_tokens: 4000,
+      verbosity: 1,
+    } as any
+    component = mount(AllSeperateParameters, {
+      target,
+      props: {
+        paramKey: 'test-model',
+        value,
+      },
+    })
+    await tick()
+
+    const frequencyPenalty = target.querySelector<HTMLElement>(
+      `[role="slider"][aria-label="${language.frequencyPenalty}"]`,
+    )
+    const presencePenalty = target.querySelector<HTMLElement>(
+      `[role="slider"][aria-label="${language.modelProfiles.runtimeFields.presencePenalty}"]`,
+    )
+    expect(frequencyPenalty?.getAttribute('aria-valuetext')).toBe('0.70')
+    expect(presencePenalty?.getAttribute('aria-valuetext')).toBe('0.80')
+
+    frequencyPenalty?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await tick()
+
+    expect(value.frequency_penalty).toBe(71)
+  })
 })

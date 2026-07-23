@@ -35,8 +35,9 @@ vi.mock('src/ts/process/modules', () => ({
 
 import ModelProfileList from './ModelProfileList.svelte'
 import { language } from 'src/lang'
+import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase, setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -54,6 +55,14 @@ function buttonsByText(label: string): HTMLButtonElement[] {
     (candidate): candidate is HTMLButtonElement =>
       candidate instanceof HTMLButtonElement && !!candidate.textContent?.includes(label),
   )
+}
+
+function runtimeNumberInput(label: string): HTMLInputElement {
+  const input = Array.from(target.querySelectorAll<HTMLLabelElement>('label'))
+    .find((candidate) => candidate.querySelector('span')?.textContent === label)
+    ?.querySelector<HTMLInputElement>('input[type="number"]')
+  if (!input) throw new Error(`Runtime number input not found: ${label}`)
+  return input
 }
 
 async function flushAsync(): Promise<void> {
@@ -156,6 +165,48 @@ describe('ModelProfileList', () => {
     await flushAsync()
 
     expect(commandSpies.updateModelProfileDurably).not.toHaveBeenCalled()
+  })
+
+  it('persists decimal profile temperature on the x100 scale and resolves it as the entered decimal', async () => {
+    getDatabase().modelProfiles = [
+      {
+        id: 'profile-1',
+        name: 'Profile 1',
+        providerId: 'debug-echo',
+        modelId: 'debug-echo',
+        runtimeOptions: { temperature: 50 },
+      },
+    ]
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    if (!profileEditButton) throw new Error('Profile edit button not found')
+    profileEditButton.click()
+    await tick()
+    buttonByText(language.modelProfiles.runtimeOverridesTitle).click()
+    await tick()
+
+    const temperature = runtimeNumberInput(language.modelProfiles.runtimeFields.temperature)
+    expect(temperature.value).toBe('0.5')
+    temperature.value = '0.7'
+    temperature.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    buttonByText(language.modelProfiles.save).click()
+    await flushAsync()
+
+    const submitted = commandSpies.updateModelProfileDurably.mock.calls[0][1]
+    expect(submitted.runtimeOptions?.temperature).toBe(70)
+
+    const database = {
+      ...getDatabase(),
+      modelProfiles: [submitted],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'profile-1' },
+      },
+    } as Database
+    expect(resolveModelProfile({ database, role: 'chatMain' }).runtimeOptions.temperature).toBe(0.7)
   })
 
   it.each(['custom-api', 'anthropic'] as const)(

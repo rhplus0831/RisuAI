@@ -41,4 +41,13 @@ describe('sparseAgentPresetStepPatch', () => {
       ),
     ).toEqual({})
   })
+
+  it('keeps a changed x100-scaled temperature as its stored integer value', () => {
+    expect(
+      sparseAgentPresetStepPatch(
+        { runtime: { timeoutMs: 30_000, temperature: 100 } },
+        { runtime: { timeoutMs: 30_000, temperature: 70 } },
+      ),
+    ).toEqual({ runtime: { timeoutMs: 30_000, temperature: 70 } })
+  })
 })

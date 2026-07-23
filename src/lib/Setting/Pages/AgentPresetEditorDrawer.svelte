@@ -62,6 +62,7 @@
   const DEFAULT_STEP_TIMEOUT_MS = 30_000
   const DEFAULT_STEP_MAX_INPUT_CHARS = 24_000
   const DEFAULT_STEP_MAX_OUTPUT_CHARS = 1_200
+  const AGENT_PRESET_RUNTIME_TEMPERATURE_SCALE = 100
   const DEFAULT_STEP_TEMPERATURE = 100
   const AGENT_PRESET_METADATA_FIELDS: readonly AgentPresetMetadataField[] = [
     'name',
@@ -112,7 +113,8 @@
   let draftStepTimeoutMs = $state(DEFAULT_STEP_TIMEOUT_MS)
   let draftStepMaxInputChars = $state(DEFAULT_STEP_MAX_INPUT_CHARS)
   let draftStepMaxOutputChars = $state(DEFAULT_STEP_MAX_OUTPUT_CHARS)
-  let draftStepTemperature = $state(DEFAULT_STEP_TEMPERATURE)
+  let draftStepTemperature = $state(decimalStepTemperature(DEFAULT_STEP_TEMPERATURE))
+  let draftStepTemperatureStoredBaseline = $state<number | undefined>(DEFAULT_STEP_TEMPERATURE)
   let draftStepInputScopes = $state<AgentPresetStepInputScope[]>([])
 
   let drawerTitle = $derived(mode === 'create' ? language.agentPresets.createPreset : language.agentPresets.editPreset)
@@ -232,7 +234,21 @@
   function clampedTemperature(): number {
     const numeric = Number(draftStepTemperature)
     if (!Number.isFinite(numeric)) return DEFAULT_STEP_TEMPERATURE
-    return Math.max(AGENT_PRESET_RUNTIME_TEMPERATURE_MIN, Math.min(AGENT_PRESET_RUNTIME_TEMPERATURE_MAX, numeric))
+    if (
+      typeof draftStepTemperatureStoredBaseline === 'number' &&
+      Number.isFinite(draftStepTemperatureStoredBaseline) &&
+      numeric === decimalStepTemperature(draftStepTemperatureStoredBaseline)
+    ) {
+      return draftStepTemperatureStoredBaseline
+    }
+    return Math.max(
+      AGENT_PRESET_RUNTIME_TEMPERATURE_MIN,
+      Math.min(AGENT_PRESET_RUNTIME_TEMPERATURE_MAX, Math.round(numeric * AGENT_PRESET_RUNTIME_TEMPERATURE_SCALE)),
+    )
+  }
+
+  function decimalStepTemperature(storedTemperature: number): number {
+    return Number((storedTemperature / AGENT_PRESET_RUNTIME_TEMPERATURE_SCALE).toFixed(12))
   }
 
   function clampInteger(value: unknown, min: number, max: number): number {
@@ -394,7 +410,9 @@
     draftStepTimeoutMs = step.runtime?.timeoutMs ?? DEFAULT_STEP_TIMEOUT_MS
     draftStepMaxInputChars = step.runtime?.maxInputChars ?? DEFAULT_STEP_MAX_INPUT_CHARS
     draftStepMaxOutputChars = step.runtime?.maxOutputChars ?? DEFAULT_STEP_MAX_OUTPUT_CHARS
-    draftStepTemperature = step.runtime?.temperature ?? DEFAULT_STEP_TEMPERATURE
+    const storedTemperature = step.runtime?.temperature ?? DEFAULT_STEP_TEMPERATURE
+    draftStepTemperatureStoredBaseline = storedTemperature
+    draftStepTemperature = decimalStepTemperature(storedTemperature)
     draftStepInputScopes = Array.isArray(step.inputScopes) ? [...step.inputScopes] : []
     normalizeStepDraftForPhase()
   }
@@ -991,9 +1009,9 @@
                 <span class="text-sm font-medium">{language.agentPresets.temperatureLabel}</span>
                 <NumberInput
                   bind:value={draftStepTemperature}
-                  min={AGENT_PRESET_RUNTIME_TEMPERATURE_MIN}
-                  max={AGENT_PRESET_RUNTIME_TEMPERATURE_MAX}
-                  step={1}
+                  min={AGENT_PRESET_RUNTIME_TEMPERATURE_MIN / AGENT_PRESET_RUNTIME_TEMPERATURE_SCALE}
+                  max={AGENT_PRESET_RUNTIME_TEMPERATURE_MAX / AGENT_PRESET_RUNTIME_TEMPERATURE_SCALE}
+                  step={0.01}
                   fullwidth />
               </label>
             </div>

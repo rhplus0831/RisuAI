@@ -903,6 +903,12 @@ describe('AgentPresetSettings', () => {
     target.querySelector<HTMLButtonElement>('[data-risu-agent-preset-step-editor] button')?.click()
     await tick()
 
+    const temperature = stepNumberInput(language.agentPresets.temperatureLabel)
+    expect(temperature.value).toBe('1')
+    expect(temperature.min).toBe('0')
+    expect(temperature.max).toBe('2')
+    expect(temperature.step).toBe('0.01')
+
     button('[data-risu-agent-preset-step-save]').click()
     await flushAsyncWork()
 
@@ -926,6 +932,94 @@ describe('AgentPresetSettings', () => {
       failurePolicy: { mode: 'required' },
     })
     expect(agentPresetSpies.updateAgentPresetStep).not.toHaveBeenCalled()
+  })
+
+  it('shows stored step temperature as a decimal and scales decimal edits in the patch payload', async () => {
+    seedDb([
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        steps: [
+          baseStep({
+            runtime: {
+              timeoutMs: 120_000,
+              maxInputChars: 100_000,
+              maxOutputChars: 20_000,
+              temperature: 150,
+            },
+          }),
+        ],
+      }),
+    ])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
+    const temperature = stepNumberInput(language.agentPresets.temperatureLabel)
+    expect(temperature.value).toBe('1.5')
+    temperature.value = '0.7'
+    temperature.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_a', {
+      runtime: {
+        timeoutMs: 120_000,
+        maxInputChars: 100_000,
+        maxOutputChars: 20_000,
+        temperature: 70,
+      },
+    })
+  })
+
+  it('does not normalize an existing fractional stored temperature when another runtime field changes', async () => {
+    seedDb([
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        steps: [
+          baseStep({
+            runtime: {
+              timeoutMs: 120_000,
+              maxInputChars: 100_000,
+              maxOutputChars: 20_000,
+              temperature: 0.7,
+            },
+          }),
+        ],
+      }),
+    ])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
+    expect(stepNumberInput(language.agentPresets.temperatureLabel).value).toBe('0.007')
+    const timeout = stepNumberInput(language.agentPresets.timeoutMsLabel)
+    timeout.value = '90000'
+    timeout.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_a', {
+      runtime: {
+        timeoutMs: 90_000,
+        maxInputChars: 100_000,
+        maxOutputChars: 20_000,
+        temperature: 0.7,
+      },
+    })
   })
 
   it('keeps dirty metadata in the locked drawer until a queued step is projected', async () => {

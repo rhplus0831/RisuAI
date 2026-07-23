@@ -151,7 +151,8 @@
   min={0}
   max={200}
   marginBottom
-  step={0.01}
+  step={1}
+  multiple={0.01}
   fixed={2}
   bind:value={value.frequency_penalty}
   disableable
@@ -161,7 +162,8 @@
   min={0}
   max={200}
   marginBottom
-  step={0.01}
+  step={1}
+  multiple={0.01}
   fixed={2}
   bind:value={value.presence_penalty}
   disableable

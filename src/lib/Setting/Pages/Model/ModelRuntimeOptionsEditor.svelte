@@ -13,6 +13,9 @@
     key: RuntimeKey
     label: string
     step?: string
+    min?: number
+    max?: number
+    storageScale?: number
   }
 
   interface RuntimeStringField {
@@ -35,14 +38,35 @@
   const numberFields: RuntimeNumberField[] = [
     { key: 'maxContext', label: language.modelProfiles.runtimeFields.maxContext, step: '1' },
     { key: 'maxResponse', label: language.modelProfiles.runtimeFields.maxResponse, step: '1' },
-    { key: 'temperature', label: language.modelProfiles.runtimeFields.temperature, step: '0.01' },
+    {
+      key: 'temperature',
+      label: language.modelProfiles.runtimeFields.temperature,
+      step: '0.01',
+      min: 0,
+      max: 2,
+      storageScale: 100,
+    },
     { key: 'topP', label: language.modelProfiles.runtimeFields.topP, step: '0.01' },
     { key: 'topK', label: language.modelProfiles.runtimeFields.topK, step: '1' },
     { key: 'minP', label: language.modelProfiles.runtimeFields.minP, step: '0.01' },
     { key: 'topA', label: language.modelProfiles.runtimeFields.topA, step: '0.01' },
     { key: 'repetitionPenalty', label: language.modelProfiles.runtimeFields.repetitionPenalty, step: '0.01' },
-    { key: 'frequencyPenalty', label: language.modelProfiles.runtimeFields.frequencyPenalty, step: '0.01' },
-    { key: 'presencePenalty', label: language.modelProfiles.runtimeFields.presencePenalty, step: '0.01' },
+    {
+      key: 'frequencyPenalty',
+      label: language.modelProfiles.runtimeFields.frequencyPenalty,
+      step: '0.01',
+      min: 0,
+      max: 2,
+      storageScale: 100,
+    },
+    {
+      key: 'presencePenalty',
+      label: language.modelProfiles.runtimeFields.presencePenalty,
+      step: '0.01',
+      min: 0,
+      max: 2,
+      storageScale: 100,
+    },
     { key: 'reasoningEffort', label: language.modelProfiles.runtimeFields.reasoningEffort, step: '1' },
     { key: 'thinkingTokens', label: language.modelProfiles.runtimeFields.thinkingTokens, step: '1' },
     { key: 'verbosity', label: language.modelProfiles.runtimeFields.verbosity, step: '1' },
@@ -85,16 +109,26 @@
     commit(next)
   }
 
-  function setNumber(key: RuntimeKey, raw: string): void {
+  function setNumber(field: RuntimeNumberField, raw: string): void {
     const trimmed = raw.trim()
     if (!trimmed) {
-      deleteRuntimeKey(key)
+      deleteRuntimeKey(field.key)
       return
     }
     const numeric = Number(trimmed)
     if (!Number.isFinite(numeric)) return
+    const stored =
+      field.storageScale && numeric !== -1000
+        ? Math.max(
+            (field.min ?? Number.NEGATIVE_INFINITY) * field.storageScale,
+            Math.min(
+              (field.max ?? Number.POSITIVE_INFINITY) * field.storageScale,
+              Math.round(numeric * field.storageScale),
+            ),
+          )
+        : numeric
     const next = asRecord()
-    next[key] = numeric
+    next[field.key] = stored
     commit(next)
   }
 
@@ -119,9 +153,11 @@
     commit(next)
   }
 
-  function numberValue(key: RuntimeKey): string {
-    const item = value?.[key]
-    return typeof item === 'number' && Number.isFinite(item) ? String(item) : ''
+  function numberValue(field: RuntimeNumberField): string {
+    const item = value?.[field.key]
+    if (typeof item !== 'number' || !Number.isFinite(item)) return ''
+    if (!field.storageScale || item === -1000) return String(item)
+    return String(Number((item / field.storageScale).toFixed(12)))
   }
 
   function stringValue(key: RuntimeKey): string {
@@ -184,10 +220,12 @@
             class="w-full rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
             type="number"
             step={field.step}
-            value={numberValue(field.key)}
+            min={field.min}
+            max={field.max}
+            value={numberValue(field)}
             placeholder={language.modelProfiles.runtimeUnset}
             oninput={(event) => {
-              setNumber(field.key, event.currentTarget.value)
+              setNumber(field, event.currentTarget.value)
             }} />
         </label>
       {/each}
