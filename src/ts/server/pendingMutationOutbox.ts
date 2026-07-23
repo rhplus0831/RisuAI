@@ -126,6 +126,13 @@ interface StoredPendingMutation {
   ciphertext: ArrayBuffer
 }
 
+interface StoredPendingMutationOrderCounter {
+  version: 1
+  writerSessionId: string
+  databaseLineage: string
+  lastCommittedOrder: number
+}
+
 interface EncryptedPendingMutationPayload {
   intent: DurableMutationIntent
 }
@@ -272,9 +279,11 @@ let nextSequenceOffset = 0
 let nextProjectionGenerationOrdinal = 0
 let persistenceWarningReported = false
 let pendingMutationScope: PendingMutationScope | null = null
+const pendingMutationStageLockTails = new Map<string, Promise<void>>()
 const liveProjectionGenerations = new Map<string, LivePendingMutationProjectionGeneration>()
 const liveProjectionGenerationStacks = new Map<string, string[]>()
 const pendingMutationDiscardListeners = new Set<PendingMutationDiscardListener>()
+let pendingMutationCommitTransactionHookForTests: ((transaction: IDBTransaction) => void) | null = null
 
 export function pendingMutationSettingsFieldProjectionTarget(field: string): string {
   return `settings-field:${encodeProjectionTargetPart(field)}`
@@ -633,7 +642,6 @@ export function stagePendingMutation(
         mutationId,
         sequence,
         scope,
-        reservePendingMutationOrder(),
         normalizedIntent,
         replacePrevious ? previous : null,
       )
@@ -914,7 +922,6 @@ export async function listPendingMutationPredecessors(
     .filter(
       (record) =>
         record.ownerWriterSessionId === current.ownerWriterSessionId &&
-        record.writerEpoch === current.writerEpoch &&
         record.databaseLineage === current.databaseLineage &&
         record.order < current.order,
     )
@@ -1042,10 +1049,19 @@ export function resetPendingMutationOutboxForTests(): void {
   nextProjectionGenerationOrdinal = 0
   persistenceWarningReported = false
   pendingMutationScope = null
+  pendingMutationStageLockTails.clear()
+  pendingMutationCommitTransactionHookForTests = null
   pendingMutationActivityRefresh += 1
   setPendingMutationOutboxActive(false)
   clearLivePendingMutationProjectionGenerations()
   clearRetainedChatProjections()
+}
+
+/** Abort/fault injection for atomicity tests; invoked synchronously after final writes are queued. */
+export function setPendingMutationCommitTransactionHookForTests(
+  hook: ((transaction: IDBTransaction) => void) | null,
+): void {
+  pendingMutationCommitTransactionHookForTests = hook
 }
 
 async function refreshPendingMutationActivity(): Promise<void> {
@@ -1056,12 +1072,29 @@ async function refreshPendingMutationActivity(): Promise<void> {
   }
 }
 
-async function persistPendingMutation(
+function persistPendingMutation(
   semanticKey: string,
   mutationId: string,
   sequence: number,
   scope: PendingMutationScope,
-  reservedOrder: Promise<number | null>,
+  intent: DurableMutationIntent,
+  replacement: PendingMutationHandle | null,
+): Promise<PendingMutationPersistenceStatus> {
+  // This call synchronously queues the origin-wide lock request. In
+  // particular, do not load IndexedDB or encryption state before requesting it.
+  return withPendingMutationStageLock(scope, () =>
+    persistPendingMutationLocked(semanticKey, mutationId, sequence, scope, intent, replacement),
+  ).catch((error) => {
+    reportPersistenceWarning('Unable to persist a pending server mutation', error)
+    return 'unavailable'
+  })
+}
+
+async function persistPendingMutationLocked(
+  semanticKey: string,
+  mutationId: string,
+  sequence: number,
+  scope: PendingMutationScope,
   intent: DurableMutationIntent,
   replacement: PendingMutationHandle | null,
 ): Promise<PendingMutationPersistenceStatus> {
@@ -1069,70 +1102,277 @@ async function persistPendingMutation(
   const replacementPersistence = replacement ? await replacement.ready : null
   const persistedReplacement = replacementPersistence === 'persisted' ? replacement : null
   if (!pendingMutationScopeEquals(scope)) return 'superseded'
-  const [database, encryptionKey, order] = await Promise.all([
-    openOutboxDatabase(),
-    getOutboxEncryptionKey(),
-    reservedOrder,
-  ])
-  if (!database || !encryptionKey || order === null) return 'unavailable'
 
   try {
     const payload = serializePendingMutationIntent(intent)
     if (payload.byteLength > MAX_DURABLE_MUTATION_PAYLOAD_BYTES) {
       throw new RangeError('Pending mutation payload is too large')
     }
-    const iv = globalThis.crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12)))
-    const ciphertext = await encryptIntentPayload(
-      encryptionKey,
-      iv,
-      mutationAdditionalData(semanticKey, mutationId, sequence, order, scope),
-      payload,
-    )
-    const transaction = database.transaction(OUTBOX_MUTATION_STORE, 'readwrite')
-    const store = transaction.objectStore(OUTBOX_MUTATION_STORE)
-    const [current, replaced] = await Promise.all([
-      requestResult<StoredPendingMutation | undefined>(store.get(mutationId)),
-      persistedReplacement
-        ? requestResult<StoredPendingMutation | undefined>(store.get(persistedReplacement.mutationId))
-        : Promise.resolve(undefined),
-    ])
-    if (current) {
-      await transactionDone(transaction)
-      return 'superseded'
+    const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
+    if (!database || !encryptionKey) return 'unavailable'
+
+    while (true) {
+      if (!pendingMutationScopeEquals(scope)) return 'superseded'
+      const lastCommittedOrder = await readPendingMutationOrderBase(database, scope)
+      const candidateOrder = nextPendingMutationOrder(lastCommittedOrder)
+      // Each attempt gets a new nonce. A CAS loss changes the authenticated
+      // order, so retaining an earlier IV would be an AES-GCM nonce reuse.
+      const iv = globalThis.crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12)))
+      const ciphertext = await encryptIntentPayload(
+        encryptionKey,
+        iv,
+        mutationAdditionalData(semanticKey, mutationId, sequence, candidateOrder, scope),
+        payload,
+      )
+      if (!pendingMutationScopeEquals(scope)) return 'superseded'
+
+      const committed = await commitPendingMutationOrderAndRow({
+        database,
+        encryptionKey,
+        semanticKey,
+        mutationId,
+        sequence,
+        scope,
+        candidateOrder,
+        iv,
+        ciphertext,
+        replacement: persistedReplacement,
+      })
+      if (committed.status === 'order-raced') continue
+      if (committed.status !== 'persisted') return 'superseded'
+      if (committed.replacementDeleted && persistedReplacement) {
+        retirePendingMutationProjectionGeneration(persistedReplacement)
+      }
+      return 'persisted'
     }
-    if (!pendingMutationScopeEquals(scope)) {
-      await transactionDone(transaction)
-      return 'superseded'
-    }
-    store.put({
-      mutationId,
-      semanticKey,
-      sequence,
-      order,
-      dispatchStarted: false,
-      ownerWriterSessionId: scope.writerSessionId,
-      writerEpoch: scope.writerEpoch,
-      databaseLineage: scope.databaseLineage,
-      updatedAt: Date.now(),
-      keyKind: encryptionKey.keyKind,
-      iv: iv.buffer,
-      ciphertext,
-    } satisfies StoredPendingMutation)
-    const replacementDeleted =
-      persistedReplacement &&
-      storedMutationMatchesHandle(replaced, persistedReplacement) &&
-      replaced?.dispatchStarted !== true
-    if (replacementDeleted && persistedReplacement) {
-      store.delete(persistedReplacement.mutationId)
-    }
-    await transactionDone(transaction)
-    if (replacementDeleted && persistedReplacement) {
-      retirePendingMutationProjectionGeneration(persistedReplacement)
-    }
-    return 'persisted'
   } catch (error) {
     reportPersistenceWarning('Unable to persist a pending server mutation', error)
     return 'unavailable'
+  }
+}
+
+interface CommitPendingMutationInput {
+  database: IDBDatabase
+  encryptionKey: OutboxEncryptionKey
+  semanticKey: string
+  mutationId: string
+  sequence: number
+  scope: PendingMutationScope
+  candidateOrder: number
+  iv: Uint8Array<ArrayBuffer>
+  ciphertext: ArrayBuffer
+  replacement: PendingMutationHandle | null
+}
+
+type CommitPendingMutationResult =
+  | { status: 'persisted'; replacementDeleted: boolean }
+  | { status: 'order-raced' | 'superseded' }
+
+async function readPendingMutationOrderBase(database: IDBDatabase, scope: PendingMutationScope): Promise<number> {
+  const transaction = database.transaction([OUTBOX_ORDER_STORE, OUTBOX_MUTATION_STORE], 'readonly')
+  const [storedCounter, mutations] = await Promise.all([
+    requestResult<unknown>(transaction.objectStore(OUTBOX_ORDER_STORE).get(pendingMutationOrderCounterKey(scope))),
+    requestResult<StoredPendingMutation[]>(transaction.objectStore(OUTBOX_MUTATION_STORE).getAll()),
+  ])
+  await transactionDone(transaction)
+  if (storedCounter !== undefined) return normalizePendingMutationOrderCounter(storedCounter, scope).lastCommittedOrder
+  return maximumPendingMutationOrder(mutations, scope)
+}
+
+/**
+ * Atomically compare the speculative order base, advance it, and publish the
+ * complete encrypted row. Every request and write is queued from IndexedDB
+ * callbacks; no WebCrypto or unrelated await can span this transaction.
+ */
+function commitPendingMutationOrderAndRow(input: CommitPendingMutationInput): Promise<CommitPendingMutationResult> {
+  return new Promise((resolve, reject) => {
+    let transaction: IDBTransaction
+    try {
+      transaction = input.database.transaction([OUTBOX_ORDER_STORE, OUTBOX_MUTATION_STORE], 'readwrite')
+    } catch (error) {
+      reject(error)
+      return
+    }
+
+    const orderStore = transaction.objectStore(OUTBOX_ORDER_STORE)
+    const mutationStore = transaction.objectStore(OUTBOX_MUTATION_STORE)
+    const counterRequest = orderStore.get(pendingMutationOrderCounterKey(input.scope))
+    const mutationsRequest = mutationStore.getAll()
+    const currentRequest = mutationStore.get(input.mutationId)
+    const replacementRequest = input.replacement ? mutationStore.get(input.replacement.mutationId) : null
+    let requestsRemaining = replacementRequest ? 4 : 3
+    let outcome: CommitPendingMutationResult | null = null
+    let callbackError: unknown = null
+    let settled = false
+
+    const rejectOnce = (error: unknown) => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+    transaction.oncomplete = () => {
+      if (settled) return
+      if (!outcome) {
+        rejectOnce(new Error('Pending-mutation commit completed without a result'))
+        return
+      }
+      settled = true
+      resolve(outcome)
+    }
+    transaction.onerror = () => {
+      callbackError ??= transaction.error ?? new Error('IndexedDB transaction failed')
+    }
+    transaction.onabort = () => {
+      rejectOnce(callbackError ?? transaction.error ?? new Error('IndexedDB transaction aborted'))
+    }
+
+    const requestFailed = (request: IDBRequest) => {
+      callbackError ??= request.error ?? new Error('IndexedDB request failed')
+    }
+    const requestSucceeded = () => {
+      requestsRemaining -= 1
+      if (requestsRemaining !== 0) return
+      try {
+        const storedCounter = counterRequest.result
+        const currentBase =
+          storedCounter === undefined
+            ? maximumPendingMutationOrder(mutationsRequest.result as StoredPendingMutation[], input.scope)
+            : normalizePendingMutationOrderCounter(storedCounter, input.scope).lastCommittedOrder
+        if (nextPendingMutationOrder(currentBase) !== input.candidateOrder) {
+          outcome = { status: 'order-raced' }
+          return
+        }
+        if (currentRequest.result !== undefined || !pendingMutationScopeEquals(input.scope)) {
+          outcome = { status: 'superseded' }
+          return
+        }
+
+        const replaced = replacementRequest?.result as StoredPendingMutation | undefined
+        const replacementDeleted = !!(
+          input.replacement &&
+          storedMutationMatchesHandle(replaced, input.replacement) &&
+          replaced?.dispatchStarted !== true
+        )
+        orderStore.put(
+          {
+            version: 1,
+            writerSessionId: input.scope.writerSessionId,
+            databaseLineage: input.scope.databaseLineage,
+            lastCommittedOrder: input.candidateOrder,
+          } satisfies StoredPendingMutationOrderCounter,
+          pendingMutationOrderCounterKey(input.scope),
+        )
+        mutationStore.put({
+          mutationId: input.mutationId,
+          semanticKey: input.semanticKey,
+          sequence: input.sequence,
+          order: input.candidateOrder,
+          dispatchStarted: false,
+          ownerWriterSessionId: input.scope.writerSessionId,
+          writerEpoch: input.scope.writerEpoch,
+          databaseLineage: input.scope.databaseLineage,
+          updatedAt: Date.now(),
+          keyKind: input.encryptionKey.keyKind,
+          iv: input.iv.buffer,
+          ciphertext: input.ciphertext,
+        } satisfies StoredPendingMutation)
+        if (replacementDeleted && input.replacement) mutationStore.delete(input.replacement.mutationId)
+        outcome = { status: 'persisted', replacementDeleted }
+        pendingMutationCommitTransactionHookForTests?.(transaction)
+      } catch (error) {
+        callbackError = error
+        try {
+          transaction.abort()
+        } catch {
+          rejectOnce(error)
+        }
+      }
+    }
+
+    for (const request of [counterRequest, mutationsRequest, currentRequest, replacementRequest]) {
+      if (!request) continue
+      request.onsuccess = requestSucceeded
+      request.onerror = () => requestFailed(request)
+    }
+  })
+}
+
+function maximumPendingMutationOrder(mutations: readonly StoredPendingMutation[], scope: PendingMutationScope): number {
+  let maximum = 0
+  for (const mutation of mutations) {
+    if (
+      mutation.ownerWriterSessionId === scope.writerSessionId &&
+      mutation.databaseLineage === scope.databaseLineage &&
+      Number.isSafeInteger(mutation.order) &&
+      mutation.order >= 0
+    ) {
+      maximum = Math.max(maximum, mutation.order)
+    }
+  }
+  return maximum
+}
+
+function nextPendingMutationOrder(lastCommittedOrder: number): number {
+  if (!Number.isSafeInteger(lastCommittedOrder) || lastCommittedOrder < 0) {
+    throw new TypeError('Pending-mutation order counter is invalid')
+  }
+  if (lastCommittedOrder >= Number.MAX_SAFE_INTEGER) {
+    throw new RangeError('Pending-mutation order counter is exhausted')
+  }
+  return lastCommittedOrder + 1
+}
+
+function pendingMutationOrderCounterKey(scope: PendingMutationScope): string {
+  return JSON.stringify(['pending-mutation-order-counter', 1, scope.writerSessionId, scope.databaseLineage])
+}
+
+function normalizePendingMutationOrderCounter(
+  value: unknown,
+  scope: PendingMutationScope,
+): StoredPendingMutationOrderCounter {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('Pending-mutation order counter is invalid')
+  }
+  const counter = value as Partial<StoredPendingMutationOrderCounter>
+  if (
+    counter.version !== 1 ||
+    typeof counter.writerSessionId !== 'string' ||
+    !SCOPE_VALUE_PATTERN.test(counter.writerSessionId) ||
+    counter.writerSessionId !== scope.writerSessionId ||
+    typeof counter.databaseLineage !== 'string' ||
+    !SCOPE_VALUE_PATTERN.test(counter.databaseLineage) ||
+    counter.databaseLineage !== scope.databaseLineage ||
+    !Number.isSafeInteger(counter.lastCommittedOrder) ||
+    counter.lastCommittedOrder! < 0
+  ) {
+    throw new TypeError('Pending-mutation order counter is invalid')
+  }
+  return counter as StoredPendingMutationOrderCounter
+}
+
+async function withPendingMutationStageLock<T>(scope: PendingMutationScope, task: () => Promise<T>): Promise<T> {
+  const name = `risu:pending-mutation-stage:${JSON.stringify([scope.writerSessionId, scope.databaseLineage])}`
+  const lockManager = globalThis.navigator?.locks
+  if (lockManager) return lockManager.request(name, { mode: 'exclusive' }, task)
+  // This FIFO protects initiation order only within this module/page. Separate
+  // tabs without Web Locks are linearized by the IndexedDB CAS commit instead.
+  return withLocalPendingMutationStageLock(name, task)
+}
+
+async function withLocalPendingMutationStageLock<T>(name: string, task: () => Promise<T>): Promise<T> {
+  const previous = pendingMutationStageLockTails.get(name) ?? Promise.resolve()
+  let release!: () => void
+  const tail = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const queuedTail = previous.then(() => tail)
+  pendingMutationStageLockTails.set(name, queuedTail)
+  await previous
+  try {
+    return await task()
+  } finally {
+    release()
+    if (pendingMutationStageLockTails.get(name) === queuedTail) pendingMutationStageLockTails.delete(name)
   }
 }
 
@@ -1865,26 +2105,6 @@ async function decryptSubtleIntent(
 
 function uint8ArrayToArrayBuffer(value: Uint8Array): ArrayBuffer {
   return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer
-}
-
-async function reservePendingMutationOrder(): Promise<number | null> {
-  const database = await openOutboxDatabase()
-  if (!database) return null
-  try {
-    const transaction = database.transaction(OUTBOX_ORDER_STORE, 'readwrite')
-    const store = transaction.objectStore(OUTBOX_ORDER_STORE)
-    const request = store.add({ reservedAt: Date.now() })
-    let order: number | null = null
-    request.onsuccess = () => {
-      order = typeof request.result === 'number' ? request.result : null
-      store.delete(request.result)
-    }
-    await transactionDone(transaction)
-    return order
-  } catch (error) {
-    reportPersistenceWarning('Unable to reserve pending-mutation order', error)
-    return null
-  }
 }
 
 async function openOutboxDatabase(): Promise<IDBDatabase | null> {

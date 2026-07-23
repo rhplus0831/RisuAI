@@ -38,6 +38,7 @@ import {
   replaceStagedPendingMutationIntent,
   resetPendingMutationOutboxForTests,
   retirePendingMutationLocalProjectionToken,
+  setPendingMutationCommitTransactionHookForTests,
   stagePendingMutation,
   type DurableMutationIntent,
 } from './pendingMutationOutbox'
@@ -82,6 +83,113 @@ afterEach(async () => {
 })
 
 describe('pending mutation outbox', () => {
+  it('lazily advances an explicit committed-order counter and retains it when rows are cleared', async () => {
+    expect(await readRawOrderCounters()).toEqual([])
+
+    const first = stagePendingMutation('settings:first', settingsIntent('first'))
+    await expect(first.ready).resolves.toBe('persisted')
+    expect(await readRawMutation(first.mutationId)).toMatchObject({ order: 1 })
+    expect(await readRawOrderCounters()).toEqual([
+      expect.objectContaining({
+        version: 1,
+        writerSessionId: 'writer-a',
+        databaseLineage: 'database-a',
+        lastCommittedOrder: 1,
+      }),
+    ])
+
+    await clearPendingMutationOutbox()
+    expect(await readRawOrderCounters()).toEqual([expect.objectContaining({ lastCommittedOrder: 1 })])
+
+    const second = stagePendingMutation('settings:second', settingsIntent('second'))
+    await expect(second.ready).resolves.toBe('persisted')
+    expect(await readRawMutation(second.mutationId)).toMatchObject({ order: 2 })
+    expect(await readRawOrderCounters()).toEqual([expect.objectContaining({ lastCommittedOrder: 2 })])
+  })
+
+  it('rolls back both the counter and row when the final transaction aborts', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    setPendingMutationCommitTransactionHookForTests((transaction) => transaction.abort())
+
+    const aborted = stagePendingMutation('settings:aborted', settingsIntent('aborted'))
+    await expect(aborted.ready).resolves.toBe('unavailable')
+    expect(await readRawMutation(aborted.mutationId)).toBeUndefined()
+    expect(await readRawOrderCounters()).toEqual([])
+
+    setPendingMutationCommitTransactionHookForTests(null)
+    const recovered = stagePendingMutation('settings:recovered', settingsIntent('recovered'))
+    await expect(recovered.ready).resolves.toBe('persisted')
+    expect(await readRawMutation(recovered.mutationId)).toMatchObject({ order: 1 })
+    expect(await readRawOrderCounters()).toEqual([expect.objectContaining({ lastCommittedOrder: 1 })])
+  })
+
+  it('initializes above legacy rows across epochs without rewriting their ciphertext', async () => {
+    const first = stagePendingMutation('settings:first', settingsIntent('legacy-first'))
+    const second = stagePendingMutation('settings:second', settingsIntent('legacy-second'))
+    await Promise.all([first.ready, second.ready])
+    const firstCiphertext = (await readRawMutation(first.mutationId))?.ciphertext
+    const secondCiphertext = (await readRawMutation(second.mutationId))?.ciphertext
+    await deleteRawOrderCounters()
+    await removeRawKeyKind(first.mutationId)
+
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 2,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: false,
+    })
+    const current = stagePendingMutation('settings:current', settingsIntent('current'))
+    await expect(current.ready).resolves.toBe('persisted')
+
+    expect(await readRawMutation(first.mutationId)).toMatchObject({ order: 1, ciphertext: firstCiphertext })
+    expect(await readRawMutation(second.mutationId)).toMatchObject({ order: 2, ciphertext: secondCiphertext })
+    expect(await readRawMutation(current.mutationId)).toMatchObject({ order: 3, writerEpoch: 2 })
+    expect(await readRawOrderCounters()).toEqual([
+      expect.objectContaining({
+        writerSessionId: 'writer-a',
+        databaseLineage: 'database-a',
+        lastCommittedOrder: 3,
+      }),
+    ])
+    expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+      settingsIntent('legacy-first'),
+      settingsIntent('legacy-second'),
+      settingsIntent('current'),
+    ])
+  })
+
+  it('treats an explicit counter corruption as unavailable without deleting retained rows', async () => {
+    const retained = stagePendingMutation('settings:retained', settingsIntent('retained'))
+    await retained.ready
+    await mutateRawOrderCounter((counter) => ({ ...counter, lastCommittedOrder: -1 }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const rejected = stagePendingMutation('settings:rejected', settingsIntent('rejected'))
+
+    await expect(rejected.ready).resolves.toBe('unavailable')
+    expect(await readRawMutation(retained.mutationId)).toBeDefined()
+    expect(await readRawMutation(rejected.mutationId)).toBeUndefined()
+    await expect(countPendingMutationRecords()).resolves.toBe(1)
+  })
+
+  it('treats committed-order exhaustion as unavailable without deleting retained rows', async () => {
+    const retained = stagePendingMutation('settings:retained', settingsIntent('retained'))
+    await retained.ready
+    await mutateRawOrderCounter((counter) => ({
+      ...counter,
+      lastCommittedOrder: Number.MAX_SAFE_INTEGER,
+    }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const rejected = stagePendingMutation('settings:rejected', settingsIntent('rejected'))
+
+    await expect(rejected.ready).resolves.toBe('unavailable')
+    expect(await readRawMutation(retained.mutationId)).toBeDefined()
+    expect(await readRawMutation(rejected.mutationId)).toBeUndefined()
+    await expect(countPendingMutationRecords()).resolves.toBe(1)
+  })
+
   it('keeps persistence activity visible while an unacknowledged intent remains in the outbox', async () => {
     const handle = stagePendingMutation('settings:runtime', settingsIntent('held-intent'))
     await expect(handle.ready).resolves.toBe('persisted')
@@ -534,6 +642,12 @@ describe('pending mutation outbox', () => {
 
     const other = stagePendingMutation('settings:other', settingsIntent('other-owner'))
     await other.ready
+    expect((await readRawOrderCounters()).map((counter) => counter.writerSessionId).sort()).toEqual([
+      'writer-a',
+      'writer-b',
+    ])
+    expect(await readRawMutation(pending.mutationId)).toMatchObject({ order: 1 })
+    expect(await readRawMutation(other.mutationId)).toMatchObject({ order: 1 })
     resetPendingMutationOutboxForTests()
     await expect(readSinglePendingMutationOwner()).resolves.toBeNull()
 
@@ -546,6 +660,7 @@ describe('pending mutation outbox', () => {
     expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([pending.mutationId])
     expect(await countPendingMutationRecords()).toBe(1)
     expect(await readRawMutation(other.mutationId)).toBeDefined()
+    expect(await readRawOrderCounters()).toHaveLength(2)
 
     resetPendingMutationOutboxForTests()
     await preparePendingMutationOutbox({
@@ -1115,6 +1230,85 @@ async function readRawMutation(mutationId: string): Promise<Record<string, unkno
   } finally {
     database.close()
   }
+}
+
+async function readRawOrderCounters(): Promise<Array<Record<string, unknown>>> {
+  const database = await openRawOutboxDatabase()
+  try {
+    const transaction = database.transaction('orders', 'readonly')
+    const counters = await rawRequestResult<Array<Record<string, unknown>>>(transaction.objectStore('orders').getAll())
+    await rawTransactionDone(transaction)
+    return counters
+  } finally {
+    database.close()
+  }
+}
+
+async function deleteRawOrderCounters(): Promise<void> {
+  const database = await openRawOutboxDatabase()
+  try {
+    const transaction = database.transaction('orders', 'readwrite')
+    transaction.objectStore('orders').clear()
+    await rawTransactionDone(transaction)
+  } finally {
+    database.close()
+  }
+}
+
+async function mutateRawOrderCounter(
+  mutate: (counter: Record<string, unknown>) => Record<string, unknown>,
+): Promise<void> {
+  const database = await openRawOutboxDatabase()
+  try {
+    const transaction = database.transaction('orders', 'readwrite')
+    const store = transaction.objectStore('orders')
+    const [keys, counters] = await Promise.all([
+      rawRequestResult<IDBValidKey[]>(store.getAllKeys()),
+      rawRequestResult<Array<Record<string, unknown>>>(store.getAll()),
+    ])
+    if (keys.length !== 1 || counters.length !== 1) throw new Error('Expected one pending-mutation order counter')
+    store.put(mutate(counters[0]!), keys[0])
+    await rawTransactionDone(transaction)
+  } finally {
+    database.close()
+  }
+}
+
+async function removeRawKeyKind(mutationId: string): Promise<void> {
+  const database = await openRawOutboxDatabase()
+  try {
+    const transaction = database.transaction('mutations', 'readwrite')
+    const store = transaction.objectStore('mutations')
+    const record = await rawRequestResult<Record<string, unknown>>(store.get(mutationId))
+    delete record.keyKind
+    store.put(record)
+    await rawTransactionDone(transaction)
+  } finally {
+    database.close()
+  }
+}
+
+function openRawOutboxDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('risu-pending-mutations-v1', 3)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+function rawRequestResult<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+function rawTransactionDone(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+    transaction.onabort = () => reject(transaction.error)
+  })
 }
 
 async function removeRawDispatchStarted(mutationId: string): Promise<void> {

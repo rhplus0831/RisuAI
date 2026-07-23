@@ -104,12 +104,17 @@ Three related artifacts have separate jobs:
 Durable helpers stage before network dispatch (and before a debounced control
 waits to send). Semantic owner keys and explicit dependency keys preserve
 predecessor order across commands; Web Locks coordinate tabs when available and
-same-tab locks provide the local fallback. Only the allowlisted command shapes
-in `pendingMutationOutbox.ts` are eligible. Secure contexts store a
-non-extractable WebCrypto key; insecure contexts use a separately stored raw
-AES-GCM key and tagged envelopes. If IndexedDB or secure random generation is
-unavailable, the command still uses the ordinary unreceipted transport path,
-but it cannot rely on crash recovery.
+same-tab locks provide the local fallback. Same-writer-session and
+database-lineage stage requests are cross-tab serialized before encryption; the
+scope's committed-order counter advances atomically with visibility of the
+complete encrypted row. Browsers without Web Locks retain same-page FIFO order,
+while an IndexedDB compare-and-swap prevents a lower order from appearing after
+a higher committed row across tabs. Only the allowlisted command shapes in
+`pendingMutationOutbox.ts` are eligible. Secure contexts store a non-extractable
+WebCrypto key; insecure contexts use a separately stored raw AES-GCM key and
+tagged envelopes. If IndexedDB or secure random generation is unavailable, the
+command still uses the ordinary unreceipted transport path, but it cannot rely
+on crash recovery.
 
 Every ordinary browser command domain shares the same server revision, so
 `src/ts/server/commands.ts` serializes high-level mutations through one global

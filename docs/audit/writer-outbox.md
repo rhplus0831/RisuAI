@@ -40,17 +40,20 @@ local-only fallback presenting as success; cleanup keyed to a coarser event
 (epoch advance) than the thing it cleans up (a specific mutation); foreign/
 stale rows deleted when they should be retained dormant.
 
+## Closed items
+
+- `VERIFIED-CLOSED` (2026-07-23) **E-6 (cross-tab variant)** —
+  same-session and lineage staging now requests an origin-wide Web Lock before
+  persistence work, then advances a validated committed-order counter in the
+  same IndexedDB transaction that publishes the encrypted row. The no-Web-Lock
+  fallback uses a same-page FIFO plus an IndexedDB compare-and-swap retry with a
+  fresh IV. Focused tests cover the deterministic two-tab interleaving,
+  predecessor drain/no-resend, epoch-independent scope, CAS/IV retry, atomic
+  abort, cold recovery, legacy counter initialization, counter corruption, and
+  exact settlement.
+
 ## Open items
 
-- `VERIFIED-OPEN` (2026-07-23) **E-6 (cross-tab variant)** — same-session
-  cross-tab order-reservation race: staging passes a separately reserved
-  order promise into persistence
-  (`src/ts/server/pendingMutationOutbox.ts:630`); the auto-increment
-  reservation commits in one transaction (`:1870`) while the encrypted row
-  inserts later in another (`:1072`, `:1091`). Another tab can reserve and
-  durably dispatch the newer absolute value while the older reservation has
-  no visible row yet; the older row can then appear and replay. Single-tab
-  variant fixed in `6a0b6c0b2`.
 - `ACCEPTED` — lost-writer recovery is reload-only in production (no un-latch
   API). Revisit only if reload-only recovery generates real complaints.
 
