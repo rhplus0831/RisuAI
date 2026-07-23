@@ -19,16 +19,17 @@ export interface PromptItemPatch {
 const PROMPT_SETTINGS_KEY_SET = new Set<string>(PROMPT_SETTINGS_KEYS)
 
 export function ensurePromptTemplateCollection(database: JsonRecord): PromptItemRecord[] {
-  if (!Array.isArray(database.promptTemplate)) {
-    database.promptTemplate = []
-  }
-
-  const promptTemplate = normalizePromptTemplateValue(database.promptTemplate)
+  const source = Array.isArray(database.promptTemplate) ? database.promptTemplate : []
+  const promptTemplate = normalizePromptTemplateValue(source)
   database.promptTemplate = promptTemplate
   return promptTemplate
 }
 
-export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] {
+export function normalizePromptTemplateValue(value: unknown[]): PromptItemRecord[]
+export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] | null
+export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] | null {
+  // Browser assembly treats null as disabled, while an empty array is an active template.
+  if (value === null) return null
   if (!Array.isArray(value)) return []
 
   const seen = new Set<string>()
@@ -46,7 +47,7 @@ export function normalizePromptTemplateCollection(database: unknown): void {
   if (!database || typeof database !== 'object' || Array.isArray(database)) return
   const target = database as JsonRecord
   if ('promptTemplate' in target) {
-    ensurePromptTemplateCollection(target)
+    target.promptTemplate = normalizePromptTemplateValue(target.promptTemplate)
   }
 }
 

@@ -3258,6 +3258,28 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     expect(result.prompt?.lorebookActivation).toBeDefined()
   })
 
+  it('uses format order and produces prompt rows when promptTemplate is null', async () => {
+    const db = fullDb({ promptTemplate: null } as unknown as Partial<Database>)
+    const state = beginAssembly(baseInput(), depsFor(db))
+    expect(state.usingPromptTemplate).toBe(false)
+    expect(state.promptTemplate).toBeNull()
+
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+    expect(result.prompt?.messages?.length).toBeGreaterThan(0)
+    expect(result.inputTokens).toBeGreaterThan(0)
+  })
+
+  it('keeps an empty promptTemplate array active, matching browser assembly', async () => {
+    const db = fullDb({ promptTemplate: [] })
+    const state = beginAssembly(baseInput(), depsFor(db))
+    expect(state.usingPromptTemplate).toBe(true)
+    expect(state.promptTemplate).toEqual([{ type: 'postEverything' }])
+
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+    expect(result.prompt?.messages).toEqual([])
+    expect(result.inputTokens).toBe(0)
+  })
+
   it('captures template-path prompt-info (promptText) when the capture flags are on', async () => {
     // `promptText` is only populated when both prompt-info-inside-chat
     // flags are set; a `description` card then contributes a row.

@@ -373,6 +373,34 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
   })
 
+  it('preserves a null prompt template during JSON database import', async () => {
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          version: 1,
+          promptTemplate: null,
+          promptPresets: [{ id: 'prompt-disabled', name: 'Disabled Prompt', promptTemplate: null }],
+          promptPresetsId: 0,
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(200)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const persisted = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
+      // Disabled root collections are omitted by persistence; the regression was
+      // materializing this value as an active empty array.
+      expect(persisted).not.toHaveProperty('promptTemplate')
+      expect((persisted.promptPresets as Array<Record<string, unknown>>)[0].promptTemplate).toBeNull()
+    } finally {
+      db.close()
+    }
+  })
+
   it('forces JSON database imported chat generation settings incomplete while preserving prefill', async () => {
     const imported = await authedInject({
       method: 'POST',

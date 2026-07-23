@@ -329,6 +329,24 @@ describe('split preset command normalization', () => {
     })
     expect((database.promptTemplate as Array<{ id?: string }>)[0].id).toEqual(expect.any(String))
   })
+
+  it('preserves null prompt templates through create, patch, and apply', () => {
+    const preset = createPromptPresetRecord({
+      id: 'prompt-template-disabled',
+      name: 'Prompt Template Disabled',
+      promptTemplate: null,
+    })
+    expect(preset.promptTemplate).toBeNull()
+
+    const patch = readPromptPresetPatch({ promptTemplate: null })
+    expect(patch.promptTemplate).toBeNull()
+
+    const database: Record<string, unknown> = {
+      promptTemplate: [{ id: 'existing', type: 'description' }],
+    }
+    applyPromptPreset(database, preset)
+    expect(database.promptTemplate).toBeNull()
+  })
 })
 
 describe('split preset command routes', () => {
