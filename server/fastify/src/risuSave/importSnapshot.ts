@@ -28,6 +28,14 @@ import {
   validateRisuServerPortableMetadata,
   type RisuServerPortableMetadata,
 } from './portableMetadata.js'
+import {
+  GREETING_TRANSLATIONS_PORTABLE_FIELD,
+  GreetingTranslationValidationError,
+  greetingSourceAtIndex,
+  parsePortableGreetingTranslation,
+  sourceHash,
+  type GreetingTranslationRow,
+} from '../translation/greetingTranslationStore.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -71,6 +79,7 @@ export interface RisuSaveImportSnapshot {
   envelope: RisuSaveEnvelopeKind
   database: JsonRecord
   portableMetadata: RisuServerPortableMetadata
+  greetingTranslations: GreetingTranslationRow[]
   incompleteChatCount: number
   unsupportedReferences: RisuSaveImportUnsupportedReference[]
 }
@@ -103,6 +112,7 @@ export class UnsupportedGroupCharactersError extends ValidationError {
 export interface RisuSaveImportDatabaseNormalization {
   database: JsonRecord
   portableMetadata: RisuServerPortableMetadata
+  greetingTranslations: GreetingTranslationRow[]
   incompleteChatCount: number
 }
 
@@ -234,12 +244,69 @@ function normalizeImportDatabase(database: unknown): RisuSaveImportDatabaseNorma
   const extracted = extractPortableMetadata(database)
   assertRecognizedImportDatabase(extracted.database)
   rejectUnsupportedGroupCharacters(extracted.database)
-  const target = normalizeImportDatabaseShape(extracted.database)
+  const portable = extractPortableGreetingTranslations(extracted.database)
+  const target = normalizeImportDatabaseShape(portable.database)
   return {
     database: target,
     portableMetadata: extracted.portableMetadata,
+    greetingTranslations: portable.rows,
     incompleteChatCount: normalizeImportedChatGenerationSettings(target),
   }
+}
+
+function extractPortableGreetingTranslations(database: JsonRecord): {
+  database: JsonRecord
+  rows: GreetingTranslationRow[]
+} {
+  if (!Array.isArray(database.characters)) return { database, rows: [] }
+  const rows: GreetingTranslationRow[] = []
+  const identities = new Set<string>()
+  const characters = database.characters.map((value, characterIndex) => {
+    if (!isJsonRecord(value)) return value
+    const character = { ...value }
+    const portable = character[GREETING_TRANSLATIONS_PORTABLE_FIELD]
+    delete character[GREETING_TRANSLATIONS_PORTABLE_FIELD]
+    if (portable === undefined) return character
+    if (!Array.isArray(portable)) {
+      throw new ValidationError(
+        `database.characters[${characterIndex}].${GREETING_TRANSLATIONS_PORTABLE_FIELD} must be an array`,
+      )
+    }
+    if (portable.length > 0 && (typeof character.chaId !== 'string' || character.chaId.trim() === '')) {
+      throw new ValidationError(
+        `database.characters[${characterIndex}].chaId must be a non-empty string when greeting translations exist`,
+      )
+    }
+    for (let rowIndex = 0; rowIndex < portable.length; rowIndex += 1) {
+      const label = `database.characters[${characterIndex}].${GREETING_TRANSLATIONS_PORTABLE_FIELD}[${rowIndex}]`
+      let parsed
+      try {
+        parsed = parsePortableGreetingTranslation(portable[rowIndex], label)
+      } catch (error) {
+        if (error instanceof GreetingTranslationValidationError) {
+          throw new ValidationError(error.message)
+        }
+        throw error
+      }
+      const identity = `${character.chaId}\u0000${parsed.greetingIndex}\u0000${parsed.settingsHash}`
+      if (identities.has(identity)) {
+        throw new ValidationError(`${label} duplicates another greeting translation row`)
+      }
+      identities.add(identity)
+      const source = greetingSourceAtIndex(character, parsed.greetingIndex)
+      if (source === null || sourceHash(source) !== parsed.translation.sourceHash) continue
+      rows.push({
+        characterId: character.chaId as string,
+        greetingIndex: parsed.greetingIndex,
+        settingsHash: parsed.settingsHash,
+        sourceHash: parsed.translation.sourceHash,
+        translation: parsed.translation,
+        updatedAt: parsed.translation.updatedAt,
+      })
+    }
+    return character
+  })
+  return { database: { ...database, characters }, rows }
 }
 
 function extractPortableMetadata(database: unknown): {

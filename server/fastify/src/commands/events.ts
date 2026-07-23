@@ -456,6 +456,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'character.alternateGreetings.updated',
     resource: 'characterRow',
   },
+  greetingTranslationUpdated: {
+    type: 'character.greetingTranslation.updated',
+    resource: 'greetingTranslation',
+  },
   coldStorageCharacterRecovered: {
     type: 'coldStorage.characterRecovered',
     // Recovery replaces one character row and its chat rows. Message bodies

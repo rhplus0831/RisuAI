@@ -110,13 +110,28 @@
     ensureMessageId,
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
-  import { canUseServerCommands, getServerCommandBaseRevision, translateMessageCommand } from 'src/ts/server/commands'
+  import {
+    canUseServerCommands,
+    getServerCommandBaseRevision,
+    translateGreetingCommand,
+    translateMessageCommand,
+  } from 'src/ts/server/commands'
   import {
     activeMessageTranslations,
     beginActiveMessageTranslation,
     clearMessageTranslationJob,
     isCurrentMessageTranslationJob,
   } from 'src/ts/server/messageTranslationJobs'
+  import {
+    activeGreetingTranslations,
+    applyGreetingTranslationCommandReceipt,
+    beginActiveGreetingTranslation,
+    clearGreetingTranslationJob,
+    findGreetingTranslation,
+    getGreetingTranslationProjection,
+    isCurrentGreetingTranslationJob,
+    refreshGreetingTranslationProjection,
+  } from 'src/ts/server/greetingTranslations.svelte'
   import {
     rollbackServerBackedChatRowMetadata,
     syncServerBackedChatMetadataBaselines,
@@ -147,10 +162,12 @@
   let editTranslationText = $state('')
   let editTranslationTarget: TranslationMessageTarget | null = $state(null)
   let translationEditOperation = 0
+  let activeRawTranslationRequestTarget: RawTranslationTarget | null = $state(null)
   let bodyRoot: HTMLElement | null = $state(null)
   interface Props {
     message?: string
     translation?: MessageTranslation | null
+    greetingTarget?: GreetingTranslationTarget | null
     name?: string
     largePortrait?: boolean
     isLastMemory: boolean
@@ -189,6 +206,18 @@
     chatId?: string
   }
 
+  interface GreetingTranslationTarget {
+    characterId: string
+    chatId: string
+    greetingIndex: number
+    source: string
+    clientSettingsSignature: string
+  }
+
+  type RawTranslationTarget =
+    | { kind: 'message'; chatId: string; messageId: string }
+    | ({ kind: 'greeting' } & GreetingTranslationTarget)
+
   interface MessageEditorTarget {
     characterId?: string
     characterReference: object
@@ -202,6 +231,7 @@
   let {
     message = $bindable(''),
     translation = null,
+    greetingTarget = null,
     name = '',
     largePortrait = false,
     isLastMemory,
@@ -788,16 +818,23 @@
     return applied
   }
 
-  function supportsServerRawTranslation() {
+  function hasServerRawTranslationTarget() {
     return (
-      canUseServerCommands() &&
-      idx >= 0 &&
+      captureRawTranslationTarget() !== null &&
       getDatabase().translator !== '' &&
       (getDatabase().translatorType === 'google' ||
         getDatabase().translatorType === 'deepl' ||
         getDatabase().translatorType === 'deeplX' ||
         getDatabase().translatorType === 'llm')
     )
+  }
+
+  function canTranslateRawTarget() {
+    return canUseServerCommands() && hasServerRawTranslationTarget()
+  }
+
+  function canEditPersistedTranslation(): boolean {
+    return captureRawTranslationTarget()?.kind === 'message' && activeRawTranslation() !== null
   }
 
   function currentLiveMessage(): Message | null {
@@ -833,6 +870,38 @@
       messageId,
       chatId: currentChatId || undefined,
     }
+  }
+
+  function captureRawTranslationTarget(): RawTranslationTarget | null {
+    if (idx < 0) {
+      if (!greetingTarget || greetingTarget.source !== message || greetingTarget.greetingIndex < -1) return null
+      return { kind: 'greeting', ...greetingTarget }
+    }
+    const target = captureTranslationMessageTarget()
+    if (!target?.chatId) return null
+    return { kind: 'message', chatId: target.chatId, messageId: target.messageId }
+  }
+
+  function sameRawTranslationTarget(left: RawTranslationTarget, right: RawTranslationTarget): boolean {
+    if (left.kind !== right.kind) return false
+    if (left.kind === 'message' && right.kind === 'message') {
+      return left.chatId === right.chatId && left.messageId === right.messageId
+    }
+    if (left.kind === 'greeting' && right.kind === 'greeting') {
+      return (
+        left.characterId === right.characterId &&
+        left.chatId === right.chatId &&
+        left.greetingIndex === right.greetingIndex &&
+        left.source === right.source &&
+        left.clientSettingsSignature === right.clientSettingsSignature
+      )
+    }
+    return false
+  }
+
+  function isRenderingRawTranslationTarget(target: RawTranslationTarget): boolean {
+    const current = captureRawTranslationTarget()
+    return current !== null && sameRawTranslationTarget(current, target)
   }
 
   function isRenderingTranslationMessageTarget(target: TranslationMessageTarget): boolean {
@@ -924,8 +993,11 @@
   }
 
   function activeRawTranslation(): MessageTranslation | null {
-    if (!supportsServerRawTranslation()) return null
-    const currentTranslation = translation ?? currentLiveMessage()?.translation
+    if (!hasServerRawTranslationTarget()) return null
+    const target = captureRawTranslationTarget()
+    if (!target) return null
+    const currentTranslation =
+      target.kind === 'greeting' ? findGreetingTranslation(target) : (translation ?? currentLiveMessage()?.translation)
     return currentTranslation?.source === 'raw' && typeof currentTranslation.text === 'string'
       ? currentTranslation
       : null
@@ -955,23 +1027,46 @@
 
   async function requestServerRawTranslation() {
     if (translationInProgress) return
-    const target = captureTranslationMessageTarget()
-    if (!target?.chatId) {
-      setStatusMessage('Message is not ready to translate yet.', 2500)
+    const target = captureRawTranslationTarget()
+    if (!target) {
+      setStatusMessage('Translation target is not ready yet.', 2500)
       return
     }
     const jobId = uuidv4()
-    if (
-      !beginActiveMessageTranslation({
-        chatId: target.chatId,
-        messageId: target.messageId,
-        jobId,
-        status: 'running',
-      })
-    ) {
-      return
+    let greetingSettingsHash: string | null = null
+    if (target.kind === 'message') {
+      if (
+        !beginActiveMessageTranslation({
+          chatId: target.chatId,
+          messageId: target.messageId,
+          jobId,
+          status: 'running',
+        })
+      ) {
+        return
+      }
+    } else {
+      const projection = getGreetingTranslationProjection(target.characterId)
+      greetingSettingsHash =
+        projection?.clientSettingsSignature === target.clientSettingsSignature ? projection.settingsHash : null
+      if (!greetingSettingsHash) {
+        setStatusMessage('Greeting translation settings are not ready yet.', 2500)
+        return
+      }
+      if (
+        !beginActiveGreetingTranslation({
+          characterId: target.characterId,
+          greetingIndex: target.greetingIndex,
+          settingsHash: greetingSettingsHash,
+          jobId,
+          status: 'running',
+        })
+      ) {
+        return
+      }
     }
     translationEditOperation += 1
+    activeRawTranslationRequestTarget = target
     translating = true
     editTranslationMode = false
     editTranslationTarget = null
@@ -982,27 +1077,67 @@
       // continue while the provider is running.
       const baseRevision = await getServerCommandBaseRevision()
       if (baseRevision === null) {
-        if (isRenderingTranslationMessageTarget(target)) translated = false
+        if (isRenderingRawTranslationTarget(target)) translated = false
         setStatusMessage('Unable to read server command revision.', 3000)
         return
       }
-      const result = await translateMessageCommand({ baseRevision, messageId: target.messageId, jobId })
-      if (!isCurrentMessageTranslationJob(target.messageId, jobId)) return
-      if (result.status === 'ok') {
-        if (result.jobId !== jobId) return
-        const resultTarget = resultTranslationMessageTarget(target, result)
-        if (resultTarget) {
-          applyLocalTranslation(resultTarget, result.translation)
+      if (target.kind === 'message') {
+        const result = await translateMessageCommand({ baseRevision, messageId: target.messageId, jobId })
+        if (!isCurrentMessageTranslationJob(target.messageId, jobId)) return
+        if (result.status === 'ok') {
+          if (result.jobId !== jobId) return
+          const resultTarget = resultTranslationMessageTarget(target, result)
+          if (resultTarget) applyLocalTranslation(resultTarget, result.translation)
+          if (isRenderingRawTranslationTarget(target)) {
+            translated = true
+            editTranslationMode = false
+          }
+          return
         }
-        if (isRenderingTranslationMessageTarget(target)) {
+        if (isRenderingRawTranslationTarget(target)) translated = false
+        if (result.status === 'conflict') {
+          setStatusMessage(`Translation conflict (${result.currentRevision}).`, 3000)
+        } else if (result.status === 'unavailable') {
+          setStatusMessage('Server commands are unavailable.', 3000)
+        } else {
+          setStatusMessage(result.error, 3000)
+        }
+        return
+      }
+
+      const result = await translateGreetingCommand({
+        baseRevision,
+        characterId: target.characterId,
+        greetingIndex: target.greetingIndex,
+        jobId,
+      })
+      if (!isCurrentGreetingTranslationJob(target.characterId, target.greetingIndex, greetingSettingsHash!, jobId)) {
+        return
+      }
+      if (result.status === 'ok') {
+        if (
+          result.jobId !== jobId ||
+          result.characterId !== target.characterId ||
+          result.greetingIndex !== target.greetingIndex ||
+          result.settingsHash !== greetingSettingsHash
+        ) {
+          return
+        }
+        applyGreetingTranslationCommandReceipt({
+          revision: result.revision,
+          characterId: target.characterId,
+          greetingIndex: target.greetingIndex,
+          settingsHash: result.settingsHash,
+          clientSettingsSignature: target.clientSettingsSignature,
+          translation: result.translation,
+        })
+        if (isRenderingRawTranslationTarget(target)) {
           translated = true
           editTranslationMode = false
         }
         return
       }
-      if (isRenderingTranslationMessageTarget(target)) {
-        translated = false
-      }
+      if (isRenderingRawTranslationTarget(target)) translated = false
       if (result.status === 'conflict') {
         setStatusMessage(`Translation conflict (${result.currentRevision}).`, 3000)
       } else if (result.status === 'unavailable') {
@@ -1011,12 +1146,16 @@
         setStatusMessage(result.error, 3000)
       }
     } catch (error) {
-      if (isRenderingTranslationMessageTarget(target)) translated = false
+      if (isRenderingRawTranslationTarget(target)) translated = false
       const detail = error instanceof Error ? error.message : String(error)
       setStatusMessage(language.playground.translationRunFailed(detail), 5000)
     } finally {
-      clearMessageTranslationJob(jobId)
-      translating = false
+      if (target.kind === 'message') clearMessageTranslationJob(jobId)
+      else clearGreetingTranslationJob(jobId)
+      if (activeRawTranslationRequestTarget && sameRawTranslationTarget(activeRawTranslationRequestTarget, target)) {
+        activeRawTranslationRequestTarget = null
+        translating = false
+      }
     }
   }
 
@@ -1290,11 +1429,30 @@
   })
   let hasActiveAgentPresetProgress = $derived($agentPresetProgress?.chatId === currentChatId)
   let serverTranslationJob = $derived.by(() => {
-    if (!messageRowId || !currentChatId) return undefined
-    return $activeMessageTranslations.find((job) => job.messageId === messageRowId && job.chatId === currentChatId)
+    const target = captureRawTranslationTarget()
+    if (!target) return undefined
+    if (target.kind === 'message') {
+      return $activeMessageTranslations.find(
+        (job) => job.messageId === target.messageId && job.chatId === target.chatId,
+      )
+    }
+    const projection = getGreetingTranslationProjection(target.characterId)
+    if (!projection?.settingsHash || projection.clientSettingsSignature !== target.clientSettingsSignature) {
+      return undefined
+    }
+    return $activeGreetingTranslations.find(
+      (job) =>
+        job.characterId === target.characterId &&
+        job.greetingIndex === target.greetingIndex &&
+        job.settingsHash === projection.settingsHash,
+    )
   })
   let serverTranslationInProgress = $derived(serverTranslationJob?.status === 'running')
-  let translationInProgress = $derived(translating || serverTranslationInProgress)
+  let translationInProgress = $derived(
+    serverTranslationInProgress ||
+      (translating &&
+        (!activeRawTranslationRequestTarget || isRenderingRawTranslationTarget(activeRawTranslationRequestTarget))),
+  )
   let sawServerTranslationInProgress = $state(false)
   let displayMessage = $derived.by(() => {
     const rawTranslation = activeRawTranslation()
@@ -1322,11 +1480,33 @@
     const job = serverTranslationJob
     return (
       !isCancelled() &&
+      !!job &&
+      'messageId' in job &&
       job?.jobId === jobId &&
       job.status === 'succeeded' &&
       job.chatId === target.chatId &&
       job.messageId === target.messageId &&
       isRenderingTranslationMessageTarget(target)
+    )
+  }
+
+  function ownsSucceededGreetingTranslation(
+    jobId: string,
+    target: Extract<RawTranslationTarget, { kind: 'greeting' }>,
+    settingsHash: string,
+    isCancelled: () => boolean,
+  ): boolean {
+    const job = serverTranslationJob
+    return (
+      !isCancelled() &&
+      !!job &&
+      'characterId' in job &&
+      job.jobId === jobId &&
+      job.status === 'succeeded' &&
+      job.characterId === target.characterId &&
+      job.greetingIndex === target.greetingIndex &&
+      job.settingsHash === settingsHash &&
+      isRenderingRawTranslationTarget(target)
     )
   }
 
@@ -1359,6 +1539,40 @@
     }
   }
 
+  async function restoreSucceededGreetingTranslation(
+    jobId: string,
+    target: Extract<RawTranslationTarget, { kind: 'greeting' }>,
+    settingsHash: string,
+    isCancelled: () => boolean,
+  ): Promise<void> {
+    if (!ownsSucceededGreetingTranslation(jobId, target, settingsHash, isCancelled)) return
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const refreshed = await refreshGreetingTranslationProjection(target.characterId, {
+        clientSettingsSignature: target.clientSettingsSignature,
+      })
+      if (!ownsSucceededGreetingTranslation(jobId, target, settingsHash, isCancelled)) return
+      if (refreshed.status !== 'ok' || !activeRawTranslation()) continue
+      translated = true
+      clearGreetingTranslationJob(jobId)
+      return
+    }
+  }
+
+  let lastRawTranslationTargetKey = ''
+  $effect(() => {
+    const target = captureRawTranslationTarget()
+    const nextKey = target ? JSON.stringify(target) : ''
+    if (lastRawTranslationTargetKey && nextKey !== lastRawTranslationTargetKey) {
+      translationEditOperation += 1
+      translated = false
+      suppressAutomaticTranslationDisplay = false
+      editTranslationMode = false
+      editTranslationTarget = null
+      sawServerTranslationInProgress = false
+    }
+    lastRawTranslationTargetKey = nextKey
+  })
+
   $effect(() => {
     if (automaticTranslationEnabled() && activeRawTranslation() && !suppressAutomaticTranslationDisplay) {
       translated = true
@@ -1385,7 +1599,7 @@
       consumeAutomaticTranslationEligibility()
       return
     }
-    if (!supportsServerRawTranslation()) {
+    if (!canTranslateRawTarget()) {
       consumeAutomaticTranslationEligibility()
       return
     }
@@ -1406,15 +1620,23 @@
     }
     if (job?.status === 'failed') {
       translated = false
-      setStatusMessage(language.playground.translationRunFailed(job.error ?? 'Message translation failed'), 5000)
-      clearMessageTranslationJob(job.jobId)
+      setStatusMessage(language.playground.translationRunFailed(job.error ?? 'Translation failed'), 5000)
+      if ('messageId' in job) clearMessageTranslationJob(job.jobId)
+      else clearGreetingTranslationJob(job.jobId)
       sawServerTranslationInProgress = false
       return
     }
     if (job?.status === 'succeeded') {
-      const target = { chatId: job.chatId, messageId: job.messageId }
       let cancelled = false
-      void restoreSucceededServerTranslation(job.jobId, target, () => cancelled)
+      if ('messageId' in job) {
+        const target = { chatId: job.chatId, messageId: job.messageId }
+        void restoreSucceededServerTranslation(job.jobId, target, () => cancelled)
+      } else {
+        const target = captureRawTranslationTarget()
+        if (target?.kind === 'greeting') {
+          void restoreSucceededGreetingTranslation(job.jobId, target, job.settingsHash, () => cancelled)
+        }
+      }
       sawServerTranslationInProgress = false
       return () => {
         cancelled = true
@@ -1824,7 +2046,7 @@
         </span>
       </button>
     {/if}
-    {#if supportsServerRawTranslation() && translated && !translationInProgress}
+    {#if canTranslateRawTarget() && translated && !translationInProgress}
       <button
         class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
@@ -1836,22 +2058,24 @@
           {language.retranslate}
         </span>
       </button>
-      <button
-        class={'text-sm p-1 border-darkborderc float-end mr-2 my-1 hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center ' +
-          (editTranslationMode ? 'text-blue-400' : 'text-textcolor2')}
-        onclick={() => {
-          if (editTranslationMode) {
-            saveTranslationEdit()
-          } else {
-            loadTranslationForEdit()
-          }
-        }}>
-        <PencilIcon size={20} />
-        <span class="ml-1">
-          {editTranslationMode ? language.editTranslationSave : language.editTranslation}
-        </span>
-      </button>
-    {:else if getDatabase().translatorType === 'llm' && translated && !translationInProgress}
+      {#if canEditPersistedTranslation()}
+        <button
+          class={'text-sm p-1 border-darkborderc float-end mr-2 my-1 hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center ' +
+            (editTranslationMode ? 'text-blue-400' : 'text-textcolor2')}
+          onclick={() => {
+            if (editTranslationMode) {
+              saveTranslationEdit()
+            } else {
+              loadTranslationForEdit()
+            }
+          }}>
+          <PencilIcon size={20} />
+          <span class="ml-1">
+            {editTranslationMode ? language.editTranslationSave : language.editTranslation}
+          </span>
+        </button>
+      {/if}
+    {:else if !hasServerRawTranslationTarget() && getDatabase().translatorType === 'llm' && translated && !translationInProgress}
       <button
         class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
@@ -1939,7 +2163,7 @@
       style:font-size="{0.875 * (getDatabase().zoomsize / 100)}rem"
       style:line-height="{(getDatabase().lineHeight ?? 1.25) * (getDatabase().zoomsize / 100)}rem">
       {#key `${totalLengthPointer}|${chatReloadPointer}|${chatScopePointer}`}
-        {#if supportsServerRawTranslation()}
+        {#if hasServerRawTranslationTarget()}
           <ChatBody
             {character}
             {firstMessage}
@@ -2382,7 +2606,8 @@
       aria-label={translationInProgress ? language.translating : language.translate}
       onclick={async () => {
         if (translationInProgress) return
-        if (!supportsServerRawTranslation()) {
+        if (!canTranslateRawTarget()) {
+          if (hasServerRawTranslationTarget()) return
           translated = !translated
           return
         }

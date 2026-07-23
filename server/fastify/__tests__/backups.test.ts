@@ -668,7 +668,7 @@ describe('Phase 2D backups', () => {
     }
   })
 
-  it('clears snapshot-owned retry and tombstone rows when an older backup lacks their tables', async () => {
+  it('clears snapshot-owned rows when an older backup lacks durability or greeting tables', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'pre-durability-tables' })
     const backup = await harness.app.inject({
@@ -685,6 +685,7 @@ describe('Phase 2D backups', () => {
         DROP TABLE generation_finalization_retries;
         DROP TRIGGER tombstone_deleted_legacy_memory_summary;
         DROP TABLE memory_legacy_summary_tombstones;
+        DROP TABLE greeting_translations;
       `)
     } finally {
       backupDb.close()
@@ -714,6 +715,7 @@ describe('Phase 2D backups', () => {
     try {
       expect(verify.prepare('SELECT * FROM generation_finalization_retries').all()).toEqual([])
       expect(verify.prepare('SELECT * FROM memory_legacy_summary_tombstones').all()).toEqual([])
+      expect(verify.prepare('SELECT * FROM greeting_translations').all()).toEqual([])
     } finally {
       verify.close()
     }

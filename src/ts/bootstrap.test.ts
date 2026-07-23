@@ -64,6 +64,8 @@ const runtimeApi = vi.hoisted(() => ({
   triggerOpenChatGenerationReattach: vi.fn(),
   setActiveMessageTranslations: vi.fn(),
   startActiveMessageTranslationRefresh: vi.fn(),
+  setActiveGreetingTranslations: vi.fn(),
+  startActiveGreetingTranslationRefresh: vi.fn(),
 }))
 
 const bridgeApi = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }))
@@ -172,6 +174,10 @@ vi.mock('./process/reattach', () => ({
 vi.mock('./server/messageTranslationJobs', () => ({
   setActiveMessageTranslations: runtimeApi.setActiveMessageTranslations,
   startActiveMessageTranslationRefresh: runtimeApi.startActiveMessageTranslationRefresh,
+}))
+vi.mock('./server/greetingTranslations.svelte', () => ({
+  setActiveGreetingTranslations: runtimeApi.setActiveGreetingTranslations,
+  startActiveGreetingTranslationRefresh: runtimeApi.startActiveGreetingTranslationRefresh,
 }))
 vi.mock('./server/memoryJobEvents', () => ({ publishServerMemoryJobEvent: memoryApi.publish }))
 vi.mock('./process/request/serverMemory', () => ({ applyServerHypaV3Progress: memoryApi.applyProgress }))
@@ -284,6 +290,9 @@ function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
       writerEpoch: 1,
       activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a' }],
       activeMessageTranslations: [{ chatId: 'chat-a', messageId: 'message-a' }],
+      activeGreetingTranslations: [
+        { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
+      ],
       ...overrides,
     },
   }
@@ -544,6 +553,9 @@ describe('API-backed client bootstrap', () => {
     expect(get(selectedCharID)).toBe(1)
     expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
+    expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([
+      { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
+    ])
     expect(hydrationApi.startChatMessageHydration).toHaveBeenCalledTimes(1)
     expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ minimumRevision: 5 })
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
@@ -584,6 +596,9 @@ describe('API-backed client bootstrap', () => {
     expect(resourceApi.loadInitial).toHaveBeenCalledTimes(1)
     expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
+    expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([
+      { characterId: 'char-a', greetingIndex: -1, settingsHash: 'settings-a', jobId: 'greeting-job-a' },
+    ])
   })
 
   it('refetches runtime metadata when another client wins initialization', async () => {
@@ -594,6 +609,7 @@ describe('API-backed client bootstrap', () => {
         revision: 1,
         activeGenerationJobs: [{ chatId: 'chat-b', jobId: 'job-b' }],
         activeMessageTranslations: [],
+        activeGreetingTranslations: [],
       }),
     )
     commandApi.initialize.mockResolvedValue({ status: 'ok', revision: 1, initialized: false })
@@ -603,6 +619,7 @@ describe('API-backed client bootstrap', () => {
     expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledTimes(1)
     expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-b', jobId: 'job-b' }])
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([])
+    expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([])
   })
 
   it('shows a fatal damaged-database alert and does not retry an initialize conflict', async () => {

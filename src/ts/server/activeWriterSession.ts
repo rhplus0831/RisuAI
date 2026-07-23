@@ -155,6 +155,7 @@ async function runWriterTakeoverFlow(): Promise<void> {
   const [
     bootstrap,
     messageTranslations,
+    greetingTranslations,
     generationReattach,
     chatHydration,
     { language },
@@ -162,6 +163,7 @@ async function runWriterTakeoverFlow(): Promise<void> {
   ] = await Promise.all([
     import('../bootstrap'),
     import('./messageTranslationJobs'),
+    import('./greetingTranslations.svelte'),
     import('../process/reattach'),
     import('./chatMessageHydration.svelte'),
     import('../../lang'),
@@ -170,6 +172,7 @@ async function runWriterTakeoverFlow(): Promise<void> {
 
   bootstrap.stopServerResourceEvents()
   messageTranslations.stopActiveMessageTranslationRefresh()
+  greetingTranslations.stopActiveGreetingTranslationRefresh()
   generationReattach.stopActiveGenerationReattach()
   chatHydration.stopChatMessageHydration()
 

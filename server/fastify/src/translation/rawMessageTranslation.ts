@@ -40,7 +40,17 @@ export interface RawMessageTranslationInput {
 export interface RawMessageTranslationHistoryContext {
   messages: readonly Record<string, unknown>[]
   messageIndex: number
-  greeting: string
+  greeting: {
+    source: string
+    translated?: string
+  }
+}
+
+export interface RawMessageTranslatorIdentity {
+  translatorType: RawMessageTranslatorType
+  targetLanguage: string
+  inputLanguage: string
+  settingsHash: string
 }
 
 const SUPPORTED_TRANSLATORS = new Set<RawMessageTranslatorType>(['google', 'deepl', 'deeplX', 'llm'])
@@ -136,6 +146,27 @@ function translatorSettingsHash(input: {
   )
 }
 
+/** Resolve cache identity without invoking a translation provider. */
+export function resolveRawMessageTranslatorIdentity(input: {
+  settings: Record<string, unknown>
+  character?: Record<string, unknown>
+}): RawMessageTranslatorIdentity {
+  const translatorType = translatorTypeFromSettings(input.settings)
+  const { targetLanguage, inputLanguage } = translationLanguages(input.settings)
+  return {
+    translatorType,
+    targetLanguage,
+    inputLanguage,
+    settingsHash: translatorSettingsHash({
+      settings: input.settings,
+      character: input.character,
+      translatorType,
+      targetLanguage,
+      inputLanguage,
+    }),
+  }
+}
+
 interface TranslatorHistoryEntry {
   role: 'user' | 'char'
   source: string
@@ -181,8 +212,12 @@ function createTranslatorHistoryResolver(
       if (newestFirst.length === count) break
     }
 
-    if (newestFirst.length < count && exhaustedHistory && context.greeting.length > 0) {
-      newestFirst.push({ role: 'char', source: context.greeting })
+    if (newestFirst.length < count && exhaustedHistory && context.greeting.source.length > 0) {
+      newestFirst.push({
+        role: 'char',
+        source: context.greeting.source,
+        ...(context.greeting.translated === undefined ? {} : { translated: context.greeting.translated }),
+      })
     }
 
     const entries = newestFirst.reverse()
@@ -427,8 +462,7 @@ async function translateWithLlm(
 }
 
 export async function translateRawMessageData(input: RawMessageTranslationInput): Promise<RawMessageTranslation> {
-  const translatorType = translatorTypeFromSettings(input.settings)
-  const { targetLanguage, inputLanguage } = translationLanguages(input.settings)
+  const { translatorType, targetLanguage, inputLanguage, settingsHash } = resolveRawMessageTranslatorIdentity(input)
   const translateChunk = async (chunk: string): Promise<string> => {
     if (translatorType === 'google') return translateWithGoogle(chunk, inputLanguage, targetLanguage, input.signal)
     if (translatorType === 'deepl') return translateWithDeepL(input.settings, chunk, targetLanguage, input.signal)
@@ -461,13 +495,7 @@ export async function translateRawMessageData(input: RawMessageTranslationInput)
     targetLanguage,
     inputLanguage,
     translatorType,
-    settingsHash: translatorSettingsHash({
-      settings: input.settings,
-      character: input.character,
-      translatorType,
-      targetLanguage,
-      inputLanguage,
-    }),
+    settingsHash,
     updatedAt: Date.now(),
   }
 }

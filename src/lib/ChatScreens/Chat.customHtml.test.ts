@@ -68,6 +68,32 @@ const customHtmlMocks = vi.hoisted(() => {
         updatedAt: 123,
       },
     })),
+    translateGreetingCommand: vi.fn(
+      async (input: { baseRevision: number; characterId: string; greetingIndex: number; jobId: string }) => ({
+        status: 'ok',
+        revision: 2,
+        event: {
+          type: 'character.greetingTranslation.updated',
+          revision: 2,
+          resource: 'greetingTranslation',
+          id: input.characterId,
+        },
+        characterId: input.characterId,
+        greetingIndex: input.greetingIndex,
+        jobId: input.jobId,
+        settingsHash: 'greeting-settings',
+        translation: {
+          source: 'raw',
+          text: 'translated greeting',
+          sourceHash: 'a'.repeat(64),
+          targetLanguage: 'ko',
+          inputLanguage: 'en',
+          translatorType: 'llm',
+          settingsHash: 'greeting-settings',
+          updatedAt: 123,
+        },
+      }),
+    ),
     updateMessageCommand: vi.fn(async () => ({
       status: 'ok',
       revision: 3,
@@ -261,7 +287,68 @@ vi.mock('src/ts/server/commands', () => ({
   getServerCommandBaseRevision: customHtmlMocks.getServerCommandBaseRevision,
   runServerCommand: customHtmlMocks.runServerCommand,
   translateMessageCommand: customHtmlMocks.translateMessageCommand,
+  translateGreetingCommand: customHtmlMocks.translateGreetingCommand,
   updateMessageCommand: customHtmlMocks.updateMessageCommand,
+}))
+
+const greetingProjectionMocks = vi.hoisted(() => {
+  let jobs: unknown[] = []
+  const subscribers = new Set<(value: unknown[]) => void>()
+  return {
+    translation: null as Record<string, unknown> | null,
+    greetingIndex: -1,
+    active: {
+      subscribe(callback: (value: unknown[]) => void) {
+        callback(jobs)
+        subscribers.add(callback)
+        return () => subscribers.delete(callback)
+      },
+      update(updater: (value: unknown[]) => unknown[]) {
+        jobs = updater(jobs)
+        for (const subscriber of subscribers) subscriber(jobs)
+      },
+    },
+    reset() {
+      this.translation = null
+      this.greetingIndex = -1
+      jobs = []
+      for (const subscriber of subscribers) subscriber(jobs)
+    },
+  }
+})
+
+vi.mock('src/ts/server/greetingTranslations.svelte', () => ({
+  activeGreetingTranslations: greetingProjectionMocks.active,
+  getGreetingTranslationProjection: () => ({
+    revision: 1,
+    characterId: 'custom-html-character',
+    settingsHash: 'greeting-settings',
+    clientSettingsSignature: 'client-settings',
+    translations: [],
+  }),
+  findGreetingTranslation: (input: { greetingIndex: number }) =>
+    input.greetingIndex === greetingProjectionMocks.greetingIndex ? greetingProjectionMocks.translation : null,
+  refreshGreetingTranslationProjection: vi.fn(async () => ({ status: 'ok' })),
+  applyGreetingTranslationCommandReceipt: (input: { greetingIndex: number; translation: Record<string, unknown> }) => {
+    greetingProjectionMocks.greetingIndex = input.greetingIndex
+    greetingProjectionMocks.translation = input.translation
+    return true
+  },
+  beginActiveGreetingTranslation: (job: Record<string, unknown>) => {
+    greetingProjectionMocks.active.update((jobs) => [...jobs, job])
+    return true
+  },
+  isCurrentGreetingTranslationJob: (characterId: string, greetingIndex: number, settingsHash: string, jobId: string) =>
+    (greetingProjectionMocks.active as any) &&
+    characterId === 'custom-html-character' &&
+    greetingIndex === -1 &&
+    settingsHash === 'greeting-settings' &&
+    typeof jobId === 'string',
+  clearGreetingTranslationJob: (jobId: string) => {
+    greetingProjectionMocks.active.update((jobs) =>
+      jobs.filter((job) => (job as Record<string, unknown>).jobId !== jobId),
+    )
+  },
 }))
 
 vi.mock('src/ts/server/chatBridge.svelte', () => ({
@@ -523,6 +610,7 @@ beforeEach(() => {
   NativeDOMParser = globalThis.DOMParser
   vi.stubGlobal('DOMParser', CountingDOMParser)
   vi.clearAllMocks()
+  greetingProjectionMocks.reset()
   customHtmlMocks.changeChatTo.mockImplementation((idOrIndex: string | number) => {
     const character = testDatabaseState.db.characters[0]
     const chatIndex =
@@ -1557,6 +1645,321 @@ describe('server raw translation controls', () => {
     expect(target.textContent).toContain('번역된 메시지')
     expect(target.textContent).toContain('x-risu-bilingual-translation')
     expect(chat.message[0].translation?.text).toBe('번역된 메시지')
+  })
+
+  it('translates the synthetic greeting through the server command without exposing the pencil editor', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'primary greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          img: '',
+          rerollIcon: false,
+          disabled: false,
+          greetingTarget: {
+            characterId: 'custom-html-character',
+            chatId: 'custom-html-chat',
+            greetingIndex: -1,
+            source: 'primary greeting',
+            clientSettingsSignature: 'client-settings',
+          },
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+
+    expect(customHtmlMocks.translateGreetingCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseRevision: 1,
+        characterId: 'custom-html-character',
+        greetingIndex: -1,
+        jobId: expect.any(String),
+      }),
+    )
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+    expect(target.textContent).toContain('translated greeting')
+    expect(target.querySelector('.button-icon-translate')?.getAttribute('aria-label')).toBe('translate')
+    expect(buttonByText('editTranslation')).toBeUndefined()
+
+    buttonByText('retranslate')?.click()
+    await settle()
+    expect(customHtmlMocks.translateGreetingCommand).toHaveBeenCalledTimes(2)
+    expect(customHtmlMocks.translateGreetingCommand).toHaveBeenLastCalledWith(
+      expect.objectContaining({ characterId: 'custom-html-character', greetingIndex: -1 }),
+    )
+  })
+
+  it('reuses a persisted greeting after remount and renders it through the bilingual display path', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].bilingualDisplay = true
+    greetingProjectionMocks.translation = {
+      source: 'raw',
+      text: 'persisted greeting translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'greeting-settings',
+      updatedAt: 123,
+    }
+    const props = {
+      message: 'primary greeting',
+      name: 'Template Bot',
+      isLastMemory: false,
+      idx: -1,
+      role: 'char' as const,
+      totalLength: 0,
+      firstMessage: true,
+      greetingTarget: {
+        characterId: 'custom-html-character',
+        chatId: 'custom-html-chat',
+        greetingIndex: -1,
+        source: 'primary greeting',
+        clientSettingsSignature: 'client-settings',
+      },
+    }
+
+    const firstMount = mount(Chat, { target, props }) as MountedComponent
+    await settle()
+    expect(target.textContent).toContain('primary greeting')
+    expect(target.textContent).not.toContain('persisted greeting translation')
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).toContain('primary greeting')
+    expect(target.textContent).toContain('persisted greeting translation')
+    expect(target.textContent).toContain('x-risu-bilingual-translation')
+    expect(customHtmlMocks.translateGreetingCommand).not.toHaveBeenCalled()
+
+    await unmount(firstMount)
+    target.replaceChildren()
+    components.push(mount(Chat, { target, props }) as MountedComponent)
+    await settle()
+    expect(target.textContent).not.toContain('persisted greeting translation')
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).toContain('persisted greeting translation')
+    expect(customHtmlMocks.translateGreetingCommand).not.toHaveBeenCalled()
+  })
+
+  it('shows an eligible persisted greeting on open without starting automatic provider work', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].autoTranslate = true
+    greetingProjectionMocks.translation = {
+      source: 'raw',
+      text: 'cached greeting translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'greeting-settings',
+      updatedAt: 123,
+    }
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'primary greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          greetingTarget: {
+            characterId: 'custom-html-character',
+            chatId: 'custom-html-chat',
+            greetingIndex: -1,
+            source: 'primary greeting',
+            clientSettingsSignature: 'client-settings',
+          },
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+
+    expect(target.textContent).toContain('cached greeting translation')
+    expect(customHtmlMocks.translateGreetingCommand).not.toHaveBeenCalled()
+  })
+
+  it('keeps a replacement alternate greeting untouched when the captured primary request finishes', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    const provider = deferred<void>()
+    customHtmlMocks.translateGreetingCommand.mockImplementationOnce(async (input) => {
+      await provider.promise
+      return {
+        status: 'ok',
+        revision: 2,
+        event: {
+          type: 'character.greetingTranslation.updated',
+          revision: 2,
+          resource: 'greetingTranslation',
+          id: input.characterId,
+        },
+        characterId: input.characterId,
+        greetingIndex: input.greetingIndex,
+        jobId: input.jobId,
+        settingsHash: 'greeting-settings',
+        translation: {
+          source: 'raw',
+          text: 'late primary translation',
+          sourceHash: 'a'.repeat(64),
+          targetLanguage: 'ko',
+          inputLanguage: 'en',
+          translatorType: 'llm',
+          settingsHash: 'greeting-settings',
+          updatedAt: 123,
+        },
+      } as const
+    })
+
+    const firstMount = mount(Chat, {
+      target,
+      props: {
+        message: 'primary greeting',
+        name: 'Template Bot',
+        isLastMemory: false,
+        idx: -1,
+        role: 'char',
+        totalLength: 0,
+        firstMessage: true,
+        greetingTarget: {
+          characterId: 'custom-html-character',
+          chatId: 'custom-html-chat',
+          greetingIndex: -1,
+          source: 'primary greeting',
+          clientSettingsSignature: 'client-settings',
+        },
+      },
+    }) as MountedComponent
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.querySelector<HTMLButtonElement>('.button-icon-translate')?.disabled).toBe(true)
+
+    await unmount(firstMount)
+    target.replaceChildren()
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'alternate greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          greetingTarget: {
+            characterId: 'custom-html-character',
+            chatId: 'custom-html-chat',
+            greetingIndex: 0,
+            source: 'alternate greeting',
+            clientSettingsSignature: 'client-settings',
+          },
+        },
+      }) as MountedComponent,
+    )
+    provider.resolve()
+    await settle()
+
+    expect(target.textContent).toContain('alternate greeting')
+    expect(target.textContent).not.toContain('late primary translation')
+    expect(customHtmlMocks.translateGreetingCommand).toHaveBeenCalledOnce()
+  })
+
+  it('restores the greeting source when the manual provider request fails', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    customHtmlMocks.translateGreetingCommand.mockResolvedValueOnce({
+      status: 'error',
+      error: 'greeting provider failed',
+    } as never)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'primary greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          greetingTarget: {
+            characterId: 'custom-html-character',
+            chatId: 'custom-html-chat',
+            greetingIndex: -1,
+            source: 'primary greeting',
+            clientSettingsSignature: 'client-settings',
+          },
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+
+    expect(target.textContent).toContain('primary greeting')
+    expect(target.textContent).toContain('greeting provider failed')
+    expect(target.querySelector<HTMLButtonElement>('.button-icon-translate')?.disabled).toBe(false)
+  })
+
+  it('keeps an untranslated greeting manual-only even when chat auto-translation is enabled', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].autoTranslate = true
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'primary greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          autoTranslateOnReady: true,
+          greetingTarget: {
+            characterId: 'custom-html-character',
+            chatId: 'custom-html-chat',
+            greetingIndex: -1,
+            source: 'primary greeting',
+            clientSettingsSignature: 'client-settings',
+          },
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+
+    expect(customHtmlMocks.translateGreetingCommand).not.toHaveBeenCalled()
+    expect(target.textContent).toContain('primary greeting')
   })
 
   it('reactively pairs sentence chunks when sentence paragraph breaks are enabled', async () => {

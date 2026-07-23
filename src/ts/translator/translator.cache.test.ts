@@ -125,6 +125,7 @@ import {
   __translatorTestHooks,
   getLLMCache,
   getCurrentTranslatorPreset,
+  getTranslatorSettingsSignatureKey,
   runTranslator,
   setLLMCache,
   translate,
@@ -368,10 +369,14 @@ describe('auto-translate cache', () => {
 
     for (const [index, mutate] of mutations.entries()) {
       const text = `<p>pipeline-signature-${index}</p>`
+      const beforeSettingsSignature = getTranslatorSettingsSignatureKey(testState.db)
+      const beforeMemoKey = __translatorTestHooks.getCurrentTranslateHTMLMemoKey(text)
       const beforeKey = __translatorTestHooks.getCurrentLLMTranslationCacheKey(text)
       await translateHTML(text, false, '', 0)
       mutate(testState.db.translatorPresets[0].steps[0])
       const afterKey = __translatorTestHooks.getCurrentLLMTranslationCacheKey(text)
+      expect(getTranslatorSettingsSignatureKey(testState.db)).not.toBe(beforeSettingsSignature)
+      expect(__translatorTestHooks.getCurrentTranslateHTMLMemoKey(text)).not.toBe(beforeMemoKey)
       expect(afterKey).not.toBe(beforeKey)
       await translateHTML(text, false, '', 0)
       const callsAfterPipelineEdit = callCount
@@ -380,6 +385,17 @@ describe('auto-translate cache', () => {
       await translateHTML(text, false, '', 0)
       expect(callCount).toBe(callsAfterPipelineEdit)
     }
+
+    const labelText = '<p>pipeline-labels</p>'
+    const settingsSignature = getTranslatorSettingsSignatureKey(testState.db)
+    const memoKey = __translatorTestHooks.getCurrentTranslateHTMLMemoKey(labelText)
+    const llmKey = __translatorTestHooks.getCurrentLLMTranslationCacheKey(labelText)
+    testState.db.translatorPresets[0].name = 'Renamed preset'
+    testState.db.translatorPresets[0].steps[0].id = 'renamed-step-id'
+    testState.db.translatorPresets[0].steps[0].name = 'Renamed step'
+    expect(getTranslatorSettingsSignatureKey(testState.db)).toBe(settingsSignature)
+    expect(__translatorTestHooks.getCurrentTranslateHTMLMemoKey(labelText)).toBe(memoKey)
+    expect(__translatorTestHooks.getCurrentLLMTranslationCacheKey(labelText)).toBe(llmKey)
   })
 
   it('v4-L26: separates LLM translation cache entries by translator signature', async () => {

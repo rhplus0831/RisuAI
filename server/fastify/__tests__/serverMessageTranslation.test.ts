@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createCommandEventSink } from '../src/commands/events.js'
 import { openDatabase } from '../src/db.js'
 import { resolveActiveMessageLocationById } from '../src/messageStore.js'
-import { writePersistedWithMessages } from '../src/repository.js'
+import {
+  loadCharacterSelectionRows,
+  loadSettingsWithTranslatorPresetsFromSqlite,
+  writePersistedWithMessages,
+} from '../src/repository.js'
+import { sourceHash, upsertGreetingTranslation } from '../src/translation/greetingTranslationStore.js'
+import { resolveRawMessageTranslatorIdentity } from '../src/translation/rawMessageTranslation.js'
 
 const serverTranslationMocks = vi.hoisted(() => ({
   dispatchChatProvider: vi.fn(),
@@ -189,6 +195,29 @@ describe('runServerMessageTranslation', () => {
       },
       assets: [],
     })
+    const character = loadCharacterSelectionRows(db, 'char-a').character
+    const settings = loadSettingsWithTranslatorPresetsFromSqlite(db)!
+    const settingsHash = resolveRawMessageTranslatorIdentity({ settings, character }).settingsHash
+    upsertGreetingTranslation(db, 'char-a', 0, {
+      text: 'wrong settings translation',
+      source: 'raw',
+      sourceHash: sourceHash('alternate greeting'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'different-settings-hash',
+      updatedAt: 122,
+    })
+    upsertGreetingTranslation(db, 'char-a', 0, {
+      text: 'alternate translated',
+      source: 'raw',
+      sourceHash: sourceHash('alternate greeting'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash,
+      updatedAt: 123,
+    })
     serverTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
 
     await runServerMessageTranslation({
@@ -203,7 +232,7 @@ describe('runServerMessageTranslation', () => {
         role: 'system',
         content:
           `History:\n${historyBlock('char', 'alternate greeting')}${historyBlock('user', 'prior source')}\n` +
-          `Translations:\n${historyBlock('char', '')}${historyBlock('user', 'prior translated')}\n` +
+          `Translations:\n${historyBlock('char', 'alternate translated')}${historyBlock('user', 'prior translated')}\n` +
           'Source=current source',
       },
     ])

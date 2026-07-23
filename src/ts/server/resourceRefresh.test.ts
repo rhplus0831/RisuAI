@@ -14,6 +14,9 @@ const sideEffects = vi.hoisted(() => ({
   setGenerationJobs: vi.fn(),
   triggerReattach: vi.fn(),
   setTranslations: vi.fn(),
+  setGreetingTranslations: vi.fn(),
+  clearGreetingTranslations: vi.fn(),
+  refreshGreetingTranslations: vi.fn(async () => ({ status: 'ok' })),
   recordRefresh: vi.fn(),
   hydratePromptTemplate: vi.fn(async () => true),
 }))
@@ -61,6 +64,11 @@ vi.mock('../process/reattach', () => ({
 vi.mock('./messageTranslationJobs', () => ({
   clearActiveMessageTranslation: vi.fn(),
   setActiveMessageTranslations: sideEffects.setTranslations,
+}))
+vi.mock('./greetingTranslations.svelte', () => ({
+  clearGreetingTranslationProjection: sideEffects.clearGreetingTranslations,
+  refreshGreetingTranslationProjection: sideEffects.refreshGreetingTranslations,
+  setActiveGreetingTranslations: sideEffects.setGreetingTranslations,
 }))
 vi.mock('./protocolDiagnostics', () => ({ recordFullResourceRefresh: sideEffects.recordRefresh }))
 vi.mock('./promptTemplateHydration', () => ({

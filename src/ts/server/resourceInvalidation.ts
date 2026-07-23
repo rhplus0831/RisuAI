@@ -98,6 +98,7 @@ export interface ServerResourceInvalidationHooks {
   recordCanonicalLorebookCollections?(names: readonly ServerCollectionName[]): void
   triggerOpenChatGenerationReattach(): void
   clearActiveMessageTranslation(messageId: string): void
+  refreshGreetingTranslations(characterId: string, minimumRevision: number): Promise<boolean>
 }
 
 export interface ServerResourceRefreshOptions {
@@ -127,6 +128,7 @@ interface RefreshPlan {
   generationChatMessageIds: Map<string, string>
   lorebookCharacterIds: Set<string>
   translatedMessageIds: Set<string>
+  greetingTranslationCharacterIds: Set<string>
   promptTemplateOwnerIds: Set<string>
   legacyPresetIds: Set<string>
   refreshSelectedPromptTemplate: boolean
@@ -411,6 +413,15 @@ async function executeTargetedRefreshPlan(
     options.hooks?.triggerOpenChatGenerationReattach?.()
   }
   for (const messageId of plan.translatedMessageIds) options.hooks?.clearActiveMessageTranslation?.(messageId)
+  for (const characterId of plan.greetingTranslationCharacterIds) {
+    const refreshed = await options.hooks?.refreshGreetingTranslations?.(
+      characterId,
+      minimumRevision ?? responseRevision,
+    )
+    if (!refreshed) {
+      return { status: 'error', error: `Failed to refresh greeting translations for ${characterId}` }
+    }
+  }
 
   return { status: 'ok', revision: responseRevision, scope: 'targeted' }
 }
@@ -429,6 +440,7 @@ function createRefreshPlan(): RefreshPlan {
     generationChatMessageIds: new Map(),
     lorebookCharacterIds: new Set(),
     translatedMessageIds: new Set(),
+    greetingTranslationCharacterIds: new Set(),
     promptTemplateOwnerIds: new Set(),
     legacyPresetIds: new Set(),
     refreshSelectedPromptTemplate: false,
@@ -567,6 +579,13 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       return
     case 'characterRow':
       addCharacter(event.parentId ?? event.id)
+      return
+    case 'greetingTranslation':
+      if (!nonEmptyString(event.id)) {
+        plan.full = true
+        return
+      }
+      plan.greetingTranslationCharacterIds.add(event.id)
       return
     case 'scriptDefinition':
     case 'triggerDefinition':
@@ -1526,6 +1545,9 @@ function missingRequiredHook(
   }
   if (plan.translatedMessageIds.size > 0 && !hooks?.clearActiveMessageTranslation) {
     return 'clearActiveMessageTranslation'
+  }
+  if (plan.greetingTranslationCharacterIds.size > 0 && !hooks?.refreshGreetingTranslations) {
+    return 'refreshGreetingTranslations'
   }
   if (plan.lorebookCharacterIds.size > 0 && !hooks?.applyCharacterLorebook) return 'applyCharacterLorebook'
   if (plan.lorebookCharacterIds.size > 0 && !hooks?.markCharacterLorebookHydrated) {

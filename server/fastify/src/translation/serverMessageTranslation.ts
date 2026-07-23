@@ -13,7 +13,12 @@ import { applyTargetedCommandMutation, type CommandMutationReceiptKey } from '..
 import { getChatMessages, resolveActiveMessageLocationById, updateActiveMessageById } from '../messageStore.js'
 import { createDetachedAbort } from '../requestAbort.js'
 import type { MessageTranslationJobHandle, MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
-import { translateRawMessageData, type RawMessageTranslation } from './rawMessageTranslation.js'
+import { getSourceValidGreetingTranslation, selectedGreeting } from './greetingTranslationStore.js'
+import {
+  resolveRawMessageTranslatorIdentity,
+  translateRawMessageData,
+  type RawMessageTranslation,
+} from './rawMessageTranslation.js'
 
 export interface RunServerMessageTranslationInput {
   db: DatabaseSync
@@ -53,17 +58,6 @@ function readLiveMessageSource(db: DatabaseSync, messageId: string): LiveMessage
   }
 }
 
-function selectedGreeting(character: Record<string, unknown>, chat: Record<string, unknown>): string {
-  const fmIndex = chat.fmIndex ?? -1
-  const greeting =
-    fmIndex === -1
-      ? character.firstMessage
-      : Array.isArray(character.alternateGreetings)
-        ? character.alternateGreetings[typeof fmIndex === 'number' ? fmIndex : -1]
-        : undefined
-  return typeof greeting === 'string' ? greeting : ''
-}
-
 /**
  * Runs the same detached raw-message translation used by the HTTP command and
  * server-triggered generation completion. The provider request does not hold
@@ -88,6 +82,18 @@ export async function runServerMessageTranslation(input: RunServerMessageTransla
     const persisted = loadPersistedForChatMutation(input.db, input.dataDir, { messageId: input.messageId })
     const characters = normalizeAllCharacterChats(persisted.database)
     const { character, chat } = requireChatLocation(characters, source.chatId)
+    const greeting = selectedGreeting(character, chat)
+    const characterId = typeof character.chaId === 'string' ? character.chaId : ''
+    const translatorIdentity = resolveRawMessageTranslatorIdentity({ settings, character })
+    const greetingTranslation = characterId
+      ? getSourceValidGreetingTranslation(
+          input.db,
+          characterId,
+          greeting.greetingIndex,
+          translatorIdentity.settingsHash,
+          greeting.source,
+        )
+      : null
     const translation = await translateRawMessageData({
       settings,
       character,
@@ -95,7 +101,10 @@ export async function runServerMessageTranslation(input: RunServerMessageTransla
       historyContext: {
         messages: getChatMessages(input.db, source.chatId),
         messageIndex: source.messageIndex,
-        greeting: selectedGreeting(character, chat),
+        greeting: {
+          source: greeting.source,
+          ...(greetingTranslation ? { translated: greetingTranslation.text } : {}),
+        },
       },
       signal,
     })

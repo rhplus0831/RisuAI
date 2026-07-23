@@ -332,6 +332,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'character-greeting-translations-read',
+    methods: GET_ONLY,
+    path: '/api/v1/characters/:characterId/greeting-translations',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Greeting translations contain private character-derived provider output.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only greeting translation projection.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'chat-messages-read',
     methods: GET_ONLY,
     path: '/api/v1/chats/:id/messages',

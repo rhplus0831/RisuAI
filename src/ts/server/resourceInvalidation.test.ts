@@ -32,6 +32,7 @@ const sideEffects = vi.hoisted(() => ({
   markLorebook: vi.fn(),
   applyChat: vi.fn(() => true),
   applyLorebook: vi.fn(() => true),
+  refreshGreeting: vi.fn(async () => true),
 }))
 
 const promptHydration = vi.hoisted(() => ({
@@ -140,6 +141,7 @@ const hooks: ServerResourceInvalidationHooks = {
   markCharacterLorebookHydrated: sideEffects.markLorebook,
   triggerOpenChatGenerationReattach: sideEffects.reattach,
   clearActiveMessageTranslation: sideEffects.clearTranslation,
+  refreshGreetingTranslations: sideEffects.refreshGreeting,
 }
 
 function metadataCharacter(chaId: string, name: string, chatId = `chat-${chaId}`, message: unknown[] = []): character {
@@ -483,6 +485,20 @@ describe('API-backed resource invalidation', () => {
       name: 'Ada updated',
       chats: [{ message: [{ role: 'user', data: 'resident-a' }] }],
     })
+  })
+
+  it('refreshes only the affected greeting translation projection for its targeted event', async () => {
+    seedResources(5)
+    await expect(
+      refreshInvalidatedServerResources(event(6, 'greetingTranslation', { id: 'char-a' }), {
+        appliedRevision: 5,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 6, scope: 'targeted' })
+    expect(sideEffects.refreshGreeting).toHaveBeenCalledWith('char-a', 6)
+    expect(api.character).not.toHaveBeenCalled()
+    expect(api.characters).not.toHaveBeenCalled()
+    expect(api.settings).not.toHaveBeenCalled()
   })
 
   it('keeps an optimistic character-row edit when an older generic read completes', async () => {

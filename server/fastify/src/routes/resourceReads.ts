@@ -21,8 +21,12 @@ import {
   loadPersistedDatabaseFields,
   loadPresetHydration,
   loadSettingsFromSqlite,
+  loadSettingsWithTranslatorPresetsFromSqlite,
   loadSingleCharacterRowForRead,
+  ValidationError,
 } from '../repository.js'
+import { listSourceValidGreetingTranslations } from '../translation/greetingTranslationStore.js'
+import { resolveRawMessageTranslatorIdentity } from '../translation/rawMessageTranslation.js'
 
 const PLUGIN_STORAGE_COLLECTION = 'pluginCustomStorage' as const
 const READABLE_COLLECTION_NAMES = [...COLLECTION_FIELDS, PLUGIN_STORAGE_COLLECTION] as const
@@ -370,6 +374,50 @@ export function registerResourceReadRoutes(
       { id: req.params.id },
     )
   })
+
+  app.get<{ Params: { characterId: string } }>(
+    '/api/v1/characters/:characterId/greeting-translations',
+    { exposeHeadRoute: false },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      const character = loadSingleCharacterRowForRead(db, dataDir, req.params.characterId)
+      if (!character) {
+        reply.code(404).send({
+          error: 'character_not_found',
+          reason: `Character not found: ${req.params.characterId}`,
+        })
+        return
+      }
+      const { revision } = getSchemaState(db)
+      const settings = loadSettingsWithTranslatorPresetsFromSqlite(db)
+      let settingsHash: string | null = null
+      if (settings !== null) {
+        try {
+          settingsHash = resolveRawMessageTranslatorIdentity({ settings, character }).settingsHash
+        } catch (error) {
+          if (!(error instanceof ValidationError)) throw error
+        }
+      }
+      const translations = settingsHash
+        ? listSourceValidGreetingTranslations(db, req.params.characterId, character, settingsHash).map((row) => ({
+            greetingIndex: row.greetingIndex,
+            translation: row.translation,
+          }))
+        : []
+      return metricResourceResponse(
+        req.log,
+        'greetingTranslations',
+        revision,
+        {
+          revision,
+          characterId: req.params.characterId,
+          settingsHash,
+          translations,
+        },
+        { id: req.params.characterId },
+      )
+    },
+  )
 
   app.get<{ Params: { id: string }; Querystring: ChatMessageRangeQuery }>(
     '/api/v1/chats/:id/messages',

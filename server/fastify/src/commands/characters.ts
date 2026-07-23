@@ -52,6 +52,7 @@ const EXCLUDED_CHARACTER_PATCH_KEYS = new Set([
   'modules',
   'coldstorage',
   'coldStoragedChats',
+  'greetingTranslations',
 ])
 
 const CHARACTER_PATCH_DELETABLE_KEYS = new Set(['loreSettings'])
@@ -462,6 +463,9 @@ function validateCharacterRecord(record: JsonRecord, label: string, options: { a
 }
 
 function validateCharacterCreateRecord(record: JsonRecord, label: string): void {
+  if (Object.prototype.hasOwnProperty.call(record, 'greetingTranslations')) {
+    throw new ValidationError(`${label}.greetingTranslations is server-owned portable data`)
+  }
   if (!Object.prototype.hasOwnProperty.call(record, 'chats')) return
   if (!Array.isArray(record.chats)) {
     throw new ValidationError(`${label}.chats must be an array when provided`)

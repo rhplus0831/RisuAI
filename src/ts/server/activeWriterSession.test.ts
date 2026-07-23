@@ -34,6 +34,9 @@ vi.mock('../storage/fastifyStorage', () => ({
 vi.mock('./messageTranslationJobs', () => ({
   stopActiveMessageTranslationRefresh: takeoverMocks.stopTranslations,
 }))
+vi.mock('./greetingTranslations.svelte', () => ({
+  stopActiveGreetingTranslationRefresh: vi.fn(),
+}))
 vi.mock('../process/reattach', () => ({ stopActiveGenerationReattach: takeoverMocks.stopReattach }))
 vi.mock('./chatMessageHydration.svelte', () => ({ stopChatMessageHydration: takeoverMocks.stopHydration }))
 

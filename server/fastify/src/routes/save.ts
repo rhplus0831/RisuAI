@@ -50,6 +50,7 @@ import {
 import type { LegacyRisuSaveEnvelopeKind } from '../risuSave/legacyEnvelopeCodec.js'
 import { importRateLimit } from '../routeRateLimits.js'
 import { emitProtocolMetric, protocolDurationMs, protocolMetricsEnabled, protocolNowMs } from '../protocolMetrics.js'
+import type { GreetingTranslationRow } from '../translation/greetingTranslationStore.js'
 
 interface ImportBody {
   database?: unknown
@@ -108,6 +109,7 @@ export function registerSaveRoutes(
           dataDir,
           snapshot.database,
           snapshot.portableMetadata,
+          snapshot.greetingTranslations,
           { automaticBackupRetention: options.automaticBackupRetention },
         )
         eventSink.emit(event)
@@ -134,6 +136,7 @@ export function registerSaveRoutes(
         dataDir,
         snapshot.database,
         snapshot.portableMetadata,
+        snapshot.greetingTranslations,
         {
           automaticBackupRetention: options.automaticBackupRetention,
           cloneBeforeMessageSplit: false,
@@ -190,6 +193,7 @@ export function registerSaveRoutes(
         dataDir,
         importedDatabase,
         snapshot.portableMetadata,
+        snapshot.greetingTranslations,
         {
           automaticBackupRetention: options.automaticBackupRetention,
           beforeRevision: () => {
@@ -303,7 +307,7 @@ export function registerSaveRoutes(
       const persisted = loadPersistedWithMessages(db, dataDir)
       persisted.assets = getAllAssetMetadata(db)
       const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
-      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted, loadPortableMetadata(db))
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted, loadPortableMetadata(db), db)
       const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
       const encodeStart = measure ? protocolNowMs() : 0
       const risuBytes = encodeRisuSaveExportSnapshot(snapshot, exportOptions)
@@ -351,7 +355,7 @@ export function registerSaveRoutes(
       const persisted = loadPersistedWithMessages(db, dataDir)
       persisted.assets = getAllAssetMetadata(db)
       const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
-      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted, loadPortableMetadata(db))
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted, loadPortableMetadata(db), db)
       snapshot.database = prepareLegacyLocalBackupExportDatabase(snapshot.database, persisted.assets)
       const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
       const encodeStart = measure ? protocolNowMs() : 0
@@ -542,6 +546,7 @@ async function applyImportedDatabase(
   dataDir: string,
   database: unknown,
   portableMetadata: RisuServerPortableMetadata,
+  greetingTranslations: readonly GreetingTranslationRow[],
   options: {
     cloneBeforeMessageSplit?: boolean
     automaticBackupRetention?: number
@@ -558,6 +563,7 @@ async function applyImportedDatabase(
   let result: Awaited<ReturnType<typeof applyImport>>
   try {
     result = await applyImport(db, dataDir, database, {
+      greetingTranslations,
       automaticBackupRetention: options.automaticBackupRetention,
       cloneBeforeMessageSplit: options.cloneBeforeMessageSplit,
       beforeRevision: () => {

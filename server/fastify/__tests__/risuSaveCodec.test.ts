@@ -24,8 +24,13 @@ import {
   encodeRepositoryRisuSaveLegacyExport,
 } from '../src/risuSave/exportSnapshot.js'
 import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
-import { writePersistedWithMessages } from '../src/repository.js'
+import { applyImport, writePersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
+import {
+  getGreetingTranslation,
+  sourceHash,
+  upsertGreetingTranslation,
+} from '../src/translation/greetingTranslationStore.js'
 
 const dataDirs: string[] = []
 
@@ -506,6 +511,141 @@ describe('server .risu fixture harness', () => {
       version: 1,
       memoryLegacySummaryTombstones: [],
     })
+    expect(decoded.greetingTranslations).toEqual([])
+  })
+
+  it.each(['legacy', 'blocks'] as const)(
+    'round-trips source-valid greeting translation variants through %s saves and strips the portable field',
+    (envelope) => {
+      const dataDir = makeDataDir()
+      const db = openDatabase(dataDir)
+      try {
+        writePersistedWithMessages(db, dataDir, {
+          _version: 1,
+          database: {
+            characters: [
+              {
+                chaId: 'greeting-char',
+                name: 'Greeting Character',
+                firstMessage: 'primary',
+                alternateGreetings: ['alternate'],
+                chats: [],
+              },
+            ],
+          },
+          assets: [],
+        })
+        for (const [settingsHash, text] of [
+          ['settings-a', '기본 A'],
+          ['settings-b', '기본 B'],
+        ] as const) {
+          upsertGreetingTranslation(db, 'greeting-char', -1, {
+            text,
+            source: 'raw',
+            sourceHash: sourceHash('primary'),
+            targetLanguage: 'ko',
+            inputLanguage: 'en',
+            translatorType: 'google',
+            settingsHash,
+            updatedAt: 123,
+          })
+        }
+        const bytes =
+          envelope === 'legacy'
+            ? encodeRepositoryRisuSaveLegacyExport(db, dataDir, 'legacy-raw')
+            : encodeRepositoryRisuSaveBlockExport(db, dataDir)
+        const decoded = decodeRisuSaveImportSnapshot(bytes)
+        expect(decoded.greetingTranslations.map((row) => [row.settingsHash, row.translation.text])).toEqual([
+          ['settings-a', '기본 A'],
+          ['settings-b', '기본 B'],
+        ])
+        expect((decoded.database.characters as Array<Record<string, unknown>>)[0]).not.toHaveProperty(
+          'greetingTranslations',
+        )
+      } finally {
+        db.close()
+      }
+    },
+  )
+
+  it('rejects malformed greeting translation entries and drops well-formed stale sources', () => {
+    const baseTranslation = {
+      text: 'translated',
+      source: 'raw',
+      sourceHash: sourceHash('stale source'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google',
+      settingsHash: 'settings-a',
+      updatedAt: 123,
+    }
+    const stale = decodeRisuSaveImportSnapshot(
+      encodeLegacyRisuSaveEnvelope({
+        characters: [
+          {
+            chaId: 'greeting-char',
+            firstMessage: 'current source',
+            greetingTranslations: [{ greetingIndex: -1, settingsHash: 'settings-a', translation: baseTranslation }],
+          },
+        ],
+      }),
+    )
+    expect(stale.greetingTranslations).toEqual([])
+    expect((stale.database.characters as Array<Record<string, unknown>>)[0]).not.toHaveProperty('greetingTranslations')
+
+    expect(() =>
+      decodeRisuSaveImportSnapshot(
+        encodeLegacyRisuSaveEnvelope({
+          characters: [
+            {
+              chaId: 'greeting-char',
+              firstMessage: 'current source',
+              greetingTranslations: [{ greetingIndex: -1, settingsHash: 'row-settings', translation: baseTranslation }],
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/settingsHash must match/)
+  })
+
+  it('atomically restores extracted greeting rows without retaining the portable character field', async () => {
+    const dataDir = makeDataDir()
+    const db = openDatabase(dataDir)
+    try {
+      const translation = {
+        text: 'translated primary',
+        source: 'raw' as const,
+        sourceHash: sourceHash('primary'),
+        targetLanguage: 'ko',
+        inputLanguage: 'en',
+        translatorType: 'google' as const,
+        settingsHash: 'settings-a',
+        updatedAt: 123,
+      }
+      const decoded = decodeRisuSaveImportSnapshot(
+        encodeLegacyRisuSaveEnvelope({
+          characters: [
+            {
+              chaId: 'greeting-char',
+              firstMessage: 'primary',
+              chats: [],
+              greetingTranslations: [{ greetingIndex: -1, settingsHash: 'settings-a', translation }],
+            },
+          ],
+        }),
+      )
+      await applyImport(db, dataDir, decoded.database, {
+        greetingTranslations: decoded.greetingTranslations,
+        automaticBackupRetention: 0,
+      })
+      expect(getGreetingTranslation(db, 'greeting-char', -1, 'settings-a')?.translation).toEqual(translation)
+      const row = db.prepare("SELECT data_json FROM characters WHERE id = 'greeting-char'").get() as {
+        data_json: string
+      }
+      expect(JSON.parse(row.data_json)).not.toHaveProperty('greetingTranslations')
+    } finally {
+      db.close()
+    }
   })
 
   it('exports tombstones without leaking retry or push-subscription secrets', () => {

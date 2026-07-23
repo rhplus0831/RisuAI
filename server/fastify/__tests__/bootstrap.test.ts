@@ -131,6 +131,7 @@ describe('bootstrap runtime metadata', () => {
       assetBaseUrl: '/api/v1/assets',
       activeGenerationJobs: [],
       activeMessageTranslations: [],
+      activeGreetingTranslations: [],
     })
   })
 
@@ -160,6 +161,7 @@ describe('bootstrap runtime metadata', () => {
       assetBaseUrl: '/api/v1/assets',
       activeGenerationJobs: [],
       activeMessageTranslations: [],
+      activeGreetingTranslations: [],
     })
   })
 

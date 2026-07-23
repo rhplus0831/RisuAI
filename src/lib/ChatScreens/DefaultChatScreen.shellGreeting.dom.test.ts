@@ -78,8 +78,21 @@ vi.mock('../../ts/util', async (importActual) => {
 })
 
 vi.mock('../../ts/translator/translator', () => ({
+  getTranslatorSettingsSignatureKey: () => 'test-translator-settings',
   isExpTranslator: () => false,
   translate: vi.fn(async (message: string) => message),
+}))
+
+vi.mock('src/ts/server/greetingTranslations.svelte', () => ({
+  currentGreetingTranslatorSettingsSignature: () => 'test-translator-settings',
+  findGreetingTranslation: () => null,
+  greetingTranslationProjectionVersion: {
+    subscribe(run: (value: number) => void) {
+      run(0)
+      return () => undefined
+    },
+  },
+  refreshGreetingTranslationProjection: vi.fn(async () => ({ status: 'unavailable' as const })),
 }))
 
 vi.mock('../../ts/process/modules', () => ({

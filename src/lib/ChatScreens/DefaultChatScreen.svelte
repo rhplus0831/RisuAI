@@ -127,6 +127,12 @@
   } from './DefaultChatScreen.composerDrafts'
   import { runInputHook } from 'src/ts/process/inputHooks'
   import InputHookPickerDialog from './InputHookPickerDialog.svelte'
+  import {
+    currentGreetingTranslatorSettingsSignature,
+    findGreetingTranslation,
+    greetingTranslationProjectionVersion,
+    refreshGreetingTranslationProjection,
+  } from 'src/ts/server/greetingTranslations.svelte'
 
   const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
   const composerFileOperationGuard = createLatestOperationGuard<string>()
@@ -241,6 +247,35 @@
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
   let currentChatId = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.id)
   let currentChatRecord = $derived(currentCharacter?.chats[currentCharacter.chatPage])
+  let greetingTranslatorSettingsSignature = $derived(currentGreetingTranslatorSettingsSignature())
+  let greetingTranslationTarget = $derived.by(() => {
+    if (!currentCharacter || isServerCharacterShell(currentCharacter) || !currentChatRecord) return null
+    const candidateIndex = currentChatRecord.fmIndex
+    const greetingIndex = Number.isInteger(candidateIndex) && (candidateIndex as number) >= -1 ? candidateIndex : -1
+    const source =
+      greetingIndex === -1 ? currentCharacter.firstMessage : currentCharacter.alternateGreetings?.[greetingIndex]
+    if (
+      typeof currentCharacter.chaId !== 'string' ||
+      currentCharacter.chaId.length === 0 ||
+      typeof currentChatRecord.id !== 'string' ||
+      currentChatRecord.id.length === 0 ||
+      typeof source !== 'string'
+    ) {
+      return null
+    }
+    return {
+      characterId: currentCharacter.chaId,
+      chatId: currentChatRecord.id,
+      greetingIndex,
+      source,
+      clientSettingsSignature: greetingTranslatorSettingsSignature,
+    }
+  })
+  let greetingTranslation = $derived.by(() => {
+    void $greetingTranslationProjectionVersion
+    const target = greetingTranslationTarget
+    return target ? findGreetingTranslation(target) : null
+  })
   let draftHooks = $derived((getDatabase().inputHooks ?? []).filter((hook) => hook.type === 'draft'))
   let btwHooks = $derived((getDatabase().inputHooks ?? []).filter((hook) => hook.type === 'btw'))
   let selectedDraftHook = $derived.by(() => {
@@ -274,6 +309,14 @@
   let activeChatMessagesFailed = $derived(
     activeChatOpen && hasChatMessageHydrationFailed(currentChatId, currentChat.length),
   )
+
+  $effect(() => {
+    if (!currentCharacter || isServerCharacterShell(currentCharacter)) return
+    const characterId = currentCharacter.chaId
+    const clientSettingsSignature = greetingTranslatorSettingsSignature
+    if (typeof characterId !== 'string' || characterId.length === 0) return
+    void refreshGreetingTranslationProjection(characterId, { clientSettingsSignature })
+  })
 
   async function retryActiveChatHydration() {
     await hydrateActiveChat({ force: true })
@@ -2099,6 +2142,8 @@
         {#if !isServerCharacterShell(currentCharacter) && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length <= loadPages}
           <Chat
             character={currentDisplayCharacter}
+            greetingTarget={greetingTranslationTarget}
+            translation={greetingTranslation}
             name={getCharacterDisplayName(getDatabase().characters[$selectedCharID])}
             message={getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
               .fmIndex === -1

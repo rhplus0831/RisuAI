@@ -1,0 +1,115 @@
+import { randomUUID } from 'node:crypto'
+import { safeTranslationError } from './messageTranslationJobs.js'
+
+export type GreetingTranslationJobStatus = 'running' | 'succeeded' | 'failed'
+
+export interface GreetingTranslationJob {
+  characterId: string
+  greetingIndex: number
+  settingsHash: string
+  jobId: string
+  status: GreetingTranslationJobStatus
+  error?: string
+  completedAt?: number
+}
+
+interface ActiveGreetingTranslationEntry extends GreetingTranslationJob {
+  status: 'running'
+  token: string
+}
+
+export interface GreetingTranslationJobHandle {
+  jobId: string
+  isCurrent(): boolean
+  succeed(): void
+  fail(error: unknown): void
+}
+
+const TERMINAL_RETENTION_MS = 10 * 60_000
+const MAX_TERMINAL_JOBS = 128
+
+function targetKey(target: Pick<GreetingTranslationJob, 'characterId' | 'greetingIndex' | 'settingsHash'>): string {
+  return JSON.stringify([target.characterId, target.greetingIndex, target.settingsHash])
+}
+
+/** Detached greeting translations plus bounded terminal reattachment history. */
+export class GreetingTranslationJobRegistry {
+  private readonly activeByTarget = new Map<string, ActiveGreetingTranslationEntry>()
+  private readonly terminalByTarget = new Map<string, GreetingTranslationJob>()
+
+  register(
+    input: Pick<GreetingTranslationJob, 'characterId' | 'greetingIndex' | 'settingsHash'> & { jobId?: string },
+  ): GreetingTranslationJobHandle {
+    const key = targetKey(input)
+    const token = randomUUID()
+    const jobId = input.jobId ?? randomUUID()
+    this.terminalByTarget.delete(key)
+    this.activeByTarget.set(key, {
+      characterId: input.characterId,
+      greetingIndex: input.greetingIndex,
+      settingsHash: input.settingsHash,
+      jobId,
+      status: 'running',
+      token,
+    })
+    return {
+      jobId,
+      isCurrent: () => this.activeByTarget.get(key)?.token === token,
+      succeed: () => this.complete(key, token, { status: 'succeeded' }),
+      fail: (error) => this.complete(key, token, { status: 'failed', error: safeTranslationError(error) }),
+    }
+  }
+
+  translations(): GreetingTranslationJob[] {
+    this.pruneTerminalJobs()
+    return [
+      ...[...this.activeByTarget.values()].map(({ token: _token, ...job }) => job),
+      ...this.terminalByTarget.values(),
+    ]
+  }
+
+  invalidateAlternateMutation(
+    characterId: string,
+    operation: { type: 'delete'; index: number } | { type: 'swap'; firstIndex: number; secondIndex: number },
+  ): void {
+    for (const [key, job] of this.activeByTarget) {
+      if (job.characterId !== characterId || job.greetingIndex < 0) continue
+      const affected =
+        operation.type === 'delete'
+          ? job.greetingIndex >= operation.index
+          : job.greetingIndex === operation.firstIndex || job.greetingIndex === operation.secondIndex
+      if (affected) this.activeByTarget.delete(key)
+    }
+  }
+
+  private complete(
+    key: string,
+    token: string,
+    terminal: { status: 'succeeded' } | { status: 'failed'; error: string },
+  ): void {
+    const active = this.activeByTarget.get(key)
+    if (!active || active.token !== token) return
+    this.activeByTarget.delete(key)
+    this.terminalByTarget.set(key, {
+      characterId: active.characterId,
+      greetingIndex: active.greetingIndex,
+      settingsHash: active.settingsHash,
+      jobId: active.jobId,
+      ...terminal,
+      completedAt: Date.now(),
+    })
+    this.pruneTerminalJobs()
+  }
+
+  private pruneTerminalJobs(): void {
+    const cutoff = Date.now() - TERMINAL_RETENTION_MS
+    for (const [key, job] of this.terminalByTarget) {
+      if ((job.completedAt ?? 0) < cutoff) this.terminalByTarget.delete(key)
+    }
+    while (this.terminalByTarget.size > MAX_TERMINAL_JOBS) {
+      const oldest = this.terminalByTarget.keys().next().value as string | undefined
+      if (!oldest) break
+      this.terminalByTarget.delete(oldest)
+    }
+  }
+}

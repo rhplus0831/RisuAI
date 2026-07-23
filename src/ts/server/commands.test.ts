@@ -132,6 +132,7 @@ import {
   selectTranslatorPresetCommand,
   touchLoadoutCommand,
   truncateMessagesCommand,
+  translateGreetingCommand,
   translateMessageCommand,
   withDirectServerCommandEventReconciliation,
   updateCharacterCommand,
@@ -6232,6 +6233,55 @@ describe('server command API adapter', () => {
           jobId: 'translation-job-a',
         },
       },
+    ])
+  })
+
+  it('dispatches greeting translation immediately outside the durable mutation lane', async () => {
+    const translation = {
+      text: 'translated greeting',
+      source: 'raw',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    const reconciled: number[] = []
+    setServerCommandSuccessReconciler((event) => {
+      reconciled.push(event.revision)
+    })
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 2,
+      event: {
+        type: 'character.greetingTranslation.updated',
+        revision: 2,
+        resource: 'greetingTranslation',
+        id: 'char a',
+      },
+      characterId: 'char a',
+      greetingIndex: -1,
+      jobId: 'greeting-job-a',
+      settingsHash: 'b'.repeat(64),
+      translation,
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      translateGreetingCommand({
+        baseRevision: 1,
+        characterId: 'char a',
+        greetingIndex: -1,
+        jobId: 'greeting-job-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, greetingIndex: -1, translation })
+    expect(reconciled).toEqual([2])
+    expect(commandFetch.calls).toEqual([
+      expect.objectContaining({
+        url: '/api/v1/commands/characters/char%20a/greetings/-1/translate',
+        method: 'POST',
+        body: { baseRevision: 1, jobId: 'greeting-job-a' },
+      }),
     ])
   })
 

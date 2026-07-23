@@ -1150,6 +1150,12 @@ export interface MutateAlternateGreetingsCommandInput extends CharacterCommandIn
   chatGreetingIndices: ChatGreetingIndex[]
 }
 
+export interface TranslateGreetingCommandInput extends CharacterCommandInput {
+  characterId: string
+  greetingIndex: number
+  jobId: string
+}
+
 export interface RecoverColdStorageCharacterCommandInput extends CharacterCommandInput {
   characterId: string
   key: string
@@ -3441,6 +3447,38 @@ export async function mutateAlternateGreetingsCommand(
     signal,
     readLocalEffect: (body, event) => readAlternateGreetingMutationLocalEffect(body, event, input),
   })
+}
+
+export async function translateGreetingCommand(
+  input: TranslateGreetingCommandInput,
+  signal?: AbortSignal | null,
+): Promise<
+  ServerCommandResult<{
+    characterId: string
+    greetingIndex: number
+    jobId: string
+    settingsHash: string
+    translation: MessageTranslation
+  }>
+> {
+  return requestCommandJson(
+    `/characters/${encodeURIComponent(input.characterId)}/greetings/${input.greetingIndex}/translate`,
+    {
+      method: 'POST',
+      body: {
+        baseRevision: input.baseRevision,
+        jobId: input.jobId,
+      },
+      signal,
+      // Greeting translation is provider-bound and source-fenced, not staged
+      // in the durable mutation lane. Reconcile its revision/event immediately.
+      reconcileImmediately: true,
+      deferOwnEventUntilResponse: (event) =>
+        event.type === 'character.greetingTranslation.updated' &&
+        event.resource === 'greetingTranslation' &&
+        event.id === input.characterId,
+    },
+  )
 }
 
 export async function recoverColdStorageCharacterCommand(

@@ -73,6 +73,10 @@ import {
   triggerOpenChatGenerationReattach,
 } from './process/reattach'
 import { setActiveMessageTranslations, startActiveMessageTranslationRefresh } from './server/messageTranslationJobs'
+import {
+  setActiveGreetingTranslations,
+  startActiveGreetingTranslationRefresh,
+} from './server/greetingTranslations.svelte'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
 import {
@@ -341,7 +345,9 @@ export async function loadWebInitialDatabase() {
   setResourceWriteGuardEnabled(true)
   setActiveGenerationJobs(runtime.activeGenerationJobs ?? [])
   setActiveMessageTranslations(runtime.activeMessageTranslations ?? [])
+  setActiveGreetingTranslations(runtime.activeGreetingTranslations ?? [])
   startActiveMessageTranslationRefresh()
+  startActiveGreetingTranslationRefresh()
   startActiveGenerationReattach()
   startChatMessageHydration()
   void hydrateActiveChat()

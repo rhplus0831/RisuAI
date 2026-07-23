@@ -7,6 +7,7 @@ import type { GenerationJobRegistry } from '../generationJobs.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
+import type { GreetingTranslationJobRegistry } from '../greetingTranslationJobs.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
 import { getDatabaseLineage, getDatabaseWriterMetadata } from '../databaseLineage.js'
 import { assessDatabaseInitialization } from '../databaseInitialization.js'
@@ -21,6 +22,7 @@ export function registerBootstrapRoutes(
   activeWriterState?: ActiveWriterState,
   generationJobs?: GenerationJobRegistry,
   messageTranslationJobs?: MessageTranslationJobRegistry,
+  greetingTranslationJobs?: GreetingTranslationJobRegistry,
 ): void {
   app.get('/api/v1/bootstrap', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -47,6 +49,7 @@ export function registerBootstrapRoutes(
       // This lets a returning browser preserve busy controls, report failures,
       // and rehydrate successful translations after reload.
       activeMessageTranslations: messageTranslationJobs?.translations() ?? [],
+      activeGreetingTranslations: greetingTranslationJobs?.translations() ?? [],
     }
     emitProtocolMetric(
       'bootstrap_projection',
@@ -55,6 +58,7 @@ export function registerBootstrapRoutes(
         payloadBytes: jsonPayloadBytes(response),
         activeGenerationJobCount: response.activeGenerationJobs.length,
         activeMessageTranslationCount: response.activeMessageTranslations.length,
+        activeGreetingTranslationCount: response.activeGreetingTranslations.length,
       }),
       req.log,
     )

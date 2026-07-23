@@ -31,6 +31,11 @@ import {
 } from '../../../src/ts/personaMutationCertificate.js'
 import { serializeScriptDefinitionCollectionDigestInput } from '../../../src/ts/server/scriptDefinitionMutations.js'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import {
+  getGreetingTranslation,
+  sourceHash,
+  upsertGreetingTranslation,
+} from '../src/translation/greetingTranslationStore.js'
 
 const subtle = webcrypto.subtle
 
@@ -401,6 +406,56 @@ async function waitForActiveMessageTranslation(
   throw new Error(`Timed out waiting for active message translation: ${JSON.stringify(expected)}`)
 }
 
+async function waitForActiveGreetingTranslation(
+  app: FastifyInstance,
+  assertion: string,
+  expected: { characterId: string; greetingIndex: number },
+  timeoutMs = 2_000,
+): Promise<{ characterId: string; greetingIndex: number; settingsHash: string; jobId: string }> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const bootstrap = await app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const active = bootstrap.json().activeGreetingTranslations as Array<{
+      characterId: string
+      greetingIndex: number
+      settingsHash: string
+      jobId: string
+    }>
+    const matching = active.find(
+      (entry) => entry.characterId === expected.characterId && entry.greetingIndex === expected.greetingIndex,
+    )
+    if (matching) return matching
+    await sleep(10)
+  }
+  throw new Error(`Timed out waiting for active greeting translation: ${JSON.stringify(expected)}`)
+}
+
+async function waitForProjectedGreetingTranslation(
+  app: FastifyInstance,
+  assertion: string,
+  characterId: string,
+  expectedText: string,
+  timeoutMs = 2_000,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const projection = await app.inject({
+      method: 'GET',
+      url: `/api/v1/characters/${encodeURIComponent(characterId)}/greeting-translations`,
+      headers: { 'risu-auth': assertion },
+    })
+    const translations = projection.json().translations as Array<{ translation?: Record<string, unknown> }>
+    const matching = translations.find((entry) => entry.translation?.text === expectedText)?.translation
+    if (matching) return matching
+    await sleep(25)
+  }
+  throw new Error(`Timed out waiting for projected greeting translation: ${expectedText}`)
+}
+
 async function importMessageTranslationFixture(
   app: FastifyInstance,
   assertion: string,
@@ -430,6 +485,33 @@ async function importMessageTranslationFixture(
         ],
         chatFolders: [],
         chatPage: 0,
+      },
+    ],
+    characterOrder: ['char-a'],
+  })
+}
+
+async function importGreetingTranslationFixture(
+  app: FastifyInstance,
+  assertion: string,
+  options: { echoMessage: string; echoDelay?: number },
+): Promise<number> {
+  return importDatabase(app, assertion, {
+    translator: 'ko',
+    translatorInputLanguage: 'en',
+    translatorType: 'llm',
+    aiModel: 'echo_model',
+    echoMessage: options.echoMessage,
+    ...(options.echoDelay === undefined ? {} : { echoDelay: options.echoDelay }),
+    translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
+    translatorMaxResponse: 128,
+    characters: [
+      {
+        chaId: 'char-a',
+        name: 'A',
+        firstMessage: 'primary greeting',
+        alternateGreetings: ['alternate greeting'],
+        chats: [{ id: 'chat-a', name: 'A chat', message: [], fmIndex: -1 }],
       },
     ],
     characterOrder: ['char-a'],
@@ -5093,7 +5175,6 @@ describe('Agent Preset command surface', () => {
       ],
       characterOrder: ['char-a'],
     })
-
     const deleted = await harness.app.inject({
       method: 'DELETE',
       url: '/api/v1/commands/agent-presets/ap_delete',
@@ -6886,6 +6967,30 @@ describe('Phase 9-3a character commands', () => {
       ],
       characterOrder: ['char-a'],
     })
+    {
+      const db = openDatabase(harness.dataDir)
+      try {
+        for (const [greetingIndex, source] of [
+          [-1, 'primary'],
+          [0, 'zero'],
+          [1, 'one'],
+          [2, 'two'],
+        ] as const) {
+          upsertGreetingTranslation(db, 'char-a', greetingIndex, {
+            text: `${source} translated`,
+            source: 'raw',
+            sourceHash: sourceHash(source),
+            targetLanguage: 'ko',
+            inputLanguage: 'en',
+            translatorType: 'google',
+            settingsHash: 'settings-a',
+            updatedAt: 123,
+          })
+        }
+      } finally {
+        db.close()
+      }
+    }
 
     const deleted = await harness.app.inject({
       method: 'PATCH',
@@ -6922,6 +7027,17 @@ describe('Phase 9-3a character commands', () => {
         (chatId) => readJsonRow('chats', chatId).fmIndex,
       ),
     ).toEqual([-1, 0, -1, 1, -1, -1])
+    {
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(getGreetingTranslation(db, 'char-a', -1, 'settings-a')?.translation.text).toBe('primary translated')
+        expect(getGreetingTranslation(db, 'char-a', 0, 'settings-a')?.translation.text).toBe('zero translated')
+        expect(getGreetingTranslation(db, 'char-a', 1, 'settings-a')?.translation.text).toBe('two translated')
+        expect(getGreetingTranslation(db, 'char-a', 2, 'settings-a')).toBeNull()
+      } finally {
+        db.close()
+      }
+    }
 
     const swapped = await harness.app.inject({
       method: 'PATCH',
@@ -6938,6 +7054,72 @@ describe('Phase 9-3a character commands', () => {
     expect(readJsonRow('characters', 'char-a').alternateGreetings).toEqual(['two', 'zero'])
     expect(readJsonRow('chats', 'chat-before').fmIndex).toBe(1)
     expect(readJsonRow('chats', 'chat-after').fmIndex).toBe(0)
+    {
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(getGreetingTranslation(db, 'char-a', 0, 'settings-a')?.translation.text).toBe('two translated')
+        expect(getGreetingTranslation(db, 'char-a', 1, 'settings-a')?.translation.text).toBe('zero translated')
+        expect(getGreetingTranslation(db, 'char-a', -1, 'settings-a')?.translation.text).toBe('primary translated')
+      } finally {
+        db.close()
+      }
+    }
+  })
+
+  it('invalidates only greeting rows whose ordinary character patch changes their source', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          firstMessage: 'primary',
+          alternateGreetings: ['zero', 'one'],
+          chats: [],
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const db = openDatabase(harness.dataDir)
+    try {
+      for (const [greetingIndex, source] of [
+        [-1, 'primary'],
+        [0, 'zero'],
+        [1, 'one'],
+      ] as const) {
+        upsertGreetingTranslation(db, 'char-a', greetingIndex, {
+          text: `${source} translated`,
+          source: 'raw',
+          sourceHash: sourceHash(source),
+          targetLanguage: 'ko',
+          inputLanguage: 'en',
+          translatorType: 'google',
+          settingsHash: 'settings-a',
+          updatedAt: 123,
+        })
+      }
+    } finally {
+      db.close()
+    }
+
+    const patched = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { firstMessage: 'primary edited', alternateGreetings: ['zero', 'one edited'] },
+      },
+    })
+    expect(patched.statusCode).toBe(200)
+    const after = openDatabase(harness.dataDir)
+    try {
+      expect(getGreetingTranslation(after, 'char-a', -1, 'settings-a')).toBeNull()
+      expect(getGreetingTranslation(after, 'char-a', 0, 'settings-a')?.translation.text).toBe('zero translated')
+      expect(getGreetingTranslation(after, 'char-a', 1, 'settings-a')).toBeNull()
+    } finally {
+      after.close()
+    }
   })
 
   it('creates, updates, selects, reorders, and deletes characters by chaId', async () => {
@@ -10485,6 +10667,179 @@ describe('Phase 9-3c message history commands', () => {
         translation: null,
       },
     ])
+  })
+
+  it('translates a server-resolved greeting and exposes only the current settings projection', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importGreetingTranslationFixture(harness.app, assertion, {
+      echoMessage: 'translated primary greeting',
+    })
+
+    const translated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/greetings/-1/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, jobId: 'greeting-job-a' },
+    })
+    expect(translated.statusCode).toBe(200)
+    expect(translated.json()).toMatchObject({
+      revision: revision + 1,
+      event: {
+        type: 'character.greetingTranslation.updated',
+        resource: 'greetingTranslation',
+        id: 'char-a',
+      },
+      jobId: 'greeting-job-a',
+      characterId: 'char-a',
+      greetingIndex: -1,
+      translation: { text: 'translated primary greeting', source: 'raw', translatorType: 'llm' },
+    })
+    expect(translated.json().settingsHash).toBe(translated.json().translation.settingsHash)
+
+    const projected = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-a/greeting-translations',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(projected.statusCode).toBe(200)
+    expect(projected.json()).toEqual({
+      revision: revision + 1,
+      characterId: 'char-a',
+      settingsHash: translated.json().settingsHash,
+      translations: [{ greetingIndex: -1, translation: translated.json().translation }],
+    })
+    expect(readJsonRow('characters', 'char-a')).not.toHaveProperty('greetingTranslations')
+
+    const invalid = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/greetings/1/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 1, jobId: 'invalid-job' },
+    })
+    expect(invalid.statusCode).toBe(404)
+    expect(invalid.json().error).toBe('Greeting not found: char-a/1')
+
+    const disabled = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/language',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 1, patch: { translatorType: 'none' } },
+    })
+    expect(disabled.statusCode).toBe(200)
+    const disabledProjection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-a/greeting-translations',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(disabledProjection.json()).toMatchObject({ settingsHash: null, translations: [] })
+  })
+
+  it('rejects a greeting translation whose source changes while the provider is running', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importGreetingTranslationFixture(harness.app, assertion, {
+      echoMessage: 'stale greeting translation',
+      echoDelay: 0.2,
+    })
+    const translating = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/greetings/-1/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, jobId: 'stale-greeting-job' },
+    })
+    await waitForActiveGreetingTranslation(harness.app, assertion, { characterId: 'char-a', greetingIndex: -1 })
+
+    const edited = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { firstMessage: 'edited greeting' } },
+    })
+    expect(edited.statusCode).toBe(200)
+    const result = await translating
+    expect(result.statusCode).toBe(400)
+    expect(result.json().error).toBe('Greeting changed before translation could be saved: char-a/-1')
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(db.prepare('SELECT COUNT(*) AS count FROM greeting_translations').get()).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('preserves a greeting row changed while the provider request is pending', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importGreetingTranslationFixture(harness.app, assertion, {
+      echoMessage: 'provider greeting translation that must lose',
+      echoDelay: 0.2,
+    })
+    const translating = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/greetings/-1/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, jobId: 'stale-prior-greeting-job' },
+    })
+    const active = await waitForActiveGreetingTranslation(harness.app, assertion, {
+      characterId: 'char-a',
+      greetingIndex: -1,
+    })
+    const manualTranslation = {
+      text: 'manual greeting translation',
+      source: 'raw' as const,
+      sourceHash: sourceHash('primary greeting'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: active.settingsHash,
+      updatedAt: 123,
+    }
+    const db = openDatabase(harness.dataDir)
+    try {
+      upsertGreetingTranslation(db, 'char-a', -1, manualTranslation)
+    } finally {
+      db.close()
+    }
+
+    const result = await translating
+    expect(result.statusCode).toBe(400)
+    expect(result.json().error).toBe('Greeting translation changed before translation could be saved: char-a/-1')
+    const after = openDatabase(harness.dataDir)
+    try {
+      expect(getGreetingTranslation(after, 'char-a', -1, active.settingsHash)?.translation).toEqual(manualTranslation)
+    } finally {
+      after.close()
+    }
+  })
+
+  it('continues greeting translation after the requesting client disconnects', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importGreetingTranslationFixture(harness.app, assertion, {
+      echoMessage: 'greeting translated after disconnect',
+      echoDelay: 0.5,
+    })
+    await harness.app.listen({ host: '127.0.0.1', port: 0 })
+    await postAndDisconnect(
+      `${appBaseUrl(harness.app)}/api/v1/commands/characters/char-a/greetings/-1/translate`,
+      assertion,
+      { baseRevision: revision, jobId: 'disconnected-greeting-job' },
+    )
+
+    const during = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(during.statusCode).toBe(200)
+    expect(during.json().activeGreetingTranslations).toEqual([
+      expect.objectContaining({
+        characterId: 'char-a',
+        greetingIndex: -1,
+        jobId: 'disconnected-greeting-job',
+        status: 'running',
+      }),
+    ])
+    await expect(
+      waitForProjectedGreetingTranslation(harness.app, assertion, 'char-a', 'greeting translated after disconnect'),
+    ).resolves.toMatchObject({ text: 'greeting translated after disconnect', source: 'raw' })
   })
 
   it('allows unrelated edits while raw translation is waiting on its provider', async () => {

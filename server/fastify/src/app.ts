@@ -60,6 +60,7 @@ import { ASSET_GC_INTERVAL_MS, type AssetGcOptions, runAssetGc } from './assetGc
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import { GenerationJobRegistry } from './generationJobs.js'
 import { MessageTranslationJobRegistry } from './messageTranslationJobs.js'
+import { GreetingTranslationJobRegistry } from './greetingTranslationJobs.js'
 import { createMemoryEventBus, emitMemoryEventSafely, type MemoryEventSink } from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
@@ -226,6 +227,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // transient chatId→jobId submission lock.
   const generationJobRegistry = new GenerationJobRegistry()
   const messageTranslationJobRegistry = new MessageTranslationJobRegistry()
+  const greetingTranslationJobRegistry = new GreetingTranslationJobRegistry()
   const gcTimer = setInterval(() => {
     streamJobRegistry.tickGc()
     generationJobRegistry.tickGc()
@@ -277,6 +279,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     activeWriterState,
     generationJobRegistry,
     messageTranslationJobRegistry,
+    greetingTranslationJobRegistry,
   )
   registerActiveWriterGuard(app, activeWriterState)
   registerResourceReadRoutes(app, db, authState, config.dataDir)
@@ -291,7 +294,15 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     maxExpandedImportBytes: config.realmImportMaxExpandedBytes ?? DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES,
     ...opts.realmImport,
   })
-  registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink, messageTranslationJobRegistry)
+  registerCommandRoutes(
+    app,
+    db,
+    authState,
+    config.dataDir,
+    commandEventSink,
+    messageTranslationJobRegistry,
+    greetingTranslationJobRegistry,
+  )
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus, activeWriterState)
   registerAssetsRoutes(app, db, authState, config.dataDir, activeWriterState)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink, {

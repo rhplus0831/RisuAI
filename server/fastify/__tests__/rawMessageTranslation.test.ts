@@ -8,7 +8,11 @@ vi.mock('../src/prompt/chatDispatch.js', () => ({
   dispatchChatProvider: rawTranslationMocks.dispatchChatProvider,
 }))
 
-import { translateRawMessageData, type RawMessageTranslatorType } from '../src/translation/rawMessageTranslation.js'
+import {
+  resolveRawMessageTranslatorIdentity,
+  translateRawMessageData,
+  type RawMessageTranslatorType,
+} from '../src/translation/rawMessageTranslation.js'
 import { tokenize } from '../src/prompt/tokens.js'
 
 type FetchInput = Parameters<typeof fetch>[0]
@@ -153,6 +157,61 @@ afterEach(() => {
 })
 
 describe('translateRawMessageData', () => {
+  it('changes the server settings hash for every pipeline execution field but not step labels', () => {
+    const createSettings = () => ({
+      ...llmSettings(true),
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: {},
+        },
+      ],
+      translatorPresetId: 0,
+      translatorPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          prompt: 'Prompt {{slot::content}}',
+          maxResponse: 100,
+          steps: [
+            {
+              id: 'step-a',
+              name: 'Step A',
+              enabled: true,
+              prompt: 'Prompt {{slot::content}}',
+              maxResponse: 100,
+              model: { mode: 'inheritTranslate' },
+              outputKey: 'draft',
+            },
+          ],
+        },
+      ],
+    })
+    const hash = (settings: Record<string, unknown>) => resolveRawMessageTranslatorIdentity({ settings }).settingsHash
+    const baselineSettings = createSettings()
+    const baseline = hash(baselineSettings)
+    const mutations = [
+      (step: any) => (step.prompt = 'Changed {{slot::content}}'),
+      (step: any) => (step.maxResponse = 200),
+      (step: any) => (step.model = { mode: 'modelProfile', profileId: 'profile-a' }),
+      (step: any) => (step.outputKey = 'renamed'),
+      (step: any) => (step.enabled = false),
+    ]
+    for (const mutate of mutations) {
+      const changed = createSettings()
+      mutate(changed.translatorPresets[0].steps[0])
+      expect(hash(changed)).not.toBe(baseline)
+    }
+    const relabeled = createSettings()
+    relabeled.translatorPresets[0].name = 'Renamed preset'
+    relabeled.translatorPresets[0].steps[0].id = 'renamed-step-id'
+    relabeled.translatorPresets[0].steps[0].name = 'Renamed step'
+    expect(hash(relabeled)).toBe(baseline)
+  })
+
   it.each(providerCases)('uses the $name wire contract and returns normalized metadata', async (providerCase) => {
     const fetchMock = vi.fn(async (_input: FetchInput, _init?: RequestInit): Promise<Response> => {
       return jsonResponse(providerCase.response)
@@ -434,7 +493,7 @@ describe('translateRawMessageData', () => {
         { role: 'user', data: 'current source' },
       ],
       messageIndex: 4,
-      greeting: 'unused greeting',
+      greeting: { source: 'unused greeting' },
     }
 
     await translateRawMessageData({
@@ -469,7 +528,7 @@ describe('translateRawMessageData', () => {
           { role: 'char', data: 'current source' },
         ],
         messageIndex: 3,
-        greeting: 'hidden greeting',
+        greeting: { source: 'hidden greeting', translated: 'hidden greeting translated' },
       },
       signal: new AbortController().signal,
     })
@@ -481,7 +540,7 @@ describe('translateRawMessageData', () => {
     )
   })
 
-  it('prepends the greeting when history is exhausted and gives it an empty translation block', async () => {
+  it('prepends the persisted greeting source and translation when history is exhausted', async () => {
     rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
 
     await translateRawMessageData({
@@ -493,14 +552,14 @@ describe('translateRawMessageData', () => {
           { role: 'char', data: 'current source' },
         ],
         messageIndex: 1,
-        greeting: 'selected greeting',
+        greeting: { source: 'selected greeting', translated: 'selected greeting translated' },
       },
       signal: new AbortController().signal,
     })
 
     expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated[0].content).toBe(
       `History:\n${historyBlock('char', 'selected greeting')}${historyBlock('user', 'prior source')}\n` +
-        `Translations:\n${historyBlock('char', '')}${historyBlock('user', 'prior translated')}\n` +
+        `Translations:\n${historyBlock('char', 'selected greeting translated')}${historyBlock('user', 'prior translated')}\n` +
         'Source=current source',
     )
   })
@@ -524,7 +583,7 @@ describe('translateRawMessageData', () => {
           { role: 'user', data: 'current source' },
         ],
         messageIndex: 2,
-        greeting: '',
+        greeting: { source: '' },
       },
       signal: new AbortController().signal,
     })
@@ -546,7 +605,7 @@ describe('translateRawMessageData', () => {
           { role: 'char', data: 'current source' },
         ],
         messageIndex: 1,
-        greeting: 'must not leak greeting',
+        greeting: { source: 'must not leak greeting', translated: 'must not leak greeting translated' },
       },
       signal: new AbortController().signal,
     })

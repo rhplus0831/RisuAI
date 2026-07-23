@@ -35,16 +35,14 @@ cases (empty/visual-only pairs).
 
 ## Open items
 
-- `VERIFIED-OPEN` (2026-07-23) **Greeting translation storage gap** — the
-  fmIndex greeting never gets a persisted MessageTranslation:
-  `supportsServerRawTranslation()` requires `idx >= 0`
-  (`src/lib/ChatScreens/Chat.svelte:791`) while the greeting renders with
-  `idx={-1}` (`DefaultChatScreen.svelte:2017`); the server includes it
-  source-only and renders `entry.translated ?? ''`
-  (`server/fastify/src/translation/rawMessageTranslation.ts:184`, `:204`), so
-  `{{slot::historytrans::N}}` gets an empty greeting body. Blocked on
-  deciding where a first-message translation is stored (greetings are
-  character fields, not Message rows).
+- `FIXED` 2026-07-23 **Greeting translation storage gap** —
+  Option A stores source- and settings-fenced primary/alternate greeting
+  translations in the normalized `greeting_translations` table. The manual
+  Translate path now covers the synthetic `idx === -1` row, persists across
+  reload/swipe/save round trips, and supplies matching translated greeting
+  text to `{{slot::historytrans::N}}`. Product decision: manual-translate-only;
+  automatic greeting ensure/dedup/done-frame integration remains the specced
+  AUTO follow-up and is not part of this fix.
 - `ACCEPTED` (soften only on complaint) — with `translatorType llm` +
   `translatorSendTextAsIs`, non-message `runTranslator` consumers hard-error
   by design since the client fallback was removed: Playground translation,

@@ -173,6 +173,7 @@ export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
   'modules',
   'coldstorage',
   'coldStoragedChats',
+  'greetingTranslations',
 ])
 
 export const CHARACTER_PATCH_DELETABLE_KEYS = new Set(['loreSettings'])

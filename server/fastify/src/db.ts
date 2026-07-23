@@ -9,6 +9,7 @@ import {
   migrateCommandMutationReceiptsToDatabaseLineage,
 } from './commandMutationReceipts.js'
 import { createDatabaseMetadataTable } from './databaseLineage.js'
+import { createGreetingTranslationTable } from './translation/greetingTranslationStore.js'
 import {
   createAssetMetadataTable,
   createInlayCatalogTable,
@@ -18,7 +19,7 @@ import {
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 26
+export const CURRENT_SCHEMA_VERSION = 27
 
 export interface OpenDatabaseOptions {
   allowMissingDatabase?: boolean
@@ -269,6 +270,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createInlayCatalogTable(db)
     },
   },
+  {
+    version: 27,
+    name: 'greeting-translations',
+    up: (db) => {
+      createGreetingTranslationTable(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -340,6 +348,7 @@ export function openDatabase(dataDir: string, options: OpenDatabaseOptions = {})
       createAssetMetadataTable(db)
       createInlayCatalogTable(db)
       createCharacterTables(db)
+      createGreetingTranslationTable(db)
       createCollectionTables(db)
       createSettingsTable(db)
       createPushSubscriptionsTable(db)

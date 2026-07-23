@@ -22,6 +22,7 @@ export const BROAD_WRITE_TABLES = [
   'bot_presets',
   'characters',
   'chats',
+  'greeting_translations',
   'hypa_v3_presets',
   'loadouts',
   'lore_books',
@@ -103,7 +104,7 @@ export const COMMAND_METRIC_REVIEW_GATES = {
       "character-scoped edits write that character row (+ its own chat rows on folder-cascade / chats-reorder / fork, + the forked chat's messages, + settings only when a pointer moved) and never another collection table",
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
-    maxTables: ['chat_hypa_v3', 'characters', 'chats', 'messages', 'settings'],
+    maxTables: ['chat_hypa_v3', 'characters', 'chats', 'greeting_translations', 'messages', 'settings'],
     forbiddenTables: [
       'bot_presets',
       'hypa_v3_presets',
@@ -140,6 +141,12 @@ export const COMMAND_METRIC_REVIEW_GATES = {
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
     expectedTables: ['inlay_catalog'],
+  },
+  'targeted-greeting-translation': {
+    reviewGate: 'greeting translation commits touch only the normalized greeting translation store',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    expectedTables: ['greeting_translations'],
   },
 } satisfies Record<string, CommandMetricGate>
 

@@ -26,6 +26,16 @@ export interface ActiveMessageTranslation {
   completedAt?: number
 }
 
+export interface ActiveGreetingTranslation {
+  characterId: string
+  greetingIndex: number
+  settingsHash: string
+  jobId: string
+  status: 'running' | 'succeeded' | 'failed'
+  error?: string
+  completedAt?: number
+}
+
 export interface ServerBootstrapRuntime {
   initialized: boolean
   revision: number
@@ -49,6 +59,7 @@ export interface ServerBootstrapRuntime {
    * after reload.
    */
   activeMessageTranslations?: ActiveMessageTranslation[]
+  activeGreetingTranslations?: ActiveGreetingTranslation[]
 }
 
 export type ServerBootstrapResult =
@@ -144,11 +155,48 @@ async function fetchServerBootstrapWithMode(input: {
     writerEpoch: Number.isSafeInteger(record.writerEpoch) ? (record.writerEpoch as number) : undefined,
     activeGenerationJobs: parseActiveGenerationJobs(record.activeGenerationJobs),
     activeMessageTranslations: parseActiveMessageTranslations(record.activeMessageTranslations),
+    activeGreetingTranslations: parseActiveGreetingTranslations(record.activeGreetingTranslations),
   }
   return {
     status: 'ok',
     bootstrap,
   }
+}
+
+function parseActiveGreetingTranslations(value: unknown): ActiveGreetingTranslation[] {
+  if (!Array.isArray(value)) return []
+  const jobs: ActiveGreetingTranslation[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const record = entry as Record<string, unknown>
+    if (
+      typeof record.characterId !== 'string' ||
+      !Number.isInteger(record.greetingIndex) ||
+      (record.greetingIndex as number) < -1 ||
+      typeof record.settingsHash !== 'string' ||
+      typeof record.jobId !== 'string' ||
+      record.jobId.length === 0
+    ) {
+      continue
+    }
+    const status =
+      record.status === 'succeeded' || record.status === 'failed' || record.status === 'running'
+        ? record.status
+        : 'running'
+    const job: ActiveGreetingTranslation = {
+      characterId: record.characterId,
+      greetingIndex: record.greetingIndex as number,
+      settingsHash: record.settingsHash,
+      jobId: record.jobId,
+      status,
+    }
+    if (status === 'failed' && typeof record.error === 'string') job.error = record.error
+    if (status !== 'running' && typeof record.completedAt === 'number' && Number.isFinite(record.completedAt)) {
+      job.completedAt = record.completedAt
+    }
+    jobs.push(job)
+  }
+  return jobs
 }
 
 function parseActiveMessageTranslations(value: unknown): ActiveMessageTranslation[] {

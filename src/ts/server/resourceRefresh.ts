@@ -34,6 +34,11 @@ import {
   resetServerResourceRevisionFencesForDatabaseReplacement,
 } from './resourceState.svelte'
 import { clearActiveMessageTranslation, setActiveMessageTranslations } from './messageTranslationJobs'
+import {
+  clearGreetingTranslationProjection,
+  refreshGreetingTranslationProjection,
+  setActiveGreetingTranslations,
+} from './greetingTranslations.svelte'
 import { fetchServerBootstrapReadOnly } from './bootstrap'
 import { recordFullResourceRefresh } from './protocolDiagnostics'
 import { ensurePromptTemplateHydrated } from './promptTemplateHydration'
@@ -73,6 +78,10 @@ export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = 
   recordCanonicalLorebookCollections,
   triggerOpenChatGenerationReattach,
   clearActiveMessageTranslation,
+  refreshGreetingTranslations: async (characterId, minimumRevision) => {
+    const result = await refreshGreetingTranslationProjection(characterId, { minimumRevision })
+    return result.status === 'ok'
+  },
 }
 
 /**
@@ -203,6 +212,7 @@ async function completeFullServerResourceRefresh(
   // replaced by a backup restore.
   resetChatHydration()
   resetLorebookHydration()
+  clearGreetingTranslationProjection()
   recordHydratedCharacterLorebooks(getDatabase().characters)
   void hydrateActiveChat({ force: true })
 
@@ -243,4 +253,5 @@ async function refreshRuntimeJobs(): Promise<void> {
   if (runtime.status !== 'ok') return
   setActiveGenerationJobs(runtime.bootstrap.activeGenerationJobs ?? [])
   setActiveMessageTranslations(runtime.bootstrap.activeMessageTranslations ?? [])
+  setActiveGreetingTranslations(runtime.bootstrap.activeGreetingTranslations ?? [])
 }

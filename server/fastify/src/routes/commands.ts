@@ -348,8 +348,14 @@ import {
   writeSingleCollectionTable,
 } from '../repository.js'
 import { readLegacyStorageValue } from './legacyStorage.js'
+import {
+  deleteChangedGreetingTranslations,
+  remapAlternateGreetingTranslations,
+} from '../translation/greetingTranslationStore.js'
 import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 import { runServerMessageTranslation } from '../translation/serverMessageTranslation.js'
+import type { GreetingTranslationJobRegistry } from '../greetingTranslationJobs.js'
+import { runServerGreetingTranslation } from '../translation/serverGreetingTranslation.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
   const writerSessionId = readActiveWriterSessionId(req)
@@ -1097,6 +1103,17 @@ function readOptionalMessageTranslationJobId(value: unknown): string | undefined
     throw new ValidationError('jobId must be a non-empty string of at most 128 characters when provided')
   }
   return value
+}
+
+function readGreetingTranslationIndex(value: unknown): number {
+  if (typeof value !== 'string' || !/^-?\d+$/.test(value)) {
+    throw new ValidationError('greetingIndex must be an integer at least -1')
+  }
+  const greetingIndex = Number(value)
+  if (!Number.isSafeInteger(greetingIndex) || greetingIndex < -1) {
+    throw new ValidationError('greetingIndex must be an integer at least -1')
+  }
+  return greetingIndex
 }
 
 function readOptionalMessageCondition(value: unknown, label: string, allowEmpty = false): string | undefined {
@@ -1968,6 +1985,7 @@ export function registerCommandRoutes(
   dataDir: string,
   eventSink: CommandEventSink,
   messageTranslationJobs?: MessageTranslationJobRegistry,
+  greetingTranslationJobs?: GreetingTranslationJobRegistry,
 ): void {
   app.addHook('preHandler', async (req, reply) => {
     const path = req.url.split('?')[0] ?? req.url
@@ -5229,9 +5247,11 @@ export function registerCommandRoutes(
           const resolvedRow = (resolvedContainer.characters as Array<Record<string, unknown>>)[0]
           const resolvedPatch = { ...resolvedRow }
           delete resolvedPatch.chaId
+          const before = structuredClone(characters[index]) as Record<string, unknown>
           const patched = buildPatchedCharacterCollectionRow(characters[index], resolvedPatch, characterId, index)
           characters[index] = patched
           writeSingleCharacterRow(innerDb, characterId, patched)
+          deleteChangedGreetingTranslations(innerDb, characterId, before, patched)
           const updatesTrashState = Object.prototype.hasOwnProperty.call(resolvedPatch, 'trashTime')
           if (updatesTrashState) {
             updateCharacterOrderForPatchedRow(target, characterId, patched)
@@ -5266,6 +5286,10 @@ export function registerCommandRoutes(
       const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
+      let appliedGreetingMutation:
+        | { type: 'delete'; index: number }
+        | { type: 'swap'; firstIndex: number; secondIndex: number }
+        | null = null
       const result = applyTargetedCommandMutation<{
         characterId: string
         certificate: 'alternate-greeting-index-cascade-v1'
@@ -5284,6 +5308,7 @@ export function registerCommandRoutes(
             ? character.alternateGreetings.filter((value): value is string => typeof value === 'string')
             : []
           const mutation = readAlternateGreetingMutation(body, currentGreetings.length)
+          appliedGreetingMutation = mutation.operation
           character.alternateGreetings = mutation.alternateGreetings
           const chats = ensureCharacterChats(character)
           const chatGreetingIndices = chats.map((chat) => {
@@ -5294,6 +5319,7 @@ export function registerCommandRoutes(
 
           writeCharacterChatRows(innerDb, characterId, chats as Record<string, unknown>[])
           writeSingleCharacterRow(innerDb, characterId, character)
+          remapAlternateGreetingTranslations(innerDb, characterId, mutation.operation)
           return {
             event: { ...COMMAND_EVENT_CATALOG.alternateGreetingsUpdated, id: characterId },
             extra: {
@@ -5304,6 +5330,9 @@ export function registerCommandRoutes(
           }
         },
       })
+      if (appliedGreetingMutation) {
+        greetingTranslationJobs?.invalidateAlternateMutation(characterId, appliedGreetingMutation)
+      }
 
       return {
         revision: result.revision,
@@ -5312,6 +5341,38 @@ export function registerCommandRoutes(
       }
     } catch (err) {
       return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/characters/:characterId/greetings/:greetingIndex/translate', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { characterId?: unknown; greetingIndex?: unknown }
+      const characterId = readCharacterId(params.characterId)
+      const greetingIndex = readGreetingTranslationIndex(params.greetingIndex)
+      const body = (req.body ?? {}) as MessageCommandBody
+      readBaseRevision(body)
+      const requestedJobId = readOptionalMessageTranslationJobId(body.jobId)
+      return await runServerGreetingTranslation({
+        db,
+        dataDir,
+        greetingTranslationJobs,
+        characterId,
+        greetingIndex,
+        ...(requestedJobId ? { jobId: requestedJobId } : {}),
+        ...commandMutationContext(req, eventSink),
+      })
+    } catch (err) {
+      if (
+        err instanceof RevisionMismatchError ||
+        err instanceof ValidationError ||
+        err instanceof EntityNotFoundError
+      ) {
+        return sendCommandError(reply, err)
+      }
+      const message = err instanceof Error && err.message.length > 0 ? err.message : String(err)
+      return sendCommandError(reply, new ValidationError(message || 'Greeting translation failed'))
     }
   })
 

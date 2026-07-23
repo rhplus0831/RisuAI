@@ -11,6 +11,12 @@ import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent
 import { getDatabaseLineage, getDatabaseWriterMetadata, rotateDatabaseLineage } from './databaseLineage.js'
 import { recordTableWrite } from './protocolMetrics.js'
 import {
+  GREETING_TRANSLATIONS_PORTABLE_FIELD,
+  listAllGreetingTranslations,
+  replaceGreetingTranslationsForImport,
+  type GreetingTranslationRow,
+} from './translation/greetingTranslationStore.js'
+import {
   applyChatMessageDiff,
   deleteChatHypaV3,
   deleteChatMessages,
@@ -462,9 +468,11 @@ function loadCharactersFromSqlite(db: DatabaseSync, options: { exactChatRows?: b
 
 export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown): void {
   const characters = isRecord(database) && Array.isArray(database.characters) ? database.characters : []
+  const greetingTranslations = listAllGreetingTranslations(db)
 
   recordTableWrite('characters')
   recordTableWrite('chats')
+  recordTableWrite('greeting_translations')
   db.exec('DELETE FROM chats')
   db.exec('DELETE FROM characters')
 
@@ -481,6 +489,7 @@ export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown)
 
     const chats = Array.isArray(char.chats) ? char.chats : []
     const { chats: _chats, ...charWithoutChats } = char
+    delete charWithoutChats[GREETING_TRANSLATIONS_PORTABLE_FIELD]
     insertChar.run(chaId, i, JSON.stringify(charWithoutChats))
 
     for (let j = 0; j < chats.length; j++) {
@@ -493,6 +502,16 @@ export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown)
       insertChat.run(chatId, chaId, j, JSON.stringify(chatClean))
     }
   }
+
+  const characterIds = new Set(
+    characters.flatMap((character) =>
+      isRecord(character) && typeof character.chaId === 'string' ? [character.chaId] : [],
+    ),
+  )
+  replaceGreetingTranslationsForImport(
+    db,
+    greetingTranslations.filter((row) => characterIds.has(row.characterId)),
+  )
 }
 
 export function loadCharacterSelectionRows(db: DatabaseSync, characterId: string): CharacterSelectionRows {
@@ -570,6 +589,7 @@ export function writeSettingsOnly(db: DatabaseSync, settings: JsonRecord): void 
  *  match the storage contract (chats live in the `chats` table). */
 export function writeSingleCharacterRow(db: DatabaseSync, characterId: string, character: JsonRecord): void {
   const { chats: _chats, ...charWithoutChats } = character
+  delete charWithoutChats[GREETING_TRANSLATIONS_PORTABLE_FIELD]
   recordTableWrite('characters')
   db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(JSON.stringify(charWithoutChats), characterId)
 }
@@ -596,6 +616,7 @@ export function insertCharacterRow(db: DatabaseSync, position: number, character
     throw new ValidationError('character.chaId must be a non-empty string')
   }
   const { chats: _chats, ...charWithoutChats } = character
+  delete charWithoutChats[GREETING_TRANSLATIONS_PORTABLE_FIELD]
   recordTableWrite('characters')
   db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)').run(
     characterId,
@@ -656,6 +677,7 @@ export function deleteCharacterRow(db: DatabaseSync, characterId: string): void 
   // The FK cascade physically writes the chats table; record it so the
   // command-metric `writtenTables` budget stays truthful.
   recordTableWrite('chats')
+  recordTableWrite('greeting_translations')
   const row = db.prepare('SELECT position FROM characters WHERE id = ?').get(characterId) as
     | { position: number }
     | undefined
@@ -2247,6 +2269,7 @@ export async function applyImport(
     beforeRevision?: (db: DatabaseSync) => void
     cloneBeforeMessageSplit?: boolean
     automaticBackupRetention?: number
+    greetingTranslations?: readonly GreetingTranslationRow[]
   } = {},
 ): Promise<{ revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number }> {
   if (database === null || database === undefined) {
@@ -2278,6 +2301,7 @@ export async function applyImport(
       database: cloneBeforeMessageSplit ? structuredClone(database) : database,
     })
     replaceAllCharactersInTable(db, messageFree.database)
+    replaceGreetingTranslationsForImport(db, options.greetingTranslations ?? [])
     replaceAllCollectionsInTable(db, messageFree.database)
     replaceAllSettingsInTable(db, messageFree.database)
     if (cloneBeforeMessageSplit) {
@@ -2644,6 +2668,7 @@ const SQLITE_BACKUP_TABLES = [
   'inlay_catalog',
   'characters',
   'chats',
+  'greeting_translations',
   'modules',
   'plugins',
   'model_presets',

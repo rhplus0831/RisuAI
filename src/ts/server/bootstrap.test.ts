@@ -76,6 +76,7 @@ describe('server runtime bootstrap helper', () => {
         databaseLineage: 'database-a',
         writerEpoch: 3,
         activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a', mode: 'continue' }],
+        activeGreetingTranslations: [],
         activeMessageTranslations: [
           { chatId: 'chat-a', messageId: 'message-a', jobId: 'translation-a', status: 'running' },
         ],
@@ -111,6 +112,7 @@ describe('server runtime bootstrap helper', () => {
         databaseLineage: 'database-a',
         writerEpoch: 3,
         activeGenerationJobs: [],
+        activeGreetingTranslations: [],
         activeMessageTranslations: [],
       },
     })

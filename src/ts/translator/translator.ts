@@ -145,6 +145,12 @@ export const __translatorTestHooks = {
   getCurrentLLMTranslationCacheKey(text: string) {
     return getCurrentLLMTranslationCacheKey(text)
   },
+  getCurrentTranslateHTMLMemoKey(html: string) {
+    const db = getDatabase()
+    const currentCharacter = db.characters?.[get(selectedCharID)]
+    if (!currentCharacter) return null
+    return getTranslateHTMLMemoKey(html, false, '', 0, currentCharacter)
+  },
 }
 
 export const LLMCacheStorage = localforage.createInstance({
@@ -169,11 +175,8 @@ function safeStringify(value: unknown) {
   }
 }
 
-function getTranslatorSettingsSignature(db = getDatabase()) {
+export function getTranslatorSettingsSignature(db = getDatabase()) {
   const selectedCharacter = db.characters?.[get(selectedCharID)]
-  const presetIndex =
-    typeof db.translatorPresetId === 'number' && Number.isInteger(db.translatorPresetId) ? db.translatorPresetId : -1
-  const selectedPreset = Array.isArray(db.translatorPresets) ? db.translatorPresets[presetIndex] : undefined
   const pipeline = db.translatorType === 'llm' ? resolveTranslatorPipeline(db) : null
   return {
     translatorType: db.translatorType,
@@ -184,7 +187,6 @@ function getTranslatorSettingsSignature(db = getDatabase()) {
     llmPrompt:
       db.translatorType === 'llm'
         ? {
-            presetId: typeof selectedPreset?.id === 'string' ? selectedPreset.id : null,
             pipeline: translatorPipelineSignature(pipeline ?? []),
             characterId: selectedCharacter?.chaId ?? null,
             translatorNote:
@@ -203,6 +205,10 @@ function getTranslatorSettingsSignature(db = getDatabase()) {
       token: db.deeplXOptions?.token,
     },
   }
+}
+
+export function getTranslatorSettingsSignatureKey(db = getDatabase()): string {
+  return safeStringify(getTranslatorSettingsSignature(db))
 }
 
 function getTranslateProfileCacheSignature(db = getDatabase()) {

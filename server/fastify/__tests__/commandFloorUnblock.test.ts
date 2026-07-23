@@ -437,7 +437,14 @@ describe('Phase 8 follow-up: DELETE characters/:id → targeted-character-row', 
     expect(metric.dbJsonWriteMs).toBe(0)
     // The character row, its chat rows, those chats' message/hypa rows, and the
     // settings pointers — but no collection table.
-    expect(metric.writtenTables).toEqual(['characters', 'chat_hypa_v3', 'chats', 'messages', 'settings'])
+    expect(metric.writtenTables).toEqual([
+      'characters',
+      'chat_hypa_v3',
+      'chats',
+      'greeting_translations',
+      'messages',
+      'settings',
+    ])
     assertCommandMetricGate(metric)
 
     // char-a (and its chats) are removed; char-b's rows keep their rowids.
