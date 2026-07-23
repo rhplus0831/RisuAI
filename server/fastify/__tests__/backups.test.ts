@@ -60,6 +60,7 @@ async function startHarness(automaticBackupRetention?: number): Promise<Harness>
   const { app } = await buildApp({
     config: harnessConfig(dataDir, automaticBackupRetention),
     commandEvents,
+    generationChat: { finalizationRetry: false },
   })
   installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir, commandEvents }
@@ -71,6 +72,7 @@ async function restartHarness(harness: Harness): Promise<void> {
   const { app } = await buildApp({
     config: harnessConfig(harness.dataDir),
     commandEvents,
+    generationChat: { finalizationRetry: false },
   })
   installResourceDatabaseBootstrapAdapter(app)
   harness.app = app
@@ -144,6 +146,49 @@ function readBackupDatabase(dataDir: string, id: string): Record<string, unknown
   } finally {
     backupDb.close()
   }
+}
+
+function insertFinalizationRetry(db: DatabaseSync, generationId: string, chatId: string): void {
+  db.prepare(
+    `INSERT INTO generation_finalization_retries (
+       generation_id,
+       chat_id,
+       mode,
+       target_message_id,
+       message_json,
+       alternate_messages_json,
+       chat_var_mutations_json,
+       target_snapshot_json,
+       failure_count,
+       last_error,
+       terminal_error,
+       status,
+       created_at,
+       updated_at
+     ) VALUES (?, ?, 'send', NULL, ?, ?, ?, ?, 2, 'last failure', 'terminal failure', 'terminal', ?, ?)`,
+  ).run(
+    generationId,
+    chatId,
+    JSON.stringify({ role: 'char', data: `message-${generationId}`, chatId: `message-${generationId}` }),
+    JSON.stringify([{ role: 'char', data: `alternate-${generationId}`, chatId: `alternate-${generationId}` }]),
+    JSON.stringify([{ key: `key-${generationId}`, value: `value-${generationId}` }]),
+    JSON.stringify({ chatId, targetMessageId: null, messageCount: 1 }),
+    '2026-07-23T00:00:00.000Z',
+    '2026-07-23T00:00:01.000Z',
+  )
+}
+
+function insertPushSubscription(db: DatabaseSync, endpoint: string): void {
+  db.prepare(
+    `INSERT INTO push_subscriptions (
+       endpoint, subscription_json, failure_count, last_error, created_at, updated_at
+     ) VALUES (?, ?, 0, NULL, ?, ?)`,
+  ).run(
+    endpoint,
+    JSON.stringify({ endpoint, keys: { p256dh: `p256dh-${endpoint}`, auth: `auth-${endpoint}` } }),
+    '2026-07-23T00:00:00.000Z',
+    '2026-07-23T00:00:01.000Z',
+  )
 }
 
 let harness: Harness
@@ -394,6 +439,284 @@ describe('Phase 2D backups', () => {
       pluginCustomStorage: {},
     })
     expect(afterRestore.json().revision).toBe(revisionAfter)
+  })
+
+  it('restores retry and tombstone snapshot state while preserving live push subscriptions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'durability-character',
+          name: 'Durability Character',
+          chats: [
+            {
+              id: 'durability-chat',
+              name: 'Durability Chat',
+              note: '',
+              localLore: [],
+              message: [{ role: 'user', data: 'remember this', chatId: 'durability-message' }],
+              hypaV3Data: {
+                summaries: [{ text: 'Snapshot A legacy summary', chatMemos: ['durability-message'] }],
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const seedSnapshotA = new DatabaseSync(liveDbPath)
+    let tombstoneA: { summary_id: string; chat_id: string; deleted_at: string }
+    let retryA: Record<string, unknown>
+    try {
+      const legacySummary = seedSnapshotA
+        .prepare("SELECT id FROM memory_summaries WHERE text = 'Snapshot A legacy summary'")
+        .get() as { id: string }
+      seedSnapshotA.prepare('DELETE FROM memory_summaries WHERE id = ?').run(legacySummary.id)
+      insertFinalizationRetry(seedSnapshotA, 'generation-A', 'durability-chat')
+      insertPushSubscription(seedSnapshotA, 'https://push.example/snapshot-A')
+      tombstoneA = seedSnapshotA
+        .prepare(
+          `SELECT summary_id, chat_id, deleted_at
+           FROM memory_legacy_summary_tombstones
+           WHERE summary_id = ?`,
+        )
+        .get(legacySummary.id) as typeof tombstoneA
+      retryA = seedSnapshotA
+        .prepare('SELECT * FROM generation_finalization_retries WHERE generation_id = ?')
+        .get('generation-A') as Record<string, unknown>
+    } finally {
+      seedSnapshotA.close()
+    }
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'durability ownership snapshot A' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const seedLiveB = new DatabaseSync(liveDbPath)
+    try {
+      seedLiveB.exec(`
+        DELETE FROM generation_finalization_retries;
+        DELETE FROM memory_legacy_summary_tombstones;
+        DELETE FROM push_subscriptions;
+      `)
+      insertFinalizationRetry(seedLiveB, 'generation-B', 'live-chat-B')
+      seedLiveB
+        .prepare(
+          `INSERT INTO memory_legacy_summary_tombstones (summary_id, chat_id, deleted_at)
+           VALUES (?, ?, ?)`,
+        )
+        .run('summary-B', 'live-chat-B', '2026-07-23T01:00:00.000Z')
+      insertPushSubscription(seedLiveB, 'https://push.example/live-B')
+    } finally {
+      seedLiveB.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(liveDbPath)
+    try {
+      expect(verify.prepare('SELECT * FROM generation_finalization_retries').all()).toEqual([retryA])
+      expect(
+        verify.prepare('SELECT summary_id, chat_id, deleted_at FROM memory_legacy_summary_tombstones').all(),
+      ).toEqual([tombstoneA])
+      expect(verify.prepare('SELECT endpoint, subscription_json FROM push_subscriptions').all()).toEqual([
+        {
+          endpoint: 'https://push.example/live-B',
+          subscription_json: JSON.stringify({
+            endpoint: 'https://push.example/live-B',
+            keys: {
+              p256dh: 'p256dh-https://push.example/live-B',
+              auth: 'auth-https://push.example/live-B',
+            },
+          }),
+        },
+      ])
+    } finally {
+      verify.close()
+    }
+
+    await restartHarness(harness)
+    const afterRestart = new DatabaseSync(liveDbPath)
+    try {
+      expect(
+        afterRestart.prepare("SELECT id FROM memory_summaries WHERE text = 'Snapshot A legacy summary'").all(),
+      ).toEqual([])
+      expect(
+        afterRestart.prepare('SELECT summary_id, chat_id, deleted_at FROM memory_legacy_summary_tombstones').all(),
+      ).toEqual([tombstoneA])
+    } finally {
+      afterRestart.close()
+    }
+  })
+
+  it('restores historical retry tables with schema-aware defaults', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'historical-queue-backup' })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'historical queue shape' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      backupDb.exec(`
+        DROP TABLE generation_finalization_retries;
+        CREATE TABLE generation_finalization_retries (
+          generation_id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          target_message_id TEXT,
+          message_json TEXT NOT NULL,
+          chat_var_mutations_json TEXT NOT NULL,
+          failure_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          terminal_error TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO generation_finalization_retries (
+          generation_id,
+          chat_id,
+          mode,
+          target_message_id,
+          message_json,
+          chat_var_mutations_json,
+          failure_count,
+          last_error,
+          terminal_error,
+          status,
+          created_at,
+          updated_at
+        ) VALUES (
+          'generation-old',
+          'chat-old',
+          'continue',
+          'target-old',
+          '{"role":"char","data":"historical payload","chatId":"message-old"}',
+          '[{"key":"historical","value":"retained"}]',
+          3,
+          'historical failure',
+          'historical terminal failure',
+          'terminal',
+          '2026-07-20T00:00:00.000Z',
+          '2026-07-20T00:00:01.000Z'
+        );
+      `)
+    } finally {
+      backupDb.close()
+    }
+
+    const live = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      insertFinalizationRetry(live, 'generation-live', 'chat-live')
+    } finally {
+      live.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(
+        verify
+          .prepare(
+            `SELECT generation_id, chat_id, mode, target_message_id, message_json,
+                    alternate_messages_json, chat_var_mutations_json, target_snapshot_json,
+                    failure_count, last_error, terminal_error, status, created_at, updated_at
+             FROM generation_finalization_retries`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          generation_id: 'generation-old',
+          chat_id: 'chat-old',
+          mode: 'continue',
+          target_message_id: 'target-old',
+          message_json: '{"role":"char","data":"historical payload","chatId":"message-old"}',
+          alternate_messages_json: '[]',
+          chat_var_mutations_json: '[{"key":"historical","value":"retained"}]',
+          target_snapshot_json: null,
+          failure_count: 3,
+          last_error: 'historical failure',
+          terminal_error: 'historical terminal failure',
+          status: 'terminal',
+          created_at: '2026-07-20T00:00:00.000Z',
+          updated_at: '2026-07-20T00:00:01.000Z',
+        },
+      ])
+    } finally {
+      verify.close()
+    }
+  })
+
+  it('clears snapshot-owned retry and tombstone rows when an older backup lacks their tables', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'pre-durability-tables' })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'backup before durability tables' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      backupDb.exec(`
+        DROP TABLE generation_finalization_retries;
+        DROP TRIGGER tombstone_deleted_legacy_memory_summary;
+        DROP TABLE memory_legacy_summary_tombstones;
+      `)
+    } finally {
+      backupDb.close()
+    }
+
+    const live = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      insertFinalizationRetry(live, 'generation-live', 'chat-live')
+      live
+        .prepare(
+          `INSERT INTO memory_legacy_summary_tombstones (summary_id, chat_id, deleted_at)
+           VALUES ('summary-live', 'chat-live', '2026-07-23T02:00:00.000Z')`,
+        )
+        .run()
+    } finally {
+      live.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(verify.prepare('SELECT * FROM generation_finalization_retries').all()).toEqual([])
+      expect(verify.prepare('SELECT * FROM memory_legacy_summary_tombstones').all()).toEqual([])
+    } finally {
+      verify.close()
+    }
   })
 
   it('snapshots pre-restore state and also protects restores of automatic snapshots', async () => {

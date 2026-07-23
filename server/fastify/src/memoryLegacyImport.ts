@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { createMemoryChunk, createMemorySummary, getMemoryChunk, getMemorySummary } from './memoryRepository.js'
 import { LEGACY_HYPA_V3_SUMMARY_MODEL } from './memorySummaryCompatibility.js'
+import type { PortableMemoryLegacySummaryTombstone } from './risuSave/portableMetadata.js'
 
 export { LEGACY_HYPA_V3_SUMMARY_MODEL } from './memorySummaryCompatibility.js'
 
@@ -71,6 +72,7 @@ export function replaceLegacyHypaV3MemoryRows(db: DatabaseSync, database: unknow
 export function replaceLegacyHypaV3MemoryRowsInTransaction(
   db: DatabaseSync,
   database: unknown,
+  tombstones: readonly PortableMemoryLegacySummaryTombstone[] = [],
 ): LegacyHypaV3BackfillResult {
   db.exec(`
     DELETE FROM memory_jobs;
@@ -79,7 +81,32 @@ export function replaceLegacyHypaV3MemoryRowsInTransaction(
     DELETE FROM memory_chunks;
     DELETE FROM memory_legacy_summary_tombstones;
   `)
+  insertLegacySummaryTombstonesInTransaction(db, tombstones)
   return backfillLegacyHypaV3MemoryRows(db, database)
+}
+
+export function listLegacySummaryTombstones(db: DatabaseSync): PortableMemoryLegacySummaryTombstone[] {
+  return db
+    .prepare(
+      `SELECT summary_id AS summaryId, chat_id AS chatId, deleted_at AS deletedAt
+       FROM memory_legacy_summary_tombstones
+       ORDER BY summary_id ASC`,
+    )
+    .all() as unknown as PortableMemoryLegacySummaryTombstone[]
+}
+
+export function insertLegacySummaryTombstonesInTransaction(
+  db: DatabaseSync,
+  tombstones: readonly PortableMemoryLegacySummaryTombstone[],
+): void {
+  if (tombstones.length === 0) return
+  const insert = db.prepare(
+    `INSERT INTO memory_legacy_summary_tombstones (summary_id, chat_id, deleted_at)
+     VALUES (?, ?, ?)`,
+  )
+  for (const tombstone of tombstones) {
+    insert.run(tombstone.summaryId, tombstone.chatId, tombstone.deletedAt)
+  }
 }
 
 export function backfillLegacyHypaV3MemoryRows(db: DatabaseSync, database: unknown): LegacyHypaV3BackfillResult {

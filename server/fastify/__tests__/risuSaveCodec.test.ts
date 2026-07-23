@@ -17,9 +17,13 @@ import {
 } from '../src/risuSave/importSnapshot.js'
 import {
   buildRisuSaveExportBlocks,
+  buildRisuSaveExportSnapshotFromPersisted,
+  encodeRisuSaveBlockExportSnapshot,
+  encodeRisuSaveLegacyExportSnapshot,
   encodeRepositoryRisuSaveBlockExport,
   encodeRepositoryRisuSaveLegacyExport,
 } from '../src/risuSave/exportSnapshot.js'
+import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
 import { writePersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 
@@ -36,6 +40,29 @@ afterEach(() => {
     rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+const PORTABLE_TOMBSTONES = {
+  version: 1 as const,
+  memoryLegacySummaryTombstones: [
+    {
+      summaryId: 'legacy-summary-a',
+      chatId: 'legacy-chat-a',
+      deletedAt: '2026-07-23T00:00:00.000Z',
+    },
+  ],
+}
+
+function encodePortableFixture(envelope: 'legacy' | 'blocks', database: Record<string, unknown>): Uint8Array {
+  return envelope === 'legacy'
+    ? encodeLegacyRisuSaveEnvelope(database, 'legacy-raw')
+    : encodeRisuSaveBlockEnvelope([
+        {
+          name: 'root',
+          type: RisuSaveBlockType.ROOT,
+          data: JSON.stringify({ ...database, __directory: [] }),
+        },
+      ])
+}
 
 describe('server .risu fixture harness', () => {
   it('classifies legacy raw, compressed, stream, block, and malformed envelopes', () => {
@@ -406,6 +433,126 @@ describe('server .risu fixture harness', () => {
         groups: [{ id: 'legacy-group-a', name: 'Legacy Party' }],
       })
       expect((error as Error).message).toContain('active database was not changed')
+    }
+  })
+
+  it.each(['legacy', 'blocks'] as const)(
+    'encodes, decodes, and strips portable server metadata in %s envelopes',
+    (envelope) => {
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted(
+        {
+          _version: 1,
+          database: { characters: [] },
+          assets: [],
+        },
+        PORTABLE_TOMBSTONES,
+      )
+      const encoded =
+        envelope === 'legacy'
+          ? encodeRisuSaveLegacyExportSnapshot(snapshot, 'legacy-raw')
+          : encodeRisuSaveBlockExportSnapshot(snapshot)
+      const encodedDatabase =
+        envelope === 'legacy'
+          ? (decodeLegacyRisuSaveEnvelope(encoded) as Record<string, unknown>)
+          : (JSON.parse(decodeRisuSaveBlockEnvelope(encoded).blocks[0].content!) as Record<string, unknown>)
+      expect(encodedDatabase[RISU_SERVER_DATA_KEY]).toEqual(PORTABLE_TOMBSTONES)
+
+      const decoded = decodeRisuSaveImportSnapshot(encoded)
+      expect(decoded.portableMetadata).toEqual(PORTABLE_TOMBSTONES)
+      expect(decoded.database[RISU_SERVER_DATA_KEY]).toBeUndefined()
+    },
+  )
+
+  it.each(['legacy', 'blocks'] as const)('rejects malformed portable metadata in %s envelopes', (envelope) => {
+    const malformed = [
+      null,
+      { version: 2, memoryLegacySummaryTombstones: [] },
+      { version: 1, memoryLegacySummaryTombstones: 'not-an-array' },
+      {
+        version: 1,
+        memoryLegacySummaryTombstones: [{ summaryId: '', chatId: 'chat-a', deletedAt: 'now' }],
+      },
+      {
+        version: 1,
+        memoryLegacySummaryTombstones: [
+          { summaryId: 'duplicate', chatId: 'chat-a', deletedAt: 'now' },
+          { summaryId: 'duplicate', chatId: 'chat-b', deletedAt: 'later' },
+        ],
+      },
+    ]
+
+    for (const portableMetadata of malformed) {
+      const encoded = encodePortableFixture(envelope, {
+        characters: [],
+        [RISU_SERVER_DATA_KEY]: portableMetadata,
+      })
+      expect(() => decodeRisuSaveImportSnapshot(encoded)).toThrow(RISU_SERVER_DATA_KEY)
+    }
+  })
+
+  it.each(['legacy', 'blocks'] as const)(
+    'does not let metadata-only %s payloads bypass the empty-database guard',
+    (envelope) => {
+      const encoded = encodePortableFixture(envelope, {
+        [RISU_SERVER_DATA_KEY]: PORTABLE_TOMBSTONES,
+      })
+      expect(() => decodeRisuSaveImportSnapshot(encoded)).toThrow('risusave_empty_database')
+    },
+  )
+
+  it('treats absent portable metadata as an older artifact with an empty tombstone list', () => {
+    const decoded = decodeRisuSaveImportSnapshot(encodeLegacyRisuSaveEnvelope({ characters: [] }, 'legacy-raw'))
+    expect(decoded.portableMetadata).toEqual({
+      version: 1,
+      memoryLegacySummaryTombstones: [],
+    })
+  })
+
+  it('exports tombstones without leaking retry or push-subscription secrets', () => {
+    const dataDir = makeDataDir()
+    const db = openDatabase(dataDir)
+    try {
+      writePersistedWithMessages(db, dataDir, {
+        _version: 1,
+        database: { characters: [] },
+        assets: [],
+      })
+      db.exec(`
+        INSERT INTO memory_legacy_summary_tombstones (summary_id, chat_id, deleted_at)
+        VALUES ('portable-summary', 'portable-chat', '2026-07-23T00:00:00.000Z');
+        INSERT INTO generation_finalization_retries (
+          generation_id, chat_id, mode, message_json, alternate_messages_json,
+          chat_var_mutations_json, status
+        ) VALUES (
+          'queue-secret-generation', 'portable-chat', 'send',
+          '{"role":"char","data":"queue-secret-payload"}', '[]', '[]', 'terminal'
+        );
+        INSERT INTO push_subscriptions (endpoint, subscription_json)
+        VALUES (
+          'https://push.example/secret-endpoint',
+          '{"endpoint":"https://push.example/secret-endpoint","keys":{"auth":"push-secret-auth"}}'
+        );
+      `)
+
+      const encoded = encodeRepositoryRisuSaveLegacyExport(db, dataDir, 'legacy-raw')
+      const portableDatabase = decodeLegacyRisuSaveEnvelope(encoded) as Record<string, unknown>
+      expect(portableDatabase[RISU_SERVER_DATA_KEY]).toEqual({
+        version: 1,
+        memoryLegacySummaryTombstones: [
+          {
+            summaryId: 'portable-summary',
+            chatId: 'portable-chat',
+            deletedAt: '2026-07-23T00:00:00.000Z',
+          },
+        ],
+      })
+      const serialized = JSON.stringify(portableDatabase)
+      expect(serialized).not.toContain('queue-secret-generation')
+      expect(serialized).not.toContain('queue-secret-payload')
+      expect(serialized).not.toContain('https://push.example/secret-endpoint')
+      expect(serialized).not.toContain('push-secret-auth')
+    } finally {
+      db.close()
     }
   })
 

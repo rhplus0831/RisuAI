@@ -479,7 +479,7 @@ export async function exportChat(target: ChatExportTarget): Promise<void> {
     }
     if (!resolveChatExportTarget(stableTarget)) return
     // The exported chat may not be the open (hydrated) one.
-    await hydrateChatMessages(stableTarget.chatId)
+    await hydrateChatMessages(stableTarget.chatId, { strict: true })
     const resolvedTarget = resolveChatExportTarget(stableTarget)
     if (!resolvedTarget) return
     const { char, chat } = resolvedTarget

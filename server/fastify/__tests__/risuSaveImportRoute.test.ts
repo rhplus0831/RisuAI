@@ -10,6 +10,7 @@ import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
 import { RISUSAVE_EMPTY_DATABASE_ERROR, RISUSAVE_INCOMPLETE_BLOCKS_ERROR } from '../src/risuSave/importSnapshot.js'
+import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
 import { insertAssetMetadataBatch, listBackups, loadPersisted, loadPersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
@@ -171,6 +172,107 @@ describe('Phase 9-8a multipart .risu import route', () => {
       url: '/api/v1/export/risusave?envelope=risusave-blocks',
     })
     expect(exported.statusCode).toBe(200)
+  })
+
+  it.each(['legacy', 'blocks', 'json'] as const)(
+    'restores portable tombstones from %s imports without exposing server metadata in bootstrap',
+    async (format) => {
+      const portableDatabase = {
+        characters: [],
+        [RISU_SERVER_DATA_KEY]: {
+          version: 1,
+          memoryLegacySummaryTombstones: [
+            {
+              summaryId: `summary-${format}`,
+              chatId: `chat-${format}`,
+              deletedAt: '2026-07-23T00:00:00.000Z',
+            },
+          ],
+        },
+      }
+      const request =
+        format === 'json'
+          ? { payload: { database: portableDatabase }, headers: {} }
+          : (() => {
+              const bytes =
+                format === 'legacy'
+                  ? encodeLegacyRisuSaveEnvelope(portableDatabase, 'legacy-raw')
+                  : encodeRisuSaveBlockEnvelope([
+                      {
+                        name: 'root',
+                        type: RisuSaveBlockType.ROOT,
+                        data: JSON.stringify({ ...portableDatabase, __directory: [] }),
+                      },
+                    ])
+              const upload = multipartRisuSave(bytes)
+              return {
+                payload: upload.payload,
+                headers: { 'content-type': upload.contentType },
+              }
+            })()
+
+      const imported = await authedInject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        ...request,
+      })
+      expect(imported.statusCode).toBe(200)
+
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(
+          db
+            .prepare(
+              `SELECT summary_id, chat_id, deleted_at
+               FROM memory_legacy_summary_tombstones`,
+            )
+            .all(),
+        ).toEqual([
+          {
+            summary_id: `summary-${format}`,
+            chat_id: `chat-${format}`,
+            deleted_at: '2026-07-23T00:00:00.000Z',
+          },
+        ])
+      } finally {
+        db.close()
+      }
+
+      const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+      expect(bootstrap.json().database).not.toHaveProperty(RISU_SERVER_DATA_KEY)
+    },
+  )
+
+  it('rejects malformed portable metadata before replacing the JSON database', async () => {
+    const baseline = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: { characters: [], tag: 'preserve-before-malformed-metadata' } },
+    })
+    expect(baseline.statusCode).toBe(200)
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          characters: [],
+          [RISU_SERVER_DATA_KEY]: {
+            version: 1,
+            memoryLegacySummaryTombstones: [
+              { summaryId: 'duplicate', chatId: 'chat-a', deletedAt: 'now' },
+              { summaryId: 'duplicate', chatId: 'chat-b', deletedAt: 'later' },
+            ],
+          },
+        },
+      },
+    })
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json().error).toContain('summaryId values must be unique')
+
+    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.json().database).toMatchObject({ tag: 'preserve-before-malformed-metadata' })
+    expect(bootstrap.json().database).not.toHaveProperty(RISU_SERVER_DATA_KEY)
   })
 
   it('takes a pre-import safety snapshot for JSON database replacements', async () => {

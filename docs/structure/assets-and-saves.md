@@ -233,10 +233,18 @@ Restore swaps asset/save directories and restores SQLite tables through the
 restore swaps tables from the copied backup DB with `ATTACH`, operational tables
 can be present in the backup file but ignored on restore if they are not allowlisted.
 Keep that allowlist in sync when adding durable tables; split model/prompt
-preset rows and `inlay_catalog` are included. `database_metadata`, `command_mutation_receipts`,
-`generation_finalization_retries`, `push_subscriptions`, and
-`memory_legacy_summary_tombstones` may be present in the physical copy but are
-not restored, and Web Push key files are outside the snapshot contract.
+preset rows and `inlay_catalog` are included. The SQLite-only durability policy
+is explicit:
+
+| State | Portable `.risu`, bundle, and local backup | Server backup/restore |
+| ----- | ------------------------------------------ | --------------------- |
+| Generation finalization retries | Excluded: portable content transfer never resumes old operational work. | Snapshot-owned and restored. Historical queue tables use an explicit column projection; missing target snapshots default to `NULL` and missing alternates to `[]`. |
+| Legacy-summary tombstones | Encoded under the validated, versioned `__risuServerData` root key and stripped before repository normalization. | Snapshot-owned and restored after `memory_summaries`, so delete-trigger side effects cannot change the selected snapshot. |
+| Push subscriptions | Excluded: endpoint and auth material is origin/device state. | Deliberately remains live across restore. The VAPID key file is outside every backup, so losing the live subscription table or moving origins requires users to re-enable notifications. |
+
+`database_metadata` also remains live because restore rotates lineage/writer
+ownership, while lineage-scoped `command_mutation_receipts` are cleared rather
+than copied across the replacement boundary.
 Destructive import and restore rotate the live database lineage and clear server
 mutation receipts, so a browser outbox scoped to the previous lineage cannot
 replay across that boundary. Older backups containing `db.json` are restored by

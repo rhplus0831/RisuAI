@@ -2381,6 +2381,12 @@ export interface StagedAssetLiveFileCopy {
   existedBefore: boolean
 }
 
+export interface StagedAssetCleanupResult {
+  attempted: number
+  removed: number
+  failures: Array<{ file: string; error: unknown }>
+}
+
 export interface StagedAssetPersistResult {
   entry: PersistedAsset
   created: boolean
@@ -2533,12 +2539,25 @@ export function persistStagedAssetsInTransaction(
   return results
 }
 
-export function cleanupCopiedStagedAssetFiles(copiedFiles: readonly StagedAssetLiveFileCopy[]): void {
+export function cleanupCopiedStagedAssetFiles(
+  copiedFiles: readonly StagedAssetLiveFileCopy[],
+): StagedAssetCleanupResult {
+  const result: StagedAssetCleanupResult = {
+    attempted: 0,
+    removed: 0,
+    failures: [],
+  }
   for (const { file, existedBefore } of copiedFiles) {
-    if (!existedBefore) {
+    if (existedBefore) continue
+    result.attempted += 1
+    try {
       fs.rmSync(file, { force: true })
+      result.removed += 1
+    } catch (error) {
+      result.failures.push({ file, error })
     }
   }
+  return result
 }
 
 export function missingAssetIds(db: DatabaseSync, ids: string[]): string[] {
@@ -2600,17 +2619,23 @@ function saveDir(dataDir: string): string {
   return path.join(dataDir, 'save')
 }
 
-// Tables that must survive a backup/restore round-trip. Kept in sync with every
-// SQLite table created by the server DDL; `createBackup` copies all of risu.db
-// through the online backup API, but `restoreBackup` swaps tables one-by-one via
-// ATTACH. A table
-// absent here would not be restored, leaving live rows desynced from the restored
-// SQLite snapshot.
+// Tables replaced by a point-in-time content/recovery restore. `createBackup`
+// copies all of risu.db through the online backup API, but `restoreBackup`
+// deliberately swaps only this ownership allowlist via ATTACH.
+//
+// Live operational exclusions:
+//   - push_subscriptions: origin/device registrations bound to the live VAPID
+//     identity, whose key file is outside the backup contract.
+//   - database_metadata: live lineage/writer ownership; restore rotates lineage.
+//   - command_mutation_receipts: lineage-scoped idempotency records that must not
+//     cross a replacement boundary.
 const SQLITE_BACKUP_TABLES = [
   'schema_version',
   'command_events',
+  'generation_finalization_retries',
   'memory_chunks',
   'memory_summaries',
+  'memory_legacy_summary_tombstones',
   'memory_embeddings',
   'memory_jobs',
   'messages',
@@ -3190,6 +3215,56 @@ interface RestoreSqliteHooks {
   onPostCommitError?: (error: unknown) => void
 }
 
+function copyGenerationFinalizationRetriesFromBackup(db: DatabaseSync): void {
+  const backupColumns = new Set(
+    (
+      db.prepare("PRAGMA bak.table_info('generation_finalization_retries')").all() as Array<{
+        name: string
+      }>
+    ).map((column) => column.name),
+  )
+  const targetSnapshot = backupColumns.has('target_snapshot_json') ? 'target_snapshot_json' : 'NULL'
+  const alternateMessages = backupColumns.has('alternate_messages_json') ? 'alternate_messages_json' : "'[]'"
+
+  // Historical queue tables predate target snapshots (schema v18) and
+  // alternate messages (v20). Keep the current destination order explicit so
+  // both altered historical tables and fresh current tables restore safely.
+  db.exec(`
+    INSERT INTO main.generation_finalization_retries (
+      generation_id,
+      chat_id,
+      mode,
+      target_message_id,
+      message_json,
+      alternate_messages_json,
+      chat_var_mutations_json,
+      target_snapshot_json,
+      failure_count,
+      last_error,
+      terminal_error,
+      status,
+      created_at,
+      updated_at
+    )
+    SELECT
+      generation_id,
+      chat_id,
+      mode,
+      target_message_id,
+      message_json,
+      ${alternateMessages},
+      chat_var_mutations_json,
+      ${targetSnapshot},
+      failure_count,
+      last_error,
+      terminal_error,
+      status,
+      created_at,
+      updated_at
+    FROM bak.generation_finalization_retries
+  `)
+}
+
 function restoreSqliteFromBackup(
   db: DatabaseSync,
   backupDbPath: string | null,
@@ -3265,7 +3340,11 @@ function restoreSqliteFromBackup(
         }
         db.exec(`DELETE FROM main.${table}`)
         if (exists) {
-          db.exec(`INSERT INTO main.${table} SELECT * FROM bak.${table}`)
+          if (table === 'generation_finalization_retries') {
+            copyGenerationFinalizationRetriesFromBackup(db)
+          } else {
+            db.exec(`INSERT INTO main.${table} SELECT * FROM bak.${table}`)
+          }
         }
       }
       repairPersistedGlobalLorebookIdsInSqlite(db)

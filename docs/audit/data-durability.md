@@ -44,25 +44,36 @@ preflight (empty/truncated archives accepted); irreversible steps taken before
 their safety net existed (rename before checkpoint, reseed without sentinel);
 cleanup loops that assume every step succeeds.
 
+## Resolved items
+
+- `RESOLVED` (2026-07-23) **A-5** — server restore now owns
+  generation-finalization retries and legacy-summary tombstones while explicitly
+  preserving live push subscriptions (`server/fastify/src/repository.ts:2632`,
+  `:3218`). Retry restoration projects historical queue schemas safely. Portable
+  saves carry validated tombstones in namespaced `__risuServerData` metadata,
+  strip it before domain normalization, and restore tombstones before the legacy
+  backfill (`risuSave/portableMetadata.ts:3`, `risuSave/importSnapshot.ts:251`,
+  `memoryLegacyImport.ts:72`). Backup compatibility/live-table/restart coverage
+  is at `server/fastify/__tests__/backups.test.ts:444`; portable envelope,
+  route, no-secret, bundle/local-backup, and restart coverage is at
+  `risuSaveCodec.test.ts:440`, `risuSaveBundleImportRoute.test.ts:526`, and
+  `memoryLegacyImport.test.ts:339`.
+- `RESOLVED` (2026-07-23) **D-8** — single-chat export now
+  requires strict message hydration before resolving and serializing the target
+  (`src/ts/characters.ts:482`). A hydration rejection reaches the existing
+  `alertError` boundary and creates no download, clipboard payload, or success
+  alert (`src/ts/characters.exportChat.test.ts:236`); no automatic retry was
+  added.
+- `RESOLVED` (2026-07-23) **A-1.2** (medium) — staged-asset
+  rollback cleanup now isolates every synchronous deletion, returns attempted /
+  removed / failure details, skips pre-existing paths, and logs one aggregate
+  warning without masking the original import error
+  (`server/fastify/src/repository.ts:2542`, `routes/save.ts:200`). Fault-injected
+  helper and route coverage is at
+  `server/fastify/__tests__/risuSaveBundleImportRoute.test.ts:352`.
+
 ## Open items
 
-- `VERIFIED-OPEN` (2026-07-23) **A-5** — backup allowlist round-trip
-  omissions: the portable exporter serializes only `Persisted.database`
-  (`server/fastify/src/risuSave/exportSnapshot.ts:27`) and
-  `SQLITE_BACKUP_TABLES` omits `generation_finalization_retries`,
-  `memory_legacy_summary_tombstones`, `push_subscriptions`
-  (`repository.ts:2609`; restore iterates only that list, `:3246`), so those
-  rows do not survive export→restore.
-- `VERIFIED-OPEN` (2026-07-23) **D-8** — single-chat export calls
-  `hydrateChatMessages(chatId)` without `{ strict: true }` and serializes
-  immediately (`src/ts/characters.ts:481`, `:504`), so a failed/stale
-  hydration can still produce an incomplete artifact (artifact-only loss; DB
-  unharmed).
-- `VERIFIED-OPEN` (2026-07-23) **A-1.2** (medium) — bundle-import rollback
-  cleanup (`cleanupCopiedStagedAssetFiles`,
-  `server/fastify/src/repository.ts:2536`, registered at
-  `routes/save.ts:184`) calls `rmSync` in one loop with no per-file
-  `try/catch`; the first deletion error strands all later files.
 - `ACCEPTED` — restore-in-flight edits are discarded by lineage rotation (by
   design; UI warns).
 - `ACCEPTED` (trigger: user reports oversized-download failures) — device

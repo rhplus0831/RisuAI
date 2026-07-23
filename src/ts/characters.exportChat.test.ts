@@ -55,6 +55,8 @@ import { replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import type { Chat, character, Database } from './storage/database.svelte'
 
+const clipboardWrite = vi.fn()
+
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((innerResolve) => {
@@ -120,6 +122,10 @@ function downloadedJson(): Record<string, unknown> {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { write: clipboardWrite },
+  })
   selectedCharID.set(0)
 })
 
@@ -164,7 +170,7 @@ describe('chat export stable targets', () => {
     dialog.resolve('0')
 
     await vi.waitFor(() => {
-      expect(exportMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a-target')
+      expect(exportMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a-target', { strict: true })
     })
 
     setDatabase([characterB, { ...characterA, chats: [otherChat, targetChat] } as character])
@@ -227,6 +233,23 @@ describe('chat export stable targets', () => {
     expect(exportMocks.alertError).not.toHaveBeenCalled()
   })
 
+  it('alerts and creates no artifact when strict chat hydration fails', async () => {
+    const targetChat = makeChat('chat-a-target', 'Target Chat', 'stale shell message')
+    setDatabase([makeCharacter('char-a', 'Character A', [targetChat])])
+    const hydrationError = new Error('strict hydration failed')
+    exportMocks.alertSelect.mockResolvedValueOnce('0')
+    exportMocks.hydrateChatMessages.mockRejectedValueOnce(hydrationError)
+
+    await exportChat({ characterId: 'char-a', chatId: 'chat-a-target' })
+
+    expect(exportMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a-target', { strict: true })
+    expect(exportMocks.alertError).toHaveBeenCalledOnce()
+    expect(exportMocks.alertError).toHaveBeenCalledWith(hydrationError)
+    expect(exportMocks.downloadFile).not.toHaveBeenCalled()
+    expect(clipboardWrite).not.toHaveBeenCalled()
+    expect(exportMocks.alertNormal).not.toHaveBeenCalled()
+  })
+
   it('aborts without downloading when the chat vanishes during hydration', async () => {
     const targetChat = makeChat('chat-a-target', 'Target Chat', 'target')
     const characterA = makeCharacter('char-a', 'Character A', [targetChat])
@@ -238,7 +261,7 @@ describe('chat export stable targets', () => {
 
     const exporting = exportChat({ characterId: 'char-a', chatId: 'chat-a-target' })
     await vi.waitFor(() => {
-      expect(exportMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a-target')
+      expect(exportMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a-target', { strict: true })
     })
     setDatabase([{ ...characterA, chats: [] } as character])
     hydration.resolve()

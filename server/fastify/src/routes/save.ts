@@ -21,12 +21,13 @@ import {
   type Persisted,
   type StagedAssetLiveFileCopy,
 } from '../repository.js'
-import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
+import { listLegacySummaryTombstones, replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
 import {
   UnsupportedGroupCharactersError,
   decodeRisuSaveImportSnapshot,
-  normalizeRisuSaveImportDatabase,
+  normalizeRisuSaveJsonImportSnapshot,
 } from '../risuSave/importSnapshot.js'
+import type { RisuServerPortableMetadata } from '../risuSave/portableMetadata.js'
 import { decodeLocalBackup } from '../risuSave/localBackupImport.js'
 import {
   normalizeLegacyLocalBackupImportDatabase,
@@ -67,6 +68,7 @@ const LOCAL_BACKUP_EXPORT_FILENAME = 'database.bin'
 const ESTIMATED_BACKUP_BYTES_HEADER = 'x-risu-estimated-backup-bytes'
 const LOCAL_BACKUP_DATABASE_ENVELOPE = 'legacy-compressed'
 const SQLITE_EXPORT_ESTIMATE_FILE = 'risu.db'
+const BUNDLE_IMPORT_ROLLBACK_CLEANUP_WARNING = 'Bundle-import rollback could not remove some staged asset files'
 // Unlimited by default: the upload streams to a temp file and decodes in bounded
 // batches, so size is constrained by disk, not memory. A finite ceiling is opt-in
 // via RISU_API_IMPORT_MAX_BYTES (see config.ts).
@@ -105,6 +107,7 @@ export function registerSaveRoutes(
           db,
           dataDir,
           snapshot.database,
+          snapshot.portableMetadata,
           { automaticBackupRetention: options.automaticBackupRetention },
         )
         eventSink.emit(event)
@@ -122,14 +125,15 @@ export function registerSaveRoutes(
       }
 
       const body = (req.body ?? {}) as ImportBody
-      const database = normalizeRisuSaveImportDatabase(body.database)
-      // `normalizeRisuSaveImportDatabase` returns a request-body-isolated
+      const snapshot = normalizeRisuSaveJsonImportSnapshot(body.database)
+      // `normalizeRisuSaveJsonImportSnapshot` returns a request-body-isolated
       // throwaway object for JSON bodies, so the repository can split
       // message rows in place without a second full-corpus clone.
       const { revision, event, databaseLineage, writerEpoch, assetReport } = await applyImportedDatabase(
         db,
         dataDir,
-        database,
+        snapshot.database,
+        snapshot.portableMetadata,
         {
           automaticBackupRetention: options.automaticBackupRetention,
           cloneBeforeMessageSplit: false,
@@ -185,13 +189,33 @@ export function registerSaveRoutes(
         db,
         dataDir,
         importedDatabase,
+        snapshot.portableMetadata,
         {
           automaticBackupRetention: options.automaticBackupRetention,
           beforeRevision: () => {
             const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
             assetsCreated = assetResults.some((result) => result.created)
           },
-          onImportRollback: () => cleanupCopiedStagedAssetFiles(copiedAssetFiles),
+          onImportRollback: () => {
+            const cleanup = cleanupCopiedStagedAssetFiles(copiedAssetFiles)
+            if (cleanup.failures.length === 0) return
+            try {
+              req.log.warn(
+                {
+                  err: new AggregateError(
+                    cleanup.failures.map((failure) => failure.error),
+                    BUNDLE_IMPORT_ROLLBACK_CLEANUP_WARNING,
+                  ),
+                  failureCount: cleanup.failures.length,
+                  attempted: cleanup.attempted,
+                  failedFiles: cleanup.failures.map((failure) => failure.file),
+                },
+                BUNDLE_IMPORT_ROLLBACK_CLEANUP_WARNING,
+              )
+            } catch {
+              // Logging is best-effort and must never replace the import error.
+            }
+          },
         },
       )
       eventSink.emit(event)
@@ -279,7 +303,7 @@ export function registerSaveRoutes(
       const persisted = loadPersistedWithMessages(db, dataDir)
       persisted.assets = getAllAssetMetadata(db)
       const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
-      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted, loadPortableMetadata(db))
       const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
       const encodeStart = measure ? protocolNowMs() : 0
       const risuBytes = encodeRisuSaveExportSnapshot(snapshot, exportOptions)
@@ -327,7 +351,7 @@ export function registerSaveRoutes(
       const persisted = loadPersistedWithMessages(db, dataDir)
       persisted.assets = getAllAssetMetadata(db)
       const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
-      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted, loadPortableMetadata(db))
       snapshot.database = prepareLegacyLocalBackupExportDatabase(snapshot.database, persisted.assets)
       const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
       const encodeStart = measure ? protocolNowMs() : 0
@@ -517,6 +541,7 @@ async function applyImportedDatabase(
   db: DatabaseSync,
   dataDir: string,
   database: unknown,
+  portableMetadata: RisuServerPortableMetadata,
   options: {
     cloneBeforeMessageSplit?: boolean
     automaticBackupRetention?: number
@@ -536,7 +561,7 @@ async function applyImportedDatabase(
       automaticBackupRetention: options.automaticBackupRetention,
       cloneBeforeMessageSplit: options.cloneBeforeMessageSplit,
       beforeRevision: () => {
-        replaceLegacyHypaV3MemoryRowsInTransaction(db, database)
+        replaceLegacyHypaV3MemoryRowsInTransaction(db, database, portableMetadata.memoryLegacySummaryTombstones)
         options.beforeRevision?.(db)
       },
     })
@@ -547,5 +572,12 @@ async function applyImportedDatabase(
   return {
     ...result,
     assetReport: summarizeRisuSaveAssetReport(buildRepositoryRisuSaveAssetReport(dataDir, db)),
+  }
+}
+
+function loadPortableMetadata(db: DatabaseSync): RisuServerPortableMetadata {
+  return {
+    version: 1,
+    memoryLegacySummaryTombstones: listLegacySummaryTombstones(db),
   }
 }

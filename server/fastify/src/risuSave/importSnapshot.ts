@@ -22,6 +22,12 @@ import { normalizeDatabaseDefaults } from '../databaseDefaults.js'
 import { normalizeStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
 import { CHAT_GENERATION_SETTINGS_FIELD } from '../../../../src/ts/chatGenerationSettings.js'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from '../../../../src/ts/server/settingsGroups.js'
+import {
+  RISU_SERVER_DATA_KEY,
+  emptyRisuServerPortableMetadata,
+  validateRisuServerPortableMetadata,
+  type RisuServerPortableMetadata,
+} from './portableMetadata.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -33,6 +39,7 @@ const ROOT_COMPONENT_RESERVED_KEYS = new Set([
   'plugins',
   'pluginCustomStorage',
   '__directory',
+  RISU_SERVER_DATA_KEY,
 ])
 
 export const RISUSAVE_EMPTY_DATABASE_ERROR = 'risusave_empty_database'
@@ -63,6 +70,7 @@ export interface RisuSaveImportUnsupportedReference {
 export interface RisuSaveImportSnapshot {
   envelope: RisuSaveEnvelopeKind
   database: JsonRecord
+  portableMetadata: RisuServerPortableMetadata
   incompleteChatCount: number
   unsupportedReferences: RisuSaveImportUnsupportedReference[]
 }
@@ -92,8 +100,9 @@ export class UnsupportedGroupCharactersError extends ValidationError {
   }
 }
 
-interface RisuSaveImportDatabaseNormalization {
+export interface RisuSaveImportDatabaseNormalization {
   database: JsonRecord
+  portableMetadata: RisuServerPortableMetadata
   incompleteChatCount: number
 }
 
@@ -142,6 +151,10 @@ function decodeEnvelopeAsValidation<T>(decode: () => T): T {
 
 export function normalizeRisuSaveImportDatabase(database: unknown): JsonRecord {
   return normalizeImportDatabase(database).database
+}
+
+export function normalizeRisuSaveJsonImportSnapshot(database: unknown): RisuSaveImportDatabaseNormalization {
+  return normalizeImportDatabase(database)
 }
 
 export function normalizeRisuSaveSnapshotDatabase(database: unknown): JsonRecord {
@@ -218,13 +231,28 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
 }
 
 function normalizeImportDatabase(database: unknown): RisuSaveImportDatabaseNormalization {
-  assertRecognizedImportDatabase(database)
-  rejectUnsupportedGroupCharacters(database)
-  const target = normalizeImportDatabaseShape(database)
+  const extracted = extractPortableMetadata(database)
+  assertRecognizedImportDatabase(extracted.database)
+  rejectUnsupportedGroupCharacters(extracted.database)
+  const target = normalizeImportDatabaseShape(extracted.database)
   return {
     database: target,
+    portableMetadata: extracted.portableMetadata,
     incompleteChatCount: normalizeImportedChatGenerationSettings(target),
   }
+}
+
+function extractPortableMetadata(database: unknown): {
+  database: JsonRecord
+  portableMetadata: RisuServerPortableMetadata
+} {
+  const source = readJsonObject(database, 'database')
+  const domainDatabase = { ...source }
+  const portableMetadata = hasOwn(source, RISU_SERVER_DATA_KEY)
+    ? validateRisuServerPortableMetadata(source[RISU_SERVER_DATA_KEY])
+    : emptyRisuServerPortableMetadata()
+  delete domainDatabase[RISU_SERVER_DATA_KEY]
+  return { database: domainDatabase, portableMetadata }
 }
 
 function assertRecognizedImportDatabase(database: unknown): void {
