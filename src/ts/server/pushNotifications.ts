@@ -1,10 +1,15 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import { navigate } from '../router'
 
 const SERVICE_WORKER_URL = '/service-worker.js'
 const SERVICE_WORKER_SCOPE = '/'
 const VAPID_PUBLIC_KEY_ENDPOINT = '/api/v1/push/vapid-public-key'
 const PUSH_SUBSCRIPTIONS_ENDPOINT = '/api/v1/push/subscriptions'
 const LOG_PREFIX = '[push notifications]'
+const NOTIFICATION_ROUTE_MESSAGE_TYPE = 'risuai:notification-route'
+const NOTIFICATION_ROUTE_ACK_TYPE = 'risuai:notification-route-ack'
+
+let serviceWorkerNavigationListenerTarget: ServiceWorkerContainer | null = null
 
 export type PushNotificationFallbackReason =
   | 'notification-unavailable'
@@ -48,6 +53,42 @@ export interface DisablePushNotificationsResult {
 }
 
 type PushTransportResult = { ok: true } | { ok: false; error: unknown }
+
+export function installPushNotificationNavigationListener(): void {
+  if (!canUseServiceWorker() || navigator.serviceWorker === serviceWorkerNavigationListenerTarget) return
+
+  navigator.serviceWorker.addEventListener('message', handleServiceWorkerNavigationMessage)
+  serviceWorkerNavigationListenerTarget = navigator.serviceWorker
+}
+
+function handleServiceWorkerNavigationMessage(event: MessageEvent<unknown>): void {
+  const targetPath = readServiceWorkerNavigationPath(event.data)
+  const acknowledgementPort = event.ports?.[0]
+  if (!targetPath || !acknowledgementPort || typeof acknowledgementPort.postMessage !== 'function') return
+
+  try {
+    navigate(targetPath)
+    acknowledgementPort.postMessage({ type: NOTIFICATION_ROUTE_ACK_TYPE })
+  } catch (error) {
+    warnPushError('Failed to apply a notification route in-app.', error)
+  }
+}
+
+function readServiceWorkerNavigationPath(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+
+  const message = data as { type?: unknown; url?: unknown }
+  if (message.type !== NOTIFICATION_ROUTE_MESSAGE_TYPE || typeof message.url !== 'string') return null
+  if (typeof window === 'undefined') return null
+
+  try {
+    const targetUrl = new URL(message.url)
+    if (targetUrl.origin !== window.location.origin) return null
+    return targetUrl.pathname
+  } catch {
+    return null
+  }
+}
 
 export async function enableChatCompletionPushNotifications(): Promise<EnablePushNotificationsResult> {
   const permission = await requestNotificationPermission()

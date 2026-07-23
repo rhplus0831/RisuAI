@@ -1,10 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const pushNotificationMocks = vi.hoisted(() => ({
+  navigate: vi.fn(),
+}))
+
 vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: vi.fn(async () => 'push-auth-token'),
 }))
 
-import { disableChatCompletionPushNotifications, enableChatCompletionPushNotifications } from './pushNotifications'
+vi.mock('../router', () => ({
+  navigate: pushNotificationMocks.navigate,
+}))
+
+import {
+  disableChatCompletionPushNotifications,
+  enableChatCompletionPushNotifications,
+  installPushNotificationNavigationListener,
+} from './pushNotifications'
 
 interface FetchCall {
   url: string
@@ -27,9 +39,14 @@ function setupNotification(permission: NotificationPermission, requestedPermissi
 }
 
 function setupServiceWorker(registration: Partial<ServiceWorkerRegistration>) {
+  const listeners: { message?: (event: MessageEvent<unknown>) => void } = {}
   const serviceWorker = {
+    addEventListener: vi.fn((type: string, listener: (event: MessageEvent<unknown>) => void) => {
+      if (type === 'message') listeners.message = listener
+    }),
     register: vi.fn(async () => registration),
     getRegistration: vi.fn(async () => registration),
+    listeners,
   }
   vi.stubGlobal('navigator', { serviceWorker })
   return serviceWorker
@@ -93,6 +110,7 @@ describe('push notification browser helper', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
+    pushNotificationMocks.navigate.mockReset()
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
   })
 
@@ -153,6 +171,79 @@ describe('push notification browser helper', () => {
         },
       },
     ])
+  })
+
+  it.each([
+    {
+      name: 'a character chat',
+      pathname: '/character/char-a/chat-a',
+    },
+    {
+      name: 'the home route',
+      pathname: '/',
+    },
+  ])('acknowledges and routes $name through the SPA router', ({ pathname }) => {
+    const serviceWorker = setupServiceWorker({})
+    const acknowledgementPort = { postMessage: vi.fn() }
+    installPushNotificationNavigationListener()
+
+    expect(serviceWorker.addEventListener).toHaveBeenCalledWith('message', expect.any(Function))
+    serviceWorker.listeners.message?.({
+      data: {
+        type: 'risuai:notification-route',
+        url: new URL(pathname, window.location.origin).href,
+      },
+      ports: [acknowledgementPort],
+    } as unknown as MessageEvent<unknown>)
+
+    expect(pushNotificationMocks.navigate).toHaveBeenCalledWith(pathname)
+    expect(acknowledgementPort.postMessage).toHaveBeenCalledWith({
+      type: 'risuai:notification-route-ack',
+    })
+  })
+
+  it.each([
+    null,
+    { type: 'other-message', url: new URL('/character/char-a/chat-a', window.location.origin).href },
+    { type: 'risuai:notification-route', url: 42 },
+    { type: 'risuai:notification-route', url: '/character/char-a/chat-a' },
+    { type: 'risuai:notification-route', url: 'https://other.example.test/character/char-a/chat-a' },
+  ])('ignores malformed or untrusted routing messages: %j', (data) => {
+    const serviceWorker = setupServiceWorker({})
+    const acknowledgementPort = { postMessage: vi.fn() }
+    installPushNotificationNavigationListener()
+
+    serviceWorker.listeners.message?.({
+      data,
+      ports: [acknowledgementPort],
+    } as unknown as MessageEvent<unknown>)
+
+    expect(pushNotificationMocks.navigate).not.toHaveBeenCalled()
+    expect(acknowledgementPort.postMessage).not.toHaveBeenCalled()
+  })
+
+  it('does not acknowledge when the SPA router rejects the target', () => {
+    const serviceWorker = setupServiceWorker({})
+    const acknowledgementPort = { postMessage: vi.fn() }
+    const routingError = new Error('routing failed')
+    pushNotificationMocks.navigate.mockImplementationOnce(() => {
+      throw routingError
+    })
+    installPushNotificationNavigationListener()
+
+    serviceWorker.listeners.message?.({
+      data: {
+        type: 'risuai:notification-route',
+        url: new URL('/character/char-a/chat-a', window.location.origin).href,
+      },
+      ports: [acknowledgementPort],
+    } as unknown as MessageEvent<unknown>)
+
+    expect(acknowledgementPort.postMessage).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[push notifications] Failed to apply a notification route in-app.',
+      routingError,
+    )
   })
 
   it('falls back without subscribing when the server has no VAPID public key', async () => {

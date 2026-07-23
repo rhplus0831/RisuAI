@@ -8,8 +8,10 @@ import { installRouter } from './ts/router'
 import { mount } from 'svelte'
 import { installFastifyBrowserSmokeHook } from './ts/server/browserSmoke'
 import { installViewportScrollGuard } from './ts/gui/viewportScrollGuard'
+import { installPushNotificationNavigationListener } from './ts/server/pushNotifications'
 
 installRouter()
+installPushNotificationNavigationListener()
 installViewportScrollGuard()
 let app = mount(App, {
   target: document.getElementById('app'),
