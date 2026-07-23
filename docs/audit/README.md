@@ -1,5 +1,16 @@
 # Audit Scopes
 
+**Status update (2026-07-23, post-implementation):** every actionable open
+item in these scopes has been resolved. Seven fix commits landed the same day
+(`8f0433e66` promptTemplate parity, `a60066671` backup round-trips,
+`92dcf55e3` onboarding settlement, `e68d3e991` outbox order atomicity,
+`1da791a65` transfer bounds/metrics, `2c757ee2b` draft durability,
+`73b53c33a` greeting translation storage), each implementing its plan in
+`plans/` with the recommended decisions. Remaining entries are `ACCEPTED`
+contracts, `EVIDENCE-GATED` deferrals, or decision items (`enableLorebookStubs`).
+The scope files' issue-history, verified-safe, and invariants sections remain
+the durable reference for future audits.
+
 Working area for audit planning. Built 2026-07-23 from three sources: the
 project memory index, `.archived-docs/` (topic-grouped history of every closed
 workstream and audit), and `git log` (~2,000 `fix:` commits with
