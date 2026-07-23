@@ -80,20 +80,23 @@
   }
 
   onMount(() => {
-    let mounted = true
     let attached = false
 
-    // Defer until the click that opened the popup has finished bubbling. Keep
-    // the deferral cancellable so a popup that closes in the same turn cannot
-    // leave a document listener behind after it has unmounted.
-    queueMicrotask(() => {
-      if (!mounted) return
+    // Defer until the click that opened the popup has finished bubbling. The
+    // deferral must be a macrotask: microtask checkpoints run between listeners
+    // of a single trusted-click dispatch, so a microtask-deferred attach can
+    // land while the opening click is still bubbling toward document — the
+    // opening click then closes the menu it just opened (openers such as the
+    // reroll candidates menu write popupStore synchronously in their handler).
+    // Keep the deferral cancellable so a popup that closes in the same turn
+    // cannot leave a document listener behind after it has unmounted.
+    const attachTimer = setTimeout(() => {
       document.addEventListener('click', handleDocumentClick)
       attached = true
-    })
+    }, 0)
 
     return () => {
-      mounted = false
+      clearTimeout(attachTimer)
       if (attached) document.removeEventListener('click', handleDocumentClick)
     }
   })

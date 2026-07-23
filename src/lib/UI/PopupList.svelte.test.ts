@@ -13,8 +13,18 @@ import { popupStore } from 'src/ts/stores.svelte'
 let component: Parameters<typeof unmount>[0] | undefined
 let target: HTMLElement
 
-async function settle() {
+// Microtasks only: the popup renders, but the macrotask-deferred document
+// listener must not have attached yet. This is the state the still-bubbling
+// opening click observes in a real browser.
+async function renderOnly() {
   await Promise.resolve()
+  await tick()
+}
+
+async function settle() {
+  await renderOnly()
+  // Flush macrotasks so the deferred document listener attaches.
+  await new Promise((resolve) => setTimeout(resolve, 0))
   await tick()
 }
 
@@ -47,6 +57,31 @@ describe('PopupList outside dismissal', () => {
     await settle()
 
     expect(addListener.mock.calls.filter(([eventName]) => eventName === 'click')).toHaveLength(0)
+  })
+
+  it('is not closed by a document click arriving before its deferred listener attaches', async () => {
+    // Regression: openers that write popupStore synchronously in their click
+    // handler (e.g. the reroll candidates menu) mount PopupList mid-dispatch.
+    // A microtask-deferred listener attach lands while the opening click is
+    // still bubbling, so the opening click itself closed the menu. The attach
+    // must stay a macrotask: a document click that arrives after render but
+    // before macrotasks run must leave the popup open.
+    component = mount(PopupListTestHost, { target })
+    await settle()
+    const trigger = target.querySelector<HTMLButtonElement>('button')!
+
+    trigger.click()
+    await renderOnly()
+    expect(target.querySelector('[data-testid="popup-content"]')).not.toBeNull()
+
+    document.body.click()
+    await settle()
+    expect(target.querySelector('[data-testid="popup-content"]')).not.toBeNull()
+
+    // A genuinely separate click, after the listener attached, still closes.
+    document.body.click()
+    await settle()
+    expect(target.querySelector('[data-testid="popup-content"]')).toBeNull()
   })
 
   it('reopens from the same trigger with one click after an outside click', async () => {
