@@ -762,6 +762,7 @@ export function dispatchCreateCharacter(character: character, previous: Characte
 
   const characterSnapshot = toCharacterSnapshot(character)
   const initialChat = initialCharacterChatSnapshot(character)
+  warnIfCharacterCreateWouldDropChats(character, initialChat)
   const intent: DurableMutationIntent = {
     version: 1,
     requests: [
@@ -809,6 +810,7 @@ export function dispatchCreateAndSelectCharacter(
 
   const characterSnapshot = toCharacterSnapshot(character)
   const initialChat = initialCharacterChatSnapshot(character)
+  warnIfCharacterCreateWouldDropChats(character, initialChat)
   const previousSelectedCharacterId = selectedCharacterIdFromStateSnapshot(previous)
   const intent: DurableMutationIntent = {
     version: 1,
@@ -2313,6 +2315,14 @@ export function initialCharacterChatSnapshot(character: character): ChatSnapshot
     return undefined
   }
   return cloneJsonValue(chat) as unknown as ChatSnapshot
+}
+
+function warnIfCharacterCreateWouldDropChats(character: character, initialChat: ChatSnapshot | undefined): void {
+  if ((character.chats?.length ?? 0) === 0 || initialChat) return
+  console.error(
+    `Character create would drop ${character.chats?.length ?? 0} chat(s) because no usable initial-chat snapshot exists`,
+    { characterId: character.chaId },
+  )
 }
 
 export function sanitizeCharacterPatch(patch: CharacterSnapshot): CharacterSnapshot {

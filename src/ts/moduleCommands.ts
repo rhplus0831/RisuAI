@@ -765,6 +765,10 @@ export async function setGlobalModuleEnabled(moduleId: string, enabled: boolean)
 }
 
 export async function createGlobalModule(module: RisuModule): Promise<ServerCommandResult | null> {
+  if (Array.isArray(module.lorebook)) ensureClientLorebookEntryIds(module.lorebook)
+  if (Array.isArray(module.regex)) ensureClientScriptDefinitionIds(module.regex)
+  if (Array.isArray(module.trigger)) ensureClientTriggerDefinitionIds(module.trigger)
+
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
     applyOptimisticCreatedGlobalModule(module)

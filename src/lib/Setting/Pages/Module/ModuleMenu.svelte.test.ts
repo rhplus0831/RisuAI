@@ -138,6 +138,24 @@ describe('ModuleMenu stale import guards', () => {
     expect(draftModule.lorebook).toEqual(liveModule.lorebook)
   })
 
+  it('remints a duplicate id when a .risu lorebook is re-imported into the same module', () => {
+    const moduleId = draftModule.id
+    const importedRows = parseImportedLorebookRows([
+      jsonFile({
+        type: 'risu',
+        ver: 1,
+        data: [loreEntry('lore-initial', 'round-trip import')],
+      }),
+    ])
+
+    expect(applyImportedModuleLorebookRows(moduleId, draftModule, importedRows)).toBe(true)
+
+    const ids = liveModule.lorebook?.map((entry) => entry.id) ?? []
+    expect(ids[0]).toBe('lore-initial')
+    expect(ids[1]).not.toBe('lore-initial')
+    expect(new Set(ids).size).toBe(2)
+  })
+
   it.each([
     ['cancel', null],
     ['empty result', []],

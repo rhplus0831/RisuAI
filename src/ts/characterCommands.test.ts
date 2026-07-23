@@ -345,6 +345,7 @@ afterEach(() => {
 describe('character create command payloads', () => {
   it('dispatchCreateCharacter omits embedded chats from the server payload and preserves the optimistic character', async () => {
     const calls = stubCreateCharacterCommandFetch()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const previous = currentCharacterStateSnapshot()
     const starterChat = {
       id: 'chat-created',
@@ -359,24 +360,58 @@ describe('character create command payloads', () => {
       chats: [starterChat],
     } as any
 
+    try {
+      dispatchCreateCharacter(character, previous)
+      await waitForCallCount(calls, 2)
+
+      expect(calls[1]).toMatchObject({
+        url: '/api/v1/commands/characters',
+        method: 'POST',
+        body: {
+          baseRevision: 10,
+          character: {
+            chaId: 'char-created',
+            name: 'Imported card',
+            firstMessage: 'Hi',
+            chatPage: 0,
+          },
+        },
+      })
+      expect(calls[1].body).not.toHaveProperty('character.chats')
+      expect(character.chats).toEqual([starterChat])
+      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('Character create would drop 1 chat'), {
+        characterId: 'char-created',
+      })
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  it('dispatchCreateCharacter carries an id-bearing empty imported starter chat', async () => {
+    const calls = stubCreateCharacterCommandFetch()
+    const previous = currentCharacterStateSnapshot()
+    const starterChat = {
+      id: 'chat-imported',
+      name: 'Chat 1',
+      note: '',
+      message: [],
+      localLore: [{ id: 'local-lore', content: 'Local lore' }],
+    }
+    const character = {
+      chaId: 'char-created',
+      name: 'Imported card',
+      chatPage: 0,
+      chats: [starterChat],
+    } as any
+
     dispatchCreateCharacter(character, previous)
     await waitForCallCount(calls, 2)
 
-    expect(calls[1]).toMatchObject({
-      url: '/api/v1/commands/characters',
-      method: 'POST',
-      body: {
-        baseRevision: 10,
-        character: {
-          chaId: 'char-created',
-          name: 'Imported card',
-          firstMessage: 'Hi',
-          chatPage: 0,
-        },
-      },
+    expect(calls[1].body).toMatchObject({
+      character: { chaId: 'char-created', name: 'Imported card', chatPage: 0 },
+      initialChat: starterChat,
     })
-    expect(calls[1].body).not.toHaveProperty('character.chats')
-    expect(character.chats).toEqual([starterChat])
+    expect((calls[1].body as { character: Record<string, unknown> }).character).not.toHaveProperty('chats')
   })
 
   it('dispatchCreateAndSelectCharacter omits embedded chats while keeping local selection data intact', async () => {

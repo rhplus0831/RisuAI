@@ -21,6 +21,29 @@ const globalApiState = vi.hoisted(() => ({
   readImage: vi.fn(),
 }))
 
+const characterCommandState = vi.hoisted(() => ({
+  dispatchCreateCharacter: vi.fn(),
+}))
+
+const charxState = vi.hoisted(() => ({
+  cardData: '',
+  moduleData: undefined as Uint8Array | undefined,
+  module: undefined as Record<string, unknown> | undefined,
+}))
+
+const clientIdentityState = vi.hoisted(() => ({ nextId: 0 }))
+
+function ensureUniqueTestIds<T extends { id?: string }>(rows: T[], prefix: string): T[] {
+  const seen = new Set<string>()
+  for (const row of rows) {
+    let id = typeof row.id === 'string' && row.id.trim() ? row.id : ''
+    if (!id || seen.has(id)) id = `${prefix}-${++clientIdentityState.nextId}`
+    row.id = id
+    seen.add(id)
+  }
+  return rows
+}
+
 vi.mock('./alert', () => ({
   alertCardExport: vi.fn(),
   alertConfirm: vi.fn(async () => true),
@@ -174,13 +197,23 @@ vi.mock('./process/files/inlays', () => ({
 }))
 
 vi.mock('./process/processzip', () => ({
-  CharXImporter: class {},
+  CharXImporter: class {
+    alertInfo = false
+    cardData = ''
+    moduleData: Uint8Array | undefined
+    assets = {}
+    async parse() {
+      this.cardData = charxState.cardData
+      this.moduleData = charxState.moduleData
+    }
+    async done() {}
+  },
   CharXWriter: class {},
 }))
 
 vi.mock('./process/modules', () => ({
   exportModule: vi.fn(),
-  readModule: vi.fn(),
+  readModule: vi.fn(async () => charxState.module),
 }))
 
 vi.mock('./characterCommands', () => ({
@@ -189,7 +222,7 @@ vi.mock('./characterCommands', () => ({
     characterOrder: [],
     selectedCharID: -1,
   })),
-  dispatchCreateCharacter: vi.fn(),
+  dispatchCreateCharacter: characterCommandState.dispatchCreateCharacter,
   dispatchUpdateCharacter: vi.fn(),
 }))
 
@@ -214,8 +247,14 @@ vi.mock('./server/chatMessageHydration.svelte', () => ({
 }))
 
 vi.mock('./server/lorebookBridge.svelte', () => ({
+  ensureClientLorebookEntryIds: (entries: Array<{ id?: string }>) => ensureUniqueTestIds(entries, 'lore'),
   recordHydratedCharacterLorebooks: vi.fn(),
   resetLorebookHydration: vi.fn(),
+}))
+
+vi.mock('./server/scriptDefinitionBridge.svelte', () => ({
+  ensureClientScriptDefinitionIds: (entries: Array<{ id?: string }>) => ensureUniqueTestIds(entries, 'script'),
+  ensureClientTriggerDefinitionIds: (entries: Array<{ id?: string }>) => ensureUniqueTestIds(entries, 'trigger'),
 }))
 
 vi.mock('./storage/fastifyStorage', () => ({
@@ -236,6 +275,11 @@ beforeEach(() => {
     characters: [],
     characterOrder: [],
   }
+  clientIdentityState.nextId = 0
+  charxState.cardData = ''
+  charxState.moduleData = undefined
+  charxState.module = undefined
+  characterCommandState.dispatchCreateCharacter.mockClear()
   alertState.alertStoreSet.mockClear()
   alertState.alertError.mockClear()
   alertState.alertNormal.mockClear()
@@ -303,6 +347,12 @@ describe('PNG character card import', () => {
       emotionImages: [['smile', 'asset-0-070809']],
       additionalAssets: [['bonus', 'asset-1-01030507', 'webp']],
     })
+    expect(dbState.db.characters[0].chats[0].id).toEqual(expect.any(String))
+    expect(dbState.db.characters[0].globalLore.map((entry: { id?: string }) => entry.id)).toEqual([
+      expect.any(String),
+      expect.any(String),
+    ])
+    expect(new Set(dbState.db.characters[0].globalLore.map((entry: { id?: string }) => entry.id)).size).toBe(2)
 
     const progress = alertState.alertStoreSet.mock.calls
       .map(([entry]) => entry)
@@ -345,6 +395,65 @@ describe('PNG character card import', () => {
       localLore: [],
     })
     expect(chat).not.toHaveProperty('generationSettings')
+  })
+
+  it('normalizes v2 lore identities and carries the starter chat into character dispatch', async () => {
+    const card = {
+      spec: 'chara_card_v2',
+      spec_version: '2.0',
+      data: {
+        name: 'V2 JSON',
+        description: 'desc',
+        first_mes: 'hello',
+        mes_example: '',
+        personality: '',
+        scenario: '',
+        creator_notes: '',
+        system_prompt: '',
+        post_history_instructions: '',
+        alternate_greetings: [],
+        tags: [],
+        creator: '',
+        character_version: '1',
+        extensions: { risuai: {} },
+        character_book: characterBookFixture(),
+      },
+    }
+
+    await importCharacterProcess({ name: 'v2.json', data: Buffer.from(JSON.stringify(card)) })
+
+    const imported = dbState.db.characters[0]
+    expect(imported.globalLore).toHaveLength(2)
+    expect(new Set(imported.globalLore.map((entry: { id?: string }) => entry.id)).size).toBe(2)
+    expect(imported.chats[0].id).toEqual(expect.any(String))
+    expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledWith(imported, expect.anything())
+  })
+
+  it('normalizes a charx module lorebook overlay after metadata replacement', async () => {
+    const card = characterCardFixture('CharX Overlay')
+    charxState.cardData = JSON.stringify(card)
+    charxState.moduleData = new Uint8Array([1])
+    charxState.module = {
+      id: 'module-source',
+      name: 'Overlay',
+      description: '',
+      lorebook: [
+        { id: 'duplicate', key: 'one', content: 'One' },
+        { id: 'duplicate', key: 'two', content: 'Two' },
+      ],
+      regex: [{ comment: 'regex' }],
+      trigger: [{ comment: 'trigger', type: 'manual', conditions: [], effect: [] }],
+    }
+
+    await importCharacterProcess({ name: 'overlay.charx', data: new Uint8Array([1]) })
+
+    const imported = dbState.db.characters[0]
+    const loreIds = imported.globalLore.map((entry: { id?: string }) => entry.id)
+    expect(loreIds[0]).toBe('duplicate')
+    expect(loreIds[1]).not.toBe('duplicate')
+    expect(new Set(loreIds).size).toBe(2)
+    expect(imported.customscript[0].id).toEqual(expect.any(String))
+    expect(imported.triggerscript[0].id).toEqual(expect.any(String))
   })
 })
 
@@ -402,41 +511,21 @@ describe('v2 character card export assets', () => {
 async function createPngCardFixture(options: { risuaiExtension?: Record<string, unknown> } = {}) {
   const assetPayloads = [new Uint8Array([7, 8, 9]), new Uint8Array([1, 3, 5, 7])]
   const assetBase64Values = assetPayloads.map((asset) => Buffer.from(asset).toString('base64'))
-  const card = {
-    spec: 'chara_card_v3',
-    data: {
-      name: 'PNG Multi Asset',
-      description: 'desc',
-      first_mes: 'hello',
-      mes_example: '',
-      personality: '',
-      scenario: '',
-      creator_notes: '',
-      system_prompt: '',
-      post_history_instructions: '',
-      alternate_greetings: [],
-      tags: [],
-      creator: '',
-      character_version: '1',
-      extensions: {
-        risuai: options.risuaiExtension ?? {},
-      },
-      assets: [
-        {
-          type: 'emotion',
-          uri: '__asset:1',
-          name: 'smile',
-          ext: 'png',
-        },
-        {
-          type: 'x-risu-asset',
-          uri: '__asset:2',
-          name: 'bonus',
-          ext: 'webp',
-        },
-      ],
+  const card = characterCardFixture('PNG Multi Asset', options.risuaiExtension)
+  card.data.assets = [
+    {
+      type: 'emotion',
+      uri: '__asset:1',
+      name: 'smile',
+      ext: 'png',
     },
-  }
+    {
+      type: 'x-risu-asset',
+      uri: '__asset:2',
+      name: 'bonus',
+      ext: 'webp',
+    },
+  ]
   const chunks = {
     'chara-ext-asset_:1': assetBase64Values[0],
     'chara-ext-asset_:2': assetBase64Values[1],
@@ -455,6 +544,41 @@ async function createPngCardFixture(options: { risuaiExtension?: Record<string, 
     ],
     assetPayloads,
     png: new Uint8Array(png),
+  }
+}
+
+function characterCardFixture(name: string, risuaiExtension: Record<string, unknown> = {}) {
+  return {
+    spec: 'chara_card_v3',
+    data: {
+      name,
+      description: 'desc',
+      first_mes: 'hello',
+      mes_example: '',
+      personality: '',
+      scenario: '',
+      creator_notes: '',
+      system_prompt: '',
+      post_history_instructions: '',
+      alternate_greetings: [],
+      tags: [],
+      creator: '',
+      character_version: '1',
+      extensions: {
+        risuai: risuaiExtension,
+      },
+      character_book: characterBookFixture(),
+      assets: [] as Array<Record<string, string>>,
+    },
+  }
+}
+
+function characterBookFixture() {
+  return {
+    entries: [
+      { keys: ['one'], secondary_keys: [], content: 'One', name: 'One', insertion_order: 1, constant: false },
+      { keys: ['two'], secondary_keys: [], content: 'Two', name: 'Two', insertion_order: 2, constant: true },
+    ],
   }
 }
 

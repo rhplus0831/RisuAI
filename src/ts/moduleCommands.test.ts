@@ -901,6 +901,28 @@ describe('module command projection helpers', () => {
     ])
   })
 
+  it('normalizes module lorebook, regex, and trigger identities before create dispatch', async () => {
+    const calls = stubCommandFetch()
+    const module = {
+      id: 'mod-import',
+      name: 'Imported module',
+      description: '',
+      lorebook: [{ id: 'duplicate', content: 'First' }, { id: 'duplicate', content: 'Second' }, { content: 'Third' }],
+      regex: [{ comment: 'Regex' }],
+      trigger: [{ comment: 'Trigger', type: 'manual', conditions: [], effect: [] }],
+    } as any
+
+    const result = createGlobalModule(module)
+    await waitForCallCount(calls, 2)
+    await expect(result).resolves.toMatchObject({ status: 'ok' })
+
+    const sent = (calls[1].body as { module: typeof module }).module
+    expect(sent.lorebook[0].id).toBe('duplicate')
+    expect(new Set(sent.lorebook.map((entry: { id: string }) => entry.id)).size).toBe(3)
+    expect(sent.regex[0].id).toEqual(expect.any(String))
+    expect(sent.trigger[0].id).toEqual(expect.any(String))
+  })
+
   it('keeps a new module edit behind its transient durable create', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()

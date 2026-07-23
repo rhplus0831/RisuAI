@@ -67,6 +67,11 @@ import {
 import { refreshServerRealmImportResources } from './server/resourceRefresh'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { sanitizeHubAdditionalHtml } from './hubAdditionalHtml'
+import { ensureClientLorebookEntryIds } from './server/lorebookBridge.svelte'
+import {
+  ensureClientScriptDefinitionIds,
+  ensureClientTriggerDefinitionIds,
+} from './server/scriptDefinitionBridge.svelte'
 
 export const hubURL = '/api/v1/hub'
 
@@ -80,6 +85,7 @@ function appendImportedCharacter(
   character: character,
   previous: ReturnType<typeof currentCharacterStateSnapshot>,
 ): string | undefined {
+  normalizeImportedCharacterIdentities(character)
   const characterId = character.chaId
   withTrustedResourceWrite(() => {
     const db = getDatabase()
@@ -91,6 +97,26 @@ function appendImportedCharacter(
   })
   dispatchCreateCharacter(character, previous)
   return characterId
+}
+
+function normalizeImportedCharacterIdentities(character: character): void {
+  ensureClientLorebookEntryIds(character.globalLore ?? (character.globalLore = []))
+
+  const chatIds = new Set<string>()
+  for (const chat of character.chats ?? []) {
+    let chatId = typeof chat.id === 'string' && chat.id.trim() ? chat.id : ''
+    if (!chatId || chatIds.has(chatId)) {
+      do {
+        chatId = v4()
+      } while (chatIds.has(chatId))
+      chat.id = chatId
+    }
+    chatIds.add(chatId)
+    ensureClientLorebookEntryIds(chat.localLore ?? (chat.localLore = []))
+  }
+
+  character.customscript = ensureClientScriptDefinitionIds(character.customscript ?? [])
+  character.triggerscript = ensureClientTriggerDefinitionIds(character.triggerscript ?? [])
 }
 
 export async function importCharacter(): Promise<string | null | undefined> {
@@ -163,7 +189,7 @@ export async function importCharacterProcess(f: {
       alertError(language.errors.noData)
       return
     }
-    let lorebook: loreBook[] = []
+    let lorebook: loreBook[] | undefined
     if (importer.moduleData) {
       const md = await readModule(Buffer.from(importer.moduleData))
       if (!md) {
@@ -626,7 +652,7 @@ async function importCharacterCardSpec(
   img?: Uint8Array,
   mode: 'hub' | 'normal' = 'normal',
   assetDict: { [key: string]: string } = {},
-  overrideLorebook: loreBook[] = [],
+  overrideLorebook?: loreBook[],
 ): Promise<string | null> {
   if (!card || (card.spec !== 'chara_card_v2' && card.spec !== 'chara_card_v3')) {
     return null
