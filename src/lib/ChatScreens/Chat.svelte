@@ -2023,7 +2023,7 @@
 </script>
 
 {#snippet genInfo()}
-  <div class="flex flex-col items-end">
+  <div class="flex flex-wrap justify-end items-center">
     {#if messageGenerationInfo && (getDatabase().requestInfoInsideChat || aiLawApplies())}
       <button
         class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
