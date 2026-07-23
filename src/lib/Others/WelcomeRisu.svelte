@@ -9,8 +9,9 @@
   import { onDestroy } from 'svelte'
   import {
     applyOnboardingServerBackedSettings,
-    applyServerBackedSetting,
+    persistServerBackedSettingsPatchWithSettlement,
     watchServerBackedSettings,
+    type ServerBackedSettingsPersistenceReceipt,
   } from 'src/ts/server/settingsBridge.svelte'
   import { updateSelectedPersonaFieldWithOutcome } from 'src/ts/persona'
 
@@ -43,9 +44,43 @@
   let mounted = true
   let setupRunId = 0
   let usernamePersistencePending = $state(false)
+  let languagePersistencePending = $state(false)
+  let apiKeyPersistencePending = $state(false)
+  let onboardingPersistenceError = $state<PersistenceErrorOwner | null>(null)
+  let languageAttemptId = 0
+  let apiKeyAttemptId = 0
+  let activeLanguageAttempt: LanguagePersistenceAttempt | null = null
+  let activeApiKeyAttempt: ApiKeyPersistenceAttempt | null = null
+  const queuedSettlementSubscriptions = new Set<QueuedSettlementSubscription>()
 
   const SETUP_COMPLETION_PENDING_STEP = 9
   const SETUP_COMPLETE_STEP = 10
+
+  type PersistenceAttemptKind = 'language' | 'apiKey'
+  type ApiKeySettingsField = 'openAIKey' | 'openrouterKey' | 'claudeAPIKey'
+
+  type PersistenceErrorOwner = {
+    kind: PersistenceAttemptKind
+    attemptId: number
+  }
+
+  type LanguagePersistenceAttempt = {
+    attemptId: number
+    language: string
+    originStep: number
+  }
+
+  type ApiKeyPersistenceAttempt = {
+    attemptId: number
+    field: ApiKeySettingsField
+    keyText: string
+    originStep: number
+    provider: string
+  }
+
+  type QueuedSettlementSubscription = {
+    stop: () => void
+  }
 
   type SetupChoicesSnapshot = {
     chatLang: number
@@ -71,6 +106,30 @@
       chatLang === snapshot.chatLang &&
       chatMemorySelection === snapshot.chatMemorySelection
     )
+  }
+
+  function clearMatchingPersistenceError(kind: PersistenceAttemptKind, attemptId?: number): void {
+    if (onboardingPersistenceError?.kind !== kind) return
+    if (attemptId !== undefined && onboardingPersistenceError.attemptId !== attemptId) return
+    onboardingPersistenceError = null
+  }
+
+  function observeQueuedSettlement(
+    receipt: Extract<ServerBackedSettingsPersistenceReceipt, { status: 'queued' }>,
+    owner: PersistenceErrorOwner,
+    isRelevant: () => boolean,
+  ): void {
+    const subscription: QueuedSettlementSubscription = { stop: () => {} }
+    queuedSettlementSubscriptions.add(subscription)
+    subscription.stop = receipt.subscribeSettlement((settlement) => {
+      queuedSettlementSubscriptions.delete(subscription)
+      if (!mounted || !isRelevant()) return
+      if (settlement === 'failed') {
+        onboardingPersistenceError = owner
+      } else {
+        clearMatchingPersistenceError(owner.kind, owner.attemptId)
+      }
+    })
   }
 
   async function completeOnboardingSetup(): Promise<void> {
@@ -109,12 +168,65 @@
     mounted = false
     stopServerSettingsWatch()
     invalidatePendingSetupRun()
+    languageAttemptId += 1
+    apiKeyAttemptId += 1
+    activeLanguageAttempt = null
+    activeApiKeyAttempt = null
+    for (const subscription of queuedSettlementSubscriptions) subscription.stop()
+    queuedSettlementSubscriptions.clear()
   })
 
-  function selectLanguage(lang: string): void {
-    changeLanguage(lang)
-    applyServerBackedSetting('language', lang)
+  function isCurrentLanguageAttempt(attempt: LanguagePersistenceAttempt): boolean {
+    return (
+      mounted &&
+      languagePersistencePending &&
+      languageAttemptId === attempt.attemptId &&
+      activeLanguageAttempt?.attemptId === attempt.attemptId &&
+      activeLanguageAttempt.language === attempt.language &&
+      step === attempt.originStep
+    )
+  }
+
+  async function selectLanguage(lang: string): Promise<void> {
+    if (!mounted || languagePersistencePending || step !== 0) return
+
+    const attempt: LanguagePersistenceAttempt = {
+      attemptId: languageAttemptId + 1,
+      language: lang,
+      originStep: step,
+    }
+    languageAttemptId = attempt.attemptId
+    activeLanguageAttempt = attempt
+    languagePersistencePending = true
+    clearMatchingPersistenceError('language')
+    changeLanguage(attempt.language)
+
+    let receipt: ServerBackedSettingsPersistenceReceipt
+    try {
+      receipt = await persistServerBackedSettingsPatchWithSettlement({ language: attempt.language })
+    } catch {
+      if (!isCurrentLanguageAttempt(attempt)) return
+      languagePersistencePending = false
+      onboardingPersistenceError = { kind: 'language', attemptId: attempt.attemptId }
+      changeLanguage(getDatabase().language)
+      return
+    }
+
+    if (!isCurrentLanguageAttempt(attempt)) return
+    languagePersistencePending = false
+    if (receipt.status === 'failed') {
+      onboardingPersistenceError = { kind: 'language', attemptId: attempt.attemptId }
+      changeLanguage(getDatabase().language)
+      return
+    }
+
+    clearMatchingPersistenceError('language', attempt.attemptId)
     step = 1
+    if (receipt.status === 'queued') {
+      observeQueuedSettlement(receipt, { kind: 'language', attemptId: attempt.attemptId }, () => {
+        return languageAttemptId === attempt.attemptId && activeLanguageAttempt?.language === attempt.language
+      })
+    }
   }
 
   function resolveBrowserLanguage(browserLanguage: string): string | null {
@@ -134,7 +246,7 @@
   {
     const browserLanguage = resolveBrowserLanguage(navigator.language)
     if (browserLanguage) {
-      selectLanguage(browserLanguage)
+      void selectLanguage(browserLanguage)
     }
   }
   let start = $state(false)
@@ -160,6 +272,82 @@
     }
   }
 
+  function apiKeyFieldForProvider(attemptedProvider: string): ApiKeySettingsField | null {
+    if (attemptedProvider === 'openai') return 'openAIKey'
+    if (attemptedProvider === 'openrouter') return 'openrouterKey'
+    if (attemptedProvider === 'claude') return 'claudeAPIKey'
+    return null
+  }
+
+  function isCurrentApiKeyAttempt(attempt: ApiKeyPersistenceAttempt): boolean {
+    return (
+      mounted &&
+      apiKeyPersistencePending &&
+      apiKeyAttemptId === attempt.attemptId &&
+      activeApiKeyAttempt?.attemptId === attempt.attemptId &&
+      activeApiKeyAttempt.field === attempt.field &&
+      activeApiKeyAttempt.keyText === attempt.keyText &&
+      step === attempt.originStep &&
+      provider === attempt.provider
+    )
+  }
+
+  async function persistOnboardingApiKey(): Promise<void> {
+    if (!mounted || apiKeyPersistencePending || step !== 4 || input.length === 0) return
+    if (!input.startsWith('sk-')) {
+      alertError('Invalid API key')
+      return
+    }
+
+    const attemptedProvider = provider
+    const attemptedKeyText = input
+    const attemptedField = apiKeyFieldForProvider(attemptedProvider)
+    if (!attemptedField) return
+    const attempt: ApiKeyPersistenceAttempt = {
+      attemptId: apiKeyAttemptId + 1,
+      field: attemptedField,
+      keyText: attemptedKeyText,
+      originStep: step,
+      provider: attemptedProvider,
+    }
+    apiKeyAttemptId = attempt.attemptId
+    activeApiKeyAttempt = attempt
+    apiKeyPersistencePending = true
+    clearMatchingPersistenceError('apiKey')
+
+    let receipt: ServerBackedSettingsPersistenceReceipt
+    try {
+      receipt = await persistServerBackedSettingsPatchWithSettlement({ [attempt.field]: attempt.keyText })
+    } catch {
+      if (!isCurrentApiKeyAttempt(attempt)) return
+      apiKeyPersistencePending = false
+      onboardingPersistenceError = { kind: 'apiKey', attemptId: attempt.attemptId }
+      return
+    }
+
+    if (!isCurrentApiKeyAttempt(attempt)) return
+    apiKeyPersistencePending = false
+    if (receipt.status === 'failed') {
+      onboardingPersistenceError = { kind: 'apiKey', attemptId: attempt.attemptId }
+      return
+    }
+
+    clearMatchingPersistenceError('apiKey', attempt.attemptId)
+    if (step === attempt.originStep && provider === attempt.provider && input === attempt.keyText) {
+      step = 5
+      input = ''
+    }
+    if (receipt.status === 'queued') {
+      observeQueuedSettlement(receipt, { kind: 'apiKey', attemptId: attempt.attemptId }, () => {
+        return (
+          apiKeyAttemptId === attempt.attemptId &&
+          activeApiKeyAttempt?.field === attempt.field &&
+          activeApiKeyAttempt.provider === attempt.provider
+        )
+      })
+    }
+  }
+
   function send() {
     switch (step) {
       case 1: {
@@ -175,24 +363,7 @@
         break
       }
       case 4: {
-        if (input.length === 0) {
-          break
-        }
-        if (!input.startsWith('sk-')) {
-          alertError('Invalid API key')
-          break
-        }
-        if (provider === 'openai') {
-          applyServerBackedSetting('openAIKey', input)
-        }
-        if (provider === 'openrouter') {
-          applyServerBackedSetting('openrouterKey', input)
-        }
-        if (provider === 'claude') {
-          applyServerBackedSetting('claudeAPIKey', input)
-        }
-        step = 5
-        input = ''
+        void persistOnboardingApiKey()
         break
       }
     }
@@ -218,34 +389,40 @@
           <h2 class="animate-bounce">Choose your language</h2>
           <div class="flex flex-col items-start ml-2">
             <button
+              disabled={languagePersistencePending}
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                selectLanguage('de')
+                void selectLanguage('de')
               }}>• Deutsch</button>
             <button
+              disabled={languagePersistencePending}
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                selectLanguage('en')
+                void selectLanguage('en')
               }}>• English</button>
             <button
+              disabled={languagePersistencePending}
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                selectLanguage('ko')
+                void selectLanguage('ko')
               }}>• 한국어</button>
             <button
+              disabled={languagePersistencePending}
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                selectLanguage('cn')
+                void selectLanguage('cn')
               }}>• 中文</button>
             <button
+              disabled={languagePersistencePending}
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                selectLanguage('zh-Hant')
+                void selectLanguage('zh-Hant')
               }}>• 中文(繁體)</button>
             <button
+              disabled={languagePersistencePending}
               class="hover:text-green-500 transition-colors"
               onclick={() => {
-                selectLanguage('vi')
+                void selectLanguage('vi')
               }}>• Tiếng Việt</button>
           </div>
         {:else}
@@ -477,14 +654,17 @@
                 style:height={'44px'}></textarea>
             {/if}
             <button
-              disabled={step === 1 && usernamePersistencePending}
-              aria-busy={step === 1 && usernamePersistencePending}
+              disabled={(step === 1 && usernamePersistencePending) || (step === 4 && apiKeyPersistencePending)}
+              aria-busy={(step === 1 && usernamePersistencePending) || (step === 4 && apiKeyPersistencePending)}
               aria-label={language.hotkeyDesc.send}
               onclick={send}
               class="flex justify-center border-y border-r rounded-r-md border-darkborderc items-center text-textcolor p-2 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors">
               <Send />
             </button>
           </div>
+        {/if}
+        {#if onboardingPersistenceError}
+          <p role="alert" class="mx-4 mb-2 text-red-500">{language.errors.settingsSaveFailed}</p>
         {/if}
       </div>
     {/if}

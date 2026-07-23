@@ -39,7 +39,7 @@ checklist for any new UI code:**
 
 ## Open items
 
-- `PARTIAL / VERIFIED 2026-07-23` **E-7/E-8** — narrower than originally
+- `FIXED 2026-07-23` **E-7/E-8** — narrower than originally
   filed. Fixed since: the preset hotkey toasts only after an `accepted`
   settlement (`src/ts/hotkey.ts:550`, via `eafdd2bc6`), and the shared
   settings bridge now stages before debounce and centrally reports
@@ -47,10 +47,10 @@ checklist for any new UI code:**
   `:1108`), so ordinary dispatch failures are loud even at outcome-blind
   call sites (e.g. `HotkeySettings.svelte:14`,
   `CustomColorSchemeEditor.svelte:28`, `DefaultChatScreen.svelte:2184`).
-  Remaining risk: onboarding language and API-key steps still call the void
-  `applyServerBackedSetting` and advance immediately
-  (`src/lib/Others/WelcomeRisu.svelte:114`, `:185`) — workflow advancement
-  before staging is durable.
+  The onboarding remainder is fixed (2026-07-23): language and API-key
+  steps now await outcome-aware durable receipts, advance on `accepted` or
+  locally staged `queued`, retain queued settlement feedback, and fence stale
+  or unmounted attempts (`src/lib/Others/WelcomeRisu.svelte`).
 - `PARTIAL / VERIFIED 2026-07-23` **E-5** — composer drafts live in an
   in-memory Map (`DefaultChatScreen.composerDrafts.ts:11`), message edits in
   transient component state (`Chat.svelte:1870`, `:374`), module edits in

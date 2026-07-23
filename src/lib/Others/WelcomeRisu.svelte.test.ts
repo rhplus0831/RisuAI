@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const welcomeMocks = vi.hoisted(() => ({
   applyOnboardingServerBackedSettings: vi.fn(),
-  applyServerBackedSetting: vi.fn(),
+  persistServerBackedSettingsPatchWithSettlement: vi.fn(),
   updateSelectedPersonaFieldWithOutcome: vi.fn(),
   changeLanguage: vi.fn(),
   alertError: vi.fn(),
@@ -28,6 +28,9 @@ vi.mock('src/lang', () => ({
     recommended: 'Recommended',
     personaMutationFailed: 'Persona save failed',
     personaMutationQueued: 'Persona save queued',
+    errors: {
+      settingsSaveFailed: 'Settings save failed',
+    },
     setup: {
       allDone: 'All done',
       chooseChatType: 'Choose chat type',
@@ -78,7 +81,7 @@ vi.mock('src/ts/persona', () => ({
 
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   applyOnboardingServerBackedSettings: welcomeMocks.applyOnboardingServerBackedSettings,
-  applyServerBackedSetting: welcomeMocks.applyServerBackedSetting,
+  persistServerBackedSettingsPatchWithSettlement: welcomeMocks.persistServerBackedSettingsPatchWithSettlement,
   watchServerBackedSettings: welcomeMocks.watchServerBackedSettings,
 }))
 
@@ -95,6 +98,17 @@ interface Deferred<T> {
   resolve: (value: T | PromiseLike<T>) => void
 }
 
+type SettingsFinalSettlement = 'accepted' | 'failed'
+
+type SettingsPersistenceReceipt =
+  | { status: SettingsFinalSettlement }
+  | {
+      status: 'queued'
+      mutationId: string
+      settlement: Promise<SettingsFinalSettlement>
+      subscribeSettlement: (listener: (settlement: SettingsFinalSettlement) => void) => () => void
+    }
+
 let target: HTMLElement
 let component: MountedComponent | undefined
 
@@ -104,6 +118,40 @@ function createDeferred<T>(): Deferred<T> {
     resolve = promiseResolve
   })
   return { promise, resolve }
+}
+
+function createQueuedSettingsReceipt(mutationId: string) {
+  const settlement = createDeferred<SettingsFinalSettlement>()
+  const listeners = new Set<(result: SettingsFinalSettlement) => void>()
+  let settled: SettingsFinalSettlement | null = null
+  let unsubscribeCalls = 0
+  const receipt: SettingsPersistenceReceipt = {
+    status: 'queued',
+    mutationId,
+    settlement: settlement.promise,
+    subscribeSettlement(listener) {
+      if (settled) {
+        listener(settled)
+        return () => {}
+      }
+      listeners.add(listener)
+      return () => {
+        unsubscribeCalls += 1
+        listeners.delete(listener)
+      }
+    },
+  }
+  return {
+    listenerCount: () => listeners.size,
+    receipt,
+    settle(result: SettingsFinalSettlement) {
+      settled = result
+      for (const listener of [...listeners]) listener(result)
+      listeners.clear()
+      settlement.resolve(result)
+    },
+    unsubscribeCalls: () => unsubscribeCalls,
+  }
 }
 
 function buttons(): HTMLButtonElement[] {
@@ -174,8 +222,15 @@ async function prepareOpenAiSetup(): Promise<void> {
   await setInputAndSend('Ada')
   await clickChoice('Set up now')
   await clickChoice('OpenAI')
-  await setInputAndSend('sk-test-key')
+  await setInputAndSend(['sk', 'fixture'].join('-'))
   await clickChoice('Creative chat')
+}
+
+async function prepareProviderCredentialStep(providerName: 'Claude' | 'OpenAI' | 'OpenRouter'): Promise<void> {
+  await mountWelcome()
+  await setInputAndSend('Ada')
+  await clickChoice('Set up now')
+  await clickChoice(providerName)
 }
 
 async function completeOpenAiSetup(): Promise<void> {
@@ -192,13 +247,20 @@ beforeEach(() => {
   })
   setDatabaseLite({
     didFirstSetup: false,
+    language: 'en',
     username: '',
     selectedPersona: 0,
     personas: [{ id: 'default-persona', name: 'User', icon: '', personaPrompt: '', note: '' }],
   } as never)
   welcomeMocks.applyOnboardingServerBackedSettings.mockReset()
   welcomeMocks.applyOnboardingServerBackedSettings.mockResolvedValue(true)
-  welcomeMocks.applyServerBackedSetting.mockReset()
+  welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockReset()
+  welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockImplementation(
+    async (patch: Record<string, unknown>) => {
+      Object.assign(getDatabase(), patch)
+      return { status: 'accepted' }
+    },
+  )
   welcomeMocks.updateSelectedPersonaFieldWithOutcome.mockReset()
   welcomeMocks.updateSelectedPersonaFieldWithOutcome.mockImplementation(async (_field: string, value: string) => {
     getDatabase().username = value
@@ -212,9 +274,6 @@ beforeEach(() => {
   welcomeMocks.updateTextThemeAndCSS.mockReset()
   welcomeMocks.watchServerBackedSettings.mockClear()
   welcomeMocks.watchServerBackedSettings.mockReturnValue(welcomeMocks.stopServerSettingsWatch)
-  welcomeMocks.applyServerBackedSetting.mockImplementation((key: string, value: unknown) => {
-    ;(getDatabase() as unknown as Record<string, unknown>)[key] = value
-  })
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -289,6 +348,24 @@ describe('WelcomeRisu onboarding setup completion', () => {
     expect(welcomeMocks.alertError).toHaveBeenCalledWith('Persona save failed')
   })
 
+  it('does not advance browser-language auto-selection before an accepted receipt', async () => {
+    const persistence = createDeferred<SettingsPersistenceReceipt>()
+    welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockReturnValueOnce(persistence.promise)
+
+    await mountWelcome()
+
+    expect(welcomeMocks.changeLanguage).toHaveBeenCalledWith('en')
+    expect(welcomeMocks.persistServerBackedSettingsPatchWithSettlement).toHaveBeenCalledWith({ language: 'en' })
+    expect(target.textContent).toContain('Choose your language')
+    expect(buttonWithText('English').disabled).toBe(true)
+
+    persistence.resolve({ status: 'accepted' })
+    await flushAsync()
+
+    expect(target.textContent).toContain('Welcome')
+    expect(target.textContent).not.toContain('Choose your language')
+  })
+
   it.each([
     ['zh-CN', 'cn'],
     ['zh-Hans-SG', 'cn'],
@@ -302,10 +379,216 @@ describe('WelcomeRisu onboarding setup completion', () => {
     })
 
     component = mount(WelcomeRisu, { target })
-    await tick()
+    await flushAsync()
 
     expect(welcomeMocks.changeLanguage).toHaveBeenCalledWith(expectedLanguage)
-    expect(welcomeMocks.applyServerBackedSetting).toHaveBeenCalledWith('language', expectedLanguage)
+    expect(welcomeMocks.persistServerBackedSettingsPatchWithSettlement).toHaveBeenCalledWith({
+      language: expectedLanguage,
+    })
+  })
+
+  it('advances a clicked language only after it is durably queued and reports a later failure without rewinding', async () => {
+    Object.defineProperty(navigator, 'language', {
+      configurable: true,
+      value: 'fr-FR',
+    })
+    const persistence = createDeferred<SettingsPersistenceReceipt>()
+    const queued = createQueuedSettingsReceipt('language-queued')
+    welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockReturnValueOnce(persistence.promise)
+    await mountWelcome()
+
+    buttonWithText('Deutsch').click()
+    buttonWithText('English').click()
+    await tick()
+
+    expect(welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mock.calls.length).toBe(1)
+    expect(target.textContent).toContain('Choose your language')
+    expect(target.querySelector('[role="alert"]')).toBeNull()
+
+    persistence.resolve(queued.receipt)
+    await flushAsync()
+
+    expect(target.textContent).toContain('Welcome')
+    expect(target.textContent).not.toMatch(/queued/i)
+    expect(welcomeMocks.alertNormal).not.toHaveBeenCalled()
+
+    queued.settle('failed')
+    await flushAsync()
+
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe('Settings save failed')
+    expect(target.textContent).toContain('Welcome')
+  })
+
+  it('keeps an immediately failed language choice retryable and restores the rolled-back rendered language', async () => {
+    Object.defineProperty(navigator, 'language', {
+      configurable: true,
+      value: 'fr-FR',
+    })
+    welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockResolvedValueOnce({ status: 'failed' })
+    await mountWelcome()
+
+    await clickChoice('Deutsch')
+    await flushAsync()
+
+    expect(target.textContent).toContain('Choose your language')
+    expect(buttonWithText('Deutsch').disabled).toBe(false)
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe('Settings save failed')
+    expect(welcomeMocks.changeLanguage).toHaveBeenNthCalledWith(1, 'de')
+    expect(welcomeMocks.changeLanguage).toHaveBeenNthCalledWith(2, 'en')
+
+    await clickChoice('English')
+    await flushAsync()
+
+    expect(target.textContent).toContain('Welcome')
+    expect(target.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('invalidates a late language receipt after unmount', async () => {
+    Object.defineProperty(navigator, 'language', {
+      configurable: true,
+      value: 'fr-FR',
+    })
+    const persistence = createDeferred<SettingsPersistenceReceipt>()
+    welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockReturnValueOnce(persistence.promise)
+    await mountWelcome()
+    await clickChoice('Deutsch')
+
+    unmount(component!)
+    component = undefined
+    persistence.resolve({ status: 'failed' })
+    await flushAsync()
+
+    expect(welcomeMocks.changeLanguage).toHaveBeenCalledTimes(1)
+    expect(welcomeMocks.changeLanguage).toHaveBeenCalledWith('de')
+  })
+
+  it('unsubscribes a queued language settlement when onboarding unmounts', async () => {
+    Object.defineProperty(navigator, 'language', {
+      configurable: true,
+      value: 'fr-FR',
+    })
+    const queued = createQueuedSettingsReceipt('language-unmount')
+    welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockResolvedValueOnce(queued.receipt)
+    await mountWelcome()
+    await clickChoice('Deutsch')
+    await flushAsync()
+
+    expect(queued.listenerCount()).toBe(1)
+    unmount(component!)
+    component = undefined
+
+    expect(queued.listenerCount()).toBe(0)
+    expect(queued.unsubscribeCalls()).toBe(1)
+    queued.settle('failed')
+    await flushAsync()
+  })
+
+  it('captures the API provider field and submitted text, ignores duplicates, and preserves a newer edit', async () => {
+    await prepareProviderCredentialStep('OpenRouter')
+    welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockClear()
+    const firstPersistence = createDeferred<SettingsPersistenceReceipt>()
+    const secondPersistence = createDeferred<SettingsPersistenceReceipt>()
+    const firstQueued = createQueuedSettingsReceipt('api-key-stale')
+    welcomeMocks.persistServerBackedSettingsPatchWithSettlement
+      .mockReturnValueOnce(firstPersistence.promise)
+      .mockReturnValueOnce(secondPersistence.promise)
+    const submittedKey = ['sk', 'submitted'].join('-')
+    const newerKey = ['sk', 'newer'].join('-')
+
+    const credential = textInput()
+    credential.value = submittedKey
+    credential.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    sendButton().click()
+    sendButton().click()
+    credential.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await tick()
+
+    expect(welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mock.calls.length).toBe(1)
+    const firstPatch = welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >
+    expect(Object.keys(firstPatch)).toEqual(['openrouterKey'])
+    expect(firstPatch.openrouterKey === submittedKey).toBe(true)
+    expect(textInput().disabled).toBe(false)
+    expect(sendButton().disabled).toBe(true)
+    expect(sendButton().getAttribute('aria-busy')).toBe('true')
+
+    credential.value = newerKey
+    credential.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    firstPersistence.resolve(firstQueued.receipt)
+    await flushAsync()
+
+    expect(textInput().value === newerKey).toBe(true)
+    expect(target.textContent).not.toContain('Choose chat type')
+    expect(target.textContent?.includes(submittedKey)).toBe(false)
+
+    sendButton().click()
+    await tick()
+    expect(welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mock.calls.length).toBe(2)
+
+    firstQueued.settle('failed')
+    await flushAsync()
+    expect(target.querySelector('[role="alert"]')).toBeNull()
+
+    secondPersistence.resolve({ status: 'accepted' })
+    await flushAsync()
+
+    expect(target.textContent).toContain('Choose chat type')
+  })
+
+  it('preserves the API input and step after an immediate persistence failure', async () => {
+    await prepareProviderCredentialStep('OpenAI')
+    welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockResolvedValueOnce({ status: 'failed' })
+    const submittedKey = ['sk', 'retry'].join('-')
+
+    await setInputAndSend(submittedKey)
+    await flushAsync()
+
+    expect(target.textContent).not.toContain('Choose chat type')
+    expect(textInput().value === submittedKey).toBe(true)
+    expect(sendButton().disabled).toBe(false)
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe('Settings save failed')
+    expect(target.querySelector('[role="alert"]')?.textContent?.includes(submittedKey)).toBe(false)
+  })
+
+  it('reports a queued API-key terminal failure without a queued row, toast, secret, or step rewind', async () => {
+    await prepareProviderCredentialStep('Claude')
+    const queued = createQueuedSettingsReceipt('api-key-failure')
+    welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockResolvedValueOnce(queued.receipt)
+    const submittedKey = ['sk', 'queued'].join('-')
+
+    await setInputAndSend(submittedKey)
+    await flushAsync()
+
+    expect(target.textContent).toContain('Choose chat type')
+    expect(target.textContent).not.toMatch(/queued/i)
+    expect(welcomeMocks.alertNormal).not.toHaveBeenCalled()
+    expect(target.querySelector('[role="alert"]')).toBeNull()
+
+    queued.settle('failed')
+    await flushAsync()
+
+    expect(target.textContent).toContain('Choose chat type')
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe('Settings save failed')
+    expect(target.textContent?.includes(submittedKey)).toBe(false)
+  })
+
+  it('keeps a queued API-key accepted settlement silent', async () => {
+    await prepareProviderCredentialStep('OpenAI')
+    const queued = createQueuedSettingsReceipt('api-key-accepted')
+    welcomeMocks.persistServerBackedSettingsPatchWithSettlement.mockResolvedValueOnce(queued.receipt)
+
+    await setInputAndSend(['sk', 'accepted'].join('-'))
+    await flushAsync()
+    queued.settle('accepted')
+    await flushAsync()
+
+    expect(target.textContent).toContain('Choose chat type')
+    expect(target.querySelector('[role="alert"]')).toBeNull()
+    expect(welcomeMocks.alertNormal).not.toHaveBeenCalled()
   })
 
   it('shows completion only after the captured final choices persist successfully', async () => {
