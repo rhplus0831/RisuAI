@@ -15,6 +15,7 @@ import {
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import { stripInternalReasoning } from '../../../../src/ts/process/internalReasoning.js'
 import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
 import type { DatabaseSync } from 'node:sqlite'
 import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences.js'
@@ -33,7 +34,6 @@ const PREPARED_INPUT_CBS_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const AGENT_INPUT_CBS_RE = /\{\{\s*agentInput::([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const AGENT_TOGGLE_CBS_RE = /\{\{\s*agentToggle::([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const PREPARED_INPUT_SCOPE_NAMES: ReadonlySet<string> = new Set(AGENT_PRESET_STEP_INPUT_SCOPES)
-const INTERNAL_REASONING_TAG_RE = /<\s*(\/?)\s*(?:Thoughts|think)\b[^>]*>/giu
 
 export interface AgentPresetPreviousOutput {
   stepId: string
@@ -1396,30 +1396,6 @@ function parseJsonObject(text: string): ParseJsonObjectResult {
   } catch (err) {
     return { status: 'error', error: err instanceof Error ? err.message : String(err) }
   }
-}
-
-function stripInternalReasoning(text: string): string {
-  let visible = ''
-  let visibleFrom = 0
-  let hiddenDepth = 0
-
-  for (const match of text.matchAll(INTERNAL_REASONING_TAG_RE)) {
-    const index = match.index
-    const closing = match[1] === '/'
-
-    if (!closing) {
-      if (hiddenDepth === 0) visible += text.slice(visibleFrom, index)
-      hiddenDepth += 1
-      continue
-    }
-
-    if (hiddenDepth === 0) continue
-    hiddenDepth -= 1
-    if (hiddenDepth === 0) visibleFrom = index + match[0].length
-  }
-
-  if (hiddenDepth === 0) visible += text.slice(visibleFrom)
-  return visible.trim()
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

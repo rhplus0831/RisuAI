@@ -1,4 +1,5 @@
 import type { OpenAIChat } from '../process/index.svelte'
+import { stripInternalReasoning } from '../process/internalReasoning'
 import {
   defaultTranslatorPrompt,
   normalizeTranslatorPresetState,
@@ -186,21 +187,24 @@ export async function runTranslatorPipeline(
   const outputsByKey: Record<string, string> = {}
 
   for (const step of stepsToRun(input.steps)) {
-    const output = await runStep({
-      messages: buildTranslatorStepMessages({
-        step,
-        sourceText: input.sourceText,
-        prevOutput: previousOutput,
-        outputsByKey,
-        to: input.to,
-        from: input.from,
-        translatorNote: input.translatorNote,
-        historyResolver: input.historyResolver,
+    const output = stripInternalReasoning(
+      await runStep({
+        messages: buildTranslatorStepMessages({
+          step,
+          sourceText: input.sourceText,
+          prevOutput: previousOutput,
+          outputsByKey,
+          to: input.to,
+          from: input.from,
+          translatorNote: input.translatorNote,
+          historyResolver: input.historyResolver,
+        }),
+        maxResponse: step.maxResponse,
+        model: step.model,
+        signal: input.signal,
       }),
-      maxResponse: step.maxResponse,
-      model: step.model,
-      signal: input.signal,
-    })
+      { preserveUnchanged: true },
+    )
     previousOutput = output
     if (step.outputKey) outputsByKey[step.outputKey] = output
   }

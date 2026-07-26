@@ -218,6 +218,49 @@ describe('runTranslatorPipeline', () => {
     ])
   })
 
+  it('removes internal reasoning before chaining or returning LLM translations', async () => {
+    const runStep = vi
+      .fn()
+      .mockResolvedValueOnce(
+        '<Thoughts data-private="true">draft secret <think>nested secret</think></Thoughts>\n\ndraft output',
+      )
+      .mockResolvedValueOnce('<think>final secret</think>\n<THOUGHTS>more secret</THOUGHTS>\nfinal output')
+
+    await expect(
+      runTranslatorPipeline(
+        {
+          steps: [
+            step({ id: 'draft', prompt: 'Draft {{slot::content}}', outputKey: 'draft' }),
+            step({ id: 'refine', prompt: 'Refine {{slot::prev}} with {{slot::out::draft}}' }),
+          ],
+          sourceText: 'source',
+          to: 'ko',
+          from: 'en',
+          translatorNote: '',
+        },
+        runStep,
+      ),
+    ).resolves.toBe('final output')
+    expect(runStep.mock.calls[1][0].messages).toEqual([
+      { role: 'system', content: 'Refine draft output with draft output' },
+    ])
+  })
+
+  it('drops an unfinished internal-reasoning tail from an LLM translation', async () => {
+    await expect(
+      runTranslatorPipeline(
+        {
+          steps: [step()],
+          sourceText: 'source',
+          to: 'ko',
+          from: 'en',
+          translatorNote: '',
+        },
+        async () => 'translated text\n<Thoughts>unfinished private reasoning',
+      ),
+    ).resolves.toBe('translated text')
+  })
+
   it('runs the first step when all steps are disabled', async () => {
     const runStep = vi.fn(async () => 'forced')
     await expect(

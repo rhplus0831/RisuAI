@@ -412,6 +412,20 @@ describe('translateRawMessageData', () => {
     expect(result.text).toBe(rawResponse)
   })
 
+  it('removes internal reasoning wrappers from an LLM translation result', async () => {
+    const rawResponse =
+      '<Thoughts>private translation reasoning</Thoughts>\n<think>more private reasoning</think>\n번역됨'
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames(rawResponse))
+
+    const result = await translateRawMessageData({
+      settings: llmSettings(true),
+      text: 'source',
+      signal: new AbortController().signal,
+    })
+
+    expect(result.text).toBe('번역됨')
+  })
+
   it('runs an LLM translator pipeline sequentially with per-step limits, named outputs, and model profiles', async () => {
     const settings = {
       ...llmSettings(true),
