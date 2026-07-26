@@ -1,6 +1,5 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import Button from 'src/lib/UI/GUI/Button.svelte'
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
@@ -45,10 +44,7 @@
       lookupModelInfo: (_database, id) => getModelInfo(id),
     }),
   )
-  let changedBindings = $derived.by(() => collectChangedBindings())
-  let hasChanges = $derived(Object.keys(changedBindings).length > 0)
   let applyQueued = $derived(pendingMutations.length > 0)
-  let canApply = $derived(hasChanges && changedBindingsAreValid(changedBindings) && !applying && !applyQueued)
 
   $effect(() => {
     return subscribePendingModelMutations('model-profiles', (pending) => {
@@ -71,6 +67,9 @@
     for (const pending of pendingMutations) {
       if (pending.phase === 'discarded') {
         commandError = language.modelProfiles.commandReplayDiscarded
+        if (pending.projection.kind === 'role-bindings') {
+          restoreBindingsIfCurrent(pending.projection.bindings)
+        }
         finishPendingModelMutation(pending.token)
         continue
       }
@@ -107,21 +106,9 @@
     return rebased
   }
 
-  function collectChangedBindings(): Partial<Record<ModelRole, ModelRoleProfileBinding>> {
-    const changes: Partial<Record<ModelRole, ModelRoleProfileBinding>> = {}
-    for (const role of MODEL_ROLES) {
-      if (snapshotBinding(draftBindings[role]) !== snapshotBinding(serverBaselineBindings[role])) {
-        changes[role] = draftBindings[role]
-      }
-    }
-    return changes
-  }
-
-  function changedBindingsAreValid(bindings: Partial<Record<ModelRole, ModelRoleProfileBinding>>): boolean {
-    return Object.entries(bindings).every(([role, binding]) => {
-      if (binding?.mode === 'profile' && !profileIdSet.has(binding.profileId)) return false
-      return role !== 'memory' || uiState.roleStatuses.memory.bucket !== 'unsupported'
-    })
+  function bindingCanBeSaved(role: ModelRole, binding: ModelRoleProfileBinding): boolean {
+    if (binding.mode === 'profile' && !profileIdSet.has(binding.profileId)) return false
+    return role !== 'memory' || uiState.roleStatuses.memory.bucket !== 'unsupported'
   }
 
   function roleLabel(role: ModelRole): string {
@@ -200,11 +187,13 @@
 
   function setBinding(role: ModelRole, binding: ModelRoleProfileBinding): void {
     if (applying || applyQueued) return
+    if (snapshotBinding(bindingFor(role)) === snapshotBinding(binding)) return
     draftBindings = {
       ...draftBindings,
       [role]: binding,
     }
     commandError = ''
+    if (bindingCanBeSaved(role, binding)) void applyBinding(role, binding)
   }
 
   function setBindingMode(role: ModelRole, mode: BindingMode): void {
@@ -227,13 +216,17 @@
     setBinding(role, { mode: 'profile', profileId })
   }
 
-  function resetDraft(): void {
-    if (applying || applyQueued) return
-    const normalized = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
-    draftBindings = cloneJsonValue(normalized)
-    serverBaselineBindings = cloneJsonValue(normalized)
-    lastServerSnapshot = snapshotBindings(normalized)
-    commandError = ''
+  function restoreBindingsIfCurrent(bindings: Partial<Record<ModelRole, ModelRoleProfileBinding>>): void {
+    const restored = cloneJsonValue(draftBindings)
+    let changed = false
+    for (const [rawRole, attemptedBinding] of Object.entries(bindings)) {
+      if (!attemptedBinding) continue
+      const role = rawRole as ModelRole
+      if (snapshotBinding(restored[role]) !== snapshotBinding(attemptedBinding)) continue
+      restored[role] = cloneJsonValue(serverBaselineBindings[role])
+      changed = true
+    }
+    if (changed) draftBindings = restored
   }
 
   function selectedModelPresetId(): string | null {
@@ -250,17 +243,19 @@
         : language.modelProfiles.commandUnavailable
   }
 
-  async function applyDraft(): Promise<void> {
-    if (!canApply) return
+  async function applyBinding(role: ModelRole, binding: ModelRoleProfileBinding): Promise<void> {
     applying = true
     commandError = ''
-    const bindings = cloneJsonValue(changedBindings)
+    const bindings: Partial<Record<ModelRole, ModelRoleProfileBinding>> = {
+      [role]: cloneJsonValue(binding),
+    }
     const modelPresetId = selectedModelPresetId()
     const pendingToken = beginPendingModelMutation('model-profiles', {
       kind: 'role-bindings',
       bindings,
     })
     if (!pendingToken) {
+      restoreBindingsIfCurrent(bindings)
       applying = false
       return
     }
@@ -276,9 +271,11 @@
       }
       finishPendingModelMutation(pendingToken)
       commandError = commandErrorMessage(outcome.result)
+      restoreBindingsIfCurrent(bindings)
     } catch {
       finishPendingModelMutation(pendingToken)
       commandError = commandErrorMessage({ status: 'unavailable' })
+      restoreBindingsIfCurrent(bindings)
     } finally {
       applying = false
     }
@@ -294,20 +291,6 @@
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
   {/if}
-  <div class="flex flex-wrap items-center justify-between gap-2">
-    <span class="text-sm text-textcolor2">
-      {hasChanges ? language.modelProfiles.unsavedRoleChanges : language.modelProfiles.noUnsavedRoleChanges}
-    </span>
-    <div class="flex gap-2">
-      <Button size="sm" styled="outlined" disabled={!hasChanges || applying || applyQueued} onclick={resetDraft}>
-        {language.modelProfiles.cancel}
-      </Button>
-      <Button size="sm" disabled={!canApply} onclick={applyDraft}>
-        {applying ? language.modelProfiles.applying : language.modelProfiles.apply}
-      </Button>
-    </div>
-  </div>
-
   <div class="flex flex-col gap-2">
     {#each MODEL_ROLES as role (role)}
       {@const binding = bindingFor(role)}

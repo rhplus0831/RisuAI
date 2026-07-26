@@ -50,14 +50,6 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, resolve, reject }
 }
 
-function buttonByText(label: string): HTMLButtonElement {
-  const button = Array.from(target.querySelectorAll('button')).find((candidate) =>
-    candidate.textContent?.includes(label),
-  )
-  if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`)
-  return button
-}
-
 async function flushAsync(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
@@ -146,6 +138,7 @@ describe('ModelProfileRoleList', () => {
 
     expect(target.querySelector('table')).toBeNull()
     expect(target.querySelectorAll('article')).toHaveLength(MODEL_ROLES.length)
+    expect(target.querySelectorAll('button')).toHaveLength(0)
 
     const modeSelects = Array.from(target.querySelectorAll<HTMLSelectElement>('select'))
     const modeNames = modeSelects.map((select) => select.getAttribute('aria-label'))
@@ -162,6 +155,12 @@ describe('ModelProfileRoleList', () => {
       `${language.modelRoles.roles.chatMain}: ${language.modelProfiles.bindingModeColumn}`,
       `${language.modelRoles.roles.chatMain}: ${language.modelProfiles.effectiveProfileColumn}`,
     ])
+    expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenCalledWith(
+      {
+        chatMain: { mode: 'profile', profileId: 'profile-1' },
+      },
+      'model-a',
+    )
   })
 
   it('reports an unavailable command transport without treating it as success', async () => {
@@ -175,16 +174,14 @@ describe('ModelProfileRoleList', () => {
     const [chatMainModeSelect] = Array.from(target.querySelectorAll('select'))
     if (!(chatMainModeSelect instanceof HTMLSelectElement)) throw new Error('Chat main binding mode select not found')
     setSelectValue(chatMainModeSelect, 'profile')
-    await tick()
-
-    buttonByText(language.modelProfiles.apply).click()
-    await tick()
+    await flushAsync()
 
     expect(target.textContent).toContain(language.modelProfiles.commandUnavailable)
     expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenCalledTimes(1)
+    expect(roleModeSelect(0).value).toBe('legacy')
   })
 
-  it('atomically mirrors roles into the model preset selected when Apply was clicked', async () => {
+  it('atomically mirrors roles into the model preset selected when the binding changed', async () => {
     const roleCommand = createDeferred<{ status: 'accepted'; result: { status: 'ok' } }>()
     commandSpies.updateModelRoleProfilesDurably.mockReturnValue(roleCommand.promise)
     component = mount(ModelProfileRoleList, { target })
@@ -194,9 +191,6 @@ describe('ModelProfileRoleList', () => {
     if (!(chatMainModeSelect instanceof HTMLSelectElement)) throw new Error('Chat main binding mode select not found')
 
     setSelectValue(chatMainModeSelect, 'profile')
-    await tick()
-
-    buttonByText(language.modelProfiles.apply).click()
     await tick()
 
     expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenCalledWith(
@@ -214,26 +208,63 @@ describe('ModelProfileRoleList', () => {
     expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps Apply retryable when the atomic role update fails', async () => {
-    commandSpies.updateModelRoleProfilesDurably.mockResolvedValue({
-      status: 'failed',
-      result: { status: 'error', error: 'save failed' },
-    })
+  it('automatically applies a selected profile change', async () => {
+    getDatabase().modelProfiles = [
+      ...(getDatabase().modelProfiles ?? []),
+      {
+        id: 'profile-2',
+        name: 'Profile 2',
+        providerId: 'debug-echo',
+        modelId: 'echo_model',
+      },
+    ]
     component = mount(ModelProfileRoleList, { target })
     await tick()
 
     setSelectValue(roleModeSelect(0), 'profile')
+    await flushAsync()
+    getDatabase().modelRoleProfiles = normalizeModelRoleProfiles({
+      chatMain: { mode: 'profile', profileId: 'profile-1' },
+    })
+    await flushAsync()
+
+    setSelectValue(roleProfileSelect(0), 'profile-2')
+    await flushAsync()
+
+    expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenLastCalledWith(
+      {
+        chatMain: { mode: 'profile', profileId: 'profile-2' },
+      },
+      'model-a',
+    )
+    expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenCalledTimes(2)
+  })
+
+  it('restores a failed automatic update and retries on the next change', async () => {
+    commandSpies.updateModelRoleProfilesDurably
+      .mockResolvedValueOnce({
+        status: 'failed',
+        result: { status: 'error', error: 'save failed' },
+      })
+      .mockResolvedValueOnce({ status: 'accepted', result: { status: 'ok' } })
+    component = mount(ModelProfileRoleList, { target })
     await tick()
-    buttonByText(language.modelProfiles.apply).click()
+
+    setSelectValue(roleModeSelect(0), 'profile')
     await flushAsync()
 
     expect(target.textContent).toContain('save failed')
-    expect(target.textContent).toContain(language.modelProfiles.unsavedRoleChanges)
-    expect(buttonByText(language.modelProfiles.apply).disabled).toBe(false)
+    expect(roleModeSelect(0).value).toBe('legacy')
+    expect(Array.from(target.querySelectorAll('select')).every((select) => !select.disabled)).toBe(true)
+
+    setSelectValue(roleModeSelect(0), 'profile')
+    await flushAsync()
+
+    expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenCalledTimes(2)
     expect(commandSpies.updateModelPresetCommand).not.toHaveBeenCalled()
   })
 
-  it('prevents role edits while Apply is pending', async () => {
+  it('prevents role edits while an automatic update is pending', async () => {
     const roleCommand = createDeferred<{ status: 'accepted'; result: { status: 'ok' } }>()
     commandSpies.updateModelRoleProfilesDurably.mockReturnValue(roleCommand.promise)
     component = mount(ModelProfileRoleList, { target })
@@ -243,8 +274,6 @@ describe('ModelProfileRoleList', () => {
     if (!(chatMainModeSelect instanceof HTMLSelectElement)) throw new Error('Chat main binding mode select not found')
 
     setSelectValue(chatMainModeSelect, 'profile')
-    await tick()
-    buttonByText(language.modelProfiles.apply).click()
     await tick()
 
     expect(Array.from(target.querySelectorAll('select')).every((select) => select.disabled)).toBe(true)
@@ -265,17 +294,12 @@ describe('ModelProfileRoleList', () => {
     await tick()
 
     setSelectValue(roleModeSelect(0), 'profile')
-    await tick()
-    buttonByText(language.modelProfiles.apply).click()
     await flushAsync()
 
     expect(target.querySelector('[data-model-role-command-notice]')).toBeNull()
-    expect(buttonByText(language.modelProfiles.apply).disabled).toBe(true)
-    expect(buttonByText(language.modelProfiles.cancel).disabled).toBe(true)
+    expect(target.querySelectorAll('button')).toHaveLength(0)
     expect(Array.from(target.querySelectorAll('select')).every((select) => select.disabled)).toBe(true)
 
-    buttonByText(language.modelProfiles.apply).click()
-    await flushAsync()
     expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenCalledTimes(1)
 
     getDatabase().modelRoleProfiles = normalizeModelRoleProfiles({
@@ -300,12 +324,10 @@ describe('ModelProfileRoleList', () => {
     await tick()
 
     setSelectValue(roleModeSelect(0), 'profile')
-    await tick()
-    buttonByText(language.modelProfiles.apply).click()
     await flushAsync()
 
     expect(target.textContent).toContain(language.modelProfiles.commandUnavailable)
-    expect(buttonByText(language.modelProfiles.apply).disabled).toBe(false)
+    expect(roleModeSelect(0).value).toBe('legacy')
     expect(Array.from(target.querySelectorAll('select')).every((select) => !select.disabled)).toBe(true)
   })
 
@@ -323,10 +345,6 @@ describe('ModelProfileRoleList', () => {
 
     expect(roleModeSelect(0).value).toBe('profile')
     expect(roleModeSelect(1).value).toBe('profile')
-    expect(target.textContent).toContain(language.modelProfiles.unsavedRoleChanges)
-
-    buttonByText(language.modelProfiles.apply).click()
-    await flushAsync()
 
     expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenCalledWith(
       {
@@ -359,9 +377,6 @@ describe('ModelProfileRoleList', () => {
 
     expect(roleProfileSelect(0).value).toBe('profile-1')
 
-    buttonByText(language.modelProfiles.apply).click()
-    await flushAsync()
-
     expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenCalledWith(
       {
         chatMain: { mode: 'profile', profileId: 'profile-1' },
@@ -370,20 +385,19 @@ describe('ModelProfileRoleList', () => {
     )
   })
 
-  it('clears a dirty role when the authoritative binding converges on the draft', async () => {
+  it('keeps the automatic binding when the authoritative projection converges', async () => {
     component = mount(ModelProfileRoleList, { target })
     await tick()
 
     setSelectValue(roleModeSelect(0), 'profile')
     await tick()
-    expect(target.textContent).toContain(language.modelProfiles.unsavedRoleChanges)
 
     getDatabase().modelRoleProfiles = normalizeModelRoleProfiles({
       chatMain: { mode: 'profile', profileId: 'profile-1' },
     })
     await flushAsync()
 
-    expect(target.textContent).toContain(language.modelProfiles.noUnsavedRoleChanges)
-    expect(buttonByText(language.modelProfiles.apply).disabled).toBe(true)
+    expect(roleModeSelect(0).value).toBe('profile')
+    expect(commandSpies.updateModelRoleProfilesDurably).toHaveBeenCalledTimes(1)
   })
 })

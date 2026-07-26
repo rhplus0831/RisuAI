@@ -442,9 +442,10 @@ Model settings are profile-first:
 - `ModelSettingsShell.svelte` owns the conversion prompt, Roles/Profiles
   segmented tabs, and Advanced Legacy Settings.
 - The Roles tab uses `ModelProfileRoleList.svelte` to edit
-  `Database.modelRoleProfiles` with explicit Apply/Cancel. It shows binding
-  mode, inherited source, effective profile, provider/model/request-model
-  summary, status, and fallback count for each canonical role.
+  `Database.modelRoleProfiles`; valid binding changes apply automatically. It
+  shows binding mode, inherited source, effective profile,
+  provider/model/request-model summary, status, and fallback count for each
+  canonical role.
 - The Profiles tab uses `ModelProfileList.svelte` to show
   `Database.modelProfiles`, role usage, status, create/edit/duplicate/delete
   actions, and the runtime defaults panel.
