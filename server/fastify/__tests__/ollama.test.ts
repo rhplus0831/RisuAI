@@ -184,6 +184,9 @@ describe('runOllama (buffered)', () => {
         message: { role: 'assistant', content: 'ollama ok' },
         done: true,
         done_reason: 'stop',
+        total_duration: 42,
+        prompt_eval_count: 8,
+        eval_count: 3,
       })
     })
     const resolved = resolveOllamaRequest({
@@ -198,7 +201,12 @@ describe('runOllama (buffered)', () => {
       signal: new AbortController().signal,
     })!
     const r = await runOllama(resolved)
-    expect(r).toEqual({ type: 'success', result: 'ollama ok', model: 'llama3' })
+    expect(r).toEqual({
+      type: 'success',
+      result: 'ollama ok',
+      model: 'llama3',
+      apiMetadata: { total_duration: 42, prompt_eval_count: 8, eval_count: 3 },
+    })
     expect(captured!.url).toBe('http://localhost:11434/api/chat')
     const sent = JSON.parse(captured!.init.body as string)
     expect(sent.model).toBe('llama3')
@@ -359,7 +367,13 @@ describe('runOllamaStream', () => {
       return ndjsonResponse([
         `${JSON.stringify({ model: 'llama3', message: { content: 'hi' }, done: false })}\n`,
         `${JSON.stringify({ model: 'llama3', message: { content: ' there' }, done: false })}\n`,
-        `${JSON.stringify({ model: 'llama3', message: { content: '' }, done: true, done_reason: 'stop' })}\n`,
+        `${JSON.stringify({
+          model: 'llama3',
+          message: { content: '' },
+          done: true,
+          done_reason: 'stop',
+          total_duration: 42,
+        })}\n`,
       ])
     })
     const resolved = resolveOllamaRequest({
@@ -375,7 +389,7 @@ describe('runOllamaStream', () => {
     expect(frames).toEqual([
       { kind: 'token', content: 'hi' },
       { kind: 'token', content: ' there' },
-      { kind: 'done', finishReason: 'stop' },
+      { kind: 'done', finishReason: 'stop', apiMetadata: { model: 'llama3', total_duration: 42 } },
     ])
   })
 

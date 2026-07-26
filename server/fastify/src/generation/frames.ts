@@ -11,6 +11,7 @@ export interface CompletionStreamFrame {
   reason?: string
   alternates?: string[]
   toolCalls?: ServerToolCall[]
+  apiMetadata?: Record<string, unknown>
 }
 
 export interface CompletionResult {
@@ -23,4 +24,5 @@ export interface CompletionResult {
   aborted?: boolean
   alternates?: string[]
   toolCalls?: ServerToolCall[]
+  apiMetadata?: Record<string, unknown>
 }

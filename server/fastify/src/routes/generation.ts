@@ -464,10 +464,15 @@ function finishLegacyRequestHistory(
 function sendCompletionResult(reply: FastifyReply, result: CompletionResult): void {
   const payload = completionPayload(result)
   const success = result.type === 'success'
+  const apiMetadata = {
+    ...(result.model !== undefined ? { model: result.model } : {}),
+    ...(result.apiMetadata ?? {}),
+  }
   finishLegacyRequestHistory(reply, {
     status: success ? 'success' : 'error',
     response: success ? result.result : '',
     ...(success ? {} : { error: result.result }),
+    ...(Object.keys(apiMetadata).length > 0 ? { apiMetadata } : {}),
     metadata: {
       ...(result.model !== undefined ? { model: result.model } : {}),
       ...(typeof result.status === 'number' ? { providerStatus: result.status } : {}),
@@ -536,6 +541,7 @@ export async function pipeStream(
         finishLegacyRequestHistory(reply, {
           status: 'success',
           response,
+          ...(frame.apiMetadata ? { apiMetadata: frame.apiMetadata } : {}),
           metadata: {
             ...(frame.finishReason ? { finishReason: frame.finishReason } : {}),
             ...(frame.alternates ? { alternates: frame.alternates } : {}),
@@ -548,6 +554,7 @@ export async function pipeStream(
           status: 'error',
           response,
           error: frame.error ?? 'Provider request failed',
+          ...(frame.apiMetadata ? { apiMetadata: frame.apiMetadata } : {}),
           metadata: {
             ...(frame.status !== undefined ? { providerStatus: frame.status } : {}),
             ...(frame.statusText ? { providerStatusText: frame.statusText } : {}),

@@ -1229,6 +1229,7 @@ export const languageEnglish = {
   requestHistoryPrompt: 'Finalized prompt',
   requestHistoryResponse: 'Response',
   requestHistoryMetadata: 'Metadata',
+  requestHistoryApiMetadata: 'API Metadata',
   requestHistoryError: 'Error',
   settingsNavKeyboardShortcuts: 'Keyboard Shortcuts',
   settingsNavAdvanced: 'Advanced',

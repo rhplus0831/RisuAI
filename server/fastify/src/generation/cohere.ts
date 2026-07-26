@@ -1,5 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
+import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyText } from './body.js'
 
 export interface CohereRequest {
@@ -280,7 +281,8 @@ export async function runCohere(req: CohereRequest): Promise<CompletionResult> {
   }
 
   if (typeof body.text === 'string' && body.text.length > 0) {
-    return { type: 'success', result: body.text }
+    const apiMetadata = extractApiResponseMetadata(body, ['text', 'message'])
+    return { type: 'success', result: body.text, ...(apiMetadata ? { apiMetadata } : {}) }
   }
   // The v2 /chat shape lives behind a different endpoint, but if a caller's
   // proxy returns it the content blocks are an array under message.content.
@@ -289,7 +291,10 @@ export async function runCohere(req: CohereRequest): Promise<CompletionResult> {
     for (const block of body.message.content) {
       if (typeof block.text === 'string') text += block.text
     }
-    if (text.length > 0) return { type: 'success', result: text }
+    if (text.length > 0) {
+      const apiMetadata = extractApiResponseMetadata(body, ['text', 'message'])
+      return { type: 'success', result: text, ...(apiMetadata ? { apiMetadata } : {}) }
+    }
   }
   return { type: 'fail', result: raw }
 }

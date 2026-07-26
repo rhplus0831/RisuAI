@@ -75,6 +75,7 @@ describe('runAnthropic (non-streaming)', () => {
           { type: 'text', text: ' world' },
         ],
         stop_reason: 'end_turn',
+        usage: { input_tokens: 5, output_tokens: 2 },
       })
     })
 
@@ -93,6 +94,7 @@ describe('runAnthropic (non-streaming)', () => {
       type: 'success',
       result: 'hello world',
       model: 'claude-3-5-sonnet-20241022',
+      apiMetadata: { usage: { input_tokens: 5, output_tokens: 2 } },
     })
 
     expect(captured!.url).toBe('https://api.anthropic.com/v1/messages')

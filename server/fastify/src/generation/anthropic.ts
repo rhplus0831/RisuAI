@@ -10,6 +10,7 @@ import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
 import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
 import { anthropicToolDefinitions, appendAnthropicToolRounds, parseAnthropicToolCalls } from './serverTools.js'
+import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 
 export interface AnthropicRequest {
   model: string
@@ -248,6 +249,8 @@ export async function runAnthropic(req: AnthropicRequest): Promise<CompletionRes
     return { type: 'fail', result: upstreamMsg }
   }
 
+  const apiMetadata = extractApiResponseMetadata(body, ['content', 'error', 'model', 'stop_reason'])
+
   // Preserve summarized/reasoning blocks in the shared `<Thoughts>` envelope,
   // matching the browser provider path so the response parser can retain them.
   let text = ''
@@ -285,6 +288,7 @@ export async function runAnthropic(req: AnthropicRequest): Promise<CompletionRes
     if (parsed.ok === false) return { type: 'fail', result: `invalid upstream tool call: ${parsed.error}` }
     const result: CompletionResult = { type: 'success', result: text, toolCalls: parsed.value }
     if (typeof body.model === 'string') result.model = body.model
+    if (apiMetadata) result.apiMetadata = apiMetadata
     return result
   }
   if (text.length === 0) {
@@ -293,6 +297,7 @@ export async function runAnthropic(req: AnthropicRequest): Promise<CompletionRes
 
   const result: CompletionResult = { type: 'success', result: text }
   if (typeof body.model === 'string') result.model = body.model
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }
 
@@ -408,6 +413,7 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   let sawStop = false
   let thinkingOpen = false
+  let apiMetadata: Record<string, unknown> | undefined
 
   try {
     while (true) {
@@ -433,7 +439,16 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
         const evt = parseUpstreamEvent(block)
         if (!evt) continue
 
-        if (evt.event === 'content_block_delta') {
+        if (evt.event === 'message_start') {
+          try {
+            const frame = JSON.parse(evt.data) as { message?: unknown }
+            apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame.message, ['content']))
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
+            return
+          }
+        } else if (evt.event === 'content_block_delta') {
           try {
             const frame = JSON.parse(evt.data) as AnthropicStreamFrame
             const t = frame.delta?.text
@@ -467,6 +482,7 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
         } else if (evt.event === 'message_delta') {
           try {
             const frame = JSON.parse(evt.data) as AnthropicStreamFrame
+            apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame, ['delta']))
             if (frame.delta?.stop_reason !== undefined) {
               finishReason = mapFinishReason(frame.delta.stop_reason)
             }
@@ -478,10 +494,10 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
         } else if (evt.event === 'message_stop') {
           sawStop = true
           if (thinkingOpen) yield { kind: 'token', content: '</Thoughts>\n\n' }
-          yield { kind: 'done', finishReason }
+          yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
           return
         }
-        // message_start / content_block_start / content_block_stop / ping: ignore
+        // content_block_start / content_block_stop / ping: ignore
       }
       // Post-drain the buffer holds at most one partial event; a
       // delimiter-less upstream must not grow it unbounded.
@@ -503,6 +519,6 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
       return
     }
     if (thinkingOpen) yield { kind: 'token', content: '</Thoughts>\n\n' }
-    yield { kind: 'done', finishReason }
+    yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
   }
 }

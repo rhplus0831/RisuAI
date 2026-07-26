@@ -16,6 +16,7 @@ import {
   type GenerationTraceContext,
 } from './generationTraceSidecar.js'
 import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 import { appendGeminiToolRounds, geminiToolDefinitions, parseGeminiToolCalls } from './serverTools.js'
 
 export interface VertexAuthInput {
@@ -520,6 +521,8 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
   }
 
+  const apiMetadata = extractApiResponseMetadata(body, ['candidates', 'error', 'modelVersion'])
+
   const text = extractText(body)
   const toolParts = (body.candidates ?? []).flatMap((candidate) => candidate.content?.parts ?? [])
   const hasToolCalls = toolParts.some((part) => part.functionCall !== undefined)
@@ -531,6 +534,7 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
     if (parsed.ok === false) return { type: 'fail', result: `invalid upstream tool call: ${parsed.error}` }
     const result: CompletionResult = { type: 'success', result: text, toolCalls: parsed.value }
     if (typeof body.modelVersion === 'string') result.model = body.modelVersion
+    if (apiMetadata) result.apiMetadata = apiMetadata
     return result
   }
   if (text.length === 0) {
@@ -538,6 +542,7 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
   }
   const result: CompletionResult = { type: 'success', result: text }
   if (typeof body.modelVersion === 'string') result.model = body.modelVersion
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }
 
@@ -600,6 +605,7 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   const extractionState: GeminiTextExtractionState = { thinkingOpen: false }
   let bufferedText = ''
+  let apiMetadata: Record<string, unknown> | undefined
 
   try {
     while (true) {
@@ -638,6 +644,7 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
           yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
           return
         }
+        apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame, ['candidates', 'error']))
         const text = extractText(frame, extractionState, false)
         if (text.length > 0) {
           if (req.streamThoughts || hasAnswerText(frame)) {
@@ -674,6 +681,6 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
     }
     if (extractionState.thinkingOpen) bufferedText += '</Thoughts>\n\n'
     if (bufferedText.length > 0) yield { kind: 'token', content: bufferedText }
-    yield { kind: 'done', finishReason }
+    yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
   }
 }

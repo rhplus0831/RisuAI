@@ -300,7 +300,9 @@ Fastify dispatch is centered in `server/fastify/src/prompt/chatDispatch.ts`.
 The same boundary records durable request history for every actual provider
 attempt, including retries and fallback profiles. It snapshots the resolved
 profile, finalized prompt, optional chat/toggle context, accumulated response,
-and non-secret terminal metadata. Memory summarization uses its separate
+and non-secret terminal metadata. Additional non-content fields returned by a
+provider API are persisted separately as API metadata; response text and tool
+payloads stay in their existing fields. Memory summarization uses its separate
 adapter and records through the same `requestHistory.ts` repository explicitly.
 The legacy client-directed completion route records at its shared buffered/SSE
 response boundary and never persists the provider options object that may carry

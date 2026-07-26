@@ -1,5 +1,6 @@
 import type { CompletionResult } from './frames.js'
 import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
+import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 
 /**
  * Stable Horde text dispatcher. Mirrors the local SPA's `requestHorde` path:
@@ -238,6 +239,7 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
     return { type: 'fail', result: 'horde async response missing job id' }
   }
   const jobId = asyncBody.id
+  const submissionMetadata = extractApiResponseMetadata(asyncBody, ['id', 'message'])
 
   // Wire up abort → DELETE.
   let abortHandled = false
@@ -305,7 +307,12 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
         if (text.length === 0) {
           return { type: 'fail', result: 'horde finished with no generations' }
         }
-        return { type: 'success', result: text }
+        const apiMetadata = mergeApiResponseMetadata(
+          { jobId },
+          submissionMetadata,
+          extractApiResponseMetadata(body, ['generations', 'message', 'done']),
+        )
+        return { type: 'success', result: text, ...(apiMetadata ? { apiMetadata } : {}) }
       }
     }
   } finally {

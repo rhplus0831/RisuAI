@@ -1,5 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
+import { extractApiResponseMetadata } from './apiMetadata.js'
 import { encodePathSegment, signSigV4 } from './sigv4.js'
 import { readBoundedBodyText } from './body.js'
 
@@ -260,5 +261,7 @@ export async function runBedrock(req: BedrockRequest): Promise<CompletionResult>
 
   const result: CompletionResult = { type: 'success', result: text }
   if (typeof body.model === 'string') result.model = body.model
+  const apiMetadata = extractApiResponseMetadata(body, ['content', 'error', 'model'])
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }

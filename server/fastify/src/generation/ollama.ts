@@ -2,6 +2,7 @@ import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 import { STREAM_BUFFER_OVERFLOW_ERROR, streamBufferExceedsCap } from './sse.js'
 import { readBoundedBodyText } from './body.js'
 import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
+import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 
 export interface OllamaRequest {
   model: string
@@ -341,6 +342,8 @@ export async function runOllama(req: OllamaRequest): Promise<CompletionResult> {
   }
   const result: CompletionResult = { type: 'success', result: content }
   if (raw.model) result.model = raw.model
+  const apiMetadata = extractApiResponseMetadata(body, ['message', 'error', 'model', 'done', 'done_reason'])
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }
 
@@ -384,6 +387,7 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   let sawDone = false
+  let apiMetadata: Record<string, unknown> | undefined
 
   try {
     while (true) {
@@ -420,6 +424,10 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
           yield { kind: 'error', error: chunk.error }
           return
         }
+        apiMetadata = mergeApiResponseMetadata(
+          apiMetadata,
+          extractApiResponseMetadata(chunk, ['message', 'error', 'done', 'done_reason']),
+        )
         const text = typeof chunk.message?.content === 'string' ? chunk.message.content : ''
         if (text.length > 0) {
           yield { kind: 'token', content: text }
@@ -445,6 +453,10 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
           yield { kind: 'error', error: chunk.error }
           return
         }
+        apiMetadata = mergeApiResponseMetadata(
+          apiMetadata,
+          extractApiResponseMetadata(chunk, ['message', 'error', 'done', 'done_reason']),
+        )
         const text = typeof chunk.message?.content === 'string' ? chunk.message.content : ''
         if (text.length > 0) {
           yield { kind: 'token', content: text }
@@ -466,8 +478,8 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
   }
 
   if (!req.signal.aborted && sawDone) {
-    yield { kind: 'done', finishReason }
+    yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
   } else if (!req.signal.aborted) {
-    yield { kind: 'done', finishReason: 'stop' }
+    yield { kind: 'done', finishReason: 'stop', ...(apiMetadata ? { apiMetadata } : {}) }
   }
 }

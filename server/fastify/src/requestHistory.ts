@@ -44,6 +44,7 @@ export interface RequestHistoryRecord extends RequestHistoryRecordSummary {
   toggles?: Record<string, string>
   response: string
   metadata: Record<string, unknown>
+  apiMetadata: Record<string, unknown>
 }
 
 export interface BeginRequestHistoryInput {
@@ -78,6 +79,7 @@ interface RequestHistoryRow {
   toggles_json: string | null
   response_text: string | null
   metadata_json: string
+  api_metadata_json: string
   error_text: string | null
 }
 
@@ -95,11 +97,18 @@ export function createRequestHistoryTable(db: DatabaseSync): void {
       toggles_json TEXT CHECK (toggles_json IS NULL OR json_valid(toggles_json)),
       response_text TEXT,
       metadata_json TEXT NOT NULL CHECK (json_valid(metadata_json)),
+      api_metadata_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(api_metadata_json)),
       error_text TEXT
     );
     CREATE INDEX IF NOT EXISTS request_history_started_at_idx
       ON request_history(started_at DESC);
   `)
+  const columns = db.prepare('PRAGMA table_info(request_history)').all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'api_metadata_json')) {
+    db.exec(
+      "ALTER TABLE request_history ADD COLUMN api_metadata_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(api_metadata_json))",
+    )
+  }
 }
 
 export function normalizeRequestHistoryLimit(value: unknown): number {
@@ -169,6 +178,7 @@ export function completeRequestHistory(
     response?: string
     error?: string
     metadata?: Record<string, unknown>
+    apiMetadata?: Record<string, unknown>
     completedAt?: number
   },
 ): void {
@@ -183,10 +193,18 @@ export function completeRequestHistory(
     handle.db
       .prepare(
         `UPDATE request_history
-         SET completed_at = ?, status = ?, response_text = ?, metadata_json = ?, error_text = ?
+         SET completed_at = ?, status = ?, response_text = ?, metadata_json = ?, api_metadata_json = ?, error_text = ?
          WHERE id = ?`,
       )
-      .run(completedAt, input.status, input.response ?? '', JSON.stringify(metadata), input.error ?? null, handle.id)
+      .run(
+        completedAt,
+        input.status,
+        input.response ?? '',
+        JSON.stringify(metadata),
+        JSON.stringify(input.apiMetadata ?? {}),
+        input.error ?? null,
+        handle.id,
+      )
   } catch {
     // See tryBeginRequestHistory: diagnostics must remain non-fatal.
   }
@@ -204,11 +222,13 @@ export function wrapRequestHistoryFrames(
     let status: Exclude<RequestHistoryStatus, 'pending'> | null = null
     let error: string | undefined
     let responseMetadata: Record<string, unknown> = {}
+    let apiMetadata: Record<string, unknown> = {}
     try {
       for await (const frame of frames) {
         if (frame.kind === 'token') response += frame.content ?? ''
         if (frame.kind === 'done') {
           status = 'success'
+          apiMetadata = frame.apiMetadata ?? {}
           responseMetadata = {
             ...(frame.finishReason ? { finishReason: frame.finishReason } : {}),
             ...(frame.alternates ? { alternates: frame.alternates } : {}),
@@ -218,6 +238,7 @@ export function wrapRequestHistoryFrames(
         if (frame.kind === 'error') {
           status = signal.aborted ? 'cancelled' : 'error'
           error = frame.error ?? 'Provider request failed'
+          apiMetadata = frame.apiMetadata ?? {}
           responseMetadata = {
             ...(frame.status !== undefined ? { providerStatus: frame.status } : {}),
             ...(frame.statusText ? { providerStatusText: frame.statusText } : {}),
@@ -237,6 +258,7 @@ export function wrapRequestHistoryFrames(
         status: finalStatus,
         response,
         ...(error ? { error } : {}),
+        apiMetadata,
         metadata: {
           ...responseMetadata,
           responseCharacters: response.length,
@@ -273,7 +295,7 @@ export function listRequestHistory(db: DatabaseSync, limitValue: unknown): Reque
   const rows = db
     .prepare(
       `SELECT id, started_at, completed_at, status, source, profile_json, prompt_json,
-              context_json, toggles_json, response_text, metadata_json, error_text
+              context_json, toggles_json, response_text, metadata_json, api_metadata_json, error_text
        FROM request_history
        ORDER BY started_at DESC, rowid DESC
        LIMIT ?`,
@@ -286,7 +308,7 @@ export function getRequestHistoryRecord(db: DatabaseSync, id: string): RequestHi
   const row = db
     .prepare(
       `SELECT id, started_at, completed_at, status, source, profile_json, prompt_json,
-              context_json, toggles_json, response_text, metadata_json, error_text
+              context_json, toggles_json, response_text, metadata_json, api_metadata_json, error_text
        FROM request_history WHERE id = ?`,
     )
     .get(id) as unknown as RequestHistoryRow | undefined
@@ -297,6 +319,7 @@ export function getRequestHistoryRecord(db: DatabaseSync, id: string): RequestHi
     ...(row.toggles_json ? { toggles: parseJson(row.toggles_json, {}) as Record<string, string> } : {}),
     response: row.response_text ?? '',
     metadata: parseJson(row.metadata_json, {}) as Record<string, unknown>,
+    apiMetadata: parseJson(row.api_metadata_json, {}) as Record<string, unknown>,
   }
 }
 

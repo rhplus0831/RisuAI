@@ -41,6 +41,7 @@ export interface RequestHistoryRecord extends RequestHistoryRecordSummary {
   toggles?: Record<string, string>
   response: string
   metadata: Record<string, unknown>
+  apiMetadata: Record<string, unknown>
 }
 
 export type RequestHistoryApiResult<T> = { status: 'ok'; value: T } | { status: 'error'; error: string }
@@ -117,6 +118,7 @@ function readRecord(value: unknown): RequestHistoryRecord | null {
   const summary = readSummary(value)
   if (!summary || !isRecord(value)) return null
   if (typeof value.response !== 'string' || !isRecord(value.metadata)) return null
+  if (value.apiMetadata !== undefined && !isRecord(value.apiMetadata)) return null
   if (value.toggles !== undefined && !isStringRecord(value.toggles)) return null
   return {
     ...summary,
@@ -124,6 +126,7 @@ function readRecord(value: unknown): RequestHistoryRecord | null {
     ...(isStringRecord(value.toggles) ? { toggles: value.toggles } : {}),
     response: value.response,
     metadata: value.metadata,
+    apiMetadata: isRecord(value.apiMetadata) ? value.apiMetadata : {},
   }
 }
 

@@ -17,6 +17,7 @@ import {
 } from './generationTraceSidecar.js'
 import type { ServerToolDefinition } from '../../../../src/ts/process/request/serverToolProtocol.js'
 import { openAIToolDefinitions, parseOpenAIToolCalls } from './serverTools.js'
+import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 
 export interface OpenAIRequest {
   model: string
@@ -364,6 +365,8 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
   }
 
+  const apiMetadata = extractApiResponseMetadata(body, ['choices', 'error', 'model'])
+
   const choices = Array.isArray(body.choices) ? body.choices : []
   const choiceText = (choice: OpenAINonStreamChoice | undefined): string | null => {
     if (!choice) return null
@@ -394,6 +397,7 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
       toolCalls: parsed.value,
     }
     if (typeof body.model === 'string') result.model = body.model
+    if (apiMetadata) result.apiMetadata = apiMetadata
     return result
   }
   const content = choiceText(choices[0])
@@ -408,6 +412,7 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
     .filter((text): text is string => text !== null)
   if (alternates.length > 0) result.alternates = alternates
   if (typeof body.model === 'string') result.model = body.model
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }
 
@@ -522,6 +527,7 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   let reasoningOpen = false
+  let apiMetadata: Record<string, unknown> | undefined
 
   try {
     while (true) {
@@ -548,7 +554,7 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
         if (data === null) continue
         if (data.trim() === '[DONE]') {
           if (reasoningOpen) yield { kind: 'token', content: '\n</Thoughts>\n' }
-          yield { kind: 'done', finishReason }
+          yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
           return
         }
         let frame: OpenAIStreamFrame
@@ -559,6 +565,7 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
           yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
           return
         }
+        apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame, ['choices', 'error']))
         const choice = Array.isArray(frame.choices) ? frame.choices[0] : undefined
         const reasoning = choice?.delta?.reasoning_content ?? choice?.delta?.reasoning
         if (typeof reasoning === 'string' && reasoning.length > 0) {
@@ -600,6 +607,6 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
       return
     }
     if (reasoningOpen) yield { kind: 'token', content: '\n</Thoughts>\n' }
-    yield { kind: 'done', finishReason }
+    yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
   }
 }

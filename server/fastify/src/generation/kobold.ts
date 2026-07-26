@@ -1,4 +1,5 @@
 import type { CompletionResult } from './frames.js'
+import { extractApiResponseMetadata } from './apiMetadata.js'
 import { flattenForLegacyInstruct } from './openaiLegacyInstruct.js'
 import { readBoundedBodyText } from './body.js'
 
@@ -144,5 +145,6 @@ export async function runKobold(req: KoboldRequest): Promise<CompletionResult> {
   if (typeof text !== 'string') {
     return { type: 'fail', result: 'upstream returned no text' }
   }
-  return { type: 'success', result: text }
+  const apiMetadata = extractApiResponseMetadata(body, ['results'])
+  return { type: 'success', result: text, ...(apiMetadata ? { apiMetadata } : {}) }
 }

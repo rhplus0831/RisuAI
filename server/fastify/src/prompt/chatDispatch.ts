@@ -965,6 +965,7 @@ async function* resultFrames(
       ...(typeof result.status === 'number' ? { status: result.status } : {}),
       ...(result.statusText ? { statusText: result.statusText } : {}),
       ...(result.code ? { code: result.code } : {}),
+      ...(result.apiMetadata ? { apiMetadata: result.apiMetadata } : {}),
     }
     return
   }
@@ -978,6 +979,9 @@ async function* resultFrames(
     finishReason: result.toolCalls?.length ? 'tool_calls' : 'stop',
     ...(alternates?.length ? { alternates } : {}),
     ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
+    ...(result.model !== undefined || result.apiMetadata
+      ? { apiMetadata: { ...(result.model !== undefined ? { model: result.model } : {}), ...result.apiMetadata } }
+      : {}),
   }
 }
 

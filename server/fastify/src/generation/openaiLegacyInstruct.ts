@@ -1,5 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
+import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyJson } from './body.js'
 
 export interface OpenAILegacyInstructRequest {
@@ -194,5 +195,7 @@ export async function runOpenAILegacyInstruct(req: OpenAILegacyInstructRequest):
   // formatting can leak them back in the model's output.
   const result: CompletionResult = { type: 'success', result: text.replace(/##\n/g, '') }
   if (typeof body.model === 'string') result.model = body.model
+  const apiMetadata = extractApiResponseMetadata(body, ['choices', 'error', 'model'])
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }

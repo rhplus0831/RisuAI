@@ -373,7 +373,8 @@ The Data navigation group contains Backup & Restore plus Request History.
 Request History reads private summaries/details through
 `src/ts/server/requestHistory.ts`; retention uses the server-backed
 `requestHistoryLimit` setting, and individual deletion uses the authenticated
-operational route.
+operational route. Its detail view separates RisuAI request metadata from
+additional non-content metadata returned by the provider API.
 
 Data-driven setting definitions use `SettingItem` from `src/ts/setting/types.ts`.
 Important fields are `id`, `type`, `labelKey`, `helpKey`, `bindKey`,

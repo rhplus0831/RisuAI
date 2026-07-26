@@ -280,6 +280,10 @@
                     <h3 class="mb-1 text-sm font-semibold">{language.requestHistoryMetadata}</h3>
                     <pre class="history-code max-h-96">{json(expandedRecord.metadata)}</pre>
                   </div>
+                  <div>
+                    <h3 class="mb-1 text-sm font-semibold">{language.requestHistoryApiMetadata}</h3>
+                    <pre class="history-code max-h-96">{json(expandedRecord.apiMetadata)}</pre>
+                  </div>
                   {#if expandedRecord.error}
                     <div>
                       <h3 class="mb-1 text-sm font-semibold">{language.requestHistoryError}</h3>

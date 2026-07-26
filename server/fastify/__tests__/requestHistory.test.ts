@@ -36,6 +36,31 @@ afterEach(() => {
 })
 
 describe('request history repository', () => {
+  it('adds API metadata storage to an existing request-history table', () => {
+    db.exec(`
+      DROP TABLE request_history;
+      CREATE TABLE request_history (
+        id TEXT PRIMARY KEY,
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        status TEXT NOT NULL,
+        source TEXT NOT NULL,
+        profile_json TEXT NOT NULL,
+        prompt_json TEXT NOT NULL,
+        context_json TEXT,
+        toggles_json TEXT,
+        response_text TEXT,
+        metadata_json TEXT NOT NULL,
+        error_text TEXT
+      );
+    `)
+
+    createRequestHistoryTable(db)
+
+    const columns = db.prepare('PRAGMA table_info(request_history)').all() as Array<{ name: string }>
+    expect(columns.map((column) => column.name)).toContain('api_metadata_json')
+  })
+
   it('retains the newest configured records and stores response metadata separately', () => {
     for (let index = 1; index <= 3; index += 1) {
       const handle = beginRequestHistory({
@@ -54,6 +79,7 @@ describe('request history repository', () => {
         status: 'success',
         response: `response-${index}`,
         metadata: { finishReason: 'stop' },
+        apiMetadata: { usage: { outputTokens: index } },
         completedAt: index + 10,
       })
     }
@@ -65,6 +91,7 @@ describe('request history repository', () => {
       response: 'response-3',
       toggles: { mode: '1' },
       metadata: { attempt: 3, finishReason: 'stop', durationMs: 10 },
+      apiMetadata: { usage: { outputTokens: 3 } },
     })
     expect(record?.metadata).not.toHaveProperty('response')
   })
@@ -96,7 +123,12 @@ describe('request history repository', () => {
     async function* frames(): AsyncGenerator<CompletionStreamFrame> {
       yield { kind: 'token', content: 'hello ' }
       yield { kind: 'token', content: 'world' }
-      yield { kind: 'done', finishReason: 'length', alternates: ['alternate'] }
+      yield {
+        kind: 'done',
+        finishReason: 'length',
+        alternates: ['alternate'],
+        apiMetadata: { usage: { inputTokens: 5, outputTokens: 2 } },
+      }
     }
 
     const received: CompletionStreamFrame[] = []
@@ -113,6 +145,7 @@ describe('request history repository', () => {
         alternates: ['alternate'],
         responseCharacters: 11,
       },
+      apiMetadata: { usage: { inputTokens: 5, outputTokens: 2 } },
     })
   })
 

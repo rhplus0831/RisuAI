@@ -1,5 +1,6 @@
 import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
+import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyText } from './body.js'
 
 export interface OpenAIResponsesRequest {
@@ -339,5 +340,7 @@ export async function runOpenAIResponses(req: OpenAIResponsesRequest): Promise<C
   }
   const result: CompletionResult = { type: 'success', result: text }
   if (typeof body.model === 'string') result.model = body.model
+  const apiMetadata = extractApiResponseMetadata(body, ['output_text', 'output', 'error', 'model'])
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }

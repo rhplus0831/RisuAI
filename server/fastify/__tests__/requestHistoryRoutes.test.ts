@@ -66,7 +66,12 @@ describe('request history routes', () => {
         context: { characterId: 'char-a', chatId: 'chat-a' },
         toggles: { lore: '1' },
       })
-      completeRequestHistory(handle, { status: 'success', response: 'private response', completedAt: 200 })
+      completeRequestHistory(handle, {
+        status: 'success',
+        response: 'private response',
+        apiMetadata: { usage: { inputTokens: 4, outputTokens: 2 } },
+        completedAt: 200,
+      })
     } finally {
       writer.close()
     }
@@ -96,6 +101,7 @@ describe('request history routes', () => {
         prompt: [{ role: 'user', content: 'private prompt' }],
         response: 'private response',
         toggles: { lore: '1' },
+        apiMetadata: { usage: { inputTokens: 4, outputTokens: 2 } },
       },
     })
 

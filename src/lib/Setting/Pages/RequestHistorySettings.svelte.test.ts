@@ -60,6 +60,7 @@ beforeEach(() => {
       toggles: { lore: '1' },
       response: 'Private response',
       metadata: { finishReason: 'stop' },
+      apiMetadata: { usage: { prompt_tokens: 12, completion_tokens: 3 } },
     },
   })
   mocks.remove.mockReset().mockResolvedValue({ status: 'ok', value: { id: 'history-a' } })
@@ -87,6 +88,12 @@ describe('RequestHistorySettings', () => {
 
     expect(mocks.get).toHaveBeenCalledWith('history-a', expect.any(AbortSignal))
     expect(target.textContent).toContain('Private response')
+    expect(target.textContent).toContain(language.requestHistoryApiMetadata)
+    expect(target.textContent).toContain('prompt_tokens')
+    const detailHeadings = Array.from(target.querySelectorAll('h3'), (heading) => heading.textContent?.trim())
+    expect(detailHeadings.indexOf(language.requestHistoryApiMetadata)).toBe(
+      detailHeadings.indexOf(language.requestHistoryMetadata) + 1,
+    )
   })
 
   it('saves an integer retention limit and refreshes the list', async () => {

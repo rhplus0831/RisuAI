@@ -108,7 +108,7 @@ describe('runHorde', () => {
     await vi.advanceTimersByTimeAsync(1000)
     await vi.advanceTimersByTimeAsync(1000)
     const r = await p
-    expect(r).toEqual({ type: 'success', result: 'horde says hello' })
+    expect(r).toEqual({ type: 'success', result: 'horde says hello', apiMetadata: { jobId: 'job-1' } })
 
     // First call is the async submit; subsequent are status polls.
     expect(calls[0].url).toBe('https://stablehorde.net/api/v2/generate/text/async')
