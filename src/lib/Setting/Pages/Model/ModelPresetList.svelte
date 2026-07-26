@@ -319,7 +319,7 @@
     <div class="flex flex-col gap-2">
       {#each presets as preset, index (preset.id ?? index)}
         <div
-          class="flex cursor-pointer flex-col gap-3 rounded-md border border-darkborderc p-3 text-sm hover:bg-darkbg"
+          class="risu-card flex cursor-pointer flex-col gap-3 text-sm hover:bg-darkbg"
           class:bg-selected={index === selectedIndex}
           role="button"
           tabindex="0"
@@ -355,7 +355,7 @@
           </div>
           <div class="flex flex-wrap gap-1">
             {#each presetBadges(preset) as badge}
-              <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs text-textcolor2">{badge}</span>
+              <span class="rounded-sm bg-white/10 px-2 py-1 text-xs text-textcolor2">{badge}</span>
             {/each}
           </div>
           <div class="flex flex-wrap gap-2">

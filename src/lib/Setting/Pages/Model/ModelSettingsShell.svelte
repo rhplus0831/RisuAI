@@ -237,11 +237,11 @@
     <Accordion styled name={language.modelProfiles.advancedLegacySettings} className="gap-3">
       <p class="text-sm text-textcolor2">{language.modelProfiles.advancedLegacyDescription}</p>
       <div class="grid gap-2 text-sm md:grid-cols-2">
-        <div class="rounded-md border border-darkborderc p-3">
+        <div class="risu-card">
           <span class="block text-xs uppercase text-textcolor2">{language.modelProfiles.legacyMainModel}</span>
           <span>{legacyMainModel}</span>
         </div>
-        <div class="rounded-md border border-darkborderc p-3">
+        <div class="risu-card">
           <span class="block text-xs uppercase text-textcolor2">{language.modelProfiles.legacyAuxModel}</span>
           <span>{legacyAuxModel}</span>
         </div>

@@ -209,10 +209,10 @@
   }
 
   function statusClass(tone: StatusPresentation['tone']): string {
-    if (tone === 'ready') return 'border-green-600 text-green-500'
-    if (tone === 'warning') return 'border-yellow-600 text-yellow-500'
-    if (tone === 'error') return 'border-draculared text-draculared'
-    return 'border-darkborderc text-textcolor2'
+    if (tone === 'ready') return 'border border-green-600 text-green-500'
+    if (tone === 'warning') return 'border border-yellow-600 text-yellow-500'
+    if (tone === 'error') return 'border border-draculared text-draculared'
+    return 'bg-white/10 text-textcolor2'
   }
 
   function phaseSummary(preset: AgentPresetRecord): string {
@@ -254,8 +254,8 @@
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
   {/if}
-  <div class="flex flex-wrap items-center gap-3 rounded-md border border-darkborderc p-3">
-    <label class="flex min-w-64 flex-1 flex-col gap-1">
+  <div class="mt-4 flex flex-col gap-2">
+    <label class="flex flex-col gap-1">
       <span class="text-sm font-medium">{language.agentPresets.globalDefault}</span>
       <span data-risu-agent-preset-default-select>
         <SelectInput
@@ -275,6 +275,11 @@
     <span class="text-sm text-textcolor2">{language.agentPresets.globalDefaultHelp}</span>
   </div>
 
+  <div class="mt-4">
+    <h3 class="text-lg font-semibold">{language.agentPresets.presetsSectionTitle}</h3>
+    <p class="text-sm text-textcolor2">{language.agentPresets.presetsSectionDescription}</p>
+  </div>
+
   {#if presets.length === 0}
     <div class="rounded-md border border-darkborderc p-4 text-sm text-textcolor2" data-risu-agent-preset-empty>
       {language.agentPresets.emptyState}
@@ -283,13 +288,10 @@
     <div class="flex flex-col gap-2" data-risu-agent-preset-list>
       {#each presets as preset, index (preset.id)}
         {@const status = statusForPreset(preset)}
-        <article
-          class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 text-sm"
-          data-risu-agent-preset-row
-          data-preset-id={preset.id}>
+        <article class="risu-card flex flex-col gap-2 text-sm" data-risu-agent-preset-row data-preset-id={preset.id}>
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-medium">{preset.name}</span>
-            <span class={`rounded-sm border px-2 py-1 text-xs ${statusClass(status.tone)}`}>
+            <span class={`rounded-sm px-2 py-1 text-xs ${statusClass(status.tone)}`}>
               {status.label}
             </span>
             {#if defaultPresetId === preset.id}

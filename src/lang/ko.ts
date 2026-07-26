@@ -2668,6 +2668,8 @@ export const languageKorean = {
     noDefault: '기본값 없음',
     globalDefault: '전역 기본값',
     globalDefaultHelp: '채팅 설정에서 기본값을 적용할 때 새 채팅에 이 프리셋을 사용할 수 있습니다.',
+    presetsSectionTitle: '프리셋',
+    presetsSectionDescription: '채팅에서 사용할 수 있는 에이전트 프리셋의 순서가 지정된 목록입니다.',
     emptyState: '에이전트 프리셋이 없습니다.',
     createPreset: '프리셋 만들기',
     editPreset: '프리셋 편집',

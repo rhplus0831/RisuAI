@@ -2787,6 +2787,8 @@ export const languageEnglish = {
     noDefault: 'No default',
     globalDefault: 'Global default',
     globalDefaultHelp: 'New chats can start with this preset when chat setup applies defaults.',
+    presetsSectionTitle: 'Presets',
+    presetsSectionDescription: 'Ordered list of Agent Presets available to chats.',
     emptyState: 'No Agent Presets yet.',
     createPreset: 'Create Preset',
     editPreset: 'Edit Preset',

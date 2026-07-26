@@ -329,7 +329,7 @@
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
   {/if}
-  <div class="flex flex-wrap items-center justify-between gap-2">
+  <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
     <div>
       <h3 class="text-lg font-semibold">{language.modelProfiles.profilesTabTitle}</h3>
       <span class="text-sm text-textcolor2">{language.modelProfiles.profilesTabDescription}</span>
@@ -347,10 +347,10 @@
     <div class="flex flex-col gap-2">
       {#each profiles as profile (profile.id)}
         {@const usedByRoles = rolesUsingProfile(profile.id)}
-        <article class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 text-sm">
+        <article class="risu-card flex flex-col gap-2 text-sm">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-medium">{profile.name}</span>
-            <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs">
+            <span class="rounded-sm bg-white/10 px-2 py-1 text-xs">
               {statusLabel(profile)}
             </span>
             <div class="ml-auto flex flex-wrap gap-2">

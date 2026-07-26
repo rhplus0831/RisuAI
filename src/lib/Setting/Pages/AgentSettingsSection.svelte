@@ -98,7 +98,7 @@
   }
 </script>
 
-<section class="flex flex-col gap-3 rounded-md border border-darkborderc p-3" data-risu-agent-settings>
+<section class="flex flex-col gap-3" data-risu-agent-settings>
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
       <h3 class="text-lg font-semibold">{language.agentPresets.agentsTitle}</h3>
@@ -114,10 +114,7 @@
   {:else}
     <div class="grid gap-2 lg:grid-cols-2" data-risu-agent-list>
       {#each agents as agent, index (agent.id)}
-        <article
-          class="flex flex-col gap-2 rounded-md border border-darkborderc p-3"
-          data-risu-agent-row
-          data-agent-id={agent.id}>
+        <article class="risu-card flex flex-col gap-2" data-risu-agent-row data-agent-id={agent.id}>
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-medium">{agent.name}</span>
             <span class="text-xs text-textcolor2">{agent.outputFormat}</span>

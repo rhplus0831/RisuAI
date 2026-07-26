@@ -286,7 +286,7 @@
 </script>
 
 <section class="flex flex-col gap-3">
-  <div class="flex flex-col gap-1">
+  <div class="mt-2 flex flex-col gap-1">
     <h3 class="text-lg font-semibold">{language.modelProfiles.rolesTabTitle}</h3>
     <span class="text-sm text-textcolor2">{language.modelProfiles.rolesTabDescription}</span>
   </div>
@@ -312,10 +312,10 @@
     {#each MODEL_ROLES as role (role)}
       {@const binding = bindingFor(role)}
       {@const inheritedSource = modelRoleProfileInheritSource(role)}
-      <article class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 text-sm">
+      <article class="risu-card flex flex-col gap-2 text-sm">
         <div class="flex flex-wrap items-center gap-2">
           <span class="font-medium">{roleLabel(role)}</span>
-          <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs">
+          <span class="rounded-sm bg-white/10 px-2 py-1 text-xs">
             {statusLabel(role)}
           </span>
           <span class="ml-auto text-xs text-textcolor2">{fallbackCount(role)}</span>

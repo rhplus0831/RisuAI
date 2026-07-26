@@ -176,7 +176,7 @@
   }
 </script>
 
-<section class="rounded-md border border-darkborderc p-3" aria-busy={saving}>
+<section aria-busy={saving}>
   <fieldset data-model-runtime-defaults-form class="m-0 min-w-0 border-0 p-0" disabled={saving} aria-busy={saving}>
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="flex flex-col gap-1">

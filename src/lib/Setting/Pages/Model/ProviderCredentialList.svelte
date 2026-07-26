@@ -248,7 +248,7 @@
 </script>
 
 <section class="flex flex-col gap-4">
-  <div class="flex flex-wrap items-center justify-between gap-2">
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
     <div>
       <h3 class="text-lg font-semibold">{language.modelProfiles.credentialsTabTitle}</h3>
       <p class="text-sm text-textcolor2">{language.modelProfiles.credentialsTabDescription}</p>
@@ -321,10 +321,10 @@
     <div class="flex flex-col gap-2">
       {#each credentials as credential (credential.id)}
         {@const references = referencingProfiles(credential.id)}
-        <article class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 text-sm">
+        <article class="risu-card flex flex-col gap-2 text-sm">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-medium">{credential.name}</span>
-            <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs text-textcolor2">
+            <span class="rounded-sm bg-white/10 px-2 py-1 text-xs text-textcolor2">
               {credential.type === 'apiKey'
                 ? language.modelProfiles.apiKeyCredentialType
                 : language.modelProfiles.vertexCredentialType}
