@@ -71,6 +71,7 @@ import {
   type GenerationSettingsPickerMode,
 } from 'src/ts/stores.svelte'
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
+import { currentRoute, navigate } from 'src/ts/router'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
 import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { mergeServerResourceCharacterRow } from 'src/ts/storage/database.svelte'
@@ -395,6 +396,12 @@ function personaNoteLine(): HTMLElement | null {
   return pickerControl('persona').querySelector<HTMLElement>('[data-risu-generation-picker-persona-note]')
 }
 
+function personaSettingsButton(): HTMLButtonElement | null {
+  return pickerControl('persona').querySelector<HTMLButtonElement>(
+    '[data-risu-generation-picker-persona-settings] button',
+  )
+}
+
 function agentPresetSelect(): HTMLSelectElement {
   const select = pickerControl('agent-preset').querySelector<HTMLSelectElement>('select')
   expect(select, 'agent preset select').toBeTruthy()
@@ -541,6 +548,7 @@ beforeEach(() => {
   characterCommandSpies.setCharacterSupaMemoryWithOutcome.mockResolvedValue({ status: 'accepted' })
   clearCachedServerCommandRevision()
   seedDb()
+  navigate('/', { replace: true })
 })
 
 afterEach(async () => {
@@ -561,6 +569,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
   selectedCharID.set(-1)
   replaceResourceDatabase({} as never)
+  navigate('/', { replace: true })
 })
 
 describe('sidebar chat generation settings controls', () => {
@@ -617,8 +626,36 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerControl('prompt').textContent).toContain('Select prompt preset')
     expect(pickerControl('persona').dataset.risuPickerMode).toBe('active-chat-generation-settings')
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
+    expect(personaSettingsButton()).toBeNull()
     expect(pickerControl('agent-preset').dataset.risuPickerMode).toBe('active-chat-generation-settings')
     expect(pickerControl('agent-preset').textContent).toContain(language.agentPresets.noSelected)
+  })
+
+  it('opens the selected chat persona directly in persona settings', async () => {
+    navigate('/character/char-a/chat-a', { replace: true })
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const settingsButton = personaSettingsButton()
+    expect(settingsButton).toBeTruthy()
+    expect(settingsButton?.getAttribute('aria-label')).toBe(`${language.edit} Persona Alpha`)
+    expect(settingsButton?.querySelector('.lucide-arrow-up-right')).toBeTruthy()
+
+    settingsButton?.click()
+    await tick()
+
+    expect(window.location.pathname).toBe('/settings/persona/persona-a')
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      index: 12,
+      personaId: 'persona-a',
+    })
+    expect(window.history.state).toEqual({
+      __risuSettingsNavigation: {
+        originPath: '/character/char-a/chat-a',
+        version: 1,
+      },
+    })
   })
 
   it('shows the global Agent Preset default until the chat explicitly opts out', async () => {
