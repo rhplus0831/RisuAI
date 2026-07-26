@@ -29,6 +29,7 @@ const RECENT_CHAT_TAIL_COUNT = 12
 const CHAT_SEARCH_LIMIT = 6
 const PREPARED_INPUT_CBS_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const PREPARED_INPUT_SCOPE_NAMES: ReadonlySet<string> = new Set(AGENT_PRESET_STEP_INPUT_SCOPES)
+const INTERNAL_REASONING_TAG_RE = /<\s*(\/?)\s*(?:Thoughts|think)\b[^>]*>/giu
 
 export interface AgentPresetPreviousOutput {
   stepId: string
@@ -497,7 +498,10 @@ export async function executeAgentPresetStep(
       }),
       timeoutMs,
     )
-    const bounded = boundText(output.trim(), maxOutputCharsForStep(input.step))
+    // Provider dispatch records the unmodified response in request history.
+    // Only the externally usable Agent output is scrubbed so private reasoning
+    // cannot flow into a later Agent, the main prompt, or the persisted reply.
+    const bounded = boundText(stripInternalReasoning(output), maxOutputCharsForStep(input.step))
     if (!bounded.text) {
       return failureResult({
         step: input.step,
@@ -607,6 +611,7 @@ export async function executeAgentPresetPhase(
         try {
           return await executeStep({
             database: input.database,
+            requestHistoryDb: input.requestHistoryDb,
             currentChar: input.currentChar,
             currentChat: input.currentChat,
             currentUserMessage: input.currentUserMessage,
@@ -1281,6 +1286,30 @@ function parseJsonObject(text: string): ParseJsonObjectResult {
   } catch (err) {
     return { status: 'error', error: err instanceof Error ? err.message : String(err) }
   }
+}
+
+function stripInternalReasoning(text: string): string {
+  let visible = ''
+  let visibleFrom = 0
+  let hiddenDepth = 0
+
+  for (const match of text.matchAll(INTERNAL_REASONING_TAG_RE)) {
+    const index = match.index
+    const closing = match[1] === '/'
+
+    if (!closing) {
+      if (hiddenDepth === 0) visible += text.slice(visibleFrom, index)
+      hiddenDepth += 1
+      continue
+    }
+
+    if (hiddenDepth === 0) continue
+    hiddenDepth -= 1
+    if (hiddenDepth === 0) visibleFrom = index + match[0].length
+  }
+
+  if (hiddenDepth === 0) visible += text.slice(visibleFrom)
+  return visible.trim()
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

@@ -288,6 +288,9 @@ user message before main prompt assembly. At most one enabled after-main
 `finalOutput` modifier is allowed, it must be the last enabled after-main step,
 and it can modify final text before persistence.
 Provider tool-calling is intentionally not part of this path yet.
+Provider reasoning wrappers such as `<Thoughts>` and `<think>` remain in the
+durable request-history response but are removed before an Agent output is
+bounded, parsed, chained, injected into the main prompt, or persisted.
 
 Legacy presets with embedded step definitions are normalized at the persistence
 boundary. Each embedded step becomes a distinct standalone Agent plus a preset

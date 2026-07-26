@@ -1,8 +1,10 @@
+import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentPresetRecord, AgentPresetStepRecord } from '../../../src/ts/agentPresetRecords'
 import { planAgentPreset } from '../../../src/ts/agentPresetResolver'
 import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
+import { createRequestHistoryTable, getRequestHistoryRecord, listRequestHistory } from '../src/requestHistory.js'
 import {
   buildAgentPresetStepMessages,
   collectAgentPresetPreparedInputs,
@@ -561,6 +563,92 @@ describe('Agent Preset step execution', () => {
       },
     })
     expect(result.diagnostics.preparedInputSections.map((section) => section.scope)).toEqual(['currentUserMessage'])
+  })
+
+  it('keeps internal reasoning in request history but removes it from memory-backed Agent output', async () => {
+    const rawOutput = [
+      '<Thoughts>',
+      'The memory block says the lantern must stay lit.',
+      '<think>Double-check the promise.</think>',
+      '</Thoughts>',
+      'The promise still stands.',
+    ].join('\n')
+    const database = db({
+      aiModel: 'echo_model',
+      echoMessage: rawOutput,
+      requestHistoryLimit: 20,
+    } as Partial<Database>)
+    const historyDb = new DatabaseSync(':memory:')
+    createRequestHistoryTable(historyDb)
+
+    try {
+      const memoryStep = step({
+        instruction: 'Use this memory without repeating it verbatim:\n{{memoryContext}}',
+        inputScopes: ['memoryContext'],
+        runtime: { maxOutputChars: 25 },
+      })
+      const result = await executeAgentPresetPhase({
+        database,
+        requestHistoryDb: historyDb,
+        currentChar: database.characters[0],
+        currentChat: database.characters[0].chats[0],
+        plan: beforeMainPlan(database, [memoryStep]),
+      })
+
+      expect(result).toMatchObject({
+        successfulOutputs: [
+          {
+            outputKey: 'context',
+            text: 'The promise still stands.',
+          },
+        ],
+      })
+
+      const [summary] = listRequestHistory(historyDb, 20)
+      expect(summary).toMatchObject({
+        status: 'success',
+        source: 'agent-preset',
+        responsePreview: expect.stringContaining('<Thoughts>'),
+      })
+      const record = getRequestHistoryRecord(historyDb, summary.id)
+      expect(record?.response).toBe(rawOutput)
+      expect(JSON.stringify(record?.prompt)).toContain('Last memory: The lantern must stay lit.')
+    } finally {
+      historyDb.close()
+    }
+  })
+
+  it('scrubs multiple and unfinished reasoning wrappers before validating Agent output', async () => {
+    const database = db()
+    const currentChar = database.characters[0]
+    const currentChat = currentChar.chats[0]
+
+    await expect(
+      executeAgentPresetStep({
+        database,
+        currentChar,
+        currentChat,
+        step: step({ outputFormat: 'jsonObject' }),
+        dispatchProvider: async () => frames('<think>private</think>\n<Thoughts>also private</Thoughts>\n{"ok": true}'),
+      }),
+    ).resolves.toMatchObject({
+      status: 'success',
+      outputText: '{"ok": true}',
+      parsedJson: { ok: true },
+    })
+
+    await expect(
+      executeAgentPresetStep({
+        database,
+        currentChar,
+        currentChat,
+        step: step(),
+        dispatchProvider: async () => frames('<Thoughts>unfinished private reasoning'),
+      }),
+    ).resolves.toMatchObject({
+      status: 'failed',
+      failureKind: 'empty_output',
+    })
   })
 
   it('parses JSON object output and fails invalid JSON according to policy', async () => {
