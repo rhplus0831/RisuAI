@@ -30,12 +30,6 @@ function getHash(
   return combined
 }
 
-export const tokenizerList = [
-  ['tik', 'Tiktoken (Automatic)'],
-  ['cl100k_base', 'Tiktoken (cl100k_base)'],
-  ['o200k_base', 'Tiktoken (o200k_base)'],
-] as const
-
 export async function encodeWithTokenizer(
   data: string,
   tokenizerType: string,

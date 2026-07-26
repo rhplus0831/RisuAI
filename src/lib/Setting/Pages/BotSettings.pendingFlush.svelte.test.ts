@@ -227,7 +227,6 @@ vi.mock('src/ts/pluginCommands', async (importActual) => {
 
 vi.mock('src/ts/tokenizer', () => ({
   tokenizeAccurate: vi.fn(async () => 0),
-  tokenizerList: [],
 }))
 
 vi.mock('src/ts/model/nanogpt', () => ({

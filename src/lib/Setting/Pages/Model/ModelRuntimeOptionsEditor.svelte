@@ -5,6 +5,7 @@
     normalizeModelProfileRuntimeOptions,
     type ModelProfileRecordRuntimeOptions,
   } from 'src/ts/model/modelProfileRecords'
+  import { FASTIFY_TOKENIZER_OPTIONS } from 'src/ts/model/tokenizerOptions'
   import { LLMFlags, type LLMFlags as LLMFlagValue } from 'src/ts/model/types'
 
   type RuntimeKey = keyof ModelProfileRecordRuntimeOptions
@@ -283,14 +284,16 @@
       <label class="flex flex-col gap-1">
         <span class="text-sm text-textcolor2">{language.modelProfiles.runtimeFields.customTokenizer}</span>
         <select
+          data-runtime-tokenizer-picker
           class="w-full rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
           value={stringValue('customTokenizer')}
           onchange={(event) => {
             setString('customTokenizer', event.currentTarget.value)
           }}>
           <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
-          <option value="cl100k_base" class="bg-darkbg">Tiktoken (cl100k_base)</option>
-          <option value="o200k_base" class="bg-darkbg">Tiktoken (o200k_base)</option>
+          {#each FASTIFY_TOKENIZER_OPTIONS as option (option.value)}
+            <option value={option.value} class="bg-darkbg">{language.tokenizerOptions[option.labelKey]}</option>
+          {/each}
         </select>
       </label>
 

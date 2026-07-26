@@ -9,7 +9,8 @@
 
   import { customProviderStore } from 'src/ts/plugins/plugins.svelte'
   import { downloadFile } from 'src/ts/globalApi.svelte'
-  import { tokenizeAccurate, tokenizerList } from 'src/ts/tokenizer'
+  import { tokenizeAccurate } from 'src/ts/tokenizer'
+  import { FASTIFY_TOKENIZER_OPTIONS } from 'src/ts/model/tokenizerOptions'
   import DropList from 'src/lib/SideBars/DropList.svelte'
   import { PlusIcon, TrashIcon, HardDriveUploadIcon, DownloadIcon, UploadIcon } from '@lucide/svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
@@ -1649,8 +1650,8 @@
     {#if usesOpenRouterModel || usesReverseProxyModel}
       <span class="text-textcolor">{language.tokenizer}</span>
       <SelectInput ariaLabel={language.tokenizer} bind:value={customTokenizerDraft.value}>
-        {#each tokenizerList as entry}
-          <OptionInput value={entry[0]}>{entry[1]}</OptionInput>
+        {#each FASTIFY_TOKENIZER_OPTIONS as option (option.value)}
+          <OptionInput value={option.value}>{language.tokenizerOptions[option.labelKey]}</OptionInput>
         {/each}
       </SelectInput>
     {/if}

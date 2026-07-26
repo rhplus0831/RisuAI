@@ -7,7 +7,8 @@
   import { AnthropicModels } from 'src/ts/model/providers/anthropic'
   import { GoogleModels } from 'src/ts/model/providers/google'
   import { OpenAIModels } from 'src/ts/model/providers/openai'
-  import { LLMFlags, LLMFormat, LLMTokenizer, type LLMFlags as LLMFlagValue } from 'src/ts/model/types'
+  import { FASTIFY_TOKENIZER_OPTIONS } from 'src/ts/model/tokenizerOptions'
+  import { LLMFlags, LLMFormat, type LLMFlags as LLMFlagValue } from 'src/ts/model/types'
   import KeyValueRowsEditor from './KeyValueRowsEditor.svelte'
 
   interface KeyValueRow {
@@ -75,10 +76,7 @@
       fullName: `${model.fullName ?? model.name} Vertex`,
     })),
   )
-  const tokenizerOptions = [
-    { label: 'Tiktoken (cl100k_base)', value: String(LLMTokenizer.tiktokenCl100kBase) },
-    { label: 'Tiktoken (o200k_base)', value: String(LLMTokenizer.tiktokenO200Base) },
-  ]
+  const tokenizerOptions = FASTIFY_TOKENIZER_OPTIONS.filter((option) => option.value !== 'tik')
   const flagOptions = Object.entries(LLMFlags).map(([label, flag]) => ({
     label,
     flag: flag as LLMFlagValue,
@@ -316,11 +314,14 @@
         <label class="flex flex-col gap-1">
           <span class="text-sm text-textcolor2">{language.modelProfiles.customTokenizer}</span>
           <select
+            data-custom-tokenizer-picker
             class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
             bind:value={customTokenizer}>
             <option value="" class="bg-darkbg">{language.modelProfiles.defaultTokenizer}</option>
-            {#each tokenizerOptions as option (option.value)}
-              <option value={option.value} class="bg-darkbg">{option.label}</option>
+            {#each tokenizerOptions as option (option.modelTokenizer)}
+              <option value={String(option.modelTokenizer)} class="bg-darkbg">
+                {language.tokenizerOptions[option.labelKey]}
+              </option>
             {/each}
           </select>
         </label>

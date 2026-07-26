@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { FASTIFY_TOKENIZER_OPTIONS } from './model/tokenizerOptions'
 
 const moduleState = vi.hoisted(() => {
   const LLMTokenizer = {
@@ -162,12 +163,23 @@ describe('Google Cloud tokenizer cache', () => {
 })
 
 describe('server-backed tokenizer choices', () => {
-  it('exposes only tokenizer identities Fastify prompt budgeting supports', async () => {
-    const { tokenizerList } = await loadTokenizer()
-    expect(tokenizerList).toEqual([
-      ['tik', 'Tiktoken (Automatic)'],
-      ['cl100k_base', 'Tiktoken (cl100k_base)'],
-      ['o200k_base', 'Tiktoken (o200k_base)'],
+  it('exposes every portable tokenizer identity Fastify prompt budgeting supports', () => {
+    expect(FASTIFY_TOKENIZER_OPTIONS.map((option) => option.value)).toEqual([
+      'tik',
+      'cl100k_base',
+      'o200k_base',
+      'mistral',
+      'llama',
+      'novelai',
+      'claude',
+      'novellist',
+      'llama3',
+      'gemma',
+      'cohere',
+      'deepseek',
+      'deepseek-v4',
+      'glm4',
+      'glm5',
     ])
   })
 })

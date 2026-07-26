@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { encodeWithTokenizer, tokenizerList } from 'src/ts/tokenizer'
+  import { encodeWithTokenizer } from 'src/ts/tokenizer'
+  import { FASTIFY_TOKENIZER_OPTIONS } from 'src/ts/model/tokenizerOptions'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import { language } from 'src/lang'
@@ -43,8 +44,8 @@
 <span class="text-textcolor text-lg">Tokenizer</span>
 
 <SelectInput bind:value={selectedTokenizer} onchange={onTokenizerChange} ariaLabel={language.tokenizer}>
-  {#each tokenizerList as [value, label]}
-    <option {value} class="bg-bgcolor">{label}</option>
+  {#each FASTIFY_TOKENIZER_OPTIONS as option (option.value)}
+    <option value={option.value} class="bg-bgcolor">{language.tokenizerOptions[option.labelKey]}</option>
   {/each}
 </SelectInput>
 

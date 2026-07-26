@@ -80,4 +80,34 @@ describe('ModelProviderPanel credential selection', () => {
     expect(target.textContent).not.toContain(language.modelProfiles.vertexClientEmail)
     expect(target.textContent).not.toContain(language.modelProfiles.vertexPrivateKey)
   })
+
+  it('offers every Fastify-portable tokenizer for Custom API profiles', async () => {
+    component = mount(ModelProviderPanel, { target, props: props('custom-api') })
+    await tick()
+
+    const picker = target.querySelector<HTMLSelectElement>('[data-custom-tokenizer-picker]')
+    expect(Array.from(picker?.options ?? []).map((option) => option.value)).toEqual([
+      '',
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      '11',
+      '13',
+      '14',
+      '15',
+      '16',
+    ])
+
+    if (!picker) throw new Error('Tokenizer picker was not rendered')
+    picker.value = '6'
+    picker.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    expect(picker.value).toBe('6')
+  })
 })
