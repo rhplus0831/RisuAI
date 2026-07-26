@@ -16,6 +16,7 @@
     SparkleIcon,
     ArrowLeftIcon,
     WorkflowIcon,
+    WebhookIcon,
     BookOpen,
     Regex,
   } from '@lucide/svelte'
@@ -141,7 +142,7 @@
               onclick={() => {
                 navigate('/settings/input-hooks')
               }}>
-              <WorkflowIcon size={20} />
+              <WebhookIcon size={20} />
               <span>{language.settingsNavInputHooks}</span>
             </button>
             {#if getDatabase().botPresets?.length > 0}
