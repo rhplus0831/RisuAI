@@ -2599,6 +2599,7 @@ export const languageEnglish = {
     llmGatewayReasoningEffort: 'Reasoning Effort',
     llmGatewayVerbosity: 'Verbosity',
     llmGatewayServiceTier: 'Service Tier',
+    llmGatewayRouting: 'Routing',
     ollamaLocal: 'Ollama Local',
     ollamaCloud: 'Ollama Cloud',
     ollamaModelPlaceholder: 'llama3.1',

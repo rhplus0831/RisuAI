@@ -1136,6 +1136,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       reasoningEffort: isLLMGatewayProfile ? llmGatewayOptions?.reasoningEffort : parameters.reasoningEffort,
       verbosity: isLLMGatewayProfile ? llmGatewayOptions?.verbosity : parameters.verbosity,
       serviceTier: llmGatewayOptions?.serviceTier,
+      routing: llmGatewayOptions?.routing,
       seed: db.generationSeed,
       responseFormat: openAIChatResponseFormat(db),
       prediction: db.OAIPrediction,

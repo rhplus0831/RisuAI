@@ -36,6 +36,7 @@ export interface OpenAIRequest {
   reasoningEffort?: string
   verbosity?: string
   serviceTier?: string
+  routing?: string
   seed?: number
   responseFormat?: Record<string, unknown>
   prediction?: string
@@ -86,6 +87,7 @@ interface OpenAIResolveInput {
   reasoningEffort?: unknown
   verbosity?: unknown
   serviceTier?: unknown
+  routing?: unknown
   seed?: unknown
   responseFormat?: unknown
   prediction?: unknown
@@ -139,6 +141,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     reasoningEffort: typeof input.reasoningEffort === 'string' ? input.reasoningEffort : undefined,
     verbosity: typeof input.verbosity === 'string' ? input.verbosity : undefined,
     serviceTier: typeof input.serviceTier === 'string' ? input.serviceTier : undefined,
+    routing: typeof input.routing === 'string' ? input.routing : undefined,
     seed: numeric(input.seed),
     responseFormat: record(input.responseFormat),
     prediction: typeof input.prediction === 'string' && input.prediction.length > 0 ? input.prediction : undefined,
@@ -203,6 +206,7 @@ function buildPayload(req: OpenAIRequest, stream: boolean): Record<string, unkno
   if (req.reasoningEffort !== undefined) body.reasoning_effort = req.reasoningEffort
   if (req.verbosity !== undefined) body.verbosity = req.verbosity
   if (req.serviceTier !== undefined) body.service_tier = req.serviceTier
+  if (req.routing !== undefined) body.routing = req.routing
   if (req.seed !== undefined && req.seed > 0) body.seed = req.seed
   if (req.responseFormat !== undefined) body.response_format = req.responseFormat
   if (req.prediction !== undefined) body.prediction = { type: 'content', content: req.prediction }

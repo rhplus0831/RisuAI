@@ -1885,6 +1885,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
                 reasoningEffort: 'max',
                 verbosity: 'high',
                 serviceTier: 'priority',
+                routing: 'throughput',
               },
             },
           },
@@ -1908,6 +1909,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
         reasoningEffort: 'max',
         verbosity: 'high',
         serviceTier: 'priority',
+        routing: 'throughput',
       },
     })
     expect(profile.modelInfo.flags).toContain(LLMFlags.hasImageInput)

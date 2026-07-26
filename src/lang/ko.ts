@@ -2479,6 +2479,7 @@ export const languageKorean = {
     llmGatewayReasoningEffort: '추론 강도',
     llmGatewayVerbosity: '응답 상세도',
     llmGatewayServiceTier: '서비스 티어',
+    llmGatewayRouting: '라우팅',
     ollamaLocal: 'Ollama 로컬',
     ollamaCloud: 'Ollama Cloud',
     ollamaModelPlaceholder: 'llama3.1',

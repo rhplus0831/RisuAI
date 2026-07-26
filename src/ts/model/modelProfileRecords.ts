@@ -21,10 +21,12 @@ export interface ModelProfileRecord {
 export const LLM_GATEWAY_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 export const LLM_GATEWAY_VERBOSITIES = ['low', 'medium', 'high'] as const
 export const LLM_GATEWAY_SERVICE_TIERS = ['auto', 'default', 'flex', 'priority'] as const
+export const LLM_GATEWAY_ROUTING_STRATEGIES = ['auto', 'price', 'throughput', 'latency'] as const
 
 export type LLMGatewayReasoningEffort = (typeof LLM_GATEWAY_REASONING_EFFORTS)[number]
 export type LLMGatewayVerbosity = (typeof LLM_GATEWAY_VERBOSITIES)[number]
 export type LLMGatewayServiceTier = (typeof LLM_GATEWAY_SERVICE_TIERS)[number]
+export type LLMGatewayRoutingStrategy = (typeof LLM_GATEWAY_ROUTING_STRATEGIES)[number]
 
 export type ModelProfileRecordFallbackRef =
   | {
@@ -65,6 +67,7 @@ export interface ModelProfileRecordProviderOptions {
     reasoningEffort?: LLMGatewayReasoningEffort
     verbosity?: LLMGatewayVerbosity
     serviceTier?: LLMGatewayServiceTier
+    routing?: LLMGatewayRoutingStrategy
   }
   ollama?: {
     url?: string
@@ -171,7 +174,7 @@ const MODEL_PROFILE_REVERSE_PROXY_KEYS = new Set(['autofillRequestUrl', 'oobaSys
 const MODEL_PROFILE_OPENROUTER_KEYS = new Set(['fallback', 'middleOut', 'provider'])
 const MODEL_PROFILE_OPENROUTER_PROVIDER_KEYS = new Set(['order', 'only', 'ignore'])
 const MODEL_PROFILE_NANOGPT_KEYS = new Set(['providerHint', 'useSubscriptionEndpoint', 'subscriptionState'])
-const MODEL_PROFILE_LLM_GATEWAY_KEYS = new Set(['reasoningEffort', 'verbosity', 'serviceTier'])
+const MODEL_PROFILE_LLM_GATEWAY_KEYS = new Set(['reasoningEffort', 'verbosity', 'serviceTier', 'routing'])
 const MODEL_PROFILE_OLLAMA_KEYS = new Set(['url', 'requestFormat', 'modelSource', 'thinkingMode'])
 const MODEL_PROFILE_VERTEX_KEYS = new Set(['projectId', 'region', 'clientEmail', 'privateKey'])
 const MODEL_PROFILE_CUSTOM_API_KEYS = new Set(['tokenizer', 'flags'])
@@ -222,6 +225,7 @@ const LLM_TOKENIZER_SET = new Set<number>(Object.values(LLMTokenizer))
 const LLM_GATEWAY_REASONING_EFFORT_SET = new Set<string>(LLM_GATEWAY_REASONING_EFFORTS)
 const LLM_GATEWAY_VERBOSITY_SET = new Set<string>(LLM_GATEWAY_VERBOSITIES)
 const LLM_GATEWAY_SERVICE_TIER_SET = new Set<string>(LLM_GATEWAY_SERVICE_TIERS)
+const LLM_GATEWAY_ROUTING_STRATEGY_SET = new Set<string>(LLM_GATEWAY_ROUTING_STRATEGIES)
 
 export function createDefaultModelRoleProfiles(): ModelRoleProfileMap {
   return Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])) as ModelRoleProfileMap
@@ -652,6 +656,9 @@ function normalizeLLMGatewayOptions(
   if (typeof value.serviceTier === 'string' && LLM_GATEWAY_SERVICE_TIER_SET.has(value.serviceTier)) {
     options.serviceTier = value.serviceTier as LLMGatewayServiceTier
   }
+  if (typeof value.routing === 'string' && LLM_GATEWAY_ROUTING_STRATEGY_SET.has(value.routing)) {
+    options.routing = value.routing as LLMGatewayRoutingStrategy
+  }
   return objectHasKeys(options) ? options : undefined
 }
 
@@ -676,6 +683,13 @@ function readLLMGatewayOptions(
   )
   readOptionalEnum(value, 'verbosity', LLM_GATEWAY_VERBOSITY_SET, `${path}.verbosity`, LLM_GATEWAY_VERBOSITIES)
   readOptionalEnum(value, 'serviceTier', LLM_GATEWAY_SERVICE_TIER_SET, `${path}.serviceTier`, LLM_GATEWAY_SERVICE_TIERS)
+  readOptionalEnum(
+    value,
+    'routing',
+    LLM_GATEWAY_ROUTING_STRATEGY_SET,
+    `${path}.routing`,
+    LLM_GATEWAY_ROUTING_STRATEGIES,
+  )
   return normalizeLLMGatewayOptions(value)
 }
 

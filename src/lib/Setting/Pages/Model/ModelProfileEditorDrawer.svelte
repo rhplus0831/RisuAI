@@ -12,10 +12,12 @@
   } from 'src/ts/model/modelProfileResolver'
   import {
     LLM_GATEWAY_REASONING_EFFORTS,
+    LLM_GATEWAY_ROUTING_STRATEGIES,
     LLM_GATEWAY_SERVICE_TIERS,
     LLM_GATEWAY_VERBOSITIES,
     normalizeModelProfileRuntimeOptions,
     type LLMGatewayReasoningEffort,
+    type LLMGatewayRoutingStrategy,
     type LLMGatewayServiceTier,
     type LLMGatewayVerbosity,
     type ModelProfileRecord,
@@ -86,6 +88,9 @@
   )
   let llmGatewayServiceTier = $state<LLMGatewayServiceTier | ''>(
     initialProfile?.providerOptions?.llmGateway?.serviceTier ?? '',
+  )
+  let llmGatewayRouting = $state<LLMGatewayRoutingStrategy | ''>(
+    initialProfile?.providerOptions?.llmGateway?.routing ?? '',
   )
   let ollamaRequestFormat = $state(
     String(initialProfile?.providerOptions?.ollama?.requestFormat ?? LLMFormat.OpenAICompatible),
@@ -240,6 +245,9 @@
       }
       if (LLM_GATEWAY_SERVICE_TIERS.includes(llmGatewayServiceTier as LLMGatewayServiceTier)) {
         llmGateway.serviceTier = llmGatewayServiceTier as LLMGatewayServiceTier
+      }
+      if (LLM_GATEWAY_ROUTING_STRATEGIES.includes(llmGatewayRouting as LLMGatewayRoutingStrategy)) {
+        llmGateway.routing = llmGatewayRouting as LLMGatewayRoutingStrategy
       }
       if (Object.keys(llmGateway).length > 0) options.llmGateway = llmGateway
       return removeEmptyProviderOptions(options)
@@ -478,6 +486,7 @@
           bind:llmGatewayReasoningEffort
           bind:llmGatewayVerbosity
           bind:llmGatewayServiceTier
+          bind:llmGatewayRouting
           bind:ollamaRequestFormat
           bind:ollamaModelSource
           bind:ollamaThinkingMode

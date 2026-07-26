@@ -255,6 +255,7 @@ describe('model profile records', () => {
               reasoningEffort: 'max',
               verbosity: 'high',
               serviceTier: 'priority',
+              routing: 'throughput',
             },
             ollama: {
               url: ' http://localhost:11434 ',
@@ -319,6 +320,7 @@ describe('model profile records', () => {
             reasoningEffort: 'max',
             verbosity: 'high',
             serviceTier: 'priority',
+            routing: 'throughput',
           },
           ollama: {
             url: 'http://localhost:11434',
@@ -591,6 +593,18 @@ describe('model profile records', () => {
       ]),
     ).toThrow(
       'modelProfiles[0].providerOptions.llmGateway.serviceTier must be one of auto, default, flex, priority when present',
+    )
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { llmGateway: { routing: 'random' } },
+        },
+      ]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.llmGateway.routing must be one of auto, price, throughput, latency when present',
     )
 
     expect(() =>

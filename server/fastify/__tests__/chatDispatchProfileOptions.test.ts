@@ -1568,6 +1568,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
                 reasoningEffort: 'max',
                 verbosity: 'high',
                 serviceTier: 'priority',
+                routing: 'throughput',
               },
             },
           },
@@ -1586,6 +1587,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.reasoning_effort).toBe('max')
     expect(captured[0].body.verbosity).toBe('high')
     expect(captured[0].body.service_tier).toBe('priority')
+    expect(captured[0].body.routing).toBe('throughput')
   })
 
   it('uses first-class Debug Echo provider options as the echo payload', async () => {

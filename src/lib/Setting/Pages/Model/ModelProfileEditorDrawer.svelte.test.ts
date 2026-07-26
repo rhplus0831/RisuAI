@@ -103,6 +103,7 @@ describe('ModelProfileEditorDrawer credentials', () => {
           reasoningEffort: 'max' as const,
           verbosity: 'high' as const,
           serviceTier: 'priority' as const,
+          routing: 'throughput' as const,
         },
       },
     }
@@ -132,6 +133,7 @@ describe('ModelProfileEditorDrawer credentials', () => {
     expect(target.querySelector<HTMLSelectElement>('[data-llm-gateway-reasoning-effort]')?.value).toBe('max')
     expect(target.querySelector<HTMLSelectElement>('[data-llm-gateway-verbosity]')?.value).toBe('high')
     expect(target.querySelector<HTMLSelectElement>('[data-llm-gateway-service-tier]')?.value).toBe('priority')
+    expect(target.querySelector<HTMLSelectElement>('[data-llm-gateway-routing]')?.value).toBe('throughput')
 
     const name = target.querySelector<HTMLInputElement>('input:not([type="password"])')
     if (!name) throw new Error('Profile name input not found')

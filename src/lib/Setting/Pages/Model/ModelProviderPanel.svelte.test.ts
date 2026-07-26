@@ -49,6 +49,7 @@ function props(providerId: string) {
     llmGatewayReasoningEffort: '' as const,
     llmGatewayVerbosity: '' as const,
     llmGatewayServiceTier: '' as const,
+    llmGatewayRouting: '' as const,
     ollamaRequestFormat: '',
     ollamaModelSource: '',
     ollamaThinkingMode: '',
@@ -173,5 +174,6 @@ describe('ModelProviderPanel credential selection', () => {
     ])
     expect(values('[data-llm-gateway-verbosity]')).toEqual(['', 'low', 'medium', 'high'])
     expect(values('[data-llm-gateway-service-tier]')).toEqual(['', 'auto', 'default', 'flex', 'priority'])
+    expect(values('[data-llm-gateway-routing]')).toEqual(['', 'auto', 'price', 'throughput', 'latency'])
   })
 })
