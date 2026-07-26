@@ -188,6 +188,50 @@ describe('modular Agent Preset settings', () => {
     expect(agentSpies.updateAgentPresetUse).not.toHaveBeenCalled()
   })
 
+  it('saves Agent-local toggles and required lorebook input aliases', async () => {
+    seed()
+    component = mount(AgentPresetSettings, { target })
+    await tick()
+
+    target.querySelectorAll<HTMLButtonElement>('[data-risu-agent-row] button')[2].click()
+    await tick()
+    const editor = target.querySelector('[data-risu-agent-editor]')!
+    const instruction = editor.querySelectorAll<HTMLTextAreaElement>('textarea')[1]
+    instruction.value = 'Tone: {{agentToggle::tone}}\nReference: {{agentInput::reference}}'
+    instruction.dispatchEvent(new Event('input', { bubbles: true }))
+
+    clickButtonContaining(editor, language.agentPresets.addToggle)
+    clickButtonContaining(editor, language.agentPresets.addLorebookInput)
+    await tick()
+
+    const toggleInputs = editor.querySelectorAll<HTMLInputElement>('[data-risu-agent-toggle] input[type="text"]')
+    toggleInputs[0].value = 'tone'
+    toggleInputs[0].dispatchEvent(new Event('input', { bubbles: true }))
+    toggleInputs[1].value = 'Tone'
+    toggleInputs[1].dispatchEvent(new Event('input', { bubbles: true }))
+
+    const lorebookInputs = editor.querySelectorAll<HTMLInputElement>(
+      '[data-risu-agent-lorebook-input] input[type="text"]',
+    )
+    lorebookInputs[0].value = 'reference'
+    lorebookInputs[0].dispatchEvent(new Event('input', { bubbles: true }))
+    lorebookInputs[1].value = 'Reference Notes'
+    lorebookInputs[1].dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    clickButtonContaining(editor, language.agentPresets.save)
+    await flush()
+
+    expect(agentSpies.updateAgent).toHaveBeenCalledWith(
+      agent.id,
+      expect.objectContaining({
+        instruction: 'Tone: {{agentToggle::tone}}\nReference: {{agentInput::reference}}',
+        toggles: [{ key: 'tone', label: 'Tone', kind: 'boolean', options: [] }],
+        lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+      }),
+    )
+  })
+
   it('adds an existing Agent to a preset by reference', async () => {
     seed([agent], [{ ...preset, agentUses: [] }])
     component = mount(AgentPresetSettings, { target })

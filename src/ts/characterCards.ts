@@ -1133,19 +1133,21 @@ function convertCharbook(arg: {
       delete extensions.match_whole_words
     }
 
+    const agentOnly = extensions.risu_agent_only === true
     lorebook.push({
-      key: book.keys.join(', '),
-      secondkey: book.secondary_keys?.join(', ') ?? '',
+      key: agentOnly ? '' : book.keys.join(', '),
+      secondkey: agentOnly ? '' : (book.secondary_keys?.join(', ') ?? ''),
       insertorder: book.insertion_order,
       comment: book.name ?? book.comment ?? '',
       content: content,
       mode: (book.mode as any) ?? 'normal',
-      alwaysActive: book.constant ?? false,
-      selective: book.selective ?? false,
+      alwaysActive: agentOnly ? false : (book.constant ?? false),
+      selective: agentOnly ? false : (book.selective ?? false),
       extentions: { ...extensions, risu_case_sensitive: book.case_sensitive ?? false },
+      agentOnly,
       activationPercent: book.extensions?.risu_activationPercent,
       loreCache: book.extensions?.risu_loreCache ?? null,
-      useRegex: book.use_regex ?? false,
+      useRegex: agentOnly ? false : (book.use_regex ?? false),
       folder: book.folder,
     })
   }
@@ -1167,21 +1169,24 @@ function createBaseV2(char: character) {
         key: string
         data: string[]
       }
+      risu_agent_only?: boolean
     } = structuredClone(lore.extentions ?? {})
 
     let caseSensitive = ext.risu_case_sensitive ?? false
     ext.risu_activationPercent = lore.activationPercent
     ext.risu_loreCache = lore.loreCache
+    const agentOnly = lore.agentOnly === true || ext.risu_agent_only === true
+    ext.risu_agent_only = agentOnly
 
     charBook.push({
-      keys: lore.key.split(',').map((r) => r.trim()),
-      secondary_keys: lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
+      keys: agentOnly ? [] : lore.key.split(',').map((r) => r.trim()),
+      secondary_keys: !agentOnly && lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
       content: lore.content,
       extensions: ext,
       enabled: true,
       insertion_order: lore.insertorder,
-      constant: lore.alwaysActive,
-      selective: lore.selective,
+      constant: agentOnly ? false : lore.alwaysActive,
+      selective: agentOnly ? false : lore.selective,
       name: lore.comment,
       comment: lore.comment,
       case_sensitive: caseSensitive,
@@ -1645,26 +1650,29 @@ export function createBaseV3(char: character) {
         key: string
         data: string[]
       }
+      risu_agent_only?: boolean
     } = structuredClone(lore.extentions ?? {})
 
     let caseSensitive = ext.risu_case_sensitive ?? false
     ext.risu_activationPercent = lore.activationPercent
     ext.risu_loreCache = lore.loreCache
+    const agentOnly = lore.agentOnly === true || ext.risu_agent_only === true
+    ext.risu_agent_only = agentOnly
 
     charBook.push({
       ...({
-        keys: lore.key.split(',').map((r) => r.trim()),
-        secondary_keys: lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
+        keys: agentOnly ? [] : lore.key.split(',').map((r) => r.trim()),
+        secondary_keys: !agentOnly && lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
         content: lore.content,
         extensions: ext,
         enabled: true,
         insertion_order: lore.insertorder,
-        constant: lore.alwaysActive,
-        selective: lore.selective,
+        constant: agentOnly ? false : lore.alwaysActive,
+        selective: agentOnly ? false : lore.selective,
         name: lore.comment,
         comment: lore.comment,
         case_sensitive: caseSensitive,
-        use_regex: lore.useRegex ?? false,
+        use_regex: agentOnly ? false : (lore.useRegex ?? false),
       } as LorebookEntry),
       mode: lore.mode ?? 'normal',
       folder: lore.folder,

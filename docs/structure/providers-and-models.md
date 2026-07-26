@@ -260,6 +260,22 @@ output references. New context-binding or port-mapping semantics are not part
 of this model; existing prepared-input scopes and placeholders remain
 unchanged.
 
+An Agent may also define chat-configurable boolean, select, text, and textarea
+controls. Active Agent uses project those controls into the existing sidebar
+toggle flow, while values are stored under `agent:<agentId>:<localKey>` so two
+Agents can safely reuse a local key. Agent instructions read the current value
+with `{{agentToggle::localKey}}`; the storage namespace is not exposed to the
+Agent author.
+
+Required named lorebook inputs use `{{agentInput::localKey}}`. Resolution
+matches the entry display name exactly, searches the active chat before the
+selected character, and does not fall back to the character when a chat-level
+match exists but is invalid. A matching entry must be a regular, nonempty entry
+marked `agentOnly`/`risu_agent_only`, with Always Active disabled and both
+activation-key fields blank. Agent-only entries are categorically excluded
+from normal lorebook activation. All required inputs across both Agent phases
+are preflighted before any Agent step or main-prompt assembly begins.
+
 Resolved Agent uses use bounded prepared-input scopes and named-output CBS
 chaining. Agents can select server-provided sections such as recent chat tail,
 chat search snippets, lorebook context, memory context, persona/character

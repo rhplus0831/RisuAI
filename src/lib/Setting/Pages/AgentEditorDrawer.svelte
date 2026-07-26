@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SaveIcon, XIcon } from '@lucide/svelte'
+  import { PlusIcon, SaveIcon, Trash2Icon, XIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Help from 'src/lib/Others/Help.svelte'
   import Button from 'src/lib/UI/GUI/Button.svelte'
@@ -18,10 +18,15 @@
     AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX,
     AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN,
     AGENT_PRESET_STEP_INPUT_SCOPES,
+    AGENT_LOREBOOK_INPUT_LIMIT,
+    AGENT_TOGGLE_DEFINITION_LIMIT,
+    AGENT_TOGGLE_KINDS,
+    type AgentLorebookInput,
     type AgentPresetStepInputScope,
     type AgentPresetStepModelSelection,
     type AgentPresetStepOutputFormat,
     type AgentRecord,
+    type AgentToggleDefinition,
   } from 'src/ts/agentPresetRecords'
   import type { AgentSnapshot } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
@@ -36,6 +41,7 @@
   }
 
   const TEMPERATURE_SCALE = 100
+  type EditableAgentToggle = AgentToggleDefinition & { optionText: string }
   let { mode, agent, busy = false, commandError = '', onSave, onCancel }: Props = $props()
   // svelte-ignore state_referenced_locally
   const initial = agent
@@ -53,6 +59,14 @@
   let inputScopes = $state<AgentPresetStepInputScope[]>(
     initial?.inputScopes ? [...initial.inputScopes] : ['currentUserMessage'],
   )
+  let toggles = $state<EditableAgentToggle[]>(
+    (initial?.toggles ?? []).map((toggle) => ({
+      ...toggle,
+      options: [...toggle.options],
+      optionText: toggle.options.join(', '),
+    })),
+  )
+  let lorebookInputs = $state<AgentLorebookInput[]>((initial?.lorebookInputs ?? []).map((input) => ({ ...input })))
   let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
   const initialSnapshot = agentSnapshotFromRecord(initial)
   let snapshot = $derived(agentSnapshot())
@@ -60,6 +74,7 @@
   let canSave = $derived(
     name.trim().length > 0 &&
       (modelMode === 'inheritMain' || profileId.trim().length > 0) &&
+      definitionsValid() &&
       !busy &&
       (mode === 'create' || dirty),
   )
@@ -92,6 +107,23 @@
         structuredOutputStrict,
       },
       inputScopes: [...inputScopes],
+      toggles: toggles.map((toggle) => ({
+        key: toggle.key.trim(),
+        label: toggle.label.trim(),
+        kind: toggle.kind,
+        options:
+          toggle.kind === 'select'
+            ? toggle.optionText
+                .split(',')
+                .map((option) => option.trim())
+                .filter(Boolean)
+            : [],
+      })),
+      lorebookInputs: lorebookInputs.map((input) => ({
+        key: input.key.trim(),
+        displayName: input.displayName.trim(),
+        required: input.required,
+      })),
       outputFormat,
     }
   }
@@ -111,6 +143,8 @@
         structuredOutputStrict: record.runtimeDefaults.structuredOutputStrict ?? false,
       },
       inputScopes: [...record.inputScopes],
+      toggles: (record.toggles ?? []).map((toggle) => ({ ...toggle, options: [...toggle.options] })),
+      lorebookInputs: (record.lorebookInputs ?? []).map((input) => ({ ...input })),
       outputFormat: record.outputFormat,
     }
   }
@@ -126,6 +160,53 @@
     inputScopes = checked
       ? [...new Set([...inputScopes, scope])]
       : inputScopes.filter((candidate) => candidate !== scope)
+  }
+
+  function addToggle(): void {
+    toggles.push({ key: '', label: '', kind: 'boolean', options: [], optionText: '' })
+  }
+
+  function removeToggle(index: number): void {
+    toggles.splice(index, 1)
+  }
+
+  function addLorebookInput(): void {
+    lorebookInputs.push({ key: '', displayName: '', required: true })
+  }
+
+  function removeLorebookInput(index: number): void {
+    lorebookInputs.splice(index, 1)
+  }
+
+  function definitionsValid(): boolean {
+    const identifier = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
+    const toggleKeys = toggles.map((toggle) => toggle.key.trim())
+    const lorebookKeys = lorebookInputs.map((input) => input.key.trim())
+    const referencedToggleKeys = [...instruction.matchAll(/\{\{\s*agentToggle::([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g)].map(
+      (match) => match[1],
+    )
+    const referencedLorebookKeys = [...instruction.matchAll(/\{\{\s*agentInput::([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g)].map(
+      (match) => match[1],
+    )
+    return (
+      toggleKeys.every((key) => identifier.test(key)) &&
+      new Set(toggleKeys).size === toggleKeys.length &&
+      toggles.every(
+        (toggle) =>
+          toggle.label.trim().length > 0 &&
+          (toggle.kind !== 'select' || toggle.optionText.split(',').some((option) => option.trim().length > 0)),
+      ) &&
+      lorebookKeys.every((key) => identifier.test(key)) &&
+      new Set(lorebookKeys).size === lorebookKeys.length &&
+      toggles.length <= AGENT_TOGGLE_DEFINITION_LIMIT &&
+      lorebookInputs.length <= AGENT_LOREBOOK_INPUT_LIMIT &&
+      lorebookInputs.every(
+        (input) =>
+          input.displayName.trim().length > 0 && (!input.required || referencedLorebookKeys.includes(input.key.trim())),
+      ) &&
+      referencedToggleKeys.every((key) => toggleKeys.includes(key)) &&
+      referencedLorebookKeys.every((key) => lorebookKeys.includes(key))
+    )
   }
 
   function clamp(value: unknown, min: number, max: number): number {
@@ -187,6 +268,113 @@
           class="min-h-36 rounded-md border border-darkborderc bg-transparent px-3 py-2 text-sm"
           bind:value={instruction}></textarea>
       </label>
+      <section class="mt-4 rounded-md border border-darkborderc p-3" data-risu-agent-toggles>
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold">{language.agentPresets.agentTogglesLabel}</h4>
+            <p class="mt-1 text-xs text-textcolor2">{language.agentPresets.agentTogglesDescription}</p>
+          </div>
+          <Button
+            size="sm"
+            styled="outlined"
+            disabled={busy || toggles.length >= AGENT_TOGGLE_DEFINITION_LIMIT}
+            onclick={addToggle}>
+            <span class="inline-flex items-center gap-1"><PlusIcon size={14} />{language.agentPresets.addToggle}</span>
+          </Button>
+        </div>
+        {#if toggles.length === 0}
+          <p class="mt-3 text-xs text-textcolor2">{language.agentPresets.noAgentToggles}</p>
+        {:else}
+          <div class="mt-3 space-y-3">
+            {#each toggles as toggle, index}
+              <div class="rounded-md border border-darkborderc p-3" data-risu-agent-toggle>
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_10rem_auto]">
+                  <label class="flex flex-col gap-1">
+                    <span class="text-xs font-medium">{language.agentPresets.localKeyLabel}</span>
+                    <TextInput bind:value={toggle.key} fullwidth />
+                  </label>
+                  <label class="flex flex-col gap-1">
+                    <span class="text-xs font-medium">{language.agentPresets.toggleLabelLabel}</span>
+                    <TextInput bind:value={toggle.label} fullwidth />
+                  </label>
+                  <label class="flex flex-col gap-1">
+                    <span class="text-xs font-medium">{language.agentPresets.toggleKindLabel}</span>
+                    <SelectInput bind:value={toggle.kind} className="w-full">
+                      {#each AGENT_TOGGLE_KINDS as kind}
+                        <option value={kind}>{language.agentPresets.toggleKindLabels[kind]}</option>
+                      {/each}
+                    </SelectInput>
+                  </label>
+                  <div class="flex items-end">
+                    <Button
+                      size="sm"
+                      styled="outlined"
+                      disabled={busy}
+                      ariaLabel={language.agentPresets.removeToggle}
+                      onclick={() => removeToggle(index)}><Trash2Icon size={14} /></Button>
+                  </div>
+                </div>
+                {#if toggle.kind === 'select'}
+                  <label class="mt-3 flex flex-col gap-1">
+                    <span class="text-xs font-medium">{language.agentPresets.toggleOptionsLabel}</span>
+                    <TextInput bind:value={toggle.optionText} fullwidth />
+                  </label>
+                {/if}
+                <p class="mt-2 text-xs text-textcolor2">
+                  {language.agentPresets.togglePlaceholder(toggle.key || 'key')}
+                </p>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </section>
+      <section class="mt-4 rounded-md border border-darkborderc p-3" data-risu-agent-lorebook-inputs>
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-semibold">{language.agentPresets.lorebookInputsLabel}</h4>
+            <p class="mt-1 text-xs text-textcolor2">{language.agentPresets.lorebookInputsDescription}</p>
+          </div>
+          <Button
+            size="sm"
+            styled="outlined"
+            disabled={busy || lorebookInputs.length >= AGENT_LOREBOOK_INPUT_LIMIT}
+            onclick={addLorebookInput}>
+            <span class="inline-flex items-center gap-1"
+              ><PlusIcon size={14} />{language.agentPresets.addLorebookInput}</span>
+          </Button>
+        </div>
+        {#if lorebookInputs.length === 0}
+          <p class="mt-3 text-xs text-textcolor2">{language.agentPresets.noLorebookInputs}</p>
+        {:else}
+          <div class="mt-3 space-y-3">
+            {#each lorebookInputs as input, index}
+              <div
+                class="grid gap-3 rounded-md border border-darkborderc p-3 sm:grid-cols-[1fr_1.5fr_auto]"
+                data-risu-agent-lorebook-input>
+                <label class="flex flex-col gap-1">
+                  <span class="text-xs font-medium">{language.agentPresets.localKeyLabel}</span>
+                  <TextInput bind:value={input.key} fullwidth />
+                </label>
+                <label class="flex flex-col gap-1">
+                  <span class="text-xs font-medium">{language.agentPresets.lorebookDisplayNameLabel}</span>
+                  <TextInput bind:value={input.displayName} fullwidth />
+                </label>
+                <div class="flex items-end">
+                  <Button
+                    size="sm"
+                    styled="outlined"
+                    disabled={busy}
+                    ariaLabel={language.agentPresets.removeLorebookInput}
+                    onclick={() => removeLorebookInput(index)}><Trash2Icon size={14} /></Button>
+                </div>
+                <p class="text-xs text-textcolor2 sm:col-span-3">
+                  {language.agentPresets.lorebookInputPlaceholder(input.key || 'key')}
+                </p>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </section>
       <div class="mt-3 grid gap-3 md:grid-cols-2">
         <label class="flex flex-col gap-1">
           <span class="text-sm font-medium">{language.agentPresets.modelModeLabel}</span>

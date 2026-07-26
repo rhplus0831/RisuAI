@@ -1,5 +1,6 @@
 import { CCardLib } from '@risuai/ccardlib'
 import type { Chat, Database, Message, character, loreBook } from '../../../../src/ts/storage/database.svelte'
+import { isAgentOnlyLorebookEntry } from '../../../../src/ts/agentLorebookInputs.js'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { pickHashRand } from '../../../../src/ts/util/loreHash'
 import { getActiveModules } from './modules.js'
@@ -144,7 +145,7 @@ function collectEntries(input: ActivateLorebookInput): loreBook[] {
   const characterLore = currentChar.globalLore ?? []
   const chatLore = currentChat.localLore ?? []
   const moduleLore = getActiveModules(database, currentChar, currentChat).flatMap((m) => m.lorebook ?? [])
-  return [...characterLore, ...chatLore, ...moduleLore]
+  return [...characterLore, ...chatLore, ...moduleLore].filter((entry) => !isAgentOnlyLorebookEntry(entry))
 }
 
 function findCharByChaId(database: Database, chaId: string | undefined): character | undefined {

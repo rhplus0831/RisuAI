@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCharacterRecord } from '../src/commands/characters.js'
 import { createChatRecord } from '../src/commands/chats.js'
 import { createModuleRecord } from '../src/commands/modules.js'
+import { validateLorebookEntry } from '../src/commands/lorebooks.js'
 
 function lorebookEntry(id?: string) {
   return {
@@ -67,5 +68,50 @@ describe('command create lorebook identity repair', () => {
 
     expectRepairedIds(module.lorebook)
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('module.lorebook'))
+  })
+
+  it('repairs portable Agent-only markers into inert entries', () => {
+    const chat = createChatRecord({
+      id: 'chat-agent-input',
+      name: 'Chat',
+      note: '',
+      message: [],
+      localLore: [
+        {
+          ...lorebookEntry('agent-reference'),
+          key: 'must-be-cleared',
+          secondkey: 'also-cleared',
+          alwaysActive: true,
+          selective: true,
+          extentions: { risu_agent_only: true },
+        },
+      ],
+    })
+
+    expect(chat.localLore[0]).toMatchObject({
+      agentOnly: true,
+      key: '',
+      secondkey: '',
+      alwaysActive: false,
+      selective: false,
+    })
+  })
+
+  it('rejects command writes that give Agent-only entries activation paths', () => {
+    expect(() =>
+      validateLorebookEntry({
+        ...lorebookEntry('agent-reference'),
+        agentOnly: true,
+        key: 'active-key',
+      }),
+    ).toThrow('Agent-only entries must disable Always Active and have no activation keys')
+
+    expect(() =>
+      validateLorebookEntry({
+        ...lorebookEntry('portable-agent-reference'),
+        alwaysActive: true,
+        extentions: { risu_agent_only: true },
+      }),
+    ).toThrow('Agent-only entries must disable Always Active and have no activation keys')
   })
 })

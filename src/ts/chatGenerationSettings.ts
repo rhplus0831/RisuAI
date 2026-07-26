@@ -1,3 +1,5 @@
+import { agentToggleStorageKey, type AgentPresetUseRecord, type AgentToggleDefinition } from './agentPresetRecords'
+
 export const CHAT_GENERATION_SETTINGS_FIELD = 'generationSettings' as const
 
 export const CHAT_GENERATION_SETTINGS_INCOMPLETE_STATUS = 409 as const
@@ -174,6 +176,14 @@ export type ChatGenerationPresetReference = ChatGenerationPromptPresetReference
 export interface ChatGenerationAgentPresetReference {
   id?: string | null
   name?: string | null
+  enabled?: boolean | null
+  agentUses?: readonly Pick<AgentPresetUseRecord, 'agentId' | 'enabled'>[] | null
+}
+
+export interface ChatGenerationAgentReference {
+  id?: string | null
+  name?: string | null
+  toggles?: readonly AgentToggleDefinition[] | null
 }
 
 export interface ChatGenerationModuleReference {
@@ -188,16 +198,20 @@ export type ChatGenerationSidebarToggleLayoutKind = 'group' | 'groupEnd' | 'divi
 type ChatGenerationSidebarToggleSource =
   | { source: 'preset'; presetId: string }
   | { source: 'module'; moduleId: string; moduleNamespace?: string }
+  | { source: 'agent'; agentId: string; agentName?: string; localKey: string }
 
 export interface ChatGenerationRequiredSidebarToggle {
   key: string
   label: string
   kind: ChatGenerationSidebarToggleKind
   options: string[]
-  source: 'preset' | 'module'
+  source: 'preset' | 'module' | 'agent'
   presetId?: string
   moduleId?: string
   moduleNamespace?: string
+  agentId?: string
+  agentName?: string
+  localKey?: string
 }
 
 export interface ChatGenerationSidebarToggleLayout {
@@ -205,10 +219,13 @@ export interface ChatGenerationSidebarToggleLayout {
   label: string
   kind: ChatGenerationSidebarToggleLayoutKind
   options: []
-  source: 'preset' | 'module'
+  source: 'preset' | 'module' | 'agent'
   presetId?: string
   moduleId?: string
   moduleNamespace?: string
+  agentId?: string
+  agentName?: string
+  localKey?: string
 }
 
 export type ChatGenerationDisplayedSidebarToggle =
@@ -233,8 +250,11 @@ export interface ChatGenerationControlRequirements {
 export interface ResolveChatGenerationRequirementsInput {
   modelPresetId?: string
   promptPresetId?: string
+  agentPresetId?: string
   modelPresets: readonly ChatGenerationModelPresetReference[]
   promptPresets: readonly ChatGenerationPromptPresetReference[]
+  agentPresets?: readonly ChatGenerationAgentPresetReference[]
+  agents?: readonly ChatGenerationAgentReference[]
   modules?: readonly ChatGenerationModuleReference[]
   enabledModuleIds?: readonly string[]
   chatModuleIds?: readonly string[]
@@ -245,7 +265,7 @@ export interface ResolveChatGenerationRequirementsInput {
 export interface ResolveChatGenerationSettingsReadinessInput extends ResolveChatGenerationRequirementsInput {
   settings?: ChatGenerationSettings
   personas: readonly ChatGenerationPersonaReference[]
-  agentPresets?: readonly ChatGenerationAgentPresetReference[]
+  effectiveAgentPresetId?: string
 }
 
 export const CHAT_GENERATION_SETTINGS_MISSING_REASON_CODES = [
@@ -401,6 +421,8 @@ export function resolveChatGenerationSettingsReadiness(
     ...input,
     modelPresetId: settings?.modelPresetId,
     promptPresetId: settings?.promptPresetId,
+    agentPresetId:
+      settings && hasOwn(settings, 'agentPresetId') ? settings.agentPresetId : input.effectiveAgentPresetId,
   })
   const missing: ChatGenerationSettingsMissingReason[] = []
 
@@ -549,6 +571,7 @@ function collectRequiredSidebarToggles(
   const toggles: ChatGenerationRequiredSidebarToggle[] = []
   const seenKeys = new Set<string>()
   const preset = resolvePreset(input.promptPresets, input.promptPresetId)
+  appendUniqueToggles(toggles, seenKeys, resolveActiveAgentToggles(input))
 
   if (preset?.id) {
     appendUniqueToggles(
@@ -582,6 +605,7 @@ function collectDisplayedSidebarToggles(
   const toggles: ChatGenerationDisplayedSidebarToggle[] = []
   const seenKeys = new Set<string>()
   const preset = resolvePreset(input.promptPresets, input.promptPresetId)
+  appendUniqueDisplayedToggles(toggles, seenKeys, resolveActiveAgentToggles(input))
 
   if (preset?.id) {
     appendUniqueDisplayedToggles(
@@ -606,6 +630,47 @@ function collectDisplayedSidebarToggles(
     )
   }
 
+  return toggles
+}
+
+function resolveActiveAgentToggles(
+  input: ResolveChatGenerationRequirementsInput,
+): ChatGenerationRequiredSidebarToggle[] {
+  const preset = resolvePreset(input.agentPresets ?? [], input.agentPresetId)
+  if (!preset?.agentUses || preset.enabled === false || !input.agents?.length) return []
+
+  const agentsById = new Map(
+    input.agents.flatMap((agent) => (isNonEmptyString(agent.id) ? [[agent.id, agent] as const] : [])),
+  )
+  const toggles: ChatGenerationRequiredSidebarToggle[] = []
+  const seenAgents = new Set<string>()
+  for (const use of preset.agentUses) {
+    if (use.enabled === false || !isNonEmptyString(use.agentId) || seenAgents.has(use.agentId)) continue
+    seenAgents.add(use.agentId)
+    const agent = agentsById.get(use.agentId)
+    if (!agent) continue
+    for (const definition of agent.toggles ?? []) {
+      if (!isNonEmptyString(definition.key) || !isNonEmptyString(definition.label)) continue
+      if (
+        definition.kind !== 'boolean' &&
+        definition.kind !== 'select' &&
+        definition.kind !== 'text' &&
+        definition.kind !== 'textarea'
+      ) {
+        continue
+      }
+      toggles.push({
+        key: agentToggleStorageKey(use.agentId, definition.key),
+        label: definition.label,
+        kind: definition.kind,
+        options: definition.kind === 'select' ? [...definition.options] : [],
+        source: 'agent',
+        agentId: use.agentId,
+        ...(isNonEmptyString(agent.name) ? { agentName: agent.name } : {}),
+        localKey: definition.key,
+      })
+    }
+  }
   return toggles
 }
 

@@ -27,6 +27,7 @@ export interface LorebookEntryRecord extends JsonRecord {
   mode: string
   alwaysActive: boolean
   selective: boolean
+  agentOnly?: boolean
   folder?: string
 }
 
@@ -602,6 +603,18 @@ function repairLorebookEntryFields(raw: JsonRecord): JsonRecord {
   repaired.mode = readStringLike(raw.mode) ?? 'normal'
   repaired.alwaysActive = readBoolean(raw.alwaysActive ?? raw.constant ?? raw.forceActivation) ?? false
   repaired.selective = readBoolean(raw.selective) ?? false
+  const extensions = readOptionalJsonObject(raw.extentions ?? raw.extensions)
+  const agentOnly = raw.agentOnly === true || extensions.risu_agent_only === true
+  if (agentOnly) {
+    repaired.agentOnly = true
+    repaired.alwaysActive = false
+    repaired.key = ''
+    repaired.secondkey = ''
+    repaired.selective = false
+    repaired.useRegex = false
+  } else if (raw.agentOnly !== undefined) {
+    repaired.agentOnly = false
+  }
   if (repaired.folder !== undefined && typeof repaired.folder !== 'string') {
     delete repaired.folder
   }
@@ -662,6 +675,19 @@ function validateLorebookEntryRecord(record: JsonRecord, label: string): void {
   }
   if (typeof record.selective !== 'boolean') {
     throw new ValidationError(`${label}.selective must be a boolean`)
+  }
+  if ('agentOnly' in record && record.agentOnly !== undefined && typeof record.agentOnly !== 'boolean') {
+    throw new ValidationError(`${label}.agentOnly must be a boolean`)
+  }
+  const extensions = readOptionalJsonObject(record.extentions ?? record.extensions)
+  const agentOnly = record.agentOnly === true || extensions.risu_agent_only === true
+  if (agentOnly) {
+    if (record.alwaysActive !== false || (record.key as string).trim() || (record.secondkey as string).trim()) {
+      throw new ValidationError(`${label} Agent-only entries must disable Always Active and have no activation keys`)
+    }
+    if (record.mode === 'folder' || record.mode === 'child') {
+      throw new ValidationError(`${label} Agent-only entries must be regular lorebook entries`)
+    }
   }
   if ('folder' in record && record.folder !== undefined && typeof record.folder !== 'string') {
     throw new ValidationError(`${label}.folder must be a string`)

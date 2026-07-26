@@ -20,6 +20,7 @@ import {
 import type { ModelProfileRecord } from '../../../../src/ts/model/modelProfileRecords.js'
 import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
 import { createPromptInfoSnapshot } from '../../../../src/ts/promptInfo.js'
+import { resolveEffectiveAgentPresetId } from '../../../../src/ts/agentPresetResolver.js'
 
 type JsonRecord = Record<string, unknown>
 type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
@@ -83,10 +84,12 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   const selectedPromptPreset = findById(promptPresets, settings?.promptPresetId)
   const readiness = resolveChatGenerationSettingsReadiness({
     settings,
+    effectiveAgentPresetId: resolveEffectiveAgentPresetId(input.database, settings),
     personas,
     modelPresets,
     promptPresets,
     agentPresets: input.database.agentPresets ?? [],
+    agents: input.database.agents ?? [],
     modules: input.database.modules ?? [],
     enabledModuleIds: stringArray(input.database.enabledModules),
     characterModuleIds: stringArray(input.currentChar.modules),

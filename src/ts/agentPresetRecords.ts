@@ -15,6 +15,11 @@ export const AGENT_PRESET_STEP_INPUT_SCOPES = [
   'mainDraft',
 ] as const
 export const AGENT_PRESET_STEP_DESTINATIONS = ['promptOutput', 'intermediate', 'userInput', 'finalOutput'] as const
+export const AGENT_TOGGLE_KINDS = ['boolean', 'select', 'text', 'textarea'] as const
+
+export const AGENT_TOGGLE_STORAGE_PREFIX = 'agent:'
+export const AGENT_TOGGLE_DEFINITION_LIMIT = 32
+export const AGENT_LOREBOOK_INPUT_LIMIT = 16
 
 export const AGENT_PRESET_MAX_CONCURRENCY_MIN = 1
 export const AGENT_PRESET_MAX_CONCURRENCY_MAX = 16
@@ -28,11 +33,28 @@ export const AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN = 250
 export const AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX = 300_000
 
 const OUTPUT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
+const AGENT_LOCAL_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
+const AGENT_TOGGLE_REFERENCE_PATTERN = /\{\{\s*agentToggle::([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+const AGENT_INPUT_REFERENCE_PATTERN = /\{\{\s*agentInput::([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
 export type AgentPresetStepPhase = (typeof AGENT_PRESET_STEP_PHASES)[number]
 export type AgentPresetStepOutputFormat = (typeof AGENT_PRESET_STEP_OUTPUT_FORMATS)[number]
 export type AgentPresetStepInputScope = (typeof AGENT_PRESET_STEP_INPUT_SCOPES)[number]
 export type AgentPresetStepDestination = (typeof AGENT_PRESET_STEP_DESTINATIONS)[number]
+export type AgentToggleKind = (typeof AGENT_TOGGLE_KINDS)[number]
+
+export interface AgentToggleDefinition {
+  key: string
+  label: string
+  kind: AgentToggleKind
+  options: string[]
+}
+
+export interface AgentLorebookInput {
+  key: string
+  displayName: string
+  required: boolean
+}
 
 export type AgentPresetStepModelSelection =
   | {
@@ -78,6 +100,10 @@ export interface AgentPresetStepRecord {
   model: AgentPresetStepModelSelection
   runtime: AgentPresetStepRuntimeOptions
   inputScopes: AgentPresetStepInputScope[]
+  /** Agent-local configurable controls, resolved through a stable Agent-id namespace. */
+  toggles?: AgentToggleDefinition[]
+  /** Named Agent-only lorebook inputs made available through {{agentInput::key}}. */
+  lorebookInputs?: AgentLorebookInput[]
   outputKey: string
   outputFormat: AgentPresetStepOutputFormat
   destination: AgentPresetStepDestination
@@ -94,6 +120,8 @@ export interface AgentRecord {
   modelDefaults: AgentPresetStepModelSelection
   runtimeDefaults: AgentPresetStepRuntimeOptions
   inputScopes: AgentPresetStepInputScope[]
+  toggles?: AgentToggleDefinition[]
+  lorebookInputs?: AgentLorebookInput[]
   outputFormat: AgentPresetStepOutputFormat
   createdAt?: number
   updatedAt?: number
@@ -145,6 +173,8 @@ export type AgentPresetValidationIssueCode =
   | 'invalid_model'
   | 'invalid_runtime'
   | 'invalid_input_scope'
+  | 'invalid_toggle'
+  | 'invalid_lorebook_input'
   | 'invalid_output_key'
   | 'duplicate_output_key'
   | 'invalid_output_format'
@@ -232,6 +262,8 @@ export function resolveAgentPresetSteps(
       model: cloneModelSelection(use.modelOverride ?? agent.modelDefaults),
       runtime: { ...agent.runtimeDefaults, ...use.runtimeOverride },
       inputScopes: [...agent.inputScopes],
+      toggles: (agent.toggles ?? []).map(cloneAgentToggleDefinition),
+      lorebookInputs: (agent.lorebookInputs ?? []).map(cloneAgentLorebookInput),
       outputKey: use.outputKey,
       outputFormat: agent.outputFormat,
       destination: use.destination,
@@ -302,6 +334,8 @@ export function validateAgentRecord(agent: AgentRecord, path = 'agent'): AgentPr
   if (!Array.isArray(agent.inputScopes) || agent.inputScopes.some((scope) => !isAgentPresetStepInputScope(scope))) {
     issues.push(issue('invalid_input_scope', `${path}.inputScopes`, 'Agent input scopes include an unknown value'))
   }
+  issues.push(...validateAgentToggleDefinitions(agent.toggles ?? [], agent.instruction, `${path}.toggles`))
+  issues.push(...validateAgentLorebookInputs(agent.lorebookInputs ?? [], agent.instruction, `${path}.lorebookInputs`))
   if (!isAgentPresetStepOutputFormat(agent.outputFormat)) {
     issues.push(
       issue('invalid_output_format', `${path}.outputFormat`, 'Agent output format must be text or jsonObject'),
@@ -499,6 +533,8 @@ export function validateAgentPresetStepRecord(
       issue('invalid_input_scope', `${path}.inputScopes`, 'Agent Preset step input scopes include an unknown value'),
     )
   }
+  issues.push(...validateAgentToggleDefinitions(step.toggles ?? [], step.instruction, `${path}.toggles`))
+  issues.push(...validateAgentLorebookInputs(step.lorebookInputs ?? [], step.instruction, `${path}.lorebookInputs`))
   if (!isValidAgentPresetOutputKey(step.outputKey)) {
     issues.push(
       issue(
@@ -594,6 +630,125 @@ export function isValidAgentPresetOutputKey(value: unknown): value is string {
   return typeof value === 'string' && OUTPUT_KEY_PATTERN.test(value)
 }
 
+export function isValidAgentLocalKey(value: unknown): value is string {
+  return typeof value === 'string' && AGENT_LOCAL_KEY_PATTERN.test(value)
+}
+
+export function agentToggleStorageKey(agentId: string, toggleKey: string): string {
+  return `${AGENT_TOGGLE_STORAGE_PREFIX}${agentId}:${toggleKey}`
+}
+
+function validateAgentToggleDefinitions(
+  toggles: readonly AgentToggleDefinition[],
+  instruction: string,
+  path: string,
+): AgentPresetValidationIssue[] {
+  if (!Array.isArray(toggles)) {
+    return [issue('invalid_toggle', path, 'Agent toggles must be an array')]
+  }
+  const issues: AgentPresetValidationIssue[] = []
+  const seen = new Set<string>()
+  if (toggles.length > AGENT_TOGGLE_DEFINITION_LIMIT) {
+    issues.push(
+      issue('invalid_toggle', path, `Agents can define at most ${AGENT_TOGGLE_DEFINITION_LIMIT} configurable toggles`),
+    )
+  }
+  toggles.forEach((toggle, index) => {
+    const togglePath = `${path}[${index}]`
+    if (!isRecord(toggle)) {
+      issues.push(issue('invalid_toggle', togglePath, 'Agent toggle must be an object'))
+      return
+    }
+    if (!isValidAgentLocalKey(toggle.key)) {
+      issues.push(issue('invalid_toggle', `${togglePath}.key`, 'Agent toggle key must be an identifier'))
+    } else if (seen.has(toggle.key)) {
+      issues.push(issue('invalid_toggle', `${togglePath}.key`, `Duplicate Agent toggle key: ${toggle.key}`))
+    }
+    if (typeof toggle.key === 'string') seen.add(toggle.key)
+    if (!isNonEmptyString(toggle.label)) {
+      issues.push(issue('invalid_toggle', `${togglePath}.label`, 'Agent toggle label must be a non-empty string'))
+    }
+    if (!isAgentToggleKind(toggle.kind)) {
+      issues.push(issue('invalid_toggle', `${togglePath}.kind`, 'Agent toggle kind is invalid'))
+    }
+    if (!Array.isArray(toggle.options) || toggle.options.some((option) => typeof option !== 'string')) {
+      issues.push(issue('invalid_toggle', `${togglePath}.options`, 'Agent toggle options must be strings'))
+    } else if (toggle.kind === 'select' && toggle.options.length === 0) {
+      issues.push(issue('invalid_toggle', `${togglePath}.options`, 'Select Agent toggles require at least one option'))
+    }
+  })
+  for (const key of referencedAgentLocalKeys(instruction, AGENT_TOGGLE_REFERENCE_PATTERN)) {
+    if (!seen.has(key)) {
+      issues.push(issue('invalid_toggle', path, `Agent instruction references an undefined toggle: ${key}`))
+    }
+  }
+  return issues
+}
+
+function validateAgentLorebookInputs(
+  inputs: readonly AgentLorebookInput[],
+  instruction: string,
+  path: string,
+): AgentPresetValidationIssue[] {
+  if (!Array.isArray(inputs)) {
+    return [issue('invalid_lorebook_input', path, 'Agent lorebook inputs must be an array')]
+  }
+  const issues: AgentPresetValidationIssue[] = []
+  const seen = new Set<string>()
+  const referenced = referencedAgentLocalKeys(instruction, AGENT_INPUT_REFERENCE_PATTERN)
+  if (inputs.length > AGENT_LOREBOOK_INPUT_LIMIT) {
+    issues.push(
+      issue('invalid_lorebook_input', path, `Agents can require at most ${AGENT_LOREBOOK_INPUT_LIMIT} lorebook inputs`),
+    )
+  }
+  inputs.forEach((input, index) => {
+    const inputPath = `${path}[${index}]`
+    if (!isRecord(input)) {
+      issues.push(issue('invalid_lorebook_input', inputPath, 'Agent lorebook input must be an object'))
+      return
+    }
+    const inputKey = typeof input.key === 'string' ? input.key : ''
+    if (!isValidAgentLocalKey(input.key)) {
+      issues.push(issue('invalid_lorebook_input', `${inputPath}.key`, 'Agent lorebook input key must be an identifier'))
+    } else if (seen.has(input.key)) {
+      issues.push(
+        issue('invalid_lorebook_input', `${inputPath}.key`, `Duplicate Agent lorebook input key: ${input.key}`),
+      )
+    }
+    if (typeof input.key === 'string') seen.add(input.key)
+    if (!isNonEmptyString(input.displayName)) {
+      issues.push(
+        issue('invalid_lorebook_input', `${inputPath}.displayName`, 'Lorebook display name must be non-empty'),
+      )
+    }
+    if (typeof input.required !== 'boolean') {
+      issues.push(issue('invalid_lorebook_input', `${inputPath}.required`, 'Lorebook input required must be boolean'))
+    }
+    if (input.required === true && !referenced.has(inputKey)) {
+      issues.push(
+        issue(
+          'invalid_lorebook_input',
+          inputPath,
+          `Required lorebook input must be referenced as {{agentInput::${input.key}}}`,
+        ),
+      )
+    }
+  })
+  for (const key of referenced) {
+    if (!seen.has(key)) {
+      issues.push(
+        issue('invalid_lorebook_input', path, `Agent instruction references an undefined lorebook input: ${key}`),
+      )
+    }
+  }
+  return issues
+}
+
+function referencedAgentLocalKeys(instruction: string, pattern: RegExp): Set<string> {
+  if (typeof instruction !== 'string') return new Set()
+  return new Set([...instruction.matchAll(pattern)].map((match) => match[1]))
+}
+
 export function isAgentPresetDirectOutputModifierStep(step: Pick<AgentPresetStepRecord, 'destination'>): boolean {
   return step.destination === 'finalOutput'
 }
@@ -640,6 +795,10 @@ function normalizeAgentRecord(item: Record<string, unknown>, id: string): AgentR
     runtimeDefaults: normalizeStepRuntimeOptions(item.runtimeDefaults ?? item.runtime),
     inputScopes: normalizeInputScopes(item.inputScopes),
     outputFormat: normalizeOutputFormat(item.outputFormat),
+  }
+  if (Array.isArray(item.toggles)) record.toggles = normalizeAgentToggleDefinitions(item.toggles)
+  if (Array.isArray(item.lorebookInputs)) {
+    record.lorebookInputs = normalizeAgentLorebookInputs(item.lorebookInputs)
   }
   const description = stringOrBlank(item.description)
   if (description) record.description = description
@@ -688,7 +847,7 @@ function normalizeAgentPresetSteps(value: unknown): AgentPresetStepRecord[] {
     const id = stringOrBlank(item.id)
     if (!id || seen.has(id)) continue
     const phase = normalizeStepPhase(item.phase)
-    steps.push({
+    const step: AgentPresetStepRecord = {
       id,
       name: stringOrBlank(item.name) || id,
       enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
@@ -702,14 +861,19 @@ function normalizeAgentPresetSteps(value: unknown): AgentPresetStepRecord[] {
       outputFormat: normalizeOutputFormat(item.outputFormat),
       destination: normalizeDestination(item.destination, phase),
       failurePolicy: normalizeFailurePolicy(item.failurePolicy),
-    })
+    }
+    if (Array.isArray(item.toggles)) step.toggles = normalizeAgentToggleDefinitions(item.toggles)
+    if (Array.isArray(item.lorebookInputs)) {
+      step.lorebookInputs = normalizeAgentLorebookInputs(item.lorebookInputs)
+    }
+    steps.push(step)
     seen.add(id)
   }
   return steps
 }
 
 function agentRecordFromLegacyStep(step: AgentPresetStepRecord, agentId: string): AgentRecord {
-  return {
+  const agent: AgentRecord = {
     id: agentId,
     name: step.name,
     version: AGENT_SCHEMA_VERSION,
@@ -719,6 +883,9 @@ function agentRecordFromLegacyStep(step: AgentPresetStepRecord, agentId: string)
     inputScopes: [...step.inputScopes],
     outputFormat: step.outputFormat,
   }
+  if (step.toggles) agent.toggles = step.toggles.map(cloneAgentToggleDefinition)
+  if (step.lorebookInputs) agent.lorebookInputs = step.lorebookInputs.map(cloneAgentLorebookInput)
+  return agent
 }
 
 function agentPresetUseFromLegacyStep(step: AgentPresetStepRecord, agentId: string): AgentPresetUseRecord {
@@ -755,7 +922,7 @@ function uniqueMigratedAgentId(stepId: string, presetId: string, usedIds: Set<st
 }
 
 function cloneStepRecord(step: AgentPresetStepRecord): AgentPresetStepRecord {
-  return {
+  const clone: AgentPresetStepRecord = {
     ...step,
     dependencies: [...step.dependencies],
     model: cloneModelSelection(step.model),
@@ -763,6 +930,9 @@ function cloneStepRecord(step: AgentPresetStepRecord): AgentPresetStepRecord {
     inputScopes: [...step.inputScopes],
     failurePolicy: cloneFailurePolicy(step.failurePolicy),
   }
+  if (step.toggles) clone.toggles = step.toggles.map(cloneAgentToggleDefinition)
+  if (step.lorebookInputs) clone.lorebookInputs = step.lorebookInputs.map(cloneAgentLorebookInput)
+  return clone
 }
 
 function cloneModelSelection(selection: AgentPresetStepModelSelection): AgentPresetStepModelSelection {
@@ -773,6 +943,14 @@ function cloneModelSelection(selection: AgentPresetStepModelSelection): AgentPre
 
 function cloneFailurePolicy(policy: AgentPresetStepFailurePolicy): AgentPresetStepFailurePolicy {
   return policy.mode === 'fallbackText' ? { mode: 'fallbackText', text: policy.text } : { mode: policy.mode }
+}
+
+function cloneAgentToggleDefinition(toggle: AgentToggleDefinition): AgentToggleDefinition {
+  return { ...toggle, options: [...toggle.options] }
+}
+
+function cloneAgentLorebookInput(input: AgentLorebookInput): AgentLorebookInput {
+  return { ...input }
 }
 
 function normalizeStepPhase(value: unknown): AgentPresetStepPhase {
@@ -800,6 +978,41 @@ function normalizeInputScopes(value: unknown): AgentPresetStepInputScope[] {
     seen.add(scope)
   }
   return scopes
+}
+
+function normalizeAgentToggleDefinitions(value: unknown): AgentToggleDefinition[] {
+  if (!Array.isArray(value)) return []
+  const toggles: AgentToggleDefinition[] = []
+  const seen = new Set<string>()
+  for (const item of value.slice(0, AGENT_TOGGLE_DEFINITION_LIMIT)) {
+    if (!isRecord(item)) continue
+    const key = stringOrBlank(item.key)
+    const label = stringOrBlank(item.label)
+    if (!key || !label || seen.has(key)) continue
+    const kind = isAgentToggleKind(item.kind) ? item.kind : 'boolean'
+    const options =
+      kind === 'select' && Array.isArray(item.options)
+        ? item.options.filter((option): option is string => typeof option === 'string')
+        : []
+    toggles.push({ key, label, kind, options })
+    seen.add(key)
+  }
+  return toggles
+}
+
+function normalizeAgentLorebookInputs(value: unknown): AgentLorebookInput[] {
+  if (!Array.isArray(value)) return []
+  const inputs: AgentLorebookInput[] = []
+  const seen = new Set<string>()
+  for (const item of value.slice(0, AGENT_LOREBOOK_INPUT_LIMIT)) {
+    if (!isRecord(item)) continue
+    const key = stringOrBlank(item.key)
+    const displayName = stringOrBlank(item.displayName)
+    if (!key || !displayName || seen.has(key)) continue
+    inputs.push({ key, displayName, required: item.required !== false })
+    seen.add(key)
+  }
+  return inputs
 }
 
 function normalizeStepModelSelection(value: unknown): AgentPresetStepModelSelection {
@@ -1017,6 +1230,10 @@ function isAgentPresetStepPhase(value: unknown): value is AgentPresetStepPhase {
 
 function isAgentPresetStepOutputFormat(value: unknown): value is AgentPresetStepOutputFormat {
   return value === 'text' || value === 'jsonObject'
+}
+
+function isAgentToggleKind(value: unknown): value is AgentToggleKind {
+  return value === 'boolean' || value === 'select' || value === 'text' || value === 'textarea'
 }
 
 function isAgentPresetStepInputScope(value: unknown): value is AgentPresetStepInputScope {

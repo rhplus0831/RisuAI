@@ -6,6 +6,7 @@ import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
 import { createRequestHistoryTable, getRequestHistoryRecord, listRequestHistory } from '../src/requestHistory.js'
 import {
+  assertAgentPresetLorebookInputsReady,
   buildAgentPresetStepMessages,
   collectAgentPresetPreparedInputs,
   executeAgentPresetPhase,
@@ -223,6 +224,141 @@ describe('Agent Preset prepared inputs', () => {
 
     expect(messages[1].content).toContain('Prior result:\nalready-generated context')
     expect(messages[1].content).not.toContain('{{agent::context}}')
+  })
+
+  it('resolves chat-level Agent-only lorebook input before the character entry', () => {
+    const currentChar = char({
+      globalLore: [
+        {
+          id: 'char-reference',
+          key: '',
+          secondkey: '',
+          insertorder: 100,
+          comment: 'Reference Notes',
+          content: 'Character reference',
+          mode: 'normal',
+          alwaysActive: false,
+          selective: false,
+          agentOnly: true,
+        },
+      ],
+    })
+    const currentChat = chat({
+      localLore: [
+        {
+          id: 'chat-reference',
+          key: '',
+          secondkey: '',
+          insertorder: 100,
+          comment: 'Reference Notes',
+          content: 'Chat override reference',
+          mode: 'normal',
+          alwaysActive: false,
+          selective: false,
+          agentOnly: true,
+        },
+      ],
+    })
+    const agentStep = step({
+      instruction: 'Reference:\n{{agentInput::reference}}',
+      lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+    })
+    const preparedInputs = collectAgentPresetPreparedInputs(agentStep, {
+      database: db({ characters: [currentChar] }),
+      currentChar,
+      currentChat,
+    })
+
+    expect(preparedInputs.sections).toContainEqual(
+      expect.objectContaining({
+        scope: 'agentLorebookInput',
+        inputKey: 'reference',
+        sourceLabel: 'chat lorebook',
+        content: 'Chat override reference',
+      }),
+    )
+    expect(buildAgentPresetStepMessages({ step: agentStep, preparedInputs })[1].content).toContain(
+      'Reference:\nChat override reference',
+    )
+  })
+
+  it('prioritizes an explicit Agent-only input over broad scopes when the input budget is tight', () => {
+    const currentChat = chat({
+      localLore: [
+        {
+          id: 'chat-reference',
+          key: '',
+          secondkey: '',
+          insertorder: 100,
+          comment: 'Reference Notes',
+          content: 'Priority reference content',
+          mode: 'normal',
+          alwaysActive: false,
+          selective: false,
+          agentOnly: true,
+        },
+      ],
+    })
+    const agentStep = step({
+      instruction: '{{agentInput::reference}}\n{{currentUserMessage}}',
+      lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+      inputScopes: ['currentUserMessage'],
+      runtime: { maxInputChars: 11 },
+    })
+    const preparedInputs = collectAgentPresetPreparedInputs(agentStep, {
+      database: db(),
+      currentChar: char(),
+      currentChat,
+      currentUserMessage: 'This broad input should not win the budget.',
+    })
+
+    expect(preparedInputs.sections[0]).toMatchObject({
+      scope: 'agentLorebookInput',
+      inputKey: 'reference',
+      truncated: true,
+    })
+    expect(preparedInputs.sections).toHaveLength(1)
+    expect(preparedInputs.diagnostics).toContainEqual(
+      expect.objectContaining({ scope: 'currentUserMessage', reason: 'max_input_exhausted' }),
+    )
+  })
+
+  it('expands Agent-local toggle values without exposing the storage namespace', () => {
+    const agentStep = step({
+      agentId: 'agent-a',
+      instruction: 'Selected tone: {{agentToggle::tone}}',
+      toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Formal'] }],
+    })
+    const preparedInputs = collectAgentPresetPreparedInputs(agentStep, {
+      database: db(),
+      currentChar: char(),
+      currentChat: chat(),
+    })
+
+    const messages = buildAgentPresetStepMessages({
+      step: agentStep,
+      preparedInputs,
+      toggleValues: { tone: '1' },
+    })
+    expect(messages[1].content).toContain('Selected tone: 1')
+    expect(messages[1].content).not.toContain('agent:agent-a:tone')
+  })
+
+  it('preflights every required Agent lorebook input before execution', () => {
+    const requiredStep = step({
+      instruction: '{{agentInput::reference}}',
+      lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+    })
+
+    expect(() =>
+      assertAgentPresetLorebookInputsReady({
+        steps: [requiredStep],
+        currentChar: char(),
+        currentChat: chat(),
+        presetId: 'preset-a',
+        presetName: 'Preset A',
+      }),
+    ).toThrow('Required Agent lorebook input was not found: Reference Notes')
   })
 })
 
@@ -563,6 +699,48 @@ describe('Agent Preset step execution', () => {
       },
     })
     expect(result.diagnostics.preparedInputSections.map((section) => section.scope)).toEqual(['currentUserMessage'])
+  })
+
+  it('retrieves a toggle value from the current chat through the Agent-id namespace', async () => {
+    const currentChat = chat({
+      generationSettings: {
+        sidebarToggles: { 'agent:agent-a:tone': '1' },
+      },
+    })
+    const currentChar = char({ chats: [currentChat] })
+    const database = db({
+      characters: [currentChar],
+      modelProfiles: [
+        {
+          id: 'ready-echo',
+          name: 'Ready Echo',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: { requestModel: 'debug-wire', baseUrl: 'debug://echo' },
+        },
+      ],
+    })
+    const dispatch = vi.fn<AgentPresetProviderDispatcher>(async (args) => {
+      expect(args.messages[1].content).toContain('Selected tone: 1')
+      expect(args.messages[1].content).not.toContain('agent:agent-a:tone')
+      return frames('done')
+    })
+
+    await expect(
+      executeAgentPresetStep({
+        database,
+        currentChar,
+        currentChat,
+        step: step({
+          agentId: 'agent-a',
+          instruction: 'Selected tone: {{agentToggle::tone}}',
+          toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Formal'] }],
+          model: { mode: 'modelProfile', profileId: 'ready-echo' },
+        }),
+        dispatchProvider: dispatch,
+      }),
+    ).resolves.toMatchObject({ status: 'success', outputText: 'done' })
+    expect(dispatch).toHaveBeenCalledTimes(1)
   })
 
   it('keeps internal reasoning in request history but removes it from memory-backed Agent output', async () => {

@@ -26,6 +26,7 @@ import {
 } from '../server/lorebookBridge.svelte'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
+import { isAgentOnlyLorebookEntry } from '../agentLorebookInputs'
 
 // Scoped pre-edit rollback for the discrete lorebook editor actions below
 // Snapshot only the one collection the action edits (`type`/`mode`
@@ -310,7 +311,12 @@ export async function loadLoreBookV3Prompt() {
   const characterLore = char.globalLore ?? []
   const chatLore = char.chats[page].localLore ?? []
   const moduleLorebook = getModuleLorebooks()
-  const fullLore = safeStructuredClone(characterLore.concat(chatLore).concat(moduleLorebook))
+  const fullLore = safeStructuredClone(
+    characterLore
+      .concat(chatLore)
+      .concat(moduleLorebook)
+      .filter((entry) => !isAgentOnlyLorebookEntry(entry)),
+  )
   const currentChat = char.chats[page].message
   const loreDepth = char.loreSettings?.scanDepth ?? getDatabase().loreBookDepth
   const loreToken = char.loreSettings?.tokenBudget ?? getDatabase().loreBookToken

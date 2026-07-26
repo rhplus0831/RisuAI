@@ -4,6 +4,7 @@ import {
   CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE,
   resolveDisplayedSidebarToggles,
   resolveChatGenerationSettingsReadiness,
+  type ChatGenerationAgentReference,
   type ChatGenerationAgentPresetReference,
   type ChatGenerationDisplayedSidebarToggle,
   type ChatGenerationModelPresetReference,
@@ -449,6 +450,7 @@ function resolveReadiness(
 
   return resolveChatGenerationSettingsReadiness({
     settings,
+    effectiveAgentPresetId: resolveEffectiveAgentPresetId(db, settings),
     personas: safeArray<ChatGenerationPersonaReference>(
       db.personas as unknown as ChatGenerationPersonaReference[] | undefined,
     ),
@@ -457,6 +459,7 @@ function resolveReadiness(
     agentPresets: safeArray<ChatGenerationAgentPresetReference>(
       db.agentPresets as unknown as ChatGenerationAgentPresetReference[] | undefined,
     ),
+    agents: safeArray<ChatGenerationAgentReference>(db.agents as unknown as ChatGenerationAgentReference[] | undefined),
     modules: safeArray<ChatGenerationModuleReference>(
       db.modules as unknown as ChatGenerationModuleReference[] | undefined,
     ),
@@ -485,8 +488,13 @@ function resolveDisplayedToggles(
   return resolveDisplayedSidebarToggles({
     modelPresetId: settings?.modelPresetId,
     promptPresetId: settings?.promptPresetId,
+    agentPresetId: resolveEffectiveAgentPresetId(db, settings),
     modelPresets,
     promptPresets,
+    agentPresets: safeArray<ChatGenerationAgentPresetReference>(
+      db.agentPresets as unknown as ChatGenerationAgentPresetReference[] | undefined,
+    ),
+    agents: safeArray<ChatGenerationAgentReference>(db.agents as unknown as ChatGenerationAgentReference[] | undefined),
     modules: safeArray<ChatGenerationModuleReference>(
       db.modules as unknown as ChatGenerationModuleReference[] | undefined,
     ),

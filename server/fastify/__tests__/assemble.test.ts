@@ -413,6 +413,55 @@ describe('prompt summary hashes', () => {
     expect(result.formated?.map((row) => row.content).join('\n')).toContain('source-backed agent context')
   })
 
+  it('preflights required inputs for every Agent phase before executing any step', async () => {
+    const db = makeDatabase({
+      agentPresets: [
+        {
+          id: 'ap_required_input',
+          name: 'Required Input Agent',
+          enabled: true,
+          version: 1,
+          steps: [
+            agentPresetStep(),
+            agentPresetStep({
+              id: 'aps_after',
+              name: 'After Main',
+              phase: 'afterMain',
+              instruction: 'Reference:\n{{agentInput::reference}}',
+              lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+              outputKey: 'after',
+              destination: 'intermediate',
+            }),
+          ],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_required_input',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const executeAgentPresetStep = vi.fn()
+
+    await expect(assemblePrompt(baseInput(), depsFor(db, { executeAgentPresetStep }))).rejects.toThrow(
+      'Required Agent lorebook input was not found: Reference Notes',
+    )
+    expect(executeAgentPresetStep).not.toHaveBeenCalled()
+  })
+
   it('runs the global default Agent Preset when the chat has no explicit selection', async () => {
     const db = makeDatabase({
       maxContext: 100_000,

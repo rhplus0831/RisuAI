@@ -116,6 +116,27 @@ describe('Phase 7-7a activateLorebook — sources', () => {
     ])
   })
 
+  it('categorically excludes Agent-only entries from normal lorebook activation', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            comment: 'Agent Reference',
+            content: 'Must never enter the main prompt.',
+            key: 'reference',
+            alwaysActive: true,
+            agentOnly: true,
+          }),
+        ],
+      }),
+      currentChat: makeChat(),
+    })
+
+    expect(report.actives).toEqual([])
+    expect(report.matchLog).toEqual([])
+  })
+
   it('picks up chat.localLore', () => {
     const report = activateLorebook({
       database: makeDb(),

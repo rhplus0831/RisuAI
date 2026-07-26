@@ -99,6 +99,7 @@ import { buildEffectiveGenerationConfig } from './effectiveGenerationConfig.js'
 import { summarizePromptRows, type PromptRowsSummary } from './promptSummary.js'
 import {
   AgentPresetGenerationError,
+  assertAgentPresetLorebookInputsReady,
   agentPresetStepResultErrorMessage,
   executeAgentPresetPhase,
   executeAgentPresetStep,
@@ -1227,6 +1228,14 @@ export async function runAgentPresetBeforeMainStage(state: AssemblyState, deps: 
   runtime.plan = resolution.plan
   runtime.outputRequired = beforeMainOutputRequiredByKey(resolution.plan)
   syncAgentPresetExpansionContext(state)
+
+  assertAgentPresetLorebookInputsReady({
+    steps: resolution.plan.stableSteps.map((planned) => planned.step),
+    currentChar: state.currentChar,
+    currentChat: state.currentChat,
+    presetId: resolution.preset.id,
+    presetName: resolution.preset.name,
+  })
 
   const beforeMain = await executeAgentPresetPhase({
     database: state.database,

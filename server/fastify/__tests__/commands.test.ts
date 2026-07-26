@@ -5169,8 +5169,10 @@ describe('Agent Preset command surface', () => {
         baseRevision: revision,
         agent: {
           name: 'Shared Researcher',
-          instruction: 'Research the current message.',
+          instruction: 'Research with {{agentInput::reference}} using {{agentToggle::tone}}.',
           inputScopes: ['currentUserMessage'],
+          toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Formal'] }],
+          lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
           outputFormat: 'text',
         },
       },
@@ -5226,7 +5228,10 @@ describe('Agent Preset command surface', () => {
       method: 'PATCH',
       url: `/api/v1/commands/agents/${agentId}`,
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: currentRevision, patch: { instruction: 'Updated once for both presets.' } },
+      payload: {
+        baseRevision: currentRevision,
+        patch: { instruction: 'Updated once for both presets. {{agentInput::reference}}' },
+      },
     })
     expect(updated.statusCode).toBe(200)
 
@@ -5245,7 +5250,12 @@ describe('Agent Preset command surface', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().database.agents).toEqual([
-      expect.objectContaining({ id: agentId, instruction: 'Updated once for both presets.' }),
+      expect.objectContaining({
+        id: agentId,
+        instruction: 'Updated once for both presets. {{agentInput::reference}}',
+        toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Formal'] }],
+        lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+      }),
     ])
     expect(
       bootstrap

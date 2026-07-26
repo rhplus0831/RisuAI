@@ -205,6 +205,8 @@ export const languageEnglish = {
     lorebook:
       'Lorebook is a user-made dictionary for AI. AI only sees it when where is an activation keys in the context.',
     loreName: "Name of the lore. It doesn't affect the Ai.",
+    agentOnlyLorebook:
+      'Reserves this entry for named Agent input. It is excluded from normal lorebook activation and cannot use activation keys or Always Active.',
     loreActivationKey:
       'If one of the activation key exists in context, the lore will be activated and prompt will go in. Separated by commas.',
     loreorder:
@@ -971,6 +973,7 @@ export const languageEnglish = {
   chatGenerationTogglePresetPickPresetTitle: (name: string) => `Pick values for ${name}`,
   chatGenerationTogglePresetPickPromptSource: (name: string) => `Prompt preset: ${name}`,
   chatGenerationTogglePresetPickModuleSource: (name: string) => `Module: ${name}`,
+  chatGenerationTogglePresetPickAgentSource: (name: string) => `Agent: ${name}`,
   chatGenerationTogglePresetPickMissingKeys: (count: number) => `Missing ${count} required key(s)`,
   chatGenerationTogglePresetPickKindMismatch: (count: number) => `${count} toggle kind mismatch(es)`,
   chatGenerationTogglePresetPickConfirm: (name: string, count: number) =>
@@ -1032,6 +1035,9 @@ export const languageEnglish = {
   successImport: 'Successfuly imported',
   importedCharacter: 'Imported Character',
   alwaysActive: 'Always Active',
+  agentOnlyLorebook: 'Agent input only',
+  agentOnlyLorebookDescription:
+    'Excluded from normal prompts. Agents can require this character or chat entry by its display name.',
   additionalPrompt: 'Additional Prompt',
   descriptionPrefix: 'Description Prefix',
   forceReplaceUrl: 'Reverse Proxy',
@@ -2835,6 +2841,31 @@ export const languageEnglish = {
     stepEnabledLabel: 'Step enabled',
     stepPhaseLabel: 'Phase',
     instructionLabel: 'Instruction',
+    agentTogglesLabel: 'Configurable toggles',
+    agentTogglesDescription:
+      'Values are stored per chat in an Agent-specific namespace and are available only to this Agent.',
+    addToggle: 'Add toggle',
+    removeToggle: 'Remove toggle',
+    noAgentToggles: 'This Agent does not define any toggles.',
+    localKeyLabel: 'Local key',
+    toggleLabelLabel: 'Display label',
+    toggleKindLabel: 'Control type',
+    toggleKindLabels: {
+      boolean: 'Boolean',
+      select: 'Select',
+      text: 'Text',
+      textarea: 'Long text',
+    },
+    toggleOptionsLabel: 'Options (comma-separated)',
+    togglePlaceholder: (key: string) => `Use in the instruction as {{agentToggle::${key}}}`,
+    lorebookInputsLabel: 'Required lorebook inputs',
+    lorebookInputsDescription:
+      'The chat is searched first, then the character. Matching entries must be marked Agent input only.',
+    addLorebookInput: 'Add lorebook input',
+    removeLorebookInput: 'Remove lorebook input',
+    noLorebookInputs: 'This Agent does not require an Agent-only lorebook entry.',
+    lorebookDisplayNameLabel: 'Lorebook display name',
+    lorebookInputPlaceholder: (key: string) => `Place in the instruction as {{agentInput::${key}}}`,
     modelModeLabel: 'Model',
     inheritMainModel: 'Inherit main model',
     selectedModelProfile: 'Model profile',

@@ -45,6 +45,7 @@
     type ScopedLorebookMutationUiContext,
   } from 'src/ts/server/scopedLorebookMutationUiState'
   import { onDestroy, onMount } from 'svelte'
+  import { isAgentOnlyLorebookEntry } from 'src/ts/agentLorebookInputs'
 
   const tokenCountCache = new Map<string, number>()
   const MAX_TOKEN_COUNT_CACHE = 500
@@ -121,6 +122,9 @@
     ),
   )
   let localActivationStatus = $derived(localActivationState?.status ?? 'idle')
+  let supportsAgentOnly = $derived(
+    entryDraftScopeKey?.startsWith('character:') === true || entryDraftScopeKey?.startsWith('chat:') === true,
+  )
 
   function trackLocalActivation(
     operation: ScopedLorebookMutationOperation | null,
@@ -349,6 +353,24 @@
     if (localActivationStatus === 'pending') return
     trackLocalActivation(setActiveChatLorebookLocalActivationWithOutcome(book, check), book.id)
   }
+
+  function setAgentOnly(check: boolean): void {
+    if (check && !supportsAgentOnly) return
+    draft.agentOnly = check
+    draft.extentions = {
+      ...draft.extentions,
+      risu_case_sensitive: draft.extentions?.risu_case_sensitive ?? false,
+      risu_agent_only: check,
+    }
+    if (check) {
+      draft.alwaysActive = false
+      draft.key = ''
+      draft.secondkey = ''
+      draft.selective = false
+      draft.useRegex = false
+    }
+    settleDraftSoon()
+  }
   function getParentLoreName(book: loreBook) {
     if (book.mode === 'child') {
       const value = getCurrentCharacter()?.globalLore.find((e) => e.id === book.id)
@@ -411,10 +433,11 @@
         class="mr-1"
         aria-label={`${draft.alwaysActive ? language.disable : language.enable}: ${language.alwaysActive} (${lorebookDisplayName(draft)})`}
         aria-pressed={draft.alwaysActive}
-        disabled={mutationLocked}
+        disabled={mutationLocked || isAgentOnlyLorebookEntry(draft)}
         class:text-textcolor2={!draft.alwaysActive}
         class:text-textcolor={draft.alwaysActive}
         onclick={async () => {
+          if (isAgentOnlyLorebookEntry(draft)) return
           if (draft.mode === 'folder') {
             updateCollection(
               (externalLoreBooks ?? []).map((entry) =>
@@ -530,7 +553,7 @@
         <span class="text-textcolor mt-6">{language.name} <Help key="loreName" /></span>
         <TextInput size="sm" bind:value={draft.comment} />
         {#if !lorePlus}
-          {#if !draft.alwaysActive}
+          {#if !draft.alwaysActive && !isAgentOnlyLorebookEntry(draft)}
             <span class="text-textcolor mt-6">{language.activationKeys} <Help key="loreActivationKey" /></span>
             <span class="text-xs text-textcolor2">{language.activationKeysInfo}</span>
             <TextInput size="sm" bind:value={draft.key} />
@@ -571,10 +594,24 @@
             <span class="text-textcolor2 mt-2 mb-2 text-sm">{e} {language.tokens}</span>
           {/await}
         {/if}
-        <div class="flex items-center mt-4">
-          <Check bind:check={draft.alwaysActive} name={language.alwaysActive} />
+        {#if supportsAgentOnly || isAgentOnlyLorebookEntry(draft)}
+          <div class="flex items-center mt-4">
+            <Check
+              check={isAgentOnlyLorebookEntry(draft)}
+              disabled={mutationLocked}
+              onChange={setAgentOnly}
+              name={language.agentOnlyLorebook} />
+            <Help key="agentOnlyLorebook" name={language.agentOnlyLorebook} />
+          </div>
+          <p class="m-0 mt-1 text-xs text-textcolor2">{language.agentOnlyLorebookDescription}</p>
+        {/if}
+        <div class="flex items-center mt-2">
+          <Check
+            bind:check={draft.alwaysActive}
+            disabled={isAgentOnlyLorebookEntry(draft)}
+            name={language.alwaysActive} />
         </div>
-        {#if !draft.alwaysActive && getCurrentCharacter()?.globalLore?.some((entry) => entry.id && draft.id && entry.id === draft.id) && getDatabase().localActivationInGlobalLorebook}
+        {#if !isAgentOnlyLorebookEntry(draft) && !draft.alwaysActive && getCurrentCharacter()?.globalLore?.some((entry) => entry.id && draft.id && entry.id === draft.id) && getDatabase().localActivationInGlobalLorebook}
           <div class="flex items-center mt-2">
             <Check
               check={isLocallyActivated(draft)}
@@ -602,13 +639,13 @@
             </p>
           {/if}
         {/if}
-        {#if !lorePlus && !draft.useRegex}
+        {#if !isAgentOnlyLorebookEntry(draft) && !lorePlus && !draft.useRegex}
           <div class="flex items-center mt-2">
             <Check bind:check={draft.selective} name={language.selective} />
             <Help key="loreSelective" name={language.selective} />
           </div>
         {/if}
-        {#if !lorePlus && !draft.alwaysActive}
+        {#if !isAgentOnlyLorebookEntry(draft) && !lorePlus && !draft.alwaysActive}
           <div class="flex items-center mt-2">
             <Check bind:check={draft.useRegex} name={language.useRegexLorebook} />
             <Help key="useRegexLorebook" name={language.useRegexLorebook} />

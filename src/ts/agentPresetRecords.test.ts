@@ -153,6 +153,59 @@ describe('agent preset records', () => {
     expect(normalizeAgentPresetDefaultId('', presets)).toBeUndefined()
   })
 
+  it('normalizes Agent toggle and named lorebook input definitions', () => {
+    const normalized = normalizeAgentConfiguration(
+      [
+        {
+          id: 'agent-context',
+          name: 'Context',
+          instruction: '{{agentToggle::tone}}\n{{agentInput::reference}}',
+          toggles: [{ key: ' tone ', label: ' Tone ', kind: 'select', options: ['Warm', 'Cold'] }],
+          lorebookInputs: [{ key: ' reference ', displayName: ' Reference Notes ' }],
+        },
+      ],
+      [],
+    ).agents[0]
+
+    expect(normalized.toggles).toEqual([{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Cold'] }])
+    expect(normalized.lorebookInputs).toEqual([{ key: 'reference', displayName: 'Reference Notes', required: true }])
+  })
+
+  it('rejects duplicate local keys and required lorebook inputs that are not placed in the instruction', () => {
+    const issues = validateAgentPresetRecord(
+      preset({
+        steps: [
+          step({
+            toggles: [
+              { key: 'tone', label: 'Tone', kind: 'boolean', options: [] },
+              { key: 'tone', label: 'Duplicate', kind: 'boolean', options: [] },
+            ],
+            lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+          }),
+        ],
+      }),
+    )
+
+    expect(issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(['invalid_toggle', 'invalid_lorebook_input']),
+    )
+  })
+
+  it('rejects Agent-local placeholders that do not have matching definitions', () => {
+    const issues = validateAgentPresetRecord(
+      preset({
+        steps: [step({ instruction: '{{agentToggle::missing_toggle}}\n{{agentInput::missing_input}}' })],
+      }),
+    )
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'invalid_toggle', message: expect.stringContaining('missing_toggle') }),
+        expect.objectContaining({ code: 'invalid_lorebook_input', message: expect.stringContaining('missing_input') }),
+      ]),
+    )
+  })
+
   it('validates output keys, dependency ids, cycles, and phase direction', () => {
     const issues = validateAgentPresetRecord(
       preset({

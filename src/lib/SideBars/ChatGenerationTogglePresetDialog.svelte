@@ -241,7 +241,11 @@
     const grouped = new Map<string, ChatGenerationRequiredSidebarToggle[]>()
     for (const toggle of state.requiredSidebarToggles) {
       const sourceId =
-        toggle.source === 'preset' ? `preset:${toggle.presetId ?? ''}` : `module:${toggle.moduleId ?? ''}`
+        toggle.source === 'preset'
+          ? `preset:${toggle.presetId ?? ''}`
+          : toggle.source === 'module'
+            ? `module:${toggle.moduleId ?? ''}`
+            : `agent:${toggle.agentId ?? ''}`
       const existing = grouped.get(sourceId)
       if (existing) existing.push(toggle)
       else grouped.set(sourceId, [toggle])
@@ -253,6 +257,10 @@
         const preset = state.db.promptPresets?.find((candidate) => candidate.id === first.presetId)
         const name = preset?.name?.trim() || first.presetId || ''
         return { id, name: language.chatGenerationTogglePresetPickPromptSource(name), toggles }
+      }
+      if (first.source === 'agent') {
+        const name = first.agentName?.trim() || first.agentId || ''
+        return { id, name: language.chatGenerationTogglePresetPickAgentSource(name), toggles }
       }
       const module = state.db.modules?.find((candidate) => candidate.id === first.moduleId)
       const name = module?.name?.trim() || first.moduleNamespace || first.moduleId || ''

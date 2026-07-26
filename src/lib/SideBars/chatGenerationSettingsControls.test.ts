@@ -1971,6 +1971,59 @@ describe('sidebar chat generation settings controls', () => {
     })
   })
 
+  it('lists namespaced Agent toggles as their own Pick source', async () => {
+    const database = testDatabaseState()
+    database.agents = [
+      {
+        id: 'agent-a',
+        name: 'Research Helper',
+        version: 1,
+        instruction: 'Tone: {{agentToggle::tone}}',
+        modelDefaults: { mode: 'inheritMain' },
+        runtimeDefaults: {},
+        inputScopes: [],
+        toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Formal'] }],
+        outputFormat: 'text',
+      },
+    ]
+    database.agentPresets[0].agentUses = [
+      {
+        id: 'use-agent-a',
+        agentId: 'agent-a',
+        enabled: true,
+        phase: 'beforeMain',
+        dependencies: [],
+        outputKey: 'research',
+        destination: 'intermediate',
+        failurePolicy: { mode: 'required' },
+      },
+    ]
+    activeChat().generationSettings!.agentPresetId = 'agent-preset-a'
+    activeChat().generationSettings!.sidebarToggles!['agent:agent-a:tone'] = '1'
+    database.chatGenerationTogglePresets = [
+      {
+        id: 'agent-values',
+        name: 'Agent Values',
+        createdAt: 1,
+        updatedAt: 1,
+        sidebarToggles: { 'agent:agent-a:tone': '0' },
+        sidebarToggleKinds: { 'agent:agent-a:tone': 'select' },
+      },
+    ]
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+    await openTogglePresetDialog()
+    togglePresetAction(3).click()
+    await tick()
+
+    const source = elementBySelector<HTMLButtonElement>(
+      '[data-risu-toggle-preset-source-row][data-risu-source-id="agent:agent-a"]',
+      'Agent Pick source',
+    )
+    expect(source.textContent).toContain(language.chatGenerationTogglePresetPickAgentSource('Research Helper'))
+  })
+
   it('writes jailbreak and sidebar toggles to active chat settings without touching global state', async () => {
     const calls = stubCommandFetch()
     mountToggles()

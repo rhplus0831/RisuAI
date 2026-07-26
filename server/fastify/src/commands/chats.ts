@@ -7,6 +7,7 @@ import {
   applySparseChatGenerationSettingsUpdate,
   resolveChatGenerationSettingsReadiness,
   serializeChatGenerationSettingsDigestInput,
+  type ChatGenerationAgentReference,
   type ChatGenerationAgentPresetReference,
   type ChatGenerationModelPresetReference,
   type ChatGenerationModuleReference,
@@ -61,6 +62,8 @@ export interface ChatGenerationSettingsValidationContext {
   modelPresets: readonly ChatGenerationModelPresetReference[]
   promptPresets: readonly ChatGenerationPromptPresetWithModuleIntegration[]
   agentPresets?: readonly ChatGenerationAgentPresetReference[]
+  agents?: readonly ChatGenerationAgentReference[]
+  effectiveAgentPresetId?: string
   modules?: readonly ChatGenerationModuleReference[]
   enabledModuleIds?: readonly string[]
   characterModuleIds?: readonly string[]

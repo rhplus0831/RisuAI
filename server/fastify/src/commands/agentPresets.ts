@@ -869,6 +869,8 @@ function validateAgentFields(source: Record<string, unknown>, label: string, req
     'modelDefaults',
     'runtimeDefaults',
     'inputScopes',
+    'toggles',
+    'lorebookInputs',
     'outputFormat',
   ])
   if (requireOne && Object.keys(source).length === 0) {
@@ -884,6 +886,12 @@ function validateAgentFields(source: Record<string, unknown>, label: string, req
     if (key === 'modelDefaults') readModelSelection(entry, `${label}.modelDefaults`)
     if (key === 'runtimeDefaults') readRuntimeOptions(entry, `${label}.runtimeDefaults`)
     if (key === 'inputScopes') readInputScopes(entry, `${label}.inputScopes`)
+    if (key === 'toggles' && !Array.isArray(entry)) {
+      throw new ValidationError(`${label}.toggles must be an array`)
+    }
+    if (key === 'lorebookInputs' && !Array.isArray(entry)) {
+      throw new ValidationError(`${label}.lorebookInputs must be an array`)
+    }
     if (key === 'outputFormat') readOutputFormat(entry, `${label}.outputFormat`)
   }
 }
@@ -903,6 +911,10 @@ function applyAgentPatch(agent: AgentRecord, patch: Record<string, unknown>): Ag
     next.runtimeDefaults = readRuntimeOptions(patch.runtimeDefaults, 'patch.runtimeDefaults')
   }
   if (hasOwn(patch, 'inputScopes')) next.inputScopes = readInputScopes(patch.inputScopes, 'patch.inputScopes')
+  if (hasOwn(patch, 'toggles')) next.toggles = cloneJson(patch.toggles) as AgentRecord['toggles']
+  if (hasOwn(patch, 'lorebookInputs')) {
+    next.lorebookInputs = cloneJson(patch.lorebookInputs) as AgentRecord['lorebookInputs']
+  }
   if (hasOwn(patch, 'outputFormat')) next.outputFormat = readOutputFormat(patch.outputFormat, 'patch.outputFormat')
   next.updatedAt = Date.now()
   return readAgentRecord(next, 'agent')

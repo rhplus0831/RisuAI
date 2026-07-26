@@ -1,9 +1,11 @@
 import type {
+  AgentLorebookInput,
   AgentPresetStepInputScope,
   AgentPresetStepPhase,
   AgentPresetStepRecord,
 } from '../../../../src/ts/agentPresetRecords.js'
-import { AGENT_PRESET_STEP_INPUT_SCOPES } from '../../../../src/ts/agentPresetRecords.js'
+import { AGENT_PRESET_STEP_INPUT_SCOPES, agentToggleStorageKey } from '../../../../src/ts/agentPresetRecords.js'
+import { resolveAgentLorebookInput } from '../../../../src/ts/agentLorebookInputs.js'
 import type { AgentPresetPhasePlan } from '../../../../src/ts/agentPresetResolver.js'
 import {
   assertModelProfileGenerationReady,
@@ -28,6 +30,8 @@ const DEFAULT_TEMPERATURE = 100
 const RECENT_CHAT_TAIL_COUNT = 12
 const CHAT_SEARCH_LIMIT = 6
 const PREPARED_INPUT_CBS_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+const AGENT_INPUT_CBS_RE = /\{\{\s*agentInput::([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+const AGENT_TOGGLE_CBS_RE = /\{\{\s*agentToggle::([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const PREPARED_INPUT_SCOPE_NAMES: ReadonlySet<string> = new Set(AGENT_PRESET_STEP_INPUT_SCOPES)
 const INTERNAL_REASONING_TAG_RE = /<\s*(\/?)\s*(?:Thoughts|think)\b[^>]*>/giu
 
@@ -51,7 +55,8 @@ export interface AgentPresetPreparedInputContext {
 }
 
 export interface AgentPresetPreparedInputSection {
-  scope: AgentPresetStepInputScope
+  scope: AgentPresetStepInputScope | 'agentLorebookInput'
+  inputKey?: string
   label: string
   sourceLabel: string
   content: string
@@ -60,7 +65,8 @@ export interface AgentPresetPreparedInputSection {
 }
 
 export interface AgentPresetPreparedInputDiagnostic {
-  scope: AgentPresetStepInputScope
+  scope: AgentPresetStepInputScope | 'agentLorebookInput'
+  inputKey?: string
   sourceLabel: string
   reason: 'unavailable' | 'empty' | 'max_input_exhausted' | 'collector_error'
   message: string
@@ -77,6 +83,7 @@ export interface BuildAgentPresetStepMessagesInput {
   step: AgentPresetStepRecord
   preparedInputs: AgentPresetPreparedInputCollection
   agentOutputs?: Readonly<Record<string, string>>
+  toggleValues?: Readonly<Record<string, string>>
 }
 
 export interface AgentPresetProviderDispatchArgs {
@@ -259,6 +266,38 @@ export function isAgentPresetGenerationError(error: unknown): error is AgentPres
   return error instanceof AgentPresetGenerationError
 }
 
+export function assertAgentPresetLorebookInputsReady(input: {
+  steps: readonly AgentPresetStepRecord[]
+  currentChar: character
+  currentChat: Chat
+  presetId?: string
+  presetName?: string
+}): void {
+  for (const step of input.steps) {
+    for (const definition of step.lorebookInputs ?? []) {
+      if (!definition.required) continue
+      const resolution = resolveAgentLorebookInput(definition, input.currentChar, input.currentChat)
+      if (resolution.status === 'resolved') continue
+      const message = 'message' in resolution ? resolution.message : `Missing lorebook input: ${definition.displayName}`
+      throw new AgentPresetGenerationError(message, {
+        phase: step.phase,
+        presetId: input.presetId,
+        presetName: input.presetName,
+        stepId: step.id,
+        stepName: step.name,
+        outputKey: step.outputKey,
+        diagnostics: {
+          status: 'lorebook_input_not_ready',
+          inputKey: definition.key,
+          displayName: definition.displayName,
+          resolution: resolution.status,
+          ...('scope' in resolution && resolution.scope ? { scope: resolution.scope } : {}),
+        },
+      })
+    }
+  }
+}
+
 class AgentPresetTimeoutError extends Error {
   constructor() {
     super('Agent Preset step timed out')
@@ -274,6 +313,45 @@ export function collectAgentPresetPreparedInputs(
   let remaining = maxInputChars
   const sections: AgentPresetPreparedInputSection[] = []
   const diagnostics: AgentPresetPreparedInputDiagnostic[] = []
+
+  // Explicit named inputs take priority over broad prepared-input scopes. A
+  // required input must not disappear merely because a chat-history scope
+  // consumed the step's complete input budget first.
+  for (const definition of referencedAgentLorebookInputs(step)) {
+    const sourceLabel = `Agent-only lorebook “${definition.displayName}”`
+    if (remaining <= 0) {
+      diagnostics.push({
+        scope: 'agentLorebookInput',
+        inputKey: definition.key,
+        sourceLabel,
+        reason: 'max_input_exhausted',
+        message: `Skipped ${sourceLabel}; max input budget is exhausted.`,
+      })
+      continue
+    }
+    const resolution = resolveAgentLorebookInput(definition, context.currentChar, context.currentChat)
+    if (resolution.status !== 'resolved') {
+      diagnostics.push({
+        scope: 'agentLorebookInput',
+        inputKey: definition.key,
+        sourceLabel,
+        reason: resolution.status === 'optional_missing' ? 'unavailable' : 'collector_error',
+        message: 'message' in resolution ? resolution.message : `${sourceLabel} is unavailable.`,
+      })
+      continue
+    }
+    const bounded = boundText(resolution.content.trim(), remaining)
+    sections.push({
+      scope: 'agentLorebookInput',
+      inputKey: definition.key,
+      label: definition.displayName,
+      sourceLabel: `${resolution.scope} lorebook`,
+      content: bounded.text,
+      charCount: bounded.text.length,
+      truncated: bounded.truncated,
+    })
+    remaining -= bounded.text.length
+  }
 
   for (const scope of orderedScopes(step.inputScopes)) {
     const sourceLabel = sourceLabelForScope(scope)
@@ -332,7 +410,7 @@ export function collectAgentPresetPreparedInputs(
 }
 
 export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessagesInput): OpenAIChat[] {
-  const { step, preparedInputs, agentOutputs } = input
+  const { step, preparedInputs, agentOutputs, toggleValues } = input
   const system = [
     'You are executing one RisuAI Agent Preset helper step.',
     `Step name: ${step.name}`,
@@ -347,7 +425,10 @@ export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessages
   ].join('\n')
 
   const authorInstruction = expandAgentPresetOutputCbs(
-    expandPreparedInputCbs(step.instruction, preparedInputs),
+    expandAgentToggleCbs(
+      expandAgentInputCbs(expandPreparedInputCbs(step.instruction, preparedInputs), preparedInputs),
+      toggleValues ?? {},
+    ),
     (key) => (agentOutputs && Object.prototype.hasOwnProperty.call(agentOutputs, key) ? agentOutputs[key] : ''),
   ).trim()
 
@@ -378,6 +459,34 @@ function expandPreparedInputCbs(instruction: string, preparedInputs: AgentPreset
     if (!isPreparedInputScopeName(name)) return match
     return contentByScope.get(name) ?? ''
   })
+}
+
+function expandAgentInputCbs(instruction: string, preparedInputs: AgentPresetPreparedInputCollection): string {
+  const contentByKey = new Map(
+    preparedInputs.sections.flatMap((section) =>
+      section.scope === 'agentLorebookInput' && section.inputKey ? [[section.inputKey, section.content] as const] : [],
+    ),
+  )
+  return instruction.replace(AGENT_INPUT_CBS_RE, (_match, key: string) => contentByKey.get(key) ?? '')
+}
+
+function expandAgentToggleCbs(instruction: string, toggleValues: Readonly<Record<string, string>>): string {
+  return instruction.replace(AGENT_TOGGLE_CBS_RE, (_match, key: string) => toggleValues[key] ?? '')
+}
+
+function referencedAgentLorebookInputs(step: AgentPresetStepRecord): AgentLorebookInput[] {
+  const inputsByKey = new Map((step.lorebookInputs ?? []).map((input) => [input.key, input]))
+  const referenced = new Set<string>()
+  for (const match of step.instruction.matchAll(AGENT_INPUT_CBS_RE)) referenced.add(match[1])
+  return (step.lorebookInputs ?? []).filter((input) => referenced.has(input.key) && inputsByKey.has(input.key))
+}
+
+function agentToggleValuesForStep(step: AgentPresetStepRecord, chat: Chat): Record<string, string> {
+  if (!step.agentId) return {}
+  const stored = chat.generationSettings?.sidebarToggles ?? {}
+  return Object.fromEntries(
+    (step.toggles ?? []).map((toggle) => [toggle.key, stored[agentToggleStorageKey(step.agentId!, toggle.key)] ?? '']),
+  )
 }
 
 function stepWithReferencedPreparedInputScopes(step: AgentPresetStepRecord): AgentPresetStepRecord {
@@ -420,6 +529,7 @@ export async function executeAgentPresetStep(
     step: input.step,
     preparedInputs,
     agentOutputs: input.agentOutputs,
+    toggleValues: agentToggleValuesForStep(input.step, input.currentChat),
   })
   const profile = resolveAgentPresetStepProfile(input)
   if (!profile) {

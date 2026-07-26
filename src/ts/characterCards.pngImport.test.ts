@@ -429,6 +429,56 @@ describe('PNG character card import', () => {
     expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledWith(imported, expect.anything())
   })
 
+  it('imports portable Agent-only lorebook entries as inert named inputs', async () => {
+    const card = {
+      spec: 'chara_card_v2',
+      spec_version: '2.0',
+      data: {
+        name: 'Agent Input Card',
+        description: 'desc',
+        first_mes: 'hello',
+        mes_example: '',
+        personality: '',
+        scenario: '',
+        creator_notes: '',
+        system_prompt: '',
+        post_history_instructions: '',
+        alternate_greetings: [],
+        tags: [],
+        creator: '',
+        character_version: '1',
+        extensions: { risuai: {} },
+        character_book: {
+          entries: [
+            {
+              keys: ['must-be-cleared'],
+              secondary_keys: ['also-cleared'],
+              content: 'Agent reference',
+              name: 'Reference Notes',
+              insertion_order: 1,
+              constant: true,
+              selective: true,
+              use_regex: true,
+              extensions: { risu_agent_only: true },
+            },
+          ],
+        },
+      },
+    }
+
+    await importCharacterProcess({ name: 'agent-input.json', data: Buffer.from(JSON.stringify(card)) })
+
+    expect(dbState.db.characters[0].globalLore[0]).toMatchObject({
+      comment: 'Reference Notes',
+      agentOnly: true,
+      key: '',
+      secondkey: '',
+      alwaysActive: false,
+      selective: false,
+      useRegex: false,
+    })
+  })
+
   it('normalizes a charx module lorebook overlay after metadata replacement', async () => {
     const card = characterCardFixture('CharX Overlay')
     charxState.cardData = JSON.stringify(card)
@@ -505,6 +555,38 @@ describe('v2 character card export assets', () => {
     expect(card.data.extensions.risuai.additionalAssets).toEqual([
       ['theme', Buffer.from(EXPORT_ADDITIONAL_BYTES).toString('base64'), 'css'],
     ])
+  })
+
+  it('exports Agent-only lorebook entries with a portable marker and no activation path', async () => {
+    const char = createExportCharacter()
+    char.globalLore = [
+      {
+        id: 'agent-reference',
+        key: 'must-not-export',
+        secondkey: 'also-must-not-export',
+        insertorder: 100,
+        comment: 'Reference Notes',
+        content: 'Agent reference',
+        mode: 'normal',
+        alwaysActive: true,
+        selective: true,
+        useRegex: true,
+        agentOnly: true,
+      },
+    ]
+    globalApiState.readImage.mockImplementation(async (key: string) => readExportFixtureAsset(key))
+
+    await exportCharacterCard(char, 'json', { spec: 'v2' })
+
+    const exportedBytes = globalApiState.downloadFile.mock.calls[0][1] as Uint8Array
+    const entry = JSON.parse(Buffer.from(exportedBytes).toString('utf-8')).data.character_book.entries[0]
+    expect(entry).toMatchObject({
+      keys: [],
+      constant: false,
+      selective: false,
+      extensions: { risu_agent_only: true },
+    })
+    expect(entry.secondary_keys).toBeUndefined()
   })
 })
 

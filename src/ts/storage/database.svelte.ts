@@ -4293,7 +4293,10 @@ export interface loreBook {
   selective: boolean
   extentions?: {
     risu_case_sensitive: boolean
+    risu_agent_only?: boolean
   }
+  /** Excludes this entry from normal prompt activation and reserves it for Agent input resolution. */
+  agentOnly?: boolean
   activationPercent?: number
   loreCache?: {
     key: string

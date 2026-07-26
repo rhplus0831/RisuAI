@@ -56,7 +56,11 @@ import {
   readProviderCredentials,
 } from '../../../../src/ts/model/providerCredentialRecords.js'
 import { normalizeChatGenerationTogglePresets } from '../../../../src/ts/chatGenerationTogglePresetRecords.js'
-import { normalizeAgentPresets } from '../../../../src/ts/agentPresetRecords.js'
+import {
+  normalizeAgentPresetDefaultId,
+  normalizeAgentPresets,
+  normalizeAgents,
+} from '../../../../src/ts/agentPresetRecords.js'
 import {
   createPromptItemRecord,
   ensurePromptTemplateCollection,
@@ -803,12 +807,15 @@ function buildChatGenerationSettingsValidationContext(
   const chatModuleIds = Array.isArray(chat.modules)
     ? chat.modules.filter((id): id is string => typeof id === 'string')
     : []
+  const agentPresets = normalizeAgentPresets(target.agentPresets)
 
   return {
     personas: ensurePersonaCollection(target),
     modelPresets: ensureModelPresetCollection(target),
     promptPresets: ensurePromptPresetCollection(target),
-    agentPresets: normalizeAgentPresets(target.agentPresets),
+    agentPresets,
+    agents: normalizeAgents(target.agents),
+    effectiveAgentPresetId: normalizeAgentPresetDefaultId(target.agentPresetDefaultId, agentPresets),
     modules: ensureModuleRecords(target),
     enabledModuleIds: ensureEnabledModules(target),
     characterModuleIds,
