@@ -151,6 +151,12 @@
     return new Date(value).toLocaleString()
   }
 
+  function formatDuration(record: RequestHistoryRecordSummary): string {
+    if (record.completedAt === undefined) return language.requestHistoryDurationPending
+    const seconds = Math.max(0, record.completedAt - record.startedAt) / 1_000
+    return language.requestHistoryDuration(seconds.toFixed(2))
+  }
+
   function profileLabel(record: RequestHistoryRecordSummary): string {
     return record.profile.name || record.profile.id || record.profile.modelId || language.requestHistoryUnknownProfile
   }
@@ -242,9 +248,12 @@
                     · {record.context.chatName}{/if}
                 </span>
               </span>
-              <time class="shrink-0 text-xs text-textcolor2" datetime={new Date(record.startedAt).toISOString()}>
-                {formatDate(record.startedAt)}
-              </time>
+              <span class="shrink-0 text-right text-xs text-textcolor2">
+                <time class="block" datetime={new Date(record.startedAt).toISOString()}>
+                  {formatDate(record.startedAt)}
+                </time>
+                <span class="mt-0.5 block" data-risu-request-history-duration>{formatDuration(record)}</span>
+              </span>
             </button>
           </div>
 

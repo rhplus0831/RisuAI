@@ -1222,6 +1222,8 @@ export const languageEnglish = {
   requestHistoryLoadingDetail: 'Loading request details…',
   requestHistoryEmpty: 'No request history records are available.',
   requestHistorySelectRecord: 'Select request record',
+  requestHistoryDuration: (seconds: string) => `${seconds} s`,
+  requestHistoryDurationPending: '—',
   requestHistoryUnknownProfile: 'Unknown profile',
   requestHistoryProfile: 'Profile',
   requestHistoryContext: 'Chat context',

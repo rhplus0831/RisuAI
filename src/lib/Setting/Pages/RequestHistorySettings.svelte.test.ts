@@ -79,6 +79,9 @@ describe('RequestHistorySettings', () => {
   it('loads summaries and reveals the full private record only when selected', async () => {
     await vi.waitFor(() => expect(target.textContent).toContain('Profile A'))
     expect(target.textContent).not.toContain('Private prompt')
+    expect(target.querySelector('[data-risu-request-history-duration]')?.textContent).toBe(
+      language.requestHistoryDuration('0.10'),
+    )
 
     const rowButton = Array.from(target.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Profile A'),
@@ -93,6 +96,24 @@ describe('RequestHistorySettings', () => {
     const detailHeadings = Array.from(target.querySelectorAll('h3'), (heading) => heading.textContent?.trim())
     expect(detailHeadings.indexOf(language.requestHistoryApiMetadata)).toBe(
       detailHeadings.indexOf(language.requestHistoryMetadata) + 1,
+    )
+  })
+
+  it('does not report a completed duration while a request is pending', async () => {
+    await vi.waitFor(() => expect(mocks.list).toHaveBeenCalledOnce())
+    mocks.list.mockResolvedValueOnce({
+      status: 'ok',
+      value: { limit: 20, records: [{ ...summary, completedAt: undefined, status: 'pending' as const }] },
+    })
+    const refresh = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === language.requestHistoryRefresh,
+    )
+    refresh?.click()
+
+    await vi.waitFor(() =>
+      expect(target.querySelector('[data-risu-request-history-duration]')?.textContent).toBe(
+        language.requestHistoryDurationPending,
+      ),
     )
   })
 
