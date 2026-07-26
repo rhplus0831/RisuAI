@@ -2,6 +2,7 @@ import type { Database, character } from '../../../../src/ts/storage/database.sv
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
 import type { LuaExecBudget } from './luaRuntime.js'
+import type { DatabaseSync } from 'node:sqlite'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { clearActivePromptScope, isActivePromptScopeDirty, setActivePromptScope } from './promptScope.js'
 import { AgentPresetGenerationError } from './agentPresetExecution.js'
@@ -60,6 +61,8 @@ export interface ExpandContext {
   signal?: AbortSignal
   /** Optional per-assembly Lua budget shared by trigger handoffs from prompt helpers. */
   luaExecBudget?: LuaExecBudget
+  /** Server-only SQLite handle for LLM request-history capture. */
+  requestHistoryDb?: DatabaseSync
   /** Optional per-assembly CBS callback memo. Browser/local calls omit this. */
   cbsCallbackMemo?: CbsCallbackMemo
 }

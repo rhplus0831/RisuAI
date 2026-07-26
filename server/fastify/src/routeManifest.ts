@@ -697,6 +697,50 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'request-history-list',
+    methods: READ_METHODS,
+    path: '/api/v1/request-history',
+    auth: {
+      decision: 'required',
+      reason: 'Request history contains private prompts, responses, and chat metadata.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only request-history listing.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'request-history-detail',
+    methods: READ_METHODS,
+    path: '/api/v1/request-history/:id',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Request history records contain private prompts and responses.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only request-history detail.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'request-history-delete',
+    methods: ['DELETE'],
+    path: '/api/v1/request-history/:id',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Deleting a request-history record mutates private persisted history.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Only the current writer may delete persisted request-history records.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'push-vapid-public-key',
     methods: READ_METHODS,
     path: '/api/v1/push/vapid-public-key',

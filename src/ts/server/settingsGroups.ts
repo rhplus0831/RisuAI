@@ -13,6 +13,7 @@ export const SETTINGS_GROUPS = [
   'advanced',
   'sidebar',
   'account',
+  'data',
   'prompt',
 ] as const
 
@@ -265,6 +266,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   requestInfoInsideChat: 'sidebar',
   requestLocation: 'runtime',
   requestRetrys: 'runtime',
+  requestHistoryLimit: 'data',
   returnCSSError: 'advanced',
   reverseProxyOobaArgs: 'providers',
   reverseProxyOobaMode: 'providers',

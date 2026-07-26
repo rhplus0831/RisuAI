@@ -69,6 +69,14 @@ export async function runServerGreetingTranslation(input: RunServerGreetingTrans
       character,
       text: source,
       signal,
+      requestHistory: {
+        db: input.db,
+        context: {
+          characterId: input.characterId,
+          ...(typeof character.name === 'string' ? { characterName: character.name } : {}),
+        },
+        metadata: { greetingIndex: input.greetingIndex },
+      },
     })
 
     const result = applyTargetedCommandMutation<{

@@ -286,6 +286,21 @@ describe('Settings supporter tab', () => {
     expect(target.querySelector('[data-risu-input-hook-settings]')).toBeTruthy()
   })
 
+  it('opens Request History from the Data settings group', async () => {
+    const requestHistoryButton = settingsButton(language.settingsNavRequestHistory)
+    expect(requestHistoryButton).toBeTruthy()
+
+    requestHistoryButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/request-history',
+      section: 'request-history',
+      index: 21,
+    })
+  })
+
   it('hides the legacy global lorebook and regex settings items by default', () => {
     expect(settingsButton(language.globalLoreBook)).toBeUndefined()
     expect(settingsButton(language.globalRegexScript)).toBeUndefined()

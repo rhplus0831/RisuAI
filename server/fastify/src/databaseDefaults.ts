@@ -21,6 +21,7 @@ import { normalizeProviderCredentials } from '../../../src/ts/model/providerCred
 import { normalizeAgentPresetDefaultId, normalizeAgentPresets } from '../../../src/ts/agentPresetRecords.js'
 import { normalizeTranslatorPresetState, type TranslatorPresetStateLike } from '../../../src/ts/translator/presets.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
+import { DEFAULT_REQUEST_HISTORY_LIMIT, normalizeRequestHistoryLimit } from './requestHistory.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -257,6 +258,8 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'textTheme', 'standard')
   setDefault(database, 'emotionPrompt2', '')
   setDefault(database, 'requestRetrys', 2)
+  setDefault(database, 'requestHistoryLimit', DEFAULT_REQUEST_HISTORY_LIMIT)
+  database.requestHistoryLimit = normalizeRequestHistoryLimit(database.requestHistoryLimit)
   setDefault(database, 'useSayNothing', true)
   setDefault(database, 'bias', [])
   setDefault(database, 'showUnrecommended', false)

@@ -1,5 +1,6 @@
 import { LuaFactory, type LuaEngine } from 'wasmoon'
 import { readFile } from 'node:fs/promises'
+import type { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -676,6 +677,8 @@ export interface ServerLuaRuntimeContext {
    * before any engine boots.
    */
   execBudget?: LuaExecBudget
+  /** SQLite handle used only for durable LLM request diagnostics. */
+  requestHistoryDb?: DatabaseSync
 }
 
 interface RuntimeState {
@@ -1016,6 +1019,28 @@ async function runLuaLlm(
       formated: prompt,
       profile,
       signal: state.ctx.signal ?? new AbortController().signal,
+      ...(state.ctx.requestHistoryDb
+        ? {
+            history: {
+              db: state.ctx.requestHistoryDb,
+              source: 'script',
+              context: {
+                ...(state.ctx.char && 'chaId' in state.ctx.char && typeof state.ctx.char.chaId === 'string'
+                  ? { characterId: state.ctx.char.chaId }
+                  : {}),
+                ...(state.ctx.char && 'name' in state.ctx.char && typeof state.ctx.char.name === 'string'
+                  ? { characterName: state.ctx.char.name }
+                  : {}),
+                ...(state.ctx.chat.id ? { chatId: state.ctx.chat.id } : {}),
+                ...(state.ctx.chat.name ? { chatName: state.ctx.chat.name } : {}),
+              },
+              ...(state.ctx.chat.generationSettings?.sidebarToggles
+                ? { toggles: { ...state.ctx.chat.generationSettings.sidebarToggles } }
+                : {}),
+              metadata: { modelRole: role },
+            },
+          }
+        : {}),
     })
     return collectLuaLlmFrames(frames)
   } catch (error) {

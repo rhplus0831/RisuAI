@@ -107,6 +107,17 @@ export async function runServerMessageTranslation(input: RunServerMessageTransla
         },
       },
       signal,
+      requestHistory: {
+        db: input.db,
+        context: {
+          characterId,
+          ...(typeof character.name === 'string' ? { characterName: character.name } : {}),
+          chatId: source.chatId,
+          ...(typeof chat.name === 'string' ? { chatName: chat.name } : {}),
+          messageId: input.messageId,
+        },
+        ...(chat.generationSettings?.sidebarToggles ? { toggles: { ...chat.generationSettings.sidebarToggles } } : {}),
+      },
     })
 
     const result = applyTargetedCommandMutation<{

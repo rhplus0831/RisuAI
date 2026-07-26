@@ -19,6 +19,7 @@
     WebhookIcon,
     BookOpen,
     Regex,
+    HistoryIcon,
   } from '@lucide/svelte'
   import { language } from 'src/lang'
   import DisplaySettings from './Pages/DisplaySettings.svelte'
@@ -29,6 +30,7 @@
   import AdvancedSettings from './Pages/AdvancedSettings.svelte'
   import AgentPresetSettings from './Pages/AgentPresetSettings.svelte'
   import InputHookSettings from './Pages/InputHookSettings.svelte'
+  import RequestHistorySettings from './Pages/RequestHistorySettings.svelte'
   import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import Communities from './Pages/Communities.svelte'
@@ -245,6 +247,14 @@
             <HardDrive size={20} />
             <span>{language.settingsNavBackups}</span>
           </button>
+          <button
+            class={navButtonClass($SettingsMenuIndex === 21)}
+            onclick={() => {
+              navigate('/settings/request-history')
+            }}>
+            <HistoryIcon size={20} />
+            <span>{language.settingsNavRequestHistory}</span>
+          </button>
           {#if !$isLite && getDatabase().showGlobalLorebookAndRegex}
             <button
               class={navButtonClass($SettingsMenuIndex === 8)}
@@ -389,6 +399,8 @@
             <AgentPresetSettings />
           {:else if $SettingsMenuIndex === 20}
             <InputHookSettings />
+          {:else if $SettingsMenuIndex === 21}
+            <RequestHistorySettings />
           {:else if $SettingsMenuIndex === 77}
             <ThanksPage />
           {/if}

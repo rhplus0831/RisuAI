@@ -621,6 +621,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
 
   const cbsCallbackMemo = createAssemblyCbsCallbackMemo()
   const luaExecBudget = createLuaExecBudget()
+  const memoryDatabase = deps.loadMemoryDatabase?.() ?? null
   const resolvedMainProfile = resolveModelProfile({ database })
   const ctx: ExpandContext = {
     database,
@@ -628,6 +629,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     chatPage,
     signal: deps.signal,
     luaExecBudget,
+    ...(memoryDatabase ? { requestHistoryDb: memoryDatabase } : {}),
     cbsCallbackMemo,
   }
   const unformated = createEmptyUnformatedSlots()
@@ -669,7 +671,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     initialLastMemory: currentChat.lastMemory,
     messageMutations: [],
     additionalSystemPromptMutations: [],
-    memoryDatabase: deps.loadMemoryDatabase?.() ?? null,
+    memoryDatabase,
     promptMemoryQueryVectors: deps.loadPromptMemoryQueryVectors?.() ?? [],
     enqueuePromptMemoryFollowUpJob: deps.enqueuePromptMemoryFollowUpJob,
     resolveStoredAsset: deps.resolveStoredAsset,
@@ -907,6 +909,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
           model: db.aiModel,
           signal: state.signal,
           execBudget: state.luaExecBudget,
+          ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
         },
       )
       throwServerLuaFailure(result, `Lua ${mode} trigger failed`)
@@ -1227,6 +1230,7 @@ export async function runAgentPresetBeforeMainStage(state: AssemblyState, deps: 
 
   const beforeMain = await executeAgentPresetPhase({
     database: state.database,
+    ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
     currentChar: state.currentChar,
     currentChat: state.currentChat,
     currentUserMessage: latestUserMessage(state.currentChat),
@@ -1905,6 +1909,7 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
     model: db.aiModel,
     signal: state.signal,
     execBudget: state.luaExecBudget,
+    ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
     moduleTriggers: getModuleTriggers(getActiveModules(db, state.currentChar, state.currentChat)),
   }
   return { editCtx, varEngine }
@@ -2373,6 +2378,7 @@ async function runOutputTrigger(
             model: db.aiModel,
             signal: state.signal,
             execBudget: state.luaExecBudget,
+            ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
           },
         )
       } catch (error) {
@@ -2451,6 +2457,7 @@ async function runAgentPresetAfterMainStage(
 
   const afterMain = await executeAgentPresetPhase({
     database: state.database,
+    ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
     currentChar: state.currentChar,
     currentChat: state.currentChat,
     currentUserMessage: latestUserMessage(state.currentChat),

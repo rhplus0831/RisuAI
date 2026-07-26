@@ -1531,6 +1531,7 @@ export async function runStartTrigger(
           model: db.aiModel,
           signal: ctx.signal,
           execBudget: ctx.luaExecBudget,
+          ...(ctx.requestHistoryDb ? { requestHistoryDb: ctx.requestHistoryDb } : {}),
         },
       )
       throwServerLuaFailure(result, `Lua ${mode} trigger failed`)

@@ -73,6 +73,8 @@ interface CharacterSidebarViewState {
 const settingIndexBySlug = new Map<string, number>([
   ['backup', 0],
   ['backup-restore', 0],
+  ['request-history', 21],
+  ['requesthistory', 21],
   ['user', 0],
   ['chat-bot', 1],
   ['chatbot', 1],
@@ -138,6 +140,7 @@ const settingSlugByIndex = new Map<number, string>([
   [18, 'prompt-settings'],
   [19, 'agent-presets'],
   [20, 'input-hooks'],
+  [21, 'request-history'],
   [77, 'supporter'],
 ])
 

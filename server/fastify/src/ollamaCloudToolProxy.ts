@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream'
 import { finished } from 'node:stream/promises'
+import { StringDecoder } from 'node:string_decoder'
 import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../../../src/ts/storage/database.svelte.js'
@@ -16,6 +17,12 @@ import { applyAdditionalParameters } from './generation/additionalParams.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'
 import { attachAbort } from './requestAbort.js'
 import { loadServerIntentCompletionSettings } from './repository.js'
+import {
+  completeRequestHistory,
+  requestHistoryProfileSnapshot,
+  tryBeginRequestHistory,
+  type RequestHistoryHandle,
+} from './requestHistory.js'
 
 export const OLLAMA_CLOUD_TOOL_OPERATION = 'ollama-cloud-tool'
 
@@ -34,7 +41,16 @@ const COMPLETION_MODEL_MODES = [
   'scriptAux',
 ] as const satisfies readonly LegacyModelMode[]
 const COMPLETION_MODEL_MODE_SET = new Set<string>(COMPLETION_MODEL_MODES)
-const ALLOWED_QUERY_KEYS = new Set(['operation', 'protocol', 'mode', 'profileId', 'staticModel'])
+const ALLOWED_QUERY_KEYS = new Set([
+  'operation',
+  'protocol',
+  'mode',
+  'profileId',
+  'staticModel',
+  'characterId',
+  'chatId',
+  'toggles',
+])
 const MAX_IDENTITY_LENGTH = 512
 
 type JsonRecord = Record<string, unknown>
@@ -45,6 +61,9 @@ interface OllamaCloudToolQuery {
   mode: LegacyModelMode
   profileId?: string
   staticModel?: string
+  characterId?: string
+  chatId?: string
+  toggles?: Record<string, string>
 }
 
 interface ResolvedOllamaCloudToolTarget {
@@ -52,6 +71,7 @@ interface ResolvedOllamaCloudToolTarget {
   apiKey: string
   extraHeaders: Record<string, string>
   model: string
+  profile: ResolvedModelProfile
   protocol: OllamaCloudToolProtocol
   thinkingMode?: boolean | 'low' | 'medium' | 'high'
   url: string
@@ -71,12 +91,14 @@ export async function handleOllamaCloudToolProxy(
   let query: OllamaCloudToolQuery
   let payload: JsonRecord
   let target: ResolvedOllamaCloudToolTarget
+  let database: Database
   try {
     query = parseQuery(req.query)
     payload = parsePayload(req.body, query.protocol)
     const settings = loadServerIntentCompletionSettings(db)
     if (settings === null) throw new Error('database is not initialized')
-    target = resolveTarget(settings as unknown as Database, query)
+    database = settings as unknown as Database
+    target = resolveTarget(database, query)
   } catch (error) {
     const message = error instanceof Error && error.message ? error.message : 'invalid Ollama Cloud tool request'
     reply.code(400).send({ error: message })
@@ -94,6 +116,28 @@ export async function handleOllamaCloudToolProxy(
     if (target.thinkingMode === undefined) delete upstreamPayload.think
     else upstreamPayload.think = target.thinkingMode
   }
+
+  const historyHandle = tryBeginRequestHistory({
+    db,
+    limit: database.requestHistoryLimit,
+    source: query.chatId ? 'chat' : 'completion',
+    profile: requestHistoryProfileSnapshot(target.profile),
+    prompt: ollamaCloudPrompt(target.protocol, upstreamPayload),
+    context:
+      query.characterId || query.chatId
+        ? {
+            ...(query.characterId ? { characterId: query.characterId } : {}),
+            ...(query.chatId ? { chatId: query.chatId } : {}),
+          }
+        : undefined,
+    toggles: query.toggles,
+    metadata: {
+      mode: query.mode,
+      protocol: target.protocol,
+      streamingRequested: upstreamPayload.stream === true,
+      toolProxy: true,
+    },
+  })
 
   const { signal, refresh, cleanup } = attachAbort(req, reply)
   try {
@@ -117,15 +161,27 @@ export async function handleOllamaCloudToolProxy(
     reply.code(upstream.status)
 
     if (!upstream.body) {
+      completeOllamaCloudHistory(historyHandle, upstream, '')
       await reply.send()
       return
     }
 
     const stream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0])
-    stream.on('data', refresh)
+    const decoder = new StringDecoder('utf8')
+    let response = ''
+    stream.on('data', (chunk: Uint8Array) => {
+      refresh()
+      response += decoder.write(chunk)
+    })
     reply.send(stream)
     await finished(stream, { cleanup: true })
+    response += decoder.end()
+    completeOllamaCloudHistory(historyHandle, upstream, response)
   } catch (error) {
+    completeRequestHistory(historyHandle, {
+      status: signal.aborted ? 'cancelled' : 'error',
+      error: error instanceof Error ? error.message : String(error),
+    })
     if (signal.aborted) {
       if (!reply.raw.headersSent) reply.code(504).send({ error: 'Ollama Cloud tool request timed out or was aborted' })
       else reply.raw.end()
@@ -155,6 +211,9 @@ function parseQuery(value: unknown): OllamaCloudToolQuery {
   }
   const profileId = optionalIdentity(value.profileId)
   const staticModel = optionalIdentity(value.staticModel)
+  const characterId = optionalIdentity(value.characterId)
+  const chatId = optionalIdentity(value.chatId)
+  const toggles = parseToggleStates(value.toggles)
   if (profileId && staticModel) {
     throw new Error('Ollama Cloud tool identity must select either profileId or staticModel')
   }
@@ -164,7 +223,27 @@ function parseQuery(value: unknown): OllamaCloudToolQuery {
     mode: mode as LegacyModelMode,
     ...(profileId ? { profileId } : {}),
     ...(staticModel ? { staticModel } : {}),
+    ...(characterId ? { characterId } : {}),
+    ...(chatId ? { chatId } : {}),
+    ...(toggles ? { toggles } : {}),
   }
+}
+
+function parseToggleStates(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || value.length === 0 || value.length > 4096) {
+    throw new Error('invalid Ollama Cloud tool toggle states')
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error('invalid Ollama Cloud tool toggle states')
+  }
+  if (!isRecord(parsed) || Object.values(parsed).some((item) => typeof item !== 'string')) {
+    throw new Error('invalid Ollama Cloud tool toggle states')
+  }
+  return parsed as Record<string, string>
 }
 
 function parsePayload(value: unknown, protocol: OllamaCloudToolProtocol): JsonRecord {
@@ -209,12 +288,40 @@ function resolveTarget(database: Database, query: OllamaCloudToolQuery): Resolve
     apiKey,
     extraHeaders: durableProviderOptions?.extraHeaders ?? profile.providerOptions.extraHeaders ?? {},
     model,
+    profile,
     protocol,
     url: urlForProtocol(protocol),
     ...(protocol === 'native'
       ? { thinkingMode: parseThinkingMode(ollama?.thinkingMode ?? database.ollamaThinkingMode) }
       : {}),
   }
+}
+
+function ollamaCloudPrompt(protocol: OllamaCloudToolProtocol, payload: JsonRecord): unknown {
+  if (protocol === 'openai-responses') {
+    return {
+      ...(payload.instructions !== undefined ? { instructions: payload.instructions } : {}),
+      ...(payload.input !== undefined ? { input: payload.input } : {}),
+    }
+  }
+  return {
+    ...(payload.system !== undefined ? { system: payload.system } : {}),
+    ...(payload.messages !== undefined ? { messages: payload.messages } : {}),
+  }
+}
+
+function completeOllamaCloudHistory(handle: RequestHistoryHandle | null, upstream: Response, response: string): void {
+  completeRequestHistory(handle, {
+    status: upstream.ok ? 'success' : 'error',
+    response,
+    ...(upstream.ok ? {} : { error: `Ollama Cloud returned HTTP ${upstream.status}` }),
+    metadata: {
+      providerStatus: upstream.status,
+      ...(upstream.statusText ? { providerStatusText: upstream.statusText } : {}),
+      ...(upstream.headers.get('content-type') ? { responseContentType: upstream.headers.get('content-type') } : {}),
+      responseCharacters: response.length,
+    },
+  })
 }
 
 function safeExtraHeaders(value: Record<string, string>): Record<string, string> {

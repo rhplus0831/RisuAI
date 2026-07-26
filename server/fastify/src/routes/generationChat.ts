@@ -57,7 +57,11 @@ import {
   replaceActiveChatMessages,
   writeGenerationChatMessage,
 } from '../messageStore.js'
-import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
+import {
+  dispatchChatProvider,
+  getServerGenerationModelString,
+  type ChatDispatchHistoryInput,
+} from '../prompt/chatDispatch.js'
 import {
   resolveModelProfile,
   type ModelProfileFallbackRef,
@@ -160,6 +164,8 @@ export interface ChatProviderDispatchContext {
   trace?: GenerationTraceContext
   /** Explicit primary/fallback profile selected by the request-policy wrapper. */
   profile?: ResolvedModelProfile
+  /** Retry/fallback identity attached by the request-policy wrapper. */
+  historyMetadata?: Record<string, unknown>
 }
 
 export type ChatProviderDispatcher = (
@@ -328,6 +334,12 @@ function dispatchProviderWithPolicies(
           ...context,
           database,
           profile,
+          historyMetadata: {
+            attempt: attempt + 1,
+            retryCount: retries,
+            fallbackIndex: profileIndex,
+            fallbackCount: profiles.length - 1,
+          },
           result: {
             ...context.result,
             outputTokens:
@@ -948,6 +960,28 @@ function createGenerationInfo(
       stage2: 0,
       stage3: 0,
       stage4: 0,
+    },
+  }
+}
+
+function chatDispatchHistory(db: DatabaseSync, context: ChatProviderDispatchContext): ChatDispatchHistoryInput {
+  const state = context.result.state
+  const toggles = state?.currentChat.generationSettings?.sidebarToggles
+  return {
+    db,
+    source: 'chat',
+    context: {
+      characterId: context.input.characterId,
+      ...(state?.currentChar.name ? { characterName: state.currentChar.name } : {}),
+      chatId: context.input.chatId,
+      ...(state?.currentChat.name ? { chatName: state.currentChat.name } : {}),
+      generationId: context.generationId,
+    },
+    ...(toggles ? { toggles: { ...toggles } } : {}),
+    metadata: {
+      mode: context.input.mode,
+      inputTokens: context.result.inputTokens,
+      ...context.historyMetadata,
     },
   }
 }
@@ -2082,6 +2116,7 @@ async function streamAssembly(
                 signal: context.signal,
                 trace: context.trace,
                 profile: context.profile,
+                history: chatDispatchHistory(db, context),
               }))
           const providerStartedAt = Date.now()
           let frames: AsyncIterable<CompletionStreamFrame> | null | undefined
@@ -3176,6 +3211,7 @@ async function runGenerationJob(args: {
                 signal: context.signal,
                 trace: context.trace,
                 profile: context.profile,
+                history: chatDispatchHistory(db, context),
               }))
           const providerStartedAt = Date.now()
           let frames: AsyncIterable<CompletionStreamFrame> | null | undefined

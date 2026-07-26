@@ -34,6 +34,7 @@ import {
 } from '../commandMutationReceipts.js'
 import { DATABASE_LINEAGE_HEADER, DatabaseLineageConflictError } from '../databaseLineage.js'
 import { InitializeConflictError } from '../databaseInitialization.js'
+import { MAX_REQUEST_HISTORY_LIMIT, pruneRequestHistory } from '../requestHistory.js'
 import { maskProviderSecrets, resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   normalizeLegacyFallbackModels,
@@ -1277,6 +1278,7 @@ export const SETTINGS_GROUPS = [
   'advanced',
   'sidebar',
   'account',
+  'data',
 ] as const
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
@@ -1637,6 +1639,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'chatGenerationTogglePresets',
     'customSidebarItems',
   ],
+  data: ['requestHistoryLimit'],
   account: ['account', 'didFirstSetup', 'username'],
 }
 
@@ -1800,6 +1803,7 @@ const NUMBER_SETTING_KEYS = new Set([
   'reasoningEffort',
   'repetition_penalty',
   'requestRetrys',
+  'requestHistoryLimit',
   'sdCFG',
   'sdSteps',
   'settingsCloseButtonSize',
@@ -2187,6 +2191,9 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           applySettingsPatch(database, patch)
           writeSettingsOnly(innerDb, extractSettings(database as Record<string, unknown>))
+          if (Object.prototype.hasOwnProperty.call(patch, 'requestHistoryLimit')) {
+            pruneRequestHistory(innerDb, (database as Record<string, unknown>).requestHistoryLimit)
+          }
           // The `memory` group's `hypaV3Presets` is a collection field, not a
           // settings scalar, so co-write only that one collection table when the
           // patch carries it; every other settings group is settings-only.
@@ -9080,6 +9087,12 @@ function validateSettingValue(key: string, value: unknown): void {
     (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
   ) {
     throw new ValidationError(`${key} must be a non-negative finite number`)
+  }
+  if (
+    key === 'requestHistoryLimit' &&
+    (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > MAX_REQUEST_HISTORY_LIMIT)
+  ) {
+    throw new ValidationError(`requestHistoryLimit must be an integer from 0 to ${MAX_REQUEST_HISTORY_LIMIT}`)
   }
   const kind = settingValueKind(key)
   if (kind === 'json') {

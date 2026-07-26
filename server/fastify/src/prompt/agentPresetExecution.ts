@@ -14,9 +14,10 @@ import {
 } from '../../../../src/ts/model/modelProfileResolver.js'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
+import type { DatabaseSync } from 'node:sqlite'
 import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
-import { dispatchChatProvider } from './chatDispatch.js'
+import { dispatchChatProvider, type ChatDispatchHistoryInput } from './chatDispatch.js'
 import { activateLorebook } from './lorebook.js'
 import { ensureTokenizerLoadedForDb } from './tokenizerConfig.js'
 
@@ -39,6 +40,7 @@ export interface AgentPresetPreviousOutput {
 
 export interface AgentPresetPreparedInputContext {
   database: Database
+  requestHistoryDb?: DatabaseSync
   currentChar: character
   currentChat: Chat
   currentUserMessage?: string
@@ -82,6 +84,7 @@ export interface AgentPresetProviderDispatchArgs {
   outputTokens: number
   profile: ResolvedModelProfile
   signal: AbortSignal
+  history?: ChatDispatchHistoryInput
 }
 
 export type AgentPresetProviderDispatcher = (
@@ -467,6 +470,29 @@ export async function executeAgentPresetStep(
         outputTokens: maxOutputCharsForStep(input.step),
         profile,
         signal: controller.signal,
+        ...(input.requestHistoryDb
+          ? {
+              history: {
+                db: input.requestHistoryDb,
+                source: 'agent-preset',
+                context: {
+                  characterId: input.currentChar.chaId,
+                  characterName: input.currentChar.name,
+                  ...(input.currentChat.id ? { chatId: input.currentChat.id } : {}),
+                  ...(input.currentChat.name ? { chatName: input.currentChat.name } : {}),
+                },
+                ...(input.currentChat.generationSettings?.sidebarToggles
+                  ? { toggles: { ...input.currentChat.generationSettings.sidebarToggles } }
+                  : {}),
+                metadata: {
+                  agentPresetStepId: input.step.id,
+                  agentPresetStepName: input.step.name,
+                  agentPresetPhase: input.step.phase,
+                  agentPresetOutputKey: input.step.outputKey,
+                },
+              },
+            }
+          : {}),
         dispatchProvider: input.dispatchProvider ?? defaultAgentPresetProviderDispatcher,
       }),
       timeoutMs,
@@ -775,6 +801,7 @@ async function defaultAgentPresetProviderDispatcher(
     outputTokens: args.outputTokens,
     profile: args.profile,
     signal: args.signal,
+    history: args.history,
   })
 }
 

@@ -17,6 +17,13 @@ import { resolveMemorySummaryModel, type MemorySummaryModelRequest } from './mem
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
 import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
 import { armMemoryProviderFetchDeadline } from './memoryProviderDeadline.js'
+import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver.js'
+import {
+  completeRequestHistory,
+  requestHistoryProfileSnapshot,
+  tryBeginRequestHistory,
+  type RequestHistoryContext,
+} from './requestHistory.js'
 
 export interface SummarizeMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -213,6 +220,25 @@ async function executeSummarizeJob(input: {
   await input.acquireRateLimit(input.settings)
   let summary: SummaryAdapterResult
   const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
+  const historyScope = memoryRequestHistoryScope(input.database, input.job.chatId)
+  const historyHandle = tryBeginRequestHistory({
+    db: input.opts.db,
+    limit: input.database.requestHistoryLimit,
+    source: 'memory-summary',
+    profile: requestHistoryProfileSnapshot(resolveModelProfile({ database: input.database, role: 'memory' })),
+    prompt: prompt.messages,
+    context: historyScope.context,
+    toggles: historyScope.toggles,
+    metadata: {
+      memoryJobId: input.job.id,
+      memoryChunkId: chunk.id,
+      rangeStartSeq: chunk.rangeStartSeq,
+      rangeEndSeq: chunk.rangeEndSeq,
+      responseBudget: prompt.options.maxTokens,
+      provider: modelRequest.request.provider,
+      requestModel: modelRequest.request.model,
+    },
+  })
   try {
     summary = await input.summarize(prompt.messages, {
       ...modelRequest.request,
@@ -220,6 +246,24 @@ async function executeSummarizeJob(input: {
       temperature: prompt.options.temperature,
       signal: controller.signal,
     })
+    if ('error' in summary) {
+      completeRequestHistory(historyHandle, {
+        status: controller.signal.aborted ? 'cancelled' : 'error',
+        error: summary.error,
+      })
+    } else {
+      completeRequestHistory(historyHandle, {
+        status: 'success',
+        response: summary.text,
+        metadata: { outputTokens: summary.tokens },
+      })
+    }
+  } catch (error) {
+    completeRequestHistory(historyHandle, {
+      status: controller.signal.aborted ? 'cancelled' : 'error',
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
   } finally {
     clearDeadline()
   }
@@ -236,6 +280,26 @@ async function executeSummarizeJob(input: {
     text: summary.text,
     tokens: summary.tokens,
   }
+}
+
+function memoryRequestHistoryScope(
+  database: Database,
+  chatId: string,
+): { context: RequestHistoryContext; toggles?: Record<string, string> } {
+  for (const character of database.characters ?? []) {
+    const chat = character.chats?.find((candidate) => candidate.id === chatId)
+    if (!chat) continue
+    return {
+      context: {
+        characterId: character.chaId,
+        characterName: character.name,
+        chatId,
+        ...(chat.name ? { chatName: chat.name } : {}),
+      },
+      ...(chat.generationSettings?.sidebarToggles ? { toggles: { ...chat.generationSettings.sidebarToggles } } : {}),
+    }
+  }
+  return { context: { chatId } }
 }
 
 function createSummaryRateLimiter(opts: SummarizeMemoryJobHandlerOptions): SummaryRateLimiter {

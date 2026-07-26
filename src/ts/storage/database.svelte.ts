@@ -2827,6 +2827,13 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.requestRetrys)) {
     data.requestRetrys = 2
   }
+  if (checkNullish(data.requestHistoryLimit)) {
+    data.requestHistoryLimit = 20
+  }
+  data.requestHistoryLimit =
+    typeof data.requestHistoryLimit === 'number' && Number.isFinite(data.requestHistoryLimit)
+      ? Math.max(0, Math.min(10000, Math.trunc(data.requestHistoryLimit)))
+      : 20
   if (checkNullish(data.useSayNothing)) {
     data.useSayNothing = true
   }
@@ -3802,6 +3809,7 @@ export interface Database {
     FontColorQuote2: string
   }
   requestRetrys: number
+  requestHistoryLimit: number
   localNetworkMode: boolean
   localNetworkTimeoutSec: number
   emotionPrompt2: string

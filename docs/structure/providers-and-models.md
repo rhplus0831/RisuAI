@@ -297,6 +297,14 @@ current retired-settings inventory is in
 ## Server Provider Dispatch
 
 Fastify dispatch is centered in `server/fastify/src/prompt/chatDispatch.ts`.
+The same boundary records durable request history for every actual provider
+attempt, including retries and fallback profiles. It snapshots the resolved
+profile, finalized prompt, optional chat/toggle context, accumulated response,
+and non-secret terminal metadata. Memory summarization uses its separate
+adapter and records through the same `requestHistory.ts` repository explicitly.
+The legacy client-directed completion route records at its shared buffered/SSE
+response boundary and never persists the provider options object that may carry
+credentials.
 Provider adapters live in `server/fastify/src/generation/`:
 
 - OpenAI, OpenAI Responses, OpenAI-compatible, and legacy instruct.

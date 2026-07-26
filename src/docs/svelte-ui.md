@@ -362,11 +362,18 @@ Current settings indexes:
 | `18`  | `prompt-settings` | Prompt preset/settings shell.                                                                 |
 | `19`  | `agent-presets`   | `AgentPresetSettings`.                                                                        |
 | `20`  | `input-hooks`     | Draft and BTW input-hook definitions through `InputHookSettings`.                             |
+| `21`  | `request-history` | Durable LLM request records and retention controls through `RequestHistorySettings`.          |
 | `77`  | `supporter`       | `ThanksPage`.                                                                                 |
 
 When `enableRisuaiProTools` is on, Settings also shows an Easy Panel nav button.
 It opens the global `easyPanelStore` overlay instead of a routed
 `/settings/:section` page.
+
+The Data navigation group contains Backup & Restore plus Request History.
+Request History reads private summaries/details through
+`src/ts/server/requestHistory.ts`; retention uses the server-backed
+`requestHistoryLimit` setting, and individual deletion uses the authenticated
+operational route.
 
 Data-driven setting definitions use `SettingItem` from `src/ts/setting/types.ts`.
 Important fields are `id`, `type`, `labelKey`, `helpKey`, `bindKey`,

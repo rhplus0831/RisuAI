@@ -276,6 +276,58 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     expect(res.json()).toEqual({ type: 'success', result: 'pong' })
   })
 
+  it('records legacy completion prompts and responses without provider credentials', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const generated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        ...basePayload,
+        options: {
+          echo: { message: 'history pong', delayMs: 0 },
+          openai: { apiKey: 'must-not-be-recorded' },
+        },
+      },
+    })
+    expect(generated.statusCode).toBe(200)
+
+    const listed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/request-history',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(listed.statusCode).toBe(200)
+    expect(listed.json()).toMatchObject({
+      records: [
+        {
+          status: 'success',
+          source: 'completion',
+          profile: {
+            sourceKind: 'legacy-client-request',
+            provider: 'echo',
+            modelId: 'echo_model',
+          },
+          responsePreview: 'history pong',
+        },
+      ],
+    })
+
+    const historyId = listed.json().records[0].id as string
+    const detail = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/request-history/${historyId}`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(detail.json()).toMatchObject({
+      record: {
+        prompt: [{ role: 'user', content: 'hi' }],
+        response: 'history pong',
+      },
+    })
+    expect(JSON.stringify(detail.json())).not.toContain('must-not-be-recorded')
+  })
+
   it('echo non-streaming falls back to default message when options.echo is absent', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
@@ -468,9 +520,10 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     }) as unknown as typeof globalThis.fetch
 
     const { assertion } = await setupAuthedClient(harness.app)
+    const toggles = encodeURIComponent(JSON.stringify({ tools: '1' }))
     const res = await harness.app.inject({
       method: 'POST',
-      url: '/api/v1/generate/completion?operation=ollama-cloud-tool&protocol=native&mode=model&staticModel=ollama-cloud',
+      url: `/api/v1/generate/completion?operation=ollama-cloud-tool&protocol=native&mode=model&staticModel=ollama-cloud&characterId=char-cloud&chatId=chat-cloud&toggles=${toggles}`,
       headers: { 'risu-auth': assertion },
       payload: {
         model: 'browser-controlled-model',
@@ -493,6 +546,35 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       think: 'medium',
       messages: [{ role: 'user', content: 'use a tool' }],
     })
+
+    const listed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/request-history',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(listed.json()).toMatchObject({
+      records: [
+        {
+          status: 'success',
+          source: 'chat',
+          context: { characterId: 'char-cloud', chatId: 'chat-cloud' },
+          profile: { provider: 'ollama', modelId: 'ollama-cloud' },
+        },
+      ],
+    })
+    const detail = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/request-history/${listed.json().records[0].id as string}`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(detail.json()).toMatchObject({
+      record: {
+        prompt: { messages: [{ role: 'user', content: 'use a tool' }] },
+        toggles: { tools: '1' },
+      },
+    })
+    expect(detail.json().record.response).toContain('cloud stream')
+    expect(JSON.stringify(detail.json())).not.toContain('sk-server-ollama-cloud')
   })
 
   it.each([

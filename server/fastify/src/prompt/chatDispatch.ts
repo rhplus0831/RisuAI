@@ -1,4 +1,5 @@
 import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { DatabaseSync } from 'node:sqlite'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { LLMFlags, LLMFormat, type LLMFormat as LLMFormatValue } from '../../../../src/ts/model/types'
 import { OpenAIModels } from '../../../../src/ts/model/providers/openai'
@@ -42,6 +43,21 @@ import {
   sanitizeTextMessages,
 } from '../generation/providerMessages.js'
 import { extractConfiguredJsonValue, parseConfiguredJsonSchemaText } from '../generation/jsonControls.js'
+import {
+  completeRequestHistory,
+  requestHistoryProfileSnapshot,
+  tryBeginRequestHistory,
+  wrapRequestHistoryFrames,
+  type RequestHistoryContext,
+} from '../requestHistory.js'
+
+export interface ChatDispatchHistoryInput {
+  db: DatabaseSync
+  source: string
+  context?: RequestHistoryContext
+  toggles?: Record<string, string>
+  metadata?: Record<string, unknown>
+}
 
 interface ChatDispatchArgs {
   database: Database
@@ -57,6 +73,10 @@ interface ChatDispatchArgs {
   tools?: ServerToolDefinition[]
   /** Prior calls and browser-executed results, converted to provider-native history server-side. */
   toolRounds?: ServerToolRound[]
+  /** Durable diagnostics for one actual provider attempt. */
+  history?: ChatDispatchHistoryInput
+  /** Provider-flag-normalized messages prepared by the public dispatch boundary. */
+  finalizedMessages?: OpenAIChat[]
 }
 
 interface CustomModelEntry {
@@ -962,6 +982,45 @@ async function* resultFrames(
 }
 
 export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<AsyncIterable<CompletionStreamFrame>> {
+  const profile = args.profile ?? resolveModelProfile({ database: args.database })
+  const finalizedMessages = reformatMessages(args.database, args.formated, profile.modelInfo.flags)
+  const handle = args.history
+    ? tryBeginRequestHistory({
+        db: args.history.db,
+        limit: args.database.requestHistoryLimit,
+        source: args.history.source,
+        profile: requestHistoryProfileSnapshot(profile),
+        prompt:
+          (args.toolRounds?.length ?? 0) > 0
+            ? { messages: finalizedMessages, toolRounds: args.toolRounds }
+            : finalizedMessages,
+        context: args.history.context,
+        toggles: args.history.toggles,
+        metadata: {
+          responseBudget: args.outputTokens ?? args.database.maxResponse,
+          maxContext: args.database.maxContext,
+          streamingRequested: args.database.useStreaming === true,
+          multiGenerationRequested: args.multiGeneration === true,
+          toolCount: args.tools?.length ?? 0,
+          toolRoundCount: args.toolRounds?.length ?? 0,
+          ...(args.history.metadata ?? {}),
+        },
+      })
+    : null
+  try {
+    const frames = await dispatchChatProviderCore({ ...args, profile, finalizedMessages })
+    return wrapRequestHistoryFrames(frames, handle, args.signal)
+  } catch (error) {
+    completeRequestHistory(handle, {
+      status: args.signal.aborted ? 'cancelled' : 'error',
+      error: error instanceof Error ? error.message : String(error),
+      metadata: { dispatchFailedBeforeFrames: true },
+    })
+    throw error
+  }
+}
+
+async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIterable<CompletionStreamFrame>> {
   const { database: db, outputTokens, signal, trace } = args
   await ensureTokenizerLoadedForDb(db)
   const profile = args.profile ?? resolveModelProfile({ database: db })
@@ -982,7 +1041,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
 
   const model = resolveProviderModel(db, info, provider, profile)
   const preSummary = summarizePromptRows(args.formated)
-  const messages = reformatMessages(db, args.formated, info.flags)
+  const messages = args.finalizedMessages ?? reformatMessages(db, args.formated, info.flags)
   const postSummary = summarizePromptRows(messages)
   emitProtocolMetric('generation_prompt_dispatch_reformat', {
     provider,

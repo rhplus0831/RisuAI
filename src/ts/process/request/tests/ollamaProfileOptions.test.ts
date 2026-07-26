@@ -380,6 +380,7 @@ describe('requestOllama profile provider options through requestChatDataMain', (
     const result = await requestChatDataMain(
       {
         ...makeRequest(),
+        chatId: 'chat-cloud',
         previewBody: false,
         tools: [
           {
@@ -400,6 +401,7 @@ describe('requestOllama profile provider options through requestChatDataMain', (
       expect(parsedUrl.searchParams.get('operation')).toBe('ollama-cloud-tool')
       expect(parsedUrl.searchParams.get('protocol')).toBe('native')
       expect(parsedUrl.searchParams.get('staticModel')).toBe('ollama-cloud')
+      expect(parsedUrl.searchParams.get('chatId')).toBe('chat-cloud')
       expect(new Headers(init.headers).get('risu-auth')).toBe('browser-auth-token')
       expect(JSON.stringify(init)).not.toContain('sk-browser-must-not-send')
       expect(new Headers(init.headers).get('authorization')).toBeNull()

@@ -46,6 +46,12 @@ import {
   type ServerToolDefinition,
   type ServerToolRound,
 } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import {
+  completeRequestHistory,
+  tryBeginRequestHistory,
+  type RequestHistoryHandle,
+  type RequestHistoryProfileSnapshot,
+} from '../requestHistory.js'
 
 const SUPPORTED_PROVIDERS = new Set([
   'echo',
@@ -364,6 +370,7 @@ function settingsToCompletionDatabase(settings: Record<string, unknown>): Databa
 }
 
 function badRequest(reply: FastifyReply, error: string): void {
+  finishLegacyRequestHistory(reply, { status: 'error', error })
   reply.code(400).send({ error })
 }
 
@@ -387,6 +394,100 @@ function completionPayload(result: CompletionResult): CompletionResponsePayload 
     ...(result.code ? { code: result.code } : {}),
     ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
   }
+}
+
+interface LegacyRequestHistoryTracker {
+  handle: RequestHistoryHandle
+  settled: boolean
+}
+
+const legacyRequestHistoryByReply = new WeakMap<FastifyReply, LegacyRequestHistoryTracker>()
+
+function beginLegacyRequestHistory(input: {
+  db: DatabaseSync
+  reply: FastifyReply
+  provider: string
+  model: string
+  prompt: unknown
+  stream: boolean
+}): void {
+  const settings = loadServerIntentCompletionSettings(input.db)
+  const profile: RequestHistoryProfileSnapshot = {
+    id: `legacy:${input.provider}:${input.model}`,
+    role: 'otherAx',
+    sourceKind: 'legacy-client-request',
+    provider: input.provider,
+    modelId: input.model,
+    requestModel: input.model,
+  }
+  const handle = tryBeginRequestHistory({
+    db: input.db,
+    limit: settings?.requestHistoryLimit,
+    source: 'completion',
+    profile,
+    prompt: input.prompt,
+    metadata: {
+      mode: 'legacy-client-request',
+      streamingRequested: input.stream,
+    },
+  })
+  if (!handle) return
+  const tracker: LegacyRequestHistoryTracker = { handle, settled: false }
+  legacyRequestHistoryByReply.set(input.reply, tracker)
+  input.reply.raw.once('close', () => {
+    finishLegacyRequestHistory(input.reply, {
+      status: input.reply.statusCode >= 400 ? 'error' : 'cancelled',
+      error:
+        input.reply.statusCode >= 400
+          ? `Completion request ended with HTTP ${input.reply.statusCode}`
+          : 'Completion request ended before a terminal provider response',
+    })
+  })
+}
+
+function finishLegacyRequestHistory(
+  reply: FastifyReply,
+  input: {
+    status: 'success' | 'error' | 'cancelled'
+    response?: string
+    error?: string
+    metadata?: Record<string, unknown>
+  },
+): void {
+  const tracker = legacyRequestHistoryByReply.get(reply)
+  if (!tracker || tracker.settled) return
+  tracker.settled = true
+  legacyRequestHistoryByReply.delete(reply)
+  completeRequestHistory(tracker.handle, input)
+}
+
+function sendCompletionResult(reply: FastifyReply, result: CompletionResult): void {
+  const payload = completionPayload(result)
+  const success = result.type === 'success'
+  finishLegacyRequestHistory(reply, {
+    status: success ? 'success' : 'error',
+    response: success ? result.result : '',
+    ...(success ? {} : { error: result.result }),
+    metadata: {
+      ...(result.model !== undefined ? { model: result.model } : {}),
+      ...(typeof result.status === 'number' ? { providerStatus: result.status } : {}),
+      ...(result.statusText ? { providerStatusText: result.statusText } : {}),
+      ...(result.code ? { providerCode: result.code } : {}),
+      ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
+    },
+  })
+  reply.code(200).send(payload)
+}
+
+function legacyFinalizedPrompt(
+  provider: string,
+  messages: ChatMessage[],
+  options: { horde?: HordeOptions; anthropic?: AnthropicOptions; bedrock?: BedrockOptions },
+): unknown {
+  if (provider === 'horde' && typeof options.horde?.prompt === 'string') return options.horde.prompt
+  const system =
+    provider === 'anthropic' ? options.anthropic?.system : provider === 'bedrock' ? options.bedrock?.system : undefined
+  return typeof system === 'string' && system.length > 0 ? { system, messages } : messages
 }
 
 function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void {
@@ -427,14 +528,52 @@ export async function pipeStream(
     'cache-control': 'no-store',
     connection: 'keep-alive',
   })
+  let response = ''
   try {
     for await (const frame of frames) {
+      if (frame.kind === 'token') response += frame.content ?? ''
+      if (frame.kind === 'done') {
+        finishLegacyRequestHistory(reply, {
+          status: 'success',
+          response,
+          metadata: {
+            ...(frame.finishReason ? { finishReason: frame.finishReason } : {}),
+            ...(frame.alternates ? { alternates: frame.alternates } : {}),
+            ...(frame.toolCalls ? { toolCalls: frame.toolCalls } : {}),
+          },
+        })
+      }
+      if (frame.kind === 'error') {
+        finishLegacyRequestHistory(reply, {
+          status: 'error',
+          response,
+          error: frame.error ?? 'Provider request failed',
+          metadata: {
+            ...(frame.status !== undefined ? { providerStatus: frame.status } : {}),
+            ...(frame.statusText ? { providerStatusText: frame.statusText } : {}),
+            ...(frame.code ? { providerCode: frame.code } : {}),
+            ...(frame.reason ? { providerReason: frame.reason } : {}),
+          },
+        })
+      }
       writeSseChunk(reply, frame)
       if (refreshDeadline && isCompletionDeadlineActivityFrame(frame)) {
         refreshDeadline()
       }
     }
+  } catch (error) {
+    finishLegacyRequestHistory(reply, {
+      status: 'error',
+      response,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
   } finally {
+    finishLegacyRequestHistory(reply, {
+      status: 'cancelled',
+      response,
+      error: 'Completion stream ended before a terminal provider response',
+    })
     reply.raw.end()
   }
 }
@@ -492,7 +631,7 @@ async function handleEchoBuffered(req: FastifyRequest, reply: FastifyReply, opti
     })
     const result = await runEcho(echo)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -636,7 +775,7 @@ async function handleAnthropicBuffered(
     }
     const result = await runAnthropic(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -668,7 +807,7 @@ async function handleKoboldBuffered(
     }
     const result = await runKobold(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -702,7 +841,7 @@ async function handleOobaLegacyBuffered(
     }
     const result = await runOobaLegacy(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -768,7 +907,7 @@ async function handleOllamaBuffered(
     }
     const result = await runOllama(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -801,7 +940,7 @@ async function handleHordeBuffered(
     }
     const result = await runHorde(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -852,7 +991,7 @@ async function handleBedrockBuffered(
     }
     const result = await runBedrock(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -891,7 +1030,7 @@ async function handleResponsesBuffered(
     }
     const result = await runOpenAIResponses(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -932,7 +1071,7 @@ async function handleLegacyInstructBuffered(
     }
     const result = await runOpenAILegacyInstruct(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -1014,7 +1153,7 @@ async function handleGeminiBuffered(
     }
     const result = await runGemini(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -1059,7 +1198,7 @@ async function handleCohereBuffered(
     }
     const result = await runCohere(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -1139,7 +1278,7 @@ async function handleMistralBuffered(
     }
     const result = await runMistral(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -1203,7 +1342,7 @@ async function handleOpenAICompatibleBuffered(
     }
     const result = await runOpenAI(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -1280,6 +1419,11 @@ async function handleServerIntentCompletion(
       signal,
       tools,
       toolRounds,
+      history: {
+        db,
+        source: 'completion',
+        metadata: { mode: isCompletionModelMode(body.mode) ? body.mode : 'model' },
+      },
     })
 
     if (body.stream === true) {
@@ -1356,6 +1500,15 @@ export function registerGenerationRoutes(
       bedrock?: BedrockOptions
       horde?: HordeOptions
     }
+
+    beginLegacyRequestHistory({
+      db,
+      reply,
+      provider,
+      model: body.model,
+      prompt: legacyFinalizedPrompt(provider, messages, options),
+      stream: body.stream,
+    })
 
     if (provider === 'echo') {
       const echoOpts = options.echo ?? {}

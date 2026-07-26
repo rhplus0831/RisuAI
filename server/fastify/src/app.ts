@@ -46,6 +46,7 @@ import { registerProviderOperationRoutes, type ProviderOperationRouteOptions } f
 import { registerImageGenerationRoutes, type ImageGenerationRouteOptions } from './routes/imageGeneration.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerPushNotificationRoutes } from './routes/pushNotifications.js'
+import { registerRequestHistoryRoutes } from './routes/requestHistory.js'
 import { registerRealmImportRoutes } from './routes/realmImport.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
@@ -308,6 +309,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink, {
     automaticBackupRetention: config.automaticBackupRetention ?? DEFAULT_AUTOMATIC_BACKUP_RETENTION,
   })
+  registerRequestHistoryRoutes(app, db, authState)
   registerPushNotificationRoutes(app, authState, pushNotifications)
   registerMcpOAuthRefreshRoutes(app, db, authState, config.dataDir, commandEventSink, opts.mcpOAuthRefresh)
   registerOpenAITranscriptionRoutes(app, db, authState, opts.openAITranscription)

@@ -30,15 +30,17 @@ preserves displaced/new candidates as alternates, while send/continue clears the
 reroll buffer for the appended path. Per-chat `hypaV3Data` lives in
 `chat_hypa_v3`.
 
-`CURRENT_SCHEMA_VERSION` is 26. SQLite includes settings; character, chat,
+`CURRENT_SCHEMA_VERSION` is 28. SQLite includes settings; character, chat,
 message, and per-chat memory rows; split collections; assets; command events and
 mutation receipts; the inlay catalog; push subscriptions; Hypa V3 memory state;
-and generation finalization retries. Migration v22 drops the retired
+generation finalization retries; greeting translations; and durable LLM request
+history. Migration v22 drops the retired
 `collection_body_revisions` and `projection_body_cache_state` tables; v23
 persists stable ids for legacy global lorebooks and entries; v24 adds durable
 command-mutation receipts; v25 adds persistent database lineage, durable active
 writer ownership/epochs, and acknowledged-receipt tombstones; v26 adds the
-`inlay_catalog` table. Current browser state is rebuilt from concrete REST
+`inlay_catalog` table; v27 adds greeting translations; and v28 adds
+`request_history`. Current browser state is rebuilt from concrete REST
 resources rather than a cached database projection.
 
 Prompt-template ownership follows the split-preset contract:

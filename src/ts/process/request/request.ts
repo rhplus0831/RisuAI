@@ -193,6 +193,16 @@ function ollamaCloudToolProxyUrl(arg: RequestDataArgumentExtended, protocol: Oll
   } else {
     url.searchParams.set('staticModel', arg.staticModel?.trim() || arg.resolvedProfile?.modelId || 'ollama-cloud')
   }
+  if (arg.chatId) {
+    url.searchParams.set('chatId', arg.chatId)
+    const currentChat = getCurrentChat()
+    const toggles = currentChat?.id === arg.chatId ? currentChat.generationSettings?.sidebarToggles : undefined
+    if (toggles) {
+      const encodedToggles = JSON.stringify(toggles)
+      if (encodedToggles.length <= 4096) url.searchParams.set('toggles', encodedToggles)
+    }
+  }
+  if (arg.currentChar?.chaId) url.searchParams.set('characterId', arg.currentChar.chaId)
   return url.toString()
 }
 

@@ -11,7 +11,7 @@ import {
   translatorPipelineSignature,
   type TranslatorHistoryResolver,
 } from '../../../../src/ts/translator/pipeline.js'
-import { dispatchChatProvider } from '../prompt/chatDispatch.js'
+import { dispatchChatProvider, type ChatDispatchHistoryInput } from '../prompt/chatDispatch.js'
 import { tokenize } from '../prompt/tokens.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { ValidationError } from '../repository.js'
@@ -35,6 +35,7 @@ export interface RawMessageTranslationInput {
   text: string
   historyContext?: RawMessageTranslationHistoryContext
   signal: AbortSignal
+  requestHistory?: Omit<ChatDispatchHistoryInput, 'source'>
 }
 
 export interface RawMessageTranslationHistoryContext {
@@ -417,6 +418,7 @@ async function translateWithLlm(
   targetLanguage: string,
   signal: AbortSignal,
   historyResolver?: TranslatorHistoryResolver,
+  requestHistory?: Omit<ChatDispatchHistoryInput, 'source'>,
 ) {
   const database = {
     ...settings,
@@ -456,6 +458,19 @@ async function translateWithLlm(
           outputTokens: maxResponse,
           profile,
           signal: stepSignal ?? signal,
+          ...(requestHistory
+            ? {
+                history: {
+                  ...requestHistory,
+                  source: 'translation',
+                  metadata: {
+                    targetLanguage,
+                    inputLanguage,
+                    ...(requestHistory.metadata ?? {}),
+                  },
+                },
+              }
+            : {}),
         }),
       )
     },
@@ -470,7 +485,16 @@ export async function translateRawMessageData(input: RawMessageTranslationInput)
     if (translatorType === 'deeplX') {
       return translateWithDeepLX(input.settings, chunk, inputLanguage, targetLanguage, input.signal)
     }
-    return translateWithLlm(input.settings, input.character, chunk, inputLanguage, targetLanguage, input.signal)
+    return translateWithLlm(
+      input.settings,
+      input.character,
+      chunk,
+      inputLanguage,
+      targetLanguage,
+      input.signal,
+      undefined,
+      input.requestHistory,
+    )
   }
   const historyResolver =
     translatorType === 'llm' && input.settings.translatorSendTextAsIs === true && input.historyContext
@@ -486,6 +510,7 @@ export async function translateRawMessageData(input: RawMessageTranslationInput)
           targetLanguage,
           input.signal,
           historyResolver,
+          input.requestHistory,
         )
       : await translatePreservingRawBlocks(input.text, translateChunk)
 
