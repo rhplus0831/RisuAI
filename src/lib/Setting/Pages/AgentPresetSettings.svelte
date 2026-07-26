@@ -271,96 +271,77 @@
       {language.agentPresets.emptyState}
     </div>
   {:else}
-    <div class="overflow-x-auto rounded-md border border-darkborderc">
-      <table class="w-full min-w-[58rem] text-sm">
-        <thead class="bg-darkbg text-left text-xs uppercase text-textcolor2">
-          <tr>
-            <th class="px-3 py-2 font-medium">{language.agentPresets.nameColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.agentPresets.statusColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.agentPresets.stepsColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.agentPresets.usageColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.agentPresets.maxConcurrency}</th>
-            <th class="px-3 py-2 font-medium">{language.agentPresets.actionsColumn}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each presets as preset, index (preset.id)}
-            {@const status = statusForPreset(preset)}
-            <tr class="border-t border-darkborderc align-top" data-risu-agent-preset-row data-preset-id={preset.id}>
-              <td class="px-3 py-3">
-                <span class="block font-medium">{preset.name}</span>
-                <span class="block text-xs text-textcolor2">{preset.id}</span>
-                {#if defaultPresetId === preset.id}
-                  <span class="mt-1 inline-block rounded-sm border border-selected px-1.5 py-0.5 text-xs text-selected">
-                    {language.agentPresets.defaultBadge}
-                  </span>
-                {/if}
-              </td>
-              <td class="px-3 py-3">
-                <span class={`inline-block rounded-sm border px-2 py-1 text-xs ${statusClass(status.tone)}`}>
-                  {status.label}
-                </span>
-              </td>
-              <td class="px-3 py-3">
-                <span class="block">{language.agentPresets.stepCount(enabledSteps(preset).length)}</span>
-                <span class="block text-xs text-textcolor2">{phaseSummary(preset)}</span>
-              </td>
-              <td class="px-3 py-3 text-textcolor2">{language.agentPresets.usageCount(usageCount(preset.id))}</td>
-              <td class="px-3 py-3 text-textcolor2">{preset.maxConcurrency ?? language.agentPresets.unlimited}</td>
-              <td class="px-3 py-3">
-                <div class="flex flex-wrap gap-2">
-                  <span data-risu-agent-preset-move-up>
-                    <Button
-                      size="sm"
-                      styled="outlined"
-                      disabled={mutationLocked || index === 0}
-                      onclick={() => movePreset(preset, -1)}>
-                      <span class="inline-flex items-center gap-1"
-                        ><ArrowUpIcon size={14} />{language.agentPresets.moveUp}</span>
-                    </Button>
-                  </span>
-                  <span data-risu-agent-preset-move-down>
-                    <Button
-                      size="sm"
-                      styled="outlined"
-                      disabled={mutationLocked || index === presets.length - 1}
-                      onclick={() => movePreset(preset, 1)}>
-                      <span class="inline-flex items-center gap-1"
-                        ><ArrowDownIcon size={14} />{language.agentPresets.moveDown}</span>
-                    </Button>
-                  </span>
-                  <span data-risu-agent-preset-edit>
-                    <Button
-                      size="sm"
-                      styled="outlined"
-                      disabled={mutationLocked}
-                      onclick={() => openEditEditor(preset)}>
-                      <span class="inline-flex items-center gap-1"
-                        ><PencilIcon size={14} />{language.agentPresets.edit}</span>
-                    </Button>
-                  </span>
-                  <span data-risu-agent-preset-duplicate>
-                    <Button
-                      size="sm"
-                      styled="outlined"
-                      disabled={mutationLocked}
-                      onclick={() => duplicatePreset(preset)}>
-                      <span class="inline-flex items-center gap-1"
-                        ><CopyIcon size={14} />{language.agentPresets.duplicate}</span>
-                    </Button>
-                  </span>
-                  <span data-risu-agent-preset-delete>
-                    <Button size="sm" styled="danger" disabled={mutationLocked} onclick={() => deletePreset(preset)}>
-                      <span class="inline-flex items-center gap-1"
-                        ><TrashIcon size={14} />{language.agentPresets.delete}</span>
-                    </Button>
-                  </span>
-                </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+    <div class="flex flex-col gap-2" data-risu-agent-preset-list>
+      {#each presets as preset, index (preset.id)}
+        {@const status = statusForPreset(preset)}
+        <article
+          class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 text-sm"
+          data-risu-agent-preset-row
+          data-preset-id={preset.id}>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-medium">{preset.name}</span>
+            <span class={`rounded-sm border px-2 py-1 text-xs ${statusClass(status.tone)}`}>
+              {status.label}
+            </span>
+            {#if defaultPresetId === preset.id}
+              <span class="rounded-sm border border-selected px-2 py-1 text-xs text-selected">
+                {language.agentPresets.defaultBadge}
+              </span>
+            {/if}
+            <div class="ml-auto flex flex-wrap gap-2">
+              <span data-risu-agent-preset-move-up>
+                <Button
+                  size="sm"
+                  styled="outlined"
+                  disabled={mutationLocked || index === 0}
+                  onclick={() => movePreset(preset, -1)}>
+                  <span class="inline-flex items-center gap-1"
+                    ><ArrowUpIcon size={14} />{language.agentPresets.moveUp}</span>
+                </Button>
+              </span>
+              <span data-risu-agent-preset-move-down>
+                <Button
+                  size="sm"
+                  styled="outlined"
+                  disabled={mutationLocked || index === presets.length - 1}
+                  onclick={() => movePreset(preset, 1)}>
+                  <span class="inline-flex items-center gap-1"
+                    ><ArrowDownIcon size={14} />{language.agentPresets.moveDown}</span>
+                </Button>
+              </span>
+              <span data-risu-agent-preset-edit>
+                <Button size="sm" styled="outlined" disabled={mutationLocked} onclick={() => openEditEditor(preset)}>
+                  <span class="inline-flex items-center gap-1"
+                    ><PencilIcon size={14} />{language.agentPresets.edit}</span>
+                </Button>
+              </span>
+              <span data-risu-agent-preset-duplicate>
+                <Button size="sm" styled="outlined" disabled={mutationLocked} onclick={() => duplicatePreset(preset)}>
+                  <span class="inline-flex items-center gap-1"
+                    ><CopyIcon size={14} />{language.agentPresets.duplicate}</span>
+                </Button>
+              </span>
+              <span data-risu-agent-preset-delete>
+                <Button size="sm" styled="danger" disabled={mutationLocked} onclick={() => deletePreset(preset)}>
+                  <span class="inline-flex items-center gap-1"
+                    ><TrashIcon size={14} />{language.agentPresets.delete}</span>
+                </Button>
+              </span>
+            </div>
+          </div>
+          <span class="break-all text-xs text-textcolor2">{preset.id}</span>
+          {#if preset.description}
+            <span class="text-xs text-textcolor2">{preset.description}</span>
+          {/if}
+          <span class="text-xs text-textcolor2">
+            {language.agentPresets.stepCount(enabledSteps(preset).length)} · {phaseSummary(preset)}
+          </span>
+          <span class="text-xs text-textcolor2">
+            {language.agentPresets.usageCount(usageCount(preset.id))} · {language.agentPresets.maxConcurrency}:
+            {preset.maxConcurrency ?? language.agentPresets.unlimited}
+          </span>
+        </article>
+      {/each}
     </div>
   {/if}
 

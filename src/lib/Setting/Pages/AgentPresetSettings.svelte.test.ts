@@ -353,6 +353,22 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).toContain(language.agentPresets.emptyState)
   })
 
+  it('renders populated presets as stacked cards', async () => {
+    seedDb([
+      preset({ id: 'ap_a', name: 'Research Agent', description: 'Researches the current conversation.' }),
+      preset({ id: 'ap_b', name: 'Critique Agent', maxConcurrency: 2 }),
+    ])
+    mountPage()
+    await tick()
+
+    expect(target.querySelector('[data-risu-agent-preset-list]')).toBeTruthy()
+    expect(row('ap_a').tagName).toBe('ARTICLE')
+    expect(row('ap_b').tagName).toBe('ARTICLE')
+    expect(target.querySelector('table')).toBeNull()
+    expect(row('ap_a').textContent).toContain('Researches the current conversation.')
+    expect(row('ap_b').textContent?.replace(/\s+/g, ' ')).toContain(`${language.agentPresets.maxConcurrency}: 2`)
+  })
+
   it('creates a preset through the command helper', async () => {
     seedDb([])
     mountPage()
