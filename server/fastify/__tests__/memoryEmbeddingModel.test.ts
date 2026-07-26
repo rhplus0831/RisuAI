@@ -5,7 +5,7 @@ import {
   MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
   OPENAI_EMBEDDING_MAX_INPUT_TOKENS,
   OPENAI_EMBEDDING_MAX_REQUEST_TOKENS,
-  VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
   VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
   VOYAGE_CONTEXTUAL_MAX_CHUNKS,
   VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
@@ -160,12 +160,27 @@ describe('memory embedding model resolver', () => {
         apiKey: 'voyage-key',
         limits: {
           source: 'provider',
-          maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
-          maxInputBytes: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+          maxInputTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
+          maxInputBytes: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
           maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
           maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
           contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
         },
+      },
+    })
+  })
+
+  it('resolves Voyage Context 4 through the contextualized embeddings endpoint', () => {
+    expect(
+      resolveMemoryEmbeddingModel(db({ hypaModel: 'voyageContext4', voyageApiKey: ' voyage-key ' })),
+    ).toMatchObject({
+      ok: true,
+      request: {
+        provider: 'voyage-contextual',
+        model: 'voyage-context-4',
+        wireModel: 'voyage-context-4',
+        endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
+        apiKey: 'voyage-key',
       },
     })
   })
@@ -209,6 +224,10 @@ describe('memory embedding model resolver', () => {
     expect(resolveMemoryEmbeddingModel(db({ hypaModel: 'voyageContext3' }))).toEqual({
       ok: false,
       error: 'voyage-context-3 requires a Voyage API key',
+    })
+    expect(resolveMemoryEmbeddingModel(db({ hypaModel: 'voyageContext4' }))).toEqual({
+      ok: false,
+      error: 'voyage-context-4 requires a Voyage API key',
     })
   })
 })

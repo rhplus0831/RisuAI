@@ -9,7 +9,7 @@ export const MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES = 64 * 1024
 export const OPENAI_EMBEDDING_MAX_INPUT_TOKENS = 8_192
 export const OPENAI_EMBEDDING_MAX_REQUEST_TOKENS = 300_000
 
-export const VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS = 32_000
+export const VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS = 32_000
 export const VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS = 120_000
 export const VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS = VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS
 export const VOYAGE_CONTEXTUAL_MAX_CHUNKS = 16_000
@@ -51,7 +51,10 @@ const OPENAI_EMBEDDING_MODELS: Partial<Record<HypaModel, string>> = {
 }
 
 const VOYAGE_CONTEXTUAL_ENDPOINT = 'https://api.voyageai.com/v1/contextualizedembeddings'
-const VOYAGE_CONTEXTUAL_MODEL = 'voyage-context-3'
+const VOYAGE_CONTEXTUAL_MODELS: Partial<Record<HypaModel, string>> = {
+  voyageContext3: 'voyage-context-3',
+  voyageContext4: 'voyage-context-4',
+}
 
 const LOCAL_EMBEDDING_MODELS = new Set<string>([
   'MiniLM',
@@ -110,15 +113,16 @@ export function resolveMemoryEmbeddingModel(
     }
   }
 
-  if (model === 'voyageContext3') {
+  const voyageContextualModel = VOYAGE_CONTEXTUAL_MODELS[model]
+  if (voyageContextualModel) {
     const apiKey = asTrimmedString(db.voyageApiKey)
-    if (!apiKey) return { ok: false, error: 'voyage-context-3 requires a Voyage API key' }
+    if (!apiKey) return { ok: false, error: `${voyageContextualModel} requires a Voyage API key` }
     return {
       ok: true,
       request: {
         provider: 'voyage-contextual',
-        model: VOYAGE_CONTEXTUAL_MODEL,
-        wireModel: VOYAGE_CONTEXTUAL_MODEL,
+        model: voyageContextualModel,
+        wireModel: voyageContextualModel,
         endpoint: VOYAGE_CONTEXTUAL_ENDPOINT,
         apiKey,
         limits: voyageContextualEmbeddingLimits(),
@@ -258,8 +262,8 @@ function openAIEmbeddingLimits(): MemoryEmbeddingModelLimits {
 function voyageContextualEmbeddingLimits(): MemoryEmbeddingModelLimits {
   return {
     source: 'provider',
-    maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
-    maxInputBytes: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+    maxInputTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
+    maxInputBytes: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
     maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
     maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
     contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,

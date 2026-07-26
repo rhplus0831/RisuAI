@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { embedTextGroups, embedTexts } from '../src/memoryEmbeddingAdapter.js'
 import {
   MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
-  VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
   VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
   VOYAGE_CONTEXTUAL_MAX_CHUNKS,
   VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
@@ -32,8 +32,8 @@ function voyageRequest(overrides: Partial<MemoryEmbeddingModelRequest> = {}): Me
     endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
     limits: {
       source: 'provider',
-      maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
-      maxInputBytes: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+      maxInputTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
+      maxInputBytes: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
       maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
       maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
       contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,

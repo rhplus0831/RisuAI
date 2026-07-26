@@ -1560,6 +1560,7 @@ export const languageEnglish = {
   textAreaTextSize: 'Input Area Text Size',
   sideBarSize: 'Sidebar Size',
   embedding: 'Embedding',
+  voyageContext4: 'Voyage Context 4',
   syntax: 'Syntax',
   run: 'Run',
   noMessage: 'Type something to start the chat.',

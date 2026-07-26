@@ -30,11 +30,14 @@ beforeEach(() => {
 
 describe('Voyage contextual embedding bridge', () => {
   it('routes document groups through stored server credentials', async () => {
-    const provider = getContextProvider('voyageContext3')!
+    const provider = getContextProvider('voyageContext4')!
     const controller = new AbortController()
 
     await expect(provider.embedDocumentGroups([['first', 'second']], controller.signal)).resolves.toEqual([[[1], [2]]])
+    expect(provider.modelId).toBe('voyage-context-4')
+    expect(provider.getCacheKeySuffix(['first', 'second'])).toBe('|voyageContext4|ctx:first-second')
     expect(state.requestGroups).toHaveBeenCalledWith({
+      model: 'voyageContext4',
       inputType: 'document',
       groups: [['first', 'second']],
       credential: { source: 'stored' },
@@ -53,6 +56,7 @@ describe('Voyage contextual embedding bridge', () => {
     expect(state.requestGroups.mock.calls[0][0].groups).toHaveLength(256)
     expect(state.requestGroups.mock.calls[1][0].groups).toHaveLength(1)
     expect(state.requestGroups.mock.calls[0][0]).toMatchObject({
+      model: 'voyageContext3',
       inputType: 'query',
       credential: { source: 'stored' },
     })

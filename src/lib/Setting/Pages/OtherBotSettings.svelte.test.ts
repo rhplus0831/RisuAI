@@ -42,7 +42,7 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
       let value = key === 'sdProvider' ? 'wavespeed' : clone(fallback)
       if (key === 'hypaV3') value = otherBotMocks.hypaEnabled
       if (key === 'hypaV3Presets') value = clone(otherBotMocks.hypaPresets)
-      if (key === 'hypaV3Presets') {
+      if (key === 'hypaV3Presets' || key === 'hypaModel') {
         const valueStore = writable(value)
         const reactiveValue = fromStore(valueStore)
         const draft = {
@@ -281,6 +281,28 @@ describe('OtherBotSettings navigation semantics', () => {
     setDatabaseLite({ ...getResourceDatabase({ snapshot: true }), useLegacyGUI: false } as any)
     await tick()
     expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
+  })
+})
+
+describe('OtherBotSettings embedding models', () => {
+  it('offers Voyage Context 4 and reveals the Voyage credential field when selected', async () => {
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const embeddingSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).find((select) =>
+      Array.from(select.options).some((option) => option.value === 'voyageContext4'),
+    )
+    expect(embeddingSelect).toBeTruthy()
+    expect(Array.from(embeddingSelect!.options).find((option) => option.value === 'voyageContext4')?.textContent).toBe(
+      language.voyageContext4,
+    )
+    expect(target.textContent).not.toContain('Voyage API Key')
+
+    otherBotMocks.drafts.get('hypaModel')?.project?.('voyageContext4')
+    await tick()
+
+    expect(otherBotMocks.drafts.get('hypaModel')?.value).toBe('voyageContext4')
+    expect(target.textContent).toContain('Voyage API Key')
   })
 })
 

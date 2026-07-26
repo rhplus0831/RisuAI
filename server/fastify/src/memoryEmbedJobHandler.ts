@@ -98,8 +98,9 @@ export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOpti
     }
 
     const orderedJobs = [...jobs].sort(compareEmbedJobs)
-    if (isContextualVoyageBatch(orderedJobs)) {
-      const modelRequest = resolveMemoryEmbeddingModel(database, 'voyageContext3')
+    const contextualModel = contextualVoyageBatchModel(orderedJobs)
+    if (contextualModel) {
+      const modelRequest = resolveMemoryEmbeddingModel(database, contextualModel)
       if (modelRequest.ok === false) {
         commitContextualBatchResults(
           opts,
@@ -216,7 +217,7 @@ async function executeEmbedJob(input: {
     throw new Error(`memory chunk ${payload.chunkId} does not belong to chat ${input.job.chatId}`)
   }
 
-  const isContextualModel = payload.model === 'voyageContext3'
+  const isContextualModel = isVoyageContextualModel(payload.model)
   const existing = listMemoryEmbeddings(input.opts.db, {
     chatId: input.job.chatId,
     chunkId: chunk.id,
@@ -423,7 +424,7 @@ function emitContextualSubBatchSplitMetric(
   if (plan.subBatches.length <= 1) return
   emitProtocolMetric('memory_contextual_embed_split', () => ({
     chatId: jobs[0]?.chatId ?? null,
-    model: 'voyageContext3',
+    model: tryParseEmbedPayload(jobs[0]?.payload)?.model ?? null,
     provider: request.provider,
     requestModel: request.model,
     originalJobCount: jobs.length,
@@ -456,7 +457,7 @@ async function executeContextualEmbedJobs(input: {
     })
 
     const groupChunkIds = parsed.map((item) => item.chunk.id)
-    const groupId = buildEmbeddingGroupId(input.jobs[0].chatId, 'voyageContext3', groupChunkIds)
+    const groupId = buildEmbeddingGroupId(input.jobs[0].chatId, parsed[0].payload.model, groupChunkIds)
     const existing = new Map(
       parsed.map((item) => [
         item.chunk.id,
@@ -664,8 +665,14 @@ function compareEmbedJobs(left: MemoryJob, right: MemoryJob): number {
   return left.id.localeCompare(right.id)
 }
 
-function isContextualVoyageBatch(jobs: readonly MemoryJob[]): boolean {
-  return jobs.length > 0 && jobs.every((job) => tryParseEmbedPayload(job.payload)?.model === 'voyageContext3')
+function contextualVoyageBatchModel(jobs: readonly MemoryJob[]): HypaModel | null {
+  const model = tryParseEmbedPayload(jobs[0]?.payload)?.model
+  if (!isVoyageContextualModel(model)) return null
+  return jobs.every((job) => tryParseEmbedPayload(job.payload)?.model === model) ? model : null
+}
+
+function isVoyageContextualModel(model: unknown): model is Extract<HypaModel, 'voyageContext3' | 'voyageContext4'> {
+  return model === 'voyageContext3' || model === 'voyageContext4'
 }
 
 function tryParseEmbedPayload(payload: unknown): HypaV3EmbedJobPayload | null {

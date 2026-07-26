@@ -94,6 +94,7 @@ describe('embedding operation client', () => {
 
     await expect(
       requestRemoteEmbeddingGroups({
+        model: 'voyageContext4',
         inputType: 'query',
         groups: [['query']],
         credential: { source: 'stored' },

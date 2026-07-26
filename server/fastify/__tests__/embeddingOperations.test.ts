@@ -56,6 +56,9 @@ describe('embedding operation protocol', () => {
   it('accepts the closed text and contextual request shapes', () => {
     expect(parseEmbeddingOperationRequest(texts())).toEqual(texts())
     expect(parseEmbeddingOperationRequest(groups({ inputType: 'query' }))).toEqual(groups({ inputType: 'query' }))
+    expect(parseEmbeddingOperationRequest(groups({ model: 'voyageContext4' }))).toEqual(
+      groups({ model: 'voyageContext4' }),
+    )
   })
 
   it('rejects unknown fields, masked provided keys, and oversized inputs', () => {
@@ -170,7 +173,7 @@ describe('embedding operation execution', () => {
     const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       expect(JSON.parse(init?.body as string)).toEqual({
         inputs: [['first']],
-        model: 'voyage-context-3',
+        model: 'voyage-context-4',
         input_type: 'query',
       })
       expect(init?.redirect).toBe('error')
@@ -178,12 +181,12 @@ describe('embedding operation execution', () => {
     })
 
     await expect(
-      executeEmbeddingOperation(groups({ inputType: 'query' }), storedSettings, {
+      executeEmbeddingOperation(groups({ model: 'voyageContext4', inputType: 'query' }), storedSettings, {
         fetchImpl: fetchImpl as typeof fetch,
       }),
     ).resolves.toEqual({
       operation: 'groups',
-      model: 'voyage-context-3',
+      model: 'voyage-context-4',
       dimension: 2,
       groups: [[[1, 2]]],
     })

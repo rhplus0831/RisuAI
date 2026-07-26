@@ -6,7 +6,10 @@ import type {
   EmbeddingOperationRequest,
   EmbeddingOperationSuccess,
 } from '../../../src/ts/server/embeddingOperationsProtocol.js'
-import { isRemoteEmbeddingModel } from '../../../src/ts/server/embeddingOperationsProtocol.js'
+import {
+  isContextualRemoteEmbeddingModel,
+  isRemoteEmbeddingModel,
+} from '../../../src/ts/server/embeddingOperationsProtocol.js'
 import {
   embedTextGroups,
   embedTexts,
@@ -68,7 +71,7 @@ export function parseEmbeddingOperationRequest(body: unknown): EmbeddingOperatio
   const credential = parseCredential(record.credential)
 
   if (operation === 'texts') {
-    if (!isRemoteEmbeddingModel(model) || model === 'voyageContext3') throw invalidRequest()
+    if (!isRemoteEmbeddingModel(model) || isContextualRemoteEmbeddingModel(model)) throw invalidRequest()
     const input = parseStringArray(record.input, EMBEDDING_OPERATION_MAX_TEXTS)
     const custom = model === 'custom' ? parseCustomConfiguration(record.custom) : undefined
     if (model !== 'custom' && record.custom !== undefined) throw invalidRequest()
@@ -84,7 +87,9 @@ export function parseEmbeddingOperationRequest(body: unknown): EmbeddingOperatio
   }
 
   if (operation === 'groups') {
-    if (model !== 'voyageContext3' || record.input !== undefined || record.custom !== undefined) throw invalidRequest()
+    if (!isContextualRemoteEmbeddingModel(model) || record.input !== undefined || record.custom !== undefined) {
+      throw invalidRequest()
+    }
     return {
       operation,
       model,
@@ -129,7 +134,7 @@ export function resolveEmbeddingOperationModel(
 
     const key = resolveCredential(request.credential, storedKey)
     effective.hypaCustomSettings = { url, model: wireModel, key }
-  } else if (model === 'voyageContext3') {
+  } else if (isContextualRemoteEmbeddingModel(model)) {
     effective.voyageApiKey = resolveCredential(request.credential, readUsableSecret(settings.voyageApiKey))
   } else {
     effective.hypaV3Key = resolveCredential(request.credential, readUsableSecret(settings.hypaV3Key))

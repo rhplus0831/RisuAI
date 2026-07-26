@@ -24,6 +24,7 @@ export type HypaModel =
   | 'bgeM3Ko'
   | 'bgeM3KoGPU'
   | 'voyageContext3'
+  | 'voyageContext4'
 
 // In a typical environment, bge-m3 is a heavy model.
 // If your GPU can't handle this model, you'll see errror below.

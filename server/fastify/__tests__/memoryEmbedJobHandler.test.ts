@@ -7,7 +7,7 @@ import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from '.
 import {
   MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
   MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
-  VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
   VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
 } from '../src/memoryEmbeddingModel.js'
 import { MEMORY_JOB_BATCH_MAX_JOBS, MemoryWorker } from '../src/memoryWorker.js'
@@ -708,23 +708,26 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('groups Voyage contextual embed jobs and persists ordered group metadata', async () => {
+  it.each([
+    ['voyageContext3', 'voyage-context-3'],
+    ['voyageContext4', 'voyage-context-4'],
+  ])('groups %s embed jobs and persists ordered group metadata', async (model, wireModel) => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
         id: 'job-2',
         chunkId: 'chunk-2',
         text: 'second contextual chunk',
-        model: 'voyageContext3',
+        model,
       })
       seedBatchJob(db, {
         id: 'job-1',
         chunkId: 'chunk-1',
         text: 'first contextual chunk',
-        model: 'voyageContext3',
+        model,
       })
       const embedGroups = vi.fn(async () => ({
-        model: 'voyage-context-3',
+        model: wireModel,
         groups: [[new Float32Array([1, 2]), new Float32Array([3, 4])]],
         dim: 2,
       }))
@@ -747,14 +750,14 @@ describe('embed memory job handler', () => {
           provider: 'voyage-contextual',
           endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
           apiKey: 'voyage-key',
-          model: 'voyage-context-3',
-          wireModel: 'voyage-context-3',
+          model: wireModel,
+          wireModel,
         },
         groups: [['first contextual chunk', 'second contextual chunk']],
       })
       const embeddings = listMemoryEmbeddings(db, {
         chatId: 'chat-1',
-        model: 'voyageContext3',
+        model,
       })
       expect(embeddings.map((embedding) => embedding.chunkId)).toEqual(['chunk-1', 'chunk-2'])
       expect(embeddings.map((embedding) => embedding.groupIndex)).toEqual([0, 1])
@@ -781,7 +784,7 @@ describe('embed memory job handler', () => {
       seedBatchJob(db, {
         id: 'job-2',
         chunkId: 'chunk-2',
-        text: 'x'.repeat((VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS + 1) * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN),
+        text: 'x'.repeat((VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS + 1) * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN),
         model: 'voyageContext3',
       })
       const embedGroups = vi.fn(async (opts: { groups: readonly (readonly string[])[] }) => ({

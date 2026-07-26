@@ -1660,6 +1660,7 @@
       <OptionInput value="openai3small">OpenAI text-embedding-3-small</OptionInput>
       <OptionInput value="openai3large">OpenAI text-embedding-3-large</OptionInput>
       <OptionInput value="ada">OpenAI Ada</OptionInput>
+      <OptionInput value="voyageContext4">{language.voyageContext4}</OptionInput>
       <OptionInput value="voyageContext3">Voyage Context 3</OptionInput>
       <OptionInput value="custom">Custom (OpenAI-compatible)</OptionInput>
     </SelectInput>
@@ -1682,7 +1683,7 @@
       <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} />
     {/if}
 
-    {#if hypaModelDraft.value === 'voyageContext3'}
+    {#if hypaModelDraft.value === 'voyageContext3' || hypaModelDraft.value === 'voyageContext4'}
       <span class="text-textcolor">Voyage API Key</span>
       <SecretInput ownerKey="voyageApiKey" size="sm" marginBottom bind:value={voyageApiKeyDraft.value} />
     {/if}
