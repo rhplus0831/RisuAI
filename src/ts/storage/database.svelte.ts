@@ -36,7 +36,12 @@ import {
   type ModelRoleProfileMap,
 } from '../model/modelProfileRecords'
 import { normalizeProviderCredentials, type ProviderCredentialRecord } from '../model/providerCredentialRecords'
-import { normalizeAgentPresetDefaultId, normalizeAgentPresets, type AgentPresetRecord } from '../agentPresetRecords'
+import {
+  normalizeAgentConfiguration,
+  normalizeAgentPresetDefaultId,
+  type AgentPresetRecord,
+  type AgentRecord,
+} from '../agentPresetRecords'
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
@@ -204,9 +209,13 @@ function normalizeModelProfileSettings(
   data.modelRuntimeDefaults = normalizeModelRuntimeDefaults(data.modelRuntimeDefaults)
 }
 
-function normalizeAgentPresetSettings(data: Partial<Pick<Database, 'agentPresets' | 'agentPresetDefaultId'>>): void {
-  const agentPresets = normalizeAgentPresets(data.agentPresets)
-  data.agentPresets = agentPresets
+function normalizeAgentPresetSettings(
+  data: Partial<Pick<Database, 'agents' | 'agentPresets' | 'agentPresetDefaultId'>>,
+): void {
+  const normalized = normalizeAgentConfiguration(data.agents, data.agentPresets)
+  data.agents = normalized.agents
+  data.agentPresets = normalized.agentPresets
+  const agentPresets = normalized.agentPresets
   const defaultId = normalizeAgentPresetDefaultId(data.agentPresetDefaultId, agentPresets)
   if (defaultId) {
     data.agentPresetDefaultId = defaultId
@@ -455,6 +464,7 @@ const SET_PRESET_ROLLBACK_KEYS = [
   'modelProfiles',
   'modelRoleProfiles',
   'modelRuntimeDefaults',
+  'agents',
   'agentPresets',
   'agentPresetDefaultId',
   'currentPluginProvider',
@@ -1515,7 +1525,7 @@ function legacyPresetSaveCommandPatch(
   return changed ? patch : null
 }
 
-const LEGACY_PRESET_NORMALIZED_SIDE_EFFECT_KEYS = ['agentPresets', 'agentPresetDefaultId'] as const
+const LEGACY_PRESET_NORMALIZED_SIDE_EFFECT_KEYS = ['agents', 'agentPresets', 'agentPresetDefaultId'] as const
 
 function exactJsonRecordClone(value: unknown): Record<string, unknown> | null {
   if (!isPlainRecord(value) || !isExactJsonValue(value)) return null
@@ -3737,6 +3747,7 @@ export interface Database {
   modelProfiles: ModelProfileRecord[]
   modelRoleProfiles: ModelRoleProfileMap
   modelRuntimeDefaults: ModelProfileRecordRuntimeOptions
+  agents: AgentRecord[]
   agentPresets: AgentPresetRecord[]
   agentPresetDefaultId?: string
   jailbreakToggle: boolean
@@ -4482,6 +4493,7 @@ export interface botPreset {
   modelProfiles?: ModelProfileRecord[]
   modelRoleProfiles?: ModelRoleProfileMap
   modelRuntimeDefaults?: ModelProfileRecordRuntimeOptions
+  agents?: AgentRecord[]
   agentPresets?: AgentPresetRecord[]
   agentPresetDefaultId?: string
   currentPluginProvider?: string
@@ -4982,6 +4994,7 @@ function saveCurrentPresetLocal(apply = true) {
     modelProfiles: safeStructuredClone(db.modelProfiles),
     modelRoleProfiles: safeStructuredClone(db.modelRoleProfiles),
     modelRuntimeDefaults: safeStructuredClone(normalizeModelRuntimeDefaults(db.modelRuntimeDefaults)),
+    agents: safeStructuredClone(db.agents),
     agentPresets: safeStructuredClone(db.agentPresets),
     agentPresetDefaultId: db.agentPresetDefaultId,
     currentPluginProvider: db.currentPluginProvider,
@@ -6663,9 +6676,15 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.modelProfiles = normalizeModelProfiles(newPres.modelProfiles ?? db.modelProfiles)
   db.modelRoleProfiles = normalizeModelRoleProfiles(newPres.modelRoleProfiles ?? db.modelRoleProfiles)
   db.modelRuntimeDefaults = normalizeModelRuntimeDefaults(newPres.modelRuntimeDefaults ?? db.modelRuntimeDefaults)
-  if (Object.hasOwn(newPres, 'agentPresets') || Object.hasOwn(newPres, 'agentPresetDefaultId')) {
-    const agentPresets = normalizeAgentPresets(newPres.agentPresets ?? db.agentPresets)
-    db.agentPresets = agentPresets
+  if (
+    Object.hasOwn(newPres, 'agents') ||
+    Object.hasOwn(newPres, 'agentPresets') ||
+    Object.hasOwn(newPres, 'agentPresetDefaultId')
+  ) {
+    const normalized = normalizeAgentConfiguration(newPres.agents ?? db.agents, newPres.agentPresets ?? db.agentPresets)
+    db.agents = normalized.agents
+    db.agentPresets = normalized.agentPresets
+    const agentPresets = normalized.agentPresets
     const defaultId = normalizeAgentPresetDefaultId(
       newPres.agentPresetDefaultId ?? db.agentPresetDefaultId,
       agentPresets,

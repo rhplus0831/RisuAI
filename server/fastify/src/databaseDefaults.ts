@@ -18,7 +18,7 @@ import {
   normalizeModelRoleProfiles,
 } from '../../../src/ts/model/modelProfileRecords.js'
 import { normalizeProviderCredentials } from '../../../src/ts/model/providerCredentialRecords.js'
-import { normalizeAgentPresetDefaultId, normalizeAgentPresets } from '../../../src/ts/agentPresetRecords.js'
+import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '../../../src/ts/agentPresetRecords.js'
 import { normalizeTranslatorPresetState, type TranslatorPresetStateLike } from '../../../src/ts/translator/presets.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
 import { DEFAULT_REQUEST_HISTORY_LIMIT, normalizeRequestHistoryLimit } from './requestHistory.js'
@@ -238,6 +238,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'modelRoleProfiles', createDefaultModelRoleProfiles())
   setDefault(database, 'modelRuntimeDefaults', {})
   normalizeModelProfileSettings(database)
+  setDefault(database, 'agents', [])
   setDefault(database, 'agentPresets', [])
   normalizeAgentPresetSettings(database)
   setDefault(database, 'waifuWidth', 100)
@@ -792,8 +793,10 @@ function normalizeModelProfileSettings(database: JsonRecord): void {
 }
 
 function normalizeAgentPresetSettings(database: JsonRecord): void {
-  const agentPresets = normalizeAgentPresets(database.agentPresets)
-  database.agentPresets = agentPresets
+  const normalized = normalizeAgentConfiguration(database.agents, database.agentPresets)
+  database.agents = normalized.agents
+  database.agentPresets = normalized.agentPresets
+  const agentPresets = normalized.agentPresets
   const defaultId = normalizeAgentPresetDefaultId(database.agentPresetDefaultId, agentPresets)
   if (defaultId) {
     database.agentPresetDefaultId = defaultId

@@ -22,10 +22,10 @@ describe('settings group parity', () => {
     ).toEqual([])
   })
 
-  it('keeps the dedicated Agent Preset projection readable but not generically writable', () => {
+  it('keeps the dedicated Agent and Agent Preset projection readable but not generically writable', () => {
     expect(READABLE_SETTINGS_GROUPS).toContain('agents')
     expect(SETTINGS_GROUPS).not.toContain('agents')
-    expect(SETTINGS_GROUP_KEYS.agents).toEqual(['agentPresets', 'agentPresetDefaultId'])
+    expect(SETTINGS_GROUP_KEYS.agents).toEqual(['agents', 'agentPresets', 'agentPresetDefaultId'])
     const clientGroups = SERVER_SETTINGS_KEYS_BY_GROUP as Record<string, string[]>
     expect(clientGroups.agents).toEqual([...SETTINGS_GROUP_KEYS.agents])
   })

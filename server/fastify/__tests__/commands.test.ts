@@ -4962,7 +4962,7 @@ describe('Agent Preset command surface', () => {
     })
   })
 
-  it('validates step mutations and duplicates presets with fresh preset and step ids', async () => {
+  it('migrates step mutations to Agents and duplicates presets with fresh use ids while sharing Agents', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       agentPresets: [{ id: 'ap_source', name: 'Source', enabled: true, version: 1, steps: [] }],
@@ -5069,13 +5069,18 @@ describe('Agent Preset command surface', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const presets = bootstrap.json().database.agentPresets as Array<{ id: string; steps: Array<{ id: string }> }>
+    const presets = bootstrap.json().database.agentPresets as Array<{
+      id: string
+      agentUses: Array<{ id: string; agentId: string }>
+    }>
     const source = presets.find((preset) => preset.id === 'ap_source')!
     const copy = presets.find((preset) => preset.id === duplicatedPresetId)!
-    expect(source.steps.map((candidate) => candidate.id)).toContain(stepId)
-    expect(source.steps.map((candidate) => candidate.id)).toContain(duplicatedStepId)
-    expect(copy.steps.map((candidate) => candidate.id)).not.toContain(stepId)
-    expect(copy.steps).toHaveLength(source.steps.length)
+    expect(source.agentUses.map((candidate) => candidate.id)).toContain(stepId)
+    expect(source.agentUses.map((candidate) => candidate.id)).toContain(duplicatedStepId)
+    expect(copy.agentUses.map((candidate) => candidate.id)).not.toContain(stepId)
+    expect(copy.agentUses).toHaveLength(source.agentUses.length)
+    expect(copy.agentUses.map((use) => use.agentId)).toEqual(source.agentUses.map((use) => use.agentId))
+    expect(bootstrap.json().database.agents).toHaveLength(2)
   })
 
   it('accepts a last before-main user-input modifier and rejects invalid phase or ordering', async () => {
@@ -5116,7 +5121,7 @@ describe('Agent Preset command surface', () => {
       },
     })
     expect(wrongPhase.statusCode).toBe(400)
-    expect(wrongPhase.json().error).toContain('Only before-main Agent Preset steps can modify user input')
+    expect(wrongPhase.json().error).toContain('Only before-main Agent uses can modify user input')
 
     const notLast = await harness.app.inject({
       method: 'POST',
@@ -5134,6 +5139,121 @@ describe('Agent Preset command surface', () => {
     })
     expect(notLast.statusCode).toBe(400)
     expect(notLast.json().error).toContain('user-input modifier must be the last')
+  })
+
+  it('reuses one standalone Agent across presets and blocks deletion while referenced', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentPresets: [
+        { id: 'ap_one', name: 'One', enabled: true, version: 1, steps: [] },
+        { id: 'ap_two', name: 'Two', enabled: true, version: 1, steps: [] },
+      ],
+    })
+    const contextBinding = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agents',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        agent: { name: 'Out of scope', contextBinding: { source: 'chat' } },
+      },
+    })
+    expect(contextBinding.statusCode).toBe(400)
+    expect(contextBinding.json().error).toContain('agent.contextBinding is not supported')
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agents',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        agent: {
+          name: 'Shared Researcher',
+          instruction: 'Research the current message.',
+          inputScopes: ['currentUserMessage'],
+          outputFormat: 'text',
+        },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    const agentId = created.json().agentId as string
+
+    let currentRevision = created.json().revision as number
+    const useIds = new Map<string, string>()
+    for (const [presetId, outputKey] of [
+      ['ap_one', 'research_one'],
+      ['ap_two', 'research_two'],
+    ]) {
+      const attached = await harness.app.inject({
+        method: 'POST',
+        url: `/api/v1/commands/agent-presets/${presetId}/uses`,
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: currentRevision, use: { agentId, outputKey } },
+      })
+      expect(attached.statusCode).toBe(200)
+      currentRevision = attached.json().revision
+      useIds.set(presetId, attached.json().useId)
+    }
+
+    const firstUseId = useIds.get('ap_one')!
+    const secondUseId = useIds.get('ap_two')!
+    const updatedUse = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/agent-presets/ap_one/uses/${firstUseId}`,
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: currentRevision, patch: { runtimeOverride: { timeoutMs: 45_000 } } },
+    })
+    expect(updatedUse.statusCode).toBe(200)
+    expect(updatedUse.json()).toMatchObject({
+      useId: firstUseId,
+      agentId,
+      acknowledgedKeys: ['runtimeOverride'],
+      canonicalValues: { runtimeOverride: { timeoutMs: 45_000 } },
+      canonicalDeletedKeys: [],
+    })
+    currentRevision = updatedUse.json().revision
+
+    const reorderedUses = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/ap_two/uses/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: currentRevision, useIds: [secondUseId] },
+    })
+    expect(reorderedUses.statusCode).toBe(200)
+    currentRevision = reorderedUses.json().revision
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/agents/${agentId}`,
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: currentRevision, patch: { instruction: 'Updated once for both presets.' } },
+    })
+    expect(updated.statusCode).toBe(200)
+
+    const blockedDelete = await harness.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/commands/agents/${agentId}`,
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: updated.json().revision },
+    })
+    expect(blockedDelete.statusCode).toBe(400)
+    expect(blockedDelete.json().error).toContain('still used by 2')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.agents).toEqual([
+      expect.objectContaining({ id: agentId, instruction: 'Updated once for both presets.' }),
+    ])
+    expect(
+      bootstrap
+        .json()
+        .database.agentPresets.map((preset: { agentUses: Array<{ agentId: string }> }) =>
+          preset.agentUses.map((use) => use.agentId),
+        ),
+    ).toEqual([[agentId], [agentId]])
   })
 
   it('returns exact canonical field receipts for metadata and step PATCHes', async () => {
@@ -5256,6 +5376,7 @@ describe('Agent Preset command surface', () => {
       name: 'Repaired Sibling',
       enabled: true,
       version: 1,
+      agentUses: [],
       steps: [],
     })
   })
@@ -5401,7 +5522,7 @@ describe('Agent Preset command surface', () => {
     })
     expect(settings.statusCode).toBe(200)
     expect(settings.json().settings.agentPresets).toEqual([
-      { id: 'ap_keep', name: 'Keep Me', enabled: true, version: 1, steps: [] },
+      { id: 'ap_keep', name: 'Keep Me', enabled: true, version: 1, agentUses: [], steps: [] },
     ])
     expect(settings.json().settings.agentPresetDefaultId).toBeUndefined()
 

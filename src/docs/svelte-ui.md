@@ -23,7 +23,7 @@ commands, generation, assets, storage, Realm import, plugins, or MCP.
 | Theme, motion, spacing, clipping, colors, font, UI scale, or custom CSS is wrong     | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/animation.ts`, `src/ts/gui/guisize.ts`                                                                                     | `src/lib/Setting/Pages/DisplaySettings.svelte`, `src/ts/setting/accessibilitySettingsData.ts`                                                                               |
 | The whole document moved or window scrolling appeared                                | `src/ts/gui/viewportScrollGuard.ts`, `src/main.ts`, `src/styles.css`                                                                                                                  | Find code that scrolls `window`, `document.scrollingElement`, or an app-root ancestor                                                                                       |
 | A settings page or left-nav item is wrong                                            | `src/lib/Setting/Settings.svelte`, `src/ts/router.ts` setting slug maps                                                                                                               | The concrete `src/lib/Setting/Pages/*.svelte` page                                                                                                                          |
-| Agent Preset authoring, status, or chat selection is wrong                           | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte`                  | `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetReferences.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts`, `server/fastify/src/commands/agentPresets.ts` |
+| Agent or Agent Preset authoring, status, or chat selection is wrong                  | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `AgentSettingsSection.svelte`, `AgentEditorDrawer.svelte`, `AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte` | `src/ts/agentPresetRecords.ts`, `src/ts/agents.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts`, `server/fastify/src/commands/agentPresets.ts` |
 | A model role/profile summary, inherited role, or provider panel visibility is wrong  | `src/lib/Setting/Pages/Model/ModelSettingsShell.svelte`, `ModelProfileRoleList.svelte`, `ModelProfileList.svelte`, `ModelProviderPanel.svelte`, `src/ts/model/modelProfileUiState.ts` | `src/ts/model/modelProfileResolver.ts`, legacy `ModelRoleList.svelte` inside Advanced Legacy Settings, `docs/structure/providers-and-models.md`                             |
 | A data-driven setting row is missing, hidden, stale, or not saving                   | `src/lib/Setting/SettingRenderer.svelte`, `src/ts/setting/*SettingsData*`, `src/ts/setting/utils.ts`                                                                                  | `src/lib/Setting/Wrappers/*`, `src/ts/server/settingsBridge.svelte.ts`                                                                                                      |
 | A shared input/control is visually or behaviorally wrong                             | The primitive in `src/lib/UI/GUI/`                                                                                                                                                    | The wrapper in `src/lib/Setting/Wrappers/` if it only breaks in settings                                                                                                    |
@@ -384,15 +384,20 @@ Important fields are `id`, `type`, `labelKey`, `helpKey`, `bindKey`,
 `SettingContext` also carries `presetMirrorTarget` for prompt/model preset
 mirror rows.
 
-Agent Presets are not data-driven settings rows. The live UI is
-`AgentPresetSettings.svelte` plus `AgentPresetEditorDrawer.svelte`, using
-row-oriented command helpers from `src/ts/agentPresets.ts`. The page creates,
-edits, duplicates, deletes, reorders, and selects the global default preset;
-the sidebar chat generation controls save the chat-scoped
-`agentPresetId`. The editor presents prepared inputs, output references,
-phase-specific modifier targets, and resolver status; keep validation/planning
-in the shared record/reference/resolver helpers rather than duplicating it in
-the component. [Providers And Models](../../docs/structure/providers-and-models.md#agent-preset-model-flow)
+Agents and Agent Presets are not data-driven settings rows. The live UI is
+`AgentPresetSettings.svelte`, with `AgentSettingsSection.svelte` and
+`AgentEditorDrawer.svelte` for reusable Agent behavior, plus
+`AgentPresetEditorDrawer.svelte` for composition. Helpers in `src/ts/agents.ts`
+own Agent and preset-use mutations; `src/ts/agentPresets.ts` owns preset-row
+mutations. The page creates, edits, duplicates, deletes, and reorders Agents and
+presets, selects the global default preset, and attaches existing Agents to a
+preset. An Agent editor owns its instruction, prepared inputs, output format,
+and model/runtime defaults. A preset-use editor owns phase, dependency/output
+wiring, destination, failure policy, and optional model/runtime overrides.
+Context binding is not an authoring surface in this phase. The sidebar chat
+generation controls save the chat-scoped `agentPresetId`. Keep
+validation/planning in the shared record/reference/resolver helpers rather than
+duplicating it in the component. [Providers And Models](../../docs/structure/providers-and-models.md#agent-preset-model-flow)
 owns the execution and completeness contract. During chat generation,
 `AgentPresetProgress.svelte` consumes
 chat-scoped `agent_preset_progress` snapshots and shows the current phase,

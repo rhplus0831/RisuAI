@@ -223,9 +223,9 @@ Driver tags used below:
 - **`SET-15` — Prompt preset/template authoring (`R`, `A`, `L`)**
   - Variants: Standalone versus inline chrome; template/settings tab; hydration loading/error/retry; empty/list; validation warnings; token counts; optional COT/JSON schema/model override/fallback sections; fallback arrays. Prompt rows expand to type-specific forms for plain/jailbreak/COT, ChatML, cache, chat range, author note, persona, description, or memory.
   - Owners: `src/lib/Setting/Pages/PromptSettings.svelte`; `src/lib/UI/PromptDataItem.svelte`; `src/ts/server/promptTemplateHydration.ts`
-- **`SET-16` — Agent Preset list/editor/diagnostics (`R`, `A`, `L`)**
-  - Variants: Empty/list; default/enabled/disabled/invalid/incomplete/model-not-ready/ready status; phase/step/usage/concurrency summaries; reorder/pending/error/drawer. Editor changes by create/edit, phase, output/dependency/scope/failure policy, validation, and saved state. Diagnostics changes through unavailable/loading/error/limited/empty/run-list/selected run and optional details.
-  - Owners: `src/lib/Setting/Pages/AgentPresetSettings.svelte`; `AgentPresetEditorDrawer.svelte`; `AgentPresetDiagnosticsPanel.svelte`; `src/ts/agentPresetResolver.ts`
+- **`SET-16` — Agent library and Agent Preset composition/diagnostics (`R`, `A`, `L`)**
+  - Variants: Empty/list; Agent usage and reusable behavior editor; default/enabled/disabled/invalid/incomplete/model-not-ready/ready preset status; phase/invocation/concurrency summaries; reorder/pending/error/drawer. Composition changes by attached Agent, phase, output/dependency/destination/failure policy, optional model/runtime override, validation, and saved state. Diagnostics changes through unavailable/loading/error/limited/empty/run-list/selected run and optional details.
+  - Owners: `src/lib/Setting/Pages/AgentPresetSettings.svelte`; `AgentSettingsSection.svelte`; `AgentEditorDrawer.svelte`; `AgentPresetEditorDrawer.svelte`; `AgentPresetDiagnosticsPanel.svelte`; `src/ts/agents.ts`; `src/ts/agentPresetResolver.ts`
 - **`SET-17` — Plugin management (`R`, `A`, `X`)**
   - Variants: Empty/list; name/version/hot-reload badge; safe custom links; enabled state; update status cycle; mutation pending/error. Expanded plugin metadata dynamically chooses divider, select, textarea, radio, checkbox, number, or text for every non-hidden argument.
   - Owners: `src/lib/Setting/Pages/PluginSettings.svelte`; `src/ts/plugins/plugins.svelte.ts`; `pluginPermissions.ts`

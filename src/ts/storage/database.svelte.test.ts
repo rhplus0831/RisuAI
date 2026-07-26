@@ -618,8 +618,9 @@ describe('model profile database normalization', () => {
       modelTools: ['preset-tool'],
     })
     expect(getDatabase().agentPresets).toEqual([
-      { id: 'agent-target', name: 'Target Agent', enabled: true, version: 1, steps: [] },
+      { id: 'agent-target', name: 'Target Agent', enabled: true, version: 1, agentUses: [], steps: [] },
     ])
+    expect(getDatabase().agents).toEqual([])
     expect(getDatabase().agentPresetDefaultId).toBe('agent-target')
   })
 
@@ -662,23 +663,31 @@ describe('agent preset database normalization', () => {
         name: 'Research',
         enabled: true,
         version: 1,
-        steps: [
+        agentUses: [
           {
             id: 'aps_context',
-            name: 'aps_context',
+            agentId: 'aps_context',
             enabled: true,
             phase: 'beforeMain',
             dependencies: [],
-            instruction: '',
-            model: { mode: 'inheritMain' },
-            runtime: {},
-            inputScopes: [],
             outputKey: 'context',
-            outputFormat: 'text',
             destination: 'promptOutput',
             failurePolicy: { mode: 'required' },
           },
         ],
+        steps: [],
+      },
+    ])
+    expect(getDatabase().agents).toEqual([
+      {
+        id: 'aps_context',
+        name: 'aps_context',
+        version: 1,
+        instruction: '',
+        modelDefaults: { mode: 'inheritMain' },
+        runtimeDefaults: {},
+        inputScopes: [],
+        outputFormat: 'text',
       },
     ])
     expect(getDatabase().agentPresetDefaultId).toBeUndefined()

@@ -39,7 +39,7 @@ surface.
 | `server/fastify/src/risuSave/`                                                          | `.risu`, bundle, local-backup, bounded-inflate, and asset-report codecs wired by save routes.                                                                                         |
 | `server/fastify/src/realmImport/`                                                       | Realm dynamic-card/`charx` conversion helpers used by Realm import routes.                                                                                                            |
 | `server/fastify/src/prompt/agentPresetExecution.ts`, `src/ts/agentPresetReferences.ts`  | Prepared-input and named-output-CBS Agent Preset prompting, shared reference expansion, provider dispatch, phase execution, failure handling, and diagnostics.                        |
-| `server/fastify/src/commands/agentPresets.ts`                                           | Revisioned Agent Preset create/update/duplicate/delete/reorder/default/step commands and delete cleanup.                                                                              |
+| `server/fastify/src/commands/agentPresets.ts`                                           | Revisioned standalone Agent and Agent Preset/use create/update/duplicate/delete/reorder/default commands, reference validation, and delete cleanup.                                     |
 | `server/fastify/src/prompt/luaPostGenerationProgress.ts`                                | Live post-generation Lua progress frames for long `editOutput` / `onOutput` runs.                                                                                                     |
 
 `buildApp()` is test-friendly. `BuildAppOptions` can inject generation chat

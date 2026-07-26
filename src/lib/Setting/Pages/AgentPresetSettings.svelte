@@ -16,10 +16,15 @@
     type AgentPresetMutationOutcome,
   } from 'src/ts/agentPresets'
   import { createAgentPresetStatusSummary, planAgentPreset } from 'src/ts/agentPresetResolver'
-  import type { AgentPresetRecord, AgentPresetStepRecord } from 'src/ts/agentPresetRecords'
+  import {
+    resolveAgentPresetSteps,
+    type AgentPresetRecord,
+    type AgentPresetStepRecord,
+  } from 'src/ts/agentPresetRecords'
   import type { AgentPresetSnapshot } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import AgentPresetEditorDrawer from './AgentPresetEditorDrawer.svelte'
+  import AgentSettingsSection from './AgentSettingsSection.svelte'
 
   type EditorMode = 'create' | 'edit' | null
 
@@ -177,7 +182,7 @@
   }
 
   function enabledSteps(preset: AgentPresetRecord): AgentPresetStepRecord[] {
-    return preset.steps.filter((step) => step.enabled)
+    return resolveAgentPresetSteps(preset, getDatabase().agents ?? []).filter((step) => step.enabled)
   }
 
   function usageCount(presetId: string): number {
@@ -218,12 +223,14 @@
           preset,
           issues: [...planning.issues, ...planning.incompleteIssues],
           modelReadiness: planning.modelReadiness,
+          agents: getDatabase().agents,
         })
       : createAgentPresetStatusSummary({
           status: 'invalid',
           preset,
           issues: planning.issues,
           modelReadiness: planning.modelReadiness,
+          agents: getDatabase().agents,
         })
     return language.agentPresets.phaseSummary(summary.beforeMainStepCount, summary.afterMainStepCount)
   }
@@ -241,6 +248,8 @@
       </Button>
     </span>
   </div>
+
+  <AgentSettingsSection />
 
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>

@@ -336,7 +336,8 @@ describe('authenticated resource read routes', () => {
       revision,
       group: 'agents',
       settings: {
-        agentPresets: [{ id: 'agent-a', name: 'Agent A', enabled: true, version: 1, steps: [] }],
+        agents: [],
+        agentPresets: [{ id: 'agent-a', name: 'Agent A', enabled: true, version: 1, agentUses: [], steps: [] }],
         agentPresetDefaultId: 'agent-a',
       },
     })

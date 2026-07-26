@@ -2232,7 +2232,7 @@ describe('API-backed client bootstrap', () => {
               agentPresets: [{ id: 'ap_a', name: 'Attempted', enabled: true, version: 1, steps: [] }],
             },
           },
-          ['agentPresets', 'agentPresetDefaultId'],
+          ['agents', 'agentPresets', 'agentPresetDefaultId'],
         )
       } else if (failure === 'agents taint') {
         markSettingsGroupAcknowledgementTainted('agents')
@@ -2365,7 +2365,7 @@ describe('API-backed client bootstrap', () => {
               agentPresetDefaultId: 'ap_a',
             },
           },
-          ['agentPresets', 'agentPresetDefaultId'],
+          ['agents', 'agentPresets', 'agentPresetDefaultId'],
         )
       } else if (failure === 'agents taint') {
         markSettingsGroupAcknowledgementTainted('agents')

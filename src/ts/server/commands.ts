@@ -19,7 +19,9 @@ import {
   validateAgentPresetRecord,
   validateAgentPresetStepRecord,
   type AgentPresetRecord,
+  type AgentPresetUseRecord,
   type AgentPresetStepRecord,
+  type AgentRecord,
 } from '../agentPresetRecords'
 import type { MessageTranslation } from '../storage/database.svelte'
 import type { AlternateGreetingMutation, ChatGreetingIndex } from '../alternateGreetingMutation'
@@ -806,6 +808,8 @@ export type ModelPresetSnapshot = Record<string, unknown>
 export type PromptPresetSnapshot = Record<string, unknown>
 export type AgentPresetSnapshot = Partial<AgentPresetRecord> & Record<string, unknown>
 export type AgentPresetStepSnapshot = Partial<AgentPresetStepRecord> & Record<string, unknown>
+export type AgentSnapshot = Partial<AgentRecord> & Record<string, unknown>
+export type AgentPresetUseSnapshot = Partial<AgentPresetUseRecord> & Record<string, unknown>
 
 export interface ModelPresetCommandInput {
   baseRevision: number
@@ -872,6 +876,49 @@ export interface ReorderPromptPresetsCommandInput extends PromptPresetCommandInp
 
 export interface AgentPresetCommandInput {
   baseRevision: number
+}
+
+export interface CreateAgentCommandInput extends AgentPresetCommandInput {
+  agent: AgentSnapshot
+}
+
+export interface UpdateAgentCommandInput extends AgentPresetCommandInput {
+  agentId: string
+  patch: AgentSnapshot
+}
+
+export interface DuplicateAgentCommandInput extends AgentPresetCommandInput {
+  agentId: string
+  name?: string
+}
+
+export interface DeleteAgentCommandInput extends AgentPresetCommandInput {
+  agentId: string
+}
+
+export interface ReorderAgentsCommandInput extends AgentPresetCommandInput {
+  agentIds: string[]
+}
+
+export interface CreateAgentPresetUseCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  use: AgentPresetUseSnapshot
+}
+
+export interface UpdateAgentPresetUseCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  useId: string
+  patch: AgentPresetUseSnapshot
+}
+
+export interface DeleteAgentPresetUseCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  useId: string
+}
+
+export interface ReorderAgentPresetUsesCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  useIds: string[]
 }
 
 export interface CreateAgentPresetCommandInput extends AgentPresetCommandInput {
@@ -2625,6 +2672,61 @@ export async function reorderPromptPresetsCommand(
   })
 }
 
+export async function createAgentCommand(
+  input: CreateAgentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ agentId: string }>> {
+  return requestCommandJson('/agents', {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, agent: input.agent },
+    signal,
+  })
+}
+
+export async function updateAgentCommand(
+  input: UpdateAgentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ agentId: string }>> {
+  return requestCommandJson(`/agents/${encodeURIComponent(input.agentId)}`, {
+    method: 'PATCH',
+    body: { baseRevision: input.baseRevision, patch: input.patch },
+    signal,
+  })
+}
+
+export async function duplicateAgentCommand(
+  input: DuplicateAgentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ agentId: string; sourceAgentId: string }>> {
+  return requestCommandJson(`/agents/${encodeURIComponent(input.agentId)}/duplicate`, {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, name: input.name },
+    signal,
+  })
+}
+
+export async function deleteAgentCommand(
+  input: DeleteAgentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ agentId: string }>> {
+  return requestCommandJson(`/agents/${encodeURIComponent(input.agentId)}`, {
+    method: 'DELETE',
+    body: { baseRevision: input.baseRevision },
+    signal,
+  })
+}
+
+export async function reorderAgentsCommand(
+  input: ReorderAgentsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<Record<string, never>>> {
+  return requestCommandJson('/agents/reorder', {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, agentIds: input.agentIds },
+    signal,
+  })
+}
+
 export async function createAgentPresetCommand(
   input: CreateAgentPresetCommandInput,
   signal?: AbortSignal | null,
@@ -2635,6 +2737,56 @@ export async function createAgentPresetCommand(
       baseRevision: input.baseRevision,
       preset: input.preset,
     },
+    signal,
+  })
+}
+
+export async function createAgentPresetUseCommand(
+  input: CreateAgentPresetUseCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; useId: string; agentId: string }>> {
+  return requestCommandJson(`/agent-presets/${encodeURIComponent(input.presetId)}/uses`, {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, use: input.use },
+    signal,
+  })
+}
+
+export async function updateAgentPresetUseCommand(
+  input: UpdateAgentPresetUseCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; useId: string; agentId: string }>> {
+  return requestCommandJson(
+    `/agent-presets/${encodeURIComponent(input.presetId)}/uses/${encodeURIComponent(input.useId)}`,
+    {
+      method: 'PATCH',
+      body: { baseRevision: input.baseRevision, patch: input.patch },
+      signal,
+    },
+  )
+}
+
+export async function deleteAgentPresetUseCommand(
+  input: DeleteAgentPresetUseCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; useId: string }>> {
+  return requestCommandJson(
+    `/agent-presets/${encodeURIComponent(input.presetId)}/uses/${encodeURIComponent(input.useId)}`,
+    {
+      method: 'DELETE',
+      body: { baseRevision: input.baseRevision },
+      signal,
+    },
+  )
+}
+
+export async function reorderAgentPresetUsesCommand(
+  input: ReorderAgentPresetUsesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson(`/agent-presets/${encodeURIComponent(input.presetId)}/uses/reorder`, {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, useIds: input.useIds },
     signal,
   })
 }
@@ -6171,7 +6323,7 @@ function readLegacyPresetPatchLocalEffect(
     attemptedFields[key] = parsedState
   }
   const expectedAttemptedFieldKeys = [
-    ...new Set([...attemptedKeys.filter((key) => key !== 'id'), 'agentPresets', 'agentPresetDefaultId']),
+    ...new Set([...attemptedKeys.filter((key) => key !== 'id'), 'agents', 'agentPresets', 'agentPresetDefaultId']),
   ].sort()
   if (!isJsonValueEqual(Object.keys(attemptedFields).sort(), expectedAttemptedFieldKeys)) {
     return undefined

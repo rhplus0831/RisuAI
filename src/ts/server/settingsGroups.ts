@@ -367,7 +367,7 @@ export const SERVER_SETTINGS_KEYS_BY_GROUP = Object.fromEntries(
   SETTINGS_GROUPS.map((group) => [
     group,
     group === 'agents'
-      ? ['agentPresets', 'agentPresetDefaultId']
+      ? ['agents', 'agentPresets', 'agentPresetDefaultId']
       : group === 'models'
         ? [...MODEL_PROFILE_SETTINGS_KEYS]
         : group === 'language'

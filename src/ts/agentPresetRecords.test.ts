@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  normalizeAgentConfiguration,
   normalizeAgentPresetDefaultId,
   normalizeAgentPresets,
+  resolveAgentPresetSteps,
   validateAgentPresetRecord,
   type AgentPresetRecord,
   type AgentPresetStepRecord,
@@ -44,6 +46,53 @@ function preset(patch: Partial<AgentPresetRecord> = {}): AgentPresetRecord {
 }
 
 describe('agent preset records', () => {
+  it('migrates embedded steps into standalone Agents and preset uses without deduplicating them', () => {
+    const normalized = normalizeAgentConfiguration(undefined, [
+      preset({ id: 'ap_a', steps: [step({ id: 'shared_name' })] }),
+      preset({ id: 'ap_b', steps: [step({ id: 'shared_name', instruction: 'Different behavior.' })] }),
+    ])
+
+    expect(normalized.agents).toHaveLength(2)
+    expect(normalized.agents.map((agent) => agent.id)).toEqual(['shared_name', 'shared_name_ap_b'])
+    expect(normalized.agentPresets[0].steps).toEqual([])
+    expect(normalized.agentPresets[0].agentUses).toEqual([
+      expect.objectContaining({ id: 'shared_name', agentId: 'shared_name', outputKey: 'context' }),
+    ])
+    expect(normalized.agentPresets[1].agentUses?.[0].agentId).toBe('shared_name_ap_b')
+  })
+
+  it('resolves shared Agent defaults with per-preset model and runtime overrides', () => {
+    const normalized = normalizeAgentConfiguration(undefined, [preset()])
+    const agent = normalized.agents[0]
+    const firstPreset = normalized.agentPresets[0]
+    const secondPreset: AgentPresetRecord = {
+      id: 'ap_second',
+      name: 'Second',
+      enabled: true,
+      version: 1,
+      steps: [],
+      agentUses: [
+        {
+          ...firstPreset.agentUses![0],
+          id: 'use_second',
+          modelOverride: { mode: 'modelProfile', profileId: 'profile_fast' },
+          runtimeOverride: { timeoutMs: 5_000 },
+        },
+      ],
+    }
+
+    expect(resolveAgentPresetSteps(firstPreset, [agent])[0]).toMatchObject({
+      agentId: agent.id,
+      instruction: 'Collect context.',
+      model: { mode: 'inheritMain' },
+      runtime: { timeoutMs: 30_000 },
+    })
+    expect(resolveAgentPresetSteps(secondPreset, [agent])[0]).toMatchObject({
+      agentId: agent.id,
+      model: { mode: 'modelProfile', profileId: 'profile_fast' },
+      runtime: { timeoutMs: 5_000, maxInputChars: 20_000 },
+    })
+  })
   it('normalizes stored records without inventing default presets', () => {
     expect(normalizeAgentPresets(undefined)).toEqual([])
 

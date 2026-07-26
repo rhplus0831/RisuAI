@@ -20,8 +20,10 @@ import {
   acknowledgeServerMutationReceipts,
   appendMessageCommand,
   bulkPluginStorageCommand,
+  createAgentCommand,
   createAgentPresetCommand,
   createAgentPresetStepCommand,
+  createAgentPresetUseCommand,
   createChatCommand,
   createChatFolderCommand,
   createAndSelectCharacterCommand,
@@ -45,6 +47,8 @@ import {
   copyPresetCommand,
   deleteAgentPresetCommand,
   deleteAgentPresetStepCommand,
+  deleteAgentPresetUseCommand,
+  deleteAgentCommand,
   deleteCharacterLorebookEntryCommand,
   deleteChatCommand,
   deleteChatFolderCommand,
@@ -88,6 +92,7 @@ import {
   persistGenerationResultCommand,
   duplicateAgentPresetCommand,
   duplicateAgentPresetStepCommand,
+  duplicateAgentCommand,
   duplicateModelProfileCommand,
   putPluginStorageCommand,
   saveChatGenerationSettingsCommand,
@@ -109,6 +114,8 @@ import {
   reorderPromptItemsCommand,
   reorderAgentPresetsCommand,
   reorderAgentPresetStepsCommand,
+  reorderAgentPresetUsesCommand,
+  reorderAgentsCommand,
   reorderPresetsCommand,
   replayDurableMutationRequests,
   replayDurableMutationRequestsInline,
@@ -142,6 +149,8 @@ import {
   updateChatFolderCommand,
   updateAgentPresetCommand,
   updateAgentPresetStepCommand,
+  updateAgentPresetUseCommand,
+  updateAgentCommand,
   updateGlobalLorebookCommand,
   updateLoadoutCommand,
   updateMessageCommand,
@@ -2866,6 +2875,118 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('dispatches standalone Agent and preset-use commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      const event = { type: 'agent.test', revision: 99, resource: 'agentPreset' }
+      if (url.endsWith('/agents/ag_a/duplicate')) {
+        return { revision: 99, event, agentId: 'ag_b', sourceAgentId: 'ag_a' }
+      }
+      if (url.endsWith('/agents/ag_b')) return { revision: 99, event, agentId: 'ag_b' }
+      if (url.endsWith('/agents/ag_a')) return { revision: 99, event, agentId: 'ag_a' }
+      if (url.endsWith('/agents/reorder')) return { revision: 99, event }
+      if (url.endsWith('/agents')) return { revision: 99, event, agentId: 'ag_a' }
+      if (url.endsWith('/agent-presets/ap_a/uses/use_a')) {
+        return { revision: 99, event, presetId: 'ap_a', stepId: 'use_a', useId: 'use_a', agentId: 'ag_a' }
+      }
+      return { revision: 99, event, presetId: 'ap_a', stepId: 'use_a', useId: 'use_a', agentId: 'ag_a' }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const agent = {
+      name: 'Researcher',
+      instruction: 'Collect facts.',
+      modelDefaults: { mode: 'inheritMain' as const },
+      runtimeDefaults: { timeoutMs: 30_000 },
+      inputScopes: ['currentUserMessage' as const],
+      outputFormat: 'text' as const,
+    }
+    await createAgentCommand({ baseRevision: 1, agent })
+    await updateAgentCommand({ baseRevision: 2, agentId: 'ag_a', patch: { instruction: 'Verify facts.' } })
+    await duplicateAgentCommand({ baseRevision: 3, agentId: 'ag_a', name: 'Researcher Copy' })
+    await deleteAgentCommand({ baseRevision: 4, agentId: 'ag_b' })
+    await reorderAgentsCommand({ baseRevision: 5, agentIds: ['ag_a'] })
+    await createAgentPresetUseCommand({
+      baseRevision: 6,
+      presetId: 'ap_a',
+      use: {
+        agentId: 'ag_a',
+        enabled: true,
+        phase: 'beforeMain',
+        dependencies: [],
+        outputKey: 'facts',
+        destination: 'promptOutput',
+        failurePolicy: { mode: 'required' },
+      },
+    })
+    await updateAgentPresetUseCommand({
+      baseRevision: 7,
+      presetId: 'ap_a',
+      useId: 'use_a',
+      patch: { runtimeOverride: { timeoutMs: 45_000 } },
+    })
+    await deleteAgentPresetUseCommand({ baseRevision: 8, presetId: 'ap_a', useId: 'use_a' })
+    await reorderAgentPresetUsesCommand({ baseRevision: 9, presetId: 'ap_a', useIds: ['use_b'] })
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/agents',
+        method: 'POST',
+        body: { baseRevision: 1, agent },
+      },
+      {
+        url: '/api/v1/commands/agents/ag_a',
+        method: 'PATCH',
+        body: { baseRevision: 2, patch: { instruction: 'Verify facts.' } },
+      },
+      {
+        url: '/api/v1/commands/agents/ag_a/duplicate',
+        method: 'POST',
+        body: { baseRevision: 3, name: 'Researcher Copy' },
+      },
+      {
+        url: '/api/v1/commands/agents/ag_b',
+        method: 'DELETE',
+        body: { baseRevision: 4 },
+      },
+      {
+        url: '/api/v1/commands/agents/reorder',
+        method: 'POST',
+        body: { baseRevision: 5, agentIds: ['ag_a'] },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/uses',
+        method: 'POST',
+        body: {
+          baseRevision: 6,
+          use: {
+            agentId: 'ag_a',
+            enabled: true,
+            phase: 'beforeMain',
+            dependencies: [],
+            outputKey: 'facts',
+            destination: 'promptOutput',
+            failurePolicy: { mode: 'required' },
+          },
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/uses/use_a',
+        method: 'PATCH',
+        body: { baseRevision: 7, patch: { runtimeOverride: { timeoutMs: 45_000 } } },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/uses/use_a',
+        method: 'DELETE',
+        body: { baseRevision: 8 },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/uses/reorder',
+        method: 'POST',
+        body: { baseRevision: 9, useIds: ['use_b'] },
+      },
+    ])
+  })
+
   it('exposes exact Agent Preset field acknowledgements without serializing optimistic proof', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url.endsWith('/agent-presets/ap_a/steps/aps_a')) {
@@ -3715,6 +3836,7 @@ describe('server command API adapter', () => {
         collectionProjectionEpoch: 17,
         attemptedFields: {
           name: { present: true, value: 'Optimistic name' },
+          agents: { present: false },
           agentPresets: { present: false },
           agentPresetDefaultId: { present: true, value: 'missing-agent' },
         },

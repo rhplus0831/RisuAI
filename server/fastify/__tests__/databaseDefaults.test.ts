@@ -215,29 +215,37 @@ describe('database defaults', () => {
       modelTools: ['tool-a'],
       customFlags: [LLMFlags.hasImageInput],
     })
+    expect(database.agents).toEqual([
+      {
+        id: 'aps_context',
+        name: 'aps_context',
+        version: 1,
+        instruction: '',
+        modelDefaults: { mode: 'inheritMain' },
+        runtimeDefaults: {},
+        inputScopes: [],
+        outputFormat: 'text',
+      },
+    ])
     expect(database.agentPresets).toEqual([
       {
         id: 'ap_research',
         name: 'Research',
         enabled: true,
         version: 1,
-        steps: [
+        agentUses: [
           {
             id: 'aps_context',
-            name: 'aps_context',
+            agentId: 'aps_context',
             enabled: true,
             phase: 'beforeMain',
             dependencies: [],
-            instruction: '',
-            model: { mode: 'inheritMain' },
-            runtime: {},
-            inputScopes: [],
             outputKey: 'context',
-            outputFormat: 'text',
             destination: 'promptOutput',
             failurePolicy: { mode: 'required' },
           },
         ],
+        steps: [],
       },
     ])
     expect(database.agentPresetDefaultId).toBe('ap_research')
@@ -258,9 +266,11 @@ describe('database defaults', () => {
         name: 'Existing',
         enabled: true,
         version: 1,
+        agentUses: [],
         steps: [],
       },
     ])
+    expect(database.agents).toEqual([])
     expect(database.agentPresetDefaultId).toBeUndefined()
   })
 

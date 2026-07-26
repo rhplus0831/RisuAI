@@ -831,6 +831,74 @@ describe('API-backed resource invalidation', () => {
     expect(getResourceDatabase()).toMatchObject({ agentPresets, agentPresetDefaultId: 'agent-a' })
   })
 
+  it('coalesces standalone Agent and preset-use events into one agents-group read', async () => {
+    seedResources(1)
+    const agents = [
+      {
+        id: 'agent-a',
+        name: 'Agent A',
+        version: 1,
+        instruction: 'Help',
+        modelDefaults: { mode: 'inheritMain' },
+        runtimeDefaults: {},
+        inputScopes: [],
+        outputFormat: 'text',
+      },
+    ]
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 10,
+      group: 'agents',
+      settings: { agents, agentPresets: [] },
+    })
+    const events: CommandEvent[] = [
+      { type: 'agent.created', revision: 2, resource: 'agentPreset', id: 'agent-a' },
+      { type: 'agent.updated', revision: 3, resource: 'agentPreset', id: 'agent-a' },
+      {
+        type: 'agent.duplicated',
+        revision: 4,
+        resource: 'agentPreset',
+        id: 'agent-b',
+        parentId: 'agent-a',
+      },
+      { type: 'agent.deleted', revision: 5, resource: 'agentPreset', id: 'agent-b' },
+      { type: 'agent.reordered', revision: 6, resource: 'agentPreset' },
+      {
+        type: 'agentPreset.use.created',
+        revision: 7,
+        resource: 'agentPreset',
+        id: 'use-a',
+        parentId: 'preset-a',
+      },
+      {
+        type: 'agentPreset.use.updated',
+        revision: 8,
+        resource: 'agentPreset',
+        id: 'use-a',
+        parentId: 'preset-a',
+      },
+      {
+        type: 'agentPreset.use.deleted',
+        revision: 9,
+        resource: 'agentPreset',
+        id: 'use-a',
+        parentId: 'preset-a',
+      },
+      { type: 'agentPreset.use.reordered', revision: 10, resource: 'agentPreset', id: 'preset-a' },
+    ]
+
+    await expect(refreshInvalidatedServerResources(events, { appliedRevision: 1, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 10,
+      scope: 'targeted',
+    })
+
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('agents', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(getResourceDatabase()).toMatchObject({ agents, agentPresets: [] })
+  })
+
   it('refreshes the agents group plus deletion cascades for an Agent Preset delete', async () => {
     seedResources(1)
     applySettingsResource({

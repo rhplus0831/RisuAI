@@ -219,11 +219,20 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PUT', path: /^\/model-role-profiles$/ },
   { method: 'PUT', path: /^\/model-runtime-defaults$/ },
   { method: 'POST', path: /^\/agent-presets$/ },
+  { method: 'POST', path: /^\/agents$/ },
+  { method: 'PATCH', path: /^\/agents\/(?!reorder$)[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/agents\/(?!reorder$)[^/?#]+$/ },
+  { method: 'POST', path: /^\/agents\/[^/?#]+\/duplicate$/ },
+  { method: 'POST', path: /^\/agents\/reorder$/ },
   { method: 'PATCH', path: /^\/agent-presets\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/agent-presets\/[^/?#]+$/ },
   { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/duplicate$/ },
   { method: 'POST', path: /^\/agent-presets\/reorder$/ },
   { method: 'POST', path: /^\/agent-presets\/default$/ },
+  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/uses$/ },
+  { method: 'PATCH', path: /^\/agent-presets\/[^/?#]+\/uses\/(?!reorder$)[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/agent-presets\/[^/?#]+\/uses\/(?!reorder$)[^/?#]+$/ },
+  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/uses\/reorder$/ },
   { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/steps$/ },
   { method: 'PATCH', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+$/ },
@@ -334,6 +343,14 @@ export function pendingMutationAgentPresetOrderProjectionTarget(): string {
 
 export function pendingMutationAgentPresetDefaultProjectionTarget(): string {
   return 'agent-preset-default'
+}
+
+export function pendingMutationAgentCollectionProjectionTarget(): string {
+  return 'agent-collection'
+}
+
+export function pendingMutationAgentRowProjectionTarget(agentId: string): string {
+  return `agent-row:${encodeProjectionTargetPart(agentId)}`
 }
 
 export function pendingMutationLoadoutRowProjectionTarget(loadoutId: string): string {
@@ -1647,11 +1664,48 @@ function pendingMutationRequestProjectionTargets(request: DurableMutationRequest
   if (request.method === 'POST' && request.path === '/agent-presets') {
     return [pendingMutationAgentPresetCollectionProjectionTarget()]
   }
+  if (request.method === 'POST' && (request.path === '/agents' || request.path === '/agents/reorder')) {
+    return [pendingMutationAgentCollectionProjectionTarget()]
+  }
+  const agentDuplicate = request.method === 'POST' ? /^\/agents\/([^/]+)\/duplicate$/.exec(request.path) : null
+  if (agentDuplicate) return [pendingMutationAgentCollectionProjectionTarget()]
+  const agentRow =
+    request.method === 'PATCH' || request.method === 'DELETE' ? /^\/agents\/([^/]+)$/.exec(request.path) : null
+  if (agentRow) {
+    const targets = [pendingMutationAgentRowProjectionTarget(decodeProjectionTargetPart(agentRow[1]!))]
+    if (request.method === 'DELETE') targets.push(pendingMutationAgentCollectionProjectionTarget())
+    return targets
+  }
   if (request.method === 'POST' && request.path === '/agent-presets/reorder') {
     return [pendingMutationAgentPresetOrderProjectionTarget()]
   }
   if (request.method === 'POST' && request.path === '/agent-presets/default') {
     return [pendingMutationAgentPresetDefaultProjectionTarget()]
+  }
+
+  const agentPresetUseReorder =
+    request.method === 'POST' ? /^\/agent-presets\/([^/]+)\/uses\/reorder$/.exec(request.path) : null
+  if (agentPresetUseReorder) {
+    return [pendingMutationAgentPresetStepsProjectionTarget(decodeProjectionTargetPart(agentPresetUseReorder[1]!))]
+  }
+
+  const agentPresetUseCollection =
+    request.method === 'POST' ? /^\/agent-presets\/([^/]+)\/uses$/.exec(request.path) : null
+  if (agentPresetUseCollection) {
+    return [pendingMutationAgentPresetStepsProjectionTarget(decodeProjectionTargetPart(agentPresetUseCollection[1]!))]
+  }
+
+  const agentPresetUseRow =
+    request.method === 'PATCH' || request.method === 'DELETE'
+      ? /^\/agent-presets\/([^/]+)\/uses\/([^/]+)$/.exec(request.path)
+      : null
+  if (agentPresetUseRow) {
+    const presetId = decodeProjectionTargetPart(agentPresetUseRow[1]!)
+    const targets = [
+      pendingMutationAgentPresetStepProjectionTarget(presetId, decodeProjectionTargetPart(agentPresetUseRow[2]!)),
+    ]
+    if (request.method === 'DELETE') targets.push(pendingMutationAgentPresetStepsProjectionTarget(presetId))
+    return targets
   }
 
   const agentPresetStepDuplicate =

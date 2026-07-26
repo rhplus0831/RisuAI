@@ -370,6 +370,42 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'agentPreset.default.updated',
     resource: 'agentPreset',
   },
+  agentCreated: {
+    type: 'agent.created',
+    resource: 'agentPreset',
+  },
+  agentUpdated: {
+    type: 'agent.updated',
+    resource: 'agentPreset',
+  },
+  agentDuplicated: {
+    type: 'agent.duplicated',
+    resource: 'agentPreset',
+  },
+  agentDeleted: {
+    type: 'agent.deleted',
+    resource: 'agentPreset',
+  },
+  agentReordered: {
+    type: 'agent.reordered',
+    resource: 'agentPreset',
+  },
+  agentPresetUseCreated: {
+    type: 'agentPreset.use.created',
+    resource: 'agentPreset',
+  },
+  agentPresetUseUpdated: {
+    type: 'agentPreset.use.updated',
+    resource: 'agentPreset',
+  },
+  agentPresetUseDeleted: {
+    type: 'agentPreset.use.deleted',
+    resource: 'agentPreset',
+  },
+  agentPresetUseReordered: {
+    type: 'agentPreset.use.reordered',
+    resource: 'agentPreset',
+  },
   agentPresetStepCreated: {
     type: 'agentPreset.step.created',
     resource: 'agentPreset',

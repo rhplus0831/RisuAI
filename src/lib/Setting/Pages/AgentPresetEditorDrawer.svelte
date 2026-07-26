@@ -6,17 +6,15 @@
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
-  import Help from 'src/lib/Others/Help.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import {
-    createAgentPresetStep,
-    deleteAgentPresetStep,
-    duplicateAgentPresetStep,
-    reorderAgentPresetSteps,
-    updateAgentPresetStep,
-    type AgentPresetGeneratedProjectionLatch,
-    type AgentPresetMutationOutcome,
-  } from 'src/ts/agentPresets'
+    addAgentToPreset,
+    defaultAgentPresetUse,
+    removeAgentFromPreset,
+    reorderAgentPresetUses,
+    updateAgentPresetUse,
+    type AgentMutationOutcome,
+  } from 'src/ts/agents'
   import {
     AGENT_PRESET_MAX_CONCURRENCY_MAX,
     AGENT_PRESET_MAX_CONCURRENCY_MIN,
@@ -24,25 +22,22 @@
     AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MIN,
     AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MAX,
     AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MIN,
-    AGENT_PRESET_RUNTIME_TEMPERATURE_MAX,
-    AGENT_PRESET_RUNTIME_TEMPERATURE_MIN,
     AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX,
     AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN,
-    AGENT_PRESET_STEP_INPUT_SCOPES,
     isValidAgentPresetOutputKey,
+    resolveAgentPresetSteps,
     type AgentPresetRecord,
     type AgentPresetStepDestination,
     type AgentPresetStepFailurePolicy,
-    type AgentPresetStepInputScope,
     type AgentPresetStepModelSelection,
-    type AgentPresetStepOutputFormat,
     type AgentPresetStepPhase,
     type AgentPresetStepRecord,
+    type AgentPresetUseRecord,
   } from 'src/ts/agentPresetRecords'
-  import type { AgentPresetSnapshot, AgentPresetStepSnapshot } from 'src/ts/server/commands'
+  import type { AgentPresetSnapshot, AgentPresetUseSnapshot } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import AgentPresetDiagnosticsPanel from './AgentPresetDiagnosticsPanel.svelte'
-  import { sparseAgentPresetStepPatch } from './agentPresetStepPatch'
+  import type { AgentPresetGeneratedProjectionLatch } from 'src/ts/agentPresets'
 
   interface Props {
     mode: 'create' | 'edit'
@@ -54,1053 +49,541 @@
     onQueuedProjection?: (latch: AgentPresetGeneratedProjectionLatch) => void | Promise<void>
   }
 
-  type StepEditorMode = 'new' | 'edit' | null
-  type StepFailurePolicyMode = AgentPresetStepFailurePolicy['mode']
-  type StepModelMode = AgentPresetStepModelSelection['mode']
-  type AgentPresetMetadataField = 'name' | 'description' | 'enabled' | 'maxConcurrency'
-
-  const DEFAULT_STEP_TIMEOUT_MS = 30_000
-  const DEFAULT_STEP_MAX_INPUT_CHARS = 24_000
-  const DEFAULT_STEP_MAX_OUTPUT_CHARS = 1_200
-  const AGENT_PRESET_RUNTIME_TEMPERATURE_SCALE = 100
-  const DEFAULT_STEP_TEMPERATURE = 100
-  const AGENT_PRESET_METADATA_FIELDS: readonly AgentPresetMetadataField[] = [
-    'name',
-    'description',
-    'enabled',
-    'maxConcurrency',
-  ]
-
-  let {
-    mode,
-    preset,
-    busy = false,
-    commandError = '',
-    onSave,
-    onCancel,
-    onQueuedProjection = () => undefined,
-  }: Props = $props()
-
+  type MetadataField = 'name' | 'description' | 'enabled' | 'maxConcurrency'
+  const METADATA_FIELDS: MetadataField[] = ['name', 'description', 'enabled', 'maxConcurrency']
+  let { mode, preset, busy = false, commandError = '', onSave, onCancel }: Props = $props()
   // svelte-ignore state_referenced_locally
   const initialPreset = preset
-  const initialPresetId = initialPreset?.id ?? ''
-  let draftName = $state(initialPreset?.name ?? language.agentPresets.newPresetName)
-  let draftDescription = $state(initialPreset?.description ?? '')
-  let draftEnabled = $state(initialPreset?.enabled ?? true)
+  const presetId = initialPreset?.id ?? ''
+  let name = $state(initialPreset?.name ?? language.agentPresets.newPresetName)
+  let description = $state(initialPreset?.description ?? '')
+  let enabled = $state(initialPreset?.enabled ?? true)
   let limitConcurrency = $state(initialPreset?.maxConcurrency !== undefined)
-  let draftMaxConcurrency = $state(initialPreset?.maxConcurrency ?? 4)
-  let initialMetadataSnapshot = $state<AgentPresetSnapshot | null>(null)
+  let maxConcurrency = $state(initialPreset?.maxConcurrency ?? 4)
+  const initialMetadata = metadataSnapshot(initialPreset)
 
-  let stepEditorMode = $state<StepEditorMode>(null)
-  let editingStepId = $state<string | null>(null)
-  let stepInitialSnapshot = $state<AgentPresetStepSnapshot | null>(null)
-  let stepInitialSnapshotJson = $state('')
-  let stepBusy = $state(false)
-  let stepCommandError = $state('')
-  let stepMutationState = $state<'idle' | 'saving' | 'queued'>('idle')
-  let draftStepName = $state('')
-  let draftStepEnabled = $state(true)
-  let draftStepPhase = $state<AgentPresetStepPhase>('beforeMain')
-  let draftStepInstruction = $state('')
-  let draftStepModelMode = $state<StepModelMode>('inheritMain')
-  let draftStepModelProfileId = $state('')
-  let draftStepDependencies = $state<string[]>([])
-  let draftStepOutputKey = $state('')
-  let draftStepOutputFormat = $state<AgentPresetStepOutputFormat>('text')
-  let draftStepDestination = $state<AgentPresetStepDestination>('promptOutput')
-  let draftStepFailurePolicyMode = $state<StepFailurePolicyMode>('required')
-  let draftStepFallbackText = $state('')
-  let draftStepTimeoutMs = $state(DEFAULT_STEP_TIMEOUT_MS)
-  let draftStepMaxInputChars = $state(DEFAULT_STEP_MAX_INPUT_CHARS)
-  let draftStepMaxOutputChars = $state(DEFAULT_STEP_MAX_OUTPUT_CHARS)
-  let draftStepTemperature = $state(decimalStepTemperature(DEFAULT_STEP_TEMPERATURE))
-  let draftStepTemperatureStoredBaseline = $state<number | undefined>(DEFAULT_STEP_TEMPERATURE)
-  let draftStepInputScopes = $state<AgentPresetStepInputScope[]>([])
+  let selectedAgentId = $state('')
+  let editingUseId = $state<string | null>(null)
+  let useBusy = $state(false)
+  let useError = $state('')
+  let useEnabled = $state(true)
+  let usePhase = $state<AgentPresetStepPhase>('beforeMain')
+  let useDependencies = $state<string[]>([])
+  let useOutputKey = $state('')
+  let useDestination = $state<AgentPresetStepDestination>('promptOutput')
+  let failureMode = $state<AgentPresetStepFailurePolicy['mode']>('required')
+  let fallbackText = $state('')
+  let overrideModel = $state(false)
+  let modelMode = $state<AgentPresetStepModelSelection['mode']>('inheritMain')
+  let modelProfileId = $state('')
+  let overrideRuntime = $state(false)
+  let timeoutMs = $state(30_000)
+  let maxInputChars = $state(24_000)
+  let maxOutputChars = $state(1_200)
+  let temperature = $state(1)
+  let structuredOutputStrict = $state(false)
 
-  let drawerTitle = $derived(mode === 'create' ? language.agentPresets.createPreset : language.agentPresets.editPreset)
   let livePreset = $derived(
-    initialPresetId && Array.isArray(getDatabase().agentPresets)
-      ? (getDatabase().agentPresets.find((candidate) => candidate.id === initialPresetId) ?? initialPreset)
-      : initialPreset,
+    presetId ? (getDatabase().agentPresets.find((candidate) => candidate.id === presetId) ?? preset) : preset,
   )
-  let presetSteps = $derived(livePreset?.steps ?? [])
-  let beforeMainSteps = $derived(stepsForPhase(presetSteps, 'beforeMain'))
-  let afterMainSteps = $derived(stepsForPhase(presetSteps, 'afterMain'))
+  let agents = $derived(Array.isArray(getDatabase().agents) ? getDatabase().agents : [])
+  let uses = $derived(livePreset?.agentUses ?? [])
+  let resolvedSteps = $derived(livePreset ? resolveAgentPresetSteps(livePreset, agents) : [])
+  let beforeMainSteps = $derived(resolvedSteps.filter((step) => step.phase === 'beforeMain'))
+  let afterMainSteps = $derived(resolvedSteps.filter((step) => step.phase === 'afterMain'))
   let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
-  let activeStep = $derived(editingStepId ? presetSteps.find((step) => step.id === editingStepId) : undefined)
-  let metadataPatch = $derived(
-    initialMetadataSnapshot ? sparseAgentPresetMetadataPatch(initialMetadataSnapshot, snapshotForSave()) : {},
-  )
+  let editingStep = $derived(editingUseId ? resolvedSteps.find((step) => step.id === editingUseId) : undefined)
+  let metadataPatch = $derived(sparseMetadata(initialMetadata, metadataForSave()))
   let metadataDirty = $derived(Object.keys(metadataPatch).length > 0)
-  let stepDirty = $derived(
-    stepInitialSnapshotJson !== '' && stepInitialSnapshotJson !== snapshot(stepSnapshotForSave()),
+  let locked = $derived(busy || useBusy)
+  let canSaveMetadata = $derived(name.trim().length > 0 && !locked && (mode === 'create' || metadataDirty))
+  let canSaveUse = $derived(
+    !!editingUseId &&
+      isValidAgentPresetOutputKey(useOutputKey.trim()) &&
+      (!overrideModel || modelMode === 'inheritMain' || modelProfileId.trim().length > 0) &&
+      !locked,
   )
-  let isDirty = $derived(metadataDirty || stepDirty)
-  let controlsLocked = $derived(busy || stepBusy)
-  let outputKeyValid = $derived(isValidAgentPresetOutputKey(draftStepOutputKey.trim()))
-  let canSave = $derived(draftName.trim().length > 0 && !controlsLocked && (mode === 'create' || metadataDirty))
-  let canSaveStep = $derived(
-    mode === 'edit' &&
-      !!initialPresetId &&
-      !!stepEditorMode &&
-      !controlsLocked &&
-      draftStepName.trim().length > 0 &&
-      outputKeyValid &&
-      (draftStepModelMode === 'inheritMain' || draftStepModelProfileId.trim().length > 0),
-  )
-  let validDependencyOptions = $derived(dependencyOptions())
-  let visibleInputScopes = $derived(inputScopesForPhase(draftStepPhase))
-  let stepFormTitle = $derived(
-    stepEditorMode === 'new' ? language.agentPresets.createStep : language.agentPresets.editStep,
-  )
+  let dependencyOptions = $derived(availableDependencies())
 
   $effect(() => {
-    const draft = snapshotForSave()
-    const projection = mode === 'edit' && livePreset ? metadataSnapshotFromPreset(livePreset) : null
-    if (!initialMetadataSnapshot) {
-      initialMetadataSnapshot = projection ?? draft
-      return
-    }
-    if (!projection) return
-
-    const initialJson = snapshot(initialMetadataSnapshot)
-    const draftJson = snapshot(draft)
-    const projectionJson = snapshot(projection)
-    // The command helper applies an optimistic row before its response has
-    // passed the local-effect or authoritative-projection fences. Keep the
-    // draft dirty until that command promise settles; a failed rollback then
-    // remains a retryable edit instead of becoming the new baseline.
-    if (busy) return
-    if (draftJson === projectionJson) {
-      if (initialJson !== projectionJson) initialMetadataSnapshot = projection
-      return
-    }
-    if (draftJson === initialJson) {
-      applyMetadataProjectionToDraft(projection)
-      initialMetadataSnapshot = projection
-    }
+    if (!selectedAgentId && agents[0]) selectedAgentId = agents[0].id
   })
 
-  function snapshot(value: unknown): string {
-    return JSON.stringify(value ?? {})
-  }
-
-  function snapshotValue(value: unknown): string {
-    const valueSnapshot = JSON.stringify(value)
-    return valueSnapshot === undefined ? '__undefined__' : valueSnapshot
-  }
-
-  function cloneJsonValue<T>(value: T): T {
-    if (value === undefined) return value
-    return JSON.parse(JSON.stringify(value)) as T
-  }
-
-  function setStepInitialSnapshot(value: AgentPresetStepSnapshot | null): void {
-    stepInitialSnapshot = value
-    stepInitialSnapshotJson = value ? snapshot(value) : ''
-  }
-
-  function stepsForPhase(
-    steps: readonly AgentPresetStepRecord[],
-    phase: AgentPresetStepPhase,
-  ): AgentPresetStepRecord[] {
-    return steps.filter((step) => step.phase === phase)
-  }
-
-  function clampedMaxConcurrency(): number {
-    return clampInteger(draftMaxConcurrency, AGENT_PRESET_MAX_CONCURRENCY_MIN, AGENT_PRESET_MAX_CONCURRENCY_MAX)
-  }
-
-  function clampedTimeoutMs(): number {
-    return clampInteger(draftStepTimeoutMs, AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN, AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX)
-  }
-
-  function clampedMaxInputChars(): number {
-    return clampInteger(
-      draftStepMaxInputChars,
-      AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MIN,
-      AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MAX,
-    )
-  }
-
-  function clampedMaxOutputChars(): number {
-    return clampInteger(
-      draftStepMaxOutputChars,
-      AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MIN,
-      AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MAX,
-    )
-  }
-
-  function clampedTemperature(): number {
-    const numeric = Number(draftStepTemperature)
-    if (!Number.isFinite(numeric)) return DEFAULT_STEP_TEMPERATURE
-    if (
-      typeof draftStepTemperatureStoredBaseline === 'number' &&
-      Number.isFinite(draftStepTemperatureStoredBaseline) &&
-      numeric === decimalStepTemperature(draftStepTemperatureStoredBaseline)
-    ) {
-      return draftStepTemperatureStoredBaseline
+  function metadataForSave(): AgentPresetSnapshot {
+    return {
+      name: name.trim(),
+      description: description.trim() || null,
+      enabled,
+      maxConcurrency: limitConcurrency
+        ? clamp(maxConcurrency, AGENT_PRESET_MAX_CONCURRENCY_MIN, AGENT_PRESET_MAX_CONCURRENCY_MAX)
+        : null,
     }
-    return Math.max(
-      AGENT_PRESET_RUNTIME_TEMPERATURE_MIN,
-      Math.min(AGENT_PRESET_RUNTIME_TEMPERATURE_MAX, Math.round(numeric * AGENT_PRESET_RUNTIME_TEMPERATURE_SCALE)),
-    )
   }
 
-  function decimalStepTemperature(storedTemperature: number): number {
-    return Number((storedTemperature / AGENT_PRESET_RUNTIME_TEMPERATURE_SCALE).toFixed(12))
+  function metadataSnapshot(record: AgentPresetRecord | undefined): AgentPresetSnapshot {
+    return record
+      ? {
+          name: record.name,
+          description: record.description ?? null,
+          enabled: record.enabled,
+          maxConcurrency: record.maxConcurrency ?? null,
+        }
+      : metadataForSave()
   }
 
-  function clampInteger(value: unknown, min: number, max: number): number {
-    const rounded = Math.round(Number(value))
-    if (!Number.isFinite(rounded)) return min
-    return Math.max(min, Math.min(max, rounded))
-  }
-
-  function snapshotForSave(): AgentPresetSnapshot {
-    const next: AgentPresetSnapshot = {
-      name: draftName.trim(),
-      enabled: draftEnabled,
-    }
-    const description = draftDescription.trim()
-    if (description) {
-      next.description = description
-    } else if (mode === 'edit') {
-      next.description = null
-    }
-
-    if (limitConcurrency) {
-      next.maxConcurrency = clampedMaxConcurrency()
-    } else if (mode === 'edit') {
-      next.maxConcurrency = null
-    }
-
-    return next
-  }
-
-  function metadataSnapshotFromPreset(source: AgentPresetRecord): AgentPresetSnapshot {
-    const next: AgentPresetSnapshot = {
-      name: source.name.trim(),
-      enabled: source.enabled,
-      description: source.description?.trim() || null,
-      maxConcurrency:
-        typeof source.maxConcurrency === 'number'
-          ? clampInteger(source.maxConcurrency, AGENT_PRESET_MAX_CONCURRENCY_MIN, AGENT_PRESET_MAX_CONCURRENCY_MAX)
-          : null,
-    }
-    return next
-  }
-
-  function sparseAgentPresetMetadataPatch(
-    previous: AgentPresetSnapshot,
-    attempted: AgentPresetSnapshot,
-  ): AgentPresetSnapshot {
+  function sparseMetadata(before: AgentPresetSnapshot, after: AgentPresetSnapshot): AgentPresetSnapshot {
     const patch: AgentPresetSnapshot = {}
-    const previousRecord = previous as Record<string, unknown>
-    const attemptedRecord = attempted as Record<string, unknown>
-    const patchRecord = patch as Record<string, unknown>
-    for (const field of AGENT_PRESET_METADATA_FIELDS) {
-      if (snapshotValue(previousRecord[field]) === snapshotValue(attemptedRecord[field])) continue
-      patchRecord[field] = cloneJsonValue(attemptedRecord[field])
+    for (const key of METADATA_FIELDS) {
+      if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) patch[key] = after[key] as never
     }
     return patch
   }
 
-  function applyMetadataProjectionToDraft(projection: AgentPresetSnapshot): void {
-    draftName = typeof projection.name === 'string' ? projection.name : ''
-    draftDescription = typeof projection.description === 'string' ? projection.description : ''
-    draftEnabled = projection.enabled !== false
-    if (typeof projection.maxConcurrency === 'number') {
-      limitConcurrency = true
-      draftMaxConcurrency = projection.maxConcurrency
-    } else {
-      limitConcurrency = false
-    }
+  function useForStep(step: AgentPresetStepRecord): AgentPresetUseRecord | undefined {
+    return uses.find((use) => use.id === step.id)
   }
 
-  function stepSnapshotForSave(): AgentPresetStepSnapshot {
-    const runtime: AgentPresetStepRecord['runtime'] = {
-      ...activeStep?.runtime,
-      timeoutMs: clampedTimeoutMs(),
-      maxInputChars: clampedMaxInputChars(),
-      maxOutputChars: clampedMaxOutputChars(),
-      temperature: clampedTemperature(),
-    }
-    const model: AgentPresetStepModelSelection =
-      draftStepModelMode === 'modelProfile'
-        ? { mode: 'modelProfile', profileId: draftStepModelProfileId.trim() }
-        : { mode: 'inheritMain' }
+  function startEdit(step: AgentPresetStepRecord): void {
+    const use = useForStep(step)
+    if (!use) return
+    editingUseId = use.id
+    useEnabled = use.enabled
+    usePhase = use.phase
+    useDependencies = [...use.dependencies]
+    useOutputKey = use.outputKey
+    useDestination = use.destination
+    failureMode = use.failurePolicy.mode
+    fallbackText = use.failurePolicy.mode === 'fallbackText' ? use.failurePolicy.text : ''
+    overrideModel = use.modelOverride !== undefined
+    modelMode = use.modelOverride?.mode ?? 'inheritMain'
+    modelProfileId = use.modelOverride?.mode === 'modelProfile' ? use.modelOverride.profileId : ''
+    overrideRuntime = use.runtimeOverride !== undefined
+    timeoutMs = use.runtimeOverride?.timeoutMs ?? 30_000
+    maxInputChars = use.runtimeOverride?.maxInputChars ?? 24_000
+    maxOutputChars = use.runtimeOverride?.maxOutputChars ?? 1_200
+    temperature = (use.runtimeOverride?.temperature ?? 100) / 100
+    structuredOutputStrict = use.runtimeOverride?.structuredOutputStrict ?? false
+    useError = ''
+  }
+
+  function closeUseEditor(): void {
+    editingUseId = null
+    useError = ''
+  }
+
+  function usePatch(): AgentPresetUseSnapshot {
     const failurePolicy: AgentPresetStepFailurePolicy =
-      draftStepFailurePolicyMode === 'fallbackText'
-        ? { mode: 'fallbackText', text: draftStepFallbackText }
-        : { mode: draftStepFailurePolicyMode }
-
+      failureMode === 'fallbackText' ? { mode: 'fallbackText', text: fallbackText } : { mode: failureMode }
     return {
-      name: draftStepName.trim(),
-      enabled: draftStepEnabled,
-      phase: draftStepPhase,
-      dependencies: draftStepDependencies.filter((dependencyId) =>
-        validDependencyOptions.some((option) => option.id === dependencyId),
-      ),
-      instruction: draftStepInstruction,
-      model,
-      runtime,
-      inputScopes: draftStepInputScopes.filter((scope) => inputScopesForPhase(draftStepPhase).includes(scope)),
-      outputKey: draftStepOutputKey.trim(),
-      outputFormat: draftStepOutputFormat,
-      destination:
-        draftStepPhase === 'beforeMain' && draftStepDestination === 'finalOutput'
-          ? 'promptOutput'
-          : draftStepPhase === 'afterMain' && draftStepDestination === 'userInput'
-            ? 'intermediate'
-            : draftStepDestination,
+      enabled: useEnabled,
+      phase: usePhase,
+      dependencies: useDependencies.filter((id) => dependencyOptions.some((step) => step.id === id)),
+      outputKey: useOutputKey.trim(),
+      destination: normalizedDestination(usePhase, useDestination),
       failurePolicy,
+      modelOverride: overrideModel
+        ? modelMode === 'modelProfile'
+          ? { mode: 'modelProfile', profileId: modelProfileId.trim() }
+          : { mode: 'inheritMain' }
+        : null,
+      runtimeOverride: overrideRuntime
+        ? {
+            timeoutMs: clamp(timeoutMs, AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN, AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX),
+            maxInputChars: clamp(
+              maxInputChars,
+              AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MIN,
+              AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MAX,
+            ),
+            maxOutputChars: clamp(
+              maxOutputChars,
+              AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MIN,
+              AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MAX,
+            ),
+            temperature: clamp(Math.round(Number(temperature) * 100), 0, 200),
+            structuredOutputStrict,
+          }
+        : null,
     }
   }
 
-  function defaultStepDraft(): AgentPresetStepSnapshot {
-    const nextNumber = presetSteps.length + 1
-    return {
-      name: language.agentPresets.defaultStepName(nextNumber),
-      enabled: true,
-      phase: 'beforeMain',
-      dependencies: [],
-      instruction: '',
-      model: { mode: 'inheritMain' },
-      runtime: {
-        timeoutMs: DEFAULT_STEP_TIMEOUT_MS,
-        maxInputChars: DEFAULT_STEP_MAX_INPUT_CHARS,
-        maxOutputChars: DEFAULT_STEP_MAX_OUTPUT_CHARS,
-        temperature: DEFAULT_STEP_TEMPERATURE,
-      },
-      inputScopes: ['currentUserMessage'],
-      outputKey: `step_${nextNumber}`,
-      outputFormat: 'text',
-      destination: 'promptOutput',
-      failurePolicy: { mode: 'required' },
+  async function addSelectedAgent(): Promise<void> {
+    if (!presetId || !selectedAgentId || locked) return
+    const agent = agents.find((candidate) => candidate.id === selectedAgentId)
+    if (!agent) return
+    const use = defaultAgentPresetUse(agent)
+    use.outputKey = uniqueOutputKey(use.outputKey, 'beforeMain')
+    useBusy = true
+    useError = ''
+    const result = await addAgentToPreset(presetId, use)
+    useBusy = false
+    handleUseResult(result)
+  }
+
+  async function saveUse(): Promise<void> {
+    if (!presetId || !editingUseId || !canSaveUse) return
+    useBusy = true
+    useError = ''
+    const result = await updateAgentPresetUse(presetId, editingUseId, usePatch())
+    useBusy = false
+    if (handleUseResult(result)) closeUseEditor()
+  }
+
+  async function duplicateUse(step: AgentPresetStepRecord): Promise<void> {
+    const source = useForStep(step)
+    if (!presetId || !source || locked) return
+    const copy: AgentPresetUseSnapshot = {
+      ...JSON.parse(JSON.stringify(source)),
+      outputKey: uniqueOutputKey(`${source.outputKey}_copy`, source.phase),
     }
+    delete copy.id
+    useBusy = true
+    const result = await addAgentToPreset(presetId, copy)
+    useBusy = false
+    handleUseResult(result)
   }
 
-  function loadStepDraft(step: Partial<AgentPresetStepRecord>): void {
-    draftStepName = typeof step.name === 'string' ? step.name : ''
-    draftStepEnabled = step.enabled !== false
-    draftStepPhase = step.phase === 'afterMain' ? 'afterMain' : 'beforeMain'
-    draftStepInstruction = typeof step.instruction === 'string' ? step.instruction : ''
-    draftStepModelMode = step.model?.mode === 'modelProfile' ? 'modelProfile' : 'inheritMain'
-    draftStepModelProfileId = step.model?.mode === 'modelProfile' ? step.model.profileId : ''
-    draftStepDependencies = Array.isArray(step.dependencies) ? [...step.dependencies] : []
-    draftStepOutputKey = typeof step.outputKey === 'string' ? step.outputKey : ''
-    draftStepOutputFormat = step.outputFormat === 'jsonObject' ? 'jsonObject' : 'text'
-    draftStepDestination =
-      step.destination === 'finalOutput' ||
-      step.destination === 'userInput' ||
-      step.destination === 'intermediate' ||
-      step.destination === 'promptOutput'
-        ? step.destination
-        : draftStepPhase === 'beforeMain'
-          ? 'promptOutput'
-          : 'intermediate'
-    draftStepFailurePolicyMode =
-      step.failurePolicy?.mode === 'optional' ||
-      step.failurePolicy?.mode === 'fallbackText' ||
-      step.failurePolicy?.mode === 'stopGeneration'
-        ? step.failurePolicy.mode
-        : 'required'
-    draftStepFallbackText = step.failurePolicy?.mode === 'fallbackText' ? step.failurePolicy.text : ''
-    draftStepTimeoutMs = step.runtime?.timeoutMs ?? DEFAULT_STEP_TIMEOUT_MS
-    draftStepMaxInputChars = step.runtime?.maxInputChars ?? DEFAULT_STEP_MAX_INPUT_CHARS
-    draftStepMaxOutputChars = step.runtime?.maxOutputChars ?? DEFAULT_STEP_MAX_OUTPUT_CHARS
-    const storedTemperature = step.runtime?.temperature ?? DEFAULT_STEP_TEMPERATURE
-    draftStepTemperatureStoredBaseline = storedTemperature
-    draftStepTemperature = decimalStepTemperature(storedTemperature)
-    draftStepInputScopes = Array.isArray(step.inputScopes) ? [...step.inputScopes] : []
-    normalizeStepDraftForPhase()
+  async function removeUse(step: AgentPresetStepRecord): Promise<void> {
+    if (!presetId || locked || !window.confirm(language.agentPresets.deleteStepConfirm(step.name))) return
+    useBusy = true
+    const result = await removeAgentFromPreset(presetId, step.id)
+    useBusy = false
+    if (handleUseResult(result) && editingUseId === step.id) closeUseEditor()
   }
 
-  function beginCreateStep(): void {
-    if (mode !== 'edit') return
-    stepEditorMode = 'new'
-    editingStepId = null
-    stepCommandError = ''
-    loadStepDraft(defaultStepDraft())
-    setStepInitialSnapshot(stepSnapshotForSave())
-  }
-
-  function beginEditStep(step: AgentPresetStepRecord): void {
-    stepEditorMode = 'edit'
-    editingStepId = step.id
-    stepCommandError = ''
-    loadStepDraft(step)
-    setStepInitialSnapshot(stepSnapshotForSave())
-  }
-
-  function cancelStepEdit(): void {
-    if (stepDirty && !window.confirm(language.agentPresets.discardStepChangesConfirm)) return
-    clearStepEditor()
-  }
-
-  function clearStepEditor(): void {
-    stepEditorMode = null
-    editingStepId = null
-    setStepInitialSnapshot(null)
-    stepCommandError = ''
-  }
-
-  function setDraftStepPhase(phase: AgentPresetStepPhase): void {
-    draftStepPhase = phase
-    normalizeStepDraftForPhase()
-  }
-
-  function normalizeStepDraftForPhase(): void {
-    if (draftStepPhase === 'beforeMain' && draftStepDestination === 'finalOutput') {
-      draftStepDestination = 'promptOutput'
-    }
-    if (draftStepPhase === 'afterMain' && draftStepDestination === 'userInput') {
-      draftStepDestination = 'intermediate'
-    }
-    draftStepDependencies = draftStepDependencies.filter((dependencyId) =>
-      dependencyOptions().some((option) => option.id === dependencyId),
+  async function moveUse(step: AgentPresetStepRecord, delta: -1 | 1): Promise<void> {
+    if (!presetId || locked) return
+    const phaseSteps = resolvedSteps.filter((candidate) => candidate.phase === step.phase)
+    const index = phaseSteps.findIndex((candidate) => candidate.id === step.id)
+    const nextIndex = index + delta
+    if (index < 0 || nextIndex < 0 || nextIndex >= phaseSteps.length) return
+    const phaseIds = phaseSteps.map((candidate) => candidate.id)
+    const [moved] = phaseIds.splice(index, 1)
+    phaseIds.splice(nextIndex, 0, moved)
+    let cursor = 0
+    const ids = resolvedSteps.map((candidate) =>
+      candidate.phase === step.phase ? (phaseIds[cursor++] ?? candidate.id) : candidate.id,
     )
-    draftStepInputScopes = draftStepInputScopes.filter((scope) => inputScopesForPhase(draftStepPhase).includes(scope))
+    useBusy = true
+    const result = await reorderAgentPresetUses(presetId, ids)
+    useBusy = false
+    handleUseResult(result)
   }
 
-  function setDraftDestination(destination: AgentPresetStepDestination): void {
-    if (draftStepPhase === 'beforeMain' && destination === 'finalOutput') {
-      draftStepDestination = 'promptOutput'
-      return
-    }
-    if (draftStepPhase === 'afterMain' && destination === 'userInput') {
-      draftStepDestination = 'intermediate'
-      return
-    }
-    draftStepDestination = destination
-  }
-
-  function setDraftModelMode(mode: StepModelMode): void {
-    draftStepModelMode = mode
-    if (mode === 'modelProfile' && !draftStepModelProfileId && modelProfiles[0]?.id) {
-      draftStepModelProfileId = String(modelProfiles[0].id)
-    }
-  }
-
-  function toggleDependency(stepId: string, enabled: boolean): void {
-    if (enabled) {
-      if (!draftStepDependencies.includes(stepId)) draftStepDependencies = [...draftStepDependencies, stepId]
-    } else {
-      draftStepDependencies = draftStepDependencies.filter((dependencyId) => dependencyId !== stepId)
-    }
-  }
-
-  function toggleInputScope(scope: AgentPresetStepInputScope, enabled: boolean): void {
-    if (!inputScopesForPhase(draftStepPhase).includes(scope)) {
-      draftStepInputScopes = draftStepInputScopes.filter((candidate) => candidate !== scope)
-      return
-    }
-    if (enabled) {
-      if (!draftStepInputScopes.includes(scope)) draftStepInputScopes = [...draftStepInputScopes, scope]
-    } else {
-      draftStepInputScopes = draftStepInputScopes.filter((candidate) => candidate !== scope)
-    }
-  }
-
-  function dependencyOptions(): AgentPresetStepRecord[] {
-    const currentIndex = editingStepId ? presetSteps.findIndex((step) => step.id === editingStepId) : presetSteps.length
-    const maxIndex = currentIndex < 0 ? presetSteps.length : currentIndex
-    return presetSteps.filter(
-      (step, index) => step.enabled && step.phase === draftStepPhase && step.id !== editingStepId && index < maxIndex,
-    )
-  }
-
-  function inputScopesForPhase(phase: AgentPresetStepPhase): AgentPresetStepInputScope[] {
-    return AGENT_PRESET_STEP_INPUT_SCOPES.filter((scope) => phase === 'afterMain' || scope !== 'mainDraft')
-  }
-
-  async function savePreset(): Promise<void> {
-    if (!canSave) return
-    if (mode === 'edit') {
-      if (Object.keys(metadataPatch).length === 0) return
-      await onSave(metadataPatch)
-      return
-    }
-    await onSave(snapshotForSave())
-  }
-
-  async function saveStep(): Promise<void> {
-    if (!canSaveStep || !initialPresetId || !stepEditorMode) return
-    const finalSnapshot = stepSnapshotForSave()
-    const patch = stepInitialSnapshot ? sparseAgentPresetStepPatch(stepInitialSnapshot, finalSnapshot) : finalSnapshot
-    if (stepEditorMode === 'edit' && editingStepId && Object.keys(patch).length === 0) {
-      clearStepEditor()
-      return
-    }
-    stepBusy = true
-    stepMutationState = 'saving'
-    stepCommandError = ''
-    const result =
-      stepEditorMode === 'new'
-        ? await createAgentPresetStep(initialPresetId, finalSnapshot)
-        : editingStepId
-          ? await updateAgentPresetStep(initialPresetId, editingStepId, patch)
-          : ({
-              status: 'failed',
-              result: { status: 'error', error: language.agentPresets.editStepTargetMissing },
-            } as AgentPresetMutationOutcome)
-    stepBusy = false
-    if (handleStepResult(result)) clearStepEditor()
-  }
-
-  async function duplicateStep(step: AgentPresetStepRecord): Promise<void> {
-    if (!initialPresetId || stepBusy) return
-    stepBusy = true
-    stepMutationState = 'saving'
-    stepCommandError = ''
-    const result = await duplicateAgentPresetStep(initialPresetId, step.id, {
-      name: language.agentPresets.copyName(step.name),
-    })
-    stepBusy = false
-    handleStepResult(result)
-  }
-
-  async function deleteStep(step: AgentPresetStepRecord): Promise<void> {
-    if (!initialPresetId || stepBusy) return
-    if (!window.confirm(language.agentPresets.deleteStepConfirm(step.name))) return
-    stepBusy = true
-    stepMutationState = 'saving'
-    stepCommandError = ''
-    const result = await deleteAgentPresetStep(initialPresetId, step.id)
-    stepBusy = false
-    if (handleStepResult(result) && editingStepId === step.id) clearStepEditor()
-  }
-
-  async function moveStep(step: AgentPresetStepRecord, delta: -1 | 1): Promise<void> {
-    if (!initialPresetId || stepBusy) return
-    const phaseSteps = stepsForPhase(presetSteps, step.phase)
-    const phaseIndex = phaseSteps.findIndex((candidate) => candidate.id === step.id)
-    const nextPhaseIndex = phaseIndex + delta
-    if (phaseIndex < 0 || nextPhaseIndex < 0 || nextPhaseIndex >= phaseSteps.length) return
-    const nextPhaseIds = phaseSteps.map((candidate) => candidate.id)
-    const [moved] = nextPhaseIds.splice(phaseIndex, 1)
-    nextPhaseIds.splice(nextPhaseIndex, 0, moved)
-    let phaseCursor = 0
-    const nextIds = presetSteps.map((candidate) =>
-      candidate.phase === step.phase ? (nextPhaseIds[phaseCursor++] ?? candidate.id) : candidate.id,
-    )
-    stepBusy = true
-    stepMutationState = 'saving'
-    stepCommandError = ''
-    const result = await reorderAgentPresetSteps(initialPresetId, nextIds)
-    stepBusy = false
-    handleStepResult(result)
-  }
-
-  function handleStepResult(outcome: AgentPresetMutationOutcome<any>): boolean {
-    if (outcome.status === 'accepted') {
-      stepMutationState = 'idle'
-      return true
-    }
+  function handleUseResult(outcome: AgentMutationOutcome<any>): boolean {
+    if (outcome.status === 'accepted') return true
     if (outcome.status === 'queued') {
-      stepMutationState = 'queued'
-      if (outcome.projectionLatch) {
-        const completion = onQueuedProjection(outcome.projectionLatch)
-        if (completion) {
-          void completion.then(() => {
-            if (stepMutationState === 'queued') stepMutationState = 'idle'
-          })
-        }
-      }
+      useError = language.agentPresets.commandQueued
       return true
     }
-    if (outcome.status === 'blocked') {
-      stepMutationState = 'idle'
-      stepCommandError = language.agentPresets.commandBlocked
-      return false
-    }
-    const result = outcome.result
-    stepMutationState = 'idle'
-    stepCommandError =
-      result.status === 'conflict'
+    useError =
+      outcome.result.status === 'conflict'
         ? language.agentPresets.commandConflict
-        : result.status === 'error'
-          ? result.error
+        : outcome.result.status === 'error'
+          ? outcome.result.error
           : language.agentPresets.commandUnavailable
     return false
   }
 
-  function requestClose(): void {
-    if (controlsLocked) return
-    if (isDirty && !window.confirm(language.agentPresets.discardChangesConfirm)) return
-    onCancel()
+  function availableDependencies(): AgentPresetStepRecord[] {
+    const currentIndex = editingUseId
+      ? resolvedSteps.findIndex((step) => step.id === editingUseId)
+      : resolvedSteps.length
+    return resolvedSteps.filter(
+      (step, index) => step.enabled && step.phase === usePhase && step.id !== editingUseId && index < currentIndex,
+    )
   }
 
-  function handleDialogKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'Escape') return
-    event.preventDefault()
-    event.stopPropagation()
-    if (controlsLocked) return
-    if (stepEditorMode) {
-      cancelStepEdit()
-      return
+  function toggleDependency(id: string, checked: boolean): void {
+    useDependencies = checked
+      ? [...new Set([...useDependencies, id])]
+      : useDependencies.filter((candidate) => candidate !== id)
+  }
+
+  function setPhase(phase: AgentPresetStepPhase): void {
+    usePhase = phase
+    useDestination = normalizedDestination(phase, useDestination)
+    useDependencies = useDependencies.filter((id) => availableDependencies().some((step) => step.id === id))
+  }
+
+  function normalizedDestination(
+    phase: AgentPresetStepPhase,
+    destination: AgentPresetStepDestination,
+  ): AgentPresetStepDestination {
+    if (phase === 'beforeMain' && destination === 'finalOutput') return 'promptOutput'
+    if (phase === 'afterMain' && destination === 'userInput') return 'intermediate'
+    return destination
+  }
+
+  function uniqueOutputKey(base: string, phase: AgentPresetStepPhase): string {
+    const used = new Set(resolvedSteps.filter((step) => step.phase === phase).map((step) => step.outputKey))
+    if (!used.has(base)) return base
+    for (let index = 2; index < 1_000; index += 1) {
+      const candidate = `${base.slice(0, 60)}_${index}`
+      if (!used.has(candidate)) return candidate
     }
-    requestClose()
+    return `agent_${Date.now()}`
   }
 
-  function stepPhaseLabel(phase: AgentPresetStepPhase): string {
-    return phase === 'beforeMain' ? language.agentPresets.beforeMain : language.agentPresets.afterMain
+  function clamp(value: unknown, min: number, max: number): number {
+    const number = Math.round(Number(value))
+    return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : min
+  }
+
+  function requestClose(): void {
+    if (locked) return
+    if (metadataDirty && !window.confirm(language.agentPresets.discardChangesConfirm)) return
+    onCancel()
   }
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div data-modal-root class="fixed inset-0 z-50 flex justify-end bg-black/50" onclick={requestClose}>
+<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<div data-modal-root role="presentation" class="fixed inset-0 z-50 flex justify-end bg-black/50" onclick={requestClose}>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     use:modalFocusTrap
     class="flex h-full w-full max-w-4xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"
     role="dialog"
-    aria-modal="true"
-    aria-busy={controlsLocked}
-    aria-label={drawerTitle}
     tabindex="-1"
+    aria-modal="true"
+    aria-busy={locked}
     data-risu-agent-preset-editor
-    onclick={(event) => {
-      event.stopPropagation()
-    }}
-    onkeydown={handleDialogKeydown}>
+    onclick={(event) => event.stopPropagation()}>
     <div class="flex items-start justify-between gap-3 border-b border-darkborderc p-4">
-      <div class="min-w-0">
-        <h3 class="truncate text-xl font-semibold">{drawerTitle}</h3>
-        <span class="text-sm text-textcolor2">{language.agentPresets.editorNotice}</span>
-      </div>
-      <button
-        type="button"
-        data-modal-initial-focus
-        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-darkbutton"
-        aria-label={language.modelRoles.close}
-        disabled={controlsLocked}
-        onclick={requestClose}>
-        <XIcon size={20} />
-      </button>
+      <h3 class="text-xl font-semibold">
+        {mode === 'create' ? language.agentPresets.createPreset : language.agentPresets.editPreset}
+      </h3>
+      <Button size="sm" styled="outlined" disabled={locked} onclick={requestClose}><XIcon size={16} /></Button>
     </div>
-
-    <fieldset
-      class="m-0 flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto border-0 p-4"
-      disabled={controlsLocked}
-      data-risu-agent-preset-controls>
-      {#if commandError}
-        <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
-      {/if}
-
-      <section class="rounded-md border border-darkborderc p-3">
-        <div class="grid gap-3 md:grid-cols-2">
-          <label class="flex flex-col gap-1">
-            <span class="text-sm font-medium">{language.agentPresets.nameLabel}</span>
-            <span data-risu-agent-preset-name-input>
-              <TextInput bind:value={draftName} fullwidth placeholder={language.agentPresets.newPresetName} />
-            </span>
-          </label>
-          <div class="flex flex-col gap-3">
-            <CheckInput
-              bind:check={draftEnabled}
-              name={language.agentPresets.enabledLabel}
-              onChange={(value) => {
-                draftEnabled = value
-              }} />
-            <CheckInput
-              bind:check={limitConcurrency}
-              name={language.agentPresets.limitConcurrency}
-              onChange={(value) => {
-                limitConcurrency = value
-              }} />
-          </div>
-        </div>
-        <label class="mt-3 flex flex-col gap-1">
-          <span class="text-sm font-medium">{language.agentPresets.descriptionLabel}</span>
-          <textarea
-            class="min-h-20 rounded-md border border-darkborderc bg-transparent px-3 py-2 text-sm text-textcolor shadow-xs focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-            bind:value={draftDescription}
-            placeholder={language.agentPresets.descriptionPlaceholder}
-            data-risu-agent-preset-description-input></textarea>
+    <div class="flex-1 overflow-y-auto p-4">
+      {#if commandError}<div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared">
+          {commandError}
+        </div>{/if}
+      <div class="grid gap-3 md:grid-cols-2">
+        <label class="flex flex-col gap-1" data-risu-agent-preset-name-input>
+          <span class="text-sm font-medium">{language.agentPresets.nameLabel}</span>
+          <TextInput bind:value={name} fullwidth />
         </label>
-        <label class="mt-3 flex max-w-xs flex-col gap-1">
-          <span class="text-sm font-medium">{language.agentPresets.maxConcurrency}</span>
-          <NumberInput
-            bind:value={draftMaxConcurrency}
+        <div class="flex flex-col justify-end gap-2">
+          <CheckInput
+            bind:check={enabled}
+            name={language.agentPresets.enabledLabel}
+            onChange={(value) => (enabled = value)} />
+          <CheckInput
+            bind:check={limitConcurrency}
+            name={language.agentPresets.limitConcurrency}
+            onChange={(value) => (limitConcurrency = value)} />
+        </div>
+      </div>
+      <label class="mt-3 flex flex-col gap-1">
+        <span class="text-sm font-medium">{language.agentPresets.descriptionLabel}</span>
+        <textarea
+          data-risu-agent-preset-description-input
+          class="min-h-20 rounded-md border border-darkborderc bg-transparent px-3 py-2 text-sm"
+          bind:value={description}></textarea>
+      </label>
+      {#if limitConcurrency}
+        <label class="mt-3 flex max-w-xs flex-col gap-1"
+          ><span class="text-sm font-medium">{language.agentPresets.maxConcurrency}</span><NumberInput
+            bind:value={maxConcurrency}
             min={AGENT_PRESET_MAX_CONCURRENCY_MIN}
             max={AGENT_PRESET_MAX_CONCURRENCY_MAX}
-            step={1}
-            fullwidth
-            disabled={!limitConcurrency} />
-        </label>
-      </section>
-
-      <section class="rounded-md border border-darkborderc p-3" data-risu-agent-preset-step-editor>
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h4 class="text-base font-semibold">{language.agentPresets.stepsTitle}</h4>
-          <Button size="sm" disabled={mode !== 'edit' || stepBusy || busy} onclick={beginCreateStep}>
-            <span class="inline-flex items-center gap-2"><PlusIcon size={16} />{language.agentPresets.createStep}</span>
-          </Button>
-        </div>
-
-        <div class="mt-3 grid gap-3 md:grid-cols-2">
-          <div class="rounded-md border border-darkborderc p-3">
-            <h5 class="text-sm font-semibold">{language.agentPresets.beforeMain}</h5>
-            {#if beforeMainSteps.length === 0}
-              <p class="mt-2 text-sm text-textcolor2">{language.agentPresets.noStepsInPhase}</p>
-            {:else}
-              <ul class="mt-2 flex flex-col gap-2 text-sm">
-                {#each beforeMainSteps as step, phaseIndex (step.id)}
-                  <li class="rounded-sm border border-darkborderc p-2" data-risu-agent-preset-step-row>
-                    <div class="flex flex-wrap items-start justify-between gap-2">
-                      <button
-                        type="button"
-                        class="min-w-0 text-left"
-                        onclick={() => beginEditStep(step)}
-                        data-risu-agent-preset-step-edit>
-                        <span class="block truncate font-medium">{step.name}</span>
-                        <span class="text-xs text-textcolor2">{language.agentPresets.outputKey}: {step.outputKey}</span>
-                      </button>
-                      <div class="flex flex-wrap gap-1">
-                        <Button
-                          size="sm"
-                          styled="outlined"
-                          disabled={stepBusy || phaseIndex <= 0}
-                          onclick={() => moveStep(step, -1)}>
-                          <ArrowUpIcon size={14} />
-                        </Button>
-                        <Button
-                          size="sm"
-                          styled="outlined"
-                          disabled={stepBusy || phaseIndex >= beforeMainSteps.length - 1}
-                          onclick={() => moveStep(step, 1)}>
-                          <ArrowDownIcon size={14} />
-                        </Button>
-                        <Button size="sm" styled="outlined" disabled={stepBusy} onclick={() => duplicateStep(step)}>
-                          <CopyIcon size={14} />
-                        </Button>
-                        <Button size="sm" styled="danger" disabled={stepBusy} onclick={() => deleteStep(step)}>
-                          <TrashIcon size={14} />
-                        </Button>
-                      </div>
-                    </div>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </div>
-          <div class="rounded-md border border-darkborderc p-3">
-            <h5 class="text-sm font-semibold">{language.agentPresets.afterMain}</h5>
-            {#if afterMainSteps.length === 0}
-              <p class="mt-2 text-sm text-textcolor2">{language.agentPresets.noStepsInPhase}</p>
-            {:else}
-              <ul class="mt-2 flex flex-col gap-2 text-sm">
-                {#each afterMainSteps as step, phaseIndex (step.id)}
-                  <li class="rounded-sm border border-darkborderc p-2" data-risu-agent-preset-step-row>
-                    <div class="flex flex-wrap items-start justify-between gap-2">
-                      <button
-                        type="button"
-                        class="min-w-0 text-left"
-                        onclick={() => beginEditStep(step)}
-                        data-risu-agent-preset-step-edit>
-                        <span class="block truncate font-medium">{step.name}</span>
-                        <span class="text-xs text-textcolor2">{language.agentPresets.outputKey}: {step.outputKey}</span>
-                      </button>
-                      <div class="flex flex-wrap gap-1">
-                        <Button
-                          size="sm"
-                          styled="outlined"
-                          disabled={stepBusy || phaseIndex <= 0}
-                          onclick={() => moveStep(step, -1)}>
-                          <ArrowUpIcon size={14} />
-                        </Button>
-                        <Button
-                          size="sm"
-                          styled="outlined"
-                          disabled={stepBusy || phaseIndex >= afterMainSteps.length - 1}
-                          onclick={() => moveStep(step, 1)}>
-                          <ArrowDownIcon size={14} />
-                        </Button>
-                        <Button size="sm" styled="outlined" disabled={stepBusy} onclick={() => duplicateStep(step)}>
-                          <CopyIcon size={14} />
-                        </Button>
-                        <Button size="sm" styled="danger" disabled={stepBusy} onclick={() => deleteStep(step)}>
-                          <TrashIcon size={14} />
-                        </Button>
-                      </div>
-                    </div>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </div>
-        </div>
-
-        {#if stepCommandError}
-          <div class="mt-3 rounded-md border border-draculared p-3 text-sm text-draculared">{stepCommandError}</div>
-        {/if}
-        {#if stepEditorMode}
-          <div class="mt-3 rounded-md border border-darkborderc p-3" data-risu-agent-preset-step-form>
-            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h5 class="text-sm font-semibold">{stepFormTitle}</h5>
-                {#if activeStep}
-                  <span class="text-xs text-textcolor2">{activeStep.id}</span>
-                {/if}
-              </div>
-              <span data-risu-agent-preset-step-cancel>
-                <Button size="sm" styled="outlined" disabled={stepBusy} onclick={cancelStepEdit}>
-                  {language.agentPresets.cancelStep}
-                </Button>
-              </span>
-            </div>
-
-            <div class="grid gap-3 md:grid-cols-2">
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.stepNameLabel}</span>
-                <TextInput bind:value={draftStepName} size="sm" fullwidth />
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.stepPhaseLabel}</span>
-                <SelectInput
-                  size="sm"
-                  className="w-full"
-                  value={draftStepPhase}
-                  onchange={(event) => setDraftStepPhase(event.currentTarget.value as AgentPresetStepPhase)}>
-                  <option value="beforeMain">{language.agentPresets.beforeMain}</option>
-                  <option value="afterMain">{language.agentPresets.afterMain}</option>
-                </SelectInput>
-              </label>
-              <div class="flex items-end">
-                <CheckInput
-                  bind:check={draftStepEnabled}
-                  name={language.agentPresets.stepEnabledLabel}
-                  onChange={(value) => {
-                    draftStepEnabled = value
-                  }} />
-              </div>
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.outputKey}</span>
-                <TextInput bind:value={draftStepOutputKey} size="sm" fullwidth />
-                {#if draftStepOutputKey.trim() && !outputKeyValid}
-                  <span class="text-xs text-draculared">{language.agentPresets.invalidOutputKey}</span>
-                {/if}
-              </label>
-            </div>
-
-            <label class="mt-3 flex flex-col gap-1">
-              <span class="text-sm font-medium">{language.agentPresets.instructionLabel}</span>
-              <textarea
-                class="min-h-28 rounded-md border border-darkborderc bg-transparent px-3 py-2 text-sm text-textcolor shadow-xs focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-                bind:value={draftStepInstruction}></textarea>
-            </label>
-
-            <div class="mt-3 grid gap-3 md:grid-cols-3">
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.modelModeLabel}</span>
-                <SelectInput
-                  size="sm"
-                  className="w-full"
-                  value={draftStepModelMode}
-                  onchange={(event) => setDraftModelMode(event.currentTarget.value as StepModelMode)}>
-                  <option value="inheritMain">{language.agentPresets.inheritMainModel}</option>
-                  <option value="modelProfile">{language.agentPresets.selectedModelProfile}</option>
-                </SelectInput>
-              </label>
-              <label class="flex flex-col gap-1 md:col-span-2">
-                <span class="text-sm font-medium">{language.agentPresets.modelProfileLabel}</span>
-                <SelectInput
-                  size="sm"
-                  className="w-full"
-                  value={draftStepModelProfileId}
-                  onchange={(event) => {
-                    draftStepModelProfileId = event.currentTarget.value
-                  }}>
-                  <option value="">{language.agentPresets.noModelProfiles}</option>
-                  {#each modelProfiles as profile (profile.id)}
-                    <option value={profile.id}>{profile.name ?? profile.id}</option>
-                  {/each}
-                </SelectInput>
-              </label>
-            </div>
-
-            <div class="mt-3 grid gap-3 md:grid-cols-3">
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.outputFormatLabel}</span>
-                <SelectInput
-                  size="sm"
-                  className="w-full"
-                  value={draftStepOutputFormat}
-                  onchange={(event) => {
-                    draftStepOutputFormat = event.currentTarget.value as AgentPresetStepOutputFormat
-                  }}>
-                  <option value="text">{language.agentPresets.outputFormatText}</option>
-                  <option value="jsonObject">{language.agentPresets.outputFormatJsonObject}</option>
-                </SelectInput>
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.destinationLabel}</span>
-                <SelectInput
-                  size="sm"
-                  className="w-full"
-                  value={draftStepDestination}
-                  onchange={(event) => setDraftDestination(event.currentTarget.value as AgentPresetStepDestination)}>
-                  <option value="promptOutput">{language.agentPresets.destinationPromptOutput}</option>
-                  <option value="intermediate">{language.agentPresets.destinationIntermediate}</option>
-                  {#if draftStepPhase === 'beforeMain'}
-                    <option value="userInput">{language.agentPresets.destinationUserInput}</option>
-                  {:else}
-                    <option value="finalOutput">{language.agentPresets.destinationFinalOutput}</option>
-                  {/if}
-                </SelectInput>
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.failurePolicyLabel}</span>
-                <SelectInput
-                  size="sm"
-                  className="w-full"
-                  value={draftStepFailurePolicyMode}
-                  onchange={(event) => {
-                    draftStepFailurePolicyMode = event.currentTarget.value as StepFailurePolicyMode
-                  }}>
-                  <option value="required">{language.agentPresets.failurePolicyRequired}</option>
-                  <option value="optional">{language.agentPresets.failurePolicyOptional}</option>
-                  <option value="fallbackText">{language.agentPresets.failurePolicyFallbackText}</option>
-                  <option value="stopGeneration">{language.agentPresets.failurePolicyStopGeneration}</option>
-                </SelectInput>
-              </label>
-            </div>
-
-            {#if draftStepFailurePolicyMode === 'fallbackText'}
-              <label class="mt-3 flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.fallbackTextLabel}</span>
-                <textarea
-                  class="min-h-20 rounded-md border border-darkborderc bg-transparent px-3 py-2 text-sm text-textcolor shadow-xs focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-                  bind:value={draftStepFallbackText}></textarea>
-              </label>
-            {/if}
-
-            <div class="mt-3 grid gap-3 md:grid-cols-4">
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.timeoutMsLabel}</span>
-                <NumberInput
-                  bind:value={draftStepTimeoutMs}
-                  min={AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN}
-                  max={AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX}
-                  step={250}
-                  fullwidth />
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.maxInputCharsLabel}</span>
-                <NumberInput
-                  bind:value={draftStepMaxInputChars}
-                  min={AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MIN}
-                  max={AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MAX}
-                  step={100}
-                  fullwidth />
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.maxOutputCharsLabel}</span>
-                <NumberInput
-                  bind:value={draftStepMaxOutputChars}
-                  min={AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MIN}
-                  max={AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MAX}
-                  step={100}
-                  fullwidth />
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">{language.agentPresets.temperatureLabel}</span>
-                <NumberInput
-                  bind:value={draftStepTemperature}
-                  min={AGENT_PRESET_RUNTIME_TEMPERATURE_MIN / AGENT_PRESET_RUNTIME_TEMPERATURE_SCALE}
-                  max={AGENT_PRESET_RUNTIME_TEMPERATURE_MAX / AGENT_PRESET_RUNTIME_TEMPERATURE_SCALE}
-                  step={0.01}
-                  fullwidth />
-              </label>
-            </div>
-
-            <div class="mt-3 flex flex-col gap-3">
-              <div class="rounded-md border border-darkborderc p-3">
-                <h6 class="text-sm font-semibold">{language.agentPresets.dependenciesLabel}</h6>
-                {#if validDependencyOptions.length === 0}
-                  <p class="mt-2 text-sm text-textcolor2">{language.agentPresets.noDependencyOptions}</p>
-                {:else}
-                  <div class="mt-2 flex flex-col gap-2">
-                    {#each validDependencyOptions as dependency (dependency.id)}
-                      <CheckInput
-                        check={draftStepDependencies.includes(dependency.id)}
-                        name={`${dependency.name} (${stepPhaseLabel(dependency.phase)})`}
-                        onChange={(value) => toggleDependency(dependency.id, value)} />
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-              <div class="rounded-md border border-darkborderc p-3">
-                <h6
-                  class="inline-flex items-center gap-1 text-sm font-semibold"
-                  data-risu-agent-preset-prepared-inputs-heading>
-                  {language.agentPresets.preparedInputScopesLabel}
-                  <Help key="agentPresetPreparedInputs" name={language.agentPresets.preparedInputScopesLabel} />
-                </h6>
-                <p class="mt-1 text-xs text-textcolor2">{language.agentPresets.preparedInputScopesDescription}</p>
-                <div class="mt-3 grid gap-2 sm:grid-cols-2">
-                  {#each visibleInputScopes as scope (scope)}
-                    <div
-                      class="flex flex-col gap-1 rounded-md border border-darkborderc p-2.5"
-                      class:bg-darkbutton={draftStepInputScopes.includes(scope)}
-                      data-risu-agent-preset-input-scope={scope}>
-                      <CheckInput
-                        check={draftStepInputScopes.includes(scope)}
-                        name={language.agentPresets.inputScopeLabels[scope]}
-                        onChange={(value) => toggleInputScope(scope, value)} />
-                      <p
-                        class="pl-7 text-xs leading-relaxed text-textcolor2"
-                        data-risu-agent-preset-input-scope-description>
-                        {language.agentPresets.inputScopeDescriptions[scope]}
-                      </p>
-                      <span class="mt-1 pl-7 text-xs text-textcolor2" data-risu-agent-preset-input-scope-cbs>
-                        {language.agentPresets.preparedInputCbsNameLabel}:
-                        <code class="rounded-sm bg-darkbg px-1 py-0.5 font-mono text-[0.7rem] text-textcolor">
-                          {`{{${scope}}}`}
-                        </code>
-                      </span>
-                    </div>
-                  {/each}
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-3 flex justify-end">
-              <span data-risu-agent-preset-step-save>
-                <Button size="sm" disabled={!canSaveStep} onclick={saveStep}>
-                  <span class="inline-flex items-center gap-2"
-                    ><SaveIcon size={16} />{stepBusy
-                      ? language.agentPresets.saving
-                      : language.agentPresets.saveStep}</span>
-                </Button>
-              </span>
-            </div>
-          </div>
-        {:else if mode === 'create'}
-          <div class="mt-3 rounded-md border border-darkborderc p-3 text-sm text-textcolor2">
-            {language.agentPresets.savePresetBeforeSteps}
-          </div>
-        {/if}
-      </section>
-
-      <AgentPresetDiagnosticsPanel presetId={mode === 'edit' ? initialPresetId : ''} />
-    </fieldset>
-
-    <div class="flex justify-end gap-2 border-t border-darkborderc p-4">
-      <span data-risu-agent-preset-cancel>
-        <Button size="sm" styled="outlined" disabled={controlsLocked} onclick={requestClose}>
-          {language.agentPresets.cancel}
-        </Button>
-      </span>
-      {#if !stepEditorMode}
-        <span data-risu-agent-preset-save>
-          <Button size="sm" disabled={!canSave} onclick={savePreset}>
-            <span class="inline-flex items-center gap-2"><SaveIcon size={16} />{language.agentPresets.save}</span>
-          </Button>
-        </span>
+            fullwidth /></label>
       {/if}
+
+      <div class="mt-5 border-t border-darkborderc pt-4">
+        <div class="flex flex-wrap items-end gap-2">
+          <label class="min-w-64 flex-1">
+            <span class="mb-1 block text-sm font-medium">{language.agentPresets.selectAgent}</span>
+            <SelectInput
+              bind:value={selectedAgentId}
+              className="w-full"
+              disabled={mode !== 'edit' || agents.length === 0}>
+              {#each agents as agent (agent.id)}<option value={agent.id}>{agent.name}</option>{/each}
+            </SelectInput>
+          </label>
+          <Button disabled={mode !== 'edit' || !selectedAgentId || locked} onclick={addSelectedAgent}>
+            <span class="inline-flex items-center gap-2"><PlusIcon size={16} />{language.agentPresets.addAgent}</span>
+          </Button>
+        </div>
+        {#if mode === 'create'}<p class="mt-2 text-sm text-textcolor2">
+            {language.agentPresets.savePresetBeforeSteps}
+          </p>{/if}
+        {#if agents.length === 0}<p class="mt-2 text-sm text-textcolor2">
+            {language.agentPresets.noAgentsAvailable}
+          </p>{/if}
+      </div>
+
+      {#if mode === 'edit'}
+        <div class="mt-4 flex flex-col gap-4">
+          {#each [['beforeMain', beforeMainSteps], ['afterMain', afterMainSteps]] as phaseGroup}
+            {@const phase = phaseGroup[0] as AgentPresetStepPhase}
+            {@const phaseSteps = phaseGroup[1] as AgentPresetStepRecord[]}
+            <section>
+              <h4 class="mb-2 font-semibold">
+                {phase === 'beforeMain' ? language.agentPresets.beforeMain : language.agentPresets.afterMain}
+              </h4>
+              {#if phaseSteps.length === 0}<p class="text-sm text-textcolor2">
+                  {language.agentPresets.noInvocationsInPhase}
+                </p>{/if}
+              <div class="flex flex-col gap-2">
+                {#each phaseSteps as step, index (step.id)}
+                  <article
+                    class="rounded-md border border-darkborderc p-3"
+                    data-risu-agent-preset-step
+                    data-step-id={step.id}>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="font-medium">{step.name}</span>
+                      <span class="text-xs text-textcolor2">{language.agentPresets.outputKey}: {step.outputKey}</span>
+                      <div class="ml-auto flex gap-1">
+                        <Button
+                          size="sm"
+                          styled="outlined"
+                          disabled={locked || index === 0}
+                          onclick={() => moveUse(step, -1)}><ArrowUpIcon size={14} /></Button>
+                        <Button
+                          size="sm"
+                          styled="outlined"
+                          disabled={locked || index === phaseSteps.length - 1}
+                          onclick={() => moveUse(step, 1)}><ArrowDownIcon size={14} /></Button>
+                        <Button size="sm" styled="outlined" disabled={locked} onclick={() => startEdit(step)}
+                          >{language.agentPresets.edit}</Button>
+                        <Button size="sm" styled="outlined" disabled={locked} onclick={() => duplicateUse(step)}
+                          ><CopyIcon size={14} /></Button>
+                        <Button size="sm" styled="danger" disabled={locked} onclick={() => removeUse(step)}
+                          ><TrashIcon size={14} /></Button>
+                      </div>
+                    </div>
+                    <span class="text-xs text-textcolor2">{step.agentId}</span>
+                  </article>
+                {/each}
+              </div>
+            </section>
+          {/each}
+        </div>
+      {/if}
+
+      {#if editingUseId && editingStep}
+        <section class="mt-4 rounded-md border border-selected p-3" data-risu-agent-preset-use-form>
+          <div class="flex items-center justify-between">
+            <h4 class="font-semibold">{language.agentPresets.editInvocation}: {editingStep.name}</h4>
+            <Button size="sm" styled="outlined" onclick={closeUseEditor}>{language.agentPresets.cancel}</Button>
+          </div>
+          <p class="mt-1 text-xs text-textcolor2">{language.agentPresets.agentDefaultsHelp}</p>
+          {#if useError}<div class="mt-2 text-sm text-draculared">{useError}</div>{/if}
+          <div class="mt-3 grid gap-3 md:grid-cols-2">
+            <label class="flex flex-col gap-1"
+              ><span class="text-sm">{language.agentPresets.stepPhaseLabel}</span><SelectInput
+                value={usePhase}
+                onchange={(event) => setPhase(event.currentTarget.value as AgentPresetStepPhase)}
+                ><option value="beforeMain">{language.agentPresets.beforeMain}</option><option value="afterMain"
+                  >{language.agentPresets.afterMain}</option
+                ></SelectInput
+              ></label>
+            <label class="flex flex-col gap-1"
+              ><span class="text-sm">{language.agentPresets.outputKey}</span><TextInput
+                bind:value={useOutputKey}
+                fullwidth />{#if useOutputKey && !isValidAgentPresetOutputKey(useOutputKey)}<span
+                  class="text-xs text-draculared">{language.agentPresets.invalidOutputKey}</span
+                >{/if}</label>
+            <CheckInput
+              bind:check={useEnabled}
+              name={language.agentPresets.invocationEnabled}
+              onChange={(value) => (useEnabled = value)} />
+            <label class="flex flex-col gap-1"
+              ><span class="text-sm">{language.agentPresets.destinationLabel}</span><SelectInput
+                bind:value={useDestination}
+                ><option value="promptOutput">{language.agentPresets.destinationPromptOutput}</option><option
+                  value="intermediate">{language.agentPresets.destinationIntermediate}</option
+                >{#if usePhase === 'beforeMain'}<option value="userInput"
+                    >{language.agentPresets.destinationUserInput}</option
+                  >{:else}<option value="finalOutput">{language.agentPresets.destinationFinalOutput}</option
+                  >{/if}</SelectInput
+              ></label>
+            <label class="flex flex-col gap-1"
+              ><span class="text-sm">{language.agentPresets.failurePolicyLabel}</span><SelectInput
+                bind:value={failureMode}
+                ><option value="required">{language.agentPresets.failurePolicyRequired}</option><option value="optional"
+                  >{language.agentPresets.failurePolicyOptional}</option
+                ><option value="fallbackText">{language.agentPresets.failurePolicyFallbackText}</option><option
+                  value="stopGeneration">{language.agentPresets.failurePolicyStopGeneration}</option
+                ></SelectInput
+              ></label>
+          </div>
+          {#if failureMode === 'fallbackText'}<textarea
+              class="mt-2 min-h-20 w-full rounded-md border border-darkborderc bg-transparent p-2 text-sm"
+              bind:value={fallbackText}></textarea
+            >{/if}
+          <div class="mt-3 rounded-md border border-darkborderc p-3">
+            <h5 class="text-sm font-semibold">{language.agentPresets.dependenciesLabel}</h5>
+            {#if dependencyOptions.length === 0}<p class="mt-1 text-sm text-textcolor2">
+                {language.agentPresets.noDependencyOptions}
+              </p>{/if}
+            {#each dependencyOptions as dependency (dependency.id)}<CheckInput
+                check={useDependencies.includes(dependency.id)}
+                name={dependency.name}
+                onChange={(value) => toggleDependency(dependency.id, value)} />{/each}
+          </div>
+          <div class="mt-3 grid gap-3 md:grid-cols-2">
+            <CheckInput
+              bind:check={overrideModel}
+              name={language.agentPresets.modelOverride}
+              onChange={(value) => (overrideModel = value)} />
+            <CheckInput
+              bind:check={overrideRuntime}
+              name={language.agentPresets.runtimeOverride}
+              onChange={(value) => (overrideRuntime = value)} />
+          </div>
+          {#if overrideModel}<div class="mt-2 grid gap-2 md:grid-cols-2">
+              <SelectInput bind:value={modelMode}
+                ><option value="inheritMain">{language.agentPresets.inheritMainModel}</option><option
+                  value="modelProfile">{language.agentPresets.selectedModelProfile}</option
+                ></SelectInput
+              >{#if modelMode === 'modelProfile'}<SelectInput bind:value={modelProfileId}
+                  ><option value="">{language.agentPresets.noModelProfiles}</option
+                  >{#each modelProfiles as profile (profile.id)}<option value={profile.id}
+                      >{profile.name ?? profile.id}</option
+                    >{/each}</SelectInput
+                >{/if}
+            </div>{/if}
+          {#if overrideRuntime}<div class="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <NumberInput
+                bind:value={timeoutMs}
+                min={AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN}
+                max={AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX}
+                fullwidth /><NumberInput
+                bind:value={maxInputChars}
+                min={AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MIN}
+                max={AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MAX}
+                fullwidth /><NumberInput
+                bind:value={maxOutputChars}
+                min={AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MIN}
+                max={AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MAX}
+                fullwidth /><NumberInput bind:value={temperature} min={0} max={2} step={0.01} fullwidth />
+            </div>
+            <div class="mt-2">
+              <CheckInput
+                bind:check={structuredOutputStrict}
+                name={language.agentPresets.structuredOutputStrict}
+                onChange={(value) => (structuredOutputStrict = value)} />
+            </div>{/if}
+          <div class="mt-3 flex justify-end">
+            <Button disabled={!canSaveUse} onclick={saveUse}>{language.agentPresets.saveInvocation}</Button>
+          </div>
+        </section>
+      {/if}
+
+      {#if mode === 'edit' && livePreset}<AgentPresetDiagnosticsPanel presetId={livePreset.id} />{/if}
+    </div>
+    <div class="flex justify-end gap-2 border-t border-darkborderc p-4">
+      <Button styled="outlined" disabled={locked} onclick={requestClose}>{language.agentPresets.cancel}</Button>
+      <span data-risu-agent-preset-save
+        ><Button
+          disabled={!canSaveMetadata}
+          onclick={() => onSave(mode === 'create' ? metadataForSave() : metadataPatch)}
+          ><span class="inline-flex items-center gap-2"
+            ><SaveIcon size={16} />{busy ? language.agentPresets.saving : language.agentPresets.save}</span
+          ></Button
+        ></span>
     </div>
   </div>
 </div>

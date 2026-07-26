@@ -290,7 +290,8 @@ engine overhead.
 
 Settings-group ownership is mirrored between the browser and Fastify; the
 dedicated read-only `agents` and `models` exceptions are parity-tested.
-`agents` is written by dedicated Agent Preset commands. `models` is an exact
+`agents` contains standalone Agents, Agent Presets, and the default-preset
+pointer and is written by dedicated Agent and Agent Preset commands. `models` is an exact
 read-only model-profile slice, while writable `providers` is its superset;
 because those projections overlap, applying either response advances both group
 fences, while a models response preserves unrelated provider acknowledgement

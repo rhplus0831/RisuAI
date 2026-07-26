@@ -12,7 +12,12 @@ import {
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
 } from '../../../../src/ts/model/modelProfileRecords.js'
-import { normalizeAgentPresetDefaultId, normalizeAgentPresets } from '../../../../src/ts/agentPresetRecords.js'
+import {
+  normalizeAgentConfiguration,
+  normalizeAgentPresetDefaultId,
+  normalizeAgents,
+  normalizeAgentPresets,
+} from '../../../../src/ts/agentPresetRecords.js'
 
 type JsonRecord = Record<string, unknown>
 type AssetValidationOptions = { assetDb?: DatabaseSync }
@@ -43,6 +48,7 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
   ['modelProfiles', 'modelProfiles'],
   ['modelRoleProfiles', 'modelRoleProfiles'],
   ['modelRuntimeDefaults', 'modelRuntimeDefaults'],
+  ['agents', 'agents'],
   ['agentPresets', 'agentPresets'],
   ['agentPresetDefaultId', 'agentPresetDefaultId'],
   ['currentPluginProvider', 'currentPluginProvider'],
@@ -254,7 +260,7 @@ export function applyPreset(database: JsonRecord, preset: PresetRecord): void {
   for (const [presetKey, databaseKey] of APPLY_KEYS) {
     if (Object.prototype.hasOwnProperty.call(preset, presetKey)) {
       database[databaseKey] = normalizePresetAppliedValue(databaseKey, cloneJson(preset[presetKey]))
-      if (databaseKey === 'agentPresets' || databaseKey === 'agentPresetDefaultId') {
+      if (databaseKey === 'agents' || databaseKey === 'agentPresets' || databaseKey === 'agentPresetDefaultId') {
         appliedAgentPresetSettings = true
       }
     }
@@ -269,6 +275,7 @@ function normalizePresetAppliedValue(databaseKey: string, value: unknown): unkno
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (databaseKey === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
+  if (databaseKey === 'agents') return normalizeAgents(value)
   if (databaseKey === 'agentPresets') return normalizeAgentPresets(value)
   if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (databaseKey === 'fallbackModels') return normalizeLegacyFallbackModels(value)
@@ -291,8 +298,10 @@ function normalizePresetProfileFields(record: JsonRecord): void {
 
 function normalizePresetAgentFields(record: JsonRecord): void {
   if (Object.prototype.hasOwnProperty.call(record, 'agentPresets')) {
-    const agentPresets = normalizeAgentPresets(record.agentPresets)
-    record.agentPresets = agentPresets
+    const normalized = normalizeAgentConfiguration(record.agents, record.agentPresets)
+    record.agents = normalized.agents
+    record.agentPresets = normalized.agentPresets
+    const agentPresets = normalized.agentPresets
     if (Object.prototype.hasOwnProperty.call(record, 'agentPresetDefaultId')) {
       const defaultId = normalizeAgentPresetDefaultId(record.agentPresetDefaultId, agentPresets)
       if (defaultId) {
@@ -313,8 +322,10 @@ function normalizePresetAgentFields(record: JsonRecord): void {
 }
 
 function normalizeDatabaseAgentPresetSettings(database: JsonRecord): void {
-  const agentPresets = normalizeAgentPresets(database.agentPresets)
-  database.agentPresets = agentPresets
+  const normalized = normalizeAgentConfiguration(database.agents, database.agentPresets)
+  database.agents = normalized.agents
+  database.agentPresets = normalized.agentPresets
+  const agentPresets = normalized.agentPresets
   const defaultId = normalizeAgentPresetDefaultId(database.agentPresetDefaultId, agentPresets)
   if (defaultId) {
     database.agentPresetDefaultId = defaultId

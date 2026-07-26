@@ -6,9 +6,11 @@ import {
   type AgentPresetStepPhase,
   type AgentPresetStepRecord,
   type AgentPresetValidationIssue,
+  type AgentRecord,
   isAgentPresetDirectOutputModifierStep,
   isAgentPresetUserInputModifierStep,
   isValidAgentPresetOutputKey,
+  resolveAgentPresetSteps,
   validateAgentPresetRecord,
 } from './agentPresetRecords'
 import { agentPresetOutputReferences } from './agentPresetReferences'
@@ -298,6 +300,7 @@ export function resolveAgentPresetForChat(input: ResolveAgentPresetForChatInput)
         issues: [],
         modelReadiness: [],
         disabledAsNoop: true,
+        agents: input.database.agents,
       }),
     }
   }
@@ -319,6 +322,7 @@ export function resolveAgentPresetForChat(input: ResolveAgentPresetForChatInput)
         preset,
         issues: planning.issues,
         modelReadiness: planning.modelReadiness,
+        agents: input.database.agents,
       }),
     }
   }
@@ -336,6 +340,7 @@ export function resolveAgentPresetForChat(input: ResolveAgentPresetForChatInput)
         preset,
         issues: [...planning.issues, ...planning.incompleteIssues],
         modelReadiness: planning.modelReadiness,
+        agents: input.database.agents,
       }),
     }
   }
@@ -353,6 +358,7 @@ export function resolveAgentPresetForChat(input: ResolveAgentPresetForChatInput)
         preset,
         issues: planning.issues,
         modelReadiness: planning.modelReadiness,
+        agents: input.database.agents,
       }),
     }
   }
@@ -368,13 +374,16 @@ export function resolveAgentPresetForChat(input: ResolveAgentPresetForChatInput)
       preset,
       issues: planning.issues,
       modelReadiness: planning.modelReadiness,
+      agents: input.database.agents,
     }),
   }
 }
 
 export function planAgentPreset(input: PlanAgentPresetInput): AgentPresetPlanningResult {
-  const recordIssues = validateAgentPresetRecord(input.preset)
-  const planningIssues = validatePhaseLocalDependencies(input.preset)
+  const agents = Array.isArray(input.database.agents) ? input.database.agents : []
+  const resolvedSteps = resolveAgentPresetSteps(input.preset, agents)
+  const recordIssues = validateAgentPresetRecord(input.preset, 'agentPreset', agents)
+  const planningIssues = validatePhaseLocalDependencies(resolvedSteps)
   const issues = [...recordIssues, ...planningIssues]
   if (issues.length > 0) {
     return {
@@ -385,13 +394,13 @@ export function planAgentPreset(input: PlanAgentPresetInput): AgentPresetPlannin
     }
   }
 
-  const enabledSteps = input.preset.steps.filter((step) => step.enabled)
+  const enabledSteps = resolvedSteps.filter((step) => step.enabled)
   const modelReadiness = enabledSteps.map((step) =>
     resolveStepModelReadiness(input.database, step, input.resolvedMainProfile),
   )
   const modelReadinessByStepId = new Map(modelReadiness.map((readiness) => [readiness.stepId, readiness]))
   const plan = buildExecutionPlan(input.preset, enabledSteps, modelReadinessByStepId)
-  const incompleteIssues = validateAgentOutputReferenceAvailability(input.preset, plan)
+  const incompleteIssues = validateAgentOutputReferenceAvailability(resolvedSteps, plan)
 
   return {
     ready: modelReadiness.every((readiness) => readiness.ready) && incompleteIssues.length === 0,
@@ -408,14 +417,16 @@ export function createAgentPresetStatusSummary({
   issues = [],
   modelReadiness = [],
   disabledAsNoop = false,
+  agents = [],
 }: {
   status: AgentPresetResolutionStatus
   preset: AgentPresetRecord
   issues?: readonly AgentPresetValidationIssue[]
   modelReadiness?: readonly AgentPresetStepModelReadiness[]
   disabledAsNoop?: boolean
+  agents?: readonly AgentRecord[]
 }): AgentPresetStatusSummary {
-  const enabledSteps = disabledAsNoop ? [] : preset.steps.filter((step) => step.enabled)
+  const enabledSteps = disabledAsNoop ? [] : resolveAgentPresetSteps(preset, agents).filter((step) => step.enabled)
   const beforeMainStepCount = enabledSteps.filter((step) => step.phase === 'beforeMain').length
   const afterMainStepCount = enabledSteps.filter((step) => step.phase === 'afterMain').length
   const missingOutputKeyCount = enabledSteps.filter((step) => !isNonEmptyString(step.outputKey)).length
@@ -499,11 +510,11 @@ function buildExecutionPlan(
 }
 
 function validateAgentOutputReferenceAvailability(
-  preset: AgentPresetRecord,
+  steps: readonly AgentPresetStepRecord[],
   plan: AgentPresetExecutionPlan,
 ): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
-  const stepIndexById = new Map(preset.steps.map((step, index) => [step.id, index]))
+  const stepIndexById = new Map(steps.map((step, index) => [step.id, index]))
   const producersByKey = new Map<string, AgentPresetPlannedStep[]>()
 
   for (const planned of plan.stableSteps) {
@@ -786,9 +797,8 @@ function maxCharsForScope(step: AgentPresetStepRecord, defaultMaxChars: number):
   return Math.max(0, Math.min(defaultMaxChars, maxInputChars))
 }
 
-function validatePhaseLocalDependencies(preset: AgentPresetRecord): AgentPresetValidationIssue[] {
+function validatePhaseLocalDependencies(steps: readonly AgentPresetStepRecord[]): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
-  const steps = Array.isArray(preset.steps) ? preset.steps : []
   const enabledById = new Map(steps.filter((step) => step.enabled).map((step) => [step.id, step]))
 
   steps.forEach((step, index) => {

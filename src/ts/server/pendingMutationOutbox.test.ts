@@ -15,12 +15,14 @@ import {
   listPendingMutationReceiptAcknowledgements,
   listPendingMutations,
   isPendingMutationProjectionFenceCurrent,
+  pendingMutationAgentCollectionProjectionTarget,
   pendingMutationAgentPresetCollectionProjectionTarget,
   pendingMutationAgentPresetDefaultProjectionTarget,
   pendingMutationAgentPresetOrderProjectionTarget,
   pendingMutationAgentPresetRowProjectionTarget,
   pendingMutationAgentPresetStepProjectionTarget,
   pendingMutationAgentPresetStepsProjectionTarget,
+  pendingMutationAgentRowProjectionTarget,
   pendingMutationCharacterLorebooksProjectionTarget,
   pendingMutationCharacterScriptsProjectionTarget,
   pendingMutationCharacterTriggersProjectionTarget,
@@ -806,11 +808,28 @@ describe('pending mutation outbox', () => {
     )
     expect(targetsFor('POST', '/agent-presets/reorder')).toEqual([pendingMutationAgentPresetOrderProjectionTarget()])
     expect(targetsFor('POST', '/agent-presets/default')).toEqual([pendingMutationAgentPresetDefaultProjectionTarget()])
+    expect(targetsFor('POST', '/agent-presets/preset%20a/uses')).toEqual([steps])
+    expect(targetsFor('POST', '/agent-presets/preset%20a/uses/reorder')).toEqual([steps])
+    expect(targetsFor('PATCH', '/agent-presets/preset%20a/uses/step%20a')).toEqual([stepRow])
+    expect(targetsFor('DELETE', '/agent-presets/preset%20a/uses/step%20a')).toEqual([stepRow, steps].sort())
     expect(targetsFor('POST', '/agent-presets/preset%20a/steps')).toEqual([steps])
     expect(targetsFor('POST', '/agent-presets/preset%20a/steps/step%20a/duplicate')).toEqual([steps])
     expect(targetsFor('POST', '/agent-presets/preset%20a/steps/reorder')).toEqual([steps])
     expect(targetsFor('PATCH', '/agent-presets/preset%20a/steps/step%20a')).toEqual([stepRow])
     expect(targetsFor('DELETE', '/agent-presets/preset%20a/steps/step%20a')).toEqual([stepRow, steps].sort())
+  })
+
+  it('maps standalone Agent rows and ordering to concrete projections', () => {
+    const targetsFor = (method: 'DELETE' | 'PATCH' | 'POST', path: string) =>
+      pendingMutationProjectionTargets({ version: 1, requests: [{ method, path, body: {} }] })
+    const collection = pendingMutationAgentCollectionProjectionTarget()
+    const row = pendingMutationAgentRowProjectionTarget('agent a')
+
+    expect(targetsFor('POST', '/agents')).toEqual([collection])
+    expect(targetsFor('POST', '/agents/reorder')).toEqual([collection])
+    expect(targetsFor('POST', '/agents/agent%20a/duplicate')).toEqual([collection])
+    expect(targetsFor('PATCH', '/agents/agent%20a')).toEqual([row])
+    expect(targetsFor('DELETE', '/agents/agent%20a')).toEqual([row, collection].sort())
   })
 
   it('fences concrete fields independently even when writers share a semantic key', async () => {
@@ -1010,12 +1029,21 @@ describe('pending mutation outbox', () => {
     ['POST', '/model-profiles/convert-legacy'],
     ['PUT', '/model-role-profiles'],
     ['PUT', '/model-runtime-defaults'],
+    ['POST', '/agents'],
+    ['PATCH', '/agents/agent-a'],
+    ['DELETE', '/agents/agent-a'],
+    ['POST', '/agents/agent-a/duplicate'],
+    ['POST', '/agents/reorder'],
     ['POST', '/agent-presets'],
     ['PATCH', '/agent-presets/preset-a'],
     ['DELETE', '/agent-presets/preset-a'],
     ['POST', '/agent-presets/preset-a/duplicate'],
     ['POST', '/agent-presets/reorder'],
     ['POST', '/agent-presets/default'],
+    ['POST', '/agent-presets/preset-a/uses'],
+    ['PATCH', '/agent-presets/preset-a/uses/use-a'],
+    ['DELETE', '/agent-presets/preset-a/uses/use-a'],
+    ['POST', '/agent-presets/preset-a/uses/reorder'],
     ['POST', '/agent-presets/preset-a/steps'],
     ['PATCH', '/agent-presets/preset-a/steps/step-a'],
     ['DELETE', '/agent-presets/preset-a/steps/step-a'],
@@ -1144,6 +1172,15 @@ describe('pending mutation outbox', () => {
     ['POST', '/model-profiles/convert-legacy/extra'],
     ['PUT', '/model-role-profiles/extra'],
     ['PUT', '/model-runtime-defaults/extra'],
+    ['PUT', '/agents'],
+    ['POST', '/agents/agent-a'],
+    ['PATCH', '/agents/reorder'],
+    ['POST', '/agents/reorder/extra'],
+    ['PATCH', '/agents/agent-a/duplicate'],
+    ['PUT', '/agent-presets/preset-a/uses'],
+    ['PATCH', '/agent-presets/preset-a/uses'],
+    ['POST', '/agent-presets/preset-a/uses/use-a'],
+    ['DELETE', '/agent-presets/preset-a/uses/reorder'],
     ['PUT', '/agent-presets'],
     ['POST', '/agent-presets/preset-a'],
     ['PATCH', '/agent-presets/preset-a/duplicate'],

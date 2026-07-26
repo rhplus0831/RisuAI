@@ -235,25 +235,39 @@ server path does not use the browser translation cache.
 
 ## Agent Preset Model Flow
 
-Agent Preset steps are auxiliary generation calls around the main chat request.
-Each step stores a model selection in `AgentPresetStepRecord.model`: either
-`inheritMain`, which reuses the already-resolved chat main profile, or
-`modelProfile`, which names a durable profile id. Planner/status helpers in
+Standalone Agents are reusable auxiliary generation definitions. An
+`AgentRecord` owns the behavior that should remain the same wherever it is
+used: name, description, version, instruction, model and runtime defaults,
+prepared-input scopes, and output format. An `AgentPresetRecord` composes those
+definitions through ordered `AgentPresetUseRecord` rows. A use owns its preset
+placement and wiring: enabled state, phase, dependencies on other use ids,
+output key, destination, failure policy, and optional model/runtime overrides.
+Deleting an Agent is blocked while any preset still uses it; duplicating a
+preset shares Agent references rather than copying their behavior.
+
+Planning resolves each use into the existing execution-step shape by applying
+the use's overrides on top of the Agent defaults. Consequently, editing a
+shared Agent affects every preset that uses it, while orchestration edits and
+overrides affect only that preset use. Model selection is either `inheritMain`,
+which reuses the already-resolved chat main profile, or `modelProfile`, which
+names a durable profile id. Planner/status helpers in
 `src/ts/agentPresetResolver.ts` use the same model-profile readiness semantics
 as chat preflight, and server execution in
 `server/fastify/src/prompt/agentPresetExecution.ts` dispatches through the
 normal provider boundary with streaming disabled and provider tools omitted.
 `src/ts/agentPresetReferences.ts` owns recognition and expansion of named
-output references.
+output references. New context-binding or port-mapping semantics are not part
+of this model; existing prepared-input scopes and placeholders remain
+unchanged.
 
-Agent Preset steps use bounded prepared-input scopes and named-output CBS
-chaining. Steps can select server-provided sections such as recent chat tail,
+Resolved Agent uses use bounded prepared-input scopes and named-output CBS
+chaining. Agents can select server-provided sections such as recent chat tail,
 chat search snippets, lorebook context, memory context, persona/character
 summaries, previous agent outputs, current user message, and after-main main
 draft. A selected section is collected and inserted only when the instruction
 contains its matching placeholder, such as `{{currentUserMessage}}`.
 
-A step can also consume an already-completed named output directly through
+A use can also consume an already-completed named output directly through
 `{{agent::outputKey}}`, independently of the aggregate
 `previousAgentOutputs` scope. Before-main consumers can use outputs from earlier
 before-main dependency levels. After-main consumers can use all completed
@@ -265,7 +279,7 @@ available to eligible later steps regardless of destination; before-main
 `promptOutput` values additionally expand in the main prompt template.
 
 Runtime execution runs dependency levels up to preset `maxConcurrency`, applies
-per-step timeout/input/output limits, validates JSON-object outputs when
+resolved per-use timeout/input/output limits, validates JSON-object outputs when
 requested, follows optional/required/fallback/stop failure policies, and writes
 step outputs to `promptOutput`, `intermediate`, `userInput`, or `finalOutput`
 destinations. At most one enabled before-main `userInput` modifier is allowed;
@@ -274,6 +288,14 @@ user message before main prompt assembly. At most one enabled after-main
 `finalOutput` modifier is allowed, it must be the last enabled after-main step,
 and it can modify final text before persistence.
 Provider tool-calling is intentionally not part of this path yet.
+
+Legacy presets with embedded step definitions are normalized at the persistence
+boundary. Each embedded step becomes a distinct standalone Agent plus a preset
+use, preserving behavior and dependency ids without deduplicating apparently
+similar steps. Canonical records retain an empty legacy `steps` field only for
+wire/storage compatibility; authoring and planning use `agents` and
+`agentUses`. New command clients use the `/agent-presets/:id/uses` routes; the
+older `/steps` routes remain as compatibility adapters over the same records.
 
 ## Compatibility Caveats
 

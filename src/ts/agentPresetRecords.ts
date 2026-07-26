@@ -1,4 +1,5 @@
 export const AGENT_PRESET_SCHEMA_VERSION = 1
+export const AGENT_SCHEMA_VERSION = 1
 
 export const AGENT_PRESET_STEP_PHASES = ['beforeMain', 'afterMain'] as const
 export const AGENT_PRESET_STEP_OUTPUT_FORMATS = ['text', 'jsonObject'] as const
@@ -67,6 +68,8 @@ export type AgentPresetStepFailurePolicy =
 
 export interface AgentPresetStepRecord {
   id: string
+  /** The reusable Agent that supplied this resolved execution definition. */
+  agentId?: string
   name: string
   enabled: boolean
   phase: AgentPresetStepPhase
@@ -81,6 +84,35 @@ export interface AgentPresetStepRecord {
   failurePolicy: AgentPresetStepFailurePolicy
 }
 
+/** Reusable behavior shared by any number of Agent Presets. */
+export interface AgentRecord {
+  id: string
+  name: string
+  description?: string
+  version: number
+  instruction: string
+  modelDefaults: AgentPresetStepModelSelection
+  runtimeDefaults: AgentPresetStepRuntimeOptions
+  inputScopes: AgentPresetStepInputScope[]
+  outputFormat: AgentPresetStepOutputFormat
+  createdAt?: number
+  updatedAt?: number
+}
+
+/** One invocation of a reusable Agent inside an Agent Preset. */
+export interface AgentPresetUseRecord {
+  id: string
+  agentId: string
+  enabled: boolean
+  phase: AgentPresetStepPhase
+  dependencies: string[]
+  outputKey: string
+  destination: AgentPresetStepDestination
+  failurePolicy: AgentPresetStepFailurePolicy
+  modelOverride?: AgentPresetStepModelSelection
+  runtimeOverride?: AgentPresetStepRuntimeOptions
+}
+
 export interface AgentPresetRecord {
   id: string
   name: string
@@ -88,6 +120,12 @@ export interface AgentPresetRecord {
   enabled: boolean
   version: number
   maxConcurrency?: number
+  /** Canonical modular composition. */
+  agentUses?: AgentPresetUseRecord[]
+  /**
+   * Legacy import-only shape. Canonical database normalization migrates these
+   * records into standalone Agents and leaves this array empty.
+   */
   steps: AgentPresetStepRecord[]
   createdAt?: number
   updatedAt?: number
@@ -115,11 +153,92 @@ export type AgentPresetValidationIssueCode =
   | 'invalid_before_main_modifier'
   | 'invalid_after_main_modifier'
   | 'unavailable_agent_output'
+  | 'missing_agent'
 
 export interface AgentPresetValidationIssue {
   code: AgentPresetValidationIssueCode
   path: string
   message: string
+}
+
+export interface NormalizedAgentConfiguration {
+  agents: AgentRecord[]
+  agentPresets: AgentPresetRecord[]
+}
+
+export function normalizeAgents(value: unknown): AgentRecord[] {
+  if (!Array.isArray(value)) return []
+
+  const agents: AgentRecord[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (!isRecord(item)) continue
+    const id = stringOrBlank(item.id)
+    if (!id || seen.has(id)) continue
+    agents.push(normalizeAgentRecord(item, id))
+    seen.add(id)
+  }
+  return agents
+}
+
+/**
+ * Normalizes the modular Agent library and migrates legacy preset-owned steps.
+ * Legacy steps intentionally become distinct Agents; content similarity is not
+ * sufficient evidence that two historical steps were meant to be shared.
+ */
+export function normalizeAgentConfiguration(agentsValue: unknown, presetsValue: unknown): NormalizedAgentConfiguration {
+  const agents = normalizeAgents(agentsValue)
+  const usedAgentIds = new Set(agents.map((agent) => agent.id))
+  const presets = normalizeAgentPresets(presetsValue)
+
+  for (const preset of presets) {
+    if (preset.agentUses) {
+      preset.steps = []
+      continue
+    }
+
+    const uses: AgentPresetUseRecord[] = []
+    for (const step of preset.steps) {
+      const agentId = uniqueMigratedAgentId(step.id, preset.id, usedAgentIds)
+      agents.push(agentRecordFromLegacyStep(step, agentId))
+      uses.push(agentPresetUseFromLegacyStep(step, agentId))
+    }
+    preset.agentUses = uses
+    preset.steps = []
+  }
+
+  return { agents, agentPresets: presets }
+}
+
+export function resolveAgentPresetSteps(
+  preset: AgentPresetRecord,
+  agents: readonly AgentRecord[],
+): AgentPresetStepRecord[] {
+  if (!preset.agentUses) return preset.steps.map((step) => cloneStepRecord(step))
+
+  const agentsById = new Map(agents.map((agent) => [agent.id, agent]))
+  const steps: AgentPresetStepRecord[] = []
+  for (const use of preset.agentUses) {
+    const agent = agentsById.get(use.agentId)
+    if (!agent) continue
+    steps.push({
+      id: use.id,
+      agentId: agent.id,
+      name: agent.name,
+      enabled: use.enabled,
+      phase: use.phase,
+      dependencies: [...use.dependencies],
+      instruction: agent.instruction,
+      model: cloneModelSelection(use.modelOverride ?? agent.modelDefaults),
+      runtime: { ...agent.runtimeDefaults, ...use.runtimeOverride },
+      inputScopes: [...agent.inputScopes],
+      outputKey: use.outputKey,
+      outputFormat: agent.outputFormat,
+      destination: use.destination,
+      failurePolicy: cloneFailurePolicy(use.failurePolicy),
+    })
+  }
+  return steps
 }
 
 export function normalizeAgentPresets(value: unknown): AgentPresetRecord[] {
@@ -148,7 +267,53 @@ export function normalizeAgentPresetDefaultId(
   return agentPresets.some((preset) => preset.id === id) ? id : undefined
 }
 
-export function validateAgentPresetRecords(value: readonly AgentPresetRecord[]): AgentPresetValidationIssue[] {
+export function validateAgentRecords(value: readonly AgentRecord[]): AgentPresetValidationIssue[] {
+  const issues: AgentPresetValidationIssue[] = []
+  const seen = new Set<string>()
+  value.forEach((agent, index) => {
+    const path = `agents[${index}]`
+    if (!isNonEmptyString(agent.id)) {
+      issues.push(issue('invalid_id', `${path}.id`, 'Agent id must be a non-empty string'))
+    } else if (seen.has(agent.id)) {
+      issues.push(issue('duplicate_id', `${path}.id`, `Duplicate Agent id: ${agent.id}`))
+    }
+    seen.add(agent.id)
+    issues.push(...validateAgentRecord(agent, path))
+  })
+  return issues
+}
+
+export function validateAgentRecord(agent: AgentRecord, path = 'agent'): AgentPresetValidationIssue[] {
+  const issues: AgentPresetValidationIssue[] = []
+  if (!isNonEmptyString(agent.id)) issues.push(issue('invalid_id', `${path}.id`, 'Agent id must be a non-empty string'))
+  if (!isNonEmptyString(agent.name)) {
+    issues.push(issue('invalid_name', `${path}.name`, 'Agent name must be a non-empty string'))
+  }
+  if (!Number.isInteger(agent.version) || agent.version < 1) {
+    issues.push(issue('invalid_version', `${path}.version`, 'Agent version must be a positive integer'))
+  }
+  if (typeof agent.instruction !== 'string') {
+    issues.push(issue('invalid_instruction', `${path}.instruction`, 'Agent instruction must be a string'))
+  }
+  if (!isValidAgentPresetStepModelSelection(agent.modelDefaults)) {
+    issues.push(issue('invalid_model', `${path}.modelDefaults`, 'Agent default model selection is invalid'))
+  }
+  issues.push(...validateAgentPresetStepRuntime(agent.runtimeDefaults, `${path}.runtimeDefaults`))
+  if (!Array.isArray(agent.inputScopes) || agent.inputScopes.some((scope) => !isAgentPresetStepInputScope(scope))) {
+    issues.push(issue('invalid_input_scope', `${path}.inputScopes`, 'Agent input scopes include an unknown value'))
+  }
+  if (!isAgentPresetStepOutputFormat(agent.outputFormat)) {
+    issues.push(
+      issue('invalid_output_format', `${path}.outputFormat`, 'Agent output format must be text or jsonObject'),
+    )
+  }
+  return issues
+}
+
+export function validateAgentPresetRecords(
+  value: readonly AgentPresetRecord[],
+  agents: readonly AgentRecord[] = [],
+): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
   const seen = new Set<string>()
 
@@ -160,7 +325,7 @@ export function validateAgentPresetRecords(value: readonly AgentPresetRecord[]):
       issues.push(issue('duplicate_id', `${path}.id`, `Duplicate Agent Preset id: ${preset.id}`))
     }
     seen.add(preset.id)
-    issues.push(...validateAgentPresetRecord(preset, path))
+    issues.push(...validateAgentPresetRecord(preset, path, agents))
   })
 
   return issues
@@ -169,6 +334,7 @@ export function validateAgentPresetRecords(value: readonly AgentPresetRecord[]):
 export function validateAgentPresetRecord(
   preset: AgentPresetRecord,
   path = 'agentPreset',
+  agents: readonly AgentRecord[] = [],
 ): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
 
@@ -196,15 +362,35 @@ export function validateAgentPresetRecord(
       ),
     )
   }
-  if (!Array.isArray(preset.steps)) {
-    issues.push(issue('invalid_id', `${path}.steps`, 'Agent Preset steps must be an array'))
+  if (!Array.isArray(preset.steps) || (preset.agentUses !== undefined && !Array.isArray(preset.agentUses))) {
+    issues.push(issue('invalid_id', `${path}.agentUses`, 'Agent Preset uses must be an array'))
     return issues
   }
 
-  const enabledSteps = preset.steps.filter((step) => step.enabled)
+  if (preset.agentUses) {
+    const agentsById = new Map(agents.map((agent) => [agent.id, agent]))
+    const seenUseIds = new Set<string>()
+    preset.agentUses.forEach((use, index) => {
+      const usePath = `${path}.agentUses[${index}]`
+      issues.push(...validateAgentPresetUseRecord(use, usePath))
+      if (seenUseIds.has(use.id)) {
+        issues.push(issue('duplicate_id', `${usePath}.id`, `Duplicate Agent Preset use id: ${use.id}`))
+      }
+      seenUseIds.add(use.id)
+      if (!agentsById.has(use.agentId)) {
+        issues.push(
+          issue('missing_agent', `${usePath}.agentId`, `Agent Preset references a missing Agent: ${use.agentId}`),
+        )
+      }
+    })
+  }
+
+  const resolvedSteps = resolveAgentPresetSteps(preset, agents)
+
+  const enabledSteps = resolvedSteps.filter((step) => step.enabled)
   const enabledById = new Map<string, AgentPresetStepRecord>()
   const enabledStepIndexes = new Map<string, number>()
-  preset.steps.forEach((step, index) => {
+  resolvedSteps.forEach((step, index) => {
     if (!step.enabled) return
     if (!isNonEmptyString(step.id)) return
     if (!enabledById.has(step.id)) {
@@ -215,7 +401,7 @@ export function validateAgentPresetRecord(
 
   const seenStepIds = new Set<string>()
   const outputKeysByPhase = new Map<string, string>()
-  preset.steps.forEach((step, index) => {
+  resolvedSteps.forEach((step, index) => {
     const stepPath = `${path}.steps[${index}]`
     issues.push(...validateAgentPresetStepRecord(step, stepPath))
 
@@ -357,6 +543,53 @@ export function validateAgentPresetStepRecord(
   return issues
 }
 
+export function validateAgentPresetUseRecord(
+  use: AgentPresetUseRecord,
+  path = 'agentPresetUse',
+): AgentPresetValidationIssue[] {
+  const issues: AgentPresetValidationIssue[] = []
+  if (!isNonEmptyString(use.id))
+    issues.push(issue('invalid_id', `${path}.id`, 'Agent use id must be a non-empty string'))
+  if (!isNonEmptyString(use.agentId)) {
+    issues.push(issue('invalid_id', `${path}.agentId`, 'Agent use must reference a non-empty Agent id'))
+  }
+  if (typeof use.enabled !== 'boolean') {
+    issues.push(issue('invalid_enabled', `${path}.enabled`, 'Agent use enabled must be a boolean'))
+  }
+  if (!isAgentPresetStepPhase(use.phase)) {
+    issues.push(issue('invalid_phase', `${path}.phase`, 'Agent use phase must be beforeMain or afterMain'))
+  }
+  if (!Array.isArray(use.dependencies) || use.dependencies.some((id) => !isNonEmptyString(id))) {
+    issues.push(issue('invalid_dependency', `${path}.dependencies`, 'Agent use dependencies must be use id strings'))
+  }
+  if (!isValidAgentPresetOutputKey(use.outputKey)) {
+    issues.push(issue('invalid_output_key', `${path}.outputKey`, 'Agent use output key must be an identifier'))
+  }
+  if (!isAgentPresetStepDestination(use.destination)) {
+    issues.push(issue('invalid_destination', `${path}.destination`, 'Agent use destination is invalid'))
+  }
+  if (use.destination === 'userInput' && use.phase !== 'beforeMain') {
+    issues.push(
+      issue('invalid_destination', `${path}.destination`, 'Only before-main Agent uses can modify user input'),
+    )
+  }
+  if (use.destination === 'finalOutput' && use.phase !== 'afterMain') {
+    issues.push(
+      issue('invalid_destination', `${path}.destination`, 'Only after-main Agent uses can modify final output'),
+    )
+  }
+  if (!isValidAgentPresetStepFailurePolicy(use.failurePolicy)) {
+    issues.push(issue('invalid_failure_policy', `${path}.failurePolicy`, 'Agent use failure policy is invalid'))
+  }
+  if (use.modelOverride !== undefined && !isValidAgentPresetStepModelSelection(use.modelOverride)) {
+    issues.push(issue('invalid_model', `${path}.modelOverride`, 'Agent use model override is invalid'))
+  }
+  if (use.runtimeOverride !== undefined) {
+    issues.push(...validateAgentPresetStepRuntime(use.runtimeOverride, `${path}.runtimeOverride`))
+  }
+  return issues
+}
+
 export function isValidAgentPresetOutputKey(value: unknown): value is string {
   return typeof value === 'string' && OUTPUT_KEY_PATTERN.test(value)
 }
@@ -379,6 +612,9 @@ function normalizeAgentPresetRecord(item: Record<string, unknown>): AgentPresetR
     version: positiveIntegerOr(item.version, AGENT_PRESET_SCHEMA_VERSION),
     steps: normalizeAgentPresetSteps(item.steps),
   }
+  if (Object.prototype.hasOwnProperty.call(item, 'agentUses')) {
+    record.agentUses = normalizeAgentPresetUses(item.agentUses)
+  }
   const description = stringOrBlank(item.description)
   if (description) record.description = description
   const maxConcurrency = boundedIntegerOrUndefined(
@@ -392,6 +628,54 @@ function normalizeAgentPresetRecord(item: Record<string, unknown>): AgentPresetR
   const updatedAt = nonNegativeFiniteNumberOrUndefined(item.updatedAt)
   if (updatedAt !== undefined) record.updatedAt = updatedAt
   return record
+}
+
+function normalizeAgentRecord(item: Record<string, unknown>, id: string): AgentRecord {
+  const record: AgentRecord = {
+    id,
+    name: stringOrBlank(item.name) || id,
+    version: positiveIntegerOr(item.version, AGENT_SCHEMA_VERSION),
+    instruction: typeof item.instruction === 'string' ? item.instruction : '',
+    modelDefaults: normalizeStepModelSelection(item.modelDefaults ?? item.model),
+    runtimeDefaults: normalizeStepRuntimeOptions(item.runtimeDefaults ?? item.runtime),
+    inputScopes: normalizeInputScopes(item.inputScopes),
+    outputFormat: normalizeOutputFormat(item.outputFormat),
+  }
+  const description = stringOrBlank(item.description)
+  if (description) record.description = description
+  const createdAt = nonNegativeFiniteNumberOrUndefined(item.createdAt)
+  if (createdAt !== undefined) record.createdAt = createdAt
+  const updatedAt = nonNegativeFiniteNumberOrUndefined(item.updatedAt)
+  if (updatedAt !== undefined) record.updatedAt = updatedAt
+  return record
+}
+
+function normalizeAgentPresetUses(value: unknown): AgentPresetUseRecord[] {
+  if (!Array.isArray(value)) return []
+  const uses: AgentPresetUseRecord[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (!isRecord(item)) continue
+    const id = stringOrBlank(item.id)
+    const agentId = stringOrBlank(item.agentId)
+    if (!id || !agentId || seen.has(id)) continue
+    const phase = normalizeStepPhase(item.phase)
+    const use: AgentPresetUseRecord = {
+      id,
+      agentId,
+      enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
+      phase,
+      dependencies: normalizeStringList(item.dependencies),
+      outputKey: stringOrBlank(item.outputKey) || id,
+      destination: normalizeDestination(item.destination, phase),
+      failurePolicy: normalizeFailurePolicy(item.failurePolicy),
+    }
+    if (item.modelOverride !== undefined) use.modelOverride = normalizeStepModelSelection(item.modelOverride)
+    if (item.runtimeOverride !== undefined) use.runtimeOverride = normalizeStepRuntimeOptions(item.runtimeOverride)
+    uses.push(use)
+    seen.add(id)
+  }
+  return uses
 }
 
 function normalizeAgentPresetSteps(value: unknown): AgentPresetStepRecord[] {
@@ -422,6 +706,73 @@ function normalizeAgentPresetSteps(value: unknown): AgentPresetStepRecord[] {
     seen.add(id)
   }
   return steps
+}
+
+function agentRecordFromLegacyStep(step: AgentPresetStepRecord, agentId: string): AgentRecord {
+  return {
+    id: agentId,
+    name: step.name,
+    version: AGENT_SCHEMA_VERSION,
+    instruction: step.instruction,
+    modelDefaults: cloneModelSelection(step.model),
+    runtimeDefaults: { ...step.runtime },
+    inputScopes: [...step.inputScopes],
+    outputFormat: step.outputFormat,
+  }
+}
+
+function agentPresetUseFromLegacyStep(step: AgentPresetStepRecord, agentId: string): AgentPresetUseRecord {
+  return {
+    id: step.id,
+    agentId,
+    enabled: step.enabled,
+    phase: step.phase,
+    dependencies: [...step.dependencies],
+    outputKey: step.outputKey,
+    destination: step.destination,
+    failurePolicy: cloneFailurePolicy(step.failurePolicy),
+  }
+}
+
+function uniqueMigratedAgentId(stepId: string, presetId: string, usedIds: Set<string>): string {
+  if (!usedIds.has(stepId)) {
+    usedIds.add(stepId)
+    return stepId
+  }
+  const base = `${stepId}_${presetId}`
+  if (!usedIds.has(base)) {
+    usedIds.add(base)
+    return base
+  }
+  for (let index = 2; index < 10_000; index += 1) {
+    const candidate = `${base}_${index}`
+    if (!usedIds.has(candidate)) {
+      usedIds.add(candidate)
+      return candidate
+    }
+  }
+  throw new Error('Unable to allocate migrated Agent id')
+}
+
+function cloneStepRecord(step: AgentPresetStepRecord): AgentPresetStepRecord {
+  return {
+    ...step,
+    dependencies: [...step.dependencies],
+    model: cloneModelSelection(step.model),
+    runtime: { ...step.runtime },
+    inputScopes: [...step.inputScopes],
+    failurePolicy: cloneFailurePolicy(step.failurePolicy),
+  }
+}
+
+function cloneModelSelection(selection: AgentPresetStepModelSelection): AgentPresetStepModelSelection {
+  return selection.mode === 'modelProfile'
+    ? { mode: 'modelProfile', profileId: selection.profileId }
+    : { mode: 'inheritMain' }
+}
+
+function cloneFailurePolicy(policy: AgentPresetStepFailurePolicy): AgentPresetStepFailurePolicy {
+  return policy.mode === 'fallbackText' ? { mode: 'fallbackText', text: policy.text } : { mode: policy.mode }
 }
 
 function normalizeStepPhase(value: unknown): AgentPresetStepPhase {

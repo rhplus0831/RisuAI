@@ -856,11 +856,16 @@ function isWellFormedAgentPresetEvent(event: CommandEvent): boolean {
   const hasId = nonEmptyString(event.id)
   const hasParentId = nonEmptyString(event.parentId)
   switch (event.type) {
+    case 'agent.created':
+    case 'agent.updated':
+    case 'agent.deleted':
     case 'agentPreset.created':
     case 'agentPreset.updated':
       return hasId && event.parentId === undefined
+    case 'agent.duplicated':
     case 'agentPreset.duplicated':
       return hasId && hasParentId
+    case 'agent.reordered':
     case 'agentPreset.reordered':
       return event.id === undefined && event.parentId === undefined
     case 'agentPreset.default.updated':
@@ -869,7 +874,11 @@ function isWellFormedAgentPresetEvent(event: CommandEvent): boolean {
     case 'agentPreset.step.updated':
     case 'agentPreset.step.duplicated':
     case 'agentPreset.step.deleted':
+    case 'agentPreset.use.created':
+    case 'agentPreset.use.updated':
+    case 'agentPreset.use.deleted':
       return hasId && hasParentId
+    case 'agentPreset.use.reordered':
     case 'agentPreset.step.reordered':
       return hasId && event.parentId === undefined
     default:
