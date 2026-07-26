@@ -227,8 +227,8 @@ Driver tags used below:
   - Variants: Empty/list; default/enabled/disabled/invalid/incomplete/model-not-ready/ready status; phase/step/usage/concurrency summaries; reorder/pending/error/drawer. Editor changes by create/edit, phase, output/dependency/scope/failure policy, validation, and saved state. Diagnostics changes through unavailable/loading/error/limited/empty/run-list/selected run and optional details.
   - Owners: `src/lib/Setting/Pages/AgentPresetSettings.svelte`; `AgentPresetEditorDrawer.svelte`; `AgentPresetDiagnosticsPanel.svelte`; `src/ts/agentPresetResolver.ts`
 - **`SET-17` — Plugin management (`R`, `A`, `X`)**
-  - Variants: Empty/list; name/version/risk/hot-reload badge; safe custom links; enabled state; update status cycle; mutation pending/error. Expanded plugin metadata dynamically chooses divider, select, textarea, radio, checkbox, number, or text for every non-hidden argument.
-  - Owners: `src/lib/Setting/Pages/PluginSettings.svelte`; `src/ts/plugins/plugins.svelte.ts`; `pluginSafety.ts`; `pluginPermissions.ts`
+  - Variants: Empty/list; name/version/hot-reload badge; safe custom links; enabled state; update status cycle; mutation pending/error. Expanded plugin metadata dynamically chooses divider, select, textarea, radio, checkbox, number, or text for every non-hidden argument.
+  - Owners: `src/lib/Setting/Pages/PluginSettings.svelte`; `src/ts/plugins/plugins.svelte.ts`; `pluginPermissions.ts`
 - **`SET-18` — Module management/editor (`R`, `A`, `X`)**
   - Variants: Empty/list/search result; ordinary versus MCP row; enabled/integration state; MCP import busy; create/edit/error/pending; basic/lore/regex/trigger/assets tabs; missing arrays initialized on entry; asset empty/list and preview by media extension. Search with no match currently yields a blank list instead of the global empty message.
   - Owners: `src/lib/Setting/Pages/Module/ModuleSettings.svelte`; `ModuleMenu.svelte`; `ModuleChatMenu.svelte`; `src/ts/process/modules.ts`
@@ -290,9 +290,9 @@ UI.
 - **`MODAL-12` — EasyPanel requirement gate (`R`, `L`)**
   - Variants: Requirements warning until six settings are enabled; then model, parameter, custom-model, and settings tabs. Parameter content switches between model-specific overrides and six role-specific editors.
   - Owners: `src/lib/Others/ProTools/EasyPanel.svelte`
-- **`MODAL-13` — Plugin safety and permission prompts (`A`, `X`, `L`)**
-  - Variants: Deduplicated localized safety reasons plus raw Dev Info; continue versus abort. Runtime permission confirmation content changes for network, database, DOM, provider, send-chat, update, logs, or other capability; cached grants suppress it until explicit/periodic reconfirmation.
-  - Owners: `src/lib/Others/PluginAlertModal.svelte`; `src/ts/plugins/pluginSafety.ts`; `pluginPermissions.ts`; `plugins.svelte.ts`
+- **`MODAL-13` — Plugin permission prompts (`A`, `X`, `L`)**
+  - Variants: Runtime permission confirmation content changes for network, database, DOM, provider, send-chat, update, logs, or other V3 capability; cached grants suppress it until explicit/periodic reconfirmation.
+  - Owners: `src/ts/plugins/pluginPermissions.ts`; `plugins.svelte.ts`
 - **`MODAL-14` — Save and background progress (`R`, `A`, `L`)**
   - Variants: The save icon appears when `showSavingIcon` is enabled and aggregate persistence activity is true. Activity covers in-flight mutations, this writer's queued outbox intents, and a short completion linger; individual workflows retain busy/disabled and failure states without transient Saving/Queued layout rows. Hypa background progress switches compact `miniMsg` spinner and expanded message/submessage. Module import can replace AlertComp text with live asset completed/total progress.
   - Owners: `src/lib/Others/SavePopupIcon.svelte`; `src/ts/server/persistenceActivity.svelte.ts`; `HypaV3Progress.svelte`; `src/ts/process/modules.ts`

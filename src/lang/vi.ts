@@ -1277,8 +1277,6 @@ export const languageVietnamese = {
   expandSidebar: 'Mở rộng thanh bên',
   home: 'Trang chủ',
   showSavingIcon: 'Hiển thị biểu tượng đang lưu',
-  pluginVersionWarn:
-    'Đây là phiên bản {{plugin_version}} của plugin, không tương thích với phiên bản Risuai này. Vui lòng cập nhật plugin lên phiên bản {{required_version}}.',
   imageTranslation: 'Dịch hình ảnh',
   banCharacterset: 'Tự động tạo lại khi gặp bộ ký tự',
   realmDirectOpen: 'Mở trực tiếp nhân vật trong RisuRealm',
@@ -1587,8 +1585,6 @@ export const languageVietnamese = {
     'Plugin {} đang yêu cầu truy cập thông qua trình hỗ trợ mạng Internet công cộng của RisuAI. Yêu cầu này có thể gửi dữ liệu trò chuyện hoặc tài khoản cho bên thứ ba. Trình hỗ trợ sẽ chặn các đích riêng tư, cục bộ, siêu dữ liệu và dịch vụ RisuAI. Bạn có muốn cho phép không?',
   pluginUpdateSourceConsent:
     'RisuAI sẽ chỉ kiểm tra và tải bản cập nhật cho plugin {{plugin}} từ nguồn HTTPS đã khai báo:\n{{url}}\nQuyền này chỉ dành cho việc kiểm tra và tải bản cập nhật; quyền này không cấp cho plugin quyền sử dụng trình hỗ trợ mạng khi chạy. Bạn có muốn tiếp tục không?',
-  legacyRuntimeConsent:
-    'Plugin cũ {} đang yêu cầu quyền chạy dưới dạng mã được tin cậy trong trang RisuAI chính. Plugin có thể đọc hoặc sửa đổi dữ liệu trò chuyện và tài khoản, đồng thời truy cập các dịch vụ mạng công cộng, riêng tư hoặc cục bộ. Chỉ cho phép các plugin mà bạn hoàn toàn tin tưởng. Bạn có muốn tiếp tục không?',
   v3RuntimeConsent:
     'Plugin {} đang yêu cầu quyền chạy mã giao diện trình duyệt được tin cậy. Plugin có thể liên hệ các đích mạng công cộng, riêng tư, cục bộ, siêu dữ liệu hoặc RisuAI và gửi dữ liệu trò chuyện hoặc tài khoản ra ngoài RisuAI, kể cả qua API trình duyệt bỏ qua sự đồng ý của trình hỗ trợ mạng. Chỉ chạy plugin mà bạn hoàn toàn tin tưởng. Bạn có muốn tiếp tục không?',
   fetchLogConsent:

@@ -1233,8 +1233,6 @@ export const languageChineseTraditional = {
   expandSidebar: '展開側邊欄',
   home: '首頁',
   showSavingIcon: '顯示儲存圖示',
-  pluginVersionWarn:
-    '這是 {{plugin_version}} 版本的外掛，與當前 Risuai 版本不相容。請更新外掛至 {{required_version}} 版本。',
   imageTranslation: '圖像翻譯',
   banCharacterset: '自動重新生成字元集',
   realmDirectOpen: '在 RisuRealm 中直接開啟角色',
@@ -1545,8 +1543,6 @@ export const languageChineseTraditional = {
     '外掛 {} 正在請求透過 RisuAI 的公共網際網路網路助手存取服務。此請求可能會將聊天或帳戶資料傳送給第三方。該助手會封鎖私人、本機、詮釋資料和 RisuAI 服務目標。是否允許？',
   pluginUpdateSourceConsent:
     'RisuAI 將只從外掛 {{plugin}} 宣告的以下 HTTPS 來源檢查並下載更新：\n{{url}}\n此權限僅用於檢查與下載更新，不會授予外掛使用執行階段網路助手的權限。是否繼續？',
-  legacyRuntimeConsent:
-    '舊版外掛 {} 正在請求以受信任程式碼的身分在 RisuAI 主頁面中執行。它可以讀取或修改聊天與帳戶資料，並存取公共、私人或本機網路服務。請只允許您完全信任的外掛。是否繼續？',
   v3RuntimeConsent:
     '外掛 {} 正在請求執行受信任的瀏覽器介面程式碼。它可以連線到公共、私人、本機、詮釋資料或 RisuAI 網路目標，並可透過繞過網路助手同意的瀏覽器 API，將聊天或帳戶資料傳送到 RisuAI 之外。請只執行您完全信任的外掛。是否繼續？',
   fetchLogConsent: '外掛 {} 正在請求存取記錄，此操作可能暴露敏感資訊。是否允許？',
@@ -1555,8 +1551,6 @@ export const languageChineseTraditional = {
   replacerPermissionConsent: '外掛 {} 正在請求替換對話內容的權限，此操作可能被用於操縱對話。是否允許？',
   providerPermissionConsent: '外掛 {} 正在請求存取提供商的權限，此操作可能允許未授權的 API 呼叫。是否允許？',
   sendChatConsent: '外掛 {} 正在請求以您的名義發送對話訊息的權限，這將觸發 AI 回應。是否允許？',
-  pluginV2Warning:
-    '外掛 V2 與 V2.1 版本被視為不安全，並將於未來版本中停用。**請勿使用此版本的外掛。**若您是外掛開發者，請盡快更新至 V3。',
   createFolderOnBranch: '在分支上建立資料夾',
   hamburgerButtonBottom: '將選單按鈕移至側邊欄底部',
   partialBackupFirstConfirm:

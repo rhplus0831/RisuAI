@@ -2,15 +2,13 @@ import { get, writable } from 'svelte/store'
 import { language } from '../../lang'
 import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from '../storage/database.svelte'
 import { alertConfirm, alertError, alertPluginConfirm } from '../alert'
-import { sleep } from '../util'
 import { selectSingleFile } from '../filePicker'
 import type { OpenAIChat } from '../process/index.svelte'
 import { pluginFetchNative, pluginGlobalFetch, readImage, saveAsset } from '../globalApi.svelte'
-import { hotReloading, pluginAlertModalStore, selectedCharID } from '../stores.svelte'
+import { hotReloading, selectedCharID } from '../stores.svelte'
 import type { ScriptMode } from '../process/scripts'
 import type { RisuModule } from '../process/modules'
 import { safeStructuredClone } from '../polyfill'
-import { checkCodeSafety } from './pluginSafety'
 import {
   BlockedPluginNetworkPrimitive,
   SafeDocument,
@@ -59,7 +57,6 @@ import {
   type PluginImportOperation,
 } from '../server/pluginImport'
 import { createPluginNetworkAccess, createPluginWebFetch } from './pluginNetworkAccess'
-import { getPluginPermission } from './pluginPermissions'
 import {
   checkPluginUpdate as checkPluginUpdateRequest,
   comparePluginVersions,
@@ -75,7 +72,7 @@ interface ProviderPlugin {
   script: string
   arguments: { [key: string]: 'int' | 'string' | string[] }
   realArg: { [key: string]: number | string }
-  version?: 1 | 2 | '2.1' | '3.0'
+  version: '3.0'
   customLink: ProviderPluginCustomLink[]
   argMeta: { [key: string]: { [key: string]: string } }
   versionOfPlugin?: string
@@ -89,6 +86,23 @@ interface ProviderPluginCustomLink {
 }
 
 export type RisuPlugin = ProviderPlugin
+
+export class UnsupportedPluginApiVersionError extends Error {
+  constructor(pluginName: string, version: unknown) {
+    const versionLabel =
+      typeof version === 'string' || typeof version === 'number' ? JSON.stringify(version) : 'missing'
+    super(
+      `Plugin "${pluginName}" uses unsupported API version ${versionLabel}. Fastify supports only API version "3.0".`,
+    )
+    this.name = 'UnsupportedPluginApiVersionError'
+  }
+}
+
+function assertSupportedPluginApiVersion(plugin: { name: string; version?: unknown }): void {
+  if (plugin.version !== '3.0') {
+    throw new UnsupportedPluginApiVersionError(plugin.name, plugin.version)
+  }
+}
 
 export async function createBlankPlugin() {
   await importPlugin(
@@ -413,6 +427,10 @@ export async function importPlugin(
       return showError('plugin version must be at least 0.0.1')
     }
 
+    if (apiVersion !== '3.0') {
+      throw new UnsupportedPluginApiVersionError(name, apiVersion)
+    }
+
     if (isTypescript) {
       if (!isFreshImport()) {
         return { status: 'stale' }
@@ -428,58 +446,13 @@ export async function importPlugin(
       }
     }
 
-    let apiInternalVersion: 2 | '2.1' | '3.0' = '2.1'
-
-    if (apiVersion === '2.1') {
-      if (!isFreshImport()) {
-        return { status: 'stale' }
-      }
-      const safety = await checkCodeSafety(jsFile)
-      if (!isFreshImport()) {
-        return { status: 'stale' }
-      }
-      if (!safety.isSafe) {
-        pluginAlertModalStore.errors = safety.errors
-        pluginAlertModalStore.open = true
-
-        // Poll while the modal owns the user's accept/reject decision.
-        while (pluginAlertModalStore.open) {
-          await sleep(100)
-          if (!isFreshImport()) {
-            pluginAlertModalStore.open = false
-            return { status: 'stale' }
-          }
-        }
-
-        if (!isFreshImport()) {
-          return { status: 'stale' }
-        }
-
-        if (pluginAlertModalStore.errors.length > 0) {
-          return { status: 'cancelled' }
-        }
-      }
-      apiInternalVersion = '2.1'
-    } else if (apiVersion === '2.0') {
-      //Only block installing
-      return showError(
-        'Your code does not include //@api or specifies API version 2.0, which is outdated. Please update your plugin to use at least API version 2.1.',
-      )
-    } else if (apiVersion === '3.0') {
-      apiInternalVersion = '3.0'
-    }
-
-    if (apiInternalVersion !== '3.0' && argu.isHotReload) {
-      return showError('Only API version 3.0 plugins can be hot-reloaded.')
-    }
-
     let pluginData: RisuPlugin = {
       name: name,
       script: jsFile,
       realArg: realArg,
       arguments: arg,
       displayName: displayName,
-      version: apiInternalVersion,
+      version: '3.0',
       customLink: customLink,
       argMeta: argMeta,
       versionOfPlugin: versionOfPlugin,
@@ -595,6 +568,9 @@ export async function importPlugin(
     completePluginImport(pluginData.name, apiVersion, argu.isHotReload)
     return { status: 'accepted', pluginName: pluginData.name }
   } catch (error) {
+    if (error instanceof UnsupportedPluginApiVersionError) {
+      throw error
+    }
     console.error(error)
     if (!operation || isFreshPluginImport(operation, currentPluginImportFreshness())) {
       alertError(language.errors.noData)
@@ -692,12 +668,10 @@ async function runQueuedPluginLoads() {
     console.log('Loading plugins...')
     const db = getDatabase()
 
-    const enabledPlugins = acceptedPluginRuntimeProjection(db.plugins ?? []).filter((p: RisuPlugin) => p.enabled)
-    const pluginV2 = enabledPlugins.filter((a: RisuPlugin) => a.version === 2 || a.version === '2.1')
-    const pluginV3 = enabledPlugins.filter((a: RisuPlugin) => a.version === '3.0')
+    const plugins = acceptedPluginRuntimeProjection(db.plugins ?? [])
+    for (const plugin of plugins) assertSupportedPluginApiVersion(plugin)
 
-    await loadV2Plugin(pluginV2)
-    await loadV3Plugins(pluginV3)
+    await loadV3Plugins(plugins.filter((plugin) => plugin.enabled))
   }
 }
 
@@ -756,37 +730,6 @@ export const pluginV2 = {
   replacerbeforeRequest: new Set<ReplacerFunction>(),
   replacerafterRequest: new Set<(content: string, type: string) => string | Promise<string>>(),
   unload: new Set<() => void | Promise<void>>(),
-  loaded: false,
-}
-
-const V2_PLUGIN_UNLOAD_TIMEOUT_MS = 1000
-let v2PluginLoadGeneration = 0
-
-async function runV2PluginUnloadCallbacks(callbacks: Array<() => void | Promise<void>>) {
-  if (callbacks.length === 0) return
-
-  const pendingCallbacks = callbacks.map(async (unload) => {
-    try {
-      await unload()
-    } catch (error) {
-      console.error('Error running V2 plugin unload callback:', error)
-    }
-  })
-
-  await Promise.race([Promise.all(pendingCallbacks), sleep(V2_PLUGIN_UNLOAD_TIMEOUT_MS)])
-}
-
-function clearV2PluginRegistrations() {
-  pluginV2.providers.clear()
-  pluginV2.providerOptions.clear()
-  pluginV2.editdisplay.clear()
-  pluginV2.editoutput.clear()
-  pluginV2.editprocess.clear()
-  pluginV2.editinput.clear()
-  pluginV2.replacerbeforeRequest.clear()
-  pluginV2.replacerafterRequest.clear()
-  pluginV2.unload.clear()
-  customProviderStore.set([])
 }
 
 export const allowedDbKeys = [
@@ -1036,9 +979,9 @@ interface TrackedPluginEventListener {
 }
 
 /**
- * Revokes callbacks created through the supported legacy surface when its load
- * generation ends. V2.1 remains trusted main-realm code, but ordinary timers,
- * listeners, and API closures must not keep operating after disable/reload.
+ * Revokes callbacks created through deprecated compatibility methods exposed
+ * by the V3 host when its load generation ends. Timers, listeners, and API
+ * closures must not keep operating after disable/reload.
  */
 class PluginRuntimeLifecycle {
   private readonly timeouts = new Set<ReturnType<typeof globalThis.setTimeout>>()
@@ -1622,148 +1565,6 @@ export const getV2PluginAPIs = (
   return pluginApis
 }
 
-export async function loadV2Plugin(plugins: RisuPlugin[]) {
-  const loadGeneration = ++v2PluginLoadGeneration
-  if (pluginV2.loaded) {
-    const unloadCallbacks = Array.from(pluginV2.unload)
-    try {
-      await runV2PluginUnloadCallbacks(unloadCallbacks)
-    } finally {
-      clearV2PluginRegistrations()
-    }
-  }
-
-  pluginV2.loaded = true
-
-  globalThis.__pluginApis__ = getV2PluginAPIs()
-
-  for (const plugin of plugins) {
-    let data = ''
-    let version = plugin.version || 2
-
-    const createRealScript = (data: string): string => {
-      const tt = (
-        window as unknown as Window & {
-          trustedTypes?: {
-            createPolicy: (
-              name: string,
-              rules: { createScript: (input: string) => string },
-            ) => { createScript: (input: string) => string }
-          }
-        }
-      ).trustedTypes
-      const policyFactory = tt ?? {
-        createPolicy: (_name: string, rules: { createScript: (input: string) => string }) => rules, // Just return the rules object as the "policy"
-      }
-
-      const policy = policyFactory.createPolicy('plugin-policy', {
-        createScript: (_input) => {
-          return `(async () => {
-                        const __pluginApi = globalThis.__pluginApis__
-                        const risuFetch = __pluginApi.risuFetch
-                        const nativeFetch = __pluginApi.nativeFetch
-                        const fetch = __pluginApi.fetch
-                        const XMLHttpRequest = __pluginApi.BlockedPluginNetworkPrimitive
-                        const WebSocket = __pluginApi.BlockedPluginNetworkPrimitive
-                        const WebSocketStream = __pluginApi.BlockedPluginNetworkPrimitive
-                        const EventSource = __pluginApi.BlockedPluginNetworkPrimitive
-                        const Image = __pluginApi.BlockedPluginNetworkPrimitive
-                        const Audio = __pluginApi.BlockedPluginNetworkPrimitive
-                        const Worker = __pluginApi.BlockedPluginNetworkPrimitive
-                        const SharedWorker = __pluginApi.BlockedPluginNetworkPrimitive
-                        const WebTransport = __pluginApi.BlockedPluginNetworkPrimitive
-                        const RTCPeerConnection = __pluginApi.BlockedPluginNetworkPrimitive
-                        const Navigator = __pluginApi.BlockedPluginNetworkPrimitive
-                        const open = __pluginApi.BlockedPluginNetworkPrimitive
-                        const navigator = __pluginApi.safeNavigator
-                        const location = __pluginApi.safeLocation
-                        const getArg = __pluginApi.getArg
-                        const printLog = __pluginApi.printLog
-                        const getChar = __pluginApi.getChar
-                        const setChar = __pluginApi.setChar
-                        const addProvider = __pluginApi.addProvider
-                        const addRisuScriptHandler = __pluginApi.addRisuScriptHandler
-                        const removeRisuScriptHandler = __pluginApi.removeRisuScriptHandler
-                        const addRisuReplacer = __pluginApi.addRisuReplacer
-                        const removeRisuReplacer = __pluginApi.removeRisuReplacer
-                        const onUnload = __pluginApi.onUnload
-                        const setArg = __pluginApi.setArg
-                        const saveAsset = __pluginApi.saveAsset
-                        const readImage = __pluginApi.readImage
-                        ${
-                          version === '2.1'
-                            ? `
-                            const safeGlobalThis = __pluginApi.getSafeGlobalThis()
-                            const Risuai = __pluginApi
-                            const safeLocalStorage = __pluginApi.safeLocalStorage
-                            const safeIdbFactory = __pluginApi.safeIdbFactory
-                            const alertStore = __pluginApi.alertStore
-                            const safeDocument = __pluginApi.safeDocument
-                            const document = safeDocument
-                            const setTimeout = safeGlobalThis.setTimeout
-                            const setInterval = safeGlobalThis.setInterval
-                            const clearTimeout = safeGlobalThis.clearTimeout
-                            const clearInterval = safeGlobalThis.clearInterval
-                            const addEventListener = safeGlobalThis.addEventListener
-                            const removeEventListener = safeGlobalThis.removeEventListener
-                            const getDatabase = __pluginApi.getDatabase
-                            const setDatabaseLite = __pluginApi.setDatabaseLite
-                            const setDatabase = __pluginApi.setDatabase
-                            const loadPlugins = __pluginApi.loadPlugins
-                            const SafeFunction = __pluginApi.SafeFunction
-                        `
-                            : ''
-                        }
-
-                        ${data}
-                    })();`
-        },
-      })
-
-      return policy.createScript(data)
-    }
-
-    if (version === '2.1') {
-      const legacyRuntimeAllowed = await getPluginPermission(plugin.name, 'legacyRuntime', false, plugin.script)
-      if (loadGeneration !== v2PluginLoadGeneration) return
-      if (!legacyRuntimeAllowed) {
-        console.warn(`Skipped V2.1 plugin "${plugin.name}" because trusted legacy runtime access was denied.`)
-        continue
-      }
-
-      const safety = await checkCodeSafety(plugin.script)
-      if (loadGeneration !== v2PluginLoadGeneration) return
-      data = safety.modifiedCode
-
-      try {
-        // Each script captures an API object whose network grant is bound to
-        // this exact plugin name and script, never the ambient last-loaded API.
-        globalThis.__pluginApis__ = getV2PluginAPIs(
-          plugin,
-          () => {
-            if (loadGeneration !== v2PluginLoadGeneration) {
-              throw new Error('Legacy plugin instance is no longer active.')
-            }
-          },
-          (cleanup) => pluginV2.unload.add(cleanup),
-        )
-        new Function(createRealScript(data))()
-      } catch (error) {
-        console.error(error)
-      }
-
-      console.log('Loaded V2.1 Plugin', plugin.name)
-    } else {
-      data = plugin.script
-      console.log('Loading V2.0 Plugin', plugin.name)
-
-      console.warn(
-        `Plugin 2.0 is removed and no longer supported. Please update plugin "${plugin.name}" to API version 3.0`,
-      )
-    }
-  }
-}
-
 export async function translatorPlugin(text: string, from: string, to: string) {
   return false
 }
@@ -1790,13 +1591,8 @@ export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[], assert
   const trimmedPlugins: RisuPlugin[] = []
   for (const plugin of plugins) {
     assertActive?.()
+    assertSupportedPluginApiVersion(plugin)
     if (!getDatabase().plugins.find((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)) {
-      if (plugin.version !== '3.0') {
-        console.warn(
-          `Plugin "${plugin.name}" has version "${plugin.version}", which is not supported for installation via plugin. Only API version 3.0 plugins can be installed via plugin. Skipping installation of this plugin.`,
-        )
-        continue
-      }
       const confirmation = await alertConfirm(language.confirmInstallPluginViaPlugin.replace('{plugin}', plugin.name))
       assertActive?.()
       if (confirmation) {

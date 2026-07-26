@@ -7,7 +7,6 @@ import { getDatabase } from 'src/ts/storage/database.svelte'
 export type PluginPermission =
   | 'fetchLogs'
   | 'db'
-  | 'legacyRuntime'
   | 'mainDom'
   | 'network'
   | 'pluginUpdate'
@@ -52,8 +51,6 @@ function permissionPrompt(
       return language.getFullDatabaseConsent.replace('{}', pluginName)
     case 'mainDom':
       return language.mainDomAccessConsent.replace('{}', pluginName)
-    case 'legacyRuntime':
-      return language.legacyRuntimeConsent.replace('{}', pluginName)
     case 'network':
       return language.pluginNetworkConsent.replace('{}', pluginName)
     case 'pluginUpdate': {

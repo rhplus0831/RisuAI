@@ -4,7 +4,6 @@ import { type simpleCharacterArgument } from './parser/parser.svelte'
 import { moduleUpdate } from './process/modules'
 import { resetScriptCache } from './process/scripts'
 import type { hubType } from './characterCards'
-import type { PluginSafetyErrors } from './plugins/pluginSafety'
 import type { ActiveChatTarget } from './chatCommands'
 import { getResourceDatabase } from './server/resourceState.svelte'
 import { alertStore, selectedCharID } from './stores/coreStores.svelte'
@@ -177,11 +176,6 @@ export const LoadingStatusState = $state({
 export const QuickSettings = $state({
   open: false,
   index: 0,
-})
-
-export const pluginAlertModalStore = $state({
-  open: false,
-  errors: [] as PluginSafetyErrors[],
 })
 
 export const disableHighlight = writable(true)

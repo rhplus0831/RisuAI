@@ -1288,8 +1288,6 @@ export const languageSpanish = {
   expandSidebar: 'Expandir barra lateral',
   home: 'Inicio',
   showSavingIcon: 'Mostrar Icono de Guardado',
-  pluginVersionWarn:
-    'Esta es la versión {{plugin_version}} del plugin, que no es compatible con esta versión de Risuai. Por favor, actualiza el plugin a la versión {{required_version}}.',
   imageTranslation: 'Traducción de Imagen',
   banCharacterset: 'Regeneración Automática en Conjunto de Caracteres',
   realmDirectOpen: 'Abrir personaje directamente en RisuRealm',
@@ -1607,8 +1605,6 @@ export const languageSpanish = {
     'El plugin {} solicita acceso mediante el asistente de red de Internet pública de RisuAI. Esta solicitud puede enviar datos de chats o cuentas a terceros. El asistente bloquea destinos privados, locales, de metadatos y de servicios de RisuAI. ¿Desea permitirlo?',
   pluginUpdateSourceConsent:
     'RisuAI comprobará y descargará actualizaciones del plugin {{plugin}} únicamente desde su fuente HTTPS declarada:\n{{url}}\nEste permiso se limita a comprobar y descargar actualizaciones; no concede al plugin acceso a los asistentes de red durante la ejecución. ¿Desea continuar?',
-  legacyRuntimeConsent:
-    'El plugin heredado {} solicita permiso para ejecutarse como código de confianza en la página principal de RisuAI. Puede leer o modificar chats y datos de la cuenta, y acceder a servicios de red públicos, privados o locales. Permita únicamente plugins en los que confíe plenamente. ¿Desea continuar?',
   v3RuntimeConsent:
     'El plugin {} solicita permiso para ejecutar código de interfaz de navegador de confianza. Puede contactar destinos de red públicos, privados, locales, de metadatos o de RisuAI y enviar datos de chats o cuentas fuera de RisuAI, incluso mediante API del navegador que omiten el consentimiento del asistente de red. Ejecute solo plugins en los que confíe plenamente. ¿Desea continuar?',
   fetchLogConsent:

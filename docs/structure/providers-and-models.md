@@ -531,7 +531,7 @@ Fastify hard-fails shapes it cannot represent safely:
 | Plugin/WebLLM/non-server-routable providers        | No Fastify provider adapter.                                                                                                                                                                                             |
 | Non-vision image-caption fallback                  | Browser captioning pipeline has no server equivalent.                                                                                                                                                                    |
 | Interactive Lua dialogs                            | Strict script preflight blocks known dialog sources; otherwise the server Lua runtime fails if a dialog API is invoked because it cannot drive browser dialogs mid-request. Non-interactive Lua remains server-routable. |
-| Plugin V2 edit/replacer hooks                      | Browser plugin execution is no-port.                                                                                                                                                                                     |
+| Deprecated plugin edit/replacer hooks exposed to V3 | Browser plugin execution is no-port.                                                                                                                                                                                   |
 
 Supported multimodal/image/asset/inlay inputs route through server asset ids
 where possible and only when the selected server-routed model accepts image

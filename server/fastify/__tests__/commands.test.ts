@@ -14604,6 +14604,40 @@ describe('Phase 9-4c module record and enablement commands', () => {
 })
 
 describe('Phase 9-4e plugin record and configuration commands', () => {
+  it.each([2, '2.1'] as const)('rejects V%s-series plugin records without bumping revision', async (version) => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, { plugins: [] })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugins',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        plugin: {
+          name: 'unsupported-plugin',
+          script: 'void 0',
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+          version,
+        },
+      },
+    })
+
+    expect(created.statusCode).toBe(400)
+    expect(created.json().error).toBe(`plugin.version must be "3.0"; Fastify does not support V2-series plugins`)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.json().database.plugins).toEqual([])
+  })
+
   it('creates, patches, enables, selects provider, reorders, and deletes plugins', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -14805,6 +14839,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
           realArg: {},
           customLink: [],
           argMeta: {},
+          version: '3.0',
         },
       ],
     })
@@ -14856,6 +14891,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
           realArg: {},
           customLink: [],
           argMeta: {},
+          version: '3.0',
         },
       ],
     })

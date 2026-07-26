@@ -68,7 +68,7 @@ const blockFixtures: RisuSaveBlockFixture[] = [
   {
     name: 'plugins',
     type: RisuSaveBlockType.PLUGINS,
-    data: JSON.stringify([{ id: 'plugin-a', name: 'Plugin A' }]),
+    data: JSON.stringify([{ id: 'plugin-a', name: 'Plugin A', version: '3.0' }]),
   },
   {
     name: 'pluginStorage',

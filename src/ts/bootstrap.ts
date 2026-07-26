@@ -222,9 +222,7 @@ export async function loadData(): Promise<void> {
       await initializePushNotificationCoordinator()
       void reconcileChatCompletionPushNotificationSetting(db.notification === true)
       LoadingStatusState.text = 'Loading Plugins...'
-      try {
-        await loadPlugins()
-      } catch (error) {}
+      await loadPlugins()
       startPluginRuntimeSync()
       LoadingStatusState.text = 'Checking For Format Update...'
 

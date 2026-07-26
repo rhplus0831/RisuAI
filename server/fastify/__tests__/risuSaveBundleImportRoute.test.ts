@@ -107,7 +107,7 @@ function persistDatabaseWithAsset(dataDir: string, imageReference = ASSET_ID): v
         promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
         modules: [{ id: 'module-a', name: 'Module A' }],
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
-        plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+        plugins: [{ id: 'plugin-a', name: 'Plugin A', version: '3.0' }],
         pluginCustomStorage: {},
       },
       assets: [],

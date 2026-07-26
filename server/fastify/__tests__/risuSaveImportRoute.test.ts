@@ -384,6 +384,21 @@ describe('Phase 9-8a multipart .risu import route', () => {
     },
   )
 
+  it.each([2, '2.1'] as const)('rejects JSON imports containing V%s-series plugins', async (version) => {
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          plugins: [{ name: 'unsupported-plugin', version }],
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json().error).toBe('plugins[0].version must be "3.0"; Fastify does not support V2-series plugins')
+  })
+
   it('normalizes malformed JSON resource families into the exportable current shape', async () => {
     const imported = await authedInject({
       method: 'POST',

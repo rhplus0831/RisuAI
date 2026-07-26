@@ -264,8 +264,8 @@ interface RisuPlugin {
   arguments: { [key: string]: 'int' | 'string' | string[] }
   /** Actual argument values */
   realArg: { [key: string]: number | string }
-  /** API version */
-  version?: 1 | 2 | '2.1' | '3.0'
+  /** API version. Fastify accepts only Plugin API 3.0. */
+  version: '3.0'
   /** Custom links for plugin UI */
   customLink: {
     link: string

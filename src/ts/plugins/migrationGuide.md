@@ -10,11 +10,11 @@ guide.
 
 ## Runtime status
 
-| API                  | Current behavior                                                                                                                                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `2.0` or no `//@api` | New imports are rejected. Old stored records are retained but not executed.                                                                                                                                   |
-| `2.1`                | Compatibility-only. Import is allowed after the safety review; execution requires an exact-script `legacyRuntime` grant. It runs in the main page realm and must be fully trusted. Hot reload is unavailable. |
-| `3.0`                | Recommended. Runs through the iframe/RPC host after an exact-script `v3Runtime` grant. Hot reload is available.                                                                                               |
+| API                  | Current behavior                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `2.0` or no `//@api` | Import and server persistence are rejected with an unsupported-version error.                                     |
+| `2.1`                | Import and server persistence are rejected with an unsupported-version error; there is no compatibility runtime. |
+| `3.0`                | Supported. Runs through the iframe/RPC host after an exact-script `v3Runtime` grant. Hot reload is available.     |
 
 The importer reads supported versions from left to right and selects the first
 match. Do not publish a declaration such as `//@api 2.0 2.1 3.0`: it selects
@@ -24,8 +24,7 @@ match. Do not publish a declaration such as `//@api 2.0 2.1 3.0`: it selects
 //@api 3.0
 ```
 
-API 2.1 remains a trusted compatibility path, not a safe intermediate target.
-Migrate maintained plugins directly to 3.0.
+Migrate maintained plugins to 3.0 before importing them.
 
 ## Required metadata
 
@@ -151,10 +150,6 @@ reductions in ambient authority, but the DOM-compatible guest is not a hostile
 code network sandbox. Browser APIs such as WebRTC may still provide egress.
 Only grant `v3Runtime` to code you fully trust.
 
-API 2.1 runs approved code in the main page realm. Its rewritten globals and
-safe wrappers are defense in depth, not isolation. Only grant `legacyRuntime`
-to code you fully trust.
-
 Every runtime, network, update, provider, database, DOM, send-chat, and related
 capability grant is bound to the plugin name and exact script hash. Updating the
 source requires new approval for the changed script.
@@ -190,8 +185,7 @@ source requires new approval for the changed script.
 
 For implementation and security details, use these owners:
 
-- `plugins.svelte.ts`: metadata parsing, 2.1 compatibility, import, and load
-  policy;
+- `plugins.svelte.ts`: V3-only metadata parsing, import, and load policy;
 - `apiV3/risuai.d.ts`: public API contract;
 - `apiV3/factory.ts` and `apiV3/v3.svelte.ts`: guest/RPC lifecycle and host API;
 - `pluginPermissions.ts` and `pluginNetworkAccess.ts`: exact-script grants and

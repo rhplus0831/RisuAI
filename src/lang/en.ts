@@ -1860,8 +1860,6 @@ export const languageEnglish = {
   expandSidebar: 'Expand sidebar',
   home: 'Home',
   showSavingIcon: 'Show Saving Icon',
-  pluginVersionWarn:
-    'This is {{plugin_version}} version of the plugin. Which is not compatible with this version of Risuai. Please update the plugin to {{required_version}} version.',
   imageTranslation: 'Image Translation',
   banCharacterset: 'Auto Regenerate On Characterset',
   realmDirectOpen: 'Directly open character in RisuRealm',
@@ -2230,8 +2228,6 @@ export const languageEnglish = {
     "Plugin {} is requesting access through RisuAI's public-internet network helper. This request may send chat or account data to third parties. The helper blocks private, local, metadata, and RisuAI service targets. Do you want to allow this?",
   pluginUpdateSourceConsent:
     "RisuAI will check and download updates for plugin {{plugin}} only from its declared HTTPS source:\n{{url}}\nThis permission is limited to update checks and downloads; it does not grant the plugin's runtime network helpers. Do you want to continue?",
-  legacyRuntimeConsent:
-    'Legacy plugin {} is requesting permission to run as trusted code in the main RisuAI page. It can read or modify chats and account data, and it can access public, private, or local network services. Only allow plugins you fully trust. Do you want to continue?',
   v3RuntimeConsent:
     'Plugin {} is requesting permission to run trusted browser UI code. It can contact public, private, local, metadata, or RisuAI network targets and send chat or account data outside RisuAI, including through browser APIs that bypass network helper consent. Only run plugins you fully trust. Do you want to continue?',
   fetchLogConsent:
@@ -2246,8 +2242,6 @@ export const languageEnglish = {
     'Plugin {} is requesting permission to access the provider, which may allow it to make unauthorized API calls. Do you want to allow this?',
   sendChatConsent:
     'Plugin {} is requesting permission to send chat messages on your behalf, which will trigger AI responses. Do you want to allow this?',
-  pluginV2Warning:
-    'Plugin V2 and V2.1 is considered unsafe and will stop working in future versions. **Please do not use these versions of plugins.**. If you are the developer of this plugin, please update to V3 as soon as possible.',
   createFolderOnBranch: 'Create Folder on Branch',
   hamburgerButtonBottom: 'Move Menu Button to Bottom of Sidebar',
   partialBackupFirstConfirm:

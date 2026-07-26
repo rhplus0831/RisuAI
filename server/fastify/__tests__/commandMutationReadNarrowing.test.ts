@@ -854,6 +854,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
           realArg: {},
           customLink: [],
           argMeta: {},
+          version: '3.0',
         },
       },
       ['plugins'],

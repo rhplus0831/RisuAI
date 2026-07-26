@@ -10,13 +10,13 @@ does not execute browser plugin code.
 
 | Path                                                            | Purpose                                                                                                                      |
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/plugins/plugins.svelte.ts`                              | Plugin import/update/load, V2 compatibility, custom providers, command-backed state dispatch.                                |
+| `src/ts/plugins/plugins.svelte.ts`                              | V3-only plugin import/update/load, custom providers, command-backed state dispatch.                                           |
 | `src/ts/plugins/apiV3/v3.svelte.ts`                             | Plugin API V3 surface exposed to sandboxed plugins.                                                                          |
 | `src/ts/plugins/apiV3/factory.ts`                               | `SandboxHost` iframe/RPC bridge between app and plugin guest code.                                                           |
 | `src/ts/plugins/apiV3/transpiler.ts`, `developMode.ts`          | Plugin V3 transpilation and development-mode loading.                                                                        |
 | `src/ts/plugins/apiV3/risuai.d.ts`                              | Plugin V3 TypeScript declarations for plugin authors.                                                                        |
 | `src/ts/plugins/pluginPermissions.ts`, `pluginNetworkAccess.ts` | Exact-script capability grants and the public-only plugin network adapters.                                                  |
-| `src/ts/plugins/pluginSafeClass.ts`, `pluginSafety.ts`          | Safe wrappers, static safety rewrite/checks, device-local storage gates.                                                     |
+| `src/ts/plugins/pluginSafeClass.ts`                            | Safe wrappers and device-local storage gates.                                                                                |
 | `src/ts/plugins/unsupportedServerWriteGuard.ts`                 | Blocks Plugin API direct writes to fields unsupported in server-backed mode.                                                 |
 | `src/ts/pluginCommands.ts`                                      | Browser command wrappers for plugin records, provider selection, plugin storage, and settings-adjacent compatibility writes. |
 | `src/ts/server/pluginImport.ts`                                 | Server-backed plugin import/update helper with stale import guards.                                                          |
@@ -77,18 +77,13 @@ anchor helper creates user-clicked links in a new `noopener noreferrer` tab;
 ordinary HTML insertion cannot create an automatic network load. These are
 defense-in-depth controls after the V3 runtime trust decision.
 
-Before each enabled API `2.1` script runs, the exact script must receive the
-script-bound `legacyRuntime` grant. Denial skips that execution. This is a trust
-gate for code running in the main RisuAI page: after approval it can read or
-modify chats and account data and may reach public, private, or local network
-services. The compatibility wrapper routes its exposed fetch helpers through
-the public-only plugin proxy and lexically shadows common network globals, but
-those measures are defense in depth, not an enforceable hostile-code sandbox
-for main-realm JavaScript. Only fully trusted V2.1 plugins should receive this
-grant. API `2.0` import is blocked and older existing records only warn as
-removed/not supported. Plugin V2 edit/replacer hooks make server prompt assembly
-return `unsupported`; Fastify never executes browser plugin code. Server Lua
-scripting is separate from browser plugins.
+Only API `3.0` plugin records are accepted. Source import throws
+`UnsupportedPluginApiVersionError` for API `2.0`, `2.1`, or a missing
+`//@api` declaration; server plugin commands independently reject every version
+other than `3.0`. Runtime reconciliation validates the complete projected plugin
+collection before loading enabled V3 instances, so an unsupported record fails
+the load instead of being skipped. There is no V2 migration or compatibility
+execution path. Server Lua scripting is separate from browser plugins.
 
 Plugin update checks start only from an explicit user action. They require an
 HTTPS, public-only URL and a `pluginUpdate` grant bound to the exact installed
@@ -134,8 +129,8 @@ cache.
 Plugin API calls that patch settings, modules, characters, chats, lorebooks, or
 scripts should use command-backed helpers. Unsupported direct resource keys stay
 blocked in server-backed mode so plugin code cannot silently mutate projection
-state. V2 database-bridge calls that write unknown `setDatabaseLite` keys become
-plugin storage writes, while recognized unsupported resource families such as
+state. Deprecated database-bridge calls retained on the V3 API that write unknown
+`setDatabaseLite` keys become plugin storage writes, while recognized unsupported resource families such as
 `characters`, `botPresets`, `loreBook`, and `pluginV2` are blocked instead of
 being shadowed into plugin storage.
 
@@ -147,7 +142,8 @@ as other command routes:
 
 Plugin record `PATCH` requests contain only changed fields. Because JSON omits
 `undefined`, `null` is reserved as a deletion sentinel for optional plugin
-metadata; it is rejected for required fields and full plugin creation records.
+metadata; it is rejected for required fields, including the required `3.0`
+API version, and full plugin creation records.
 Module record patches use the same compact contract for optional module
 metadata, including CJS and asset references. `POST /api/v1/commands/modules`
 independently applies the shared MCP import predicate at creation. Stored MCP

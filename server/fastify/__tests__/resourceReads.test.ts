@@ -103,7 +103,7 @@ beforeEach(async () => {
         modelRuntimeDefaults: { maxContext: 8_192 },
         enabledModules: ['module-a'],
         modules: [{ id: 'module-a', name: 'Module A', cjs: 'module.exports = true' }],
-        plugins: [{ name: 'plugin-a', displayName: 'Plugin A', script: 'Risuai.log("plugin")' }],
+        plugins: [{ name: 'plugin-a', displayName: 'Plugin A', script: 'Risuai.log("plugin")', version: '3.0' }],
         modelPresets: [{ id: 'model-a', name: 'Model A', openAIKey: 'model-secret' }],
         promptPresets: [
           {

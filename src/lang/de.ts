@@ -1307,8 +1307,6 @@ export const languageGerman = {
   expandSidebar: 'Seitenleiste ausklappen',
   home: 'Startseite',
   showSavingIcon: 'Speichersymbol anzeigen',
-  pluginVersionWarn:
-    'Dies ist Version {{plugin_version}} des Plugins, die nicht mit dieser Version von Risuai kompatibel ist. Bitte aktualisieren Sie das Plugin auf Version {{required_version}}.',
   imageTranslation: 'Bildübersetzung',
   banCharacterset: 'Bei Zeichensatz automatisch neu generieren',
   realmDirectOpen: 'Charakter in RisuRealm direkt öffnen',
@@ -1623,8 +1621,6 @@ export const languageGerman = {
     'Plugin {} fordert Zugriff über den RisuAI-Netzwerkhelfer für das öffentliche Internet an. Diese Anfrage kann Chat- oder Kontodaten an Dritte senden. Der Helfer sperrt private, lokale, Metadaten- und RisuAI-Dienstziele. Möchten Sie dies zulassen?',
   pluginUpdateSourceConsent:
     'RisuAI prüft und lädt Updates für das Plugin {{plugin}} ausschließlich von seiner angegebenen HTTPS-Quelle herunter:\n{{url}}\nDiese Berechtigung gilt nur für Update-Prüfungen und Downloads; sie gewährt dem Plugin keinen Zugriff auf die Laufzeit-Netzwerkhelfer. Möchten Sie fortfahren?',
-  legacyRuntimeConsent:
-    'Das Legacy-Plugin {} fordert die Berechtigung an, als vertrauenswürdiger Code auf der RisuAI-Hauptseite ausgeführt zu werden. Es kann Chats und Kontodaten lesen oder ändern und auf öffentliche, private oder lokale Netzwerkdienste zugreifen. Erlauben Sie dies nur Plugins, denen Sie vollständig vertrauen. Möchten Sie fortfahren?',
   v3RuntimeConsent:
     'Plugin {} fordert die Berechtigung an, vertrauenswürdigen Browser-UI-Code auszuführen. Es kann öffentliche, private, lokale, Metadaten- oder RisuAI-Netzwerkziele kontaktieren und Chat- oder Kontodaten aus RisuAI senden, auch über Browser-APIs, die die Zustimmung des Netzwerkhelfers umgehen. Führen Sie nur Plugins aus, denen Sie vollständig vertrauen. Möchten Sie fortfahren?',
   newMessageButtonTopBar: 'Obere Leiste',

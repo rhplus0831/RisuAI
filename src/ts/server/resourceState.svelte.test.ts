@@ -1483,8 +1483,24 @@ describe('resource-scoped database state', () => {
       collections: {
         ...completeCollections(),
         plugins: [
-          { name: 'plugin-b', script: 'newer-b', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
-          { name: 'plugin-a', script: 'newer-a', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
+          {
+            name: 'plugin-b',
+            script: 'newer-b',
+            arguments: {},
+            realArg: {},
+            customLink: [],
+            argMeta: {},
+            version: '3.0',
+          },
+          {
+            name: 'plugin-a',
+            script: 'newer-a',
+            arguments: {},
+            realArg: {},
+            customLink: [],
+            argMeta: {},
+            version: '3.0',
+          },
         ],
       },
     })
@@ -1505,8 +1521,24 @@ describe('resource-scoped database state', () => {
     ).toBe(true)
 
     expect(getResourceDatabase().plugins).toEqual([
-      { name: 'plugin-b', script: 'newer-b', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
-      { name: 'plugin-a', script: 'newer-a', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
+      {
+        name: 'plugin-b',
+        script: 'newer-b',
+        arguments: {},
+        realArg: {},
+        customLink: [],
+        argMeta: {},
+        version: '3.0',
+      },
+      {
+        name: 'plugin-a',
+        script: 'newer-a',
+        arguments: {},
+        realArg: {},
+        customLink: [],
+        argMeta: {},
+        version: '3.0',
+      },
     ])
     expect(collectionsResourceState.revisions.plugins).toBe(5)
     expect(collectionsResourceState.revision).toBe(5)

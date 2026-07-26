@@ -1282,7 +1282,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
       currentPluginProvider: 'plugin-a',
       enabledModules: ['mod-a'],
       modules: [{ id: 'mod-a', name: 'Module A', description: '' }],
-      plugins: [{ id: 'plugin-a', name: 'Plugin A', enabled: true }],
+      plugins: [{ id: 'plugin-a', name: 'Plugin A', enabled: true, version: '3.0' }],
     }
     const revision = await importDatabase(database)
 

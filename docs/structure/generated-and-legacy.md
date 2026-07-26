@@ -110,8 +110,8 @@ Do not remove these just because the name sounds old:
 - Browser plugin runtime remains in `src/ts/plugins/`; server command routes
   store plugin records and plugin storage but do not execute plugin code.
 - Server Lua scripting executes during prompt assembly in
-  `server/fastify/src/prompt/luaRuntime.ts`. Plugin V2 code execution remains
-  unsupported on the server.
+  `server/fastify/src/prompt/luaRuntime.ts`. Plugin V2-series import,
+  persistence, and browser execution are unsupported.
 
 `data/db.json` is also a legacy name now. If present, `ensureDbJsonImported()`
 imports a valid snapshot in one transaction, checkpoints SQLite, then renames

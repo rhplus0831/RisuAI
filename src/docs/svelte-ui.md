@@ -70,7 +70,7 @@ translator-preset exchange entrypoints are mapped in
 
 Global overlays mount after the main branch. The common blockers are
 `AlertComp`, Realm popup/frame, preset/persona lists, bookmarks, Hypa V3 modal
-and progress, save popup icon, plugin alert modal, popup list, EasyPanel,
+and progress, save popup icon, popup list, EasyPanel,
 popup editor, loadout modal, Iris modal, and custom sidebar config.
 The saved-toggle management dialog is also app-hosted through
 `src/lib/SideBars/ChatGenerationTogglePresetDialog.svelte`.

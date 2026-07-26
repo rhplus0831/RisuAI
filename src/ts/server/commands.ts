@@ -707,7 +707,7 @@ export type PluginSnapshot = Record<string, unknown> & {
   realArg?: Record<string, string | number>
   customLink?: Array<{ link: string; hoverText?: string }>
   argMeta?: Record<string, Record<string, string>>
-  version?: 1 | 2 | '2.1' | '3.0'
+  version?: '3.0'
   displayName?: string
   versionOfPlugin?: string
   updateURL?: string

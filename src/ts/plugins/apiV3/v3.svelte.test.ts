@@ -122,7 +122,6 @@ vi.mock('src/ts/stores.svelte', () => ({
   additionalSettingsMenu: [],
   bodyIntercepterStore: [],
   hotReloading: makeStore(false),
-  pluginAlertModalStore: makeStore(null),
   selectedCharID: makeStore('char-a'),
 }))
 
@@ -133,7 +132,6 @@ vi.mock('../../stores.svelte', () => ({
   additionalSettingsMenu: [],
   bodyIntercepterStore: [],
   hotReloading: makeStore(false),
-  pluginAlertModalStore: makeStore(null),
   selectedCharID: makeStore('char-a'),
 }))
 

@@ -60,7 +60,7 @@ function seedDatabase(): Record<string, unknown> {
     hypaV3Presets: [{ name: 'hypa-0' }],
     botPresets: [{ name: 'preset-0' }, { name: 'preset-1' }],
     modules: [{ id: 'mod-a', name: 'Module A' }],
-    plugins: [{ name: 'plugin-a' }],
+    plugins: [{ name: 'plugin-a', version: '3.0' }],
     personas: [{ name: 'persona-a' }],
     loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
     loreBook: [

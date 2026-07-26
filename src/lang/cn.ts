@@ -1215,8 +1215,6 @@ export const languageChinese = {
   expandSidebar: '展开侧边栏',
   home: '主页',
   showSavingIcon: '显示保存图标',
-  pluginVersionWarn:
-    '这是插件的 {{plugin_version}} 版本。它与此版本的 Risuai 不兼容。请将插件更新到 {{required_version}} 版本。',
   imageTranslation: '图片翻译',
   banCharacterset: '字符集自动重新生成',
   realmDirectOpen: '在 RisuRealm 中直接打开角色',
@@ -1524,8 +1522,6 @@ export const languageChinese = {
     '插件 {} 正在请求通过 RisuAI 的公共互联网网络助手访问服务。此请求可能会将聊天或账户数据发送给第三方。该助手会阻止私有、本地、元数据和 RisuAI 服务目标。是否允许？',
   pluginUpdateSourceConsent:
     'RisuAI 将仅从插件 {{plugin}} 声明的以下 HTTPS 来源检查并下载更新：\n{{url}}\n此权限仅用于检查和下载更新，不会授予插件使用运行时网络助手的权限。是否继续？',
-  legacyRuntimeConsent:
-    '旧版插件 {} 正在请求以受信任代码的身份在 RisuAI 主页面中运行。它可以读取或修改聊天和账户数据，并访问公共、私有或本地网络服务。请仅允许您完全信任的插件。是否继续？',
   v3RuntimeConsent:
     '插件 {} 正在请求运行受信任的浏览器界面代码。它可以联系公共、私有、本地、元数据或 RisuAI 网络目标，并可通过绕过网络助手许可的浏览器 API 将聊天或账户数据发送到 RisuAI 之外。请仅运行您完全信任的插件。是否继续？',
   enableScrollToActiveChar: '启用滚动至当前角色',

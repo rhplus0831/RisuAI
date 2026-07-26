@@ -104,7 +104,7 @@ function persistExportableDatabase(dataDir: string): void {
         botPresets: [{ id: 'preset-a', name: 'Preset A' }],
         modules: [{ id: 'module-a', name: 'Module A' }],
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
-        plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+        plugins: [{ id: 'plugin-a', name: 'Plugin A', version: '3.0' }],
         pluginCustomStorage: { 'plugin-a:key': { assetId: ASSET_ID } },
       },
       assets: [{ id: ASSET_ID, ext: 'png', size: 12, contentType: 'image/png' }],

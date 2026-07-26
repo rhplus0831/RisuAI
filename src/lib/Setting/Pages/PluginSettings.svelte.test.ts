@@ -160,14 +160,13 @@ describe('PluginSettings', () => {
           realArg: {},
           customLink: [{ link: 'https://example.test/docs', hoverText: 'Plugin documentation' }],
           argMeta: {},
-          version: 2,
+          version: '3.0',
           enabled: true,
         },
       ],
     } as any)
     component = mount(PluginSettings, { target })
 
-    const warningButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.pluginV2Warning}"]`)
     const link = target.querySelector<HTMLAnchorElement>('a[aria-label="Plugin documentation"]')
     const enableButton = target.querySelector<HTMLButtonElement>(
       `button[aria-label="${language.enable}: Accessible Plugin"]`,
@@ -180,7 +179,6 @@ describe('PluginSettings', () => {
     )
     const developButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.pluginDevelopMode}"]`)
 
-    expect(warningButton?.type).toBe('button')
     expect(link?.href).toBe('https://example.test/docs')
     expect(enableButton?.type).toBe('button')
     expect(enableButton?.getAttribute('aria-pressed')).toBe('true')

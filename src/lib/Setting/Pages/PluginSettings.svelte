@@ -2,8 +2,7 @@
   import { onDestroy } from 'svelte'
   import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon, RefreshCwIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { alertConfirm, alertMd, alertSelect } from 'src/ts/alert'
-  import { TriangleAlert } from '@lucide/svelte'
+  import { alertConfirm, alertSelect } from 'src/ts/alert'
 
   import { hotReloading } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
@@ -396,19 +395,6 @@
           <span class="text-sm rounded bg-amber-700 ml-2 px-2 py-1 text-white"> Hot </span>
         {/if}
       </button>
-      {#if plugin.version === 2 || plugin.version === '2.1'}
-        <button
-          type="button"
-          aria-label={language.pluginV2Warning}
-          class="text-yellow-400 hover:gray-200 cursor-pointer"
-          onclick={(e) => {
-            e.stopPropagation()
-            alertMd(language.pluginV2Warning)
-          }}>
-          <TriangleAlert />
-        </button>
-      {/if}
-
       {#if plugin.customLink}
         {#each plugin.customLink as link}
           {#if typeof link.link === 'string' && (link.link.startsWith('http://') || link.link.startsWith('https://'))}
@@ -502,11 +488,7 @@
         {pluginMutationStatusText(plugin.name)}
       </span>
     {/if}
-    {#if plugin.version === 1}
-      <span class="text-draculared text-xs">
-        {language.pluginVersionWarn.replace('{{plugin_version}}', 'API V1').replace('{{required_version}}', 'API V3')}
-      </span>
-    {:else if Object.keys(plugin.arguments).filter((i) => !i.startsWith('hidden_')).length > 0 && isPluginExpanded(plugin.name)}
+    {#if Object.keys(plugin.arguments).filter((i) => !i.startsWith('hidden_')).length > 0 && isPluginExpanded(plugin.name)}
       <div id={pluginParamsId(plugin.name)} class="flex flex-col mt-2 bg-dark-900/50 p-3">
         {#each Object.keys(plugin.arguments) as arg}
           {#if !arg.startsWith('hidden_')}

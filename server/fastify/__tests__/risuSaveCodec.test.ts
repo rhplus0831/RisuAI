@@ -308,7 +308,7 @@ describe('server .risu fixture harness', () => {
         personaId: '',
       },
     ])
-    expect(decoded.database.plugins).toEqual([{ id: 'plugin-a', name: 'Plugin A' }])
+    expect(decoded.database.plugins).toEqual([{ id: 'plugin-a', name: 'Plugin A', version: '3.0' }])
     expect(decoded.database.pluginCustomStorage).toEqual({ 'plugin-a:key': { enabled: true } })
     expect(decoded.database.characterOrder).toEqual(['fixture-char'])
   })
@@ -721,7 +721,7 @@ describe('server .risu fixture harness', () => {
       botPresets: [{ id: 'preset-a', name: 'Preset A' }],
       modules: [{ id: 'module-a', name: 'Module A' }],
       loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
-      plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+      plugins: [{ id: 'plugin-a', name: 'Plugin A', version: '3.0' }],
       pluginCustomStorage: { 'plugin-a:key': { assetId } },
     }
     const db = openDatabase(dataDir)
@@ -766,7 +766,7 @@ describe('server .risu fixture harness', () => {
           botPresets: [{ id: 'preset-a', name: 'Preset A' }],
           modules: [{ id: 'module-a', name: 'Module A' }],
           loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
-          plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+          plugins: [{ id: 'plugin-a', name: 'Plugin A', version: '3.0' }],
           pluginCustomStorage: { 'plugin-a:key': { assetId } },
         },
         assets: [{ id: assetId, ext: 'webp', size: 44, contentType: 'image/webp' }],

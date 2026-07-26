@@ -212,9 +212,6 @@ vi.mock('./lib/Others/HypaV3Modal.svelte', async () => ({
 vi.mock('./lib/Others/HypaV3Progress.svelte', async () => ({
   default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
 }))
-vi.mock('./lib/Others/PluginAlertModal.svelte', async () => ({
-  default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
-}))
 vi.mock('./lib/UI/PopupList.svelte', async () => ({
   default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
 }))

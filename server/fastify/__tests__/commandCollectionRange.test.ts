@@ -129,6 +129,7 @@ function pluginRecord(name: string): Record<string, unknown> {
     realArg: {},
     customLink: [],
     argMeta: {},
+    version: '3.0',
     enabled: false,
   }
 }

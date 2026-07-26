@@ -1300,8 +1300,6 @@ const languageKoreanBase = {
     '플러그인 {} 이(가) RisuAI의 공개 인터넷 네트워크 도우미를 통한 접근을 요청합니다. 이 요청으로 채팅 또는 계정 데이터가 제3자에게 전송될 수 있습니다. 도우미는 사설, 로컬, 메타데이터 및 RisuAI 서비스 대상을 차단합니다. 허용하시겠습니까?',
   pluginUpdateSourceConsent:
     'RisuAI가 플러그인 {{plugin}}의 업데이트를 다음에 선언된 HTTPS 소스에서만 확인하고 다운로드합니다:\n{{url}}\n이 권한은 업데이트 확인 및 다운로드에만 사용되며 플러그인의 런타임 네트워크 도우미 접근을 허용하지 않습니다. 계속하시겠습니까?',
-  legacyRuntimeConsent:
-    '레거시 플러그인 {}이(가) RisuAI 기본 페이지에서 신뢰된 코드로 실행할 권한을 요청합니다. 이 플러그인은 채팅 및 계정 데이터를 읽거나 수정하고 공개, 사설 또는 로컬 네트워크 서비스에 접근할 수 있습니다. 완전히 신뢰하는 플러그인만 허용하세요. 계속하시겠습니까?',
   v3RuntimeConsent:
     '플러그인 {}이(가) 신뢰된 브라우저 UI 코드를 실행할 권한을 요청합니다. 공개, 사설, 로컬, 메타데이터 또는 RisuAI 네트워크 대상에 접속하고, 네트워크 도우미 동의를 우회하는 브라우저 API를 포함해 채팅 또는 계정 데이터를 RisuAI 외부로 보낼 수 있습니다. 완전히 신뢰하는 플러그인만 실행하세요. 계속하시겠습니까?',
   customFlags: '커스텀 플래그',
@@ -1323,8 +1321,6 @@ const languageKoreanBase = {
   expandSidebar: '사이드바 펼치기',
   home: '홈',
   showSavingIcon: '저장 아이콘 표시',
-  pluginVersionWarn:
-    '이 플러그인은 {{plugin_version}} 버전입니다. 이 버전의 Risuai와 호환되지 않습니다. 플러그인을 {{required_version}} 버전으로 업데이트하세요.',
   imageTranslation: '이미지 번역',
   banCharacterset: '문자 집합으로 자동 재생성',
   realmDirectOpen: 'RisuRealm 미리보기에서 바로 열기',
@@ -2252,8 +2248,6 @@ export const languageKorean = {
     '플러그인 {}이(가) 승인되지 않은 API 호출을 실행할 수 있는 제공자 접근 권한을 요청합니다. 허용하시겠습니까?',
   sendChatConsent:
     '플러그인 {}이(가) 사용자를 대신해 AI 응답을 생성하는 채팅 메시지 전송 권한을 요청합니다. 허용하시겠습니까?',
-  pluginV2Warning:
-    '플러그인 V2와 V2.1은 안전하지 않은 것으로 간주되며 향후 버전에서 작동이 중단됩니다. **이 버전의 플러그인을 사용하지 마세요.** 플러그인 개발자라면 가능한 한 빨리 V3로 업데이트하세요.',
   createFolderOnBranch: '분기 시 폴더 만들기',
   pluginProviderNotFound: '알 수 없는 플러그인이 감지되었습니다. 모델을 변경하거나 해당 플러그인을 활성화하세요.',
   enableRemoteSaving: '원격 저장 활성화',

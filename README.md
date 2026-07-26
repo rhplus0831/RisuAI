@@ -27,7 +27,7 @@ Not present in this fork:
 - Desktop and mobile (Tauri) builds — this is a web application only.
 - Browser-local-only storage mode.
 - Google Drive / account sync (the server's database is the single source of truth).
-- Plugin API 2.0 execution. Trusted API 2.1 compatibility plugins and Plugin V3 still run in the browser, while Lua scripting and modules remain supported extension paths.
+- Plugin API 2.0/2.1 execution. Only Plugin API 3.0 runs in the browser; Lua scripting and modules remain supported extension paths.
 - Some text-generation backends: NovelAI, NovelList, WebLLM, plugin-provided providers, and the modern Ooba API (the legacy Ooba API still works). Their models are shown as unsupported.
 
 ## Features
