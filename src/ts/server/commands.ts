@@ -6761,7 +6761,6 @@ function readTranslatorPresetPatchLocalEffect(
   if (
     !isUniqueStringArray(acknowledgedKeys) ||
     attemptedKeys.length === 0 ||
-    !isJsonValueEqual(attemptedKeys, [...acknowledgedKeys].sort()) ||
     attemptedKeys.some((key) => !allowedKeys.has(key) || !isJsonValue(input.attemptedPatch[key]))
   ) {
     return undefined
@@ -6773,6 +6772,26 @@ function readTranslatorPresetPatchLocalEffect(
     attemptedPreset.id !== input.presetId ||
     attemptedKeys.some((key) => !isJsonValueEqual(attemptedPreset[key], input.attemptedPatch[key]))
   ) {
+    return undefined
+  }
+
+  const attemptedKeySet = new Set(attemptedKeys)
+  const acknowledgedKeySet = new Set(acknowledgedKeys)
+  const extraAcknowledgedKeys = acknowledgedKeys.filter((key) => !attemptedKeySet.has(key))
+  const firstAttemptedStep = attemptedPreset.steps?.[0]
+  // The server canonicalizes a steps patch by adding its first-step legacy
+  // mirrors before issuing the key certificate. No other certificate expansion
+  // is implied by the attempted patch.
+  const hasOnlyImpliedStepMirrorKeys =
+    extraAcknowledgedKeys.length === 0 ||
+    (attemptedKeySet.has('steps') &&
+      firstAttemptedStep !== undefined &&
+      extraAcknowledgedKeys.every((key) => {
+        if (key === 'prompt') return attemptedPreset.prompt === firstAttemptedStep.prompt
+        if (key === 'maxResponse') return attemptedPreset.maxResponse === firstAttemptedStep.maxResponse
+        return false
+      }))
+  if (attemptedKeys.some((key) => !acknowledgedKeySet.has(key)) || !hasOnlyImpliedStepMirrorKeys) {
     return undefined
   }
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { character } from '../storage/database.svelte'
 import type { AgentPresetStepRecord } from '../agentPresetRecords'
+import type { TranslatorPresetStep } from '../translator/presets'
 import {
   clearPendingChatGenerationSettingsSave,
   registerPendingChatGenerationSettingsSave,
@@ -136,6 +137,21 @@ function canonicalAgentPresetStep(id: string, overrides: Partial<AgentPresetStep
     outputFormat: 'text',
     destination: 'promptOutput',
     failurePolicy: { mode: 'required' },
+    ...overrides,
+  }
+}
+
+function canonicalTranslatorPresetStep(
+  id: string,
+  overrides: Partial<TranslatorPresetStep> = {},
+): TranslatorPresetStep {
+  return {
+    id,
+    name: id,
+    enabled: true,
+    prompt: `${id} prompt`,
+    maxResponse: 100,
+    model: { mode: 'inheritTranslate' },
     ...overrides,
   }
 }
@@ -912,6 +928,106 @@ describe('resource-scoped database state', () => {
     expect(isSettingsGroupAcknowledgementTainted('language')).toBe(true)
   })
 
+  it('acknowledges a canonical translator pipeline steps PATCH and advances both revision fences', () => {
+    const steps = [
+      canonicalTranslatorPresetStep('translate', {
+        name: 'Translate',
+        prompt: 'Translate the input',
+        maxResponse: 256,
+        outputKey: 'translation',
+      }),
+      canonicalTranslatorPresetStep('polish', {
+        name: 'Polish',
+        prompt: 'Polish {{translation}}',
+        maxResponse: 128,
+        model: { mode: 'modelProfile', profileId: 'profile-polish' },
+      }),
+    ]
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        translatorPresets: [
+          {
+            id: 'translator-a',
+            name: 'Pipeline',
+            prompt: steps[0].prompt,
+            maxResponse: steps[0].maxResponse,
+            steps,
+          },
+        ],
+        translatorPresetId: 0,
+        translatorPrompt: steps[0].prompt,
+        translatorMaxResponse: steps[0].maxResponse,
+      } as never,
+      3,
+    )
+
+    expect(
+      applyTranslatorPresetPatchLocalEffect({
+        revision: 4,
+        presetId: 'translator-a',
+        attemptedPatch: { steps },
+        attemptedPreset: {
+          id: 'translator-a',
+          name: 'Pipeline',
+          prompt: steps[0].prompt,
+          maxResponse: steps[0].maxResponse,
+          steps,
+        },
+        selectedPresetId: 'translator-a',
+      }),
+    ).toBe(true)
+
+    expect(collectionsResourceState.revisions.translatorPresets).toBe(4)
+    expect(settingsResourceState.groupRevisions.language).toBe(4)
+  })
+
+  it.each([
+    ['a wrong field type', [canonicalTranslatorPresetStep('translate', { enabled: 'true' as never })]],
+    ['duplicate step ids', [canonicalTranslatorPresetStep('duplicate'), canonicalTranslatorPresetStep('duplicate')]],
+    ['an invalid output key', [canonicalTranslatorPresetStep('translate', { outputKey: 'invalid-output-key' })]],
+  ])('rejects translator preset PATCH local effects with %s', (_label, malformedSteps) => {
+    const residentSteps = [canonicalTranslatorPresetStep('resident')]
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        translatorPresets: [
+          {
+            id: 'translator-a',
+            name: 'Pipeline',
+            prompt: residentSteps[0].prompt,
+            maxResponse: residentSteps[0].maxResponse,
+            steps: residentSteps,
+          },
+        ],
+        translatorPresetId: 0,
+        translatorPrompt: residentSteps[0].prompt,
+        translatorMaxResponse: residentSteps[0].maxResponse,
+      } as never,
+      3,
+    )
+
+    expect(
+      applyTranslatorPresetPatchLocalEffect({
+        revision: 4,
+        presetId: 'translator-a',
+        attemptedPatch: { steps: malformedSteps },
+        attemptedPreset: {
+          id: 'translator-a',
+          name: 'Pipeline',
+          prompt: malformedSteps[0].prompt,
+          maxResponse: malformedSteps[0].maxResponse,
+          steps: malformedSteps,
+        },
+        selectedPresetId: 'translator-a',
+      }),
+    ).toBe(false)
+    expect(collectionsResourceState.revisions.translatorPresets).toBe(3)
+    expect(settingsResourceState.groupRevisions.language).toBeUndefined()
+  })
+
   it('rejects malformed, unready, or selection-ambiguous translator preset PATCH local effects', () => {
     replaceResourceDatabase(
       {
@@ -963,6 +1079,21 @@ describe('resource-scoped database state', () => {
     collectionsResourceState.values.translatorPresets = [
       { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
       { id: 'translator-a', name: 'Duplicate', prompt: 'duplicate', maxResponse: 100 },
+    ] as never
+    expect(applyTranslatorPresetPatchLocalEffect(baseEffect)).toBe(false)
+
+    collectionsResourceState.values.translatorPresets = [
+      {
+        id: 'translator-a',
+        name: 'A',
+        prompt: 'a prompt',
+        maxResponse: 100,
+        steps: [
+          canonicalTranslatorPresetStep('duplicate', { prompt: 'a prompt' }),
+          canonicalTranslatorPresetStep('duplicate'),
+        ],
+      },
+      { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
     ] as never
     expect(applyTranslatorPresetPatchLocalEffect(baseEffect)).toBe(false)
     expect(collectionsResourceState.revisions.translatorPresets).toBe(3)

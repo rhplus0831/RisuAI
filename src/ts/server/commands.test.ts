@@ -5030,6 +5030,124 @@ describe('server command API adapter', () => {
     expect(commandFetch.calls[0]?.body).not.toHaveProperty('optimisticAcknowledgement')
   })
 
+  it('accepts server-added legacy mirror keys for a steps-only translator preset PATCH acknowledgement', async () => {
+    const event = {
+      type: 'translatorPreset.updated',
+      revision: 3,
+      resource: 'translatorPreset',
+      id: 'translator-b',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      presetId: 'translator-b',
+      acknowledgedKeys: ['steps', 'prompt', 'maxResponse'],
+      selectedPresetId: 'translator-a',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const steps = [
+      {
+        id: 'step-a',
+        name: 'Renamed step',
+        enabled: true,
+        prompt: 'Translate the input',
+        maxResponse: 300,
+        model: { mode: 'inheritTranslate' as const },
+        outputKey: 'translation',
+      },
+    ]
+    const attemptedPreset = {
+      id: 'translator-b',
+      name: 'B',
+      prompt: steps[0].prompt,
+      maxResponse: steps[0].maxResponse,
+      steps,
+    }
+
+    await updateTranslatorPresetCommand({
+      baseRevision: 2,
+      presetId: 'translator-b',
+      patch: { steps },
+      optimisticAcknowledgement: {
+        collectionProjectionEpoch: 11,
+        languageSettingsProjectionEpoch: 17,
+        selectedPresetId: 'translator-a',
+        attemptedPreset,
+      },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'translatorPresetPatch',
+        presetId: 'translator-b',
+        collectionProjectionEpoch: 11,
+        languageSettingsProjectionEpoch: 17,
+        selectedPresetId: 'translator-a',
+        attemptedPatch: { steps },
+        attemptedPreset,
+      },
+    ])
+    expect(commandFetch.calls[0]?.body).toEqual({
+      baseRevision: 2,
+      patch: { steps },
+    })
+  })
+
+  it('rejects unrelated extra keys in a steps-only translator preset PATCH acknowledgement', async () => {
+    const event = {
+      type: 'translatorPreset.updated',
+      revision: 3,
+      resource: 'translatorPreset',
+      id: 'translator-b',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      presetId: 'translator-b',
+      acknowledgedKeys: ['steps', 'name'],
+      selectedPresetId: 'translator-a',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const steps = [
+      {
+        id: 'step-a',
+        name: 'Renamed step',
+        enabled: true,
+        prompt: 'Translate the input',
+        maxResponse: 300,
+        model: { mode: 'inheritTranslate' as const },
+      },
+    ]
+
+    await updateTranslatorPresetCommand({
+      baseRevision: 2,
+      presetId: 'translator-b',
+      patch: { steps },
+      optimisticAcknowledgement: {
+        collectionProjectionEpoch: 11,
+        languageSettingsProjectionEpoch: 17,
+        selectedPresetId: 'translator-a',
+        attemptedPreset: {
+          id: 'translator-b',
+          name: 'B',
+          prompt: steps[0].prompt,
+          maxResponse: steps[0].maxResponse,
+          steps,
+        },
+      },
+    })
+
+    expect(observedEffects).toEqual([])
+  })
+
   it('keeps malformed or contradictory translator preset PATCH receipts on authoritative reconciliation', async () => {
     const exactEvent = {
       type: 'translatorPreset.updated',
@@ -5049,6 +5167,16 @@ describe('server command API adapter', () => {
       },
     }
     const cases = [
+      {
+        body: {
+          revision: 3,
+          event: exactEvent,
+          presetId: 'translator-b',
+          acknowledgedKeys: [],
+          selectedPresetId: 'translator-a',
+        },
+        acknowledgement: exactAcknowledgement,
+      },
       {
         body: {
           revision: 3,

@@ -1,6 +1,11 @@
 import type { Database, character } from '../storage/database.svelte'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { normalizeAgentPresets, validateAgentPresetRecord } from '../agentPresetRecords'
+import {
+  isValidTranslatorPresetOutputKey,
+  TRANSLATOR_PRESET_MAX_STEPS,
+  type TranslatorPresetStep,
+} from '../translator/presets'
 import { changeLanguage } from '../../lang'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
 import { isCanonicalLoadoutCollection } from './loadoutCanonical'
@@ -1679,7 +1684,7 @@ export function applyPersonaMutationLocalEffect(payload: ServerPersonaMutationLo
  */
 export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorPresetPatchLocalEffectPayload): boolean {
   const attemptedKeys = isPlainRecord(payload.attemptedPatch) ? Object.keys(payload.attemptedPatch).sort() : []
-  const allowedKeys = new Set(['name', 'prompt', 'maxResponse'])
+  const allowedKeys = new Set(['name', 'prompt', 'maxResponse', 'steps'])
   if (
     !Number.isInteger(payload.revision) ||
     payload.revision < 0 ||
@@ -3030,26 +3035,85 @@ function isUniquePresetCollection(value: readonly unknown[]): boolean {
   return true
 }
 
-function isCanonicalTranslatorPresetRecord(value: unknown): value is {
+type CanonicalTranslatorPresetRecord = {
   id: string
   name: string
   prompt: string
   maxResponse: number
-} {
-  if (!isPlainRecord(value)) return false
-  return (
-    isJsonValueEqual(Object.keys(value).sort(), ['id', 'maxResponse', 'name', 'prompt']) &&
-    nonEmptyString(value.id) &&
-    typeof value.name === 'string' &&
-    typeof value.prompt === 'string' &&
-    typeof value.maxResponse === 'number' &&
-    Number.isFinite(value.maxResponse)
-  )
+  steps?: TranslatorPresetStep[]
 }
 
-function isCanonicalTranslatorPresetCollection(
-  value: readonly unknown[],
-): value is Array<{ id: string; name: string; prompt: string; maxResponse: number }> {
+function isCanonicalTranslatorPresetSteps(value: unknown): value is TranslatorPresetStep[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > TRANSLATOR_PRESET_MAX_STEPS) return false
+
+  const stepIds = new Set<string>()
+  const outputKeys = new Set<string>()
+  for (const candidate of value) {
+    if (!isPlainRecord(candidate)) return false
+    const expectedKeys =
+      candidate.outputKey === undefined
+        ? ['enabled', 'id', 'maxResponse', 'model', 'name', 'prompt']
+        : ['enabled', 'id', 'maxResponse', 'model', 'name', 'outputKey', 'prompt']
+    if (
+      !isJsonValueEqual(Object.keys(candidate).sort(), expectedKeys) ||
+      !nonEmptyString(candidate.id) ||
+      stepIds.has(candidate.id) ||
+      !nonEmptyString(candidate.name) ||
+      typeof candidate.enabled !== 'boolean' ||
+      typeof candidate.prompt !== 'string' ||
+      typeof candidate.maxResponse !== 'number' ||
+      !Number.isFinite(candidate.maxResponse) ||
+      !isPlainRecord(candidate.model)
+    ) {
+      return false
+    }
+    stepIds.add(candidate.id)
+
+    const model = candidate.model
+    if (
+      (model.mode === 'inheritTranslate' && !isJsonValueEqual(Object.keys(model), ['mode'])) ||
+      (model.mode === 'modelProfile' &&
+        (!isJsonValueEqual(Object.keys(model).sort(), ['mode', 'profileId']) || !nonEmptyString(model.profileId))) ||
+      (model.mode !== 'inheritTranslate' && model.mode !== 'modelProfile')
+    ) {
+      return false
+    }
+
+    if (candidate.outputKey !== undefined) {
+      if (
+        typeof candidate.outputKey !== 'string' ||
+        !isValidTranslatorPresetOutputKey(candidate.outputKey) ||
+        outputKeys.has(candidate.outputKey)
+      ) {
+        return false
+      }
+      outputKeys.add(candidate.outputKey)
+    }
+  }
+  return true
+}
+
+function isCanonicalTranslatorPresetRecord(value: unknown): value is CanonicalTranslatorPresetRecord {
+  if (!isPlainRecord(value) || !isJsonValue(value)) return false
+  const keys = Object.keys(value).sort()
+  if (
+    (!isJsonValueEqual(keys, ['id', 'maxResponse', 'name', 'prompt']) &&
+      !isJsonValueEqual(keys, ['id', 'maxResponse', 'name', 'prompt', 'steps'])) ||
+    !nonEmptyString(value.id) ||
+    typeof value.name !== 'string' ||
+    typeof value.prompt !== 'string' ||
+    typeof value.maxResponse !== 'number' ||
+    !Number.isFinite(value.maxResponse)
+  ) {
+    return false
+  }
+  if (!Object.prototype.hasOwnProperty.call(value, 'steps')) return true
+  if (!isCanonicalTranslatorPresetSteps(value.steps)) return false
+
+  return value.prompt === value.steps[0].prompt && value.maxResponse === value.steps[0].maxResponse
+}
+
+function isCanonicalTranslatorPresetCollection(value: readonly unknown[]): value is CanonicalTranslatorPresetRecord[] {
   return value.every(isCanonicalTranslatorPresetRecord) && isUniquePresetCollection(value)
 }
 
