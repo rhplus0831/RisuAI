@@ -9,6 +9,14 @@
     type LLMGatewayModelInfo,
   } from 'src/ts/model/llmgateway'
   import { FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS } from 'src/ts/model/modelProfileResolver'
+  import {
+    LLM_GATEWAY_REASONING_EFFORTS,
+    LLM_GATEWAY_SERVICE_TIERS,
+    LLM_GATEWAY_VERBOSITIES,
+    type LLMGatewayReasoningEffort,
+    type LLMGatewayServiceTier,
+    type LLMGatewayVerbosity,
+  } from 'src/ts/model/modelProfileRecords'
   import type { ProviderCredentialRecord, ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { AnthropicModels } from 'src/ts/model/providers/anthropic'
   import { GoogleModels } from 'src/ts/model/providers/google'
@@ -37,6 +45,9 @@
     baseUrl: string
     extraHeadersRows: KeyValueRow[]
     additionalParamRows: KeyValueRow[]
+    llmGatewayReasoningEffort: LLMGatewayReasoningEffort | ''
+    llmGatewayVerbosity: LLMGatewayVerbosity | ''
+    llmGatewayServiceTier: LLMGatewayServiceTier | ''
     ollamaRequestFormat: string
     ollamaModelSource: string
     ollamaThinkingMode: string
@@ -56,6 +67,9 @@
     baseUrl = $bindable(),
     extraHeadersRows = $bindable(),
     additionalParamRows = $bindable(),
+    llmGatewayReasoningEffort = $bindable(),
+    llmGatewayVerbosity = $bindable(),
+    llmGatewayServiceTier = $bindable(),
     ollamaRequestFormat = $bindable(),
     ollamaModelSource = $bindable(),
     ollamaThinkingMode = $bindable(),
@@ -217,6 +231,42 @@
             fullwidth
             bind:value={requestModel}
             placeholder={language.modelProfiles.requestModelPlaceholder} />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.llmGatewayReasoningEffort}</span>
+          <select
+            data-llm-gateway-reasoning-effort
+            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+            bind:value={llmGatewayReasoningEffort}>
+            <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
+            {#each LLM_GATEWAY_REASONING_EFFORTS as effort (effort)}
+              <option value={effort} class="bg-darkbg">{effort}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.llmGatewayVerbosity}</span>
+          <select
+            data-llm-gateway-verbosity
+            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+            bind:value={llmGatewayVerbosity}>
+            <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
+            {#each LLM_GATEWAY_VERBOSITIES as verbosity (verbosity)}
+              <option value={verbosity} class="bg-darkbg">{verbosity}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.llmGatewayServiceTier}</span>
+          <select
+            data-llm-gateway-service-tier
+            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+            bind:value={llmGatewayServiceTier}>
+            <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
+            {#each LLM_GATEWAY_SERVICE_TIERS as tier (tier)}
+              <option value={tier} class="bg-darkbg">{tier}</option>
+            {/each}
+          </select>
         </label>
       </div>
     {:else if providerId === 'anthropic'}

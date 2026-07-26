@@ -163,6 +163,7 @@ export interface ModelProfileProviderOptions {
     useSubscriptionEndpoint?: boolean
     subscriptionState?: string
   }
+  llmGateway?: NonNullable<ModelProfileRecordProviderOptions['llmGateway']>
   ollama?: {
     url?: string
     apiKey?: string
@@ -1339,6 +1340,7 @@ function resolveFirstClassProviderOptions(
         ...base,
         apiKey,
         baseUrl: LLM_GATEWAY_BASE_URL,
+        llmGateway: durableProviderOptions?.llmGateway ? { ...durableProviderOptions.llmGateway } : undefined,
       }
     case 'anthropic':
     case 'google':

@@ -251,6 +251,11 @@ describe('model profile records', () => {
               useSubscriptionEndpoint: true,
               subscriptionState: ' active ',
             },
+            llmGateway: {
+              reasoningEffort: 'max',
+              verbosity: 'high',
+              serviceTier: 'priority',
+            },
             ollama: {
               url: ' http://localhost:11434 ',
               requestFormat: LLMFormat.Anthropic,
@@ -309,6 +314,11 @@ describe('model profile records', () => {
             providerHint: 'nano-provider',
             useSubscriptionEndpoint: true,
             subscriptionState: 'active',
+          },
+          llmGateway: {
+            reasoningEffort: 'max',
+            verbosity: 'high',
+            serviceTier: 'priority',
           },
           ollama: {
             url: 'http://localhost:11434',
@@ -558,6 +568,30 @@ describe('model profile records', () => {
         },
       ]),
     ).toThrow('modelProfiles[0].providerOptions.nanogpt.useSubscriptionEndpoint must be a boolean when present')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { llmGateway: { reasoningEffort: 'extreme' } },
+        },
+      ]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.llmGateway.reasoningEffort must be one of none, minimal, low, medium, high, xhigh, max when present',
+    )
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { llmGateway: { serviceTier: 'turbo' } },
+        },
+      ]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.llmGateway.serviceTier must be one of auto, default, flex, priority when present',
+    )
 
     expect(() =>
       readModelProfiles([

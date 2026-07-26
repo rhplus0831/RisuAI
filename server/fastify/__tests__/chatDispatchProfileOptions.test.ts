@@ -1564,6 +1564,11 @@ describe('dispatchChatProvider profile providerOptions', () => {
             providerOptions: {
               credentialId: 'credential-gateway',
               baseUrl: 'https://attacker.example/v1',
+              llmGateway: {
+                reasoningEffort: 'max',
+                verbosity: 'high',
+                serviceTier: 'priority',
+              },
             },
           },
         ],
@@ -1578,6 +1583,9 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].url).toBe('https://api.llmgateway.io/v1/chat/completions')
     expect(captured[0].headers.authorization).toBe('Bearer sk-gateway')
     expect(captured[0].body.model).toBe('gpt-4o-mini')
+    expect(captured[0].body.reasoning_effort).toBe('max')
+    expect(captured[0].body.verbosity).toBe('high')
+    expect(captured[0].body.service_tier).toBe('priority')
   })
 
   it('uses first-class Debug Echo provider options as the echo payload', async () => {

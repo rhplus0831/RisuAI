@@ -18,6 +18,14 @@ export interface ModelProfileRecord {
   fallbacks?: ModelProfileRecordFallbackRef[]
 }
 
+export const LLM_GATEWAY_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+export const LLM_GATEWAY_VERBOSITIES = ['low', 'medium', 'high'] as const
+export const LLM_GATEWAY_SERVICE_TIERS = ['auto', 'default', 'flex', 'priority'] as const
+
+export type LLMGatewayReasoningEffort = (typeof LLM_GATEWAY_REASONING_EFFORTS)[number]
+export type LLMGatewayVerbosity = (typeof LLM_GATEWAY_VERBOSITIES)[number]
+export type LLMGatewayServiceTier = (typeof LLM_GATEWAY_SERVICE_TIERS)[number]
+
 export type ModelProfileRecordFallbackRef =
   | {
       mode: 'profile'
@@ -52,6 +60,11 @@ export interface ModelProfileRecordProviderOptions {
     providerHint?: string
     useSubscriptionEndpoint?: boolean
     subscriptionState?: string
+  }
+  llmGateway?: {
+    reasoningEffort?: LLMGatewayReasoningEffort
+    verbosity?: LLMGatewayVerbosity
+    serviceTier?: LLMGatewayServiceTier
   }
   ollama?: {
     url?: string
@@ -149,6 +162,7 @@ const MODEL_PROFILE_PROVIDER_OPTIONS_KEYS = new Set([
   'reverseProxy',
   'openrouter',
   'nanogpt',
+  'llmGateway',
   'ollama',
   'vertex',
   'customApi',
@@ -157,6 +171,7 @@ const MODEL_PROFILE_REVERSE_PROXY_KEYS = new Set(['autofillRequestUrl', 'oobaSys
 const MODEL_PROFILE_OPENROUTER_KEYS = new Set(['fallback', 'middleOut', 'provider'])
 const MODEL_PROFILE_OPENROUTER_PROVIDER_KEYS = new Set(['order', 'only', 'ignore'])
 const MODEL_PROFILE_NANOGPT_KEYS = new Set(['providerHint', 'useSubscriptionEndpoint', 'subscriptionState'])
+const MODEL_PROFILE_LLM_GATEWAY_KEYS = new Set(['reasoningEffort', 'verbosity', 'serviceTier'])
 const MODEL_PROFILE_OLLAMA_KEYS = new Set(['url', 'requestFormat', 'modelSource', 'thinkingMode'])
 const MODEL_PROFILE_VERTEX_KEYS = new Set(['projectId', 'region', 'clientEmail', 'privateKey'])
 const MODEL_PROFILE_CUSTOM_API_KEYS = new Set(['tokenizer', 'flags'])
@@ -204,6 +219,9 @@ const MODEL_ROLE_PROFILE_BINDING_KEYS = new Set(['mode', 'profileId'])
 const MODEL_ROLE_SET = new Set<string>(MODEL_ROLES)
 const LLM_FLAG_SET = new Set<number>(Object.values(LLMFlags))
 const LLM_TOKENIZER_SET = new Set<number>(Object.values(LLMTokenizer))
+const LLM_GATEWAY_REASONING_EFFORT_SET = new Set<string>(LLM_GATEWAY_REASONING_EFFORTS)
+const LLM_GATEWAY_VERBOSITY_SET = new Set<string>(LLM_GATEWAY_VERBOSITIES)
+const LLM_GATEWAY_SERVICE_TIER_SET = new Set<string>(LLM_GATEWAY_SERVICE_TIERS)
 
 export function createDefaultModelRoleProfiles(): ModelRoleProfileMap {
   return Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])) as ModelRoleProfileMap
@@ -438,6 +456,7 @@ export function normalizeModelProfileProviderOptions(value: unknown): ModelProfi
   const reverseProxy = normalizeReverseProxyOptions(value.reverseProxy)
   const openrouter = normalizeOpenrouterOptions(value.openrouter)
   const nanogpt = normalizeNanoGPTOptions(value.nanogpt)
+  const llmGateway = normalizeLLMGatewayOptions(value.llmGateway)
   const ollama = normalizeOllamaOptions(value.ollama)
   const vertex = normalizeVertexOptions(value.vertex)
   const customApi = normalizeCustomApiOptions(value.customApi)
@@ -449,6 +468,7 @@ export function normalizeModelProfileProviderOptions(value: unknown): ModelProfi
   if (reverseProxy) options.reverseProxy = reverseProxy
   if (openrouter) options.openrouter = openrouter
   if (nanogpt) options.nanogpt = nanogpt
+  if (llmGateway) options.llmGateway = llmGateway
   if (ollama) options.ollama = ollama
   if (vertex) options.vertex = vertex
   if (customApi) options.customApi = customApi
@@ -493,6 +513,9 @@ export function readModelProfileProviderOptions(
   }
   if (Object.prototype.hasOwnProperty.call(value, 'nanogpt')) {
     readNanoGPTOptions(value.nanogpt, `${path}.nanogpt`)
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'llmGateway')) {
+    readLLMGatewayOptions(value.llmGateway, `${path}.llmGateway`)
   }
   if (Object.prototype.hasOwnProperty.call(value, 'ollama')) {
     readOllamaOptions(value.ollama, `${path}.ollama`)
@@ -613,6 +636,47 @@ function normalizeNanoGPTOptions(
   }
   if (subscriptionState) options.subscriptionState = subscriptionState
   return objectHasKeys(options) ? options : undefined
+}
+
+function normalizeLLMGatewayOptions(
+  value: unknown,
+): NonNullable<ModelProfileRecordProviderOptions['llmGateway']> | undefined {
+  if (!isRecord(value)) return undefined
+  const options: NonNullable<ModelProfileRecordProviderOptions['llmGateway']> = {}
+  if (typeof value.reasoningEffort === 'string' && LLM_GATEWAY_REASONING_EFFORT_SET.has(value.reasoningEffort)) {
+    options.reasoningEffort = value.reasoningEffort as LLMGatewayReasoningEffort
+  }
+  if (typeof value.verbosity === 'string' && LLM_GATEWAY_VERBOSITY_SET.has(value.verbosity)) {
+    options.verbosity = value.verbosity as LLMGatewayVerbosity
+  }
+  if (typeof value.serviceTier === 'string' && LLM_GATEWAY_SERVICE_TIER_SET.has(value.serviceTier)) {
+    options.serviceTier = value.serviceTier as LLMGatewayServiceTier
+  }
+  return objectHasKeys(options) ? options : undefined
+}
+
+function readLLMGatewayOptions(
+  value: unknown,
+  path: string,
+): NonNullable<ModelProfileRecordProviderOptions['llmGateway']> | undefined {
+  if (!isRecord(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
+  }
+  for (const key of Object.keys(value)) {
+    if (!MODEL_PROFILE_LLM_GATEWAY_KEYS.has(key)) {
+      throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
+    }
+  }
+  readOptionalEnum(
+    value,
+    'reasoningEffort',
+    LLM_GATEWAY_REASONING_EFFORT_SET,
+    `${path}.reasoningEffort`,
+    LLM_GATEWAY_REASONING_EFFORTS,
+  )
+  readOptionalEnum(value, 'verbosity', LLM_GATEWAY_VERBOSITY_SET, `${path}.verbosity`, LLM_GATEWAY_VERBOSITIES)
+  readOptionalEnum(value, 'serviceTier', LLM_GATEWAY_SERVICE_TIER_SET, `${path}.serviceTier`, LLM_GATEWAY_SERVICE_TIERS)
+  return normalizeLLMGatewayOptions(value)
 }
 
 function readNanoGPTOptions(
@@ -848,6 +912,19 @@ function normalizeModelRoleProfileBinding(value: unknown, role: ModelRole): Mode
 function readOptionalString(value: Record<string, unknown>, key: string, path: string): void {
   if (Object.prototype.hasOwnProperty.call(value, key) && typeof value[key] !== 'string') {
     throw new ModelProfileRecordValidationError(`${path} must be a string when present`)
+  }
+}
+
+function readOptionalEnum(
+  value: Record<string, unknown>,
+  key: string,
+  allowed: ReadonlySet<string>,
+  path: string,
+  values: readonly string[],
+): void {
+  if (!Object.prototype.hasOwnProperty.call(value, key)) return
+  if (typeof value[key] !== 'string' || !allowed.has(value[key])) {
+    throw new ModelProfileRecordValidationError(`${path} must be one of ${values.join(', ')} when present`)
   }
 }
 

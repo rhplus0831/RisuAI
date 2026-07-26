@@ -46,6 +46,9 @@ function props(providerId: string) {
     baseUrl: '',
     extraHeadersRows: [],
     additionalParamRows: [],
+    llmGatewayReasoningEffort: '' as const,
+    llmGatewayVerbosity: '' as const,
+    llmGatewayServiceTier: '' as const,
     ollamaRequestFormat: '',
     ollamaModelSource: '',
     ollamaThinkingMode: '',
@@ -149,5 +152,26 @@ describe('ModelProviderPanel credential selection', () => {
       (input) => input.value === 'gpt-4o-mini',
     )
     expect(modelInput).toBeDefined()
+  })
+
+  it('offers every documented LLM Gateway request parameter value', async () => {
+    component = mount(ModelProviderPanel, { target, props: props('llmgateway') })
+    await tick()
+
+    const values = (selector: string): string[] =>
+      Array.from(target.querySelectorAll<HTMLOptionElement>(`${selector} option`)).map((option) => option.value)
+
+    expect(values('[data-llm-gateway-reasoning-effort]')).toEqual([
+      '',
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+    expect(values('[data-llm-gateway-verbosity]')).toEqual(['', 'low', 'medium', 'high'])
+    expect(values('[data-llm-gateway-service-tier]')).toEqual(['', 'auto', 'default', 'flex', 'priority'])
   })
 })

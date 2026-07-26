@@ -1070,6 +1070,8 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
   })
   const maxTokens = outputTokens ?? db.maxResponse
   const parameters = resolveDispatchParameters(db, profile)
+  const isLLMGatewayProfile = profile.status.providerId === 'llmgateway'
+  const llmGatewayOptions = isLLMGatewayProfile ? profile.providerOptions.llmGateway : undefined
   const temperature = parameters.temperature
   const supportsMultiGeneration = provider === 'openai' || provider === 'openrouter' || provider === 'nanogpt'
   const generationCount =
@@ -1131,8 +1133,9 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       repetitionPenalty: parameters.repetitionPenalty,
       frequencyPenalty: parameters.frequencyPenalty,
       presencePenalty: parameters.presencePenalty,
-      reasoningEffort: parameters.reasoningEffort,
-      verbosity: parameters.verbosity,
+      reasoningEffort: isLLMGatewayProfile ? llmGatewayOptions?.reasoningEffort : parameters.reasoningEffort,
+      verbosity: isLLMGatewayProfile ? llmGatewayOptions?.verbosity : parameters.verbosity,
+      serviceTier: llmGatewayOptions?.serviceTier,
       seed: db.generationSeed,
       responseFormat: openAIChatResponseFormat(db),
       prediction: db.OAIPrediction,

@@ -1881,6 +1881,11 @@ describe('resolveModelProfile provider/runtime normalization', () => {
             providerOptions: {
               credentialId: 'credential-gateway',
               baseUrl: 'https://attacker.example/v1',
+              llmGateway: {
+                reasoningEffort: 'max',
+                verbosity: 'high',
+                serviceTier: 'priority',
+              },
             },
           },
         ],
@@ -1899,6 +1904,11 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       apiKey: 'gateway-key',
       baseUrl: 'https://api.llmgateway.io/v1',
       requestModel: 'anthropic/claude-sonnet-4.5',
+      llmGateway: {
+        reasoningEffort: 'max',
+        verbosity: 'high',
+        serviceTier: 'priority',
+      },
     })
     expect(profile.modelInfo.flags).toContain(LLMFlags.hasImageInput)
   })

@@ -148,7 +148,12 @@ debugging.
 LLM Gateway profiles use the fixed managed API base URL and a reusable API-key
 credential. Their model picker loads the public, bounded `GET /v1/models`
 catalog through the server-owned provider-operation boundary, while generation
-uses the OpenAI-compatible Chat Completions transport.
+uses the OpenAI-compatible Chat Completions transport. Profile-local LLM Gateway
+options expose the documented `reasoning_effort` (`none` through `max`),
+`verbosity` (`low`, `medium`, or `high`), and `service_tier` (`auto`, `default`,
+`flex`, or `priority`) request enums. They remain unset unless explicitly chosen
+so models that do not support a given option are not sent an incompatible
+default.
 
 ## Durable Profile Data Flow
 

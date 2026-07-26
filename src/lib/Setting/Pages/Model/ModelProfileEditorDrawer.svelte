@@ -11,7 +11,13 @@
     type FirstClassModelProfileProviderId,
   } from 'src/ts/model/modelProfileResolver'
   import {
+    LLM_GATEWAY_REASONING_EFFORTS,
+    LLM_GATEWAY_SERVICE_TIERS,
+    LLM_GATEWAY_VERBOSITIES,
     normalizeModelProfileRuntimeOptions,
+    type LLMGatewayReasoningEffort,
+    type LLMGatewayServiceTier,
+    type LLMGatewayVerbosity,
     type ModelProfileRecord,
     type ModelProfileRecordFallbackRef,
     type ModelProfileRecordProviderOptions,
@@ -72,6 +78,15 @@
   let baseUrl = $state(initialProfile?.providerOptions?.baseUrl ?? '')
   let extraHeadersRows = $state<KeyValueRow[]>(recordToRows(initialProfile?.providerOptions?.extraHeaders))
   let additionalParamRows = $state<KeyValueRow[]>(paramsToRows(initialProfile?.providerOptions?.additionalParams))
+  let llmGatewayReasoningEffort = $state<LLMGatewayReasoningEffort | ''>(
+    initialProfile?.providerOptions?.llmGateway?.reasoningEffort ?? '',
+  )
+  let llmGatewayVerbosity = $state<LLMGatewayVerbosity | ''>(
+    initialProfile?.providerOptions?.llmGateway?.verbosity ?? '',
+  )
+  let llmGatewayServiceTier = $state<LLMGatewayServiceTier | ''>(
+    initialProfile?.providerOptions?.llmGateway?.serviceTier ?? '',
+  )
   let ollamaRequestFormat = $state(
     String(initialProfile?.providerOptions?.ollama?.requestFormat ?? LLMFormat.OpenAICompatible),
   )
@@ -209,6 +224,24 @@
       if (headers) options.extraHeaders = headers
       if (params) options.additionalParams = params
       if (Object.keys(customApi).length > 0) options.customApi = customApi
+      return removeEmptyProviderOptions(options)
+    }
+
+    if (nextProviderId === 'llmgateway') {
+      const options: ModelProfileRecordProviderOptions = {}
+      const llmGateway: NonNullable<ModelProfileRecordProviderOptions['llmGateway']> = {}
+      if (credentialId.trim()) options.credentialId = credentialId.trim()
+      if (requestModel.trim()) options.requestModel = requestModel.trim()
+      if (LLM_GATEWAY_REASONING_EFFORTS.includes(llmGatewayReasoningEffort as LLMGatewayReasoningEffort)) {
+        llmGateway.reasoningEffort = llmGatewayReasoningEffort as LLMGatewayReasoningEffort
+      }
+      if (LLM_GATEWAY_VERBOSITIES.includes(llmGatewayVerbosity as LLMGatewayVerbosity)) {
+        llmGateway.verbosity = llmGatewayVerbosity as LLMGatewayVerbosity
+      }
+      if (LLM_GATEWAY_SERVICE_TIERS.includes(llmGatewayServiceTier as LLMGatewayServiceTier)) {
+        llmGateway.serviceTier = llmGatewayServiceTier as LLMGatewayServiceTier
+      }
+      if (Object.keys(llmGateway).length > 0) options.llmGateway = llmGateway
       return removeEmptyProviderOptions(options)
     }
 
@@ -442,6 +475,9 @@
           bind:baseUrl
           bind:extraHeadersRows
           bind:additionalParamRows
+          bind:llmGatewayReasoningEffort
+          bind:llmGatewayVerbosity
+          bind:llmGatewayServiceTier
           bind:ollamaRequestFormat
           bind:ollamaModelSource
           bind:ollamaThinkingMode
