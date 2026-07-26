@@ -4,6 +4,7 @@ import { get } from 'svelte/store'
 const routerMocks = vi.hoisted(() => ({
   changeChar: vi.fn<(...args: any[]) => Promise<void> | void>(),
   changeChatTo: vi.fn(),
+  changeUserPersonaWithOutcome: vi.fn(),
   findCharacterIndexbyId: vi.fn<(characterId: string) => number>(() => -1),
   openPlaygroundChat: vi.fn(),
 }))
@@ -19,6 +20,10 @@ vi.mock('./globalApi.svelte', () => ({
 vi.mock('./playground', () => ({
   PLAYGROUND_CHARACTER_ID: 'playground',
   openPlaygroundChat: routerMocks.openPlaygroundChat,
+}))
+
+vi.mock('./persona', () => ({
+  changeUserPersonaWithOutcome: routerMocks.changeUserPersonaWithOutcome,
 }))
 
 vi.mock('./process/index.svelte', async () => {
@@ -70,6 +75,7 @@ async function importRouterAt(path: string) {
 beforeEach(() => {
   routerMocks.changeChar.mockReset()
   routerMocks.changeChatTo.mockReset()
+  routerMocks.changeUserPersonaWithOutcome.mockReset()
   routerMocks.findCharacterIndexbyId.mockReset()
   routerMocks.findCharacterIndexbyId.mockReturnValue(-1)
   routerMocks.openPlaygroundChat.mockReset()
@@ -175,6 +181,76 @@ describe('router initial application', () => {
 
     expect(get(settingsOpen)).toBe(true)
     expect(get(SettingsMenuIndex)).toBe(20)
+  })
+
+  it('routes a specific persona id and selects it through the persona command path', async () => {
+    const router = await importRouterAt('/settings/persona/persona-b')
+    const stores = await import('./stores.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      selectedPersona: 0,
+      personas: [
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' },
+        { id: 'persona-b', name: 'B', icon: '', personaPrompt: '', note: '' },
+      ],
+    } as any)
+    routerMocks.changeUserPersonaWithOutcome.mockResolvedValue('accepted')
+
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/persona/persona-b',
+      section: 'persona',
+      index: 12,
+      personaId: 'persona-b',
+    })
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(routerMocks.changeUserPersonaWithOutcome).toHaveBeenCalledWith(1)
+    expect(get(stores.settingsOpen)).toBe(true)
+    expect(get(stores.SettingsMenuIndex)).toBe(12)
+  })
+
+  it('serializes a selected persona id in the settings route', async () => {
+    const router = await importRouterAt('/settings/persona')
+
+    router.syncRouteFromState({
+      currentRouteKind: 'settings',
+      settingsOpen: true,
+      settingsMenuIndex: 12,
+      selectedCharID: -1,
+      playgroundStore: 0,
+      personaId: 'persona / one',
+    })
+
+    expect(window.location.pathname).toBe('/settings/persona/persona%20%2F%20one')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      index: 12,
+      personaId: 'persona / one',
+    })
+  })
+
+  it('replaces an unknown persona route with the current valid selection', async () => {
+    const router = await importRouterAt('/settings/persona/missing-persona')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      selectedPersona: 0,
+      personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+    } as any)
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/settings/persona/persona-a')
+    expect(routerMocks.changeUserPersonaWithOutcome).not.toHaveBeenCalled()
+    expect(pushState).not.toHaveBeenCalled()
+    expect(replaceState).toHaveBeenCalledOnce()
+    replaceState.mockRestore()
+    pushState.mockRestore()
   })
 
   it('does not route the removed context agent settings slug', async () => {
@@ -358,6 +434,25 @@ describe('router settings history', () => {
     })
     pushState.mockRestore()
     replaceState.mockRestore()
+  })
+
+  it('replaces the current settings entry when navigating between personas', async () => {
+    const router = await importRouterAt('/settings/persona/persona-a')
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+
+    router.navigateToPersonaSettings('persona-b')
+
+    expect(window.location.pathname).toBe('/settings/persona/persona-b')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      index: 12,
+      personaId: 'persona-b',
+    })
+    expect(pushState).not.toHaveBeenCalled()
+    expect(replaceState).toHaveBeenCalledOnce()
+    replaceState.mockRestore()
+    pushState.mockRestore()
   })
 })
 

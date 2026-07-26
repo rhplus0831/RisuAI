@@ -3,6 +3,7 @@ import { get, writable } from 'svelte/store'
 import { changeChar } from './characters'
 import { changeChatTo } from './globalApi.svelte'
 import { openPlaygroundChat, PLAYGROUND_CHARACTER_ID } from './playground'
+import { changeUserPersonaWithOutcome } from './persona'
 import { activeGenerationTarget, doingChat } from './process/index.svelte'
 import { findCharacterIndexbyId } from './characterState'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
@@ -20,7 +21,7 @@ import {
 
 export type AppRoute =
   | { kind: 'home'; path: string }
-  | { kind: 'settings'; path: string; section: string; index: number }
+  | { kind: 'settings'; path: string; section: string; index: number; personaId?: string }
   | { kind: 'playground'; path: string; tool: string; index: number }
   | { kind: 'inlay'; path: string }
   | { kind: 'grid'; path: string }
@@ -33,6 +34,7 @@ interface StateRouteInput {
   settingsMenuIndex: number
   selectedCharID: number
   playgroundStore: number
+  personaId?: string
   characterId?: string
   chatId?: string
 }
@@ -410,6 +412,9 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
         SettingsMenuIndex.set(route.index)
         PlaygroundStore.set(0)
         OpenRealmStore.set(false)
+        if (route.index === 12 && route.personaId) {
+          await selectRoutedPersona(route.personaId, isFreshRouteApplication)
+        }
         break
       }
       case 'grid': {
@@ -505,6 +510,7 @@ export function parseRoute(pathname: string): AppRoute {
       path,
       section,
       index: index ?? DEFAULT_SETTINGS_INDEX,
+      ...(section === 'persona' && parts[2] ? { personaId: decodeSegment(parts[2]) } : {}),
     }
   }
 
@@ -553,9 +559,21 @@ export function characterRoutePath(characterId: string, chatId?: string): string
   return chatId ? `/character/${encodedCharacterId}/${encodeURIComponent(chatId)}` : `/character/${encodedCharacterId}`
 }
 
+export function personaSettingsRoutePath(personaId?: string): string {
+  return typeof personaId === 'string' && personaId.trim()
+    ? `/settings/persona/${encodeURIComponent(personaId)}`
+    : '/settings/persona'
+}
+
+export function navigateToPersonaSettings(personaId: string): void {
+  if (!personaId.trim()) return
+  navigate(personaSettingsRoutePath(personaId), { replace: true })
+}
+
 function routePathFromState(input: StateRouteInput): string {
   if (input.settingsOpen) {
     if (input.settingsMenuIndex < 0) return '/settings'
+    if (input.settingsMenuIndex === 12) return personaSettingsRoutePath(input.personaId)
     return `/settings/${settingSlugByIndex.get(input.settingsMenuIndex) ?? 'model'}`
   }
 
@@ -577,6 +595,43 @@ function routePathFromState(input: StateRouteInput): string {
   }
 
   return '/'
+}
+
+async function selectRoutedPersona(personaId: string, isFresh: () => boolean): Promise<void> {
+  const index = uniquePersonaIndex(personaId)
+  if (index < 0) {
+    canonicalizePersonaSettingsRoute(isFresh)
+    return
+  }
+  if (getDatabase().selectedPersona === index) return
+
+  const persistence = changeUserPersonaWithOutcome(index)
+  if (!persistence) {
+    canonicalizePersonaSettingsRoute(isFresh)
+    return
+  }
+
+  const status = await persistence
+  if (status === 'failed') canonicalizePersonaSettingsRoute(isFresh)
+}
+
+function uniquePersonaIndex(personaId: string): number {
+  let index = -1
+  for (const [candidateIndex, persona] of (getDatabase().personas ?? []).entries()) {
+    if (persona?.id !== personaId) continue
+    if (index !== -1) return -1
+    index = candidateIndex
+  }
+  return index
+}
+
+function canonicalizePersonaSettingsRoute(isFresh: () => boolean): void {
+  if (!isFresh()) return
+  const selectedPersona = getDatabase().personas?.[getDatabase().selectedPersona]
+  const selectedId = typeof selectedPersona?.id === 'string' ? selectedPersona.id : undefined
+  const path =
+    selectedId && uniquePersonaIndex(selectedId) >= 0 ? personaSettingsRoutePath(selectedId) : '/settings/persona'
+  commitPath(path, { replace: true, stateDriven: true, historyState: window.history.state })
 }
 
 async function openCharacterRoute(
@@ -842,7 +897,7 @@ function numericPlaygroundIndex(slug: string): number | undefined {
 function routeKey(route: AppRoute): string {
   switch (route.kind) {
     case 'settings':
-      return `${route.kind}:${route.index}`
+      return `${route.kind}:${route.index}:${route.personaId ?? ''}`
     case 'playground':
       return `${route.kind}:${route.index}`
     case 'character':

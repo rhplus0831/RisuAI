@@ -112,7 +112,9 @@
     const selectedCharacterIndex = $selectedCharID
     const playgroundIndex = $PlaygroundStore
     const chatIsOpen = routeChatIsOpen
-    const character = getDatabase().characters?.[selectedCharacterIndex]
+    const database = getDatabase()
+    const character = database.characters?.[selectedCharacterIndex]
+    const persona = database.personas?.[database.selectedPersona]
 
     if (isApplyingRouteToStores() || hasPendingRouteApplication()) return
     syncRouteFromState({
@@ -121,6 +123,7 @@
       settingsMenuIndex,
       selectedCharID: selectedCharacterIndex,
       playgroundStore: playgroundIndex,
+      personaId: typeof persona?.id === 'string' ? persona.id : undefined,
       characterId: character?.chaId,
       chatId: chatIsOpen ? character?.chats?.[character.chatPage]?.id : undefined,
     })

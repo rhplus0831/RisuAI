@@ -36,6 +36,7 @@
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { getServerResourceApplyEpoch } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
+  import { navigateToPersonaSettings } from 'src/ts/router'
 
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
@@ -163,7 +164,8 @@
         disabled={structuralMutationPending}
         data-risu-idx={i}
         onclick={async () => {
-          await runPersonaStructuralMutation(() => changeUserPersonaWithOutcome(i))
+          const status = await runPersonaStructuralMutation(() => changeUserPersonaWithOutcome(i))
+          if (status && status !== 'failed' && persona.id) navigateToPersonaSettings(persona.id)
         }}>
         {#if persona.icon === ''}
           <div

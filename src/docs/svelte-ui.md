@@ -102,6 +102,7 @@ the URL. Route changes are not file-system based.
 | `/`                                 | Home, `selectedCharID = -1`, settings/playground closed.                                  |
 | `/settings`                         | Opens settings; split layout auto-selects model settings, mobile shows the settings list. |
 | `/settings/:section`                | Opens settings and maps section slugs to `SettingsMenuIndex`.                             |
+| `/settings/persona/:personaId`      | Opens persona settings and selects the uniquely matching persona.                         |
 | `/grid` and `/characters`           | Opens the character grid.                                                                 |
 | `/character/:chaId/:chatId?`        | Selects the character and optionally selects a chat.                                      |
 | `/characters/:chaId/chats/:chatId?` | Legacy character/chat route shape.                                                        |
