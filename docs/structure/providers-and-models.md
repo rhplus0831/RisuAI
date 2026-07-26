@@ -18,7 +18,7 @@ that decides whether a request shape can run on the server.
 | `src/ts/model/modelGrid.ts`                                                                     | Model-grid normalization and filtering helpers for picker UI.                                                                                         |
 | `src/ts/model/keyedRequestCache.ts`                                                             | In-flight dedupe and bounded successful-result caching keyed by complete provider request context.                                                    |
 | `src/ts/model/providers/`                                                                       | Provider-specific static model lists.                                                                                                                 |
-| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers, including keyed OpenRouter/NanoGPT/Ollama Cloud request reuse.                                                      |
+| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `llmgateway.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers, including keyed OpenRouter/NanoGPT/LLM Gateway/Ollama Cloud request reuse.                                          |
 | `src/lib/UI/ModelList.svelte`, `ModelGrid.svelte`, `NanoGPT*`, `OpenrouterProviderList.svelte`  | Model-picker UI.                                                                                                                                      |
 
 `Database.modelProfiles` stores durable reusable profile records, and
@@ -46,9 +46,9 @@ allowlist; it does not import the full browser UI registry.
 ## Server-Owned Provider And Media Operations
 
 Dynamic NanoGPT account/model fetching lives in `src/ts/model/nanogpt.ts`.
-OpenRouter, NanoGPT, Ollama, and Horde helpers carry richer browser catalog
+OpenRouter, NanoGPT, LLM Gateway, Ollama, and Horde helpers carry richer browser catalog
 metadata for picker/filter UI than the server needs for dispatch. NanoGPT,
-OpenRouter, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish
+OpenRouter, LLM Gateway, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish
 Speech catalog/account calls use the fixed allowlist in
 `server/fastify/src/providerOperations.ts` through
 `src/ts/server/providerOperations.ts`. The same boundary owns Google token
@@ -65,7 +65,7 @@ deadlines, error details, and disconnect cancellation are bounded.
 
 | Route / browser adapter                                                             | Fixed boundary                                                                                                                                                              | Result / rate limit           |
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `POST /api/v1/provider-operations` / `src/ts/server/providerOperations.ts`          | NanoGPT account/catalog operations; OpenRouter, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish catalogs; Google token counting; DeepL/DeepLX translation. | JSON, `60/min`                |
+| `POST /api/v1/provider-operations` / `src/ts/server/providerOperations.ts`          | NanoGPT account/catalog operations; OpenRouter, LLM Gateway, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish catalogs; Google token counting; DeepL/DeepLX translation. | JSON, `60/min`                |
 | `POST /api/v1/embedding-operations` / `src/ts/server/embeddingOperations.ts`        | Remote `ada`, OpenAI v3, Voyage contextual, or custom embeddings. Stored secrets cannot be paired with a changed one-shot custom endpoint.                                  | JSON vectors, `60/min`        |
 | `POST /api/v1/tts/synthesize` / `src/ts/server/tts.ts`                              | ElevenLabs, Fish, Hugging Face, NovelAI, or OpenAI-compatible synthesis. Stored-character OpenAI credentials, endpoint, and options resolve together by character id.       | Audio bytes, `60/min`         |
 | `POST /api/v1/image-generation` / `src/ts/server/imageGeneration.ts`                | NovelAI, DALL-E, Stability, Fal, Imagen, OpenAI-compatible, WaveSpeed, or Kei generation with provider-specific request validation.                                         | JPEG/PNG/WebP bytes, `10/min` |
@@ -89,7 +89,7 @@ by their full credential/model context and share an in-flight promise. Public
 and explicit-draft contexts briefly reuse successful results; failed requests
 are not retained. Opaque stored/profile credential references bypass completed
 result reuse so a server-side key rotation cannot be hidden behind an unchanged
-masked placeholder. OpenRouter and NanoGPT catalogs use a 30-second TTL where
+masked placeholder. OpenRouter, NanoGPT, and the public LLM Gateway catalog use a 30-second TTL where
 reuse is safe. Ollama Cloud tags use a 15-second cache keyed by credential under
 the same rule, while local Ollama discovery remains uncached.
 NanoGPT balance/subscription lookups dedupe only concurrent calls. The legacy
@@ -123,6 +123,7 @@ legacy-inherit keeps it visible.
 First-class profile provider panels are intentionally limited to:
 
 - `openai`
+- `llmgateway`
 - `anthropic`
 - `google`
 - `vertex`
@@ -144,6 +145,10 @@ appends that suffix.
 Debug Echo profiles use the existing Echo dispatcher and return a small JSON
 payload containing the profile-local Base URL and Request Model for provider
 debugging.
+LLM Gateway profiles use the fixed managed API base URL and a reusable API-key
+credential. Their model picker loads the public, bounded `GET /v1/models`
+catalog through the server-owned provider-operation boundary, while generation
+uses the OpenAI-compatible Chat Completions transport.
 
 ## Durable Profile Data Flow
 

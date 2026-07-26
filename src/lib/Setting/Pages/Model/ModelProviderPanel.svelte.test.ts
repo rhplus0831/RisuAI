@@ -3,6 +3,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { language } from 'src/lang'
 import ModelProviderPanel from './ModelProviderPanel.svelte'
 
+const llmGatewayCatalog = vi.hoisted(() => ({
+  getModels: vi.fn(),
+}))
+
+vi.mock('src/ts/model/llmgateway', () => ({
+  getLLMGatewayModels: llmGatewayCatalog.getModels,
+  toModelGridItem: (model: { id: string; name: string }) => ({
+    id: model.id,
+    displayName: model.name,
+    providerName: 'LLM Gateway',
+    description: '',
+    context_length: 0,
+    sortPrice: 0,
+    prices: [],
+  }),
+}))
+
 type MountedComponent = Parameters<typeof unmount>[0]
 
 let target: HTMLElement
@@ -40,6 +57,8 @@ function props(providerId: string) {
 }
 
 beforeEach(() => {
+  llmGatewayCatalog.getModels.mockReset()
+  llmGatewayCatalog.getModels.mockResolvedValue([])
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -109,5 +128,26 @@ describe('ModelProviderPanel credential selection', () => {
     picker.dispatchEvent(new Event('change', { bubbles: true }))
     await tick()
     expect(picker.value).toBe('6')
+  })
+
+  it('loads and selects models from the LLM Gateway catalog', async () => {
+    llmGatewayCatalog.getModels.mockResolvedValueOnce([{ id: 'gpt-4o-mini', name: 'Gateway Model' }])
+    component = mount(ModelProviderPanel, { target, props: props('llmgateway') })
+
+    await vi.waitFor(() => {
+      expect(target.textContent).toContain('Gateway Model')
+    })
+    expect(llmGatewayCatalog.getModels).toHaveBeenCalledTimes(1)
+
+    const modelButton = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Gateway Model'),
+    )
+    modelButton?.click()
+    await tick()
+
+    const modelInput = Array.from(target.querySelectorAll<HTMLInputElement>('input')).find(
+      (input) => input.value === 'gpt-4o-mini',
+    )
+    expect(modelInput).toBeDefined()
   })
 })

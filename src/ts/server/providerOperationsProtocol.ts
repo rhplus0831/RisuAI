@@ -6,6 +6,7 @@ export const PROVIDER_OPERATIONS = [
   'nanogpt.subscription-models',
   'openrouter.models',
   'openrouter.providers',
+  'llmgateway.models',
   'ollama.cloud-models',
   'wavespeed.models',
   'google.models',

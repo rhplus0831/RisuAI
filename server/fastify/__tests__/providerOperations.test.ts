@@ -110,6 +110,11 @@ describe('provider operation allowlist', () => {
       header: ['authorization', 'Bearer stored-openrouter-key'],
     },
     {
+      operation: 'llmgateway.models' as const,
+      url: 'https://api.llmgateway.io/v1/models',
+      method: 'GET',
+    },
+    {
       operation: 'ollama.cloud-models' as const,
       url: 'https://ollama.com/api/tags',
       method: 'GET',
@@ -205,6 +210,13 @@ describe('provider operation allowlist', () => {
     expect(nano.url).toBe('https://nano-gpt.com/api/v1/models?detailed=true')
     expect(header(nano.init, 'authorization')).toBeNull()
     expect(header(openrouter.init, 'authorization')).toBeNull()
+
+    const llmGateway = resolveProviderUpstreamRequest(
+      { operation: 'llmgateway.models', credential: { source: 'none' } },
+      storedSettings,
+    )
+    expect(llmGateway.url).toBe('https://api.llmgateway.io/v1/models')
+    expect(header(llmGateway.init, 'authorization')).toBeNull()
   })
 
   it('resolves only matching model-profile secrets and preserves the same-provider flat fallback', () => {

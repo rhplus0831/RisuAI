@@ -1551,6 +1551,35 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.model).toBe('profile-custom-model')
   })
 
+  it('dispatches first-class LLM Gateway profiles through its fixed OpenAI-compatible endpoint', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        providerCredentials: [{ id: 'credential-gateway', name: 'LLM Gateway', type: 'apiKey', apiKey: 'sk-gateway' }],
+        modelProfiles: [
+          {
+            id: 'llmgateway-profile',
+            name: 'LLM Gateway',
+            providerId: 'llmgateway',
+            modelId: 'gpt-4o-mini',
+            providerOptions: {
+              credentialId: 'credential-gateway',
+              baseUrl: 'https://attacker.example/v1',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'llmgateway-profile' } },
+      } as unknown as Partial<Database>),
+    })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, db({ openAIKey: 'flat-openai-key' } as Partial<Database>))
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://api.llmgateway.io/v1/chat/completions')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-gateway')
+    expect(captured[0].body.model).toBe('gpt-4o-mini')
+  })
+
   it('uses first-class Debug Echo provider options as the echo payload', async () => {
     const profile = resolveModelProfile({
       database: db({

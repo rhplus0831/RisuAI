@@ -1868,6 +1868,41 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it('resolves first-class LLM Gateway profiles to the fixed managed endpoint', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        providerCredentials: [{ id: 'credential-gateway', name: 'LLM Gateway', type: 'apiKey', apiKey: 'gateway-key' }],
+        modelProfiles: [
+          {
+            id: 'gateway-profile',
+            name: 'LLM Gateway Profile',
+            providerId: 'llmgateway',
+            modelId: 'anthropic/claude-sonnet-4.5',
+            providerOptions: {
+              credentialId: 'credential-gateway',
+              baseUrl: 'https://attacker.example/v1',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'gateway-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(profile.status).toMatchObject({
+      bucket: 'ready',
+      providerId: 'llmgateway',
+      providerIdSource: 'explicit',
+    })
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'openai' })
+    expect(profile.providerOptions).toMatchObject({
+      apiKey: 'gateway-key',
+      baseUrl: 'https://api.llmgateway.io/v1',
+      requestModel: 'anthropic/claude-sonnet-4.5',
+    })
+    expect(profile.modelInfo.flags).toContain(LLMFlags.hasImageInput)
+  })
+
   it('classifies inferred, compatibility, unsupported, Vertex, and Custom API profile statuses', () => {
     const inferredOpenAI = resolveModelProfile({
       database: db({

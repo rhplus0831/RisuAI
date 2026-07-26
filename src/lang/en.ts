@@ -2720,6 +2720,7 @@ export const languageEnglish = {
     },
     providerNames: {
       openai: 'OpenAI',
+      llmgateway: 'LLM Gateway',
       anthropic: 'Anthropic',
       google: 'Google',
       vertex: 'Vertex AI',

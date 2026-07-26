@@ -65,6 +65,7 @@ export interface ModelProfileResolutionSource {
 
 export const FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS = [
   'openai',
+  'llmgateway',
   'anthropic',
   'google',
   'vertex',
@@ -278,6 +279,7 @@ const OPENAI_EXTENDED_PARAMETERS = [
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
 const NANOGPT_SUBSCRIPTION_BASE_URL = 'https://nano-gpt.com/api/subscription/v1'
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+const LLM_GATEWAY_BASE_URL = 'https://api.llmgateway.io/v1'
 const FIRST_CLASS_MODEL_PROFILE_PROVIDER_ID_SET = new Set<string>(FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS)
 const OPENAI_MODEL_IDS = new Set(
   OpenAIModels.flatMap((model) => [model.id, model.internalID]).filter(
@@ -1209,6 +1211,17 @@ function resolveFirstClassModelInfo(
         tokenizer: LLMTokenizer.tiktokenO200Base,
       })
     }
+    case 'llmgateway':
+      return completeModel({
+        id,
+        name: id,
+        internalID: id,
+        provider: LLMProvider.AsIs,
+        format: LLMFormat.OpenAICompatible,
+        flags: OPENAI_WITH_IMAGE_FLAGS,
+        parameters: OpenAIParameters,
+        tokenizer: LLMTokenizer.Unknown,
+      })
     case 'anthropic': {
       const known = AnthropicModels.find((candidate) => candidate.id === id || candidate.internalID === id)
       if (known) return cloneModelInfo(known)
@@ -1320,6 +1333,12 @@ function resolveFirstClassProviderOptions(
         ...base,
         apiKey,
         baseUrl: modelInfo.endpoint ? deriveOpenAIBaseUrl(modelInfo.endpoint) : undefined,
+      }
+    case 'llmgateway':
+      return {
+        ...base,
+        apiKey,
+        baseUrl: LLM_GATEWAY_BASE_URL,
       }
     case 'anthropic':
     case 'google':
@@ -1498,6 +1517,7 @@ function firstClassIncompleteReasons(
 
   switch (providerId) {
     case 'openai':
+    case 'llmgateway':
     case 'anthropic':
     case 'google':
       if (!nonBlankString(providerOptions.apiKey)) reasons.push('api-key-missing')

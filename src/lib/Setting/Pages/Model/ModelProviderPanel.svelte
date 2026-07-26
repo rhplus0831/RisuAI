@@ -2,6 +2,12 @@
   import { AlertTriangleIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
+  import ModelGrid from 'src/lib/UI/ModelGrid.svelte'
+  import {
+    getLLMGatewayModels,
+    toModelGridItem as llmGatewayModelToGridItem,
+    type LLMGatewayModelInfo,
+  } from 'src/ts/model/llmgateway'
   import { FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS } from 'src/ts/model/modelProfileResolver'
   import type { ProviderCredentialRecord, ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { AnthropicModels } from 'src/ts/model/providers/anthropic'
@@ -82,6 +88,10 @@
     flag: flag as LLMFlagValue,
   }))
 
+  let llmGatewayModels = $state<LLMGatewayModelInfo[]>([])
+  let llmGatewayModelsLoading = $state(false)
+  let llmGatewayGridItems = $derived(llmGatewayModels.map(llmGatewayModelToGridItem))
+
   let baseUrlIncludesSuffix = $derived(baseUrl.toLowerCase().includes('/chat/completions'))
   let compatibleCredentialType = $derived<ProviderCredentialType>(
     providerId === 'vertex' ? 'vertexServiceAccount' : 'apiKey',
@@ -108,6 +118,22 @@
     }
     if (modelId === 'ollama-hosted' && ollamaRequestFormat !== String(LLMFormat.Ollama)) {
       ollamaRequestFormat = String(LLMFormat.Ollama)
+    }
+  })
+
+  $effect(() => {
+    if (providerId !== 'llmgateway') return
+    let cancelled = false
+    llmGatewayModelsLoading = true
+    void getLLMGatewayModels()
+      .then((models) => {
+        if (!cancelled) llmGatewayModels = models
+      })
+      .finally(() => {
+        if (!cancelled) llmGatewayModelsLoading = false
+      })
+    return () => {
+      cancelled = true
     }
   })
 
@@ -158,6 +184,28 @@
             {/each}
           </select>
         </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.modelColumn}</span>
+          <TextInput size="sm" fullwidth bind:value={modelId} placeholder={language.modelProfiles.modelPlaceholder} />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
+          <TextInput
+            size="sm"
+            fullwidth
+            bind:value={requestModel}
+            placeholder={language.modelProfiles.requestModelPlaceholder} />
+        </label>
+      </div>
+    {:else if providerId === 'llmgateway'}
+      <ModelGrid
+        bind:value={modelId}
+        items={llmGatewayGridItems}
+        loading={llmGatewayModelsLoading}
+        onselect={() => {
+          requestModel = ''
+        }} />
+      <div class="grid gap-3 md:grid-cols-2">
         <label class="flex flex-col gap-1">
           <span class="text-sm text-textcolor2">{language.modelProfiles.modelColumn}</span>
           <TextInput size="sm" fullwidth bind:value={modelId} placeholder={language.modelProfiles.modelPlaceholder} />

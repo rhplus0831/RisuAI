@@ -19,6 +19,7 @@ type JsonRecord = Record<string, unknown>
 type ProviderKind =
   | 'nanogpt'
   | 'openrouter'
+  | 'llmgateway'
   | 'ollama'
   | 'wavespeed'
   | 'google'
@@ -134,6 +135,15 @@ const OPERATION_SPECS: Record<ProviderOperation, ProviderOperationSpec> = {
     buildRequest: (apiKey) => ({
       url: 'https://openrouter.ai/api/v1/providers',
       init: fixedJsonRequest('GET', apiKey ? bearerHeader(apiKey) : undefined),
+    }),
+  },
+  'llmgateway.models': {
+    provider: 'llmgateway',
+    credentialRequired: false,
+    storedCredential: () => undefined,
+    buildRequest: () => ({
+      url: 'https://api.llmgateway.io/v1/models',
+      init: fixedJsonRequest('GET'),
     }),
   },
   'ollama.cloud-models': {
