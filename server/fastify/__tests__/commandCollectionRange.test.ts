@@ -733,6 +733,24 @@ describe('Phase 4 presets collection range', () => {
       ownerProjectionApplied: false,
       selectedPromptPresetId: null,
     })
+    const mainPromptBeforeArchive = readSettings().mainPrompt
+
+    const archiveResult = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-presets/prompt-0',
+      payload: { baseRevision: revision, patch: { archived: true } },
+    })
+    revision = archiveResult.revision
+    expect(archiveResult.metric.writtenTables).toEqual(['prompt_presets'])
+    expect(archiveResult.body).toMatchObject({
+      acknowledgedKeys: ['archived'],
+      preset: {},
+      settings: {},
+      selectedProjectionApplied: false,
+      ownerProjectionApplied: false,
+    })
+    expect(readCollection('prompt_presets')[0]).toMatchObject({ archived: true })
+    expect(readSettings().mainPrompt).toBe(mainPromptBeforeArchive)
 
     const promptResult = await runCommand({
       method: 'PATCH',

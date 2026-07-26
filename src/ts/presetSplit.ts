@@ -148,7 +148,7 @@ export type PromptPresetModelParameterOverrideField = (typeof PROMPT_PRESET_MODE
 export type PromptPresetModelOthersOverrideField = (typeof PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS)[number]
 export type PromptPresetModelOverrideField = (typeof PROMPT_PRESET_MODEL_OVERRIDE_FIELDS)[number]
 export type ModelPresetRecord = JsonRecord & { id: string; name?: string }
-export type PromptPresetRecord = JsonRecord & { id: string; name?: string }
+export type PromptPresetRecord = JsonRecord & { id: string; name?: string; archived?: boolean }
 export type EffectivePresetCompositionScope = 'full-generation' | 'model-runtime'
 
 export interface EffectivePresetCompositionOptions {

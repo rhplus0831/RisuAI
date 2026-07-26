@@ -405,6 +405,12 @@ Prompt template editing and enable/disable controls belong to the selected
 modern prompt preset; legacy bot-preset prompt templates remain compatibility UI
 for old saves and explicit extraction paths.
 
+The prompt-preset branch of `botpreset.svelte` treats `promptPresets[].archived`
+as organization metadata. Its default view excludes archived rows, its archive
+view includes only archived rows, and both views retain stable-id selection and
+mutation behavior; archiving does not clear existing global, chat, or loadout
+references.
+
 Legacy global lorebook and regex nav buttons are hidden by default through
 `showGlobalLorebookAndRegex`, defined in
 `src/ts/setting/advancedSettingsData.ts`. They also remain hidden in lite mode.

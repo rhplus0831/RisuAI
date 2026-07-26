@@ -95,6 +95,7 @@ export function readModelPresetPatch(input: JsonRecord): JsonRecord {
 
 export function readPromptPresetPatch(input: JsonRecord): JsonRecord {
   const patch = readSplitPresetPatch(input, 'promptPreset')
+  validatePromptPresetArchived(patch)
   normalizePromptPresetPatchAliases(patch)
   return patch
 }
@@ -304,6 +305,7 @@ function createSplitPresetRecord(
   preset.name ??= fallbackName
   normalizeSplitPresetRoleAdjacentFields(preset)
   normalizePromptPresetPromptTemplate(label, preset)
+  if (label === 'promptPreset') validatePromptPresetArchived(preset)
   validateJsonValue(label, preset)
   return preset
 }
@@ -328,6 +330,12 @@ function normalizePromptPresetPromptTemplate(
 function normalizePromptPresetPatchAliases(patch: JsonRecord): void {
   if (Object.prototype.hasOwnProperty.call(patch, 'presetRegex')) {
     patch.regex = []
+  }
+}
+
+function validatePromptPresetArchived(record: JsonRecord): void {
+  if (record.archived !== undefined && typeof record.archived !== 'boolean') {
+    throw new ValidationError('promptPreset.archived must be a boolean')
   }
 }
 

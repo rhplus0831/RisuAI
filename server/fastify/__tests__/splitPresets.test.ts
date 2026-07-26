@@ -340,6 +340,25 @@ describe('split preset command normalization', () => {
     expect((database.promptTemplate as Array<{ id?: string }>)[0].id).toEqual(expect.any(String))
   })
 
+  it('preserves boolean prompt preset archive metadata and rejects invalid values', () => {
+    expect(
+      createPromptPresetRecord({
+        id: 'prompt-archived',
+        name: 'Archived Prompt',
+        archived: true,
+      }),
+    ).toMatchObject({ archived: true })
+    expect(readPromptPresetPatch({ archived: false })).toEqual({ archived: false })
+
+    expect(() =>
+      createPromptPresetRecord({
+        id: 'prompt-invalid-archive',
+        archived: 'true',
+      }),
+    ).toThrow('promptPreset.archived must be a boolean')
+    expect(() => readPromptPresetPatch({ archived: 1 })).toThrow('promptPreset.archived must be a boolean')
+  })
+
   it('preserves null prompt templates through create, patch, and apply', () => {
     const preset = createPromptPresetRecord({
       id: 'prompt-template-disabled',

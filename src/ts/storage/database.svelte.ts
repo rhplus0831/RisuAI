@@ -4565,6 +4565,7 @@ export type ModelPreset = Partial<botPreset> & {
 export type PromptPreset = Partial<botPreset> & {
   id?: string
   name?: string
+  archived?: boolean
   overrideModelParameters?: boolean
 }
 

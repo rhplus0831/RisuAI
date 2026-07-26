@@ -23,6 +23,8 @@
   import { selectedCharID, type GenerationSettingsPickerMode, type PresetPickerKind } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import {
+    ArchiveIcon,
+    ArchiveRestoreIcon,
     HardDriveUploadIcon,
     PlusIcon,
     PencilIcon,
@@ -45,6 +47,7 @@
   type ModernPresetKind = 'model' | 'prompt'
 
   let editMode = $state(false)
+  let showArchivedPromptPresets = $state(false)
   let isDragging = $state(false)
   let dragOverIndex = $state(-1)
   let draggedPreset = $state<{ kind: ModernPresetKind; id: string } | null>(null)
@@ -73,6 +76,14 @@
     kind === 'model' ? language.modelPresets : kind === 'prompt' ? language.promptPresets : language.legacyBotPresets,
   )
   let modernPresets = $derived.by(() => (kind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets))
+  let visibleModernPresetEntries = $derived.by(() =>
+    modernPresets.flatMap((preset, index) => {
+      if (kind !== 'prompt' || ((preset as PromptPreset).archived === true) === showArchivedPromptPresets) {
+        return [{ preset, index }]
+      }
+      return []
+    }),
+  )
   let legacyPresets = $derived.by(() => (Array.isArray(getDatabase().botPresets) ? getDatabase().botPresets : []))
   let useModelPresetManager = $derived(kind === 'model' && mode === 'global')
   let activeChatSettings = $derived.by(() =>
@@ -121,6 +132,14 @@
   function toggleEditMode() {
     renameErrors = {}
     editMode = !editMode
+  }
+
+  function togglePromptPresetArchiveView() {
+    if (kind !== 'prompt') return
+    isDragging = false
+    dragOverIndex = -1
+    draggedPreset = null
+    showArchivedPromptPresets = !showArchivedPromptPresets
   }
 
   function settlePresetRename(
@@ -274,6 +293,17 @@
     observePresetRowMutation(key, outcome)
   }
 
+  function setPromptPresetArchived(preset: PromptPreset, index: number, archived: boolean) {
+    const presetId = nonEmptyId(preset.id)
+    const presets = getDatabase().promptPresets
+    const liveIndex = presetId ? presets.findIndex((candidate) => candidate?.id === presetId) : index
+    const livePreset = presets[liveIndex]
+    if (!livePreset || (!presetId && livePreset !== preset) || livePreset.archived === archived) return
+
+    const key = `prompt:${presetId ?? `index:${liveIndex}`}`
+    observePresetRowMutation(key, updatePromptPreset(liveIndex, { archived }))
+  }
+
   function handlePresetDrop(targetPresetId: string | null | undefined, e: DragEvent) {
     e.preventDefault()
     e.stopPropagation()
@@ -366,7 +396,29 @@
     onkeydown={handleDialogKeydown}>
     <div class="flex items-center text-textcolor mb-4">
       <h2 id="risu-preset-picker-title" class="mt-0 mb-0">{title}</h2>
-      <div class="grow flex justify-end">
+      <div class="grow flex justify-end items-center gap-2">
+        {#if kind === 'prompt'}
+          <button
+            type="button"
+            data-risu-preset-archive-view
+            disabled={!!selectionPendingKey}
+            class="flex items-center gap-1 rounded border border-darkborderc px-2 py-1 text-sm text-textcolor2 hover:text-green-500 cursor-pointer"
+            class:text-textcolor={showArchivedPromptPresets}
+            aria-label={showArchivedPromptPresets
+              ? language.showActivePromptPresets
+              : language.showArchivedPromptPresets}
+            title={showArchivedPromptPresets ? language.showActivePromptPresets : language.showArchivedPromptPresets}
+            aria-pressed={showArchivedPromptPresets}
+            onclick={togglePromptPresetArchiveView}>
+            {#if showArchivedPromptPresets}
+              <ArchiveRestoreIcon size={18} />
+              <span>{language.activePromptPresets}</span>
+            {:else}
+              <ArchiveIcon size={18} />
+              <span>{language.archivedPromptPresets}</span>
+            {/if}
+          </button>
+        {/if}
         <button
           data-modal-initial-focus
           disabled={!!selectionPendingKey}
@@ -412,18 +464,25 @@
     {:else if useModelPresetManager}
       <ModelPresetList embedded afterApply={close} />
     {:else}
-      {#each modernPresets as preset, i}
+      {#if kind === 'prompt' && visibleModernPresetEntries.length === 0}
+        <span data-risu-preset-empty-state class="text-textcolor2 text-sm">
+          {showArchivedPromptPresets ? language.noArchivedPromptPresets : language.noActivePromptPresets}
+        </span>
+      {/if}
+      {#each visibleModernPresetEntries as entry, visibleIndex}
+        {@const preset = entry.preset}
+        {@const i = entry.index}
         <div
           class="w-full transition-all duration-200"
-          class:h-0.5={!isDragging || dragOverIndex !== i}
-          class:h-1={isDragging && dragOverIndex === i}
-          class:bg-blue-500={isDragging && dragOverIndex === i}
-          class:shadow-lg={isDragging && dragOverIndex === i}
+          class:h-0.5={!isDragging || dragOverIndex !== visibleIndex}
+          class:h-1={isDragging && dragOverIndex === visibleIndex}
+          class:bg-blue-500={isDragging && dragOverIndex === visibleIndex}
+          class:shadow-lg={isDragging && dragOverIndex === visibleIndex}
           class:hover:bg-gray-600={!isDragging}
           role="listitem"
           ondragover={(e) => {
             e.preventDefault()
-            dragOverIndex = i
+            dragOverIndex = visibleIndex
           }}
           ondragleave={() => {
             dragOverIndex = -1
@@ -476,13 +535,15 @@
           ondragover={(e) => {
             e.preventDefault()
             const rect = e.currentTarget.getBoundingClientRect()
-            dragOverIndex = e.clientY < rect.top + rect.height / 2 ? i : i + 1
+            dragOverIndex = e.clientY < rect.top + rect.height / 2 ? visibleIndex : visibleIndex + 1
           }}
           ondrop={(e) => {
             const rect = e.currentTarget.getBoundingClientRect()
-            const dropIndex = e.clientY < rect.top + rect.height / 2 ? i : i + 1
+            const dropIndex = e.clientY < rect.top + rect.height / 2 ? visibleIndex : visibleIndex + 1
             const targetPresetId =
-              dropIndex >= modernPresets.length ? undefined : nonEmptyId(modernPresets[dropIndex]?.id)
+              dropIndex >= visibleModernPresetEntries.length
+                ? undefined
+                : nonEmptyId(visibleModernPresetEntries[dropIndex]?.preset.id)
             handlePresetDrop(targetPresetId, e)
             dragOverIndex = -1
           }}>
@@ -511,14 +572,36 @@
                 event.stopPropagation()
                 selectPreset(preset, i)
               }}>
-              {#if i < 9}
-                <span class="w-2 text-center mr-2 text-textcolor2">{i + 1}</span>
+              {#if visibleIndex < 9}
+                <span class="w-2 text-center mr-2 text-textcolor2">{visibleIndex + 1}</span>
               {/if}
               <span>{preset.name}</span>
             </button>
           {/if}
           <div class="ml-auto flex shrink-0 justify-end">
             {#if kind === 'prompt'}
+              <button
+                type="button"
+                data-risu-preset-archive-action
+                class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
+                aria-label={`${
+                  (preset as PromptPreset).archived === true
+                    ? language.restorePromptPreset
+                    : language.archivePromptPreset
+                }: ${preset.name ?? `#${visibleIndex + 1}`}`}
+                title={(preset as PromptPreset).archived === true
+                  ? language.restorePromptPreset
+                  : language.archivePromptPreset}
+                onclick={(e) => {
+                  e.stopPropagation()
+                  setPromptPresetArchived(preset as PromptPreset, i, (preset as PromptPreset).archived !== true)
+                }}>
+                {#if (preset as PromptPreset).archived === true}
+                  <ArchiveRestoreIcon size={18} />
+                {:else}
+                  <ArchiveIcon size={18} />
+                {/if}
+              </button>
               <button
                 class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
                 aria-label={`${language.export}: ${preset.name ?? `#${i + 1}`}`}
@@ -549,14 +632,14 @@
 
       <div
         class="w-full transition-all duration-200"
-        class:h-0.5={!isDragging || dragOverIndex !== modernPresets.length}
-        class:h-1={isDragging && dragOverIndex === modernPresets.length}
-        class:bg-blue-500={isDragging && dragOverIndex === modernPresets.length}
-        class:shadow-lg={isDragging && dragOverIndex === modernPresets.length}
+        class:h-0.5={!isDragging || dragOverIndex !== visibleModernPresetEntries.length}
+        class:h-1={isDragging && dragOverIndex === visibleModernPresetEntries.length}
+        class:bg-blue-500={isDragging && dragOverIndex === visibleModernPresetEntries.length}
+        class:shadow-lg={isDragging && dragOverIndex === visibleModernPresetEntries.length}
         role="listitem"
         ondragover={(e) => {
           e.preventDefault()
-          dragOverIndex = modernPresets.length
+          dragOverIndex = visibleModernPresetEntries.length
         }}
         ondragleave={() => {
           dragOverIndex = -1
@@ -568,21 +651,23 @@
       </div>
 
       <div class="flex mt-2 items-center">
-        <button
-          class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
-          aria-label={`${language.add}: ${title}`}
-          onclick={createNewPreset}>
-          <PlusIcon />
-        </button>
-        {#if kind === 'prompt'}
+        {#if kind !== 'prompt' || !showArchivedPromptPresets}
           <button
-            class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
-            aria-label={`${language.import}: ${title}`}
-            onclick={() => {
-              importPreset()
-            }}>
-            <HardDriveUploadIcon size={18} />
+            class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
+            aria-label={`${language.add}: ${title}`}
+            onclick={createNewPreset}>
+            <PlusIcon />
           </button>
+          {#if kind === 'prompt'}
+            <button
+              class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
+              aria-label={`${language.import}: ${title}`}
+              onclick={() => {
+                importPreset()
+              }}>
+              <HardDriveUploadIcon size={18} />
+            </button>
+          {/if}
         {/if}
         <button
           class="text-textcolor2 hover:text-green-500 cursor-pointer"

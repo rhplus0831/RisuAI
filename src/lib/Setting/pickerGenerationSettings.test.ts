@@ -443,7 +443,7 @@ function mountPersonaPicker(mode: GenerationSettingsPickerMode, close = vi.fn())
 
 function globalPresetSelectionControl(kind: 'model' | 'prompt'): HTMLElement {
   if (kind === 'prompt') return pickerSelectionControl('prompt', 'preset-b')
-  const rows = target.querySelectorAll<HTMLElement>('tbody tr')
+  const rows = target.querySelectorAll<HTMLElement>('section [role="button"][tabindex="0"]')
   expect(rows).toHaveLength(2)
   return rows[1]
 }
@@ -527,7 +527,7 @@ describe('generation settings picker mode', () => {
     const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
     last!.dispatchEvent(tab)
     expect(tab.defaultPrevented).toBe(true)
-    expect(document.activeElement).toBe(initialFocus)
+    expect(document.activeElement).toBe(focusable[0])
 
     dialog.click()
     expect(close).not.toHaveBeenCalled()
@@ -604,6 +604,104 @@ describe('generation settings picker mode', () => {
 
     expect(event.defaultPrevented).toBe(false)
     expect(close).not.toHaveBeenCalled()
+  })
+
+  it('keeps archived prompt presets out of the active view and shows only them in the archive view', async () => {
+    getDatabase().promptPresets[1].archived = true
+    mountPresetPicker('global')
+
+    expect(pickerRow('prompt', 'preset-a')).toBeTruthy()
+    expect(target.querySelector('[data-risu-row-id="preset-b"]')).toBeNull()
+
+    const archiveView = elementBySelector<HTMLButtonElement>(
+      '[data-risu-preset-archive-view]',
+      'prompt preset archive view button',
+    )
+    expect(archiveView.getAttribute('aria-label')).toBe(language.showArchivedPromptPresets)
+    expect(archiveView.getAttribute('aria-pressed')).toBe('false')
+    archiveView.click()
+    await tick()
+
+    expect(target.querySelector('[data-risu-row-id="preset-a"]')).toBeNull()
+    expect(pickerRow('prompt', 'preset-b').dataset.risuRowIndex).toBe('1')
+    expect(archiveView.getAttribute('aria-label')).toBe(language.showActivePromptPresets)
+    expect(archiveView.getAttribute('aria-pressed')).toBe('true')
+    expect(target.querySelector(`[aria-label="${language.add}: ${language.promptPresets}"]`)).toBeNull()
+    expect(target.querySelector(`[aria-label="${language.import}: ${language.promptPresets}"]`)).toBeNull()
+  })
+
+  it('archives a prompt preset without selecting it and persists the archive field', async () => {
+    const calls = stubCommandFetch()
+    const close = mountPresetPicker('global')
+
+    const archiveAction = pickerRow('prompt', 'preset-a').querySelector<HTMLButtonElement>(
+      '[data-risu-preset-archive-action]',
+    )
+    expect(archiveAction?.getAttribute('aria-label')).toBe(`${language.archivePromptPreset}: Preset A`)
+    archiveAction!.click()
+    await tick()
+
+    expect(getDatabase().promptPresets[0].archived).toBe(true)
+    expect(getDatabase().promptPresetsId).toBe(0)
+    expect(target.querySelector('[data-risu-row-id="preset-a"]')).toBeNull()
+    expect(close).not.toHaveBeenCalled()
+
+    flushRegisteredPendingBridgePatches({})
+    await waitForCommandFetches(calls)
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        url: '/api/v1/commands/prompt-presets/preset-a',
+        method: 'PATCH',
+        body: expect.objectContaining({ patch: { archived: true } }),
+      }),
+    )
+  })
+
+  it('restores an archived prompt preset to the active view', async () => {
+    getDatabase().promptPresets[1].archived = true
+    const calls = stubCommandFetch()
+    mountPresetPicker('global')
+
+    elementBySelector<HTMLButtonElement>('[data-risu-preset-archive-view]', 'prompt preset archive view button').click()
+    await tick()
+    const restoreAction = pickerRow('prompt', 'preset-b').querySelector<HTMLButtonElement>(
+      '[data-risu-preset-archive-action]',
+    )
+    expect(restoreAction?.getAttribute('aria-label')).toBe(`${language.restorePromptPreset}: Preset B`)
+    restoreAction!.click()
+    await tick()
+
+    expect(getDatabase().promptPresets[1].archived).toBe(false)
+    expect(target.querySelector('[data-risu-row-id="preset-b"]')).toBeNull()
+
+    flushRegisteredPendingBridgePatches({})
+    await waitForCommandFetches(calls)
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        url: '/api/v1/commands/prompt-presets/preset-b',
+        method: 'PATCH',
+        body: expect.objectContaining({ patch: { archived: false } }),
+      }),
+    )
+
+    elementBySelector<HTMLButtonElement>('[data-risu-preset-archive-view]', 'prompt preset active view button').click()
+    await tick()
+    expect(pickerRow('prompt', 'preset-b')).toBeTruthy()
+  })
+
+  it('allows an archived prompt preset to be selected from the archive view', async () => {
+    getDatabase().promptPresets[1].archived = true
+    const calls = stubCommandFetch()
+    const close = mountPresetPicker('global')
+
+    elementBySelector<HTMLButtonElement>('[data-risu-preset-archive-view]', 'prompt preset archive view button').click()
+    await tick()
+    pickerSelectionControl('prompt', 'preset-b').click()
+    await waitForCommandFetches(calls)
+
+    expect(getDatabase().promptPresetsId).toBe(1)
+    expect(getDatabase().promptPresets[1].archived).toBe(true)
+    expect(close).toHaveBeenCalledOnce()
   })
 
   it('projects and exports a quick prompt preset rename before lifecycle keepalive flushes it', async () => {
@@ -839,6 +937,7 @@ describe('generation settings picker mode', () => {
     expect(select).toBeInstanceOf(HTMLButtonElement)
     expect(presetRow.querySelector('button button, button input, button [role="button"]')).toBeNull()
     expect(presetRow.querySelector(`[aria-label="${language.export}: Preset A"]`)).toBeTruthy()
+    expect(presetRow.querySelector(`[aria-label="${language.archivePromptPreset}: Preset A"]`)).toBeTruthy()
     expect(presetRow.querySelector(`[aria-label="${language.remove}: Preset A"]`)).toBeTruthy()
     expect(target.querySelector(`[aria-label="${language.add}: ${language.promptPresets}"]`)).toBeTruthy()
     expect(target.querySelector(`[aria-label="${language.import}: ${language.promptPresets}"]`)).toBeTruthy()
@@ -849,6 +948,13 @@ describe('generation settings picker mode', () => {
     edit.click()
     await tick()
     expect(edit.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('does not expose prompt archive controls in the model preset picker', () => {
+    mountPresetPicker('active-chat-generation-settings', vi.fn(), 'model')
+
+    expect(target.querySelector('[data-risu-preset-archive-view]')).toBeNull()
+    expect(target.querySelector('[data-risu-preset-archive-action]')).toBeNull()
   })
 
   it('moves the dragged preset by stable id after the live list reorders', async () => {
@@ -1141,7 +1247,7 @@ describe('generation settings picker mode', () => {
         expectPickerRowSelection('prompt', 'preset-a', true)
         expectPickerRowSelection('prompt', 'preset-b', false)
       } else {
-        const rows = target.querySelectorAll<HTMLElement>('tbody tr')
+        const rows = target.querySelectorAll<HTMLElement>('section [role="button"][tabindex="0"]')
         expect(rows[0].classList.contains('bg-selected')).toBe(true)
         expect(rows[1].classList.contains('bg-selected')).toBe(false)
       }
