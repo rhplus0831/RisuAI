@@ -139,6 +139,7 @@ function resetDatabase() {
     translatorInputLanguage: 'ja',
     translatorType: 'google',
     translatorSendTextAsIs: false,
+    translatorExcludeThoughts: false,
     aiModel: 'openai',
     subModel: 'echo_model',
     modelRoles: {},
@@ -474,6 +475,44 @@ describe('auto-translate cache', () => {
 
     expect(testState.requestChatData.mock.calls[0][0].formated).toContainEqual({ role: 'user', content: text })
     expect(result).toBe(rawResponse)
+  })
+
+  it('removes internal reasoning from browser LLM source text when send-text-as-is exclusion is enabled', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.translatorSendTextAsIs = true
+    testState.db.translatorExcludeThoughts = true
+    const text = '<Thoughts>private</Thoughts>\nvisible source\n<think>private tail</think>'
+    testState.requestChatData.mockResolvedValue({ type: 'success', result: 'translated' })
+
+    const result = await translateHTML(text, false, 'char-a', 0)
+
+    expect(testState.requestChatData.mock.calls[0][0].formated).toContainEqual({
+      role: 'user',
+      content: 'visible source',
+    })
+    expect(result).toBe('translated')
+  })
+
+  it('separates send-text-as-is LLM caches by chain-of-thought exclusion mode', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.translatorSendTextAsIs = true
+    testState.requestChatData
+      .mockResolvedValueOnce({ type: 'success', result: 'unfiltered translation' })
+      .mockResolvedValueOnce({ type: 'success', result: 'filtered translation' })
+    const text = '<Thoughts>private</Thoughts>\nvisible source'
+
+    const unfiltered = await translateHTML(text, false, 'char-a', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.translatorExcludeThoughts = true
+    const filtered = await translateHTML(text, false, 'char-a', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.translatorExcludeThoughts = false
+    const unfilteredAgain = await translateHTML(text, false, 'char-a', 0)
+
+    expect(unfiltered).toBe('unfiltered translation')
+    expect(filtered).toBe('filtered translation')
+    expect(unfilteredAgain).toBe(unfiltered)
+    expect(testState.requestChatData).toHaveBeenCalledTimes(2)
   })
 
   it('runs multi-step LLM translation with one style encoding pass and a per-step profile override', async () => {

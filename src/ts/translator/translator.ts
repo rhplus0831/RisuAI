@@ -16,6 +16,7 @@ import localforage from 'localforage'
 import sendSound from '../../etc/send.mp3'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import { resolveTranslatorPipeline, runTranslatorPipeline, translatorPipelineSignature } from './pipeline'
+import { stripInternalReasoning } from '../process/internalReasoning'
 
 export const TRANSLATE_CACHE_MAX_ENTRIES = 256
 export const TRANSLATE_HTML_OUTPUT_MEMO_MAX_ENTRIES = 64
@@ -217,6 +218,7 @@ function getTranslateProfileCacheSignature(db = getDatabase()) {
 
   return {
     translatorSendTextAsIs: db.translatorSendTextAsIs === true,
+    translatorExcludeThoughts: db.translatorSendTextAsIs === true && db.translatorExcludeThoughts === true,
     profileId: profile.profileId,
     source: {
       kind: profile.source.kind,
@@ -1102,6 +1104,8 @@ async function translateLLM(
       styleDecodes.push(p1)
       return `<style-data style-index="${styleDecodes.length - 1}"></style-data>`
     })
+  } else if (db.translatorExcludeThoughts === true) {
+    text = stripInternalReasoning(text, { preserveUnchanged: true })
   }
 
   let pipelineResult: string

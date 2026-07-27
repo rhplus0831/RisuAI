@@ -15,6 +15,7 @@ import { dispatchChatProvider, type ChatDispatchHistoryInput } from '../prompt/c
 import { tokenize } from '../prompt/tokens.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { ValidationError } from '../repository.js'
+import { stripInternalReasoning } from '../../../../src/ts/process/internalReasoning.js'
 
 export type RawMessageTranslatorType = 'google' | 'deepl' | 'deeplX' | 'llm'
 
@@ -130,6 +131,8 @@ function translatorSettingsHash(input: {
       inputLanguage: input.inputLanguage,
       translatorPipeline: translatorPipelineSignature(resolveTranslatorPipeline(input.settings)),
       translatorSendTextAsIs: input.settings.translatorSendTextAsIs === true,
+      translatorExcludeThoughts:
+        input.settings.translatorSendTextAsIs === true && input.settings.translatorExcludeThoughts === true,
       translatorHistoryMaxTokens: translatorHistoryMaxTokens(input.settings),
       translatorNote: translatorNote(input.character),
       aiModel: stringValue(input.settings.aiModel),
@@ -184,6 +187,11 @@ function translatorHistoryBlock(role: TranslatorHistoryEntry['role'], body: stri
   return `${role}: ${body}\n\n---\n\n`
 }
 
+function translatorInputText(settings: Record<string, unknown>, text: string): string {
+  if (settings.translatorSendTextAsIs !== true || settings.translatorExcludeThoughts !== true) return text
+  return stripInternalReasoning(text, { preserveUnchanged: true })
+}
+
 function createTranslatorHistoryResolver(
   settings: Record<string, unknown>,
   context: RawMessageTranslationHistoryContext,
@@ -208,8 +216,10 @@ function createTranslatorHistoryResolver(
       const translation = recordValue(message.translation)
       newestFirst.push({
         role: message.role === 'user' ? 'user' : 'char',
-        source: stringValue(message.data),
-        ...(typeof translation.text === 'string' ? { translated: translation.text } : {}),
+        source: translatorInputText(settings, stringValue(message.data)),
+        ...(typeof translation.text === 'string'
+          ? { translated: translatorInputText(settings, translation.text) }
+          : {}),
       })
       if (newestFirst.length === count) break
     }
@@ -217,8 +227,10 @@ function createTranslatorHistoryResolver(
     if (newestFirst.length < count && exhaustedHistory && context.greeting.source.length > 0) {
       newestFirst.push({
         role: 'char',
-        source: context.greeting.source,
-        ...(context.greeting.translated === undefined ? {} : { translated: context.greeting.translated }),
+        source: translatorInputText(settings, context.greeting.source),
+        ...(context.greeting.translated === undefined
+          ? {}
+          : { translated: translatorInputText(settings, context.greeting.translated) }),
       })
     }
 
@@ -505,7 +517,7 @@ export async function translateRawMessageData(input: RawMessageTranslationInput)
       ? await translateWithLlm(
           input.settings,
           input.character,
-          input.text,
+          translatorInputText(input.settings, input.text),
           inputLanguage,
           targetLanguage,
           input.signal,

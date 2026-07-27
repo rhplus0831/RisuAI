@@ -218,6 +218,8 @@ const languageKoreanBase = {
       '활성화하면 정규식 스크립트와 HTML 포맷팅 전에 텍스트를 번역합니다. 토큰이 줄어들 수 있지만 포맷이 깨질 수 있습니다.',
     translatorSendTextAsIs:
       '활성화하면 Ax. Model 번역이 메시지 텍스트를 작성된 그대로 모델에 전송합니다. 줄 보호, 분할 또는 스타일 자리표시자 없이 단일 요청으로 전송하며, 모델의 응답을 수정 없이 번역 결과로 사용합니다.',
+    translatorExcludeThoughts:
+      '텍스트 원문 그대로 전송을 사용할 때 모델로 보내기 전에 원문과 번역 기록에서 `<Thoughts>` 및 `<think>` 블록을 제거합니다.',
     translatorHistoryMaxTokens:
       '원문 및 번역 기록 프롬프트 슬롯이 함께 사용하는 최대 근사 토큰 예산입니다. 한도를 넘으면 가장 오래된 메시지부터 전체 단위로 제거합니다.',
     autoTranslateCachedOnly: '활성화하면 자동 번역을 켠 채팅은 저장된 번역만 표시하고 새 LLM 번역을 요청하지 않습니다.',
@@ -1300,6 +1302,7 @@ const languageKoreanBase = {
   translatorPrompt: '번역 프롬프트',
   translateBeforeHTMLFormatting: 'HTML 포맷 전 번역',
   translatorSendTextAsIs: '텍스트 원문 그대로 전송',
+  translatorExcludeThoughts: '사고 과정 제외',
   translatorHistoryMaxTokens: '번역 기록 최대 토큰',
   retranslate: '다시 번역',
   editTranslation: '번역 수정',

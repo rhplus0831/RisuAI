@@ -31,6 +31,7 @@ describe('database defaults', () => {
     expect(database.paragraphBreakBySentences).toBe(false)
     expect(database.paragraphBreakSentenceCount).toBe(3)
     expect(database.translatorSendTextAsIs).toBe(false)
+    expect(database.translatorExcludeThoughts).toBe(false)
     expect(database.showSavingIcon).toBe(true)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
@@ -104,9 +105,13 @@ describe('database defaults', () => {
   })
 
   it('preserves an enabled send-text-as-is translation preference', () => {
-    const database = normalizeDatabaseDefaults({ translatorSendTextAsIs: true }, { providerDefaults: false })
+    const database = normalizeDatabaseDefaults(
+      { translatorSendTextAsIs: true, translatorExcludeThoughts: true },
+      { providerDefaults: false },
+    )
 
     expect(database.translatorSendTextAsIs).toBe(true)
+    expect(database.translatorExcludeThoughts).toBe(true)
   })
 
   it('normalizes old model maps without dropping script roles', () => {

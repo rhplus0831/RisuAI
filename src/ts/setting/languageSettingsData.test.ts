@@ -52,6 +52,29 @@ describe('language settings actions', () => {
     expect(item?.getValue?.({ translatorSendTextAsIs: true } as never)).toBe(true)
   })
 
+  it('shows chain-of-thought exclusion only for active send-text-as-is LLM translation', () => {
+    const item = languageSettingsItems.find((candidate) => candidate.id === 'lang.translatorExcludeThoughts')
+
+    expect(item?.bindKey).toBe('translatorExcludeThoughts')
+    expect(item?.getValue?.({ translatorExcludeThoughts: undefined } as never)).toBe(false)
+    expect(item?.getValue?.({ translatorExcludeThoughts: true } as never)).toBe(true)
+    expect(
+      item?.condition?.({
+        db: { translator: 'ko', translatorType: 'llm', translatorSendTextAsIs: true },
+      } as never),
+    ).toBe(true)
+    expect(
+      item?.condition?.({
+        db: { translator: 'ko', translatorType: 'llm', translatorSendTextAsIs: false },
+      } as never),
+    ).toBe(false)
+    expect(
+      item?.condition?.({
+        db: { translator: 'ko', translatorType: 'google', translatorSendTextAsIs: true },
+      } as never),
+    ).toBe(false)
+  })
+
   it('uses the default history token limit for missing or invalid existing values', () => {
     const item = languageSettingsItems.find((candidate) => candidate.id === 'lang.translatorHistoryMaxTokens')
 

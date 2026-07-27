@@ -1731,6 +1731,7 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('notification')).toBe('display')
     expect(settingsGroupForKey('useAutoSuggestions')).toBe('runtime')
     expect(settingsGroupForKey('useAutoTranslateInput')).toBe('language')
+    expect(settingsGroupForKey('translatorExcludeThoughts')).toBe('language')
     expect(settingsGroupForKey('globalChatVariables')).toBe('sidebar')
     expect(settingsGroupForKey('jailbreakToggle')).toBe('sidebar')
     expect(settingsGroupForKey('customSidebarItems')).toBe('sidebar')

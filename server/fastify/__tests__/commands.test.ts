@@ -685,6 +685,37 @@ describe('Phase 9-1 command foundation', () => {
     })
   })
 
+  it('persists chain-of-thought exclusion as a boolean language setting', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translatorSendTextAsIs: true,
+      translatorExcludeThoughts: false,
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/language',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { translatorExcludeThoughts: true } },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      acknowledgedKeys: ['translatorExcludeThoughts'],
+      event: { resource: 'settings', id: 'language' },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      translatorSendTextAsIs: true,
+      translatorExcludeThoughts: true,
+    })
+  })
+
   it('does not bump revision or mutate persisted state on validation failure', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

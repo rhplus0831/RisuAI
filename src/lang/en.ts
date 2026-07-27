@@ -400,6 +400,8 @@ export const languageEnglish = {
       'If enabled, it will translate the text before Regex scripts and HTML formatting. This could make the token lesser but could break the formatting.',
     translatorSendTextAsIs:
       "If enabled, Ax. Model translation sends the message text to the model exactly as written — in a single request, with no line protection, splitting, or style placeholders — and the model's response is used verbatim as the translation result.",
+    translatorExcludeThoughts:
+      'When Send Text As-Is is enabled, removes `<Thoughts>` and `<think>` blocks from the source and translation history before sending them to the model.',
     translatorHistoryMaxTokens:
       'Maximum approximate token budget shared by the source and translated history prompt slots. Whole oldest messages are removed when the limit is exceeded.',
     autoTranslateCachedOnly:
@@ -1826,6 +1828,7 @@ export const languageEnglish = {
   translatorPrompt: 'Translation Prompt',
   translateBeforeHTMLFormatting: 'Translate Before HTML Formatting',
   translatorSendTextAsIs: 'Send Text As-Is',
+  translatorExcludeThoughts: 'Exclude Chain-of-Thought',
   translatorHistoryMaxTokens: 'Translation History Max Tokens',
   retranslate: 'Retranslate',
   editTranslation: 'Edit Translation',

@@ -3197,6 +3197,7 @@ export function setDatabase(data: Database) {
   data.stabllityStyle ??= ''
   data.legacyTranslation ??= false
   data.translatorSendTextAsIs ??= false
+  data.translatorExcludeThoughts ??= false
   data.comfyUiUrl ??= 'http://localhost:8188'
   data.comfyConfig ??= {
     workflow: '',
@@ -4067,6 +4068,7 @@ export interface Database {
   }
   translateBeforeHTMLFormatting: boolean
   translatorSendTextAsIs: boolean
+  translatorExcludeThoughts: boolean
   autoTranslateCachedOnly: boolean
   notification: boolean
   autoTranslateNotificationDeferCapSeconds: number

@@ -62,13 +62,14 @@ function settingsFor(translatorType: Exclude<RawMessageTranslatorType, 'llm'>): 
   return settings
 }
 
-function llmSettings(translatorSendTextAsIs: boolean): Record<string, unknown> {
+function llmSettings(translatorSendTextAsIs: boolean, translatorExcludeThoughts = false): Record<string, unknown> {
   return {
     translatorType: 'llm',
     translator: 'ko',
     translatorInputLanguage: 'en',
     aiModel: 'echo_model',
     translatorSendTextAsIs,
+    translatorExcludeThoughts,
   }
 }
 
@@ -221,6 +222,9 @@ describe('translateRawMessageData', () => {
     relabeled.translatorPresets[0].steps[0].id = 'renamed-step-id'
     relabeled.translatorPresets[0].steps[0].name = 'Renamed step'
     expect(hash(relabeled)).toBe(baseline)
+
+    const excludingThoughts = { ...createSettings(), translatorExcludeThoughts: true }
+    expect(hash(excludingThoughts)).not.toBe(baseline)
   })
 
   it.each(providerCases)('uses the $name wire contract and returns normalized metadata', async (providerCase) => {
@@ -394,9 +398,14 @@ describe('translateRawMessageData', () => {
   })
 
   it('sends one untouched LLM request and stores its response verbatim when send-text-as-is is enabled', async () => {
-    const text = ['  before', '{{img::assets/image.png}}', '', '<risu-style>color:red</risu-style>', 'after  '].join(
-      '\n',
-    )
+    const text = [
+      '  before',
+      '<Thoughts>keep this by default</Thoughts>',
+      '{{img::assets/image.png}}',
+      '',
+      '<risu-style>color:red</risu-style>',
+      'after  ',
+    ].join('\n')
     const rawResponse = '  translated exactly\n\n'
     rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames(rawResponse))
 
@@ -410,6 +419,25 @@ describe('translateRawMessageData', () => {
     const request = rawTranslationMocks.dispatchChatProvider.mock.calls[0][0]
     expect(request.formated).toContainEqual({ role: 'user', content: text })
     expect(result.text).toBe(rawResponse)
+  })
+
+  it('removes internal reasoning from send-text-as-is source text when exclusion is enabled', async () => {
+    const text =
+      '<Thoughts data-private="true">draft secret <think>nested secret</think></Thoughts>\n' +
+      'visible source\n<THINK>more private reasoning</THINK>'
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+
+    await translateRawMessageData({
+      settings: llmSettings(true, true),
+      text,
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider).toHaveBeenCalledTimes(1)
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated).toContainEqual({
+      role: 'user',
+      content: 'visible source',
+    })
   })
 
   it('removes internal reasoning wrappers from an LLM translation result', async () => {
@@ -537,6 +565,45 @@ describe('translateRawMessageData', () => {
           'Source=current source',
       },
     ])
+  })
+
+  it('removes internal reasoning from send-text-as-is source and translated history slots', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+
+    await translateRawMessageData({
+      settings: {
+        ...historyLlmSettings(3),
+        translatorExcludeThoughts: true,
+      },
+      text: '<Thoughts>current private</Thoughts>\ncurrent source',
+      historyContext: {
+        messages: [
+          {
+            role: 'user',
+            data: '<Thoughts>old private</Thoughts>\nold source',
+            translation: { text: '<think>old translated private</think>\nold translated' },
+          },
+          {
+            role: 'char',
+            data: 'new source\n<think>new private</think>',
+            translation: { text: 'new translated\n<Thoughts>new translated private</Thoughts>' },
+          },
+          { role: 'user', data: 'current source' },
+        ],
+        messageIndex: 2,
+        greeting: {
+          source: '<think>greeting private</think>\ngreeting source',
+          translated: '<Thoughts>translated greeting private</Thoughts>\ngreeting translated',
+        },
+      },
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated[0].content).toBe(
+      `History:\n${historyBlock('char', 'greeting source')}${historyBlock('user', 'old source')}${historyBlock('char', 'new source')}\n` +
+        `Translations:\n${historyBlock('char', 'greeting translated')}${historyBlock('user', 'old translated')}${historyBlock('char', 'new translated')}\n` +
+        'Source=current source',
+    )
   })
 
   it('treats allBefore as a reset boundary and does not restore the greeting behind it', async () => {

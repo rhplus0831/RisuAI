@@ -222,6 +222,18 @@ export const languageSettingsItems: SettingItem[] = [
   },
 
   {
+    id: 'lang.translatorExcludeThoughts',
+    type: 'check',
+    labelKey: 'translatorExcludeThoughts',
+    bindKey: 'translatorExcludeThoughts',
+    helpKey: 'translatorExcludeThoughts',
+    getValue: (db) => db.translatorExcludeThoughts ?? false,
+    classes: 'mt-4',
+    condition: (ctx) =>
+      !!ctx.db.translator && ctx.db.translatorType === 'llm' && ctx.db.translatorSendTextAsIs === true,
+  },
+
+  {
     id: 'lang.translatorHistoryMaxTokens',
     type: 'number',
     labelKey: 'translatorHistoryMaxTokens',

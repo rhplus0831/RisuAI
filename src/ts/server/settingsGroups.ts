@@ -324,6 +324,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   top_p: 'runtime',
   translateBeforeHTMLFormatting: 'language',
   translatorSendTextAsIs: 'language',
+  translatorExcludeThoughts: 'language',
   translator: 'language',
   translatorInputLanguage: 'language',
   translatorHistoryMaxTokens: 'language',

@@ -399,6 +399,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'stabllityStyle', '')
   setDefault(database, 'legacyTranslation', false)
   setDefault(database, 'translatorSendTextAsIs', false)
+  setDefault(database, 'translatorExcludeThoughts', false)
   setDefault(database, 'comfyUiUrl', 'http://localhost:8188')
   setDefault(database, 'comfyConfig', DEFAULT_COMFY_CONFIG)
   setDefault(database, 'hideApiKey', true)

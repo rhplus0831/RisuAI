@@ -235,9 +235,12 @@ profile, consume the source text, previous step output, or a named prior output,
 and publish an optional named output for later steps. The first step remains
 mirrored into the legacy `translatorPrompt` and `translatorMaxResponse` fields
 for compatibility.
-Provider reasoning wrappers such as `<Thoughts>` and `<think>` remain in request
-history but are removed from each LLM translation step before its output is
-chained, cached, or persisted.
+By default, provider reasoning wrappers such as `<Thoughts>` and `<think>` remain
+in request history but are removed from each LLM translation step before its
+output is chained, cached, or persisted.
+When **Send Text As-Is** and **Exclude Chain-of-Thought** are both enabled, those
+wrappers and their contents are also removed from the current translation source
+and translation-history slots before provider dispatch.
 The selected preset is collection-owned; its pointer and language settings are
 mirrored through `server/fastify/src/routes/commands.ts`,
 `server/fastify/src/databaseDefaults.ts`, and

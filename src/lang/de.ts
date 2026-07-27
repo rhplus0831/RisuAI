@@ -217,6 +217,8 @@ export const languageGerman = {
       'Wenn aktiviert, wird der Text vor Regex-Skripten und HTML-Formatierung übersetzt. Dies könnte die Token verringern, aber die Formatierung beeinträchtigen.',
     translatorSendTextAsIs:
       'Wenn aktiviert, sendet die Ax.-Modell-Übersetzung den Nachrichtentext genau wie geschrieben an das Modell – in einer einzigen Anfrage, ohne Zeilenschutz, Aufteilung oder Stilplatzhalter – und verwendet die Antwort des Modells unverändert als Übersetzungsergebnis.',
+    translatorExcludeThoughts:
+      'Wenn „Text unverändert senden“ aktiviert ist, werden `<Thoughts>`- und `<think>`-Blöcke aus dem Quelltext und Übersetzungsverlauf entfernt, bevor sie an das Modell gesendet werden.',
     translatorHistoryMaxTokens:
       'Maximales ungefähres Token-Budget für die Platzhalter des Quell- und Übersetzungsverlaufs. Bei Überschreitung werden die ältesten Nachrichten vollständig entfernt.',
     autoTranslateCachedOnly:
@@ -1267,6 +1269,7 @@ export const languageGerman = {
   translatorPrompt: 'Übersetzungsanweisung',
   translateBeforeHTMLFormatting: 'Vor HTML-Formatierung übersetzen',
   translatorSendTextAsIs: 'Text unverändert senden',
+  translatorExcludeThoughts: 'Gedankengang ausschließen',
   translatorHistoryMaxTokens: 'Maximale Tokens im Übersetzungsverlauf',
   retranslate: 'Neu übersetzen',
   editTranslation: 'Übersetzung bearbeiten',

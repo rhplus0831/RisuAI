@@ -176,6 +176,8 @@ export const languageChinese = {
       '激活后，将在正则脚本和 HTML 格式化之前翻译文本。这可能减少 Token 数，但可能破坏格式。',
     translatorSendTextAsIs:
       '启用后，Ax. Model 翻译会将消息文本完全按原样发送给模型——仅发送一次请求，不保护行、不拆分，也不使用样式占位符——并将模型的响应原封不动地用作翻译结果。',
+    translatorExcludeThoughts:
+      '启用“按原样发送文本”时，在发送给模型前从源文本和翻译历史中移除 `<Thoughts>` 和 `<think>` 块。',
     translatorHistoryMaxTokens:
       '原文和译文历史提示词插槽共享的近似最大令牌预算。超过限制时会从最旧的完整消息开始移除。',
     autoTranslateCachedOnly: '如果在启用自动翻译的情况下启用，则仅会自动翻译用户之前已翻译过的消息。',
@@ -1178,6 +1180,7 @@ export const languageChinese = {
   translatorPrompt: '翻译提示词',
   translateBeforeHTMLFormatting: '於 HTML 格式化前翻译',
   translatorSendTextAsIs: '按原样发送文本',
+  translatorExcludeThoughts: '排除思维链',
   translatorHistoryMaxTokens: '翻译历史最大令牌数',
   retranslate: '重新翻译',
   editTranslation: '编辑翻译',
