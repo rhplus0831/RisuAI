@@ -1,8 +1,8 @@
 # Server Resources And Bridges
 
-Last audited: 2026-07-23.
+Last audited: 2026-07-27.
 
-Fastify owns durable state. The browser reads concrete REST resources into
+Fastify owns authoritative application state. The browser reads concrete REST resources into
 Svelte-owned settings, collections, and characters state plus a standalone
 inlay-catalog projection, fetches large bodies only when needed, and routes
 persistent edits through command helpers or explicit server-owned mutation
@@ -19,20 +19,21 @@ routes.
   Bootstrap is deliberately runtime-only metadata: initialization state,
   revision/schema version, database lineage, durable writer epoch, the
   pre-takeover writer verdict, asset base URL, running generation jobs, and
-  active manual or generated-message translations. It does not carry durable
-  application data.
+  active manual/generated-message translations, and active greeting
+  translations. It does not carry durable application data.
 - Only classifier-confirmed empty state triggers
   `POST /api/v1/commands/state/initialize`. The winning client reuses the runtime
   metadata and accepted revision it already has; a read-only bootstrap retry is
   needed only when another client won the initialization race.
-- After bootstrap/initialization, startup prepares the mutation outbox against
+- After bootstrap/initialization, startup establishes the shared draft-recovery
+  scope, then prepares the mutation outbox against
   the writer session and database lineage, flushes its durable server-receipt
   acknowledgements, and replays pending intents. Same-session rows survive a
   writer-epoch reclaim. Transient and genuine stale-writer failures retain their
-  encrypted intents; conclusive request, lineage, receipt-id, and malformed
-  permanent-status failures discard them only with an explicit user-visible
-  notice. Any retained or unreadable raw row blocks root-resource hydration so
-  unresolved local work is not hidden by fresh reads.
+  encrypted intents. Same-lineage foreign-writer rows remain dormant, while
+  old-lineage rows are discarded during preparation. Only retained or unreadable
+  rows owned by the current writer and lineage block root-resource hydration;
+  terminal disposal and notices are contract-specific.
 - `loadInitialServerResources()` concurrently reads settings, collections, and
   characters through their hash-aware POST resources (with compatible full GET
   fallback), plus `/api/v1/inlay-assets`. All four responses must report one
@@ -48,9 +49,9 @@ routes.
   on-demand.
 - Startup seeds the known-server and applied-resource revision cursors, enables
   the resource write guard, records runtime jobs, starts active-generation and
-  active-translation recovery, starts active-chat hydration, installs the
+  message/greeting translation recovery, starts active-chat hydration, installs the
   bridge lifecycle flush, and subscribes to `/api/v1/events`.
-- Command success reconciliation and foreign SSE events both flow through the
+- Command success reconciliation and foreign command SSE events both flow through the
   same serialized resource path. Contiguous response-confirmed optimistic
   effects can advance their resource fences without a read; authoritative reads
   still apply in command-event order for every other event.
@@ -73,10 +74,14 @@ routes.
 | `src/ts/server/characterShellHydration.svelte.ts`          | Fetches a full character row when a consumer encounters a shell row.                                                                 |
 | `src/ts/server/promptTemplateHydration.ts`                 | Fetches the template owned by a selected or explicitly requested prompt preset.                                                      |
 | `src/ts/server/messageTranslationJobs.ts`                  | Tracks detached manual or generated-message translation rows from bootstrap and refresh polling.                                     |
+| `src/ts/server/greetingTranslations.svelte.ts`             | Character-scoped greeting projection, source/settings fencing, manual translation, refresh, and job recovery.                        |
 | `src/ts/process/serverGeneratedMessageTranslation.ts`      | Applies translation results embedded in generation completion and seeds the shared translation-job state for running/failure UI.     |
 | `src/ts/process/generatedMessageTranslationEligibility.ts` | Prevents the older rendered-row auto trigger from duplicating server-owned generated-message translation.                            |
 | `src/ts/server/inlayCatalog.ts`                            | Standalone browser projection and revision-aware writes for inlay metadata.                                                          |
 | `src/ts/process/reattach.ts`                               | Reattaches running durable generation jobs reported by bootstrap.                                                                    |
+| `src/ts/server/draftRecoveryScope.ts`                      | Shared database-lineage/writer-session scope for non-authoritative editing recovery.                                                  |
+| `src/lib/ChatScreens/DefaultChatScreen.composerDrafts.ts`  | Bounded per-transcript composer recovery in `sessionStorage`.                                                                         |
+| `src/ts/server/moduleEditorDraftStore.ts`                  | Separately encrypted, bounded IndexedDB recovery for module-editor drafts.                                                            |
 
 `getResourceDatabase()` and the `getDatabase()` adapter compose the settings,
 collections, and characters owners into a transitional aggregate `Database`
@@ -86,20 +91,16 @@ practical, and all durable writes still go through API commands.
 
 ## Durable Mutation Recovery, Command Queue, And Local Acknowledgements
 
-Three related artifacts have separate jobs:
+Do not conflate the persistence and acknowledgement artifacts:
 
-- The browser durable mutation intent is an IndexedDB recovery record staged
-  before dispatch: its command payload is encrypted, while scope/order indexes
-  are plaintext. It is non-authoritative and is retained across transient
-  failures so bootstrap can replay it in dependency order.
-- The server mutation receipt is an SQLite idempotency record keyed by mutation
-  id within the current database lineage. Replaying that id returns the original
-  revision/event/extras without repeating side effects; the browser acknowledges
-  it only after durably deleting the accepted intent.
-- The compact local-effect acknowledgement is response-supplied canonical
-  keys/digests/certificates plus event ownership and client fences. It can
-  acknowledge already-visible optimistic state without a GET, but it is neither
-  the durable intent nor the server receipt.
+| Artifact                         | Storage / protection                                  | Authority and startup effect                                                                                                      |
+| -------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Disposable resource cache        | IndexedDB; SHA-256 reverified after authenticated read | Never authoritative or offline state; corruption/misses fall back to full reads.                                                  |
+| Durable mutation intent          | IndexedDB; AES-GCM payload plus plaintext scope/order | Non-authoritative pending command work; current-scope unresolved rows replay before hydration and can block hydration.            |
+| Composer recovery draft          | Bounded `sessionStorage`; plaintext                   | Lineage/writer-scoped editing recovery only; not a command, receipt, or proof of acceptance.                                      |
+| Module-editor recovery draft     | Separate bounded AES-GCM IndexedDB                    | Lineage/writer-scoped editing recovery with rebase/copy/discard UI; not outbox intent.                                             |
+| Server mutation receipt          | SQLite; lineage-scoped mutation id                    | Authoritative idempotency record returned on replay; acknowledged after the accepted browser intent is durably removed.           |
+| Compact local-effect acknowledgement | Command response plus client projection fences    | May advance already-visible optimistic state without a GET; durable nowhere and distinct from both the intent and server receipt. |
 
 Durable helpers stage before network dispatch (and before a debounced control
 waits to send). Semantic owner keys and explicit dependency keys preserve
@@ -113,8 +114,9 @@ a higher committed row across tabs. Only the allowlisted command shapes in
 `pendingMutationOutbox.ts` are eligible. Secure contexts store a non-extractable
 WebCrypto key; insecure contexts use a separately stored raw AES-GCM key and
 tagged envelopes. If IndexedDB or secure random generation is unavailable, the
-command still uses the ordinary unreceipted transport path, but it cannot rely
-on crash recovery.
+outbox cannot provide crash recovery. IndexedDB/key-persistence failure can
+fall back to ordinary transport; unavailable secure randomness can fail staging
+before dispatch.
 
 Every ordinary browser command domain shares the same server revision, so
 `src/ts/server/commands.ts` serializes high-level mutations through one global
@@ -127,12 +129,13 @@ Accepted response events and matching own-session SSE echoes are accumulated by
 revision and reconciled once after the queued work drains. A response-supplied
 local effect can advance the applied-resource cursor without a GET only when it
 is the next contiguous revision and its event type, resource, and stable owner
-ids match. Effects that depend on an unchanged optimistic target also carry the
+ids match. Message effects also validate the chat-body projection epoch. Effects
+that depend on an unchanged optimistic target carry the
 relevant settings-group, collection, character-row/lorebook, lorebook-page, or
 prompt-owner projection epoch and reject tainted targets.
 
 The acknowledgement path covers settings patches; character, selection,
-order, chat-structure, chat-message, and translation mutations; plugin storage
+order, chat-structure, chat-message, and message-translation mutations; plugin storage
 and plugin/module collections; prompt items and split/legacy presets; Agent
 Preset, persona, translator-preset, loadout, lorebook, and script-definition
 edits. Each helper canonicalizes only the accepted fields or fences an exact
@@ -161,7 +164,11 @@ server revision can advance from a command response, asset upload, generation,
 or Realm completion without making an unapplied event look complete. Clean
 closes and stream errors reconnect with exponential backoff plus jitter, capped
 at 30 seconds. A malformed command frame forces a complete resource refresh
-before reconnect.
+before reconnect. Every frame resets a 60-second silence watchdog;
+visibility/online recovery reconnects immediately, successful reconnect
+retriggers current-scope outbox replay, and foreign writer frames enter the
+takeover flow. Server writer/memory frames are live-only; only command events
+are persisted and replayed.
 
 `refreshInvalidatedServerResources()` sorts and normalizes a single event or a
 coalesced event batch, then converts each resource key into concrete reads:
@@ -178,6 +185,9 @@ coalesced event batch, then converts each resource key into concrete reads:
   changed suffix; ambiguous coalesced generations safely fall back to one full
   chat read. Single-chat invalidation retains authoritative reroll alternates.
 - Character lorebook events read the single or bulk lorebook endpoint.
+- Greeting-translation events read
+  `/api/v1/characters/:characterId/greeting-translations` at or beyond the event
+  revision.
 - Legacy preset row events fetch only the changed hydrated body. Membership
   events read the shell collection plus only the affected bodies at one common
   revision, preserving already-hydrated unchanged rows and concurrent local
@@ -192,6 +202,9 @@ coalesced event batch, then converts each resource key into concrete reads:
 - Broad `state`/`lorebook` events, unknown resources, missing required owner
   ids, and event revision gaps use a complete
   settings/collections/characters/inlay-catalog refresh.
+
+Model-profile and provider-credential events target the `models` group;
+well-formed Agent, Agent Preset, and Agent-use events target `agents`.
 
 Targeted responses must be at least as new as the invalidating event. Per-slice,
 per-collection, character-list, character-row, hydrated-body, and prompt-owner
@@ -211,11 +224,12 @@ unsettled durable intent remain available for dispatch or next-bootstrap
 replay. Projection replacement alone is never treated as proof that a staged
 mutation was accepted; mutation-id settlement is the acknowledgement signal.
 
-After a complete refresh, chat and lorebook hydration identities reset because
-the character endpoint intentionally carries message-free chat rows. The active
-chat is fetched again, selected-character identity is preserved by stable id
-when possible, generation reattach is retriggered, and runtime job metadata is
-refreshed through read-only bootstrap.
+After a complete refresh, chat identities reset because character rows are
+message-free, lorebook identities reset/reseed separately, and greeting
+projections clear. The active chat is fetched again, selected-character identity
+is preserved by stable id when possible, generation reattach is retriggered,
+and generation/message/greeting job metadata refreshes through read-only
+bootstrap.
 
 Server replay is backed by SQLite `command_events` and retained for
 `COMMAND_EVENT_HISTORY_LIMIT` revisions. The server subscribes to live command
@@ -263,12 +277,17 @@ DELETE commands are documented in
 | Character order only                               | `GET /api/v1/characters/order`                                                                   | Character-order invalidation                        |
 | Character selection/interaction                    | `GET /api/v1/characters/:id/selection`                                                           | Character-selection invalidation                    |
 | One character row                                  | `GET /api/v1/characters/:id`                                                                     | Targeted invalidation and character-shell hydration |
+| One character's greeting translations              | `GET /api/v1/characters/:id/greeting-translations`                                               | `greetingTranslations.svelte.ts`                    |
 | Full, tail, ranged, or generation-suffix chat body | `GET /api/v1/chats/:id/messages` with optional `tail`, `start`/`limit`, or `generationMessageId` | `hydrateActiveChat*()` and event invalidation       |
 | Many chat bodies                                   | `POST /api/v1/chats/messages/bulk`                                                               | `ensureAllChatsHydrated()`                          |
 | One character lorebook                             | Cache `POST /api/v1/characters/:id/lorebook`; full `GET` fallback                                | `hydrateActiveCharacterLorebook()` and invalidation |
 | Many character lorebooks                           | `POST /api/v1/characters/lorebooks/bulk`                                                         | `ensureAllCharacterLorebooksHydrated()`             |
 | One legacy bot-preset body                         | Cache `POST /api/v1/legacy-presets/:id`; full `GET` fallback                                     | `ensureBotPresetHydrated()`                         |
 | One prompt-preset template                         | Cache `POST /api/v1/prompt-presets/:id/template`; full `GET` fallback                            | `ensurePromptTemplateHydrated()`                    |
+
+Both bulk hydration endpoints accept at most 32 ids and 64 KiB request bodies.
+The browser splits larger hydrate-all operations into 32-id batches while
+preserving revision fences.
 
 The collection names are `modules`, `plugins`, `modelPresets`,
 `promptPresets`, `botPresets`, `promptTemplate`, `personas`, `loadouts`,
@@ -291,8 +310,9 @@ engine overhead.
 Settings-group ownership is mirrored between the browser and Fastify; the
 dedicated read-only `agents` and `models` exceptions are parity-tested.
 `agents` contains standalone Agents, Agent Presets, and the default-preset
-pointer and is written by dedicated Agent and Agent Preset commands. `models` is an exact
-read-only model-profile slice, while writable `providers` is its superset;
+pointer and is written by dedicated Agent and Agent Preset commands. `models`
+contains exactly `providerCredentials`, `modelProfiles`, `modelRoleProfiles`,
+and `modelRuntimeDefaults`, while writable `providers` is its superset;
 because those projections overlap, applying either response advances both group
 fences, while a models response preserves unrelated provider acknowledgement
 taint. One providers read subsumes a simultaneous models invalidation. The
@@ -364,7 +384,7 @@ that affect rendered state should follow the visible-state policy in
 | `settingsBridge.svelte.ts`         | Debounced settings groups through `PATCH /commands/settings/:group`, equality-noop suppression, rollback-aware patches.                                                              |
 | `characterBridge.svelte.ts`        | Character profile/draft bridging through `PATCH /commands/characters/:id`.                                                                                                           |
 | `chatBridge.svelte.ts`             | Chat metadata and chat-folder bridging through `PATCH /commands/chats/:id` and chat-folder routes.                                                                                   |
-| `lorebookBridge.svelte.ts`         | Global/character/chat/module lorebook replacement routes with hydrated-lorebook guards.                                                                                              |
+| `lorebookBridge.svelte.ts`         | Stable-id global/character/chat/module lorebook upsert/delete/reorder planning with hydrated guards and unsafe-diff replacement fallback.                                            |
 | `promptTemplateBridge.svelte.ts`   | Prompt item/settings routes, selected-prompt-preset ownership, optimistic writes, rollback, and hydration/revision-aware reconciliation.                                             |
 | `scriptDefinitionBridge.svelte.ts` | Global/character/module script and trigger watchers; compact create/update/delete/reorder classification, response-digest checks, projection fencing, and full-replacement fallback. |
 
@@ -394,9 +414,10 @@ in `src/ts/server/activeWriterSession.ts`.
 
 Server protocol metrics are opt-in with `RISU_PROTOCOL_METRICS=1` (also accepts
 `true`, `yes`, or `on`). Browser protocol debug logs are opt-in with
-`localStorage.setItem('risu:protocol-debug', '1')`. Browser diagnostics include
+`localStorage.setItem('risu:protocol-debug', '1')` or `'true'`. Browser diagnostics include
 complete-resource-refresh reasons, hydration concurrency and stale-drop
-counters, and asset byte-read fanout counters. Memory job SSE and refresh paths
+counters, asset byte-read fanout counters, and server event-stream frame/byte,
+lifetime, and close-reason metrics. Memory job SSE and refresh paths
 gate updates through ordering checks, record terminal jobs, and suppress stale
 or non-active terminal refresh updates. Relevant files include
 `server/fastify/src/protocolMetrics.ts`,

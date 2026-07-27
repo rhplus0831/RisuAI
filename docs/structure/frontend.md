@@ -1,6 +1,6 @@
 # Frontend Map
 
-Last audited: 2026-07-23.
+Last audited: 2026-07-27.
 
 Moved: current frontend documentation lives under `src/docs/`.
 
@@ -14,8 +14,9 @@ Start with:
   UI, accessibility, styling, localization, and visible-state testing.
 - [`src/docs/client-runtime.md`](../../src/docs/client-runtime.md) for browser
   coordination: Fastify startup, root-resource ownership, async freshness,
-  generation/reattach, fixed server-operation adapters, and links to canonical
-  backend/assets/provider/plugin owners.
+  durable mutation and draft recovery, generation/reattach, fixed
+  server-operation adapters, and links to canonical backend/assets/provider/plugin
+  owners.
 
 This file remains only as a compatibility pointer for older archive links. Do
 not add current frontend guidance here.

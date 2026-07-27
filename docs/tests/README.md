@@ -45,7 +45,7 @@ The main weakness is integration depth rather than raw case count. Most frontend
 | `pnpm test:frontend:all` | Frontend tests including both explicit gate directories                                                       |
 | `pnpm test:gates`        | All explicit performance and audit gates                                                                      |
 | `pnpm test:gates:perf`   | The two named render/clone performance probes                                                                 |
-| `pnpm test:gates:audit`  | Static and mounted audit gates under `src/lib/_audit`                                                         |
+| `pnpm test:gates:audit`  | The two mounted visible-state audit gates under `src/lib/_audit`                                             |
 | `pnpm test:server`       | Node/Fastify/SQLite tests discovered by `server/fastify/vitest.config.ts`                                     |
 | `pnpm test:smoke`        | Serial Chromium tests under `server/fastify/browser-smoke`                                                    |
 | `pnpm test:all`          | The quality-workflow aggregate: formatting, both type checks, frontend, gates, UI map, server, and smoke      |

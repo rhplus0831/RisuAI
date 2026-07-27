@@ -1,27 +1,28 @@
-# Audit Scopes
+# July 23, 2026 Audit Scopes
 
-**Status update (2026-07-23, post-implementation):** every actionable open
-item in these scopes has been resolved. Seven fix commits landed the same day
+Archived after the planned 2026-07-23 implementation tranche. Seven fix commits landed that day
 (`8f0433e66` promptTemplate parity, `a60066671` backup round-trips,
 `92dcf55e3` onboarding settlement, `e68d3e991` outbox order atomicity,
 `1da791a65` transfer bounds/metrics, `2c757ee2b` draft durability,
 `73b53c33a` greeting translation storage), each implementing its plan in
 `plans/` with the recommended decisions. Remaining entries are `ACCEPTED`
 contracts, `EVIDENCE-GATED` deferrals, or decision items (`enableLorebookStubs`).
-The scope files' issue-history, verified-safe, and invariants sections remain
-the durable reference for future audits.
+The scope files retain their as-of-2026-07-23 priorities, issue history,
+verified-safe findings, and unresolved labels. Those labels are not a current
+backlog or a source of current behavior; re-verify them against the live code.
+Paths that start with `docs/audit/` record this workstream's original working
+location.
 
-Working area for audit planning. Built 2026-07-23 from three sources: the
+This workstream was built from three sources: the
 project memory index, `.archived-docs/` (topic-grouped history of every closed
 workstream and audit), and `git log` (~2,000 `fix:` commits with
-symptom-naming messages). When these audits close, this directory should be
-archived to `.archived-docs/` per repo convention.
+symptom-naming messages).
 
 Each scope file is a self-contained brief that can be handed to an auditor
 (human or agent) as-is: what is in bounds, what already broke there and why,
 what is still open, and what has been verified safe and must not be re-audited.
 
-## Status legend for open items
+## Historical Status Legend
 
 | Tag              | Meaning                                                                                |
 | ---------------- | -------------------------------------------------------------------------------------- |
@@ -32,8 +33,8 @@ what is still open, and what has been verified safe and must not be re-audited.
 
 ## Scopes
 
-| Scope                                              | Charter (one line)                                                                     | Audit priority |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------- |
+| Scope                                              | Charter (one line)                                                                     | Historical priority on 2026-07-23 |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------- |
 | [Data durability](data-durability.md)              | Backup/restore/import/export lifecycle, boot import, asset GC, safety snapshots.        | Medium — majors remediated 07-21/23; residual tier-3 list remains. |
 | [Writer coordination & outbox](writer-outbox.md)   | Active-writer lease, takeover, lost-writer latch, pending-mutation outbox, multi-tab.   | Medium — one known residual race; recent heavy churn. |
 | [Client↔server sync & hydration](sync-hydration.md) | Bootstrap, resource projection, revision fencing, SSE events, settlement semantics.     | Medium — the SSE-liveness/409 gap turned out already fixed (`5b0d2da81`); remaining opens are decision items. |
@@ -45,18 +46,18 @@ what is still open, and what has been verified safe and must not be re-audited.
 
 ## Cross-cutting exclusions (apply to every scope)
 
-- **Plugin V2 is permanently unsupported** by maintainer policy (deprecated in
+- Plugin V2 is permanently unsupported by maintainer policy (deprecated in
   favor of Plugin V3). Do not audit V2 code paths for server parity.
-- **Dismissed finding IDs from the v1–v4 stability/perf audits must not be
-  re-opened.** Each version's dismissed/refuted IDs live in its archived
+- Dismissed finding IDs from the v1–v4 stability/perf audits must not be
+  re-opened. Each version's dismissed/refuted IDs live in its archived
   `active-risk-analysis.md` / dismissed-findings files under
   `.archived-docs/performance-and-stability/stability-audits/`.
-- **Archival completeness gates were deliberately deleted** 2026-07-14
+- Archival completeness gates were deliberately deleted on 2026-07-14
   (`49814e919`): `fixCompletenessGate`/`V2`/`V3`, `commandMutationBudget`,
   `cloneCostGateCompleteness`, A4R*/EC* rules. Do not look for or re-add them.
-- **Legacy Global Lorebook/Regex pages are hidden by preference** — new global
+- Legacy Global Lorebook/Regex navigation is hidden by preference; new global
   functionality routes through modules.
-- **Group chat is removed.** Dead strings/comments remain (known cleanup item);
+- Group chat is removed. Dead strings/comments remain (known cleanup item);
   runtime guards enforce removal.
 
 ## Cross-cutting invariants (hold all new code against these)

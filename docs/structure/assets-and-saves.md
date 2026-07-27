@@ -1,15 +1,15 @@
 # Assets And Saves
 
-Last audited: 2026-07-23.
+Last audited: 2026-07-27.
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
 instead of writing runtime state directly.
 
 Static app assets are a separate source boundary from persisted runtime assets:
-`public/` is Vite-served static input, `resources/` contains packaging
-icon/splash sources, and `src/etc/` contains bundled media/docs/tokenizer seed
-data. Save/import/export and user-upload flows should use server asset ids and
+`public/` is Vite-served static input, `resources/` retains currently
+unconsumed packaging artwork, and `src/etc/` mixes live bundled media/tokenizer
+data with unreferenced legacy payloads. Save/import/export and user-upload flows should use server asset ids and
 `/api/v1/assets/:id` URLs, not static `/public` paths.
 
 ## Assets
@@ -21,7 +21,8 @@ data. Save/import/export and user-upload flows should use server asset ids and
 | `server/fastify/src/assetGc.ts`                                             | Reference-counted asset garbage collection over a minimal SQLite reference shape.                 |
 | `server/fastify/src/risuSave/assetReferences.ts`                            | Known-field asset-reference walker for import/export/GC reports.                                  |
 | `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`                     | Browser upload/read adapters, asset URL normalization, and private bulk-upload existence probing. |
-| `src/ts/server/inlayCatalog.ts`                                             | Browser catalog projection plus revisioned metadata upsert/delete helpers.                        |
+| `src/ts/server/inlayCatalog.ts`                                             | Browser catalog projection validation and revision-aware acknowledgement application.             |
+| `src/ts/server/commands.ts`, `src/ts/process/files/inlays.ts`               | Catalog commands plus the upload/register/migrate/read/delete inlay workflow.                      |
 | `src/ts/server/settingsMediaAssetUpload.ts`, `src/ts/process/stableDiff.ts` | Durable image-setting asset references and lazy provider-request base64 materialization.          |
 
 Asset ids are lowercase sha256 hex strings. Metadata lives in SQLite `assets`;
@@ -31,7 +32,7 @@ by `CONTENT_TYPE_EXTENSIONS` and mirrored by content type in
 for the server's canonical `jpg` extension.
 `POST /api/v1/assets` accepts raw supported asset bytes;
 `POST /api/v1/assets/bulk` accepts compact binary framing for browser bulk
-uploads and keeps JSON/base64 batch compatibility for import paths.
+uploads and keeps JSON/base64 batch compatibility for legacy callers.
 Uploads are authenticated and active-writer guarded. Asset metadata is outside
 the revisioned application-resource domain: uploads return the current domain
 revision but do not bump it or emit a command event. Re-uploading existing
@@ -44,9 +45,11 @@ GC grace window before the upload's later reference mutation commits.
 
 `GET` and `HEAD /api/v1/assets/:id` are public immutable reads for ids present
 in metadata and on disk. `POST /api/v1/assets/exists` is a public read-only POST
-that reports missing ids.
+that checks metadata only; it does not prove the corresponding file remains on
+disk. A direct re-upload can heal missing bytes, but a browser bulk helper can
+skip that repair when metadata already exists.
 
-New NovelAI I2I/character-reference and WaveSpeed reference-image uploads store
+NovelAI I2I/character-reference and WaveSpeed reference-image uploads store
 only the durable server asset id and remove the duplicated legacy inline-base64
 field. `stableDiff.ts` reads and encodes the asset only while constructing the
 provider request. Imported base64-only settings and inline fallbacks for an
@@ -64,8 +67,10 @@ storage is the deliberate arbitrary-JSON exception: GC loads only its
 `value_json` columns and deeply scans strings, while the shared walker applies
 the same sha256-id/`assets/<id>.<ext>` validation used everywhere else.
 
-The shared walker is authoritative for known database fields, so save/bundle
-reports and GC must gain those fields together. Operational-only references
+The shared walker is authoritative for current portable-save and GC database
+fields. Legacy `.bin` rewriting uses a separate field list in
+`localBackupDatabase.ts`; keep it synchronized or raw asset ids can survive that
+conversion. Operational-only references
 (pending finalization rows and catalog membership) are appended only in the GC
 report because they are not part of an exported database; message-table scans
 are shared by repository export reports and GC. A grace window protects
@@ -93,8 +98,10 @@ guarded by `server/fastify/__tests__/inlayCatalog.test.ts` and
 | Path                                                                  | Role                                                                |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `server/fastify/src/routes/save.ts`                                   | Save import/export and device-backup bundle routes.                 |
-| `server/fastify/src/risuSave/importSnapshot.ts`                       | Multipart `.risu` decode and import normalization.                  |
+| `server/fastify/src/risuSave/importSnapshot.ts`                       | Envelope decode, validation, and import normalization.              |
 | `server/fastify/src/risuSave/exportSnapshot.ts`                       | Repository export into block or legacy envelopes.                   |
+| `server/fastify/src/risuSave/portableMetadata.ts`                     | Validated versioned `__risuServerData` metadata.                     |
+| `server/fastify/src/translation/greetingTranslationStore.ts`          | Portable normalized greeting-translation extraction/replacement.    |
 | `server/fastify/src/risuSave/bundleExport.ts`                         | Zip bundle export with `.risu` bytes plus present asset files.      |
 | `server/fastify/src/risuSave/localBackupExport.ts`                    | Original Risu `.bin` local-backup export with asset records.        |
 | `server/fastify/src/risuSave/localBackupImport.ts`                    | Streaming device-backup decode for `.risu.zip` and legacy `.bin`.   |
@@ -108,8 +115,9 @@ database bodies. Imports normalize the database, apply it through the
 repository, replace legacy Hypa V3 rows where needed, emit `state.imported`,
 and return asset reports. Multipart `.risu` and bundle-style imports also
 return import reports; JSON body compatibility imports return only the asset
-report. Plain `.risu` imports report missing asset ids; they do not fetch
-remote/cache assets server-side.
+report. Plain `.risu` responses expose aggregate referenced/missing/orphaned
+counts, where missing means absent asset metadata rather than missing disk
+bytes. They do not fetch remote/cache assets server-side.
 
 `GET /api/v1/export/risusave` exports the current repository as a `.risu` and
 supports envelope/compression query options.
@@ -136,6 +144,12 @@ asset paths in the embedded database are canonicalized back to server asset ids
 before persistence, including custom or fallback non-sha256 media filenames.
 `src/ts/server/backups.ts` uses the `x-risu-estimated-backup-bytes` progress
 header when present; UI-facing wrappers live in `src/ts/storage/backup.ts`.
+
+Whole-database `.risu`, bundle, and legacy `.bin` imports reject group
+characters atomically with `422 unsupported-group-characters`. Exported
+whole-database saves contain raw credential-bearing settings, including shared
+provider API keys and Vertex private keys; treat these files as secrets. The
+separate bug-report export masks registered secrets.
 
 ## Client Content Exchange
 
@@ -177,11 +191,14 @@ browser refreshes only the character list and preserves resident hydrated
 bodies; a missing cursor, mismatched event, or revision gap falls back to a
 complete resource refresh. Server Realm import is primary but not exclusive:
 unsupported server Realm responses can fall back to the older browser path, and
-local direct `charx` file import still has a browser-native path.
+local direct `charx` file import still has a browser-native path. Negotiating
+`realmProgressDelta` makes the first progress frame complete and later frames
+carry `percent` plus only changed fields.
 Operational guards include a request deadline and client-disconnect abort,
 dynamic JSON size caps, per-asset and cumulative fetched-asset caps, pending
-low-level-access confirmation tokens, and staged/created asset cleanup on
-failure. Non-SSE JSON responses include success, low-level-access confirmation
+low-level-access confirmation tokens, and temporary staging cleanup. Rollback of newly created
+asset rows/files is guaranteed for the JSON-card path but not after the charx
+asset commit. Non-SSE JSON responses include success, low-level-access confirmation
 tokens, HTTP `415` `unsupported_realm_download` fallbacks, revision conflicts,
 and upstream/fetch errors.
 The `/api/v1/download/dynamic/` string in the route module is an upstream Realm
@@ -240,6 +257,10 @@ is explicit:
 | ----- | ------------------------------------------ | --------------------- |
 | Generation finalization retries | Excluded: portable content transfer never resumes old operational work. | Snapshot-owned and restored. Historical queue tables use an explicit column projection; missing target snapshots default to `NULL` and missing alternates to `[]`. |
 | Legacy-summary tombstones | Encoded under the validated, versioned `__risuServerData` root key and stripped before repository normalization. | Snapshot-owned and restored after `memory_summaries`, so delete-trigger side effects cannot change the selected snapshot. |
+| Greeting translations | Source-valid rows are embedded per character; import validates, deduplicates, and drops stale-source rows. | `greeting_translations` is restore-allowlisted and replaced with the snapshot. |
+| LLM request history | Excluded from portable formats. | The physical SQLite copy contains it, but `request_history` is not restore-allowlisted, so restore leaves the target's live history untouched. |
+| Inlay catalog and asset store | Catalog metadata/catalog-only assets are excluded. Bundle/local formats can add portable database references and present asset files without replacing the target catalog/store. | `inlay_catalog` is restored and the asset directory is replaced. |
+| Provider credentials | Included unmasked in whole-database settings; portable save files must be handled as secrets. | Restored with settings. |
 | Push subscriptions | Excluded: endpoint and auth material is origin/device state. | Deliberately remains live across restore. The VAPID key file is outside every backup, so losing the live subscription table or moving origins requires users to re-enable notifications. |
 
 `database_metadata` also remains live because restore rotates lineage/writer
@@ -269,6 +290,3 @@ Restore and bundle import call `adoptReplacementDatabaseOwnership()` before a
 complete refresh. A changed lineage/writer epoch retires the old projection,
 pending bridge ownership, and registered mutation settlements before the outbox
 admits writes against the replacement database.
-
-Module `.risum` import, embedded module assets, and MCP stored-row rules are
-owned by [Plugins And MCP](plugins-and-mcp.md).

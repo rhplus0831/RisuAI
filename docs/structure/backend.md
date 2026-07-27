@@ -1,11 +1,11 @@
 # Backend Map
 
-Last audited: 2026-07-23.
+Last audited: 2026-07-27.
 
 The backend is the Fastify server under `server/fastify`. It owns SQLite state,
-auth, provider secrets, prompt assembly, provider dispatch, message
-translation, Hypa V3 memory, imports/exports/backups, and the `/api/v1/*` route
-surface.
+auth, provider credentials, prompt assembly, provider dispatch, message and
+greeting translation, request history, Hypa V3 memory, imports/exports/backups,
+and the `/api/v1/*` route surface.
 
 ## Key Files
 
@@ -14,7 +14,7 @@ surface.
 | `server/fastify/src/index.ts`                                                           | Process entrypoint: load config, call `buildApp()`, listen, handle shutdown signals.                                                                                                  |
 | `server/fastify/src/app.ts`                                                             | Composition root for plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA.                                                                              |
 | `server/fastify/src/config.ts`                                                          | Parses `RISU_API_*`, `TRUST_PROXY`, hub/Realm URLs, static root, trace mode, and agent auth bypass.                                                                                   |
-| `server/fastify/src/db.ts`, `databaseLineage.ts`, `commandMutationReceipts.ts`          | SQLite schema v26, migrations, `schema_version`, global revision, durable command-mutation receipts, database lineage, receipt acknowledgements, and durable writer ownership/epochs. |
+| `server/fastify/src/db.ts`, `databaseLineage.ts`, `commandMutationReceipts.ts`          | SQLite migrations, `schema_version`, global revision, durable command-mutation receipts, database lineage, receipt acknowledgements, and durable writer ownership/epochs.             |
 | `server/fastify/src/databaseInitialization.ts`                                          | Fail-closed first-run classifier: valid settings mean initialized; character/chat/message rows or revision/event history without settings mean conflict, never a fresh reseed.        |
 | `server/fastify/src/databaseDefaults.ts`                                                | Canonical first-run and import-normalization defaults; keep persisted setting groups aligned with the browser ownership map and parity test.                                          |
 | `server/fastify/src/repository.ts`                                                      | Broad/scoped/exact domain loaders, REST resource/hydration readers, targeted row/table writers, legacy `db.json` import, `applyImport`, assets, backups.                              |
@@ -27,8 +27,9 @@ surface.
 | `server/fastify/src/routeRateLimits.ts`                                                 | Per-route rate-limit presets.                                                                                                                                                         |
 | `server/fastify/src/protocolMetrics.ts`, `requestTrace.ts`                              | Opt-in protocol metrics, command table-write capture, and API request traces.                                                                                                         |
 | `server/fastify/src/generationJobs.ts`, `generationFinalizationRetry.ts`                | Process-local durable chat jobs, replay/reattach state, and SQLite-backed finalization retry rows.                                                                                    |
-| `server/fastify/src/messageTranslationJobs.ts`                                          | Process-local running jobs plus bounded terminal manual/generated-message translation recovery rows exposed through runtime bootstrap.                                                |
-| `server/fastify/src/translation/`                                                       | Google, DeepL, DeepLX, and LLM message translation, multi-step/history-aware translator execution, and generated-message automatic-translation follow-up.                             |
+| `server/fastify/src/requestHistory.ts`, `routes/requestHistory.ts`                      | Durable provider-attempt summaries/details, retention pruning, authenticated reads, and active-writer deletion.                                                                       |
+| `server/fastify/src/messageTranslationJobs.ts`, `greetingTranslationJobs.ts`            | Separate process-local registries for message and greeting translation execution/recovery exposed through runtime bootstrap.                                                           |
+| `server/fastify/src/translation/`                                                       | Google, DeepL, DeepLX, and LLM translation, translator pipelines, normalized greeting storage, and generated-message automatic follow-up.                                               |
 | `server/fastify/src/pushNotifications.ts`                                               | Web Push VAPID key loading/generation, subscription persistence, and best-effort completion pushes.                                                                                   |
 | `server/fastify/src/assetGc.ts`                                                         | Periodic reference-counted asset garbage collection.                                                                                                                                  |
 | `server/fastify/src/streamJobs.ts`, `streamBackpressure.ts`                             | Process-local proxy stream jobs and bounded stream writes for slow clients.                                                                                                           |
@@ -40,6 +41,7 @@ surface.
 | `server/fastify/src/realmImport/`                                                       | Realm dynamic-card/`charx` conversion helpers used by Realm import routes.                                                                                                            |
 | `server/fastify/src/prompt/agentPresetExecution.ts`, `src/ts/agentPresetReferences.ts`  | Prepared-input and named-output-CBS Agent Preset prompting, shared reference expansion, provider dispatch, phase execution, failure handling, and diagnostics.                        |
 | `server/fastify/src/commands/agentPresets.ts`                                           | Revisioned standalone Agent and Agent Preset/use create/update/duplicate/delete/reorder/default commands, reference validation, and delete cleanup.                                     |
+| `server/fastify/src/commands/providerCredentials.ts`                                    | Revisioned shared API-key/Vertex credential CRUD, masking-aware updates, reference validation, and deletion guards.                                                                    |
 | `server/fastify/src/prompt/luaPostGenerationProgress.ts`                                | Live post-generation Lua progress frames for long `editOutput` / `onOutput` runs.                                                                                                     |
 
 `buildApp()` is test-friendly. `BuildAppOptions` can inject generation chat
@@ -65,8 +67,8 @@ evidence without `risu.db` refuses startup unless
 `RISU_API_ALLOW_MISSING_DATABASE=1`; invalid legacy envelopes are quarantined,
 while malformed JSON remains in place and stops startup for operator repair.
 It then starts the memory worker, creates command/memory event buses, creates
-proxy, durable-generation, and message-translation registries, and starts
-GC/finalization retry timers. The proxy stream and durable-generation
+proxy, durable-generation, message-translation, and greeting-translation
+registries, and starts GC/finalization retry timers. The proxy stream and durable-generation
 registries share a GC tick, asset GC is optional, and the generation
 finalization retry sweep runs once on startup then on a default 5s interval
 while also pruning retained terminal retry rows. Startup also calls
@@ -76,23 +78,25 @@ tracing adds `X-Request-UID` and writes API traces under
 `data/trace/<mode>.jsonl` while keeping the newest 5,000 entries per mode. The
 startup push service loads or generates VAPID keys before push routes accept
 subscriptions.
-Optional generation trace sidecars write redacted prompt payloads under
+Optional generation trace sidecars write redacted prompt-emission payloads and
+OpenAI/Gemini provider request bodies under
 `data/trace/generation/` only when protocol metrics and
 `RISU_GENERATION_TRACE_FULL_PROMPT=1` are enabled. Post-generation Lua flow
 diagnostics also use protocol metrics: `generation_lua_post_generation_trace`
 records metadata for `editOutput`/`onOutput` runs and links a compressed
 `bodySidecar` with chat/completion before-after bodies under
-`data/trace/generation/`. `onClose` stops
-workers/timers/jobs and settles generation runners before closing SQLite.
+`data/trace/generation/`; these Lua sidecars do not require the full-prompt
+flag. `onClose` stops the memory worker and owned timers, removes proxy and
+generation jobs, settles generation runners, and closes SQLite.
 
 The active-writer guard is registered after health/auth/bootstrap and before
 guarded routes, with route decisions driven by `routeManifest.ts`. Asset upload
 routes also perform early auth/writer checks before body parsing. New routes
 should be registered from `app.ts` and mirrored in `routeManifest.ts`.
 Route protection is test-backed by
-`server/fastify/__tests__/routeProtection.test.ts`, which derives live routes
-from `app.printRoutes()` and checks every `/api/v1/*` route has a manifest
-decision. Runtime active-writer enforcement uses `activeWriter.ts`: before any
+`server/fastify/__tests__/routeProtection.test.ts`, which derives route policy
+from `app.printRoutes()` and the manifest and guards explicit wildcard/prefix
+exceptions. Runtime active-writer enforcement uses `activeWriter.ts`: before any
 writer is latched, guarded mutations are allowed; after a writer-intent
 bootstrap latches ownership, stale or missing writer sessions receive
 `423 active_writer_stale`. Ownership and its monotonic epoch live in
@@ -109,15 +113,16 @@ asset upload `30/min`, and generation submit `60/min`.
 
 | Family                | Registrars                                                                                                                        | Notes                                                                                                                                                                                                                                                                                                                                                                                     |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                                                                                            | Health/status/setup/login plus authenticated runtime-only bootstrap; writer intent latches the active writer, while the response carries initialization/revision/schema metadata, active generation jobs, and translation recovery rows.                                                                                                                                                  |
-| Resources/events      | `resourceReads.ts`, `events.ts`                                                                                                   | Root and targeted REST resources, the server-owned inlay catalog, lazy/bulk chat/lorebook/preset hydration, replayable command SSE, and live memory SSE.                                                                                                                                                                                                                                  |
-| Commands              | `commands.ts` plus `commands/`                                                                                                    | First-run initialization plus revision-checked domain mutations for settings, profiles/presets, personas/loadouts, characters/chats/messages, lorebooks, modules/plugins, definitions, and generation results. Hot paths accept sparse object/row/definition patches and return compact canonical or digest-backed receipts when the browser can acknowledge its optimistic state safely. |
+| Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                                                                                            | Health/status/setup/login plus authenticated runtime-only bootstrap; writer intent latches the active writer, while the response carries initialization/revision/schema metadata, active generation jobs, and separate message/greeting translation recovery entries.                                                                                                                      |
+| Resources/events      | `resourceReads.ts`, `events.ts`                                                                                                   | Root and targeted REST resources, greeting translations, the inlay catalog, bounded lazy/bulk hydration, replayable command SSE, and live memory SSE.                                                                                                                                                                                                                                    |
+| Commands              | `commands.ts` plus `commands/`                                                                                                    | First-run initialization plus revision-checked domain mutations, including shared provider credentials and standalone Agents/Agent Presets. Hot paths accept sparse object/row/definition patches and return contract-specific canonical state or digest-backed receipts when optimistic state can be acknowledged safely.                                                              |
 | Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`                                                                            | Content-addressed assets, `.risu`/bundle/local-backup import/export, Realm import, snapshots.                                                                                                                                                                                                                                                                                             |
 | Push notifications    | `pushNotifications.ts`                                                                                                            | Web Push VAPID public-key lookup plus authenticated subscription create/delete routes; durable subscriptions live in SQLite while generated VAPID keys live in `data/__web_push_vapid_keys.json`.                                                                                                                                                                                         |
 | Provider/media ops    | `providerOperations.ts`, `embeddingOperations.ts`, `tts.ts`, `imageGeneration.ts`, `openAITranscription.ts`, `mcpOAuthRefresh.ts` | Authenticated, bounded server-owned provider catalogs/translations, remote embeddings, TTS, image generation, OpenAI transcription, and stored-credential MCP OAuth refresh.                                                                                                                                                                                                              |
 | Proxy/compatibility   | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts`                                                                         | Generic proxy/stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility bytes, and the public auth crypto helper.                                                                                                                                                                                                                                                          |
 | Generation            | `generation.ts`, `generationChat.ts`                                                                                              | Completion route, server-assembled chat generation, preview prompt, internal chat generation settings/profile/Agent Preset readiness preflight, durable reattach/cancel.                                                                                                                                                                                                                  |
 | Memory                | `memoryJobs.ts`, `memoryReads.ts`                                                                                                 | Queue/cancel/list jobs plus chunk/summary reads and active-writer summary edit/delete routes.                                                                                                                                                                                                                                                                                             |
+| Request history       | `requestHistory.ts`                                                                                                               | Authenticated summary/detail reads and active-writer deletion for durable provider-attempt history; retention pruning is operational state outside domain revisions.                                                                                                                                                                                                                      |
 
 The Commands family includes atomic onboarding at
 `POST /api/v1/commands/onboarding`: one transaction patches the selected
@@ -149,8 +154,9 @@ hand-written browser adapters under `src/ts/server/` and
 
 ### Server-Owned Provider And Media Boundary
 
-These authenticated routes perform upstream work without mutating local durable
-application state, so they do not require active-writer ownership. They accept
+These authenticated routes perform upstream work without writing returned
+provider/media data into durable application state, so the work itself does not
+require active-writer ownership. They accept
 fixed operation discriminators and bounded, provider-specific inputs rather
 than arbitrary upstream URLs, methods, or headers. Stored credentials resolve
 inside Fastify, while request/result limits, deadlines, rate limits, sanitized
@@ -159,6 +165,9 @@ errors, and disconnect cancellation stay at the route/service boundary.
 The family currently covers provider operations, embeddings, TTS, image
 generation, OpenAI transcription, and MCP OAuth refresh. It is distinct from
 the generic proxy family and does not persist returned media/provider data.
+Provider attempts may write operational request history. MCP OAuth refresh can
+also persist a rotated refresh token through a targeted settings mutation; that
+exception is owned by [Plugins And MCP](plugins-and-mcp.md).
 [Providers And Models](providers-and-models.md#server-owned-provider-and-media-operations)
 owns the operation/provider/result matrix and browser adapter map.
 
@@ -205,8 +214,8 @@ results; SQLite finalization retries protect stale targets and idempotency.
 Preview prompt assembles once without dispatching a provider.
 
 Raw-message translation is disconnect-independent. The registry in
-`server/fastify/src/messageTranslationJobs.ts` keeps running rows plus succeeded
-or failed terminal rows for `TERMINAL_RETENTION_MS` (10 minutes), capped by
+`server/fastify/src/messageTranslationJobs.ts` keeps running entries plus succeeded
+or failed terminal entries for `TERMINAL_RETENTION_MS` (10 minutes), capped by
 `MAX_TERMINAL_JOBS` (128), with bounded/redacted errors so bootstrap polling can
 observe completion. Source-safe persistence lives in
 `server/fastify/src/translation/rawMessageTranslation.ts`. Guards are
@@ -227,6 +236,13 @@ translation settles or the cap expires. Browser handling lives in
 `server/fastify/__tests__/generationChatCompletionTranslation.test.ts` and
 `src/ts/process/serverGeneratedMessageTranslation.test.ts`.
 
+Greeting translation uses a separate process-local registry and a normalized
+character-scoped SQLite store. `translation/serverGreetingTranslation.ts`
+fences source/settings/previous-value changes before persistence,
+`translation/greetingTranslationStore.ts` owns the rows, and
+`greetingTranslationJobs.ts` exposes unfinished work through
+`activeGreetingTranslations` for browser recovery.
+
 Only Hypa V3 is maintained. Legacy backfill lives in `memoryLegacyImport.ts`.
 Memory storage and queueing live in `memoryRepository.ts`; planning/selection
 live in `memoryPlanner.ts`, `memoryChunkPlanner.ts`,
@@ -243,8 +259,9 @@ and `memorySummarizeJobHandler.ts`; provider models/deadlines live in
 Prompt assembly snapshots summaries, plans new chunks/jobs, selects existing
 summaries without provider calls, and enqueues follow-up summarize/embed jobs for
 the worker. Provider-backed embedding/summarization work runs in the worker, not
-inline on the chat hot path. `GET /api/v1/memory/jobs` is compact and ETag-backed;
-chunk/summary read routes return full text for a chat. Authenticated active
+inline on the chat hot path. `GET /api/v1/memory/jobs` is compact and ETag-backed.
+Chunk/summary reads use cursor pagination up to 200 rows; legacy unpaged
+requests fail with `413` when more than 1,000 rows would be returned. Authenticated active
 writers can edit summary text/Important/category/tag metadata or delete a
 summary through `PATCH`/`DELETE /api/v1/memory/summaries/:summaryId`; the Hypa
 V3 manager reads and mutates these server-owned rows directly.

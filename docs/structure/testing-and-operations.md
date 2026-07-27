@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-07-23.
+Last audited: 2026-07-27.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -24,7 +24,7 @@ pin a `packageManager`; the lockfile is pnpm lockfile v9.
 | `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane without explicit gate tests.                                                                        |
 | `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit gate tests.                                                                                     |
 | `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit gate tests.                                                                                                             |
-| `pnpm test:gates`                  | Run explicit frontend architecture, UI, clone-cost, and render-cost gates.                                                                                                    |
+| `pnpm test:gates`                  | Run two mounted visible-state UI gates plus render-cost and send-clone performance gates.                                                                                     |
 | `pnpm test:gates:audit`            | Run UI-audit gate tests.                                                                                                                                                      |
 | `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                                                                                        |
 | `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                                                                                              |
@@ -110,8 +110,9 @@ compressed sidecar is at most 10 MiB. Oversized compressed bodies, multipart,
 binary, SSE, and stream bodies are recorded as omitted metadata.
 
 Generation trace sidecars are separate and opt in only when protocol metrics are
-enabled and `RISU_GENERATION_TRACE_FULL_PROMPT=1`. They write redacted prompt
-payloads under `<data-dir>/trace/generation/`, capped by
+enabled and `RISU_GENERATION_TRACE_FULL_PROMPT=1`. They write redacted
+prompt-emission payloads and OpenAI/Gemini provider request bodies under
+`<data-dir>/trace/generation/`, capped by
 `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES`.
 
 Post-generation Lua flow tracing also uses `RISU_PROTOCOL_METRICS=1`. When
@@ -124,6 +125,9 @@ counts. Its `bodySidecar` points at a compressed JSON file under
 phase, `editOutput` text before/after, and captured Lua `log()` values. Use this
 when debugging whether post-generation Lua ran, whether `setChat` changed the
 assistant row, or whether low-level LLM calls were blocked.
+Lua sidecars require protocol metrics but not the full-prompt flag; they use the
+same compressed-size cap. These files can retain redacted user prompt/chat
+content and should not be shared casually.
 
 To serve a built SPA through Fastify:
 
@@ -153,7 +157,7 @@ source helper, not generated output.
 | Browser smoke               | `pnpm smoke:fastify-browser` or `pnpm test:smoke`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`; specs start an in-process Fastify app on a random port serving `dist`.                    |
 
 Pick the smallest command that covers the changed area. On a fresh machine, run
-`pnpm exec playwright install chromium` before browser smoke.
+`pnpm exec playwright install --with-deps chromium` before browser smoke.
 `server/fastify/__tests__/README.md` is the maintained topical map for the flat
 Fastify test directory; use it to find command/persistence, generation, memory,
 provider, job, asset/import, and platform/route coverage.
@@ -170,9 +174,11 @@ include those files. Server Vitest uses Node, forks, a 15s test timeout, and
 sets `RISU_DIRECT_REALM_IMPORT_TEST` only when the Realm import test is directly
 selected. Playwright smoke is serial, one-worker Chromium with trace retained on
 failure, and rejects focused tests when CI is truthy.
+Both Vitest configs set `allowOnly: false`. Directly selecting
+`realmImport.test.ts` also enables its otherwise skipped 7,000-asset stress case.
 
 `pnpm coverage:frontend` and `pnpm coverage:backend` are broad coverage views for
-coverage analysis. `pnpm coverage:all` runs both sides and still executes backend
+reporting and enforce no thresholds. `pnpm coverage:all` runs both sides and still executes backend
 coverage when frontend tests fail, then exits non-zero if either side failed.
 
 `pnpm coverage:ui-map` is the focused UI state coverage gate included in
@@ -294,16 +300,16 @@ Server:
 | `RISU_API_AUTOMATIC_BACKUP_RETENTION`              | `3`                        | Positive count of automatic pre-import/pre-restore safety snapshots to retain; manual backups are never pruned.                                           |
 | `RISU_REALM_IMPORT_MAX_EXPANDED_BYTES`             | `325058560`                | Expanded payload cap for streamed Realm `charx` imports and Realm-fetched asset totals.                                                                   |
 | `RISU_API_TRACE_MODE`                              | unset                      | Enables API request tracing when `agent` or `human`; `0`/`false`/`off`/`none` disable it.                                                                 |
-| `RISU_GENERATION_TRACE_FULL_PROMPT`                | unset                      | Set to `1` with protocol metrics enabled to write redacted prompt sidecars under `<data-dir>/trace/generation/`.                                          |
-| `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES` | `10485760`                 | Maximum compressed sidecar size for full-prompt generation traces.                                                                                        |
+| `RISU_GENERATION_TRACE_FULL_PROMPT`                | unset                      | Set to `1` with protocol metrics enabled to write redacted prompt-emission and OpenAI/Gemini request sidecars.                                             |
+| `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES` | `10485760`                 | Maximum compressed size for prompt/provider and post-generation Lua trace sidecars.                                                                        |
 | `RISU_WEB_PUSH_VAPID_PUBLIC_KEY`                   | unset                      | Optional Web Push VAPID public key. If public/private keys are omitted, the server can generate and persist keys under `data/__web_push_vapid_keys.json`. |
 | `RISU_WEB_PUSH_VAPID_PRIVATE_KEY`                  | unset                      | Optional Web Push VAPID private key. Must be supplied with the public key when using env-provided keys.                                                   |
-| `RISU_WEB_PUSH_CONTACT`                            | unset                      | Optional Web Push contact subject used for VAPID details, such as a `mailto:` URL.                                                                        |
+| `RISU_WEB_PUSH_CONTACT`                            | `mailto:risuai@example.invalid` | Web Push contact subject used for VAPID details.                                                                                                      |
 | `TRUST_PROXY`                                      | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.                                                                                         |
 | `RISU_API_STATIC_ROOT`                             | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                                                                                                        |
 | `RISU_HUB_URL`                                     | `https://sv.risuai.xyz`    | Hub passthrough target.                                                                                                                                   |
 | `RISU_REALM_URL`                                   | `https://realm.risuai.net` | Realm character import target.                                                                                                                            |
-| `RISU_AGENT_DEV_AUTH_BYPASS`                       | unset                      | Dev escape hatch; `dev:agent` defaults it to `TRUE`, while `dev:human` defaults it to `FALSE`.                                                            |
+| `RISU_AGENT_DEV_AUTH_BYPASS`                       | disabled                   | Direct-server dev escape hatch; full-stack runners override it as described below.                                                                        |
 | `LOG_LEVEL`                                        | `info`                     | Use `silent` to disable Fastify logger.                                                                                                                   |
 | `RISU_PROTOCOL_METRICS`                            | unset                      | Enables structured protocol metrics when `1`, `true`, `yes`, or `on`.                                                                                     |
 
@@ -320,7 +326,7 @@ Local/dev:
 | `RISU_TS_AGENT_TSSERVER_LOG`     | unset                                           | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                                                            |
 | `RISU_TS_AGENT_TIMEOUT_MS`       | `30000`                                         | Default tsserver request timeout for `pnpm ts:agent`; `--timeout-ms` overrides it.                                                |
 | `RISU_TS_AGENT_DEBUG`            | unset                                           | Echo tsserver stderr while debugging `pnpm ts:agent`.                                                                             |
-| `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`                                          | Set by `pnpm dev:agent` / `pnpm dev:human`; `alertTOS()` returns accepted without showing the TOS modal.                          |
+| `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE` in full-stack runners                    | Set by `pnpm dev:agent` / `pnpm dev:human`; ordinary Vite/build leaves it unset. `alertTOS()` returns accepted when set.          |
 
 Client/build:
 

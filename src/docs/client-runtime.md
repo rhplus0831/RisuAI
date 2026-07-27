@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-07-23.
+Last audited: 2026-07-27.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
@@ -43,20 +43,22 @@ Endpoint, credential, provider, limit, and result contracts belong in
 
 ## Startup Sequence
 
-`src/main.ts` installs the document-root viewport scroll guard before it mounts
-`App.svelte`, installs the router, optionally installs the Fastify browser smoke
-hook, calls `loadData()`, initializes hotkeys, and removes the preloading
-element.
+`src/main.ts` installs the router, push-notification navigation listener, and
+document-root viewport scroll guard before mounting `App.svelte`. It then
+optionally installs the Fastify browser smoke hook, calls `loadData()`,
+initializes hotkeys, and removes the preloading element.
 
 `loadData()` in `src/ts/bootstrap.ts` performs the visible startup work:
 
 1. Adopt the sole pending-mutation writer identity, if one exists, then fetch
    `/api/v1/bootstrap` for initialization, revision, database-lineage/writer
-   metadata, active generation jobs, and message-translation recovery rows.
+   metadata, active generation jobs, and message/greeting translation recovery
+   entries.
 2. If SQLite is uninitialized, issue the initialization command. The winning
    client reuses the returned revision; only a client that lost the
    initialization race refetches read-only bootstrap metadata.
-3. Prepare the encrypted pending-mutation outbox for the authenticated writer
+3. Initialize the shared lineage/writer-scoped draft-recovery scope, then
+   prepare the encrypted pending-mutation outbox for the authenticated writer
    epoch and database lineage, flush saved receipt acknowledgements, and replay
    its dependency-ordered commands. Secure contexts use a non-extractable
    WebCrypto key; plain-HTTP contexts use a separately stored raw AES key and
@@ -69,12 +71,13 @@ element.
    lorebook coverage, and hydrate the selected prompt-template owner before
    caching the common resource revision.
 6. Enable guarded resource writes and command-event reconciliation.
-7. Seed active generation jobs and message-translation recovery rows, then start
-   translation refresh and durable generation reattach.
+7. Seed active generation jobs and separate message/greeting translation
+   recovery state, then start both translation refreshers and durable generation
+   reattach.
 8. Start chat-message hydration, fetch the active chat body, start bridge patch
    lifecycle flushing, and subscribe to server events.
-9. If the loaded `notification` setting is true, enable chat-completion push
-   notifications.
+9. Initialize the push coordinator and reconcile both enabled and disabled
+   notification states.
 10. Load plugins and start plugin runtime synchronization.
 11. Update color scheme, text theme, reduced-motion/animation state, height mode, error
     handling, and GUI size CSS variables.
@@ -96,6 +99,11 @@ settings, collections, and characters in
 chat, lorebook, legacy-preset, and prompt-template bodies hydrate only when a
 workflow needs them.
 
+Greeting translations are another targeted projection rather than character
+root data. `src/ts/server/greetingTranslations.svelte.ts` reads
+`/api/v1/characters/:characterId/greeting-translations`, fences source/settings
+changes, and reconciles detached greeting jobs reported by bootstrap.
+
 The main client boundaries are:
 
 | Path                                                                                                                                   | Responsibility                                                              |
@@ -104,6 +112,7 @@ The main client boundaries are:
 | `src/ts/server/hydrationReads.ts`, `chatMessageHydration.svelte.ts`, `characterShellHydration.svelte.ts`, `promptTemplateHydration.ts` | Lazy owner-body and shell hydration.                                        |
 | `src/ts/server/commands.ts`, `events.ts`, `resourceInvalidation.ts`, `resourceRefresh.ts`                                              | Serialized commands, SSE reconciliation, targeted reads, and full recovery. |
 | `src/ts/server/pendingMutationOutbox.ts`, `durableMutationDispatch.ts`, `pendingMutationReplay.ts`                                     | Encrypted crash-recovery intents and pre-hydration replay.                  |
+| `src/ts/server/greetingTranslations.svelte.ts`                                                                                         | Character-scoped greeting projection, refresh, manual translation, and job recovery. |
 | `src/ts/server/resourceWriteGuard.svelte.ts`                                                                                           | Guards direct writes to the compatibility view.                             |
 | `src/ts/server/*Bridge.svelte.ts`                                                                                                      | Converts compatibility/UI mutations into command-backed writes.             |
 
@@ -158,6 +167,26 @@ select or navigate to a character. Guards are `src/ts/loadout.test.ts` and
 is owned by
 [Server Resources And Bridges](../../docs/structure/server-resources-and-bridges.md#durable-mutation-recovery-command-queue-and-local-acknowledgements).
 
+## Draft Recovery Stores
+
+Editing recovery is deliberately separate from the pending-mutation outbox.
+These records are scoped to the current database lineage and writer session;
+they are drafts, not durable commands, server receipts, or proof of acceptance.
+
+- `DefaultChatScreen.composerDrafts.ts` keeps the five composer fields per
+  transcript in `sessionStorage`. Records survive reload, use generation-fenced
+  clearing, and are bounded to 50 entries, seven days, 256 KiB per record, and
+  2 MiB total.
+- `src/ts/server/moduleEditorDraftStore.ts` keeps module-editor drafts in a
+  separate AES-GCM IndexedDB store. It is bounded to 20 records, 30 days,
+  16 MiB per record, and 64 MiB total. `ModuleSettings.svelte` rebases a restored
+  draft onto current canonical state and offers copy/export/discard recovery when
+  the target disappeared.
+
+Only an accepted save for the exact draft generation clears its recovery row.
+Queued, failed, or superseded work remains available so newer edits are not
+discarded.
+
 ## Async Freshness And Import Guards
 
 `src/ts/server/staleStateGuards.ts` is the shared helper for browser async work
@@ -194,8 +223,10 @@ server subscriptions through `src/ts/server/pushNotifications.ts`; failed setup
 compensates the durable setting back to disabled. Unresolved cleanup endpoints
 and local-subscription-inspection state persist in IndexedDB through
 `src/ts/server/pushNotificationRetryStorage.ts`, then hydrate and retry after
-reload. `public/service-worker.js` owns notification display and click
-navigation.
+reload. `public/service-worker.js` owns notification display plus the
+focus/open and message/ack handshake. A mounted app routes in place through
+`src/ts/server/pushNotifications.ts`; service-worker navigation/openWindow are
+fallbacks when no client acknowledges.
 
 The guard set is `src/ts/server/pushNotificationSetting.test.ts`,
 `src/ts/server/pushNotificationRetryStorage.test.ts`,

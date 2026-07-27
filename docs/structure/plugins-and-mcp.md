@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-07-23.
+Last audited: 2026-07-27.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -16,12 +16,14 @@ does not execute browser plugin code.
 | `src/ts/plugins/apiV3/transpiler.ts`, `developMode.ts`          | Plugin V3 transpilation and development-mode loading.                                                                        |
 | `src/ts/plugins/apiV3/risuai.d.ts`                              | Plugin V3 TypeScript declarations for plugin authors.                                                                        |
 | `src/ts/plugins/pluginPermissions.ts`, `pluginNetworkAccess.ts` | Exact-script capability grants and the public-only plugin network adapters.                                                  |
+| `src/ts/plugins/pluginUpdates.ts`, `pluginIconSafety.ts`       | Bounded explicit update flow and network-dead HTML/CSS/registered-icon sanitization.                                         |
 | `src/ts/plugins/pluginSafeClass.ts`                            | Safe wrappers and device-local storage gates.                                                                                |
 | `src/ts/plugins/unsupportedServerWriteGuard.ts`                 | Blocks Plugin API direct writes to fields unsupported in server-backed mode.                                                 |
 | `src/ts/pluginCommands.ts`                                      | Browser command wrappers for plugin records, provider selection, plugin storage, and settings-adjacent compatibility writes. |
 | `src/ts/server/pluginImport.ts`                                 | Server-backed plugin import/update helper with stale import guards.                                                          |
 | `server/fastify/src/commands/plugins.ts`, `pluginStorage.ts`    | Server validation for plugin records and plugin key/value JSON storage.                                                      |
 | `server/fastify/src/pluginNetwork.ts`, `routes/proxy.ts`        | DNS-pinned public-target validation and the dedicated plugin fetch proxy.                                                    |
+| `src/ts/plugins/migrationGuide.md`                              | Plugin-author V3 migration and compatibility reference.                                                                      |
 
 Plugin records live in `Database.plugins` and use the plugin `name` as the
 stable id. `currentPluginProvider` selects a plugin-defined provider when one is
@@ -70,6 +72,13 @@ but it is not exposed by the plugin network adapters. This public-only rule
 applies to those helper methods, not to every browser API available to trusted
 DOM-compatible plugin code.
 
+The capability catalog is `fetchLogs`, `db`, `mainDom`, `network`,
+`pluginUpdate`, `replacer`, `provider`, `sendChat`, and `v3Runtime`. Grants are
+device-local localforage state, not Fastify/backed-up data; `db`, `provider`, and
+`replacer` require periodic three-day reconfirmation. Import also parses
+`allowedIPC`, but plugin-to-plugin delivery succeeds only when sender and
+receiver mutually list each other.
+
 The `mainDom` bridge additionally removes network-loading HTML/SVG elements
 and attributes, rejects existing `<style>` content mutation, and accepts only a
 layout/color/text CSS allowlist with network-valued CSS disabled. Its explicit
@@ -82,8 +91,9 @@ Only API `3.0` plugin records are accepted. Source import throws
 `//@api` declaration; server plugin commands independently reject every version
 other than `3.0`. Runtime reconciliation validates the complete projected plugin
 collection before loading enabled V3 instances, so an unsupported record fails
-the load instead of being skipped. There is no V2 migration or compatibility
-execution path. Server Lua scripting is separate from browser plugins.
+the load instead of being skipped. There is no V2-record import, migration, or
+execution path. V3 still exposes deprecated V2-named compatibility shims and
+maps. Server Lua scripting is separate from browser plugins.
 
 Plugin update checks start only from an explicit user action. They require an
 HTTPS, public-only URL and a `pluginUpdate` grant bound to the exact installed
@@ -111,6 +121,7 @@ ignores the requested range.
   compatibility/cache storage rather than app database or backup persistence.
 
 Plugin storage persists in the SQLite `plugin_custom_storage` table.
+It is one shared global key map, so plugins must namespace their keys.
 Plugin-record events use precise resource scopes: `pluginCollection` reads
 only the plugin collection, `pluginProvider` reads only the `providers` settings
 group, and deleting the active provider uses `pluginCollectionWithProvider` to
@@ -192,14 +203,16 @@ usable.
 MCP/tool orchestration is browser-side and separate from model-hosted
 function/tool dispatch. Fastify stores plugin/MCP-adjacent records and supports
 command-backed Risu access writes, but normal Fastify chat/completion provider
-dispatch does not execute MCP tools; see `providers-and-models.md` for the
-server provider boundary.
+dispatch does not execute MCP tools; see the server provider boundary in
+[Providers And Models](providers-and-models.md#capability-table).
 
 | Path                                                                                                       | Purpose                                                                                               |
 | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `src/ts/process/mcp/mcp.ts`                                                                                | Runtime registry, URL parsing, tool discovery/calls, OAuth refresh persistence, module import helper. |
+| `src/ts/process/mcp/mcpIdentifier.ts`                                                                      | Shared stored-MCP creation predicate.                                                                   |
 | `src/ts/process/mcp/mcplib.ts`                                                                             | Remote Streamable HTTP MCP client with legacy SSE fallback.                                           |
 | `src/ts/server/mcpOAuthRefresh.ts`, `server/fastify/src/routes/mcpOAuthRefresh.ts`                         | Authenticated stable-identity bridge for server-owned persisted OAuth refresh credentials.            |
+| `server/fastify/src/mcpOAuthRefreshEgress.ts`                                                              | DNS-pinned, redirect-free, bounded token-endpoint validation and connection.                           |
 | `src/ts/process/mcp/internalmcp.ts`                                                                        | Base class for internal MCP-like clients.                                                             |
 | `src/ts/process/mcp/pluginmcp.ts`                                                                          | Plugin-registered MCP modules using `plugin:` identifiers.                                            |
 | `src/ts/process/mcp/risuaccess/`                                                                           | Internal Risu access tools for characters, read-only chat history, and modules.                       |
@@ -230,7 +243,8 @@ not treat the import predicate as a complete transport or egress policy.
 Plugin V3 exposes `risuai.registerMCP` and `risuai.unregisterMCP`, which add or
 remove `plugin:` MCP clients in the browser registry. Registration alone does
 not create a persisted MCP module row; activation still depends on active module
-MCP URLs or additional runtime MCP lists.
+MCP URLs or additional runtime MCP lists. Registrations are owner/lifecycle
+tracked and are removed automatically when the plugin unloads or reloads.
 
 `internal:risuai` is always available as a call-only client. Risu access write
 tools ask for user confirmation and dispatch command-backed writes where
@@ -256,8 +270,9 @@ Stored MCP rows remain a special module kind, not generally editable modules.
 Normal module patch, script/lorebook/trigger definition, and
 character/chat/loadout link operations target non-MCP rows. Global enable and
 generic delete explicitly admit MCP ids: enable updates `enabledModules`, and
-delete removes the stored row plus references through the ordinary revisioned
-module commands. The module UI displays imported MCP rows, supports those two
+delete removes the stored row plus enabled/character/chat/loadout id references
+through the ordinary revisioned module commands. It does not rewrite
+`moduleIntergration` text. The module UI displays imported MCP rows, supports those two
 global lifecycle actions, hides edit/export, and hides unsupported scoped-link
 controls. Server behavior is guarded by
 `server/fastify/__tests__/commands.test.ts`; UI restrictions are guarded by
@@ -275,13 +290,17 @@ filenames pass through and default to PNG in the asset saver.
 
 OAuth refresh token persistence for remote MCP servers writes
 `Database.authRefreshes` through optimistic patches to the `providers` settings
-group via `/api/v1/commands/settings/providers`, upserting by exact MCP URL.
+group via `/api/v1/commands/settings/providers`, upserting by exact MCP
+identifier (a raw HTTP(S) URL or URL-wrapped `stdio` identifier).
 Retryable failures retain the durable intent; terminal rejection rolls back the
 attempted row only when it still owns that URL. Server projections mask the
 refresh token and client secret. A masked row is refreshed through authenticated
 `POST /api/v1/mcp/oauth/refresh` using only that stable MCP identity; Fastify
 loads the matching raw row and never returns refresh credentials to the
-browser. Newly authorized, not-yet-projected raw rows retain a bounded direct
+browser. Refresh egress is DNS-pinned, redirect-free, and bounded; public
+endpoints require HTTPS, while local HTTP is allowed only for a local MCP
+identity. If the upstream rotates the refresh token, Fastify persists it through
+a targeted settings mutation and returns only the access token. Newly authorized, not-yet-projected raw rows retain a bounded direct
 refresh path, and those credential-bearing requests are omitted from browser
 fetch diagnostics. Google Search MCP credentials are currently unsupported in
 server-backed web mode. Remote MCP tool results may contain text, image/audio
@@ -301,8 +320,8 @@ entry from the same plugin owner and removes owned entries on unload/reset;
 cleanup. UI placement is mapped in
 [Svelte UI](../../src/docs/svelte-ui.md#component-ownership).
 
-- `src/lib/Setting/Pages/PluginSettings.svelte` manages installed plugins and
-  plugin arguments.
+- `src/lib/Setting/Pages/PluginSettings.svelte` manages import, enable/delete,
+  arguments, explicit update checks/install, and V3 development/hot reload.
 - `src/lib/Playground/PlaygroundMCP.svelte` lists MCP metadata/tools and can run
   tool calls for debugging.
 - `src/lib/Setting/Pages/Module/ModuleSettings.svelte` exposes validated direct

@@ -1,6 +1,6 @@
 # Providers And Models
 
-Last audited: 2026-07-23.
+Last audited: 2026-07-27.
 
 Provider/model behavior is split between browser model metadata, Fastify
 provider dispatch, the translator pipeline, and the shared capability table
@@ -14,6 +14,8 @@ that decides whether a request shape can run on the server.
 | `src/ts/model/modellist.ts`                                                                     | Static/dynamic/custom model registry and `getModelInfo()`.                                                                                            |
 | `src/ts/model/modelRoles.ts`                                                                    | Model role helpers for `chatMain`, `chatAux`, `memory`, `emotion`, `translate`, `otherAx`, `scriptMain`, and `scriptAux`; fallback refs are separate. |
 | `src/ts/model/modelProfileRecords.ts`, `modelProfileResolver.ts`, `modelProfileUiState.ts`      | Durable model profile records, role bindings, compatibility resolution, and settings UI summaries.                                                    |
+| `src/ts/model/providerCredentialRecords.ts`                                                     | Reusable API-key and Vertex-service-account credential records referenced by stable id.                                                               |
+| `src/ts/model/tokenizerOptions.ts`                                                              | Shared portable tokenizer choices used by profile/runtime settings, Custom API, and the playground.                                                   |
 | `src/ts/model/modelPresetSnapshots.ts`, `src/ts/promptPresetModelOverrides.svelte.ts`           | Snapshot/override helpers for model preset saves and prompt-preset model overrides.                                                                   |
 | `src/ts/model/modelGrid.ts`                                                                     | Model-grid normalization and filtering helpers for picker UI.                                                                                         |
 | `src/ts/model/keyedRequestCache.ts`                                                             | In-flight dedupe and bounded successful-result caching keyed by complete provider request context.                                                    |
@@ -24,8 +26,9 @@ that decides whether a request shape can run on the server.
 `Database.modelProfiles` stores durable reusable profile records, and
 `Database.modelRoleProfiles` stores durable role bindings. A profile can own a
 selected model id, provider/request options, provider endpoints, a
-profile-local API key, runtime options that directly affect a request, and
-fallback profile refs. Role bindings can use profile mode, legacy mode, or
+shared provider-credential reference, runtime options that directly affect a
+request, and fallback profile refs. Inline API keys and Vertex private keys are
+rejected in profile records. Role bindings can use profile mode, legacy mode, or
 inherit mode where a role supports inheritance. The resolver prefers durable
 profile records and bindings, then falls back to legacy flat fields for copied
 data, older presets, static model bypasses, and settings surfaces that still
@@ -57,8 +60,10 @@ counting and DeepL/DeepLX translation; use
 
 Credentialed provider and media features use authenticated, no-store Fastify
 operations rather than exposing raw stored keys to browser provider code. The
-routes do not mutate local durable state and therefore do not require the active
-writer. Each accepts a fixed operation/provider discriminator and bounded typed
+provider/media work does not write returned results into durable application
+state and therefore does not require the active writer. MCP OAuth refresh is a
+documented exception when it persists a rotated refresh token. Each operation
+accepts a fixed provider discriminator and bounded typed
 input; contracts that permit custom endpoints validate them explicitly instead
 of accepting a generic URL/method/header proxy. Upstream response sizes,
 deadlines, error details, and disconnect cancellation are bounded.
@@ -66,11 +71,11 @@ deadlines, error details, and disconnect cancellation are bounded.
 | Route / browser adapter                                                             | Fixed boundary                                                                                                                                                              | Result / rate limit           |
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
 | `POST /api/v1/provider-operations` / `src/ts/server/providerOperations.ts`          | NanoGPT account/catalog operations; OpenRouter, LLM Gateway, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish catalogs; Google token counting; DeepL/DeepLX translation. | JSON, `60/min`                |
-| `POST /api/v1/embedding-operations` / `src/ts/server/embeddingOperations.ts`        | Remote `ada`, OpenAI v3, Voyage contextual, or custom embeddings. Stored secrets cannot be paired with a changed one-shot custom endpoint.                                  | JSON vectors, `60/min`        |
+| `POST /api/v1/embedding-operations` / `src/ts/server/embeddingOperations.ts`        | Remote `ada`, OpenAI v3, Voyage Context 3/4, or custom embeddings. Stored secrets cannot be paired with a changed one-shot custom endpoint.                                 | JSON vectors, `60/min`        |
 | `POST /api/v1/tts/synthesize` / `src/ts/server/tts.ts`                              | ElevenLabs, Fish, Hugging Face, NovelAI, or OpenAI-compatible synthesis. Stored-character OpenAI credentials, endpoint, and options resolve together by character id.       | Audio bytes, `60/min`         |
 | `POST /api/v1/image-generation` / `src/ts/server/imageGeneration.ts`                | NovelAI, DALL-E, Stability, Fal, Imagen, OpenAI-compatible, WaveSpeed, or Kei generation with provider-specific request validation.                                         | JPEG/PNG/WebP bytes, `10/min` |
 | `POST /api/v1/media/openai/transcriptions` / `src/ts/server/openAITranscription.ts` | One bounded audio/video upload to OpenAI `whisper-1`, using the server-stored OpenAI key and a fixed VTT response format.                                                   | VTT text, `10/min`            |
-| `POST /api/v1/mcp/oauth/refresh` / `src/ts/server/mcpOAuthRefresh.ts`               | A stable MCP URL selects its matching stored refresh credential; the browser cannot submit the raw refresh token or client secret.                                          | JSON access token, `30/min`   |
+| `POST /api/v1/mcp/oauth/refresh` / `src/ts/server/mcpOAuthRefresh.ts`               | An exact MCP identifier selects its matching stored credential; rotated refresh tokens may be persisted server-side. See [Plugins And MCP](plugins-and-mcp.md).             | JSON access token, `30/min`   |
 
 The server implementations are `providerOperations.ts`,
 `embeddingOperations.ts`, `tts.ts`, `imageGeneration.ts`,
@@ -79,7 +84,7 @@ The server implementations are `providerOperations.ts`,
 `server/fastify/src/routes/`. Request discriminators and browser/server shared
 types live in the corresponding `src/ts/server/*Protocol.ts` files, except that
 OpenAI transcription validates its fixed contract directly in its adapter and
-route. Raw stored/profile credentials resolve only inside Fastify; resource
+route. Raw stored/shared credentials resolve only inside Fastify; resource
 reads project a masked sentinel so the browser can refer to a stored secret
 without receiving it. A user-edited draft key is a one-shot override only for
 operations whose protocol permits `credential.source: "provided"`.
@@ -87,7 +92,7 @@ operations whose protocol permits `credential.source: "provided"`.
 OpenRouter model/provider and NanoGPT model/provider catalog requests are keyed
 by their full credential/model context and share an in-flight promise. Public
 and explicit-draft contexts briefly reuse successful results; failed requests
-are not retained. Opaque stored/profile credential references bypass completed
+are not retained. Opaque stored credential references bypass completed
 result reuse so a server-side key rotation cannot be hidden behind an unchanged
 masked placeholder. OpenRouter, NanoGPT, and the public LLM Gateway catalog use a 30-second TTL where
 reuse is safe. Ollama Cloud tags use a 15-second cache keyed by credential under
@@ -103,9 +108,10 @@ settings to `ModelSettingsShell.svelte`, which owns the visible workflow:
 
 | Surface                             | Role                                                                                                                                                                                                                         |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ModelProfileRoleList.svelte`       | Roles tab. Edits `modelRoleProfiles` with explicit Apply/Cancel, binding modes (`profile`, supported `inherit`, `legacy`), effective profile summaries, provider/model/request-model summaries, status, and fallback counts. |
+| `ModelProfileRoleList.svelte`       | Roles tab. Auto-applies valid `modelRoleProfiles` changes across `profile`, supported `inherit`, and `legacy` modes and shows effective profile/status/fallback summaries.                                                    |
 | `ModelProfileList.svelte`           | Profiles tab. Lists profile name/id, provider, model, request model, fallback count, status, role usage, and create/edit/duplicate/delete actions.                                                                           |
-| `ModelProfileEditorDrawer.svelte`   | Command-backed profile drawer for first-class provider fields, profile runtime overrides, fallbacks, and profile-local secret placeholder preserve/replace/clear behavior.                                                   |
+| `ModelProfileEditorDrawer.svelte`   | Command-backed profile drawer for first-class provider fields, shared credential selection, profile runtime overrides, and fallbacks.                                                                                         |
+| `ProviderCredentialList.svelte`     | API Credentials tab. Creates, updates, and deletes shared API-key/Vertex credential records, preserving masked values and blocking deletion while referenced.                                                                |
 | `ModelRuntimeDefaultsEditor.svelte` | Edits `modelRuntimeDefaults` with explicit Save/Cancel and a compact count summary.                                                                                                                                          |
 | `ModelPresetList.svelte`            | Embedded model preset picker/list hosted by `src/lib/Setting/botpreset.svelte`; applies/saves `modelPresets` and `modelPresetsId`.                                                                                           |
 | `ModelRoleList.svelte`              | Legacy role editor shown only inside Advanced Legacy Settings for compatibility data.                                                                                                                                        |
@@ -131,14 +137,17 @@ First-class profile provider panels are intentionally limited to:
 - `custom-api`
 - `debug-echo`
 
-The first-class panels write top-level `providerId`, selected `modelId`,
-`providerOptions` such as `apiKey`, `requestModel`, endpoint/base URL, extra
-headers, additional params, and nested shapes for reverse proxy, OpenRouter,
-NanoGPT, Ollama, Vertex, and Custom API metadata. `ModelProviderPanel.svelte`,
-`ModelRuntimeOptionsEditor.svelte`, `ModelFallbackEditor.svelte`, and
-`modelProfileSecrets.ts` own most of the editor/provider-option plumbing.
-Ollama profiles select local or cloud routing, store the native base URL or
-cloud API key, and keep the Ollama request model separate from the source row.
+The first-class panels write top-level `providerId`, selected `modelId`, and
+supported `providerOptions`, including `credentialId`, request model,
+endpoint/base URL, extra headers, additional parameters, and provider-specific
+metadata. Retained profile schemas can still normalize compatibility shapes
+for reverse proxy, OpenRouter, NanoGPT, Ollama, Vertex, and Custom API records;
+that does not make each shape a first-class authoring panel.
+`ModelProviderPanel.svelte`, `ModelRuntimeOptionsEditor.svelte`, and
+`ModelFallbackEditor.svelte` own most profile-option plumbing, while
+`ProviderCredentialList.svelte` owns secret creation and rotation. Ollama
+profiles select local or cloud routing, reference a shared cloud credential,
+and keep the request model separate from the source row.
 Custom API profiles represent OpenAI-compatible Chat Completions; the UI stores
 a base URL and warns when the user includes `/chat/completions` because dispatch
 appends that suffix.
@@ -151,7 +160,8 @@ catalog through the server-owned provider-operation boundary, while generation
 uses the OpenAI-compatible Chat Completions transport. Profile-local LLM Gateway
 options expose the documented `reasoning_effort` (`none` through `max`),
 `verbosity` (`low`, `medium`, or `high`), and `service_tier` (`auto`, `default`,
-`flex`, or `priority`) request enums. They remain unset unless explicitly chosen
+`flex`, or `priority`) request enums. They also support `routing` (`auto`,
+`price`, `throughput`, or `latency`). Optional controls remain unset unless explicitly chosen
 so models that do not support a given option are not sent an incompatible
 default.
 
@@ -171,10 +181,13 @@ prompt preset ids and let the selected modern prompt preset own
 `promptPresets[].promptTemplate`. They should not resurrect stale top-level
 `promptTemplate` data as the active template when a prompt preset id resolves.
 
-Provider secret masking in `server/fastify/src/providerSecrets.ts` includes
-profile-local `apiKey` values and resolves masked placeholders by stable profile
-id. This is separate from older flat provider/custom-model masking, which
-remains for compatibility.
+`Database.providerCredentials` stores reusable `apiKey` or
+`vertexServiceAccount` rows. Profiles reference them through
+`providerOptions.credentialId`; resolution happens server-side, reads mask
+secrets by stable credential id, and deletion is rejected while a profile still
+references the record. Legacy-to-profile conversion mints and deduplicates
+credential rows. Older flat provider/custom-model masking remains for
+compatibility.
 
 `Database.modelRuntimeDefaults` uses the same runtime option schema as profile
 `runtimeOptions`. Profile-bound runtime precedence is hard defaults,
@@ -183,10 +196,18 @@ and separate parameters are preserved for compatibility/conversion, but
 profile-bound generation does not silently borrow them as active profile
 runtime overrides.
 
-Durable profile commands live in the browser command wrappers and Fastify
-command handlers. The profile-first UI uses row-oriented commands for profile
+`FASTIFY_TOKENIZER_OPTIONS` in `src/ts/model/tokenizerOptions.ts` is the shared
+portable tokenizer catalog for settings and playground UI. Effective tokenizer
+precedence is runtime override, runtime default, then the Custom API provider
+choice. Server prompt budgeting loads the matching portable implementation
+through `server/fastify/src/prompt/webTokenizers.cjs`; golden-count tests keep
+browser and server families aligned.
+
+Durable profile and credential commands live in the browser command wrappers
+and Fastify command handlers. The profile-first UI uses row-oriented commands for profile
 create/update/duplicate/delete, role binding updates, create-and-bind,
-legacy-to-profile conversion, and runtime defaults updates. Whole-array settings
+legacy-to-profile conversion, runtime defaults updates, and credential
+create/update/delete. Whole-array settings
 patches remain compatibility paths for imports, presets, loadouts, and older
 callers.
 
@@ -198,7 +219,11 @@ callers.
 | `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte`    | Multi-step translator preset editor and model-profile selection UI.                                                                |
 | `server/fastify/src/translation/rawMessageTranslation.ts`           | Google, DeepL, DeepLX, and LLM dispatch plus protected raw-block handling and server history-window rendering.                     |
 | `server/fastify/src/translation/serverMessageTranslation.ts`        | Detached provider work followed by source/previous-translation/job-fenced targeted message persistence.                            |
+| `server/fastify/src/translation/serverGreetingTranslation.ts`       | Detached manual greeting translation with source/settings/previous-value fences before persistence.                                |
+| `server/fastify/src/translation/greetingTranslationStore.ts`        | Normalized character/greeting/settings-hash rows and portable greeting-translation projection.                                      |
 | `server/fastify/src/translation/generationCompletionTranslation.ts` | Eligibility, wait-cap, completion-frame, and push-notification coordination for generated-message automatic translation.           |
+| `server/fastify/src/greetingTranslationJobs.ts`                     | Separate process-local greeting job registry exposed through bootstrap recovery metadata.                                           |
+| `src/ts/server/greetingTranslations.svelte.ts`                      | Character-scoped greeting translation projection, manual command flow, refresh, and recovery state.                                 |
 | `src/ts/server/messageTranslationJobs.ts`                           | Browser recovery state for detached translations reported by bootstrap or a generation completion frame.                           |
 | `src/ts/process/serverGeneratedMessageTranslation.ts`               | Applies embedded success and maps running/failure outcomes into the shared translation-job UI state.                               |
 | `src/ts/process/generatedMessageTranslationEligibility.ts`          | Prevents the rendered-message compatibility trigger from duplicating translation already owned by the server generation lifecycle. |
@@ -235,6 +260,11 @@ bootstrap recovery. A successful terminal frame can embed the translation for
 immediate display, while running and failed results reuse the shared job UI.
 `autoTranslateCachedOnly` disables automatic LLM translation because the
 server path does not use the browser translation cache.
+
+Greeting translations are manual-only and use their own character-scoped
+registry and normalized store. Bootstrap exposes unfinished work as
+`activeGreetingTranslations`; the browser refreshes the matching projection
+through `GET /api/v1/characters/:characterId/greeting-translations`.
 
 ## Agent Preset Model Flow
 
@@ -337,7 +367,8 @@ Canonical compatibility surfaces:
   but server-side summarization currently accepts only the memory/subModel API
   path and OpenAI-compatible summary providers (`openai`, `openrouter`, or
   `nanogpt`). Memory embeddings stay outside chat profiles on the separate
-  Hypa/Voyage/custom embedding config.
+  Hypa/Voyage/custom embedding config. Voyage contextual embeddings support
+  both Context 3 and Context 4 grouped query/document requests.
 - The Custom Models catalog (`customModels` / `xcustom:::`) remains separate
   from first-class Custom API profiles.
 - Imported old `agentContext*` fields are inert compatibility data. They are no
@@ -361,6 +392,16 @@ adapter and records through the same `requestHistory.ts` repository explicitly.
 The legacy client-directed completion route records at its shared buffered/SSE
 response boundary and never persists the provider options object that may carry
 credentials.
+
+Request-history ownership is split across:
+
+| Path                                                               | Role                                                                                         |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `server/fastify/src/requestHistory.ts`                             | SQLite rows, bounded summaries/details, completion, failure, and `requestHistoryLimit` pruning. |
+| `server/fastify/src/routes/requestHistory.ts`                      | Authenticated list/detail reads and active-writer deletion.                                  |
+| `server/fastify/src/generation/apiMetadata.ts`                     | Sanitized provider-specific non-content metadata extraction.                                 |
+| `src/ts/server/requestHistory.ts`, `RequestHistorySettings.svelte` | Browser adapter plus duration/metadata/detail/retention UI.                                   |
+
 Provider adapters live in `server/fastify/src/generation/`:
 
 - OpenAI, OpenAI Responses, OpenAI-compatible, and legacy instruct.

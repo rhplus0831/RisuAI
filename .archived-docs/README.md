@@ -16,6 +16,7 @@ codebase whenever an archived line number or contract has drifted.
 | [Generation and models](generation-and-models/README.md)           | Durable generation, translation decisions, chat-scoped settings, Agent Presets, model profiles, and prompt-template ownership.    |
 | [UI and user input](ui-and-user-input/README.md)                   | Visible-state and persistence audits, input hooks, chat/settings controls, stale-state reviews, and input hardening.               |
 | [Deferred work](deferred-work/README.md)                           | The consolidated deferred-feature inventory/progress record and the older Fastify leftover snapshot.                              |
+| [July 23 audit scopes](audit-scopes-2026-07-23/README.md)          | Closed cross-cutting audit charters, verification records, and the plans implemented on 2026-07-23.                                |
 
 ## Archive Conventions
 
