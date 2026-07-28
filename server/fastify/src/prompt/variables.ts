@@ -5,7 +5,7 @@ import type { LuaExecBudget } from './luaRuntime.js'
 import type { DatabaseSync } from 'node:sqlite'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { clearActivePromptScope, isActivePromptScopeDirty, setActivePromptScope } from './promptScope.js'
-import { AgentPresetGenerationError } from './agentPresetExecution.js'
+import { AgentPresetGenerationError } from './agentPresetErrors.js'
 import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences'
 
 /**

@@ -21,9 +21,25 @@ import type { Chat, Database, Message, character } from '../../../../src/ts/stor
 import type { DatabaseSync } from 'node:sqlite'
 import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
+import {
+  AgentPresetGenerationError,
+  isAgentPresetGenerationError,
+  type AgentPresetGenerationErrorBody,
+  type AgentPresetStepFailureKind,
+  type AgentPresetStepFailurePolicyOutcome,
+} from './agentPresetErrors.js'
 import { dispatchChatProvider, type ChatDispatchHistoryInput } from './chatDispatch.js'
 import { activateLorebook } from './lorebook.js'
 import { ensureTokenizerLoadedForDb } from './tokenizerConfig.js'
+import { expandVariables } from './variables.js'
+
+export {
+  AgentPresetGenerationError,
+  isAgentPresetGenerationError,
+  type AgentPresetGenerationErrorBody,
+  type AgentPresetStepFailureKind,
+  type AgentPresetStepFailurePolicyOutcome,
+} from './agentPresetErrors.js'
 
 const DEFAULT_MAX_INPUT_CHARS = 24_000
 const DEFAULT_MAX_OUTPUT_CHARS = 1_200
@@ -85,6 +101,8 @@ export interface BuildAgentPresetStepMessagesInput {
   preparedInputs: AgentPresetPreparedInputCollection
   agentOutputs?: Readonly<Record<string, string>>
   toggleValues?: Readonly<Record<string, string>>
+  /** Expands standard CBS after ChatML roles are fixed and before prepared inputs are inserted. */
+  expandChatMLContent?: (content: string) => string
 }
 
 export interface AgentPresetProviderDispatchArgs {
@@ -135,20 +153,6 @@ export interface ExecuteAgentPresetStepInput extends AgentPresetPreparedInputCon
   signal?: AbortSignal
   dispatchProvider?: AgentPresetProviderDispatcher
 }
-
-export type AgentPresetStepFailureKind =
-  | 'dependency_skipped'
-  | 'model_not_ready'
-  | 'timeout'
-  | 'provider_error'
-  | 'invalid_json_output'
-  | 'empty_output'
-
-export type AgentPresetStepFailurePolicyOutcome =
-  | 'optional_failure'
-  | 'required_failure'
-  | 'fallback_text'
-  | 'stop_generation'
 
 export type AgentPresetStepExecutionResult =
   | {
@@ -228,43 +232,6 @@ export interface ExecuteAgentPresetPhaseInput extends AgentPresetPreparedInputCo
   dispatchProvider?: AgentPresetProviderDispatcher
   executeStep?: AgentPresetStepExecutor
   onProgress?: AgentPresetPhaseProgressReporter
-}
-
-export interface AgentPresetGenerationErrorBody {
-  error: 'agent_preset_generation_failed'
-  message: string
-  statusCode: number
-  phase?: AgentPresetStepPhase
-  presetId?: string
-  presetName?: string
-  stepId?: string
-  stepName?: string
-  outputKey?: string
-  failureKind?: AgentPresetStepFailureKind | 'final_output_cbs'
-  failurePolicyOutcome?: AgentPresetStepFailurePolicyOutcome
-  diagnostics?: unknown
-}
-
-export class AgentPresetGenerationError extends Error {
-  readonly statusCode: number
-  readonly body: AgentPresetGenerationErrorBody
-
-  constructor(message: string, body: Omit<AgentPresetGenerationErrorBody, 'error' | 'message' | 'statusCode'> = {}) {
-    const statusCode = 422
-    super(message)
-    this.name = 'AgentPresetGenerationError'
-    this.statusCode = statusCode
-    this.body = {
-      error: 'agent_preset_generation_failed',
-      message,
-      statusCode,
-      ...body,
-    }
-  }
-}
-
-export function isAgentPresetGenerationError(error: unknown): error is AgentPresetGenerationError {
-  return error instanceof AgentPresetGenerationError
 }
 
 export function assertAgentPresetLorebookInputsReady(input: {
@@ -411,13 +378,18 @@ export function collectAgentPresetPreparedInputs(
 }
 
 export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessagesInput): OpenAIChat[] {
-  const { step, preparedInputs, agentOutputs, toggleValues } = input
+  const { step, preparedInputs, agentOutputs, toggleValues, expandChatMLContent } = input
   if (step.useChatML) {
     const messages = parseChatMLRows(step.instruction)
     if (!messages) throw new Error('A ChatML Agent instruction must start with <|im_start|>')
     return messages.map((message) => ({
       ...message,
-      content: expandAgentInstructionContent(message.content, preparedInputs, agentOutputs, toggleValues ?? {}),
+      content: expandAgentInstructionContent(
+        expandChatMLContent?.(message.content) ?? message.content,
+        preparedInputs,
+        agentOutputs,
+        toggleValues ?? {},
+      ),
     }))
   }
 
@@ -534,6 +506,24 @@ function isPreparedInputScopeName(value: string): value is AgentPresetStepInputS
   return PREPARED_INPUT_SCOPE_NAMES.has(value)
 }
 
+function agentPromptLocation(input: AgentPresetPreparedInputContext): { selectedCharID?: number; chatPage?: number } {
+  const selectedCharID = input.database.characters.findIndex(
+    (candidate) => candidate === input.currentChar || candidate.chaId === input.currentChar.chaId,
+  )
+  if (selectedCharID < 0) return {}
+
+  const character = input.database.characters[selectedCharID]
+  const chatPage = character.chats.findIndex(
+    (candidate) =>
+      candidate === input.currentChat ||
+      (typeof candidate.id === 'string' && candidate.id !== '' && candidate.id === input.currentChat.id),
+  )
+  return {
+    selectedCharID,
+    ...(chatPage >= 0 ? { chatPage } : {}),
+  }
+}
+
 export async function executeAgentPresetStep(
   input: ExecuteAgentPresetStepInput,
 ): Promise<AgentPresetStepExecutionResult> {
@@ -554,6 +544,15 @@ export async function executeAgentPresetStep(
     preparedInputs,
     agentOutputs: input.agentOutputs,
     toggleValues: agentToggleValuesForStep(input.step, input.currentChat),
+    expandChatMLContent: input.step.useChatML
+      ? (content) =>
+          expandVariables(content, {
+            database: input.database,
+            ...agentPromptLocation(input),
+            chara: input.currentChar,
+            ...(input.agentOutputs ? { agentOutputs: { ...input.agentOutputs } } : {}),
+          }).text
+      : undefined,
   })
   const profile = resolveAgentPresetStepProfile(input)
   if (!profile) {

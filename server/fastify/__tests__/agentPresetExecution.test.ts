@@ -1,10 +1,11 @@
 import { DatabaseSync } from 'node:sqlite'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { AgentPresetRecord, AgentPresetStepRecord } from '../../../src/ts/agentPresetRecords'
 import { planAgentPreset } from '../../../src/ts/agentPresetResolver'
 import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
 import { createRequestHistoryTable, getRequestHistoryRecord, listRequestHistory } from '../src/requestHistory.js'
+import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import {
   assertAgentPresetLorebookInputsReady,
   buildAgentPresetStepMessages,
@@ -15,6 +16,10 @@ import {
   type AgentPresetProviderDispatcher,
   type AgentPresetStepExecutor,
 } from '../src/prompt/agentPresetExecution.js'
+
+beforeAll(() => {
+  bootPromptVariables()
+})
 
 function db(overrides: Partial<Database> = {}): Database {
   return {
@@ -752,7 +757,7 @@ describe('Agent Preset step execution', () => {
     const dispatch = vi.fn<AgentPresetProviderDispatcher>(async (args) => {
       expect(args.messages.map(({ role, content }) => ({ role, content }))).toEqual([
         { role: 'system', content: 'Use only the supplied question.' },
-        { role: 'user', content: 'Question: Lantern promise?' },
+        { role: 'user', content: 'Question: Lantern promise? {{history::3}}' },
       ])
       expect(JSON.stringify(args.messages)).not.toContain('Author instruction:')
       return frames('done')
@@ -763,11 +768,39 @@ describe('Agent Preset step execution', () => {
         database,
         currentChar: database.characters[0],
         currentChat: database.characters[0].chats[0],
-        currentUserMessage: 'Lantern promise?',
+        currentUserMessage: 'Lantern promise? {{history::3}}',
         step: step({
           useChatML: true,
           instruction:
             '<|im_start|>system\nUse only the supplied question.<|im_end|><|im_start|>user\nQuestion: {{currentUserMessage}}<|im_end|>',
+        }),
+        dispatchProvider: dispatch,
+      }),
+    ).resolves.toMatchObject({ status: 'success', outputText: 'done' })
+    expect(dispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('expands standard CBS within ChatML messages using the current chat', async () => {
+    const database = db()
+    const dispatch = vi.fn<AgentPresetProviderDispatcher>(async (args) => {
+      expect(args.messages.map(({ role, content }) => ({ role, content }))).toEqual([
+        {
+          role: 'user',
+          content:
+            'Recent history: ["Remember the lighthouse promise.","I will keep the lantern lit.","What did we promise about the lantern?"]',
+        },
+      ])
+      return frames('done')
+    })
+
+    await expect(
+      executeAgentPresetStep({
+        database,
+        currentChar: database.characters[0],
+        currentChat: database.characters[0].chats[0],
+        step: step({
+          useChatML: true,
+          instruction: '<|im_start|>user\nRecent history: {{history::3}}<|im_end|>',
         }),
         dispatchProvider: dispatch,
       }),
