@@ -308,7 +308,7 @@ export interface ContentCardDeps {
   currentChar: character
   unformated: UnformatedPromptSlots
   usingPromptTemplate: boolean
-  /** `{{position::}}` and injection-lore substitution supplied by the caller. */
+  /** `{{position::}}` and `@@inject_at` substitution supplied by the caller. */
   positionParser: (text: string, loc: string) => string
   /**
    * Prompt-info capture sink. When present, persona /
@@ -508,15 +508,30 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
       if (card.type === 'cot' && !db.chainOfThought) return []
 
       const posType = card.type === 'plain' ? card.type2 : card.type
-      let content = positionParser(card.text, posType)
+      let content = card.text
 
       if (card.type === 'plain' && card.type2 === 'globalNote') {
         if (currentChar.replaceGlobalNote) {
-          content = positionParser(currentChar.replaceGlobalNote, posType).replaceAll('{{original}}', content)
+          content = currentChar.replaceGlobalNote.replaceAll('{{original}}', content)
         }
-        if (currentChar.prebuiltAssetCommand && !card.text.includes('{{//@customimageinstruction}}')) {
-          content += PREBUILT_ASSET_COMMAND
-        }
+      }
+
+      // Compose the effective Global Note first, then apply location-targeted
+      // lore exactly once. Applying the parser separately to the original and
+      // replacement text duplicates `@@inject_at globalNote` whenever the
+      // replacement contains `{{original}}`.
+      content = positionParser(content, posType)
+
+      // Preserve the existing ordering of the internal asset instruction: it
+      // is appended after location-targeted Global Note lore and therefore is
+      // not itself an `@@inject_replace` target.
+      if (
+        card.type === 'plain' &&
+        card.type2 === 'globalNote' &&
+        currentChar.prebuiltAssetCommand &&
+        !card.text.includes('{{//@customimageinstruction}}')
+      ) {
+        content += PREBUILT_ASSET_COMMAND
       }
 
       content = expanded(
@@ -700,7 +715,7 @@ export interface RenderFinalPromptArgs {
   formatOrder: FormatOrderKey[]
   /** Memory rows for the `memory` template card. */
   memories?: OpenAIChat[]
-  /** `{{position::}}` and injection-lore substitution supplied by the caller. */
+  /** `{{position::}}` and `@@inject_at` substitution supplied by the caller. */
   positionParser?: (text: string, loc: string) => string
   /** Pushes a `[Continue the last response]` system entry under gpt/claude/openrouter/reverse_proxy. */
   isContinue?: boolean

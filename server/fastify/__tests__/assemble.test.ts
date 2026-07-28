@@ -4436,6 +4436,46 @@ describe('Phase 3 M3 stable card cache', () => {
   })
 })
 
+describe('Fastify lorebook template injection', () => {
+  it('applies @@inject_at globalNote once through async activation, preflight, cache, and final render', async () => {
+    const injector = {
+      key: '',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Global Note injection',
+      content: '@@inject_at globalNote\nINJECTED',
+      mode: 'normal',
+      alwaysActive: true,
+      selective: false,
+    } as loreBook
+    const db = makeDatabase({
+      aiModel: 'gpt4',
+      maxContext: 100_000,
+      maxResponse: 50,
+      promptTemplate: [{ type: 'plain', type2: 'globalNote', text: 'BASE', role: 'system' }],
+      characters: [
+        makeCharacter({
+          replaceGlobalNote: '[[{{original}}]]',
+          globalLore: [injector],
+          chats: [makeChat({ id: 'chat-1', message: [] })],
+        }),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated).toEqual([{ role: 'system', content: '[[BASE]] INJECTED' }])
+    expect(result.state?.report?.actives).toEqual([
+      expect.objectContaining({
+        source: 'Global Note injection',
+        prompt: 'INJECTED',
+        inject: { operation: 'append', location: 'globalNote', param: '', lore: false },
+      }),
+    ])
+  })
+})
+
 describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
   const stickyLore = (content: string): loreBook =>
     ({

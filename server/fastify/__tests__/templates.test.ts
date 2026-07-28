@@ -15,6 +15,7 @@ import {
 } from '../src/prompt/templates.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import { preflightTemplateTokens } from '../src/prompt/preflight.js'
+import { createPositionParser, type LoreEntryActive, type LorebookActivationReport } from '../src/prompt/lorebook.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
 import * as promptVariables from '../src/prompt/variables.js'
 
@@ -388,6 +389,23 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
       true,
     )
     expect(out[0].content).toBe('[[note]]')
+  })
+
+  it('applies a Global Note position injection once after composing {{original}}', () => {
+    const db = makeDatabase()
+    const positionParser = vi.fn((text: string, loc: string) => (loc === 'globalNote' ? `${text} INJECTED` : text))
+    const { formated: out } = renderByTemplate(
+      ctxFor(db),
+      makeCharacter({ replaceGlobalNote: '[[{{original}}]]' }),
+      makeSlots(),
+      tpl([{ type: 'plain', type2: 'globalNote', text: 'note', role: 'system' }]),
+      true,
+      positionParser,
+    )
+
+    expect(out[0].content).toBe('[[note]] INJECTED')
+    expect(positionParser).toHaveBeenCalledOnce()
+    expect(positionParser).toHaveBeenCalledWith('[[note]]', 'globalNote')
   })
 
   it('appends prebuiltAssetCommand on a globalNote card when the char opts in', () => {
@@ -982,6 +1000,53 @@ describe('Phase 3 M3 stable template card cache', () => {
     expect(promptInfoCalls('desc {{user}} {{slot}}')).toBe(1)
     expect(promptInfoCalls('persona {{user}} {{slot}}')).toBe(1)
     expect(promptInfoCalls('author {{user}} {{slot}}')).toBe(1)
+  })
+
+  it('shares inject-at rendering between preflight and the final stable-card cache read', () => {
+    const db = cacheDb()
+    const ctx = ctxFor(db)
+    const currentChar = makeCharacter({ replaceGlobalNote: '[[{{original}}]]' })
+    const unformated = makeSlots()
+    const template: PromptItem[] = [{ type: 'plain', type2: 'globalNote', text: 'BASE', role: 'system' }]
+    const injector: LoreEntryActive = {
+      depth: 0,
+      pos: '',
+      prompt: 'INJECTED',
+      role: 'system',
+      order: 0,
+      priority: 0,
+      tokens: 1,
+      source: 'injector',
+      inject: { operation: 'append', location: 'globalNote', param: '', lore: false },
+    }
+    const report: LorebookActivationReport = {
+      actives: [injector],
+      disabledUIPrompts: [],
+      matchLog: [],
+    }
+    const stableCardCache = createStableCardRenderCache()
+
+    preflightTemplateTokens({
+      ctx,
+      currentChar,
+      unformated,
+      promptTemplate: template,
+      usingPromptTemplate: true,
+      report,
+      stableCardCache,
+    })
+    const rendered = renderByTemplate(
+      ctx,
+      currentChar,
+      unformated,
+      template,
+      true,
+      createPositionParser(report),
+      undefined,
+      stableCardCache,
+    )
+
+    expect(rendered.formated).toEqual([{ role: 'system', content: '[[BASE]] INJECTED' }])
   })
 
   it('keeps live chat, postEverything, memory, and cache cards outside the stable-card cache', () => {

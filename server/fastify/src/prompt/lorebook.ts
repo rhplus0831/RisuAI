@@ -1320,6 +1320,41 @@ export function resolvePosition(text: string, report: LorebookActivationReport, 
   return result.replace(POSITION_REGEX, '')
 }
 
+/**
+ * Build the prompt-template position parser shared by token preflight and the
+ * final render. In addition to resolving `{{position::}}` markers, it applies
+ * activated `@@inject_at <location>` entries to the matching template card.
+ *
+ * `@@inject_lore` entries never reach this stage: activation applies them to
+ * their target lore entry and removes the injector from `report.actives`.
+ * Non-lore `@@inject_at` entries intentionally remain in the report so their
+ * append / prepend / replace operation can run here.
+ */
+export function createPositionParser(report: LorebookActivationReport): (text: string, loc: string) => string {
+  const injections = report.actives.filter((entry) => entry.inject !== null && !entry.inject.lore)
+
+  return (text, loc) => {
+    for (const entry of injections) {
+      const injection = entry.inject!
+      if (injection.location !== loc) continue
+
+      switch (injection.operation) {
+        case 'append':
+          text += ' ' + entry.prompt
+          break
+        case 'prepend':
+          text = entry.prompt + ' ' + text
+          break
+        case 'replace':
+          text = text.replace(injection.param, entry.prompt)
+          break
+      }
+    }
+
+    return resolvePosition(text, report)
+  }
+}
+
 /** The slots `buildLorebookContext` distributes activated entries into. */
 export interface UnformatedLorebookSlots {
   lorebook: OpenAIChat[]
@@ -1329,13 +1364,8 @@ export interface UnformatedLorebookSlots {
 
 export interface LorebookContext {
   /**
-   * `{{position::}}` resolver for the template / render walkers. The
-   * SPA's injection-lore branch is dead server-side because filtering removes
-   * lore-targeted injection entries from `report.actives`; non-lore injection
-   * entries can still survive. This just delegates to `resolvePosition` and
-   * ignores `loc`,
-   * matching `preflight.ts`'s `positionParserFor` so preflight and the
-   * final render agree.
+   * Shared `{{position::}}` and `@@inject_at` resolver for template preflight
+   * and final rendering.
    */
   positionParser: (text: string, loc: string) => string
   /** `pos === 'depth' && depth > 0` or `reverse_depth` (via `getDepthPrompts`). */
@@ -1393,7 +1423,7 @@ export function buildLorebookContext(
   }
 
   return {
-    positionParser: (text) => resolvePosition(text, report),
+    positionParser: createPositionParser(report),
     depthPrompts: getDepthPrompts(report),
   }
 }

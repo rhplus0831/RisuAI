@@ -360,6 +360,48 @@ describe('Phase 7-7a activateLorebook — inject_lore', () => {
   })
 })
 
+describe('Phase 7-7a activateLorebook — inject_at', () => {
+  it.each([
+    {
+      name: 'append',
+      decorators: '@@inject_at globalNote',
+      operation: 'append' as const,
+      param: '',
+    },
+    {
+      name: 'prepend',
+      decorators: '@@inject_at main\n@@inject_prepend',
+      operation: 'prepend' as const,
+      param: '',
+    },
+    {
+      name: 'replace',
+      decorators: '@@inject_at description\n@@inject_replace SLOT',
+      operation: 'replace' as const,
+      param: 'SLOT',
+    },
+  ])('retains a non-lore $name injector for template rendering', ({ decorators, operation, param }) => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [makeLore({ content: `${decorators}\nInjected body` })],
+      }),
+      currentChat: makeChat(),
+    })
+
+    expect(report.actives).toHaveLength(1)
+    expect(report.actives[0]).toMatchObject({
+      prompt: 'Injected body',
+      inject: {
+        operation,
+        location: operation === 'append' ? 'globalNote' : operation === 'prepend' ? 'main' : 'description',
+        param,
+        lore: false,
+      },
+    })
+  })
+})
+
 describe('Phase 7-7b activateLorebook — keyword matching', () => {
   it('activates a keyword entry when a recent message contains the key', () => {
     const report = activateLorebook({
@@ -1416,6 +1458,34 @@ describe('Phase 7-11c buildLorebookContext', () => {
       emptySlots(),
     )
     expect(positionParser('a {{position::x}} b', 'anyloc')).toBe('a XVAL b')
+  })
+
+  it('applies append, prepend, and replace injectors at their target locations', () => {
+    const { positionParser } = buildLorebookContext(
+      ctxFor(),
+      makeChar(),
+      makeReport([
+        makeActive({
+          prompt: 'APPEND {{position::suffix}}',
+          inject: { operation: 'append', location: 'globalNote', param: '', lore: false },
+        }),
+        makeActive({
+          prompt: 'PREPEND',
+          inject: { operation: 'prepend', location: 'main', param: '', lore: false },
+        }),
+        makeActive({
+          prompt: 'REPLACEMENT',
+          inject: { operation: 'replace', location: 'description', param: 'SLOT', lore: false },
+        }),
+        makeActive({ pos: 'pt_suffix', prompt: 'SUFFIX' }),
+      ]),
+      emptySlots(),
+    )
+
+    expect(positionParser('BASE', 'globalNote')).toBe('BASE APPEND SUFFIX')
+    expect(positionParser('BASE', 'main')).toBe('PREPEND BASE')
+    expect(positionParser('left SLOT right', 'description')).toBe('left REPLACEMENT right')
+    expect(positionParser('UNCHANGED', 'authornote')).toBe('UNCHANGED')
   })
 
   it('resolves {{position::}} inside a distributed row before expanding', () => {

@@ -2,7 +2,7 @@ import type { character } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { ExpandContext } from './variables.js'
-import { resolvePosition, type LorebookActivationReport } from './lorebook.js'
+import { createPositionParser, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import {
@@ -29,10 +29,9 @@ import {
  * chains, card normalization / alias resolution, cache-marker emission as actual
  * prompt rows, and route-layer wiring.
  *
- * `positionParser`: the SPA injects `inject_lore` location-targeted lorebooks
- * here too, but lorebook activation filters those entries out of `report.actives`,
- * so the SPA's `injectionLorebooks` branch is dead at this layer. The shim just
- * delegates to `resolvePosition`; the `loc` argument is kept for SPA parity.
+ * `positionParser`: preflight uses the same `{{position::}}` and
+ * `@@inject_at` resolver as final rendering. This is important when stable
+ * cards are cached during preflight and reused by the final template walk.
  */
 
 /**
@@ -61,7 +60,7 @@ export interface PreflightInput {
 
 function positionParserFor(report: LorebookActivationReport | undefined): (text: string, loc: string) => string {
   if (!report) return (text) => text
-  return (text) => resolvePosition(text, report)
+  return createPositionParser(report)
 }
 
 export function preflightTemplateTokens(input: PreflightInput): PreflightResult {
