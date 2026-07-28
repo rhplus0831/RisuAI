@@ -15,6 +15,7 @@
   import RealmLicense from './RealmLicense.svelte'
   import MultiLangDisplay from '../GUI/MultiLangDisplay.svelte'
   import { tooltip } from 'src/ts/gui/tooltip'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   interface Props {
@@ -114,9 +115,9 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 {#if openedData}
   <div
+    use:modalBackdropDismiss={closePopup}
     data-modal-root
-    class="top-0 left-0 z-50 fixed w-full h-full bg-black/50 flex justify-center items-center text-textcolor"
-    onclick={closePopup}>
+    class="top-0 left-0 z-50 fixed w-full h-full bg-black/50 flex justify-center items-center text-textcolor">
     <div
       use:modalFocusTrap
       class="p-6 max-w-full bg-darkbg rounded-md flex flex-col gap-4 w-2xl overflow-y-auto max-h-full"

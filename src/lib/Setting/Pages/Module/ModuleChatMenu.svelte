@@ -13,6 +13,7 @@
   import type { ServerCommandResult } from 'src/ts/server/commands'
   import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
   import { selectedCharID, SettingsMenuIndex, settingsOpen } from 'src/ts/stores.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   interface Props {
@@ -48,10 +49,6 @@
     event.preventDefault()
     event.stopPropagation()
     closeMenu()
-  }
-
-  function handleBackdropClick(event: MouseEvent): void {
-    if (event.target === event.currentTarget) closeMenu()
   }
 
   function moduleMutationError(result: Exclude<ServerCommandResult, { status: 'ok' }>): string {
@@ -128,9 +125,9 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={closeMenu}
   data-modal-root
-  class="fixed inset-0 z-[100] bg-black/50 flex justify-center items-center"
-  onclick={handleBackdropClick}>
+  class="fixed inset-0 z-[100] bg-black/50 flex justify-center items-center">
   <div
     use:modalFocusTrap
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-full max-h-full overflow-y-auto"

@@ -24,6 +24,7 @@
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import { navigateToCharacterChatMessage } from 'src/ts/router'
@@ -384,13 +385,9 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={close}
   data-modal-root
-  class="fixed top-0 left-0 w-full h-full z-30 bg-black/50 flex justify-center items-center"
-  onclick={(event) => {
-    if (event.target === event.currentTarget) {
-      close()
-    }
-  }}>
+  class="fixed top-0 left-0 w-full h-full z-30 bg-black/50 flex justify-center items-center">
   <div
     use:modalFocusTrap
     class="bg-darkbg p-3 rounded-md flex flex-col max-w-4xl w-full max-h-[90%] overflow-y-auto"

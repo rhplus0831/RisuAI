@@ -26,6 +26,7 @@
   } from 'src/ts/chatGenerationTogglePresets'
   import type { ChatGenerationRequiredSidebarToggle } from 'src/ts/chatGenerationSettings'
   import type { ActiveChatTarget, ChatGenerationSettingsSaveOperation } from 'src/ts/chatCommands'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { chatGenerationTogglePresetListModalStore, selectedCharID } from 'src/ts/stores.svelte'
   import Button from '../UI/GUI/Button.svelte'
@@ -203,10 +204,6 @@
     if (persistenceStatus !== 'pending') close()
   }
 
-  function handleBackdropClick(event: MouseEvent): void {
-    if (event.target === event.currentTarget && persistenceStatus !== 'pending') close()
-  }
-
   function ineligibilityReasons(preset: ChatGenerationTogglePreset, source: ToggleSource): string[] {
     const eligibility = getChatGenerationTogglePresetPickEligibility(preset, source.toggles)
     const reasons: string[] = []
@@ -272,9 +269,11 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={() => {
+    if (persistenceStatus !== 'pending') close()
+  }}
   data-modal-root
-  class="fixed inset-0 z-[60] bg-black/50 flex justify-center items-center"
-  onclick={handleBackdropClick}>
+  class="fixed inset-0 z-[60] bg-black/50 flex justify-center items-center">
   <div
     use:modalFocusTrap
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-h-full overflow-y-auto toggle-preset-modal"

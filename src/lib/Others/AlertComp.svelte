@@ -37,6 +37,7 @@
   import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from 'src/ts/platform'
   import versionData from '../../../version.json'
   import { normalizeMessagePromptInfo } from './alertPromptInfo'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { isTrustedLoginMessageOrigin } from 'src/ts/gui/loginMessageOrigin'
 
@@ -338,10 +339,6 @@
     resolveAlertSelection($alertStore.dialogOwner, null)
   }
 
-  function handleAlertBackdropClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) cancelSelectAlert()
-  }
-
   function handleAlertKeydown(event: KeyboardEvent) {
     if ($alertStore.type !== 'select' || event.key !== 'Escape') return
     event.preventDefault()
@@ -362,10 +359,10 @@
 {#if $alertStore.type !== 'none' && $alertStore.type !== 'toast' && $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs'}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    use:modalBackdropDismiss={cancelSelectAlert}
     data-modal-root
     class="fixed inset-0 z-[100] bg-black/50 flex justify-center items-center"
     class:vis={$alertStore.type === 'wait2'}
-    onclick={handleAlertBackdropClick}
     onkeydown={handleAlertKeydown}>
     <div
       use:modalFocusTrap
@@ -936,9 +933,9 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    use:modalBackdropDismiss={() => cancelCardExport(cardExportOwner)}
     data-modal-root
-    class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-[100] items-center justify-center"
-    onclick={() => cancelCardExport(cardExportOwner)}>
+    class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-[100] items-center justify-center">
     <div
       use:modalFocusTrap
       class="bg-darkbg rounded-md p-4 max-w-full flex flex-col w-2xl"

@@ -28,6 +28,7 @@
   } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   let editMode = $state(false)
@@ -481,21 +482,16 @@
     event.stopPropagation()
     close()
   }
-
-  /** @param {MouseEvent} event */
-  function handleBackdropClick(event) {
-    if (event.target === event.currentTarget) close()
-  }
 </script>
 
 {#if modalCharacter}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    use:modalBackdropDismiss={close}
     data-modal-root
     data-risu-chat-list="modal"
-    class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center"
-    onclick={handleBackdropClick}>
+    class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
     <div
       use:modalFocusTrap
       class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-72 max-h-full overflow-y-auto"

@@ -188,6 +188,40 @@ describe('modular Agent Preset settings', () => {
     expect(agentSpies.updateAgentPresetUse).not.toHaveBeenCalled()
   })
 
+  it('keeps the Agent drawer open when a text-selection drag ends on the backdrop', async () => {
+    seed()
+    component = mount(AgentPresetSettings, { target })
+    await tick()
+
+    target.querySelectorAll<HTMLButtonElement>('[data-risu-agent-row] button')[2].click()
+    await tick()
+
+    const editor = target.querySelector<HTMLElement>('[data-risu-agent-editor]')!
+    const backdrop = editor.parentElement!
+    const instruction = editor.querySelectorAll<HTMLTextAreaElement>('textarea')[1]
+    const pointerOptions: PointerEventInit = {
+      bubbles: true,
+      button: 0,
+      isPrimary: true,
+      pointerId: 1,
+    }
+
+    instruction.dispatchEvent(new PointerEvent('pointerdown', pointerOptions))
+    backdrop.dispatchEvent(new PointerEvent('pointerup', pointerOptions))
+    backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, detail: 1 }))
+    await tick()
+
+    expect(target.querySelector('[data-risu-agent-editor]')).toBe(editor)
+    expect(vi.mocked(window.confirm)).not.toHaveBeenCalled()
+
+    backdrop.dispatchEvent(new PointerEvent('pointerdown', pointerOptions))
+    backdrop.dispatchEvent(new PointerEvent('pointerup', pointerOptions))
+    backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, detail: 1 }))
+    await tick()
+
+    expect(target.querySelector('[data-risu-agent-editor]')).toBeNull()
+  })
+
   it('saves ChatML request mode as reusable Agent behavior', async () => {
     seed()
     component = mount(AgentPresetSettings, { target })

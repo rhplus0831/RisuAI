@@ -7,6 +7,7 @@
   import { risuChatParser } from 'src/ts/parser/parser.svelte'
   import { tokenize } from 'src/ts/tokenizer'
   import Toggles from '../SideBars/Toggles.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { isMobile } from 'src/ts/platform'
 
@@ -75,9 +76,9 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={close}
   data-modal-root
-  class="fixed top-0 left-0 w-full h-full bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-  onclick={close}>
+  class="fixed top-0 left-0 w-full h-full bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
   <div
     use:modalFocusTrap
     class="bg-darkbg rounded-lg p-4 w-11/12 h-11/12 flex flex-col gap-2"

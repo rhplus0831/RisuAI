@@ -41,6 +41,7 @@
   } from 'src/ts/activeChatGenerationSettings'
   import type { ActiveChatTarget } from 'src/ts/chatCommands'
   import ModelPresetList from './Pages/Model/ModelPresetList.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   type ModernPreset = ModelPreset | PromptPreset
@@ -369,18 +370,16 @@
     event.stopPropagation()
     if (!selectionPendingKey) close()
   }
-
-  function handleBackdropClick(event: MouseEvent): void {
-    if (event.target === event.currentTarget && !selectionPendingKey) close()
-  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={() => {
+    if (!selectionPendingKey) close()
+  }}
   data-modal-root
-  class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center"
-  onclick={handleBackdropClick}>
+  class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
   <div
     use:modalFocusTrap
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-h-full overflow-y-auto preset-modal"

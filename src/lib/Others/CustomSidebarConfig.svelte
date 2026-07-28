@@ -6,6 +6,7 @@
   import TextInput from '../UI/GUI/TextInput.svelte'
   import type { CustomSideBarItem } from 'src/ts/storage/database.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 
@@ -42,7 +43,10 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div data-modal-root class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onclick={close}>
+<div
+  use:modalBackdropDismiss={close}
+  data-modal-root
+  class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
   <div
     use:modalFocusTrap
     class="bg-darkbg p-4 rounded max-h-full overflow-auto flex flex-col gap-2"

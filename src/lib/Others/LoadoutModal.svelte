@@ -4,6 +4,7 @@
   import { loadoutModalStore } from 'src/ts/stores.svelte'
   import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from 'src/ts/loadout'
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { language } from 'src/lang'
   import { alertConfirm, alertNormal } from 'src/ts/alert'
@@ -221,11 +222,9 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={close}
   data-modal-root
-  class="fixed inset-0 z-40 bg-black/60 flex justify-center items-center"
-  onclick={(e) => {
-    if (e.target === e.currentTarget) close()
-  }}>
+  class="fixed inset-0 z-40 bg-black/60 flex justify-center items-center">
   <div
     use:modalFocusTrap
     class="bg-darkbg rounded-lg flex flex-col w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-xl"

@@ -14,6 +14,7 @@
     ModelRole,
     NormalizedModelRoleOverrides,
   } from 'src/ts/model/modelRoles'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   type OptionalModelRole = Exclude<ModelRole, 'chatMain' | 'chatAux'>
@@ -101,7 +102,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div data-modal-root class="fixed inset-0 z-50 flex justify-end bg-black/50" onclick={closeEditor}>
+<div use:modalBackdropDismiss={closeEditor} data-modal-root class="fixed inset-0 z-50 flex justify-end bg-black/50">
   <div
     use:modalFocusTrap
     class="flex h-full w-full max-w-2xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"

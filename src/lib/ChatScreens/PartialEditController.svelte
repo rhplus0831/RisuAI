@@ -195,6 +195,7 @@
     type RangeResultWithContext,
   } from 'src/ts/parser/partialEdit'
   import type { PartialEditMode, PartialEditSaveDetail } from './partialEditFreshness'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   interface Props {
@@ -874,12 +875,10 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
+    use:modalBackdropDismiss={cancelMatchSelection}
     data-modal-root
     data-partial-edit-ui
-    class="partial-edit-overlay"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) cancelMatchSelection()
-    }}>
+    class="partial-edit-overlay">
     <div
       use:partialEditModalFocusTrap
       class="partial-match-selection-modal"
@@ -940,13 +939,7 @@
 {#if showMatchFailedModal}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    data-modal-root
-    data-partial-edit-ui
-    class="partial-edit-overlay"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) closeMatchFailed()
-    }}>
+  <div use:modalBackdropDismiss={closeMatchFailed} data-modal-root data-partial-edit-ui class="partial-edit-overlay">
     <div
       use:partialEditModalFocusTrap
       class="partial-match-failed-modal"
@@ -974,13 +967,7 @@
 {#if isConfirmingDelete}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    data-modal-root
-    data-partial-edit-ui
-    class="partial-edit-overlay"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) handleCancelDelete()
-    }}>
+  <div use:modalBackdropDismiss={handleCancelDelete} data-modal-root data-partial-edit-ui class="partial-edit-overlay">
     <div
       use:partialEditModalFocusTrap
       class="partial-delete-modal"
@@ -1038,13 +1025,7 @@
 {#if isEditing}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    data-modal-root
-    data-partial-edit-ui
-    class="partial-edit-overlay"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) handleCancel()
-    }}>
+  <div use:modalBackdropDismiss={handleCancel} data-modal-root data-partial-edit-ui class="partial-edit-overlay">
     <div
       use:partialEditModalFocusTrap
       class="partial-edit-modal"

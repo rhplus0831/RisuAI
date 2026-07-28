@@ -27,6 +27,7 @@
   } from 'src/ts/model/modelProfileRecords'
   import type { ProviderCredentialRecord, ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import type { ModelRole } from 'src/ts/model/modelRoles'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { LLMFormat, type LLMFlags as LLMFlagValue, type LLMTokenizer as LLMTokenizerValue } from 'src/ts/model/types'
   import type { ModelProfileSnapshot } from 'src/ts/server/commands'
@@ -378,7 +379,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div data-modal-root class="fixed inset-0 z-50 flex justify-end bg-black/50" onclick={requestClose}>
+<div use:modalBackdropDismiss={requestClose} data-modal-root class="fixed inset-0 z-50 flex justify-end bg-black/50">
   <div
     use:modalFocusTrap
     class="flex h-full w-full max-w-3xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"

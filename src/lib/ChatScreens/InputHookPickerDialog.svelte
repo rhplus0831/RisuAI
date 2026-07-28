@@ -1,6 +1,7 @@
 <script lang="ts">
   import { XIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import type { InputHook } from 'src/ts/storage/database.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
@@ -25,10 +26,10 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={close}
   data-modal-root
   data-testid="default-chat-input-hook-dialog"
-  class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-  onclick={(event) => event.target === event.currentTarget && close()}>
+  class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
   <div
     use:modalFocusTrap
     class="flex max-h-full min-w-72 max-w-[calc(100vw-2rem)] flex-col overflow-y-auto rounded-md bg-darkbg p-4 text-textcolor"

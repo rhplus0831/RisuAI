@@ -9,6 +9,7 @@
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import Help from 'src/lib/Others/Help.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import {
     type triggerEffectV2,
@@ -2664,6 +2665,12 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
+      use:modalBackdropDismiss={() => {
+        contextMenu = false
+        if (menuMode === 0) {
+          clearTriggerSelection()
+        }
+      }}
       use:modalFocusTrap
       data-modal-root
       data-risu-trigger-v2-dialog
@@ -2673,14 +2680,6 @@
       tabindex="-1"
       class="text-textcolor absolute top-0 bottom-0 bg-black/50 max-w-full w-full h-full z-40 flex justify-center items-center"
       onkeydown={handleKeydown}
-      onclick={(e) => {
-        if (e.target === e.currentTarget) {
-          contextMenu = false
-          if (menuMode === 0) {
-            clearTriggerSelection()
-          }
-        }
-      }}
       oncontextmenu={(e) => {
         if (e.target === e.currentTarget) {
           e.preventDefault()

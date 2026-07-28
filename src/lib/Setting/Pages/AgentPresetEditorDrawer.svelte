@@ -6,6 +6,7 @@
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import {
     addAgentToPreset,
@@ -359,7 +360,11 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-<div data-modal-root role="presentation" class="fixed inset-0 z-50 flex justify-end bg-black/50" onclick={requestClose}>
+<div
+  use:modalBackdropDismiss={requestClose}
+  data-modal-root
+  role="presentation"
+  class="fixed inset-0 z-50 flex justify-end bg-black/50">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     use:modalFocusTrap
