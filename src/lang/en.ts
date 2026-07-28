@@ -2695,6 +2695,7 @@ export const languageEnglish = {
       strictJsonSchema: 'Strict JSON Schema',
       outputImageModal: 'Output Image Modal',
       enableCustomFlags: 'Enable Custom Flags',
+      stripCoT: 'Strip CoT',
       modelTools: 'Model Tools',
     },
     commandConflict: 'The server has newer settings. Refresh and try again.',

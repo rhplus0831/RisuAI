@@ -692,6 +692,7 @@ describe('model profile records', () => {
         temperature: 55,
         extractJson: ' object ',
         useStreaming: false,
+        stripCoT: true,
         modelTools: [' tool-a ', '', 7],
         customFlags: [LLMFlags.hasStreaming, 999, 'bad'],
         unsupportedRuntimeField: true,
@@ -701,6 +702,7 @@ describe('model profile records', () => {
       temperature: 55,
       extractJson: 'object',
       useStreaming: false,
+      stripCoT: true,
       modelTools: ['tool-a'],
       customFlags: [LLMFlags.hasStreaming],
     })
@@ -710,12 +712,14 @@ describe('model profile records', () => {
         topP: 0.8,
         customTokenizer: ' cl100k_base ',
         enableCustomFlags: true,
+        stripCoT: false,
         customFlags: [LLMFlags.hasImageInput],
       }),
     ).toEqual({
       topP: 0.8,
       customTokenizer: 'cl100k_base',
       enableCustomFlags: true,
+      stripCoT: false,
       customFlags: [LLMFlags.hasImageInput],
     })
 

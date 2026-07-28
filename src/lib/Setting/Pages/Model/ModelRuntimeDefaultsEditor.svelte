@@ -213,7 +213,7 @@
     {/if}
     {#if editing}
       <div class="mt-4">
-        <ModelRuntimeOptionsEditor bind:value={draft} />
+        <ModelRuntimeOptionsEditor bind:value={draft} scope="defaults" />
       </div>
     {/if}
   </fieldset>

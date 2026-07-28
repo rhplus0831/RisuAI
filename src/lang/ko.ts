@@ -2605,6 +2605,7 @@ export const languageKorean = {
       strictJsonSchema: '엄격한 JSON 스키마',
       outputImageModal: '출력 이미지 모달',
       enableCustomFlags: '커스텀 플래그 활성화',
+      stripCoT: 'CoT 제거',
       modelTools: '모델 도구',
     },
     commandConflict: '서버에 더 새로운 설정이 있습니다. 새로고침한 후 다시 시도하세요.',

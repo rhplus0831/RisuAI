@@ -207,6 +207,7 @@ export interface ModelProfileRuntimeOptions {
   jsonSchema?: string
   strictJsonSchema?: boolean
   outputImageModal?: boolean
+  stripCoT: boolean
   dynamicOutput?: unknown
   modelTools: string[]
   enableCustomFlags?: boolean
@@ -321,6 +322,7 @@ const HARD_RUNTIME_DEFAULTS: ModelProfileRecordRuntimeOptions = {
   jsonSchema: '',
   strictJsonSchema: true,
   outputImageModal: false,
+  stripCoT: false,
   modelTools: [],
   enableCustomFlags: false,
   customFlags: [],
@@ -2065,6 +2067,7 @@ function resolveRuntimeOptions(
     jsonSchema: value(durableRuntimeOptions?.jsonSchema, database.jsonSchema),
     strictJsonSchema: value(durableRuntimeOptions?.strictJsonSchema, database.strictJsonSchema),
     outputImageModal: value(durableRuntimeOptions?.outputImageModal, database.outputImageModal),
+    stripCoT: durableRuntimeOptions?.stripCoT === true,
     dynamicOutput: value(durableRuntimeOptions?.dynamicOutput, database.dynamicOutput),
     modelTools:
       durableRuntimeOptions?.modelTools !== undefined

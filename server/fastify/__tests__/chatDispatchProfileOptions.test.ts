@@ -304,6 +304,63 @@ afterEach(() => {
 })
 
 describe('dispatchChatProvider final wire controls', () => {
+  it('strips known CoT blocks when the effective profile runtime option is enabled', async () => {
+    const database = db({
+      echoMessage: '<Thoughts>private reasoning</Thoughts>\nVisible answer\n<think>private tail</think>',
+      useStreaming: true,
+      modelRuntimeDefaults: { stripCoT: true },
+      modelProfiles: [{ id: 'strip-cot-profile', name: 'Strip CoT', modelId: 'echo_model' }],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'strip-cot-profile' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of frames) emitted.push(frame)
+
+    expect(profile.runtimeOptions.stripCoT).toBe(true)
+    expect(emitted).toEqual([
+      { kind: 'token', content: 'Visible answer' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('preserves CoT when a profile disables an enabled runtime default', async () => {
+    const response = '<Thoughts>profile-visible reasoning</Thoughts>\nVisible answer'
+    const database = db({
+      echoMessage: response,
+      modelRuntimeDefaults: { stripCoT: true },
+      modelProfiles: [
+        {
+          id: 'preserve-cot-profile',
+          name: 'Preserve CoT',
+          modelId: 'echo_model',
+          runtimeOptions: { stripCoT: false },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'preserve-cot-profile' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of frames) emitted.push(frame)
+
+    expect(profile.runtimeOptions.stripCoT).toBe(false)
+    expect(emitted).toEqual([
+      { kind: 'token', content: response },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
   it('sends supported runtime controls, schema, prediction, multi-generation, and logit bias', async () => {
     const database = db({
       aiModel: 'reverse_proxy',

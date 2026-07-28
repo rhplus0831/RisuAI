@@ -4,6 +4,7 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { LLMFlags, LLMFormat, type LLMFormat as LLMFormatValue } from '../../../../src/ts/model/types'
 import { OpenAIModels } from '../../../../src/ts/model/providers/openai'
 import type { CompletionResult, CompletionStreamFrame } from '../generation/frames.js'
+import { stripCoTFromCompletionFrames } from '../generation/stripCoT.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
 import { resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../generation/openai.js'
 import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
@@ -1013,7 +1014,8 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
     : null
   try {
     const frames = await dispatchChatProviderCore({ ...args, profile, finalizedMessages })
-    return wrapRequestHistoryFrames(frames, handle, args.signal)
+    const processedFrames = profile.runtimeOptions.stripCoT ? stripCoTFromCompletionFrames(frames) : frames
+    return wrapRequestHistoryFrames(processedFrames, handle, args.signal)
   } catch (error) {
     completeRequestHistory(handle, {
       status: args.signal.aborted ? 'cancelled' : 'error',

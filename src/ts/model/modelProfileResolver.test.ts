@@ -1761,6 +1761,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
           temperature: 35,
           topP: 0.7,
           useStreaming: true,
+          stripCoT: true,
           modelTools: ['default-tool'],
         },
         modelProfiles: [
@@ -1771,6 +1772,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
             runtimeOptions: {
               maxResponse: 2048,
               topP: 0.5,
+              stripCoT: false,
               modelTools: ['profile-tool'],
             },
           },
@@ -1789,8 +1791,31 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       rawTemperature: 35,
       topP: 0.5,
       useStreaming: true,
+      stripCoT: false,
       modelTools: ['profile-tool'],
     })
+  })
+
+  it('inherits Strip CoT from runtime defaults unless a profile explicitly overrides it', () => {
+    const database = db({
+      modelRuntimeDefaults: { stripCoT: true },
+      modelProfiles: [
+        { id: 'inherited', name: 'Inherited', modelId: 'gpt-5' },
+        {
+          id: 'disabled',
+          name: 'Disabled',
+          modelId: 'gpt-5',
+          runtimeOptions: { stripCoT: false },
+        },
+      ],
+    } as Partial<Database>)
+
+    expect(
+      resolveModelProfileByProfileId({ database, role: 'chatMain', profileId: 'inherited' })?.runtimeOptions.stripCoT,
+    ).toBe(true)
+    expect(
+      resolveModelProfileByProfileId({ database, role: 'chatMain', profileId: 'disabled' })?.runtimeOptions.stripCoT,
+    ).toBe(false)
   })
 
   it('classifies first-class OpenAI profiles from profile-local fields without borrowing global keys', () => {

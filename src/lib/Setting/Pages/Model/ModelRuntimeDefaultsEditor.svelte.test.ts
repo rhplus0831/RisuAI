@@ -96,6 +96,25 @@ afterEach(() => {
 })
 
 describe('ModelRuntimeDefaultsEditor', () => {
+  it('saves Strip CoT as an enabled runtime default from its checkbox', async () => {
+    getDatabase().modelRuntimeDefaults = {}
+    component = mount(ModelRuntimeDefaultsEditor, { target })
+
+    buttonByText(language.modelProfiles.edit).click()
+    await tick()
+
+    const stripCoT = target.querySelector<HTMLInputElement>('[data-runtime-strip-cot]')
+    if (!stripCoT) throw new Error('Strip CoT checkbox not found')
+    expect(stripCoT.checked).toBe(false)
+
+    stripCoT.click()
+    await tick()
+    buttonByText(language.modelProfiles.save).click()
+    await flushAsync()
+
+    expect(commandSpies.updateModelRuntimeDefaultsDurably).toHaveBeenCalledWith({ stripCoT: true })
+  })
+
   it('resets the edit draft and saves empty runtime defaults through the command path', async () => {
     component = mount(ModelRuntimeDefaultsEditor, { target })
 

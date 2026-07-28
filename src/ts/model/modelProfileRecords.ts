@@ -112,6 +112,7 @@ export interface ModelProfileRecordRuntimeOptions {
   strictJsonSchema?: boolean
   outputImageModal?: boolean
   enableCustomFlags?: boolean
+  stripCoT?: boolean
   dynamicOutput?: unknown
   modelTools?: string[]
   customFlags?: LLMFlagValue[]
@@ -209,6 +210,7 @@ const MODEL_PROFILE_RUNTIME_BOOLEAN_KEYS = [
   'strictJsonSchema',
   'outputImageModal',
   'enableCustomFlags',
+  'stripCoT',
 ] as const
 const MODEL_PROFILE_RUNTIME_KEYS = new Set([
   ...MODEL_PROFILE_RUNTIME_NUMBER_KEYS,

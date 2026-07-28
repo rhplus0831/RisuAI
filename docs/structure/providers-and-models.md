@@ -194,7 +194,10 @@ compatibility.
 `modelRuntimeDefaults`, then profile `runtimeOptions`. Legacy flat parameters
 and separate parameters are preserved for compatibility/conversion, but
 profile-bound generation does not silently borrow them as active profile
-runtime overrides.
+runtime overrides. The opt-in `stripCoT` runtime option removes known
+`<Thoughts>` and `<think>` reasoning blocks from provider output before it
+reaches downstream generation consumers; profile overrides may inherit,
+enable, or disable the runtime default.
 
 `FASTIFY_TOKENIZER_OPTIONS` in `src/ts/model/tokenizerOptions.ts` is the shared
 portable tokenizer catalog for settings and playground UI. Effective tokenizer

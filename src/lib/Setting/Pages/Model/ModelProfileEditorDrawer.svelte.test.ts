@@ -35,6 +35,53 @@ afterEach(() => {
 })
 
 describe('ModelProfileEditorDrawer credentials', () => {
+  it('saves an explicit Strip CoT profile override', async () => {
+    const onSave = vi.fn()
+    const profile = {
+      id: 'profile-strip-cot',
+      name: 'Strip CoT Profile',
+      providerId: 'debug-echo',
+      modelId: 'debug-echo',
+    }
+    component = mount(ModelProfileEditorDrawer, {
+      target,
+      props: {
+        mode: 'edit',
+        profile,
+        profiles: [profile],
+        credentials: [],
+        usedByRoles: [],
+        statusText: 'Ready',
+        onSave,
+        onCancel: vi.fn(),
+        onManageCredentials: vi.fn(),
+      },
+    })
+    await tick()
+
+    const runtimeOverrides = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(language.modelProfiles.runtimeOverridesTitle),
+    )
+    if (!runtimeOverrides) throw new Error('Runtime overrides accordion not found')
+    runtimeOverrides.click()
+    await tick()
+
+    const stripCoT = target.querySelector<HTMLSelectElement>('[data-runtime-field="stripCoT"]')
+    if (!stripCoT) throw new Error('Strip CoT override not found')
+    expect(stripCoT.value).toBe('')
+    stripCoT.value = 'true'
+    stripCoT.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    const save = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(language.modelProfiles.save),
+    )
+    save?.click()
+    await tick()
+
+    expect(onSave).toHaveBeenCalledWith({ ...profile, runtimeOptions: { stripCoT: true } })
+  })
+
   it('saves a credential reference without placing a secret in the profile row', async () => {
     const onSave = vi.fn()
     const profile = {

@@ -2562,7 +2562,7 @@ describe('server command API adapter', () => {
     })
     await updateModelRuntimeDefaultsCommand({
       baseRevision: 7,
-      runtimeDefaults: { temperature: 55 },
+      runtimeDefaults: { temperature: 55, stripCoT: true },
     })
     await convertLegacyModelProfilesCommand({
       baseRevision: 8,
@@ -2625,7 +2625,7 @@ describe('server command API adapter', () => {
         method: 'PUT',
         body: {
           baseRevision: 7,
-          runtimeDefaults: { temperature: 55 },
+          runtimeDefaults: { temperature: 55, stripCoT: true },
         },
       },
       {

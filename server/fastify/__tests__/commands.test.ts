@@ -1821,6 +1821,7 @@ describe('Phase 9-2a scalar settings groups', () => {
                 genTime: 3,
                 extractJson: ' object ',
                 jsonSchemaEnabled: true,
+                stripCoT: false,
                 modelTools: [' tool-a ', ''],
                 customFlags: [LLMFlags.hasImageInput],
                 customTokenizer: ' custom-tokenizer ',
@@ -1838,6 +1839,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           modelRuntimeDefaults: {
             maxContext: 8192,
             temperature: 55,
+            stripCoT: true,
             modelTools: [' tool-a ', ''],
           },
         },
@@ -1884,6 +1886,7 @@ describe('Phase 9-2a scalar settings groups', () => {
             genTime: 3,
             extractJson: 'object',
             jsonSchemaEnabled: true,
+            stripCoT: false,
             modelTools: ['tool-a'],
             customFlags: [LLMFlags.hasImageInput],
             customTokenizer: 'custom-tokenizer',
@@ -1902,6 +1905,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       modelRuntimeDefaults: {
         maxContext: 8192,
         temperature: 55,
+        stripCoT: true,
         modelTools: ['tool-a'],
       },
     })

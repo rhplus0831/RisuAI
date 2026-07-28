@@ -32,9 +32,10 @@
 
   interface Props {
     value: ModelProfileRecordRuntimeOptions
+    scope?: 'defaults' | 'overrides'
   }
 
-  let { value = $bindable({}) }: Props = $props()
+  let { value = $bindable({}), scope = 'overrides' }: Props = $props()
 
   const numberFields: RuntimeNumberField[] = [
     { key: 'maxContext', label: language.modelProfiles.runtimeFields.maxContext, step: '1' },
@@ -89,6 +90,7 @@
     { key: 'strictJsonSchema', label: language.modelProfiles.runtimeFields.strictJsonSchema },
     { key: 'outputImageModal', label: language.modelProfiles.runtimeFields.outputImageModal },
     { key: 'enableCustomFlags', label: language.modelProfiles.runtimeFields.enableCustomFlags },
+    { key: 'stripCoT', label: language.modelProfiles.runtimeFields.stripCoT },
   ]
 
   const flagOptions = Object.entries(LLMFlags).map(([label, flag]) => ({
@@ -151,6 +153,16 @@
     }
     const next = asRecord()
     next[key] = raw === 'true'
+    commit(next)
+  }
+
+  function setDefaultCheckbox(key: RuntimeKey, checked: boolean): void {
+    const next = asRecord()
+    if (checked) {
+      next[key] = true
+    } else {
+      delete next[key]
+    }
     commit(next)
   }
 
@@ -237,19 +249,34 @@
     <h4 class="mb-2 text-sm font-semibold">{language.modelProfiles.runtimeBooleanSection}</h4>
     <div class="grid gap-3 md:grid-cols-2">
       {#each booleanFields as field (field.key)}
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{field.label}</span>
-          <select
-            class="w-full rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-            value={booleanValue(field.key)}
-            onchange={(event) => {
-              setBoolean(field.key, event.currentTarget.value)
-            }}>
-            <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
-            <option value="true" class="bg-darkbg">{language.modelProfiles.runtimeTrue}</option>
-            <option value="false" class="bg-darkbg">{language.modelProfiles.runtimeFalse}</option>
-          </select>
-        </label>
+        {#if scope === 'defaults' && field.key === 'stripCoT'}
+          <label class="flex items-center gap-2 text-sm text-textcolor2">
+            <input
+              data-runtime-strip-cot
+              type="checkbox"
+              class="h-4 w-4"
+              checked={value?.stripCoT === true}
+              onchange={(event) => {
+                setDefaultCheckbox(field.key, event.currentTarget.checked)
+              }} />
+            <span>{field.label}</span>
+          </label>
+        {:else}
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-textcolor2">{field.label}</span>
+            <select
+              data-runtime-field={field.key}
+              class="w-full rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+              value={booleanValue(field.key)}
+              onchange={(event) => {
+                setBoolean(field.key, event.currentTarget.value)
+              }}>
+              <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
+              <option value="true" class="bg-darkbg">{language.modelProfiles.runtimeTrue}</option>
+              <option value="false" class="bg-darkbg">{language.modelProfiles.runtimeFalse}</option>
+            </select>
+          </label>
+        {/if}
       {/each}
     </div>
   </div>
