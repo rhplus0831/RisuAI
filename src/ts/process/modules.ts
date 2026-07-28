@@ -59,6 +59,12 @@ import {
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
 import { isImportableMCPIdentifier } from './mcp/mcpIdentifier'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
+import { resolveEffectiveAgentPresetId } from '../agentPresetResolver'
+import {
+  combineModuleIntegrations,
+  parseModuleIntegration,
+  resolveAgentPresetModuleIntegration,
+} from '../moduleIntegration'
 
 export interface MCPModule {
   url: string
@@ -629,13 +635,6 @@ function promptPresetModuleIntegration(
   return typeof db.moduleIntergration === 'string' ? db.moduleIntergration : ''
 }
 
-function parseModuleIntegration(value: string) {
-  return value
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-}
-
 let lastModules = ''
 let lastModuleData: RisuModule[] = []
 let lastModuleSource: RisuModule[] | undefined
@@ -659,7 +658,13 @@ export function getModules() {
   if (character && character.modules) {
     ids = ids.concat(character.modules)
   }
-  const moduleIntergration = promptPresetModuleIntegration(db, currentChat)
+  const moduleIntergration = combineModuleIntegrations(
+    promptPresetModuleIntegration(db, currentChat),
+    resolveAgentPresetModuleIntegration(
+      db.agentPresets,
+      resolveEffectiveAgentPresetId(db, currentChat?.generationSettings),
+    ),
+  )
   if (moduleIntergration) {
     ids = ids.concat(parseModuleIntegration(moduleIntergration))
   }

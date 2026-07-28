@@ -1110,6 +1110,7 @@ describe('resource-scoped database state', () => {
             id: 'ap_a',
             name: '  Attempted Name  ',
             description: null,
+            moduleIntergration: null,
             enabled: true,
             version: 1,
             steps: [
@@ -1153,6 +1154,10 @@ describe('resource-scoped database state', () => {
             attempted: { present: true, value: null },
             canonical: { present: false },
           },
+          moduleIntergration: {
+            attempted: { present: true, value: null },
+            canonical: { present: false },
+          },
         },
         updatedAt: 400,
       }),
@@ -1163,6 +1168,9 @@ describe('resource-scoped database state', () => {
     })
     expect((settingsResourceState.value as { agentPresets: unknown[] }).agentPresets[0]).not.toHaveProperty(
       'description',
+    )
+    expect((settingsResourceState.value as { agentPresets: unknown[] }).agentPresets[0]).not.toHaveProperty(
+      'moduleIntergration',
     )
     expect(settingsResourceState.groupRevisions.agents).toBe(4)
     expect(hasSettingsGroupProjectionEpochChanged('agents', epoch)).toBe(false)

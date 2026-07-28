@@ -342,6 +342,28 @@ describe('modular Agent Preset settings', () => {
     })
   })
 
+  it('saves module IDs and namespaces as Agent Preset metadata', async () => {
+    seed([agent], [{ ...preset, moduleIntergration: 'old-space' }])
+    component = mount(AgentPresetSettings, { target })
+    await tick()
+
+    clickButtonContaining(target.querySelector('[data-risu-agent-preset-row]')!, language.agentPresets.edit)
+    await tick()
+    const editor = target.querySelector('[data-risu-agent-preset-editor]')!
+    const integration = editor.querySelector<HTMLTextAreaElement>(
+      '[data-risu-agent-preset-module-integration] textarea',
+    )!
+    integration.value = ' research-tools, module-id '
+    integration.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    clickButtonContaining(editor, language.agentPresets.save)
+    await flush()
+
+    expect(presetSpies.updateAgentPreset).toHaveBeenCalledWith(preset.id, {
+      moduleIntergration: 'research-tools, module-id',
+    })
+  })
+
   it('disables deletion for Agents still referenced by presets', async () => {
     seed()
     component = mount(AgentPresetSettings, { target })

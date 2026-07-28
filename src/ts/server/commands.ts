@@ -6894,7 +6894,7 @@ function readAgentPresetPatchLocalEffect(
 
   const allowedKeys =
     input.kind === 'preset'
-      ? new Set(['name', 'description', 'finalOutputTemplate', 'enabled', 'maxConcurrency'])
+      ? new Set(['name', 'description', 'moduleIntergration', 'finalOutputTemplate', 'enabled', 'maxConcurrency'])
       : new Set([
           'name',
           'enabled',
@@ -6952,7 +6952,11 @@ function readAgentPresetPatchLocalEffect(
     canonicalDeletedKeys.some(
       (key) =>
         !allowedKeys.has(key) ||
-        (input.kind === 'preset' && key !== 'description' && key !== 'finalOutputTemplate' && key !== 'maxConcurrency'),
+        (input.kind === 'preset' &&
+          key !== 'description' &&
+          key !== 'moduleIntergration' &&
+          key !== 'finalOutputTemplate' &&
+          key !== 'maxConcurrency'),
     ) ||
     (input.kind === 'step' && canonicalDeletedKeys.length > 0)
   ) {

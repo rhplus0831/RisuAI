@@ -788,7 +788,14 @@ function assertValidPreset(preset: AgentPresetRecord, label: string, agents: rea
 
 function readPresetMetadataPatch(value: unknown): Record<string, unknown> {
   const patch = readObject(value, 'patch')
-  const allowed = new Set(['name', 'description', 'finalOutputTemplate', 'enabled', 'maxConcurrency'])
+  const allowed = new Set([
+    'name',
+    'description',
+    'moduleIntergration',
+    'finalOutputTemplate',
+    'enabled',
+    'maxConcurrency',
+  ])
   const entries = Object.entries(patch)
   if (entries.length === 0) {
     throw new ValidationError('patch must include at least one Agent Preset field')
@@ -800,6 +807,9 @@ function readPresetMetadataPatch(value: unknown): Record<string, unknown> {
     if (key === 'name') readNonEmptyString(patchValue, 'patch.name')
     if (key === 'description' && patchValue !== null && typeof patchValue !== 'string') {
       throw new ValidationError('patch.description must be a string or null')
+    }
+    if (key === 'moduleIntergration' && patchValue !== null && typeof patchValue !== 'string') {
+      throw new ValidationError('patch.moduleIntergration must be a string or null')
     }
     if (key === 'finalOutputTemplate' && patchValue !== null && typeof patchValue !== 'string') {
       throw new ValidationError('patch.finalOutputTemplate must be a string or null')
@@ -830,6 +840,14 @@ function applyPresetMetadataPatch(
       delete next.description
     } else {
       next.description = description as string
+    }
+  }
+  if (hasOwn(patch, 'moduleIntergration')) {
+    const moduleIntergration = patch.moduleIntergration
+    if (moduleIntergration === null || (moduleIntergration as string).trim() === '') {
+      delete next.moduleIntergration
+    } else {
+      next.moduleIntergration = moduleIntergration as string
     }
   }
   if (hasOwn(patch, 'finalOutputTemplate')) {

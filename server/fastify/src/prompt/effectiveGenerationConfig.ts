@@ -21,6 +21,7 @@ import type { ModelProfileRecord } from '../../../../src/ts/model/modelProfileRe
 import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
 import { createPromptInfoSnapshot } from '../../../../src/ts/promptInfo.js'
 import { resolveEffectiveAgentPresetId } from '../../../../src/ts/agentPresetResolver.js'
+import { combineModuleIntegrations, resolveAgentPresetModuleIntegration } from '../../../../src/ts/moduleIntegration.js'
 
 type JsonRecord = Record<string, unknown>
 type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
@@ -77,6 +78,7 @@ export interface EffectiveGenerationConfigResult {
 
 export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigInput): EffectiveGenerationConfigResult {
   const settings = input.currentChat.generationSettings
+  const effectiveAgentPresetId = resolveEffectiveAgentPresetId(input.database, settings)
   const modelPresets = (input.database.modelPresets ?? []) as unknown as ModelPresetRecord[]
   const promptPresets = (input.database.promptPresets ?? []) as unknown as EffectivePromptPresetRecord[]
   const personas = (input.database.personas ?? []) as PersonaRecord[]
@@ -84,7 +86,7 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   const selectedPromptPreset = findById(promptPresets, settings?.promptPresetId)
   const readiness = resolveChatGenerationSettingsReadiness({
     settings,
-    effectiveAgentPresetId: resolveEffectiveAgentPresetId(input.database, settings),
+    effectiveAgentPresetId,
     personas,
     modelPresets,
     promptPresets,
@@ -142,8 +144,10 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     promptPreset: effectivePromptPreset,
     scope: 'full-generation',
   })
-  effectiveDatabase.moduleIntergration =
-    typeof effectivePromptPreset.moduleIntergration === 'string' ? effectivePromptPreset.moduleIntergration : ''
+  effectiveDatabase.moduleIntergration = combineModuleIntegrations(
+    effectivePromptPreset.moduleIntergration,
+    resolveAgentPresetModuleIntegration(effectiveDatabase.agentPresets, effectiveAgentPresetId),
+  )
   const promptPresetRegex = resolvePromptPresetRegexField(effectivePromptPreset)
   effectiveDatabase.presetRegex = structuredClone(
     promptPresetRegex.present && Array.isArray(promptPresetRegex.value) ? promptPresetRegex.value : [],

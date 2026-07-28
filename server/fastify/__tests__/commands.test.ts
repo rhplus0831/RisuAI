@@ -4887,6 +4887,7 @@ describe('Agent Preset command surface', () => {
         patch: {
           name: 'Research Agent Renamed',
           description: 'before-main helper',
+          moduleIntergration: 'research-tools, citations',
           finalOutputTemplate: '{{slot::mainOutput}}\n{{agent::research}}',
           maxConcurrency: 2,
           enabled: false,
@@ -4896,10 +4897,18 @@ describe('Agent Preset command surface', () => {
     expect(updated.statusCode).toBe(200)
     expect(updated.json()).toMatchObject({
       presetId: createdBody.presetId,
-      acknowledgedKeys: ['name', 'description', 'finalOutputTemplate', 'maxConcurrency', 'enabled'],
+      acknowledgedKeys: [
+        'name',
+        'description',
+        'moduleIntergration',
+        'finalOutputTemplate',
+        'maxConcurrency',
+        'enabled',
+      ],
       canonicalValues: {
         name: 'Research Agent Renamed',
         description: 'before-main helper',
+        moduleIntergration: 'research-tools, citations',
         finalOutputTemplate: '{{slot::mainOutput}}\n{{agent::research}}',
         maxConcurrency: 2,
         enabled: false,
@@ -4987,6 +4996,7 @@ describe('Agent Preset command surface', () => {
       id: createdBody.presetId,
       name: 'Research Agent Renamed',
       description: 'before-main helper',
+      moduleIntergration: 'research-tools, citations',
       finalOutputTemplate: '{{slot::mainOutput}}\n{{agent::research}}',
       maxConcurrency: 2,
       enabled: false,
@@ -5312,6 +5322,7 @@ describe('Agent Preset command surface', () => {
           id: 'ap_fields',
           name: 'Fields',
           description: 'Old description',
+          moduleIntergration: 'old-space',
           enabled: true,
           version: 1,
           maxConcurrency: 4,
@@ -5342,15 +5353,15 @@ describe('Agent Preset command surface', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: revision,
-        patch: { name: '  Trimmed Fields  ', description: '   ', maxConcurrency: null },
+        patch: { name: '  Trimmed Fields  ', description: '   ', moduleIntergration: null, maxConcurrency: null },
       },
     })
     expect(metadata.statusCode).toBe(200)
     expect(metadata.json()).toMatchObject({
       presetId: 'ap_fields',
-      acknowledgedKeys: ['name', 'description', 'maxConcurrency'],
+      acknowledgedKeys: ['name', 'description', 'moduleIntergration', 'maxConcurrency'],
       canonicalValues: { name: 'Trimmed Fields' },
-      canonicalDeletedKeys: ['description', 'maxConcurrency'],
+      canonicalDeletedKeys: ['description', 'moduleIntergration', 'maxConcurrency'],
       updatedAt: expect.any(Number),
     })
 

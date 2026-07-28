@@ -177,6 +177,64 @@ describe('chat generation settings contract', () => {
     ])
   })
 
+  it('adds modules associated with the effective Agent Preset to Prompt module integration', () => {
+    const toggles = resolveRequiredSidebarToggles({
+      modelPresets,
+      promptPresets: [],
+      agentPresetId: 'agent-preset-a',
+      agentPresets: [
+        {
+          id: 'agent-preset-a',
+          enabled: true,
+          moduleIntergration: ' agent-space, exact-agent-module ',
+        },
+      ],
+      modules: [
+        {
+          id: 'prompt-module',
+          namespace: 'prompt-space',
+          customModuleToggle: 'prompt=Prompt module',
+        },
+        {
+          id: 'agent-module',
+          namespace: 'agent-space',
+          customModuleToggle: 'agentModule=Agent module',
+        },
+        {
+          id: 'exact-agent-module',
+          customModuleToggle: 'exact=Exact Agent module',
+        },
+      ],
+      moduleIntegration: 'prompt-space',
+    })
+
+    expect(toggles.map((toggle) => toggle.key)).toEqual(['prompt', 'agentModule', 'exact'])
+  })
+
+  it('does not activate modules associated with a disabled Agent Preset', () => {
+    const toggles = resolveRequiredSidebarToggles({
+      modelPresets,
+      promptPresets: [],
+      agentPresetId: 'agent-preset-disabled',
+      agentPresets: [
+        {
+          id: 'agent-preset-disabled',
+          enabled: false,
+          moduleIntergration: 'agent-space',
+        },
+      ],
+      modules: [
+        {
+          id: 'agent-module',
+          namespace: 'agent-space',
+          customModuleToggle: 'agentModule=Agent module',
+        },
+      ],
+    })
+
+    expect(toggles).toEqual([])
+  })
+
   it('namespaces active Agent toggles by stable Agent id and deduplicates repeated uses', () => {
     const toggles = resolveRequiredSidebarToggles({
       modelPresets,

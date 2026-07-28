@@ -145,6 +145,8 @@ export interface AgentPresetRecord {
   id: string
   name: string
   description?: string
+  /** Comma-separated module ids or namespaces activated while this preset is effective. */
+  moduleIntergration?: string
   /** CBS evaluated after the main response and all Agent uses complete. */
   finalOutputTemplate?: string
   enabled: boolean
@@ -168,6 +170,7 @@ export type AgentPresetValidationIssueCode =
   | 'invalid_enabled'
   | 'invalid_version'
   | 'invalid_max_concurrency'
+  | 'invalid_module_integration'
   | 'invalid_phase'
   | 'invalid_dependency'
   | 'cyclic_dependency'
@@ -395,6 +398,15 @@ export function validateAgentPresetRecord(
         'invalid_max_concurrency',
         `${path}.maxConcurrency`,
         `Agent Preset maxConcurrency must be between ${AGENT_PRESET_MAX_CONCURRENCY_MIN} and ${AGENT_PRESET_MAX_CONCURRENCY_MAX}`,
+      ),
+    )
+  }
+  if (preset.moduleIntergration !== undefined && typeof preset.moduleIntergration !== 'string') {
+    issues.push(
+      issue(
+        'invalid_module_integration',
+        `${path}.moduleIntergration`,
+        'Agent Preset module integration must be a string',
       ),
     )
   }
@@ -774,6 +786,9 @@ function normalizeAgentPresetRecord(item: Record<string, unknown>): AgentPresetR
   }
   const description = stringOrBlank(item.description)
   if (description) record.description = description
+  if (typeof item.moduleIntergration === 'string' && item.moduleIntergration.trim()) {
+    record.moduleIntergration = item.moduleIntergration
+  }
   if (typeof item.finalOutputTemplate === 'string' && item.finalOutputTemplate.trim()) {
     record.finalOutputTemplate = item.finalOutputTemplate
   }

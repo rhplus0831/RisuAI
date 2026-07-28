@@ -2729,6 +2729,10 @@ export const languageKorean = {
     nameLabel: '이름',
     descriptionLabel: '설명',
     descriptionPlaceholder: '선택 사항인 작성자 메모',
+    moduleIntegrationLabel: '모듈 통합',
+    moduleIntegrationDescription:
+      '이 에이전트 프리셋을 선택했을 때 활성화할 모듈 ID 또는 네임스페이스를 쉼표로 구분해 입력합니다.',
+    moduleIntegrationPlaceholder: 'research-tools, module-id',
     enabledLabel: '활성화',
     limitConcurrency: '동시 실행 제한',
     maxConcurrency: '최대 동시 실행 수',

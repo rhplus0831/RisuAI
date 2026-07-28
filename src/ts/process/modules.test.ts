@@ -16,6 +16,8 @@ const createGlobalModule = vi.hoisted(() => vi.fn())
 const getCurrentCharacter = vi.hoisted(() => vi.fn())
 const getCurrentChatMock = vi.hoisted(() => vi.fn())
 type ModuleDatabaseFixture = {
+  agentPresetDefaultId?: string
+  agentPresets?: Array<Record<string, unknown>>
   characters?: unknown[]
   enabledModules?: string[]
   enableLorebookStubs?: boolean
@@ -1208,6 +1210,43 @@ describe('module imports', () => {
     })
 
     expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['chat regex'])
+  })
+
+  it('adds module integration from the effective default Agent Preset', () => {
+    getCurrentChatMock.mockReturnValue({
+      modules: [],
+      generationSettings: {
+        promptPresetId: 'chat-preset',
+      },
+    })
+    getCurrentCharacter.mockReturnValue({ modules: [] })
+    getDatabase.mockReturnValue({
+      enabledModules: [],
+      moduleIntergration: '',
+      promptPresets: [{ id: 'chat-preset', moduleIntergration: 'prompt-space' }],
+      agentPresetDefaultId: 'agent-preset-default',
+      agentPresets: [
+        {
+          id: 'agent-preset-default',
+          enabled: true,
+          moduleIntergration: 'agent-space',
+        },
+      ],
+      modules: [
+        {
+          id: 'prompt-module',
+          namespace: 'prompt-space',
+          regex: [{ comment: 'prompt regex', in: 'PROMPT', out: 'prompt', type: 'editdisplay' }],
+        },
+        {
+          id: 'agent-module',
+          namespace: 'agent-space',
+          regex: [{ comment: 'agent regex', in: 'AGENT', out: 'agent', type: 'editdisplay' }],
+        },
+      ],
+    })
+
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['prompt regex', 'agent regex'])
   })
 
   it('does not use global prompt integration when the active chat selected prompt has none', () => {

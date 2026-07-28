@@ -157,6 +157,18 @@ describe('agent preset records', () => {
     ])
   })
 
+  it('preserves non-empty module integration and drops a blank value', () => {
+    expect(
+      normalizeAgentPresets([
+        { id: 'ap_modules', name: 'Modules', moduleIntergration: ' research-tools, module-id ' },
+        { id: 'ap_blank_modules', name: 'Blank Modules', moduleIntergration: '   ' },
+      ]),
+    ).toEqual([
+      expect.objectContaining({ id: 'ap_modules', moduleIntergration: ' research-tools, module-id ' }),
+      expect.not.objectContaining({ moduleIntergration: expect.anything() }),
+    ])
+  })
+
   it('clears default ids that do not point to an existing preset', () => {
     const presets = normalizeAgentPresets([{ id: 'ap_a', name: 'A' }])
 

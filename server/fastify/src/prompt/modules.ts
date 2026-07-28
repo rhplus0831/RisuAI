@@ -1,6 +1,7 @@
 import type { Chat, Database, character, customscript, loreBook } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import type { triggerscript } from '../../../../src/ts/process/triggers'
+import { parseModuleIntegration } from '../../../../src/ts/moduleIntegration.js'
 import { attachTriggerSource } from './triggerSource.js'
 
 /**
@@ -64,12 +65,7 @@ export function getActiveModules(
   if (currentChat?.modules) ids = ids.concat(currentChat.modules)
   if (currentChar?.modules) ids = ids.concat(currentChar.modules)
   if (database.moduleIntergration) {
-    ids = ids.concat(
-      database.moduleIntergration
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0),
-    )
+    ids = ids.concat(parseModuleIntegration(database.moduleIntergration))
   }
   if (ids.length === 0) return NO_ACTIVE_MODULES
 

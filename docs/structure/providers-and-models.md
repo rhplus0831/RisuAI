@@ -284,6 +284,13 @@ output key, destination, failure policy, and optional model/runtime overrides.
 Deleting an Agent is blocked while any preset still uses it; duplicating a
 preset shares Agent references rather than copying their behavior.
 
+An Agent Preset may also own `moduleIntergration`, using the same
+comma-separated module-id or namespace contract as Prompt Presets. While an
+enabled Agent Preset is effective for a chat, its entries are added to the
+Prompt Preset integration and to global, character, and chat module sources;
+module resolution deduplicates matching rows by module id. This is an effective
+generation overlay and does not mutate `enabledModules`.
+
 Planning resolves each use into the existing execution-step shape by applying
 the use's overrides on top of the Agent defaults. Consequently, editing a
 shared Agent affects every preset that uses it, while orchestration edits and
@@ -495,12 +502,12 @@ Chat generation has a two-stage effective-config path. Browser preflight uses
 `effectiveModelDatabaseForChat()` with model-runtime preset scope for routing
 and image gates. Server generation then uses
 `buildEffectiveGenerationConfig()` with full chat generation settings,
-persona selection, Agent Preset readiness, jailbreak state, prompt-preset
-module integration, sidebar-toggle materialization, prompt-preset ownership, and
-profile-bound runtime fields before prompt assembly. Effective preset precedence
-is selected model preset first, prompt preset fields for full generation,
-prompt-preset model overrides after that, then server generation reapplies
-prompt-preset model overrides after profile-bound runtime fields.
+persona selection, Agent Preset readiness, jailbreak state, additive Prompt and
+Agent Preset module integration, sidebar-toggle materialization, prompt-preset
+ownership, and profile-bound runtime fields before prompt assembly. Effective
+preset precedence is selected model preset first, prompt preset fields for full
+generation, prompt-preset model overrides after that, then server generation
+reapplies prompt-preset model overrides after profile-bound runtime fields.
 `chatDispatch.ts` forwards only the supported runtime subset to provider
 adapters.
 

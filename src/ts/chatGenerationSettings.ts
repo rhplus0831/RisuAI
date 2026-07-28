@@ -1,4 +1,5 @@
 import { agentToggleStorageKey, type AgentPresetUseRecord, type AgentToggleDefinition } from './agentPresetRecords'
+import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from './moduleIntegration'
 
 export const CHAT_GENERATION_SETTINGS_FIELD = 'generationSettings' as const
 
@@ -177,6 +178,7 @@ export interface ChatGenerationAgentPresetReference {
   id?: string | null
   name?: string | null
   enabled?: boolean | null
+  moduleIntergration?: string | null
   agentUses?: readonly Pick<AgentPresetUseRecord, 'agentId' | 'enabled'>[] | null
 }
 
@@ -778,11 +780,13 @@ function resolvePreset<T extends { id?: string | null }>(
 }
 
 function resolveActiveModules(input: ResolveChatGenerationRequirementsInput): ChatGenerationModuleReference[] {
+  const agentPresetModuleIntegration = resolveAgentPresetModuleIntegration(input.agentPresets, input.agentPresetId)
   const requestedIds = [
     ...(input.enabledModuleIds ?? []),
     ...(input.chatModuleIds ?? []),
     ...(input.characterModuleIds ?? []),
     ...parseModuleIntegration(input.moduleIntegration),
+    ...parseModuleIntegration(agentPresetModuleIntegration),
   ].filter(isNonEmptyString)
 
   if (requestedIds.length === 0) return []
@@ -799,14 +803,6 @@ function resolveActiveModules(input: ResolveChatGenerationRequirementsInput): Ch
     active.push(module)
   }
   return active
-}
-
-function parseModuleIntegration(value: string | null | undefined): string[] {
-  if (!value) return []
-  return value
-    .split(',')
-    .map((namespace) => namespace.trim())
-    .filter((namespace) => namespace.length > 0)
 }
 
 function presetDisplaysJailbreakToggle(preset: ChatGenerationPresetReference | undefined): boolean {

@@ -2819,6 +2819,10 @@ export const languageEnglish = {
     nameLabel: 'Name',
     descriptionLabel: 'Description',
     descriptionPlaceholder: 'Optional author note',
+    moduleIntegrationLabel: 'Module Integration',
+    moduleIntegrationDescription:
+      'Comma-separated module IDs or namespaces activated while this Agent Preset is selected.',
+    moduleIntegrationPlaceholder: 'research-tools, module-id',
     enabledLabel: 'Enabled',
     limitConcurrency: 'Limit concurrency',
     maxConcurrency: 'Max Concurrency',

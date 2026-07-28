@@ -1837,6 +1837,59 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(ChatGenerationSettingsIncompleteAssemblyError)
   })
 
+  it('adds effective Agent Preset module integration to the selected Prompt Preset', () => {
+    const db = makeDatabase({
+      modules: [
+        { id: 'module-prompt', namespace: 'prompt-space', customModuleToggle: 'promptMode=Prompt Mode' },
+        { id: 'module-agent', namespace: 'agent-space', customModuleToggle: 'agentMode=Agent Mode' },
+      ] as Database['modules'],
+      enabledModules: [],
+      moduleIntergration: '',
+      botPresets: [
+        {
+          id: 'preset-chat',
+          name: 'Chat',
+          moduleIntergration: 'prompt-space',
+        },
+      ],
+      agentPresets: [
+        {
+          id: 'ap_modules',
+          name: 'Module Agent Preset',
+          enabled: true,
+          version: 1,
+          moduleIntergration: 'agent-space',
+          steps: [],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          modules: [],
+          chats: [
+            makeChat({
+              modules: [],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-chat',
+                agentPresetId: 'ap_modules',
+                jailbreakToggle: false,
+                sidebarToggles: { promptMode: '1', agentMode: '1' },
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    const state = beginAssembly(baseInput(), depsFor(db))
+
+    expect(state.database.moduleIntergration).toBe('prompt-space, agent-space')
+    expect(state.database.globalChatVariables).toMatchObject({ toggle_promptMode: '1', toggle_agentMode: '1' })
+    expect(db.moduleIntergration).toBe('')
+  })
+
   it('clears stale global module integration when the chat selected prompt has none', () => {
     const db = makeDatabase({
       moduleIntergration: 'global-space',

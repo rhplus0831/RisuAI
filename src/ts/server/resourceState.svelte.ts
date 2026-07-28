@@ -1841,7 +1841,7 @@ function applyAgentPresetFieldPatchLocalEffect(
         'destination',
         'failurePolicy',
       ])
-    : new Set(['name', 'description', 'enabled', 'maxConcurrency'])
+    : new Set(['name', 'description', 'moduleIntergration', 'finalOutputTemplate', 'enabled', 'maxConcurrency'])
   const fieldEntries = isPlainRecord(payload.fields) ? Object.entries(payload.fields) : []
   if (
     !Number.isInteger(payload.revision) ||
@@ -1862,7 +1862,12 @@ function applyAgentPresetFieldPatchLocalEffect(
       !isCanonicalJsonFieldState(field.attempted) ||
       !isCanonicalJsonFieldState(field.canonical) ||
       (isStepPatch && !field.canonical.present) ||
-      (!isStepPatch && !field.canonical.present && key !== 'description' && key !== 'maxConcurrency')
+      (!isStepPatch &&
+        !field.canonical.present &&
+        key !== 'description' &&
+        key !== 'moduleIntergration' &&
+        key !== 'finalOutputTemplate' &&
+        key !== 'maxConcurrency')
     ) {
       return false
     }

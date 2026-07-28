@@ -49,14 +49,28 @@
     onQueuedProjection?: (latch: AgentPresetGeneratedProjectionLatch) => void | Promise<void>
   }
 
-  type MetadataField = 'name' | 'description' | 'finalOutputTemplate' | 'enabled' | 'maxConcurrency'
-  const METADATA_FIELDS: MetadataField[] = ['name', 'description', 'finalOutputTemplate', 'enabled', 'maxConcurrency']
+  type MetadataField =
+    | 'name'
+    | 'description'
+    | 'moduleIntergration'
+    | 'finalOutputTemplate'
+    | 'enabled'
+    | 'maxConcurrency'
+  const METADATA_FIELDS: MetadataField[] = [
+    'name',
+    'description',
+    'moduleIntergration',
+    'finalOutputTemplate',
+    'enabled',
+    'maxConcurrency',
+  ]
   let { mode, preset, busy = false, commandError = '', onSave, onCancel }: Props = $props()
   // svelte-ignore state_referenced_locally
   const initialPreset = preset
   const presetId = initialPreset?.id ?? ''
   let name = $state(initialPreset?.name ?? language.agentPresets.newPresetName)
   let description = $state(initialPreset?.description ?? '')
+  let moduleIntergration = $state(initialPreset?.moduleIntergration ?? '')
   let finalOutputTemplate = $state(initialPreset?.finalOutputTemplate ?? '')
   let enabled = $state(initialPreset?.enabled ?? true)
   let limitConcurrency = $state(initialPreset?.maxConcurrency !== undefined)
@@ -117,6 +131,7 @@
     return {
       name: name.trim(),
       description: description.trim() || null,
+      moduleIntergration: moduleIntergration.trim() || null,
       finalOutputTemplate: finalOutputTemplate.trim() ? finalOutputTemplate : null,
       enabled,
       maxConcurrency: limitConcurrency
@@ -130,6 +145,7 @@
       ? {
           name: record.name,
           description: record.description ?? null,
+          moduleIntergration: record.moduleIntergration ?? null,
           finalOutputTemplate: record.finalOutputTemplate ?? null,
           enabled: record.enabled,
           maxConcurrency: record.maxConcurrency ?? null,
@@ -386,6 +402,14 @@
           data-risu-agent-preset-description-input
           class="min-h-20 rounded-md border border-darkborderc bg-transparent px-3 py-2 text-sm"
           bind:value={description}></textarea>
+      </label>
+      <label class="mt-3 flex flex-col gap-1" data-risu-agent-preset-module-integration>
+        <span class="text-sm font-medium">{language.agentPresets.moduleIntegrationLabel}</span>
+        <span class="text-xs text-textcolor2">{language.agentPresets.moduleIntegrationDescription}</span>
+        <textarea
+          class="min-h-20 rounded-md border border-darkborderc bg-transparent px-3 py-2 text-sm"
+          placeholder={language.agentPresets.moduleIntegrationPlaceholder}
+          bind:value={moduleIntergration}></textarea>
       </label>
       {#if limitConcurrency}
         <label class="mt-3 flex max-w-xs flex-col gap-1"

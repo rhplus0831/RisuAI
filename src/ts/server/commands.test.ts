@@ -3017,9 +3017,9 @@ describe('server command API adapter', () => {
           id: 'ap_a',
         },
         presetId: 'ap_a',
-        acknowledgedKeys: ['name', 'description'],
+        acknowledgedKeys: ['name', 'description', 'moduleIntergration'],
         canonicalValues: { name: 'Canonical Name' },
-        canonicalDeletedKeys: ['description'],
+        canonicalDeletedKeys: ['description', 'moduleIntergration'],
         updatedAt: 300,
       }
     })
@@ -3032,12 +3032,13 @@ describe('server command API adapter', () => {
     await updateAgentPresetCommand({
       baseRevision: 2,
       presetId: 'ap_a',
-      patch: { name: '  Canonical Name  ', description: null },
+      patch: { name: '  Canonical Name  ', description: null, moduleIntergration: null },
       optimisticAcknowledgement: {
         settingsProjectionEpoch: 12,
         attemptedFields: {
           name: { present: true, value: '  Canonical Name  ' },
           description: { present: true, value: null },
+          moduleIntergration: { present: true, value: null },
         },
       },
     })
@@ -3066,6 +3067,10 @@ describe('server command API adapter', () => {
             attempted: { present: true, value: null },
             canonical: { present: false },
           },
+          moduleIntergration: {
+            attempted: { present: true, value: null },
+            canonical: { present: false },
+          },
         },
         updatedAt: 300,
       },
@@ -3086,7 +3091,7 @@ describe('server command API adapter', () => {
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
       {
         baseRevision: 2,
-        patch: { name: '  Canonical Name  ', description: null },
+        patch: { name: '  Canonical Name  ', description: null, moduleIntergration: null },
       },
       {
         baseRevision: 3,

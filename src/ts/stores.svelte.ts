@@ -330,10 +330,24 @@ $effect.root(() => {
   $effect(() => {
     const database = getResourceDatabase()
     const character = database.characters?.[selIdState.selId]
+    const chat = character?.chats?.[character.chatPage]
+    const selectedPromptPreset = database.promptPresets?.find(
+      (preset) => preset.id === chat?.generationSettings?.promptPresetId,
+    )
+    const effectiveAgentPresetId = Object.prototype.hasOwnProperty.call(chat?.generationSettings ?? {}, 'agentPresetId')
+      ? chat?.generationSettings?.agentPresetId
+      : database.agentPresetDefaultId
+    const selectedAgentPreset = database.agentPresets?.find((preset) => preset.id === effectiveAgentPresetId)
     readModuleUpdateSignals(database.modules)
     database.enabledModules
     database.enabledModules?.length
-    character?.chats?.[character.chatPage]?.modules?.length
+    chat?.modules?.length
+    chat?.generationSettings?.promptPresetId
+    chat?.generationSettings?.agentPresetId
+    selectedPromptPreset?.moduleIntergration
+    database.agentPresetDefaultId
+    selectedAgentPreset?.enabled
+    selectedAgentPreset?.moduleIntergration
     character?.hideChatIcon
     character?.backgroundHTML
     database.moduleIntergration
