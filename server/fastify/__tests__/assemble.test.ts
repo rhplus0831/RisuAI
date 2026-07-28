@@ -908,6 +908,108 @@ describe('prompt summary hashes', () => {
     })
   })
 
+  it('composes the final response from mainOutput and multiple named Agent outputs through CBS', async () => {
+    const contextStep = agentPresetStep({
+      id: 'aps_context',
+      name: 'Context',
+      outputKey: 'context',
+      destination: 'intermediate',
+    })
+    const statusStep = agentPresetStep({
+      id: 'aps_status',
+      name: 'Status',
+      phase: 'afterMain',
+      outputKey: 'status',
+      destination: 'intermediate',
+      inputScopes: ['mainDraft'],
+    })
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      agentPresets: [
+        {
+          id: 'ap_composed',
+          name: 'Composed Agent',
+          enabled: true,
+          version: 1,
+          finalOutputTemplate: 'Main:\n{{slot::mainOutput}}\nContext: {{agent::context}}\nStatus: {{agent::status}}',
+          steps: [contextStep, statusStep],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          customscript: [
+            { in: 'assistant reply', out: 'edited reply', type: 'editoutput', flag: '', ableFlag: false },
+          ] as never,
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_composed',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const executeAgentPresetStep = vi.fn(async (input) => {
+      const outputText = input.step.id === 'aps_context' ? 'source-backed context' : 'ready'
+      return {
+        status: 'success' as const,
+        stepId: input.step.id,
+        stepName: input.step.name,
+        outputKey: input.step.outputKey,
+        outputText,
+        outputTruncated: false,
+        diagnostics: {
+          phase: input.step.phase,
+          outputFormat: 'text' as const,
+          destination: input.step.destination,
+          failurePolicy: 'required' as const,
+          inputChars: 0,
+          outputChars: outputText.length,
+          startedAt: 1,
+          endedAt: 2,
+          durationMs: 1,
+          preparedInputSections: [],
+          preparedInputDiagnostics: [],
+          parseStatus: 'not_applicable' as const,
+        },
+      }
+    })
+
+    const assembled = await assemblePrompt(
+      baseInput({ userMessage: 'latest user turn' }),
+      depsFor(db, { executeAgentPresetStep }),
+    )
+    expect(assembled.stopSending).toBe(false)
+    if (assembled.stopSending) return
+
+    const generationInfo: Record<string, unknown> = {}
+    const post = await runServerPostGeneration(assembled.state!, {
+      completionText: 'assistant reply',
+      generationId: 'generation-composed',
+      generationInfo,
+    })
+
+    expect(executeAgentPresetStep).toHaveBeenCalledTimes(2)
+    expect(post.finalText).toBe('Main:\nedited reply\nContext: source-backed context\nStatus: ready')
+    expect(generationInfo.agentPreset).toMatchObject({
+      status: 'ready',
+      presetId: 'ap_composed',
+      finalOutputComposed: true,
+      finalTextModified: true,
+      mainOutputPreview: 'edited reply',
+    })
+  })
+
   it('preserves the post-editoutput text when required after-main fails', async () => {
     const afterStep = agentPresetStep({
       id: 'aps_after',

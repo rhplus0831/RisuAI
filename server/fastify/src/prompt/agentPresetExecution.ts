@@ -239,7 +239,7 @@ export interface AgentPresetGenerationErrorBody {
   stepId?: string
   stepName?: string
   outputKey?: string
-  failureKind?: AgentPresetStepFailureKind
+  failureKind?: AgentPresetStepFailureKind | 'final_output_cbs'
   failurePolicyOutcome?: AgentPresetStepFailurePolicyOutcome
   diagnostics?: unknown
 }

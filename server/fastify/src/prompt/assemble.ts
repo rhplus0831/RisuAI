@@ -262,8 +262,15 @@ export interface AgentPresetRuntimeState {
   outputRequired: Record<string, boolean>
   userInputModified?: boolean
   finalTextModified?: boolean
+  finalOutputComposed?: boolean
   mainOutputText?: string
-  failure?: AgentPresetPhaseFailure
+  failure?: AgentPresetPhaseFailure | AgentPresetFinalOutputFailure
+}
+
+interface AgentPresetFinalOutputFailure {
+  phase: 'afterMain'
+  message: string
+  failureKind: 'final_output_cbs'
 }
 
 const assemblyMessageCaptureInstrumentation: AssemblyMessageCaptureInstrumentation = {
@@ -2459,52 +2466,103 @@ async function runAgentPresetAfterMainStage(
   }
 
   runtime.mainOutputText = mainDraft
-  if (plan.afterMain.steps.length === 0) {
-    runtime.finalTextModified = false
-    return { finalText: mainDraft }
-  }
+  let outputTextByKey = outputTextByKeyFromPreviousOutputs(runtime.previousAgentOutputs)
+  let directFinalText = mainDraft
 
-  const afterMain = await executeAgentPresetPhase({
-    database: state.database,
-    ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
-    currentChar: state.currentChar,
-    currentChat: state.currentChat,
-    currentUserMessage: latestUserMessage(state.currentChat),
-    previousAgentOutputs: runtime.previousAgentOutputs,
-    mainDraft,
-    plan: plan.afterMain,
-    resolvedMainProfile: state.resolvedMainProfile,
-    maxConcurrency: plan.maxConcurrency,
-    signal: state.signal,
-    executeStep: state.executeAgentPresetStep ?? executeAgentPresetStep,
-    onProgress: (progress) =>
-      progressReporter?.({
-        chatId: state.currentChat.id ?? state.input.chatId,
-        presetId: runtime.preset?.id ?? '',
-        presetName: runtime.preset?.name ?? '',
-        ...progress,
-      }),
-  })
-  runtime.afterMain = afterMain
-  runtime.previousAgentOutputs = afterMain.previousAgentOutputs
+  if (plan.afterMain.steps.length > 0) {
+    const afterMain = await executeAgentPresetPhase({
+      database: state.database,
+      ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
+      currentChar: state.currentChar,
+      currentChat: state.currentChat,
+      currentUserMessage: latestUserMessage(state.currentChat),
+      previousAgentOutputs: runtime.previousAgentOutputs,
+      mainDraft,
+      plan: plan.afterMain,
+      resolvedMainProfile: state.resolvedMainProfile,
+      maxConcurrency: plan.maxConcurrency,
+      signal: state.signal,
+      executeStep: state.executeAgentPresetStep ?? executeAgentPresetStep,
+      onProgress: (progress) =>
+        progressReporter?.({
+          chatId: state.currentChat.id ?? state.input.chatId,
+          presetId: runtime.preset?.id ?? '',
+          presetName: runtime.preset?.name ?? '',
+          ...progress,
+        }),
+    })
+    runtime.afterMain = afterMain
+    runtime.previousAgentOutputs = afterMain.previousAgentOutputs
+    outputTextByKey = afterMain.outputTextByKey
 
-  if (afterMain.blockingFailure) {
-    runtime.failure = afterMain.blockingFailure
-    runtime.finalTextModified = false
-    return {
-      finalText: mainDraft,
-      error: agentPresetPhaseError(runtime, afterMain.blockingFailure).body,
+    if (afterMain.blockingFailure) {
+      runtime.failure = afterMain.blockingFailure
+      runtime.finalTextModified = false
+      return {
+        finalText: mainDraft,
+        error: agentPresetPhaseError(runtime, afterMain.blockingFailure).body,
+      }
     }
+
+    const modifier = plan.finalOutputModifierStepId
+      ? afterMain.stepResults.find(
+          (result) => result.status === 'success' && result.stepId === plan.finalOutputModifierStepId,
+        )
+      : undefined
+    directFinalText = modifier?.status === 'success' ? modifier.outputText : mainDraft
   }
 
-  const modifier = plan.finalOutputModifierStepId
-    ? afterMain.stepResults.find(
-        (result) => result.status === 'success' && result.stepId === plan.finalOutputModifierStepId,
-      )
-    : undefined
-  const finalText = modifier?.status === 'success' ? modifier.outputText : mainDraft
+  let finalText = directFinalText
+  if (runtime.preset?.finalOutputTemplate) {
+    try {
+      finalText = expandVariables(runtime.preset.finalOutputTemplate, {
+        ...state.ctx,
+        slot: { ...(state.ctx.slot ?? {}), mainOutput: mainDraft },
+        agentOutputs: outputTextByKey,
+        agentOutputRequired: allAgentOutputsRequiredByKey(plan),
+      }).text
+      runtime.finalOutputComposed = true
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      const failure: AgentPresetFinalOutputFailure = {
+        phase: 'afterMain',
+        message: `Final output CBS failed: ${detail}`,
+        failureKind: 'final_output_cbs',
+      }
+      runtime.failure = failure
+      runtime.finalOutputComposed = false
+      runtime.finalTextModified = false
+      return {
+        finalText: mainDraft,
+        error: new AgentPresetGenerationError(failure.message, {
+          phase: failure.phase,
+          presetId: runtime.preset.id,
+          presetName: runtime.preset.name,
+          failureKind: failure.failureKind,
+          diagnostics: { status: failure.failureKind },
+        }).body,
+      }
+    }
+  } else {
+    runtime.finalOutputComposed = false
+  }
+
   runtime.finalTextModified = finalText !== mainDraft
   return { finalText }
+}
+
+function outputTextByKeyFromPreviousOutputs(outputs: readonly AgentPresetPreviousOutput[]): Record<string, string> {
+  const byKey: Record<string, string> = {}
+  for (const output of outputs) byKey[output.outputKey] = output.text
+  return byKey
+}
+
+function allAgentOutputsRequiredByKey(plan: AgentPresetExecutionPlan): Record<string, boolean> {
+  const required: Record<string, boolean> = {}
+  for (const planned of plan.stableSteps) {
+    if (planned.step.failurePolicy.mode !== 'optional') required[planned.step.outputKey] = true
+  }
+  return required
 }
 
 function attachAgentPresetDiagnostics(generationInfo: Record<string, unknown> | undefined, state: AssemblyState): void {
@@ -2540,6 +2598,7 @@ function buildAgentPresetGenerationDiagnostics(runtime: AgentPresetRuntimeState)
     steps,
     userInputModified: runtime.userInputModified === true,
     finalTextModified: runtime.finalTextModified === true,
+    finalOutputComposed: runtime.finalOutputComposed === true,
     ...(runtime.mainOutputText !== undefined
       ? { mainOutputPreview: boundedPreview(runtime.mainOutputText), mainOutputChars: runtime.mainOutputText.length }
       : {}),

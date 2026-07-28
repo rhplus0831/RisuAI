@@ -45,7 +45,7 @@ export interface ExpandContext {
   runVar?: boolean
   /** Per-call slot map; consumed by `{{slot::X}}`. */
   slot?: Record<string, string>
-  /** Named before-main Agent Preset outputs consumed by `{{agent::key}}`. */
+  /** Named Agent Preset outputs consumed by `{{agent::key}}` in the current expansion stage. */
   agentOutputs?: Record<string, string>
   /** Whether a named Agent Preset output is allowed to disappear. */
   agentOutputRequired?: Record<string, boolean>

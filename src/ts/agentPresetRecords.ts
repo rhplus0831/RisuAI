@@ -145,6 +145,8 @@ export interface AgentPresetRecord {
   id: string
   name: string
   description?: string
+  /** CBS evaluated after the main response and all Agent uses complete. */
+  finalOutputTemplate?: string
   enabled: boolean
   version: number
   maxConcurrency?: number
@@ -772,6 +774,9 @@ function normalizeAgentPresetRecord(item: Record<string, unknown>): AgentPresetR
   }
   const description = stringOrBlank(item.description)
   if (description) record.description = description
+  if (typeof item.finalOutputTemplate === 'string' && item.finalOutputTemplate.trim()) {
+    record.finalOutputTemplate = item.finalOutputTemplate
+  }
   const maxConcurrency = boundedIntegerOrUndefined(
     item.maxConcurrency,
     AGENT_PRESET_MAX_CONCURRENCY_MIN,

@@ -66,6 +66,7 @@ export interface AgentPresetGenerationDiagnostic {
   steps: AgentPresetStepDiagnostic[]
   userInputModified?: boolean
   finalTextModified?: boolean
+  finalOutputComposed?: boolean
   mainOutputPreview?: string
   mainOutputChars?: number
   failure?: AgentPresetRunFailureDiagnostic
@@ -111,6 +112,7 @@ export function normalizeAgentPresetGenerationDiagnostic(
     steps: Array.isArray(value.steps) ? value.steps.flatMap(normalizeStepDiagnostic) : [],
     userInputModified: readBoolean(value.userInputModified),
     finalTextModified: readBoolean(value.finalTextModified),
+    finalOutputComposed: readBoolean(value.finalOutputComposed),
     mainOutputPreview: readString(value.mainOutputPreview, { allowEmpty: true }),
     mainOutputChars: readNumber(value.mainOutputChars),
     failure: normalizeRunFailure(value.failure),

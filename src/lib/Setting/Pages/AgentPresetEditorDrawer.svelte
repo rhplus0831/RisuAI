@@ -49,14 +49,15 @@
     onQueuedProjection?: (latch: AgentPresetGeneratedProjectionLatch) => void | Promise<void>
   }
 
-  type MetadataField = 'name' | 'description' | 'enabled' | 'maxConcurrency'
-  const METADATA_FIELDS: MetadataField[] = ['name', 'description', 'enabled', 'maxConcurrency']
+  type MetadataField = 'name' | 'description' | 'finalOutputTemplate' | 'enabled' | 'maxConcurrency'
+  const METADATA_FIELDS: MetadataField[] = ['name', 'description', 'finalOutputTemplate', 'enabled', 'maxConcurrency']
   let { mode, preset, busy = false, commandError = '', onSave, onCancel }: Props = $props()
   // svelte-ignore state_referenced_locally
   const initialPreset = preset
   const presetId = initialPreset?.id ?? ''
   let name = $state(initialPreset?.name ?? language.agentPresets.newPresetName)
   let description = $state(initialPreset?.description ?? '')
+  let finalOutputTemplate = $state(initialPreset?.finalOutputTemplate ?? '')
   let enabled = $state(initialPreset?.enabled ?? true)
   let limitConcurrency = $state(initialPreset?.maxConcurrency !== undefined)
   let maxConcurrency = $state(initialPreset?.maxConcurrency ?? 4)
@@ -91,6 +92,9 @@
   let resolvedSteps = $derived(livePreset ? resolveAgentPresetSteps(livePreset, agents) : [])
   let beforeMainSteps = $derived(resolvedSteps.filter((step) => step.phase === 'beforeMain'))
   let afterMainSteps = $derived(resolvedSteps.filter((step) => step.phase === 'afterMain'))
+  let finalOutputAgentKeys = $derived([
+    ...new Set(resolvedSteps.filter((step) => step.enabled).map((step) => step.outputKey)),
+  ])
   let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
   let editingStep = $derived(editingUseId ? resolvedSteps.find((step) => step.id === editingUseId) : undefined)
   let metadataPatch = $derived(sparseMetadata(initialMetadata, metadataForSave()))
@@ -113,6 +117,7 @@
     return {
       name: name.trim(),
       description: description.trim() || null,
+      finalOutputTemplate: finalOutputTemplate.trim() ? finalOutputTemplate : null,
       enabled,
       maxConcurrency: limitConcurrency
         ? clamp(maxConcurrency, AGENT_PRESET_MAX_CONCURRENCY_MIN, AGENT_PRESET_MAX_CONCURRENCY_MAX)
@@ -125,6 +130,7 @@
       ? {
           name: record.name,
           description: record.description ?? null,
+          finalOutputTemplate: record.finalOutputTemplate ?? null,
           enabled: record.enabled,
           maxConcurrency: record.maxConcurrency ?? null,
         }
@@ -389,6 +395,24 @@
             max={AGENT_PRESET_MAX_CONCURRENCY_MAX}
             fullwidth /></label>
       {/if}
+
+      <section class="mt-5 rounded-md border border-darkborderc p-3" data-risu-agent-preset-final-output>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium">{language.agentPresets.finalOutputTemplateLabel}</span>
+          <span class="text-xs text-textcolor2">{language.agentPresets.finalOutputTemplateDescription}</span>
+          <textarea
+            class="mt-1 min-h-32 rounded-md border border-darkborderc bg-transparent px-3 py-2 font-mono text-sm"
+            placeholder={language.agentPresets.finalOutputTemplatePlaceholder}
+            bind:value={finalOutputTemplate}></textarea>
+        </label>
+        <div class="mt-2 flex flex-wrap items-center gap-1.5" data-risu-agent-preset-final-output-variables>
+          <span class="mr-1 text-xs text-textcolor2">{language.agentPresets.finalOutputVariablesLabel}</span>
+          <code class="rounded-sm bg-darkbg px-1.5 py-0.5 text-xs">{'{{slot::mainOutput}}'}</code>
+          {#each finalOutputAgentKeys as outputKey (outputKey)}
+            <code class="rounded-sm bg-darkbg px-1.5 py-0.5 text-xs">{`{{agent::${outputKey}}}`}</code>
+          {/each}
+        </div>
+      </section>
 
       <div class="mt-5 border-t border-darkborderc pt-4">
         <div class="flex flex-wrap items-end gap-2">

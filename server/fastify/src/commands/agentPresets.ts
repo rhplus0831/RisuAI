@@ -788,7 +788,7 @@ function assertValidPreset(preset: AgentPresetRecord, label: string, agents: rea
 
 function readPresetMetadataPatch(value: unknown): Record<string, unknown> {
   const patch = readObject(value, 'patch')
-  const allowed = new Set(['name', 'description', 'enabled', 'maxConcurrency'])
+  const allowed = new Set(['name', 'description', 'finalOutputTemplate', 'enabled', 'maxConcurrency'])
   const entries = Object.entries(patch)
   if (entries.length === 0) {
     throw new ValidationError('patch must include at least one Agent Preset field')
@@ -800,6 +800,9 @@ function readPresetMetadataPatch(value: unknown): Record<string, unknown> {
     if (key === 'name') readNonEmptyString(patchValue, 'patch.name')
     if (key === 'description' && patchValue !== null && typeof patchValue !== 'string') {
       throw new ValidationError('patch.description must be a string or null')
+    }
+    if (key === 'finalOutputTemplate' && patchValue !== null && typeof patchValue !== 'string') {
+      throw new ValidationError('patch.finalOutputTemplate must be a string or null')
     }
     if (key === 'enabled' && typeof patchValue !== 'boolean') {
       throw new ValidationError('patch.enabled must be a boolean')
@@ -827,6 +830,14 @@ function applyPresetMetadataPatch(
       delete next.description
     } else {
       next.description = description as string
+    }
+  }
+  if (hasOwn(patch, 'finalOutputTemplate')) {
+    const finalOutputTemplate = patch.finalOutputTemplate
+    if (finalOutputTemplate === null || (finalOutputTemplate as string).trim() === '') {
+      delete next.finalOutputTemplate
+    } else {
+      next.finalOutputTemplate = finalOutputTemplate as string
     }
   }
   if (hasOwn(patch, 'enabled')) next.enabled = patch.enabled as boolean

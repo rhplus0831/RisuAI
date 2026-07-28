@@ -145,6 +145,18 @@ describe('agent preset records', () => {
     ])
   })
 
+  it('preserves a non-empty final output CBS template and drops a blank one', () => {
+    expect(
+      normalizeAgentPresets([
+        { id: 'ap_composed', name: 'Composed', finalOutputTemplate: ' {{slot::mainOutput}} ' },
+        { id: 'ap_blank', name: 'Blank', finalOutputTemplate: '   ' },
+      ]),
+    ).toEqual([
+      expect.objectContaining({ id: 'ap_composed', finalOutputTemplate: ' {{slot::mainOutput}} ' }),
+      expect.not.objectContaining({ finalOutputTemplate: expect.anything() }),
+    ])
+  })
+
   it('clears default ids that do not point to an existing preset', () => {
     const presets = normalizeAgentPresets([{ id: 'ap_a', name: 'A' }])
 

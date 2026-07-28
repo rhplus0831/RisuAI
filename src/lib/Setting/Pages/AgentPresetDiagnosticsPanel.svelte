@@ -295,6 +295,10 @@
                     <dd>{booleanLabel(selectedRun.diagnostic.finalTextModified)}</dd>
                   </div>
                   <div class="min-w-0">
+                    <dt class="text-xs text-textcolor2">{language.agentPresets.diagnosticsFinalOutputComposed}</dt>
+                    <dd>{booleanLabel(selectedRun.diagnostic.finalOutputComposed)}</dd>
+                  </div>
+                  <div class="min-w-0">
                     <dt class="text-xs text-textcolor2">{language.agentPresets.diagnosticsModel}</dt>
                     <dd class="break-words">{selectedRun.model ?? language.agentPresets.diagnosticsUnknown}</dd>
                   </div>

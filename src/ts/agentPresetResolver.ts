@@ -400,7 +400,11 @@ export function planAgentPreset(input: PlanAgentPresetInput): AgentPresetPlannin
   )
   const modelReadinessByStepId = new Map(modelReadiness.map((readiness) => [readiness.stepId, readiness]))
   const plan = buildExecutionPlan(input.preset, enabledSteps, modelReadinessByStepId)
-  const incompleteIssues = validateAgentOutputReferenceAvailability(resolvedSteps, plan)
+  const incompleteIssues = validateAgentOutputReferenceAvailability(
+    resolvedSteps,
+    plan,
+    input.preset.finalOutputTemplate,
+  )
 
   return {
     ready: modelReadiness.every((readiness) => readiness.ready) && incompleteIssues.length === 0,
@@ -512,6 +516,7 @@ function buildExecutionPlan(
 function validateAgentOutputReferenceAvailability(
   steps: readonly AgentPresetStepRecord[],
   plan: AgentPresetExecutionPlan,
+  finalOutputTemplate?: string,
 ): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
   const stepIndexById = new Map(steps.map((step, index) => [step.id, index]))
@@ -545,6 +550,17 @@ function validateAgentOutputReferenceAvailability(
         code: 'unavailable_agent_output',
         path,
         message: unavailableAgentOutputMessage(reference.token, reference.key, consumer, producers),
+      })
+    }
+  }
+
+  if (finalOutputTemplate) {
+    for (const reference of agentPresetOutputReferences(finalOutputTemplate)) {
+      if (producersByKey.has(reference.key)) continue
+      issues.push({
+        code: 'unavailable_agent_output',
+        path: 'agentPreset.finalOutputTemplate',
+        message: `Final output CBS reference ${reference.token} has no enabled Agent Preset output key "${reference.key}".`,
       })
     }
   }

@@ -342,6 +342,17 @@ it must be the last enabled before-main step and replaces and persists the lates
 user message before main prompt assembly. At most one enabled after-main
 `finalOutput` modifier is allowed, it must be the last enabled after-main step,
 and it can modify final text before persistence.
+
+An Agent Preset can alternatively own a `finalOutputTemplate`. After the main
+response has passed output edits and all enabled Agent uses have completed, the
+server evaluates this template through CBS. `{{slot::mainOutput}}` resolves to
+the edited main-model response, while `{{agent::outputKey}}` resolves any
+successful named output from either Agent phase. A configured template takes
+precedence over the legacy direct `finalOutput` modifier; that modifier's named
+result remains available through its Agent output key. Missing references make
+the preset incomplete during planning, and missing optional outputs expand to
+an empty string at runtime.
+
 Provider tool-calling is intentionally not part of this path yet.
 Provider reasoning wrappers such as `<Thoughts>` and `<think>` remain in the
 durable request-history response but are removed before an Agent output is

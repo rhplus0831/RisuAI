@@ -314,6 +314,34 @@ describe('modular Agent Preset settings', () => {
     expect(agentSpies.updateAgent).not.toHaveBeenCalled()
   })
 
+  it('saves final output CBS metadata and shows the available Agent output keys', async () => {
+    seed()
+    component = mount(AgentPresetSettings, { target })
+    await tick()
+
+    clickButtonContaining(target.querySelector('[data-risu-agent-preset-row]')!, language.agentPresets.edit)
+    await tick()
+    const editor = target.querySelector('[data-risu-agent-preset-editor]')!
+    const composer = editor.querySelector('[data-risu-agent-preset-final-output]')!
+    expect(composer.querySelector('[data-risu-agent-preset-final-output-variables]')?.textContent).toContain(
+      '{{slot::mainOutput}}',
+    )
+    expect(composer.querySelector('[data-risu-agent-preset-final-output-variables]')?.textContent).toContain(
+      '{{agent::research}}',
+    )
+
+    const template = composer.querySelector<HTMLTextAreaElement>('textarea')!
+    template.value = '{{slot::mainOutput}}\nStatus: {{agent::research}}'
+    template.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    clickButtonContaining(editor, language.agentPresets.save)
+    await flush()
+
+    expect(presetSpies.updateAgentPreset).toHaveBeenCalledWith(preset.id, {
+      finalOutputTemplate: '{{slot::mainOutput}}\nStatus: {{agent::research}}',
+    })
+  })
+
   it('disables deletion for Agents still referenced by presets', async () => {
     seed()
     component = mount(AgentPresetSettings, { target })

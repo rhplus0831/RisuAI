@@ -4887,6 +4887,7 @@ describe('Agent Preset command surface', () => {
         patch: {
           name: 'Research Agent Renamed',
           description: 'before-main helper',
+          finalOutputTemplate: '{{slot::mainOutput}}\n{{agent::research}}',
           maxConcurrency: 2,
           enabled: false,
         },
@@ -4895,10 +4896,11 @@ describe('Agent Preset command surface', () => {
     expect(updated.statusCode).toBe(200)
     expect(updated.json()).toMatchObject({
       presetId: createdBody.presetId,
-      acknowledgedKeys: ['name', 'description', 'maxConcurrency', 'enabled'],
+      acknowledgedKeys: ['name', 'description', 'finalOutputTemplate', 'maxConcurrency', 'enabled'],
       canonicalValues: {
         name: 'Research Agent Renamed',
         description: 'before-main helper',
+        finalOutputTemplate: '{{slot::mainOutput}}\n{{agent::research}}',
         maxConcurrency: 2,
         enabled: false,
       },
@@ -4985,6 +4987,7 @@ describe('Agent Preset command surface', () => {
       id: createdBody.presetId,
       name: 'Research Agent Renamed',
       description: 'before-main helper',
+      finalOutputTemplate: '{{slot::mainOutput}}\n{{agent::research}}',
       maxConcurrency: 2,
       enabled: false,
       steps: [],

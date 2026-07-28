@@ -787,6 +787,7 @@ function agentPresetSemanticDescriptor(preset: AgentPresetRecord): string {
   return canonicalAgentPresetDescriptor({
     name: preset.name,
     description: preset.description ?? null,
+    finalOutputTemplate: preset.finalOutputTemplate ?? null,
     enabled: preset.enabled,
     version: preset.version,
     maxConcurrency: preset.maxConcurrency ?? null,
@@ -1033,8 +1034,9 @@ function applyProjectionPatch<T extends object>(target: T, patch: Record<string,
   const next: Record<string, unknown> = { ...(target as Record<string, unknown>) }
   for (const [key, value] of Object.entries(patch)) {
     if (key === 'id') continue
-    if (value === null && (key === 'description' || key === 'maxConcurrency')) delete next[key]
-    else next[key] = safeStructuredClone(value)
+    if (value === null && (key === 'description' || key === 'finalOutputTemplate' || key === 'maxConcurrency')) {
+      delete next[key]
+    } else next[key] = safeStructuredClone(value)
   }
   return next as T
 }

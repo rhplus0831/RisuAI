@@ -438,6 +438,28 @@ describe('agent preset resolver', () => {
     expect(missingReference.status).toBe('incomplete')
     if (missingReference.status !== 'incomplete') throw new Error('expected incomplete missing reference')
     expect(missingReference.issues[0]?.message).toContain('no enabled Agent Preset output key')
+
+    const missingFinalOutputReference = resolveAgentPresetForChat({
+      database: db({
+        agentPresets: [
+          preset({
+            finalOutputTemplate: '{{slot::mainOutput}}\n{{agent::missing}}',
+          }),
+        ],
+      }),
+      generationSettings: { agentPresetId: 'ap_default' },
+    })
+
+    expect(missingFinalOutputReference.status).toBe('incomplete')
+    if (missingFinalOutputReference.status !== 'incomplete') {
+      throw new Error('expected incomplete final output reference')
+    }
+    expect(missingFinalOutputReference.issues).toContainEqual(
+      expect.objectContaining({
+        path: 'agentPreset.finalOutputTemplate',
+        message: expect.stringContaining('{{agent::missing}}'),
+      }),
+    )
   })
 
   it('allows agent CBS references when the output is already completed by phase order', () => {
