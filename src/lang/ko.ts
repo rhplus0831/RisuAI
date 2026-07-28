@@ -2809,7 +2809,7 @@ export const languageKorean = {
     preparedInputScopesLabel: '준비된 입력',
     preparedInputScopesDescription:
       '이 에이전트에서 사용할 수 있는 컨텍스트를 선택하세요. 선택한 입력은 해당 지침 자리표시자가 있는 위치에만 포함됩니다.',
-    preparedInputCbsNameLabel: '지침 자리표시자',
+    preparedInputCbsNameLabel: '사용 가능한 준비된 입력 CBS 변수',
     inputScopeLabels: {
       recentChatTail: '최근 채팅 끝부분',
       chatSearchSnippets: '채팅 검색 결과',

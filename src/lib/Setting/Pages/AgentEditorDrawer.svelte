@@ -267,6 +267,16 @@
         <textarea
           class="min-h-36 rounded-md border border-darkborderc bg-transparent px-3 py-2 text-sm"
           bind:value={instruction}></textarea>
+        {#if inputScopes.length > 0}
+          <span
+            class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-textcolor2"
+            data-risu-agent-instruction-placeholders>
+            <span>{language.agentPresets.preparedInputCbsNameLabel}:</span>
+            {#each AGENT_PRESET_STEP_INPUT_SCOPES.filter((scope) => inputScopes.includes(scope)) as scope (scope)}
+              <code class="rounded bg-darkbutton px-1.5 py-0.5">{`{{${scope}}}`}</code>
+            {/each}
+          </span>
+        {/if}
       </label>
       <section class="mt-4 rounded-md border border-darkborderc p-3" data-risu-agent-toggles>
         <div class="flex items-start justify-between gap-3">

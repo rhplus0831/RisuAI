@@ -188,6 +188,45 @@ describe('modular Agent Preset settings', () => {
     expect(agentSpies.updateAgentPresetUse).not.toHaveBeenCalled()
   })
 
+  it('shows only the CBS variables for currently selected prepared inputs below the instruction', async () => {
+    seed()
+    component = mount(AgentPresetSettings, { target })
+    await tick()
+
+    target.querySelectorAll<HTMLButtonElement>('[data-risu-agent-row] button')[2].click()
+    await tick()
+    const editor = target.querySelector('[data-risu-agent-editor]')!
+
+    let placeholders = editor.querySelector('[data-risu-agent-instruction-placeholders]')
+    expect(placeholders?.textContent).toContain('{{currentUserMessage}}')
+    expect(placeholders?.textContent).not.toContain('{{memoryContext}}')
+    expect(placeholders?.textContent).not.toContain('{{recentChatTail}}')
+
+    editor
+      .querySelector<HTMLInputElement>(`input[aria-label="${language.agentPresets.inputScopeLabels.memoryContext}"]`)!
+      .click()
+    await tick()
+    placeholders = editor.querySelector('[data-risu-agent-instruction-placeholders]')
+    expect(placeholders?.textContent).toContain('{{currentUserMessage}}')
+    expect(placeholders?.textContent).toContain('{{memoryContext}}')
+
+    editor
+      .querySelector<HTMLInputElement>(
+        `input[aria-label="${language.agentPresets.inputScopeLabels.currentUserMessage}"]`,
+      )!
+      .click()
+    await tick()
+    placeholders = editor.querySelector('[data-risu-agent-instruction-placeholders]')
+    expect(placeholders?.textContent).not.toContain('{{currentUserMessage}}')
+    expect(placeholders?.textContent).toContain('{{memoryContext}}')
+
+    editor
+      .querySelector<HTMLInputElement>(`input[aria-label="${language.agentPresets.inputScopeLabels.memoryContext}"]`)!
+      .click()
+    await tick()
+    expect(editor.querySelector('[data-risu-agent-instruction-placeholders]')).toBeNull()
+  })
+
   it('saves Agent-local toggles and required lorebook input aliases', async () => {
     seed()
     component = mount(AgentPresetSettings, { target })

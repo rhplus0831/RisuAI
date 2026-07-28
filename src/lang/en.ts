@@ -2899,7 +2899,7 @@ export const languageEnglish = {
     preparedInputScopesLabel: 'Prepared inputs',
     preparedInputScopesDescription:
       'Select the context this Agent can use. A selected input is included only where its instruction placeholder appears.',
-    preparedInputCbsNameLabel: 'Instruction placeholder',
+    preparedInputCbsNameLabel: 'Available prepared-input CBS variables',
     inputScopeLabels: {
       recentChatTail: 'Recent chat tail',
       chatSearchSnippets: 'Chat search snippets',
