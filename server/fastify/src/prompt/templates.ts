@@ -1,6 +1,7 @@
 import type { Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
+import { parseChatMLRows } from '../../../../src/ts/parser/chatMLCore.js'
 import {
   resolveEffectivePromptTemplate,
   type EffectivePromptTemplateOptions,
@@ -208,55 +209,7 @@ Example: <img src="{{ele::{{chardisplayasset}}::0}}">
  * `preflight.ts`). Returns `null` when the text is not a ChatML block.
  */
 export function parseChatML(text: string, ctx: ExpandContext, onVarDirty?: () => void): OpenAIChat[] | null {
-  const starter = '<|im_start|>'
-  const seperator = '<|im_sep|>'
-  const ender = '<|im_end|>'
-
-  const trimmed = text.trim()
-  if (!trimmed.startsWith(starter)) return null
-
-  return trimmed
-    .split(starter)
-    .filter((f) => f !== '')
-    .map((v) => {
-      let role: 'system' | 'user' | 'assistant' = 'user'
-      if (v.startsWith('user' + seperator)) {
-        role = 'user'
-        v = v.substring(4 + seperator.length)
-      } else if (v.startsWith('system' + seperator)) {
-        role = 'system'
-        v = v.substring(6 + seperator.length)
-      } else if (v.startsWith('assistant' + seperator)) {
-        role = 'assistant'
-        v = v.substring(9 + seperator.length)
-      } else if (v.startsWith('user ') || v.startsWith('user\n')) {
-        role = 'user'
-        v = v.substring(5)
-      } else if (v.startsWith('system ') || v.startsWith('system\n')) {
-        role = 'system'
-        v = v.substring(7)
-      } else if (v.startsWith('assistant ') || v.startsWith('assistant\n')) {
-        role = 'assistant'
-        v = v.substring(10)
-      }
-
-      v = v.trim()
-      if (v.endsWith(ender)) {
-        v = v.substring(0, v.length - ender.length)
-      }
-
-      const thoughts: string[] = []
-      v = v.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (_match, body: string) => {
-        thoughts.push(body)
-        return ''
-      })
-
-      return {
-        role,
-        content: expanded(v, ctx, onVarDirty),
-        thoughts,
-      } satisfies OpenAIChat
-    })
+  return parseChatMLRows(text, (content) => expanded(content, ctx, onVarDirty))
 }
 
 /**

@@ -277,7 +277,11 @@ through `GET /api/v1/characters/:characterId/greeting-translations`.
 Standalone Agents are reusable auxiliary generation definitions. An
 `AgentRecord` owns the behavior that should remain the same wherever it is
 used: name, description, version, instruction, model and runtime defaults,
-prepared-input scopes, and output format. An `AgentPresetRecord` composes those
+prepared-input scopes, output format, and whether the instruction defines a
+role-tagged ChatML request. ChatML Agents bypass the generated helper-step
+system prefill and `Author instruction:` wrapper; their parsed messages are
+sent directly after Agent CBS values are expanded within each message. An
+`AgentPresetRecord` composes those
 definitions through ordered `AgentPresetUseRecord` rows. A use owns its preset
 placement and wiring: enabled state, phase, dependencies on other use ids,
 output key, destination, failure policy, and optional model/runtime overrides.

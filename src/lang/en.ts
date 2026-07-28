@@ -2855,6 +2855,10 @@ export const languageEnglish = {
     stepEnabledLabel: 'Step enabled',
     stepPhaseLabel: 'Phase',
     instructionLabel: 'Instruction',
+    useChatMLLabel: 'Use ChatML',
+    useChatMLDescription:
+      'Parse this instruction as role-tagged ChatML and send those messages without the default Agent system prefill.',
+    invalidChatMLInstruction: 'A ChatML instruction must start with <|im_start|>.',
     agentTogglesLabel: 'Configurable toggles',
     agentTogglesDescription:
       'Values are stored per chat in an Agent-specific namespace and are available only to this Agent.',

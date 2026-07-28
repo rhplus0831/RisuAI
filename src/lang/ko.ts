@@ -2766,6 +2766,10 @@ export const languageKorean = {
     stepEnabledLabel: '단계 활성화',
     stepPhaseLabel: '실행 구간',
     instructionLabel: '지침',
+    useChatMLLabel: 'ChatML 사용',
+    useChatMLDescription:
+      '이 지침을 역할이 지정된 ChatML로 해석하고 기본 에이전트 시스템 프리필 없이 해당 메시지를 전송합니다.',
+    invalidChatMLInstruction: 'ChatML 지침은 <|im_start|>로 시작해야 합니다.',
     agentTogglesLabel: '설정 가능한 토글',
     agentTogglesDescription: '값은 에이전트별 네임스페이스를 사용하여 채팅마다 저장되며 이 에이전트에서만 조회됩니다.',
     addToggle: '토글 추가',

@@ -818,6 +818,7 @@ function agentPresetStepDescriptorValue(
       return dependencyIndex === undefined ? `id:${dependencyId}` : `step:${dependencyIndex}`
     }),
     instruction: step.instruction,
+    useChatML: step.useChatML ?? false,
     model: step.model,
     runtime: step.runtime,
     inputScopes: step.inputScopes,

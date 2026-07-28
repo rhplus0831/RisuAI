@@ -307,6 +307,7 @@ export function createAgentCommand(args: AgentPresetCommandArgs): JsonCommandMut
         name: 'New Agent',
         version: AGENT_SCHEMA_VERSION,
         instruction: '',
+        useChatML: false,
         modelDefaults: { mode: 'inheritMain' },
         runtimeDefaults: {},
         inputScopes: [],
@@ -895,6 +896,7 @@ function validateAgentFields(source: Record<string, unknown>, label: string, req
     'name',
     'description',
     'instruction',
+    'useChatML',
     'modelDefaults',
     'runtimeDefaults',
     'inputScopes',
@@ -912,6 +914,7 @@ function validateAgentFields(source: Record<string, unknown>, label: string, req
       throw new ValidationError(`${label}.description must be a string or null`)
     }
     if (key === 'instruction') readString(entry, `${label}.instruction`)
+    if (key === 'useChatML') readBoolean(entry, `${label}.useChatML`)
     if (key === 'modelDefaults') readModelSelection(entry, `${label}.modelDefaults`)
     if (key === 'runtimeDefaults') readRuntimeOptions(entry, `${label}.runtimeDefaults`)
     if (key === 'inputScopes') readInputScopes(entry, `${label}.inputScopes`)
@@ -933,6 +936,7 @@ function applyAgentPatch(agent: AgentRecord, patch: Record<string, unknown>): Ag
     else next.description = patch.description as string
   }
   if (hasOwn(patch, 'instruction')) next.instruction = readString(patch.instruction, 'patch.instruction')
+  if (hasOwn(patch, 'useChatML')) next.useChatML = readBoolean(patch.useChatML, 'patch.useChatML')
   if (hasOwn(patch, 'modelDefaults')) {
     next.modelDefaults = readModelSelection(patch.modelDefaults, 'patch.modelDefaults')
   }
@@ -957,6 +961,7 @@ function readAgentRecordFromLegacyStepCreate(source: Record<string, unknown>, ag
       name: hasOwn(source, 'name') ? readNonEmptyString(source.name, 'step.name') : 'New Agent',
       version: AGENT_SCHEMA_VERSION,
       instruction: hasOwn(source, 'instruction') ? readString(source.instruction, 'step.instruction') : '',
+      useChatML: hasOwn(source, 'useChatML') ? readBoolean(source.useChatML, 'step.useChatML') : false,
       modelDefaults: hasOwn(source, 'model') ? readModelSelection(source.model, 'step.model') : { mode: 'inheritMain' },
       runtimeDefaults: hasOwn(source, 'runtime') ? readRuntimeOptions(source.runtime, 'step.runtime') : {},
       inputScopes: hasOwn(source, 'inputScopes') ? readInputScopes(source.inputScopes, 'step.inputScopes') : [],
@@ -1031,6 +1036,7 @@ function agentPatchFromLegacyStepPatch(patch: Record<string, unknown>): Record<s
   const agentPatch: Record<string, unknown> = {}
   if (hasOwn(patch, 'name')) agentPatch.name = patch.name
   if (hasOwn(patch, 'instruction')) agentPatch.instruction = patch.instruction
+  if (hasOwn(patch, 'useChatML')) agentPatch.useChatML = patch.useChatML
   if (hasOwn(patch, 'model')) agentPatch.modelDefaults = patch.model
   if (hasOwn(patch, 'runtime')) agentPatch.runtimeDefaults = patch.runtime
   if (hasOwn(patch, 'inputScopes')) agentPatch.inputScopes = patch.inputScopes
@@ -1054,6 +1060,7 @@ function readStepRecordFromCreate(
     phase,
     dependencies: hasOwn(source, 'dependencies') ? readIdList(source.dependencies, 'step.dependencies') : [],
     instruction: hasOwn(source, 'instruction') ? readString(source.instruction, 'step.instruction') : '',
+    useChatML: hasOwn(source, 'useChatML') ? readBoolean(source.useChatML, 'step.useChatML') : false,
     model: hasOwn(source, 'model') ? readModelSelection(source.model, 'step.model') : { mode: 'inheritMain' },
     runtime: hasOwn(source, 'runtime') ? readRuntimeOptions(source.runtime, 'step.runtime') : {},
     inputScopes: hasOwn(source, 'inputScopes') ? readInputScopes(source.inputScopes, 'step.inputScopes') : [],
@@ -1079,6 +1086,7 @@ function readStepPatch(value: unknown): Record<string, unknown> {
     'phase',
     'dependencies',
     'instruction',
+    'useChatML',
     'model',
     'modelOverride',
     'runtime',
@@ -1108,6 +1116,7 @@ function validateStepPatchField(key: string, value: unknown): void {
   if (key === 'phase') readPhase(value, 'patch.phase')
   if (key === 'dependencies') readIdList(value, 'patch.dependencies')
   if (key === 'instruction') readString(value, 'patch.instruction')
+  if (key === 'useChatML') readBoolean(value, 'patch.useChatML')
   if (key === 'model') readModelSelection(value, 'patch.model')
   if (key === 'modelOverride' && value !== null) readModelSelection(value, 'patch.modelOverride')
   if (key === 'runtime') readRuntimeOptions(value, 'patch.runtime')
@@ -1126,6 +1135,7 @@ function applyStepPatch(step: AgentPresetStepRecord, patch: Record<string, unkno
   if (hasOwn(patch, 'phase')) next.phase = readPhase(patch.phase, 'patch.phase')
   if (hasOwn(patch, 'dependencies')) next.dependencies = readIdList(patch.dependencies, 'patch.dependencies')
   if (hasOwn(patch, 'instruction')) next.instruction = readString(patch.instruction, 'patch.instruction')
+  if (hasOwn(patch, 'useChatML')) next.useChatML = readBoolean(patch.useChatML, 'patch.useChatML')
   if (hasOwn(patch, 'model')) next.model = readModelSelection(patch.model, 'patch.model')
   if (hasOwn(patch, 'runtime')) next.runtime = readRuntimeOptions(patch.runtime, 'patch.runtime')
   if (hasOwn(patch, 'inputScopes')) next.inputScopes = readInputScopes(patch.inputScopes, 'patch.inputScopes')

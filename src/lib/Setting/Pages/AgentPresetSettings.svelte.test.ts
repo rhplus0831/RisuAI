@@ -188,6 +188,53 @@ describe('modular Agent Preset settings', () => {
     expect(agentSpies.updateAgentPresetUse).not.toHaveBeenCalled()
   })
 
+  it('saves ChatML request mode as reusable Agent behavior', async () => {
+    seed()
+    component = mount(AgentPresetSettings, { target })
+    await tick()
+
+    target.querySelectorAll<HTMLButtonElement>('[data-risu-agent-row] button')[2].click()
+    await tick()
+    const editor = target.querySelector('[data-risu-agent-editor]')!
+    const instruction = editor.querySelectorAll<HTMLTextAreaElement>('textarea')[1]
+    const chatMLInstruction = '<|im_start|>user\nResearch {{currentUserMessage}}.<|im_end|>'
+    instruction.value = chatMLInstruction
+    instruction.dispatchEvent(new Event('input', { bubbles: true }))
+    editor.querySelector<HTMLInputElement>(`input[aria-label="${language.agentPresets.useChatMLLabel}"]`)!.click()
+    await tick()
+
+    expect(editor.querySelector('[data-risu-agent-use-chatml]')?.textContent).not.toContain(
+      language.agentPresets.invalidChatMLInstruction,
+    )
+    clickButtonContaining(editor, language.agentPresets.save)
+    await flush()
+
+    expect(agentSpies.updateAgent).toHaveBeenCalledWith(agent.id, {
+      instruction: chatMLInstruction,
+      useChatML: true,
+    })
+  })
+
+  it('blocks saving an enabled ChatML Agent until its instruction starts with ChatML', async () => {
+    seed()
+    component = mount(AgentPresetSettings, { target })
+    await tick()
+
+    target.querySelectorAll<HTMLButtonElement>('[data-risu-agent-row] button')[2].click()
+    await tick()
+    const editor = target.querySelector('[data-risu-agent-editor]')!
+    editor.querySelector<HTMLInputElement>(`input[aria-label="${language.agentPresets.useChatMLLabel}"]`)!.click()
+    await tick()
+
+    expect(editor.querySelector('[data-risu-agent-use-chatml]')?.textContent).toContain(
+      language.agentPresets.invalidChatMLInstruction,
+    )
+    const save = [...editor.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.textContent?.includes(language.agentPresets.save),
+    )
+    expect(save?.disabled).toBe(true)
+  })
+
   it('shows only the CBS variables for currently selected prepared inputs below the instruction', async () => {
     seed()
     component = mount(AgentPresetSettings, { target })

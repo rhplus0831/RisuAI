@@ -1,3 +1,5 @@
+import { parseChatMLRows } from './parser/chatMLCore'
+
 export const AGENT_PRESET_SCHEMA_VERSION = 1
 export const AGENT_SCHEMA_VERSION = 1
 
@@ -97,6 +99,8 @@ export interface AgentPresetStepRecord {
   phase: AgentPresetStepPhase
   dependencies: string[]
   instruction: string
+  /** Parse the instruction as role-tagged ChatML instead of using the helper-step prefill. */
+  useChatML?: boolean
   model: AgentPresetStepModelSelection
   runtime: AgentPresetStepRuntimeOptions
   inputScopes: AgentPresetStepInputScope[]
@@ -117,6 +121,8 @@ export interface AgentRecord {
   description?: string
   version: number
   instruction: string
+  /** Parse the instruction as role-tagged ChatML instead of using the helper-step prefill. */
+  useChatML?: boolean
   modelDefaults: AgentPresetStepModelSelection
   runtimeDefaults: AgentPresetStepRuntimeOptions
   inputScopes: AgentPresetStepInputScope[]
@@ -264,6 +270,7 @@ export function resolveAgentPresetSteps(
       phase: use.phase,
       dependencies: [...use.dependencies],
       instruction: agent.instruction,
+      ...(agent.useChatML === true ? { useChatML: true } : {}),
       model: cloneModelSelection(use.modelOverride ?? agent.modelDefaults),
       runtime: { ...agent.runtimeDefaults, ...use.runtimeOverride },
       inputScopes: [...agent.inputScopes],
@@ -331,6 +338,13 @@ export function validateAgentRecord(agent: AgentRecord, path = 'agent'): AgentPr
   }
   if (typeof agent.instruction !== 'string') {
     issues.push(issue('invalid_instruction', `${path}.instruction`, 'Agent instruction must be a string'))
+  }
+  if (agent.useChatML !== undefined && typeof agent.useChatML !== 'boolean') {
+    issues.push(issue('invalid_instruction', `${path}.useChatML`, 'Agent useChatML must be a boolean'))
+  } else if (agent.useChatML && typeof agent.instruction === 'string' && parseChatMLRows(agent.instruction) === null) {
+    issues.push(
+      issue('invalid_instruction', `${path}.instruction`, 'A ChatML Agent instruction must start with <|im_start|>'),
+    )
   }
   if (!isValidAgentPresetStepModelSelection(agent.modelDefaults)) {
     issues.push(issue('invalid_model', `${path}.modelDefaults`, 'Agent default model selection is invalid'))
@@ -537,6 +551,13 @@ export function validateAgentPresetStepRecord(
   }
   if (typeof step.instruction !== 'string') {
     issues.push(issue('invalid_instruction', `${path}.instruction`, 'Agent Preset step instruction must be a string'))
+  }
+  if (step.useChatML !== undefined && typeof step.useChatML !== 'boolean') {
+    issues.push(issue('invalid_instruction', `${path}.useChatML`, 'Agent Preset step useChatML must be a boolean'))
+  } else if (step.useChatML && typeof step.instruction === 'string' && parseChatMLRows(step.instruction) === null) {
+    issues.push(
+      issue('invalid_instruction', `${path}.instruction`, 'A ChatML Agent instruction must start with <|im_start|>'),
+    )
   }
   if (!isValidAgentPresetStepModelSelection(step.model)) {
     issues.push(issue('invalid_model', `${path}.model`, 'Agent Preset step model selection is invalid'))
@@ -816,6 +837,7 @@ function normalizeAgentRecord(item: Record<string, unknown>, id: string): AgentR
     inputScopes: normalizeInputScopes(item.inputScopes),
     outputFormat: normalizeOutputFormat(item.outputFormat),
   }
+  if (typeof item.useChatML === 'boolean') record.useChatML = item.useChatML
   if (Array.isArray(item.toggles)) record.toggles = normalizeAgentToggleDefinitions(item.toggles)
   if (Array.isArray(item.lorebookInputs)) {
     record.lorebookInputs = normalizeAgentLorebookInputs(item.lorebookInputs)
@@ -882,6 +904,7 @@ function normalizeAgentPresetSteps(value: unknown): AgentPresetStepRecord[] {
       destination: normalizeDestination(item.destination, phase),
       failurePolicy: normalizeFailurePolicy(item.failurePolicy),
     }
+    if (typeof item.useChatML === 'boolean') step.useChatML = item.useChatML
     if (Array.isArray(item.toggles)) step.toggles = normalizeAgentToggleDefinitions(item.toggles)
     if (Array.isArray(item.lorebookInputs)) {
       step.lorebookInputs = normalizeAgentLorebookInputs(item.lorebookInputs)
@@ -903,6 +926,7 @@ function agentRecordFromLegacyStep(step: AgentPresetStepRecord, agentId: string)
     inputScopes: [...step.inputScopes],
     outputFormat: step.outputFormat,
   }
+  if (step.useChatML !== undefined) agent.useChatML = step.useChatML
   if (step.toggles) agent.toggles = step.toggles.map(cloneAgentToggleDefinition)
   if (step.lorebookInputs) agent.lorebookInputs = step.lorebookInputs.map(cloneAgentLorebookInput)
   return agent

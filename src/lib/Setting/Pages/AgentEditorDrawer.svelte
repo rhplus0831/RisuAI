@@ -8,6 +8,7 @@
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import { parseChatMLRows } from 'src/ts/parser/chatMLCore'
   import {
     AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MAX,
     AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MIN,
@@ -48,6 +49,7 @@
   let name = $state(initial?.name ?? language.agentPresets.newAgentName)
   let description = $state(initial?.description ?? '')
   let instruction = $state(initial?.instruction ?? '')
+  let useChatML = $state(initial?.useChatML ?? false)
   let modelMode = $state<AgentPresetStepModelSelection['mode']>(initial?.modelDefaults.mode ?? 'inheritMain')
   let profileId = $state(initial?.modelDefaults.mode === 'modelProfile' ? initial.modelDefaults.profileId : '')
   let outputFormat = $state<AgentPresetStepOutputFormat>(initial?.outputFormat ?? 'text')
@@ -74,6 +76,7 @@
   let canSave = $derived(
     name.trim().length > 0 &&
       (modelMode === 'inheritMain' || profileId.trim().length > 0) &&
+      (!useChatML || parseChatMLRows(instruction) !== null) &&
       definitionsValid() &&
       !busy &&
       (mode === 'create' || dirty),
@@ -86,6 +89,7 @@
       name: name.trim(),
       description: description.trim() || null,
       instruction,
+      useChatML,
       modelDefaults,
       runtimeDefaults: {
         timeoutMs: clamp(timeoutMs, AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN, AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX),
@@ -134,6 +138,7 @@
       name: record.name,
       description: record.description ?? null,
       instruction: record.instruction,
+      useChatML: record.useChatML ?? false,
       modelDefaults: record.modelDefaults,
       runtimeDefaults: {
         timeoutMs: record.runtimeDefaults.timeoutMs ?? 30_000,
@@ -278,6 +283,16 @@
           </span>
         {/if}
       </label>
+      <div class="mt-3" data-risu-agent-use-chatml>
+        <CheckInput
+          bind:check={useChatML}
+          name={language.agentPresets.useChatMLLabel}
+          onChange={(value) => (useChatML = value)} />
+        <p class="pl-7 text-xs text-textcolor2">{language.agentPresets.useChatMLDescription}</p>
+        {#if useChatML && parseChatMLRows(instruction) === null}
+          <p class="pl-7 text-xs text-draculared">{language.agentPresets.invalidChatMLInstruction}</p>
+        {/if}
+      </div>
       <section class="mt-4 rounded-md border border-darkborderc p-3" data-risu-agent-toggles>
         <div class="flex items-start justify-between gap-3">
           <div>

@@ -4,6 +4,7 @@ import {
   normalizeAgentPresetDefaultId,
   normalizeAgentPresets,
   resolveAgentPresetSteps,
+  validateAgentRecord,
   validateAgentPresetRecord,
   type AgentPresetRecord,
   type AgentPresetStepRecord,
@@ -92,6 +93,45 @@ describe('agent preset records', () => {
       model: { mode: 'modelProfile', profileId: 'profile_fast' },
       runtime: { timeoutMs: 5_000, maxInputChars: 20_000 },
     })
+  })
+
+  it('normalizes and resolves the Agent-owned ChatML request mode', () => {
+    const normalized = normalizeAgentConfiguration(
+      [
+        {
+          id: 'agent-chatml',
+          name: 'ChatML Agent',
+          instruction: '<|im_start|>user\n{{currentUserMessage}}<|im_end|>',
+          useChatML: true,
+          inputScopes: ['currentUserMessage'],
+        },
+      ],
+      [
+        {
+          id: 'preset-chatml',
+          name: 'ChatML Preset',
+          agentUses: [{ id: 'use-chatml', agentId: 'agent-chatml', outputKey: 'result' }],
+        },
+      ],
+    )
+
+    expect(normalized.agents[0].useChatML).toBe(true)
+    expect(resolveAgentPresetSteps(normalized.agentPresets[0], normalized.agents)[0].useChatML).toBe(true)
+  })
+
+  it('rejects plain instructions when an Agent enables ChatML', () => {
+    const normalized = normalizeAgentConfiguration(
+      [{ id: 'agent-chatml', name: 'ChatML Agent', instruction: 'Plain instruction.', useChatML: true }],
+      [],
+    ).agents[0]
+
+    expect(validateAgentRecord(normalized)).toContainEqual(
+      expect.objectContaining({
+        code: 'invalid_instruction',
+        path: 'agent.instruction',
+        message: expect.stringContaining('<|im_start|>'),
+      }),
+    )
   })
   it('normalizes stored records without inventing default presets', () => {
     expect(normalizeAgentPresets(undefined)).toEqual([])

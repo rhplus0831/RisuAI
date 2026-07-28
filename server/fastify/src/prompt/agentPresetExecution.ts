@@ -15,6 +15,7 @@ import {
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import { parseChatMLRows } from '../../../../src/ts/parser/chatMLCore.js'
 import { stripInternalReasoning } from '../../../../src/ts/process/internalReasoning.js'
 import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
 import type { DatabaseSync } from 'node:sqlite'
@@ -411,6 +412,15 @@ export function collectAgentPresetPreparedInputs(
 
 export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessagesInput): OpenAIChat[] {
   const { step, preparedInputs, agentOutputs, toggleValues } = input
+  if (step.useChatML) {
+    const messages = parseChatMLRows(step.instruction)
+    if (!messages) throw new Error('A ChatML Agent instruction must start with <|im_start|>')
+    return messages.map((message) => ({
+      ...message,
+      content: expandAgentInstructionContent(message.content, preparedInputs, agentOutputs, toggleValues ?? {}),
+    }))
+  }
+
   const system = [
     'You are executing one RisuAI Agent Preset helper step.',
     `Step name: ${step.name}`,
@@ -424,18 +434,32 @@ export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessages
     'Use only the context embedded in the author instruction. Do not include tool calls.',
   ].join('\n')
 
-  const authorInstruction = expandAgentPresetOutputCbs(
-    expandAgentToggleCbs(
-      expandAgentInputCbs(expandPreparedInputCbs(step.instruction, preparedInputs), preparedInputs),
-      toggleValues ?? {},
-    ),
-    (key) => (agentOutputs && Object.prototype.hasOwnProperty.call(agentOutputs, key) ? agentOutputs[key] : ''),
+  const authorInstruction = expandAgentInstructionContent(
+    step.instruction,
+    preparedInputs,
+    agentOutputs,
+    toggleValues ?? {},
   ).trim()
 
   return [
     { role: 'system', content: system },
     { role: 'user', content: `Author instruction:\n${authorInstruction}` },
   ]
+}
+
+function expandAgentInstructionContent(
+  instruction: string,
+  preparedInputs: AgentPresetPreparedInputCollection,
+  agentOutputs: Readonly<Record<string, string>> | undefined,
+  toggleValues: Readonly<Record<string, string>>,
+): string {
+  return expandAgentPresetOutputCbs(
+    expandAgentToggleCbs(
+      expandAgentInputCbs(expandPreparedInputCbs(instruction, preparedInputs), preparedInputs),
+      toggleValues,
+    ),
+    (key) => (agentOutputs && Object.prototype.hasOwnProperty.call(agentOutputs, key) ? agentOutputs[key] : ''),
+  )
 }
 
 export function resolveAgentPresetStepProfile(input: {
