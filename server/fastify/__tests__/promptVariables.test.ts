@@ -97,6 +97,27 @@ describe('Phase 7-2c expandVariables — basic substitution', () => {
   it('substitutes the <user> / <char> / <bot> shorthand', () => {
     expect(expandVariables('<user> meets <char>', ctx()).text).toBe('Alex meets Tess')
   })
+
+  it('returns the most recent N stored messages through {{history::N}}', () => {
+    const database = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: 'Greeting',
+          chats: [
+            makeChat({
+              message: [
+                { role: 'user', data: 'oldest' },
+                { role: 'char', data: 'middle' },
+                { role: 'user', data: 'newest' },
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+
+    expect(JSON.parse(expandVariables('{{history::2}}', { database }).text)).toEqual(['middle', 'newest'])
+  })
 })
 
 describe('Phase 7-2c expandVariables — unknowns and trigger_id', () => {

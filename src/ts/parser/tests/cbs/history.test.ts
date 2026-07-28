@@ -105,4 +105,32 @@ describe('history CBS functions shallow-spread (Phase 7)', () => {
     expect((JSON.parse(parsed[0]) as { data: string }).data).toBe('FIRST')
     expect(mocks.db.characters[0].chats[0].message).toEqual(before)
   })
+
+  test('{{history::N}} returns the N most recent stored messages in chronological order', () => {
+    expect(JSON.parse(risuChatParser('{{history::2}}'))).toEqual(['reply to {{user}}', 'plain user line'])
+    expect(JSON.parse(risuChatParser('{{messages::1}}'))).toEqual(['plain user line'])
+  })
+
+  test('{{history::N}} returns all stored messages when N exceeds the chat length without adding the greeting', () => {
+    expect(JSON.parse(risuChatParser('{{history::50}}'))).toEqual([
+      'hello {{char}}',
+      'reply to {{user}}',
+      'plain user line',
+    ])
+  })
+
+  test('{{history::N::role}} preserves role prefixes within the selected window', () => {
+    expect(JSON.parse(risuChatParser('{{history::2::role}}'))).toEqual([
+      'char: reply to {{user}}',
+      'user: plain user line',
+    ])
+    expect(JSON.parse(risuChatParser('{{history::role}}'))).toHaveLength(3)
+  })
+
+  test('{{history::N}} returns an empty array for invalid counts', () => {
+    expect(JSON.parse(risuChatParser('{{history::0}}'))).toEqual([])
+    expect(JSON.parse(risuChatParser('{{history::-1}}'))).toEqual([])
+    expect(JSON.parse(risuChatParser('{{history::1.5}}'))).toEqual([])
+    expect(JSON.parse(risuChatParser('{{history::many}}'))).toEqual([])
+  })
 })

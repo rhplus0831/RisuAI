@@ -1878,8 +1878,17 @@ export function registerCBS(arg: CBSRegisterArg) {
       const db = getDatabase()
       const selchar = db.characters[getSelectedCharID()]
       const chat = selchar.chats[selchar.chatPage]
+      const countArgs = args.filter((arg) => arg !== 'role')
+      if (countArgs.length > 1 || (countArgs.length === 1 && !/^[1-9]\d*$/.test(countArgs[0]))) {
+        return makeArray([])
+      }
+      const count = countArgs.length === 1 ? Number(countArgs[0]) : null
+      if (count !== null && !Number.isSafeInteger(count)) {
+        return makeArray([])
+      }
+      const messages = count === null ? chat.message : chat.message.slice(-count)
       return makeArray(
-        chat.message.map((f) => {
+        messages.map((f) => {
           let data = ''
           if (args.includes('role')) {
             data += f.role + ': '
@@ -1891,7 +1900,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     },
     alias: ['messages'],
     description:
-      'Returns chat history as a JSON array. With no arguments, returns full message objects. With "role" argument, prefixes each message with "role: ". Includes first message/greeting.\n\nUsage:: {{history}} or {{history::role}}',
+      'Returns chat history as a JSON array. With no arguments, returns full message objects and includes the first message/greeting. With a positive integer N, returns the raw content of the N most recent stored chat messages in chronological order. Add "role" to prefix each selected message with "role: ".\n\nUsage:: {{history}}, {{history::N}}, {{history::role}}, or {{history::N::role}}',
   })
 
   registerFunction({
