@@ -39,6 +39,7 @@
     getDatabase,
     getCharacterByIndex,
     isServerCharacterShell,
+    isServerChatMessagePlaceholder,
     setCharacterByIndex,
     type InputHook,
     type Message,
@@ -125,7 +126,8 @@
     type DefaultChatComposerDraft,
     type DefaultChatComposerDraftGeneration,
   } from './DefaultChatScreen.composerDrafts'
-  import { runInputHook } from 'src/ts/process/inputHooks'
+  import { runInputHook, type InputHookHistoryContext } from 'src/ts/process/inputHooks'
+  import { maximumHistorySlotCount } from 'src/ts/translator/historySlots'
   import InputHookPickerDialog from './InputHookPickerDialog.svelte'
   import {
     currentGreetingTranslatorSettingsSignature,
@@ -994,6 +996,86 @@
     return files.map((file) => `{{inlayed::${file}}}`).join('')
   }
 
+  function inputHookHistoryWindowIsResident(messages: readonly Message[], count: number): boolean {
+    let visibleRows = 0
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]
+      if (message.disabled === 'allBefore') return true
+      if (isServerChatMessagePlaceholder(message)) return false
+      if (message.disabled === true || message.isComment === true) continue
+      visibleRows += 1
+      if (visibleRows >= count) return true
+    }
+    return true
+  }
+
+  function snapshotInputHookHistoryContext(target: ActiveChatTarget): InputHookHistoryContext | null {
+    if (!isActiveChatTargetFresh(target)) return null
+    const database = getDatabase()
+    const character = database.characters[target.selectedCharID]
+    const chat = character?.chats[target.chatPage]
+    if (!character || !chat || character.chaId !== target.characterId || chat.id !== target.chatId) return null
+
+    const targetGreeting = greetingTranslationTarget
+    const persistedGreetingTranslation = greetingTranslation
+    const greetingMatchesTarget =
+      targetGreeting?.characterId === target.characterId && targetGreeting.chatId === target.chatId
+
+    return {
+      messages: chat.message.map((message) => ({
+        role: message.role,
+        data: message.data,
+        ...(message.translation ? { translation: { text: message.translation.text } } : {}),
+        ...(message.disabled === undefined ? {} : { disabled: message.disabled }),
+        ...(message.isComment === undefined ? {} : { isComment: message.isComment }),
+      })),
+      messageIndex: chat.message.length,
+      greeting: greetingMatchesTarget
+        ? {
+            source: targetGreeting.source,
+            ...(persistedGreetingTranslation ? { translated: persistedGreetingTranslation.text } : {}),
+          }
+        : { source: '' },
+      maxTokens: database.translatorHistoryMaxTokens ?? 2048,
+    }
+  }
+
+  async function prepareInputHookHistoryContext(
+    hook: InputHook,
+    target: ActiveChatTarget,
+  ): Promise<InputHookHistoryContext | undefined | null> {
+    const requiredRows = maximumHistorySlotCount(hook.prompt)
+    if (requiredRows === 0) return undefined
+
+    let requestedTail = Math.max(loadPages, requiredRows)
+    while (true) {
+      if (!isActiveChatTargetFresh(target)) return null
+      const character = getDatabase().characters[target.selectedCharID]
+      const chat = character?.chats[target.chatPage]
+      if (!chat || chat.id !== target.chatId) return null
+
+      const hydrationPending = isChatMessageHydrationPending(chat.id, chat.message.length)
+      if (!hydrationPending && inputHookHistoryWindowIsResident(chat.message, requiredRows)) {
+        return snapshotInputHookHistoryContext(target)
+      }
+
+      const hydrated = await hydrateActiveChatWindow(requestedTail)
+      if (!isActiveChatTargetFresh(target)) return null
+      if (!hydrated) throw new Error(language.chatDataLoadFailed)
+
+      const hydratedCharacter = getDatabase().characters[target.selectedCharID]
+      const hydratedChat = hydratedCharacter?.chats[target.chatPage]
+      if (!hydratedChat || hydratedChat.id !== target.chatId) return null
+      if (inputHookHistoryWindowIsResident(hydratedChat.message, requiredRows)) {
+        return snapshotInputHookHistoryContext(target)
+      }
+
+      const nextTail = Math.min(hydratedChat.message.length, Math.max(requestedTail + requiredRows, requestedTail * 2))
+      if (nextTail <= requestedTail) throw new Error(language.chatDataLoadFailed)
+      requestedTail = nextTail
+    }
+  }
+
   async function runDraftHookForSend(input: {
     hook: InputHook
     composerOperation: ComposerOperation
@@ -1002,10 +1084,13 @@
     const abortController = createActiveGenerationAbortController()
     doingDraftHook = true
     try {
+      const historyContext = await prepareInputHookHistoryContext(input.hook, input.activeTarget)
+      if (historyContext === null) return
       const result = await runInputHook(
         input.hook,
         { content: input.composerOperation.messageInput, draft: input.composerOperation.draftText },
         abortController.signal,
+        historyContext,
       )
       if (!isActiveChatTargetFresh(input.activeTarget) || !isCurrentComposerOperation(input.composerOperation)) {
         return
@@ -1049,10 +1134,13 @@
     doingBtwHook = true
     const abortController = createActiveGenerationAbortController()
     try {
+      const historyContext = await prepareInputHookHistoryContext(hook, activeTarget)
+      if (historyContext === null) return
       const result = await runInputHook(
         hook,
         { content: composerOperation.messageInput, draft: composerOperation.draftText },
         abortController.signal,
+        historyContext,
       )
       if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
       const nextBtw = result.trim()

@@ -245,7 +245,12 @@ High-risk chat areas:
   that hook before generation. The composer can also open
   `InputHookPickerDialog.svelte` for an ad hoc BTW hook and retain/dismiss its
   result independently of the message draft. Execution lives in
-  `src/ts/process/inputHooks.ts` and uses the `otherAx` model role.
+  `src/ts/process/inputHooks.ts` and uses the `otherAx` model role. Hook prompts
+  support `{{slot::content}}`, `{{slot::draft}}`, and the bounded
+  `{{slot::history::N}}` / `{{slot::historytrans::N}}` windows (`N` is 1–50).
+  History access expands the resident tail only as far as needed and shares the
+  translator history renderer's disabled/comment boundary, greeting, persisted
+  translation, and token-budget semantics.
 - `AgentPresetProgress.svelte` and `PostGenerationScriptProgress.svelte` render
   chat-scoped SSE state above the transcript. Their stores/parsing live in
   `src/ts/process/agentPresetProgress.ts`, `postGenerationProgress.ts`, and

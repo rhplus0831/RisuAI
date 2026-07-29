@@ -16,6 +16,7 @@ import { tokenize } from '../prompt/tokens.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { ValidationError } from '../repository.js'
 import { stripInternalReasoning } from '../../../../src/ts/process/internalReasoning.js'
+import { createHistorySlotResolver, type HistorySlotContext } from '../../../../src/ts/translator/historySlots.js'
 
 export type RawMessageTranslatorType = 'google' | 'deepl' | 'deeplX' | 'llm'
 
@@ -39,14 +40,7 @@ export interface RawMessageTranslationInput {
   requestHistory?: Omit<ChatDispatchHistoryInput, 'source'>
 }
 
-export interface RawMessageTranslationHistoryContext {
-  messages: readonly Record<string, unknown>[]
-  messageIndex: number
-  greeting: {
-    source: string
-    translated?: string
-  }
-}
+export type RawMessageTranslationHistoryContext = HistorySlotContext
 
 export interface RawMessageTranslatorIdentity {
   translatorType: RawMessageTranslatorType
@@ -172,21 +166,6 @@ export function resolveRawMessageTranslatorIdentity(input: {
   }
 }
 
-interface TranslatorHistoryEntry {
-  role: 'user' | 'char'
-  source: string
-  translated?: string
-}
-
-interface RenderedTranslatorHistory {
-  source: string
-  translated: string
-}
-
-function translatorHistoryBlock(role: TranslatorHistoryEntry['role'], body: string): string {
-  return `${role}: ${body}\n\n---\n\n`
-}
-
 function translatorInputText(settings: Record<string, unknown>, text: string): string {
   if (settings.translatorSendTextAsIs !== true || settings.translatorExcludeThoughts !== true) return text
   return stripInternalReasoning(text, { preserveUnchanged: true })
@@ -196,67 +175,12 @@ function createTranslatorHistoryResolver(
   settings: Record<string, unknown>,
   context: RawMessageTranslationHistoryContext,
 ): TranslatorHistoryResolver {
-  const cache = new Map<number, RenderedTranslatorHistory>()
-  const maxTokens = translatorHistoryMaxTokens(settings)
-
-  const resolveWindow = (count: number): RenderedTranslatorHistory => {
-    const cached = cache.get(count)
-    if (cached) return cached
-
-    const newestFirst: TranslatorHistoryEntry[] = []
-    let exhaustedHistory = true
-    for (let index = Math.min(context.messageIndex - 1, context.messages.length - 1); index >= 0; index--) {
-      const message = context.messages[index]
-      if (message.disabled === 'allBefore') {
-        exhaustedHistory = false
-        break
-      }
-      if (message.disabled === true || message.isComment === true) continue
-
-      const translation = recordValue(message.translation)
-      newestFirst.push({
-        role: message.role === 'user' ? 'user' : 'char',
-        source: translatorInputText(settings, stringValue(message.data)),
-        ...(typeof translation.text === 'string'
-          ? { translated: translatorInputText(settings, translation.text) }
-          : {}),
-      })
-      if (newestFirst.length === count) break
-    }
-
-    if (newestFirst.length < count && exhaustedHistory && context.greeting.source.length > 0) {
-      newestFirst.push({
-        role: 'char',
-        source: translatorInputText(settings, context.greeting.source),
-        ...(context.greeting.translated === undefined
-          ? {}
-          : { translated: translatorInputText(settings, context.greeting.translated) }),
-      })
-    }
-
-    const entries = newestFirst.reverse()
-    let totalTokens = entries.reduce((total, entry) => {
-      const sourceBlock = translatorHistoryBlock(entry.role, entry.source)
-      const translatedBlock = entry.translated === undefined ? '' : translatorHistoryBlock(entry.role, entry.translated)
-      return total + tokenize(sourceBlock) + tokenize(translatedBlock)
-    }, 0)
-    while (entries.length > 0 && totalTokens > maxTokens) {
-      const entry = entries.shift()!
-      totalTokens -= tokenize(translatorHistoryBlock(entry.role, entry.source))
-      if (entry.translated !== undefined) {
-        totalTokens -= tokenize(translatorHistoryBlock(entry.role, entry.translated))
-      }
-    }
-
-    const rendered = {
-      source: entries.map((entry) => translatorHistoryBlock(entry.role, entry.source)).join(''),
-      translated: entries.map((entry) => translatorHistoryBlock(entry.role, entry.translated ?? '')).join(''),
-    }
-    cache.set(count, rendered)
-    return rendered
-  }
-
-  return (kind, count) => resolveWindow(count)[kind]
+  return createHistorySlotResolver({
+    context,
+    maxTokens: translatorHistoryMaxTokens(settings),
+    countTokens: tokenize,
+    transformText: (text) => translatorInputText(settings, text),
+  })
 }
 
 function isProtectedRawLine(line: string): boolean {

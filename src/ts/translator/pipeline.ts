@@ -7,13 +7,13 @@ import {
   type TranslatorPresetStep,
   type TranslatorPresetStepModel,
 } from './presets'
+import { replaceHistorySlots, type HistorySlotResolver } from './historySlots'
 
 const TRANSLATOR_INPUT_SLOT_PATTERN = /{{(?:solt::content|slot::(?:content|prev|out::[^}]+))}}/
 const TRANSLATOR_OUTPUT_SLOT_PATTERN = /{{slot::out::([^}]+)}}/g
-const TRANSLATOR_HISTORY_SLOT_PATTERN = /{{slot::(history|historytrans)::([^}]*)}}/g
 const TRANSLATOR_HISTORY_SLOT_START_PATTERN = /{{slot::(?:historytrans|history)/g
 
-export type TranslatorHistoryResolver = (kind: 'source' | 'translated', n: number) => string
+export type TranslatorHistoryResolver = HistorySlotResolver
 
 export interface TranslatorPipelineSignature {
   steps: Array<{
@@ -121,7 +121,7 @@ export function buildTranslatorStepMessages(input: {
 }): OpenAIChat[] {
   const promptTemplate = input.step.prompt || defaultTranslatorPrompt
   const hasEmbeddedInput = TRANSLATOR_INPUT_SLOT_PATTERN.test(promptTemplate)
-  const prompt = promptTemplate
+  const promptWithNamedSlots = promptTemplate
     .replaceAll('{{slot::from}}', input.from)
     .replaceAll('{{slot}}', input.to)
     .replaceAll('{{solt::content}}', input.sourceText)
@@ -129,12 +129,7 @@ export function buildTranslatorStepMessages(input: {
     .replaceAll('{{slot::prev}}', input.prevOutput)
     .replace(TRANSLATOR_OUTPUT_SLOT_PATTERN, (_match, key: string) => input.outputsByKey[key] ?? '')
     .replaceAll('{{slot::tnote}}', input.translatorNote)
-    .replace(TRANSLATOR_HISTORY_SLOT_PATTERN, (_match, slot: string, rawCount: string) => {
-      if (!/^\d+$/.test(rawCount)) return ''
-      const count = Number(rawCount)
-      if (!Number.isInteger(count) || count < 1 || count > 50) return ''
-      return input.historyResolver?.(slot === 'history' ? 'source' : 'translated', count) ?? ''
-    })
+  const prompt = replaceHistorySlots(promptWithNamedSlots, input.historyResolver)
   const parsed = parseTranslatorChatML(prompt)
   if (parsed) return parsed
   if (hasEmbeddedInput) return [{ role: 'system', content: prompt }]

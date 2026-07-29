@@ -293,7 +293,7 @@ import {
   ScrollToMessageStore,
   selectedCharID,
 } from 'src/ts/stores.svelte'
-import { presetTemplate, type Database } from 'src/ts/storage/database.svelte'
+import { presetTemplate, type Database, type Message } from 'src/ts/storage/database.svelte'
 import {
   createActiveChatGenerationSettingsIncompleteMessage,
   resolveActiveChatGenerationSettings,
@@ -1509,6 +1509,7 @@ describe('DefaultChatScreen transcript window state', () => {
       hook,
       { content: 'Composer source', draft: 'Earlier draft' },
       expect.any(Object),
+      undefined,
     )
     expect(composer.value).toBe('Composer source')
     expect(loadPageMocks.preflightChatSendBeforeMutation).not.toHaveBeenCalled()
@@ -1672,10 +1673,94 @@ describe('DefaultChatScreen transcript window state', () => {
       btwHook,
       { content: 'Question', draft: 'Current draft' },
       expect.any(Object),
+      undefined,
     )
     target.querySelector<HTMLButtonElement>('[data-testid="default-chat-btw-dismiss"]')!.click()
     await tick()
     expect(target.querySelector('[data-testid="default-chat-btw-result"]')).toBeNull()
+  })
+
+  it('captures prior messages and the selected greeting for history-aware input hooks', async () => {
+    seedDatabase([2])
+    const hook = {
+      id: 'history-hook',
+      name: 'History Hook',
+      type: 'draft' as const,
+      prompt: '{{slot::history::3}}\n{{slot::historytrans::3}}\n{{slot::content}}',
+    }
+    getResourceDatabase().inputHooks = [hook]
+    getResourceDatabase().characters[0].chats[0].selectedDraftHookId = hook.id
+    getResourceDatabase().characters[0].chats[0].message[0].translation = {
+      text: 'translated first row',
+    } as Message['translation']
+    vi.mocked(runInputHook).mockResolvedValueOnce('History-aware draft')
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    composer.value = 'Composer source'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => expect(runInputHook).toHaveBeenCalledTimes(1))
+    expect(runInputHook).toHaveBeenCalledWith(hook, { content: 'Composer source', draft: '' }, expect.any(Object), {
+      messages: [
+        {
+          role: 'user',
+          data: 'chat-0 message 0',
+          translation: { text: 'translated first row' },
+        },
+        { role: 'char', data: 'chat-0 message 1' },
+      ],
+      messageIndex: 2,
+      greeting: { source: 'Greeting 0' },
+      maxTokens: 2048,
+    })
+    expect(loadPageMocks.hydrateActiveChatWindow).not.toHaveBeenCalled()
+  })
+
+  it('hydrates only the tail needed by the largest input-hook history window', async () => {
+    seedDatabase([60])
+    const chat = getResourceDatabase().characters[0].chats[0]
+    const originalMessages = chat.message.map((message) => ({ ...message }))
+    for (let index = 0; index < 30; index += 1) {
+      chat.message[index] = {
+        role: 'char',
+        data: '',
+        disabled: true,
+        isComment: true,
+        __risuServerUnloadedMessage: true,
+      } as Message
+    }
+    const hook = {
+      id: 'history-hook',
+      name: 'History Hook',
+      type: 'draft' as const,
+      prompt: '{{slot::history::40}}',
+    }
+    getResourceDatabase().inputHooks = [hook]
+    chat.selectedDraftHookId = hook.id
+    loadPageMocks.hydrateActiveChatWindow.mockImplementationOnce(async () => {
+      for (let index = 20; index < 30; index += 1) chat.message[index] = originalMessages[index]
+      return true
+    })
+    vi.mocked(runInputHook).mockResolvedValueOnce('History-aware draft')
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy())
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    composer.value = 'Composer source'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => expect(runInputHook).toHaveBeenCalledTimes(1))
+    expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledTimes(1)
+    expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledWith(40)
+    const historyContext = vi.mocked(runInputHook).mock.calls[0][3]
+    expect(historyContext?.messageIndex).toBe(60)
+    expect(historyContext?.messages.slice(20).map((message) => message.data)).toEqual(
+      originalMessages.slice(20).map((message) => message.data),
+    )
   })
 
   it('shrinks the composer back after sending a tall draft', async () => {
