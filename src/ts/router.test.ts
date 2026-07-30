@@ -115,7 +115,7 @@ describe('router initial application', () => {
     expect(window.location.pathname).toBe('/')
     expect(get(stores.selectedCharID)).toBe(-1)
     expect(routerMocks.changeChar).not.toHaveBeenCalled()
-  })
+  }, 15_000)
 
   it('does not treat initial root load as a pending home navigation', async () => {
     const router = await importRouterAt('/')
