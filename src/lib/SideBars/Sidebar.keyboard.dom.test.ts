@@ -7,6 +7,7 @@ const sidebarKeyboardMocks = vi.hoisted(() => ({
   alertSelect: vi.fn(),
   navigate: vi.fn(),
   selectSingleFile: vi.fn(),
+  persistServerBackedSettingsPatchWithSettlement: vi.fn(async (): Promise<any> => ({ status: 'accepted' })),
   updateCharacterOrderFolderWithOutcome: vi.fn((): any => ({
     applied: true,
     settlement: Promise.resolve({ status: 'accepted', result: { status: 'ok' } }),
@@ -65,6 +66,14 @@ vi.mock('src/ts/util', async (importActual) => {
 vi.mock('src/ts/filePicker', () => ({
   selectSingleFile: sidebarKeyboardMocks.selectSingleFile,
 }))
+
+vi.mock('src/ts/server/settingsBridge.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/server/settingsBridge.svelte')>()
+  return {
+    ...actual,
+    persistServerBackedSettingsPatchWithSettlement: sidebarKeyboardMocks.persistServerBackedSettingsPatchWithSettlement,
+  }
+})
 
 import Sidebar from './Sidebar.svelte'
 import { language } from 'src/lang'
@@ -220,6 +229,32 @@ describe('Sidebar character keyboard activation', () => {
     await vi.waitFor(() => expect(target.querySelector('[data-char-id="char-normal"]')).toBeTruthy())
     expect(target.querySelector('[data-char-id="char-private"]')).toBeNull()
     expect(sidebarKeyboardMocks.alertConfirm).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens the visual membership manager and persists a tile toggle without closing it', async () => {
+    setMoodLightModeActive(true)
+    component = mount(Sidebar, { target })
+    await tick()
+
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightManage}"]`)!.click()
+    await tick()
+
+    const dialog = target.querySelector<HTMLElement>('[data-risu-mood-light-dialog-root] [role="dialog"]')
+    const characterToggle = target.querySelector<HTMLButtonElement>(
+      'button[data-risu-mood-light-target="character"][data-risu-target-id="char-a"]',
+    )
+    expect(dialog).toBeTruthy()
+    expect(characterToggle).toBeTruthy()
+
+    characterToggle!.click()
+    await vi.waitFor(() =>
+      expect(sidebarKeyboardMocks.persistServerBackedSettingsPatchWithSettlement).toHaveBeenCalledWith({
+        moodLightMembership: { characterIds: ['char-a'], folders: [] },
+      }),
+    )
+
+    expect(target.querySelector('[data-risu-mood-light-dialog-root] [role="dialog"]')).toBeTruthy()
+    expect(sidebarKeyboardMocks.alertSelect).not.toHaveBeenCalled()
   })
 
   it('names and exposes the state of the developer tools tab', async () => {

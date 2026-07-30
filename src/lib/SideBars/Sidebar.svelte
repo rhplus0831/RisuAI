@@ -38,6 +38,7 @@
   import SideChatList from './SideChatList.svelte'
   import { sideBarSize } from 'src/ts/gui/guisize'
   import DevTool from './DevTool.svelte'
+  import MoodLightManageModal from './MoodLightManageModal.svelte'
   import QuickSettingsGui from '../Others/QuickSettingsGUI.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import {
@@ -70,11 +71,9 @@
   } from 'src/ts/router'
   import { moodLightMode, setMoodLightModeActive } from 'src/ts/moodLightMode'
   import {
-    buildMoodLightManagementTargets,
     filterCharacterOrderForMoodLight,
     isMoodLightCharacterVisible,
-    moodLightMembershipFromDatabase,
-    moodLightProtectedCharacterIds,
+    type MoodLightManagementTarget,
     toggleMoodLightManagementTarget,
   } from 'src/ts/moodLightMembership'
   import { persistServerBackedSettingsPatchWithSettlement } from 'src/ts/server/settingsBridge.svelte'
@@ -90,6 +89,7 @@
     status: 'pending' | 'queued' | 'failed'
   }
   let characterOrganizationActions = $state<Record<string, CharacterOrganizationActionState>>({})
+  let moodLightManagerOpen = $state(false)
   let moodLightMembershipPending = $state(false)
   let characterOrganizationMutationPending = $derived(
     Object.values(characterOrganizationActions).some((action) => action.status === 'pending'),
@@ -369,25 +369,8 @@
     navigate('/')
   }
 
-  async function manageMoodLightMembership(): Promise<void> {
+  async function toggleMoodLightMembership(target: MoodLightManagementTarget): Promise<void> {
     if (!$moodLightMode || moodLightMembershipPending) return
-    const targets = buildMoodLightManagementTargets(getDatabase())
-    if (targets.length === 0) return
-    const protectedCharacters = moodLightProtectedCharacterIds(getDatabase())
-    const protectedFolders = new Set(moodLightMembershipFromDatabase(getDatabase()).folders.map((entry) => entry.id))
-    const options = targets.map((target) => {
-      const selected = target.kind === 'folder' ? protectedFolders.has(target.id) : protectedCharacters.has(target.id)
-      const label =
-        target.kind === 'folder'
-          ? language.moodLightFolderOption(target.name)
-          : language.moodLightCharacterOption(target.name, target.folderName)
-      return `${selected ? '✓' : '○'} ${label}`
-    })
-    const selection = parseAlertSelection(await alertSelect(options, language.moodLightManagePrompt), options.length)
-    if (selection === null) return
-    const target = targets[selection]
-    if (!target) return
-
     moodLightMembershipPending = true
     try {
       const persistence = persistServerBackedSettingsPatchWithSettlement({
@@ -899,7 +882,7 @@
             ariaLabel={language.moodLightManage}
             isDisabled={moodLightMembershipPending}
             onClick={() => {
-              void manageMoodLightMembership()
+              moodLightManagerOpen = true
             }}>
             <SlidersHorizontal size={22} />
           </BaseRoundedButton>
@@ -1047,6 +1030,15 @@
     class:sidebar-dark-animation={!$sideBarClosing}
     class:sidebar-dark-close-animation={$sideBarClosing}>
   </button>
+{/if}
+
+{#if moodLightManagerOpen && $moodLightMode}
+  <MoodLightManageModal
+    pending={moodLightMembershipPending}
+    onToggle={toggleMoodLightMembership}
+    close={() => {
+      moodLightManagerOpen = false
+    }} />
 {/if}
 
 <style>

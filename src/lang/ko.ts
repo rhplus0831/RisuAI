@@ -1152,9 +1152,6 @@ const languageKoreanBase = {
   moodLightManage: '무드 라이트 봇 및 폴더 관리',
   moodLightEnableConfirm: '무드 라이트 모드로 전환할까요? 모드를 종료할 때까지 보호된 봇과 폴더만 표시됩니다.',
   moodLightManagePrompt: '무드 라이트 모드에 추가하거나 제거할 봇 또는 폴더를 선택하세요.',
-  moodLightFolderOption: (name: string) => `폴더: ${name}`,
-  moodLightCharacterOption: (name: string, folderName?: string) =>
-    folderName ? `봇: ${name} (${folderName})` : `봇: ${name}`,
   moodLightSelectionQueued:
     '무드 라이트 선택 항목이 이 기기에 저장되어 대기열에 추가되었습니다. 자동으로 다시 시도합니다.',
   importFromRealm: 'RisuRealm에서 고르기',

@@ -1604,9 +1604,6 @@ export const languageEnglish = {
   moodLightEnableConfirm:
     'Enter Mood Light mode? Only protected bots and folders will be visible until you leave the mode.',
   moodLightManagePrompt: 'Choose a bot or folder to move into or out of Mood Light mode.',
-  moodLightFolderOption: (name: string) => `Folder: ${name}`,
-  moodLightCharacterOption: (name: string, folderName?: string) =>
-    folderName ? `Bot: ${name} (${folderName})` : `Bot: ${name}`,
   moodLightSelectionQueued: 'The Mood Light selection is saved on this device and queued. It will retry automatically.',
   importFromRealm: 'Choose from RisuRealm',
   importFromRealmDesc: 'Choose over 1000 characters in RisuRealm',
