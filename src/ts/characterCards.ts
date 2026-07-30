@@ -1,6 +1,7 @@
 import { writable, type Writable } from 'svelte/store'
 import {
   alertCardExport,
+  alertClear,
   alertConfirm,
   alertError,
   alertInput,
@@ -850,7 +851,7 @@ async function importCharacterCardSpec(
         alertStore.set({
           type: 'progress',
           msg: `Loading... (Assets)`,
-          submsg: ((i / data.assets.length) * 100).toFixed(2),
+          submsg: (((i + 1) / data.assets.length) * 100).toFixed(2),
         })
         if (i % 100 === 0) {
           await sleep(10)
@@ -930,6 +931,7 @@ async function importCharacterCardSpec(
   }
 
   if (risuext && risuext?.lowLevelAccess) {
+    alertClear()
     const conf = await alertConfirm(language.lowLevelAccessConfirm)
     if (!conf) {
       return null

@@ -109,6 +109,8 @@ export const SERVER_ASSET_EXISTS_MAX_IDS = 1024
 const SERVER_ASSET_BULK_MAX_ITEMS = 32
 const SERVER_ASSET_BULK_MAX_RAW_BYTES = 32 * 1024 * 1024
 const SERVER_ASSET_BULK_BINARY_CONTENT_TYPE = 'application/vnd.risu.assets-bulk'
+export const SERVER_ASSET_HASH_CONCURRENCY = 4
+export const SERVER_ASSET_OPERATION_TIMEOUT_MS = 5 * 60 * 1000
 const SERVER_ASSET_RATE_LIMIT_MAX_RETRIES = 3
 const SERVER_ASSET_RATE_LIMIT_FALLBACK_DELAY_MS = 1000
 
@@ -149,13 +151,7 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
 
 export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<string[]> {
   if (assets.length === 0) return []
-  const prepared = await Promise.all(
-    assets.map(async (asset) => ({
-      assetId: await sha256Hex(asset.data),
-      data: asset.data,
-      contentType: serverAssetContentType(assetExtensionFromFileName(asset.fileName ?? '')),
-    })),
-  )
+  const prepared = await prepareServerAssetUploads(assets)
   const missingIds = await findMissingServerAssetIds(prepared.map((asset) => asset.assetId))
   const missingUploads: PreparedServerAssetUpload[] = []
   const queuedMissingIds = new Set<string>()
@@ -176,6 +172,28 @@ export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<str
   }
 
   return prepared.map((asset) => asset.assetId)
+}
+
+async function prepareServerAssetUploads(assets: readonly AssetSaveInput[]): Promise<PreparedServerAssetUpload[]> {
+  const prepared = new Array<PreparedServerAssetUpload>(assets.length)
+  let nextIndex = 0
+  const workerCount = Math.min(SERVER_ASSET_HASH_CONCURRENCY, assets.length)
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex
+        nextIndex += 1
+        if (index >= assets.length) return
+        const asset = assets[index]
+        prepared[index] = {
+          assetId: await sha256Hex(asset.data),
+          data: asset.data,
+          contentType: serverAssetContentType(assetExtensionFromFileName(asset.fileName ?? '')),
+        }
+      }
+    }),
+  )
+  return prepared
 }
 
 async function findMissingServerAssetIds(assetIds: readonly string[]): Promise<Set<string>> {
@@ -303,7 +321,7 @@ async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUploa
 
 async function fetchServerAssetOperation(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
   for (let retry = 0; ; retry += 1) {
-    const response = await fetch(input, init)
+    const response = await fetchServerAssetOperationAttempt(input, init)
     if (response.status !== 429 || retry >= SERVER_ASSET_RATE_LIMIT_MAX_RETRIES) {
       return response
     }
@@ -314,6 +332,17 @@ async function fetchServerAssetOperation(input: RequestInfo | URL, init: Request
     if (delayMs > 0) {
       await new Promise<void>((resolve) => setTimeout(resolve, delayMs))
     }
+  }
+}
+
+async function fetchServerAssetOperationAttempt(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const timeoutSignal = buildTimeoutSignal(init.signal ?? undefined, SERVER_ASSET_OPERATION_TIMEOUT_MS)
+  try {
+    const response = await fetch(input, { ...init, signal: timeoutSignal.signal })
+    return retainFetchCancellationThroughBody(response, timeoutSignal.signal, timeoutSignal.cleanup)
+  } catch (error) {
+    timeoutSignal.cleanup()
+    throw error
   }
 }
 

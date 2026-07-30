@@ -1,11 +1,4 @@
-import {
-  AppendableBuffer,
-  saveAsset,
-  saveAssets,
-  SERVER_ASSET_EXISTS_MAX_IDS,
-  type LocalWriter,
-  type VirtualWriter,
-} from '../globalApi.svelte'
+import { AppendableBuffer, saveAsset, saveAssets, type LocalWriter, type VirtualWriter } from '../globalApi.svelte'
 import * as fflate from 'fflate'
 import { asBuffer } from '../util'
 import { alertStore } from '../alert'
@@ -17,7 +10,9 @@ const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024 // 50MB
 const CHUNK_SIZE_BYTES = 1024 * 1024 // 1MB
 
 // Queue management constants
-const MAX_BULK_ASSET_SAVE_BYTES = 32 * 1024 * 1024
+const CHARX_ASSET_SAVE_BATCH_MAX_ITEMS = 32
+const CHARX_ASSET_SAVE_BATCH_MAX_BYTES = 8 * 1024 * 1024
+const CHARX_ASSET_QUEUE_MAX_BYTES = 32 * 1024 * 1024
 
 // HTTP status code ranges
 const HTTP_STATUS_OK_MIN = 200
@@ -188,6 +183,8 @@ export class CharXImporter {
   private pendingAssetBatch: { id: string; data: Uint8Array }[] = []
   private pendingAssetBatchBytes: number = 0
   private assetBatchFlushChain: Promise<void> = Promise.resolve()
+  private retainedAssetBytes: number = 0
+  private assetCapacityWaiters: Array<() => void> = []
 
   // Results: filename -> saved asset ID mapping
   assets: { [key: string]: string } = {}
@@ -275,6 +272,8 @@ export class CharXImporter {
 
     if (final) {
       await this.#finalize()
+    } else {
+      await this.#waitForAssetCapacity()
     }
   }
 
@@ -447,12 +446,28 @@ export class CharXImporter {
     this.totalEnqueued += 1
     this.pendingAssetBatch.push(asset)
     this.pendingAssetBatchBytes += asset.data.byteLength
+    this.retainedAssetBytes += asset.data.byteLength
     if (
-      this.pendingAssetBatch.length >= SERVER_ASSET_EXISTS_MAX_IDS ||
-      this.pendingAssetBatchBytes >= MAX_BULK_ASSET_SAVE_BYTES
+      this.pendingAssetBatch.length >= CHARX_ASSET_SAVE_BATCH_MAX_ITEMS ||
+      this.pendingAssetBatchBytes >= CHARX_ASSET_SAVE_BATCH_MAX_BYTES
     ) {
       void this.#flushAssetBatch()
     }
+  }
+
+  #waitForAssetCapacity(): Promise<void> {
+    if (this.retainedAssetBytes <= CHARX_ASSET_QUEUE_MAX_BYTES) {
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve) => this.assetCapacityWaiters.push(resolve))
+  }
+
+  #releaseAssetCapacity(bytes: number): void {
+    this.retainedAssetBytes = Math.max(0, this.retainedAssetBytes - bytes)
+    if (this.retainedAssetBytes > CHARX_ASSET_QUEUE_MAX_BYTES) return
+    const waiters = this.assetCapacityWaiters
+    this.assetCapacityWaiters = []
+    for (const resolve of waiters) resolve()
   }
 
   #flushAssetBatch(): Promise<void> {
@@ -461,6 +476,7 @@ export class CharXImporter {
     }
 
     const batch = this.pendingAssetBatch
+    const batchBytes = this.pendingAssetBatchBytes
     this.pendingAssetBatch = []
     this.pendingAssetBatchBytes = 0
 
@@ -481,6 +497,7 @@ export class CharXImporter {
       } catch (error) {
         this.errors.push(error instanceof Error ? error : new Error(String(error)))
       } finally {
+        this.#releaseAssetCapacity(batchBytes)
         this.totalCompleted += batch.length
         this.onProgress?.(this.totalCompleted, this.totalEnqueued)
         this.#checkCompletion()

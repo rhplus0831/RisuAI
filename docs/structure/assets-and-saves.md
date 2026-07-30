@@ -33,13 +33,16 @@ for the server's canonical `jpg` extension.
 `POST /api/v1/assets` accepts raw supported asset bytes;
 `POST /api/v1/assets/bulk` accepts compact binary framing for browser bulk
 uploads and keeps JSON/base64 batch compatibility for legacy callers.
-The browser groups streaming CharX saves into at most 1,024 assets or 32 MiB
-per existence probe, whichever comes first, then sends missing bytes in upload
-chunks of at most 32 assets or 32 MiB. This uses the existence endpoint's full
-ID capacity without allowing large imports to accumulate unbounded asset bytes
-in memory or making the server synchronously write 1,024 files in one handler.
-Transient rate-limit responses on either request honor `Retry-After` and retry
-the affected batch rather than failing the whole import immediately.
+The browser hands streaming CharX assets to persistence in batches of at most
+32 assets or 8 MiB and pauses ZIP input while retained decoded assets exceed
+32 MiB. A single valid asset can exceed that queue target, up to the per-asset
+CharX limit. Browser hashing is limited to four concurrent assets and avoids
+copying ordinary `ArrayBuffer`-backed byte views before WebCrypto. The shared
+asset helper can still fill the existence endpoint's 1,024-id capacity when a
+caller supplies that many ids, while missing bytes are sent in upload chunks of
+at most 32 assets or 32 MiB. Asset requests time out after five minutes.
+Transient rate-limit responses honor `Retry-After` and retry the affected batch
+rather than failing the whole import immediately.
 Uploads are authenticated and active-writer guarded. Asset metadata is outside
 the revisioned application-resource domain: uploads return the current domain
 revision but do not bump it or emit a command event. Re-uploading existing

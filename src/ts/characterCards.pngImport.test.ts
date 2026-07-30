@@ -8,6 +8,8 @@ const dbState = vi.hoisted(() => ({
 }))
 
 const alertState = vi.hoisted(() => ({
+  alertClear: vi.fn(),
+  alertConfirm: vi.fn(async () => true),
   alertStoreSet: vi.fn(),
   alertError: vi.fn(),
   alertNormal: vi.fn(),
@@ -26,6 +28,7 @@ const characterCommandState = vi.hoisted(() => ({
 }))
 
 const charxState = vi.hoisted(() => ({
+  assets: {} as Record<string, string>,
   cardData: '',
   moduleData: undefined as Uint8Array | undefined,
   module: undefined as Record<string, unknown> | undefined,
@@ -46,7 +49,8 @@ function ensureUniqueTestIds<T extends { id?: string }>(rows: T[], prefix: strin
 
 vi.mock('./alert', () => ({
   alertCardExport: vi.fn(),
-  alertConfirm: vi.fn(async () => true),
+  alertClear: alertState.alertClear,
+  alertConfirm: alertState.alertConfirm,
   alertError: alertState.alertError,
   alertInput: vi.fn(async () => ''),
   alertMd: vi.fn(),
@@ -203,6 +207,7 @@ vi.mock('./process/processzip', () => ({
     moduleData: Uint8Array | undefined
     assets = {}
     async parse() {
+      this.assets = charxState.assets
       this.cardData = charxState.cardData
       this.moduleData = charxState.moduleData
     }
@@ -277,10 +282,13 @@ beforeEach(() => {
   }
   clientIdentityState.nextId = 0
   charxState.cardData = ''
+  charxState.assets = {}
   charxState.moduleData = undefined
   charxState.module = undefined
   characterCommandState.dispatchCreateCharacter.mockClear()
   alertState.alertStoreSet.mockClear()
+  alertState.alertClear.mockClear()
+  alertState.alertConfirm.mockClear()
   alertState.alertError.mockClear()
   alertState.alertNormal.mockClear()
   alertState.alertWait.mockClear()
@@ -363,8 +371,8 @@ describe('PNG character card import', () => {
       ['Loading... (Loading Assets)', '0.00'],
       ['Loading... (Loading Assets)', '50.00'],
       ['Loading... (Saving Assets)', '0.00'],
-      ['Loading... (Assets)', '0.00'],
       ['Loading... (Assets)', '50.00'],
+      ['Loading... (Assets)', '100.00'],
     ])
     expect(alertState.alertNormal).toHaveBeenCalledWith('Imported character')
   })
@@ -504,6 +512,33 @@ describe('PNG character card import', () => {
     expect(new Set(loreIds).size).toBe(2)
     expect(imported.customscript[0].id).toEqual(expect.any(String))
     expect(imported.triggerscript[0].id).toEqual(expect.any(String))
+  })
+
+  it('clears completed asset progress before requesting CharX low-level access confirmation', async () => {
+    const card = characterCardFixture('CharX Low Level', { lowLevelAccess: true })
+    card.data.assets = [
+      { type: 'emotion', uri: 'embeded://assets/one.png', name: 'one', ext: 'png' },
+      { type: 'icon', uri: 'embeded://assets/two.png', name: 'main', ext: 'png' },
+    ]
+    charxState.cardData = JSON.stringify(card)
+    charxState.assets = {
+      'assets/one.png': 'asset-one',
+      'assets/two.png': 'asset-two',
+    }
+
+    await importCharacterProcess({ name: 'low-level.charx', data: new Uint8Array([1]) })
+
+    const assetProgress = alertState.alertStoreSet.mock.calls
+      .map(([entry]) => entry)
+      .filter((entry) => entry.msg === 'Loading... (Assets)')
+      .map((entry) => entry.submsg)
+    expect(assetProgress).toEqual(['50.00', '100.00'])
+    expect(alertState.alertClear).toHaveBeenCalledOnce()
+    expect(alertState.alertConfirm).toHaveBeenCalledWith('Low-level access?')
+    expect(alertState.alertClear.mock.invocationCallOrder[0]).toBeLessThan(
+      alertState.alertConfirm.mock.invocationCallOrder[0],
+    )
+    expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledOnce()
   })
 })
 

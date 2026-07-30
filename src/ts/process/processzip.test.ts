@@ -200,6 +200,24 @@ function streamFromChunks(chunks: Uint8Array[]) {
   })
 }
 
+function trackedStreamFromChunks(chunks: Uint8Array[]) {
+  let index = 0
+  let pulls = 0
+  return {
+    stream: new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1
+        controller.enqueue(chunks[index])
+        index += 1
+        if (index >= chunks.length) {
+          controller.close()
+        }
+      },
+    }),
+    pulls: () => pulls,
+  }
+}
+
 function repeatedChunks(count: number, size = ONE_MIB) {
   const chunk = new Uint8Array(size)
   chunk.fill(7)
@@ -327,7 +345,7 @@ describe('CharXImporter stream caps', () => {
     })
   })
 
-  it('batches high-asset-count CharX imports at the server existence-probe capacity', async () => {
+  it('keeps high-asset-count CharX save batches small even though existence probes accept more ids', async () => {
     const assetCount = 4_361
     const entries = Object.fromEntries(
       Array.from({ length: assetCount }, (_, index) => [`assets/${index}.png`, new Uint8Array([index & 0xff])]),
@@ -337,8 +355,45 @@ describe('CharXImporter stream caps', () => {
     await importer.parse(fflate.zipSync(entries, { level: 0 }))
     await importer.done()
 
-    expect(globalApiState.saveAssets.mock.calls.map(([assets]) => assets.length)).toEqual([1024, 1024, 1024, 1024, 265])
+    expect(globalApiState.saveAssets.mock.calls.map(([assets]) => assets.length)).toEqual([
+      ...Array.from({ length: 136 }, () => 32),
+      9,
+    ])
     expect(Object.keys(importer.assets)).toHaveLength(assetCount)
+  })
+
+  it('pauses ZIP reads while retained decoded asset bytes exceed the queue budget', async () => {
+    const assetSize = ONE_MIB
+    const entries = Array.from({ length: 40 }, (_, index) => ({
+      name: `assets/${index}.png`,
+      chunks: [new Uint8Array(assetSize)],
+    }))
+    const chunks = streamingZipChunks(entries)
+    const tracked = trackedStreamFromChunks(chunks)
+    let releaseFirstSave: (() => void) | undefined
+    globalApiState.saveAssets.mockImplementationOnce(
+      async (assets: readonly { data: Uint8Array }[]) =>
+        new Promise<string[]>((resolve) => {
+          releaseFirstSave = () => resolve(assets.map((_, index) => `first-${index}`))
+        }),
+    )
+    const importer = new CharXImporter()
+
+    const parsing = importer.parse(tracked.stream)
+    await vi.waitFor(() => expect(releaseFirstSave).toBeTypeOf('function'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(tracked.pulls()).toBeLessThan(chunks.length)
+    const decodedBytesBeforeRelease = globalApiState.appendable.bufferReads.reduce(
+      (total, read) => total + read.byteLength,
+      0,
+    )
+    expect(decodedBytesBeforeRelease).toBeLessThanOrEqual(33 * ONE_MIB)
+
+    releaseFirstSave?.()
+    await parsing
+    await importer.done()
+    expect(Object.keys(importer.assets)).toHaveLength(entries.length)
   })
 })
 

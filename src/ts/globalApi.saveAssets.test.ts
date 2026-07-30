@@ -19,7 +19,12 @@ vi.mock('./process/modules', async (importActual) => {
 })
 
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
-import { saveAsset, saveAssets } from './globalApi.svelte'
+import {
+  saveAsset,
+  saveAssets,
+  SERVER_ASSET_HASH_CONCURRENCY,
+  SERVER_ASSET_OPERATION_TIMEOUT_MS,
+} from './globalApi.svelte'
 
 interface CapturedFetch {
   input: RequestInfo | URL
@@ -97,6 +102,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -188,6 +194,65 @@ describe('saveAssets server bulk upload', () => {
       '/api/v1/assets/bulk',
       '/api/v1/assets/bulk',
     ])
+  })
+
+  it('limits concurrent WebCrypto hashing for large asset groups', async () => {
+    const actualDigest = webcrypto.subtle.digest.bind(webcrypto.subtle)
+    const pending: Array<() => void> = []
+    let active = 0
+    let maxActive = 0
+    const digest = vi.fn((algorithm: AlgorithmIdentifier, data: BufferSource) => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      return new Promise<ArrayBuffer>((resolve, reject) => {
+        pending.push(() => {
+          active -= 1
+          actualDigest(algorithm, data).then(resolve, reject)
+        })
+      })
+    })
+    vi.stubGlobal('crypto', { subtle: { digest } })
+    const assets = Array.from({ length: SERVER_ASSET_HASH_CONCURRENCY * 2 + 1 }, (_, index) => ({
+      data: new Uint8Array([index]),
+    }))
+
+    const saving = saveAssets(assets)
+    await vi.waitFor(() => expect(digest).toHaveBeenCalledTimes(SERVER_ASSET_HASH_CONCURRENCY))
+    expect(maxActive).toBe(SERVER_ASSET_HASH_CONCURRENCY)
+
+    pending.splice(0).forEach((release) => release())
+    await vi.waitFor(() => expect(digest).toHaveBeenCalledTimes(SERVER_ASSET_HASH_CONCURRENCY * 2))
+    expect(maxActive).toBe(SERVER_ASSET_HASH_CONCURRENCY)
+
+    pending.splice(0).forEach((release) => release())
+    await vi.waitFor(() => expect(digest).toHaveBeenCalledTimes(assets.length))
+    pending.splice(0).forEach((release) => release())
+
+    await expect(saving).resolves.toHaveLength(assets.length)
+    expect(maxActive).toBe(SERVER_ASSET_HASH_CONCURRENCY)
+  })
+
+  it('aborts a stalled existence probe after the asset operation timeout', async () => {
+    const digestBytes = await webcrypto.subtle.digest('SHA-256', presentAsset)
+    vi.stubGlobal('crypto', {
+      subtle: {
+        digest: vi.fn(async () => digestBytes),
+      },
+    })
+    vi.useFakeTimers()
+    vi.mocked(fetch).mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    })
+
+    const saving = expect(saveAssets([{ data: presentAsset }])).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetch).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(SERVER_ASSET_OPERATION_TIMEOUT_MS)
+
+    await saving
   })
 })
 
