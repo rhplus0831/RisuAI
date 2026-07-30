@@ -55,7 +55,11 @@ const PORTABLE_TOKENIZER_ASSETS: Record<PortableTokenEncoding, PortableTokenizer
   novellist: { kind: 'sentencepiece', relativePath: 'trin/spiece.model' },
 }
 
-const nodeRequire = createRequire(import.meta.url)
+const nodeRequire = createRequire(
+  import.meta.url.startsWith('file:')
+    ? import.meta.url
+    : path.join(process.cwd(), 'server', 'fastify', 'src', 'prompt', 'tokens.ts'),
+)
 const loadedTokenizers = new Map<PortableTokenEncoding, SyncTokenizer>()
 const tokenizerLoads = new Map<PortableTokenEncoding, Promise<SyncTokenizer>>()
 let webTokenizersModule: typeof import('@mlc-ai/web-tokenizers') | undefined
@@ -93,11 +97,17 @@ function tokenizerAssetPath(relativePath: string): string {
 function loadWebTokenizersModule(): typeof import('@mlc-ai/web-tokenizers') {
   if (webTokenizersModule) return webTokenizersModule
   try {
-    // This is the working Node/tsx path for the package's UMD distribution.
-    webTokenizersModule = nodeRequire('@mlc-ai/web-tokenizers') as typeof import('@mlc-ai/web-tokenizers')
+    const candidate = nodeRequire('@mlc-ai/web-tokenizers') as typeof import('@mlc-ai/web-tokenizers')
+    if (
+      typeof candidate.Tokenizer?.fromJSON !== 'function' ||
+      typeof candidate.Tokenizer?.fromSentencePiece !== 'function'
+    ) {
+      throw new Error('@mlc-ai/web-tokenizers exposed an empty ESM namespace')
+    }
+    webTokenizersModule = candidate
   } catch {
-    // Some ESM-aware test runners reinterpret the package entry before Node's
-    // require loader sees it. The adapter compiles that same UMD source as CJS.
+    // The package can expose an empty namespace instead of throwing because its
+    // UMD entry is marked as ESM. Compile that same source explicitly as CJS.
     webTokenizersModule = nodeRequire('./webTokenizers.cjs') as typeof import('@mlc-ai/web-tokenizers')
   }
   return webTokenizersModule

@@ -254,6 +254,7 @@ async function dispatchWithProfile(
   profile: ResolvedModelProfile,
   database: Database,
   formated: OpenAIChat[] = [{ role: 'user', content: 'hello' }],
+  expectedApiMetadata?: Record<string, unknown>,
 ): Promise<void> {
   const frames = await dispatchChatProvider({
     database,
@@ -267,7 +268,11 @@ async function dispatchWithProfile(
   }
   expect(emitted).toEqual([
     { kind: 'token', content: 'profile ok' },
-    { kind: 'done', finishReason: 'stop' },
+    {
+      kind: 'done',
+      finishReason: 'stop',
+      ...(expectedApiMetadata ? { apiMetadata: expectedApiMetadata } : {}),
+    },
   ])
 }
 
@@ -294,7 +299,7 @@ async function dispatchHordeWithProfile(
   await vi.advanceTimersByTimeAsync(2000)
   await expect(emittedPromise).resolves.toEqual([
     { kind: 'token', content: 'profile ok' },
-    { kind: 'done', finishReason: 'stop' },
+    { kind: 'done', finishReason: 'stop', apiMetadata: { jobId: 'profile-horde-job' } },
   ])
 }
 
@@ -1027,11 +1032,16 @@ describe('dispatchChatProvider profile providerOptions', () => {
     } as Partial<Database>)
     const captured = captureDispatchRequests(okBedrockResponse())
 
-    await dispatchWithProfile(profile, flatConflict, [
-      { role: 'system', content: 'profile system 1' },
-      { role: 'system', content: 'profile system 2' },
-      { role: 'user', content: 'hello' },
-    ])
+    await dispatchWithProfile(
+      profile,
+      flatConflict,
+      [
+        { role: 'system', content: 'profile system 1' },
+        { role: 'system', content: 'profile system 2' },
+        { role: 'user', content: 'hello' },
+      ],
+      { stop_reason: 'end_turn' },
+    )
 
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe(
@@ -1060,7 +1070,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     } as Partial<Database>)
     const captured = captureDispatchRequests(okBedrockResponse())
 
-    await dispatchWithProfile(profile, flatConflict)
+    await dispatchWithProfile(profile, flatConflict, undefined, { stop_reason: 'end_turn' })
 
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe(
