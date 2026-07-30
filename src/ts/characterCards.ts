@@ -105,6 +105,7 @@ function normalizeImportedCharacterIdentities(character: character): void {
 
   const chatIds = new Set<string>()
   for (const chat of character.chats ?? []) {
+    chat.fmIndex ??= character.firstMsgIndex ?? -1
     let chatId = typeof chat.id === 'string' && chat.id.trim() ? chat.id : ''
     if (!chatId || chatIds.has(chatId)) {
       do {

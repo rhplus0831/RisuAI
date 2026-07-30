@@ -319,6 +319,7 @@ describe('addCharacter import navigation freshness', () => {
       })
       const imported = testDatabaseState.db.characters.find((character) => character.chaId === importedCharacterId)
       expect(imported).toBeTruthy()
+      expect(imported?.chats[0]?.fmIndex).toBe(-1)
       testDatabaseState.db.characters = [
         imported!,
         fullCharacter('char-a', 'Character A'),

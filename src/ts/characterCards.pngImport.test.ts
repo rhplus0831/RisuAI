@@ -401,6 +401,7 @@ describe('PNG character card import', () => {
       note: '',
       name: 'Chat 1',
       localLore: [],
+      fmIndex: -1,
     })
     expect(chat).not.toHaveProperty('generationSettings')
   })
