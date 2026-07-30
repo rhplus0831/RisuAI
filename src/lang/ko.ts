@@ -2647,6 +2647,7 @@ export const languageKorean = {
     providerNames: {
       openai: 'OpenAI',
       llmgateway: 'LLM Gateway',
+      neuralwatt: 'Neuralwatt',
       anthropic: 'Anthropic',
       google: 'Google',
       vertex: 'Vertex AI',

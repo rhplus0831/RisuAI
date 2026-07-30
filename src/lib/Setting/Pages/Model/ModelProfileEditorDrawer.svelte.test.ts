@@ -16,6 +16,19 @@ vi.mock('src/ts/model/llmgateway', () => ({
   }),
 }))
 
+vi.mock('src/ts/model/neuralwatt', () => ({
+  getNeuralwattModels: vi.fn(async () => []),
+  toModelGridItem: (model: { id: string; name: string }) => ({
+    id: model.id,
+    displayName: model.name,
+    providerName: 'Neuralwatt',
+    description: '',
+    context_length: 0,
+    sortPrice: 0,
+    prices: [],
+  }),
+}))
+
 type MountedComponent = Parameters<typeof unmount>[0]
 
 let target: HTMLElement

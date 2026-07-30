@@ -8,6 +8,11 @@
     toModelGridItem as llmGatewayModelToGridItem,
     type LLMGatewayModelInfo,
   } from 'src/ts/model/llmgateway'
+  import {
+    getNeuralwattModels,
+    toModelGridItem as neuralwattModelToGridItem,
+    type NeuralwattModelInfo,
+  } from 'src/ts/model/neuralwatt'
   import { FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS } from 'src/ts/model/modelProfileResolver'
   import {
     LLM_GATEWAY_REASONING_EFFORTS,
@@ -109,6 +114,9 @@
   let llmGatewayModels = $state<LLMGatewayModelInfo[]>([])
   let llmGatewayModelsLoading = $state(false)
   let llmGatewayGridItems = $derived(llmGatewayModels.map(llmGatewayModelToGridItem))
+  let neuralwattModels = $state<NeuralwattModelInfo[]>([])
+  let neuralwattModelsLoading = $state(false)
+  let neuralwattGridItems = $derived(neuralwattModels.map(neuralwattModelToGridItem))
 
   let baseUrlIncludesSuffix = $derived(baseUrl.toLowerCase().includes('/chat/completions'))
   let compatibleCredentialType = $derived<ProviderCredentialType>(
@@ -149,6 +157,22 @@
       })
       .finally(() => {
         if (!cancelled) llmGatewayModelsLoading = false
+      })
+    return () => {
+      cancelled = true
+    }
+  })
+
+  $effect(() => {
+    if (providerId !== 'neuralwatt') return
+    let cancelled = false
+    neuralwattModelsLoading = true
+    void getNeuralwattModels()
+      .then((models) => {
+        if (!cancelled) neuralwattModels = models
+      })
+      .finally(() => {
+        if (!cancelled) neuralwattModelsLoading = false
       })
     return () => {
       cancelled = true
@@ -283,6 +307,28 @@
               <option value={routing} class="bg-darkbg">{routing}</option>
             {/each}
           </select>
+        </label>
+      </div>
+    {:else if providerId === 'neuralwatt'}
+      <ModelGrid
+        bind:value={modelId}
+        items={neuralwattGridItems}
+        loading={neuralwattModelsLoading}
+        onselect={() => {
+          requestModel = ''
+        }} />
+      <div class="grid gap-3 md:grid-cols-2">
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.modelColumn}</span>
+          <TextInput size="sm" fullwidth bind:value={modelId} placeholder={language.modelProfiles.modelPlaceholder} />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
+          <TextInput
+            size="sm"
+            fullwidth
+            bind:value={requestModel}
+            placeholder={language.modelProfiles.requestModelPlaceholder} />
         </label>
       </div>
     {:else if providerId === 'anthropic'}

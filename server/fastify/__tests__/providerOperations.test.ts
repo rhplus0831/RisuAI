@@ -115,6 +115,11 @@ describe('provider operation allowlist', () => {
       method: 'GET',
     },
     {
+      operation: 'neuralwatt.models' as const,
+      url: 'https://api.neuralwatt.com/v1/models',
+      method: 'GET',
+    },
+    {
       operation: 'ollama.cloud-models' as const,
       url: 'https://ollama.com/api/tags',
       method: 'GET',
@@ -217,6 +222,13 @@ describe('provider operation allowlist', () => {
     )
     expect(llmGateway.url).toBe('https://api.llmgateway.io/v1/models')
     expect(header(llmGateway.init, 'authorization')).toBeNull()
+
+    const neuralwatt = resolveProviderUpstreamRequest(
+      { operation: 'neuralwatt.models', credential: { source: 'none' } },
+      storedSettings,
+    )
+    expect(neuralwatt.url).toBe('https://api.neuralwatt.com/v1/models')
+    expect(header(neuralwatt.init, 'authorization')).toBeNull()
   })
 
   it('resolves only matching model-profile secrets and preserves the same-provider flat fallback', () => {

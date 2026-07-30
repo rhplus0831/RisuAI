@@ -6,6 +6,9 @@ import ModelProviderPanel from './ModelProviderPanel.svelte'
 const llmGatewayCatalog = vi.hoisted(() => ({
   getModels: vi.fn(),
 }))
+const neuralwattCatalog = vi.hoisted(() => ({
+  getModels: vi.fn(),
+}))
 
 vi.mock('src/ts/model/llmgateway', () => ({
   getLLMGatewayModels: llmGatewayCatalog.getModels,
@@ -13,6 +16,19 @@ vi.mock('src/ts/model/llmgateway', () => ({
     id: model.id,
     displayName: model.name,
     providerName: 'LLM Gateway',
+    description: '',
+    context_length: 0,
+    sortPrice: 0,
+    prices: [],
+  }),
+}))
+
+vi.mock('src/ts/model/neuralwatt', () => ({
+  getNeuralwattModels: neuralwattCatalog.getModels,
+  toModelGridItem: (model: { id: string; name: string }) => ({
+    id: model.id,
+    displayName: model.name,
+    providerName: 'Neuralwatt',
     description: '',
     context_length: 0,
     sortPrice: 0,
@@ -63,6 +79,8 @@ function props(providerId: string) {
 beforeEach(() => {
   llmGatewayCatalog.getModels.mockReset()
   llmGatewayCatalog.getModels.mockResolvedValue([])
+  neuralwattCatalog.getModels.mockReset()
+  neuralwattCatalog.getModels.mockResolvedValue([])
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -175,5 +193,26 @@ describe('ModelProviderPanel credential selection', () => {
     expect(values('[data-llm-gateway-verbosity]')).toEqual(['', 'low', 'medium', 'high'])
     expect(values('[data-llm-gateway-service-tier]')).toEqual(['', 'auto', 'default', 'flex', 'priority'])
     expect(values('[data-llm-gateway-routing]')).toEqual(['', 'auto', 'price', 'throughput', 'latency'])
+  })
+
+  it('loads and selects models from the Neuralwatt catalog', async () => {
+    neuralwattCatalog.getModels.mockResolvedValueOnce([{ id: 'gemma-4-31b', name: 'Gemma 4 31B' }])
+    component = mount(ModelProviderPanel, { target, props: props('neuralwatt') })
+
+    await vi.waitFor(() => {
+      expect(target.textContent).toContain('Gemma 4 31B')
+    })
+    expect(neuralwattCatalog.getModels).toHaveBeenCalledTimes(1)
+
+    const modelButton = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Gemma 4 31B'),
+    )
+    modelButton?.click()
+    await tick()
+
+    const modelInput = Array.from(target.querySelectorAll<HTMLInputElement>('input')).find(
+      (input) => input.value === 'gemma-4-31b',
+    )
+    expect(modelInput).toBeDefined()
   })
 })

@@ -20,7 +20,7 @@ that decides whether a request shape can run on the server.
 | `src/ts/model/modelGrid.ts`                                                                     | Model-grid normalization and filtering helpers for picker UI.                                                                                         |
 | `src/ts/model/keyedRequestCache.ts`                                                             | In-flight dedupe and bounded successful-result caching keyed by complete provider request context.                                                    |
 | `src/ts/model/providers/`                                                                       | Provider-specific static model lists.                                                                                                                 |
-| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `llmgateway.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers, including keyed OpenRouter/NanoGPT/LLM Gateway/Ollama Cloud request reuse.                                          |
+| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `llmgateway.ts`, `neuralwatt.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers, including keyed OpenRouter/NanoGPT/LLM Gateway/Neuralwatt/Ollama Cloud request reuse.                               |
 | `src/lib/UI/ModelList.svelte`, `ModelGrid.svelte`, `NanoGPT*`, `OpenrouterProviderList.svelte`  | Model-picker UI.                                                                                                                                      |
 
 `Database.modelProfiles` stores durable reusable profile records, and
@@ -49,9 +49,9 @@ allowlist; it does not import the full browser UI registry.
 ## Server-Owned Provider And Media Operations
 
 Dynamic NanoGPT account/model fetching lives in `src/ts/model/nanogpt.ts`.
-OpenRouter, NanoGPT, LLM Gateway, Ollama, and Horde helpers carry richer browser catalog
+OpenRouter, NanoGPT, LLM Gateway, Neuralwatt, Ollama, and Horde helpers carry richer browser catalog
 metadata for picker/filter UI than the server needs for dispatch. NanoGPT,
-OpenRouter, LLM Gateway, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish
+OpenRouter, LLM Gateway, Neuralwatt, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish
 Speech catalog/account calls use the fixed allowlist in
 `server/fastify/src/providerOperations.ts` through
 `src/ts/server/providerOperations.ts`. The same boundary owns Google token
@@ -130,6 +130,7 @@ First-class profile provider panels are intentionally limited to:
 
 - `openai`
 - `llmgateway`
+- `neuralwatt`
 - `anthropic`
 - `google`
 - `vertex`
@@ -164,6 +165,11 @@ options expose the documented `reasoning_effort` (`none` through `max`),
 `price`, `throughput`, or `latency`). Optional controls remain unset unless explicitly chosen
 so models that do not support a given option are not sent an incompatible
 default.
+Neuralwatt profiles likewise use a fixed managed API base URL and reusable
+API-key credential. Their picker loads Neuralwatt's public `/v1/models`
+catalog, including display names, provider attribution, context limits, and
+per-million-token prices, through the fixed provider-operation boundary;
+generation uses the OpenAI-compatible Chat Completions transport.
 
 ## Durable Profile Data Flow
 

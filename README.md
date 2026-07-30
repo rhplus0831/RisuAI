@@ -34,7 +34,7 @@ Not present in this fork:
 
 Inherited from upstream RisuAI and still applicable:
 
-- **Multiple API Supports**: Supports OpenAI, Claude, Gemini / Vertex AI, AWS Bedrock, OpenRouter, Mistral, Cohere, Ollama, DeepInfra, and other OpenAI-compatible endpoints... and More!
+- **Multiple API Supports**: Supports OpenAI, Claude, Gemini / Vertex AI, AWS Bedrock, OpenRouter, Neuralwatt, Mistral, Cohere, Ollama, DeepInfra, and other OpenAI-compatible endpoints... and More!
 - **Emotion Images**: Display the image of the current character, according to his/her expressions!
 - **Regex Script**: Modify model's output by regex, to make a custom GUI and others
 - **Powerful Translators**: Automatically translate the input/output, so you can roleplay without knowing model's language.

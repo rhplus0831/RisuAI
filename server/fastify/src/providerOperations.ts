@@ -20,6 +20,7 @@ type ProviderKind =
   | 'nanogpt'
   | 'openrouter'
   | 'llmgateway'
+  | 'neuralwatt'
   | 'ollama'
   | 'wavespeed'
   | 'google'
@@ -143,6 +144,15 @@ const OPERATION_SPECS: Record<ProviderOperation, ProviderOperationSpec> = {
     storedCredential: () => undefined,
     buildRequest: () => ({
       url: 'https://api.llmgateway.io/v1/models',
+      init: fixedJsonRequest('GET'),
+    }),
+  },
+  'neuralwatt.models': {
+    provider: 'neuralwatt',
+    credentialRequired: false,
+    storedCredential: () => undefined,
+    buildRequest: () => ({
+      url: 'https://api.neuralwatt.com/v1/models',
       init: fixedJsonRequest('GET'),
     }),
   },

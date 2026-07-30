@@ -7,6 +7,7 @@ export const PROVIDER_OPERATIONS = [
   'openrouter.models',
   'openrouter.providers',
   'llmgateway.models',
+  'neuralwatt.models',
   'ollama.cloud-models',
   'wavespeed.models',
   'google.models',

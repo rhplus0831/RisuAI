@@ -1940,6 +1940,43 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     expect(profile.modelInfo.flags).toContain(LLMFlags.hasImageInput)
   })
 
+  it('resolves first-class Neuralwatt profiles to the fixed managed endpoint', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        providerCredentials: [
+          { id: 'credential-neuralwatt', name: 'Neuralwatt', type: 'apiKey', apiKey: 'neuralwatt-key' },
+        ],
+        modelProfiles: [
+          {
+            id: 'neuralwatt-profile',
+            name: 'Neuralwatt Profile',
+            providerId: 'neuralwatt',
+            modelId: 'gemma-4-31b',
+            providerOptions: {
+              credentialId: 'credential-neuralwatt',
+              baseUrl: 'https://attacker.example/v1',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'neuralwatt-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(profile.status).toMatchObject({
+      bucket: 'ready',
+      providerId: 'neuralwatt',
+      providerIdSource: 'explicit',
+    })
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'openai' })
+    expect(profile.providerOptions).toMatchObject({
+      apiKey: 'neuralwatt-key',
+      baseUrl: 'https://api.neuralwatt.com/v1',
+      requestModel: 'gemma-4-31b',
+    })
+    expect(profile.modelInfo.flags).toContain(LLMFlags.hasImageInput)
+  })
+
   it('classifies inferred, compatibility, unsupported, Vertex, and Custom API profile statuses', () => {
     const inferredOpenAI = resolveModelProfile({
       database: db({

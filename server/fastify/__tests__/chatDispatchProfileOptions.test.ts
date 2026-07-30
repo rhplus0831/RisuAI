@@ -1647,6 +1647,37 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.routing).toBe('throughput')
   })
 
+  it('dispatches first-class Neuralwatt profiles through its fixed OpenAI-compatible endpoint', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        providerCredentials: [
+          { id: 'credential-neuralwatt', name: 'Neuralwatt', type: 'apiKey', apiKey: 'sk-neuralwatt' },
+        ],
+        modelProfiles: [
+          {
+            id: 'neuralwatt-profile',
+            name: 'Neuralwatt',
+            providerId: 'neuralwatt',
+            modelId: 'gemma-4-31b',
+            providerOptions: {
+              credentialId: 'credential-neuralwatt',
+              baseUrl: 'https://attacker.example/v1',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'neuralwatt-profile' } },
+      } as unknown as Partial<Database>),
+    })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, db({ openAIKey: 'flat-openai-key' } as Partial<Database>))
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://api.neuralwatt.com/v1/chat/completions')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-neuralwatt')
+    expect(captured[0].body.model).toBe('gemma-4-31b')
+  })
+
   it('uses first-class Debug Echo provider options as the echo payload', async () => {
     const profile = resolveModelProfile({
       database: db({

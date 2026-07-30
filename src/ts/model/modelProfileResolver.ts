@@ -66,6 +66,7 @@ export interface ModelProfileResolutionSource {
 export const FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS = [
   'openai',
   'llmgateway',
+  'neuralwatt',
   'anthropic',
   'google',
   'vertex',
@@ -282,6 +283,7 @@ const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
 const NANOGPT_SUBSCRIPTION_BASE_URL = 'https://nano-gpt.com/api/subscription/v1'
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 const LLM_GATEWAY_BASE_URL = 'https://api.llmgateway.io/v1'
+const NEURALWATT_BASE_URL = 'https://api.neuralwatt.com/v1'
 const FIRST_CLASS_MODEL_PROFILE_PROVIDER_ID_SET = new Set<string>(FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS)
 const OPENAI_MODEL_IDS = new Set(
   OpenAIModels.flatMap((model) => [model.id, model.internalID]).filter(
@@ -1215,6 +1217,7 @@ function resolveFirstClassModelInfo(
       })
     }
     case 'llmgateway':
+    case 'neuralwatt':
       return completeModel({
         id,
         name: id,
@@ -1343,6 +1346,12 @@ function resolveFirstClassProviderOptions(
         apiKey,
         baseUrl: LLM_GATEWAY_BASE_URL,
         llmGateway: durableProviderOptions?.llmGateway ? { ...durableProviderOptions.llmGateway } : undefined,
+      }
+    case 'neuralwatt':
+      return {
+        ...base,
+        apiKey,
+        baseUrl: NEURALWATT_BASE_URL,
       }
     case 'anthropic':
     case 'google':
@@ -1522,6 +1531,7 @@ function firstClassIncompleteReasons(
   switch (providerId) {
     case 'openai':
     case 'llmgateway':
+    case 'neuralwatt':
     case 'anthropic':
     case 'google':
       if (!nonBlankString(providerOptions.apiKey)) reasons.push('api-key-missing')
