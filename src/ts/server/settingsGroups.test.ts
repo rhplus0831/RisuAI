@@ -48,4 +48,10 @@ describe('settings group contracts', () => {
       expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain(key)
     }
   })
+
+  it('persists Mood Light membership without treating the session-only active flag as a setting', () => {
+    expect(SERVER_SETTINGS_GROUP_BY_KEY.moodLightMembership).toBe('sidebar')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.sidebar).toContain('moodLightMembership')
+    expect(SERVER_SETTINGS_GROUP_BY_KEY).not.toHaveProperty('moodLightMode')
+  })
 })

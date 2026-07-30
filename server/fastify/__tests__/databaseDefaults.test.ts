@@ -35,6 +35,7 @@ describe('database defaults', () => {
     expect(database.showSavingIcon).toBe(true)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
+    expect(database.moodLightMembership).toEqual({ characterIds: [], folders: [] })
     expect(database.loreBook).toEqual([
       expect.objectContaining({ id: 'default-global-lorebook', name: 'My First LoreBook', data: [] }),
     ])

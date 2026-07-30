@@ -16,6 +16,7 @@
 
   interface MobileCharacterRowsOptions {
     hideTrash?: boolean
+    isVisible?: (character: character, index: number) => boolean
     agoFormatter: Pick<Intl.RelativeTimeFormat, 'format'>
     unknownText: string
     now?: number
@@ -76,12 +77,18 @@
 
   export function formatMobileCharacterRows(
     characters: readonly character[],
-    { hideTrash = false, agoFormatter, unknownText, now = Date.now() }: MobileCharacterRowsOptions,
+    {
+      hideTrash = false,
+      isVisible = () => true,
+      agoFormatter,
+      unknownText,
+      now = Date.now(),
+    }: MobileCharacterRowsOptions,
   ): MobileCharacterRow[] {
     const rows = characters
       .map((c, i) => ({ c, i }))
-      .filter(({ c }) => {
-        return !hideTrash || !c.trashTime
+      .filter(({ c, i }) => {
+        return (!hideTrash || !c.trashTime) && isVisible(c, i)
       })
       .map(({ c, i }) => {
         const interaction = c.lastInteraction || 0
@@ -131,6 +138,8 @@
   import { characterRoutePath, navigate } from 'src/ts/router'
   import { language } from 'src/lang'
   import { onMount } from 'svelte'
+  import { moodLightMode } from 'src/ts/moodLightMode'
+  import { moodLightProtectedCharacterIds } from 'src/ts/moodLightMembership'
 
   interface Props {
     endGrid?: () => void
@@ -143,9 +152,11 @@
   let relativeTimeLocale = $derived(resolveMobileRelativeTimeLocale(getDatabase().language))
   let agoFormatter = $derived(new Intl.RelativeTimeFormat(relativeTimeLocale, { style: 'short' }))
   let normalizedSearch = $derived(normalizeMobileCharacterSearch(search ?? $MobileSearch))
+  let moodLightProtectedIds = $derived(moodLightProtectedCharacterIds(getDatabase()))
   let mobileCharacterRows = $derived(
     formatMobileCharacterRows(getDatabase().characters, {
       hideTrash,
+      isVisible: (character) => moodLightProtectedIds.has(character.chaId ?? '') === $moodLightMode,
       agoFormatter,
       unknownText: language.unknownInteractionTime,
       now: relativeTimeNow,

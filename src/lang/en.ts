@@ -1597,6 +1597,17 @@ export const languageEnglish = {
   antiClaudeOverload: 'Anti-Claude Overload',
   activeTabChange: 'Current tab is inactivated since other tab is active. To activate this tab, click OK',
   addCharacter: 'Add Character',
+  moodLightMode: 'Mood Light mode',
+  moodLightEnable: 'Enable Mood Light mode',
+  moodLightDisable: 'Disable Mood Light mode',
+  moodLightManage: 'Manage Mood Light bots and folders',
+  moodLightEnableConfirm:
+    'Enter Mood Light mode? Only protected bots and folders will be visible until you leave the mode.',
+  moodLightManagePrompt: 'Choose a bot or folder to move into or out of Mood Light mode.',
+  moodLightFolderOption: (name: string) => `Folder: ${name}`,
+  moodLightCharacterOption: (name: string, folderName?: string) =>
+    folderName ? `Bot: ${name} (${folderName})` : `Bot: ${name}`,
+  moodLightSelectionQueued: 'The Mood Light selection is saved on this device and queued. It will retry automatically.',
   importFromRealm: 'Choose from RisuRealm',
   importFromRealmDesc: 'Choose over 1000 characters in RisuRealm',
   random: 'Random',

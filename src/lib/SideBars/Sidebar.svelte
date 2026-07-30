@@ -22,6 +22,8 @@
     FolderIcon,
     FolderOpenIcon,
     HomeIcon,
+    Lightbulb,
+    SlidersHorizontal,
     WrenchIcon,
     User2Icon,
   } from '@lucide/svelte'
@@ -32,7 +34,7 @@
   import BaseRoundedButton from '../UI/BaseRoundedButton.svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
-  import { alertError, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
+  import { alertConfirm, alertError, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
   import SideChatList from './SideChatList.svelte'
   import { sideBarSize } from 'src/ts/gui/guisize'
   import DevTool from './DevTool.svelte'
@@ -66,6 +68,16 @@
     openSettingsRoute as openSettingsPath,
     setCharacterSidebarViewMode,
   } from 'src/ts/router'
+  import { moodLightMode, setMoodLightModeActive } from 'src/ts/moodLightMode'
+  import {
+    buildMoodLightManagementTargets,
+    filterCharacterOrderForMoodLight,
+    isMoodLightCharacterVisible,
+    moodLightMembershipFromDatabase,
+    moodLightProtectedCharacterIds,
+    toggleMoodLightManagementTarget,
+  } from 'src/ts/moodLightMembership'
+  import { persistServerBackedSettingsPatchWithSettlement } from 'src/ts/server/settingsBridge.svelte'
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -78,6 +90,7 @@
     status: 'pending' | 'queued' | 'failed'
   }
   let characterOrganizationActions = $state<Record<string, CharacterOrganizationActionState>>({})
+  let moodLightMembershipPending = $state(false)
   let characterOrganizationMutationPending = $derived(
     Object.values(characterOrganizationActions).some((action) => action.status === 'pending'),
   )
@@ -334,9 +347,68 @@
     navigate(characterRoutePath(character.chaId))
   }
 
+  function reconcileMoodLightSelection(): void {
+    const selectedIndex = $selectedCharID
+    if (selectedIndex < 0) return
+    const characterId = getDatabase().characters?.[selectedIndex]?.chaId
+    if (isMoodLightCharacterVisible(getDatabase(), characterId, $moodLightMode)) return
+    selectedCharID.set(-1)
+    navigate('/')
+  }
+
+  async function toggleMoodLightMode(): Promise<void> {
+    if ($moodLightMode) {
+      setMoodLightModeActive(false)
+      selectedCharID.set(-1)
+      navigate('/')
+      return
+    }
+    if (!(await alertConfirm(language.moodLightEnableConfirm))) return
+    setMoodLightModeActive(true)
+    selectedCharID.set(-1)
+    navigate('/')
+  }
+
+  async function manageMoodLightMembership(): Promise<void> {
+    if (!$moodLightMode || moodLightMembershipPending) return
+    const targets = buildMoodLightManagementTargets(getDatabase())
+    if (targets.length === 0) return
+    const protectedCharacters = moodLightProtectedCharacterIds(getDatabase())
+    const protectedFolders = new Set(moodLightMembershipFromDatabase(getDatabase()).folders.map((entry) => entry.id))
+    const options = targets.map((target) => {
+      const selected = target.kind === 'folder' ? protectedFolders.has(target.id) : protectedCharacters.has(target.id)
+      const label =
+        target.kind === 'folder'
+          ? language.moodLightFolderOption(target.name)
+          : language.moodLightCharacterOption(target.name, target.folderName)
+      return `${selected ? '✓' : '○'} ${label}`
+    })
+    const selection = parseAlertSelection(await alertSelect(options, language.moodLightManagePrompt), options.length)
+    if (selection === null) return
+    const target = targets[selection]
+    if (!target) return
+
+    moodLightMembershipPending = true
+    try {
+      const persistence = persistServerBackedSettingsPatchWithSettlement({
+        moodLightMembership: toggleMoodLightManagementTarget(getDatabase(), target),
+      })
+      reconcileMoodLightSelection()
+      const receipt = await persistence
+      reconcileMoodLightSelection()
+      if (receipt.status === 'queued') {
+        alertNormal(language.moodLightSelectionQueued)
+        void receipt.settlement.finally(reconcileMoodLightSelection)
+      }
+    } finally {
+      moodLightMembershipPending = false
+    }
+  }
+
   const getSidebarCharacterList = createSidebarCharacterListMemo()
+  let visibleCharacterOrder = $derived(filterCharacterOrderForMoodLight(getDatabase(), $moodLightMode))
   let charImages: SidebarCharacterListItem[] = $derived.by(
-    () => getSidebarCharacterList(getDatabase().characterOrder, getDatabase().characters).items,
+    () => getSidebarCharacterList(visibleCharacterOrder, getDatabase().characters).items,
   )
   let IconRounded = $derived(getDatabase().roundIcons)
   let openFolders: string[] = $state([])
@@ -353,6 +425,32 @@
   const inserter = (mainIndex: DragData, targetIndex: DragData) => {
     if (characterOrganizationMutationPending) return
     runCharacterOrderAction(() => moveCharacterOrderItemWithOutcome(mainIndex, targetIndex))
+  }
+
+  function characterOrderPosition(characterId: string | undefined): DragData | null {
+    if (!characterId) return null
+    for (const [index, entry] of getDatabase().characterOrder.entries()) {
+      if (typeof entry === 'string') {
+        if (entry === characterId) return { index }
+        continue
+      }
+      const childIndex = entry.data.indexOf(characterId)
+      if (childIndex >= 0) return { folder: entry.id, index: childIndex }
+    }
+    return null
+  }
+
+  function sidebarItemPosition(item: SidebarCharacterListItem): DragData | null {
+    if (item.type === 'normal') {
+      return characterOrderPosition(getDatabase().characters[item.index]?.chaId)
+    }
+    const index = getDatabase().characterOrder.findIndex((entry) => typeof entry !== 'string' && entry.id === item.id)
+    return index < 0 ? null : { index }
+  }
+
+  function positionAfter(position: DragData | null): DragData | null {
+    if (!position) return null
+    return position.folder ? { folder: position.folder, index: position.index + 1 } : { index: position.index + 1 }
   }
 
   function scrollToActiveCharacter() {
@@ -589,13 +687,14 @@
         }}
         ondrop={(e) => {
           const da = consumeDropZoneDrag(e)
-          if (da) {
-            inserter(da, { index: 0 })
+          const target = sidebarItemPosition(charImages[0]) ?? { index: 0 }
+          if (da && target) {
+            inserter(da, target)
           }
         }}
         ondragenter={preventCharacterDrag}>
       </div>
-      {#each charImages as char, ind}
+      {#each charImages as char}
         <div
           class="group relative flex items-center px-2"
           role="listitem"
@@ -610,12 +709,14 @@
               isCharacterOrganizationActionPending('order')
             : isCharacterOrganizationActionPending('order')}
           ondragstart={(e) => {
-            avatarDragStart({ index: ind }, e)
+            const position = sidebarItemPosition(char)
+            if (position) avatarDragStart(position, e)
           }}
           ondragend={sidebarCharacterDrag.clear}
           ondragover={avatarDragOver}
           ondrop={(e) => {
-            avatarDrop({ index: ind }, e)
+            const position = sidebarItemPosition(char)
+            if (position) avatarDrop(position, e)
           }}
           ondragenter={preventCharacterDrag}>
           <SidebarIndicator isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1} />
@@ -704,7 +805,7 @@
                 }}
                 ondragenter={preventCharacterDrag}>
               </div>
-              {#each char.folder as char2, ind}
+              {#each char.folder as char2}
                 <div
                   class="group relative flex items-center px-2 z-10"
                   role="listitem"
@@ -712,16 +813,14 @@
                   data-risu-character-organization-status={characterOrganizationActions.order?.status ?? 'idle'}
                   aria-busy={isCharacterOrganizationActionPending('order')}
                   ondragstart={(e) => {
-                    if (char.type === 'folder') {
-                      avatarDragStart({ index: ind, folder: char.id }, e)
-                    }
+                    const position = characterOrderPosition(getDatabase().characters[char2.index]?.chaId)
+                    if (position) avatarDragStart(position, e)
                   }}
                   ondragend={sidebarCharacterDrag.clear}
                   ondragover={avatarDragOver}
                   ondrop={(e) => {
-                    if (char.type === 'folder') {
-                      avatarDrop({ index: ind, folder: char.id }, e)
-                    }
+                    const position = characterOrderPosition(getDatabase().characters[char2.index]?.chaId)
+                    if (position) avatarDrop(position, e)
                   }}
                   ondragenter={preventCharacterDrag}>
                   <SidebarIndicator isActive={$selectedCharID === char2.index && sideBarMode !== 1} />
@@ -744,8 +843,9 @@
                   }}
                   ondrop={(e) => {
                     const da = consumeDropZoneDrag(e)
-                    if (da && char.type === 'folder') {
-                      inserter(da, { index: ind + 1, folder: char.id })
+                    const target = positionAfter(characterOrderPosition(getDatabase().characters[char2.index]?.chaId))
+                    if (da && target) {
+                      inserter(da, target)
                     }
                   }}
                   ondragenter={preventCharacterDrag}>
@@ -763,8 +863,9 @@
           }}
           ondrop={(e) => {
             const da = consumeDropZoneDrag(e)
-            if (da) {
-              inserter(da, { index: ind + 1 })
+            const target = positionAfter(sidebarItemPosition(char))
+            if (da && target) {
+              inserter(da, target)
             }
           }}
           ondragenter={preventCharacterDrag}>
@@ -785,6 +886,24 @@
               stroke-width="2"
               d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg
           ></BaseRoundedButton>
+        <BaseRoundedButton
+          ariaLabel={$moodLightMode ? language.moodLightDisable : language.moodLightEnable}
+          isPressed={$moodLightMode}
+          onClick={() => {
+            void toggleMoodLightMode()
+          }}>
+          <Lightbulb size={22} />
+        </BaseRoundedButton>
+        {#if $moodLightMode}
+          <BaseRoundedButton
+            ariaLabel={language.moodLightManage}
+            isDisabled={moodLightMembershipPending}
+            onClick={() => {
+              void manageMoodLightMembership()
+            }}>
+            <SlidersHorizontal size={22} />
+          </BaseRoundedButton>
+        {/if}
       </div>
     </div>
     {#if getDatabase().hamburgerButtonBottom}

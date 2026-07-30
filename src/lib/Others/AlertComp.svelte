@@ -40,8 +40,11 @@
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { isTrustedLoginMessageOrigin } from 'src/ts/gui/loginMessageOrigin'
+  import { moodLightMode } from 'src/ts/moodLightMode'
+  import { moodLightProtectedCharacterIds } from 'src/ts/moodLightMembership'
 
   let showDetails = $state(false)
+  let moodLightProtectedIds = $derived(moodLightProtectedCharacterIds(getDatabase()))
   let translatedStackTrace = $state('')
   let stackTraceTranslationFailed = $state(false)
   let isTranslating = $state(false)
@@ -610,8 +613,25 @@
         {@const selectCharacterOwner = $alertStore.dialogOwner}
         <div class="flex w-full items-start flex-wrap gap-2 justify-start">
           {#each getDatabase().characters as char}
-            {#if char.image}
-              {#await getCharImage(char.image, 'css')}
+            {#if moodLightProtectedIds.has(char.chaId ?? '') === $moodLightMode}
+              {#if char.image}
+                {#await getCharImage(char.image, 'css')}
+                  <BarIcon
+                    ariaLabel={char.name || language.character}
+                    onClick={() => {
+                      resolveAlertWorkflow(selectCharacterOwner, char.chaId)
+                    }}>
+                    <User />
+                  </BarIcon>
+                {:then im}
+                  <BarIcon
+                    ariaLabel={char.name || language.character}
+                    onClick={() => {
+                      resolveAlertWorkflow(selectCharacterOwner, char.chaId)
+                    }}
+                    additionalStyle={im} />
+                {/await}
+              {:else}
                 <BarIcon
                   ariaLabel={char.name || language.character}
                   onClick={() => {
@@ -619,22 +639,7 @@
                   }}>
                   <User />
                 </BarIcon>
-              {:then im}
-                <BarIcon
-                  ariaLabel={char.name || language.character}
-                  onClick={() => {
-                    resolveAlertWorkflow(selectCharacterOwner, char.chaId)
-                  }}
-                  additionalStyle={im} />
-              {/await}
-            {:else}
-              <BarIcon
-                ariaLabel={char.name || language.character}
-                onClick={() => {
-                  resolveAlertWorkflow(selectCharacterOwner, char.chaId)
-                }}>
-                <User />
-              </BarIcon>
+              {/if}
             {/if}
           {/each}
         </div>

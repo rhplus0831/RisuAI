@@ -2,6 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sidebarKeyboardMocks = vi.hoisted(() => ({
+  alertConfirm: vi.fn(),
   alertInput: vi.fn(),
   alertSelect: vi.fn(),
   navigate: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('src/ts/alert', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/alert')>()
   return {
     ...actual,
+    alertConfirm: sidebarKeyboardMocks.alertConfirm,
     alertInput: sidebarKeyboardMocks.alertInput,
     alertSelect: sidebarKeyboardMocks.alertSelect,
   }
@@ -68,6 +70,7 @@ import Sidebar from './Sidebar.svelte'
 import { language } from 'src/lang'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { botMakerMode, DynamicGUI, PlaygroundStore, selectedCharID, settingsOpen } from 'src/ts/stores.svelte'
+import { setMoodLightModeActive } from 'src/ts/moodLightMode'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -157,6 +160,7 @@ beforeEach(() => {
   PlaygroundStore.set(0)
   DynamicGUI.set(false)
   botMakerMode.set(false)
+  setMoodLightModeActive(false)
   seedSidebarDatabase()
 })
 
@@ -168,10 +172,56 @@ afterEach(() => {
   target.remove()
   document.body.innerHTML = ''
   selectedCharID.set(-1)
+  setMoodLightModeActive(false)
   setDatabaseLite({} as never)
 })
 
 describe('Sidebar character keyboard activation', () => {
+  it('confirms entry, exits immediately, and swaps the privacy partition', async () => {
+    setDatabaseLite({
+      characterOrder: ['char-private', 'char-normal'],
+      characters: [
+        { chaId: 'char-private', name: 'Private', image: '', chatPage: 0, chats: [] },
+        { chaId: 'char-normal', name: 'Normal', image: '', chatPage: 0, chats: [] },
+      ],
+      moodLightMembership: { characterIds: ['char-private'], folders: [] },
+      hamburgerButtonBottom: false,
+      menuSideBar: false,
+      roundIcons: false,
+    } as never)
+    component = mount(Sidebar, { target })
+    await tick()
+
+    const addButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.addCharacter}"]`)
+    const moodLightButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightEnable}"]`)
+    expect(addButton).toBeTruthy()
+    expect(moodLightButton).toBeTruthy()
+    expect(addButton!.compareDocumentPosition(moodLightButton!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(target.querySelector('[data-char-id="char-private"]')).toBeNull()
+    expect(target.querySelector('[data-char-id="char-normal"]')).toBeTruthy()
+
+    sidebarKeyboardMocks.alertConfirm.mockResolvedValueOnce(false)
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightEnable}"]`)!.click()
+    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertConfirm).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() =>
+      expect(target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightEnable}"]`)).toBeTruthy(),
+    )
+    expect(target.querySelector('[data-char-id="char-private"]')).toBeNull()
+
+    sidebarKeyboardMocks.alertConfirm.mockResolvedValueOnce(true)
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightEnable}"]`)!.click()
+    await vi.waitFor(() =>
+      expect(target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightDisable}"]`)).toBeTruthy(),
+    )
+    await vi.waitFor(() => expect(target.querySelector('[data-char-id="char-private"]')).toBeTruthy())
+    expect(target.querySelector('[data-char-id="char-normal"]')).toBeNull()
+
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.moodLightDisable}"]`)!.click()
+    await vi.waitFor(() => expect(target.querySelector('[data-char-id="char-normal"]')).toBeTruthy())
+    expect(target.querySelector('[data-char-id="char-private"]')).toBeNull()
+    expect(sidebarKeyboardMocks.alertConfirm).toHaveBeenCalledTimes(2)
+  })
+
   it('names and exposes the state of the developer tools tab', async () => {
     seedSidebarDatabase({ enableDevTools: true })
     selectedCharID.set(0)

@@ -6,6 +6,8 @@ import { openPlaygroundChat, PLAYGROUND_CHARACTER_ID } from './playground'
 import { changeUserPersonaWithOutcome } from './persona'
 import { activeGenerationTarget, doingChat } from './process/index.svelte'
 import { findCharacterIndexbyId } from './characterState'
+import { isMoodLightModeActive } from './moodLightMode'
+import { isMoodLightCharacterVisible } from './moodLightMembership'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import {
   CharEmotion,
@@ -642,6 +644,14 @@ async function openCharacterRoute(
   chatId: string | undefined,
   isFreshRouteApplication: () => boolean,
 ): Promise<void> {
+  if (!isMoodLightCharacterVisible(getDatabase(), characterId, isMoodLightModeActive())) {
+    selectedCharID.set(-1)
+    settingsOpen.set(false)
+    PlaygroundStore.set(0)
+    OpenRealmStore.set(false)
+    commitPath('/', { replace: true, stateDriven: true })
+    return
+  }
   const isFreshCharacterRoute = () =>
     isFreshRouteApplication() && (!get(doingChat) || activeGenerationOwnerMatches(characterId, chatId))
   const index = findCharacterIndexbyId(characterId)
@@ -723,6 +733,8 @@ function activeGenerationOwnerPathForCharacterRoute(route: AppRoute): string | n
 
 function blocksActiveCharacterGeneration(nextRoute: AppRoute): boolean {
   if (nextRoute.kind !== 'character' || !get(doingChat)) return false
+  const owner = resolvedActiveGenerationOwner()
+  if (owner && !isMoodLightCharacterVisible(getDatabase(), owner.characterId, isMoodLightModeActive())) return false
   return !activeGenerationOwnerMatches(nextRoute.chaId, nextRoute.chatId)
 }
 
@@ -742,7 +754,10 @@ function restoreActiveGenerationOwnerRoute(): { characterId: string; chatId: str
 
 function restoreSelectedCharacterRoute(): void {
   const selectedCharacter = getDatabase().characters?.[get(selectedCharID)]
-  if (!selectedCharacter?.chaId) {
+  if (
+    !selectedCharacter?.chaId ||
+    !isMoodLightCharacterVisible(getDatabase(), selectedCharacter.chaId, isMoodLightModeActive())
+  ) {
     commitPath('/', { replace: true, stateDriven: true })
     return
   }

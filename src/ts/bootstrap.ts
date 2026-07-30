@@ -8,6 +8,8 @@ import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { language } from 'src/lang'
 import { startObserveDom } from './observer.svelte'
 import { updateGuisize } from './gui/guisize'
+import { isMoodLightModeActive } from './moodLightMode'
+import { isMoodLightCharacterVisible } from './moodLightMembership'
 import { moduleUpdate } from './process/modules'
 import { registerModelDynamic } from './model/modellist'
 import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstrapRuntime } from './server/bootstrap'
@@ -205,7 +207,9 @@ function initialSelectedCharFromDatabase(db: Database): number {
   const currentChar = (db as { currentChar?: unknown }).currentChar
   const characterCount = Array.isArray(db.characters) ? db.characters.length : 0
   if (Number.isInteger(currentChar) && (currentChar as number) >= 0 && (currentChar as number) < characterCount) {
-    return currentChar as number
+    const index = currentChar as number
+    const characterId = db.characters[index]?.chaId
+    if (isMoodLightCharacterVisible(db, characterId, isMoodLightModeActive())) return index
   }
   return -1
 }

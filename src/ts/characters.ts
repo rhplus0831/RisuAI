@@ -63,6 +63,8 @@ import {
 import { rekeyClonedChat } from './chatFork'
 import { createBlankChar } from './characterDefaults'
 import { getCharImage } from './characterImage'
+import { isMoodLightModeActive } from './moodLightMode'
+import { isMoodLightCharacterVisible } from './moodLightMembership'
 
 export { createBlankChar } from './characterDefaults'
 export { getCharImage } from './characterImage'
@@ -156,7 +158,8 @@ export function createNewCharacter(
 ) {
   const previous = currentCharacterStateSnapshot()
   const character = characterFormatUpdate(createBlankChar())
-  const select = options.select ?? false
+  const select =
+    (options.select ?? false) && isMoodLightCharacterVisible(getDatabase(), character.chaId, isMoodLightModeActive())
   const lastInteraction = Date.now()
   let index = -1
   withTrustedResourceWrite(() => {
@@ -1332,6 +1335,8 @@ function isFreshCharacterImportNavigation(
 
 export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
   const reseter = arg.reseter ?? (() => {})
+  const requestedCharacterId = getDatabase().characters?.[index]?.chaId
+  if (!isMoodLightCharacterVisible(getDatabase(), requestedCharacterId, isMoodLightModeActive())) return
   if (get(doingChat) && !characterSelectionMatchesActiveGeneration(index) && !arg.allowDuringGeneration?.()) {
     return
   }
@@ -1355,6 +1360,7 @@ export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
   if (!isFreshSelectionAttempt()) return
   const liveIndex = findLiveCharacterIndex(characterId)
   if (liveIndex < 0 || isServerCharacterShell(getDatabase().characters?.[liveIndex])) return
+  if (!isMoodLightCharacterVisible(getDatabase(), characterId, isMoodLightModeActive())) return
   const previous = currentCharacterSelectionSnapshot(characterId)
   const lastInteraction = Date.now()
   withTrustedResourceWrite(() => {

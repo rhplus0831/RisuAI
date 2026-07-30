@@ -1529,6 +1529,16 @@ describe('Phase 9-2a scalar settings groups', () => {
               label: 'Loadouts',
             },
           ],
+          moodLightMembership: {
+            characterIds: ['char-private'],
+            folders: [
+              {
+                id: 'folder-private',
+                characterIds: ['char-folder-private'],
+                excludedCharacterIds: [],
+              },
+            ],
+          },
           hotkeys: [{ key: 'a', ctrl: true, action: 'home' }],
         },
       },
@@ -1572,6 +1582,16 @@ describe('Phase 9-2a scalar settings groups', () => {
           label: 'Loadouts',
         },
       ],
+      moodLightMembership: {
+        characterIds: ['char-private'],
+        folders: [
+          {
+            id: 'folder-private',
+            characterIds: ['char-folder-private'],
+            excludedCharacterIds: [],
+          },
+        ],
+      },
       hotkeys: [{ key: 'a', ctrl: true, action: 'home' }],
     })
   })

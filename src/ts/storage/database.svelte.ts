@@ -115,6 +115,7 @@ import { isServerChatMessagePlaceholder, SERVER_UNLOADED_CHAT_MESSAGE_MARKER } f
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { optimisticallyRehomeGenerationReferences } from '../generationReferenceCascade'
+import { normalizeMoodLightMembership } from '../moodLightMembership'
 import {
   normalizeChatGenerationTogglePresets,
   type ChatGenerationTogglePreset,
@@ -3347,6 +3348,7 @@ export function setDatabase(data: Database) {
   data.useMonacoEditorOnDesktop ??= true
   data.useMonacoEditorOnMobile ??= true
   data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
+  data.moodLightMembership = normalizeMoodLightMembership(data.moodLightMembership)
   changeLanguage(data.language)
   setDatabaseLite(data)
 }
@@ -3357,6 +3359,7 @@ export function applyServerResourceDatabase(data: Database, revision?: number) {
     data.autoTranslateNotificationDeferCapSeconds ??= 180
     data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
     data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
+    data.moodLightMembership = normalizeMoodLightMembership(data.moodLightMembership)
     normalizeAgentPresetSettings(data)
     changeLanguage(data.language)
     setDatabaseLite(data, revision)
@@ -3386,7 +3389,9 @@ export function mergeServerResourceFields(fields: Partial<Database>) {
           ? normalizeCustomSidebarItems(value)
           : key === 'chatGenerationTogglePresets'
             ? normalizeChatGenerationTogglePresets(value)
-            : value
+            : key === 'moodLightMembership'
+              ? normalizeMoodLightMembership(value)
+              : value
     }
     if (typeof fields.language === 'string') {
       changeLanguage(fields.language)
@@ -3850,6 +3855,7 @@ export interface Database {
   textScreenRounded?: boolean
   textScreenBorder?: string
   characterOrder: (string | folder)[]
+  moodLightMembership?: import('../moodLightMembership').MoodLightMembership
   hordeConfig: hordeConfig
   novelai: {
     token: string

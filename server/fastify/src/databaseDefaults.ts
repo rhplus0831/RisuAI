@@ -502,6 +502,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'useMonacoEditorOnDesktop', true)
   setDefault(database, 'useMonacoEditorOnMobile', true)
   setDefault(database, 'customSidebarItems', [])
+  setDefault(database, 'moodLightMembership', { characterIds: [], folders: [] })
   normalizeFormatVersion(database)
 
   return database
