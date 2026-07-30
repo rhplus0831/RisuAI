@@ -2,6 +2,7 @@
   import 'src/ts/stores.svelte'
   import { ArrowLeft, PlusIcon, RefreshCcwIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import PromptDataItem from 'src/lib/UI/PromptDataItem.svelte'
   import {
     createPromptTokenizeDebouncer,
@@ -1457,6 +1458,7 @@
             readOnly={promptTemplateUsesSelectedFallback}
             onRemove={() => {
               if (promptTemplateStructuralMutationPending) return
+              if (!confirmSettingsItemRemoval()) return
               const removed = promptTemplateDraft.value[originalIndex]
               if (!removed) return
               const sequence = beginPromptTemplateStructuralMutation()
@@ -1629,6 +1631,7 @@
         aria-label={`${language.remove}: ${fallbackModelLabel(arg)}`}
         class="bg-red-500 text-white p-2 rounded-md"
         onclick={() => {
+          if (!confirmSettingsItemRemoval()) return
           const value = fallbackModelsDraft.value[arg] ?? []
           fallbackModelsDraft.value[arg] = value.slice(0, -1)
         }}><TrashIcon /></button>

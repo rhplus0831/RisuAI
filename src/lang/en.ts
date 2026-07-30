@@ -1174,6 +1174,7 @@ export const languageEnglish = {
   altGreet: 'Alternative First Messages',
   scripts: 'Scripts',
   settings: 'Settings',
+  settingsItemRemovalConfirm: 'Are you sure you want to remove this item?',
   settingsGroupChatSetup: 'Chat setup',
   settingsGroupCapabilities: 'Tools & Extensions',
   settingsGroupInterface: 'Interface',

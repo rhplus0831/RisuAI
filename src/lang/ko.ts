@@ -2009,6 +2009,7 @@ export const languageKorean = {
   extractPromptOnly: '프롬프트',
   loraScaleLabel: (index: number) => `LoRA ${index} 배율`,
   showGlobalLorebookAndRegex: '이전 방식의 전역 로어북 및 정규식 메뉴 표시',
+  settingsItemRemovalConfirm: '이 항목을 제거하시겠습니까?',
   settingsGroupChatSetup: '채팅 설정',
   settingsGroupCapabilities: '도구 및 확장 기능',
   settingsGroupInterface: '인터페이스',

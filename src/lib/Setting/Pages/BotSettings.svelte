@@ -45,6 +45,7 @@
   import SettingRenderer from '../SettingRenderer.svelte'
   import { allBasicParameterItems } from 'src/ts/setting/botSettingsParamsData'
   import { reconcileLegacyGuiSubmenu } from 'src/ts/setting/legacyGuiLayout'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import SeparateParametersSection from './SeparateParametersSection.svelte'
   import ModelRoleList from './Model/ModelRoleList.svelte'
   import ModelSettingsShell from './Model/ModelSettingsShell.svelte'
@@ -1888,6 +1889,7 @@
                   aria-label={`${language.remove}: ${language.customStopWords} ${i + 1}`}
                   class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                   onclick={() => {
+                    if (!confirmSettingsItemRemoval()) return
                     const localStopStrings = activeLocalStopStringsDraft.value ?? []
                     localStopStrings.splice(i, 1)
                     activeLocalStopStringsDraft.value = localStopStrings
@@ -2144,6 +2146,7 @@
                     aria-label={`${language.remove}: Bias ${i + 1}`}
                     class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                     onclick={() => {
+                      if (!confirmSettingsItemRemoval()) return
                       biasDraft.value = biasDraft.value.filter((_, index) => index !== i)
                     }}><TrashIcon /></button>
                 </td>
@@ -2209,6 +2212,7 @@
                     aria-label={`${language.remove}: ${language.additionalParams} ${i + 1}`}
                     class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                     onclick={() => {
+                      if (!confirmSettingsItemRemoval()) return
                       activeAdditionalParamsDraft.value = activeAdditionalParamsDraft.value.filter(
                         (_, index) => index !== i,
                       )

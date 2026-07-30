@@ -10,6 +10,7 @@
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import ChatFormatSettings from './ChatFormatSettings.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   const reverseProxyOobaArgsDraft = createServerBackedSettingDraft<Record<string, any>>('reverseProxyOobaArgs', {})
   const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>('localStopStrings', null)
 
@@ -281,6 +282,7 @@
                 aria-label={`${language.remove}: ${language.customStopWords} ${i + 1}`}
                 class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                 onclick={() => {
+                  if (!confirmSettingsItemRemoval()) return
                   const localStopStrings = localStopStringsDraft.value ?? []
                   localStopStrings.splice(i, 1)
                   localStopStringsDraft.value = localStopStrings

@@ -53,6 +53,7 @@
     type NaiVibeImportOperation,
   } from 'src/ts/server/naiVibeImport'
   import { reconcileLegacyGuiSubmenu } from 'src/ts/setting/legacyGuiLayout'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -822,6 +823,7 @@
           {#if NAIImgConfigDraft.value.vibe_data}
             <button
               onclick={() => {
+                if (!confirmSettingsItemRemoval()) return
                 NAIImgConfigDraft.value.vibe_data = undefined
                 NAIImgConfigDraft.value.vibe_model_selection = undefined
               }}
@@ -913,6 +915,7 @@
           {#if NAIImgConfigDraft.value.character_image && NAIImgConfigDraft.value.character_image !== ''}
             <button
               onclick={() => {
+                if (!confirmSettingsItemRemoval()) return
                 NAIImgConfigDraft.value.character_image = undefined
                 NAIImgConfigDraft.value.character_base64image = undefined
               }}
@@ -975,6 +978,7 @@
           {#if NAIImgConfigDraft.value.image && NAIImgConfigDraft.value.image !== ''}
             <button
               onclick={() => {
+                if (!confirmSettingsItemRemoval()) return
                 NAIImgConfigDraft.value.image = undefined
                 NAIImgConfigDraft.value.base64image = undefined
               }}
@@ -1298,6 +1302,7 @@
             {#if wavespeedImageDraft.value.reference_image && wavespeedImageDraft.value.reference_image !== ''}
               <button
                 onclick={() => {
+                  if (!confirmSettingsItemRemoval()) return
                   wavespeedImageDraft.value.reference_image = undefined
                   wavespeedImageDraft.value.reference_base64image = undefined
                 }}

@@ -132,6 +132,7 @@
   import Help from 'src/lib/Others/Help.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import { getFileSrc, saveAsset, downloadFile } from 'src/ts/globalApi.svelte'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import { alertNormal, alertError } from 'src/ts/alert'
   import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   import { selectMultipleFile } from 'src/ts/filePicker'
@@ -739,6 +740,7 @@
                   aria-label={`${language.remove}: ${assets[0]}`}
                   class="hover:text-green-500"
                   onclick={() => {
+                    if (!confirmSettingsItemRemoval()) return
                     let additionalAssets = currentModule.assets
                     additionalAssets.splice(i, 1)
                     currentModule.assets = additionalAssets

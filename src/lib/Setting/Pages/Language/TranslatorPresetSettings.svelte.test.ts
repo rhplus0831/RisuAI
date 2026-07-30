@@ -523,6 +523,10 @@ async function failDeferredCommand(
 
 beforeEach(() => {
   vi.useFakeTimers()
+  vi.stubGlobal(
+    'confirm',
+    vi.fn(() => true),
+  )
   commandSpies.failNextCreate = false
   commandSpies.failNextDelete = false
   commandSpies.failNextSelect = false
@@ -592,6 +596,7 @@ afterEach(async () => {
   target.remove()
   document.body.innerHTML = ''
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 describe('TranslatorPresetSettings server-backed edits', () => {

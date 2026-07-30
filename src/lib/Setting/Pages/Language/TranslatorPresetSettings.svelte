@@ -20,6 +20,7 @@
   import { downloadFile } from 'src/ts/globalApi.svelte'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import {
     canUseServerCommands,
     createTranslatorPresetCommand,
@@ -2142,6 +2143,7 @@
               disabled={steps.length <= 1}
               aria-label={language.translatorPipeline.removeStep}
               onclick={() => {
+                if (!confirmSettingsItemRemoval()) return
                 updateTranslatorPresetSteps(preset, (currentSteps) =>
                   currentSteps.filter((_candidate, index) => index !== stepIndex),
                 )

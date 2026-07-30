@@ -4,6 +4,7 @@
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import type { ModelProfileRecord, ModelProfileRecordFallbackRef } from 'src/ts/model/modelProfileRecords'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
 
   interface Props {
     profileId?: string
@@ -68,6 +69,7 @@
   }
 
   function removeFallback(index: number): void {
+    if (!confirmSettingsItemRemoval()) return
     value = value.filter((_, itemIndex) => itemIndex !== index)
   }
 

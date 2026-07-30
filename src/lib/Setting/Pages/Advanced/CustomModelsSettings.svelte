@@ -12,6 +12,7 @@
   import { LLMFlags, type LLMFormat, type LLMTokenizer } from 'src/ts/model/types'
   import { v4 } from 'uuid'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
 
   type CustomModel = Database['customModels'][number]
 
@@ -130,6 +131,7 @@
             styled="outlined"
             onclick={(e) => {
               e.stopPropagation()
+              if (!confirmSettingsItemRemoval()) return
               updateCustomModels((models) => {
                 models.splice(index, 1)
               })

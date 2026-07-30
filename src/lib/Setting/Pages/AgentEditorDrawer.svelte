@@ -10,6 +10,7 @@
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { parseChatMLRows } from 'src/ts/parser/chatMLCore'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import {
     AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MAX,
     AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MIN,
@@ -173,6 +174,7 @@
   }
 
   function removeToggle(index: number): void {
+    if (!confirmSettingsItemRemoval()) return
     toggles.splice(index, 1)
   }
 
@@ -181,6 +183,7 @@
   }
 
   function removeLorebookInput(index: number): void {
+    if (!confirmSettingsItemRemoval()) return
     lorebookInputs.splice(index, 1)
   }
 

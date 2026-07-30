@@ -7,6 +7,7 @@
   import { PlusIcon, TrashIcon } from '@lucide/svelte'
   import { getOpenRouterProviders } from 'src/ts/model/openrouter'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
 
   type OpenrouterProviderSettings = {
     order: string[]
@@ -38,6 +39,7 @@
   }
 
   function removeProviderEntry(key: keyof OpenrouterProviderSettings): void {
+    if (!confirmSettingsItemRemoval()) return
     openrouterProviderDraft.value = {
       ...openrouterProviderDraft.value,
       [key]: (openrouterProviderDraft.value[key] ?? []).slice(0, -1),

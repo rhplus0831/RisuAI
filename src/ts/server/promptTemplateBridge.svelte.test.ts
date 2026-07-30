@@ -538,6 +538,10 @@ async function applyPromptSettingsProjection(apply: () => void): Promise<void> {
 
 beforeEach(() => {
   vi.useFakeTimers()
+  vi.stubGlobal(
+    'confirm',
+    vi.fn(() => true),
+  )
   resourceGuardState.epoch = 0
   commandState.revision = 1
   commandState.commands.length = 0
@@ -577,6 +581,7 @@ afterEach(() => {
   resetPendingPromptTemplateStructuralMutationsForTests()
   durableState.settlementListeners.clear()
   vi.useRealTimers()
+  vi.unstubAllGlobals()
   resourceDatabase.current = {}
 })
 

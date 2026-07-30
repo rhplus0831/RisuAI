@@ -27,6 +27,7 @@ type MountedComponent = Parameters<typeof unmount>[0]
 
 let component: MountedComponent | undefined
 let target: HTMLElement
+const confirmRemoval = vi.fn()
 
 function buttonByText(text: string): HTMLButtonElement {
   const button = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
@@ -43,6 +44,8 @@ function buttonByLabel(label: string): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  confirmRemoval.mockReset().mockReturnValue(false)
+  vi.stubGlobal('confirm', confirmRemoval)
   customModelsDraft.value = [
     {
       id: 'xcustom:::all-flags',
@@ -65,6 +68,7 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
+  vi.unstubAllGlobals()
   target.remove()
 })
 
@@ -117,5 +121,27 @@ describe('CustomModelsSettings flags', () => {
     expect(buttonByText(`${language.remove}: All Flags`)).toBeTruthy()
     expect(buttonByLabel(`${language.add}: ${language.customModels}`).type).toBe('button')
     expect(target.querySelector('button button')).toBeNull()
+  })
+
+  it('keeps a model until its removal is confirmed', async () => {
+    component = mount(CustomModelsSettings, {
+      target,
+      props: { noAccordion: true },
+    })
+
+    const removeButton = buttonByText(`${language.remove}: All Flags`)
+    removeButton.click()
+    await tick()
+
+    expect(confirmRemoval).toHaveBeenCalledWith(language.settingsItemRemovalConfirm)
+    expect(customModelsDraft.value).toHaveLength(1)
+    expect(target.textContent).toContain('All Flags')
+
+    confirmRemoval.mockReturnValueOnce(true)
+    removeButton.click()
+    await tick()
+
+    expect(customModelsDraft.value).toHaveLength(0)
+    expect(target.textContent).not.toContain('All Flags')
   })
 })

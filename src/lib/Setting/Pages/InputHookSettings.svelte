@@ -8,6 +8,7 @@
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import type { InputHook } from 'src/ts/storage/database.svelte'
   import { createDefaultInputHooks } from 'src/ts/storage/defaultPrompts'
 
@@ -39,6 +40,7 @@
   }
 
   function deleteHook(index: number): void {
+    if (!confirmSettingsItemRemoval()) return
     updateHooks((hooks) => {
       hooks.splice(index, 1)
     })
