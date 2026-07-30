@@ -106,8 +106,8 @@ Rate limits are opt-in per route. Current presets are setup `5/min`, login
 `10/min`, auth crypto `60/min`, provider and embedding operations `60/min`,
 OpenAI transcription `10/min`, image generation `10/min`, MCP OAuth refresh
 `30/min`, TTS synthesis `60/min`, proxy fetch `120/min`, proxy stream-job create
-`30/min`, imports `10/min`, asset upload and existence checks `120/min`, bulk
-asset upload `30/min`, and generation submit `60/min`.
+`30/min`, imports `10/min`, asset upload `120/min`, asset existence checks and
+bulk asset uploads `180/min`, and generation submit `60/min`.
 
 ## Route Families
 

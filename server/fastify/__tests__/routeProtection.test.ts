@@ -7,7 +7,12 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { findProtocolRouteDecision, isProtocolMutatingMethod } from '../src/routeManifest.js'
-import { authLoginRateLimit, generationSubmitRateLimit } from '../src/routeRateLimits.js'
+import {
+  assetBulkUploadRateLimit,
+  assetExistsRateLimit,
+  authLoginRateLimit,
+  generationSubmitRateLimit,
+} from '../src/routeRateLimits.js'
 
 // Table-wide protection invariants for the Fastify port.
 //
@@ -366,6 +371,15 @@ describe('active-writer header validation', () => {
 })
 
 describe('explicit route rate limits', () => {
+  it('allows the legacy CharX request burst represented by the high-asset fixture', () => {
+    const fixtureAssetCount = 4_361
+    const legacyAssetBatchSize = 32
+    const requiredBurst = Math.ceil(fixtureAssetCount / legacyAssetBatchSize)
+
+    expect(Number(assetExistsRateLimit.max)).toBeGreaterThanOrEqual(requiredBurst)
+    expect(Number(assetBulkUploadRateLimit.max)).toBeGreaterThanOrEqual(requiredBurst)
+  })
+
   it('limits auth login attempts with an explicit route limit', async () => {
     const setup = await harness.app.inject({
       method: 'POST',

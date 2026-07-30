@@ -1,4 +1,11 @@
-import { AppendableBuffer, saveAsset, saveAssets, type LocalWriter, type VirtualWriter } from '../globalApi.svelte'
+import {
+  AppendableBuffer,
+  saveAsset,
+  saveAssets,
+  SERVER_ASSET_EXISTS_MAX_IDS,
+  type LocalWriter,
+  type VirtualWriter,
+} from '../globalApi.svelte'
 import * as fflate from 'fflate'
 import { asBuffer } from '../util'
 import { alertStore } from '../alert'
@@ -10,7 +17,6 @@ const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024 // 50MB
 const CHUNK_SIZE_BYTES = 1024 * 1024 // 1MB
 
 // Queue management constants
-const MAX_BULK_ASSET_SAVE_ITEMS = 32
 const MAX_BULK_ASSET_SAVE_BYTES = 32 * 1024 * 1024
 
 // HTTP status code ranges
@@ -442,7 +448,7 @@ export class CharXImporter {
     this.pendingAssetBatch.push(asset)
     this.pendingAssetBatchBytes += asset.data.byteLength
     if (
-      this.pendingAssetBatch.length >= MAX_BULK_ASSET_SAVE_ITEMS ||
+      this.pendingAssetBatch.length >= SERVER_ASSET_EXISTS_MAX_IDS ||
       this.pendingAssetBatchBytes >= MAX_BULK_ASSET_SAVE_BYTES
     ) {
       void this.#flushAssetBatch()

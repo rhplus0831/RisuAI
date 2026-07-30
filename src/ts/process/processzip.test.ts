@@ -77,6 +77,7 @@ vi.mock('../globalApi.svelte', () => {
 
   return {
     AppendableBuffer: TestAppendableBuffer,
+    SERVER_ASSET_EXISTS_MAX_IDS: 1024,
     saveAsset: globalApiState.saveAsset,
     saveAssets: globalApiState.saveAssets,
   }
@@ -324,6 +325,20 @@ describe('CharXImporter stream caps', () => {
       'assets/main.png': 'saved-0-4-1',
       'assets/voice.bin': 'saved-1-3-9',
     })
+  })
+
+  it('batches high-asset-count CharX imports at the server existence-probe capacity', async () => {
+    const assetCount = 4_361
+    const entries = Object.fromEntries(
+      Array.from({ length: assetCount }, (_, index) => [`assets/${index}.png`, new Uint8Array([index & 0xff])]),
+    )
+    const importer = new CharXImporter()
+
+    await importer.parse(fflate.zipSync(entries, { level: 0 }))
+    await importer.done()
+
+    expect(globalApiState.saveAssets.mock.calls.map(([assets]) => assets.length)).toEqual([1024, 1024, 1024, 1024, 265])
+    expect(Object.keys(importer.assets)).toHaveLength(assetCount)
   })
 })
 

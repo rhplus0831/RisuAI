@@ -105,9 +105,12 @@ let fileCache: {
   res: [],
 }
 
+export const SERVER_ASSET_EXISTS_MAX_IDS = 1024
 const SERVER_ASSET_BULK_MAX_ITEMS = 32
 const SERVER_ASSET_BULK_MAX_RAW_BYTES = 32 * 1024 * 1024
 const SERVER_ASSET_BULK_BINARY_CONTENT_TYPE = 'application/vnd.risu.assets-bulk'
+const SERVER_ASSET_RATE_LIMIT_MAX_RETRIES = 3
+const SERVER_ASSET_RATE_LIMIT_FALLBACK_DELAY_MS = 1000
 
 export interface AssetSaveInput {
   data: Uint8Array
@@ -178,12 +181,11 @@ export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<str
 async function findMissingServerAssetIds(assetIds: readonly string[]): Promise<Set<string>> {
   const uniqueAssetIds = [...new Set(assetIds)]
   if (uniqueAssetIds.length === 0) return new Set()
-  const assetExistsBatchSize = 1024
   const missing = new Set<string>()
 
-  for (let offset = 0; offset < uniqueAssetIds.length; offset += assetExistsBatchSize) {
-    const ids = uniqueAssetIds.slice(offset, offset + assetExistsBatchSize)
-    const response = await fetch('/api/v1/assets/exists', {
+  for (let offset = 0; offset < uniqueAssetIds.length; offset += SERVER_ASSET_EXISTS_MAX_IDS) {
+    const ids = uniqueAssetIds.slice(offset, offset + SERVER_ASSET_EXISTS_MAX_IDS)
+    const response = await fetchServerAssetOperation('/api/v1/assets/exists', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -254,7 +256,7 @@ async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUploa
   }
 
   const auth = await getNodeServerProxyAuth()
-  const response = await fetch('/api/v1/assets/bulk', {
+  const response = await fetchServerAssetOperation('/api/v1/assets/bulk', {
     method: 'POST',
     headers: {
       'content-type': SERVER_ASSET_BULK_BINARY_CONTENT_TYPE,
@@ -297,6 +299,36 @@ async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUploa
     }
     return assetId
   })
+}
+
+async function fetchServerAssetOperation(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  for (let retry = 0; ; retry += 1) {
+    const response = await fetch(input, init)
+    if (response.status !== 429 || retry >= SERVER_ASSET_RATE_LIMIT_MAX_RETRIES) {
+      return response
+    }
+
+    const retryAfter = response.headers.get('retry-after')
+    await response.arrayBuffer().catch(() => undefined)
+    const delayMs = serverAssetRetryDelayMs(retryAfter)
+    if (delayMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+}
+
+function serverAssetRetryDelayMs(retryAfter: string | null): number {
+  if (retryAfter !== null) {
+    const seconds = Number(retryAfter)
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.ceil(seconds * 1000)
+    }
+    const deadline = Date.parse(retryAfter)
+    if (Number.isFinite(deadline)) {
+      return Math.max(0, deadline - Date.now())
+    }
+  }
+  return SERVER_ASSET_RATE_LIMIT_FALLBACK_DELAY_MS
 }
 
 function buildServerAssetBulkBinaryBody(assets: readonly PreparedServerAssetUpload[]): ArrayBuffer {
