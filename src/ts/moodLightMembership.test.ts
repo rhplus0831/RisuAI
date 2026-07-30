@@ -88,7 +88,7 @@ describe('Mood Light membership', () => {
     expect(filterCharacterOrderForMoodLight(updated, false)).toContain('folder-protected')
   })
 
-  it('lists folders, nested bots, and trashed bots as stable management targets', () => {
+  it('lists folders and nested bots as stable management targets, hiding trashed bots', () => {
     const targets = buildMoodLightManagementTargets(database())
 
     expect(targets).toContainEqual({ kind: 'folder', id: 'private-folder', name: 'Private Folder' })
@@ -98,10 +98,10 @@ describe('Mood Light membership', () => {
       name: 'Folder Protected',
       folderName: 'Private Folder',
     })
-    expect(targets).toContainEqual({
-      kind: 'character',
-      id: 'trashed-protected',
-      name: 'Trashed Protected',
-    })
+    expect(targets.some((target) => target.id === 'trashed-protected')).toBe(false)
+  })
+
+  it('keeps trashed bots protected even though they are no longer manageable', () => {
+    expect(moodLightCharacterIsProtected(database(), 'trashed-protected')).toBe(true)
   })
 })

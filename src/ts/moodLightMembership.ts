@@ -155,7 +155,7 @@ export function buildMoodLightManagementTargets(
   const charactersById = new Map(
     database.characters
       .filter((character): character is typeof character & { chaId: string } =>
-        Boolean(character?.chaId && character.chaId !== '§playground'),
+        Boolean(character?.chaId && character.chaId !== '§playground' && !character.trashTime),
       )
       .map((character) => [character.chaId, character]),
   )
