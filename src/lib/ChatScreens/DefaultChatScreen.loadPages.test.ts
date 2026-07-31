@@ -953,6 +953,15 @@ describe('DefaultChatScreen content width', () => {
     expect(screen.style.getPropertyValue('--chat-content-rendered-width')).toBe('500px')
     expect(screen.style.getPropertyValue('--chat-content-inline-end')).toBe('150px')
     expect(screen.style.getPropertyValue('--chat-content-fixed-inline-end')).toBe(`${window.innerWidth - 750}px`)
+
+    screen.scrollTop = -80
+    screen.dispatchEvent(new Event('scroll'))
+    await tick()
+
+    const floatingInputButton = target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')
+    expect(floatingInputButton?.classList).toContain('floating-chat-input-button')
+    expect(floatingInputButton?.classList).not.toContain('right-4')
+    expect(floatingInputButton?.style.getPropertyValue('--chat-content-inline-end')).toBe('150px')
     expect(composerRow).toBeTruthy()
     expect(transcript).toBeTruthy()
     expect(composerRow).not.toBe(transcript)
@@ -972,6 +981,7 @@ describe('DefaultChatScreen content width', () => {
     expect(screen.style.getPropertyValue('--chat-content-rendered-width')).toBe('800px')
     expect(screen.style.getPropertyValue('--chat-content-inline-end')).toBe('0px')
     expect(screen.style.getPropertyValue('--chat-content-fixed-inline-end')).toBe(`${window.innerWidth - 900}px`)
+    expect(floatingInputButton?.style.getPropertyValue('--chat-content-inline-end')).toBe('0px')
   })
 })
 

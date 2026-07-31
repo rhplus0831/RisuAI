@@ -1943,7 +1943,8 @@
       data-testid="floating-chat-input-button"
       aria-label={language.openFloatingChatInput}
       title={language.openFloatingChatInput}
-      class="absolute bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg transition-colors hover:bg-blue-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
+      class="floating-chat-input-button absolute bottom-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg transition-colors hover:bg-blue-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
+      style={`--chat-content-inline-end: ${chatContentInlineEnd ?? 16}px`}
       onclick={() => void openFloatingInput()}>
       <span class="relative flex h-6 w-6 items-center justify-center" aria-hidden="true">
         <PencilLineIcon size={22} />
@@ -2687,6 +2688,10 @@
 {/if}
 
 <style>
+  .floating-chat-input-button {
+    right: max(var(--chat-content-inline-end, 1rem), env(safe-area-inset-right));
+  }
+
   .floating-chat-composer {
     position: fixed;
     right: max(var(--chat-content-fixed-inline-end, 1rem), env(safe-area-inset-right));
