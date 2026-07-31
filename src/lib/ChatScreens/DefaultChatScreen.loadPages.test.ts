@@ -626,6 +626,8 @@ describe('DefaultChatScreen overflow menu accessibility', () => {
     expect(menu?.classList).toContain('overscroll-contain')
     expect(menu?.className).toContain('max-h-[calc(100dvh-5rem)]')
     expect(menu?.className).toContain('max-w-[calc(100vw-1rem)]')
+    expect(menu?.classList).toContain('chat-overflow-menu')
+    expect(menu?.classList).not.toContain('chat-overflow-menu-fixed')
 
     const items = Array.from(menu!.querySelectorAll<HTMLButtonElement>('[data-default-chat-menu-item]'))
     expect(items.length).toBeGreaterThan(0)
@@ -766,6 +768,9 @@ describe('DefaultChatScreen floating action accessibility', () => {
       (button) => button.textContent?.trim(),
     )
     expect(menuItems).toEqual(['goToBottom', 'hideInput'])
+    expect(target.querySelector('[data-testid="default-chat-overflow-menu"]')?.classList).toContain(
+      'chat-overflow-menu-fixed',
+    )
 
     target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-hide"]')!.click()
     await settle()
@@ -914,6 +919,7 @@ describe('DefaultChatScreen dynamic icon anchor', () => {
 describe('DefaultChatScreen content width', () => {
   it('centers the transcript and composer in one reactively sized fixed-width column', async () => {
     seedDatabase([1])
+    getResourceDatabase().chatScreenWidth = 500
     mountScreen()
 
     await waitFor(() => {
@@ -927,7 +933,26 @@ describe('DefaultChatScreen content width', () => {
     const composerRow = composer.closest<HTMLElement>('.chat-screen-content-width')
     const transcript = messageRow.closest<HTMLElement>('.chat-screen-content-width')
 
-    expect(screen.style.getPropertyValue('--chat-screen-width')).toBe('900px')
+    Object.defineProperty(screen, 'clientWidth', { configurable: true, value: 800 })
+    screen.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        bottom: 600,
+        left: 100,
+        right: 900,
+        width: 800,
+        height: 600,
+        x: 100,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
+    window.dispatchEvent(new Event('resize'))
+    await tick()
+
+    expect(screen.style.getPropertyValue('--chat-screen-width')).toBe('500px')
+    expect(screen.style.getPropertyValue('--chat-content-rendered-width')).toBe('500px')
+    expect(screen.style.getPropertyValue('--chat-content-inline-end')).toBe('150px')
+    expect(screen.style.getPropertyValue('--chat-content-fixed-inline-end')).toBe(`${window.innerWidth - 750}px`)
     expect(composerRow).toBeTruthy()
     expect(transcript).toBeTruthy()
     expect(composerRow).not.toBe(transcript)
@@ -944,6 +969,9 @@ describe('DefaultChatScreen content width', () => {
     await tick()
 
     expect(screen.style.getPropertyValue('--chat-screen-width')).toBe('1240px')
+    expect(screen.style.getPropertyValue('--chat-content-rendered-width')).toBe('800px')
+    expect(screen.style.getPropertyValue('--chat-content-inline-end')).toBe('0px')
+    expect(screen.style.getPropertyValue('--chat-content-fixed-inline-end')).toBe(`${window.innerWidth - 900}px`)
   })
 })
 

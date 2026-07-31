@@ -199,8 +199,13 @@
   let showFloatingInputButton = $state(false)
   let floatingInputOpen = $state(false)
   let floatingInputButton: HTMLButtonElement | null = $state(null)
+  let chatScreenRoot: HTMLDivElement | null = $state(null)
   let chatScrollContainer: HTMLDivElement | null = $state(null)
   let composerRow: HTMLDivElement | null = $state(null)
+  let chatContentRenderedWidth: number | null = $state(null)
+  let chatContentInlineEnd: number | null = $state(null)
+  let chatContentFixedInlineEnd: number | null = $state(null)
+  let refreshChatContentGeometry = () => {}
   let chatsInstance: any = $state()
   let isScrollingToMessage = $state(false)
   let preparingSend = $state(false)
@@ -362,8 +367,10 @@
       return
     }
 
+    refreshChatContentGeometry()
     openMenu = true
     void tick().then(() => {
+      refreshChatContentGeometry()
       getChatMenuItems()[0]?.focus()
     })
   }
@@ -413,6 +420,52 @@
     return getDatabase().floatingChatInput !== false && !getDatabase().fixedChatTextarea
   }
 
+  function trackChatContentGeometry(node: HTMLElement, configuredWidth: number) {
+    let currentConfiguredWidth = configuredWidth
+
+    const measure = () => {
+      const rect = node.getBoundingClientRect()
+      const availableWidth = node.clientWidth || rect.width
+      if (availableWidth <= 0) return
+
+      const renderedWidth = Math.min(Math.max(currentConfiguredWidth, 0), availableWidth)
+      const inlineEnd = Math.max(0, (availableWidth - renderedWidth) / 2)
+      const contentRight = rect.left + node.clientLeft + availableWidth - inlineEnd
+      const fixedContainingRight = customStyle.includes('backdrop-filter')
+        ? (chatScreenRoot?.getBoundingClientRect().right ?? window.innerWidth)
+        : window.innerWidth
+      const fixedInlineEnd = Math.max(0, fixedContainingRight - contentRight)
+
+      if (chatContentRenderedWidth !== renderedWidth) chatContentRenderedWidth = renderedWidth
+      if (chatContentInlineEnd !== inlineEnd) chatContentInlineEnd = inlineEnd
+      if (chatContentFixedInlineEnd !== fixedInlineEnd) chatContentFixedInlineEnd = fixedInlineEnd
+    }
+
+    refreshChatContentGeometry = measure
+    window.addEventListener('resize', measure)
+
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    let observedElement: HTMLElement | null = node
+    while (resizeObserver && observedElement) {
+      resizeObserver.observe(observedElement)
+      observedElement = observedElement.parentElement
+    }
+
+    measure()
+
+    return {
+      update(nextConfiguredWidth: number) {
+        currentConfiguredWidth = nextConfiguredWidth
+        measure()
+      },
+      destroy() {
+        window.removeEventListener('resize', measure)
+        resizeObserver?.disconnect()
+        if (refreshChatContentGeometry === measure) refreshChatContentGeometry = () => {}
+      },
+    }
+  }
+
   function updateFloatingInputForScroll(chatTarget: HTMLElement): void {
     if (!floatingInputEnabled()) {
       showFloatingInputButton = false
@@ -440,9 +493,11 @@
     if (!floatingInputEnabled()) return
 
     const preservedScrollTop = chatScrollContainer?.scrollTop
+    refreshChatContentGeometry()
     floatingInputOpen = true
     showFloatingInputButton = false
     await tick()
+    refreshChatContentGeometry()
 
     if (preservedScrollTop !== undefined && chatScrollContainer) {
       chatScrollContainer.scrollTop = preservedScrollTop
@@ -1818,6 +1873,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  bind:this={chatScreenRoot}
   class="w-full h-full relative"
   style={customStyle}
   onclick={() => {
@@ -1955,9 +2011,10 @@
   {:else}
     <div
       bind:this={chatScrollContainer}
+      use:trackChatContentGeometry={getDatabase().chatScreenWidth ?? 900}
       class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
       class:fastify-chat-theme={getDatabase().theme === 'fastify'}
-      style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px`}
+      style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px; --chat-content-rendered-width: ${chatContentRenderedWidth === null ? 'min(var(--chat-screen-width), 100%)' : `${chatContentRenderedWidth}px`}; --chat-content-inline-end: ${chatContentInlineEnd ?? 8}px; --chat-content-fixed-inline-end: ${chatContentFixedInlineEnd ?? 16}px`}
       data-default-chat-screen-width
       onscroll={(e) => {
         //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
@@ -2399,7 +2456,7 @@
           role="menu"
           tabindex="-1"
           aria-label={language.menu}
-          class="fixed right-2 bottom-16 z-[51] max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
+          class="chat-overflow-menu chat-overflow-menu-fixed fixed bottom-16 z-[51] max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
           style:bottom={`calc(min(${inputHeight}, 40dvh, 18rem) + 2rem)`}
           onkeydown={handleChatMenuKeydown}
           onclick={(e) => {
@@ -2434,9 +2491,9 @@
           role="menu"
           tabindex="-1"
           aria-label={language.menu}
-          class="{getDatabase().fixedChatTextarea
-            ? 'fixed'
-            : 'absolute'} right-2 bottom-16 max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
+          class="chat-overflow-menu {getDatabase().fixedChatTextarea
+            ? 'chat-overflow-menu-fixed fixed'
+            : 'absolute'} bottom-16 max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
           onkeydown={handleChatMenuKeydown}
           onclick={(e) => {
             e.stopPropagation()
@@ -2632,9 +2689,9 @@
 <style>
   .floating-chat-composer {
     position: fixed;
-    right: max(1rem, env(safe-area-inset-right));
+    right: max(var(--chat-content-fixed-inline-end, 1rem), env(safe-area-inset-right));
     bottom: max(1rem, env(safe-area-inset-bottom));
-    width: min(var(--chat-screen-width, 900px), calc(100vw - 2rem));
+    width: min(var(--chat-content-rendered-width, var(--chat-screen-width, 900px)), calc(100vw - 2rem));
     margin: 0;
     padding: 0.5rem;
     border: 1px solid var(--risu-theme-darkborderc);
@@ -2642,6 +2699,14 @@
     background: var(--risu-theme-bgcolor);
     box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 35%);
     z-index: 50 !important;
+  }
+
+  .chat-overflow-menu {
+    right: max(var(--chat-content-inline-end, 0.5rem), env(safe-area-inset-right));
+  }
+
+  .chat-overflow-menu-fixed {
+    right: max(var(--chat-content-fixed-inline-end, 1rem), env(safe-area-inset-right));
   }
 
   .floating-chat-composer textarea[data-testid='default-chat-composer'] {
