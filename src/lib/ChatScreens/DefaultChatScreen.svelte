@@ -1944,11 +1944,10 @@
       aria-label={language.openFloatingChatInput}
       title={language.openFloatingChatInput}
       class="floating-chat-input-button absolute bottom-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg transition-colors hover:bg-blue-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
-      style={`--chat-content-inline-end: ${chatContentInlineEnd ?? 16}px`}
+      style={`--chat-content-inline-end: ${chatContentInlineEnd ? chatContentInlineEnd - 8 : 16}px`}
       onclick={() => void openFloatingInput()}>
       <span class="relative flex h-6 w-6 items-center justify-center" aria-hidden="true">
         <PencilLineIcon size={22} />
-        <SparkleIcon size={10} class="absolute -right-1 -top-1" />
       </span>
     </button>
   {/if}
