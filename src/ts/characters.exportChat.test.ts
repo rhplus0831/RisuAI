@@ -204,7 +204,7 @@ describe('chat export stable targets', () => {
     setDatabase([characterB, { ...characterA, chats: [...characterA.chats].reverse() } as character])
     selectedCharID.set(0)
     hydration.resolve()
-    await exporting
+    await expect(exporting).resolves.toBe(true)
 
     expect(exportMocks.ensureAllChatsHydrated).toHaveBeenCalledWith({ strict: true })
     expect(downloadedJson()).toMatchObject({
@@ -281,9 +281,19 @@ describe('chat export stable targets', () => {
     const exporting = exportAllChats('char-a')
     setDatabase([])
     hydration.resolve()
-    await exporting
+    await expect(exporting).resolves.toBe(false)
 
     expect(exportMocks.downloadFile).not.toHaveBeenCalled()
     expect(exportMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed all-chat download to its caller', async () => {
+    const downloadError = new Error('download failed')
+    setDatabase([makeCharacter('char-a', 'Character A', [makeChat('chat-a', 'Chat A', 'a')])])
+    exportMocks.downloadFile.mockRejectedValueOnce(downloadError)
+
+    await expect(exportAllChats('char-a')).resolves.toBe(false)
+
+    expect(exportMocks.alertError).toHaveBeenCalledWith(downloadError)
   })
 })

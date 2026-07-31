@@ -61,6 +61,7 @@ import {
   applyOptimisticCreatedChat,
   applyOptimisticCreatedChatFolder,
   applyOptimisticDeletedChat,
+  applyOptimisticResetChats,
   applyChatNoteValueLocally,
   appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend,
@@ -88,6 +89,7 @@ import {
   dispatchReorderChatFoldersAndChatsByIdsWithOutcome,
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
+  dispatchResetChatsWithOutcome,
   dispatchReplaceTailMessagesScoped,
   dispatchReplaceMessagesScoped,
   dispatchSaveChatGenerationSettings,
@@ -851,6 +853,26 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
   })
 
+  it('optimistically replaces every chat with one empty Chat 1 under the resource guard', () => {
+    setResourceWriteGuardEnabled(true)
+    const previous = currentChatStateSnapshot()
+    const chat = {
+      id: 'chat-new',
+      name: 'Chat 1',
+      note: '',
+      message: [],
+      localLore: [],
+      fmIndex: -1,
+    } as Chat
+
+    expect(applyOptimisticResetChats('char-a', chat, previous)).toBe(true)
+    expect(getDatabase().characters[0].chats).toEqual([chat])
+    expect(getDatabase().characters[0].chatPage).toBe(0)
+
+    restoreChatState(previous)
+    expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
+  })
+
   it('optimistically inserts a command-created chat folder under the resource guard', () => {
     setResourceWriteGuardEnabled(true)
     const previous = currentChatStateSnapshot()
@@ -1504,6 +1526,47 @@ describe('chat command projection helpers', () => {
       id: 'chat-b',
       name: 'Chat B',
     })
+  })
+
+  it('restores every previous chat when an optimistic reset fails', async () => {
+    await clearPendingMutationOutbox()
+    resetPendingMutationOutboxForTests()
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'PUT',
+    })
+    setResourceWriteGuardEnabled(true)
+    const previous = currentChatStateSnapshot()
+    const attemptedChat = {
+      id: 'chat-new',
+      name: 'Chat 1',
+      note: '',
+      message: [],
+      localLore: [],
+      fmIndex: -1,
+    } as Chat
+
+    expect(applyOptimisticResetChats('char-a', attemptedChat, previous)).toBe(true)
+    await expect(dispatchResetChatsWithOutcome('char-a', attemptedChat, previous)).resolves.toMatchObject({
+      status: 'failed',
+    })
+
+    expect(calls.at(-1)).toMatchObject({
+      url: '/api/v1/commands/characters/char-a/chats',
+      method: 'PUT',
+      body: {
+        baseRevision: 10,
+        chat: {
+          id: 'chat-new',
+          name: 'Chat 1',
+          note: '',
+          message: [],
+          localLore: [],
+          fmIndex: -1,
+        },
+      },
+    })
+    expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+    expect(getDatabase().characters[0].chatPage).toBe(0)
   })
 
   it('removes only an unchanged attempted chat after a failed create and keeps newer siblings', async () => {

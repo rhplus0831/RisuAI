@@ -558,6 +558,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'chat.deleted',
     resource: 'characterRow',
   },
+  chatsReset: {
+    type: 'chats.reset',
+    resource: 'characterRow',
+  },
   chatForked: {
     type: 'chat.forked',
     resource: 'characterRow',

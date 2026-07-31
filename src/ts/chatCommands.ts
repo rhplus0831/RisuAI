@@ -13,6 +13,7 @@ import {
   peekAppliedServerResourceRevision,
   reorderChatFoldersCommand,
   reorderChatsCommand,
+  resetChatsCommand,
   replaceTailMessagesCommand,
   replaceMessagesCommand,
   runServerCommand,
@@ -649,6 +650,24 @@ export function applyOptimisticCreatedChat(
       return
     }
     character.chats.unshift(chat)
+    character.chatPage = 0
+    applied = true
+  })
+  if (applied) reloadGuiDisplay()
+  return applied
+}
+
+export function applyOptimisticResetChats(
+  characterId: string | undefined,
+  chat: Chat,
+  snapshot: ChatStateSnapshot,
+): boolean {
+  if (!chat.id) return false
+  let applied = false
+  withTrustedResourceWrite(() => {
+    const character = locateSnapshotCharacter(characterId, snapshot.selectedCharID)
+    if (!character?.chats) return
+    character.chats = [chat]
     character.chatPage = 0
     applied = true
   })
@@ -1588,6 +1607,25 @@ function restoreFailedCreatedChatAttempt(rollback: ChatCreateRollback | null): v
   })
 }
 
+function restoreResetChatsAttempt(characterId: string, attemptedChat: Chat, previous: ChatStateSnapshot): void {
+  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
+  if (!previousCharacter) return
+  const previousChats = cloneJsonValue(previousCharacter.chats ?? [])
+  const previousChatPage = previousCharacter.chatPage ?? 0
+  const attemptedSnapshot = snapshotJson(attemptedChat)
+  let restored = false
+
+  withTrustedResourceWrite(() => {
+    const character = locateSnapshotCharacter(characterId, previous.selectedCharID)
+    if (!character || character.chats?.length !== 1) return
+    if (snapshotJson(character.chats[0]) !== attemptedSnapshot) return
+    character.chats = cloneJsonValue(previousChats)
+    character.chatPage = previousChatPage
+    restored = true
+  })
+  if (restored) reloadGuiDisplay()
+}
+
 function restoreImportedCreatedChatAttempt(rollback: ChatImportedCreateRollback | null): void {
   if (!rollback) return
   withTrustedResourceWrite(() => {
@@ -2317,6 +2355,31 @@ export function dispatchCreateChatWithOutcome(
           acknowledgeOptimistic,
           optimisticEpoch,
           optimisticRowEpoch,
+        }),
+      rollback: rollbackAttempt,
+      ...transport,
+    }),
+  )
+  return normalizedChatMutationOutcome(outcome, rollbackAttempt)
+}
+
+export function dispatchResetChatsWithOutcome(
+  characterId: string,
+  chat: Chat,
+  previous: ChatStateSnapshot,
+): Promise<ChatMutationOutcome> {
+  flushRegisteredPendingBridgePatches({})
+  const attemptedChat = cloneJsonValue(chat)
+  const body = freezeDurableChatRequestBody({ chat: toChatSnapshot(attemptedChat) })
+  const intent = durableChatMutationIntent('PUT', `/characters/${encodeURIComponent(characterId)}/chats`, body)
+  const rollbackAttempt = () => restoreResetChatsAttempt(characterId, attemptedChat, previous)
+  const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        resetChatsCommand({
+          baseRevision,
+          characterId,
+          chat: body.chat,
         }),
       rollback: rollbackAttempt,
       ...transport,

@@ -5961,6 +5961,83 @@ export function registerCommandRoutes(
     }
   })
 
+  app.put('/api/v1/commands/characters/:characterId/chats', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as ChatCommandBody
+      const baseRevision = readBaseRevision(body)
+      const chat = createChatRecord(body.chat)
+      if (chat.message.length > 0) {
+        throw new ValidationError('chat.message must be empty when resetting chats')
+      }
+      if (chat.hypaV3Data !== undefined && chat.hypaV3Data !== null) {
+        throw new ValidationError('chat.hypaV3Data must be empty when resetting chats')
+      }
+
+      const result = applyTargetedCommandMutation<{
+        chatId: string
+        selectedChatId: string
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
+          const target = ensureModuleCommandDatabase(database)
+          const characters = normalizeAllCharacterChats(target)
+          const modules = ensureModuleRecords(target)
+          const character = characters[requireCharacterIndex(characters, characterId)]
+          if (chatIdExists(characters, chat.id)) {
+            throw new ValidationError(`Duplicate chat id: ${chat.id}`)
+          }
+          if (chat.modules) {
+            validateNormalModuleLinks(modules, chat.modules, 'chat.modules')
+          }
+          if (chat.folderId) {
+            const folders = ensureCharacterChatFolders(character)
+            if (!folders.some((folder) => folder.id === chat.folderId)) {
+              throw new ValidationError(`Unknown chat folder id: ${chat.folderId}`)
+            }
+          }
+          if (Object.prototype.hasOwnProperty.call(chat, 'generationSettings')) {
+            chat.generationSettings = readChatGenerationSettingsSave(
+              chat.generationSettings,
+              buildChatGenerationSettingsValidationContext(target, character, chat),
+            )
+          }
+
+          const removedChatIds = ensureCharacterChats(character).map((candidate) => candidate.id)
+          character.chats = [chat]
+          character.chatPage = 0
+
+          for (const removedChatId of removedChatIds) {
+            deleteCharacterChatRow(innerDb, removedChatId, characterId)
+            deleteChatMessages(innerDb, removedChatId)
+            deleteChatHypaV3(innerDb, removedChatId)
+          }
+          insertCharacterChatRow(innerDb, characterId, 0, chat as Record<string, unknown>)
+          writeSingleCharacterRow(innerDb, characterId, character)
+
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.chatsReset, id: chat.id, parentId: characterId },
+            extra: { chatId: chat.id, selectedChatId: chat.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.patch('/api/v1/commands/chats/:chatId', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 

@@ -1003,6 +1003,11 @@ export const languageEnglish = {
   newReroll: 'New reroll',
   chatList: 'Chat List',
   chatListExportAll: 'Export all chats',
+  chatListDeleteAllAfterExportConfirm:
+    'All chats were downloaded. Do you want to delete every chat for this character?',
+  chatListDeleteAllSecondConfirm:
+    'This will permanently delete every chat for this character. Are you absolutely sure?',
+  chatListDeleteAllAction: 'Delete all chats',
   chatListImport: 'Import chat',
   chatListEdit: 'Edit chat list',
   chatListCreateFolder: 'Create chat folder',

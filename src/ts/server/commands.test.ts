@@ -99,6 +99,7 @@ import {
   reorderCharactersCommand,
   reorderChatFoldersCommand,
   reorderChatsCommand,
+  resetChatsCommand,
   reorderPersonasCommand,
   reorderGlobalLorebooksCommand,
   reorderCharacterLorebookEntriesCommand,
@@ -6230,6 +6231,41 @@ describe('server command API adapter', () => {
           baseRevision: 8,
           folderIds: ['folder-a'],
           selectedChatId: 'chat-a',
+        },
+      },
+    ])
+  })
+
+  it('dispatches an atomic all-chat reset through the typed helper', async () => {
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 12,
+      event: {
+        type: 'chats.reset',
+        revision: 12,
+        resource: 'characterRow',
+        id: 'chat-new',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-new',
+      selectedChatId: 'chat-new',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      resetChatsCommand({
+        baseRevision: 11,
+        characterId: 'char-a',
+        chat: { id: 'chat-new', name: 'Chat 1', note: '', message: [], localLore: [], fmIndex: -1 },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 12, chatId: 'chat-new' })
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/characters/char-a/chats',
+        method: 'PUT',
+        body: {
+          baseRevision: 11,
+          chat: { id: 'chat-new', name: 'Chat 1', note: '', message: [], localLore: [], fmIndex: -1 },
         },
       },
     ])

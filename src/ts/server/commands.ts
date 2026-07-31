@@ -1252,6 +1252,11 @@ export interface CreateChatCommandInput extends ChatCommandInput {
   acknowledgeOptimistic?: boolean
 }
 
+export interface ResetChatsCommandInput extends ChatCommandInput {
+  characterId: string
+  chat: ChatSnapshot
+}
+
 export interface UpdateChatCommandInput extends ChatCommandInput {
   chatId: string
   patch: ChatSnapshot
@@ -3783,6 +3788,20 @@ export async function createChatCommand(
               expectedOptimisticRowEpoch: input.optimisticRowEpoch,
             })
         : undefined,
+  })
+}
+
+export async function resetChatsCommand(
+  input: ResetChatsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; selectedChatId: string }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/chats`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      chat: input.chat,
+    },
+    signal,
   })
 }
 

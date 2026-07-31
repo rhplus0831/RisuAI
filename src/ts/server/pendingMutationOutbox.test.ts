@@ -1080,6 +1080,7 @@ describe('pending mutation outbox', () => {
     ['DELETE', '/characters/character-a'],
     ['POST', '/characters/select'],
     ['POST', '/characters/character-a/chats'],
+    ['PUT', '/characters/character-a/chats'],
     ['POST', '/characters/character-a/chats/reorder'],
     ['POST', '/characters/character-a/chat-folders'],
     ['POST', '/characters/character-a/chat-folders/reorder'],

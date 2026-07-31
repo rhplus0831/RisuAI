@@ -166,6 +166,10 @@ const sidebarMocks = vi.hoisted(() => {
       status: 'accepted',
       result: okCommandResult(),
     })),
+    dispatchResetChatsWithOutcome: vi.fn(async (..._args: any[]) => ({
+      status: 'accepted',
+      result: okCommandResult(),
+    })),
     dispatchUpdateChatWithOutcome: vi.fn(async (..._args: any[]) => ({
       status: 'accepted',
       result: okCommandResult(),
@@ -177,7 +181,7 @@ const sidebarMocks = vi.hoisted(() => {
       }),
     ),
     ensureAllChatsHydrated: vi.fn(async () => undefined),
-    exportAllChats: vi.fn(),
+    exportAllChats: vi.fn(async () => false),
     exportChat: vi.fn(),
     forkChatCommand: unusedCommand,
     hydrateChatMessages: vi.fn(async (_chatId: string, _options?: { strict?: boolean }) => undefined),
@@ -186,6 +190,7 @@ const sidebarMocks = vi.hoisted(() => {
     patchChatScriptstateCommand: unusedCommand,
     reorderChatFoldersCommand: unusedCommand,
     reorderChatsCommand: unusedCommand,
+    resetChatsCommand: unusedCommand,
     replaceMessagesCommand: unusedCommand,
     resetCommandHarness: () => {
       pendingCreateCommand = undefined
@@ -271,6 +276,9 @@ vi.mock('src/lang', () => ({
     chatListCreateFolder: 'Create chat folder',
     chatListEdit: 'Edit chat list',
     chatListExportAll: 'Export all chats',
+    chatListDeleteAllAfterExportConfirm: 'Download finished. Delete every chat?',
+    chatListDeleteAllSecondConfirm: 'Permanently delete every chat?',
+    chatListDeleteAllAction: 'Delete all chats',
     chatListImport: 'Import chat',
     chatStructureFailed: (action: string) => `${action} failed`,
     chatStructurePending: (action: string) => `Saving ${action}`,
@@ -329,6 +337,7 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
     dispatchForkChatWithOutcome: sidebarMocks.dispatchForkChatWithOutcome,
     dispatchReorderChatFoldersAndChatsByIdsWithOutcome: sidebarMocks.dispatchReorderChatFoldersAndChatsByIdsWithOutcome,
     dispatchReorderChatsByIdsWithOutcome: sidebarMocks.dispatchReorderChatsByIdsWithOutcome,
+    dispatchResetChatsWithOutcome: sidebarMocks.dispatchResetChatsWithOutcome,
     dispatchUpdateChatWithOutcome: sidebarMocks.dispatchUpdateChatWithOutcome,
     dispatchUpdateChatFolderWithOutcome: sidebarMocks.dispatchUpdateChatFolderWithOutcome,
   }
@@ -389,6 +398,7 @@ vi.mock('src/ts/server/commands', () => ({
   patchChatScriptstateCommand: sidebarMocks.patchChatScriptstateCommand,
   reorderChatFoldersCommand: sidebarMocks.reorderChatFoldersCommand,
   reorderChatsCommand: sidebarMocks.reorderChatsCommand,
+  resetChatsCommand: sidebarMocks.resetChatsCommand,
   replaceMessagesCommand: sidebarMocks.replaceMessagesCommand,
   runServerCommand: sidebarMocks.runServerCommand,
   truncateMessagesCommand: sidebarMocks.truncateMessagesCommand,
@@ -1080,6 +1090,54 @@ describe('SideChatList DOM contract harness', () => {
 
     expect(sidebarMocks.alertConfirm).toHaveBeenCalledWith('Remove Pinned Folder')
     expect(sidebarRoot().querySelector('button button, button input, button [role="button"]')).toBeNull()
+  })
+
+  it.each([
+    { name: 'failed download', exported: false, confirmations: [] as boolean[], expectedConfirmations: 0 },
+    { name: 'first cancellation', exported: true, confirmations: [false], expectedConfirmations: 1 },
+    { name: 'second cancellation', exported: true, confirmations: [true, false], expectedConfirmations: 2 },
+  ])('does not reset chats after a $name', async ({ exported, confirmations, expectedConfirmations }) => {
+    const chara = seedSidebarDatabase()
+    sidebarMocks.exportAllChats.mockResolvedValueOnce(exported)
+    for (const confirmed of confirmations) sidebarMocks.alertConfirm.mockResolvedValueOnce(confirmed)
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="export-all"]')!.click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.alertConfirm).toHaveBeenCalledTimes(expectedConfirmations)
+    expect(sidebarMocks.dispatchResetChatsWithOutcome).not.toHaveBeenCalled()
+    expect(chara.chats.map((chat) => chat.name)).toEqual(['Root Chat A', 'Foldered Chat', 'Root Chat B'])
+  })
+
+  it('resets every chat to an empty Chat 1 only after two confirmations', async () => {
+    const chara = seedSidebarDatabase()
+    sidebarMocks.exportAllChats.mockResolvedValueOnce(true)
+    sidebarMocks.alertConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(true)
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="export-all"]')!.click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.alertConfirm.mock.calls).toEqual([
+      [language.chatListDeleteAllAfterExportConfirm],
+      [language.chatListDeleteAllSecondConfirm],
+    ])
+    expect(sidebarMocks.dispatchResetChatsWithOutcome).toHaveBeenCalledOnce()
+    const [characterId, replacementChat, previous] = sidebarMocks.dispatchResetChatsWithOutcome.mock.calls[0]
+    expect(characterId).toBe('char-a')
+    expect(replacementChat).toMatchObject({ name: 'Chat 1', message: [], note: '', localLore: [], fmIndex: -1 })
+    expect(previous.characters[0].chats.map((chat: Chat) => chat.name)).toEqual([
+      'Root Chat A',
+      'Foldered Chat',
+      'Root Chat B',
+    ])
+    expect(chara.chats).toEqual([replacementChat])
+    expect(chara.chatPage).toBe(0)
+    expect(chara.chatFolders).toEqual([{ id: 'folder-a', name: 'Pinned Folder', folded: false }])
+    expect(sidebarMocks.navigate).toHaveBeenCalledWith(`/character/char-a/${replacementChat.id}`, { replace: true })
   })
 
   it('remints copied message ids before dispatching a server-backed chat copy', async () => {

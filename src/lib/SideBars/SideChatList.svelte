@@ -37,6 +37,7 @@
     applyOptimisticCreatedChat,
     applyOptimisticCreatedChatFolder,
     applyOptimisticDeletedChat,
+    applyOptimisticResetChats,
     currentChatSelectionSnapshot,
     currentChatStateSnapshot,
     dispatchCreateChatFolderWithOutcome,
@@ -46,6 +47,7 @@
     dispatchForkChatWithOutcome,
     dispatchReorderChatFoldersAndChatsByIdsWithOutcome,
     dispatchReorderChatsByIdsWithOutcome,
+    dispatchResetChatsWithOutcome,
     dispatchSelectChat,
     dispatchUpdateChatAsync,
     dispatchUpdateChatFolderWithOutcome,
@@ -995,6 +997,51 @@
     }
   }
 
+  async function exportAllAndMaybeResetChats(): Promise<void> {
+    const characterId = chara.chaId
+    if (!characterId || !(await exportAllChats(characterId))) return
+
+    const firstConfirmed = await alertConfirm(language.chatListDeleteAllAfterExportConfirm)
+    if (!firstConfirmed) return
+    const secondConfirmed = await alertConfirm(language.chatListDeleteAllSecondConfirm)
+    if (!secondConfirmed || hasConflictingStructureMutation([chatOrderConflictKey(characterId)])) return
+
+    const liveCharacter = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    if (!liveCharacter) return
+    const previousChatIds = liveCharacter.chats.map((candidate) => candidate.id)
+    const previous = currentChatStateSnapshot()
+    const chat: Chat = {
+      message: [],
+      note: '',
+      name: 'Chat 1',
+      localLore: [],
+      fmIndex: -1,
+      id: v4(),
+    }
+    const originRoute = currentRouteIdentity()
+    if (!applyOptimisticResetChats(characterId, chat, previous)) return
+
+    const outcome = await settleStructureMutation(
+      structureMutationKey('reset-chats', characterId),
+      'order',
+      characterId,
+      language.chatListDeleteAllAction,
+      [chatOrderConflictKey(characterId), ...previousChatIds.map((chatId) => chatConflictKey(chatId))],
+      () => dispatchResetChatsWithOutcome(characterId, chat, previous),
+      undefined,
+      (finalOutcome) => {
+        if (finalOutcome.status === 'failed') recoverRejectedProvisionalChatRoute(characterId, chat.id)
+      },
+    )
+    if (
+      outcome !== 'failed' &&
+      currentRouteIdentity() === originRoute &&
+      isExpectedSidebarChatSelected(characterId, chat.id)
+    ) {
+      navigate(characterRoutePath(characterId, chat.id), { replace: true })
+    }
+  }
+
   async function deleteChatFolder(folder: ChatFolder, index: number): Promise<void> {
     if (isFolderStructuralActionPending(folder.id)) return
     const confirmed = await alertConfirm(`${language.removeConfirm}${folder.name}`)
@@ -1727,9 +1774,7 @@
           aria-label={language.chatListExportAll}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
-            if (chara.chaId) {
-              exportAllChats(chara.chaId)
-            }
+            void exportAllAndMaybeResetChats()
           }}>
           <DownloadIcon size={18} />
         </button>

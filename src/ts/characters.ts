@@ -1036,15 +1036,15 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-export async function exportAllChats(characterId: string): Promise<void> {
+export async function exportAllChats(characterId: string): Promise<boolean> {
   const stableCharacterId = characterId
 
   try {
-    if (!resolveCharacterExportTarget(stableCharacterId)) return
+    if (!resolveCharacterExportTarget(stableCharacterId)) return false
     // This serializes every chat's history, so hydrate lazy chats first.
     await ensureAllChatsHydrated({ strict: true })
     const char = resolveCharacterExportTarget(stableCharacterId)
-    if (!char) return
+    if (!char) return false
     const date = new Date().toISOString().replace(/[:.]/g, '-')
     const allChats = char.chats
     const allFolders = char.chatFolders
@@ -1058,9 +1058,10 @@ export async function exportAllChats(characterId: string): Promise<void> {
       'utf-8',
     )
     await downloadFile(`${char.name}_all_chats_${date}`.replace(/[<>:"/\\|?*.,]/g, '') + '.json', stringl)
-    alertNormal(language.successExport)
+    return true
   } catch (error) {
     alertError(error)
+    return false
   }
 }
 

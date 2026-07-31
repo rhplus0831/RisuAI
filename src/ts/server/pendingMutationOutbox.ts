@@ -170,6 +170,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'POST', path: /^\/characters\/select$/ },
   { method: 'POST', path: /^\/characters\/reorder$/ },
   { method: 'POST', path: /^\/characters\/[^/?#]+\/chats$/ },
+  { method: 'PUT', path: /^\/characters\/[^/?#]+\/chats$/ },
   { method: 'POST', path: /^\/characters\/[^/?#]+\/chats\/reorder$/ },
   { method: 'POST', path: /^\/characters\/[^/?#]+\/chat-folders$/ },
   { method: 'POST', path: /^\/characters\/[^/?#]+\/chat-folders\/reorder$/ },

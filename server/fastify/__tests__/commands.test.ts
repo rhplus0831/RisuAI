@@ -8349,6 +8349,107 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
   })
 
+  it('atomically replaces every character chat with one empty Chat 1', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'old a', chatId: 'message-a' }],
+              localLore: [],
+              hypaV3Data: { version: 3, summaries: [{ text: 'old memory', start: 0, end: 1 }] },
+            },
+            {
+              id: 'chat-b',
+              name: 'B chat',
+              note: '',
+              message: [{ role: 'char', data: 'old b', chatId: 'message-b' }],
+              localLore: [],
+              folderId: 'folder-a',
+            },
+          ],
+          chatFolders: [{ id: 'folder-a', name: 'Folder A', folded: false }],
+          chatPage: 1,
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [{ id: 'chat-other', name: 'Other', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const reset = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/chats',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          id: 'chat-new',
+          name: 'Chat 1',
+          note: '',
+          message: [],
+          localLore: [],
+          fmIndex: -1,
+        },
+      },
+    })
+
+    expect(reset.statusCode).toBe(200)
+    expect(reset.json()).toMatchObject({
+      revision: revision + 1,
+      event: {
+        type: 'chats.reset',
+        resource: 'characterRow',
+        id: 'chat-new',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-new',
+      selectedChatId: 'chat-new',
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const [characterA, characterB] = bootstrap.json().database.characters
+    expect(characterA).toMatchObject({
+      chaId: 'char-a',
+      chatPage: 0,
+      chats: [{ id: 'chat-new', name: 'Chat 1', note: '', localLore: [], fmIndex: -1 }],
+      chatFolders: [{ id: 'folder-a', name: 'Folder A', folded: false }],
+    })
+    expect(characterA.chats[0].message).toEqual([])
+    expect(characterB.chats.map((chat: { id: string }) => chat.id)).toEqual(['chat-other'])
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(db.prepare("SELECT id FROM chats WHERE character_id = 'char-a' ORDER BY position").all()).toEqual([
+        { id: 'chat-new' },
+      ])
+      expect(db.prepare("SELECT uid FROM messages WHERE chat_id IN ('chat-a', 'chat-b') ORDER BY uid").all()).toEqual(
+        [],
+      )
+      expect(
+        db.prepare("SELECT chat_id FROM chat_hypa_v3 WHERE chat_id IN ('chat-a', 'chat-b') ORDER BY chat_id").all(),
+      ).toEqual([])
+    } finally {
+      db.close()
+    }
+  })
+
   it('preserves omitted folder assignments in sparse chat reorder patches', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
