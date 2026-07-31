@@ -781,6 +781,33 @@ describe('DefaultChatScreen floating action accessibility', () => {
     expect(composer.value).toBe('unfinished draft')
   })
 
+  it('remeasures an empty composer after opening it as a floating input', async () => {
+    seedDatabase([2])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+
+    const screen = target.querySelector<HTMLElement>('.default-chat-screen')!
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    Object.defineProperty(composer, 'scrollHeight', {
+      configurable: true,
+      get: () => 44,
+    })
+    composer.style.height = '0px'
+
+    screen.scrollTop = -80
+    screen.dispatchEvent(new Event('scroll'))
+    await settle()
+    target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')!.click()
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    expect(composer.value).toBe('')
+    expect(composer.style.height).toBe('44px')
+  })
+
   it('restores the standard input at the bottom while preserving the draft', async () => {
     seedDatabase([2])
     mountScreen()
@@ -1899,7 +1926,7 @@ describe('DefaultChatScreen transcript window state', () => {
     const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
     Object.defineProperty(textarea, 'scrollHeight', {
       configurable: true,
-      get: () => (textarea.value === '' ? 44 : 180),
+      get: () => (textarea.value === '' ? 0 : 180),
     })
 
     textarea.value = 'A long draft that wraps enough to make the composer tall.'

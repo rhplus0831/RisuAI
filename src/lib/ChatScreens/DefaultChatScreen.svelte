@@ -497,6 +497,7 @@
     floatingInputOpen = true
     showFloatingInputButton = false
     await tick()
+    updateInputSize()
     refreshChatContentGeometry()
 
     if (preservedScrollTop !== undefined && chatScrollContainer) {
@@ -1632,9 +1633,11 @@
     }
   })
 
-  let inputHeight = $state('44px')
+  // Empty textareas can transiently report no scroll height during mobile layout changes.
+  const composerMinimumHeight = 44
+  let inputHeight = $state(`${composerMinimumHeight}px`)
   let inputEle: HTMLTextAreaElement = $state()
-  let inputTranslateHeight = $state('44px')
+  let inputTranslateHeight = $state(`${composerMinimumHeight}px`)
   let inputTranslateEle: HTMLTextAreaElement = $state()
   let draftInputHeight = $state('72px')
   let draftInputEle: HTMLTextAreaElement = $state()
@@ -1656,14 +1659,14 @@
   function updateInputTranslateSize() {
     if (inputTranslateEle) {
       inputTranslateEle.style.height = '0'
-      inputTranslateHeight = inputTranslateEle.scrollHeight + 'px'
+      inputTranslateHeight = Math.max(composerMinimumHeight, inputTranslateEle.scrollHeight) + 'px'
       inputTranslateEle.style.height = inputTranslateHeight
     }
   }
   function updateInputSize() {
     if (inputEle) {
       inputEle.style.height = '0'
-      inputHeight = inputEle.scrollHeight + 'px'
+      inputHeight = Math.max(composerMinimumHeight, inputEle.scrollHeight) + 'px'
       inputEle.style.height = inputHeight
     }
   }
