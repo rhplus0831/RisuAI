@@ -20,6 +20,8 @@
     XIcon,
     BrainIcon,
     ArrowDown,
+    EyeOffIcon,
+    PencilLineIcon,
     SparkleIcon,
   } from '@lucide/svelte'
   import {
@@ -194,6 +196,11 @@
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
   let showNewMessageButton = $state(false)
+  let showFloatingInputButton = $state(false)
+  let floatingInputOpen = $state(false)
+  let floatingInputButton: HTMLButtonElement | null = $state(null)
+  let chatScrollContainer: HTMLDivElement | null = $state(null)
+  let composerRow: HTMLDivElement | null = $state(null)
   let chatsInstance: any = $state()
   let isScrollingToMessage = $state(false)
   let preparingSend = $state(false)
@@ -400,6 +407,70 @@
 
   function scrollToBottom() {
     chatsInstance?.scrollToLatestMessage()
+  }
+
+  function floatingInputEnabled(): boolean {
+    return getDatabase().floatingChatInput !== false && !getDatabase().fixedChatTextarea
+  }
+
+  function updateFloatingInputForScroll(chatTarget: HTMLElement): void {
+    if (!floatingInputEnabled()) {
+      showFloatingInputButton = false
+      floatingInputOpen = false
+      return
+    }
+
+    const distanceFromBottom = Math.max(0, -chatTarget.scrollTop)
+    if (distanceFromBottom <= 1) {
+      const wasFloating = floatingInputOpen
+      showFloatingInputButton = false
+      floatingInputOpen = false
+      if (wasFloating) openMenu = false
+      return
+    }
+
+    if (floatingInputOpen) return
+
+    const composerHeight = composerRow?.getBoundingClientRect().height ?? 0
+    const revealThreshold = Math.max(24, composerHeight / 2)
+    showFloatingInputButton = distanceFromBottom >= revealThreshold
+  }
+
+  async function openFloatingInput(): Promise<void> {
+    if (!floatingInputEnabled()) return
+
+    const preservedScrollTop = chatScrollContainer?.scrollTop
+    floatingInputOpen = true
+    showFloatingInputButton = false
+    await tick()
+
+    if (preservedScrollTop !== undefined && chatScrollContainer) {
+      chatScrollContainer.scrollTop = preservedScrollTop
+    }
+    inputEle?.focus({ preventScroll: true })
+  }
+
+  async function hideFloatingInput(): Promise<void> {
+    const preservedScrollTop = chatScrollContainer?.scrollTop
+    openMenu = false
+    floatingInputOpen = false
+    showFloatingInputButton = true
+    await tick()
+
+    floatingInputButton?.focus({ preventScroll: true })
+    if (preservedScrollTop !== undefined && chatScrollContainer) {
+      chatScrollContainer.scrollTop = preservedScrollTop
+    }
+  }
+
+  async function goToBottomFromFloatingInput(): Promise<void> {
+    openMenu = false
+    floatingInputOpen = false
+    showFloatingInputButton = false
+    await tick()
+    scrollToBottom()
+    if (chatScrollContainer) chatScrollContainer.scrollTop = 0
+    inputEle?.focus({ preventScroll: true })
   }
 
   function getActiveTranscriptWindowIdentity(): string | null {
@@ -820,11 +891,21 @@
     activeTranscriptWindowConfiguredPages = configuredChatLoadPages
     transcriptWindowConfigurationRun += 1
     loadPages = configuredChatLoadPages
+    showFloatingInputButton = false
+    floatingInputOpen = false
+    openMenu = false
     untrack(() => restoreComposerDraft(nextIdentity))
 
     if (previousIdentity !== null) {
       resetTranscriptWindowForChatSwitch()
     }
+  })
+
+  $effect(() => {
+    if (floatingInputEnabled()) return
+
+    showFloatingInputButton = false
+    floatingInputOpen = false
   })
 
   $effect(() => {
@@ -1799,6 +1880,21 @@
       </button>
     {/if}
   {/if}
+  {#if showFloatingInputButton && floatingInputEnabled() && !floatingInputOpen}
+    <button
+      bind:this={floatingInputButton}
+      type="button"
+      data-testid="floating-chat-input-button"
+      aria-label={language.openFloatingChatInput}
+      title={language.openFloatingChatInput}
+      class="absolute bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg transition-colors hover:bg-blue-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
+      onclick={() => void openFloatingInput()}>
+      <span class="relative flex h-6 w-6 items-center justify-center" aria-hidden="true">
+        <PencilLineIcon size={22} />
+        <SparkleIcon size={10} class="absolute -right-1 -top-1" />
+      </span>
+    </button>
+  {/if}
   {#if isScrollingToMessage}
     <div
       class="absolute inset-0 z-50 flex items-center justify-center bg-black/50 text-white text-xl font-bold backdrop-blur-sm">
@@ -1858,6 +1954,7 @@
     </div>
   {:else}
     <div
+      bind:this={chatScrollContainer}
       class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"
       class:fastify-chat-theme={getDatabase().theme === 'fastify'}
       style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px`}
@@ -1881,6 +1978,7 @@
         if (isAtBottom) {
           showNewMessageButton = false
         }
+        updateFloatingInputForScroll(chatTarget)
       }}>
       {#if composerDraftPersistenceError}
         <div
@@ -1891,10 +1989,14 @@
         </div>
       {/if}
       <div
-        class="{getDatabase().fixedChatTextarea
-          ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor'
-          : 'mt-2 mb-2'} chat-screen-content-width flex items-stretch w-full"
-        style={getDatabase().fixedChatTextarea ? 'z-index:29;' : ''}>
+        bind:this={composerRow}
+        data-floating-chat-input={floatingInputOpen ? 'true' : undefined}
+        class="{floatingInputOpen
+          ? 'floating-chat-composer'
+          : getDatabase().fixedChatTextarea
+            ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor'
+            : 'mt-2 mb-2'} chat-screen-content-width flex items-stretch w-full"
+        style={getDatabase().fixedChatTextarea || floatingInputOpen ? 'z-index:29;' : ''}>
         {#if getDatabase().useChatSticker}
           <button
             type="button"
@@ -2289,7 +2391,42 @@
         {/if}
       {/if}
 
-      {#if openMenu}
+      {#if openMenu && floatingInputOpen}
+        <div
+          bind:this={chatMenuElement}
+          id="default-chat-overflow-menu"
+          data-testid="default-chat-overflow-menu"
+          role="menu"
+          tabindex="-1"
+          aria-label={language.menu}
+          class="fixed right-2 bottom-16 z-[51] max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
+          style:bottom={`calc(min(${inputHeight}, 40dvh, 18rem) + 2rem)`}
+          onkeydown={handleChatMenuKeydown}
+          onclick={(e) => {
+            e.stopPropagation()
+          }}>
+          <button
+            type="button"
+            role="menuitem"
+            data-default-chat-menu-item
+            data-testid="floating-chat-input-go-to-bottom"
+            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
+            onclick={() => void goToBottomFromFloatingInput()}>
+            <ArrowDown />
+            <span class="ml-2">{language.goToBottom}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-default-chat-menu-item
+            data-testid="floating-chat-input-hide"
+            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
+            onclick={() => void hideFloatingInput()}>
+            <EyeOffIcon />
+            <span class="ml-2">{language.hideInput}</span>
+          </button>
+        </div>
+      {:else if openMenu}
         <div
           bind:this={chatMenuElement}
           id="default-chat-overflow-menu"
@@ -2493,6 +2630,25 @@
 {/if}
 
 <style>
+  .floating-chat-composer {
+    position: fixed;
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    width: min(var(--chat-screen-width, 900px), calc(100vw - 2rem));
+    margin: 0;
+    padding: 0.5rem;
+    border: 1px solid var(--risu-theme-darkborderc);
+    border-radius: 0.75rem;
+    background: var(--risu-theme-bgcolor);
+    box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 35%);
+    z-index: 50 !important;
+  }
+
+  .floating-chat-composer textarea[data-testid='default-chat-composer'] {
+    max-height: min(40dvh, 18rem);
+    overflow-y: auto;
+  }
+
   .chat-process-stage-1 {
     border-top: 0.4rem solid #60a5fa;
     border-left: 0.4rem solid #60a5fa;

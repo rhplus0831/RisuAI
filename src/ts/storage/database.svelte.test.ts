@@ -708,6 +708,20 @@ describe('accessibility database normalization', () => {
     setDatabase(enabledData)
     expect(getDatabase().reducedMotion).toBe(true)
   })
+
+  it('defaults the floating chat input to enabled and preserves an opt-out', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as unknown as Record<string, unknown>).floatingChatInput
+
+    setDatabase(legacyData)
+    expect(getDatabase().floatingChatInput).toBe(true)
+
+    const disabledData = clonePlain(getDatabase())
+    disabledData.floatingChatInput = false
+    setDatabase(disabledData)
+    expect(getDatabase().floatingChatInput).toBe(false)
+  })
 })
 
 describe('sentence paragraph database normalization', () => {

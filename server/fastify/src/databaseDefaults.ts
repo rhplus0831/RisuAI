@@ -486,6 +486,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'autoScrollToNewMessage', true)
   setDefault(database, 'alwaysScrollToNewMessage', false)
   setDefault(database, 'newMessageButtonStyle', 'bottom-center')
+  setDefault(database, 'floatingChatInput', true)
   setDefault(database, 'echoMessage', 'Echo Message')
   setDefault(database, 'echoDelay', 0)
   setDefault(database, 'createFolderOnBranch', true)

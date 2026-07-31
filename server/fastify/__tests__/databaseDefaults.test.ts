@@ -26,6 +26,7 @@ describe('database defaults', () => {
       },
     ])
     expect(database.reducedMotion).toBe(false)
+    expect(database.floatingChatInput).toBe(true)
     expect(database.chatScreenWidth).toBe(900)
     expect(database.autoTranslateNotificationDeferCapSeconds).toBe(180)
     expect(database.paragraphBreakBySentences).toBe(false)
@@ -72,6 +73,12 @@ describe('database defaults', () => {
     const database = normalizeDatabaseDefaults({ reducedMotion: true }, { providerDefaults: false })
 
     expect(database.reducedMotion).toBe(true)
+  })
+
+  it('preserves an explicit floating-input opt-out', () => {
+    const database = normalizeDatabaseDefaults({ floatingChatInput: false }, { providerDefaults: false })
+
+    expect(database.floatingChatInput).toBe(false)
   })
 
   it('preserves an explicit saving-icon opt-out', () => {

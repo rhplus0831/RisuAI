@@ -176,6 +176,8 @@ export const languageEnglish = {
   help: {
     reducedMotion:
       'Minimizes animations and transitions. This app setting is used instead of your operating system or browser preference.',
+    floatingChatInput:
+      'Shows a floating chat input when you scroll far enough that the standard input is no longer readily available.',
     model: 'Model option is a main model used in chat.',
     submodel:
       'Auxiliary Model is a model that used in analyzing emotion images and auto suggestions and etc. gpt3.5 is recommended.',
@@ -1294,6 +1296,10 @@ export const languageEnglish = {
   reducedMotion: 'Reduce Motion',
   sendWithEnter: 'Send with Enter Key',
   fixedChatTextarea: 'Fixed at the bottom of the chat window(When unchecked, Shift + Enter changes to send a message.)',
+  floatingChatInput: 'Floating Chat Input',
+  openFloatingChatInput: 'Open floating chat input',
+  goToBottom: 'Go to bottom',
+  hideInput: 'Hide input',
   clickToEdit: 'Click Text to Edit',
   disableAutoPopupMessageEditor: 'Disable Auto Popup Editor When Editing Messages',
   useMonacoEditorOnDesktop: 'Use Monaco Editor on Desktop',

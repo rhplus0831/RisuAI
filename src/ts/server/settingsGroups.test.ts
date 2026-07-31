@@ -42,6 +42,11 @@ describe('settings group contracts', () => {
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('reducedMotion')
   })
 
+  it('persists the floating chat input through the sidebar settings group', () => {
+    expect(SERVER_SETTINGS_GROUP_BY_KEY.floatingChatInput).toBe('sidebar')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.sidebar).toContain('floatingChatInput')
+  })
+
   it('persists sentence paragraph preferences through the display settings group', () => {
     for (const key of ['paragraphBreakBySentences', 'paragraphBreakSentenceCount']) {
       expect(SERVER_SETTINGS_GROUP_BY_KEY[key]).toBe('display')

@@ -883,6 +883,10 @@ const languageKoreanBase = {
   reducedMotion: '모션 줄이기',
   sendWithEnter: '엔터키로 메세지 보내기(체크 해제시 Shift + Enter가 메세지 전송으로 변경.)',
   fixedChatTextarea: '채팅창 하단 고정',
+  floatingChatInput: '떠 있는 채팅 입력창',
+  openFloatingChatInput: '떠 있는 채팅 입력창 열기',
+  goToBottom: '맨 아래로 이동',
+  hideInput: '입력창 숨기기',
   clickToEdit: '클릭해서 수정하기',
   disableAutoPopupMessageEditor: '메시지 수정 시 팝업 편집기 자동 열기 비활성화',
   useMonacoEditorOnDesktop: '데스크톱에서 Monaco 편집기 사용',
@@ -1904,6 +1908,7 @@ export const languageKorean = {
   help: {
     ...languageKoreanBase.help,
     reducedMotion: '애니메이션과 화면 전환을 최소화합니다. 운영체제나 브라우저 설정 대신 이 앱 설정을 사용합니다.',
+    floatingChatInput: '표준 입력창을 사용하기 어려울 만큼 위로 스크롤하면 떠 있는 채팅 입력창을 표시합니다.',
     customNotificationMessage: '설정하면 이 캐릭터의 완료 알림에 기본 알림 문구 대신 이 메시지를 사용합니다.',
     notificationImage: '설정하면 이 캐릭터의 완료 알림에 캐릭터 아이콘 대신 이 이미지를 사용합니다.',
     showGlobalLorebookAndRegex:

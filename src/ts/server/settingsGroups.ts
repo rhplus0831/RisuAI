@@ -129,6 +129,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   falToken: 'media',
   fishSpeechKey: 'media',
   fixedChatTextarea: 'sidebar',
+  floatingChatInput: 'sidebar',
   font: 'display',
   forceReplaceUrl: 'providers',
   frequencyPenalty: 'runtime',

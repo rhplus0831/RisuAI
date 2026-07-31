@@ -3330,6 +3330,7 @@ export function setDatabase(data: Database) {
   data.autoScrollToNewMessage ??= true
   data.alwaysScrollToNewMessage ??= false
   data.newMessageButtonStyle ??= 'bottom-center'
+  data.floatingChatInput ??= true
   data.echoMessage ??= 'Echo Message'
   data.echoDelay ??= 0
   data.createFolderOnBranch ??= true
@@ -3864,6 +3865,7 @@ export interface Database {
   globalscript: customscript[]
   sendWithEnter: boolean
   fixedChatTextarea: boolean
+  floatingChatInput?: boolean
   clickToEdit: boolean
   disableAutoPopupMessageEditor: boolean
   useMonacoEditorOnDesktop?: boolean

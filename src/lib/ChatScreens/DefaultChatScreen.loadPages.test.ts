@@ -406,6 +406,7 @@ function seedDatabase(messageCounts: number[]) {
     chatScreenWidth: 900,
     enableRisuaiProTools: false,
     fixedChatTextarea: false,
+    floatingChatInput: true,
     hypaV3: false,
     inputHooks: [],
     newMessageButtonStyle: 'bottom-center',
@@ -728,6 +729,93 @@ describe('DefaultChatScreen floating action accessibility', () => {
     const newMessageButton = target.querySelector<HTMLButtonElement>('button[aria-label="newMessage"]')!
     expect(newMessageButton.type).toBe('button')
     expect(newMessageButton.title).toBe('newMessage')
+  })
+
+  it('opens and hides the floating input without moving the transcript or losing the draft', async () => {
+    seedDatabase([2])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+
+    const screen = target.querySelector<HTMLElement>('.default-chat-screen')!
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    composer.value = 'unfinished draft'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    screen.scrollTop = -80
+    screen.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    const floatingButton = target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')
+    expect(floatingButton).toBeTruthy()
+    expect(floatingButton?.getAttribute('aria-label')).toBe('openFloatingChatInput')
+    expect(floatingButton?.title).toBe('openFloatingChatInput')
+
+    floatingButton!.click()
+    await settle()
+
+    expect(screen.scrollTop).toBe(-80)
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    expect(composer.value).toBe('unfinished draft')
+
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
+    await settle()
+
+    const menuItems = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-default-chat-menu-item]')).map(
+      (button) => button.textContent?.trim(),
+    )
+    expect(menuItems).toEqual(['goToBottom', 'hideInput'])
+
+    target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-hide"]')!.click()
+    await settle()
+
+    expect(screen.scrollTop).toBe(-80)
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeTruthy()
+    expect(composer.value).toBe('unfinished draft')
+  })
+
+  it('restores the standard input at the bottom while preserving the draft', async () => {
+    seedDatabase([2])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+
+    const screen = target.querySelector<HTMLElement>('.default-chat-screen')!
+    const composer = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    const revealFloatingInput = async () => {
+      screen.scrollTop = -80
+      screen.dispatchEvent(new Event('scroll'))
+      await settle()
+      target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')!.click()
+      await settle()
+      expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    }
+
+    composer.value = 'keep this draft'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    await revealFloatingInput()
+
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
+    await settle()
+    target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-go-to-bottom"]')!.click()
+    await settle()
+
+    expect(screen.scrollTop).toBe(0)
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(composer.value).toBe('keep this draft')
+
+    await revealFloatingInput()
+    screen.scrollTop = 0
+    screen.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeNull()
+    expect(composer.value).toBe('keep this draft')
   })
 
   it('names attachment removal for the selected attachment', async () => {
