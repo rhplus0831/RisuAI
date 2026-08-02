@@ -115,6 +115,7 @@ interface CapturedFetch {
 interface StubCommandFetchOptions {
   generationSettingsResponse?: Promise<Response>
   modelPatchResponse?: Promise<Response>
+  promptCreateResponse?: Promise<Response>
   promptPatchResponse?: Promise<Response>
   promptDeleteResponse?: Promise<Response>
   modelSelectResponse?: Promise<Response>
@@ -196,6 +197,21 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
           settings: {},
           selectedProjectionApplied: false,
           ownerProjectionApplied: false,
+        })
+      }
+      if (init.method === 'POST' && url === '/api/v1/commands/prompt-presets') {
+        if (options.promptCreateResponse) return options.promptCreateResponse
+        const promptPresetId = body?.preset?.id
+        return jsonResponse({
+          status: 'ok',
+          revision: 201,
+          event: {
+            type: 'promptPreset.created',
+            revision: 201,
+            resource: 'promptPreset',
+            id: promptPresetId,
+          },
+          promptPresetId,
         })
       }
       if (init.method === 'DELETE' && url.endsWith('/prompt-presets/preset-b') && options.promptDeleteResponse) {
@@ -936,6 +952,7 @@ describe('generation settings picker mode', () => {
     expect(presetRow.getAttribute('tabindex')).toBeNull()
     expect(select).toBeInstanceOf(HTMLButtonElement)
     expect(presetRow.querySelector('button button, button input, button [role="button"]')).toBeNull()
+    expect(presetRow.querySelector(`[aria-label="${language.duplicate}: Preset A"]`)).toBeTruthy()
     expect(presetRow.querySelector(`[aria-label="${language.export}: Preset A"]`)).toBeTruthy()
     expect(presetRow.querySelector(`[aria-label="${language.archivePromptPreset}: Preset A"]`)).toBeTruthy()
     expect(presetRow.querySelector(`[aria-label="${language.remove}: Preset A"]`)).toBeTruthy()
@@ -948,6 +965,49 @@ describe('generation settings picker mode', () => {
     edit.click()
     await tick()
     expect(edit.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('duplicates a prompt preset with a fresh id and its hydrated prompt template', async () => {
+    const source = getDatabase().promptPresets[0]
+    source.promptTemplate = [
+      {
+        id: 'prompt-row-a',
+        type: 'plain',
+        type2: 'normal',
+        name: 'Source row',
+        text: 'Keep this prompt body',
+        role: 'system',
+      },
+    ]
+    const sourceSnapshot = safeStructuredClone(source)
+    const calls = stubCommandFetch()
+    const close = mountPresetPicker('global')
+
+    const duplicateAction = pickerRow('prompt', 'preset-a').querySelector<HTMLButtonElement>(
+      '[data-risu-preset-duplicate-action]',
+    )
+    expect(duplicateAction?.getAttribute('aria-label')).toBe(`${language.duplicate}: Preset A`)
+    duplicateAction!.click()
+    await tick()
+    await waitForCommandFetches(calls)
+
+    expect(getDatabase().promptPresets).toHaveLength(3)
+    const duplicate = getDatabase().promptPresets[2]
+    expect(duplicate.id).toEqual(expect.any(String))
+    expect(duplicate.id).not.toBe(sourceSnapshot.id)
+    expect(duplicate.name).toBe(language.presetCopyName('Preset A'))
+    expect({ ...duplicate, id: sourceSnapshot.id, name: sourceSnapshot.name }).toEqual(sourceSnapshot)
+    expect(duplicate.promptTemplate).not.toBe(source.promptTemplate)
+    expect(getDatabase().promptPresetsId).toBe(0)
+    expect(close).not.toHaveBeenCalled()
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/prompt-presets',
+      method: 'POST',
+      body: {
+        baseRevision: 200,
+        preset: duplicate,
+      },
+    })
   })
 
   it('does not expose prompt archive controls in the model preset picker', () => {

@@ -45,23 +45,11 @@ describe('PromptDataItem disclosure control', () => {
     )
 
     expect(actionNames).toEqual([
-      `${language.duplicate}: Cached context`,
       `${language.remove}: Cached context`,
       `${language.moveDown}: Cached context`,
       `${language.moveUp}: Cached context`,
     ])
     expect(new Set(actionNames).size).toBe(actionNames.length)
-  })
-
-  it('invokes the duplicate action without toggling the row', async () => {
-    component = mount(PromptDataItemTestHost, { target })
-    await tick()
-
-    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.duplicate}: Cached context"]`)?.click()
-    await tick()
-
-    expect(target.querySelector('[data-testid="duplicate-count"]')?.textContent).toBe('1')
-    expect(target.querySelector('[data-testid="opened-state"]')?.textContent).toBe('closed')
   })
 
   it('uses native button activation and reports its expanded state', async () => {

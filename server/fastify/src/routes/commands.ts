@@ -930,7 +930,6 @@ interface LegacyBotPresetCommandBody {
 interface PromptCommandBody {
   baseRevision?: unknown
   promptItem?: unknown
-  afterItemId?: unknown
   patch?: unknown
   deleteKeys?: unknown
   itemIds?: unknown
@@ -4297,7 +4296,6 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
       const promptPresetId = readOptionalPromptPresetIdFromBody(body)
-      const afterItemId = body.afterItemId === undefined ? undefined : readPromptItemId(body.afterItemId, 'afterItemId')
       const promptItem = createPromptItemRecord(body.promptItem)
       const result = applyTargetedCommandMutation<{ itemId: string }>({
         db,
@@ -4314,12 +4312,7 @@ export function registerCommandRoutes(
           if (items.some((item) => item.id === promptItem.id)) {
             throw new ValidationError(`Duplicate prompt item id: ${promptItem.id}`)
           }
-          if (afterItemId) {
-            const afterIndex = requirePromptItemIndex(items, afterItemId)
-            items.splice(afterIndex + 1, 0, promptItem)
-          } else {
-            items.push(promptItem)
-          }
+          items.push(promptItem)
           if (scoped) {
             writeSingleCollectionRow(innerDb, 'promptPresets', scoped.index, scoped.preset)
           } else {

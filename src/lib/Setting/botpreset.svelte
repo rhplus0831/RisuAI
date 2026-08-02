@@ -25,6 +25,7 @@
   import {
     ArchiveIcon,
     ArchiveRestoreIcon,
+    CopyIcon,
     HardDriveUploadIcon,
     PlusIcon,
     PencilIcon,
@@ -43,6 +44,11 @@
   import ModelPresetList from './Pages/Model/ModelPresetList.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import {
+    clonePromptTemplateSelectedFallback,
+    ensurePromptTemplateHydrated,
+    promptTemplateOwnerUsesSelectedFallback,
+  } from 'src/ts/server/promptTemplateHydration'
 
   type ModernPreset = ModelPreset | PromptPreset
   type ModernPresetKind = 'model' | 'prompt'
@@ -247,13 +253,18 @@
 
   function observePresetRowMutation(key: string, outcome: Promise<PresetMutationOutcome> | undefined): void {
     if (!outcome) return
-    const operation = ++rowMutationOperation
-    rowMutationStates[key] = { operation, status: 'saving' }
-    delete rowMutationErrors[key]
+    const operation = beginPresetRowMutation(key)
     void outcome.then(
       (result) => settlePresetRowMutation(key, operation, result),
       () => showPresetRowMutationFailure(key, operation),
     )
+  }
+
+  function beginPresetRowMutation(key: string): number {
+    const operation = ++rowMutationOperation
+    rowMutationStates[key] = { operation, status: 'saving' }
+    delete rowMutationErrors[key]
+    return operation
   }
 
   function settlePresetRowMutation(key: string, operation: number, outcome: PresetMutationOutcome): void {
@@ -303,6 +314,50 @@
 
     const key = `prompt:${presetId ?? `index:${liveIndex}`}`
     observePresetRowMutation(key, updatePromptPreset(liveIndex, { archived }))
+  }
+
+  function duplicatePromptPreset(preset: PromptPreset): void {
+    const presetId = nonEmptyId(preset.id)
+    if (!presetId) return
+    const key = `prompt:${presetId}`
+    if (rowMutationStates[key]) return
+
+    const operation = beginPresetRowMutation(key)
+    void ensurePromptTemplateHydrated({ promptPresetId: presetId, applyProjection: false }).then(
+      (hydrated) => {
+        if (rowMutationStates[key]?.operation !== operation) return
+        if (!hydrated) {
+          showPresetRowMutationFailure(key, operation)
+          return
+        }
+
+        const presets = getDatabase().promptPresets
+        const liveIndex = presets.findIndex((candidate) => candidate?.id === presetId)
+        const livePreset = presets[liveIndex]
+        if (!livePreset) {
+          showPresetRowMutationFailure(key, operation)
+          return
+        }
+
+        const copy = safeStructuredClone(livePreset)
+        delete copy.id
+        copy.name = language.presetCopyName(livePreset.name?.trim() || language.promptPresets)
+        if (
+          !Object.prototype.hasOwnProperty.call(copy, 'promptTemplate') &&
+          promptTemplateOwnerUsesSelectedFallback(presetId)
+        ) {
+          const fallback = clonePromptTemplateSelectedFallback(presetId)
+          if (fallback) copy.promptTemplate = fallback
+        }
+
+        const outcome = createPromptPreset(copy)
+        void outcome.then(
+          (result) => settlePresetRowMutation(key, operation, result),
+          () => showPresetRowMutationFailure(key, operation),
+        )
+      },
+      () => showPresetRowMutationFailure(key, operation),
+    )
   }
 
   function handlePresetDrop(targetPresetId: string | null | undefined, e: DragEvent) {
@@ -579,6 +634,19 @@
           {/if}
           <div class="ml-auto flex shrink-0 justify-end">
             {#if kind === 'prompt'}
+              <button
+                type="button"
+                data-risu-preset-duplicate-action
+                disabled={!!rowMutationStates[presetDraftKey(preset, i)]}
+                class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
+                aria-label={`${language.duplicate}: ${preset.name ?? `#${visibleIndex + 1}`}`}
+                title={language.duplicate}
+                onclick={(e) => {
+                  e.stopPropagation()
+                  duplicatePromptPreset(preset as PromptPreset)
+                }}>
+                <CopyIcon size={18} />
+              </button>
               <button
                 type="button"
                 data-risu-preset-archive-action

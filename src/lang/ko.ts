@@ -2008,6 +2008,7 @@ export const languageKorean = {
   restorePromptPreset: '프롬프트 프리셋 복원',
   noActivePromptPresets: '활성 프롬프트 프리셋이 없습니다',
   noArchivedPromptPresets: '보관된 프롬프트 프리셋이 없습니다',
+  presetCopyName: (name: string) => `${name} 복사본`,
   presetSelectionSaving: '프리셋 선택을 저장하는 중...',
   presetSelectionQueued: '프리셋 선택이 이 기기에 저장되어 대기열에 추가되었습니다. 자동으로 다시 시도합니다.',
   presetSelectionFailed: '프리셋 선택을 저장할 수 없습니다. 복원된 선택을 확인한 후 다시 시도하세요.',

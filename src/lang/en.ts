@@ -1123,6 +1123,7 @@ export const languageEnglish = {
   restorePromptPreset: 'Restore prompt preset',
   noActivePromptPresets: 'No active prompt presets',
   noArchivedPromptPresets: 'No archived prompt presets',
+  presetCopyName: (name: string) => `${name} Copy`,
   presetSelectionSaving: 'Saving preset selection...',
   presetSelectionQueued: 'The preset selection is saved on this device and queued. It will retry automatically.',
   presetSelectionFailed: 'The preset selection could not be saved. Review the restored selection and try again.',
