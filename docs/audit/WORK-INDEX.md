@@ -4,12 +4,12 @@ Generated 2026-08-02 from the six-agent parity review of the Fastify
 message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
-into **53 work items**: 49 in the active tiers, 2 deferred, and 2 resolved.
+into **53 work items**: 46 in the active tiers, 2 deferred, and 5 resolved.
 Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
 divergences, and the maintainer approved dispositions for every remaining
 `Needs decision` item plus the blanket implementation policy (see the
-maintenance rules) — active items are now `Ready` (41) or `Needs design` (8)
-only, cleared for autonomous execution.
+maintenance rules) — active items are now `Ready` (38) or `Needs design` (8)
+only, cleared for autonomous execution. Tier 0 landed in `99a346377`.
 All items were classified on 2026-08-02 against `fbf750b24`;
 findings are point-in-time evidence and must be re-verified against current
 code before work begins.
@@ -58,10 +58,7 @@ valid work intentionally held outside the active execution order;
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
-| Handle Anthropic in-stream `error` frames | [PR-13](docs/provider-adapters.md) | Ready | An overload error after partial text persists the fragment as a completed response instead of failing/retrying. | Add the `error`-event branch and the proxy-compatible `delta.type: "text"` acceptance; wire into the existing pre-token retry policy. |
 | Sequence IGP after the terminal derived text | [OR-1](docs/orchestration-postgen.md) | Needs design | The IGP suffix is computed on raw streamed text and races the server terminal patch — either the `editoutput` transform or the IGP suffix can be durably lost. | Browser-side ordering fix: IGP must consume the terminal `finalText`. Touches `orchestrateResponse.ts`/`serverBackedSendChat.ts` command sequencing. |
-| Stop treating Continue-displaced rows as reroll candidates | [OR-7](docs/orchestration-postgen.md) | Ready | After continue → reload → regenerate, swiping back can restore the pre-continue text, losing the continuation. | `messageStore.ts` already documents send/continue as the reroll boundary; enforce it for the displaced-row path. |
-| Detect cumulative stream fragments | [PR-12](docs/provider-adapters.md) | Ready | Proxies that emit cumulative deltas produce duplicated streamed and persisted text (`HelHello`). | Port the original replace-if-prefix accumulation check. |
 
 ## Tier 1 — Mainstream generation correctness
 
@@ -137,6 +134,9 @@ pinning test + area-doc intentional entry).
 
 | Work item | Findings | Status | Impact | Resolution |
 | --- | --- | --- | --- | --- |
+| Handle Anthropic in-stream `error` frames | [PR-13](docs/provider-adapters.md) | Resolved | An overload error after partial text persisted the fragment as a completed response. | Fixed in `99a346377`: in-stream `type: "error"` payloads (and `event: error`) become provider failure frames preserving message/code; pre-token errors retry through the existing policy, post-token errors restore with no persistence; proxy-compatible `delta.type: "text"` accepted. Regressions in `anthropic.test.ts` and `generation.chat.test.ts`. |
+| Stop treating Continue-displaced rows as reroll candidates | [OR-7](docs/orchestration-postgen.md) | Resolved | After continue → reload → regenerate, swiping back could restore the pre-continue text. | Fixed in `99a346377`: continue mode never preserves reroll candidates — the buffer is cleared and the displaced pre-continue row is excluded; a later regenerate captures the fully extended row. Regression: continue → hydrate → regenerate in `generation.chat.test.ts`. |
+| Detect cumulative stream fragments | [PR-12](docs/provider-adapters.md) | Resolved | Cumulative proxy deltas produced duplicated streamed/persisted text. | Fixed in `99a346377`: a strictly-longer delta that starts with the full accumulation is treated as cumulative and only the new suffix is emitted (strict `>` keeps legitimately repeated equal-length tokens intact — saner-than-baseline edge kept per blanket policy). Regression in `openai.test.ts`. |
 | Implement V2 persistent data effects | [ST-1](docs/scripts-triggers-lua.md) | Resolved | Character/persona/author-note getters+setters and lorebook effects silently no-op; getter-dependent triggers send `null` into prompts. | Accepted divergence (maintainer decision, 2026-08-02): support cost is disproportionate to current ecosystem usage — bot authors have moved to Lua, the committed server scripting surface. Recorded in the area document's intentional section; the user-facing notice and pinning regression are tracked as the Tier 2 item "Surface and pin the V2 unsupported-effect no-ops". |
 | Implement or reject V2 command/privileged effects | [ST-2](docs/scripts-triggers-lua.md) | Resolved | `command`, auxiliary-LLM, similarity, image-generation, and alert effects silently no-op. | Accepted divergence (same 2026-08-02 decision): the arms stay no-op. The baseline never gated `command`/`v2Command` behind `lowLevelAccess`, so declining the port also declines re-introducing ungated command execution. Same follow-up item covers the notice and pinning coverage. |
 
