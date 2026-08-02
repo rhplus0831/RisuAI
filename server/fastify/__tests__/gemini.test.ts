@@ -366,6 +366,25 @@ describe('runGemini', () => {
     })
   })
 
+  it('does not forward a Chat Completions stream override into the Gemini body', async () => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      additionalParams: [['stream', 'true']],
+      signal: new AbortController().signal,
+    })!
+
+    await runGemini(resolved)
+
+    expect(sent.stream).toBeUndefined()
+  })
+
   it('sends array-shaped tools and preserves function ids and signatures in continuation history', async () => {
     const sentBodies: Array<Record<string, unknown>> = []
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {

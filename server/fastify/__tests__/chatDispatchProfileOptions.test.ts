@@ -662,6 +662,54 @@ describe('dispatchChatProvider profile providerOptions', () => {
     ])
   })
 
+  it.each([
+    {
+      label: 'autofill off custom operation',
+      configuredUrl: 'https://proxy.example.com/custom/chat?api-version=2025-01-01',
+      autofill: false,
+      expectedUrl: 'https://proxy.example.com/custom/chat?api-version=2025-01-01',
+    },
+    {
+      label: 'autofill off Chat Completions endpoint',
+      configuredUrl: 'https://proxy.example.com/v1/chat/completions?api-version=2025-01-01',
+      autofill: false,
+      expectedUrl: 'https://proxy.example.com/v1/chat/completions?api-version=2025-01-01',
+    },
+    {
+      label: 'autofill on v1 query',
+      configuredUrl: 'https://proxy.example.com/v1?api-version=2025-01-01',
+      autofill: true,
+      expectedUrl: 'https://proxy.example.com/v1/chat/completions?api-version=2025-01-01',
+    },
+    {
+      label: 'autofill on v1 trailing slash query',
+      configuredUrl: 'https://proxy.example.com/v1/?api-version=2025-01-01',
+      autofill: true,
+      expectedUrl: 'https://proxy.example.com/v1/chat/completions?api-version=2025-01-01',
+    },
+    {
+      label: 'autofill on completed trailing slash query',
+      configuredUrl: 'https://proxy.example.com/v1/chat/completions/?api-version=2025-01-01',
+      autofill: true,
+      expectedUrl: 'https://proxy.example.com/v1/chat/completions?api-version=2025-01-01',
+    },
+  ])('preserves query placement for $label', async ({ configuredUrl, autofill, expectedUrl }) => {
+    const database = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'query-model',
+      customAPIFormat: LLMFormat.OpenAICompatible,
+      forceReplaceUrl: configuredUrl,
+      proxyKey: 'sk-query',
+      autofillRequestUrl: autofill,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured[0].url).toBe(expectedUrl)
+  })
+
   it('forwards persisted Gemini reverse-proxy URL, headers, key, and body overrides', async () => {
     const profile = resolveModelProfile({
       database: db({
@@ -980,18 +1028,20 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.flatFlag).toBeUndefined()
   })
 
-  it('uses native Ollama profile URL and model over conflicting flat database fields', async () => {
+  it('uses native Ollama profile URL, model, and thinking mode over conflicting flat database fields', async () => {
     const profile = resolveModelProfile({
       database: db({
         aiModel: 'ollama-hosted',
         ollamaURL: 'http://profile-ollama.example.com',
         ollamaModel: 'profile-llama',
+        ollamaThinkingMode: 'medium',
       } as Partial<Database>),
     })
     const flatConflict = db({
       aiModel: 'ollama-hosted',
       ollamaURL: 'http://flat-ollama.example.com',
       ollamaModel: 'flat-llama',
+      ollamaThinkingMode: 'off',
     } as Partial<Database>)
     const captured = captureDispatchRequests(okOllamaResponse())
 
@@ -1000,6 +1050,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe('http://profile-ollama.example.com/api/chat')
     expect(captured[0].body.model).toBe('profile-llama')
+    expect(captured[0].body.think).toBe('medium')
   })
 
   it('uses Kobold profile URL over conflicting flat database fields', async () => {
@@ -1122,6 +1173,32 @@ describe('dispatchChatProvider profile providerOptions', () => {
     )
     expect(captured[0].headers.Authorization).toContain('/eu-central-1/bedrock/aws4_request')
     expect(captured[0].body.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'hello' }] }])
+  })
+
+  it('maps Bedrock thinking budget and restores the Bedrock sampler constraints', async () => {
+    const database = db({
+      aiModel: 'anthropic.claude-3-7-sonnet-20250219-v1:0',
+      claudeAPIKey: 'PROFILEAKIA:profile-secret:us-east-1',
+      thinkingType: 'budget',
+      thinkingTokens: 4096,
+      temperature: 25,
+      top_p: 0.8,
+      top_k: 20,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okBedrockResponse())
+
+    await dispatchWithProfile(profile, database, undefined, { stop_reason: 'end_turn' })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.thinking).toEqual({
+      type: 'enabled',
+      budget_tokens: 4096,
+      display: 'summarized',
+    })
+    expect(captured[0].body.temperature).toBe(1)
+    expect(captured[0].body.top_p).toBeUndefined()
+    expect(captured[0].body.top_k).toBeUndefined()
   })
 
   it('uses Google AI Studio profile API key and request model over conflicting flat database fields', async () => {
@@ -1686,6 +1763,30 @@ describe('dispatchChatProvider profile providerOptions', () => {
     if (testCase.absentBodyField) {
       expect(captured[0].body[testCase.absentBodyField]).toBeUndefined()
     }
+  })
+
+  it('carries the DeepSeek embedded-thinking output flag into the OpenAI parser', async () => {
+    const database = db({
+      aiModel: 'deepseek-reasoner',
+      OaiCompAPIKeys: { deepseek: 'sk-deepseek' },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    captureDispatchRequests(okOpenAIResponse('<think>private reasoning</think>visible answer'))
+
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of frames) emitted.push(frame)
+
+    expect(profile.modelInfo.flags).toContain(LLMFlags.deepSeekThinkingOutput)
+    expect(emitted).toEqual([
+      { kind: 'token', content: '<Thoughts>\nprivate reasoning\n</Thoughts>\nvisible answer' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
   })
 
   it('allows first-class Custom API profiles without an API key', async () => {

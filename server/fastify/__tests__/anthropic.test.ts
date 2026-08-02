@@ -133,6 +133,7 @@ describe('runAnthropic (non-streaming)', () => {
         ['extra.flag', 'true'],
         ['extra.nested.value', 'json::[1, 2]'],
         ['temperature', '{{none}}'],
+        ['stream', 'true'],
       ],
       signal: new AbortController().signal,
     })
@@ -140,6 +141,7 @@ describe('runAnthropic (non-streaming)', () => {
     expect(sent.model).toBe('m')
     expect(sent.max_tokens).toBe(512)
     expect(sent.temperature).toBeUndefined()
+    expect(sent.stream).toBe(false)
     expect(sent.extra).toEqual({ flag: true, nested: { value: [1, 2] } })
     const headers = captured!.init.headers as Record<string, string>
     expect(headers['anthropic-beta']).toBe('prompt-caching-2024-07-31')

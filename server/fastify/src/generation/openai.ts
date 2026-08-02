@@ -24,6 +24,8 @@ export interface OpenAIRequest {
   messages: unknown[]
   apiKey?: string
   baseUrl: string
+  /** Exact Chat Completions endpoint for custom URLs that must not be autofilled. */
+  endpointUrl?: string
   maxTokens?: number
   temperature?: number
   topP?: number
@@ -48,6 +50,7 @@ export interface OpenAIRequest {
   n?: number
   useCompletionTokens?: boolean
   thinking?: Record<string, unknown>
+  deepSeekThinkingOutput?: boolean
   logitBias?: Record<string, number>
   extraHeaders?: Record<string, string>
   /**
@@ -75,6 +78,7 @@ interface OpenAIResolveInput {
   messages?: unknown
   apiKey?: unknown
   baseUrl?: unknown
+  endpointUrl?: unknown
   maxTokens?: unknown
   temperature?: unknown
   topP?: unknown
@@ -95,6 +99,7 @@ interface OpenAIResolveInput {
   n?: unknown
   useCompletionTokens?: unknown
   thinking?: unknown
+  deepSeekThinkingOutput?: unknown
   logitBias?: unknown
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
@@ -129,6 +134,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     messages: input.messages,
     apiKey,
     baseUrl,
+    endpointUrl: typeof input.endpointUrl === 'string' && input.endpointUrl.length > 0 ? input.endpointUrl : undefined,
     maxTokens,
     temperature,
     topP: numeric(input.topP),
@@ -149,6 +155,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     n: typeof input.n === 'number' && Number.isInteger(input.n) && input.n > 1 ? Math.min(input.n, 20) : undefined,
     useCompletionTokens: input.useCompletionTokens === true ? true : undefined,
     thinking: record(input.thinking),
+    deepSeekThinkingOutput: input.deepSeekThinkingOutput === true,
     logitBias: record(input.logitBias) as Record<string, number> | undefined,
     extraHeaders: input.extraHeaders,
     additionalParams: input.additionalParams,
@@ -232,8 +239,20 @@ function buildPayload(req: OpenAIRequest, stream: boolean): Record<string, unkno
 }
 
 function endpoint(req: OpenAIRequest): string {
-  const base = req.baseUrl.endsWith('/') ? req.baseUrl.slice(0, -1) : req.baseUrl
-  return `${base}/chat/completions`
+  if (req.endpointUrl !== undefined) return req.endpointUrl
+  try {
+    const url = new URL(req.baseUrl)
+    const trimmedPath = url.pathname.replace(/\/+$/u, '')
+    if (!trimmedPath.endsWith('/chat/completions')) {
+      url.pathname = `${trimmedPath}/chat/completions`
+    } else {
+      url.pathname = trimmedPath
+    }
+    return url.toString()
+  } catch {
+    const base = req.baseUrl.endsWith('/') ? req.baseUrl.slice(0, -1) : req.baseUrl
+    return `${base}/chat/completions`
+  }
 }
 
 function buildHeaders(req: OpenAIRequest): Record<string, string> {
@@ -261,6 +280,9 @@ function buildRequestInit(
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  // Streaming is selected by dispatch and determines the response parser.
+  // Custom parameters must not change the upstream wire format underneath it.
+  body.stream = stream
   // Tool definitions are caller-scoped capabilities. A persisted
   // additionalParams entry must not replace them with unrelated functions.
   if (req.tools !== undefined && req.tools.length > 0) body.tools = openAIToolDefinitions(req.tools)
@@ -307,6 +329,15 @@ interface OpenAINonStreamResponse {
   choices?: OpenAINonStreamChoice[]
   model?: unknown
   error?: { message?: unknown }
+}
+
+function normalizeDeepSeekThinking(content: string): string {
+  let reasoning = ''
+  const visible = content.replace(/^(.*)<\/think>/su, (_match, prefix: string) => {
+    reasoning = prefix.replace(/<think>/gu, '')
+    return ''
+  })
+  return reasoning.length > 0 ? `<Thoughts>\n${reasoning}\n</Thoughts>\n${visible}` : visible
 }
 
 export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
@@ -388,6 +419,9 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
             ? choice.message.reasoning
             : ''
     if (content.length === 0 && reasoning.length === 0) return null
+    if (req.deepSeekThinkingOutput && reasoning.length === 0) {
+      return normalizeDeepSeekThinking(content)
+    }
     return reasoning.length > 0 && !content.startsWith('<Thoughts>')
       ? `<Thoughts>\n${reasoning}\n</Thoughts>\n${content}`
       : content
@@ -536,6 +570,9 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   let reasoningOpen = false
   let accumulatedContent = ''
+  let structuredReasoningSeen = false
+  let embeddedThinkingPending = req.deepSeekThinkingOutput === true
+  let embeddedThinkingBuffer = ''
   let apiMetadata: Record<string, unknown> | undefined
 
   try {
@@ -562,6 +599,9 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
         evt = popSseEventBlock(buf)
         if (data === null) continue
         if (data.trim() === '[DONE]') {
+          if (embeddedThinkingPending && embeddedThinkingBuffer.length > 0) {
+            yield { kind: 'token', content: normalizeDeepSeekThinking(embeddedThinkingBuffer) }
+          }
           if (reasoningOpen) yield { kind: 'token', content: '\n</Thoughts>\n' }
           yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
           return
@@ -578,6 +618,12 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
         const choice = Array.isArray(frame.choices) ? frame.choices[0] : undefined
         const reasoning = choice?.delta?.reasoning_content ?? choice?.delta?.reasoning
         if (typeof reasoning === 'string' && reasoning.length > 0) {
+          structuredReasoningSeen = true
+          if (embeddedThinkingPending && embeddedThinkingBuffer.length > 0) {
+            yield { kind: 'token', content: embeddedThinkingBuffer }
+            embeddedThinkingBuffer = ''
+          }
+          embeddedThinkingPending = false
           if (!reasoningOpen) {
             reasoningOpen = true
             yield { kind: 'token', content: '<Thoughts>\n' }
@@ -597,7 +643,21 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
             reasoningOpen = false
             yield { kind: 'token', content: '\n</Thoughts>\n' }
           }
-          if (content.length > 0) yield { kind: 'token', content }
+          if (req.deepSeekThinkingOutput && !structuredReasoningSeen && embeddedThinkingPending) {
+            embeddedThinkingBuffer += content
+            if (embeddedThinkingBuffer.includes('</think>')) {
+              const normalized = normalizeDeepSeekThinking(embeddedThinkingBuffer)
+              embeddedThinkingBuffer = ''
+              embeddedThinkingPending = false
+              if (normalized.length > 0) yield { kind: 'token', content: normalized }
+            } else if (!'<think>'.startsWith(embeddedThinkingBuffer) && !embeddedThinkingBuffer.startsWith('<think>')) {
+              yield { kind: 'token', content: embeddedThinkingBuffer }
+              embeddedThinkingBuffer = ''
+              embeddedThinkingPending = false
+            }
+          } else if (content.length > 0) {
+            yield { kind: 'token', content }
+          }
         }
         if (choice?.finish_reason) {
           finishReason = mapFinishReason(choice.finish_reason)
@@ -621,6 +681,9 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
     if (hasNonIgnorableSseTail(buf)) {
       yield { kind: 'error', error: 'truncated upstream stream event' }
       return
+    }
+    if (embeddedThinkingPending && embeddedThinkingBuffer.length > 0) {
+      yield { kind: 'token', content: normalizeDeepSeekThinking(embeddedThinkingBuffer) }
     }
     if (reasoningOpen) yield { kind: 'token', content: '\n</Thoughts>\n' }
     yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }

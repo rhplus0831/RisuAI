@@ -36,6 +36,11 @@ export interface BedrockRequest {
   temperature?: number
   topP?: number
   topK?: number
+  thinkingTokens?: number
+  thinkingType?: 'off' | 'budget' | 'adaptive'
+  adaptiveThinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  supportsAdaptiveThinking?: boolean
+  supportsXHighEffort?: boolean
   additionalParams?: Array<[string, string]>
   /** Override clock for deterministic SigV4 tests. */
   date?: Date
@@ -51,6 +56,11 @@ interface BedrockResolveInput {
   temperature?: unknown
   topP?: unknown
   topK?: unknown
+  thinkingTokens?: unknown
+  thinkingType?: unknown
+  adaptiveThinkingEffort?: unknown
+  supportsAdaptiveThinking?: unknown
+  supportsXHighEffort?: unknown
   additionalParams?: Array<[string, string]>
   date?: Date
   signal: AbortSignal
@@ -109,6 +119,22 @@ export function resolveBedrockRequest(input: BedrockResolveInput): BedrockReques
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
   const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
   const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const thinkingTokens =
+    typeof input.thinkingTokens === 'number' && Number.isFinite(input.thinkingTokens) && input.thinkingTokens > 0
+      ? input.thinkingTokens
+      : undefined
+  const thinkingType =
+    input.thinkingType === 'off' || input.thinkingType === 'budget' || input.thinkingType === 'adaptive'
+      ? input.thinkingType
+      : undefined
+  const adaptiveThinkingEffort =
+    input.adaptiveThinkingEffort === 'low' ||
+    input.adaptiveThinkingEffort === 'medium' ||
+    input.adaptiveThinkingEffort === 'high' ||
+    input.adaptiveThinkingEffort === 'xhigh' ||
+    input.adaptiveThinkingEffort === 'max'
+      ? input.adaptiveThinkingEffort
+      : undefined
   const system = typeof input.system === 'string' && input.system.length > 0 ? input.system : undefined
 
   return {
@@ -120,6 +146,11 @@ export function resolveBedrockRequest(input: BedrockResolveInput): BedrockReques
     temperature,
     topP,
     topK,
+    thinkingTokens,
+    thinkingType,
+    adaptiveThinkingEffort,
+    supportsAdaptiveThinking: input.supportsAdaptiveThinking === true,
+    supportsXHighEffort: input.supportsXHighEffort === true,
     additionalParams: input.additionalParams,
     date: input.date,
     signal: input.signal,
@@ -136,6 +167,22 @@ function buildPayload(req: BedrockRequest): Record<string, unknown> {
   if (req.temperature !== undefined) body.temperature = req.temperature
   if (req.topP !== undefined) body.top_p = req.topP
   if (req.topK !== undefined) body.top_k = req.topK
+  if (req.thinkingType === 'adaptive' && req.supportsAdaptiveThinking) {
+    const effort =
+      req.adaptiveThinkingEffort === 'xhigh' && !req.supportsXHighEffort
+        ? 'high'
+        : (req.adaptiveThinkingEffort ?? 'high')
+    body.thinking = { type: 'adaptive', display: 'summarized' }
+    body.output_config = { effort }
+    body.temperature = 1
+    delete body.top_p
+    delete body.top_k
+  } else if (req.thinkingType !== 'off' && req.thinkingTokens !== undefined) {
+    body.thinking = { type: 'enabled', budget_tokens: req.thinkingTokens, display: 'summarized' }
+    body.temperature = 1
+    delete body.top_p
+    delete body.top_k
+  }
   return body
 }
 
@@ -189,6 +236,7 @@ export function buildBedrockRequest(req: BedrockRequest): BedrockBuildResult {
 interface BedrockResponseContentBlock {
   type?: unknown
   text?: unknown
+  thinking?: unknown
 }
 
 interface BedrockResponse {
@@ -250,11 +298,31 @@ export async function runBedrock(req: BedrockRequest): Promise<CompletionResult>
   }
 
   let text = ''
+  let thinkingOpen = false
   if (Array.isArray(body.content)) {
     for (const block of body.content) {
-      if (block.type === 'text' && typeof block.text === 'string') text += block.text
+      if (block.type === 'text' && typeof block.text === 'string') {
+        if (thinkingOpen) {
+          text += '</Thoughts>\n\n'
+          thinkingOpen = false
+        }
+        text += block.text
+      } else if (block.type === 'thinking' && typeof block.thinking === 'string') {
+        if (!thinkingOpen) {
+          text += '<Thoughts>\n'
+          thinkingOpen = true
+        }
+        text += block.thinking
+      } else if (block.type === 'redacted_thinking') {
+        if (!thinkingOpen) {
+          text += '<Thoughts>\n'
+          thinkingOpen = true
+        }
+        text += '\n{{redacted_thinking}}\n'
+      }
     }
   }
+  if (thinkingOpen) text += '</Thoughts>\n\n'
   if (text.length === 0) {
     return { type: 'fail', result: 'upstream returned no text content' }
   }

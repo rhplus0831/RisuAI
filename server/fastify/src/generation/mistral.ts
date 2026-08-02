@@ -192,6 +192,7 @@ function buildRequestInit(req: MistralRequest, stream: boolean): { body: string;
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  body.stream = stream
   return { body: JSON.stringify(body), headers }
 }
 

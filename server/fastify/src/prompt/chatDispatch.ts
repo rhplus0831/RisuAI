@@ -106,6 +106,7 @@ interface ModelInfoLite {
 interface OpenAICompatibleVariant {
   apiKey?: string
   baseUrl?: string
+  endpointUrl?: string
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
   oobaSystemHoist?: boolean
@@ -351,11 +352,39 @@ function findXcustomEntry(db: Database, aiModel: string): CustomModelEntry | nul
 }
 
 function deriveOpenAIBaseUrl(endpoint: string): string {
-  const trimmed = endpoint.replace(/\/+$/, '')
-  if (trimmed.endsWith('/chat/completions')) {
-    return trimmed.slice(0, -'/chat/completions'.length)
+  try {
+    const url = new URL(endpoint)
+    const trimmedPath = url.pathname.replace(/\/+$/u, '')
+    if (trimmedPath.endsWith('/chat/completions')) {
+      url.pathname = trimmedPath.slice(0, -'/chat/completions'.length)
+      return url.toString().replace(/\/$/u, '')
+    }
+    url.pathname = trimmedPath
+    return url.toString().replace(/\/$/u, '')
+  } catch {
+    const trimmed = endpoint.replace(/\/+$/u, '')
+    return trimmed.endsWith('/chat/completions') ? trimmed.slice(0, -'/chat/completions'.length) : trimmed
   }
-  return trimmed
+}
+
+function autofillOpenAIEndpoint(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl)
+    const path = url.pathname
+    if (path.endsWith('v1')) {
+      url.pathname += '/chat/completions'
+    } else if (path.endsWith('v1/')) {
+      url.pathname += 'chat/completions'
+    } else if (!(path.endsWith('completions') || path.endsWith('completions/'))) {
+      url.pathname += path.endsWith('/') ? 'v1/chat/completions' : '/v1/chat/completions'
+    }
+    return url.toString()
+  } catch {
+    if (rawUrl.endsWith('v1')) return `${rawUrl}/chat/completions`
+    if (rawUrl.endsWith('v1/')) return `${rawUrl}chat/completions`
+    if (rawUrl.endsWith('completions') || rawUrl.endsWith('completions/')) return rawUrl
+    return rawUrl + (rawUrl.endsWith('/') ? 'v1/chat/completions' : '/v1/chat/completions')
+  }
 }
 
 function resolveReverseProxyUrl(
@@ -363,6 +392,7 @@ function resolveReverseProxyUrl(
   autofill: boolean,
 ): {
   baseUrl: string
+  endpointUrl: string
   risuIdentify: boolean
 } {
   let url = rawUrl
@@ -372,20 +402,22 @@ function resolveReverseProxyUrl(
     url = url.slice('risu::'.length)
   }
   if (autofill) {
-    if (url.endsWith('v1')) {
-      url += '/chat/completions'
-    } else if (url.endsWith('v1/')) {
-      url += 'chat/completions'
-    } else if (!(url.endsWith('completions') || url.endsWith('completions/'))) {
-      url += url.endsWith('/') ? 'v1/chat/completions' : '/v1/chat/completions'
-    }
+    url = autofillOpenAIEndpoint(url)
   }
-  return { baseUrl: deriveOpenAIBaseUrl(url), risuIdentify }
+  return { baseUrl: deriveOpenAIBaseUrl(url), endpointUrl: url, risuIdentify }
 }
 
 function stripTrailingPath(rawUrl: string, path: string): string {
-  const trimmed = rawUrl.replace(/\/+$/, '')
-  return trimmed.endsWith(path) ? trimmed.slice(0, -path.length) : trimmed
+  try {
+    const url = new URL(rawUrl)
+    const trimmedPath = url.pathname.replace(/\/+$/u, '')
+    if (trimmedPath.endsWith(path)) url.pathname = trimmedPath.slice(0, -path.length)
+    else url.pathname = trimmedPath
+    return url.toString().replace(/\/$/u, '')
+  } catch {
+    const trimmed = rawUrl.replace(/\/+$/u, '')
+    return trimmed.endsWith(path) ? trimmed.slice(0, -path.length) : trimmed
+  }
 }
 
 function resolveModelInfo(db: Database): ModelInfoLite {
@@ -780,7 +812,7 @@ function resolveLegacyMirrorCustomApiBaseUrl(
   db: Database,
   profile: ResolvedModelProfile,
   baseUrl: string | undefined,
-): { baseUrl: string | undefined; extraHeaders?: Record<string, string> } {
+): { baseUrl: string | undefined; endpointUrl?: string; extraHeaders?: Record<string, string> } {
   const legacyUrl = asString(db.forceReplaceUrl)
   if (
     !baseUrl ||
@@ -800,6 +832,7 @@ function resolveLegacyMirrorCustomApiBaseUrl(
   const resolved = resolveReverseProxyUrl(legacyUrl, db.autofillRequestUrl !== false)
   return {
     baseUrl: resolved.baseUrl,
+    endpointUrl: resolved.endpointUrl,
     ...(resolved.risuIdentify ? { extraHeaders: { 'X-Proxy-Risu': 'RisuAI' } } : {}),
   }
 }
@@ -823,6 +856,11 @@ function resolveProfileOpenAIVariant(
   return {
     ...(apiKey ? { apiKey } : {}),
     baseUrl: legacyMirror.baseUrl,
+    endpointUrl:
+      legacyMirror.endpointUrl ??
+      (profile.modelId === 'reverse_proxy' && options.reverseProxy?.autofillRequestUrl === false
+        ? legacyMirror.baseUrl
+        : undefined),
     extraHeaders,
     additionalParams: options.additionalParams,
     oobaSystemHoist: options.reverseProxy?.oobaSystemHoist === true,
@@ -832,6 +870,13 @@ function resolveProfileOpenAIVariant(
 function resolveProfileOllamaBaseUrl(profile: ResolvedModelProfile): string | undefined {
   const options = profile.providerOptions
   return asString(options.ollama?.url) ?? asString(options.baseUrl)
+}
+
+function resolveOllamaThinkMode(value: unknown): boolean | 'low' | 'medium' | 'high' | undefined {
+  if (value === 'off') return false
+  if (value === 'on') return true
+  if (value === 'low' || value === 'medium' || value === 'high') return value
+  return undefined
 }
 
 function resolveDebugEchoMessage(profile: ResolvedModelProfile): string {
@@ -894,10 +939,11 @@ export function resolveOpenAIVariant(
     const apiKey = asString(db.proxyKey)
     const rawUrl = asString(db.forceReplaceUrl)
     if (!apiKey || !rawUrl) return null
-    const { baseUrl, risuIdentify } = resolveReverseProxyUrl(rawUrl, db.autofillRequestUrl !== false)
+    const { baseUrl, endpointUrl, risuIdentify } = resolveReverseProxyUrl(rawUrl, db.autofillRequestUrl !== false)
     return {
       apiKey,
       baseUrl,
+      endpointUrl,
       extraHeaders: risuIdentify ? { 'X-Proxy-Risu': 'RisuAI' } : undefined,
       additionalParams: additionalParams(db.additionalParams),
       oobaSystemHoist: db.reverseProxyOobaMode === true,
@@ -911,6 +957,7 @@ export function resolveOpenAIVariant(
     return {
       apiKey,
       baseUrl: deriveOpenAIBaseUrl(url),
+      endpointUrl: url,
       additionalParams: parseXcustomParams(entry.params),
     }
   }
@@ -920,6 +967,7 @@ export function resolveOpenAIVariant(
     return {
       apiKey,
       baseUrl: info.endpoint ? deriveOpenAIBaseUrl(info.endpoint) : undefined,
+      endpointUrl: info.endpoint,
     }
   }
   const apiKey = asString(db.openAIKey)
@@ -1145,6 +1193,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       ),
       apiKey: variant.apiKey,
       baseUrl: variant.baseUrl,
+      endpointUrl: variant.endpointUrl,
       maxTokens,
       temperature,
       topP: parameters.topP,
@@ -1165,6 +1214,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       n: generationCount,
       useCompletionTokens: info.flags.includes(LLMFlags.OAICompletionTokens),
       thinking: resolveDeepSeekThinking(db, info.flags),
+      deepSeekThinkingOutput: info.flags.includes(LLMFlags.deepSeekThinkingOutput),
       logitBias: resolveOpenAILogitBias(args.biases ?? [], model, tokenizerEncodingFromDb(db)),
       extraHeaders: variant.extraHeaders,
       additionalParams: variant.additionalParams,
@@ -1192,6 +1242,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       ),
       apiKey: variant.apiKey,
       baseUrl: variant.baseUrl,
+      endpointUrl: variant.endpointUrl,
       maxTokens,
       temperature,
       topP: parameters.topP,
@@ -1210,6 +1261,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       n: generationCount,
       useCompletionTokens: info.flags.includes(LLMFlags.OAICompletionTokens),
       thinking: resolveDeepSeekThinking(db, info.flags),
+      deepSeekThinkingOutput: info.flags.includes(LLMFlags.deepSeekThinkingOutput),
       logitBias: resolveOpenAILogitBias(args.biases ?? [], model, tokenizerEncodingFromDb(db)),
       extraHeaders: variant.extraHeaders,
       additionalParams: variant.additionalParams,
@@ -1448,6 +1500,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       temperature,
       topP: parameters.topP,
       topK: parameters.topK,
+      think: resolveOllamaThinkMode(profile.providerOptions.ollama?.thinkingMode ?? db.ollamaThinkingMode),
       signal,
     })
     if (!request) throw new Error('options.ollama.baseUrl is required')
@@ -1470,6 +1523,11 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       temperature,
       topP: parameters.topP,
       topK: parameters.topK,
+      thinkingTokens: parameters.thinkingTokens,
+      thinkingType: db.thinkingType,
+      adaptiveThinkingEffort: db.adaptiveThinkingEffort,
+      supportsAdaptiveThinking: info.flags.includes(LLMFlags.claudeAdaptiveThinking),
+      supportsXHighEffort: info.flags.includes(LLMFlags.claudeXHighEffort),
       signal,
     })
     if (!request) throw new Error('bedrock could not resolve request from the given options')

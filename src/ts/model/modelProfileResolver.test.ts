@@ -1040,11 +1040,14 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     expect(profile.requestModel).toBe('profile-proxy-model')
     expect(profile.providerCapability).toEqual({ routable: true, provider: 'openai' })
     expect(profile.providerCapabilityInput).toMatchObject({
-      config: { forceReplaceUrl: 'https://profile-proxy.example.com/v1', proxyKey: 'flat-proxy-key' },
+      config: {
+        forceReplaceUrl: 'https://profile-proxy.example.com/v1/chat/completions',
+        proxyKey: 'flat-proxy-key',
+      },
     })
     expect(profile.providerOptions).toMatchObject({
       apiKey: 'flat-proxy-key',
-      baseUrl: 'https://profile-proxy.example.com/v1',
+      baseUrl: 'https://profile-proxy.example.com/v1/chat/completions',
       extraHeaders: { 'X-Proxy-Risu': 'RisuAI' },
       reverseProxy: {
         autofillRequestUrl: false,
@@ -1422,6 +1425,8 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
 
     expect(profile.modelInfo.format).toBe(LLMFormat.AWSBedrockClaude)
+    expect(profile.modelInfo.flags).toContain(LLMFlags.claudeThinking)
+    expect(profile.modelInfo.parameters).toContain('thinking_tokens')
     expect(profile.providerCapability).toEqual({ routable: true, provider: 'bedrock' })
     expect(profile.requestModel).toBe('anthropic.claude-sonnet-4-5-20250929-v1:0')
     expect(profile.providerOptions).toMatchObject({

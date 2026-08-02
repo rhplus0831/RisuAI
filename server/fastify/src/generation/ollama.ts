@@ -13,6 +13,7 @@ export interface OllamaRequest {
   temperature?: number
   topP?: number
   topK?: number
+  think?: boolean | 'low' | 'medium' | 'high'
   tools?: OllamaTool[]
   extraHeaders?: Record<string, string>
   signal: AbortSignal
@@ -52,6 +53,7 @@ interface OllamaResolveInput {
   temperature?: unknown
   topP?: unknown
   topK?: unknown
+  think?: unknown
   tools?: unknown
   extraHeaders?: Record<string, string>
   signal: AbortSignal
@@ -167,6 +169,10 @@ export function resolveOllamaRequest(input: OllamaResolveInput): OllamaRequest |
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
   const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
   const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const think =
+    typeof input.think === 'boolean' || input.think === 'low' || input.think === 'medium' || input.think === 'high'
+      ? input.think
+      : undefined
   const tools = normalizeTools(input.tools)
 
   return {
@@ -178,6 +184,7 @@ export function resolveOllamaRequest(input: OllamaResolveInput): OllamaRequest |
     temperature,
     topP,
     topK,
+    think,
     tools,
     extraHeaders: input.extraHeaders,
     signal: input.signal,
@@ -210,6 +217,7 @@ function buildPayload(req: OllamaRequest, stream: boolean): Record<string, unkno
     stream,
   }
   if (Object.keys(options).length > 0) body.options = options
+  if (req.think !== undefined) body.think = req.think
   if (req.tools !== undefined && req.tools.length > 0) body.tools = req.tools
   return body
 }
@@ -336,11 +344,13 @@ export async function runOllama(req: OllamaRequest): Promise<CompletionResult> {
 
   const body = raw.body
 
+  const thinking = typeof body.message?.thinking === 'string' ? body.message.thinking : ''
   const content = typeof body.message?.content === 'string' ? body.message.content : ''
-  if (content.length === 0) {
+  if (thinking.length === 0 && content.length === 0) {
     return { type: 'fail', result: 'upstream returned no message content' }
   }
-  const result: CompletionResult = { type: 'success', result: content }
+  const text = thinking.length > 0 ? `<Thoughts>\n${thinking}\n</Thoughts>\n\n${content}` : content
+  const result: CompletionResult = { type: 'success', result: text }
   if (raw.model) result.model = raw.model
   const apiMetadata = extractApiResponseMetadata(body, ['message', 'error', 'model', 'done', 'done_reason'])
   if (apiMetadata) result.apiMetadata = apiMetadata
@@ -387,7 +397,27 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   let sawDone = false
+  let thinkingOpen = false
   let apiMetadata: Record<string, unknown> | undefined
+
+  const visibleParts = function* (chunk: OllamaChunk): Generator<string> {
+    const thinking = typeof chunk.message?.thinking === 'string' ? chunk.message.thinking : ''
+    const content = typeof chunk.message?.content === 'string' ? chunk.message.content : ''
+    if (thinking.length > 0) {
+      if (!thinkingOpen) {
+        thinkingOpen = true
+        yield '<Thoughts>\n'
+      }
+      yield thinking
+    }
+    if (content.length > 0) {
+      if (thinkingOpen) {
+        thinkingOpen = false
+        yield '\n</Thoughts>\n\n'
+      }
+      yield content
+    }
+  }
 
   try {
     while (true) {
@@ -428,10 +458,7 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
           apiMetadata,
           extractApiResponseMetadata(chunk, ['message', 'error', 'done', 'done_reason']),
         )
-        const text = typeof chunk.message?.content === 'string' ? chunk.message.content : ''
-        if (text.length > 0) {
-          yield { kind: 'token', content: text }
-        }
+        for (const content of visibleParts(chunk)) yield { kind: 'token', content }
         if (chunk.done === true) {
           sawDone = true
           finishReason = mapDoneReason(chunk.done_reason)
@@ -457,10 +484,7 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
           apiMetadata,
           extractApiResponseMetadata(chunk, ['message', 'error', 'done', 'done_reason']),
         )
-        const text = typeof chunk.message?.content === 'string' ? chunk.message.content : ''
-        if (text.length > 0) {
-          yield { kind: 'token', content: text }
-        }
+        for (const content of visibleParts(chunk)) yield { kind: 'token', content }
         if (chunk.done === true) {
           sawDone = true
           finishReason = mapDoneReason(chunk.done_reason)
@@ -477,6 +501,9 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
     })
   }
 
+  if (!req.signal.aborted && thinkingOpen) {
+    yield { kind: 'token', content: '\n</Thoughts>\n\n' }
+  }
   if (!req.signal.aborted && sawDone) {
     yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
   } else if (!req.signal.aborted) {

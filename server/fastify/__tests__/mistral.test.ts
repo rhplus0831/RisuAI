@@ -255,12 +255,14 @@ describe('runMistral (non-streaming)', () => {
         ['extra.flag', 'true'],
         ['extra.nested.value', 'json::[1, 2]'],
         ['temperature', '{{none}}'],
+        ['stream', 'true'],
       ],
       signal: new AbortController().signal,
     })!
     await runMistral(resolved)
     const sent = JSON.parse(captured!.init.body as string)
     expect(sent.temperature).toBeUndefined()
+    expect(sent.stream).toBe(false)
     expect(sent.extra).toEqual({ flag: true, nested: { value: [1, 2] } })
     const headers = captured!.init.headers as Record<string, string>
     expect(headers['X-Custom']).toBe('one')

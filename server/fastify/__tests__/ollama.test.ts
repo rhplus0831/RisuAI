@@ -135,6 +135,7 @@ describe('resolveOllamaRequest', () => {
       temperature: 0.5,
       topP: 0.9,
       topK: 40,
+      think: 'medium',
       signal: new AbortController().signal,
     })
     expect(r?.apiKey).toBe('tok')
@@ -142,6 +143,7 @@ describe('resolveOllamaRequest', () => {
     expect(r?.temperature).toBe(0.5)
     expect(r?.topP).toBe(0.9)
     expect(r?.topK).toBe(40)
+    expect(r?.think).toBe('medium')
   })
 
   it('normalizes native function tools', () => {
@@ -254,6 +256,53 @@ describe('runOllama (buffered)', () => {
         },
       },
     ])
+  })
+
+  it.each([
+    ['off', false],
+    ['on', true],
+    ['low', 'low'],
+    ['medium', 'medium'],
+    ['high', 'high'],
+  ] as const)('maps the configured %s mode to Ollama think=%s', async (_mode, think) => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ message: { content: 'answer' }, done: true })
+    })
+    const resolved = resolveOllamaRequest({
+      model: 'deep-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      think,
+      signal: new AbortController().signal,
+    })!
+
+    await runOllama(resolved)
+
+    expect(sent.think).toBe(think)
+  })
+
+  it('combines buffered message.thinking and content in the shared envelope', async () => {
+    vi.stubGlobal('fetch', async () =>
+      ok({
+        model: 'deep-model',
+        message: { role: 'assistant', thinking: 'reasoning', content: 'answer' },
+        done: true,
+      }),
+    )
+    const resolved = resolveOllamaRequest({
+      model: 'deep-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      signal: new AbortController().signal,
+    })!
+
+    expect(await runOllama(resolved)).toEqual({
+      type: 'success',
+      result: '<Thoughts>\nreasoning\n</Thoughts>\n\nanswer',
+      model: 'deep-model',
+    })
   })
 
   it('strips a trailing slash from baseUrl when composing the URL', async () => {
@@ -409,6 +458,34 @@ describe('runOllamaStream', () => {
     const frames: unknown[] = []
     for await (const f of runOllamaStream(resolved)) frames.push(f)
     expect(frames.at(-1)).toEqual({ kind: 'done', finishReason: 'length' })
+  })
+
+  it('streams message.thinking before content in one shared envelope', async () => {
+    vi.stubGlobal('fetch', async () =>
+      ndjsonResponse([
+        `${JSON.stringify({ message: { thinking: 'reason' }, done: false })}\n`,
+        `${JSON.stringify({ message: { thinking: 'ing' }, done: false })}\n`,
+        `${JSON.stringify({ message: { content: 'answer' }, done: false })}\n`,
+        `${JSON.stringify({ message: {}, done: true, done_reason: 'stop' })}\n`,
+      ]),
+    )
+    const resolved = resolveOllamaRequest({
+      model: 'deep-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const frame of runOllamaStream(resolved)) frames.push(frame)
+
+    expect(frames).toEqual([
+      { kind: 'token', content: '<Thoughts>\n' },
+      { kind: 'token', content: 'reason' },
+      { kind: 'token', content: 'ing' },
+      { kind: 'token', content: '\n</Thoughts>\n\n' },
+      { kind: 'token', content: 'answer' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
   })
 
   it('reassembles an NDJSON line split across two reader reads', async () => {

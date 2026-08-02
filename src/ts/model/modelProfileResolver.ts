@@ -331,6 +331,16 @@ const HARD_RUNTIME_DEFAULTS: ModelProfileRecordRuntimeOptions = {
   customTokenizer: 'tik',
 }
 
+const BEDROCK_THINKING_MODELS = new Set([
+  'anthropic.claude-opus-4-6-v1',
+  'anthropic.claude-opus-4-5-20251101-v1:0',
+  'anthropic.claude-sonnet-4-5-20250929-v1:0',
+  'anthropic.claude-opus-4-1-20250805-v1:0',
+  'anthropic.claude-opus-4-20250514-v1:0',
+  'anthropic.claude-sonnet-4-20250514-v1:0',
+  'anthropic.claude-3-7-sonnet-20250219-v1:0',
+])
+
 const SERVER_SAFE_MODELS: LLMModel[] = [
   ...OpenAIModels,
   ...OpenAIModels.filter((model) => model.format === LLMFormat.OpenAICompatible).map((model) => ({
@@ -926,6 +936,7 @@ export function resolveServerSafeModelInfo(
     )
   }
   if (id.startsWith('anthropic.')) {
+    const supportsThinking = BEDROCK_THINKING_MODELS.has(id)
     return withCustomFlags(
       database,
       completeModel({
@@ -934,8 +945,8 @@ export function resolveServerSafeModelInfo(
         internalID: id,
         provider: LLMProvider.AWS,
         format: LLMFormat.AWSBedrockClaude,
-        flags: FIRST_SYSTEM_FLAGS,
-        parameters: ClaudeParameters,
+        flags: supportsThinking ? [...FIRST_SYSTEM_FLAGS, LLMFlags.claudeThinking] : FIRST_SYSTEM_FLAGS,
+        parameters: supportsThinking ? [...ClaudeParameters, 'thinking_tokens'] : ClaudeParameters,
         tokenizer: LLMTokenizer.Claude,
       }),
       durableRuntimeOptions,
@@ -2421,14 +2432,26 @@ function resolveReverseProxyUrl(
     url = url.slice('risu::'.length)
   }
   if (autofill && url.length > 0) {
-    if (url.endsWith('v1')) {
-      url += `/${suffix}`
-    } else if (url.endsWith('v1/')) {
-      url += suffix
-    } else if (!(url.endsWith(suffix) || url.endsWith(`${suffix}/`))) {
-      url += url.endsWith('/') ? `v1/${suffix}` : `/v1/${suffix}`
+    try {
+      const parsed = new URL(url)
+      const path = parsed.pathname
+      if (path.endsWith('v1')) {
+        parsed.pathname += `/${suffix}`
+      } else if (path.endsWith('v1/')) {
+        parsed.pathname += suffix
+      } else if (!(path.endsWith(suffix) || path.endsWith(`${suffix}/`))) {
+        parsed.pathname += path.endsWith('/') ? `v1/${suffix}` : `/v1/${suffix}`
+      }
+      url = parsed.toString()
+    } catch {
+      if (url.endsWith('v1')) url += `/${suffix}`
+      else if (url.endsWith('v1/')) url += suffix
+      else if (!(url.endsWith(suffix) || url.endsWith(`${suffix}/`))) {
+        url += url.endsWith('/') ? `v1/${suffix}` : `/v1/${suffix}`
+      }
     }
   }
+  if (!autofill && suffix === 'chat/completions') return { baseUrl: url, risuIdentify }
   return { baseUrl: stripTrailingPath(url, `/${suffix}`), risuIdentify }
 }
 
@@ -2437,8 +2460,16 @@ function deriveOpenAIBaseUrl(endpoint: string): string {
 }
 
 function stripTrailingPath(rawUrl: string, path: string): string {
-  const trimmed = rawUrl.replace(/\/+$/, '')
-  return trimmed.endsWith(path) ? trimmed.slice(0, -path.length) : trimmed
+  try {
+    const url = new URL(rawUrl)
+    const trimmedPath = url.pathname.replace(/\/+$/u, '')
+    if (trimmedPath.endsWith(path)) url.pathname = trimmedPath.slice(0, -path.length)
+    else url.pathname = trimmedPath
+    return url.toString().replace(/\/$/u, '')
+  } catch {
+    const trimmed = rawUrl.replace(/\/+$/u, '')
+    return trimmed.endsWith(path) ? trimmed.slice(0, -path.length) : trimmed
+  }
 }
 
 function normalizeSampler(value: unknown, options: { scale?: number } = {}): number | undefined {

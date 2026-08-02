@@ -79,6 +79,38 @@ describe('provider-native message conversion', () => {
     ])
   })
 
+  it('pins natural Anthropic attachment order and the final-part cache point', () => {
+    // Accepted divergence from baseline anthropic.ts:147: the old unshift()
+    // path reversed attachments and cached content[0]. Preserve A, B, text
+    // order and place the cache boundary on the final part instead.
+    expect(
+      buildAnthropicWireMessages([
+        {
+          role: 'user',
+          content: 'compare the first and second images',
+          cachePoint: true,
+          multimodals: [
+            { type: 'image', base64: 'data:image/png;base64,IMAGE_A' },
+            { type: 'image', base64: 'data:image/jpeg;base64,IMAGE_B' },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'IMAGE_A' } },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'IMAGE_B' } },
+          {
+            type: 'text',
+            text: 'compare the first and second images',
+            cache_control: { type: 'ephemeral' },
+          },
+        ],
+      },
+    ])
+  })
+
   it('converts Gemini image/audio/video rows to inlineData parts', () => {
     expect(
       reformatForGemini([

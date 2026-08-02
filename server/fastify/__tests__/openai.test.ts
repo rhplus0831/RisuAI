@@ -331,6 +331,26 @@ describe('runOpenAI (non-streaming)', () => {
     expect(headers['X-Title']).toBe('RisuAI')
   })
 
+  it('restores buffered stream=false after additionalParams', async () => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ choices: [{ message: { content: 'buffered' } }] })
+    })
+
+    const result = await runOpenAI({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      additionalParams: [['stream', 'true']],
+      signal: new AbortController().signal,
+    })
+
+    expect(sent.stream).toBe(false)
+    expect(result).toEqual({ type: 'success', result: 'buffered' })
+  })
+
   it('does not let additionalParams replace caller-scoped tool definitions', async () => {
     let captured: { init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
@@ -381,6 +401,83 @@ describe('runOpenAI (non-streaming)', () => {
       signal: new AbortController().signal,
     })
     expect(capturedUrl).toBe('https://api.openai.com/v1/chat/completions')
+  })
+
+  it('uses an exact custom endpoint with its query string unchanged', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    await runOpenAI({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://unused.example/v1',
+      endpointUrl: 'https://proxy.example/v1/chat/completions?api-version=2025-01-01',
+      signal: new AbortController().signal,
+    })
+
+    expect(capturedUrl).toBe('https://proxy.example/v1/chat/completions?api-version=2025-01-01')
+  })
+
+  it.each([
+    [
+      'query-bearing base',
+      'https://proxy.example/v1?api-version=2025-01-01',
+      'https://proxy.example/v1/chat/completions?api-version=2025-01-01',
+    ],
+    [
+      'query-bearing trailing slash base',
+      'https://proxy.example/v1/?api-version=2025-01-01',
+      'https://proxy.example/v1/chat/completions?api-version=2025-01-01',
+    ],
+    [
+      'completed trailing slash endpoint',
+      'https://proxy.example/v1/chat/completions/?api-version=2025-01-01',
+      'https://proxy.example/v1/chat/completions?api-version=2025-01-01',
+    ],
+  ])('appends chat/completions before the query for a %s', async (_label, baseUrl, expectedUrl) => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    await runOpenAI({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl,
+      signal: new AbortController().signal,
+    })
+
+    expect(capturedUrl).toBe(expectedUrl)
+  })
+
+  it('normalizes flagged embedded DeepSeek thinking in buffered choices', async () => {
+    vi.stubGlobal('fetch', async () =>
+      ok({
+        choices: [
+          { message: { content: '<think>hidden reasoning</think>answer' } },
+          { message: { content: '<think>alternate thought</think>alternate' } },
+        ],
+      }),
+    )
+
+    expect(
+      await runOpenAI({
+        model: 'deep-model',
+        messages: [],
+        apiKey: 'k',
+        baseUrl: 'https://api.openai.com/v1',
+        deepSeekThinkingOutput: true,
+        signal: new AbortController().signal,
+      }),
+    ).toEqual({
+      type: 'success',
+      result: '<Thoughts>\nhidden reasoning\n</Thoughts>\nanswer',
+      alternates: ['<Thoughts>\nalternate thought\n</Thoughts>\nalternate'],
+    })
   })
 
   it('returns fail with upstream error context on non-2xx', async () => {
@@ -686,6 +783,33 @@ describe('runOpenAIStream', () => {
     ])
   })
 
+  it('normalizes a flagged DeepSeek think block split across content deltas', async () => {
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream([
+        tokenFrame('<thi'),
+        tokenFrame('nk>hidden reasoning</thi'),
+        tokenFrame('nk>answer'),
+        `data: [DONE]\n\n`,
+      ]),
+    )
+    const frames: unknown[] = []
+    for await (const frame of runOpenAIStream({
+      model: 'deep-model',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      deepSeekThinkingOutput: true,
+      signal: new AbortController().signal,
+    })) {
+      frames.push(frame)
+    }
+
+    expect(frames).toEqual([
+      { kind: 'token', content: '<Thoughts>\nhidden reasoning\n</Thoughts>\nanswer' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
   it('accepts CRLF-delimited upstream SSE frames', async () => {
     vi.stubGlobal('fetch', async () => {
       return sseUpstream([crlf(tokenFrame('hello')), crlf(tokenFrame(' world')), `data: [DONE]\r\n\r\n`])
@@ -934,5 +1058,30 @@ describe('runOpenAIStream', () => {
         messageCount: 1,
       })
     })
+  })
+
+  it('restores streaming stream=true after additionalParams', async () => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return sseUpstream([tokenFrame('streamed'), `data: [DONE]\n\n`])
+    })
+    const frames: unknown[] = []
+    for await (const frame of runOpenAIStream({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      additionalParams: [['stream', 'false']],
+      signal: new AbortController().signal,
+    })) {
+      frames.push(frame)
+    }
+
+    expect(sent.stream).toBe(true)
+    expect(frames).toEqual([
+      { kind: 'token', content: 'streamed' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
   })
 })

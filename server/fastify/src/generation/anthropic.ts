@@ -186,6 +186,7 @@ function buildRequestInit(req: AnthropicRequest, stream: boolean): { body: strin
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  body.stream = stream
   if (req.tools !== undefined && req.tools.length > 0) {
     // Extended-thinking blocks carry signatures that this bounded browser
     // round-trip intentionally does not retain. Keep tool turns compatible,

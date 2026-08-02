@@ -361,6 +361,9 @@ function buildRequestInit(
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, requestHeaders, req.additionalParams)
   }
+  // Gemini selects streaming through the operation URL, not a body field.
+  // Ignore a Chat Completions-style override that could contradict dispatch.
+  delete body.stream
   return { body, bodyText: JSON.stringify(body), headers: requestHeaders }
 }
 
