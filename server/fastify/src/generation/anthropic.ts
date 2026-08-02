@@ -314,7 +314,10 @@ interface AnthropicDelta {
 }
 
 interface AnthropicStreamFrame {
+  type?: unknown
+  message?: unknown
   delta?: AnthropicDelta
+  error?: { message?: unknown; type?: unknown }
 }
 
 interface AnthropicErrorResponse {
@@ -439,57 +442,67 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
         const evt = parseUpstreamEvent(block)
         if (!evt) continue
 
-        if (evt.event === 'message_start') {
-          try {
-            const frame = JSON.parse(evt.data) as { message?: unknown }
-            apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame.message, ['content']))
-          } catch (err) {
+        let frame: AnthropicStreamFrame | undefined
+        try {
+          frame = JSON.parse(evt.data) as AnthropicStreamFrame
+        } catch (err) {
+          if (
+            evt.event === 'message_start' ||
+            evt.event === 'content_block_delta' ||
+            evt.event === 'message_delta' ||
+            evt.event === 'error'
+          ) {
             const msg = err instanceof Error ? err.message : String(err)
             yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
             return
           }
+        }
+
+        if (frame?.type === 'error' || evt.event === 'error') {
+          const message =
+            typeof frame?.error?.message === 'string' && frame.error.message.length > 0
+              ? frame.error.message
+              : 'Anthropic stream failed without an error message.'
+          const code =
+            typeof frame?.error?.type === 'string' && frame.error.type.length > 0 ? frame.error.type : undefined
+          yield { kind: 'error', error: message, ...(code ? { code } : {}) }
+          return
+        }
+
+        if (evt.event === 'message_start') {
+          apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame?.message, ['content']))
         } else if (evt.event === 'content_block_delta') {
-          try {
-            const frame = JSON.parse(evt.data) as AnthropicStreamFrame
-            const t = frame.delta?.text
-            if (frame.delta?.type === 'text_delta' && typeof t === 'string' && t.length > 0) {
-              if (thinkingOpen) {
-                thinkingOpen = false
-                yield { kind: 'token', content: '</Thoughts>\n\n' }
-              }
-              yield { kind: 'token', content: t }
-            } else if (
-              (frame.delta?.type === 'thinking' || frame.delta?.type === 'thinking_delta') &&
-              typeof frame.delta.thinking === 'string'
-            ) {
-              if (!thinkingOpen) {
-                thinkingOpen = true
-                yield { kind: 'token', content: '<Thoughts>\n' }
-              }
-              yield { kind: 'token', content: frame.delta.thinking }
-            } else if (frame.delta?.type === 'redacted_thinking') {
-              if (!thinkingOpen) {
-                thinkingOpen = true
-                yield { kind: 'token', content: '<Thoughts>\n' }
-              }
-              yield { kind: 'token', content: '\n{{redacted_thinking}}\n' }
+          const t = frame?.delta?.text
+          if (
+            (frame?.delta?.type === 'text' || frame?.delta?.type === 'text_delta') &&
+            typeof t === 'string' &&
+            t.length > 0
+          ) {
+            if (thinkingOpen) {
+              thinkingOpen = false
+              yield { kind: 'token', content: '</Thoughts>\n\n' }
             }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err)
-            yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
-            return
+            yield { kind: 'token', content: t }
+          } else if (
+            (frame?.delta?.type === 'thinking' || frame?.delta?.type === 'thinking_delta') &&
+            typeof frame.delta.thinking === 'string'
+          ) {
+            if (!thinkingOpen) {
+              thinkingOpen = true
+              yield { kind: 'token', content: '<Thoughts>\n' }
+            }
+            yield { kind: 'token', content: frame.delta.thinking }
+          } else if (frame?.delta?.type === 'redacted_thinking') {
+            if (!thinkingOpen) {
+              thinkingOpen = true
+              yield { kind: 'token', content: '<Thoughts>\n' }
+            }
+            yield { kind: 'token', content: '\n{{redacted_thinking}}\n' }
           }
         } else if (evt.event === 'message_delta') {
-          try {
-            const frame = JSON.parse(evt.data) as AnthropicStreamFrame
-            apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame, ['delta']))
-            if (frame.delta?.stop_reason !== undefined) {
-              finishReason = mapFinishReason(frame.delta.stop_reason)
-            }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err)
-            yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
-            return
+          apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame, ['delta']))
+          if (frame?.delta?.stop_reason !== undefined) {
+            finishReason = mapFinishReason(frame.delta.stop_reason)
           }
         } else if (evt.event === 'message_stop') {
           sawStop = true

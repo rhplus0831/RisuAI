@@ -345,8 +345,12 @@ function sseUpstream(chunks: string[]): Response {
   })
 }
 
-function deltaEvent(text: string): string {
-  return `event: content_block_delta\n` + `data: ${JSON.stringify({ delta: { type: 'text_delta', text } })}\n\n`
+function deltaEvent(text: string, type: 'text' | 'text_delta' = 'text_delta'): string {
+  return `event: content_block_delta\n` + `data: ${JSON.stringify({ delta: { type, text } })}\n\n`
+}
+
+function errorEvent(message: string, type: string): string {
+  return `event: error\n` + `data: ${JSON.stringify({ type: 'error', error: { type, message } })}\n\n`
 }
 
 function messageDeltaEvent(stopReason: string): string {
@@ -386,6 +390,26 @@ describe('runAnthropicStream', () => {
     expect(frames).toEqual([
       { kind: 'token', content: 'hello' },
       { kind: 'token', content: ' world' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('accepts the proxy-compatible text delta type', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream([deltaEvent('proxy text', 'text'), MESSAGE_STOP]))
+    const frames: unknown[] = []
+    for await (const f of runAnthropicStream({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 1024,
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'proxy text' },
       { kind: 'done', finishReason: 'stop' },
     ])
   })
@@ -454,6 +478,28 @@ describe('runAnthropicStream', () => {
     expect(frames).toEqual([
       { kind: 'token', content: 'partial' },
       { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('surfaces in-stream error payloads as failure frames without a trailing done', async () => {
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream([deltaEvent('partial'), errorEvent('Overloaded', 'overloaded_error')]),
+    )
+    const frames: unknown[] = []
+    for await (const f of runAnthropicStream({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 1024,
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'partial' },
+      { kind: 'error', error: 'Overloaded', code: 'overloaded_error' },
     ])
   })
 

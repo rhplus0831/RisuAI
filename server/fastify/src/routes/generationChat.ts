@@ -2639,7 +2639,7 @@ function persistServerGenerationResult(args: {
           }
         }
         // Reroll buffer ("don't lose a rerolled result"):
-        //  - regenerate (`targetMessageId` set) REPLACES a candidate; preserve BOTH the
+        //  - regenerate REPLACES a candidate; preserve BOTH the
         //    one it displaces AND the new one it produces as alternate rows, so the
         //    full candidate set of the turn survives a reload and swipe-navigation is
         //    durable for free (flipping the active tail never touches the buffer — the
@@ -2651,9 +2651,10 @@ function persistServerGenerationResult(args: {
         //    both versions instead of silently discarding the displaced row.
         // Both run inside this mutation's transaction (atomic with the message write).
         const preservesRerollCandidate =
-          !!args.targetMessageId ||
-          !!write.displaced ||
-          (args.mode === 'regenerate' && countAlternateMessages(targetDb, args.chatId) > 0)
+          args.mode !== 'continue' &&
+          (!!args.targetMessageId ||
+            !!write.displaced ||
+            (args.mode === 'regenerate' && countAlternateMessages(targetDb, args.chatId) > 0))
         if (providerAlternates.length > 0) {
           if (!preservesRerollCandidate) clearAlternateMessages(targetDb, args.chatId)
           if (preservesRerollCandidate && write.displaced) addAlternateMessage(targetDb, args.chatId, write.displaced)

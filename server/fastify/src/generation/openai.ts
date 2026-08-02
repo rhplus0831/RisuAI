@@ -535,6 +535,7 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   let reasoningOpen = false
+  let accumulatedContent = ''
   let apiMetadata: Record<string, unknown> | undefined
 
   try {
@@ -585,11 +586,18 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
         }
         const delta = choice?.delta?.content
         if (typeof delta === 'string' && delta.length > 0) {
+          let content = delta
+          if (delta.length > accumulatedContent.length && delta.startsWith(accumulatedContent)) {
+            content = delta.slice(accumulatedContent.length)
+            accumulatedContent = delta
+          } else {
+            accumulatedContent += delta
+          }
           if (reasoningOpen) {
             reasoningOpen = false
             yield { kind: 'token', content: '\n</Thoughts>\n' }
           }
-          yield { kind: 'token', content: delta }
+          if (content.length > 0) yield { kind: 'token', content }
         }
         if (choice?.finish_reason) {
           finishReason = mapFinishReason(choice.finish_reason)

@@ -4510,6 +4510,77 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted[1].data).toContain('and they lived happily')
   })
 
+  it('excludes a Continue-displaced row and captures the extended row on a later regenerate', async () => {
+    const replies = [' continued', 'replacement']
+    let call = 0
+    const dispatchProvider = vi.fn(() => {
+      const reply = replies[call++]
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: reply }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    })
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      useStreaming: true,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              id: 'chat-1',
+              message: [
+                { role: 'user', data: 'continue this', chatId: 'msg-user-1' },
+                { role: 'char', data: 'A', chatId: 'msg-char-1', saying: 'char-1' },
+              ],
+              note: '',
+              name: 'Chat',
+              localLore: [],
+            },
+          ],
+        },
+      ],
+    })
+
+    const continued = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'continue' },
+    })
+    expect(continued.statusCode).toBe(200)
+
+    // Hydration after Continue must expose the extended active row and no stale
+    // pre-Continue candidate under its retained uid.
+    const reloaded = await persistedMessages(assertion)
+    const extended = reloaded.at(-1)!
+    expect(extended).toMatchObject({ role: 'char', chatId: 'msg-char-1' })
+    expect(extended.data).toContain('A')
+    expect(extended.data).toContain('continued')
+    expect(await persistedAlternates(assertion)).toEqual([])
+
+    const regenerated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'regenerate',
+        regenerateMessageId: extended.chatId,
+      },
+    })
+    expect(regenerated.statusCode).toBe(200)
+    expect(dispatchProvider).toHaveBeenCalledTimes(2)
+
+    const alternates = await persistedAlternates(assertion)
+    expect(alternates).toHaveLength(2)
+    expect(alternates).toContainEqual(expect.objectContaining({ chatId: extended.chatId, data: extended.data }))
+    expect(alternates.some((message) => message.data === 'A')).toBe(false)
+  })
+
   it('persists a regenerate result server-side, replacing the target message', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedChatWithMessages(
@@ -5060,6 +5131,46 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(events.at(-1)?.type).toBe('done')
     expect(typeof events.at(-1)?.data.generationId).toBe('string')
+  })
+
+  it('surfaces a provider error frame after streamed tokens without retrying or persisting partial output', async () => {
+    const dispatchProvider = vi.fn(() =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'partial' }
+        yield { kind: 'error', error: 'Overloaded', code: 'overloaded_error' }
+      })(),
+    )
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      requestRetrys: 2,
+      useStreaming: true,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(dispatchProvider).toHaveBeenCalledTimes(1)
+
+    const events = parseEvents(res.body)
+    expect(events.filter((event) => event.type === 'token')).toEqual([{ type: 'token', data: { content: 'partial' } }])
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      error: 'Overloaded',
+      reason: 'provider_stream_error_frame',
+      code: 'overloaded_error',
+      restoration: {
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        messages: [],
+      },
+    })
+    expect(events.at(-1)?.type).toBe('done')
+    expect((await readPersistedMessages(assertion)).filter((message) => message.role === 'char')).toEqual([])
   })
 })
 
@@ -6340,6 +6451,44 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       (async function* (): AsyncGenerator<CompletionStreamFrame> {
         call++
         if (call === 1) throw new Error('connect stream failed')
+        yield { kind: 'token', content: 'retry succeeded' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })(),
+    )
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      requestRetrys: 1,
+      useStreaming: true,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(dispatchProvider).toHaveBeenCalledTimes(2)
+    const events = parseEvents(res.body)
+    expect(events.filter((event) => event.type === 'token')).toEqual([
+      { type: 'token', data: { content: 'retry succeeded' } },
+    ])
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect((await readPersistedMessages(assertion)).at(-1)?.data).toBe('retry succeeded')
+  })
+
+  it('retries a provider error frame emitted before its first token', async () => {
+    let call = 0
+    const dispatchProvider = vi.fn(() =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        call++
+        if (call === 1) {
+          yield { kind: 'error', error: 'Overloaded', code: 'overloaded_error' }
+          return
+        }
         yield { kind: 'token', content: 'retry succeeded' }
         yield { kind: 'done', finishReason: 'stop' }
       })(),

@@ -665,6 +665,27 @@ describe('runOpenAIStream', () => {
     ])
   })
 
+  it('converts cumulative proxy fragments into append-only token frames', async () => {
+    vi.stubGlobal('fetch', async () => {
+      return sseUpstream([tokenFrame('Hel'), tokenFrame('Hello'), `data: [DONE]\n\n`])
+    })
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'Hel' },
+      { kind: 'token', content: 'lo' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
   it('accepts CRLF-delimited upstream SSE frames', async () => {
     vi.stubGlobal('fetch', async () => {
       return sseUpstream([crlf(tokenFrame('hello')), crlf(tokenFrame(' world')), `data: [DONE]\r\n\r\n`])
