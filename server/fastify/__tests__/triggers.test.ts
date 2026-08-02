@@ -20,6 +20,7 @@ import { createTriggerRunCache } from '../src/prompt/triggerRunCache.js'
 import { BOUNDED_REGEX_LIMITS } from '../src/prompt/boundedRegex.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import { getTriggerSource } from '../src/prompt/triggerSource.js'
+import { expandVariables } from '../src/prompt/variables.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -668,6 +669,27 @@ async function countRegexCompiles<T>(fn: () => Promise<T>): Promise<{ result: T;
 }
 
 describe('Phase 7-9c deterministic V1 effects', () => {
+  it('agrees with prompt CBS on a character-over-template default-backed variable', async () => {
+    const chat = makeChat()
+    const char = makeChar({
+      chats: [chat],
+      defaultVariables: 'mood=happy',
+      triggerscript: [
+        triggerWithEffects([eff({ type: 'setvar', operator: '=', var: 'matched', value: 'yes' })], {
+          conditions: [cond({ type: 'var', var: 'mood', value: 'happy', operator: '=' })],
+        }),
+      ],
+    })
+    const database = makeDb({
+      characters: [char],
+      templateDefaultVariables: 'mood=template',
+    })
+
+    expect(expandVariables('{{getvar::mood}}', { database }).text).toBe('happy')
+    const result = await runTrigger(makeCtx({ database }), char, 'output', { chat })
+    expect(result?.chat.scriptstate?.['$matched']).toBe('yes')
+  })
+
   it('setvar assigns and flips varChanged', async () => {
     const char = makeChar({
       triggerscript: [triggerWithEffects([eff({ type: 'setvar', operator: '=', var: 'hp', value: '5' })])],

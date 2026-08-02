@@ -58,7 +58,7 @@ import {
 import { getPromptAssetTableInstrumentation, resetPromptAssetTableInstrumentation } from '../src/prompt/promptAssets.js'
 import { promptSummaryMetricFields, summarizePromptRows } from '../src/prompt/promptSummary.js'
 import { getTriggerCloneInstrumentation, resetTriggerCloneInstrumentation } from '../src/prompt/triggers.js'
-import { LLMFlags } from '../../../src/ts/model/types'
+import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer } from '../../../src/ts/model/types'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -2168,6 +2168,51 @@ describe('Phase 7-11a beginAssembly context + template normalization', () => {
     const db = makeDatabase()
     const state = beginAssembly(baseInput(), depsFor(db))
     expect(state.formatOrder).toEqual(['main', 'description', 'chats', 'postEverything'])
+  })
+
+  it('injects effective profile/request model metadata into CBS', () => {
+    const db = makeDatabase({
+      aiModel: 'echo_model',
+      modelProfiles: [
+        {
+          id: 'prompt-metadata-profile',
+          name: 'Prompt Metadata',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: {
+            baseUrl: 'debug://prompt-metadata',
+            requestModel: 'profile-request-model',
+          },
+        },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'prompt-metadata-profile' },
+      },
+    } as unknown as Partial<Database>)
+    const state = beginAssembly(baseInput(), depsFor(db))
+
+    const metadata = promptVariables.expandVariables(
+      [
+        '{{metadata::modelshortname}}',
+        '{{metadata::modelname}}',
+        '{{metadata::modelinternalid}}',
+        '{{metadata::modelformat}}',
+        '{{metadata::modelprovider}}',
+        '{{metadata::modeltokenizer}}',
+      ].join('|'),
+      state.ctx,
+    ).text
+
+    expect(metadata).toBe(
+      [
+        'Debug Echo',
+        'Debug Echo',
+        'profile-request-model',
+        LLMFormat.Echo,
+        LLMProvider.Echo,
+        LLMTokenizer.Unknown,
+      ].join('|'),
+    )
   })
 })
 
@@ -4343,6 +4388,34 @@ describe('Phase 2 L2 run-var fixed-point skip', () => {
     expect(rows[0].data).toBe(prose)
     expect(rows[1].data).toBe('I am Tess. ')
     expect(result.mutations!.chatVarMutations).toEqual([{ key: '$mood', before: null, after: 'bright' }])
+  })
+
+  it('resolves the baseline run-var plus history second-pass indirection chain', async () => {
+    const db = makeDatabase({
+      username: 'Alex',
+      maxContext: 100_000,
+      maxResponse: 50,
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          firstMessage: '',
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              scriptstate: {
+                $outer: '{{getvar::inner}}',
+                $inner: '{{user}}',
+              },
+              message: [msg('user', '{{getvar::outer}}', 'nested-cbs')],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput({ userMessage: 'latest user' }), depsFor(db))
+
+    expect(result.formated?.find((row) => row.memo === 'nested-cbs')?.content).toBe('Alex')
   })
 })
 

@@ -8,6 +8,8 @@ interface NormalizedTokenizeChatOptions {
   chatAdditionalTokens: number
   useName: 'name' | 'noName'
   countThoughts: boolean
+  supportsInlayImage: boolean
+  visionQuality: string
 }
 
 export interface HypaV3PrefixTokenMemoStats {
@@ -106,15 +108,22 @@ function createHypaV3PrefixTokenMemoKey(
   const normalizedOptions = normalizeTokenizeChatOptions(options)
   const thoughts = Array.isArray(chat.thoughts) ? chat.thoughts : []
   return JSON.stringify([
-    'hypa-v3-prefix-token-v1',
+    'hypa-v3-prefix-token-v2',
     encoding,
     normalizedOptions.chatAdditionalTokens,
     normalizedOptions.useName,
     normalizedOptions.countThoughts,
+    normalizedOptions.supportsInlayImage,
+    normalizedOptions.visionQuality,
     chat.role,
     hashText(chat.content ?? ''),
     chat.name === undefined ? null : hashText(chat.name),
     thoughts.map(hashText),
+    (chat.multimodals ?? []).map((multimodal) => [
+      multimodal.type,
+      multimodal.width ?? null,
+      multimodal.height ?? null,
+    ]),
     chat.memo ?? null,
   ])
 }
@@ -124,6 +133,8 @@ function normalizeTokenizeChatOptions(options: TokenizeChatOptions): NormalizedT
     chatAdditionalTokens: options.chatAdditionalTokens ?? 4,
     useName: options.useName ?? 'name',
     countThoughts: options.countThoughts === true,
+    supportsInlayImage: options.supportsInlayImage === true,
+    visionQuality: options.visionQuality ?? 'low',
   }
 }
 

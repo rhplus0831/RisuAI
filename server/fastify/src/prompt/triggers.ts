@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import type { additonalSysPrompt, triggerCondition, triggerscript } from '../../../../src/ts/process/triggers'
-import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import {
@@ -15,6 +14,7 @@ import {
 import { tokenize } from './tokens.js'
 import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
+import { getChatDefaultVariables } from './chatVarDefaults.js'
 import { applyV2DataEffectAsync } from './triggerDataEffects.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { runServerLua, throwServerLuaFailure } from './luaRuntime.js'
@@ -923,9 +923,7 @@ export async function runTrigger(
     ? sourceChat
     : cloneTriggerChatForRun(sourceChat, mode, needsPrivateTranscript, selected.length > 0)
 
-  const defaultVariables = parseKeyValue(workingChar.defaultVariables ?? '').concat(
-    parseKeyValue(ctx.database.templateDefaultVariables ?? ''),
-  )
+  const defaultVariables = getChatDefaultVariables(workingChar, ctx.database)
   const engine = createTriggerVarEngine({
     chat,
     database: ctx.database,

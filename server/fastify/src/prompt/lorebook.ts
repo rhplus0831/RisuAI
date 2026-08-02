@@ -17,6 +17,7 @@ import {
 import { tokenize, type TokenEncoding } from './tokens.js'
 import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import { expandVariables, type ExpandContext } from './variables.js'
+import { getChatDefaultVariables, readChatVariable } from './chatVarDefaults.js'
 
 /**
  * Lorebook activation: constant + keyword + recursive.
@@ -153,10 +154,14 @@ function findCharByChaId(database: Database, chaId: string | undefined): charact
   return database.characters?.find((c) => c?.chaId === chaId)
 }
 
-function readChatVar(chat: Chat, key: string): string {
-  const stored = chat.scriptstate?.['$' + key]
-  if (stored === undefined || stored === null) return 'null'
-  return String(stored)
+function readChatVar(input: ActivateLorebookInput, key: string): string {
+  return (
+    readChatVariable(
+      input.currentChat.scriptstate as Record<string, unknown> | undefined,
+      key,
+      getChatDefaultVariables(input.currentChar, input.database),
+    ) ?? 'null'
+  )
 }
 
 function writeChatVar(chat: Chat, key: string, value: string): void {
@@ -778,7 +783,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
             return
           }
           case 'keep_activate_after_match': {
-            if (readChatVar(currentChat, '__internal_ka_' + loreId(entry)) === 'true') {
+            if (readChatVar(input, '__internal_ka_' + loreId(entry)) === 'true') {
               forceState = 'activate'
             } else {
               keepAfterMatch = true
@@ -790,7 +795,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
             return false
           }
           case 'dont_activate_after_match': {
-            if (readChatVar(currentChat, '__internal_da_' + loreId(entry)) === 'true') {
+            if (readChatVar(input, '__internal_da_' + loreId(entry)) === 'true') {
               forceState = 'deactivate'
             } else {
               dontAfterMatch = true
@@ -1140,7 +1145,7 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
             return
           }
           case 'keep_activate_after_match': {
-            if (readChatVar(currentChat, '__internal_ka_' + loreId(entry)) === 'true') {
+            if (readChatVar(input, '__internal_ka_' + loreId(entry)) === 'true') {
               forceState = 'activate'
             } else {
               keepAfterMatch = true
@@ -1148,7 +1153,7 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
             return false
           }
           case 'dont_activate_after_match': {
-            if (readChatVar(currentChat, '__internal_da_' + loreId(entry)) === 'true') {
+            if (readChatVar(input, '__internal_da_' + loreId(entry)) === 'true') {
               forceState = 'deactivate'
             } else {
               dontAfterMatch = true

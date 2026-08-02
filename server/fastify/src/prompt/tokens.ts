@@ -5,13 +5,14 @@ import process from 'node:process'
 import { get_encoding, type Tiktoken } from '@dqbd/tiktoken'
 import type { Tokenizer as WebTokenizer } from '@mlc-ai/web-tokenizers'
 import type { PreTrainedTokenizer } from '@huggingface/transformers'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
 
 /**
  * Server text tokenizer plus `OpenAIChat` per-message overhead. Portable client
  * tokenizer families are loaded lazily from the repository's `public/token`
  * assets. Google Cloud network counting, local GGUF tokenization, plugin
- * tokenizer hooks, and multimodal image-token math remain out of scope.
+ * tokenizer hooks remain out of scope. Multimodal charges mirror the client
+ * `ChatTokenizer` because they participate in every prompt-budget phase.
  */
 
 export const PORTABLE_TOKEN_ENCODINGS = [
@@ -194,12 +195,50 @@ export interface TokenizeChatOptions {
   useName?: 'name' | 'noName'
   /** Whether to fold `thoughts[]` into the count. */
   countThoughts?: boolean
+  /** Whether the effective request model advertises image-input support. */
+  supportsInlayImage?: boolean
+  /** Database `gptVisionQuality`; only the exact value `'low'` uses the fixed charge. */
+  visionQuality?: string
+}
+
+/** Port of the baseline `ChatTokenizer.tokenizeMultiModal` charging rules. */
+export function tokenizeMultiModal(data: MultiModal, options: TokenizeChatOptions = {}): number {
+  const overhead = options.chatAdditionalTokens ?? 4
+  if (options.supportsInlayImage !== true) return overhead
+  if ((options.visionQuality ?? 'low') === 'low') return 87
+
+  let encoded = overhead
+  // Stored asset references can lack dimensions. The baseline treated those as
+  // 0x0, which conservatively keeps the base 85-token image charge plus the
+  // per-message overhead while adding no 512px tiles.
+  let height = data.height ?? 0
+  let width = data.width ?? 0
+
+  if (height === width) {
+    if (height > 768) {
+      height = 768
+      width = 768
+    }
+  } else if (height > width) {
+    if (width > 768) {
+      width = 768
+      height = height * (768 / width)
+    }
+  } else if (height > 768) {
+    height = 768
+    width = width * (768 / height)
+  }
+
+  const chunkSize = Math.ceil(width / 512) * Math.ceil(height / 512)
+  encoded += chunkSize * 2
+  encoded += 85
+  return encoded
 }
 
 /**
  * Count tokens for a single `OpenAIChat`. Mirrors the SPA's
- * `ChatTokenizer.tokenizeChat` (text-only): content + overhead, plus
- * `name` and `thoughts[]` when requested.
+ * `ChatTokenizer.tokenizeChat`: content + overhead, names, every multimodal,
+ * and `thoughts[]` when requested.
  */
 export function tokenizeChat(
   chat: OpenAIChat,
@@ -211,6 +250,11 @@ export function tokenizeChat(
   let count = tokenize(chat.content ?? '', encoding) + overhead
   if (chat.name && useName === 'name') {
     count += tokenize(chat.name, encoding) + 1
+  }
+  if (chat.multimodals && chat.multimodals.length > 0) {
+    for (const multimodal of chat.multimodals) {
+      count += tokenizeMultiModal(multimodal, options)
+    }
   }
   if (options.countThoughts && chat.thoughts && chat.thoughts.length > 0) {
     for (const thought of chat.thoughts) {

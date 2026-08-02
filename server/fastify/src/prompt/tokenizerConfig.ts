@@ -1,6 +1,6 @@
 import type { Database } from '../../../../src/ts/storage/database.svelte'
-import { LLMTokenizer } from '../../../../src/ts/model/types.js'
-import { resolveServerSafeTokenizerFamily } from '../../../../src/ts/model/modelProfileResolver.js'
+import { LLMFlags, LLMTokenizer } from '../../../../src/ts/model/types.js'
+import { resolveModelProfile, resolveServerSafeTokenizerFamily } from '../../../../src/ts/model/modelProfileResolver.js'
 import { encodingForModel, ensureTokenizerLoaded, type TokenEncoding, type TokenizeChatOptions } from './tokens.js'
 
 const AUTOMATIC_TOKENIZERS = new Set(['', 'tik', 'automatic', 'unknown', '0'])
@@ -185,6 +185,8 @@ export function tokenizerOptionsFromDb(db: Database): {
     options: {
       chatAdditionalTokens: isGpt ? 5 : 3,
       useName: isGpt ? 'noName' : 'name',
+      supportsInlayImage: resolveModelProfile({ database: db }).modelInfo.flags.includes(LLMFlags.hasImageInput),
+      visionQuality: db.gptVisionQuality ?? 'low',
     },
   }
 }

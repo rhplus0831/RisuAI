@@ -144,14 +144,18 @@ describe('Fastify tokenizer configuration', () => {
     )
   })
 
-  it('keeps the existing per-message overhead selection', () => {
-    expect(tokenizerOptionsFromDb(database({ aiModel: 'gpt-4o' })).options).toEqual({
+  it('keeps per-message overhead selection and carries multimodal billing config', () => {
+    expect(tokenizerOptionsFromDb(database({ aiModel: 'gpt4o' })).options).toEqual({
       chatAdditionalTokens: 5,
       useName: 'noName',
+      supportsInlayImage: true,
+      visionQuality: 'low',
     })
     expect(tokenizerOptionsFromDb(database({ aiModel: 'claude-3-5-sonnet-latest' })).options).toEqual({
       chatAdditionalTokens: 3,
       useName: 'name',
+      supportsInlayImage: true,
+      visionQuality: 'low',
     })
   })
 

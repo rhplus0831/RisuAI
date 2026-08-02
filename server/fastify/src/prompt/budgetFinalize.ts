@@ -18,9 +18,9 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
  * history rows `removable: true` in `buildMemoryWindow.ts`). Non-removable
  * rows are pinned and can force an `overflow` result.
  *
- * Divergence from the SPA: the server's `tokenizeChat` is text-only
- * so multimodal rows contribute only their content + overhead here. The
- * multimodal-only survival filter still applies.
+ * `tokenizeChat` includes the baseline's per-attachment multimodal charge. The
+ * multimodal-only survival filter still applies after a removable row's text is
+ * blanked, matching the baseline final re-check.
  */
 
 export type FinalizeRequestBudgetResult =

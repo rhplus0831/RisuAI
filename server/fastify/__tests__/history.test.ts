@@ -370,6 +370,20 @@ function regex(
 }
 
 describe('Phase 7-5b buildHistoryWindow per-message processScript', () => {
+  it('reparses the first CBS result with the current message index before regex scripts', async () => {
+    const chat = makeChat({
+      scriptstate: { $outer: 'user={{user}} index={{chat_index}}' },
+      message: [makeMessage({ role: 'user', data: '{{getvar::outer}}' })],
+    })
+    const currentChar = makeCharacter({ firstMessage: '', chats: [chat] })
+    const db = makeDatabase({ characters: [currentChar] })
+
+    const result = await buildHistoryWindow(ctxFor(db), currentChar, chat)
+    const message = result.messages.find((row) => row.memo === 'm')
+
+    expect(message?.content).toBe('user=Alex index=0')
+  })
+
   it("runs editprocess regex against each message's data", async () => {
     const db = makeDatabase({
       presetRegex: [regex('hello', 'hi', 'editprocess')],
@@ -631,6 +645,32 @@ describe('Phase 7-5b buildHistoryWindow <Thoughts> extraction', () => {
     const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     const msg = result.messages.find((m) => m.memo !== undefined && m.role === 'assistant')
     expect(msg?.thoughts).toEqual(['secret'])
+  })
+
+  it('greedily strips through the last </Thoughts> and records one capture', async () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({
+                  role: 'char',
+                  data: '<Thoughts>a</Thoughts>VISIBLE<Thoughts>b</Thoughts>',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+    const msg = result.messages.find((row) => row.memo !== undefined && row.role === 'assistant')
+
+    expect(msg?.content).toBe('')
+    expect(msg?.thoughts).toEqual(['a</Thoughts>VISIBLE<Thoughts>b'])
   })
 
   it("strips but doesn't capture when maxThoughtTagDepth - totalCount > index", async () => {

@@ -19,6 +19,7 @@ import {
 } from './boundedRegex.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { getActiveModules, getModuleRegexScripts } from './modules.js'
+import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 
 /**
  * Regex script processor ported from `src/ts/process/scripts.ts`
@@ -659,7 +660,17 @@ export async function processScriptAsync(
   const options = complexRegexCompatibilityOptions(ctx.database, stageForScriptMode(mode))
   const prepared = getPreparedScripts(ctx.database, char, currentChat, options)
 
-  let current = data
+  // `processScriptFull` reparsed the whole Lua/plugin-processed body before
+  // regex scripts. Keep `runVar` disabled exactly like that parser call (which
+  // omitted the flag), so nested CBS resolves without replaying state writes.
+  let current = isRisuChatParserFixedPoint(data)
+    ? data
+    : expandVariables(data, {
+        ...ctx,
+        chatID,
+        cbsConditions,
+        runVar: false,
+      }).text
   for (const p of prepared) {
     if (p.script.type !== mode) continue
     try {

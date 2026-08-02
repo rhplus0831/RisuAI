@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { encodingForModel, tokenize, tokenizeChat, tokenizeChats } from '../src/prompt/tokens.js'
+import { encodingForModel, tokenize, tokenizeChat, tokenizeChats, tokenizeMultiModal } from '../src/prompt/tokens.js'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 
 describe('encodingForModel', () => {
@@ -96,6 +96,54 @@ describe('tokenizeChat', () => {
     expect(tokenizeChat(withThoughts)).toBe(6)
     // Base 6 + (2 + 1) per thought.
     expect(tokenizeChat(withThoughts, 'cl100k_base', { countThoughts: true })).toBe(6 + 3 + 3)
+  })
+
+  it('charges every multimodal attachment', () => {
+    const withImages: OpenAIChat = {
+      ...baseChat,
+      multimodals: [
+        { type: 'image', base64: 'a' },
+        { type: 'image', base64: 'b' },
+      ],
+    }
+
+    expect(
+      tokenizeChat(withImages, 'cl100k_base', {
+        supportsInlayImage: true,
+        visionQuality: 'low',
+      }),
+    ).toBe(6 + 87 + 87)
+  })
+})
+
+describe('tokenizeMultiModal', () => {
+  const image = { type: 'image' as const, base64: 'image' }
+
+  it('uses row overhead when the effective model lacks image input', () => {
+    expect(tokenizeMultiModal(image, { chatAdditionalTokens: 5, supportsInlayImage: false })).toBe(5)
+  })
+
+  it('uses the fixed low-quality charge', () => {
+    expect(
+      tokenizeMultiModal(image, {
+        chatAdditionalTokens: 5,
+        supportsInlayImage: true,
+        visionQuality: 'low',
+      }),
+    ).toBe(87)
+  })
+
+  it('ports the non-low square, portrait, landscape, and missing-size tile math', () => {
+    const options = {
+      chatAdditionalTokens: 5,
+      supportsInlayImage: true,
+      visionQuality: 'high',
+    }
+
+    expect(tokenizeMultiModal({ ...image, width: 1024, height: 1024 }, options)).toBe(98)
+    expect(tokenizeMultiModal({ ...image, width: 1000, height: 2000 }, options)).toBe(106)
+    expect(tokenizeMultiModal({ ...image, width: 2000, height: 1000 }, options)).toBe(106)
+    expect(tokenizeMultiModal(image, options)).toBe(90)
   })
 })
 

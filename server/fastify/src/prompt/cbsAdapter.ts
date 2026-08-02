@@ -1,10 +1,9 @@
 import type { CBSRegisterArg, matcherArg } from '../../../../src/ts/cbs'
-import type { LLMModel } from '../../../../src/ts/model/modellist'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { dateTimeFormat, makeArray, parseArray, parseDict } from '../../../../src/ts/parser/risuChatParserHelpers'
 import { calcString } from '../../../../src/ts/process/infunctions'
 import { getChatVar, getGlobalChatVar, setChatVar } from '../../../../src/ts/parser/chatVarBackend'
-import { getActiveDatabase, getActiveSelectedCharID } from './promptScope.js'
+import { getActiveDatabase, getActiveModelInfo, getActiveSelectedCharID } from './promptScope.js'
 
 /**
  * Server-side `CBSRegisterArg` factory. Wires the DI fields the `registerCBS`
@@ -21,9 +20,8 @@ import { getActiveDatabase, getActiveSelectedCharID } from './promptScope.js'
  * `getCurrentTriggerId` returns `'null'` because manual triggers are a
  * browser UI concept.
  *
- * `getModelInfo` returns a placeholder shape (same as
- * `defaultCBSRegisterArg`) because variable expansion does not read model
- * metadata.
+ * Model metadata is read lazily from the active prompt scope so CBS sees the
+ * same resolved profile/request model that assembly sends to dispatch.
  */
 
 // In-process pseudo-random generator, ported from src/ts/util/loreHash.ts.
@@ -57,16 +55,6 @@ function pickHashRand(cid: number, word: string): number {
   for (let i = 0; i < v; i++) randF()
   return randF()
 }
-
-const PLACEHOLDER_MODEL: LLMModel = {
-  id: 'placeholder',
-  name: 'Placeholder Model',
-  shortName: 'Placeholder',
-  internalID: 'placeholder',
-  format: 0,
-  provider: 0,
-  tokenizer: 0,
-} as LLMModel
 
 export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
   return {
@@ -118,7 +106,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     getModuleLorebooks: () => [],
     pickHashRand,
     getSelectedCharID: getActiveSelectedCharID,
-    getModelInfo: () => PLACEHOLDER_MODEL,
+    getModelInfo: getActiveModelInfo,
     callInternalFunction: () => '',
     isMobile: false,
     appVer: '2026.4.181',

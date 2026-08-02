@@ -76,8 +76,9 @@ import type { PostGenerationLuaTraceCollector } from './luaPostGenerationTrace.j
 import type { PostGenerationLuaProgressTracker } from './luaPostGenerationProgress.js'
 import { processScriptAsync } from './scripts.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
-import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { expandVariables, type ExpandContext } from './variables.js'
+import { getChatDefaultVariables } from './chatVarDefaults.js'
+import { modelInfoForPromptScope } from './promptScope.js'
 import type { PromptEvent } from './sseEvents.js'
 import type { MemorySelectionInput } from '../memorySelectionService.js'
 import {
@@ -635,6 +636,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     database,
     selectedCharID,
     chatPage,
+    modelInfo: modelInfoForPromptScope(resolvedMainProfile),
     signal: deps.signal,
     luaExecBudget,
     ...(memoryDatabase ? { requestHistoryDb: memoryDatabase } : {}),
@@ -1928,9 +1930,7 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
     database: db,
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
-    defaultVariables: parseKeyValue(state.currentChar.defaultVariables ?? '').concat(
-      parseKeyValue(db.templateDefaultVariables ?? ''),
-    ),
+    defaultVariables: getChatDefaultVariables(state.currentChar, db),
   })
   const editCtx: ServerLuaEditTriggerContext = {
     chat: state.currentChat,

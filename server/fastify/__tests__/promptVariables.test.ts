@@ -161,6 +161,38 @@ describe('Phase 7-2c expandVariables — chat variable write-back', () => {
     expect(expandVariables('v={{getvar::missing}}', ctx()).text).toBe('v=null')
   })
 
+  it('falls back to character defaults before template defaults with parseKeyValue semantics', () => {
+    const database = makeDatabase({
+      templateDefaultVariables: 'shared=template\ntemplateOnly=blue',
+      characters: [
+        makeCharacter({
+          defaultVariables: 'shared=character\ncharacterOnly=green\nwithEquals=first=discarded',
+        }),
+      ],
+    })
+
+    expect(
+      expandVariables('{{getvar::shared}}|{{getvar::characterOnly}}|{{getvar::templateOnly}}|{{getvar::withEquals}}', {
+        database,
+      }).text,
+    ).toBe('character|green|blue|first')
+  })
+
+  it('starts {{addvar}} arithmetic from a default-backed value', () => {
+    const database = makeDatabase({
+      characters: [makeCharacter({ defaultVariables: 'count=2' })],
+    })
+
+    const result = expandVariables('{{addvar::count::1}}{{getvar::count}}', {
+      database,
+      runVar: true,
+    })
+
+    expect(result.text).toBe('3')
+    expect(result.dirty).toBe(true)
+    expect(database.characters[0].chats[0].scriptstate?.['$count']).toBe('3')
+  })
+
   it('writes via {{setvar}} when runVar=true and mutates scriptstate', () => {
     const db = makeDatabase()
     const result = expandVariables('{{setvar::greeting::hello}}done', { database: db, runVar: true })

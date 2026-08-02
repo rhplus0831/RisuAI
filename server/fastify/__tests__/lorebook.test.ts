@@ -842,6 +842,24 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     expect(second.actives).toHaveLength(1)
   })
 
+  it('@@keep_activate_after_match reads its sticky key from template defaults', () => {
+    const lore = makeLore({
+      id: 'lore-default-keep',
+      alwaysActive: false,
+      key: 'cat',
+      content: '@@keep_activate_after_match\nDefault sticky.',
+    })
+    const currentChar = makeChar({ globalLore: [lore] })
+    const report = activateLorebook({
+      database: makeDb({ templateDefaultVariables: '__internal_ka_lore-default-keep=true' }),
+      currentChar,
+      currentChat: makeChat({ message: [makeMessage({ data: 'unrelated' })] }),
+    })
+
+    expect(report.actives).toHaveLength(1)
+    expect(report.actives[0].prompt).toBe('Default sticky.')
+  })
+
   it('falls back to pickHashRand for the chat-var key when entry.id is absent', () => {
     const lore = makeLore({
       alwaysActive: false,

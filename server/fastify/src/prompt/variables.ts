@@ -1,5 +1,6 @@
 import type { Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
+import type { LLMModel } from '../../../../src/ts/model/types'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
 import type { LuaExecBudget } from './luaRuntime.js'
 import type { DatabaseSync } from 'node:sqlite'
@@ -67,6 +68,8 @@ export interface ExpandContext {
   requestHistoryDb?: DatabaseSync
   /** Optional per-assembly CBS callback memo. Browser/local calls omit this. */
   cbsCallbackMemo?: CbsCallbackMemo
+  /** Effective main-request model metadata exposed through CBS `metadata`. */
+  modelInfo?: LLMModel
 }
 
 export interface ExpandResult {
@@ -97,6 +100,7 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
     chatPage,
     scriptstate,
     globalChatVariables,
+    modelInfo: ctx.modelInfo,
   })
 
   try {

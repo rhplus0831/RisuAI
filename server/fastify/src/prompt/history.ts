@@ -143,7 +143,7 @@ function pushMultimodal(arr: MultiModal[], m: MultiModal): void {
 }
 
 const SEND_NAME_WRAPPER = `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>`
-const THOUGHTS_RE = /<Thoughts>(.+?)<\/Thoughts>/gms
+const THOUGHTS_RE = /<Thoughts>(.+)<\/Thoughts>/gms
 
 export function exampleMessage(ctx: ExpandContext, char: character): OpenAIChat[] {
   const raw = char.exampleMessage ?? ''

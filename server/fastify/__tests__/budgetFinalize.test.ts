@@ -103,13 +103,40 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
     })
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    // 'caption' (1+5) + 'final-question' (2+5) = 13 > 10.
-    // Trim row0 (-6 → 7 ≤ 10); its content blanks but multimodals keep it.
+    // GPT-4 has no image input, so the attachment adds one row-overhead charge:
+    // 'caption' (1+5+5) + 'final-question' (2+5) = 18 > 10.
+    // Trim row0 (-11 → 7 ≤ 10); its content blanks but multimodals keep it.
     expect(result.formated).toHaveLength(2)
     expect(result.formated[0].content).toBe('')
     expect(result.formated[0].multimodals?.length).toBe(1)
     expect(result.formated[1].content).toBe('final-question')
     expect(result.inputTokens).toBe(7)
+  })
+
+  it('uses low-quality image charges when deciding whether to trim history', () => {
+    const formated: OpenAIChat[] = [
+      {
+        role: 'user',
+        content: 'caption',
+        removable: true,
+        multimodals: [{ type: 'image', base64: 'x' }],
+      },
+      { role: 'user', content: 'final-question' },
+    ]
+    const result = finalizeRequestBudget({
+      db: { ...makeDb('gpt4o'), gptVisionQuality: 'low' },
+      formated,
+      maxContextTokens: 99,
+      maxResponse: 50,
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // caption (1) + overhead (5) + image (87) + final row (7) = 100.
+    // The image charge tips the request over the 99-token window.
+    expect(result.inputTokens).toBe(7)
+    expect(result.formated[0]).toMatchObject({ content: '', removable: true })
+    expect(result.formated[0].multimodals).toHaveLength(1)
   })
 
   it('returns ok=false overflow when no removable row can fit the budget', () => {

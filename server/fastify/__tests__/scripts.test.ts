@@ -214,6 +214,19 @@ describe('Phase 7-6a processScript', () => {
     expect(out).toBe('CURRENT')
   })
 
+  it('keeps state-changing CBS read-only during the whole-text parser pass', async () => {
+    const db = makeDatabase()
+    const out = await processScriptAsync(
+      { database: db, runVar: true },
+      db.characters[0],
+      '{{setvar::sideEffect::changed}}visible',
+      'editprocess',
+    )
+
+    expect(out).toBe('{{setvar::sideEffect::changed}}visible')
+    expect(db.characters[0].chats[0].scriptstate?.['$sideEffect']).toBeUndefined()
+  })
+
   it("preserves '$1' and '$&' backreferences via RegExp.replace (outScript ending in `>` auto-appends \\n per SPA scripts.ts:194-196)", () => {
     const db = makeDatabase({
       presetRegex: [regex('(\\w+)', '<$1:$&>', 'editprocess')],

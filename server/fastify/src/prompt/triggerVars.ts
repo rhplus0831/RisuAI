@@ -1,4 +1,5 @@
 import type { Chat, Database } from '../../../../src/ts/storage/database.svelte'
+import { readChatVariable } from './chatVarDefaults.js'
 
 /**
  * Trigger variable engine, ported from the closures inside
@@ -151,18 +152,12 @@ export function createTriggerVarEngine(opts: TriggerVarEngineOptions): TriggerVa
       return localVar
     }
 
-    const state = chat.scriptstate?.['$' + key]
-    if (state === undefined || state === null) {
-      const findResult = defaultVariables.find((f) => f[0] === key)
-      if (findResult) {
-        return findResult[1]
-      }
-      if (displayMode) {
-        return tempVars[key] ?? 'null'
-      }
-      return 'null'
+    const resolved = readChatVariable(chat.scriptstate as Record<string, unknown> | undefined, key, defaultVariables)
+    if (resolved !== undefined) return resolved
+    if (displayMode) {
+      return tempVars[key] ?? 'null'
     }
-    return state.toString()
+    return 'null'
   }
 
   function setVar(key: string, value: string): void {

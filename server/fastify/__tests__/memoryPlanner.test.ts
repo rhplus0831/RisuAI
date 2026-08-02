@@ -430,6 +430,36 @@ describe('standard Hypa V3 planner contract', () => {
     )
   })
 
+  it('L15: re-encodes when summarized-prefix multimodal dimensions change', () => {
+    const memo = createHypaV3PrefixTokenMemo()
+    const chats: OpenAIChat[] = [
+      {
+        role: 'user',
+        content: 'alpha prefix '.repeat(12),
+        memo: 'memo-a',
+        multimodals: [{ type: 'image', base64: 'a', width: 512, height: 512 }],
+      },
+      { role: 'assistant', content: 'bravo prefix '.repeat(12), memo: 'memo-b' },
+      { role: 'user', content: 'tail', memo: 'memo-c' },
+    ]
+    const options: TokenizeChatOptions = {
+      supportsInlayImage: true,
+      visionQuality: 'high',
+    }
+    const rawTokenizeChat = vi.fn((item: OpenAIChat, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
+      tokenizeChat(item, rawEncoding, rawOptions),
+    )
+    planWithSummarizedPrefixMemo({ chats, memo, rawTokenizeChat, options })
+    rawTokenizeChat.mockClear()
+
+    const resized = structuredClone(chats)
+    resized[0].multimodals![0].width = 1024
+    planWithSummarizedPrefixMemo({ chats: resized, memo, rawTokenizeChat, options })
+
+    expect(rawTokenizeChat).toHaveBeenCalledTimes(1)
+    expect(rawTokenizeChat.mock.calls[0]?.[0].memo).toBe('memo-a')
+  })
+
   it('returns a planner error when the standard path cannot summarize further', () => {
     const plan = planStandardHypaV3Memory({
       chats: [chat('m0'), chat('m1'), chat('m2')],
