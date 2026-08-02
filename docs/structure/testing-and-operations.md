@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-07-27.
+Last audited: 2026-08-02.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -95,12 +95,18 @@ Stop `pnpm dev:agent` when done so frontend port `6418` and API port `6419`
 are released for the next agent. Do the same for `pnpm dev:human` when using
 the human trace ports.
 
+Tracked utilities that are not package-script-backed include
+`util/risuUserscript.user.js`, a manual browser/userscript bridge. Treat it as a
+source helper, not generated output.
+
+## Request And Generation Tracing
+
 Request tracing writes under the active server data directory as
 `trace/<mode>.jsonl`. The standard runners therefore use
 `data-agent/trace/agent.jsonl` for `dev:agent` and `data/trace/human.jsonl` for
-`dev:human`. Every response receives `X-Request-UID`, but only API requests are
-appended to JSONL; search that UID in the trace file to correlate a visible
-failure to one API call.
+`dev:human`. While tracing is enabled, every response receives
+`X-Request-UID`, but only API requests are appended to JSONL; search that UID in
+the trace file to correlate a visible failure to one API call.
 Each mode keeps the newest 5,000 entries and trims older entries, including
 their gzip body sidecars. Entries include route pattern, caller hints, redacted
 headers/query/body fields, and process/send timing. Text request/response bodies
@@ -129,6 +135,8 @@ Lua sidecars require protocol metrics but not the full-prompt flag; they use the
 same compressed-size cap. These files can retain redacted user prompt/chat
 content and should not be shared casually.
 
+## Built SPA Serving
+
 To serve a built SPA through Fastify:
 
 ```sh
@@ -138,10 +146,6 @@ pnpm api:start
 
 `RISU_API_STATIC_ROOT` defaults to `<repo>/dist`; empty string, `none`, or `off`
 disables Fastify static serving.
-
-Tracked utilities that are not package-script-backed include
-`util/risuUserscript.user.js`, a manual browser/userscript bridge. Treat it as a
-source helper, not generated output.
 
 ## Tests And Checks
 
@@ -344,7 +348,7 @@ Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
 `RISU_ASSET_BYTE_SUMMARY`, `RISU_EXPORT_MATERIALIZE_SUMMARY`, and
 `RISU_GENERATION_METRIC_SUMMARY`.
 
-## CI
+## CI And Deployment
 
 `.github/workflows/quality.yml` is the only current workflow. Pull requests and
 pushes to `main` use Node 24 and pnpm 10, install Chromium with Playwright

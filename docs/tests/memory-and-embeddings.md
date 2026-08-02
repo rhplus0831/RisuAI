@@ -1,5 +1,7 @@
 # Memory and Embeddings
 
+Last audited: 2026-08-02.
+
 This area covers legacy memory-window construction and the Hypa V3 lifecycle: planning conversation chunks, summarizing and embedding them, selecting memories for a prompt, operating the background queue, exposing the API, and keeping browser state coherent. Prompt placement is also discussed in [Prompting, Generation, and Streaming](prompting-generation-and-streaming.md); the modal's broader character-management context is covered in [Character Content, Memory, and Catalogs](character-content-memory-and-catalogs.md).
 
 ## Assessment

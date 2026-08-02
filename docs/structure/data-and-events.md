@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-07-27.
+Last audited: 2026-08-02.
 
 Fastify owns authoritative application state. The browser reads authenticated
 REST resources and sends revision-checked commands or explicit server-owned
@@ -44,6 +44,18 @@ writer ownership/epochs, and acknowledged-receipt tombstones; v26 adds the
 `inlay_catalog` table; v27 adds greeting translations; and v28 adds
 `request_history`. Current browser state is rebuilt from concrete REST
 resources rather than a cached database projection.
+
+Mood Light's durable state is the singleton settings field
+`moodLightMembership`, defaulted by `server/fastify/src/databaseDefaults.ts`
+and normalized by `src/ts/moodLightMembership.ts` at both the Fastify command
+boundary and browser database application boundary. It belongs to the
+`sidebar` group in both `SETTINGS_GROUP_KEYS` in
+`server/fastify/src/routes/commands.ts` and
+`src/ts/server/settingsGroups.ts`, so updates use the normal revisioned settings
+transaction and a grouped `settings.updated` event. The active-mode bit is
+separate tab-local `sessionStorage`, not SQLite state. Ownership parity is
+guarded by `src/ts/server/settingsGroups.test.ts` and defaults by
+`server/fastify/__tests__/databaseDefaults.test.ts`.
 
 Prompt-template ownership follows the split-preset contract. Modern template
 bodies are persisted as `promptPresets[].promptTemplate` inside
@@ -149,6 +161,16 @@ event, owner, revision, digest, and projection checks pass; malformed, stale,
 tainted, missing, or non-contiguous acknowledgements fail closed to the normal
 authoritative event read.
 
+`PUT /api/v1/commands/characters/:characterId/chats` is the atomic all-chat
+reset contract. Its targeted character-row transaction deletes that
+character's previous `chats`, `messages`, and `chat_hypa_v3` rows, inserts one
+empty replacement chat, resets `chatPage` to `0`, preserves `chatFolders`,
+bumps the revision once, and emits `chats.reset` with resource `characterRow`.
+The response deliberately has no compact local-effect certificate, so normal
+reconciliation rereads `/api/v1/characters/:characterId`. The server contract
+is guarded by `server/fastify/__tests__/commands.test.ts`; browser command
+decoding is guarded by `src/ts/server/commands.test.ts`.
+
 Command-event resources should be as narrow as practical. Default drafts live
 in `COMMAND_EVENT_CATALOG`; composite constants and route-local overrides select
 narrower or cross-resource keys where needed. The browser invalidator maps both
@@ -233,7 +255,8 @@ not ordinary browser `/commands/*` resource endpoints:
 - Manual greeting translation uses a separate process-local job registry and
   normalized character-scoped rows. Source/settings/previous-value fences guard
   persistence, `greetingTranslation.updated` drives targeted invalidation, and
-  bootstrap exposes running work through `activeGreetingTranslations`.
+  bootstrap exposes running plus bounded recent succeeded/failed work through
+  `activeGreetingTranslations`.
 - Memory job create/cancel writes durable memory-job state and emits memory
   events without a domain revision. Worker writes and direct summary
   `PATCH`/`DELETE` also update memory tables outside the domain revision; only
@@ -241,7 +264,9 @@ not ordinary browser `/commands/*` resource endpoints:
 - LLM request history is operational SQLite state outside the common-revision
   application snapshot. Provider work creates/finalizes rows best-effort;
   retention pruning and active-writer deletion neither bump the domain revision
-  nor emit command events.
+  nor emit command events. The persisted data-group setting
+  `requestHistoryLimit` bounds the table from 0 to 10,000 rows; `0` disables new
+  records and prunes existing history.
 - MCP OAuth refresh can persist a rotated refresh token through a targeted
   settings mutation while returning only the access token to the browser.
 - The startup push service loads or generates VAPID keys; push notification
@@ -329,9 +354,10 @@ lineage, writer, and event implications.
 
 ## SSE And Streaming
 
-`GET /api/v1/events` sends an initial connected comment, then a `writer` frame with the current
+`GET /api/v1/events` sends a `writer` frame with the current
 `{ sessionId, epoch }` state (`sessionId` is null before the first writer is
-latched), replays SQLite `command_events` for cursor reconnects, then streams
+latched), then a connected comment, replays SQLite `command_events` for cursor
+reconnects, then streams
 live command-sink, memory, and writer-change events. Writer frames have no
 revision semantics and are never replayed. Clients subscribe with
 `sinceRevision` or `Last-Event-ID`; replay gaps return
@@ -375,7 +401,7 @@ retry paths. Bootstrap `activeGenerationJobs` exposes
 running durable jobs, including mode and regenerate message id when relevant,
 while `activeMessageTranslations` exposes running plus bounded recent terminal
 manual or generated-message translation entries and `activeGreetingTranslations`
-exposes running greeting jobs for completion polling.
+exposes running plus bounded recent terminal greeting jobs for completion polling.
 `post_generation_progress` can describe either Lua work or the server-owned
 automatic-translation wait. `done.postGeneration` carries the persisted message
 id and may embed a succeeded, failed, or still-running translation result.

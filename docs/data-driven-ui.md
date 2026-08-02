@@ -1,6 +1,6 @@
 # Data-dependent UI variation inventory
 
-Last audited: 2026-07-23.
+Last audited: 2026-08-02.
 
 This is the identification pass for UI whose content, structure, available
 actions, or semantic state changes with data. It is a map for later runtime
@@ -82,6 +82,9 @@ Driver tags used below:
 - **`APP-10` — Active-writer takeover (`R`, `A`, `L`)**
   - Variants: A writer SSE event or validated stale-writer response blocks interaction and asks for Refresh or Stay Offline. Refresh reloads; offline mode stops server coordination, freezes editable controls, preserves selectable text, and adds a reload banner.
   - Owners: `src/ts/server/activeWriterSession.ts`; `src/ts/server/events.ts`; `src/styles.css`
+- **`APP-11` — Mood Light privacy partition (`R`, `L`, `B`)**
+  - Variants: Normal mode exposes only unprotected characters; confirmed Mood Light mode exposes only characters protected directly or through protected-folder membership. Mixed folder children are promoted into the visible root rather than leaking the hidden folder, while exclusions can keep one child on the opposite side. The active flag is browser-session state in `sessionStorage`; durable `moodLightMembership` is a normalized `sidebar` settings-group value. Changing mode clears the selected character and returns home; membership settlement, resource refresh, and direct-route application also reject a selection outside the active partition. The partition gates the grid/trash catalog, mobile character list, and select-character alert.
+  - Owners: `src/ts/moodLightMode.ts`; `src/ts/moodLightMembership.ts`; `src/App.svelte`; `src/ts/router.ts`; `src/lib/SideBars/Sidebar.svelte`; `src/lib/Others/GridCatalog.svelte`; `src/lib/Mobile/MobileCharacters.svelte`; `src/lib/Others/AlertComp.svelte`
 - **`HOME-01` — Landing versus Realm (`L`, `R`)**
   - Variants: Home title/version/GitHub card or the Realm catalog. Opening Realm can first yield an external-server confirmation unless `doNotWarnExternalServers` is set.
   - Owners: `src/lib/UI/MainMenu.svelte`
@@ -107,7 +110,7 @@ Driver tags used below:
   - Variants: Tail-only rows and Load More, compatibility cold-storage loader, folded-window boundary, auto-scroll, scroll-to-message overlay, and an unread/new-message affordance in six configured placements. Same-chat message growth and last role, not just arrival, determine unread state.
   - Owners: `src/lib/ChatScreens/DefaultChatScreen.svelte`; `Chats.svelte`; `DefaultChatScreen.loadPages.ts`
 - **`CHAT-05` — Greeting, legal disclosure, and creator note (`R`, `B`)**
-  - Variants: Synthetic first greeting; alternate-greeting navigation/page count; AI disclosure; dismissible creator note. These only appear when the loaded window covers the beginning, and the greeting is `idx=-1`, not a normal persisted message.
+  - Variants: Synthetic first greeting; alternate-greeting navigation/page count; AI disclosure; dismissible creator note. These only appear when the loaded window covers the beginning, and the greeting is `idx=-1`, not a normal persisted message. Character-card import initializes the starter chat with `fmIndex: -1`, so the primary greeting is visible immediately instead of selecting a nonexistent alternate.
   - Owners: `src/lib/ChatScreens/DefaultChatScreen.svelte`; `CreatorQuote.svelte`; `src/ts/globalApi.svelte.ts`
 - **`CHAT-06` — Message semantic state (`R`, `A`, `L`)**
   - Variants: Translation editor, raw editor, comment, special branch-reference comment, generation loader, blank row, or parsed body. Malformed special comments can render effectively empty.
@@ -128,7 +131,7 @@ Driver tags used below:
   - Variants: Previous/next greeting, first-message page count, swipe/regenerate button, reroll candidate list, undo/new reroll, and branch graph. Each has distinct empty/current/disabled states and may require full hydration.
   - Owners: `src/lib/ChatScreens/Chat.svelte`; `RerollList.svelte`; `src/lib/Others/AlertComp.svelte`; `src/ts/process/rerollNavigation.svelte.ts`
 - **`CHAT-12` — Composer and generation ownership (`R`, `A`, `L`)**
-  - Variants: Send versus abort/progress; character menu versus playground action; normal plus translated textarea; translation rollback; selected draft-hook output; BTW hook picker/pending/result/dismissed state; continue/regenerate disabled state. Message, translation, files, draft output, and BTW output are keyed by transcript identity. Only a generation owned by the visible chat gets visible progress, although another active generation can still disable sending.
+  - Variants: Send versus abort/progress; character menu versus playground action; normal plus translated textarea; translation rollback; selected draft-hook output; BTW hook picker/pending/result/dismissed state; continue/regenerate disabled state. Message, translation, files, draft output, and BTW output are keyed by transcript identity. When persisted `floatingChatInput` is enabled and `fixedChatTextarea` is off, scrolling far enough above the bottom reveals an open button; the same composer can then float, hide without moving the transcript, or return to the bottom while preserving its draft. Only a generation owned by the visible chat gets visible progress, although another active generation can still disable sending.
   - Owners: `src/lib/ChatScreens/DefaultChatScreen.svelte`; `InputHookPickerDialog.svelte`; `DefaultChatScreen.composerDrafts.ts`; `src/ts/process/inputHooks.ts`; `src/ts/process/index.svelte.ts`
 - **`CHAT-13` — Attachments, stickers, and suggestions (`R`, `A`, `L`)**
   - Variants: Attachment strip with missing/generic/image/video/audio previews; sticker/asset picker; suggestion loading, empty/hidden, generated list, translated/original controls, and reroll. Stale-owner guards suppress results for a newly selected chat.
@@ -143,7 +146,7 @@ Driver tags used below:
 ## Sidebar and character-owned editors
 
 - **`SIDE-01` — Sidebar navigation form (`R`, `L`, `X`)**
-  - Variants: Labeled menu sidebar versus compact avatar rail; hamburger at top/bottom; menu open/closed; runtime plugin entries. The live local `sideBarMode` remains `0`, so nonzero modes are not separate current surfaces.
+  - Variants: Labeled menu sidebar versus compact avatar rail; hamburger at top/bottom; menu open/closed; runtime plugin entries; confirmed Mood Light enable/disable and active-only manage controls. The live local `sideBarMode` remains `0`, so nonzero modes are not separate current surfaces. Mood Light's partition and manager states are detailed in `APP-11` and `SIDE-12`.
   - Owners: `src/lib/SideBars/Sidebar.svelte`; `SidebarAvatar.svelte`
 - **`SIDE-02` — Character order/folders (`R`, `A`, `L`)**
   - Variants: Character rows, folder rows, expanded children, folder name/image/open/closed fallback, selected marker, and optimistic drag/reorder. Stale order references are omitted.
@@ -152,7 +155,7 @@ Driver tags used below:
   - Variants: Welcome/select-bot, playground chat list, Chat/Character tabs, optional Dev Tool, Quick Settings, Dev Tool body, character editor, or chat list. Priority is Quick Settings -> Dev Tool -> character editor -> chat list.
   - Owners: `src/lib/SideBars/Sidebar.svelte`; `QuickSettingsGUI.svelte`
 - **`SIDE-04` — Chat list route and folder data (`R`, `L`, `A`)**
-  - Variants: Active-chat author-note/settings pane or folder/list index; empty folders; grouped/ungrouped chats; selected row; edit/rename/organizer handles; create/import/export/delete/branch/bookmark/persona actions. A chat with a nonexistent non-null folder ID can fall out of both groups.
+  - Variants: Active-chat author-note/settings pane or folder/list index; empty folders; grouped/ungrouped chats; selected row; edit/rename/organizer handles; create/import/export/delete/branch/bookmark/persona actions. After an all-chat download succeeds, two confirmations can atomically replace every chat with a new empty `Chat 1`; cancellation or download failure preserves the collection. A chat with a nonexistent non-null folder ID can fall out of both groups.
   - Owners: `src/lib/SideBars/SideChatList.svelte`; `chatFolderGrouping.ts`; `DropList.svelte`
 - **`SIDE-05` — Author note and effective generation settings (`R`, `A`, `X`)**
   - Variants: Template-derived note placeholder/token count; resolved or unconfigured model/prompt/persona/agent preset; visible missing reference; optional persona note; recursive group/select/text/textarea/boolean toggles; mismatch markers and reset state; per-chat auto-translation/bot-only/bilingual/emphasis controls; and a selected/missing/unselected draft hook.
@@ -175,6 +178,9 @@ Driver tags used below:
 - **`SIDE-11` — Developer panel (`R`, `A`, `L`)**
   - Variants: Typed script-state inputs or empty state; async character/chat/prompt token results; autopilot rows; chat versus instruct preview; Jinja-only editor.
   - Owners: `src/lib/SideBars/DevTool.svelte`
+- **`SIDE-12` — Mood Light membership manager (`R`, `A`, `L`)**
+  - Variants: The manager exists only while Mood Light mode is active. It groups root characters and folder children, marks live folder/character protection with `aria-pressed`, filters by space-insensitive case-folded search while retaining matched folder context, and shows a no-results state. Membership toggles disable during persistence but search and the dialog remain usable; accepted, queued, and failed settings settlements can repaint the partition or reconcile an invalid selection. Trashed characters stay protected by stored membership but are omitted from management targets.
+  - Owners: `src/lib/SideBars/MoodLightManageModal.svelte`; `src/lib/SideBars/Sidebar.svelte`; `src/ts/moodLightMembership.ts`; `src/ts/server/settingsBridge.svelte.ts`
 
 ## Settings
 
@@ -182,16 +188,16 @@ Driver tags used below:
   - Variants: Desktop split versus narrow list/detail; Lite-reduced menu; legacy bot-preset entry only when rows exist; page selected by `SettingsMenuIndex`; input-hook authoring; plugin menu rows; EasyPanel only with Pro Tools; lorebook picker overlay. Menu index `1` renders legacy Bot Settings when legacy presets exist and modern Model Settings otherwise.
   - Owners: `src/lib/Setting/Settings.svelte`; `src/ts/router.ts`
 - **`SET-02` — Schema-driven setting rows (`R`, `L`)**
-  - Variants: Each item can be omitted by a condition, choose one of 11 wrapper types, recursively render an accordion, show warning/experimental/help metadata, or render nothing for an unknown custom component. Context includes database, main/sub model capability, and preset mirror target.
-  - Owners: `src/lib/Setting/SettingRenderer.svelte`; `src/ts/setting/types.ts`; `src/ts/setting/utils.ts`; `src/ts/setting/settingRegistry.ts`; `customComponents.ts`
+  - Variants: Each item can be omitted by a condition, choose one of 11 wrapper types, recursively render an accordion, show warning/experimental/help metadata, or render nothing for an unknown custom component. Context includes database, main/sub model capability, and preset mirror target. Removal from supported repeatable settings collections is additionally gated by a shared browser confirmation before the draft changes.
+  - Owners: `src/lib/Setting/SettingRenderer.svelte`; `src/ts/setting/types.ts`; `src/ts/setting/utils.ts`; `src/ts/setting/settingRegistry.ts`; `src/ts/setting/customComponents.ts`; `src/ts/setting/confirmSettingsItemRemoval.ts`
 - **`SET-03` — Conditional select/segmented options (`R`)**
   - Variants: Options are filtered by their own conditions. A persisted unavailable value is retained on first render; after a later option-set change it can be coerced to the explicit fallback or last available option, making visibility itself capable of causing a setting mutation.
   - Owners: `src/lib/Setting/Wrappers/SettingSelect.svelte`; `SettingSegmented.svelte`; `src/ts/setting/types.ts`
 - **`SET-04` — Display and accessibility dependencies (`R`, `A`, `B`)**
-  - Variants: Custom HTML and Waifu controls by theme; custom color/text/font editors by selection; memory-thickness and quote children by enabling parent; nullable color picker by value; pending/existing background asset; notification permission can turn a just-enabled toggle off; auto-scroll reveals always-scroll and placement children.
+  - Variants: Custom HTML and Waifu controls by theme; custom color/text/font editors by selection; memory-thickness and quote children by enabling parent; nullable color picker by value; pending/existing background asset; notification permission can turn a just-enabled toggle off; auto-scroll reveals always-scroll and placement children. The persisted floating-composer toggle controls `CHAT-12`, but a fixed-bottom textarea suppresses the floating form even when that toggle remains enabled.
   - Owners: `src/ts/setting/displaySettingsData.svelte.ts`; `accessibilitySettingsData.ts`; `src/lib/Setting/Pages/Display/*`; `src/ts/server/pushNotificationSetting.ts`
 - **`SET-05` — Language and translator configuration (`R`, `L`, `A`)**
-  - Variants: Local restart warning after language change; translator disabled/enabled; provider-specific DeepL/DeepLX/Google/LLM fields; Google-specific language choices; LLM preset list/editor; single- or multi-step LLM pipelines; send-text-as-is Ax.Model steps with bounded history slots; auto/combine/legacy controls; and LLM cache/import/export actions. Missing selected translator preset yields no editor fields.
+  - Variants: Local restart warning after language change; translator disabled/enabled; provider-specific DeepL/DeepLX/Google/LLM fields; Google-specific language choices; LLM preset list/editor; single- or multi-step LLM pipelines; send-text-as-is Ax.Model steps with bounded history slots; optional removal of `<Thoughts>`/`<think>` blocks from current source and source/translated history; auto/combine/legacy controls; and LLM cache/import/export actions. Missing selected translator preset yields no editor fields.
   - Owners: `src/ts/setting/languageSettingsData.svelte.ts`; `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte`; `src/lang/index.ts`
 - **`SET-06` — Advanced and chat-format dependencies (`R`, `B`)**
   - Variants: Local-network timeout, experimental fields, unrecommended/deprecated fields, prompt-info text, regex-worker timeouts, dynamic-asset editor, Jinja instruction template, custom model list/expanded editor/flags. The request-location row is hard-hidden and is not a live surface.
@@ -209,13 +215,13 @@ Driver tags used below:
   - Variants: Empty/list; provider/model/status/reason/fallback/usage badges; command pending/error; create/edit drawer. Compatibility/unsupported profiles lock provider fields; provider switches can warn that credentials will clear; runtime/fallback accordions exist only for editable first-class providers.
   - Owners: `src/lib/Setting/Pages/Model/ModelProfileList.svelte`; `ModelProfileEditorDrawer.svelte`
 - **`SET-11` — Provider-specific model form (`R`, `A`, `B`)**
-  - Variants: Entire form switches among OpenAI, Anthropic, Google, Vertex, Ollama, Custom API, Debug Echo, or compatibility notice. Nested variants include local/cloud Ollama, known/manual model, catalogs, Custom API URL warning/headers/params/flags, Vertex identity/private key, request format, and thinking support.
+  - Variants: Entire form switches among OpenAI, LLM Gateway, Neuralwatt, Anthropic, Google, Vertex, Ollama, Custom API, Debug Echo, or compatibility notice. Nested variants include managed catalog loading/empty/results for LLM Gateway and Neuralwatt, Gateway reasoning/verbosity/service-tier/routing choices, local/cloud Ollama, known/manual model, Custom API URL warning/headers/params/flags, Vertex identity/private key, request format, and thinking support.
   - Owners: `src/lib/Setting/Pages/Model/ModelProviderPanel.svelte`; `KeyValueRowsEditor.svelte`; provider catalogs under `src/ts/model/`
 - **`SET-12` — Secrets, fallbacks, and runtime defaults (`R`, `L`)**
-  - Variants: Preserved saved secret versus replace/clear; profile versus raw fallback row; missing current profile; self/duplicate exclusions; empty fallback state; runtime default empty/count/edit/error/queued/reset/save states.
+  - Variants: Preserved saved secret versus replace/clear; profile versus raw fallback row; missing current profile; self/duplicate exclusions; empty fallback state; runtime default empty/count/edit/error/queued/reset/save states. `stripCoT` can inherit from runtime defaults or use an explicit profile override, including explicit `false` against an enabled default.
   - Owners: `src/lib/Setting/Pages/Model/SecretField.svelte`; `ModelFallbackEditor.svelte`; `ModelRuntimeDefaultsEditor.svelte`; `ModelRuntimeOptionsEditor.svelte`
-- **`SET-13` — Model preset list (`R`, `L`)**
-  - Variants: Empty/list; selected row; prompt-preset role-override notice; modern profile/runtime/legacy badges; missing-profile and fallback summaries; reorder/delete availability.
+- **`SET-13` — Model and prompt preset lists (`R`, `L`)**
+  - Variants: Empty/list; selected row; prompt-preset role-override notice; modern profile/runtime/legacy badges; missing-profile and fallback summaries; reorder/delete availability. Prompt-preset rows also expose duplicate state: the source template is hydrated first, the clone receives a fresh ID/name while selection stays put, and the source row becomes busy or reports failure while the operation settles.
   - Owners: `src/lib/Setting/Pages/Model/ModelPresetList.svelte`; `src/lib/Setting/botpreset.svelte`
 - **`SET-14` — Legacy Bot Settings/provider panels (`R`, `A`, `X`, `B`)**
   - Variants: Model/parameters/prompt/other tabs or legacy stacked layout; prompt presets may omit parameters; provider panels for Google/Vertex/Anthropic/Mistral/NovelAI/Reverse Proxy/Cohere/Ollama/NanoGPT/OpenRouter/plugins/Kobold/Echo/Horde/textgen/Ooba; loading catalog versus manual/result; subscription state; format-specific parameters; streaming/thinking nesting; prompt-template hydration; custom flags/assets/tools.
@@ -224,7 +230,7 @@ Driver tags used below:
   - Variants: Standalone versus inline chrome; template/settings tab; hydration loading/error/retry; empty/list; validation warnings; token counts; optional COT/JSON schema/model override/fallback sections; fallback arrays. Prompt rows expand to type-specific forms for plain/jailbreak/COT, ChatML, cache, chat range, author note, persona, description, or memory.
   - Owners: `src/lib/Setting/Pages/PromptSettings.svelte`; `src/lib/UI/PromptDataItem.svelte`; `src/ts/server/promptTemplateHydration.ts`
 - **`SET-16` — Agent library and Agent Preset composition/diagnostics (`R`, `A`, `L`)**
-  - Variants: Empty/list; Agent usage and reusable behavior editor, including configurable toggle definitions and required Agent-only lorebook input aliases; default/enabled/disabled/invalid/incomplete/model-not-ready/ready preset status; phase/invocation/concurrency summaries; reorder/pending/error/drawer. Composition changes by attached Agent, phase, output/dependency/destination/failure policy, optional model/runtime override, validation, and saved state. Diagnostics changes through unavailable/loading/error/limited/empty/run-list/selected run and optional details.
+  - Variants: Empty/list; Agent usage and reusable behavior editor, including configurable toggle definitions, required Agent-only lorebook input aliases, prepared-input-specific CBS hints, and optional ChatML request mode whose instruction must start with a ChatML row. Preset composition adds optional module ID/namespace integration and a final-output CBS template over `mainOutput` plus enabled named Agent outputs; missing output references make the preset incomplete. Status still varies among default/enabled/disabled/invalid/incomplete/model-not-ready/ready, with phase/invocation/concurrency summaries, reorder/pending/error/drawer, and diagnostics from unavailable/loading/error/limited/empty through run selection/details.
   - Owners: `src/lib/Setting/Pages/AgentPresetSettings.svelte`; `AgentSettingsSection.svelte`; `AgentEditorDrawer.svelte`; `AgentPresetEditorDrawer.svelte`; `AgentPresetDiagnosticsPanel.svelte`; `src/ts/agents.ts`; `src/ts/agentPresetResolver.ts`
 - **`SET-17` — Plugin management (`R`, `A`, `X`)**
   - Variants: Empty/list; name/version/hot-reload badge; safe custom links; enabled state; update status cycle; mutation pending/error. Expanded plugin metadata dynamically chooses divider, select, textarea, radio, checkbox, number, or text for every non-hidden argument.
@@ -245,7 +251,7 @@ Driver tags used below:
   - Variants: Persisted `guiHTML` becomes a data-shaped visual tree. Node type/structure controls the canvas; selection and local menu state switch component/container/help editors and highlights.
   - Owners: `src/lib/Setting/Pages/CustomGUISettingMenu.svelte`; `src/ts/server/settingsBridge.svelte.ts`
 - **`SET-23` — Input-hook authoring (`R`, `L`)**
-  - Variants: Empty/list and add/delete states; each row selects draft or BTW behavior and edits a name and prompt. The server-backed settings draft saves the ordered hook collection, while chat-level selection remains separate.
+  - Variants: Empty/list and add/delete states; each row selects draft or BTW behavior and edits a name and prompt. Runtime prompts can request aligned source and persisted-translation history windows, including greeting fallback and shared token-budget trimming; content/draft replacements are not recursively reinterpreted as slots. The server-backed settings draft saves the ordered hook collection, while chat-level selection remains separate.
   - Owners: `src/lib/Setting/Pages/InputHookSettings.svelte`; `src/ts/process/inputHooks.ts`; `src/ts/chatCommands.ts`
 
 ## Global overlays and workflow modals
@@ -429,8 +435,8 @@ For each inventory ID selected for detailed investigation, capture:
 6. A screenshot or accessible DOM snapshot plus the request UID/trace entry for
    server-backed transitions.
 
-Start with `APP-10`, `CHAT-03`, `CHAT-08`, `CHAT-09`, `CHAT-12`, `SIDE-05`,
-`SIDE-07`, `SIDE-10`, `SET-03`, `SET-05`, `SET-08` through `SET-20`,
+Start with `APP-10`, `APP-11`, `CHAT-03`, `CHAT-08`, `CHAT-09`, `CHAT-12`,
+`SIDE-05`, `SIDE-07`, `SIDE-10`, `SIDE-12`, `SET-03`, `SET-05`, `SET-08` through `SET-20`,
 `SET-23`, `MODAL-02`, `HYPA-01`, and the
 cross-cutting sources. These combine the most independent data owners or have
 final UI that cannot be determined from one component alone.

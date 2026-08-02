@@ -1,6 +1,6 @@
 # Project Structure
 
-Last audited: 2026-07-27.
+Last audited: 2026-08-02.
 
 Use this file to orient yourself in the Fastify-only RisuAI codebase. The
 supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
@@ -16,11 +16,13 @@ records past decisions and is not authoritative.
 | Change SQLite, revisions, active-writer rules, command events, or streaming           | [Data And Events](docs/structure/data-and-events.md)                                                                                                                           |
 | Change browser bootstrap, resources, hydration, invalidation, or durable mutations    | [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md), then [Client Runtime Guide](src/docs/client-runtime.md)                                        |
 | Change reload-durable composer or module-editor draft recovery                        | [Client Runtime Guide](src/docs/client-runtime.md#draft-recovery-stores), then [Svelte UI Guide](src/docs/svelte-ui.md)                                                        |
-| Change Svelte UI, navigation, settings controls, chat, sidebars, or styling            | [Svelte UI Guide](src/docs/svelte-ui.md)                                                                                                                                       |
-| Change model profiles, credentials, Agents, Agent Presets, translation, or providers | [Providers And Models](docs/structure/providers-and-models.md)                                                                                                                 |
+| Change Svelte UI, navigation, settings controls, chat, the floating composer, sidebars, or styling | [Svelte UI Guide](src/docs/svelte-ui.md)                                                                                                                         |
+| Change Mood Light membership, session mode, character visibility, or route guards               | [Svelte UI Guide](src/docs/svelte-ui.md#sidebar-and-navigation-ui), [Client Runtime Guide](src/docs/client-runtime.md#mood-light-visibility-coordination), and [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md#mood-light) |
+| Change model profiles, credentials, providers, capabilities, or runtime options                  | [Providers And Models](docs/structure/providers-and-models.md)                                                                                                     |
+| Change prompt assembly, CBS/history slots, input hooks, translation, Agents, or Agent Presets    | [Providers And Models](docs/structure/providers-and-models.md) and [Svelte UI Guide](src/docs/svelte-ui.md#agent-and-prompt-authoring)                              |
 | Change LLM request history, provider metadata, or retention                           | [Providers And Models](docs/structure/providers-and-models.md), [Data And Events](docs/structure/data-and-events.md), and [Svelte UI Guide](src/docs/svelte-ui.md)             |
 | Change modules, plugins, network permissions, or MCP                                  | [Plugins And MCP](docs/structure/plugins-and-mcp.md)                                                                                                                           |
-| Change assets, the inlay catalog, imports, exports, backups, or Realm conversion       | [Assets And Saves](docs/structure/assets-and-saves.md), then [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md) for browser catalog reads           |
+| Change assets, the inlay catalog, character/CharX or chat exchange, post-export chat reset, backups, or Realm conversion | [Assets And Saves](docs/structure/assets-and-saves.md), then [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md) for browser catalog reads |
 | Run or extend checks, local dev, or CI                                                | [Testing And Operations](docs/structure/testing-and-operations.md) and the [Test Suite Guide](docs/tests/README.md)                                                            |
 | Trace data-dependent rendering or UI ownership                                        | [Data-Driven UI Inventory](docs/data-driven-ui.md)                                                                                                                             |
 | Classify generated, vendored, compatibility-only, or removed paths                    | [Generated Files And Legacy Caveats](docs/structure/generated-and-legacy.md)                                                                                                   |
@@ -51,8 +53,8 @@ records past decisions and is not authoritative.
 | Path                          | Responsibility                                                                                          |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `index.html` -> `src/main.ts` | Installs browser coordinators and mounts the application.                                               |
-| `src/App.svelte`              | Svelte application shell and top-level render routing.                                                  |
-| `src/ts/bootstrap.ts`         | Auth/writer bootstrap, recovery preparation, resource hydration, and invalidation startup.              |
+| `src/App.svelte`              | Svelte application shell, top-level render routing, and selected-character visibility guard.            |
+| `src/ts/bootstrap.ts`         | Auth/writer bootstrap, recovery preparation, resource hydration, invalidation, and active-work recovery. |
 | `server/fastify/src/index.ts` | Loads configuration, builds the API, listens, and handles shutdown.                                     |
 | `server/fastify/src/app.ts`   | Fastify composition root: plugins, SQLite, auth, writer policy, routes, jobs, timers, and optional SPA. |
 
@@ -73,13 +75,18 @@ to find companion files and tests.
   hash-verified. The encrypted mutation outbox and scoped draft-recovery stores
   retain pending intent or editing state; neither is an independent application
   database. See [Server Resources And Bridges](docs/structure/server-resources-and-bridges.md).
+- Mood Light is a browser privacy/visibility partition, not an authorization
+  boundary. Its normalized membership is durable server-backed settings state;
+  the active flag is tab-local `sessionStorage`, and Fastify continues to return
+  all character rows.
 - Normal revision-tracked domain writes use command mutations and global
   revision ordering. Server-owned exceptions are listed in
   [Data And Events](docs/structure/data-and-events.md#server-owned-exceptions).
-- Persisted provider credentials stay server-side and resource projections mask
-  their secrets. Provider/media APIs expose fixed, validated operations rather
-  than arbitrary upstream requests; permitted one-shot credential drafts are
-  operation-specific.
+- During normal runtime, persisted provider credentials are resolved server-side
+  and resource projections mask their secrets. Whole-database exports can
+  contain raw credentials and must be treated as secrets. Provider/media APIs
+  expose fixed, validated operations rather than arbitrary upstream requests;
+  permitted one-shot credential drafts are operation-specific.
 - Mutation-facing UI must distinguish `accepted`, `queued`, and `failed`. A
   queued mutation is retained intent, not server acceptance; preserve newer
   drafts and do not report success merely because dispatch began.

@@ -1,6 +1,6 @@
 # Server Resources And Bridges
 
-Last audited: 2026-07-27.
+Last audited: 2026-08-02.
 
 Fastify owns authoritative application state. The browser reads concrete REST resources into
 Svelte-owned settings, collections, and characters state plus a standalone
@@ -19,8 +19,8 @@ routes.
   Bootstrap is deliberately runtime-only metadata: initialization state,
   revision/schema version, database lineage, durable writer epoch, the
   pre-takeover writer verdict, asset base URL, running generation jobs, and
-  active manual/generated-message translations, and active greeting
-  translations. It does not carry durable application data.
+  running plus bounded recent terminal message/greeting translations. It does
+  not carry durable application data.
 - Only classifier-confirmed empty state triggers
   `POST /api/v1/commands/state/initialize`. The winning client reuses the runtime
   metadata and accepted revision it already has; a read-only bootstrap retry is
@@ -75,6 +75,7 @@ routes.
 | `src/ts/server/promptTemplateHydration.ts`                 | Fetches the template owned by a selected or explicitly requested prompt preset.                                                      |
 | `src/ts/server/messageTranslationJobs.ts`                  | Tracks detached manual or generated-message translation rows from bootstrap and refresh polling.                                     |
 | `src/ts/server/greetingTranslations.svelte.ts`             | Character-scoped greeting projection, source/settings fencing, manual translation, refresh, and job recovery.                        |
+| `src/ts/moodLightMode.ts`, `src/ts/moodLightMembership.ts` | Tab-local mode state plus normalized durable membership and shared character-visibility partitioning.                                |
 | `src/ts/process/serverGeneratedMessageTranslation.ts`      | Applies translation results embedded in generation completion and seeds the shared translation-job state for running/failure UI.     |
 | `src/ts/process/generatedMessageTranslationEligibility.ts` | Prevents the older rendered-row auto trigger from duplicating server-owned generated-message translation.                            |
 | `src/ts/server/inlayCatalog.ts`                            | Standalone browser projection and revision-aware writes for inlay metadata.                                                          |
@@ -144,6 +145,17 @@ an epoch change, a revision gap, or a foreign event falls back to authoritative
 resource invalidation. A complete refresh advances the destructive-refresh
 token before applying its first slice, so even a partial failed apply cannot
 later acknowledge stale optimism.
+
+The destructive all-chat reset uses `dispatchResetChatsWithOutcome()` in
+`src/ts/chatCommands.ts`. It first flushes registered bridge patches, stages
+the allowlisted character-owned `PUT` intent, applies one optimistic replacement
+chat, and retains or rolls back that projection according to the normal
+`accepted`/`queued`/`failed` outcome. The low-level `resetChatsCommand()`
+intentionally supplies no compact local effect; its `chats.reset` event
+therefore reconciles through the authoritative
+`/api/v1/characters/:characterId` row. `src/ts/chatCommands.test.ts` guards the
+outcome/rollback path and `src/ts/server/commands.test.ts` guards the wire
+contract.
 
 Mutation-facing UI must distinguish `accepted`, `queued`, and `failed` helper
 outcomes. `queued` means recoverable local intent was retained, not that the
@@ -307,6 +319,8 @@ unreferenced values and limiting their UTF-8 serialized JSON to 64 MiB globally
 and 32 MiB per value. Those byte limits do not include IndexedDB metadata or
 engine overhead.
 
+### Settings Groups And Feature Projections
+
 Settings-group ownership is mirrored between the browser and Fastify; the
 dedicated read-only `agents` and `models` exceptions are parity-tested.
 `agents` contains standalone Agents, Agent Presets, and the default-preset
@@ -320,6 +334,28 @@ taint. One providers read subsumes a simultaneous models invalidation. The
 `hypaV3Presets` is collection-owned even though memory settings commands can
 change it, so the memory group response excludes it and its cross-resource event
 reads the collection separately.
+
+#### Mood Light
+
+Mood Light's durable membership arrives with the settings root and belongs to
+the `sidebar` settings group. The UI persists it through
+`persistServerBackedSettingsPatchWithSettlement()`, so the ordinary optimistic
+settings bridge, encrypted outbox, `settings.updated` event, and targeted
+`/api/v1/settings/sidebar` invalidation all apply. Fastify normalizes the
+object in `server/fastify/src/routes/commands.ts`; there is no dedicated Mood
+Light command, resource projection, or per-character persistence field.
+
+The active bit is instead stored for the current tab under
+`risu:mood-light-mode` by `src/ts/moodLightMode.ts`. Fastify continues to return
+all character/order rows: `src/ts/moodLightMembership.ts` derives the visible
+partition from direct character ids, protected-folder snapshots/current
+children, and exclusions. Mood Light is therefore a browser privacy view, not
+an authorization boundary. The persistence split and normalization are guarded
+by `src/ts/server/settingsGroups.test.ts`,
+`server/fastify/__tests__/commands.test.ts`, and
+`src/ts/moodLightMembership.test.ts`.
+
+#### Prompt Preset And Legacy Bodies
 
 Modern `promptPresets[].promptTemplate` is the normal prompt-template owner.
 Collection reads strip every modern preset template into a shell and, on the

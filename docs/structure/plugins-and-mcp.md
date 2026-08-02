@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-07-27.
+Last audited: 2026-08-02.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -74,10 +74,10 @@ DOM-compatible plugin code.
 
 The capability catalog is `fetchLogs`, `db`, `mainDom`, `network`,
 `pluginUpdate`, `replacer`, `provider`, `sendChat`, and `v3Runtime`. Grants are
-device-local localforage state, not Fastify/backed-up data; `db`, `provider`, and
-`replacer` require periodic three-day reconfirmation. Import also parses
-`allowedIPC`, but plugin-to-plugin delivery succeeds only when sender and
-receiver mutually list each other.
+device-local localforage state, not Fastify-backed or backed-up data; `db`,
+`provider`, and `replacer` require periodic three-day reconfirmation. Import
+also parses `allowedIPC`, but plugin-to-plugin delivery succeeds only when
+sender and receiver mutually list each other.
 
 The `mainDom` bridge additionally removes network-loading HTML/SVG elements
 and attributes, rejects existing `<style>` content mutation, and accepts only a
@@ -111,10 +111,9 @@ ignores the requested range.
 
 ## Plugin Storage
 
-- Server-backed plugin custom storage is `Database.pluginCustomStorage`, mutated
-  through `PUT /api/v1/commands/plugin-storage/:key`,
-  `DELETE /api/v1/commands/plugin-storage/:key`, or
-  `POST /api/v1/commands/plugin-storage/bulk`.
+- Server-backed plugin custom storage is `Database.pluginCustomStorage`, with
+  client mutation adapters in `src/ts/pluginCommands.ts` and Fastify mutation
+  ownership in `server/fastify/src/commands/pluginStorage.ts`.
 - Device-local plugin storage wraps `localStorage`, IndexedDB, and localforage
   through safe prefixes. In Fastify mode it is disabled unless
   `pluginCompatibilityMode` is enabled, and remains plugin sandbox
@@ -129,27 +128,34 @@ read both affected slices. Response-confirmed optimistic record/provider writes
 advance those resource fences without a read, retaining any newer queued edit.
 `pluginStorage` maps to the complete `pluginCustomStorage` collection so key
 deletion, clear, and bulk replacement remove absent values without refreshing
-unrelated app state. Pending per-key put/delete/bulk intents stay registered through
-resource reconciliation and overlay both targeted and full refreshes, so an
-older response cannot erase a newer optimistic storage edit. Plugin and module
-records arrive through the collection resources; bootstrap contains no durable
-record bodies. Those collection reads participate in the generic authenticated
-SHA-256/IndexedDB resource cache, rather than a plugin-specific bootstrap body
-cache.
+unrelated app state. Pending per-key put/delete/bulk intents stay registered
+through resource reconciliation and overlay both targeted and full refreshes,
+so an older response cannot erase a newer optimistic storage edit. Plugin and
+module records arrive through the collection resources; bootstrap contains no
+durable record bodies. Those collection reads participate in the generic
+authenticated SHA-256/IndexedDB resource cache, rather than a plugin-specific
+bootstrap body cache.
 
 Plugin API calls that patch settings, modules, characters, chats, lorebooks, or
 scripts should use command-backed helpers. Unsupported direct resource keys stay
 blocked in server-backed mode so plugin code cannot silently mutate projection
-state. Deprecated database-bridge calls retained on the V3 API that write unknown
-`setDatabaseLite` keys become plugin storage writes, while recognized unsupported resource families such as
-`characters`, `botPresets`, `loreBook`, and `pluginV2` are blocked instead of
-being shadowed into plugin storage.
+state. Deprecated database-bridge calls retained on the V3 API that write
+unknown `setDatabaseLite` keys become plugin storage writes, while recognized
+unsupported resource families such as `characters`, `botPresets`, `loreBook`,
+and `pluginV2` are blocked instead of being shadowed into plugin storage.
 
-## Fastify Command Routes
+## Fastify Command Boundary
 
-Plugin command routes are part of the generic `/api/v1/commands/` manifest entry
-and use the same auth, active-writer, base-revision, and command-event contract
-as other command routes:
+Plugin commands are covered by the `commands` prefix entry in
+`server/fastify/src/routeManifest.ts` and use the same auth, active-writer,
+base-revision, and command-event contract as other command routes. Client
+wrappers live in `src/ts/server/commands.ts`; route registration and validation
+live in `server/fastify/src/routes/commands.ts`, with mutation logic in
+`server/fastify/src/commands/plugins.ts` and `pluginStorage.ts`. The route and
+storage contracts are guarded by
+`server/fastify/__tests__/routeProtection.test.ts`,
+`server/fastify/__tests__/commands.test.ts`, and
+`server/fastify/__tests__/commandSettingsAndPluginStorageRange.test.ts`.
 
 Plugin record `PATCH` requests contain only changed fields. Because JSON omits
 `undefined`, `null` is reserved as a deletion sentinel for optional plugin
@@ -160,20 +166,6 @@ metadata, including CJS and asset references. `POST /api/v1/commands/modules`
 independently applies the shared MCP import predicate at creation. Stored MCP
 rows can be globally enabled or durably deleted, but cannot be patched or
 linked to character, chat, or loadout scopes.
-
-- `POST /api/v1/commands/plugins`
-- `PATCH /api/v1/commands/plugins/:pluginId`
-- `DELETE /api/v1/commands/plugins/:pluginId`
-- `POST /api/v1/commands/plugins/:pluginId/enable`
-- `POST /api/v1/commands/plugins/provider`
-- `POST /api/v1/commands/plugins/reorder`
-- `PUT /api/v1/commands/plugin-storage/:key`
-- `DELETE /api/v1/commands/plugin-storage/:key`
-- `POST /api/v1/commands/plugin-storage/bulk`
-
-Client wrappers live in `src/ts/server/commands.ts`; server validation and
-mutation logic lives in `server/fastify/src/routes/commands.ts` plus
-`server/fastify/src/commands/plugins.ts` and `pluginStorage.ts`.
 Single-key plugin-storage `PUT`/`DELETE` commands skip full database load and
 touch only `plugin_custom_storage`; bulk storage reads and merges current
 storage. Plugin collection commands are similarly scoped, and deleting the
@@ -193,8 +185,12 @@ are released.
 MCP and tool orchestration mostly lives under `src/ts/process/mcp/`. MCP
 initialization reads MCP URLs from currently active modules via
 `getModuleMcps()` in `src/ts/process/modules.ts`: global enabled modules,
-current chat modules, current character modules, and prompt-preset/global
-`moduleIntergration` entries.
+current chat modules, current character modules, the selected Prompt Preset's
+`moduleIntergration` (or the global fallback when no prompt preset is selected),
+and the effective enabled Agent Preset's `moduleIntergration`.
+`combineModuleIntegrations()` deduplicates the integration sources before
+module lookup; this resolution is guarded by
+`src/ts/moduleIntegration.test.ts` and `src/ts/process/modules.test.ts`.
 Initialization dedupes concurrent construction, removes stale clients when the
 active URL inputs change, indexes tools with the first MCP URL winning duplicate
 tool names, and isolates failed internal handshakes so other MCP clients remain
@@ -272,13 +268,13 @@ character/chat/loadout link operations target non-MCP rows. Global enable and
 generic delete explicitly admit MCP ids: enable updates `enabledModules`, and
 delete removes the stored row plus enabled/character/chat/loadout id references
 through the ordinary revisioned module commands. It does not rewrite
-`moduleIntergration` text. The module UI displays imported MCP rows, supports those two
-global lifecycle actions, hides edit/export, and hides unsupported scoped-link
-controls. Server behavior is guarded by
+`moduleIntergration` text. The module UI displays imported MCP rows, supports
+those two global lifecycle actions, hides edit/export, and hides unsupported
+scoped-link controls. Server behavior is guarded by
 `server/fastify/__tests__/commands.test.ts`; UI restrictions are guarded by
 `src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts` and
-`src/lib/Setting/Pages/Module/ModuleChatMenu.svelte.test.ts`. The import picker exclusion is guarded by
-`src/ts/process/mcp/mcp.test.ts`.
+`src/lib/Setting/Pages/Module/ModuleChatMenu.svelte.test.ts`. The import-picker
+exclusion is guarded by `src/ts/process/mcp/mcp.test.ts`.
 Command-based stdio MCPs remain unsupported by the browser runtime; only a
 parseable URL-wrapped `stdio:{...}` row can initialize.
 
@@ -300,12 +296,12 @@ loads the matching raw row and never returns refresh credentials to the
 browser. Refresh egress is DNS-pinned, redirect-free, and bounded; public
 endpoints require HTTPS, while local HTTP is allowed only for a local MCP
 identity. If the upstream rotates the refresh token, Fastify persists it through
-a targeted settings mutation and returns only the access token. Newly authorized, not-yet-projected raw rows retain a bounded direct
-refresh path, and those credential-bearing requests are omitted from browser
-fetch diagnostics. Google Search MCP credentials are currently unsupported in
-server-backed web mode. Remote MCP tool results may contain text, image/audio
-base64, or resource payloads, but they are not server-persisted unless a later
-command stores them.
+a targeted settings mutation and returns only the access token. Newly
+authorized, not-yet-projected raw rows retain a bounded direct refresh path, and
+those credential-bearing requests are omitted from browser fetch diagnostics.
+Google Search MCP credentials are currently unsupported in server-backed web
+mode. Remote MCP tool results may contain text, image/audio base64, or resource
+payloads, but they are not server-persisted unless a later command stores them.
 
 ## UI Surfaces
 

@@ -1,6 +1,6 @@
 # Assets And Saves
 
-Last audited: 2026-07-27.
+Last audited: 2026-08-02.
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -9,8 +9,9 @@ instead of writing runtime state directly.
 Static app assets are a separate source boundary from persisted runtime assets:
 `public/` is Vite-served static input, `resources/` retains currently
 unconsumed packaging artwork, and `src/etc/` mixes live bundled media/tokenizer
-data with unreferenced legacy payloads. Save/import/export and user-upload flows should use server asset ids and
-`/api/v1/assets/:id` URLs, not static `/public` paths.
+data with unreferenced legacy payloads. Save/import/export and user-upload flows
+should use server asset ids and `/api/v1/assets/:id` URLs, not static `/public`
+paths.
 
 ## Assets
 
@@ -20,7 +21,7 @@ data with unreferenced legacy payloads. Save/import/export and user-upload flows
 | `server/fastify/src/repository.ts`                                          | Asset id validation, sha256 dedupe, SQLite metadata, file paths, missing-asset checks.            |
 | `server/fastify/src/assetGc.ts`                                             | Reference-counted asset garbage collection over a minimal SQLite reference shape.                 |
 | `server/fastify/src/risuSave/assetReferences.ts`                            | Known-field asset-reference walker for import/export/GC reports.                                  |
-| `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`                     | Browser upload/read adapters, asset URL normalization, and private bulk-upload existence probing. |
+| `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`                     | Browser upload/read adapters, asset URL normalization, and bulk-upload existence probing.         |
 | `src/ts/server/inlayCatalog.ts`                                             | Browser catalog projection validation and revision-aware acknowledgement application.             |
 | `src/ts/server/commands.ts`, `src/ts/process/files/inlays.ts`               | Catalog commands plus the upload/register/migrate/read/delete inlay workflow.                      |
 | `src/ts/server/settingsMediaAssetUpload.ts`, `src/ts/process/stableDiff.ts` | Durable image-setting asset references and lazy provider-request base64 materialization.          |
@@ -33,16 +34,14 @@ for the server's canonical `jpg` extension.
 `POST /api/v1/assets` accepts raw supported asset bytes;
 `POST /api/v1/assets/bulk` accepts compact binary framing for browser bulk
 uploads and keeps JSON/base64 batch compatibility for legacy callers.
-The browser hands streaming CharX assets to persistence in batches of at most
-32 assets or 8 MiB and pauses ZIP input while retained decoded assets exceed
-32 MiB. A single valid asset can exceed that queue target, up to the per-asset
-CharX limit. Browser hashing is limited to four concurrent assets and avoids
-copying ordinary `ArrayBuffer`-backed byte views before WebCrypto. The shared
-asset helper can still fill the existence endpoint's 1,024-id capacity when a
-caller supplies that many ids, while missing bytes are sent in upload chunks of
-at most 32 assets or 32 MiB. Asset requests time out after five minutes.
-Transient rate-limit responses honor `Retry-After` and retry the affected batch
-rather than failing the whole import immediately.
+`saveAssets()` limits browser hashing to four concurrent assets, deduplicates
+ids within the call, fills the existence endpoint's 1,024-id capacity, and
+packs missing bytes toward 32-asset/32 MiB upload targets. A single asset larger
+than the byte target remains a single-item batch instead of being split. Asset
+requests time out after five minutes; transient rate-limit responses honor
+`Retry-After` and retry the affected request up to three times. These contracts
+are named by the `SERVER_ASSET_*` constants in `src/ts/globalApi.svelte.ts` and
+guarded by `src/ts/globalApi.saveAssets.test.ts`.
 Uploads are authenticated and active-writer guarded. Asset metadata is outside
 the revisioned application-resource domain: uploads return the current domain
 revision but do not bump it or emit a command event. Re-uploading existing
@@ -165,19 +164,64 @@ separate bug-report export masks registered secrets.
 
 Portable client formats outside whole-database saves remain browser workflows:
 
-| Owner                                                                                            | Exchange contract                                                                                                                        |
-| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/storage/exportAsDataset.ts`                                                              | Dataset JSON export strictly hydrates every chat and character lorebook before serialization; any incomplete hydration fails the export. |
-| `src/ts/characters.ts`                                                                           | Chat import/export.                                                                                                                      |
-| `src/ts/characterCards.ts`                                                                       | Character-card import/export, including packaged card assets.                                                                            |
-| `src/ts/persona.ts`                                                                              | Persona PNG import/export.                                                                                                               |
-| `src/ts/storage/database.svelte.ts`                                                              | Legacy and split preset exchange, including `.risup`.                                                                                    |
-| `src/ts/process/lorebook.svelte.ts`, `src/ts/process/scripts.ts`, `src/ts/translator/presets.ts` | Lorebook, regex-script, and `.risutl` translator-preset exchange.                                                                        |
+| Owner                                                                                            | Exchange contract                                                 |
+| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `src/ts/storage/exportAsDataset.ts`                                                              | Dataset JSON export.                                              |
+| `src/ts/characters.ts`                                                                           | Single-chat and all-chat import/export.                           |
+| `src/ts/characterCards.ts`, `src/ts/process/processzip.ts`                                       | Character-card import/export, including packaged CharX assets.    |
+| `src/ts/persona.ts`                                                                              | Persona PNG import/export.                                        |
+| `src/ts/storage/database.svelte.ts`                                                              | Legacy and split preset exchange, including `.risup`.             |
+| `src/ts/process/lorebook.svelte.ts`, `src/ts/process/scripts.ts`, `src/ts/translator/presets.ts` | Lorebook, regex-script, and `.risutl` translator-preset exchange. |
+
+### Character Cards
+
+`CharXImporter` incrementally decodes `.charx` and JPEG-embedded CharX ZIPs.
+It excludes an entry once its expanded bytes exceed 50 MiB, flushes completed
+assets at 32 items or the 8 MiB batch target, and pauses ZIP input while
+retained decoded asset bytes exceed the 32 MiB queue target. Because thresholds
+are checked after accepting an entry, one valid entry can exceed either byte
+target up to the 50 MiB per-entry cap. The shared asset helper then applies its
+four-worker hashing, existence probing, deduplication, timeout, retry, and
+upload-chunk rules described above. `src/ts/process/processzip.test.ts` guards
+the entry cap, high-asset-count batching, queue backpressure, and representative
+valid output.
+
+CharX asset writes finish before the imported character is dispatched through
+the command path. They are content-addressed and deduplicated, but are not
+rolled back when later card validation, low-level-access confirmation, or the
+character mutation fails; assets left without a durable reference become
+eligible for normal grace-window GC.
+
+Every browser card path passes through
+`normalizeImportedCharacterIdentities()` before the optimistic character
+append. In addition to rekeying identities, it fills a missing starter-chat
+`fmIndex` from the character's `firstMsgIndex` or `-1`, so the imported greeting
+is available immediately after selection. This is guarded for spec and off-spec
+imports by `src/ts/characterCards.pngImport.test.ts` and
+`src/ts/characters.changeChar.test.ts`.
+
+### Chats And Datasets
+
+Dataset export strictly hydrates every chat and character lorebook before
+serialization; any incomplete hydration fails the export. All-chat export
+similarly hydrates the target character's chats and writes unchanged
+`risuAllChats` version-2 JSON.
+
+Only the sidebar's **Export all chats** action offers destructive follow-up:
+after the download succeeds, two confirmations are required before a durable
+command atomically replaces that character's chats with one empty `Chat 1` and
+selects page `0`. Chat folders remain. Export failure or either cancellation
+leaves chats unchanged, and terminal command failure rolls back the optimistic
+replacement. This does not change the export bytes or affect single-chat,
+dataset, character-card, `.risu`, bundle, or local-backup exports. The client
+contract is guarded by `src/ts/characters.exportChat.test.ts`,
+`src/lib/SideBars/SideChatList.svelte.test.ts`, and
+`src/ts/chatCommands.test.ts`; the atomic `chats.reset` mutation is guarded by
+`server/fastify/__tests__/commands.test.ts`.
 
 Module and MCP-bearing `.risum` exchange is owned by
-[Plugins And MCP](plugins-and-mcp.md#fastify-mode-limits). Dataset/chat guards
-are `src/ts/storage/exportAsDataset.test.ts`,
-`src/ts/characters.exportChat.test.ts`, and
+[Plugins And MCP](plugins-and-mcp.md#fastify-mode-limits). The remaining
+dataset/chat import guards are `src/ts/storage/exportAsDataset.test.ts` and
 `src/ts/characters.importChat.test.ts`.
 
 ## Realm Import
@@ -206,11 +250,12 @@ local direct `charx` file import still has a browser-native path. Negotiating
 carry `percent` plus only changed fields.
 Operational guards include a request deadline and client-disconnect abort,
 dynamic JSON size caps, per-asset and cumulative fetched-asset caps, pending
-low-level-access confirmation tokens, and temporary staging cleanup. Rollback of newly created
-asset rows/files is guaranteed for the JSON-card path but not after the charx
-asset commit. Non-SSE JSON responses include success, low-level-access confirmation
-tokens, HTTP `415` `unsupported_realm_download` fallbacks, revision conflicts,
-and upstream/fetch errors.
+low-level-access confirmation tokens, and temporary staging cleanup. Rollback
+of newly created asset rows/files is guaranteed for the JSON-card path but not
+after the charx asset commit. Non-SSE JSON responses include success,
+low-level-access confirmation tokens, HTTP `415`
+`unsupported_realm_download` fallbacks, revision conflicts, and upstream/fetch
+errors.
 The `/api/v1/download/dynamic/` string in the route module is an upstream Realm
 path constant, not a local Fastify route.
 
@@ -241,8 +286,9 @@ Creation first reads the `wal_checkpoint(TRUNCATE)` result row and requires
 manual checkpoint returns `backup_wal_checkpoint_failed`; the same failure in a
 safety snapshot is wrapped as `automatic_backup_failed`. Create, restore, and
 delete are authenticated and active-writer guarded; list is authenticated
-read-only. Concrete routes are `POST /api/v1/backups`, `GET /api/v1/backups`,
-`POST /api/v1/backups/:id/restore`, and `DELETE /api/v1/backups/:id`.
+read-only. The durable route-policy owners are the `backup-mutations` and
+`backup-list` entries in `server/fastify/src/routeManifest.ts`; behavior is
+guarded by `server/fastify/__tests__/backups.test.ts`.
 
 Before an initialized database is replaced by a `.risu`, bundle, legacy local
 backup, or server-backup restore, the repository creates a fail-closed automatic
@@ -258,10 +304,10 @@ Restore swaps asset/save directories and restores SQLite tables through the
 `SQLITE_BACKUP_TABLES` allowlist in `repository.ts`, then emits
 `state.restored` and triggers a complete browser resource refresh. Because
 restore swaps tables from the copied backup DB with `ATTACH`, operational tables
-can be present in the backup file but ignored on restore if they are not allowlisted.
-Keep that allowlist in sync when adding durable tables; split model/prompt
-preset rows and `inlay_catalog` are included. The SQLite-only durability policy
-is explicit:
+can be present in the backup file but ignored on restore if they are not
+allowlisted. Keep that allowlist in sync when adding durable tables; split
+model/prompt preset rows and `inlay_catalog` are included. The SQLite-only
+durability policy is explicit:
 
 | State | Portable `.risu`, bundle, and local backup | Server backup/restore |
 | ----- | ------------------------------------------ | --------------------- |
@@ -270,6 +316,7 @@ is explicit:
 | Greeting translations | Source-valid rows are embedded per character; import validates, deduplicates, and drops stale-source rows. | `greeting_translations` is restore-allowlisted and replaced with the snapshot. |
 | LLM request history | Excluded from portable formats. | The physical SQLite copy contains it, but `request_history` is not restore-allowlisted, so restore leaves the target's live history untouched. |
 | Inlay catalog and asset store | Catalog metadata/catalog-only assets are excluded. Bundle/local formats can add portable database references and present asset files without replacing the target catalog/store. | `inlay_catalog` is restored and the asset directory is replaced. |
+| Mood Light state | Durable `moodLightMembership` is included as whole-database root settings, but individual character/chat/dataset exports do not carry it. The session-only active `moodLightMode` flag is excluded. | Membership is restored with `settings`; the active flag remains browser-session state and is not backed up. |
 | Provider credentials | Included unmasked in whole-database settings; portable save files must be handled as secrets. | Restored with settings. |
 | Push subscriptions | Excluded: endpoint and auth material is origin/device state. | Deliberately remains live across restore. The VAPID key file is outside every backup, so losing the live subscription table or moving origins requires users to re-enable notifications. |
 

@@ -1,5 +1,7 @@
 # Test Suite Guide
 
+Last audited: 2026-08-02.
+
 This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
 ## Executive summary
@@ -14,10 +16,10 @@ The main weakness is integration depth rather than raw case count. Most frontend
 
 ### Product flows and UI
 
-- [App Navigation and Chat](app-navigation-and-chat.md) — routing, chat rendering/composition, lists, rerolls, responsive navigation, and browser smoke.
+- [App Navigation and Chat](app-navigation-and-chat.md) — routing, Mood Light route/selection guards, floating composition, chat lists/reset, rerolls, responsive navigation, and browser smoke.
 - [Settings, Profiles, and Extensions](settings-profiles-and-extensions.md) — settings pages, model/profile editors, modules/plugins, translators, personas, and Agent Preset UI.
-- [Character Content, Memory, and Catalogs](character-content-memory-and-catalogs.md) — character editors, lore/scripts, Hypa controls, Realm/catalog and mobile character behavior.
-- [Shared UI, Feedback, and Accessibility](shared-ui-feedback-and-accessibility.md) — alerts, dialogs, generic controls, focus, onboarding, feedback, and platform surface gates.
+- [Character Content, Memory, and Catalogs](character-content-memory-and-catalogs.md) — character editors, Mood Light membership, lore/scripts, Hypa controls, Realm/catalog and mobile character behavior.
+- [Shared UI, Feedback, and Accessibility](shared-ui-feedback-and-accessibility.md) — alerts, drag-safe backdrop dismissal, dialogs, generic controls, focus, onboarding, feedback, and platform surface gates.
 - [Playground and Specialized Tools](playground-and-specialized-tools.md) — Playground execution, conversion, media, parser, translation, MCP, and developer tools.
 
 ### State, data, and platform
@@ -26,12 +28,12 @@ The main weakness is integration depth rather than raw case count. Most frontend
 - [Domain Mutations and Editing Bridges](domain-mutations-and-editing-bridges.md) — optimistic character/chat/settings/preset/persona/loadout/module/lorebook/script edits and rollback.
 - [Persistence, Revisioned Commands, and Events](persistence-commands-and-events.md) — SQLite repositories, migrations, revisions, receipts, command transactions, events, projections, and resource reads.
 - [API Security, Runtime, and Network Boundaries](api-security-and-runtime.md) — auth, body limits, SSRF/egress policy, tracing/redaction, Web Push, startup/shutdown, and operational routes.
-- [Assets, Import/Export, and Backups](assets-import-export-and-backups.md) — assets, garbage collection, save codecs, backup/restore, bundles, Realm/CharX, browser uploads, and compatibility adapters.
+- [Assets, Import/Export, and Backups](assets-import-export-and-backups.md) — assets, garbage collection, save codecs, backup/restore, bundles, bounded high-cardinality Realm/CharX imports, browser uploads, and compatibility adapters.
 
 ### AI behavior and extensibility
 
-- [Prompting, Generation, and Streaming](prompting-generation-and-streaming.md) — prompt construction, preflight, generation, SSE, durability, reroll, Agent Presets, and cost gates.
-- [Providers, Models, and Media](providers-models-and-media.md) — model profiles, capability/routing, provider adapters, credentials, translation, image/audio/transcription, and codecs.
+- [Prompting, Generation, and Streaming](prompting-generation-and-streaming.md) — prompt construction, CBS history/index semantics, preflight, generation, SSE, durability, reroll, Agent Presets, and cost gates.
+- [Providers, Models, and Media](providers-models-and-media.md) — model profiles, Strip CoT, Neuralwatt and other provider adapters, credentials, translation, image/audio/transcription, and codecs.
 - [Memory and Embeddings](memory-and-embeddings.md) — Hypa planning, summaries, embeddings, ranking, job execution, worker/API/browser reconciliation, and memory UI.
 - [Scripting, Parsing, and Automation](scripting-parsing-and-automation.md) — CBS, regex scripts, triggers, Lua, HTML/chat parsing, templates, and bounded execution.
 - [Plugins, Modules, and MCP](plugins-modules-and-mcp.md) — plugin permissions/sandboxing, module lifecycle, MCP transports/OAuth/tools, and RisuAccess resources.
