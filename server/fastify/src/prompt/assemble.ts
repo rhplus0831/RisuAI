@@ -8,11 +8,13 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { trimUntilPunctuation } from '../../../../src/ts/util/punctuation.js'
 import { EntityNotFoundError } from '../repository.js'
 import {
+  determineHypaV3SummarizedPrefixStartIndex,
   normalizeHypaV3Settings,
   planStandardHypaV3Memory,
   type HypaV3Settings,
   type HypaV3SummaryRef,
 } from '../memoryPlanner.js'
+import { emptyPromptMemoryQueryDiagnostics, type PromptMemoryQueryDiagnostics } from '../promptMemoryQuery.js'
 import { planHypaV3ChunkJobs } from '../memoryChunkPlanner.js'
 import {
   buildFormatOrder,
@@ -141,6 +143,7 @@ export interface AssembleDeps {
   loadDatabase(): Database | null
   loadMemoryDatabase?(): DatabaseSync | null
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
+  loadPromptMemoryQueryDiagnostics?(): PromptMemoryQueryDiagnostics
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
   executeAgentPresetStep?: AgentPresetStepExecutor
   /** Optional live progress reporter for Agent Preset helper steps. */
@@ -172,6 +175,8 @@ export type PromptAssemblyStage =
 
 export interface PromptMemoryChunkPlanningDiagnostics {
   attempted: boolean
+  summarizedPrefixStartIndex: number
+  summarizedPrefixTokens: number
   chunksCreated: number
   jobsCreated: number
   plannedWindows: number
@@ -502,11 +507,16 @@ export interface AssemblyState {
    */
   memories?: OpenAIChat[]
   promptMemoryChunkPlanningDiagnostics?: PromptMemoryChunkPlanningDiagnostics
+  promptMemoryQueryDiagnostics?: PromptMemoryQueryDiagnostics
   promptMemorySelectionDiagnostics?: PromptMemoryAdapterDiagnostics
   promptMemoryRowAssemblyDiagnostics?: PromptMemoryRowAssemblyDiagnostics
   promptMemoryFollowUpDiagnostics?: PromptMemoryFollowUpDiagnostics
   recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
   promptMemoryRows?: OpenAIChat[]
+  /** Stored-summary boundary applied only when the Hypa V3 prompt-memory path is enabled. */
+  promptMemoryHistoryStartIndex?: number
+  /** Token cost removed with `promptMemoryHistoryStartIndex`. */
+  promptMemorySummarizedHistoryTokens?: number
   /** Agent Preset resolution, hidden step outputs, and diagnostics for this generation. */
   agentPreset?: AgentPresetRuntimeState
   // --- Final render + budget (set by `renderAndBudget`) ---
@@ -683,6 +693,8 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     additionalSystemPromptMutations: [],
     memoryDatabase,
     promptMemoryQueryVectors: deps.loadPromptMemoryQueryVectors?.() ?? [],
+    promptMemoryQueryDiagnostics:
+      deps.loadPromptMemoryQueryDiagnostics?.() ?? emptyPromptMemoryQueryDiagnostics(undefined, 'feature-disabled'),
     enqueuePromptMemoryFollowUpJob: deps.enqueuePromptMemoryFollowUpJob,
     resolveStoredAsset: deps.resolveStoredAsset,
     executeAgentPresetStep: deps.executeAgentPresetStep,
@@ -1648,10 +1660,14 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   const { ctx, currentChar, unformated } = state
   const db = state.database
   const promptMemoryRows = buildPromptMemoryRowsForAssembly(state)
+  const historyStartIndex = state.promptMemoryHistoryStartIndex ?? 0
+  const promptHistory = (state.historyMessages ?? []).slice(historyStartIndex)
+  const currentTokens = (state.currentTokens ?? 0) - (state.promptMemorySummarizedHistoryTokens ?? 0)
+  state.currentTokens = currentTokens
 
   const mem = buildMemoryWindow({
-    chats: [...promptMemoryRows, ...(state.historyMessages ?? [])],
-    currentTokens: state.currentTokens ?? 0,
+    chats: [...promptMemoryRows, ...promptHistory],
+    currentTokens,
     maxContextTokens: db.maxContext ?? 0,
     currentChat: state.currentChat,
     memoryCardUsed: !!state.memoryCardUsed,
@@ -1729,6 +1745,8 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
   const memoryDb = state.memoryDatabase
   if (!memoryDb) {
     state.promptMemoryRows = []
+    state.promptMemoryHistoryStartIndex = 0
+    state.promptMemorySummarizedHistoryTokens = 0
     state.promptMemoryChunkPlanningDiagnostics = emptyPromptMemoryChunkPlanningDiagnostics()
     state.promptMemoryFollowUpDiagnostics = emptyPromptMemoryFollowUpDiagnostics()
     return []
@@ -1747,6 +1765,8 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
     settings,
   })
   state.promptMemoryChunkPlanningDiagnostics = planning.diagnostics
+  state.promptMemoryHistoryStartIndex = planning.summarizedPrefixStartIndex
+  state.promptMemorySummarizedHistoryTokens = planning.summarizedPrefixTokens
   const selection = selectPromptMemory({
     db: memoryDb,
     enabled,
@@ -1762,6 +1782,9 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
     summarySnapshot: planning.summarySnapshot,
     getSummaryTokenCost: createPromptMemorySummaryTokenCost(state.database),
   })
+  selection.diagnostics.hotPathWork.generatedQueryEmbeddings =
+    state.promptMemoryQueryDiagnostics?.status === 'success' && state.promptMemoryQueryDiagnostics.vectors > 0
+  selection.diagnostics.hotPathWork.calledProviders = state.promptMemoryQueryDiagnostics?.providerCallAttempted ?? false
   state.promptMemorySelectionDiagnostics = selection.diagnostics
 
   const assembled = assemblePromptMemoryRows(selection)
@@ -1800,12 +1823,21 @@ function planPromptMemoryChunksForAssembly(input: {
   chatId: string
   enabled: boolean
   settings: ReturnType<typeof normalizeHypaV3Settings>['settings']
-}): { diagnostics: PromptMemoryChunkPlanningDiagnostics; summarySnapshot?: MemorySummarySnapshot } {
+}): {
+  diagnostics: PromptMemoryChunkPlanningDiagnostics
+  summarySnapshot?: MemorySummarySnapshot
+  summarizedPrefixStartIndex: number
+  summarizedPrefixTokens: number
+} {
   const diagnostics = emptyPromptMemoryChunkPlanningDiagnostics()
-  if (!input.enabled) return { diagnostics }
+  if (!input.enabled) {
+    return { diagnostics, summarizedPrefixStartIndex: 0, summarizedPrefixTokens: 0 }
+  }
 
   diagnostics.attempted = true
   let summarySnapshot: MemorySummarySnapshot | undefined
+  let summarizedPrefixStartIndex = 0
+  let summarizedPrefixTokens = 0
   try {
     const chats = input.state.historyMessages ?? []
     const currentChatMemos = chats.map((chat) => chat.memo).filter(isNonEmptyString)
@@ -1822,6 +1854,7 @@ function planPromptMemoryChunksForAssembly(input: {
     }
 
     const summaries = filterMemorySummariesForModel(summarySnapshot.summaries, input.settings.summarizationModel)
+    summarizedPrefixStartIndex = determineHypaV3SummarizedPrefixStartIndex(chats, summaries.map(summaryToHypaV3Ref))
     const { encoding, options } = tokenizerOptionsFromDb(input.state.database)
     const plan = planStandardHypaV3Memory({
       chats,
@@ -1833,6 +1866,9 @@ function planPromptMemoryChunksForAssembly(input: {
       tokenizeChat: (chat) => tokenizeChat(chat, encoding, options),
       tokenizeSummarizedPrefixChat: (chat) => tokenizeHypaV3PrefixChat(chat, encoding, options),
     })
+    summarizedPrefixTokens = -(plan.tokenDeltas.find((delta) => delta.kind === 'summarized_history')?.amount ?? 0)
+    diagnostics.summarizedPrefixStartIndex = summarizedPrefixStartIndex
+    diagnostics.summarizedPrefixTokens = summarizedPrefixTokens
     diagnostics.plannerWarnings.push(...plan.warnings.map((warning) => warning.message))
     diagnostics.plannerErrors.push(...plan.errors.map((error) => error.message))
 
@@ -1849,12 +1885,14 @@ function planPromptMemoryChunksForAssembly(input: {
   } catch (error) {
     diagnostics.errors.push(errorMessage(error, 'failed to plan Hypa V3 memory chunks'))
   }
-  return { diagnostics, summarySnapshot }
+  return { diagnostics, summarySnapshot, summarizedPrefixStartIndex, summarizedPrefixTokens }
 }
 
 function emptyPromptMemoryChunkPlanningDiagnostics(): PromptMemoryChunkPlanningDiagnostics {
   return {
     attempted: false,
+    summarizedPrefixStartIndex: 0,
+    summarizedPrefixTokens: 0,
     chunksCreated: 0,
     jobsCreated: 0,
     plannedWindows: 0,

@@ -16,8 +16,8 @@ export type PromptMemoryAdapterDisabledReason =
   | 'no-token-budget'
 
 export interface PromptMemoryHotPathWorkDiagnostics {
-  generatedQueryEmbeddings: false
-  calledProviders: false
+  generatedQueryEmbeddings: boolean
+  calledProviders: boolean
   generatedSummaries: false
   enqueuedJobs: false
   assembledPromptRows: false

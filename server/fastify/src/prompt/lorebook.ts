@@ -446,12 +446,13 @@ function getCompiledLoreKeyRegexWithCompatibility(
  */
 function searchMatch(corpus: SearchableMessageCorpus, arg: SearchArg, matchLog: LoreMatchLogEntry[]): boolean {
   lorebookSearchEntryListInstrumentation.searchMatchCalls++
+  const allMode = arg.all ?? false
   const trimmedKeys: string[] = []
   for (const k of arg.keys) {
     const t = k.trim()
     if (t.length > 0) trimmedKeys.push(t)
   }
-  if (trimmedKeys.length === 0) return false
+  if (trimmedKeys.length === 0) return allMode
 
   const baseEntries = baseSearchEntriesForDepth(corpus, arg.searchDepth)
   const recursiveEntries = arg.dontSearchWhenRecursive ? NO_SEARCH_ENTRIES : corpus.recursiveEntries
@@ -477,7 +478,6 @@ function searchMatch(corpus: SearchableMessageCorpus, arg: SearchArg, matchLog: 
     return matched && !malformedRegex
   }
 
-  const allMode = arg.all ?? false
   let allModeMatched = true
   const lowerKeys = trimmedKeys.map((key) => key.toLocaleLowerCase())
   const compactKeys = lowerKeys.map((key) => key.replace(/ /g, ''))
@@ -515,12 +515,13 @@ async function searchMatchAsync(
   matchLog: LoreMatchLogEntry[],
   options: BoundedRegexCompatibilityOptions,
 ): Promise<boolean> {
+  const allMode = arg.all ?? false
   const trimmedKeys: string[] = []
   for (const k of arg.keys) {
     const t = k.trim()
     if (t.length > 0) trimmedKeys.push(t)
   }
-  if (trimmedKeys.length === 0) return false
+  if (trimmedKeys.length === 0) return allMode
 
   const baseEntries = baseSearchEntriesForDepth(corpus, arg.searchDepth)
   const recursiveEntries = arg.dontSearchWhenRecursive ? NO_SEARCH_ENTRIES : corpus.recursiveEntries
@@ -545,7 +546,6 @@ async function searchMatchAsync(
     return false
   }
 
-  const allMode = arg.all ?? false
   let allModeMatched = true
   const lowerKeys = trimmedKeys.map((key) => key.toLocaleLowerCase())
   const compactKeys = lowerKeys.map((key) => key.replace(/ /g, ''))

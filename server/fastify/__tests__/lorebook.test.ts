@@ -3,6 +3,7 @@ import type { Chat, Database, Message, character, loreBook } from '../../../src/
 import type { RisuModule } from '../../../src/ts/process/modules'
 import {
   activateLorebook,
+  activateLorebookAsync,
   buildLorebookContext,
   getLorebookSearchEntryListInstrumentation,
   getLorebookSearchNormalizationInstrumentation,
@@ -623,6 +624,27 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
       }),
     })
     expect(report.actives).toEqual([])
+  })
+
+  it('treats a bare @@exclude_keys_all as an empty all-match and suppresses the entry', async () => {
+    const input = {
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            content: '@@exclude_keys_all\nCats nap.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'A cat naps nearby.' })],
+      }),
+    }
+
+    expect(activateLorebook(input).actives).toEqual([])
+    expect((await activateLorebookAsync(input)).actives).toEqual([])
   })
 
   it('@@match_full_word distinguishes whole-word vs substring', () => {

@@ -34,6 +34,7 @@ import type { GenerationTraceOptions, GenerationTraceSidecarEntry } from '../src
 import { runServerMessageTranslation } from '../src/translation/serverMessageTranslation.js'
 import type { ServerMessageTranslationRunner } from '../src/translation/generationCompletionTranslation.js'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import { createMemoryChunk, createMemoryEmbedding, createMemorySummary } from '../src/memoryRepository.js'
 
 const subtle = webcrypto.subtle
 
@@ -276,6 +277,95 @@ async function seedDatabase(_app: FastifyInstance, _assertion: string, database:
     return result.revision
   } finally {
     db.close()
+  }
+}
+
+function seedSimilarMemoryRows(): void {
+  const db = openDatabase(harness.dataDir)
+  try {
+    createMemoryChunk(db, {
+      id: 'memory-cat-chunk',
+      chatId: 'chat-1',
+      rangeStartSeq: 0,
+      rangeEndSeq: 0,
+      text: 'A remembered cat curled up in the library.',
+      status: 'summarized',
+    })
+    createMemorySummary(db, {
+      id: 'memory-cat-summary',
+      chatId: 'chat-1',
+      chunkId: 'memory-cat-chunk',
+      model: 'subModel',
+      text: 'A remembered cat curled up in the library.',
+      tokens: 10,
+    })
+    createMemoryEmbedding(db, {
+      id: 'memory-cat-embedding',
+      chatId: 'chat-1',
+      chunkId: 'memory-cat-chunk',
+      model: 'custom',
+      vector: [1, 0],
+    })
+
+    createMemoryChunk(db, {
+      id: 'memory-dog-chunk',
+      chatId: 'chat-1',
+      rangeStartSeq: 1,
+      rangeEndSeq: 1,
+      text: 'A remembered dog chased a ball in the park.',
+      status: 'summarized',
+    })
+    createMemorySummary(db, {
+      id: 'memory-dog-summary',
+      chatId: 'chat-1',
+      chunkId: 'memory-dog-chunk',
+      model: 'subModel',
+      text: 'A remembered dog chased a ball in the park.',
+      tokens: 10,
+    })
+    createMemoryEmbedding(db, {
+      id: 'memory-dog-embedding',
+      chatId: 'chat-1',
+      chunkId: 'memory-dog-chunk',
+      model: 'custom',
+      vector: [0, 1],
+    })
+  } finally {
+    db.close()
+  }
+}
+
+function similarityMemoryDatabase(): unknown {
+  return {
+    ...fixtureDatabase,
+    maxContext: 100,
+    maxResponse: 10,
+    hypaV3: true,
+    hypaModel: 'custom',
+    hypaCustomSettings: {
+      url: 'https://embeddings.example.test/v1',
+      key: 'custom-key',
+      model: 'custom-query-model',
+    },
+    hypaV3PresetId: 0,
+    hypaV3Presets: [
+      {
+        name: 'Similarity only',
+        settings: {
+          summarizationModel: 'subModel',
+          memoryTokensRatio: 0.1,
+          recentMemoryRatio: 0,
+          similarMemoryRatio: 1,
+          queryChatCount: 1,
+        },
+      },
+    ],
+    characters: [
+      {
+        ...fixtureDatabase.characters[0],
+        supaMemory: true,
+      },
+    ],
   }
 }
 
@@ -993,6 +1083,139 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(events.at(-3)?.type).toBe('info')
     expect(events.at(-2)?.type).toBe('error')
     expect(events.at(-1)?.type).toBe('done')
+  })
+
+  it('prefetches live Hypa query vectors and selects similar memory through the generation route', async () => {
+    let dispatchContext: ChatProviderDispatchContext | undefined
+    const embedPromptMemoryQueryTexts: NonNullable<GenerationChatRouteOptions['embedPromptMemoryQueryTexts']> = vi.fn(
+      async ({ input }) => ({
+        model: 'custom',
+        vectors: input.map(() => new Float32Array([1, 0])),
+        dim: 2,
+      }),
+    )
+    await restartHarness({
+      embedPromptMemoryQueryTexts,
+      dispatchProvider: (context) => {
+        dispatchContext = context
+        return null
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, similarityMemoryDatabase())
+    seedSimilarMemoryRows()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, userMessage: 'Tell me about the cat.' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(embedPromptMemoryQueryTexts).toHaveBeenCalledTimes(1)
+    expect(embedPromptMemoryQueryTexts).toHaveBeenCalledWith(
+      expect.objectContaining({ input: ['Tell me about the cat.'] }),
+    )
+    const prompt = parseEvents(res.body).find((event) => event.type === 'prompt')
+    const formated = prompt?.data.formated as Array<{ content: unknown }>
+    expect(formated.some((row) => String(row.content).includes('remembered cat'))).toBe(true)
+    expect(formated.some((row) => String(row.content).includes('remembered dog'))).toBe(false)
+    expect(dispatchContext?.result.state?.promptMemoryQueryDiagnostics).toMatchObject({
+      status: 'success',
+      providerCallAttempted: true,
+      queryTexts: 1,
+      vectors: 1,
+      error: null,
+    })
+    expect(dispatchContext?.result.state?.promptMemorySelectionDiagnostics?.selection?.ranking).toMatchObject({
+      queryVectors: 1,
+      validQueryVectors: 1,
+    })
+    expect(dispatchContext?.result.state?.promptMemorySelectionDiagnostics?.hotPathWork).toMatchObject({
+      generatedQueryEmbeddings: true,
+      calledProviders: true,
+    })
+  })
+
+  it('degrades query-embedding provider failures to empty vectors with prompt-memory diagnostics', async () => {
+    let dispatchContext: ChatProviderDispatchContext | undefined
+    const embedPromptMemoryQueryTexts = vi.fn(async () => ({
+      error: 'embedding provider offline',
+      code: 'fetch' as const,
+    }))
+    await restartHarness({
+      embedPromptMemoryQueryTexts,
+      dispatchProvider: (context) => {
+        dispatchContext = context
+        return null
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, similarityMemoryDatabase())
+    seedSimilarMemoryRows()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, userMessage: 'Tell me about the cat.' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(parseEvents(res.body).some((event) => event.type === 'prompt')).toBe(true)
+    expect(dispatchContext?.result.state?.promptMemoryQueryVectors).toEqual([])
+    expect(dispatchContext?.result.state?.promptMemoryQueryDiagnostics).toMatchObject({
+      status: 'failed',
+      providerCallAttempted: true,
+      queryTexts: 1,
+      vectors: 0,
+      error: 'embedding provider offline',
+    })
+    expect(dispatchContext?.result.state?.promptMemorySelectionDiagnostics?.hotPathWork).toMatchObject({
+      generatedQueryEmbeddings: false,
+      calledProviders: true,
+    })
+  })
+
+  it('bounds query-embedding latency and continues generation after timeout', async () => {
+    let dispatchContext: ChatProviderDispatchContext | undefined
+    const embedPromptMemoryQueryTexts: NonNullable<GenerationChatRouteOptions['embedPromptMemoryQueryTexts']> = vi.fn(
+      async ({ signal }) =>
+        await new Promise<{ error: string; code: 'aborted' }>((resolve) => {
+          signal.addEventListener('abort', () => resolve({ error: 'aborted', code: 'aborted' }), { once: true })
+        }),
+    )
+    await restartHarness({
+      embedPromptMemoryQueryTexts,
+      promptMemoryEmbeddingDeadlineMs: 5,
+      dispatchProvider: (context) => {
+        dispatchContext = context
+        return null
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, similarityMemoryDatabase())
+    seedSimilarMemoryRows()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, userMessage: 'Tell me about the cat.' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(parseEvents(res.body).some((event) => event.type === 'prompt')).toBe(true)
+    expect(dispatchContext?.result.state?.promptMemoryQueryVectors).toEqual([])
+    expect(dispatchContext?.result.state?.promptMemoryQueryDiagnostics).toMatchObject({
+      status: 'timed-out',
+      providerCallAttempted: true,
+      queryTexts: 1,
+      vectors: 0,
+      deadlineMs: 5,
+      error: 'prompt memory query embedding timed out after 5ms',
+    })
   })
 
   it('M2/L4: omits duplicate prompt fields for compact-capable clients', async () => {

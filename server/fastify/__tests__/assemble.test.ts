@@ -2795,7 +2795,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
-  it('uses imported legacy summaries for planning and selection without scheduling duplicate summarization', () => {
+  it('clips stored-summary history from the provider prompt and its running token budget', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       createMemoryChunk(memoryDb, {
@@ -2823,8 +2823,9 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         tokens: 0,
       })
       const db = memoryEnabledDatabase({
-        maxContext: 100,
+        maxContext: 1000,
         maxResponse: 0,
+        promptTemplate: [{ type: 'chat', rangeStart: 0, rangeEnd: 'end' }],
         hypaV3Presets: [
           {
             name: 'Test',
@@ -2847,12 +2848,25 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         }),
       )
       state.historyMessages = chunkPlanningHistory()
-      state.currentTokens = 99
+      state.currentTokens = 300
+      const tokensBeforeMemory = state.currentTokens
 
       fillMemoryAndPostHistory(state)
 
       expect(state.promptMemoryRows?.some((row) => row.content.includes('Imported tagged memory.'))).toBe(true)
+      expect(state.promptMemoryHistoryStartIndex).toBe(2)
+      expect(state.promptMemorySummarizedHistoryTokens).toBeGreaterThan(0)
+      expect(state.currentTokens).toBe(tokensBeforeMemory - (state.promptMemorySummarizedHistoryTokens ?? 0))
+      // Keep the full, already-scripted history available on state while only
+      // the unsummarized suffix is handed to the final memory/provider window.
+      expect(state.historyMessages?.map((row) => row.memo)).toEqual(['memo-a', 'memo-b', 'memo-c'])
+      const providerHistoryMemos = [...state.unformated.chats, ...state.unformated.lastChat].map((row) => row.memo)
+      expect(providerHistoryMemos).toContain('memo-c')
+      expect(providerHistoryMemos).not.toContain('memo-a')
+      expect(providerHistoryMemos).not.toContain('memo-b')
       expect(state.promptMemoryChunkPlanningDiagnostics).toMatchObject({
+        summarizedPrefixStartIndex: 2,
+        summarizedPrefixTokens: state.promptMemorySummarizedHistoryTokens,
         chunksCreated: 0,
         jobsCreated: 0,
         plannedWindows: 0,
@@ -2870,6 +2884,12 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
           },
         },
       ])
+
+      await renderAndBudget(state)
+      expect(state.formated?.some((row) => row.content.includes('Imported tagged memory.'))).toBe(true)
+      expect(state.formated?.some((row) => row.content.includes('charlie charlie'))).toBe(true)
+      expect(state.formated?.some((row) => row.content.includes('alpha alpha'))).toBe(false)
+      expect(state.formated?.some((row) => row.content.includes('bravo bravo'))).toBe(false)
     } finally {
       memoryDb.close()
     }

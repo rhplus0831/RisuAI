@@ -107,6 +107,12 @@ import { REQUEST_UID_HEADER } from '../requestTrace.js'
 import type { ChatCompletionNotificationContext, PushNotificationService } from '../pushNotifications.js'
 import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 import {
+  emptyPromptMemoryQueryDiagnostics,
+  prefetchPromptMemoryQueryVectors,
+  type PrefetchPromptMemoryQueryInput,
+  type PromptMemoryQueryPrefetchResult,
+} from '../promptMemoryQuery.js'
+import {
   handleGeneratedChatCompletion,
   type ServerMessageTranslationRunner,
 } from '../translation/generationCompletionTranslation.js'
@@ -178,6 +184,12 @@ export type ChatProviderDispatcher = (
 
 export interface GenerationChatRouteOptions {
   dispatchProvider?: ChatProviderDispatcher
+  /** Test/alternate adapter seam; production uses the shared server embedding adapter. */
+  embedPromptMemoryQueryTexts?: PrefetchPromptMemoryQueryInput['embed']
+  /** Contextual-model counterpart to `embedPromptMemoryQueryTexts`. */
+  embedPromptMemoryQueryGroups?: PrefetchPromptMemoryQueryInput['embedGroups']
+  /** Bounded query-embedding deadline; defaults to the shared memory-provider deadline. */
+  promptMemoryEmbeddingDeadlineMs?: number
   pushNotifications?: false | PushNotificationService
   runMessageTranslation?: ServerMessageTranslationRunner
   finalizationRetry?:
@@ -655,6 +667,7 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
  */
 interface RouteAssembleDeps extends AssembleDeps {
   getDatabase(): Database | null
+  setPromptMemoryQueryPrefetch(prefetch: PromptMemoryQueryPrefetchResult): void
 }
 
 interface PromptAssemblyMeasurement {
@@ -771,11 +784,18 @@ function loadDatabaseDeps(
   agentPresetProgress?: AgentPresetProgressReporter,
 ): RouteAssembleDeps {
   let database: Database | null = null
+  let databaseLoaded = false
+  let promptMemoryQueryPrefetch: PromptMemoryQueryPrefetchResult = {
+    vectors: [],
+    diagnostics: emptyPromptMemoryQueryDiagnostics(),
+  }
   const resolveStoredAsset = createRequestScopedStoredAssetResolver(db, dataDir)
   return {
     signal,
     agentPresetProgress,
     loadDatabase: () => {
+      if (databaseLoaded) return database
+      databaseLoaded = true
       const startedAt = measurement ? protocolNowMs() : 0
       // Assembly reads only the target chat's transcript hydrate
       // that chat alone; every sibling chat stays `message = []`.
@@ -787,7 +807,11 @@ function loadDatabaseDeps(
       return database
     },
     loadMemoryDatabase: () => db,
-    loadPromptMemoryQueryVectors: () => [],
+    loadPromptMemoryQueryVectors: () => promptMemoryQueryPrefetch.vectors,
+    loadPromptMemoryQueryDiagnostics: () => promptMemoryQueryPrefetch.diagnostics,
+    setPromptMemoryQueryPrefetch: (prefetch) => {
+      promptMemoryQueryPrefetch = prefetch
+    },
     getDatabase: () => database,
     resolveStoredAsset,
     recordAssemblyStageTiming: measurement
@@ -803,6 +827,7 @@ async function assemblePromptWithMetrics(
   signal?: AbortSignal,
   context: PromptAssemblyMetricContext = {},
   agentPresetProgress?: AgentPresetProgressReporter,
+  options: GenerationChatRouteOptions = {},
 ): Promise<{ result: AssembleResult; deps: RouteAssembleDeps; promptMs: number }> {
   const measurement: PromptAssemblyMeasurement | undefined = protocolMetricsEnabled()
     ? { databaseLoadCount: 0, databaseLoadMs: 0, stageTimingsMs: {} }
@@ -811,6 +836,23 @@ async function assemblePromptWithMetrics(
   const startedAt = Date.now()
   const deps = loadDatabaseDeps(dataDir, db, input.chatId, measurement, signal, agentPresetProgress)
   try {
+    const database = deps.loadDatabase()
+    deps.setPromptMemoryQueryPrefetch(
+      database
+        ? await prefetchPromptMemoryQueryVectors({
+            db,
+            database,
+            input,
+            signal,
+            deadlineMs: options.promptMemoryEmbeddingDeadlineMs,
+            embed: options.embedPromptMemoryQueryTexts,
+            embedGroups: options.embedPromptMemoryQueryGroups,
+          })
+        : {
+            vectors: [],
+            diagnostics: emptyPromptMemoryQueryDiagnostics(options.promptMemoryEmbeddingDeadlineMs),
+          },
+    )
     const result = await assemblePrompt(input, deps)
     const promptMs = Date.now() - startedAt
     emitProtocolMetric('generation_prompt_assembly', {
@@ -1069,6 +1111,11 @@ function assemblyDiagnosticMetricFields(result: AssembleResult): Record<string, 
     additionalSystemPromptMutationCount: mutations?.additionalSystemPrompt.length ?? 0,
     varChanged: mutations?.varChanged ?? false,
     submitTranscriptChanged: result.submitTranscriptChanged ?? false,
+    promptMemoryQueryStatus: result.state?.promptMemoryQueryDiagnostics?.status,
+    promptMemoryQueryProviderCallAttempted: result.state?.promptMemoryQueryDiagnostics?.providerCallAttempted ?? false,
+    promptMemoryQueryTextCount: result.state?.promptMemoryQueryDiagnostics?.queryTexts ?? 0,
+    promptMemoryQueryVectorCount: result.state?.promptMemoryQueryDiagnostics?.vectors ?? 0,
+    promptMemoryQueryError: result.state?.promptMemoryQueryDiagnostics?.error,
   }
 }
 
@@ -2033,8 +2080,14 @@ async function streamAssembly(
       if (deferredFailure) throw deferredFailure.error
       const { result, deps, promptMs } =
         preparedAssembly ??
-        (await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext, (progress) =>
-          emit({ type: 'agent_preset_progress', ...progress }),
+        (await assemblePromptWithMetrics(
+          input,
+          dataDir,
+          db,
+          signal,
+          metricContext,
+          (progress) => emit({ type: 'agent_preset_progress', ...progress }),
+          options,
         ))
       const database = result.state?.database ?? deps.getDatabase()
       // The route owns assembly-time chat-var writes and post-`editinput`
@@ -3136,8 +3189,14 @@ async function runGenerationJob(args: {
       if (preparedAssembly) retargetAssemblySignal(preparedAssembly, signal)
       const { result, deps, promptMs } =
         preparedAssembly ??
-        (await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext, (progress) =>
-          emit({ type: 'agent_preset_progress', ...progress }),
+        (await assemblePromptWithMetrics(
+          input,
+          dataDir,
+          db,
+          signal,
+          metricContext,
+          (progress) => emit({ type: 'agent_preset_progress', ...progress }),
+          options,
         ))
       const database = result.state?.database ?? deps.getDatabase()
       const persistedRevision =
@@ -3564,7 +3623,15 @@ export function registerGenerationChatRoutes(
       })
       const { signal, cleanup } = attachAbort(req, reply)
       try {
-        const { result, deps } = await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext)
+        const { result, deps } = await assemblePromptWithMetrics(
+          input,
+          dataDir,
+          db,
+          signal,
+          metricContext,
+          undefined,
+          options,
+        )
         if (result.stopSending) {
           return {
             stopSending: true,

@@ -211,7 +211,7 @@ export function planStandardHypaV3Memory(input: PlanHypaV3MemoryInput): HypaV3Me
   const tokenDeltas: HypaV3TokenDelta[] = []
   const plannedWindows: HypaV3PlannedWindow[] = []
   const skippedMessages: HypaV3SkippedMessage[] = []
-  let startIndex = determineStartIndex(input.chats, input.summaries ?? [])
+  let startIndex = determineHypaV3SummarizedPrefixStartIndex(input.chats, input.summaries ?? [])
 
   currentTokens -= input.maxResponseTokens
   tokenDeltas.push({
@@ -350,7 +350,10 @@ function planWindow(
   }
 }
 
-function determineStartIndex(chats: readonly OpenAIChat[], summaries: readonly HypaV3SummaryRef[]): number {
+export function determineHypaV3SummarizedPrefixStartIndex(
+  chats: readonly OpenAIChat[],
+  summaries: readonly HypaV3SummaryRef[],
+): number {
   const lastSummary = summaries.at(-1)
   const lastMemo = lastSummary?.chatMemos.at(-1)
   if (!lastMemo) return 0
