@@ -4,11 +4,11 @@ Generated 2026-08-02 from the six-agent parity review of the Fastify
 message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
-into **53 work items**: 5 in the active tiers, 2 deferred, and 46 resolved.
+into **53 work items**: 3 in the active tiers, 2 deferred, and 48 resolved.
 Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
 divergences, and the maintainer approved dispositions for every remaining
 `Needs decision` item plus the blanket implementation policy (see the
-maintenance rules) — all 5 remaining active items are `Needs design`. Tier 0 landed in `99a346377`; the
+maintenance rules) — all 3 remaining active items are `Needs design`. Tier 0 landed in `99a346377`; the
 Tier 1 CBS/assembly batch in `0c5ba0ac8`; the Gemini cluster in `db638a29c`.
 All items were classified on 2026-08-02 against `fbf750b24`;
 findings are point-in-time evidence and must be re-verified against current
@@ -64,14 +64,12 @@ valid work intentionally held outside the active execution order;
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
-| Re-expand stable cards after the start trigger | [PA-2](docs/prompt-assembly.md) | Needs design | Start-trigger state changes never reach the final prompt (cached pre-trigger expansions are reused). | Invalidate/re-render the stable-card cache when the start trigger mutates state; weigh against the caching design that motivated preflight expansion. |
 
 ## Tier 2 — Feature-scoped gaps
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
 | Durable Lua character/local-lore writes | [ST-3](docs/scripts-triggers-lua.md) | Needs design | `setName`, `setCharacterFirstMessage`, `setBackgroundEmbedding`, `upsertLocalLoreBook` mutate only the request snapshot and are lost. | Extend the assembly mutation payload to carry character-field and local-lore changes through persistence. |
-| Persist `@@inject` history mutations | [ST-4](docs/scripts-triggers-lua.md) | Needs design | The original durably rewrote the stored message; Fastify's rewrite is request-local. | Route the inject write through an assembly message mutation (`submitTranscriptChanged`); mind the lorebook identity-dirty and transcript-persistence rules. |
 | Gemini response modalities and returned assets | [PR-5](docs/provider-adapters.md) | Needs design | Image/audio-output Gemini models lose their generated media (or fail with "no text content"). | Request `responseModalities`, disable streaming for those models, persist `inlineData` as inlay assets server-side. |
 
 ## Tier 3 — Legacy/niche surfaces and disputed edge cases
@@ -93,6 +91,8 @@ pinning test + area-doc intentional entry).
 
 | Work item | Findings | Status | Impact | Resolution |
 | --- | --- | --- | --- | --- |
+| Re-expand stable cards after the start trigger | [PA-2](docs/prompt-assembly.md) | Resolved | Start-trigger state changes never reached the final prompt. | Fixed in `b193042e0`: speculative preflight writes (snapshot + rollback), conservative cache invalidation on trigger results/history injection/scriptstate drift, and final render replaying the preflight write set exactly once or re-expanding post-trigger. Preview stays read-only. |
+| Persist `@@inject` history mutations | [ST-4](docs/scripts-triggers-lua.md) | Resolved | Inject rewrites were request-local and lost. | Fixed in `b193042e0`: identity-keyed `replace_by_id` mutations through the atomic pre-dispatch assembly transaction (client patch contract mirrored additively); plain regex transforms stay prompt-local; preview does not persist. |
 | Resolve OpenRouter `risu/free` | [PR-6](docs/provider-adapters.md) | Resolved | The sentinel went to OpenRouter literally → invalid-model error. | Fixed in `6e1df13b9`: dispatch-time resolution via a fixed catalog operation (15s timeout, credential-scoped 45-min TTL cache, stale-on-refresh-failure, baseline free-filter + largest-context/catalog-order selection). Metadata carries the resolved model — deliberate improvement; the baseline retained the sentinel label. |
 | Strong-ban logit-bias parity | [PR-21](docs/provider-adapters.md) | Resolved | -101 banned all variant tokens; ordinary bias was clamped. | Fixed in `6e1df13b9`: baseline six-variant construction with the exact punctuation set, first non-punctuation token only; clamping removed (baseline forwarded stored values unchanged — parity wins over the documented wire range, tested). |
 | Retire character additional-information retrieval | [PA-1](docs/prompt-assembly.md) | Resolved | The `additionalText` field was editable but never reached the prompt. | Retired per 2026-08-02 decision in `ec124302c`: editor replaced by a read-only unsupported notice when imported data exists (data preserved), prompt omission pinned, boundary documented. |
