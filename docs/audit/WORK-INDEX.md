@@ -4,11 +4,11 @@ Generated 2026-08-02 from the six-agent parity review of the Fastify
 message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
-into **53 work items**: 24 in the active tiers, 2 deferred, and 27 resolved.
+into **53 work items**: 19 in the active tiers, 2 deferred, and 32 resolved.
 Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
 divergences, and the maintainer approved dispositions for every remaining
 `Needs decision` item plus the blanket implementation policy (see the
-maintenance rules) — active items are now `Ready` (17) or `Needs design` (7)
+maintenance rules) — active items are now `Ready` (12) or `Needs design` (7)
 only, cleared for autonomous execution. Tier 0 landed in `99a346377`; the
 Tier 1 CBS/assembly batch in `0c5ba0ac8`; the Gemini cluster in `db638a29c`.
 All items were classified on 2026-08-02 against `fbf750b24`;
@@ -77,9 +77,6 @@ valid work intentionally held outside the active execution order;
 | Persist `@@inject` history mutations | [ST-4](docs/scripts-triggers-lua.md) | Needs design | The original durably rewrote the stored message; Fastify's rewrite is request-local. | Route the inject write through an assembly message mutation (`submitTranscriptChanged`); mind the lorebook identity-dirty and transcript-persistence rules. |
 | Module visibility in CBS | [HC-4](docs/history-cbs-variables.md) | Ready | `{{moduleenabled}}`/`{{moduleassetlist}}`/module lore in `{{lorebook}}` see zero modules despite server assembly knowing the active set. | Decision 2026-08-02: parity — wire the existing active-module helpers into the CBS adapter. |
 | `sendName` group-template semantics | [HC-2](docs/history-cbs-variables.md) | Ready | Custom `groupTemplate` and `groupOtherBotRole` role rewriting are ignored; assistant rows keep their role. | Decision 2026-08-02: parity — honor `groupTemplate` and `groupOtherBotRole` (presets can depend on the wrapper and role behavior), then pin. |
-| Bypass input hooks for "say nothing" sends | [OR-2](docs/orchestration-postgen.md) | Ready | Synthetic `*says nothing*` rows now run the input trigger and `editinput`, mutating state the original left untouched. | Flag the synthetic send so assembly skips both stages. |
-| Speak processed text and all choices in buffered TTS | [OR-8](docs/orchestration-postgen.md) | Ready | TTS speaks raw pre-`editoutput` text and only the primary multi-gen choice. | Build the TTS side effect from derived final text after post-generation; iterate choices. |
-| Restore `noRetry` failure classification | [OR-4](docs/orchestration-postgen.md) | Ready | Auth errors and impossible Horde jobs burn the full retry budget and may cascade into fallbacks. | Add a non-retryable marker to provider failure frames; set it where the original did (Kobold HTTP, Horde impossible/empty). |
 | Resolve OpenRouter `risu/free` | [PR-6](docs/provider-adapters.md) | Needs design | "Free Auto" sends a literal `risu/free` model ID → invalid-model error. | Needs a server-side OpenRouter catalog fetch (cache/TTL/failure policy) mirroring `model/openrouter.ts`. |
 | Gemini response modalities and returned assets | [PR-5](docs/provider-adapters.md) | Needs design | Image/audio-output Gemini models lose their generated media (or fail with "no text content"). | Request `responseModalities`, disable streaming for those models, persist `inlineData` as inlay assets server-side. |
 | Strong-ban logit-bias parity | [PR-21](docs/provider-adapters.md) | Needs design | `-101` bans component tokens of variants (over-suppression); ordinary bias values are clamped where the original passed them through. | Port the original punctuation-variant first-token algorithm; decide whether the clamp is a deliberate guard. |
@@ -93,8 +90,6 @@ valid work intentionally held outside the active execution order;
 | Horde cleanup uses the active character | [PR-20](docs/provider-adapters.md) | Ready | Response trimming searches the wrong character name and persists simulated turns. | Use the effective character passed through dispatch, not `characters[0]`. |
 | Repeated mixed chat-card systemization | [PA-4](docs/prompt-assembly.md) | Ready | Two chat cards over one range with mixed systemization produce different roles vs the baseline's shared-mutation behavior. | Decision 2026-08-02: keep the current clone behavior (baseline shared-mutation was accidental); pin with a regression and record as an accepted divergence. |
 | Missing prompt-asset bytes policy | [HC-8](docs/history-cbs-variables.md) | Ready | Stale asset references silently drop the image where the original failed generation. | Decision 2026-08-02: keep silent-drop (better UX than failing generation), add a diagnostic warning so the drop is observable, pin, and record as an accepted divergence. |
-| Request-trigger accumulation across retries | [OR-3](docs/orchestration-postgen.md) | Ready | Same-model retries re-apply the request trigger to fresh rows instead of accumulating. | Decision 2026-08-02: keep the current per-retry reset (baseline accumulation was accidental); pin the row-reset explicitly and record as an accepted divergence. |
-| Buffered Continue two-pass `editoutput` | [OR-6](docs/orchestration-postgen.md) | Ready | Stateful edit hooks fire once per buffered Continue instead of twice. | Decision 2026-08-02: keep single-pass (baseline double-fire was accidental); pin with a regression and record as an accepted divergence. |
 
 ## Tier 4 — Metadata/telemetry only
 
@@ -113,6 +108,11 @@ pinning test + area-doc intentional entry).
 
 | Work item | Findings | Status | Impact | Resolution |
 | --- | --- | --- | --- | --- |
+| Bypass input hooks for "say nothing" sends | [OR-2](docs/orchestration-postgen.md) | Resolved | Synthetic `*says nothing*` rows ran the input trigger and `editinput`. | Fixed in `954a97ab6`: validated `syntheticSayNothing` request flag set only by the exact UI sentinel path; assembly skips input trigger + editinput, later stages unchanged. |
+| Speak processed text and all choices in buffered TTS | [OR-8](docs/orchestration-postgen.md) | Resolved | TTS spoke raw pre-editoutput text and only the primary choice. | Fixed in `954a97ab6`: TTS events built after post-generation from derived primary + alternates in choice order; browser inlay processing precedes speech; SSE schema unchanged (multiple side_effect frames). |
+| Restore `noRetry` failure classification | [OR-4](docs/orchestration-postgen.md) | Resolved | Non-retryable failures burned the full retry/fallback budget. | Fixed in `954a97ab6`: `nonRetryable` on provider failure frames at the three baseline sites (Kobold non-OK HTTP, Horde impossible, Horde empty completion — full baseline inventory audited); route surfaces them after one attempt. |
+| Request-trigger accumulation across retries | [OR-3](docs/orchestration-postgen.md) | Resolved | Baseline accumulated request-trigger rewrites on same-model retries. | Accepted divergence per 2026-08-02 decision, pinned in `954a97ab6`: each retry receives fresh singly-transformed rows; accepted-divergence comment references baseline `request.ts:222`. |
+| Buffered Continue two-pass `editoutput` | [OR-6](docs/orchestration-postgen.md) | Resolved | Baseline double-fired editoutput per buffered Continue. | Accepted divergence per 2026-08-02 decision, pinned in `954a97ab6`: counting-hook regression proves exactly one invocation; comment references baseline `index.svelte.ts:1631`. |
 | Small V2 condition/effect parity fixes | [ST-5](docs/scripts-triggers-lua.md), [ST-6](docs/scripts-triggers-lua.md) | Resolved | `∉` never passed; `v2ExtractRegex` was allowlisted yet no-opped. | Fixed in `3713304e4`: `∉` with the baseline invalid-JSON-passes rule; `v2ExtractRegex` with `$n`/`$&`/`$$` expansion, no low-level requirement, bounded-regex screening. |
 | Lua `getPersonaDescription` | [ST-7](docs/scripts-triggers-lua.md) | Resolved | Always returned an empty string. | Fixed in `3713304e4`: returns the CBS-expanded effective persona prompt. |
 | Non-interactive Lua API stubs | [ST-8](docs/scripts-triggers-lua.md) | Resolved | `loadLoreBooks`/`similarity`/`generateImage`/image getters/multimodal `LLM` returned empty or errored. | Implemented per the 2026-08-02 triage in `3713304e4`: loadLoreBooks (baseline `{data, role}[]` shape, assistant→char), similarity (embedding dot-product ranking, nil on failure/timeout), generateImage (server image engine, persisted inlay, baseline failure string; native MIME kept vs baseline PNG normalization; browser-only WebUI/Comfy providers take the failure path). Multimodal `LLM` + image getters raise explicit unsupported errors. |
