@@ -209,7 +209,7 @@ export async function prefetchPromptMemoryQueryVectors(
           status: 'failed',
           providerCallAttempted: true,
           queryTexts: queryTexts.length,
-          error: result?.error ?? 'embedding provider returned no result',
+          error: result && 'error' in result ? result.error : 'embedding provider returned no result',
         },
       }
     }

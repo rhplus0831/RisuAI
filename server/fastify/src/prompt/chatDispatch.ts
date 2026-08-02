@@ -17,7 +17,7 @@ import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
 import { resolveOllamaRequest, runOllama, runOllamaStream } from '../generation/ollama.js'
 import { resolveBedrockRequest, runBedrock, type BedrockCredentials } from '../generation/bedrock.js'
 import { resolveHordeRequest, runHorde } from '../generation/horde.js'
-import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
+import { buildOobaLegacyStopStrings, resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import {
   resolveProviderCapability,
   type CustomModelEntryLike,
@@ -80,6 +80,8 @@ interface ChatDispatchArgs {
   history?: ChatDispatchHistoryInput
   /** Provider-flag-normalized messages prepared by the public dispatch boundary. */
   finalizedMessages?: OpenAIChat[]
+  /** Effective character selected for this generation, including non-zero database positions. */
+  currentCharacterName?: string
 }
 
 interface CustomModelEntry {
@@ -110,6 +112,7 @@ interface OpenAICompatibleVariant {
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
   oobaSystemHoist?: boolean
+  oobaArgs?: unknown
 }
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
@@ -864,6 +867,7 @@ function resolveProfileOpenAIVariant(
     extraHeaders,
     additionalParams: options.additionalParams,
     oobaSystemHoist: options.reverseProxy?.oobaSystemHoist === true,
+    oobaArgs: options.reverseProxy?.oobaArgs,
   }
 }
 
@@ -947,6 +951,7 @@ export function resolveOpenAIVariant(
       extraHeaders: risuIdentify ? { 'X-Proxy-Risu': 'RisuAI' } : undefined,
       additionalParams: additionalParams(db.additionalParams),
       oobaSystemHoist: db.reverseProxyOobaMode === true,
+      oobaArgs: db.reverseProxyOobaArgs,
     }
   }
   if (aiModel.startsWith('xcustom:::')) {
@@ -990,6 +995,8 @@ function extractSystem(messages: OpenAIChat[], newOAIHandle = true): { messages:
 }
 
 function applyChatTemplate(db: Database, messages: OpenAIChat[]): string {
+  // Accepted divergence (PR-18/PR-7 sunset): Fastify intentionally does not
+  // port the SPA's `src/ts/process/templates/chatTemplate.ts` engine.
   const type = asString(db.instructChatTemplate)
   if (type === 'chatml' || type === 'gpt2') {
     const rows = messages
@@ -1016,6 +1023,13 @@ function unstringlizeChat(text: string, formated: OpenAIChat[], char: string, us
     if (index !== -1 && (minIndex === -1 || index < minIndex)) minIndex = index
   }
   return minIndex === -1 ? text : text.substring(0, minIndex).trim()
+}
+
+function cleanupCharacterName(args: ChatDispatchArgs, db: Database): string {
+  if (args.currentCharacterName) return args.currentCharacterName
+  const currentChar = (db as Database & { currentChar?: unknown }).currentChar
+  const selected = typeof currentChar === 'number' && Number.isInteger(currentChar) ? currentChar : 0
+  return db.characters?.[selected]?.name ?? ''
 }
 
 async function* resultFrames(
@@ -1220,6 +1234,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       extraHeaders: variant.extraHeaders,
       additionalParams: variant.additionalParams,
       oobaSystemHoist: variant.oobaSystemHoist,
+      oobaArgs: variant.oobaArgs,
       signal,
       trace,
       tools: args.tools,
@@ -1267,6 +1282,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       extraHeaders: variant.extraHeaders,
       additionalParams: variant.additionalParams,
       oobaSystemHoist: variant.oobaSystemHoist,
+      oobaArgs: variant.oobaArgs,
       signal,
       trace,
       tools: args.tools,
@@ -1458,7 +1474,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       baseUrl: asString(providerOptions.baseUrl),
       apiKey: asString(providerOptions.apiKey),
       maxTokens,
-      truncationLength: db.maxContext,
+      truncationLength: maxTokens,
       // Ooba Legacy predates the model-capability parameter table and keeps its
       // own sampler block. Preserve that contract even though the model row's
       // `parameters` array is intentionally empty.
@@ -1484,11 +1500,23 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       addBosToken: ooba?.add_bos_token,
       banEosToken: ooba?.ban_eos_token,
       skipSpecialTokens: ooba?.skip_special_tokens,
-      stoppingStrings: db.localStopStrings?.map((value) => value.replace(/\\n/gu, '\n')),
+      stoppingStrings:
+        db.localStopStrings?.map((value) => value.replace(/\\n/gu, '\n')) ??
+        buildOobaLegacyStopStrings(ooba?.formating?.userPrefix ?? '', db.username ?? 'User'),
       signal,
     })
     if (!request) throw new Error('options["ooba-legacy"].baseUrl is required')
-    return bufferedResultFrames(runOobaLegacy(request))
+    const charName = cleanupCharacterName(args, db)
+    return bufferedResultFrames(
+      runOobaLegacy(request).then((result) =>
+        result.type === 'success'
+          ? {
+              ...result,
+              result: unstringlizeChat(result.result, messages, charName, db.username ?? ''),
+            }
+          : result,
+      ),
+    )
   }
 
   if (provider === 'ollama') {
@@ -1549,13 +1577,13 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       signal,
     })
     if (!request) throw new Error('options.horde.prompt is required')
-    const char = db.characters?.[0]
+    const charName = cleanupCharacterName(args, db)
     return bufferedResultFrames(
       runHorde(request).then((result) =>
         result.type === 'success'
           ? {
               ...result,
-              result: unstringlizeChat(result.result, messages, char?.name ?? '', db.username ?? ''),
+              result: unstringlizeChat(result.result, messages, charName, db.username ?? ''),
             }
           : result,
       ),

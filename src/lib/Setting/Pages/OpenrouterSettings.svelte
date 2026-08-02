@@ -54,8 +54,9 @@
   <div class="flex items-center mb-4">
     <Check bind:check={openrouterMiddleOutDraft.value} name={language.openRouterMiddleOut} />
   </div>
-  <div class="flex items-center mb-4">
-    <Check bind:check={useInstructPromptDraft.value} name={language.useInstructPrompt} />
+  <div class="mb-4 flex flex-col gap-1">
+    <Check bind:check={useInstructPromptDraft.value} name={language.useInstructPrompt} disabled />
+    <span class="text-sm text-textcolor2">{language.openRouterInstructPromptUnsupported}</span>
   </div>
   {#await getOpenRouterProviders(providerCatalogContext)}
     <Accordion name={language.openRouterProviderOrder} help="openRouterProviderOrder" styled>

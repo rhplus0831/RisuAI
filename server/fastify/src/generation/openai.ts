@@ -68,6 +68,8 @@ export interface OpenAIRequest {
    * reverse_proxy route today.
    */
   oobaSystemHoist?: boolean
+  /** Non-null Ooba WebUI chat arguments overlaid in persisted key order. */
+  oobaArgs?: Record<string, unknown>
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
   signal: AbortSignal
@@ -104,6 +106,7 @@ interface OpenAIResolveInput {
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
   oobaSystemHoist?: boolean
+  oobaArgs?: unknown
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
   signal: AbortSignal
@@ -160,6 +163,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     extraHeaders: input.extraHeaders,
     additionalParams: input.additionalParams,
     oobaSystemHoist: input.oobaSystemHoist === true ? true : undefined,
+    oobaArgs: record(input.oobaArgs),
     trace: input.trace,
     tools: input.tools,
     signal: input.signal,
@@ -277,6 +281,12 @@ function buildRequestInit(
 } {
   const body = buildPayload(req, stream)
   const headers = buildHeaders(req)
+  if (req.oobaSystemHoist === true && req.oobaArgs !== undefined) {
+    for (const key of Object.keys(req.oobaArgs)) {
+      const value = req.oobaArgs[key]
+      if (value !== undefined && value !== null) body[key] = value
+    }
+  }
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }

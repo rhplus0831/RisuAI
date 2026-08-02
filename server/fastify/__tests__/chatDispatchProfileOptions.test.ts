@@ -620,6 +620,22 @@ describe('dispatchChatProvider profile providerOptions', () => {
         proxyKey: 'sk-profile-proxy',
         autofillRequestUrl: true,
         reverseProxyOobaMode: true,
+        reverseProxyOobaArgs: {
+          mode: 'chat-instruct',
+          turn_template: '<|user|>{{user}}',
+          name1: 'Profile Persona',
+          name2: 'Profile Character',
+          context: 'Profile context',
+          greeting: '',
+          chat_instruct_command: 'Continue the chat',
+          preset: 'Profile preset',
+          tokenizer: 'profile-tokenizer',
+          min_p: 0.17,
+          top_k: 73,
+          do_sample: false,
+          ban_eos_token: true,
+          grammar_string: 'root ::= "ok"',
+        },
         additionalParams: [
           ['header::X-Profile', 'profile'],
           ['profileFlag', 'true'],
@@ -634,6 +650,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
       proxyKey: 'sk-flat-proxy',
       autofillRequestUrl: true,
       reverseProxyOobaMode: false,
+      reverseProxyOobaArgs: { mode: 'chat', name1: 'Flat Persona', grammar_string: 'flat-only' },
       additionalParams: [
         ['header::X-Flat', 'flat'],
         ['flatFlag', 'true'],
@@ -656,6 +673,22 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.model).toBe('profile-proxy-model')
     expect(captured[0].body.profileFlag).toBe(true)
     expect(captured[0].body.flatFlag).toBeUndefined()
+    expect(captured[0].body).toMatchObject({
+      mode: 'chat-instruct',
+      turn_template: '<|user|>{{user}}',
+      name1: 'Profile Persona',
+      name2: 'Profile Character',
+      context: 'Profile context',
+      greeting: '',
+      chat_instruct_command: 'Continue the chat',
+      preset: 'Profile preset',
+      tokenizer: 'profile-tokenizer',
+      min_p: 0.17,
+      top_k: 73,
+      do_sample: false,
+      ban_eos_token: true,
+      grammar_string: 'root ::= "ok"',
+    })
     expect(captured[0].body.messages).toEqual([
       { role: 'user', content: 'hello' },
       { role: 'system', content: 'profile system 1\nprofile system 2' },
@@ -1131,6 +1164,98 @@ describe('dispatchChatProvider profile providerOptions', () => {
     })
   })
 
+  it('sends baseline Ooba stops and truncation budget, then cleans the effective character turn', async () => {
+    const database = db({
+      aiModel: 'mancer',
+      textgenWebUIBlockingURL: 'http://ooba.example.com/api/v1/blocking',
+      mancerHeader: 'mancer-key',
+      username: 'Active Persona',
+      maxContext: 8_192,
+      maxResponse: 64,
+      currentChar: 0,
+      characters: [{ name: 'Wrong First Character' }, { name: 'Active Character' }],
+      ooba: {
+        formating: { userPrefix: '### Persona Input:' },
+      } as Database['ooba'],
+    } as unknown as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okOobaLegacyResponse('clean answer\nActive Character: trailing turn'))
+
+    const source = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'hello' },
+      ],
+      outputTokens: 123,
+      currentCharacterName: 'Active Character',
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of source) emitted.push(frame)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.truncation_length).toBe(123)
+    expect(captured[0].body.stopping_strings).toEqual([
+      'GPT4 User',
+      '</s>',
+      '<|end',
+      '<|im_end',
+      '### Persona Input:',
+      'Active Persona:',
+      'user:',
+      '<<user>>',
+      '### user',
+      'USER:',
+      '<<USER>>',
+      '### USER',
+      'User:',
+      '<<User>>',
+      '### User',
+      'human:',
+      '<<human>>',
+      '### human',
+      'HUMAN:',
+      '<<HUMAN>>',
+      '### HUMAN',
+      'Human:',
+      '<<Human>>',
+      '### Human',
+      'input:',
+      '<<input>>',
+      '### input',
+      'INPUT:',
+      '<<INPUT>>',
+      '### INPUT',
+      'Input:',
+      '<<Input>>',
+      '### Input',
+      'inst:',
+      '<<inst>>',
+      '### inst',
+      'INST:',
+      '<<INST>>',
+      '### INST',
+      'Inst:',
+      '<<Inst>>',
+      '### Inst',
+      'instruction:',
+      '<<instruction>>',
+      '### instruction',
+      'INSTRUCTION:',
+      '<<INSTRUCTION>>',
+      '### INSTRUCTION',
+      'Instruction:',
+      '<<Instruction>>',
+      '### Instruction',
+    ])
+    expect(emitted).toEqual([
+      { kind: 'token', content: 'clean answer' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
   it('uses Bedrock profile credentials and request model over conflicting flat database fields', async () => {
     const profile = resolveModelProfile({
       database: db({
@@ -1444,6 +1569,68 @@ describe('dispatchChatProvider profile providerOptions', () => {
       'profile-horde-model',
       ' profile-horde-model',
       'profile-horde-model ',
+    ])
+  })
+
+  it.each([
+    {
+      template: 'chatml',
+      expected:
+        '<|im_start|>system\nrules<|im_end|>\n<|im_start|>user\nhello<|im_end|>\n<|im_start|>assistant\nprior<|im_end|>\n<|im_start|>assistant\n',
+    },
+    {
+      template: 'llama3',
+      expected: 'system: rules\n\nuser: hello\n\nassistant: prior\n\nassistant:',
+    },
+  ])('pins Horde $template legacy-template output', async ({ template, expected }) => {
+    // Accepted divergence (PR-18/PR-7 sunset): do not port baseline
+    // `src/ts/process/templates/chatTemplate.ts`; pin ChatML and the generic fallback.
+    const database = db({
+      aiModel: 'horde:::profile-horde-model',
+      hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
+      instructChatTemplate: template,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureHordeRequests()
+
+    await dispatchHordeWithProfile(profile, database, [
+      { role: 'system', content: 'rules' },
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'prior' },
+    ])
+
+    expect(captured[0].body.prompt).toBe(expected)
+  })
+
+  it('cleans Horde output with the effective character instead of characters[0]', async () => {
+    vi.useFakeTimers()
+    const database = db({
+      aiModel: 'horde:::profile-horde-model',
+      hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
+      instructChatTemplate: 'chatml',
+      currentChar: 0,
+      characters: [{ name: 'Wrong First Character' }, { name: 'Active Character' }],
+    } as unknown as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    captureHordeRequests('clean result\nActive Character: trailing role text')
+    const source = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      currentCharacterName: 'Active Character',
+      signal: new AbortController().signal,
+    })
+    const emittedPromise = (async () => {
+      const emitted = []
+      for await (const frame of source) emitted.push(frame)
+      return emitted
+    })()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    await expect(emittedPromise).resolves.toEqual([
+      { kind: 'token', content: 'clean result' },
+      { kind: 'done', finishReason: 'stop', apiMetadata: { jobId: 'profile-horde-job' } },
     ])
   })
 

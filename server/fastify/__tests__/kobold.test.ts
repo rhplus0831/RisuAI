@@ -23,14 +23,19 @@ describe('resolveKoboldRequest', () => {
     ).toBeNull()
   })
 
-  it('flattens messages into a prompt string', () => {
+  it('pins the retained legacy-instruct flattening', () => {
+    // Accepted divergence (PR-18/PR-7 sunset): Kobold keeps this fixed flattening
+    // instead of baseline `src/ts/process/templates/chatTemplate.ts` templates.
     const r = resolveKoboldRequest({
-      messages: [{ role: 'user', content: 'hi' }],
+      messages: [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'prior' },
+      ],
       baseUrl: 'http://localhost:5001',
       signal: new AbortController().signal,
     })
-    expect(r?.prompt).toContain('## User\nhi')
-    expect(r?.prompt).toContain('## Response')
+    expect(r?.prompt).toBe('\n## Instruction\nrules\n## User\nhi\n## Assistant\nprior\n## Response\n')
   })
 })
 
@@ -52,7 +57,7 @@ describe('runKobold', () => {
     expect(r).toEqual({ type: 'success', result: 'kobold ok' })
     expect(captured!.url).toBe('http://localhost:5001/api/v1/generate')
     const sent = JSON.parse(captured!.init.body as string)
-    expect(sent.prompt).toContain('## User')
+    expect(sent.prompt).toBe('\n## User\nhi\n## Response\n')
     expect(sent.max_length).toBe(128)
     expect(sent.temperature).toBe(0.7)
     expect(sent.n).toBe(1)

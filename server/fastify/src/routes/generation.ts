@@ -1422,6 +1422,7 @@ async function handleServerIntentCompletion(
       database,
       formated: messages as OpenAIChat[],
       outputTokens: finiteNumber(body.maxTokens),
+      currentCharacterName: typeof body.currentCharName === 'string' ? body.currentCharName : undefined,
       profile,
       signal,
       tools,

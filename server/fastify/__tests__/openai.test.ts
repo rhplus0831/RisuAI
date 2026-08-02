@@ -301,6 +301,49 @@ describe('runOpenAI (non-streaming)', () => {
     ])
   })
 
+  it('overlays every non-null reverse-proxy Ooba argument before additionalParams', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    await runOpenAI({
+      model: 'm',
+      messages: [{ role: 'user', content: 'q' }],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      temperature: 0.7,
+      topK: 20,
+      oobaSystemHoist: true,
+      oobaArgs: {
+        mode: 'chat-instruct',
+        name1: 'Persona',
+        greeting: '',
+        do_sample: false,
+        top_k: 73,
+        temperature: 0.4,
+        nested_extension: { enabled: true },
+        ignored_null: null,
+        ignored_undefined: undefined,
+      },
+      additionalParams: [['temperature', '0.9']],
+      signal: new AbortController().signal,
+    })
+
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent).toMatchObject({
+      mode: 'chat-instruct',
+      name1: 'Persona',
+      greeting: '',
+      do_sample: false,
+      top_k: 73,
+      temperature: 0.9,
+      nested_extension: { enabled: true },
+    })
+    expect(sent.ignored_null).toBeUndefined()
+    expect(sent.ignored_undefined).toBeUndefined()
+  })
+
   it('applies additionalParams to the body + headers after the default payload is built', async () => {
     let captured: { init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {

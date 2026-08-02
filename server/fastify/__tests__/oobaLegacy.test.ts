@@ -22,6 +22,22 @@ describe('resolveOobaLegacyRequest', () => {
       }),
     ).toBeNull()
   })
+
+  it('pins the retained legacy-instruct flattening', () => {
+    // Accepted divergence (PR-18/PR-7 sunset): Ooba keeps this fixed flattening
+    // instead of baseline `src/ts/process/templates/chatTemplate.ts` templates.
+    const resolved = resolveOobaLegacyRequest({
+      messages: [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'prior' },
+      ],
+      baseUrl: 'http://localhost:5000',
+      signal: new AbortController().signal,
+    })
+
+    expect(resolved?.prompt).toBe('\n## Instruction\nrules\n## User\nhi\n## Assistant\nprior\n## Response\n')
+  })
 })
 
 describe('runOobaLegacy', () => {
@@ -42,7 +58,7 @@ describe('runOobaLegacy', () => {
     expect(r).toEqual({ type: 'success', result: 'ooba ok' })
     expect(captured!.url).toBe('http://localhost:5000/api/v1/generate')
     const sent = JSON.parse(captured!.init.body as string)
-    expect(sent.prompt).toContain('## User')
+    expect(sent.prompt).toBe('\n## User\nhi\n## Response\n')
     expect(sent.max_new_tokens).toBe(128)
     expect(sent.temperature).toBe(0.5)
     const headers = captured!.init.headers as Record<string, string>

@@ -4,9 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('src/lib/UI/Accordion.svelte', async () => ({
   default: (await import('./ProviderListActions.testStub.svelte')).default,
 }))
-vi.mock('src/lib/UI/GUI/CheckInput.svelte', async () => ({
-  default: (await import('./ProviderListActions.testStub.svelte')).default,
-}))
 vi.mock('src/lib/UI/GUI/SelectInput.svelte', async () => ({
   default: (await import('./ProviderListActions.testStub.svelte')).default,
 }))
@@ -81,6 +78,14 @@ describe('provider list icon actions', () => {
       `${language.add}: ${language.openRouterProviderIgnore}`,
       `${language.remove}: ${language.openRouterProviderIgnore}`,
     ])
+  })
+
+  it('marks the OpenRouter instruction-prompt toggle as unsupported server-side', async () => {
+    component = mount(OpenrouterSettings, { target })
+
+    const toggle = target.querySelector<HTMLInputElement>(`input[aria-label="${language.useInstructPrompt}"]`)
+    expect(toggle?.disabled).toBe(true)
+    expect(target.textContent).toContain(language.openRouterInstructPromptUnsupported)
   })
 
   it('names Ooba stop-word controls and includes the row identity', async () => {

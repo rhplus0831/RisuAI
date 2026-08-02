@@ -72,6 +72,23 @@ interface RawChatMessage {
   content?: unknown
 }
 
+const OOBA_LEGACY_USER_MARKERS = ['user', 'human', 'input', 'inst', 'instruction']
+
+function toTitleCase(value: string): string {
+  return value[0].toUpperCase() + value.slice(1).toLowerCase()
+}
+
+/** Mirrors the retained SPA `getStopStrings(false)` construction. */
+export function buildOobaLegacyStopStrings(userPrefix: string, username: string): string[] {
+  const stopStrings = ['GPT4 User', '</s>', '<|end', '<|im_end', userPrefix, `${username}:`]
+  for (const marker of OOBA_LEGACY_USER_MARKERS) {
+    for (const value of [marker.toLowerCase(), marker.toUpperCase(), marker.replace(/\w\S*/gu, toTitleCase)]) {
+      stopStrings.push(`${value}:`, `<<${value}>>`, `### ${value}`)
+    }
+  }
+  return [...new Set(stopStrings)]
+}
+
 export function resolveOobaLegacyRequest(input: ResolveInput): OobaLegacyRequest | null {
   if (!Array.isArray(input.messages)) return null
   if (typeof input.baseUrl !== 'string' || input.baseUrl.length === 0) return null

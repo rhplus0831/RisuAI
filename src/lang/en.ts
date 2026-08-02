@@ -1643,6 +1643,8 @@ export const languageEnglish = {
   },
   chatFormating: 'Chat Formating',
   useInstructPrompt: 'Use Instruction Prompt',
+  openRouterInstructPromptUnsupported:
+    'Unsupported in Fastify server mode: OpenRouter always sends chat messages, so this toggle has no effect.',
   textAreaSize: 'Input Area Size',
   textAreaTextSize: 'Input Area Text Size',
   sideBarSize: 'Sidebar Size',

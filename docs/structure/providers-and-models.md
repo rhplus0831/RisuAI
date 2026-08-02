@@ -541,6 +541,14 @@ Provider adapters live in `server/fastify/src/generation/`:
   Kobold, Horde, Ooba legacy, and Echo.
 - Shared additional-parameter, frame, and SSE helpers.
 
+Legacy transports have a deliberately degraded instruction-template boundary.
+Kobold and Ooba legacy use the fixed `## Instruction` / `## User` /
+`## Assistant` / `## Response` flattening, while Horde renders ChatML for the
+`chatml` and `gpt2` selections and otherwise uses a generic `role: content`
+fallback. Fastify does not apply the SPA's non-ChatML instruct templates or
+custom Jinja template engine; the OpenRouter **Use Instruction Prompt** toggle
+is therefore unsupported server-side.
+
 Provider adapters build provider-safe wire rows instead of serializing internal
 prompt objects. `generation/providerMessages.ts` strips prompt-only metadata,
 translates OpenAI/Anthropic image parts, preserves supported reasoning
