@@ -48,7 +48,7 @@ import {
  * The V2 effect loop is index-based so control flow can advance / rewind
  * `index`. Ported arms: `v2Header` / `v2Comment` /
  * `v2ConsoleLog` (no-ops), `v2SetVar` (adds `%=`), `v2DeclareLocalVar`,
- * `v2If` / `v2IfAdvanced` (incl. the `∈` / `∋` / `∌` / `≒` / `≡`
+ * `v2If` / `v2IfAdvanced` (incl. the `∈` / `∉` / `∋` / `∌` / `≒` / `≡`
  * operators with fail-skip to `v2EndIndent` / `v2Else`), `v2Else`,
  * `v2EndIndent` (loop-back when `endOfLoop`, `clearLocalVarsAtIndent`,
  * the `loopTimes > 100` lag guard), `v2Loop` / `v2LoopNTimes`,
@@ -344,6 +344,7 @@ const knownNonMessageMutatingEffectTypes = new Set<string>([
   'v2Calculate',
   'v2Tokenize',
   'v2RegexTest',
+  'v2ExtractRegex',
   'v2QuickSearchChat',
   'v2GetDisplayState',
   'v2SetDisplayState',
@@ -1201,6 +1202,13 @@ export async function runTrigger(
                 pass = false
               }
               break
+            case '∉':
+              try {
+                pass = !JSON.parse(targetValue).includes(sourceValue)
+              } catch {
+                pass = true
+              }
+              break
             case '∋':
               try {
                 pass = JSON.parse(sourceValue).includes(targetValue)
@@ -1530,6 +1538,7 @@ export async function runStartTrigger(
           signal: ctx.signal,
           execBudget: ctx.luaExecBudget,
           ...(ctx.requestHistoryDb ? { requestHistoryDb: ctx.requestHistoryDb } : {}),
+          ...(ctx.assetDataDir ? { assetDataDir: ctx.assetDataDir } : {}),
         },
       )
       throwServerLuaFailure(result, `Lua ${mode} trigger failed`)

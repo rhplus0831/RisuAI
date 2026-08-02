@@ -106,6 +106,8 @@ function sanitizeFlag(flag: string): string {
 interface ParsedScript {
   script: customscript
   order: number
+  /** Baseline stores NaN; this flag preserves its stable-sort equality outcome explicitly. */
+  malformedOrder: boolean
   actions: string[]
 }
 
@@ -143,15 +145,18 @@ function parseScripts(rawScripts: customscript[]): {
     if (script.ableFlag && script.flag?.includes('<')) {
       const cloned = { ...script }
       let order = 0
+      let malformedOrder = false
       const actions: string[] = []
       cloned.flag = (cloned.flag ?? '').replace(META_RE, (_match, body: string) => {
         const tokens = body.split(',').map((t) => t.trim())
         for (const t of tokens) {
           if (t.startsWith('order ')) {
             const n = parseInt(t.substring(6))
-            if (!Number.isNaN(n)) {
+            orderChanged = true
+            if (Number.isNaN(n)) {
+              malformedOrder = true
+            } else {
               order = n
-              orderChanged = true
             }
           } else if (t.length > 0) {
             actions.push(t)
@@ -159,9 +164,9 @@ function parseScripts(rawScripts: customscript[]): {
         }
         return ''
       })
-      parsed.push({ script: cloned, order, actions })
+      parsed.push({ script: cloned, order, malformedOrder, actions })
     } else {
-      parsed.push({ script, order: 0, actions: [] })
+      parsed.push({ script, order: 0, malformedOrder: false, actions: [] })
     }
   }
   return { parsed, orderChanged }
@@ -601,7 +606,7 @@ function getPreparedScripts(
     .concat(getModuleRegexScripts(activeModules))
   const { parsed, orderChanged } = parseScripts(rawScripts)
   if (orderChanged) {
-    parsed.sort((a, b) => b.order - a.order)
+    parsed.sort((a, b) => (a.malformedOrder || b.malformedOrder ? 0 : b.order - a.order))
   }
   const prepared = parsed.map((script) => prepareOne(script, options?.enabled ? options : undefined))
   preparedScriptsMemo.set(db, {

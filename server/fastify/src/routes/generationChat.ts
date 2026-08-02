@@ -792,6 +792,7 @@ function loadDatabaseDeps(
   const resolveStoredAsset = createRequestScopedStoredAssetResolver(db, dataDir)
   return {
     signal,
+    assetDataDir: dataDir,
     agentPresetProgress,
     loadDatabase: () => {
       if (databaseLoaded) return database

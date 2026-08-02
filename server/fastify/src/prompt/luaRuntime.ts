@@ -19,6 +19,18 @@ import { tokenize } from './tokens.js'
 import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import { dispatchChatProvider } from './chatDispatch.js'
 import { getActiveModules, getModuleLorebooks } from './modules.js'
+import { activateLorebookAsync } from './lorebook.js'
+import { embedTextGroups, embedTexts } from '../memoryEmbeddingAdapter.js'
+import { resolveMemoryEmbeddingModel } from '../memoryEmbeddingModel.js'
+import { armMemoryProviderFetchDeadline, resolveMemoryProviderFetchDeadlineMs } from '../memoryProviderDeadline.js'
+import {
+  executeImageGeneration,
+  parseImageGenerationRequest,
+  type GeneratedImage,
+  type ImageGenerationExecutionOptions,
+} from '../imageGeneration.js'
+import { addAsset, upsertInlayCatalogEntry } from '../repository.js'
+import type { ImageGenerationRequest } from '../../../../src/ts/server/imageGenerationProtocol.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { emitProtocolMetric, protocolMetricsEnabled } from '../protocolMetrics.js'
 import {
@@ -98,6 +110,8 @@ const MAX_RESPONSE_BYTES = 2_000_000
 /** `sleep()` caps: per-call and per-run (the browser caps neither). */
 const MAX_SLEEP_MS = 2000
 const MAX_TOTAL_SLEEP_MS = 6000
+const SERVER_UNSUPPORTED_LUA_API_ERROR = 'Lua API is unsupported on the server'
+const LUA_IMAGE_GENERATION_FAILURE = 'Error: Image generation failed'
 
 /**
  * Default aggregate Lua wall-clock budget per request. Shared by
@@ -677,8 +691,25 @@ export interface ServerLuaRuntimeContext {
    * before any engine boots.
    */
   execBudget?: LuaExecBudget
-  /** SQLite handle used only for durable LLM request diagnostics. */
+  /** SQLite handle for durable LLM diagnostics and generated-inlay metadata. */
   requestHistoryDb?: DatabaseSync
+  /** Server asset root used to persist Lua-generated inlays. */
+  assetDataDir?: string
+  /** Test/alternate adapter seam; production uses the shared embedding adapters. */
+  luaSimilarity?: {
+    embed?: typeof embedTexts
+    embedGroups?: typeof embedTextGroups
+    deadlineMs?: number
+  }
+  /** Test/alternate image execution/persistence seams. */
+  luaImageGeneration?: {
+    execute?: (
+      request: ImageGenerationRequest,
+      settings: Record<string, unknown>,
+      options?: ImageGenerationExecutionOptions,
+    ) => Promise<GeneratedImage>
+    persist?: (image: GeneratedImage) => Promise<string> | string
+  }
 }
 
 interface RuntimeState {
@@ -942,7 +973,7 @@ function normalizeLuaLlmRole(role: unknown): OpenAIChat['role'] {
 
 function parseLuaLlmPrompt(promptStr: string, useMultimodal: boolean): OpenAIChat[] | LuaLlmResult {
   if (useMultimodal) {
-    return luaLlmFailure('Multimodal Lua LLM input is not supported by server prompt assembly')
+    throw new Error(`${SERVER_UNSUPPORTED_LUA_API_ERROR}: multimodal LLM`)
   }
 
   let parsed: unknown
@@ -1093,6 +1124,319 @@ async function runLuaLlmMain(
   }
 }
 
+function dotProduct(a: Float32Array, b: Float32Array): number | null {
+  if (a.length !== b.length) return null
+  let dot = 0
+  for (let index = 0; index < a.length; index += 1) {
+    dot += a[index] * b[index]
+  }
+  return Number.isFinite(dot) ? dot : null
+}
+
+async function settleLuaProviderCall<T>(promise: Promise<T>, signal: AbortSignal): Promise<T | undefined> {
+  if (signal.aborted) return undefined
+  return await new Promise<T | undefined>((resolve) => {
+    let settled = false
+    const finish = (value: T | undefined): void => {
+      if (settled) return
+      settled = true
+      signal.removeEventListener('abort', onAbort)
+      resolve(value)
+    }
+    const onAbort = (): void => finish(undefined)
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      (value) => finish(value),
+      () => finish(undefined),
+    )
+  })
+}
+
+async function runLuaSimilarity(state: RuntimeState, source: string, values: unknown): Promise<string[] | undefined> {
+  if (!Array.isArray(values) || values.some((value) => typeof value !== 'string')) return undefined
+  if (values.length === 0) return []
+
+  const model = resolveMemoryEmbeddingModel(state.ctx.database)
+  if (model.ok === false) return undefined
+
+  const deadlineController = new AbortController()
+  const deadlineMs = resolveMemoryProviderFetchDeadlineMs(state.ctx.luaSimilarity?.deadlineMs)
+  const signal = state.ctx.signal
+    ? AbortSignal.any([deadlineController.signal, state.ctx.signal])
+    : deadlineController.signal
+  const clearDeadline = armMemoryProviderFetchDeadline(deadlineController, deadlineMs)
+
+  try {
+    const run = (async (): Promise<{ documents: Float32Array[]; query: Float32Array } | null> => {
+      const documents: Float32Array[] = []
+      const chunks: string[][] = []
+      for (let index = 0; index < values.length; index += 50) {
+        chunks.push((values as string[]).slice(index, index + 50))
+      }
+
+      if (model.request.provider === 'voyage-contextual') {
+        const embedGroups = state.ctx.luaSimilarity?.embedGroups ?? embedTextGroups
+        let expectedDim: number | undefined
+        for (const chunk of chunks) {
+          const result = await embedGroups({
+            request: model.request,
+            groups: chunk.map((value) => [value]),
+            inputType: 'document',
+            signal,
+            ...(expectedDim === undefined ? {} : { expectedDim }),
+          })
+          if ('error' in result) return null
+          expectedDim = result.dim
+          documents.push(...result.groups.flatMap((group) => (group[0] ? [group[0]] : [])))
+        }
+        const query = await embedGroups({
+          request: model.request,
+          groups: [[String(source ?? '')]],
+          inputType: 'query',
+          signal,
+          ...(expectedDim === undefined ? {} : { expectedDim }),
+        })
+        if ('error' in query || !query.groups[0]?.[0]) return null
+        return { documents, query: query.groups[0][0] }
+      }
+
+      const embed = state.ctx.luaSimilarity?.embed ?? embedTexts
+      let expectedDim: number | undefined
+      for (const chunk of chunks) {
+        const result = await embed({
+          request: model.request,
+          input: chunk,
+          signal,
+          ...(expectedDim === undefined ? {} : { expectedDim }),
+        })
+        if ('error' in result) return null
+        expectedDim = result.dim
+        documents.push(...result.vectors)
+      }
+      const query = await embed({
+        request: model.request,
+        input: [String(source ?? '')],
+        signal,
+        ...(expectedDim === undefined ? {} : { expectedDim }),
+      })
+      if ('error' in query || !query.vectors[0]) return null
+      return { documents, query: query.vectors[0] }
+    })()
+
+    const embedded = await settleLuaProviderCall(run, signal)
+    if (!embedded || embedded.documents.length !== values.length) return undefined
+
+    const scored = (values as string[]).map((content, index) => ({
+      content,
+      similarity: dotProduct(embedded.query, embedded.documents[index]),
+    }))
+    if (scored.some((item) => item.similarity === null)) return undefined
+    return scored
+      .sort((a, b) => ((a.similarity as number) > (b.similarity as number) ? -1 : 0))
+      .map((item) => item.content)
+  } catch {
+    return undefined
+  } finally {
+    clearDeadline()
+  }
+}
+
+function randomImageSeed(): number {
+  return Math.floor(Math.random() * 0x1_0000_0000)
+}
+
+function buildLuaImageGenerationRequest(
+  database: Database,
+  prompt: string,
+  negativePrompt: string,
+): ImageGenerationRequest {
+  const credential = { source: 'stored' as const }
+  switch (database.sdProvider) {
+    case 'novelai': {
+      const config = database.NAIImgConfig
+      const model = database.NAIImgModel
+      const isV2OrV3 =
+        model.includes('nai-diffusion-3') ||
+        model.includes('nai-diffusion-furry-3') ||
+        model.includes('nai-diffusion-2')
+      const normalizedPrompt = prompt
+        .replaceAll('\\(', '♧')
+        .replaceAll('\\)', '♤')
+        .replaceAll('(', '{')
+        .replaceAll(')', '}')
+        .replaceAll('♧', '(')
+        .replaceAll('♤', ')')
+      let skipCfgAboveSigma: number | null = null
+      if (config.variety_plus) {
+        if (
+          model.includes('nai-diffusion-4-full') ||
+          model.includes('nai-diffusion-4-curated') ||
+          model.includes('nai-diffusion-3') ||
+          model.includes('nai-diffusion-furry-3')
+        ) {
+          skipCfgAboveSigma = Math.sqrt(config.width * config.height) * 0.01889
+        }
+        if (model.includes('nai-diffusion-4-5-full') || model.includes('nai-diffusion-4-5-curated')) {
+          skipCfgAboveSigma = Math.sqrt(config.width * config.height) * 0.05766
+        }
+      }
+      const parameters: Record<string, unknown> = {
+        params_version: 3,
+        add_original_image: true,
+        cfg_rescale: config.cfg_rescale,
+        controlnet_strength: 1,
+        dynamic_thresholding: isV2OrV3 ? config.decrisp : false,
+        n_samples: 1,
+        width: config.width,
+        height: config.height,
+        sampler: config.sampler,
+        steps: config.steps,
+        scale: config.scale,
+        negative_prompt: negativePrompt,
+        sm: isV2OrV3 ? config.sm : undefined,
+        sm_dyn:
+          model.includes('nai-diffusion-3') || model.includes('nai-diffusion-furry-3') ? config.sm_dyn : undefined,
+        noise_schedule: config.noise_schedule,
+        normalize_reference_strength_multiple: true,
+        ucPreset: 3,
+        uncond_scale: 1,
+        qualityToggle: false,
+        legacy_v3_extend: false,
+        legacy: false,
+        autoSmea: false,
+        use_coords: false,
+        legacy_uc: config.legacy_uc,
+        v4_prompt: {
+          caption: { base_caption: normalizedPrompt, char_captions: [] },
+          use_coords: false,
+          use_order: true,
+        },
+        v4_negative_prompt: {
+          caption: { base_caption: negativePrompt, char_captions: [] },
+          legacy_uc: config.legacy_uc,
+        },
+        reference_image_multiple: [],
+        reference_strength_multiple: [],
+        seed: randomImageSeed(),
+        extra_noise_seed: randomImageSeed(),
+        prefer_brownian: true,
+        deliberate_euler_ancestral_bug: false,
+        skip_cfg_above_sigma: skipCfgAboveSigma,
+        director_reference_images: [],
+        director_reference_descriptions: [],
+        director_reference_information_extracted: [],
+        director_reference_strength_values: [],
+      }
+      const inlineImage = typeof config.base64image === 'string' ? config.base64image : ''
+      if (database.NAII2I && inlineImage) {
+        parameters.image = inlineImage
+        parameters.strength = config.strength || 0.7
+        parameters.noise = config.noise || 0
+      }
+      return {
+        provider: 'novelai',
+        credential,
+        payload: {
+          input: normalizedPrompt,
+          model,
+          parameters,
+          action: database.NAII2I && inlineImage ? 'img2img' : 'generate',
+        },
+      }
+    }
+    case 'dalle':
+      return { provider: 'dalle', credential, prompt, quality: database.dallEQuality || 'standard' }
+    case 'stability':
+      return {
+        provider: 'stability',
+        credential,
+        prompt,
+        negativePrompt,
+        model: database.stabilityModel,
+        style: database.stabllityStyle || '',
+      }
+    case 'fal':
+      return {
+        provider: 'fal',
+        credential,
+        prompt,
+        model: database.falModel,
+        width: database.sdConfig.width,
+        height: database.sdConfig.height,
+        ...(database.falModel === 'fal-ai/flux-lora' && database.falLora?.trim()
+          ? { lora: { path: database.falLora, scale: database.falLoraScale } }
+          : {}),
+      }
+    case 'Imagen':
+      return {
+        provider: 'imagen',
+        credential,
+        prompt,
+        model: database.ImagenModel,
+        imageSize: database.ImagenImageSize,
+        aspectRatio: database.ImagenAspectRatio,
+        personGeneration: database.ImagenPersonGeneration,
+      }
+    case 'openai-compat':
+      return { provider: 'openai-compat', credential, prompt }
+    case 'wavespeed': {
+      const config = database.wavespeedImage
+      const loras = Array.isArray(config.loras)
+        ? config.loras
+            .filter((lora) => lora?.path?.trim())
+            .map((lora) => ({ path: lora.path, scale: typeof lora.scale === 'number' ? lora.scale : 1 }))
+        : undefined
+      return {
+        provider: 'wavespeed',
+        credential,
+        prompt,
+        model: config.model,
+        ...(config.reference_base64image ? { images: [config.reference_base64image] } : {}),
+        ...(loras?.length ? { loras } : {}),
+      }
+    }
+    case 'kei':
+      return { provider: 'kei', credential, prompt }
+    default:
+      throw new Error('configured image provider is unsupported by the server')
+  }
+}
+
+async function persistLuaGeneratedImage(state: RuntimeState, image: GeneratedImage): Promise<string> {
+  if (state.ctx.luaImageGeneration?.persist) {
+    return await state.ctx.luaImageGeneration.persist(image)
+  }
+  if (!state.ctx.requestHistoryDb || !state.ctx.assetDataDir) {
+    throw new Error('server asset persistence is unavailable')
+  }
+  const added = addAsset(state.ctx.requestHistoryDb, state.ctx.assetDataDir, {
+    bytes: image.bytes,
+    contentType: image.contentType,
+  })
+  upsertInlayCatalogEntry(state.ctx.requestHistoryDb, {
+    assetId: added.entry.id,
+    aliases: [],
+    name: added.entry.id,
+  })
+  return added.entry.id
+}
+
+async function runLuaImageGeneration(state: RuntimeState, prompt: string, negativePrompt: string): Promise<string> {
+  try {
+    const request = parseImageGenerationRequest(
+      buildLuaImageGenerationRequest(state.ctx.database, String(prompt ?? ''), String(negativePrompt ?? '')),
+    )
+    const execute = state.ctx.luaImageGeneration?.execute ?? executeImageGeneration
+    const image = await execute(request, state.ctx.database as unknown as Record<string, unknown>, {
+      signal: state.ctx.signal,
+    })
+    const assetId = await persistLuaGeneratedImage(state, image)
+    return assetId ? `{{inlay::${assetId}}}` : LUA_IMAGE_GENERATION_FAILURE
+  } catch {
+    return LUA_IMAGE_GENERATION_FAILURE
+  }
+}
+
 // ── Host functions ─
 
 /**
@@ -1127,9 +1471,8 @@ const UNBOUND_RUNTIME_STATE: RuntimeState = (() => {
  * Declare the full browser host-fn surface on `engine`:
  *   - **Pure** fns operate on the server's in-memory chat / vars / char / db;
  *   - **Gated** fns (`request`) run behind the SSRF guard + low-level access;
- *   - **Unsupported** privileged fns (`similarity`/`generateImage`/image
- *     getters/lorebook loaders) return an explicit error/empty so callers do
- *     not crash;
+ *   - **Unsupported** multimodal LLM/image getter APIs raise explicit
+ *     script-facing server errors;
  *   - **Interactive** fns (`alert*Input/Select/Confirm`) throw and flag the run;
  *   - **Browser-only** fns (`alertError`/`alertNormal`/`reloadDisplay`/`reloadChat`)
  *     are no-ops.
@@ -1463,9 +1806,12 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   })
   declare('getPersonaName', (_id: string) => state.ctx.database.username ?? '')
   declare('getPersonaDescription', (_id: string) => {
-    // Browser parses the persona prompt against the current char; server persona
-    // assembly lives elsewhere, so this runtime returns an empty string.
-    return ''
+    return expandVariables(String(state.ctx.database.personaPrompt ?? ''), {
+      database: state.ctx.database,
+      selectedCharID: state.ctx.selectedCharID,
+      chatPage: state.ctx.chatPage,
+      chara: asCharacter(state.ctx),
+    }).text
   })
   declare('getAuthorsNote', (_id: string) => state.ctx.chat?.note ?? '')
   declare('getBackgroundEmbedding', (id: string) => {
@@ -1540,11 +1886,27 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     }
     return JSON.stringify(found)
   })
-  // loadLoreBooks reads activation state the runtime does not own; return empty
-  // so callers degrade rather than crash.
   declare('loadLoreBooksMain', async (id: string) => {
     if (!canLowLevel(id)) return
-    return JSON.stringify([])
+    const char = asCharacter(state.ctx)
+    if (!char) return
+    const report = await activateLorebookAsync({
+      database: state.ctx.database,
+      currentChar: structuredClone(char),
+      currentChat: structuredClone(state.ctx.chat),
+      model: state.ctx.model,
+      writeChatVar: (key, value) => state.ctx.varEngine.setVar(key, value),
+    })
+    const books = report.actives.flatMap((book) => {
+      const data = expandVariables(book.prompt, {
+        database: state.ctx.database,
+        selectedCharID: state.ctx.selectedCharID,
+        chatPage: state.ctx.chatPage,
+        chara: char,
+      }).text.trim()
+      return data.length > 0 ? [{ data, role: book.role === 'assistant' ? ('char' as const) : book.role }] : []
+    })
+    return JSON.stringify(books)
   })
 
   // ── Gated: SSRF-guarded egress ──
@@ -1569,17 +1931,20 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     return true
   })
 
-  // Unsupported privileged fns: explicit error / empty result.
-  declare('similarity', async (id: string) => {
+  declare('similarity', async (id: string, source: string, values: unknown) => {
     if (!canLowLevel(id)) return
-    return [] // similarity is unavailable in server prompt assembly
+    return runLuaSimilarity(state, String(source ?? ''), values)
   })
-  declare('generateImage', async (id: string) => {
+  declare('generateImage', async (id: string, prompt: string, negativePrompt = '') => {
     if (!canLowLevel(id)) return
-    return 'Error: Image generation is not supported by server prompt assembly'
+    return runLuaImageGeneration(state, prompt, negativePrompt)
   })
-  declare('getCharacterImageMain', async (_id: string) => '')
-  declare('getPersonaImageMain', async (_id: string) => '')
+  declare('getCharacterImageMain', async (_id: string) => {
+    throw new Error(`${SERVER_UNSUPPORTED_LUA_API_ERROR}: getCharacterImage`)
+  })
+  declare('getPersonaImageMain', async (_id: string) => {
+    throw new Error(`${SERVER_UNSUPPORTED_LUA_API_ERROR}: getPersonaImage`)
+  })
 
   // Supported low-level LLM host fns.
   declare('LLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {

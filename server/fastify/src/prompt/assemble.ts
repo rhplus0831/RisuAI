@@ -142,6 +142,8 @@ import type { AgentPresetRecord } from '../../../../src/ts/agentPresetRecords.js
 export interface AssembleDeps {
   loadDatabase(): Database | null
   loadMemoryDatabase?(): DatabaseSync | null
+  /** Server asset root used by Lua image generation. */
+  assetDataDir?: string
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
   loadPromptMemoryQueryDiagnostics?(): PromptMemoryQueryDiagnostics
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
@@ -548,6 +550,8 @@ export interface AssemblyState {
   messageMutations?: AssembleMessageMutation[]
   additionalSystemPromptMutations?: AssembleAdditionalSystemPromptMutation[]
   memoryDatabase?: DatabaseSync | null
+  /** Server asset root used by Lua image generation. */
+  assetDataDir?: string
   promptMemoryQueryVectors?: MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
   executeAgentPresetStep?: AgentPresetStepExecutor
@@ -650,6 +654,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     signal: deps.signal,
     luaExecBudget,
     ...(memoryDatabase ? { requestHistoryDb: memoryDatabase } : {}),
+    ...(deps.assetDataDir ? { assetDataDir: deps.assetDataDir } : {}),
     cbsCallbackMemo,
   }
   const unformated = createEmptyUnformatedSlots()
@@ -692,6 +697,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     messageMutations: [],
     additionalSystemPromptMutations: [],
     memoryDatabase,
+    assetDataDir: deps.assetDataDir,
     promptMemoryQueryVectors: deps.loadPromptMemoryQueryVectors?.() ?? [],
     promptMemoryQueryDiagnostics:
       deps.loadPromptMemoryQueryDiagnostics?.() ?? emptyPromptMemoryQueryDiagnostics(undefined, 'feature-disabled'),
@@ -932,6 +938,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
           signal: state.signal,
           execBudget: state.luaExecBudget,
           ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
+          ...(state.assetDataDir ? { assetDataDir: state.assetDataDir } : {}),
         },
       )
       throwServerLuaFailure(result, `Lua ${mode} trigger failed`)
@@ -1980,6 +1987,7 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
     signal: state.signal,
     execBudget: state.luaExecBudget,
     ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
+    ...(state.assetDataDir ? { assetDataDir: state.assetDataDir } : {}),
     moduleTriggers: getModuleTriggers(getActiveModules(db, state.currentChar, state.currentChat)),
   }
   return { editCtx, varEngine }
@@ -2449,6 +2457,7 @@ async function runOutputTrigger(
             signal: state.signal,
             execBudget: state.luaExecBudget,
             ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
+            ...(state.assetDataDir ? { assetDataDir: state.assetDataDir } : {}),
           },
         )
       } catch (error) {

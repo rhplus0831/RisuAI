@@ -1,9 +1,15 @@
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { Chat, Database, character, loreBook } from '../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import type { RisuModule } from '../../../src/ts/process/modules'
 import { createTriggerVarEngine, type TriggerVarEngine } from '../src/prompt/triggerVars.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
+import { openDatabase } from '../src/db.js'
+import { assetPath, getAssetMetadataById, listInlayCatalogEntries } from '../src/repository.js'
 import {
   createLuaExecBudget,
   isBlockedAddress,
@@ -484,6 +490,25 @@ describe('server Lua runtime — low-level LLM bindings', () => {
   })
 })
 
+describe('server Lua runtime — persona description', () => {
+  it('returns the effective persona prompt expanded in the current character CBS scope', async () => {
+    const { ctx } = makeRuntime({
+      database: { personaPrompt: 'Persona {{user}} accompanies {{char}}.' },
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = getPersonaDescription(id)
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as OpenAIChat[])[0].content).toBe('Persona Operator accompanies Tess.')
+  })
+})
+
 describe('server Lua runtime — getLoreBooksMain', () => {
   it('returns exact-comment local, global, and module lorebooks in source order with parsed content', async () => {
     const chat = makeChat({
@@ -556,6 +581,244 @@ describe('server Lua runtime — getLoreBooksMain', () => {
       insertorder: 7,
       key: 'preset-key',
     })
+  })
+})
+
+describe('server Lua runtime — loadLoreBooks', () => {
+  it('returns activated lore as exact data/role rows in activation order', async () => {
+    const chat = makeChat({
+      localLore: [
+        lore({
+          id: 'local-active',
+          comment: 'local',
+          content: '@@role assistant\n  local {{char}}  ',
+          alwaysActive: true,
+          insertorder: 10,
+        }),
+        lore({
+          id: 'local-inactive',
+          comment: 'inactive',
+          content: 'must not appear',
+          key: 'missing-key',
+          insertorder: 15,
+        }),
+      ],
+    })
+    const module = makeModule({
+      id: 'module-a',
+      lorebook: [
+        lore({
+          id: 'module-active',
+          comment: 'module',
+          content: '@@role user\nmodule {{user}}',
+          alwaysActive: true,
+          insertorder: 30,
+        }),
+      ],
+    })
+    const char = makeChar({
+      chats: [chat],
+      globalLore: [
+        lore({
+          id: 'global-active',
+          comment: 'global',
+          content: 'global {{char}}',
+          alwaysActive: true,
+          insertorder: 20,
+        }),
+      ],
+    })
+    const { ctx } = makeRuntime({
+      chat,
+      char,
+      database: {
+        loreBookToken: 10_000,
+        modules: [module],
+        enabledModules: ['module-a'],
+      } as Partial<Database>,
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = json.encode(loadLoreBooks(id))
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect(JSON.parse((result.res as OpenAIChat[])[0].content)).toEqual([
+      { data: 'local Tess', role: 'char' },
+      { data: 'global Tess', role: 'system' },
+      { data: 'module Operator', role: 'user' },
+    ])
+  })
+})
+
+describe('server Lua runtime — similarity', () => {
+  it('ranks values by the baseline dot-product similarity using the shared embedding contract', async () => {
+    const { ctx } = makeRuntime({
+      database: {
+        hypaModel: 'custom',
+        hypaCustomSettings: { url: 'https://embeddings.example/v1', key: 'test-key', model: 'test-model' },
+      },
+    })
+    ctx.luaSimilarity = {
+      embed: async ({ input }) => {
+        const vectors = input.map((value) => {
+          switch (value) {
+            case 'right':
+            case 'query':
+              return new Float32Array([1, 0])
+            case 'middle':
+              return new Float32Array([0.5, 0.5])
+            default:
+              return new Float32Array([0, 1])
+          }
+        })
+        return { model: 'test-model', vectors, dim: 2 }
+      },
+    }
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local ranked = similarity(id, 'query', { 'left', 'right', 'middle' }):await()
+        data[1].content = ranked[1] .. ',' .. ranked[2] .. ',' .. ranked[3]
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as OpenAIChat[])[0].content).toBe('right,middle,left')
+  })
+
+  it('returns the baseline nil failure value when the embedding provider reaches its deadline', async () => {
+    const { ctx } = makeRuntime({
+      database: {
+        hypaModel: 'custom',
+        hypaCustomSettings: { url: 'https://embeddings.example/v1', key: 'test-key', model: 'test-model' },
+      },
+    })
+    ctx.luaSimilarity = {
+      deadlineMs: 10,
+      embed: async () => await new Promise<never>(() => undefined),
+    }
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local ranked = similarity(id, 'query', { 'value' }):await()
+        data[1].content = ranked == nil and 'nil' or 'unexpected'
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as OpenAIChat[])[0].content).toBe('nil')
+  })
+})
+
+describe('server Lua runtime — generateImage', () => {
+  it('uses the configured image model, persists the image, and returns an inlay marker', async () => {
+    const { ctx } = makeRuntime({
+      database: {
+        sdProvider: 'stability',
+        stabilityModel: 'sd3-medium',
+        stabllityStyle: 'anime',
+      },
+    })
+    let receivedRequest: unknown
+    const imageBytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z8Z0AAAAASUVORK5CYII=',
+      'base64',
+    )
+    const assetId = createHash('sha256').update(imageBytes).digest('hex')
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-lua-image-'))
+    const assetDb = openDatabase(dataDir)
+    ctx.requestHistoryDb = assetDb
+    ctx.assetDataDir = dataDir
+    ctx.luaImageGeneration = {
+      execute: async (request) => {
+        receivedRequest = request
+        return { bytes: imageBytes, contentType: 'image/png' }
+      },
+    }
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = generateImage(id, 'a lighthouse', 'fog'):await()
+        return data
+      end)
+    `
+
+    try {
+      const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+      expect(result.error).toBeUndefined()
+      expect(receivedRequest).toEqual({
+        provider: 'stability',
+        credential: { source: 'stored' },
+        prompt: 'a lighthouse',
+        negativePrompt: 'fog',
+        model: 'sd3-medium',
+        style: 'anime',
+      })
+      expect((result.res as OpenAIChat[])[0].content).toBe(`{{inlay::${assetId}}}`)
+      const asset = getAssetMetadataById(assetDb, assetId)
+      expect(asset).toMatchObject({ id: assetId, contentType: 'image/png', size: imageBytes.length })
+      expect(existsSync(assetPath(dataDir, asset!))).toBe(true)
+      expect(listInlayCatalogEntries(assetDb)).toContainEqual(
+        expect.objectContaining({ assetId, name: assetId, type: 'image' }),
+      )
+    } finally {
+      assetDb.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns the baseline failure string when image generation fails', async () => {
+    const { ctx } = makeRuntime({ database: { sdProvider: 'dalle', dallEQuality: 'standard' } })
+    ctx.luaImageGeneration = {
+      execute: async () => {
+        throw new Error('upstream unavailable')
+      },
+    }
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = generateImage(id, 'a lighthouse'):await()
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as OpenAIChat[])[0].content).toBe('Error: Image generation failed')
+  })
+})
+
+describe('server Lua runtime — unsupported server APIs reject loudly', () => {
+  it.each([
+    {
+      api: 'multimodal LLM',
+      call: "LLM(id, { { role = 'user', content = 'look' } }, true)",
+    },
+    { api: 'getCharacterImage', call: 'getCharacterImage(id)' },
+    { api: 'getPersonaImage', call: 'getPersonaImage(id)' },
+  ])('$api raises a script-facing unsupported-server error', async ({ call }) => {
+    const { ctx } = makeRuntime()
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        ${call}
+        data[1].content = 'SHOULD_NOT_APPLY'
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toContain('Lua API is unsupported on the server')
+    expect(result.res).toBeUndefined()
   })
 })
 

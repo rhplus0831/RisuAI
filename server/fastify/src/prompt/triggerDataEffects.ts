@@ -40,7 +40,7 @@ import {
  * Covered: message readers, string ops, array helpers (JSON-in-var),
  * dict helpers (JSON-in-var), `v2Random`, `v2Calculate` (via the
  * Svelte-free `calcString`), `v2Tokenize` (via `tokens.ts`),
- * `v2RegexTest`, and `v2QuickSearchChat`.
+ * `v2ExtractRegex`, `v2RegexTest`, and `v2QuickSearchChat`.
  *
  * Divergence from the SPA: `v2MakeArrayVar` / `v2MakeDictVar` /
  * `v2ClearDict` guard a malformed var name with `return`, which in the
@@ -67,7 +67,7 @@ import {
  * Unsupported or externally handled effects fall through to `return false`: the
  * persistent character/persona/author-note
  * get+set pairs, the `lowLevelAccess`-gated
- * alert/LLM/image/similarity/extractRegex arms, `command`,
+ * alert/LLM/image/similarity arms, `command`,
  * `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`, and the lorebook arms.
  */
 
@@ -725,6 +725,29 @@ export async function applyV2DataEffectAsync(effect: triggerEffect, deps: V2Data
   const { engine, expand, chat } = deps
   const resolve = (raw: string, isValue: boolean): string => (isValue ? expand(raw) : engine.getVar(expand(raw)))
   const options = deps.regexCompatibility
+
+  if (effect.type === 'v2ExtractRegex') {
+    const value = resolve(effect.value, effect.valueType === 'value')
+    const regexPattern = resolve(effect.regex, effect.regexType === 'value')
+    const flags = resolve(effect.flags, effect.flagsType === 'value')
+    const resultFormat = resolve(effect.result, effect.resultType === 'value')
+    const regex = deps.triggerCache
+      ? getCachedTriggerRegex(deps.triggerCache, regexPattern, flags, 'trigger v2ExtractRegex pattern')
+      : compileBoundedRegex(regexPattern, flags, 'trigger v2ExtractRegex pattern')
+    assertBoundedRegexHaystack(value, 'trigger v2ExtractRegex value')
+    assertBoundedRegexReplacement(resultFormat, 'trigger v2ExtractRegex result template')
+    regex.lastIndex = 0
+    const matched = regex.exec(value)
+    const result = resultFormat
+      .replace(/\$[0-9]+/g, (placeholder) => {
+        const index = Number(placeholder.slice(1))
+        return matched?.[index] || ''
+      })
+      .replace(/\$&/g, matched?.[0] || '')
+      .replace(/\$\$/g, '$')
+    engine.setVar(expand(effect.outputVar), result)
+    return true
+  }
 
   if (effect.type === 'v2SplitString' && effect.delimiterType === 'regex') {
     const source = resolve(effect.source, effect.sourceType === 'value')

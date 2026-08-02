@@ -864,6 +864,41 @@ describe('Phase 7-9d-i V2 control flow', () => {
     expect(elseResult?.chat.scriptstate?.['$branch']).toBe('else')
   })
 
+  it.each([
+    { target: '["a"]', expected: 'yes', label: 'source is absent from the target array' },
+    { target: '["z"]', expected: undefined, label: 'source is present in the target array' },
+    { target: 'not-json', expected: 'yes', label: 'target JSON is invalid' },
+  ])('supports v2IfAdvanced ∉ when $label', async ({ target, expected }) => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2IfAdvanced',
+            condition: '∉',
+            sourceType: 'value',
+            source: 'z',
+            targetType: 'value',
+            target,
+            indent: 0,
+          }),
+          eff({
+            type: 'v2SetVar',
+            operator: '=',
+            var: 'hit',
+            valueType: 'value',
+            value: 'yes',
+            indent: 1,
+          }),
+          eff({ type: 'v2EndIndent', indent: 1 }),
+        ]),
+      ],
+    })
+
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+
+    expect(result?.chat.scriptstate?.['$hit']).toBe(expected)
+  })
+
   it('runs a counted loop N times', async () => {
     const effects = [
       eff({ type: 'v2LoopNTimes', valueType: 'value', value: '3', indent: 0 }),
@@ -1771,6 +1806,82 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
     const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
     expect(result?.chat.scriptstate?.['$hit']).toBe('1')
     expect(result?.chat.scriptstate?.['$miss']).toBe('0')
+  })
+
+  it('extracts the first regex match and expands $n, $&, and $$ without low-level access', async () => {
+    const char = makeChar({
+      lowLevelAccess: false,
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2ExtractRegex',
+            valueType: 'value',
+            value: 'ID=42; ID=99',
+            regexType: 'value',
+            regex: 'ID=(\\d+)',
+            flagsType: 'value',
+            flags: 'g',
+            resultType: 'value',
+            result: '$1|$&|$$|$9',
+            outputVar: 'extracted',
+          }),
+        ]),
+      ],
+    })
+
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+
+    expect(result?.chat.scriptstate?.['$extracted']).toBe('42|ID=42|$|')
+  })
+
+  it('writes the capture-stripped result template when v2ExtractRegex has no match', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2ExtractRegex',
+            valueType: 'value',
+            value: 'no id here',
+            regexType: 'value',
+            regex: 'ID=(\\d+)',
+            flagsType: 'value',
+            flags: '',
+            resultType: 'value',
+            result: '[$1][$&][$$]',
+            outputVar: 'extracted',
+          }),
+        ]),
+      ],
+    })
+
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+
+    expect(result?.chat.scriptstate?.['$extracted']).toBe('[][][$]')
+  })
+
+  it('rejects an invalid v2ExtractRegex pattern before changing the output variable', async () => {
+    const chat = makeChat({ scriptstate: { $extracted: 'kept' } })
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2ExtractRegex',
+            valueType: 'value',
+            value: 'ID=42',
+            regexType: 'value',
+            regex: '[',
+            flagsType: 'value',
+            flags: '',
+            resultType: 'value',
+            result: '$1',
+            outputVar: 'extracted',
+          }),
+        ]),
+      ],
+    })
+
+    await expect(runTrigger(ctx, char, 'output', { chat })).rejects.toThrow(SyntaxError)
+    expect(chat.scriptstate?.['$extracted']).toBe('kept')
   })
 
   it('quick-searches the recent chat', async () => {

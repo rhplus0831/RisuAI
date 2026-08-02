@@ -64,8 +64,10 @@ export interface ExpandContext {
   signal?: AbortSignal
   /** Optional per-assembly Lua budget shared by trigger handoffs from prompt helpers. */
   luaExecBudget?: LuaExecBudget
-  /** Server-only SQLite handle for LLM request-history capture. */
+  /** Server-only SQLite handle for Lua LLM diagnostics/generated-inlay metadata. */
   requestHistoryDb?: DatabaseSync
+  /** Server-only asset root for Lua-generated inlays. */
+  assetDataDir?: string
   /** Optional per-assembly CBS callback memo. Browser/local calls omit this. */
   cbsCallbackMemo?: CbsCallbackMemo
   /** Effective main-request model metadata exposed through CBS `metadata`. */

@@ -308,6 +308,18 @@ describe('Phase 7-6b @@move_top / @@move_bottom', () => {
     expect(out).toBe('<meta>\n\npre  post')
   })
 
+  it('keeps an unmatched optional capture literal in move directives', () => {
+    const db = makeDatabase({
+      presetRegex: [regex('(a)?b', '@@move_top <$1>', 'editprocess')],
+    })
+
+    const out = processScript(ctxFor(db), db.characters[0], 'b', 'editprocess')
+
+    // Accepted ST-9 divergence from baseline scripts.ts:219, which coerced the
+    // missing capture to "undefined". The server intentionally preserves `$1`.
+    expect(out).toBe('<$1>\n\n')
+  })
+
   it('does nothing when the regex does not match', () => {
     const db = makeDatabase({
       presetRegex: [regex('NEVER', '@@move_top $&', 'editprocess')],
@@ -452,6 +464,17 @@ describe('Phase 7-6c ableFlag <order, actions> DSL parsing', () => {
     // the SPA appends `\n` per substitution.
     // 'CBA' --B-> 'C2<B>\nA' --C-> '3<C>\n2<B>\nA' --A-> '3<C>\n2<B>\n1<A>\n'
     expect(out).toBe('3<C>\n2<B>\n1<A>\n')
+  })
+
+  it('keeps a malformed order token in relative position before a valid order', () => {
+    const db = makeDatabase({
+      presetRegex: [
+        regex('a', 'b', 'editprocess', '<order nope>', true),
+        regex('b', 'c', 'editprocess', '<order 5>', true),
+      ],
+    })
+
+    expect(processScript(ctxFor(db), db.characters[0], 'a', 'editprocess')).toBe('c')
   })
 
   it('parses `<action_name>` into the actions list', () => {
