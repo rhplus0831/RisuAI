@@ -4,12 +4,13 @@ Generated 2026-08-02 from the six-agent parity review of the Fastify
 message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
-into **53 work items**: 46 in the active tiers, 2 deferred, and 5 resolved.
+into **53 work items**: 41 in the active tiers, 2 deferred, and 10 resolved.
 Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
 divergences, and the maintainer approved dispositions for every remaining
 `Needs decision` item plus the blanket implementation policy (see the
-maintenance rules) — active items are now `Ready` (38) or `Needs design` (8)
-only, cleared for autonomous execution. Tier 0 landed in `99a346377`.
+maintenance rules) — active items are now `Ready` (33) or `Needs design` (8)
+only, cleared for autonomous execution. Tier 0 landed in `99a346377`; the
+Tier 1 CBS/assembly batch landed in `0c5ba0ac8`.
 All items were classified on 2026-08-02 against `fbf750b24`;
 findings are point-in-time evidence and must be re-verified against current
 code before work begins.
@@ -64,18 +65,13 @@ valid work intentionally held outside the active execution order;
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
-| Default-variable fallback in the server chat-var backend | [HC-1](docs/history-cbs-variables.md), [LM-4](docs/lorebook-memory.md) | Ready | `{{getvar}}` in any prompt surface returns `"null"` where the original returned character/template defaults; prompts and triggers currently disagree about the same variable; also breaks sticky lorebook activation. | One shared fix in `promptScope.ts`/`variables.ts` mirroring `chatVar.svelte.ts`; align with the trigger engine's existing default handling. |
 | Clip summarized history with the planner start index | [LM-2](docs/lorebook-memory.md) | Ready | Prompts carry both a Hypa V3 summary and the full messages it summarizes — duplicated context and wasted budget. | Apply `plan.startIndex` to `historyMessages` in assembly; verify interaction with generic non-memory trimming and the memory window token math. |
 | Supply live similar-memory query vectors | [LM-1](docs/lorebook-memory.md) | Needs design | Similarity-weighted Hypa V3 configurations silently inject no memory in production. | Requires embedding recent chat text at generation time (cost/latency policy, embedding-provider resolution, failure handling); ranking service and tests already accept vectors. |
 | Gemini: send safety-setting overrides | [PR-1](docs/provider-adapters.md) | Ready | Provider-default safety blocking is active; role-play content can return `SAFETY` with no text. | Port the category list including the `geminiBlockOff` `OFF` variant. |
 | Gemini: forward JSON-schema controls | [PR-2](docs/provider-adapters.md) | Ready | JSON-schema mode is a no-op on Gemini; extraction receives prose. | Emit `response_mime_type`/`response_schema` from the retained `jsonSchemaEnabled`/`jsonSchema` config. |
 | Gemini: map Gemini 3 thinking levels and omit zero top-k | [PR-3](docs/provider-adapters.md) | Ready | Gemini 3 requests carry `thinkingBudget` (rejected/ignored) and `topK: 0`. | Port the Flash/Pro `thinkingLevel` mapping and the zero-top-k omission. |
 | Gemini: honor reverse-proxy transport options | [PR-4](docs/provider-adapters.md) | Ready | Custom URL, extra headers, and additional params are ignored; proxied deployments fail auth/routing. | Pass `providerOptions.baseUrl`/`extraHeaders`/`additionalParams` through dispatch into the existing `resolveGeminiRequest()` support. |
-| Second CBS pass over history messages | [HC-3](docs/history-cbs-variables.md) | Ready | One level of CBS indirection (variable containing `{{user}}` etc.) stays literal in the provider prompt. | Mirror the original `processScriptFull` re-parse in `processScriptAsync`; watch for double-execution of state-changing CBS (original semantics are the spec). |
-| Greedy `<Thoughts>` stripping parity | [HC-6](docs/history-cbs-variables.md) | Ready | Text between multiple thought blocks leaks into visible history where the original stripped it. | One-regex change plus thought-record expectations. |
 | Re-expand stable cards after the start trigger | [PA-2](docs/prompt-assembly.md) | Needs design | Start-trigger state changes never reach the final prompt (cached pre-trigger expansions are reused). | Invalidate/re-render the stable-card cache when the start trigger mutates state; weigh against the caching design that motivated preflight expansion. |
-| Count multimodal tokens in context budgeting | [PA-3](docs/prompt-assembly.md) | Ready | Vision chats near the limit can dispatch over-budget requests. | Port `tokenizeMultiModal` charges into `tokens.ts`/`budgetFinalize.ts`. |
-| Real model metadata in CBS | [HC-5](docs/history-cbs-variables.md) | Ready | `{{metadata::model*}}` always reports `Placeholder Model`. | Inject the effective model info into the CBS adapter; the adapter comment claiming the path is unused is wrong. |
 
 ## Tier 2 — Feature-scoped gaps
 
@@ -134,6 +130,11 @@ pinning test + area-doc intentional entry).
 
 | Work item | Findings | Status | Impact | Resolution |
 | --- | --- | --- | --- | --- |
+| Default-variable fallback in the server chat-var backend | [HC-1](docs/history-cbs-variables.md), [LM-4](docs/lorebook-memory.md) | Resolved | `{{getvar}}` returned `"null"` where the original returned character/template defaults; prompts and triggers disagreed; sticky lorebook activation broke. | Fixed in `0c5ba0ac8`: shared `chatVarDefaults.ts` resolver (browser `parseKeyValue`, character-first precedence) now feeds prompt CBS, triggers, and both lorebook sticky readers; `addvar` starts from defaults. Regressions in `promptVariables/triggers/lorebook` suites. |
+| Second CBS pass over history messages | [HC-3](docs/history-cbs-variables.md) | Resolved | One level of CBS indirection stayed literal in the provider prompt. | Fixed in `0c5ba0ac8`: whole-text CBS reparse before regex scripts at the baseline position, `runVar: false`, fixed-point short-circuit. Regressions incl. the nested `$outer -> $inner -> {{user}}` chain. |
+| Greedy `<Thoughts>` stripping parity | [HC-6](docs/history-cbs-variables.md) | Resolved | Text between multiple thought blocks leaked into visible history. | Fixed in `0c5ba0ac8`: greedy first-open-to-last-close match restored for both visible removal and the recorded capture. |
+| Count multimodal tokens in context budgeting | [PA-3](docs/prompt-assembly.md) | Resolved | Vision chats near the limit could dispatch over-budget requests. | Fixed in `0c5ba0ac8`: baseline `tokenizeMultiModal` charges ported (87-token low-quality, tile math otherwise, zero-dimension fallback); prefix-memo keys include multimodal dimensions/billing settings. |
+| Real model metadata in CBS | [HC-5](docs/history-cbs-variables.md) | Resolved | `{{metadata::model*}}` always reported `Placeholder Model`. | Fixed in `0c5ba0ac8`: the effective resolved profile/request model feeds the CBS adapter (short name, name, internal ID, format, provider, tokenizer); stale comment removed. |
 | Handle Anthropic in-stream `error` frames | [PR-13](docs/provider-adapters.md) | Resolved | An overload error after partial text persisted the fragment as a completed response. | Fixed in `99a346377`: in-stream `type: "error"` payloads (and `event: error`) become provider failure frames preserving message/code; pre-token errors retry through the existing policy, post-token errors restore with no persistence; proxy-compatible `delta.type: "text"` accepted. Regressions in `anthropic.test.ts` and `generation.chat.test.ts`. |
 | Stop treating Continue-displaced rows as reroll candidates | [OR-7](docs/orchestration-postgen.md) | Resolved | After continue → reload → regenerate, swiping back could restore the pre-continue text. | Fixed in `99a346377`: continue mode never preserves reroll candidates — the buffer is cleared and the displaced pre-continue row is excluded; a later regenerate captures the fully extended row. Regression: continue → hydrate → regenerate in `generation.chat.test.ts`. |
 | Detect cumulative stream fragments | [PR-12](docs/provider-adapters.md) | Resolved | Cumulative proxy deltas produced duplicated streamed/persisted text. | Fixed in `99a346377`: a strictly-longer delta that starts with the full accumulation is treated as cumulative and only the new suffix is emitted (strict `>` keeps legitimately repeated equal-length tokens intact — saner-than-baseline edge kept per blanket policy). Regression in `openai.test.ts`. |
