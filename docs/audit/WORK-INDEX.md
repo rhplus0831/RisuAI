@@ -4,11 +4,11 @@ Generated 2026-08-02 from the six-agent parity review of the Fastify
 message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
-into **53 work items**: 15 in the active tiers, 2 deferred, and 36 resolved.
+into **53 work items**: 12 in the active tiers, 2 deferred, and 39 resolved.
 Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
 divergences, and the maintainer approved dispositions for every remaining
 `Needs decision` item plus the blanket implementation policy (see the
-maintenance rules) — active items are now `Ready` (8) or `Needs design` (7)
+maintenance rules) — active items are now `Ready` (5) or `Needs design` (7)
 only, cleared for autonomous execution. Tier 0 landed in `99a346377`; the
 Tier 1 CBS/assembly batch in `0c5ba0ac8`; the Gemini cluster in `db638a29c`.
 All items were classified on 2026-08-02 against `fbf750b24`;
@@ -83,9 +83,6 @@ valid work intentionally held outside the active execution order;
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
-| Sunset non-ChatML instruct templates on legacy transports | [PR-18](docs/provider-adapters.md), [PR-7](docs/provider-adapters.md) | Ready | Kobold/Ooba-legacy/Horde send `##` headings or `role:` labels instead of Llama/Gemma/Mistral/Vicuna/Alpaca/custom-Jinja control tokens; OpenRouter `useInstructPrompt` is dead. | Decision 2026-08-02: sunset, not port. Document legacy transports as degraded (ChatML only), surface the limitation to users (disable or annotate the dead `useInstructPrompt` toggle), pin current output, and record as an accepted divergence. |
-| Ooba legacy stop strings, cleanup, truncation, and args | [PR-19](docs/provider-adapters.md), [PR-8](docs/provider-adapters.md) | Ready | Missing default `stopping_strings`, no `unstringlizeChat`, `truncation_length` = maxContext, and configured Ooba args silently dropped — simulated extra turns get persisted. | Bounded adapter fixes; the Ooba settings page is still live so configured args must reach the body. |
-| Horde cleanup uses the active character | [PR-20](docs/provider-adapters.md) | Ready | Response trimming searches the wrong character name and persists simulated turns. | Use the effective character passed through dispatch, not `characters[0]`. |
 
 ## Tier 4 — Metadata/telemetry only
 
@@ -104,6 +101,9 @@ pinning test + area-doc intentional entry).
 
 | Work item | Findings | Status | Impact | Resolution |
 | --- | --- | --- | --- | --- |
+| Ooba legacy stop strings, cleanup, truncation, and args | [PR-19](docs/provider-adapters.md), [PR-8](docs/provider-adapters.md) | Resolved | Missing default stops/cleanup/truncation; configured Ooba args dropped. | Fixed in `d589297af`. Evidence corrections: baseline `truncation_length` was `maxTokens ?? maxResponse` (not the output-token claim as written), and `getStopStrings(false)` is a fixed 51-entry set (user/human/input/inst/instruction case-variants, markers, `username:`) that does NOT read the active character. Non-null Ooba args overlay in baseline object-key order before additionalParams. |
+| Horde cleanup uses the active character | [PR-20](docs/provider-adapters.md) | Resolved | Cleanup searched `characters[0]` instead of the active character. | Fixed in `d589297af`: effective generation character supplied by inline and durable dispatch; regression proves the active second character's turn is trimmed. |
+| Sunset non-ChatML instruct templates on legacy transports | [PR-18](docs/provider-adapters.md), [PR-7](docs/provider-adapters.md) | Resolved | Non-ChatML templates were silently degraded; `useInstructPrompt` was dead but enabled. | Sunset per 2026-08-02 decision in `d589297af`: current Kobold/Ooba/Horde output pinned with accepted-divergence notes; the OpenRouter toggle is disabled with a localized unsupported note; the degraded boundary is documented in `docs/structure/providers-and-models.md`. |
 | Module visibility in CBS | [HC-4](docs/history-cbs-variables.md) | Resolved | CBS saw zero modules. | Fixed in `29c7cb114`: active modules (enabled + chat + character + `moduleIntergration`, database order, id-deduplicated — the integration source was missing from the finding) wired into the adapter; `moduleenabled`/`moduleassetlist`/module-lore regressions added. |
 | `sendName` group-template semantics | [HC-2](docs/history-cbs-variables.md) | Resolved | `groupTemplate`/`groupOtherBotRole` were ignored; roles kept. | Fixed in `29c7cb114`: custom template honored (full CBS expansion + first-`{{slot}}` replacement) and every wrapped row gets `groupOtherBotRole` (default `user`); the dropped schema fields restored with defaults and preset-split coverage. One pinned test updated (it selected the wrapped row by the old role). |
 | Repeated mixed chat-card systemization | [PA-4](docs/prompt-assembly.md) | Resolved | Baseline shared-mutation made later chat cards see earlier systemization. | Accepted divergence per 2026-08-02 decision, pinned in `29c7cb114`: two-card mixed-role regression asserts independent clone behavior. |
