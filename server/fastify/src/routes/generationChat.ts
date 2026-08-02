@@ -173,6 +173,8 @@ export interface ChatProviderDispatchContext {
   profile?: ResolvedModelProfile
   /** Retry/fallback identity attached by the request-policy wrapper. */
   historyMetadata?: Record<string, unknown>
+  /** Dispatch-time request model selected from a provider sentinel. */
+  resolvedRequestModel?: string
 }
 
 export type ChatProviderDispatcher = (
@@ -268,7 +270,7 @@ function markPolicyProfileSuccess(
   database: Database,
   profile: ResolvedModelProfile,
 ): void {
-  context.generationInfo.model = getServerGenerationModelString(database, profile)
+  context.generationInfo.model = getServerGenerationModelString(database, profile, context.resolvedRequestModel)
   if (typeof database.maxContext === 'number') context.generationInfo.maxContext = database.maxContext
 }
 
@@ -385,7 +387,7 @@ function dispatchProviderWithPolicies(
             for await (const frame of iterable) {
               if (frame.kind === 'token') {
                 emittedToken = true
-                markPolicyProfileSuccess(context, database, profile)
+                markPolicyProfileSuccess(attemptContext, database, profile)
                 yield frame
                 continue
               }
@@ -408,7 +410,7 @@ function dispatchProviderWithPolicies(
                 attempt = retries
                 break
               }
-              if (frame.kind === 'done') markPolicyProfileSuccess(context, database, profile)
+              if (frame.kind === 'done') markPolicyProfileSuccess(attemptContext, database, profile)
               yield frame
               if (frame.kind === 'done' || frame.kind === 'error') return
             }
@@ -471,7 +473,7 @@ function dispatchProviderWithPolicies(
           attempt = retries
           continue
         }
-        markPolicyProfileSuccess(context, database, profile)
+        markPolicyProfileSuccess(attemptContext, database, profile)
         yield* transformed
         return
       }
@@ -2217,6 +2219,9 @@ async function streamAssembly(
                 trace: context.trace,
                 profile: context.profile,
                 history: chatDispatchHistory(db, context),
+                onResolvedModel: (model) => {
+                  context.resolvedRequestModel = model
+                },
               }))
           const providerStartedAt = Date.now()
           let frames: AsyncIterable<CompletionStreamFrame> | null | undefined
@@ -3321,6 +3326,9 @@ async function runGenerationJob(args: {
                 trace: context.trace,
                 profile: context.profile,
                 history: chatDispatchHistory(db, context),
+                onResolvedModel: (model) => {
+                  context.resolvedRequestModel = model
+                },
               }))
           const providerStartedAt = Date.now()
           let frames: AsyncIterable<CompletionStreamFrame> | null | undefined

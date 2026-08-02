@@ -12,6 +12,7 @@ import { listPersistedCommandEventHistory } from '../src/commands/events.js'
 import { openDatabase } from '../src/db.js'
 import { applyImport, hydrateAssemblyModuleBodies } from '../src/repository.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
+import { clearOpenRouterFreeModelCacheForTests } from '../src/generation/openrouterFreeModel.js'
 import {
   createRequestScopedStoredAssetResolver,
   type ChatProviderDispatchContext,
@@ -1417,6 +1418,74 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect((await readPersistedMessages(assertion)).at(-1)?.generationInfo).toMatchObject({
       model: 'openrouter-vendor/model-name',
+    })
+  })
+
+  it('resolves risu/free at dispatch and persists the selected OpenRouter model label', async () => {
+    clearOpenRouterFreeModelCacheForTests()
+    const upstreamCalls: Array<{ url: string; body?: Record<string, unknown> }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        const call = {
+          url: String(url),
+          ...(init?.body ? { body: JSON.parse(String(init.body)) as Record<string, unknown> } : {}),
+        }
+        upstreamCalls.push(call)
+        if (call.url === 'https://openrouter.ai/api/v1/models') {
+          return new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: 'provider/smaller:free',
+                  name: 'Provider: Smaller Free',
+                  context_length: 32_000,
+                  pricing: { prompt: '0', completion: '0' },
+                },
+                {
+                  id: 'provider/largest:free',
+                  name: 'Provider: Largest Free',
+                  context_length: 128_000,
+                  pricing: { prompt: '0', completion: '0' },
+                },
+              ],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          )
+        }
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: 'resolved free reply' }, finish_reason: 'stop' }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }),
+    )
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'openrouter',
+      openrouterKey: 'test-openrouter-free-key',
+      openrouterRequestModel: 'risu/free',
+      useStreaming: false,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    expect(upstreamCalls.map((call) => call.url)).toEqual([
+      'https://openrouter.ai/api/v1/models',
+      'https://openrouter.ai/api/v1/chat/completions',
+    ])
+    expect(upstreamCalls[1]?.body?.model).toBe('provider/largest:free')
+    expect(parseEvents(res.body).at(-1)?.data.generationInfo).toMatchObject({
+      model: 'openrouter-provider/largest:free',
+    })
+    expect((await readPersistedMessages(assertion)).at(-1)?.generationInfo).toMatchObject({
+      model: 'openrouter-provider/largest:free',
     })
   })
 

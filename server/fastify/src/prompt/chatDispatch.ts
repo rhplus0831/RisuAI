@@ -17,6 +17,7 @@ import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
 import { resolveOllamaRequest, runOllama, runOllamaStream } from '../generation/ollama.js'
 import { resolveBedrockRequest, runBedrock, type BedrockCredentials } from '../generation/bedrock.js'
 import { resolveHordeRequest, runHorde } from '../generation/horde.js'
+import { resolveOpenRouterFreeModel } from '../generation/openrouterFreeModel.js'
 import { buildOobaLegacyStopStrings, resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import {
   resolveProviderCapability,
@@ -82,6 +83,8 @@ interface ChatDispatchArgs {
   finalizedMessages?: OpenAIChat[]
   /** Effective character selected for this generation, including non-zero database positions. */
   currentCharacterName?: string
+  /** Reports a dispatch-time sentinel resolution to generation metadata owners. */
+  onResolvedModel?: (model: string) => void
 }
 
 interface CustomModelEntry {
@@ -256,41 +259,54 @@ function resolveDeepSeekThinking(db: Database, flags: readonly number[]): Record
     : { type: 'disabled' }
 }
 
+export const OPENAI_STRONG_BAN_PUNCTUATION = ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~“”‘’«»「」…–―※'
+
 export function resolveOpenAILogitBias(
   rows: readonly [string, number][],
   model: string,
   selectedEncoding?: TokenEncoding,
+  encode: (text: string, encoding: TokenEncoding) => readonly number[] = encodeTokens,
 ): Record<string, number> {
   const bias: Record<string, number> = {}
   const encoding = selectedEncoding ?? encodingForModel(model)
   const assignTokens = (text: string, value: number): void => {
-    for (const token of encodeTokens(text, encoding)) bias[String(token)] = value
+    for (const token of encode(text, encoding)) bias[String(token)] = value
   }
   for (const [rawText, rawValue] of rows) {
     if (typeof rawText !== 'string' || typeof rawValue !== 'number' || !Number.isFinite(rawValue)) continue
-    const directToken = /^\[\[(\d+)\]\]$/u.exec(rawText.trim())
-    if (directToken) {
-      bias[directToken[1]] = Math.max(-100, Math.min(100, rawValue))
+    if (rawText.startsWith('[[') && rawText.endsWith(']]')) {
+      const token = Number.parseInt(rawText.replace('[[', '').replace(']]', ''), 10)
+      bias[String(token)] = rawValue
       continue
     }
     if (rawValue === -101) {
-      const trimmed = rawText.trim()
-      const variants = new Set([
+      const variants = [
         rawText,
-        trimmed,
-        trimmed.toLocaleLowerCase(),
-        trimmed.toLocaleUpperCase(),
-        trimmed ? trimmed[0].toLocaleUpperCase() + trimmed.slice(1) : '',
-        trimmed ? trimmed[0].toLocaleLowerCase() + trimmed.slice(1) : '',
-        ` ${trimmed}`,
-        `\n${trimmed}`,
-      ])
-      for (const variant of variants) {
-        if (variant) assignTokens(variant, -100)
+        rawText.trim(),
+        rawText.toLocaleUpperCase(),
+        rawText.toLocaleLowerCase(),
+        rawText ? rawText[0].toLocaleUpperCase() + rawText.slice(1) : '',
+        rawText ? rawText[0].toLocaleLowerCase() + rawText.slice(1) : '',
+      ]
+      const punctuationTokens = new Set<number>()
+      for (const char of OPENAI_STRONG_BAN_PUNCTUATION) {
+        const token = encode(char, encoding)[0]
+        if (token !== undefined) punctuationTokens.add(token)
+      }
+      const banFirstToken = (text: string): void => {
+        const token = encode(text, encoding)[0]
+        if (token !== undefined && !punctuationTokens.has(token)) bias[String(token)] = -100
+      }
+      for (const char of OPENAI_STRONG_BAN_PUNCTUATION) {
+        banFirstToken(char)
+        for (const variant of variants) {
+          banFirstToken(variant + char)
+          banFirstToken(char + variant)
+        }
       }
       continue
     }
-    assignTokens(rawText, Math.max(-100, Math.min(100, rawValue)))
+    assignTokens(rawText, rawValue)
   }
   return bias
 }
@@ -1125,7 +1141,18 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
   }
   const provider = route.provider
 
-  const model = resolveProviderModel(db, info, provider, profile)
+  const configuredModel = resolveProviderModel(db, info, provider, profile)
+  let model = configuredModel
+  let openRouterVariant: OpenAICompatibleVariant | null | undefined
+  if (provider === 'openrouter') {
+    openRouterVariant = resolveOpenAIVariant(db, info, provider, profile)
+    if (!openRouterVariant) throw new Error('options.openai.apiKey is required')
+    model = await resolveOpenRouterFreeModel(configuredModel, {
+      apiKey: openRouterVariant.apiKey,
+      signal,
+    })
+    if (model !== configuredModel) args.onResolvedModel?.(model)
+  }
   const preSummary = summarizePromptRows(args.formated)
   const messages = args.finalizedMessages ?? reformatMessages(db, args.formated, info.flags)
   const postSummary = summarizePromptRows(messages)
@@ -1194,7 +1221,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
   }
 
   if (provider === 'openai' || provider === 'openrouter') {
-    const variant = resolveOpenAIVariant(db, info, provider, profile)
+    const variant = provider === 'openrouter' ? openRouterVariant : resolveOpenAIVariant(db, info, provider, profile)
     if (!variant) throw new Error('options.openai.apiKey is required')
     const request = resolveOpenAIRequest({
       model,
@@ -1593,14 +1620,18 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
   throw new Error(`provider not implemented yet: ${provider}`)
 }
 
-export function getServerGenerationModelString(db: Database, profile?: ResolvedModelProfile): string {
+export function getServerGenerationModelString(
+  db: Database,
+  profile?: ResolvedModelProfile,
+  resolvedRequestModel?: string,
+): string {
   const name = profile?.modelId ?? db.aiModel
   const durableRequestModel = profile?.source.kind === 'durable-profile' ? profile.requestModel : undefined
   switch (name) {
     case 'reverse_proxy':
       return `custom-${db.reverseProxyOobaMode ? 'ooba' : durableRequestModel || db.customProxyRequestModel}`
     case 'openrouter':
-      return `openrouter-${durableRequestModel || profile?.requestModel || db.openrouterRequestModel}`
+      return `openrouter-${resolvedRequestModel || durableRequestModel || profile?.requestModel || db.openrouterRequestModel}`
     case 'nanogpt': {
       const modelLabel = durableRequestModel || db.nanogptRequestModelName || db.nanogptRequestModel
       const subscription =
