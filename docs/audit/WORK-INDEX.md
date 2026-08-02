@@ -4,11 +4,12 @@ Generated 2026-08-02 from the six-agent parity review of the Fastify
 message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
-into **53 work items**: 1 in the active tiers, 2 deferred, and 50 resolved.
-Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
-divergences, and the maintainer approved dispositions for every remaining
-`Needs decision` item plus the blanket implementation policy (see the
-maintenance rules) — the single remaining active item is `Needs design` (OR-1). Tier 0 landed in `99a346377`; the
+into **53 work items**: 51 resolved and 2 deferred — the active execution
+order is COMPLETE as of 2026-08-03.
+Every active item was executed 2026-08-02/03 under the maintainer-approved
+2026-08-02 decisions and blanket policy (see the maintenance rules); all
+resolutions, commits, and regression pins are recorded in Completed items.
+Only the two Deferred items remain open. Tier 0 landed in `99a346377`; the
 Tier 1 CBS/assembly batch in `0c5ba0ac8`; the Gemini cluster in `db638a29c`.
 All items were classified on 2026-08-02 against `fbf750b24`;
 findings are point-in-time evidence and must be re-verified against current
@@ -58,7 +59,6 @@ valid work intentionally held outside the active execution order;
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
-| Sequence IGP after the terminal derived text | [OR-1](docs/orchestration-postgen.md) | Needs design | The IGP suffix is computed on raw streamed text and races the server terminal patch — either the `editoutput` transform or the IGP suffix can be durably lost. | Browser-side ordering fix: IGP must consume the terminal `finalText`. Touches `orchestrateResponse.ts`/`serverBackedSendChat.ts` command sequencing. |
 
 ## Tier 1 — Mainstream generation correctness
 
@@ -89,6 +89,7 @@ pinning test + area-doc intentional entry).
 
 | Work item | Findings | Status | Impact | Resolution |
 | --- | --- | --- | --- | --- |
+| Sequence IGP after the terminal derived text | [OR-1](docs/orchestration-postgen.md) | Resolved | IGP raced the terminal patch; editoutput transforms or the IGP suffix could be durably lost. | Fixed in `400183698`: server-backed orchestration skips early IGP; after the terminal frame the derived row is applied first, IGP evaluates against it and dispatches with full preconditions through the durable outbox; newer edits discard it, error terminals skip it, reattach guards prevent double-runs. |
 | Durable Lua character/local-lore writes | [ST-3](docs/scripts-triggers-lua.md) | Resolved | Lua setters mutated only the request snapshot and were lost. | Fixed in `492f99e9e`: `characterFieldMutations`/`localLoreMutation` payloads persist through the atomic assembly/finalization transactions with fresh-value checks, identity-stable lore upserts, durable-retry envelope compatibility, and events invalidating chat + character projections; preview read-only. |
 | Gemini response modalities and returned assets | [PR-5](docs/provider-adapters.md) | Resolved | Image/audio-output Gemini models lost generated media or failed with no-text errors. | Fixed in `492f99e9e`: baseline modality gating (image precedence), forced buffered dispatch, inlineData persisted via the shared inlay pipeline as `{{inlay::id}}` (accepted deltas recorded: baseline used `{{inlayeddata}}` and appended no audio marker; native MIME kept), marker-only responses succeed, unsupported audio MIME warns loudly. |
 | Re-expand stable cards after the start trigger | [PA-2](docs/prompt-assembly.md) | Resolved | Start-trigger state changes never reached the final prompt. | Fixed in `b193042e0`: speculative preflight writes (snapshot + rollback), conservative cache invalidation on trigger results/history injection/scriptstate drift, and final render replaying the preflight write set exactly once or re-expanding post-trigger. Preview stays read-only. |
