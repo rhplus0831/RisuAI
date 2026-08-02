@@ -4,13 +4,13 @@ Generated 2026-08-02 from the six-agent parity review of the Fastify
 message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
-into **53 work items**: 41 in the active tiers, 2 deferred, and 10 resolved.
+into **53 work items**: 37 in the active tiers, 2 deferred, and 14 resolved.
 Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
 divergences, and the maintainer approved dispositions for every remaining
 `Needs decision` item plus the blanket implementation policy (see the
-maintenance rules) — active items are now `Ready` (33) or `Needs design` (8)
+maintenance rules) — active items are now `Ready` (29) or `Needs design` (8)
 only, cleared for autonomous execution. Tier 0 landed in `99a346377`; the
-Tier 1 CBS/assembly batch landed in `0c5ba0ac8`.
+Tier 1 CBS/assembly batch in `0c5ba0ac8`; the Gemini cluster in `db638a29c`.
 All items were classified on 2026-08-02 against `fbf750b24`;
 findings are point-in-time evidence and must be re-verified against current
 code before work begins.
@@ -67,10 +67,6 @@ valid work intentionally held outside the active execution order;
 | --- | --- | --- | --- | --- |
 | Clip summarized history with the planner start index | [LM-2](docs/lorebook-memory.md) | Ready | Prompts carry both a Hypa V3 summary and the full messages it summarizes — duplicated context and wasted budget. | Apply `plan.startIndex` to `historyMessages` in assembly; verify interaction with generic non-memory trimming and the memory window token math. |
 | Supply live similar-memory query vectors | [LM-1](docs/lorebook-memory.md) | Needs design | Similarity-weighted Hypa V3 configurations silently inject no memory in production. | Requires embedding recent chat text at generation time (cost/latency policy, embedding-provider resolution, failure handling); ranking service and tests already accept vectors. |
-| Gemini: send safety-setting overrides | [PR-1](docs/provider-adapters.md) | Ready | Provider-default safety blocking is active; role-play content can return `SAFETY` with no text. | Port the category list including the `geminiBlockOff` `OFF` variant. |
-| Gemini: forward JSON-schema controls | [PR-2](docs/provider-adapters.md) | Ready | JSON-schema mode is a no-op on Gemini; extraction receives prose. | Emit `response_mime_type`/`response_schema` from the retained `jsonSchemaEnabled`/`jsonSchema` config. |
-| Gemini: map Gemini 3 thinking levels and omit zero top-k | [PR-3](docs/provider-adapters.md) | Ready | Gemini 3 requests carry `thinkingBudget` (rejected/ignored) and `topK: 0`. | Port the Flash/Pro `thinkingLevel` mapping and the zero-top-k omission. |
-| Gemini: honor reverse-proxy transport options | [PR-4](docs/provider-adapters.md) | Ready | Custom URL, extra headers, and additional params are ignored; proxied deployments fail auth/routing. | Pass `providerOptions.baseUrl`/`extraHeaders`/`additionalParams` through dispatch into the existing `resolveGeminiRequest()` support. |
 | Re-expand stable cards after the start trigger | [PA-2](docs/prompt-assembly.md) | Needs design | Start-trigger state changes never reach the final prompt (cached pre-trigger expansions are reused). | Invalidate/re-render the stable-card cache when the start trigger mutates state; weigh against the caching design that motivated preflight expansion. |
 
 ## Tier 2 — Feature-scoped gaps
@@ -130,6 +126,10 @@ pinning test + area-doc intentional entry).
 
 | Work item | Findings | Status | Impact | Resolution |
 | --- | --- | --- | --- | --- |
+| Gemini: send safety-setting overrides | [PR-1](docs/provider-adapters.md) | Resolved | Provider-default safety blocking was active; role-play content could return `SAFETY` with no text. | Fixed in `db638a29c`: baseline `BLOCK_NONE` category set with `geminiBlockOff` `OFF` variant and `noCivilIntegrity` omission. Regressions in `gemini.test.ts`. |
+| Gemini: forward JSON-schema controls | [PR-2](docs/provider-adapters.md) | Resolved | JSON-schema mode was a no-op on Gemini. | Fixed in `db638a29c`: `response_mime_type`/`response_schema` emitted from effective/per-request schema with recursive `$schema`/`additionalProperties` stripping. Wire tests in `gemini.test.ts`/`chatDispatchProfileOptions.test.ts`. |
+| Gemini: map Gemini 3 thinking levels and omit zero top-k | [PR-3](docs/provider-adapters.md) | Resolved | Gemini 3 requests carried `thinkingBudget` and `topK: 0`. | Fixed in `db638a29c`: fork-point budget→level thresholds (Flash 4096→MEDIUM/16384→HIGH; Pro 8192→HIGH), numeric budget dropped on Gemini 3, `topK` omitted at zero. Boundary tests included. |
+| Gemini: honor reverse-proxy transport options | [PR-4](docs/provider-adapters.md) | Resolved | Custom URL/headers/params were ignored; proxied deployments failed auth/routing. | Fixed in `db638a29c`: base URL/extra headers/additional params flow through dispatch (defaults → extra headers → overrides); GoogleCloud proxy/xcustom profiles pass the server-routability gate; Gemini URLs skip OpenAI autofill. Broader than the finding: capability gate + resolver also fixed. Fetch-boundary regression added. |
 | Default-variable fallback in the server chat-var backend | [HC-1](docs/history-cbs-variables.md), [LM-4](docs/lorebook-memory.md) | Resolved | `{{getvar}}` returned `"null"` where the original returned character/template defaults; prompts and triggers disagreed; sticky lorebook activation broke. | Fixed in `0c5ba0ac8`: shared `chatVarDefaults.ts` resolver (browser `parseKeyValue`, character-first precedence) now feeds prompt CBS, triggers, and both lorebook sticky readers; `addvar` starts from defaults. Regressions in `promptVariables/triggers/lorebook` suites. |
 | Second CBS pass over history messages | [HC-3](docs/history-cbs-variables.md) | Resolved | One level of CBS indirection stayed literal in the provider prompt. | Fixed in `0c5ba0ac8`: whole-text CBS reparse before regex scripts at the baseline position, `runVar: false`, fixed-point short-circuit. Regressions incl. the nested `$outer -> $inner -> {{user}}` chain. |
 | Greedy `<Thoughts>` stripping parity | [HC-6](docs/history-cbs-variables.md) | Resolved | Text between multiple thought blocks leaked into visible history. | Fixed in `0c5ba0ac8`: greedy first-open-to-last-close match restored for both visible removal and the recorded capture. |
