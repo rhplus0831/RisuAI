@@ -1946,6 +1946,28 @@ describe('DefaultChatScreen transcript window state', () => {
     })
   })
 
+  it('marks an empty useSayNothing send for server-side input-hook bypass', async () => {
+    seedDatabase([0])
+    getResourceDatabase().useSayNothing = true
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelector('[data-testid="default-chat-send-button"]')).toBeTruthy())
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'user', data: '*says nothing*' }),
+      expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
+    )
+    expect(loadPageMocks.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({
+        syntheticSayNothing: true,
+        expectedTarget: expectedActiveTarget(0),
+      }),
+    )
+  })
+
   it('does not clear newer typed composer text when a delayed append succeeds', async () => {
     seedDatabase([1])
     const append = createDeferred<AppendCurrentChatUserMessageResult>()

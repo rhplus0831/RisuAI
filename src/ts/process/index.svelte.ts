@@ -77,6 +77,8 @@ export interface SendChatArgs {
   preview?: boolean
   previewPrompt?: boolean
   regenerateMessageId?: string
+  /** True only for the UI-created `*says nothing*` empty-send sentinel. */
+  syntheticSayNothing?: boolean
   expectedTarget?: ActiveChatTarget | null
   /** Internal circuit-breaker depth for server-owned postGeneration resends. */
   serverResendDepth?: number
@@ -354,6 +356,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         previewPrompt: arg.previewPrompt,
         continue: arg.continue,
         regenerateMessageId: arg.regenerateMessageId,
+        syntheticSayNothing: arg.syntheticSayNothing,
         durable: serverDurable,
       })
       if (serverAssembly.status === 'aborted') {

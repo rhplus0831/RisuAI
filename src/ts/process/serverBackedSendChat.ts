@@ -343,6 +343,7 @@ export async function assembleServerBackedSendChat(args: {
   previewPrompt?: boolean
   continue?: boolean
   regenerateMessageId?: string
+  syntheticSayNothing?: boolean
   /**
    * `resolveDurableGeneration === 'durable'` for this send. The server runs it as
    * a detached job and persists the result, so the coordinator suppresses the
@@ -368,6 +369,9 @@ export async function assembleServerBackedSendChat(args: {
   }
   if (typeof userMessage === 'string') {
     input.userMessage = userMessage
+  }
+  if (mode === 'send' && args.syntheticSayNothing === true) {
+    input.syntheticSayNothing = true
   }
   if (mode === 'regenerate') {
     input.regenerateMessageId = args.regenerateMessageId
@@ -674,6 +678,7 @@ export async function applyServerBackedTerminal(args: {
   }
   let immediateInlay: InlayFinalizationState | undefined
   let pendingInlay: (InlayFinalizationState & { promise: Promise<string> }) | undefined
+  let processedPrimaryTtsText: string | undefined
   withTrustedResourceWrite(() => {
     const resolution = resolveServerBackedLiveChat({
       selectedChar: args.selectedChar,
@@ -698,6 +703,9 @@ export async function applyServerBackedTerminal(args: {
       const baseText = typeof postGen?.finalText === 'string' ? postGen.finalText : assistant.data
       const inlay = runInlayScreen(resolution.character, baseText)
       assistant.data = inlay.text
+      if (pendingTtsTexts[0] === baseText) {
+        processedPrimaryTtsText = inlay.text
+      }
       const messageId = assistant.chatId ?? args.targetMessageId ?? generationId
       if (inlay.text !== baseText && messageId && generationId) {
         const finalization = {
@@ -719,8 +727,16 @@ export async function applyServerBackedTerminal(args: {
   // The terminal patch is already durable on the server. Mirror it before
   // waiting on best-effort client TTS so a newer message edit cannot be
   // overwritten when slow synthesis eventually settles.
-  for (const text of pendingTtsTexts) {
-    await sayTTS(args.currentChar, text)
+  for (let index = 0; index < pendingTtsTexts.length; index++) {
+    const text = pendingTtsTexts[index]
+    // The server payload is post-editoutput; inlay remains browser-owned. Reuse
+    // the primary display pass when possible, then process each alternate in
+    // provider choice order before speaking it (baseline buffered semantics).
+    const processedText =
+      index === 0 && processedPrimaryTtsText !== undefined
+        ? processedPrimaryTtsText
+        : runInlayScreen(args.currentChar, text).text
+    await sayTTS(args.currentChar, processedText)
   }
 
   const settleInlayProjection = (finalization: InlayFinalizationState, finalData: string, persisted: boolean): void => {

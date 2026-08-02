@@ -1332,6 +1332,7 @@
       const currentChatRecord =
         getDatabase().characters[selectedChar].chats[getDatabase().characters[selectedChar].chatPage]
       let userMessage: Message | null = null
+      let syntheticSayNothing = false
       const composerBeforeSend = composerOperation.messageInput
       const translatedComposerBeforeSend = composerOperation.messageInputTranslate
       const filesBeforeSend = [...composerOperation.fileInput]
@@ -1367,6 +1368,7 @@
           const messages = currentChatRecord.message ?? []
           if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
             if (getDatabase().useSayNothing) {
+              syntheticSayNothing = true
               userMessage = {
                 role: 'user',
                 data: '*says nothing*',
@@ -1432,7 +1434,7 @@
         return
       }
       // Clear the reroll buffer only after send/continue succeeds.
-      await sendChatMain(continueResponse, undefined, true, composerOperation, activeTarget)
+      await sendChatMain(continueResponse, undefined, true, composerOperation, activeTarget, syntheticSayNothing)
     } finally {
       if (composerOperation) {
         composerOperationGuard.clear(composerOperation.token)
@@ -1571,6 +1573,7 @@
     confirmBoundary: boolean = false,
     composerOperation?: ComposerOperation,
     expectedTarget?: ActiveChatTarget | null,
+    syntheticSayNothing: boolean = false,
   ): Promise<boolean> {
     const generationTarget = expectedTarget === undefined ? captureActiveChatTarget() : expectedTarget
     if (!generationTarget || !isActiveChatTargetFresh(generationTarget)) {
@@ -1592,6 +1595,7 @@
         continue: continued,
         regenerateMessageId,
         expectedTarget: generationTarget,
+        syntheticSayNothing,
       })
       if (!ok) return false
       // Durable generation may finish after navigation. Its target chat has

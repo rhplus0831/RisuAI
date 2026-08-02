@@ -223,6 +223,7 @@ describe('runHorde', () => {
     expect(await p).toEqual({
       type: 'fail',
       result: 'horde reports the job is not possible',
+      nonRetryable: true,
     })
     expect(calls).toContain('DELETE https://stablehorde.net/api/v2/generate/text/status/job-x')
   })
@@ -379,6 +380,7 @@ describe('runHorde', () => {
     expect(await p).toEqual({
       type: 'fail',
       result: 'horde finished with no generations',
+      nonRetryable: true,
     })
   })
 })

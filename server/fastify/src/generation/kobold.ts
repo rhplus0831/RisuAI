@@ -131,7 +131,7 @@ export async function runKobold(req: KoboldRequest): Promise<CompletionResult> {
     return { type: 'fail', result: `invalid upstream body: ${msg}` }
   }
 
-  if (!response.ok) return { type: 'fail', result: raw }
+  if (!response.ok) return { type: 'fail', result: raw, nonRetryable: true }
 
   let body: KoboldResponse
   try {

@@ -195,6 +195,8 @@ export interface AssembleInput {
   mode: 'send' | 'continue' | 'preview' | 'preview_prompt' | 'regenerate'
   regenerateMessageId?: string
   userMessage?: string
+  /** Client-created empty-send sentinel; skips only submit-time input hooks. */
+  syntheticSayNothing?: boolean
   resetMessages?: boolean
   expectedRevision?: number
   /** Legacy compatibility only; Fastify inlay bytes should live in `/assets`. */
@@ -2161,9 +2163,13 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     // The submit-time input trigger runs before the user message is appended;
     // `editinput` then rewrites that user row. This mirrors the browser
     // chat-screen submit handler while the server receives the raw user text.
-    await runInputTrigger(state)
+    const bypassInputHooks =
+      state.input.mode === 'send' &&
+      state.input.syntheticSayNothing === true &&
+      state.input.userMessage === '*says nothing*'
+    if (!bypassInputHooks) await runInputTrigger(state)
     appendUserMessageRow(state)
-    await applyEditInput(state)
+    if (!bypassInputHooks) await applyEditInput(state)
     captureSubmitTranscript(state)
     applyCurrentChatRunVars(state)
   })
@@ -2749,6 +2755,9 @@ export async function runServerPostGeneration(
   state.messageMutations = []
   state.additionalSystemPromptMutations = []
 
+  // Accepted divergence (OR-6): baseline index.svelte.ts:1631 entered a
+  // buffered per-choice loop that fired `editoutput` once on the raw Continue
+  // fragment and again on the combined row. Keep the intentional single pass.
   const reformatted = reformatCompletion(continueBase + input.completionText)
   let editedText = await applyEditOutput(state, reformatted, editIndex, input.luaTrace, input.luaProgress)
   if (state.database.removeIncompleteResponse) {

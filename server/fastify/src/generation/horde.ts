@@ -294,7 +294,7 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
 
       if (body.is_possible === false) {
         fireDeleteJob(jobId, req.apiKey)
-        return { type: 'fail', result: 'horde reports the job is not possible' }
+        return { type: 'fail', result: 'horde reports the job is not possible', nonRetryable: true }
       }
       if (body.faulted === true) {
         fireDeleteJob(jobId, req.apiKey)
@@ -305,7 +305,7 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
         const gens = Array.isArray(body.generations) ? body.generations : []
         const text = typeof gens[0]?.text === 'string' ? gens[0].text : ''
         if (text.length === 0) {
-          return { type: 'fail', result: 'horde finished with no generations' }
+          return { type: 'fail', result: 'horde finished with no generations', nonRetryable: true }
         }
         const apiMetadata = mergeApiResponseMetadata(
           { jobId },

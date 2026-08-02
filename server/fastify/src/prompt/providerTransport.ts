@@ -14,6 +14,8 @@ export type ProviderDoneMetadata = (result: string) => Omit<DoneEvent, 'type' | 
 
 export interface ProviderPostGenerationResult {
   frame?: PostGenerationFrame
+  /** Derived primary text used by post-generation side effects such as TTS. */
+  primary?: string
   /** Final per-choice text to expose on the terminal done event. */
   alternates?: readonly string[]
 }
@@ -26,7 +28,8 @@ export interface ProviderChunkTransportOptions {
    * durable/replayable transports must retain the terminal result.
    */
   omitResultWhenStreamed?: boolean
-  sideEffects?: (result: string) => PromptChatEvent[]
+  /** Receives post-generation primary + alternates in provider choice order. */
+  sideEffects?: (results: readonly string[]) => PromptChatEvent[]
   errorRestoration?: () => ErrorEvent['restoration']
   /**
    * Server post-generation pass, run over the full completion text after the
@@ -46,7 +49,9 @@ function isProviderPostGenerationResult(
   value: PostGenerationFrame | ProviderPostGenerationResult,
 ): value is ProviderPostGenerationResult {
   return (
-    Object.prototype.hasOwnProperty.call(value, 'frame') || Object.prototype.hasOwnProperty.call(value, 'alternates')
+    Object.prototype.hasOwnProperty.call(value, 'frame') ||
+    Object.prototype.hasOwnProperty.call(value, 'primary') ||
+    Object.prototype.hasOwnProperty.call(value, 'alternates')
   )
 }
 
@@ -74,27 +79,30 @@ export async function emitProviderChunks(
   let alternates: string[] = []
   const normalizedOptions: ProviderChunkTransportOptions =
     typeof options === 'function' ? { doneMetadata: options } : options
-  const emitSideEffects = (): void => {
-    for (const event of normalizedOptions.sideEffects?.(result) ?? []) {
+  const emitSideEffects = (results: readonly string[]): void => {
+    for (const event of normalizedOptions.sideEffects?.(results) ?? []) {
       emit(event)
     }
   }
   // Run the post-generation pass before the terminal `done`; thrown errors are
   // handled by the streaming route's provider-error path.
   const emitSuccessDone = async (): Promise<void> => {
-    emitSideEffects()
     const postGenerationResult = normalizedOptions.postGeneration
       ? await normalizedOptions.postGeneration(result, alternates)
       : undefined
     let postGeneration: PostGenerationFrame | undefined
+    let primary = result
     if (postGenerationResult) {
       if (isProviderPostGenerationResult(postGenerationResult)) {
         postGeneration = postGenerationResult.frame
+        primary = postGenerationResult.primary ?? postGeneration?.finalText ?? result
         alternates = [...(postGenerationResult.alternates ?? alternates)]
       } else {
         postGeneration = postGenerationResult as PostGenerationFrame
+        primary = postGeneration.finalText ?? result
       }
     }
+    emitSideEffects([primary, ...alternates])
     const omitStreamedResult = normalizedOptions.omitResultWhenStreamed === true && result.length > 0
     emit({
       type: 'done',

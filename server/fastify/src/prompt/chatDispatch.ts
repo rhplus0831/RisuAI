@@ -1031,6 +1031,7 @@ async function* resultFrames(
       ...(typeof result.status === 'number' ? { status: result.status } : {}),
       ...(result.statusText ? { statusText: result.statusText } : {}),
       ...(result.code ? { code: result.code } : {}),
+      ...(result.nonRetryable === true ? { nonRetryable: true } : {}),
       ...(result.apiMetadata ? { apiMetadata: result.apiMetadata } : {}),
     }
     return

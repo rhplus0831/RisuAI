@@ -74,6 +74,7 @@ export interface ServerChatInput {
   characterId: string
   mode: 'send' | 'continue' | 'preview' | 'preview_prompt' | 'regenerate'
   userMessage?: string
+  syntheticSayNothing?: boolean
   regenerateMessageId?: string
   loadoutId?: string
   resetMessages?: boolean

@@ -80,7 +80,7 @@ describe('runKobold', () => {
       baseUrl: 'http://localhost:5001',
       signal: new AbortController().signal,
     })!
-    expect(await runKobold(resolved)).toEqual({ type: 'fail', result: 'overloaded' })
+    expect(await runKobold(resolved)).toEqual({ type: 'fail', result: 'overloaded', nonRetryable: true })
   })
 
   it('returns fail when results array lacks text', async () => {

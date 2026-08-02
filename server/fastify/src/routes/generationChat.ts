@@ -128,6 +128,7 @@ interface ChatRequestBody {
   mode?: unknown
   regenerateMessageId?: unknown
   userMessage?: unknown
+  syntheticSayNothing?: unknown
   resetMessages?: unknown
   expectedRevision?: unknown
   inlayAssets?: unknown
@@ -316,6 +317,9 @@ function dispatchProviderWithPolicies(
   return (async function* () {
     const state = context.result.state
     const escape = state?.currentChar.escapeOutput === true
+    // Accepted divergence (OR-3): unlike baseline request.ts:222, each same-model
+    // retry starts from these untransformed rows instead of accumulating request
+    // trigger rewrites from the preceding attempt.
     const baseRows = escapedRows(context.result.formated ?? context.result.prompt.formated ?? [], escape)
     const policyDatabase = context.database
     const profiles = resolvePolicyProfiles(policyDatabase)
@@ -391,6 +395,10 @@ function dispatchProviderWithPolicies(
               }
               if (frame.kind === 'error' && !emittedToken) {
                 lastFailure = frame
+                if (frame.nonRetryable === true) {
+                  yield frame
+                  return
+                }
                 retry = true
                 break
               }
@@ -441,7 +449,13 @@ function dispatchProviderWithPolicies(
           lastFailure = { kind: 'error', error: errorMessage(error, PROVIDER_DISPATCH_FALLBACK) }
           failed = true
         }
-        if (failed) continue
+        if (failed) {
+          if (lastFailure?.kind === 'error' && lastFailure.nonRetryable === true) {
+            yield lastFailure
+            return
+          }
+          continue
+        }
 
         const transformed = transformEscapedFrames(buffered, escape)
         const transformedText = escape ? risuEscape(text) : text
@@ -573,6 +587,15 @@ function validate(body: ChatRequestBody): { ok: true } | { ok: false; error: str
   if (body.mode === 'send' && !isNonEmptyString(body.userMessage)) {
     return { ok: false, error: 'userMessage is required when mode is "send"' }
   }
+  if (body.syntheticSayNothing !== undefined && typeof body.syntheticSayNothing !== 'boolean') {
+    return { ok: false, error: 'syntheticSayNothing must be a boolean when provided' }
+  }
+  if (body.syntheticSayNothing === true && (body.mode !== 'send' || body.userMessage !== '*says nothing*')) {
+    return {
+      ok: false,
+      error: 'syntheticSayNothing requires mode "send" and the say-nothing sentinel',
+    }
+  }
   if (body.mode === 'regenerate' && !isNonEmptyString(body.regenerateMessageId)) {
     return {
       ok: false,
@@ -635,6 +658,9 @@ function validatePreview(body: ChatRequestBody): { ok: true } | { ok: false; err
   if (body.inlayAssetRefs !== undefined && !Array.isArray(body.inlayAssetRefs)) {
     return { ok: false, error: 'inlayAssetRefs must be an array when provided' }
   }
+  if (body.syntheticSayNothing !== undefined && typeof body.syntheticSayNothing !== 'boolean') {
+    return { ok: false, error: 'syntheticSayNothing must be a boolean when provided' }
+  }
   return { ok: true }
 }
 
@@ -650,6 +676,7 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
     loadoutId: typeof body.loadoutId === 'string' ? body.loadoutId : undefined,
     regenerateMessageId: typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : undefined,
     userMessage: typeof body.userMessage === 'string' ? body.userMessage : undefined,
+    syntheticSayNothing: body.syntheticSayNothing === true ? true : undefined,
     resetMessages: typeof body.resetMessages === 'boolean' ? body.resetMessages : undefined,
     expectedRevision: typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined,
     inlayAssets: Array.isArray(body.inlayAssets) ? body.inlayAssets : undefined,
@@ -1991,7 +2018,7 @@ async function buildPostGenerationFrame(args: {
     })
     // Chat changed / gone during persist: leave the browser's optimistic copy
     // and terminate cleanly (no frame).
-    return { alternates: alternateTexts }
+    return { primary: message.data, alternates: alternateTexts }
   }
 
   emitProtocolMetric('generation_persistence', {
@@ -2031,6 +2058,7 @@ async function buildPostGenerationFrame(args: {
       messageId,
       translationFollowup.translation,
     ),
+    primary: message.data,
     alternates: alternateTexts,
   }
 }
@@ -2209,15 +2237,13 @@ async function streamAssembly(
                 }
                 return { generationId, generationInfo }
               },
-              sideEffects: (text) =>
+              sideEffects: (texts) =>
                 database.ttsAutoSpeech
-                  ? [
-                      {
-                        type: 'side_effect',
-                        kind: 'tts',
-                        payload: { text, characterId: input.characterId },
-                      },
-                    ]
+                  ? texts.map((text) => ({
+                      type: 'side_effect',
+                      kind: 'tts',
+                      payload: { text, characterId: input.characterId },
+                    }))
                   : [],
               errorRestoration: () => successfulResult.restoration,
               postGeneration: (completionText, alternateTexts) =>
@@ -3009,7 +3035,7 @@ async function buildDurablePostGeneration(args: {
         ...(targetMessageId ? { targetMessageId } : {}),
       },
     })
-    return { alternates: alternateTexts }
+    return { primary: message.data, alternates: alternateTexts }
   }
 
   // `postGen === undefined` means the derivation threw: the client may be gone, so
@@ -3050,6 +3076,7 @@ async function buildDurablePostGeneration(args: {
         messageId,
         translationFollowup.translation,
       ),
+      primary: message.data,
       alternates: alternateTexts,
     }
   }
@@ -3083,6 +3110,7 @@ async function buildDurablePostGeneration(args: {
       messageId,
       translationFollowup.translation,
     ),
+    primary: message.data,
     alternates: alternateTexts,
   }
 }
@@ -3308,15 +3336,13 @@ async function runGenerationJob(args: {
                 }
                 return { generationId, generationInfo }
               },
-              sideEffects: (text) =>
+              sideEffects: (texts) =>
                 database.ttsAutoSpeech
-                  ? [
-                      {
-                        type: 'side_effect',
-                        kind: 'tts',
-                        payload: { text, characterId: input.characterId },
-                      },
-                    ]
+                  ? texts.map((text) => ({
+                      type: 'side_effect',
+                      kind: 'tts',
+                      payload: { text, characterId: input.characterId },
+                    }))
                   : [],
               errorRestoration: () => successfulResult.restoration,
               postGeneration: (completionText, alternateTexts) => {

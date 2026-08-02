@@ -1146,7 +1146,26 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     expect(getServerCompletionCalls()).toEqual([])
   })
 
-  it('runs server-sent tts side effects once on successful /chat dispatch', async () => {
+  it('forwards the synthetic say-nothing marker on the server-backed send', async () => {
+    const loaded = await loadFixture('simple-send')
+    cleanups.push(loaded.cleanup)
+    markFixtureActiveChatGenerationSettingsReady()
+    testDatabaseState.db.characters[0].chats[0].message.at(-1)!.data = '*says nothing*'
+
+    setServerChatDispatchResult('Hello there!', { model: 'gpt-4o' }, 'uuid-0')
+    setResourceWriteGuardEnabled(true)
+    const result = await sendChat(-1, { syntheticSayNothing: true })
+
+    expect(result).toBe(true)
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({
+      mode: 'send',
+      userMessage: '*says nothing*',
+      syntheticSayNothing: true,
+    })
+  })
+
+  it('speaks every server-derived choice after browser-owned inlay processing', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
     markFixtureActiveChatGenerationSettingsReady()
@@ -1161,7 +1180,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     )
     setServerChatInfo(233, 200)
     setServerChatDispatchResult(
-      'Hello there!',
+      'raw primary',
       {
         model: 'gpt-4o',
         inputTokens: 233,
@@ -1169,8 +1188,12 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
         maxContext: 4000,
       },
       'uuid-0',
-      { emitTtsSideEffect: true },
+      { postGeneration: { finalText: 'derived primary' } },
     )
+    setServerChatSideEffects([
+      { kind: 'tts', payload: { text: 'derived primary', characterId: 'char-tess' } },
+      { kind: 'tts', payload: { text: 'derived alternate', characterId: 'char-tess' } },
+    ])
 
     setResourceWriteGuardEnabled(true)
     const result = await sendChat(-1, {})
@@ -1179,7 +1202,21 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     expect(getSideEffectCalls().filter((call) => call.fn === 'sayTTS')).toEqual([
       {
         fn: 'sayTTS',
-        args: [{ chaId: 'char-tess', name: 'Tess' }, 'Hello there!'],
+        args: [{ chaId: 'char-tess', name: 'Tess' }, 'derived primary'],
+      },
+      {
+        fn: 'sayTTS',
+        args: [{ chaId: 'char-tess', name: 'Tess' }, 'derived alternate'],
+      },
+    ])
+    expect(getSideEffectCalls().filter((call) => call.fn === 'runInlayScreen')).toEqual([
+      {
+        fn: 'runInlayScreen',
+        args: [{ chaId: 'char-tess', name: 'Tess' }, 'derived primary'],
+      },
+      {
+        fn: 'runInlayScreen',
+        args: [{ chaId: 'char-tess', name: 'Tess' }, 'derived alternate'],
       },
     ])
   })

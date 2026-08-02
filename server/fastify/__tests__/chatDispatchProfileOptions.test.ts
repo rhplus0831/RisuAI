@@ -1072,6 +1072,23 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].url).toBe('http://profile-kobold.example.com/api/v1/generate')
   })
 
+  it('preserves Kobold HTTP non-retryability on the provider failure frame', async () => {
+    const database = db({ aiModel: 'kobold', koboldURL: 'http://kobold.example.com' } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    vi.stubGlobal('fetch', async () => new Response('kobold denied', { status: 401 }))
+
+    const source = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of source) emitted.push(frame)
+
+    expect(emitted).toEqual([{ kind: 'error', error: 'kobold denied', nonRetryable: true }])
+  })
+
   it('uses OobaLegacy profile URL and API key over conflicting flat database fields', async () => {
     const profile = resolveModelProfile({
       database: db({
@@ -1427,6 +1444,49 @@ describe('dispatchChatProvider profile providerOptions', () => {
       'profile-horde-model',
       ' profile-horde-model',
       'profile-horde-model ',
+    ])
+  })
+
+  it('preserves impossible Horde job non-retryability on the provider failure frame', async () => {
+    vi.useFakeTimers()
+    const database = db({
+      aiModel: 'horde:::profile-horde-model',
+      hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
+      instructChatTemplate: 'chatml',
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    vi.stubGlobal('fetch', async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith('/generate/text/async')) {
+        return new Response(JSON.stringify({ id: 'impossible-job' }), {
+          status: 202,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (String(url).endsWith('/generate/text/status/impossible-job') && init?.method !== 'DELETE') {
+        return new Response(JSON.stringify({ is_possible: false, done: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (init?.method === 'DELETE') return new Response('{}', { status: 200 })
+      throw new Error(`unexpected Horde URL: ${String(url)}`)
+    })
+
+    const source = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emittedPromise = (async () => {
+      const emitted = []
+      for await (const frame of source) emitted.push(frame)
+      return emitted
+    })()
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    await expect(emittedPromise).resolves.toEqual([
+      { kind: 'error', error: 'horde reports the job is not possible', nonRetryable: true },
     ])
   })
 

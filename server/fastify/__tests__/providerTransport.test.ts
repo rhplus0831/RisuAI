@@ -67,6 +67,7 @@ describe('emitProviderChunks', () => {
   it('carries multi-generation alternates through post-generation and the terminal done event', async () => {
     const events: PromptChatEvent[] = []
     const postGenerationCalls: Array<{ result: string; alternates: readonly string[] }> = []
+    const sideEffectCalls: string[][] = []
 
     const result = await emitProviderChunks(
       frames([
@@ -80,13 +81,24 @@ describe('emitProviderChunks', () => {
           postGenerationCalls.push({ result: completion, alternates })
           return {
             frame: { revision: 2 },
+            primary: completion.toUpperCase(),
             alternates: alternates.map((choice) => choice.toUpperCase()),
           }
+        },
+        sideEffects: (choices) => {
+          sideEffectCalls.push([...choices])
+          return choices.map((text) => ({ type: 'side_effect', kind: 'tts', payload: { text } }))
         },
       },
     )
 
     expect(postGenerationCalls).toEqual([{ result: 'primary', alternates: ['choice two', 'choice three'] }])
+    expect(sideEffectCalls).toEqual([['PRIMARY', 'CHOICE TWO', 'CHOICE THREE']])
+    expect(events.slice(1, -1)).toEqual([
+      { type: 'side_effect', kind: 'tts', payload: { text: 'PRIMARY' } },
+      { type: 'side_effect', kind: 'tts', payload: { text: 'CHOICE TWO' } },
+      { type: 'side_effect', kind: 'tts', payload: { text: 'CHOICE THREE' } },
+    ])
     expect(events.at(-1)).toEqual({
       type: 'done',
       result: 'primary',

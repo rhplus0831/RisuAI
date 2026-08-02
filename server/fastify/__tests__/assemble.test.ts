@@ -4150,6 +4150,39 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expectNoFullTranscriptStringify()
   })
 
+  it('bypasses input trigger and editinput only for the synthetic say-nothing send', async () => {
+    const database = () =>
+      m1Db([], {
+        char: {
+          triggerscript: [
+            {
+              comment: '',
+              type: 'input',
+              conditions: [],
+              effect: [{ type: 'setvar', operator: '=', var: 'inputSeen', value: '1' }],
+            },
+          ] as never,
+          customscript: [{ in: '.+', out: 'EDITED', type: 'editinput', flag: '', ableFlag: false }] as never,
+        },
+      })
+
+    const synthetic = await assemblePrompt(
+      baseInput({ userMessage: '*says nothing*', syntheticSayNothing: true }),
+      depsFor(database()),
+    )
+    const normal = await assemblePrompt(baseInput({ userMessage: 'ordinary send' }), depsFor(database()))
+
+    expect(synthetic.stopSending).toBe(false)
+    expect(synthetic.state?.currentChat.message.at(-1)?.data).toBe('*says nothing*')
+    expect(synthetic.mutations?.chatVarMutations).toEqual([])
+    expect(synthetic.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual(['user_message'])
+
+    expect(normal.stopSending).toBe(false)
+    expect(normal.state?.currentChat.message.at(-1)?.data).toBe('EDITED')
+    expect(normal.mutations?.chatVarMutations).toEqual([{ key: '$inputSeen', before: null, after: '1' }])
+    expect(normal.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual(['user_message', 'editinput'])
+  })
+
   it('captures editinput rewrites once after the appended user checkpoint', async () => {
     resetAssemblyMessageCaptureInstrumentation()
 

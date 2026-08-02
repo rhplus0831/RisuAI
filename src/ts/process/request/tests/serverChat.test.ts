@@ -215,6 +215,17 @@ describe('requestServerChat', () => {
     })
   })
 
+  it('forwards the optional synthetic say-nothing marker additively', async () => {
+    vi.stubGlobal('fetch', serverChatFetch)
+    await requestServerChat({ ...baseInput, userMessage: '*says nothing*', syntheticSayNothing: true }, null)
+
+    expect(getServerChatCalls()[0]).toMatchObject({
+      mode: 'send',
+      userMessage: '*says nothing*',
+      syntheticSayNothing: true,
+    })
+  })
+
   it('labels preview prompt requests with x-risu-caller: preview-prompt', async () => {
     vi.stubGlobal('fetch', serverChatFetch)
     await requestServerChat({ ...baseInput, mode: 'preview_prompt', userMessage: undefined }, null)
