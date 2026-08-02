@@ -13,7 +13,7 @@ import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import { MASKED_PROVIDER_SECRET } from '../../../src/ts/providerSecretMask'
 import { _resetVertexTokenCacheForTesting } from '../src/generation/vertexAuth.js'
-import { dispatchChatProvider } from '../src/prompt/chatDispatch.js'
+import { dispatchChatProvider, getServerGenerationModelString } from '../src/prompt/chatDispatch.js'
 import type { PromptRowSummary } from '../src/prompt/promptSummary.js'
 
 interface CapturedDispatchRequest {
@@ -2305,5 +2305,58 @@ describe('dispatchChatProvider profile providerOptions', () => {
 
     await expect(dispatchWithProfile(profile, testCase.flatConflict)).rejects.toThrow(testCase.error)
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('getServerGenerationModelString', () => {
+  it.each([
+    {
+      database: db({
+        aiModel: 'reverse_proxy',
+        reverseProxyOobaMode: false,
+        customProxyRequestModel: 'reverse/model',
+      } as Partial<Database>),
+      expected: 'custom-reverse/model',
+    },
+    {
+      database: db({ aiModel: 'openrouter', openrouterRequestModel: 'openrouter/model' } as Partial<Database>),
+      expected: 'openrouter-openrouter/model',
+    },
+    {
+      database: db({
+        aiModel: 'nanogpt',
+        nanogptRequestModel: 'nano/model',
+        nanogptRequestModelName: 'Nano Label',
+        nanogptUseSubscriptionEndpoint: true,
+      } as Partial<Database>),
+      expected: 'NanoGPT Nano Label [SUB]',
+    },
+    {
+      database: db({
+        aiModel: 'ollama-hosted',
+        ollamaModel: 'ollama/model',
+        ollamaModelName: 'Ollama Label',
+      } as Partial<Database>),
+      expected: 'Ollama Local Ollama Label',
+    },
+    {
+      database: db({
+        aiModel: 'ollama-cloud',
+        ollamaCloudModel: 'cloud/model',
+        ollamaCloudModelName: 'Cloud Label',
+      } as Partial<Database>),
+      expected: 'Ollama Cloud Cloud Label',
+    },
+  ])('ports the baseline provider label for $expected', ({ database, expected }) => {
+    expect(getServerGenerationModelString(database, resolveModelProfile({ database }))).toBe(expected)
+  })
+
+  it('uses a durable selected profile request model without dropping the provider prefix', () => {
+    const database = db({ aiModel: 'openrouter', openrouterRequestModel: 'flat/model' } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    profile.source = { ...profile.source, kind: 'durable-profile' }
+    profile.requestModel = 'profile/model'
+
+    expect(getServerGenerationModelString(database, profile)).toBe('openrouter-profile/model')
   })
 })

@@ -542,6 +542,25 @@ describe('CharConfig desktop section navigation', () => {
   })
 })
 
+describe('CharConfig retired additional description', () => {
+  it('preserves imported data while replacing the editor with an unsupported notice', async () => {
+    await mountCharConfig(2, { additionalText: 'Imported private appendix' })
+
+    expect(target.querySelector(`textarea[aria-label="${language.additionalText}"]`)).toBeNull()
+    expect(target.querySelector('[data-risu-additional-text-unsupported="true"]')?.textContent).toContain(
+      language.additionalTextUnsupported,
+    )
+    expect(getDatabase().characters[0].additionalText).toBe('Imported private appendix')
+  })
+
+  it('hides the retired surface when no imported data exists', async () => {
+    await mountCharConfig(2, { additionalText: '' })
+
+    expect(target.querySelector('[data-risu-additional-text-unsupported="true"]')).toBeNull()
+    expect(target.querySelector(`textarea[aria-label="${language.additionalText}"]`)).toBeNull()
+  })
+})
+
 describe('CharConfig editor action accessibility', () => {
   it('names media actions and exposes display and removal toggle state', async () => {
     await mountCharConfig(1, {

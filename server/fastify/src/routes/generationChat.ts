@@ -249,7 +249,7 @@ function resolvePolicyFallback(database: Database, fallback: ModelProfileFallbac
 
 function configuredRequestRetries(database: Database): number {
   const value = typeof database.requestRetrys === 'number' ? Math.floor(database.requestRetrys) : 0
-  return Math.max(0, Math.min(value, 10))
+  return Math.max(0, Math.min(value, 20))
 }
 
 function materializePolicyProfileDatabase(
@@ -268,9 +268,8 @@ function markPolicyProfileSuccess(
   database: Database,
   profile: ResolvedModelProfile,
 ): void {
-  context.generationInfo.model = profile.requestModel || profile.modelId
+  context.generationInfo.model = getServerGenerationModelString(database, profile)
   if (typeof database.maxContext === 'number') context.generationInfo.maxContext = database.maxContext
-  if (typeof database.maxResponse === 'number') context.generationInfo.outputTokens = database.maxResponse
 }
 
 function containsBannedScript(text: string, scripts: unknown): boolean {
@@ -358,10 +357,7 @@ function dispatchProviderWithPolicies(
           },
           result: {
             ...context.result,
-            outputTokens:
-              typeof database.maxResponse === 'number' && Number.isFinite(database.maxResponse)
-                ? database.maxResponse
-                : context.result.outputTokens,
+            outputTokens: context.result.outputTokens,
             formated: requestRows,
             prompt: { ...context.result.prompt, formated: requestRows },
           },
@@ -706,6 +702,7 @@ interface RouteAssembleDeps extends AssembleDeps {
 interface PromptAssemblyMeasurement {
   databaseLoadCount: number
   databaseLoadMs: number
+  promptMemoryPrefetchMs: number
   stageTimingsMs: Partial<Record<PromptAssemblyStage, number>>
 }
 
@@ -862,15 +859,19 @@ async function assemblePromptWithMetrics(
   context: PromptAssemblyMetricContext = {},
   agentPresetProgress?: AgentPresetProgressReporter,
   options: GenerationChatRouteOptions = {},
-): Promise<{ result: AssembleResult; deps: RouteAssembleDeps; promptMs: number }> {
-  const measurement: PromptAssemblyMeasurement | undefined = protocolMetricsEnabled()
-    ? { databaseLoadCount: 0, databaseLoadMs: 0, stageTimingsMs: {} }
-    : undefined
-  const metricStartedAt = measurement ? protocolNowMs() : 0
+): Promise<{ result: AssembleResult; deps: RouteAssembleDeps; promptMs: number; stage2Ms: number }> {
+  const measurement: PromptAssemblyMeasurement = {
+    databaseLoadCount: 0,
+    databaseLoadMs: 0,
+    promptMemoryPrefetchMs: 0,
+    stageTimingsMs: {},
+  }
+  const metricStartedAt = protocolMetricsEnabled() ? protocolNowMs() : 0
   const startedAt = Date.now()
   const deps = loadDatabaseDeps(dataDir, db, input.chatId, measurement, signal, agentPresetProgress)
   try {
     const database = deps.loadDatabase()
+    const promptMemoryPrefetchStartedAt = protocolNowMs()
     deps.setPromptMemoryQueryPrefetch(
       database
         ? await prefetchPromptMemoryQueryVectors({
@@ -887,8 +888,13 @@ async function assemblePromptWithMetrics(
             diagnostics: emptyPromptMemoryQueryDiagnostics(options.promptMemoryEmbeddingDeadlineMs),
           },
     )
+    measurement.promptMemoryPrefetchMs = protocolDurationMs(promptMemoryPrefetchStartedAt)
     const result = await assemblePrompt(input, deps)
     const promptMs = Date.now() - startedAt
+    const stage2Ms =
+      result.state?.promptMemoryChunkPlanningDiagnostics?.attempted === true
+        ? Math.max(0, Math.round(measurement.promptMemoryPrefetchMs + (measurement.stageTimingsMs.memory_bridge ?? 0)))
+        : 0
     emitProtocolMetric('generation_prompt_assembly', {
       status: result.stopSending ? 'stopped' : 'ok',
       ...context,
@@ -897,13 +903,13 @@ async function assemblePromptWithMetrics(
       mode: input.mode,
       durationMs: protocolDurationMs(metricStartedAt),
       promptMs,
-      databaseLoadCount: measurement?.databaseLoadCount ?? 0,
-      databaseLoadMs: Math.round((measurement?.databaseLoadMs ?? 0) * 100) / 100,
-      stageTimingsMs: measurement?.stageTimingsMs ?? {},
+      databaseLoadCount: measurement.databaseLoadCount,
+      databaseLoadMs: Math.round(measurement.databaseLoadMs * 100) / 100,
+      stageTimingsMs: measurement.stageTimingsMs,
       ...assemblyDiagnosticMetricFields(result),
       ...(result.stopSending ? { stopReason: result.abortReason ?? 'unknown' } : {}),
     })
-    return { result, deps, promptMs }
+    return { result, deps, promptMs, stage2Ms }
   } catch (err) {
     emitProtocolMetric('generation_prompt_assembly', {
       status: 'error',
@@ -913,9 +919,9 @@ async function assemblePromptWithMetrics(
       mode: input.mode,
       durationMs: protocolDurationMs(metricStartedAt),
       promptMs: Date.now() - startedAt,
-      databaseLoadCount: measurement?.databaseLoadCount ?? 0,
-      databaseLoadMs: Math.round((measurement?.databaseLoadMs ?? 0) * 100) / 100,
-      stageTimingsMs: measurement?.stageTimingsMs ?? {},
+      databaseLoadCount: measurement.databaseLoadCount,
+      databaseLoadMs: Math.round(measurement.databaseLoadMs * 100) / 100,
+      stageTimingsMs: measurement.stageTimingsMs,
       error: errorMessage(err, 'prompt assembly failed'),
     })
     throw err
@@ -1024,16 +1030,17 @@ function createGenerationInfo(
   generationId: string,
   result: SuccessfulAssembleResult,
   promptMs: number,
+  stage2Ms: number,
 ): Record<string, unknown> {
   return {
-    model: getServerGenerationModelString(db),
+    model: getServerGenerationModelString(db, result.state?.resolvedMainProfile),
     generationId,
     inputTokens: result.inputTokens,
     outputTokens: result.outputTokens,
     maxContext: db.maxContext,
     stageTiming: {
-      stage1: promptMs,
-      stage2: 0,
+      stage1: Math.max(0, promptMs - stage2Ms),
+      stage2: stage2Ms,
       stage3: 0,
       stage4: 0,
     },
@@ -1774,6 +1781,9 @@ async function resolvePostGenerationResult(args: {
         alternateTexts = await transformProviderAlternateTexts(alternateState, args.input, args.alternateTexts ?? [])
       },
     })
+    for (const warning of postGen.warnings ?? []) {
+      args.emit?.({ type: 'warning', ...warning })
+    }
     await emitPostGenerationLuaTraceMetric({
       collector: luaTrace,
       status: 'ok',
@@ -2113,7 +2123,7 @@ async function streamAssembly(
 
     try {
       if (deferredFailure) throw deferredFailure.error
-      const { result, deps, promptMs } =
+      const { result, deps, promptMs, stage2Ms } =
         preparedAssembly ??
         (await assemblePromptWithMetrics(
           input,
@@ -2151,7 +2161,7 @@ async function streamAssembly(
         const shouldDispatch = shouldDispatchProvider(input, database)
         const generationInfo =
           shouldDispatch && database
-            ? createGenerationInfo(database, generationId, successfulResult, promptMs)
+            ? createGenerationInfo(database, generationId, successfulResult, promptMs, stage2Ms)
             : undefined
         const promptEvent = promptEventForClient(result.prompt, clientCapabilities, input.mode)
         const trace = createGenerationTraceContext({
@@ -3224,7 +3234,7 @@ async function runGenerationJob(args: {
     try {
       if (deferredFailure) throw deferredFailure.error
       if (preparedAssembly) retargetAssemblySignal(preparedAssembly, signal)
-      const { result, deps, promptMs } =
+      const { result, deps, promptMs, stage2Ms } =
         preparedAssembly ??
         (await assemblePromptWithMetrics(
           input,
@@ -3258,7 +3268,7 @@ async function runGenerationJob(args: {
         const shouldDispatch = shouldDispatchProvider(input, database)
         const generationInfo =
           shouldDispatch && database
-            ? createGenerationInfo(database, generationId, successfulResult, promptMs)
+            ? createGenerationInfo(database, generationId, successfulResult, promptMs, stage2Ms)
             : undefined
         const promptEvent = promptEventForClient(result.prompt, clientCapabilities, input.mode)
         const trace = createGenerationTraceContext({

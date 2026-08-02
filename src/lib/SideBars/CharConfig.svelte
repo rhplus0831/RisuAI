@@ -2304,13 +2304,12 @@
     ariaLabel={language.replaceGlobalNote}
     bind:value={characterDraft.value.replaceGlobalNote}></TextAreaInput>
 
-  <span class="text-textcolor mt-2">{language.additionalText} <Help key="additionalText" /></span>
-  <TextAreaInput
-    highlight
-    margin="both"
-    autocomplete="off"
-    ariaLabel={language.additionalText}
-    bind:value={characterDraft.value.additionalText}></TextAreaInput>
+  {#if typeof characterDraft.value.additionalText === 'string' && characterDraft.value.additionalText.length > 0}
+    <div class="my-2" data-risu-additional-text-unsupported="true">
+      <span class="text-textcolor">{language.additionalText} <Help key="additionalText" /></span>
+      <p class="text-sm text-textcolor2">{language.additionalTextUnsupported}</p>
+    </div>
+  {/if}
 
   {#if getDatabase().showUnrecommended || characterDraft.value.personality.length > 3}
     <span class="text-textcolor">{language.personality} <Help key="personality" unrecommended /></span>

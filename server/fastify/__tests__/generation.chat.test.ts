@@ -1161,6 +1161,47 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
+  it('persists server-owned stage-2 memory timing while keeping browser-owned stage 4 at zero (OR-9)', async () => {
+    const embedPromptMemoryQueryTexts: NonNullable<GenerationChatRouteOptions['embedPromptMemoryQueryTexts']> = vi.fn(
+      async ({ input }) => {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        return {
+          model: 'custom',
+          vectors: input.map(() => new Float32Array([1, 0])),
+          dim: 2,
+        }
+      },
+    )
+    await restartHarness({
+      embedPromptMemoryQueryTexts,
+      dispatchProvider: () =>
+        (async function* (): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'timed reply' }
+          yield { kind: 'done', finishReason: 'stop' }
+        })(),
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, similarityMemoryDatabase())
+    seedSimilarMemoryRows()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, userMessage: 'Tell me about the cat.' },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const generationInfo = (await readPersistedMessages(assertion)).at(-1)?.generationInfo as
+      | { stageTiming?: Record<string, number> }
+      | undefined
+    expect(generationInfo?.stageTiming?.stage1).toBeGreaterThanOrEqual(0)
+    expect(generationInfo?.stageTiming?.stage2).toBeGreaterThan(0)
+    // Browser stage 4 has no narrow metadata-patch command. The authoritative
+    // server row therefore pins this browser-owned timing to zero.
+    expect(generationInfo?.stageTiming?.stage4).toBe(0)
+  })
+
   it('degrades query-embedding provider failures to empty vectors with prompt-memory diagnostics', async () => {
     let dispatchContext: ChatProviderDispatchContext | undefined
     const embedPromptMemoryQueryTexts = vi.fn(async () => ({
@@ -1345,6 +1386,159 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     // `responseBudget` mirrors the clamped `maxResponse` from the fixture.
     expect(info.data.responseBudget).toBe(50)
     expect(typeof (info.data.timings as Record<string, number>).prompt).toBe('number')
+  })
+
+  it('persists the baseline-formatted provider display label in generationInfo (OR-9)', async () => {
+    await restartHarness({
+      dispatchProvider: () =>
+        (async function* (): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'labeled reply' }
+          yield { kind: 'done', finishReason: 'stop' }
+        })(),
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'openrouter',
+      openrouterKey: 'test-openrouter-key',
+      openrouterRequestModel: 'vendor/model-name',
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    expect(parseEvents(res.body).at(-1)?.data.generationInfo).toMatchObject({
+      model: 'openrouter-vendor/model-name',
+    })
+    expect((await readPersistedMessages(assertion)).at(-1)?.generationInfo).toMatchObject({
+      model: 'openrouter-vendor/model-name',
+    })
+  })
+
+  it('omits retired character additional-description data from the generated prompt (PA-1)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          additionalText: 'PA1-PRIVATE-APPENDIX-MUST-NOT-REACH-THE-PROMPT',
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const prompt = parseEvents(res.body).find((event) => event.type === 'prompt')
+    const serializedRows = JSON.stringify(prompt?.data.formated ?? [])
+    expect(serializedRows).toContain('DESC')
+    // Accepted divergence: baseline index.svelte.ts:430 called
+    // embedding/addinfo.ts to retrieve additionalText; Fastify intentionally
+    // retires that embedding retrieval while preserving imported data.
+    expect(serializedRows).not.toContain('PA1-PRIVATE-APPENDIX-MUST-NOT-REACH-THE-PROMPT')
+  })
+
+  it('keeps unsupported trigger families as no-ops and warns once per effect type (ST-1/ST-2)', async () => {
+    await restartHarness({
+      dispatchProvider: () =>
+        (async function* (): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'completed reply' }
+          yield { kind: 'done', finishReason: 'stop' }
+        })(),
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          triggerscript: [
+            {
+              comment: 'unsupported server effects',
+              type: 'start',
+              conditions: [],
+              effect: [
+                {
+                  type: 'v2SetCharacterDesc',
+                  value: 'MUTATED-DESCRIPTION',
+                  valueType: 'value',
+                  indent: 0,
+                },
+                {
+                  type: 'v2SetCharacterDesc',
+                  value: 'MUTATED-AGAIN',
+                  valueType: 'value',
+                  indent: 0,
+                },
+                { type: 'command', value: 'delete everything' },
+              ],
+            },
+            {
+              comment: 'unsupported output effect',
+              type: 'output',
+              conditions: [],
+              effect: [
+                {
+                  type: 'v2RunLLM',
+                  value: 'privileged request',
+                  valueType: 'value',
+                  model: 'scriptMain',
+                  outputVar: 'llmResult',
+                  indent: 0,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    const warnings = events.filter((event) => event.type === 'warning').map((event) => event.data)
+    expect(warnings).toEqual([
+      {
+        message: 'Trigger effect "v2SetCharacterDesc" is unsupported on this server and was skipped.',
+        context: { kind: 'unsupported_trigger_effect', effectType: 'v2SetCharacterDesc' },
+      },
+      {
+        message: 'Trigger effect "command" is unsupported on this server and was skipped.',
+        context: { kind: 'unsupported_trigger_effect', effectType: 'command' },
+      },
+      {
+        message: 'Trigger effect "v2RunLLM" is unsupported on this server and was skipped.',
+        context: { kind: 'unsupported_trigger_effect', effectType: 'v2RunLLM' },
+      },
+    ])
+    expect(JSON.stringify(events.find((event) => event.type === 'prompt')?.data.formated ?? [])).not.toContain(
+      'MUTATED-DESCRIPTION',
+    )
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].desc).toBe('DESC')
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate?.$llmResult).toBeUndefined()
   })
 
   it('persists the assembly-time chat-var delta in send mode and bumps the revision (C-A1)', async () => {
@@ -6988,6 +7182,32 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect((await readPersistedMessages(assertion)).at(-1)?.data).toBe('retry succeeded')
   })
 
+  it('clamps request retries to the UI maximum of 20 (OR-5)', async () => {
+    const dispatchProvider = vi.fn(() =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'error', error: 'retryable failure', status: 503 }
+      })(),
+    )
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      requestRetrys: 99,
+      useStreaming: true,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(dispatchProvider).toHaveBeenCalledTimes(21)
+    expect(parseEvents(res.body).find((event) => event.type === 'error')?.data.error).toBe('retryable failure')
+  })
+
   it('materializes fallback-profile runtime settings and records the successful fallback model', async () => {
     const attempts: Array<{ profileId?: string; database: Record<string, unknown>; outputTokens?: number }> = []
     const dispatchProvider = vi.fn((context: ChatProviderDispatchContext) => {
@@ -7073,14 +7293,16 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
         useStreaming: false,
         jsonSchema: '{"type":"object","title":"fallback"}',
       },
-      outputTokens: 99,
+      outputTokens: 11,
     })
     const done = parseEvents(res.body).at(-1)?.data
-    expect(done?.generationInfo).toMatchObject({ model: 'fallback-wire', maxContext: 9999, outputTokens: 99 })
+    // Fixed divergence: the successful fallback may update model/context
+    // labels, but it must not replace the assembler's clamped response budget.
+    expect(done?.generationInfo).toMatchObject({ model: 'custom-api', maxContext: 9999, outputTokens: 11 })
     expect((await readPersistedMessages(assertion)).at(-1)?.generationInfo).toMatchObject({
-      model: 'fallback-wire',
+      model: 'custom-api',
       maxContext: 9999,
-      outputTokens: 99,
+      outputTokens: 11,
     })
   })
 

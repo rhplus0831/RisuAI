@@ -16,6 +16,7 @@ import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizer
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
 import { getChatDefaultVariables } from './chatVarDefaults.js'
 import { applyV2DataEffectAsync } from './triggerDataEffects.js'
+import { isServerUnsupportedTriggerEffectType } from '../../../../src/ts/process/triggerServerSupport.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { runServerLua, throwServerLuaFailure } from './luaRuntime.js'
 import {
@@ -132,6 +133,8 @@ export interface TriggerRunContext {
    * before. See the `case 'triggerlua'` arm in {@link runTrigger}.
    */
   runLua?: (args: TriggerLuaRunArgs) => Promise<TriggerLuaRunResult>
+  /** Shared per-generation collector; a set deduplicates recursive/in-loop effects. */
+  unsupportedEffectTypes?: Set<string>
 }
 
 /**
@@ -1475,7 +1478,7 @@ export async function runTrigger(
           // persistent lorebook / character / persona / note arms;
           // `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`; `triggercode`),
           // which fall through as no-ops.
-          await applyV2DataEffectAsync(effect, {
+          const handled = await applyV2DataEffectAsync(effect, {
             engine,
             expand,
             chat,
@@ -1487,6 +1490,9 @@ export async function runTrigger(
             triggerCache,
             regexCompatibility: complexRegexCompatibilityOptions(ctx.database, stageForTriggerMode(mode)),
           })
+          if (!handled && isServerUnsupportedTriggerEffectType(effect.type)) {
+            ctx.unsupportedEffectTypes?.add(effect.type)
+          }
           break
         }
       }
@@ -1524,6 +1530,7 @@ export async function runStartTrigger(
     selectedCharID,
     chatPage,
     signal: ctx.signal,
+    unsupportedEffectTypes: ctx.unsupportedTriggerEffectTypes,
     runLua: async ({ code, mode, lowLevelAccess, chat: luaChat, varEngine, source }) => {
       const result = await runServerLua(
         { code, mode, lowLevelAccess, source },

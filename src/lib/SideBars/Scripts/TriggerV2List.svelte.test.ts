@@ -159,6 +159,41 @@ afterEach(() => {
 })
 
 describe('TriggerV2List effect display', () => {
+  it('marks persistent-data, command, and privileged effect options as unsupported on the server', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        lowLevelAble: true,
+        initialValue: [
+          { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          { comment: 'Trigger', type: 'start', conditions: [], effect: [] },
+        ],
+      },
+    }) as MountedComponent
+    await openEditor()
+
+    const addEffect = document.querySelector<HTMLButtonElement>(`[aria-label="${language.add}: ${language.effect}"]`)
+    addEffect?.click()
+    addEffect?.click()
+    await settle()
+
+    const unsupportedOption = (type: string) =>
+      document.querySelector<HTMLElement>(`[data-risu-server-unsupported-effect="${type}"]`)
+    expect(unsupportedOption('v2Command')?.textContent).toContain(language.triggerEffectUnsupportedOnServer)
+
+    const categoryButton = (category: string) =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim() === language.triggerCategories[category],
+      )
+    categoryButton('Data')?.click()
+    await settle()
+    expect(unsupportedOption('v2SetCharacterDesc')?.textContent).toContain(language.triggerEffectUnsupportedOnServer)
+
+    categoryButton('Low Level')?.click()
+    await settle()
+    expect(unsupportedOption('v2RunLLM')?.textContent).toContain(language.triggerEffectUnsupportedOnServer)
+  })
+
   it('renders imported and edited effect text literally without creating executable elements', async () => {
     const commentPayload = '</span><img data-trigger-v2-comment-xss src=x onerror="globalThis.triggerV2Xss = true">'
     const variablePayload = '</span><svg data-trigger-v2-field-xss onload="globalThis.triggerV2Xss = true"></svg>'

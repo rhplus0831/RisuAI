@@ -1593,21 +1593,27 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
   throw new Error(`provider not implemented yet: ${provider}`)
 }
 
-export function getServerGenerationModelString(db: Database): string {
-  const name = db.aiModel
+export function getServerGenerationModelString(db: Database, profile?: ResolvedModelProfile): string {
+  const name = profile?.modelId ?? db.aiModel
+  const durableRequestModel = profile?.source.kind === 'durable-profile' ? profile.requestModel : undefined
   switch (name) {
     case 'reverse_proxy':
-      return `custom-${db.reverseProxyOobaMode ? 'ooba' : db.customProxyRequestModel}`
+      return `custom-${db.reverseProxyOobaMode ? 'ooba' : durableRequestModel || db.customProxyRequestModel}`
     case 'openrouter':
-      return `openrouter-${db.openrouterRequestModel}`
+      return `openrouter-${durableRequestModel || profile?.requestModel || db.openrouterRequestModel}`
     case 'nanogpt': {
-      const modelLabel = db.nanogptRequestModelName || db.nanogptRequestModel
-      return `NanoGPT ${modelLabel}${db.nanogptUseSubscriptionEndpoint ? ' [SUB]' : ''}`
+      const modelLabel = durableRequestModel || db.nanogptRequestModelName || db.nanogptRequestModel
+      const subscription =
+        profile?.providerOptions.nanogpt?.useSubscriptionEndpoint ?? db.nanogptUseSubscriptionEndpoint
+      return `NanoGPT ${modelLabel}${subscription ? ' [SUB]' : ''}`
     }
     case 'ollama-hosted':
     case 'ollama-cloud': {
       const modelLabel =
-        name === 'ollama-cloud' ? db.ollamaCloudModelName || db.ollamaCloudModel : db.ollamaModelName || db.ollamaModel
+        durableRequestModel ||
+        (name === 'ollama-cloud'
+          ? db.ollamaCloudModelName || db.ollamaCloudModel
+          : db.ollamaModelName || db.ollamaModel)
       return `Ollama ${name === 'ollama-cloud' ? 'Cloud' : 'Local'} ${modelLabel}`
     }
     default:

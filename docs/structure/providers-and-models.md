@@ -320,6 +320,12 @@ prefixes. This standard CBS history window is distinct from the filtered,
 `server/fastify/__tests__/promptVariables.test.ts` keep the browser and
 Fastify parsers aligned.
 
+Character `additionalText` is a retained import/export compatibility field, not
+a server prompt source. Fastify does not port the browser's embedding-based
+additional-information retrieval: an imported non-empty value is preserved and
+shown as unsupported in the character editor, while an empty value has no UI
+surface. Server static-description assembly always omits the field.
+
 Normal lorebook activation excludes Agent-only entries. For ordinary active
 entries, `server/fastify/src/prompt/lorebook.ts` builds one position parser
 that applies `{{position::...}}` plus non-lore `@@inject_at` append, prepend,
@@ -713,6 +719,17 @@ Output are applied before frames become authoritative. Buffered
 multi-generation choices each pass post-generation derivation before their
 alternate ids are persisted.
 
+The retry count is clamped to 20, matching the advanced-settings UI. Persisted
+`generationInfo.model` uses the legacy display-label format (including
+OpenRouter, reverse-proxy, NanoGPT, and Ollama prefixes), and
+`generationInfo.outputTokens` remains the assembler's context-headroom-clamped
+budget even when a fallback profile supplies a different `maxResponse`.
+Stage timing follows ownership: Fastify records prompt-memory work as stage 2.
+Browser finalization owns stage 4, but the server has no narrow message-metadata
+patch command and generation results are already authoritative before that
+browser pass. Persisted server metadata therefore deliberately keeps stage 4 at
+zero; no extra telemetry-only mutation is issued.
+
 Generation finalization retries are SQLite-backed operational rows with
 target snapshots. Persistence is idempotent when the target already has the
 final output and rejects stale chat/message/scriptstate targets; retry rows move
@@ -770,6 +787,14 @@ owns the optional worker-thread compatibility path. Guards are
 `server/fastify/__tests__/luaRuntime.test.ts`,
 `server/fastify/__tests__/triggers.test.ts`, and
 `server/fastify/__tests__/boundedRegex.test.ts`.
+
+Unsupported trigger effects are a visible compatibility boundary rather than a
+silent partial implementation. Persistent character/persona/author-note and
+lorebook effects, command effects, privileged LLM/image/similarity effects,
+alerts, GUI/update/wait arms, and legacy browser JavaScript remain preserved
+no-ops. The V2 editor labels these options as unsupported on the server. During
+generation, execution emits one `warning` SSE event per distinct unsupported
+effect type, even if a loop or recursive trigger invokes that type repeatedly.
 
 Per-message CBS expansion preserves the row being processed. History formatting
 passes each stored row index into `expandVariables()`; `editinput` uses the

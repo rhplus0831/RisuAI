@@ -23,6 +23,7 @@
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import { alertError } from 'src/ts/alert'
   import { parseTriggerV2Import } from './triggerV2Import'
+  import { isServerUnsupportedTriggerEffectType } from 'src/ts/process/triggerServerSupport'
 
   interface Props {
     value?: triggerscript[]
@@ -3481,6 +3482,7 @@
                   <button
                     class="w-full p-3 text-left hover:bg-selected transition-colors text-textcolor2 hover:text-textcolor"
                     class:opacity-60={effectCategories.Deprecated.includes(type)}
+                    data-risu-server-unsupported-effect={isServerUnsupportedTriggerEffectType(type) ? type : undefined}
                     onclick={(e) => {
                       e.stopPropagation()
                       makeDefaultEditType(type)
@@ -3496,6 +3498,9 @@
                         <span class="text-xs opacity-60 ml-1">(Deprecated)</span>
                       {/if}
                     </div>
+                    {#if isServerUnsupportedTriggerEffectType(type)}
+                      <div class="mt-1 text-xs text-textcolor2">{language.triggerEffectUnsupportedOnServer}</div>
+                    {/if}
                   </button>
                 {/each}
               </div>
@@ -3528,6 +3533,11 @@
                 {language.triggerDesc[editTrigger.type]}
               </h2>
             </div>
+            {#if isServerUnsupportedTriggerEffectType(editTrigger.type)}
+              <p class="mb-4 text-sm text-textcolor2" data-risu-server-unsupported-effect={editTrigger.type}>
+                {language.triggerEffectUnsupportedOnServer}
+              </p>
+            {/if}
             {#if editTrigger.type === 'v2SetVar'}
               <span class="block text-textcolor">{language.triggerInputLabels.varName}</span>
               <TextInput bind:value={editTrigger.var} />

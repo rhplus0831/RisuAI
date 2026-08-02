@@ -72,6 +72,8 @@ export interface ExpandContext {
   cbsCallbackMemo?: CbsCallbackMemo
   /** Effective main-request model metadata exposed through CBS `metadata`. */
   modelInfo?: LLMModel
+  /** Server-only per-generation collector for trigger effects retained as no-ops. */
+  unsupportedTriggerEffectTypes?: Set<string>
 }
 
 export interface ExpandResult {

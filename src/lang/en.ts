@@ -1469,6 +1469,8 @@ export const languageEnglish = {
   customStopWords: 'Custom Stop Words',
   defaultPrompt: 'Default Prompt',
   additionalText: 'Additional Description',
+  additionalTextUnsupported:
+    'Unsupported on this server: imported additional-description data is preserved but is not added to prompts.',
   seed: 'Seed',
   charjs: 'CharacterJS',
   depthPrompt: 'Depth Prompt',
@@ -1674,6 +1676,8 @@ export const languageEnglish = {
   resultStoredVar: 'Variable to Store Result',
   triggerEffRunLLM: 'Run Main Model',
   triggerEffectSendAI: 'Resend AI',
+  triggerEffectUnsupportedOnServer:
+    'Unsupported on this server: this imported effect is preserved but has no effect during generation.',
   triggerEffCheckSim: 'Check Similarity',
   triggerEffShowAlert: 'Show Alert',
   normal: 'Normal',

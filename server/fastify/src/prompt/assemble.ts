@@ -466,6 +466,10 @@ export interface AssemblyState {
   loadoutId?: string
   activeModuleIds?: string[]
   resolvedMainProfile?: ResolvedModelProfile
+  /** Unsupported trigger types observed anywhere in this generation. */
+  unsupportedTriggerEffectTypes: Set<string>
+  /** Types already surfaced through the warning SSE channel. */
+  warnedUnsupportedTriggerEffectTypes: Set<string>
   // --- Lorebook placement + token preflight (set by `fillLorebookSlots`) ---
   /** The lorebook activation report (entries that fired + why). */
   report?: LorebookActivationReport
@@ -653,6 +657,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
   const luaExecBudget = createLuaExecBudget()
   const memoryDatabase = deps.loadMemoryDatabase?.() ?? null
   const resolvedMainProfile = resolveModelProfile({ database })
+  const unsupportedTriggerEffectTypes = new Set<string>()
   const ctx: ExpandContext = {
     database,
     selectedCharID,
@@ -663,6 +668,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     ...(memoryDatabase ? { requestHistoryDb: memoryDatabase } : {}),
     ...(deps.assetDataDir ? { assetDataDir: deps.assetDataDir } : {}),
     cbsCallbackMemo,
+    unsupportedTriggerEffectTypes,
   }
   const unformated = createEmptyUnformatedSlots()
 
@@ -697,6 +703,8 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     loadoutId: input.loadoutId,
     activeModuleIds,
     resolvedMainProfile,
+    unsupportedTriggerEffectTypes,
+    warnedUnsupportedTriggerEffectTypes: new Set<string>(),
     initialMessages,
     messageMutationCheckpoint: initialMessages,
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
@@ -931,6 +939,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
     signal: state.signal,
+    unsupportedEffectTypes: state.unsupportedTriggerEffectTypes,
     runLua: async ({ code, mode, lowLevelAccess, chat, varEngine, source }) => {
       const result = await runServerLua(
         { code, mode, lowLevelAccess, source },
@@ -991,6 +1000,7 @@ export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
     signal: state.signal,
+    unsupportedEffectTypes: state.unsupportedTriggerEffectTypes,
   }
   try {
     const result = await runTrigger(triggerCtx, state.currentChar, 'request', {
@@ -2186,15 +2196,18 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
   measureAssemblyStage(state, 'memory_bridge', () => fillMemoryAndPostHistory(state))
   await renderAndBudget(state)
 
-  const warnings: Omit<WarningEvent, 'type'>[] = (state.promptAssetDropDiagnostics ?? []).map((diagnostic) => ({
-    message: 'Prompt asset was omitted because its metadata or stored bytes were unavailable.',
-    context: {
-      kind: 'prompt_asset_dropped',
-      name: diagnostic.name,
-      ...(diagnostic.reference ? { reference: diagnostic.reference } : {}),
-      reason: diagnostic.reason,
-    },
-  }))
+  const warnings: Omit<WarningEvent, 'type'>[] = [
+    ...(state.promptAssetDropDiagnostics ?? []).map((diagnostic) => ({
+      message: 'Prompt asset was omitted because its metadata or stored bytes were unavailable.',
+      context: {
+        kind: 'prompt_asset_dropped',
+        name: diagnostic.name,
+        ...(diagnostic.reference ? { reference: diagnostic.reference } : {}),
+        reason: diagnostic.reason,
+      },
+    })),
+    ...takeUnsupportedTriggerWarnings(state),
+  ]
 
   if (state.stopSending) {
     return {
@@ -2293,6 +2306,21 @@ export interface ServerPostGenerationResult {
   resendChat: boolean
   /** A durable chat-var write occurred; the route persists when true. */
   changed: boolean
+  /** Unsupported output-trigger effects first observed after assembly warnings were emitted. */
+  warnings?: Omit<WarningEvent, 'type'>[]
+}
+
+function takeUnsupportedTriggerWarnings(state: AssemblyState): Omit<WarningEvent, 'type'>[] {
+  const warnings: Omit<WarningEvent, 'type'>[] = []
+  for (const effectType of state.unsupportedTriggerEffectTypes) {
+    if (state.warnedUnsupportedTriggerEffectTypes.has(effectType)) continue
+    state.warnedUnsupportedTriggerEffectTypes.add(effectType)
+    warnings.push({
+      message: `Trigger effect "${effectType}" is unsupported on this server and was skipped.`,
+      context: { kind: 'unsupported_trigger_effect', effectType },
+    })
+  }
+  return warnings
 }
 
 function cloneAgentPresetRuntime(runtime: AgentPresetRuntimeState | undefined): AgentPresetRuntimeState | undefined {
@@ -2454,6 +2482,7 @@ async function runOutputTrigger(
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
     signal: state.signal,
+    unsupportedEffectTypes: state.unsupportedTriggerEffectTypes,
     runLua: async ({ code, mode, lowLevelAccess, chat, varEngine, source }) => {
       const traceRun = luaTrace?.beginRun({
         phase: 'onOutput',
@@ -2818,5 +2847,8 @@ export async function runServerPostGeneration(
     mutations,
     resendChat,
     changed,
+    ...(state.unsupportedTriggerEffectTypes.size > state.warnedUnsupportedTriggerEffectTypes.size
+      ? { warnings: takeUnsupportedTriggerWarnings(state) }
+      : {}),
   }
 }
