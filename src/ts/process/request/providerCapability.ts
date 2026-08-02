@@ -206,8 +206,13 @@ function isVanillaProxyShaped(input: ProviderCapabilityInput, xcustomFormat: LLM
 
 function isVanillaGemini(input: ProviderCapabilityInput): boolean {
   const { aiModel, config } = input
-  if (aiModel === 'reverse_proxy') return false
-  if (aiModel.startsWith('xcustom:::')) return false
+  if (aiModel === 'reverse_proxy') {
+    return input.format === LLMFormat.GoogleCloud && reverseProxyConfigured(config)
+  }
+  if (aiModel.startsWith('xcustom:::')) {
+    const entry = findXcustomEntry(config, aiModel)
+    return entry !== null && entry.format === LLMFormat.GoogleCloud
+  }
   if (nonEmpty(input.endpoint)) return false
   if (input.format === LLMFormat.VertexAIGemini) {
     return (

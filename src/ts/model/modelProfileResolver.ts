@@ -1354,8 +1354,9 @@ function resolveFirstClassProviderOptions(
         baseUrl: NEURALWATT_BASE_URL,
       }
     case 'anthropic':
-    case 'google':
       return { ...base, apiKey }
+    case 'google':
+      return { ...base, apiKey, baseUrl, ...shared }
     case 'vertex':
       return {
         ...base,
@@ -1957,12 +1958,17 @@ function resolveProviderOptions(
     const autofillRequestUrl =
       durableProviderOptions?.reverseProxy?.autofillRequestUrl ?? database.autofillRequestUrl !== false
     const reverseProxyUrl = resolveReverseProxyUrlForFormat(rawUrl, autofillRequestUrl, modelInfo.format)
+    const extraHeaders = {
+      ...cloneStringRecord(durableProviderOptions?.extraHeaders),
+      ...(reverseProxyUrl.risuIdentify ? { 'X-Proxy-Risu': 'RisuAI' } : {}),
+    }
     return {
       ...base,
       apiKey: durableApiKey ?? nonBlankString(database.proxyKey),
       baseUrl: reverseProxyUrl.baseUrl,
-      extraHeaders: reverseProxyUrl.risuIdentify ? { 'X-Proxy-Risu': 'RisuAI' } : undefined,
-      additionalParams: additionalParams(database.additionalParams),
+      extraHeaders: Object.keys(extraHeaders).length > 0 ? extraHeaders : undefined,
+      additionalParams:
+        cloneAdditionalParams(durableProviderOptions?.additionalParams) ?? additionalParams(database.additionalParams),
       reverseProxy: {
         autofillRequestUrl,
         oobaSystemHoist:
@@ -1981,7 +1987,9 @@ function resolveProviderOptions(
       ...base,
       apiKey,
       baseUrl: xcustomBaseUrl(entry, modelInfo.format),
-      additionalParams: parseXcustomParams(entry?.params),
+      extraHeaders: cloneStringRecord(durableProviderOptions?.extraHeaders),
+      additionalParams:
+        cloneAdditionalParams(durableProviderOptions?.additionalParams) ?? parseXcustomParams(entry?.params),
       customModel: entry ? cloneCustomModelDependency(entry, modelId, apiKey) : undefined,
     }
   }
@@ -2355,6 +2363,8 @@ function xcustomBaseUrl(entry: CustomModelEntry | null, format: LLMFormat): stri
     case LLMFormat.OpenAIResponseAPI:
     case LLMFormat.NanoGPTResponses:
       return stripTrailingPath(url, '/responses')
+    case LLMFormat.GoogleCloud:
+      return url
     default:
       return deriveOpenAIBaseUrl(url)
   }
@@ -2381,8 +2391,18 @@ function resolveReverseProxyUrlForFormat(
     case LLMFormat.OpenAIResponseAPI:
     case LLMFormat.NanoGPTResponses:
       return resolveReverseProxyUrl(rawUrl, autofill, 'responses')
+    case LLMFormat.GoogleCloud:
+      return resolveGeminiProxyBaseUrl(rawUrl)
     default:
       return resolveReverseProxyUrl(rawUrl, autofill, 'chat/completions')
+  }
+}
+
+function resolveGeminiProxyBaseUrl(rawUrl: string): { baseUrl: string; risuIdentify: boolean } {
+  const risuIdentify = rawUrl.startsWith('risu::')
+  return {
+    baseUrl: risuIdentify ? rawUrl.slice('risu::'.length) : rawUrl,
+    risuIdentify,
   }
 }
 

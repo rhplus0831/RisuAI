@@ -18,6 +18,7 @@ import {
 import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
 import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 import { appendGeminiToolRounds, geminiToolDefinitions, parseGeminiToolCalls } from './serverTools.js'
+import { applyAdditionalParameters } from './additionalParams.js'
 
 export interface VertexAuthInput {
   projectId: string
@@ -49,6 +50,12 @@ export interface GeminiRequest {
   presencePenalty?: number
   frequencyPenalty?: number
   thinkingTokens?: number
+  geminiBlockOff?: boolean
+  noCivilIntegrity?: boolean
+  responseSchema?: Record<string, unknown>
+  extraHeaders?: Record<string, string>
+  /** Persisted profile additional-parameter overrides, applied after defaults and extra headers. */
+  additionalParams?: Array<[string, string]>
   /** Reveal reasoning deltas as they arrive instead of buffering them until answer text. */
   streamThoughts?: boolean
   trace?: GenerationTraceContext
@@ -79,6 +86,11 @@ interface GeminiResolveInput {
   presencePenalty?: unknown
   frequencyPenalty?: unknown
   thinkingTokens?: unknown
+  geminiBlockOff?: unknown
+  noCivilIntegrity?: unknown
+  responseSchema?: unknown
+  extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
   streamThoughts?: unknown
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
@@ -106,9 +118,9 @@ const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
  *   - `contents` alternating between `user` and `model` roles with `parts`.
  *
  * Function/tool rows are dropped. Consecutive same-role rows are coalesced
- * since Gemini also rejects two `user` (or two `model`) in a row. Supports the
- * text-only browser request shape; tool, multimodal, thinking-config, and
- * response-schema rows are omitted.
+ * since Gemini also rejects two `user` (or two `model`) in a row. Request-level
+ * tool, multimodal, thinking, and response-schema controls are added after this
+ * message-only conversion.
  */
 export interface GeminiReformatResult {
   contents: GeminiContent[]
@@ -202,7 +214,8 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
   const temperature =
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
   const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
-  const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const topK =
+    typeof input.topK === 'number' && Number.isFinite(input.topK) && input.topK !== 0 ? input.topK : undefined
   const presencePenalty =
     typeof input.presencePenalty === 'number' && Number.isFinite(input.presencePenalty)
       ? input.presencePenalty
@@ -230,11 +243,53 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     presencePenalty,
     frequencyPenalty,
     thinkingTokens,
+    geminiBlockOff: input.geminiBlockOff === true,
+    noCivilIntegrity: input.noCivilIntegrity === true,
+    responseSchema:
+      input.responseSchema && typeof input.responseSchema === 'object' && !Array.isArray(input.responseSchema)
+        ? (input.responseSchema as Record<string, unknown>)
+        : undefined,
+    extraHeaders: input.extraHeaders,
+    additionalParams: input.additionalParams,
     streamThoughts: input.streamThoughts === true,
     trace: input.trace,
     tools: input.tools,
     signal: input.signal,
   }
+}
+
+const GEMINI_SAFETY_CATEGORIES = [
+  'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+  'HARM_CATEGORY_HATE_SPEECH',
+  'HARM_CATEGORY_HARASSMENT',
+  'HARM_CATEGORY_DANGEROUS_CONTENT',
+  'HARM_CATEGORY_CIVIC_INTEGRITY',
+] as const
+
+function buildSafetySettings(req: GeminiRequest): Array<{ category: string; threshold: 'BLOCK_NONE' | 'OFF' }> {
+  const threshold = req.geminiBlockOff === true ? 'OFF' : 'BLOCK_NONE'
+  return GEMINI_SAFETY_CATEGORIES.filter(
+    (category) => !(req.noCivilIntegrity === true && category === 'HARM_CATEGORY_CIVIC_INTEGRITY'),
+  ).map((category) => ({ category, threshold }))
+}
+
+function buildThinkingConfig(req: GeminiRequest): Record<string, unknown> | undefined {
+  if ((req.tools?.length ?? 0) > 0 || req.thinkingTokens === undefined) return undefined
+  if (!/^gemini-3-/u.test(req.model)) {
+    return { thinkingBudget: req.thinkingTokens, includeThoughts: true }
+  }
+
+  const thinkingLevel =
+    req.model === 'gemini-3-flash-preview'
+      ? req.thinkingTokens >= 16_384
+        ? 'HIGH'
+        : req.thinkingTokens >= 4_096
+          ? 'MEDIUM'
+          : 'LOW'
+      : req.thinkingTokens >= 8_192
+        ? 'HIGH'
+        : 'LOW'
+  return { thinkingLevel, includeThoughts: true }
 }
 
 function buildPayload(req: GeminiRequest): Record<string, unknown> {
@@ -245,12 +300,16 @@ function buildPayload(req: GeminiRequest): Record<string, unknown> {
   if (req.topK !== undefined) generationConfig.topK = req.topK
   if (req.presencePenalty !== undefined) generationConfig.presencePenalty = req.presencePenalty
   if (req.frequencyPenalty !== undefined) generationConfig.frequencyPenalty = req.frequencyPenalty
-  if ((req.tools?.length ?? 0) === 0 && req.thinkingTokens !== undefined) {
-    generationConfig.thinkingConfig = { thinkingBudget: req.thinkingTokens, includeThoughts: true }
+  const thinkingConfig = buildThinkingConfig(req)
+  if (thinkingConfig !== undefined) generationConfig.thinkingConfig = thinkingConfig
+  if (req.responseSchema !== undefined) {
+    generationConfig.response_mime_type = 'application/json'
+    generationConfig.response_schema = req.responseSchema
   }
   const body: Record<string, unknown> = {
     contents: req.contents,
     generationConfig,
+    safetySettings: buildSafetySettings(req),
   }
   if (req.systemInstruction !== undefined) {
     body.systemInstruction = { parts: [{ text: req.systemInstruction }] }
@@ -291,6 +350,18 @@ function endpoint(req: GeminiRequest, stream: boolean): string {
 
 function headers(): Record<string, string> {
   return { 'content-type': 'application/json' }
+}
+
+function buildRequestInit(
+  req: GeminiRequest,
+  defaultHeaders: Record<string, string>,
+): { body: Record<string, unknown>; bodyText: string; headers: Record<string, string> } {
+  const body = buildPayload(req)
+  const requestHeaders = { ...defaultHeaders, ...(req.extraHeaders ?? {}) }
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, requestHeaders, req.additionalParams)
+  }
+  return { body, bodyText: JSON.stringify(body), headers: requestHeaders }
 }
 
 async function emitGeminiProviderBodyMetric(args: {
@@ -463,23 +534,22 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
   }
 
   const url = endpoint(req, false)
-  const requestBody = buildPayload(req)
-  const bodyText = JSON.stringify(requestBody)
+  const init = buildRequestInit(req, h.headers)
   let response: Response
   try {
     await emitGeminiProviderBodyMetric({
       url,
-      headers: h.headers,
-      body: requestBody,
-      bodyText,
+      headers: init.headers,
+      body: init.body,
+      bodyText: init.bodyText,
       model: req.model,
       stream: false,
       trace: req.trace,
     })
     response = await fetch(url, {
       method: 'POST',
-      headers: h.headers,
-      body: bodyText,
+      headers: init.headers,
+      body: init.bodyText,
       signal: req.signal,
     })
   } catch (err) {
@@ -557,23 +627,22 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
   }
 
   const url = endpoint(req, true)
-  const requestBody = buildPayload(req)
-  const bodyText = JSON.stringify(requestBody)
+  const init = buildRequestInit(req, h.headers)
   let response: Response
   try {
     await emitGeminiProviderBodyMetric({
       url,
-      headers: h.headers,
-      body: requestBody,
-      bodyText,
+      headers: init.headers,
+      body: init.body,
+      bodyText: init.bodyText,
       model: req.model,
       stream: true,
       trace: req.trace,
     })
     response = await fetch(url, {
       method: 'POST',
-      headers: h.headers,
-      body: bodyText,
+      headers: init.headers,
+      body: init.bodyText,
       signal: req.signal,
     })
   } catch (err) {

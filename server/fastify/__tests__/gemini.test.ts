@@ -227,6 +227,38 @@ describe('runGemini', () => {
     expect(sent.contents).toEqual([{ role: 'user', parts: [{ text: 'hello' }] }])
     expect(sent.systemInstruction).toEqual({ parts: [{ text: 'be brief' }] })
     expect(sent.generationConfig).toEqual({ maxOutputTokens: 128, temperature: 0.4 })
+    expect(sent.safetySettings).toEqual([
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' },
+    ])
+  })
+
+  it('uses OFF safety thresholds for flagged models and omits unsupported civic integrity', async () => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash-lite-preview-02-05',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      geminiBlockOff: true,
+      noCivilIntegrity: true,
+      signal: new AbortController().signal,
+    })!
+
+    await runGemini(resolved)
+
+    expect(sent.safetySettings).toEqual([
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
+    ])
   })
 
   it('url-encodes the apiKey so chars like & or = stay intact', async () => {
@@ -274,6 +306,63 @@ describe('runGemini', () => {
     expect(JSON.parse(captured!.body as string).generationConfig.thinkingConfig).toEqual({
       thinkingBudget: 256,
       includeThoughts: true,
+    })
+  })
+
+  it.each([
+    { model: 'gemini-3-flash-preview', budget: 4095, level: 'LOW' },
+    { model: 'gemini-3-flash-preview', budget: 4096, level: 'MEDIUM' },
+    { model: 'gemini-3-flash-preview', budget: 16383, level: 'MEDIUM' },
+    { model: 'gemini-3-flash-preview', budget: 16384, level: 'HIGH' },
+    { model: 'gemini-3-pro-preview', budget: 8191, level: 'LOW' },
+    { model: 'gemini-3-pro-preview', budget: 8192, level: 'HIGH' },
+  ])('maps $model budget $budget to $level without a numeric budget or zero topK', async ({ model, budget, level }) => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model,
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      thinkingTokens: budget,
+      topK: 0,
+      signal: new AbortController().signal,
+    })!
+
+    await runGemini(resolved)
+
+    const generationConfig = sent.generationConfig as Record<string, unknown>
+    expect(generationConfig.thinkingConfig).toEqual({ thinkingLevel: level, includeThoughts: true })
+    expect(generationConfig.thinkingConfig).not.toHaveProperty('thinkingBudget')
+    expect(generationConfig).not.toHaveProperty('topK')
+  })
+
+  it('emits Gemini JSON response controls in generationConfig', async () => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ candidates: [{ content: { parts: [{ text: '{"answer":"ok"}' }] } }] })
+    })
+    const responseSchema = {
+      type: 'object',
+      properties: { answer: { type: 'string' } },
+      required: ['answer'],
+    }
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      responseSchema,
+      signal: new AbortController().signal,
+    })!
+
+    await runGemini(resolved)
+
+    expect(sent.generationConfig).toMatchObject({
+      response_mime_type: 'application/json',
+      response_schema: responseSchema,
     })
   })
 
@@ -508,7 +597,7 @@ describe('runGemini', () => {
         audioPartCount: 0,
         videoPartCount: 0,
         toolCount: 0,
-        safetySettingCount: 0,
+        safetySettingCount: 5,
         generationConfigKeyCount: 2,
       })
       expect(metric.requestBodyBytes).toBe(Buffer.byteLength(capturedBody, 'utf8'))

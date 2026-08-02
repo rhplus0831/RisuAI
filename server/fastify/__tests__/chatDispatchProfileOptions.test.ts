@@ -662,6 +662,50 @@ describe('dispatchChatProvider profile providerOptions', () => {
     ])
   })
 
+  it('forwards persisted Gemini reverse-proxy URL, headers, key, and body overrides', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'reverse_proxy',
+        customProxyRequestModel: 'gemini-proxy-model',
+        customAPIFormat: LLMFormat.GoogleCloud,
+        forceReplaceUrl: 'risu::https://gemini-proxy.example.com/google/v1beta',
+        proxyKey: 'profile-gemini-proxy-key',
+        autofillRequestUrl: true,
+        additionalParams: [
+          ['header::X-Proxy-Auth', 'profile-header'],
+          ['generationConfig.temperature', '0.91'],
+          ['profileFlag', 'true'],
+        ],
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'flat-gemini-model',
+      customAPIFormat: LLMFormat.GoogleCloud,
+      forceReplaceUrl: 'https://flat-gemini.example.com/v1beta',
+      proxyKey: 'flat-gemini-key',
+      autofillRequestUrl: true,
+      additionalParams: [
+        ['header::X-Flat', 'flat'],
+        ['flatFlag', 'true'],
+      ],
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe(
+      'https://gemini-proxy.example.com/google/v1beta/models/gemini-proxy-model:generateContent?key=profile-gemini-proxy-key',
+    )
+    expect(captured[0].headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(captured[0].headers['X-Proxy-Auth']).toBe('profile-header')
+    expect(captured[0].headers['X-Flat']).toBeUndefined()
+    expect(captured[0].body.generationConfig).toMatchObject({ temperature: 0.91 })
+    expect(captured[0].body.profileFlag).toBe(true)
+    expect(captured[0].body.flatFlag).toBeUndefined()
+  })
+
   it('preserves legacy reverse_proxy autofill for converted custom-api profile mirrors', async () => {
     const database = db({
       aiModel: 'reverse_proxy',
@@ -1108,6 +1152,70 @@ describe('dispatchChatProvider profile providerOptions', () => {
     )
     expect(captured[0].url).not.toContain('flat-google-key')
     expect(captured[0].body.contents).toEqual([{ role: 'user', parts: [{ text: 'hello' }] }])
+  })
+
+  it('forwards Gemini model safety flags and the translated effective JSON schema', async () => {
+    const database = db({
+      aiModel: 'gemini-2.5-flash-lite-preview-09-2025',
+      google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      jsonSchemaEnabled: true,
+      jsonSchema: JSON.stringify({
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          answer: { type: 'string' },
+          details: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { score: { type: 'number' } },
+          },
+        },
+        required: ['answer'],
+      }),
+    } as Partial<Database>)
+    const profile = resolveModelProfile({
+      database,
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'gemini-2.5-flash-lite-preview-09-2025',
+          flags: [
+            LLMFlags.geminiBlockOff,
+            LLMFlags.hasFirstSystemPrompt,
+            LLMFlags.requiresAlternateRole,
+            LLMFlags.mustStartWithUserInput,
+          ],
+        }),
+    })
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.safetySettings).toEqual([
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'OFF' },
+    ])
+    expect(captured[0].body.generationConfig).toMatchObject({
+      response_mime_type: 'application/json',
+      response_schema: {
+        type: 'object',
+        properties: {
+          answer: { type: 'string' },
+          details: {
+            type: 'object',
+            properties: { score: { type: 'number' } },
+          },
+        },
+        required: ['answer'],
+      },
+    })
+    expect(JSON.stringify(captured[0].body.generationConfig)).not.toContain('$schema')
+    expect(JSON.stringify(captured[0].body.generationConfig)).not.toContain('additionalProperties')
   })
 
   it.each([

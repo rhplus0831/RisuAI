@@ -74,6 +74,8 @@ interface ChatDispatchArgs {
   tools?: ServerToolDefinition[]
   /** Prior calls and browser-executed results, converted to provider-native history server-side. */
   toolRounds?: ServerToolRound[]
+  /** Optional internal schema override matching the retained low-level generation contract. */
+  schema?: string
   /** Durable diagnostics for one actual provider attempt. */
   history?: ChatDispatchHistoryInput
   /** Provider-flag-normalized messages prepared by the public dispatch boundary. */
@@ -193,11 +195,26 @@ function verbosity(value: unknown): string | undefined {
   return ['low', 'medium', 'high'][numeric] ?? 'medium'
 }
 
-function parseConfiguredJsonSchema(db: Database): Record<string, unknown> | undefined {
-  if (db.jsonSchemaEnabled !== true) return undefined
-  const raw = typeof db.jsonSchema === 'string' ? db.jsonSchema.trim() : ''
+function parseConfiguredJsonSchema(db: Database, schemaOverride?: string): Record<string, unknown> | undefined {
+  if (schemaOverride === undefined && db.jsonSchemaEnabled !== true) return undefined
+  const raw = typeof schemaOverride === 'string' ? schemaOverride.trim() : db.jsonSchema?.trim()
   if (!raw) return undefined
   return parseConfiguredJsonSchemaText(raw)
+}
+
+function stripGeminiUnsupportedSchemaKeywords(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripGeminiUnsupportedSchemaKeywords)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== '$schema' && key !== 'additionalProperties')
+      .map(([key, nested]) => [key, stripGeminiUnsupportedSchemaKeywords(nested)]),
+  )
+}
+
+function geminiResponseSchema(db: Database, schemaOverride?: string): Record<string, unknown> | undefined {
+  const schema = parseConfiguredJsonSchema(db, schemaOverride)
+  return schema ? (stripGeminiUnsupportedSchemaKeywords(schema) as Record<string, unknown>) : undefined
 }
 
 function openAIChatResponseFormat(db: Database): Record<string, unknown> | undefined {
@@ -1085,7 +1102,9 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       ? Math.min(db.genTime, 20)
       : 1
   const extractJsonPath =
-    db.jsonSchemaEnabled === true && typeof db.extractJson === 'string' && db.extractJson.trim().length > 0
+    (db.jsonSchemaEnabled === true || args.schema !== undefined) &&
+    typeof db.extractJson === 'string' &&
+    db.extractJson.trim().length > 0
       ? db.extractJson.trim()
       : undefined
   const hasTools = (args.tools?.length ?? 0) > 0
@@ -1287,6 +1306,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       messages,
       apiKey: info.format === LLMFormat.VertexAIGemini ? undefined : asString(providerOptions.apiKey),
       vertex,
+      baseUrl: asString(providerOptions.baseUrl),
       maxOutputTokens: maxTokens,
       temperature,
       topP: parameters.topP,
@@ -1294,6 +1314,11 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       presencePenalty: parameters.presencePenalty,
       frequencyPenalty: parameters.frequencyPenalty,
       thinkingTokens: parameters.thinkingTokens,
+      geminiBlockOff: info.flags.includes(LLMFlags.geminiBlockOff),
+      noCivilIntegrity: info.flags.includes(LLMFlags.noCivilIntegrity),
+      responseSchema: geminiResponseSchema(db, args.schema),
+      extraHeaders: providerOptions.extraHeaders,
+      additionalParams: providerOptions.additionalParams,
       streamThoughts: db.streamGeminiThoughts === true,
       signal,
       trace,
