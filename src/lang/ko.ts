@@ -929,6 +929,7 @@ const languageKoreanBase = {
   icon: '아이콘',
   account: '계정',
   remove: '삭제',
+  duplicate: '복제',
   able: '활성화됨',
   assetWidth: '에셋 넓이',
   animationSpeed: '에니메이션 속도',

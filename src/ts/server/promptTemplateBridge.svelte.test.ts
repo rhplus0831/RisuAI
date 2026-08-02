@@ -1808,6 +1808,65 @@ describe('flushPendingPromptTemplatePatches', () => {
     }
   })
 
+  it('duplicates a prompt row beside its source with a fresh id and one durable create', async () => {
+    const source = promptItemFixture({
+      ...item('p-source', 'copy this text'),
+      name: 'Source row',
+      metadata: { nested: ['preserved'] },
+    })
+    const sibling = promptItemFixture({ ...item('p-sibling', 'leave me second'), name: 'Sibling row' })
+    seedPromptSettings({ promptTemplate: [source, sibling] })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, { target, props: { mode: 'inline', subMenu: 0 } })
+      await tick()
+      await flushMicrotasks()
+
+      const duplicate = target.querySelector<HTMLButtonElement>(
+        `button[aria-label="${language.duplicate}: Source row"]`,
+      )
+      expect(duplicate?.type).toBe('button')
+      duplicate!.click()
+      await tick()
+      await flushMicrotasks()
+
+      const projected = getResourceDatabase().promptTemplate as Array<PromptItem & { metadata?: unknown }>
+      expect(projected).toHaveLength(3)
+      expect(projected.map((promptItem) => promptItem.id)).toEqual(['p-source', expect.any(String), 'p-sibling'])
+      expect(projected[1].id).not.toBe('p-source')
+      expect({ ...projected[1], id: 'p-source' }).toEqual(source)
+      expect(projected[1].metadata).not.toBe((source as PromptItem & { metadata?: unknown }).metadata)
+
+      expect(durableState.stages.at(-1)?.intent).toEqual({
+        version: 1,
+        requests: [
+          {
+            method: 'POST',
+            path: '/prompt-items',
+            body: {
+              afterItemId: 'p-source',
+              promptItem: projected[1],
+            },
+          },
+        ],
+      })
+      expect(commandMocks.createPromptItemCommand).toHaveBeenCalledTimes(1)
+      expect(commandMocks.createPromptItemCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          afterItemId: 'p-source',
+          promptItem: projected[1],
+        }),
+      )
+      expect(target.querySelector(`[data-risu-prompt-item-id="${projected[1].id}"] fieldset`)).toBeTruthy()
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
   it('disables structural controls and renders a pending status until create persistence settles', async () => {
     const pending = createDeferred<{ status: string; error?: string }>()
     commandState.runResults.push(pending.promise)

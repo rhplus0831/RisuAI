@@ -3449,6 +3449,7 @@ describe('server command API adapter', () => {
       createPromptItemCommand({
         baseRevision: 2,
         promptPresetId: 'prompt-preset-a',
+        afterItemId: 'item-a',
         promptItem: { id: 'item-b', type: 'memory' },
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 3, itemId: 'item-b' })
@@ -3507,7 +3508,12 @@ describe('server command API adapter', () => {
       {
         url: '/api/v1/commands/prompt-items',
         method: 'POST',
-        body: { baseRevision: 2, promptPresetId: 'prompt-preset-a', promptItem: { id: 'item-b', type: 'memory' } },
+        body: {
+          baseRevision: 2,
+          promptPresetId: 'prompt-preset-a',
+          afterItemId: 'item-a',
+          promptItem: { id: 'item-b', type: 'memory' },
+        },
       },
       {
         url: '/api/v1/commands/prompt-items/item-b',

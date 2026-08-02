@@ -1062,6 +1062,7 @@ interface PromptItemOptimisticCommandInput {
 export interface CreatePromptItemCommandInput extends PromptItemOptimisticCommandInput {
   baseRevision: number
   promptPresetId?: string
+  afterItemId?: string
   promptItem: PromptItemSnapshot
 }
 
@@ -3189,6 +3190,7 @@ export async function createPromptItemCommand(
     body: {
       baseRevision: input.baseRevision,
       ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
+      ...(input.afterItemId ? { afterItemId: input.afterItemId } : {}),
       promptItem: input.promptItem,
     },
     signal,

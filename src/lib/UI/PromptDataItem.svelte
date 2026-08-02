@@ -6,12 +6,13 @@
   import { language } from 'src/lang'
   import NumberInput from './GUI/NumberInput.svelte'
   import CheckInput from './GUI/CheckInput.svelte'
-  import { ArrowDown, ArrowUp, XIcon } from '@lucide/svelte'
+  import { ArrowDown, ArrowUp, CopyIcon, XIcon } from '@lucide/svelte'
   import TextInput from './GUI/TextInput.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 
   interface Props {
     promptItem: PromptItem
+    onDuplicate?: () => void
     onRemove?: () => void
     onUpdate?: (promptItem: PromptItem, previousItem: PromptItem) => void
     moveUp?: () => void
@@ -31,6 +32,7 @@
 
   let {
     promptItem = $bindable(),
+    onDuplicate = () => {},
     onRemove = () => {},
     onUpdate = () => {},
     moveUp = () => {},
@@ -205,6 +207,14 @@
       <span>{getName(promptItem)}</span>
     </button>
     <div class="flex justify-end">
+      <button
+        type="button"
+        aria-label={`${language.duplicate}: ${getName(promptItem)}`}
+        disabled={interactionsDisabled}
+        onclick={(e) => {
+          e.stopPropagation()
+          onDuplicate()
+        }}><CopyIcon /></button>
       <button
         type="button"
         aria-label={`${language.remove}: ${getName(promptItem)}`}

@@ -435,6 +435,13 @@
     }
   }
 
+  function clonePromptItemForDuplicate(promptItem: PromptItem): PromptItem {
+    return {
+      ...cloneJsonValue(promptItem),
+      id: createNonSecurityUuid(),
+    }
+  }
+
   function promptTemplateItemIds(items: PromptItem[]): string[] | null {
     const itemIds: string[] = []
     const seen = new Set<string>()
@@ -517,6 +524,7 @@
     previous: PromptItem[],
     projectionFence: PromptTemplateOwnerMutationFence,
     sequence: number,
+    afterItemId?: string,
   ): Promise<PromptTemplateStructuralMutationOutcome> {
     if (!promptTemplateHydrated || !canUseServerCommands() || projectionFence.ownerId !== ownerId) {
       return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
@@ -533,6 +541,7 @@
           path: '/prompt-items',
           body: {
             ...(ownerId ? { promptPresetId: ownerId } : {}),
+            ...(afterItemId ? { afterItemId } : {}),
             promptItem: cloneJsonValue(attemptedItem),
           },
         },
@@ -556,6 +565,7 @@
               createPromptItemCommand({
                 baseRevision,
                 promptPresetId: promptTemplateOwnerCommandId(ownerId),
+                afterItemId,
                 promptItem: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
                 optimisticAcknowledgement,
               }),
@@ -845,6 +855,47 @@
       sequence,
       dispatchReorderPromptItems(ownerId, previous, projectionFence, sequence),
     )
+  }
+
+  function insertPromptItem(promptItem: PromptItem, afterItemId?: string): number | null {
+    if (!promptTemplateHydrated || promptTemplateStructuralMutationPending || promptTemplateUsesSelectedFallback) {
+      return null
+    }
+
+    const ownerId = currentPromptTemplateOwnerId()
+    ensurePromptTemplateDraftIds(ownerId)
+    const afterIndex = afterItemId ? uniquePromptItemIndex(promptTemplateDraft.value, afterItemId) : null
+    if (afterItemId && afterIndex === null) return null
+
+    const sequence = beginPromptTemplateStructuralMutation()
+    if (sequence === null) return null
+    if (canUseServerCommands()) flushPendingPromptTemplatePatches()
+    const previous = currentPromptTemplateSnapshot()
+    const projectionFence = capturePromptTemplateOwnerMutationFence(ownerId)
+    const templates = [...promptTemplateDraft.value]
+    const insertionIndex = afterIndex === null ? templates.length : afterIndex + 1
+    templates.splice(insertionIndex, 0, promptItem)
+    applyPromptTemplateDraft(templates)
+    trackPromptTemplateStructuralMutation(
+      sequence,
+      dispatchCreatePromptItem(ownerId, promptItem, previous, projectionFence, sequence, afterItemId),
+    )
+    return insertionIndex
+  }
+
+  function duplicatePromptItem(originalIndex: number): void {
+    const source = promptTemplateDraft.value[originalIndex]
+    if (!source) return
+    const sourceId = promptItemId(source)
+    const insertionIndex = insertPromptItem(clonePromptItemForDuplicate(source), sourceId)
+    if (insertionIndex === null) return
+
+    const nextOpenedIndices = new Set<number>()
+    for (const index of openedItemIndices) {
+      nextOpenedIndices.add(index > originalIndex ? index + 1 : index)
+    }
+    nextOpenedIndices.add(insertionIndex)
+    openedItemIndices = nextOpenedIndices
   }
 
   function applyPromptTemplateDraft(templates: PromptItem[]): string | null {
@@ -1456,6 +1507,7 @@
             onDrop={handlePromptDrop}
             structuralDisabled={promptTemplateStructuralMutationPending || promptTemplateUsesSelectedFallback}
             readOnly={promptTemplateUsesSelectedFallback}
+            onDuplicate={() => duplicatePromptItem(originalIndex)}
             onRemove={() => {
               if (promptTemplateStructuralMutationPending) return
               if (!confirmSettingsItemRemoval()) return
@@ -1536,18 +1588,7 @@
       class:cursor-wait={promptTemplateStructuralMutationPending}
       class:opacity-60={promptTemplateStructuralMutationPending || promptTemplateUsesSelectedFallback}
       onclick={() => {
-        if (promptTemplateStructuralMutationPending || promptTemplateUsesSelectedFallback) return
-        const sequence = beginPromptTemplateStructuralMutation()
-        if (sequence === null) return
-        if (canUseServerCommands()) flushPendingPromptTemplatePatches()
-        const previous = currentPromptTemplateSnapshot()
-        const promptItem = createPromptItem()
-        const projectionFence = capturePromptTemplateOwnerMutationFence()
-        const ownerId = applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])
-        trackPromptTemplateStructuralMutation(
-          sequence,
-          dispatchCreatePromptItem(ownerId, promptItem, previous, projectionFence, sequence),
-        )
+        insertPromptItem(createPromptItem())
       }}><PlusIcon /></button>
 
     {#if promptTemplateStructuralMutationState === 'failed'}

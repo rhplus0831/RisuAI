@@ -863,6 +863,32 @@ describe('Phase 4 prompt-items collection range', () => {
     ])
   })
 
+  it('POST prompt-items can insert immediately after an existing item', async () => {
+    const revision = await importWithPromptItems()
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items',
+      payload: {
+        baseRevision: revision,
+        afterItemId: 'item-0',
+        promptItem: { id: 'item-copy', type: 'plain', text: 'copy' },
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_templates'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect((readCollection('prompt_templates') as Array<{ id: string }>).map((i) => i.id)).toEqual([
+      'item-0',
+      'item-copy',
+      'item-1',
+      'item-2',
+    ])
+  })
+
   it('PATCH prompt-items/:id updates one row in place', async () => {
     const revision = await importWithPromptItems()
     const before = rowidSnapshot()
@@ -950,6 +976,7 @@ describe('Phase 4 prompt-items collection range', () => {
       payload: {
         baseRevision: revision,
         promptPresetId: 'prompt-a',
+        afterItemId: 'item-0',
         promptItem: { id: 'item-3', type: 'plain', text: 'a3' },
       },
     })
@@ -958,7 +985,7 @@ describe('Phase 4 prompt-items collection range', () => {
     expect(metric.writtenTables).toEqual(['prompt_presets'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-0', 'item-1', 'item-2', 'item-3'])
+    expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-0', 'item-3', 'item-1', 'item-2'])
     expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
   })
 

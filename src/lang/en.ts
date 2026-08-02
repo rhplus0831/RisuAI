@@ -1343,6 +1343,7 @@ export const languageEnglish = {
   icon: 'Icon',
   account: 'Account',
   remove: 'Remove',
+  duplicate: 'Duplicate',
   moveUp: 'Move up',
   moveDown: 'Move down',
   able: 'Able',
