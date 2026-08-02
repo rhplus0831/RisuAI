@@ -18,6 +18,8 @@ export interface GenerationFinalizationAttempt {
   message: Message
   alternateMessages?: Message[]
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
+  characterFieldMutations?: AssembleMutationPayload['characterFieldMutations']
+  localLoreMutation?: AssembleMutationPayload['localLoreMutation']
   targetSnapshot?: GenerationFinalizationTargetSnapshot
 }
 
@@ -40,6 +42,38 @@ export interface PruneTerminalGenerationFinalizationRetriesOptions {
   now?: string | Date
   retentionMs?: number
   maxPerSweep?: number
+}
+
+interface GenerationFinalizationMutationEnvelope {
+  chatVarMutations: AssembleMutationPayload['chatVarMutations']
+  characterFieldMutations?: AssembleMutationPayload['characterFieldMutations']
+  localLoreMutation?: AssembleMutationPayload['localLoreMutation']
+}
+
+function serializeGenerationFinalizationMutations(attempt: GenerationFinalizationAttempt): string {
+  if (!attempt.characterFieldMutations?.length && !attempt.localLoreMutation) {
+    return JSON.stringify(attempt.chatVarMutations)
+  }
+  return JSON.stringify({
+    chatVarMutations: attempt.chatVarMutations,
+    ...(attempt.characterFieldMutations?.length ? { characterFieldMutations: attempt.characterFieldMutations } : {}),
+    ...(attempt.localLoreMutation ? { localLoreMutation: attempt.localLoreMutation } : {}),
+  } satisfies GenerationFinalizationMutationEnvelope)
+}
+
+function parseGenerationFinalizationMutations(value: string): GenerationFinalizationMutationEnvelope {
+  const parsed = JSON.parse(value) as unknown
+  if (Array.isArray(parsed)) {
+    return { chatVarMutations: parsed as AssembleMutationPayload['chatVarMutations'] }
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Invalid generation finalization mutation payload')
+  }
+  const envelope = parsed as Partial<GenerationFinalizationMutationEnvelope>
+  if (!Array.isArray(envelope.chatVarMutations)) {
+    throw new Error('Invalid generation finalization chat variable mutations')
+  }
+  return envelope as GenerationFinalizationMutationEnvelope
 }
 
 function normalizeTimestamp(value: string | Date | undefined): string {
@@ -128,7 +162,7 @@ export function enqueueGenerationFinalizationRetry(db: DatabaseSync, attempt: Ge
     attempt.targetMessageId ?? null,
     JSON.stringify(attempt.message),
     JSON.stringify(attempt.alternateMessages ?? []),
-    JSON.stringify(attempt.chatVarMutations),
+    serializeGenerationFinalizationMutations(attempt),
     attempt.targetSnapshot ? JSON.stringify(attempt.targetSnapshot) : null,
   )
 }
@@ -221,6 +255,7 @@ export function listPendingGenerationFinalizationRetries(
 
   return rows.map((row) => {
     const alternateMessages = JSON.parse(row.alternate_messages_json) as Message[]
+    const mutations = parseGenerationFinalizationMutations(row.chat_var_mutations_json)
     return {
       generationId: row.generation_id,
       chatId: row.chat_id,
@@ -228,7 +263,11 @@ export function listPendingGenerationFinalizationRetries(
       ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
       message: JSON.parse(row.message_json) as Message,
       ...(alternateMessages.length > 0 ? { alternateMessages } : {}),
-      chatVarMutations: JSON.parse(row.chat_var_mutations_json) as AssembleMutationPayload['chatVarMutations'],
+      chatVarMutations: mutations.chatVarMutations,
+      ...(mutations.characterFieldMutations?.length
+        ? { characterFieldMutations: mutations.characterFieldMutations }
+        : {}),
+      ...(mutations.localLoreMutation ? { localLoreMutation: mutations.localLoreMutation } : {}),
       ...(row.target_snapshot_json !== null
         ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
         : {}),

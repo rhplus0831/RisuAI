@@ -1360,6 +1360,7 @@ async function handleServerIntentCompletion(
   reply: FastifyReply,
   body: CompletionRequestBody,
   db: DatabaseSync,
+  dataDir: string,
 ): Promise<void> {
   if (body.provider !== undefined || body.model !== undefined || body.options !== undefined) {
     return badRequest(reply, 'server-intent completion must not include provider, model, or options')
@@ -1432,6 +1433,7 @@ async function handleServerIntentCompletion(
         source: 'completion',
         metadata: { mode: isCompletionModelMode(body.mode) ? body.mode : 'model' },
       },
+      inlayAssetPersistence: { db, dataDir },
     })
 
     if (body.stream === true) {
@@ -1465,7 +1467,7 @@ export function registerGenerationRoutes(
 
     const body = (req.body ?? {}) as CompletionRequestBody
     if (body.kind === SERVER_INTENT_KIND) {
-      await handleServerIntentCompletion(req, reply, body, db)
+      await handleServerIntentCompletion(req, reply, body, db, dataDir)
       return
     }
 

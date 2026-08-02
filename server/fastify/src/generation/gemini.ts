@@ -60,7 +60,22 @@ export interface GeminiRequest {
   streamThoughts?: boolean
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
+  responseModalities?: readonly GeminiResponseModality[]
+  persistInlineData?: (inlineData: GeminiInlineData) => Promise<string>
+  onWarning?: (warning: GeminiResponseWarning) => void
   signal: AbortSignal
+}
+
+export type GeminiResponseModality = 'TEXT' | 'IMAGE' | 'AUDIO'
+
+export interface GeminiInlineData {
+  mimeType: string
+  data: string
+}
+
+export interface GeminiResponseWarning {
+  message: string
+  context?: Record<string, unknown>
 }
 
 export interface GeminiContent {
@@ -95,6 +110,9 @@ interface GeminiResolveInput {
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
   toolRounds?: ServerToolRound[]
+  responseModalities?: readonly GeminiResponseModality[]
+  persistInlineData?: (inlineData: GeminiInlineData) => Promise<string>
+  onWarning?: (warning: GeminiResponseWarning) => void
   signal: AbortSignal
 }
 
@@ -254,6 +272,9 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     streamThoughts: input.streamThoughts === true,
     trace: input.trace,
     tools: input.tools,
+    responseModalities: input.responseModalities,
+    persistInlineData: input.persistInlineData,
+    onWarning: input.onWarning,
     signal: input.signal,
   }
 }
@@ -300,6 +321,7 @@ function buildPayload(req: GeminiRequest): Record<string, unknown> {
   if (req.topK !== undefined) generationConfig.topK = req.topK
   if (req.presencePenalty !== undefined) generationConfig.presencePenalty = req.presencePenalty
   if (req.frequencyPenalty !== undefined) generationConfig.frequencyPenalty = req.frequencyPenalty
+  if (req.responseModalities !== undefined) generationConfig.responseModalities = [...req.responseModalities]
   const thinkingConfig = buildThinkingConfig(req)
   if (thinkingConfig !== undefined) generationConfig.thinkingConfig = thinkingConfig
   if (req.responseSchema !== undefined) {
@@ -421,6 +443,7 @@ interface GeminiResponsePart {
   thought?: unknown
   thoughtSignature?: unknown
   functionCall?: unknown
+  inlineData?: unknown
 }
 
 interface GeminiCandidate {
@@ -479,6 +502,80 @@ function extractText(
     text += '</Thoughts>\n\n'
     state.thinkingOpen = false
   }
+  return text
+}
+
+function readGeminiInlineData(value: unknown): GeminiInlineData | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const mimeType = (value as { mimeType?: unknown }).mimeType
+  const data = (value as { data?: unknown }).data
+  if (typeof mimeType !== 'string' || mimeType.trim().length === 0 || typeof data !== 'string' || data.length === 0) {
+    return null
+  }
+  return { mimeType: mimeType.trim(), data }
+}
+
+function geminiInlineDataWarning(req: GeminiRequest, inlineData: GeminiInlineData | null, error: unknown): void {
+  const mimeType = inlineData?.mimeType
+  const mediaType = mimeType?.split('/', 1)[0] ?? 'unknown'
+  const detail = error instanceof Error ? error.message : String(error)
+  req.onWarning?.({
+    message: `Gemini returned ${mediaType} output that could not be persisted and was skipped.`,
+    context: {
+      kind: 'gemini_inline_data_persistence_failed',
+      mediaType,
+      ...(mimeType ? { mimeType } : {}),
+      error: detail,
+    },
+  })
+}
+
+async function extractBufferedContent(body: GeminiResponse, req: GeminiRequest): Promise<string> {
+  const state: GeminiTextExtractionState = { thinkingOpen: false }
+  let text = ''
+  const candidates = Array.isArray(body.candidates) ? body.candidates : []
+  for (const candidate of candidates) {
+    const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []
+    for (const part of parts) {
+      if (part.thought === true && typeof part.text === 'string') {
+        if (!state.thinkingOpen) {
+          text += '<Thoughts>\n'
+          state.thinkingOpen = true
+        }
+        text += part.text
+        continue
+      }
+      if (typeof part.text === 'string') {
+        if (state.thinkingOpen) {
+          text += '</Thoughts>\n\n'
+          state.thinkingOpen = false
+        }
+        text += part.text
+      }
+      if (part.inlineData === undefined) continue
+      const inlineData = readGeminiInlineData(part.inlineData)
+      if (!inlineData) {
+        geminiInlineDataWarning(req, null, new Error('invalid inlineData payload'))
+        continue
+      }
+      if (!req.persistInlineData) {
+        geminiInlineDataWarning(req, inlineData, new Error('server asset persistence is unavailable'))
+        continue
+      }
+      try {
+        const assetId = await req.persistInlineData(inlineData)
+        if (!assetId) throw new Error('asset persistence returned an empty id')
+        if (state.thinkingOpen) {
+          text += '</Thoughts>\n\n'
+          state.thinkingOpen = false
+        }
+        text += `{{inlay::${assetId}}}`
+      } catch (error) {
+        geminiInlineDataWarning(req, inlineData, error)
+      }
+    }
+  }
+  if (state.thinkingOpen) text += '</Thoughts>\n\n'
   return text
 }
 
@@ -596,7 +693,7 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
 
   const apiMetadata = extractApiResponseMetadata(body, ['candidates', 'error', 'modelVersion'])
 
-  const text = extractText(body)
+  const text = await extractBufferedContent(body, req)
   const toolParts = (body.candidates ?? []).flatMap((candidate) => candidate.content?.parts ?? [])
   const hasToolCalls = toolParts.some((part) => part.functionCall !== undefined)
   if (hasToolCalls) {

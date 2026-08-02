@@ -10,7 +10,15 @@ import { resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../generation/
 import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveMistralRequest, runMistral, runMistralStream } from '../generation/mistral.js'
 import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
-import { resolveGeminiRequest, runGemini, runGeminiStream, type VertexAuthInput } from '../generation/gemini.js'
+import {
+  resolveGeminiRequest,
+  runGemini,
+  runGeminiStream,
+  type GeminiInlineData,
+  type GeminiResponseModality,
+  type GeminiResponseWarning,
+  type VertexAuthInput,
+} from '../generation/gemini.js'
 import { resolveOpenAILegacyInstructRequest, runOpenAILegacyInstruct } from '../generation/openaiLegacyInstruct.js'
 import { resolveOpenAIResponsesRequest, runOpenAIResponses } from '../generation/openaiResponses.js'
 import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
@@ -52,6 +60,7 @@ import {
   wrapRequestHistoryFrames,
   type RequestHistoryContext,
 } from '../requestHistory.js'
+import { persistServerInlayAsset } from '../inlayAssetPersistence.js'
 
 export interface ChatDispatchHistoryInput {
   db: DatabaseSync
@@ -85,6 +94,10 @@ interface ChatDispatchArgs {
   currentCharacterName?: string
   /** Reports a dispatch-time sentinel resolution to generation metadata owners. */
   onResolvedModel?: (model: string) => void
+  /** Main generation route capability for provider-returned media. */
+  inlayAssetPersistence?: { db: DatabaseSync; dataDir: string }
+  /** Provider warnings surfaced over the owning route's warning channel. */
+  onWarning?: (warning: GeminiResponseWarning) => void
 }
 
 interface CustomModelEntry {
@@ -1198,7 +1211,22 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       ? db.extractJson.trim()
       : undefined
   const hasTools = (args.tools?.length ?? 0) > 0
-  const stream = !hasTools && db.useStreaming === true && generationCount === 1 && extractJsonPath === undefined
+  const imageResponse = db.outputImageModal === true || info.flags.includes(LLMFlags.hasImageOutput)
+  const audioResponse = !imageResponse && info.flags.includes(LLMFlags.hasAudioOutput)
+  const geminiResponseModalities: readonly GeminiResponseModality[] | undefined =
+    provider === 'gemini'
+      ? imageResponse
+        ? ['TEXT', 'IMAGE']
+        : audioResponse
+          ? ['TEXT', 'AUDIO']
+          : undefined
+      : undefined
+  const stream =
+    !hasTools &&
+    db.useStreaming === true &&
+    generationCount === 1 &&
+    extractJsonPath === undefined &&
+    geminiResponseModalities === undefined
   const bufferedResultFrames = (result: Promise<CompletionResult>): AsyncGenerator<CompletionStreamFrame> =>
     resultFrames(result, extractJsonPath)
   const textMessages = sanitizeTextMessages(messages, {
@@ -1420,6 +1448,24 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       trace,
       tools: args.tools,
       toolRounds: args.toolRounds,
+      responseModalities: geminiResponseModalities,
+      persistInlineData: args.inlayAssetPersistence
+        ? async (inlineData: GeminiInlineData) => {
+            const compactBase64 = inlineData.data.replace(/\s/gu, '')
+            if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(compactBase64) || compactBase64.length % 4 === 1) {
+              throw new Error('Gemini returned invalid base64 inlineData')
+            }
+            const bytes = Buffer.from(compactBase64, 'base64')
+            if (bytes.length === 0) throw new Error('Gemini returned empty inlineData')
+            const mediaType = inlineData.mimeType.split('/', 1)[0]
+            return persistServerInlayAsset(args.inlayAssetPersistence!.db, args.inlayAssetPersistence!.dataDir, {
+              bytes,
+              contentType: inlineData.mimeType,
+              name: mediaType === 'audio' ? 'gemini-audio' : mediaType === 'image' ? 'gemini-image' : 'gemini-media',
+            })
+          }
+        : undefined,
+      onWarning: args.onWarning,
     })
     if (!request) throw new Error('options.gemini.apiKey or options.gemini.vertex is required')
     return stream ? runGeminiStream(request) : bufferedResultFrames(runGemini(request))

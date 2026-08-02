@@ -1373,6 +1373,52 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.contents).toEqual([{ role: 'user', parts: [{ text: 'hello' }] }])
   })
 
+  it.each([
+    { flag: LLMFlags.hasImageOutput, modalities: ['TEXT', 'IMAGE'] },
+    { flag: LLMFlags.hasAudioOutput, modalities: ['TEXT', 'AUDIO'] },
+  ])('forces buffered Gemini dispatch and requests $modalities output for flag $flag', async ({ flag, modalities }) => {
+    const database = db({
+      aiModel: 'gemini-2.5-flash',
+      google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      useStreaming: true,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({
+      database,
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'gemini-media-output',
+          flags: [flag],
+        }),
+    })
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toContain(':generateContent?key=')
+    expect(captured[0].url).not.toContain(':streamGenerateContent')
+    expect((captured[0].body.generationConfig as Record<string, unknown>).responseModalities).toEqual(modalities)
+  })
+
+  it('leaves buffered non-output-capable Gemini requests without responseModalities', async () => {
+    const database = db({
+      aiModel: 'gemini-2.5-flash',
+      google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      useStreaming: false,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({
+      database,
+      lookupModelInfo: (_database, id) => geminiModelInfo({ id, internalID: 'gemini-text-only' }),
+    })
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect((captured[0].body.generationConfig as Record<string, unknown>).responseModalities).toBeUndefined()
+  })
+
   it('forwards Gemini model safety flags and the translated effective JSON schema', async () => {
     const database = db({
       aiModel: 'gemini-2.5-flash-lite-preview-09-2025',

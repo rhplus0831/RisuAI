@@ -385,6 +385,86 @@ describe('runGemini', () => {
     expect(sent.stream).toBeUndefined()
   })
 
+  it('emits responseModalities in generationConfig', async () => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-image',
+      messages: [{ role: 'user', content: 'draw' }],
+      apiKey: 'k',
+      responseModalities: ['TEXT', 'IMAGE'],
+      signal: new AbortController().signal,
+    })!
+
+    await runGemini(resolved)
+
+    expect(sent.generationConfig).toMatchObject({ responseModalities: ['TEXT', 'IMAGE'] })
+  })
+
+  it.each([
+    { label: 'image', mimeType: 'image/png' },
+    { label: 'audio', mimeType: 'audio/wav' },
+  ])('persists a text-free $label inlineData part and returns its inlay marker', async ({ mimeType }) => {
+    const persistInlineData = vi.fn(async () => 'a'.repeat(64))
+    vi.stubGlobal('fetch', async () =>
+      ok({
+        candidates: [{ content: { parts: [{ inlineData: { mimeType, data: 'cGF5bG9hZA==' } }] } }],
+      }),
+    )
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-media',
+      messages: [{ role: 'user', content: 'create media' }],
+      apiKey: 'k',
+      persistInlineData,
+      signal: new AbortController().signal,
+    })!
+
+    await expect(runGemini(resolved)).resolves.toEqual({
+      type: 'success',
+      result: `{{inlay::${'a'.repeat(64)}}}`,
+    })
+    expect(persistInlineData).toHaveBeenCalledWith({ mimeType, data: 'cGF5bG9hZA==' })
+  })
+
+  it('warns loudly and skips inlineData that cannot be persisted', async () => {
+    const onWarning = vi.fn()
+    vi.stubGlobal('fetch', async () =>
+      ok({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'kept text' }, { inlineData: { mimeType: 'audio/unsupported', data: 'cGF5bG9hZA==' } }],
+            },
+          },
+        ],
+      }),
+    )
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-media',
+      messages: [{ role: 'user', content: 'create media' }],
+      apiKey: 'k',
+      persistInlineData: async () => {
+        throw new Error('Unsupported content-type: audio/unsupported')
+      },
+      onWarning,
+      signal: new AbortController().signal,
+    })!
+
+    await expect(runGemini(resolved)).resolves.toEqual({ type: 'success', result: 'kept text' })
+    expect(onWarning).toHaveBeenCalledWith({
+      message: 'Gemini returned audio output that could not be persisted and was skipped.',
+      context: {
+        kind: 'gemini_inline_data_persistence_failed',
+        mediaType: 'audio',
+        mimeType: 'audio/unsupported',
+        error: 'Unsupported content-type: audio/unsupported',
+      },
+    })
+  })
+
   it('sends array-shaped tools and preserves function ids and signatures in continuation history', async () => {
     const sentBodies: Array<Record<string, unknown>> = []
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {

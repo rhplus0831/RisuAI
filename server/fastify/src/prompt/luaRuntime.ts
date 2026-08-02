@@ -29,7 +29,7 @@ import {
   type GeneratedImage,
   type ImageGenerationExecutionOptions,
 } from '../imageGeneration.js'
-import { addAsset, upsertInlayCatalogEntry } from '../repository.js'
+import { persistServerInlayAsset } from '../inlayAssetPersistence.js'
 import type { ImageGenerationRequest } from '../../../../src/ts/server/imageGenerationProtocol.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { emitProtocolMetric, protocolMetricsEnabled } from '../protocolMetrics.js'
@@ -1409,16 +1409,10 @@ async function persistLuaGeneratedImage(state: RuntimeState, image: GeneratedIma
   if (!state.ctx.requestHistoryDb || !state.ctx.assetDataDir) {
     throw new Error('server asset persistence is unavailable')
   }
-  const added = addAsset(state.ctx.requestHistoryDb, state.ctx.assetDataDir, {
+  return persistServerInlayAsset(state.ctx.requestHistoryDb, state.ctx.assetDataDir, {
     bytes: image.bytes,
     contentType: image.contentType,
   })
-  upsertInlayCatalogEntry(state.ctx.requestHistoryDb, {
-    assetId: added.entry.id,
-    aliases: [],
-    name: added.entry.id,
-  })
-  return added.entry.id
 }
 
 async function runLuaImageGeneration(state: RuntimeState, prompt: string, negativePrompt: string): Promise<string> {
@@ -1846,8 +1840,11 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
       if (!char) return
       const { alwaysActive = false, insertOrder = 100, key = '', regex = false, secondKey = '' } = options ?? {}
       const chat = state.ctx.chat
+      const previous = (chat.localLore ?? []).find((book) => book.comment === name)
+      const entryId = typeof previous?.id === 'string' && previous.id.trim().length > 0 ? previous.id : randomUUID()
       chat.localLore = (chat.localLore ?? []).filter((book) => book.comment !== name)
       chat.localLore.push({
+        id: entryId,
         alwaysActive,
         comment: name,
         content,

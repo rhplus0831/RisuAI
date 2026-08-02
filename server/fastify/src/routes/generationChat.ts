@@ -18,6 +18,8 @@ import {
   isValidAssetId,
   loadPersistedForAssembly,
   writeSingleChatRow,
+  writeSingleChatRowExact,
+  writeSingleCharacterRow,
 } from '../repository.js'
 import {
   assemblePrompt,
@@ -1408,6 +1410,8 @@ function persistAssemblyMutations(args: {
     }
   }
   const hasVarWrite = Object.keys(patch).length > 0 || deleteKeys.length > 0
+  const hasCharacterWrite = (args.mutations.characterFieldMutations?.length ?? 0) > 0
+  const hasLocalLoreWrite = args.mutations.localLoreMutation !== undefined
   const lastMemoryMutation = args.mutations.chatMetadataMutations?.find((mutation) => mutation.key === 'lastMemory')
   const hasMetadataWrite = lastMemoryMutation !== undefined
   const injectReplacements = args.mutations.messageMutations.filter(
@@ -1416,7 +1420,7 @@ function persistAssemblyMutations(args: {
   const persistReplacement = !!args.submitTranscriptChanged && Array.isArray(args.submitMessages)
   const persistTargetedInjects = !!args.submitTranscriptChanged && !persistReplacement && injectReplacements.length > 0
   const persistMessages = persistReplacement || persistTargetedInjects
-  if (!hasVarWrite && !hasMetadataWrite && !persistMessages) {
+  if (!hasVarWrite && !hasMetadataWrite && !hasCharacterWrite && !hasLocalLoreWrite && !persistMessages) {
     emitProtocolMetric('generation_assembly_persistence', {
       status: 'skipped',
       chatId: args.input.chatId,
@@ -1425,6 +1429,8 @@ function persistAssemblyMutations(args: {
       persistMessages,
       hasVarWrite,
       hasMetadataWrite,
+      hasCharacterWrite,
+      hasLocalLoreWrite,
       durationMs: 0,
     })
     return undefined
@@ -1446,10 +1452,20 @@ function persistAssemblyMutations(args: {
       baseRevision,
       eventSink: args.eventSink,
       mutationPath: 'targeted-assembly',
-      chatScopedRead: { chatId: args.input.chatId },
+      chatScopedRead: { chatId: args.input.chatId, exactChatRow: hasLocalLoreWrite },
       mutate(database, targetDb) {
         const characters = normalizeAllCharacterChats(database)
         const { character, chat } = requireChatLocation(characters, args.input.chatId)
+        applyGenerationCharacterFieldMutationsFresh({
+          characterId: character.chaId as string,
+          character,
+          characterFieldMutations: args.mutations.characterFieldMutations,
+        })
+        applyGenerationLocalLoreMutationFresh({
+          chatId: args.input.chatId,
+          chat,
+          localLoreMutation: args.mutations.localLoreMutation,
+        })
         if (hasVarWrite) {
           chat.scriptstate ??= {}
           for (const key of deleteKeys) {
@@ -1506,11 +1522,18 @@ function persistAssemblyMutations(args: {
             chat.lastMemory = lastMemoryMutation.after
           }
         }
-        if (hasVarWrite || hasMetadataWrite) {
-          writeSingleChatRow(targetDb, args.input.chatId, chat)
+        if (hasVarWrite || hasMetadataWrite || hasLocalLoreWrite) {
+          if (hasLocalLoreWrite) {
+            writeSingleChatRowExact(targetDb, args.input.chatId, chat)
+          } else {
+            writeSingleChatRow(targetDb, args.input.chatId, chat)
+          }
+        }
+        if (hasCharacterWrite) {
+          writeSingleCharacterRow(targetDb, character.chaId as string, character)
         }
         const eventTemplate =
-          persistMessages || hasMetadataWrite
+          persistMessages || hasMetadataWrite || hasCharacterWrite || hasLocalLoreWrite
             ? COMMAND_EVENT_CATALOG.generationAssemblyPersisted
             : COMMAND_EVENT_CATALOG.chatScriptstateUpdated
         eventType = eventTemplate.type
@@ -1534,6 +1557,8 @@ function persistAssemblyMutations(args: {
       persistMessages,
       hasVarWrite,
       hasMetadataWrite,
+      hasCharacterWrite,
+      hasLocalLoreWrite,
       durationMs: protocolDurationMs(persistStartedAt),
     })
     return result.revision
@@ -1547,6 +1572,8 @@ function persistAssemblyMutations(args: {
       persistMessages,
       hasVarWrite,
       hasMetadataWrite,
+      hasCharacterWrite,
+      hasLocalLoreWrite,
       durationMs: protocolDurationMs(persistStartedAt),
       error: errorMessage(err, 'failed to persist assembly mutations'),
     })
@@ -1805,6 +1832,8 @@ async function resolvePostGenerationResult(args: {
   message: Message
   targetMessageId?: string
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
+  characterFieldMutations: AssembleMutationPayload['characterFieldMutations']
+  localLoreMutation: AssembleMutationPayload['localLoreMutation']
   alternateTexts: string[]
   targetSnapshot?: GenerationFinalizationTargetSnapshot
   postGenMetricError?: string
@@ -1856,6 +1885,8 @@ async function resolvePostGenerationResult(args: {
       message: resolved.message,
       targetMessageId: resolved.targetMessageId,
       chatVarMutations: postGen.mutations.chatVarMutations,
+      characterFieldMutations: postGen.mutations.characterFieldMutations,
+      localLoreMutation: postGen.mutations.localLoreMutation,
       alternateTexts,
       targetSnapshot,
     }
@@ -1905,6 +1936,8 @@ async function resolvePostGenerationResult(args: {
       message: raw.message,
       targetMessageId: raw.targetMessageId,
       chatVarMutations: [],
+      characterFieldMutations: undefined,
+      localLoreMutation: undefined,
       alternateTexts: (args.alternateTexts ?? []).map((text) => rawProviderAlternateText(args.state, args.input, text)),
       targetSnapshot,
       postGenMetricError: metricError,
@@ -1926,7 +1959,12 @@ function buildPostGenerationFrameBody(
   }
   if (postGen) {
     if (postGen.textChanged) frame.finalText = postGen.finalText
-    if (postGen.mutations.chatVarMutations.length > 0 || postGen.mutations.messageMutations.length > 0) {
+    if (
+      postGen.mutations.chatVarMutations.length > 0 ||
+      postGen.mutations.messageMutations.length > 0 ||
+      (postGen.mutations.characterFieldMutations?.length ?? 0) > 0 ||
+      postGen.mutations.localLoreMutation !== undefined
+    ) {
       frame.messagePatch = postGen.mutations
     }
     if (postGen.resendChat) frame.resendChat = true
@@ -2037,6 +2075,8 @@ async function buildPostGenerationFrame(args: {
     message,
     targetMessageId,
     chatVarMutations,
+    characterFieldMutations,
+    localLoreMutation,
     alternateTexts,
     targetSnapshot,
   } = await resolvePostGenerationResult({
@@ -2068,6 +2108,8 @@ async function buildPostGenerationFrame(args: {
       chatId: args.input.chatId,
       message,
       chatVarMutations,
+      characterFieldMutations,
+      localLoreMutation,
       targetMessageId,
       mode: finalizationModeFromInput(args.input),
       targetSnapshot,
@@ -2266,6 +2308,8 @@ async function streamAssembly(
                 trace: context.trace,
                 profile: context.profile,
                 history: chatDispatchHistory(db, context),
+                inlayAssetPersistence: { db, dataDir },
+                onWarning: (warning) => emit({ type: 'warning', ...warning }),
                 onResolvedModel: (model) => {
                   context.resolvedRequestModel = model
                 },
@@ -2680,6 +2724,56 @@ function validateGenerationChatVarMutationsFresh(args: {
   }
 }
 
+function liveCharacterFieldValue(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
+function applyGenerationCharacterFieldMutationsFresh(args: {
+  characterId: string
+  character: Record<string, unknown>
+  characterFieldMutations: AssembleMutationPayload['characterFieldMutations']
+}): void {
+  for (const mutation of args.characterFieldMutations ?? []) {
+    if (liveCharacterFieldValue(args.character[mutation.key]) !== mutation.before) {
+      throw new ValidationError(
+        `Generation character field is stale for character ${args.characterId}: ${mutation.key}`,
+      )
+    }
+    args.character[mutation.key] = mutation.after
+  }
+}
+
+function validateLocalLoreEntryIds(entries: readonly unknown[]): void {
+  const ids = new Set<string>()
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new ValidationError('Generation local lore entries must be objects')
+    }
+    const id = (entry as { id?: unknown }).id
+    if (typeof id !== 'string' || id.trim().length === 0) {
+      throw new ValidationError('Generation local lore entry id must be a non-empty string')
+    }
+    if (ids.has(id)) {
+      throw new ValidationError(`Duplicate generation local lore entry id: ${id}`)
+    }
+    ids.add(id)
+  }
+}
+
+function applyGenerationLocalLoreMutationFresh(args: {
+  chatId: string
+  chat: Record<string, unknown>
+  localLoreMutation: AssembleMutationPayload['localLoreMutation']
+}): void {
+  if (!args.localLoreMutation) return
+  const live = Array.isArray(args.chat.localLore) ? args.chat.localLore : []
+  if (!isDeepStrictEqual(live, args.localLoreMutation.before)) {
+    throw new ValidationError(`Generation local lore is stale for chat ${args.chatId}`)
+  }
+  validateLocalLoreEntryIds(args.localLoreMutation.after)
+  args.chat.localLore = structuredClone(args.localLoreMutation.after)
+}
+
 /**
  * Persist a durable generation result in one targeted command mutation against a
  * freshly read chat: apply post-gen scriptstate changes, append/replace the
@@ -2697,6 +2791,8 @@ function persistServerGenerationResult(args: {
   /** Additional provider choices persisted as reroll candidates atomically. */
   alternateMessages?: readonly Message[]
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
+  characterFieldMutations?: AssembleMutationPayload['characterFieldMutations']
+  localLoreMutation?: AssembleMutationPayload['localLoreMutation']
   /**
    * Continue/regenerate target. When set, the result REPLACES the existing
    * message at this id (the regenerate target, or the continue row) rather than
@@ -2730,6 +2826,8 @@ function persistServerGenerationResult(args: {
   }
   const { revision: baseRevision } = getSchemaState(args.db)
   const hasScriptstateWrite = Object.keys(patch).length > 0 || deleteKeys.length > 0
+  const hasCharacterWrite = (args.characterFieldMutations?.length ?? 0) > 0
+  const hasLocalLoreWrite = args.localLoreMutation !== undefined
   try {
     const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
       db: args.db,
@@ -2737,7 +2835,7 @@ function persistServerGenerationResult(args: {
       baseRevision,
       eventSink: args.eventSink,
       mutationPath: 'targeted-generation',
-      chatScopedRead: { chatId: args.chatId },
+      chatScopedRead: { chatId: args.chatId, exactChatRow: hasLocalLoreWrite },
       mutate(database, targetDb) {
         const characters = normalizeAllCharacterChats(database)
         const { character, chat } = requireChatLocation(characters, args.chatId)
@@ -2757,6 +2855,16 @@ function persistServerGenerationResult(args: {
             chatVarMutations: args.chatVarMutations,
           })
         }
+        applyGenerationCharacterFieldMutationsFresh({
+          characterId: character.chaId as string,
+          character,
+          characterFieldMutations: args.characterFieldMutations,
+        })
+        applyGenerationLocalLoreMutationFresh({
+          chatId: args.chatId,
+          chat,
+          localLoreMutation: args.localLoreMutation,
+        })
         if (hasScriptstateWrite) {
           chat.scriptstate ??= {}
           for (const key of deleteKeys) {
@@ -2818,20 +2926,28 @@ function persistServerGenerationResult(args: {
         } else {
           clearAlternateMessages(targetDb, args.chatId)
         }
-        if (hasScriptstateWrite) {
-          writeSingleChatRow(targetDb, args.chatId, chat)
+        if (hasScriptstateWrite || hasLocalLoreWrite) {
+          if (hasLocalLoreWrite) {
+            writeSingleChatRowExact(targetDb, args.chatId, chat)
+          } else {
+            writeSingleChatRow(targetDb, args.chatId, chat)
+          }
         }
-        const event = hasScriptstateWrite
-          ? {
-              ...COMMAND_EVENT_CATALOG.generationPersistedWithChatState,
-              id: args.chatId,
-              parentId: character.chaId as string,
-            }
-          : {
-              ...COMMAND_EVENT_CATALOG.generationPersisted,
-              id: write.messageId,
-              parentId: args.chatId,
-            }
+        if (hasCharacterWrite) {
+          writeSingleCharacterRow(targetDb, character.chaId as string, character)
+        }
+        const event =
+          hasScriptstateWrite || hasCharacterWrite || hasLocalLoreWrite
+            ? {
+                ...COMMAND_EVENT_CATALOG.generationPersistedWithChatState,
+                id: args.chatId,
+                parentId: character.chaId as string,
+              }
+            : {
+                ...COMMAND_EVENT_CATALOG.generationPersisted,
+                id: write.messageId,
+                parentId: args.chatId,
+              }
         return {
           event,
           extra: { chatId: args.chatId, messageId: write.messageId },
@@ -2869,6 +2985,8 @@ function persistGenerationFinalizationAttempt(args: {
     message: args.attempt.message,
     alternateMessages: args.attempt.alternateMessages,
     chatVarMutations: args.attempt.chatVarMutations,
+    characterFieldMutations: args.attempt.characterFieldMutations,
+    localLoreMutation: args.attempt.localLoreMutation,
     targetMessageId: args.attempt.targetMessageId,
     mode: args.attempt.mode,
     targetSnapshot: args.attempt.targetSnapshot,
@@ -3045,6 +3163,8 @@ async function buildDurablePostGeneration(args: {
     message,
     targetMessageId,
     chatVarMutations,
+    characterFieldMutations,
+    localLoreMutation,
     alternateTexts,
     targetSnapshot,
   } = await resolvePostGenerationResult({
@@ -3080,6 +3200,8 @@ async function buildDurablePostGeneration(args: {
         message,
         alternateMessages,
         chatVarMutations,
+        characterFieldMutations,
+        localLoreMutation,
         ...(targetMessageId ? { targetMessageId } : {}),
         ...(targetSnapshot ? { targetSnapshot } : {}),
       },
@@ -3373,6 +3495,8 @@ async function runGenerationJob(args: {
                 trace: context.trace,
                 profile: context.profile,
                 history: chatDispatchHistory(db, context),
+                inlayAssetPersistence: { db, dataDir },
+                onWarning: (warning) => emit({ type: 'warning', ...warning }),
                 onResolvedModel: (model) => {
                   context.resolvedRequestModel = model
                 },

@@ -10,7 +10,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { listPersistedCommandEventHistory } from '../src/commands/events.js'
 import { openDatabase } from '../src/db.js'
-import { applyImport, hydrateAssemblyModuleBodies } from '../src/repository.js'
+import { applyImport, assetById, hydrateAssemblyModuleBodies, listInlayCatalogEntries } from '../src/repository.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import { clearOpenRouterFreeModelCacheForTests } from '../src/generation/openrouterFreeModel.js'
 import {
@@ -2280,6 +2280,197 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $__turns: '3' })
   })
 
+  it.each([
+    { field: 'name', lua: "setName(id, 'Renamed Tess')", before: 'Tess', expected: 'Renamed Tess' },
+    {
+      field: 'firstMessage',
+      lua: "setCharacterFirstMessage(id, 'A durable new greeting.')",
+      before: 'Greetings.',
+      expected: 'A durable new greeting.',
+    },
+    {
+      field: 'backgroundHTML',
+      lua: "setBackgroundEmbedding(id, '<section>Durable background</section>')",
+      before: null,
+      expected: '<section>Durable background</section>',
+    },
+  ])(
+    'durably persists Lua editRequest character field $field and emits a character-refreshing event',
+    async (testCase) => {
+      const { assertion } = await setupAuthedClient(harness.app)
+      const database = dbWithEditRequestLua(`
+      listenEdit('editRequest', function(id, data, meta)
+        ${testCase.lua}
+        return data
+      end)
+    `) as JsonRecord
+      database.aiModel = 'echo_model'
+      database.echoMessage = 'server echo reply'
+      await seedDatabase(harness.app, assertion, database)
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(res.statusCode).toBe(200)
+      const patch = parseEvents(res.body).find((event) => event.type === 'message_patch')?.data.patch as
+        | { characterFieldMutations?: Array<{ key: string; before: unknown; after: unknown }> }
+        | undefined
+      expect(patch?.characterFieldMutations).toEqual([
+        { key: testCase.field, before: testCase.before, after: testCase.expected },
+      ])
+
+      const character = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/characters/char-1',
+        headers: { 'risu-auth': assertion },
+      })
+      expect(character.statusCode).toBe(200)
+      expect(character.json().character[testCase.field]).toBe(testCase.expected)
+
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(
+          listPersistedCommandEventHistory(db)
+            .filter((event) => event.type === 'generation.assemblyPersisted')
+            .at(-1),
+        ).toMatchObject({
+          type: 'generation.assemblyPersisted',
+          resource: 'chatTranscript',
+          id: 'chat-1',
+          parentId: 'char-1',
+        })
+      } finally {
+        db.close()
+      }
+    },
+  )
+
+  it('durably upserts local lore by comment while preserving stable entry identity and exact siblings', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const database = dbWithEditRequestLua(`
+      listenEdit('editRequest', function(id, data, meta)
+        upsertLocalLoreBook(id, 'shared', 'replacement', { insertOrder = 7, key = 'new-key' })
+        return data
+      end)
+    `) as JsonRecord
+    database.aiModel = 'echo_model'
+    database.echoMessage = 'server echo reply'
+    const character = (database.characters as Array<JsonRecord>)[0]!
+    const chat = (character.chats as Array<JsonRecord>)[0]!
+    chat.unrelatedExactField = { keep: ['byte-for-byte'] }
+    chat.localLore = [
+      {
+        id: 'stable-shared-id',
+        key: 'old-key',
+        secondkey: '',
+        insertorder: 10,
+        comment: 'shared',
+        content: 'old',
+        mode: 'normal',
+        alwaysActive: false,
+        selective: false,
+      },
+      {
+        id: 'other-id',
+        key: 'other',
+        secondkey: '',
+        insertorder: 20,
+        comment: 'other',
+        content: 'untouched',
+        mode: 'normal',
+        alwaysActive: true,
+        selective: false,
+      },
+      {
+        id: 'duplicate-comment-id',
+        key: 'duplicate',
+        secondkey: '',
+        insertorder: 30,
+        comment: 'shared',
+        content: 'removed duplicate',
+        mode: 'normal',
+        alwaysActive: false,
+        selective: false,
+      },
+    ]
+    await seedDatabase(harness.app, assertion, database)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const reloaded = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(reloaded.statusCode).toBe(200)
+    const persistedChat = reloaded.json().character.chats[0]
+    expect(persistedChat.unrelatedExactField).toEqual({ keep: ['byte-for-byte'] })
+    expect(persistedChat.localLore.map((entry: { id: string }) => entry.id)).toEqual(['other-id', 'stable-shared-id'])
+    expect(persistedChat.localLore[1]).toMatchObject({
+      id: 'stable-shared-id',
+      comment: 'shared',
+      content: 'replacement',
+      insertorder: 7,
+      key: 'new-key',
+    })
+    expect(new Set(persistedChat.localLore.map((entry: { id: string }) => entry.id)).size).toBe(2)
+  })
+
+  it('keeps Lua character and local-lore setters request-local in preview mode', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithEditRequestLua(`
+        listenEdit('editRequest', function(id, data, meta)
+          setName(id, 'Preview-only name')
+          setCharacterFirstMessage(id, 'Preview-only greeting')
+          setBackgroundEmbedding(id, 'Preview-only background')
+          upsertLocalLoreBook(id, 'preview-only', 'must not persist', {})
+          return data
+        end)
+      `),
+    )
+    const dbBefore = openDatabase(harness.dataDir)
+    const eventCountBefore = listPersistedCommandEventHistory(dbBefore).length
+    dbBefore.close()
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, mode: 'preview' },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const reloaded = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(reloaded.json().character).toMatchObject({
+      name: 'Tess',
+      firstMessage: 'Greetings.',
+      chats: [{ localLore: [] }],
+    })
+    expect(reloaded.json().character.backgroundHTML).toBeUndefined()
+    const dbAfter = openDatabase(harness.dataDir)
+    try {
+      expect(listPersistedCommandEventHistory(dbAfter)).toHaveLength(eventCountBefore)
+    } finally {
+      dbAfter.close()
+    }
+  })
+
   // Byte-parity vs the local golden. The browser fixture sweep
   // (`src/ts/process/__fixtures__`) computes its `editrequest-trigger` golden with
   // a *mocked* `runLuaEditTrigger` that appends a fixed marker row whenever a char
@@ -3878,6 +4069,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       messagePatch?: {
         varChanged?: boolean
         chatVarMutations?: Array<{ key: string; before: unknown; after: unknown }>
+        characterFieldMutations?: Array<{ key: string; before: unknown; after: unknown }>
+        localLoreMutation?: { before: unknown[]; after: unknown[] }
         messageMutations?: unknown[]
       }
       translation?: {
@@ -3892,6 +4085,203 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(done?.type).toBe('done')
     return done!.data as ReturnType<typeof doneFrame>
   }
+
+  it('atomically persists output-trigger character and local-lore writes with the generated message', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        chats: [
+          {
+            ...fixtureDatabase.characters[0].chats[0],
+            localLore: [
+              {
+                id: 'output-lore-id',
+                key: 'old',
+                secondkey: '',
+                insertorder: 10,
+                comment: 'output-lore',
+                content: 'old',
+                mode: 'normal',
+                alwaysActive: false,
+                selective: false,
+              },
+            ],
+          },
+        ],
+        triggerscript: [
+          {
+            id: 'durable-character-output',
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [
+              {
+                type: 'triggerlua',
+                code: `
+                  function onOutput(id)
+                    setName(id, 'Output Tess')
+                    setCharacterFirstMessage(id, 'Output greeting')
+                    setBackgroundEmbedding(id, 'Output background')
+                    upsertLocalLoreBook(id, 'output-lore', 'output replacement', { key = 'output-key' })
+                  end
+                `,
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, durable: true },
+    })
+    expect(res.statusCode).toBe(200)
+    const done = doneFrame(parseEvents(res.body))
+    expect(done.postGeneration?.messagePatch?.characterFieldMutations).toEqual([
+      { key: 'name', before: 'Tess', after: 'Output Tess' },
+      { key: 'firstMessage', before: 'Greetings.', after: 'Output greeting' },
+      { key: 'backgroundHTML', before: null, after: 'Output background' },
+    ])
+    expect(done.postGeneration?.messagePatch?.localLoreMutation?.after).toEqual([
+      expect.objectContaining({
+        id: 'output-lore-id',
+        comment: 'output-lore',
+        content: 'output replacement',
+        key: 'output-key',
+      }),
+    ])
+
+    const character = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(character.statusCode).toBe(200)
+    expect(character.json().character).toMatchObject({
+      name: 'Output Tess',
+      firstMessage: 'Output greeting',
+      backgroundHTML: 'Output background',
+      chats: [
+        {
+          localLore: [
+            {
+              id: 'output-lore-id',
+              comment: 'output-lore',
+              content: 'output replacement',
+              key: 'output-key',
+            },
+          ],
+        },
+      ],
+    })
+    expect((await persistedMessages(assertion)).at(-1)).toMatchObject({
+      role: 'char',
+      data: 'server echo reply',
+    })
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(
+        listPersistedCommandEventHistory(db)
+          .filter((event) => event.type === 'generation.persisted')
+          .at(-1),
+      ).toMatchObject({
+        type: 'generation.persisted',
+        resource: 'chatTranscript',
+        id: 'chat-1',
+        parentId: 'char-1',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it.each([
+    {
+      label: 'image',
+      model: 'gemini-3-pro-image-preview',
+      mimeType: 'image/png',
+      bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]),
+      customFlags: undefined,
+      modalities: ['TEXT', 'IMAGE'],
+      catalogType: 'image',
+    },
+    {
+      label: 'audio',
+      model: 'gemini-2.5-flash',
+      mimeType: 'audio/wav',
+      bytes: Buffer.from('RIFF0000WAVEdata', 'ascii'),
+      customFlags: [LLMFlags.hasAudioOutput],
+      modalities: ['TEXT', 'AUDIO'],
+      catalogType: 'audio',
+    },
+  ])(
+    'forces buffered Gemini $label output, persists the native asset, and stores the marker-only message',
+    async (testCase) => {
+      const { assertion } = await setupAuthedClient(harness.app)
+      await seedDatabase(harness.app, assertion, {
+        ...fixtureDatabase,
+        aiModel: testCase.model,
+        google: { accessToken: 'gemini-test-key', projectId: 'test-project' },
+        useStreaming: true,
+        ...(testCase.customFlags ? { enableCustomFlags: true, customFlags: testCase.customFlags } : {}),
+      })
+      let capturedUrl = ''
+      let capturedBody: Record<string, unknown> = {}
+      vi.stubGlobal('fetch', async (url: string | URL | Request, init?: RequestInit) => {
+        capturedUrl = String(url)
+        capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [{ inlineData: { mimeType: testCase.mimeType, data: testCase.bytes.toString('base64') } }],
+                },
+                finishReason: 'STOP',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      })
+
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(capturedUrl).toContain(':generateContent?key=gemini-test-key')
+      expect(capturedUrl).not.toContain(':streamGenerateContent')
+      expect((capturedBody.generationConfig as Record<string, unknown>).responseModalities).toEqual(testCase.modalities)
+
+      const assetId = createHash('sha256').update(testCase.bytes).digest('hex')
+      const marker = `{{inlay::${assetId}}}`
+      expect(doneFrame(parseEvents(res.body)).result).toBe(marker)
+      expect((await persistedMessages(assertion)).at(-1)).toMatchObject({ role: 'char', data: marker })
+
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(assetById(db, assetId)).toMatchObject({
+          id: assetId,
+          contentType: testCase.mimeType,
+          size: testCase.bytes.length,
+        })
+        expect(listInlayCatalogEntries(db)).toContainEqual(
+          expect.objectContaining({ assetId, type: testCase.catalogType }),
+        )
+      } finally {
+        db.close()
+      }
+    },
+  )
 
   it('persists an output-trigger scriptstate delta server-side and surfaces it on done (A2)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)

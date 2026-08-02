@@ -94,6 +94,17 @@ export interface ServerChatMetadataMutation {
   after: string | null
 }
 
+export interface ServerChatCharacterFieldMutation {
+  key: 'name' | 'firstMessage' | 'backgroundHTML'
+  before: string | null
+  after: string
+}
+
+export interface ServerChatLocalLoreMutation {
+  before: unknown[]
+  after: unknown[]
+}
+
 export type ServerChatMessageMutation =
   | {
       type: 'append'
@@ -135,6 +146,8 @@ export interface ServerChatMessagePatch {
   messageMutations: ServerChatMessageMutation[]
   chatVarMutations: ServerChatVarMutation[]
   chatMetadataMutations?: ServerChatMetadataMutation[]
+  characterFieldMutations?: ServerChatCharacterFieldMutation[]
+  localLoreMutation?: ServerChatLocalLoreMutation
   additionalSystemPrompt: ServerChatAdditionalSystemPromptMutation[]
 }
 

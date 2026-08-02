@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { performance } from 'node:perf_hooks'
-import type { Chat, Database, Message, MessagePresetInfo, character } from '../../../../src/ts/storage/database.svelte'
+import { isDeepStrictEqual } from 'node:util'
+import type {
+  Chat,
+  Database,
+  Message,
+  MessagePresetInfo,
+  character,
+  loreBook,
+} from '../../../../src/ts/storage/database.svelte'
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
@@ -358,6 +366,17 @@ export interface AssembleChatMetadataMutation {
   after: string | null
 }
 
+export type AssembleCharacterFieldMutation = {
+  key: 'name' | 'firstMessage' | 'backgroundHTML'
+  before: string | null
+  after: string
+}
+
+export interface AssembleLocalLoreMutation {
+  before: loreBook[]
+  after: loreBook[]
+}
+
 export interface AssembleMutationPayload {
   chatId: string
   characterId: string
@@ -367,6 +386,8 @@ export interface AssembleMutationPayload {
   messageMutations: AssembleMessageMutation[]
   chatVarMutations: AssembleChatVarMutation[]
   chatMetadataMutations?: AssembleChatMetadataMutation[]
+  characterFieldMutations?: AssembleCharacterFieldMutation[]
+  localLoreMutation?: AssembleLocalLoreMutation
   additionalSystemPrompt: AssembleAdditionalSystemPromptMutation[]
 }
 
@@ -566,6 +587,8 @@ export interface AssemblyState {
   messageMutationCheckpoint?: Message[]
   initialScriptstate?: Record<string, string | number | boolean>
   initialLastMemory?: string
+  initialCharacterFields?: Record<AssembleCharacterFieldMutation['key'], string | null>
+  initialLocalLore?: loreBook[]
   /** The submit-time input trigger rewrote the transcript. */
   inputTriggerRewroteTranscript?: boolean
   /** `editinput` transformed the submitted user message. */
@@ -731,6 +754,8 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     messageMutationCheckpoint: initialMessages,
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
     initialLastMemory: currentChat.lastMemory,
+    initialCharacterFields: characterFieldSnapshot(currentChar),
+    initialLocalLore: cloneLocalLore(currentChat.localLore),
     messageMutations: [],
     additionalSystemPromptMutations: [],
     memoryDatabase,
@@ -754,6 +779,22 @@ function cloneMessages(
 
 function cloneScriptstate(scriptstate: Chat['scriptstate'] | undefined): Record<string, string | number | boolean> {
   return structuredClone(scriptstate ?? {}) as Record<string, string | number | boolean>
+}
+
+function characterFieldValue(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
+function characterFieldSnapshot(value: character): Record<AssembleCharacterFieldMutation['key'], string | null> {
+  return {
+    name: characterFieldValue(value.name),
+    firstMessage: characterFieldValue(value.firstMessage),
+    backgroundHTML: characterFieldValue(value.backgroundHTML),
+  }
+}
+
+function cloneLocalLore(localLore: Chat['localLore'] | undefined): loreBook[] {
+  return structuredClone(localLore ?? []) as loreBook[]
 }
 
 function scriptstateEqual(
@@ -1263,8 +1304,24 @@ function buildChatMetadataMutations(state: AssemblyState): AssembleChatMetadataM
   return before === after ? [] : [{ key: 'lastMemory', before, after }]
 }
 
+function buildCharacterFieldMutations(state: AssemblyState): AssembleCharacterFieldMutation[] {
+  const before = state.initialCharacterFields ?? characterFieldSnapshot(state.currentChar)
+  const after = characterFieldSnapshot(state.currentChar)
+  return (Object.keys(after) as AssembleCharacterFieldMutation['key'][]).flatMap((key) =>
+    before[key] === after[key] || after[key] === null ? [] : [{ key, before: before[key], after: after[key] }],
+  )
+}
+
+function buildLocalLoreMutation(state: AssemblyState): AssembleLocalLoreMutation | undefined {
+  const before = state.initialLocalLore ?? []
+  const after = cloneLocalLore(state.currentChat.localLore)
+  return isDeepStrictEqual(before, after) ? undefined : { before: cloneLocalLore(before), after }
+}
+
 function buildMutationPayload(state: AssemblyState): AssembleMutationPayload {
   const chatMetadataMutations = buildChatMetadataMutations(state)
+  const characterFieldMutations = buildCharacterFieldMutations(state)
+  const localLoreMutation = buildLocalLoreMutation(state)
   return {
     chatId: state.input.chatId,
     characterId: state.input.characterId,
@@ -1274,6 +1331,8 @@ function buildMutationPayload(state: AssemblyState): AssembleMutationPayload {
     messageMutations: state.messageMutations ?? [],
     chatVarMutations: buildChatVarMutations(state),
     ...(chatMetadataMutations.length > 0 ? { chatMetadataMutations } : {}),
+    ...(characterFieldMutations.length > 0 ? { characterFieldMutations } : {}),
+    ...(localLoreMutation ? { localLoreMutation } : {}),
     additionalSystemPrompt: state.additionalSystemPromptMutations ?? [],
   }
 }
@@ -2908,6 +2967,8 @@ export async function runServerPostGeneration(
   // mutation accumulators so the payload carries only post-gen writes.
   state.initialScriptstate = cloneScriptstate(currentPersistedChat(state)?.scriptstate)
   state.initialLastMemory = state.currentChat.lastMemory
+  state.initialCharacterFields = characterFieldSnapshot(state.currentChar)
+  state.initialLocalLore = cloneLocalLore(state.currentChat.localLore)
   state.varChanged = false
   state.messageMutations = []
   state.additionalSystemPromptMutations = []
@@ -2949,7 +3010,11 @@ export async function runServerPostGeneration(
   const finalText = assistantTextAfterPass(state, input, isContinue, continueIndex, agentPresetAfterMain.finalText)
   attachAgentPresetDiagnostics(input.generationInfo, state)
   const mutations = buildMutationPayload(state)
-  const changed = mutations.varChanged || mutations.chatVarMutations.length > 0
+  const changed =
+    mutations.varChanged ||
+    mutations.chatVarMutations.length > 0 ||
+    (mutations.characterFieldMutations?.length ?? 0) > 0 ||
+    mutations.localLoreMutation !== undefined
 
   return {
     finalText,
