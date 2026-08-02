@@ -5,8 +5,11 @@ message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
 into **53 work items**: 49 in the active tiers, 2 deferred, and 2 resolved.
-Work status was last updated 2026-08-02 (ST-1/ST-2 resolved as accepted
-divergences by maintainer decision, with a follow-up notice/pinning item).
+Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
+divergences, and the maintainer approved dispositions for every remaining
+`Needs decision` item plus the blanket implementation policy (see the
+maintenance rules) — active items are now `Ready` (41) or `Needs design` (8)
+only, cleared for autonomous execution.
 All items were classified on 2026-08-02 against `fbf750b24`;
 findings are point-in-time evidence and must be re-verified against current
 code before work begins.
@@ -33,6 +36,13 @@ valid work intentionally held outside the active execution order;
   moves to Completed with Status `Resolved` and a resolution of
   "accepted divergence" — then pin it with a test and record it in the area
   document's intentional section.
+- **Blanket implementation policy (maintainer-approved 2026-08-02):** parity
+  with the baseline wins by default; where the baseline behavior is
+  demonstrably accidental and the current behavior is saner, keep current,
+  pin it with a regression test, and record it in the area document's
+  intentional section. Escalate to the maintainer only when evidence no
+  longer matches current code in a way that changes the fix, or a new
+  product/security question appears.
 
 ## Priority rules
 
@@ -74,22 +84,22 @@ valid work intentionally held outside the active execution order;
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
-| Port character additional-information retrieval | [PA-1](docs/prompt-assembly.md) | Needs decision | The `additionalText` field is editable in the UI but never reaches the prompt; the original similarity-searched and appended up to three blocks. | Requires server-side embedding retrieval at assembly time; decide port-vs-remove (if removed, hide the UI field and document). |
+| Retire character additional-information retrieval | [PA-1](docs/prompt-assembly.md) | Ready | The `additionalText` field is editable in the UI but never reaches the prompt; the original similarity-searched and appended up to three blocks. | Decision 2026-08-02: remove, not port. Hide the UI field, add an unsupported notice (strings via `src/lang`), document, and record as an accepted divergence with pinning coverage. |
 | Surface and pin the V2 unsupported-effect no-ops | [ST-1](docs/scripts-triggers-lua.md), [ST-2](docs/scripts-triggers-lua.md) | Ready | Decision 2026-08-02: the effects stay no-op (see Completed items). Users currently get a silent fall-through — a card's trigger appears to run but doesn't, and getter-dependent triggers inject the literal string `null`. | Add a user-facing unsupported notice (trigger editor and/or runtime trigger diagnostic; new strings go in `src/lang`), record the boundary in `docs/structure/`, and pin the no-op arms with a regression test so the fall-through becomes a documented contract. |
 | Durable Lua character/local-lore writes | [ST-3](docs/scripts-triggers-lua.md) | Needs design | `setName`, `setCharacterFirstMessage`, `setBackgroundEmbedding`, `upsertLocalLoreBook` mutate only the request snapshot and are lost. | Extend the assembly mutation payload to carry character-field and local-lore changes through persistence. |
 | Small V2 condition/effect parity fixes | [ST-5](docs/scripts-triggers-lua.md), [ST-6](docs/scripts-triggers-lua.md) | Ready | `∉` never passes; `v2ExtractRegex` is allowlisted yet no-ops (variables become `null`). | Two bounded dispatcher additions with original semantics as spec. |
 | Lua `getPersonaDescription` | [ST-7](docs/scripts-triggers-lua.md) | Ready | Always returns `''`; persona-dependent scripts break. | Expand the active persona prompt against the current character, as the original did. |
-| Non-interactive Lua API stubs | [ST-8](docs/scripts-triggers-lua.md) | Needs decision | `loadLoreBooks`, `similarity`, `generateImage`, image getters, multimodal `LLM` return empty/errors. | Each needs its own server capability (lorebook engine hook, embedding, image generation, asset access); triage individually — `loadLoreBooks` is likely cheapest and most used. |
+| Non-interactive Lua API stubs | [ST-8](docs/scripts-triggers-lua.md) | Ready | `loadLoreBooks`, `similarity`, `generateImage`, image getters, multimodal `LLM` return empty/errors. | Decision 2026-08-02: implement `loadLoreBooks` (server lorebook engine), `similarity` (existing embedding contract), and `generateImage` (via `imageGeneration.ts`); multimodal `LLM` and the image getters reject loudly as unsupported instead of returning empty. |
 | Persist `@@inject` history mutations | [ST-4](docs/scripts-triggers-lua.md) | Needs design | The original durably rewrote the stored message; Fastify's rewrite is request-local. | Route the inject write through an assembly message mutation (`submitTranscriptChanged`); mind the lorebook identity-dirty and transcript-persistence rules. |
-| Module visibility in CBS | [HC-4](docs/history-cbs-variables.md) | Needs decision | `{{moduleenabled}}`/`{{moduleassetlist}}`/module lore in `{{lorebook}}` see zero modules despite server assembly knowing the active set. | Adapter comment claims intent but nothing pins it; wiring the existing active-module helpers in is straightforward if parity is chosen. |
-| `sendName` group-template semantics | [HC-2](docs/history-cbs-variables.md) | Needs decision | Custom `groupTemplate` and `groupOtherBotRole` role rewriting are ignored; assistant rows keep their role. | The original role-overwrite is odd but is the baseline; decide parity vs documented improvement, then pin. |
+| Module visibility in CBS | [HC-4](docs/history-cbs-variables.md) | Ready | `{{moduleenabled}}`/`{{moduleassetlist}}`/module lore in `{{lorebook}}` see zero modules despite server assembly knowing the active set. | Decision 2026-08-02: parity — wire the existing active-module helpers into the CBS adapter. |
+| `sendName` group-template semantics | [HC-2](docs/history-cbs-variables.md) | Ready | Custom `groupTemplate` and `groupOtherBotRole` role rewriting are ignored; assistant rows keep their role. | Decision 2026-08-02: parity — honor `groupTemplate` and `groupOtherBotRole` (presets can depend on the wrapper and role behavior), then pin. |
 | Bypass input hooks for "say nothing" sends | [OR-2](docs/orchestration-postgen.md) | Ready | Synthetic `*says nothing*` rows now run the input trigger and `editinput`, mutating state the original left untouched. | Flag the synthetic send so assembly skips both stages. |
 | Speak processed text and all choices in buffered TTS | [OR-8](docs/orchestration-postgen.md) | Ready | TTS speaks raw pre-`editoutput` text and only the primary multi-gen choice. | Build the TTS side effect from derived final text after post-generation; iterate choices. |
 | Restore `noRetry` failure classification | [OR-4](docs/orchestration-postgen.md) | Ready | Auth errors and impossible Horde jobs burn the full retry budget and may cascade into fallbacks. | Add a non-retryable marker to provider failure frames; set it where the original did (Kobold HTTP, Horde impossible/empty). |
 | Bedrock Claude thinking | [PR-16](docs/provider-adapters.md) | Ready | Extended thinking is silently absent on Bedrock; thinking blocks are discarded. | Port thinking request fields (incl. forced temperature/top-p/top-k rules) and `thinking`/`redacted_thinking` parsing. |
 | Native Ollama thinking | [PR-17](docs/provider-adapters.md) | Ready | `ollamaThinkingMode` is a dead option; `message.thinking` is dropped. | Pass `think` and merge thinking into the shared envelope in both parsers. |
 | DeepSeek `<think>` normalization | [PR-11](docs/provider-adapters.md) | Ready | Literal `<think>` tags persist instead of the `<Thoughts>` envelope. | Port the `deepSeekThinkingOutput` extraction for buffered and streaming paths. |
-| Anthropic image order and cache-point placement | [PR-14](docs/provider-adapters.md) | Ready | Multi-image rows arrive in the opposite order vs the original and the cache boundary moved. | Decide whether original (reversed) order is truly the spec — it likely was accidental but is what deployed prompts and caches saw; then pin. |
+| Anthropic image order and cache-point placement | [PR-14](docs/provider-adapters.md) | Ready | Multi-image rows arrive in the opposite order vs the original and the cache boundary moved. | Decision 2026-08-02 (blanket policy): the baseline's reversed order was accidental — keep the current natural order and cache placement, pin with a regression, and record as an accepted divergence. |
 | Restore stream mode after `additionalParams` | [PR-9](docs/provider-adapters.md) | Ready | A `stream` override in custom params desyncs wire format from parser → hard failure. | Reapply the dispatch-selected `stream` after merging custom params. |
 | Preserve exact custom URLs with query strings | [PR-10](docs/provider-adapters.md) | Ready | Autofill-disabled URLs with query strings get the path appended inside the query. | Parse-aware endpoint construction. |
 | Resolve OpenRouter `risu/free` | [PR-6](docs/provider-adapters.md) | Needs design | "Free Auto" sends a literal `risu/free` model ID → invalid-model error. | Needs a server-side OpenRouter catalog fetch (cache/TTL/failure policy) mirroring `model/openrouter.ts`. |
@@ -100,15 +110,15 @@ valid work intentionally held outside the active execution order;
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
-| Instruct-template engine for legacy transports | [PR-18](docs/provider-adapters.md), [PR-7](docs/provider-adapters.md) | Needs design | Kobold/Ooba-legacy/Horde send `##` headings or `role:` labels instead of Llama/Gemma/Mistral/Vicuna/Alpaca/custom-Jinja control tokens; OpenRouter `useInstructPrompt` is dead. | Port `chatTemplate.ts` (or a bounded subset) server-side; one shared dependency for both findings. Decide which templates are still worth supporting. |
+| Sunset non-ChatML instruct templates on legacy transports | [PR-18](docs/provider-adapters.md), [PR-7](docs/provider-adapters.md) | Ready | Kobold/Ooba-legacy/Horde send `##` headings or `role:` labels instead of Llama/Gemma/Mistral/Vicuna/Alpaca/custom-Jinja control tokens; OpenRouter `useInstructPrompt` is dead. | Decision 2026-08-02: sunset, not port. Document legacy transports as degraded (ChatML only), surface the limitation to users (disable or annotate the dead `useInstructPrompt` toggle), pin current output, and record as an accepted divergence. |
 | Ooba legacy stop strings, cleanup, truncation, and args | [PR-19](docs/provider-adapters.md), [PR-8](docs/provider-adapters.md) | Ready | Missing default `stopping_strings`, no `unstringlizeChat`, `truncation_length` = maxContext, and configured Ooba args silently dropped — simulated extra turns get persisted. | Bounded adapter fixes; the Ooba settings page is still live so configured args must reach the body. |
 | Horde cleanup uses the active character | [PR-20](docs/provider-adapters.md) | Ready | Response trimming searches the wrong character name and persists simulated turns. | Use the effective character passed through dispatch, not `characters[0]`. |
-| Regex-script edge parity | [ST-9](docs/scripts-triggers-lua.md), [ST-10](docs/scripts-triggers-lua.md) | Ready | Unmatched `$1` in move directives and `NaN` `order` tokens change output/order vs baseline. | Tiny fixes; decide whether to reproduce `undefined`-coercion exactly (it is the baseline spec). |
+| Regex-script edge parity | [ST-9](docs/scripts-triggers-lua.md), [ST-10](docs/scripts-triggers-lua.md) | Ready | Unmatched `$1` in move directives and `NaN` `order` tokens change output/order vs baseline. | Decision 2026-08-02 (blanket policy): ST-9 keeps the saner literal `$1` (pin + record as accepted divergence); ST-10 restores parity — malformed `order` tokens must not reorder scripts. |
 | Empty `@@exclude_keys_all` suppression | [LM-3](docs/lorebook-memory.md) | Ready | A bare decorator activates the entry where the original suppressed it. | One-line initialization parity in the all-key matcher. |
-| Repeated mixed chat-card systemization | [PA-4](docs/prompt-assembly.md) | Needs decision | Two chat cards over one range with mixed systemization produce different roles vs the baseline's shared-mutation behavior. | Parity would reproduce a mutation side effect; probably accept + pin instead. |
-| Missing prompt-asset bytes policy | [HC-8](docs/history-cbs-variables.md) | Needs decision | Stale asset references silently drop the image where the original failed generation. | Silent-drop is arguably better UX; decide, then pin and document. |
-| Request-trigger accumulation across retries | [OR-3](docs/orchestration-postgen.md) | Needs decision | Same-model retries re-apply the request trigger to fresh rows instead of accumulating. | Two agents dispute whether baseline accumulation was intentional; current per-attempt re-run is pinned but row-reset is not. Decide and pin explicitly. |
-| Buffered Continue two-pass `editoutput` | [OR-6](docs/orchestration-postgen.md) | Needs decision | Stateful edit hooks fire once per buffered Continue instead of twice. | Baseline double-fire looks accidental; decide parity vs accepted improvement, then pin. |
+| Repeated mixed chat-card systemization | [PA-4](docs/prompt-assembly.md) | Ready | Two chat cards over one range with mixed systemization produce different roles vs the baseline's shared-mutation behavior. | Decision 2026-08-02: keep the current clone behavior (baseline shared-mutation was accidental); pin with a regression and record as an accepted divergence. |
+| Missing prompt-asset bytes policy | [HC-8](docs/history-cbs-variables.md) | Ready | Stale asset references silently drop the image where the original failed generation. | Decision 2026-08-02: keep silent-drop (better UX than failing generation), add a diagnostic warning so the drop is observable, pin, and record as an accepted divergence. |
+| Request-trigger accumulation across retries | [OR-3](docs/orchestration-postgen.md) | Ready | Same-model retries re-apply the request trigger to fresh rows instead of accumulating. | Decision 2026-08-02: keep the current per-retry reset (baseline accumulation was accidental); pin the row-reset explicitly and record as an accepted divergence. |
+| Buffered Continue two-pass `editoutput` | [OR-6](docs/orchestration-postgen.md) | Ready | Stateful edit hooks fire once per buffered Continue instead of twice. | Decision 2026-08-02: keep single-pass (baseline double-fire was accidental); pin with a regression and record as an accepted divergence. |
 
 ## Tier 4 — Metadata/telemetry only
 
@@ -116,7 +126,7 @@ valid work intentionally held outside the active execution order;
 | --- | --- | --- | --- | --- |
 | Legacy model labels and stage timings in `generationInfo` | [OR-9](docs/orchestration-postgen.md) | Ready | Exported metadata loses provider-prefixed model labels; `stageTiming.stage2/stage4` persist as zero. | Either persist the legacy display label and post-stage-4 timings, or document the new shape. |
 | Preserve the headroom clamp in `outputTokens` metadata | [PA-5](docs/prompt-assembly.md) | Ready | Persisted `outputTokens` reports `maxResponse` instead of the assembly-clamped value. | Keep the clamped value through provider-profile selection. |
-| Align the retry-count clamp with the UI | [OR-5](docs/orchestration-postgen.md) | Ready | UI accepts 20 retries; the server clamps to 10 silently. | Pick one bound and enforce it on both sides. |
+| Align the retry-count clamp with the UI | [OR-5](docs/orchestration-postgen.md) | Ready | UI accepts 20 retries; the server clamps to 10 silently. | Decision 2026-08-02: parity — raise the server clamp to the UI's 20. |
 
 ## Completed items
 
@@ -158,11 +168,9 @@ risk, and shared code.
 4. **Tier 2 by subsystem, not by row order:** the provider batch
    (PR-16/17/11/14/9/10) shares adapter test scaffolding; the scripting batch
    (ST-5/6/7, then ST-3/ST-4 design) shares the trigger/Lua harness; the
-   orchestration batch (OR-2/8/4) is independent. Escalate the remaining
-   `Needs decision` clusters (PA-1, HC-4, HC-2) to a maintainer early —
-   decisions unblock cheap implementations. (The ST-1/ST-2 V2-effects
-   cluster was decided 2026-08-02; only its notice/pinning follow-up
-   remains.)
+   orchestration batch (OR-2/8/4) is independent. All decision clusters
+   were settled by the 2026-08-02 maintainer approval; per-row decision
+   notes record each disposition.
 5. **Tier 3** rides spare capacity; the instruct-template engine decision
    (support vs sunset legacy transports) should be made before any effort is
    spent on PR-18.
