@@ -290,6 +290,7 @@ async function formatHistoryMessage(
     ? rawData
     : expandVariables(rawData, {
         ...ctx,
+        chatID: index,
         chara: currentChar,
         role: msg.role,
       }).text

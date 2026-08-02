@@ -985,7 +985,8 @@ export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat
  * `processScriptFull`'s order for the user text: the Lua `editInput` hook
  * (`runLuaEditTrigger(char,'editinput',…)`) → CBS expansion (the
  * `risuChatParser` at `scripts.ts`) → the regex `editinput` scripts
- * ({@link processScript}). `chatID` is `-1` (submit-time; the SPA default).
+ * ({@link processScript}). Because Fastify owns the transform after appending
+ * the submitted row, its actual message index is used for Lua metadata and CBS.
  *
  * The transform applies in place to the last (user) row that
  * `appendUserMessageRow` produced, whose `.data` is still the raw submitted text.
@@ -999,16 +1000,31 @@ async function applyEditInput(state: AssemblyState): Promise<void> {
   if (typeof rawUserMessage !== 'string') return
 
   const messages = state.currentChat.message ?? []
-  const lastMessage = messages[messages.length - 1]
+  const lastMessageIndex = messages.length - 1
+  const lastMessage = messages[lastMessageIndex]
   // Only the freshly-submitted user row (still carrying the raw text) is edited.
   if (lastMessage?.role !== 'user' || (lastMessage.name ?? null) !== null || lastMessage.data !== rawUserMessage) {
     return
   }
 
   const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
-  let text = await runLuaEditTrigger(state.currentChar, 'editinput', rawUserMessage, { index: -1 }, editCtx)
-  text = expandVariables(text, { ...state.ctx, chara: state.currentChar }).text
-  text = await processScriptAsync(state.ctx, state.currentChar, text, 'editinput', {}, -1, state.currentChat)
+  let text = await runLuaEditTrigger(
+    state.currentChar,
+    'editinput',
+    rawUserMessage,
+    { index: lastMessageIndex },
+    editCtx,
+  )
+  text = expandVariables(text, { ...state.ctx, chatID: lastMessageIndex, chara: state.currentChar }).text
+  text = await processScriptAsync(
+    state.ctx,
+    state.currentChar,
+    text,
+    'editinput',
+    {},
+    lastMessageIndex,
+    state.currentChat,
+  )
 
   if (varEngine.varChanged) {
     state.varChanged = true
@@ -2304,7 +2320,7 @@ async function applyEditOutput(
   editCtx.postGenerationTrace = luaTrace
   editCtx.postGenerationProgress = luaProgress
   let out = await runLuaEditTrigger(state.currentChar, 'editoutput', text, { index: msgIndex }, editCtx)
-  out = expandVariables(out, { ...state.ctx, chara: state.currentChar }).text
+  out = expandVariables(out, { ...state.ctx, chatID: msgIndex, chara: state.currentChar }).text
   out = await processScriptAsync(state.ctx, state.currentChar, out, 'editoutput', {}, msgIndex, state.currentChat)
   if (varEngine.varChanged) {
     state.varChanged = true

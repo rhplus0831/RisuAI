@@ -344,7 +344,7 @@ function applyOne(
   if (prepared.isCbs) {
     // `cbs` action: pre-expand the input regex source (scripts.ts).
     // Per-message by design — the expansion depends on cbsConditions.
-    const regexIn = expandVariables(script.in, { ...ctx, cbsConditions }).text
+    const regexIn = expandVariables(script.in, { ...ctx, chatID, cbsConditions }).text
     reg = compileBoundedRegex(regexIn, flag, 'customscript cbs script.in pattern')
   } else {
     if (!prepared.reg) return data
@@ -379,7 +379,7 @@ function applyOne(
       assertBoundedRegexHaystack(data, 'customscript action replace source')
       assertBoundedRegexReplacement(outScript, 'customscript action replace replacement')
       const replaced = data.replace(reg, outScript)
-      return expandVariables(replaced, { ...ctx, cbsConditions }).text
+      return expandVariables(replaced, { ...ctx, chatID, cbsConditions }).text
     }
     // No match: only @@repeat_back / the 'repeat_back' action fires.
     if (outScript.startsWith('@@repeat_back') || actions.includes('repeat_back')) {
@@ -391,7 +391,7 @@ function applyOne(
   assertBoundedRegexHaystack(data, 'customscript replace source')
   assertBoundedRegexReplacement(outScript, 'customscript replace replacement')
   const replaced = data.replace(reg, outScript)
-  return expandVariables(replaced, { ...ctx, cbsConditions }).text
+  return expandVariables(replaced, { ...ctx, chatID, cbsConditions }).text
 }
 
 async function applyMoveAsync(
@@ -504,7 +504,7 @@ async function applyOneAsync(
 
   let reg: BoundedRegexLike
   if (prepared.isCbs) {
-    const regexIn = expandVariables(script.in, { ...ctx, cbsConditions }).text
+    const regexIn = expandVariables(script.in, { ...ctx, chatID, cbsConditions }).text
     reg = compileBoundedRegexWithCompatibility(regexIn, flag, 'customscript cbs script.in pattern', options)
   } else {
     if (!prepared.reg) return data
@@ -534,7 +534,7 @@ async function applyOneAsync(
         'customscript action replace replacement',
         options,
       )
-      return expandVariables(replaced, { ...ctx, cbsConditions }).text
+      return expandVariables(replaced, { ...ctx, chatID, cbsConditions }).text
     }
     if (outScript.startsWith('@@repeat_back') || actions.includes('repeat_back')) {
       return applyRepeatBackAsync(char, currentChat, chatID, data, reg, outScript, options)
@@ -550,7 +550,7 @@ async function applyOneAsync(
     'customscript replace replacement',
     options,
   )
-  return expandVariables(replaced, { ...ctx, cbsConditions }).text
+  return expandVariables(replaced, { ...ctx, chatID, cbsConditions }).text
 }
 
 interface PreparedScriptsMemoEntry {

@@ -2016,7 +2016,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       dbWithSubmitLua(
         `
         listenEdit('editInput', function(id, data, meta)
-          return data .. ' [EDITINPUT]'
+          return data .. ' [EDITINPUT:' .. tostring(meta.index) .. ']'
         end)
       `,
         ['main', 'description', 'chats', 'lastChat'],
@@ -2028,7 +2028,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     // Assembled prompt: the transformed user message renders (lastChat slot).
     const prompt = events.find((e) => e.type === 'prompt')!
     const messages = prompt.data.messages as Array<{ role: string; content: string }>
-    expect(messages.some((m) => m.content === 'hi [EDITINPUT]')).toBe(true)
+    expect(messages.some((m) => m.content === 'hi [EDITINPUT:0]')).toBe(true)
     expect(messages.some((m) => m.content === 'hi')).toBe(false)
 
     // The message_patch carries the editinput replace_all and the persisted
@@ -2044,12 +2044,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(editinputMutation?.type).toBe('replace_all')
     expect(editinputMutation?.messages?.at(-1)).toMatchObject({
       role: 'user',
-      data: 'hi [EDITINPUT]',
+      data: 'hi [EDITINPUT:0]',
     })
 
     const chat = await bootstrapChat(assertion)
     expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([
-      { role: 'user', data: 'hi [EDITINPUT]' },
+      { role: 'user', data: 'hi [EDITINPUT:0]' },
     ])
   })
 

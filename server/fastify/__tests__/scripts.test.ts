@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { Chat, Database, character, customscript } from '../../../src/ts/storage/database.svelte'
-import { processScript } from '../src/prompt/scripts.js'
+import { processScript, processScriptAsync } from '../src/prompt/scripts.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
 
@@ -189,6 +189,29 @@ describe('Phase 7-6a processScript', () => {
     })
     const out = processScript(ctxFor(db), db.characters[0], 'Hello, NAME!', 'editprocess')
     expect(out).toBe('Hello, Alex!')
+  })
+
+  it('expands replacement CBS with the supplied current-message index', async () => {
+    const chat = makeChatForScripts([
+      { role: 'char', data: 'previous response' },
+      { role: 'user', data: 'current request' },
+    ])
+    const char = makeCharacter({ chats: [chat] })
+    const db = makeDatabase({
+      characters: [char],
+      presetRegex: [
+        regex(
+          '^current request$',
+          '{{#if {{equal::{{chat_index}}::{{lastmessageid}}}}}}CURRENT{{/if}}' +
+            '{{#if {{not_equal::{{chat_index}}::{{lastmessageid}}}}}}STALE{{/if}}',
+          'editprocess',
+        ),
+      ],
+    })
+
+    const out = await processScriptAsync(ctxFor(db), char, 'current request', 'editprocess', {}, 1, chat)
+
+    expect(out).toBe('CURRENT')
   })
 
   it("preserves '$1' and '$&' backreferences via RegExp.replace (outScript ending in `>` auto-appends \\n per SPA scripts.ts:194-196)", () => {

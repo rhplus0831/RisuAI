@@ -30,6 +30,8 @@ import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetRefere
 
 export interface ExpandContext {
   database: Database
+  /** Current chat-message index for CBS callbacks such as `{{chat_index}}`. */
+  chatID?: number
   /** Index into `database.characters`. Defaults to `database.currentChar ?? 0`. */
   selectedCharID?: number
   /**
@@ -99,6 +101,7 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
 
   try {
     const text = risuChatParser(expandAgentPresetOutputs(input, ctx), {
+      chatID: ctx.chatID,
       db: ctx.database,
       chara: ctx.chara ?? char,
       var: ctx.slot,

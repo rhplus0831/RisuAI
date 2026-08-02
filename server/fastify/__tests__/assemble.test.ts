@@ -4111,6 +4111,36 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expectNoFullTranscriptStringify()
   })
 
+  it('runs editinput CBS with the appended user row as the current message', async () => {
+    const currentMessageOnly =
+      '{{#if {{equal::{{chat_index}}::{{lastmessageid}}}}}}CURRENT{{/if}}' +
+      '{{#if {{not_equal::{{chat_index}}::{{lastmessageid}}}}}}STALE{{/if}}'
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'current request' }),
+      depsFor(
+        m1Db([msg('char', 'previous response', 'msg-1')], {
+          char: {
+            customscript: [
+              {
+                in: '^current request$',
+                out: currentMessageOnly,
+                type: 'editinput',
+                flag: '',
+                ableFlag: false,
+              },
+            ] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.submitMessages?.map((message) => ({ role: message.role, data: message.data }))).toEqual([
+      { role: 'char', data: 'previous response' },
+      { role: 'user', data: 'CURRENT' },
+    ])
+  })
+
   it('L9/v4-L7: valid customscript script.in output remains unchanged under bounds', async () => {
     const result = await assemblePrompt(
       baseInput({ userMessage: 'hi' }),

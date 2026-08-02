@@ -335,6 +335,29 @@ describe('Phase 7-5a buildHistoryWindow role mapping', () => {
     const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     expect(result.messages.some((m) => m.content === 'I am Alex')).toBe(true)
   })
+
+  it('expands per-message data with its current chat index', async () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({ role: 'user', data: 'row={{chat_index}} last={{lastmessageid}}' }),
+                makeMessage({ role: 'char', data: 'row={{chat_index}} last={{lastmessageid}}' }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+
+    expect(result.messages.map((message) => message.content)).toContain('row=0 last=1')
+    expect(result.messages.map((message) => message.content)).toContain('row=1 last=1')
+  })
 })
 
 function regex(
