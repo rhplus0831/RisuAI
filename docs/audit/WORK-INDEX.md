@@ -4,11 +4,11 @@ Generated 2026-08-02 from the six-agent parity review of the Fastify
 message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
-into **53 work items**: 37 in the active tiers, 2 deferred, and 14 resolved.
+into **53 work items**: 34 in the active tiers, 2 deferred, and 17 resolved.
 Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
 divergences, and the maintainer approved dispositions for every remaining
 `Needs decision` item plus the blanket implementation policy (see the
-maintenance rules) — active items are now `Ready` (29) or `Needs design` (8)
+maintenance rules) — active items are now `Ready` (27) or `Needs design` (7)
 only, cleared for autonomous execution. Tier 0 landed in `99a346377`; the
 Tier 1 CBS/assembly batch in `0c5ba0ac8`; the Gemini cluster in `db638a29c`.
 All items were classified on 2026-08-02 against `fbf750b24`;
@@ -65,8 +65,6 @@ valid work intentionally held outside the active execution order;
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
-| Clip summarized history with the planner start index | [LM-2](docs/lorebook-memory.md) | Ready | Prompts carry both a Hypa V3 summary and the full messages it summarizes — duplicated context and wasted budget. | Apply `plan.startIndex` to `historyMessages` in assembly; verify interaction with generic non-memory trimming and the memory window token math. |
-| Supply live similar-memory query vectors | [LM-1](docs/lorebook-memory.md) | Needs design | Similarity-weighted Hypa V3 configurations silently inject no memory in production. | Requires embedding recent chat text at generation time (cost/latency policy, embedding-provider resolution, failure handling); ranking service and tests already accept vectors. |
 | Re-expand stable cards after the start trigger | [PA-2](docs/prompt-assembly.md) | Needs design | Start-trigger state changes never reach the final prompt (cached pre-trigger expansions are reused). | Invalidate/re-render the stable-card cache when the start trigger mutates state; weigh against the caching design that motivated preflight expansion. |
 
 ## Tier 2 — Feature-scoped gaps
@@ -103,7 +101,6 @@ valid work intentionally held outside the active execution order;
 | Ooba legacy stop strings, cleanup, truncation, and args | [PR-19](docs/provider-adapters.md), [PR-8](docs/provider-adapters.md) | Ready | Missing default `stopping_strings`, no `unstringlizeChat`, `truncation_length` = maxContext, and configured Ooba args silently dropped — simulated extra turns get persisted. | Bounded adapter fixes; the Ooba settings page is still live so configured args must reach the body. |
 | Horde cleanup uses the active character | [PR-20](docs/provider-adapters.md) | Ready | Response trimming searches the wrong character name and persists simulated turns. | Use the effective character passed through dispatch, not `characters[0]`. |
 | Regex-script edge parity | [ST-9](docs/scripts-triggers-lua.md), [ST-10](docs/scripts-triggers-lua.md) | Ready | Unmatched `$1` in move directives and `NaN` `order` tokens change output/order vs baseline. | Decision 2026-08-02 (blanket policy): ST-9 keeps the saner literal `$1` (pin + record as accepted divergence); ST-10 restores parity — malformed `order` tokens must not reorder scripts. |
-| Empty `@@exclude_keys_all` suppression | [LM-3](docs/lorebook-memory.md) | Ready | A bare decorator activates the entry where the original suppressed it. | One-line initialization parity in the all-key matcher. |
 | Repeated mixed chat-card systemization | [PA-4](docs/prompt-assembly.md) | Ready | Two chat cards over one range with mixed systemization produce different roles vs the baseline's shared-mutation behavior. | Decision 2026-08-02: keep the current clone behavior (baseline shared-mutation was accidental); pin with a regression and record as an accepted divergence. |
 | Missing prompt-asset bytes policy | [HC-8](docs/history-cbs-variables.md) | Ready | Stale asset references silently drop the image where the original failed generation. | Decision 2026-08-02: keep silent-drop (better UX than failing generation), add a diagnostic warning so the drop is observable, pin, and record as an accepted divergence. |
 | Request-trigger accumulation across retries | [OR-3](docs/orchestration-postgen.md) | Ready | Same-model retries re-apply the request trigger to fresh rows instead of accumulating. | Decision 2026-08-02: keep the current per-retry reset (baseline accumulation was accidental); pin the row-reset explicitly and record as an accepted divergence. |
@@ -126,6 +123,9 @@ pinning test + area-doc intentional entry).
 
 | Work item | Findings | Status | Impact | Resolution |
 | --- | --- | --- | --- | --- |
+| Clip summarized history with the planner start index | [LM-2](docs/lorebook-memory.md) | Resolved | Prompts carried both a Hypa V3 summary and the full messages it summarizes. | Fixed in `a3765724c`: history handed to the memory window/provider is clipped at the stored compatible-summary boundary (deliberately NOT the planner's forward-looking `startIndex`, which can include scheduled-but-unsummarized chunks) with matching token accounting; scripts still see full history, mirroring the baseline order. Regressions in `assemble.test.ts`. |
+| Supply live similar-memory query vectors | [LM-1](docs/lorebook-memory.md) | Resolved | Similarity-weighted Hypa V3 selected no memory in production. | Fixed in `a3765724c`: the route prefetches query vectors before assembly (baseline query window: enabled transcript, regenerate truncation/send append, last `queryChatCount` rows, blank filtering) via the shared embedding adapter under the memory-provider deadline; abort/timeout/failure degrade to empty vectors with prompt-memory diagnostics; work is skipped unless Hypa V3 + positive similarity allocation + compatible embedded summaries. Route-level success/failure/timeout regressions in `generation.chat.test.ts`. |
+| Empty `@@exclude_keys_all` suppression | [LM-3](docs/lorebook-memory.md) | Resolved | A bare decorator activated the entry where the original suppressed it. | Fixed in `a3765724c`: empty all-key queries count as matched in both sync and async matchers. Regressions in `lorebook.test.ts`. |
 | Gemini: send safety-setting overrides | [PR-1](docs/provider-adapters.md) | Resolved | Provider-default safety blocking was active; role-play content could return `SAFETY` with no text. | Fixed in `db638a29c`: baseline `BLOCK_NONE` category set with `geminiBlockOff` `OFF` variant and `noCivilIntegrity` omission. Regressions in `gemini.test.ts`. |
 | Gemini: forward JSON-schema controls | [PR-2](docs/provider-adapters.md) | Resolved | JSON-schema mode was a no-op on Gemini. | Fixed in `db638a29c`: `response_mime_type`/`response_schema` emitted from effective/per-request schema with recursive `$schema`/`additionalProperties` stripping. Wire tests in `gemini.test.ts`/`chatDispatchProfileOptions.test.ts`. |
 | Gemini: map Gemini 3 thinking levels and omit zero top-k | [PR-3](docs/provider-adapters.md) | Resolved | Gemini 3 requests carried `thinkingBudget` and `topK: 0`. | Fixed in `db638a29c`: fork-point budget→level thresholds (Flash 4096→MEDIUM/16384→HIGH; Pro 8192→HIGH), numeric budget dropped on Gemini 3, `topK` omitted at zero. Boundary tests included. |
