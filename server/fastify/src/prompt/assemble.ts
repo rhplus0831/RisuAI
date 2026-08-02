@@ -211,6 +211,7 @@ export type AssembleMutationSource =
   | 'regenerate'
   | 'run_var'
   | 'history_normalize'
+  | 'history_inject'
   | 'start_trigger'
   | 'input_trigger'
   | 'editinput'
@@ -238,6 +239,13 @@ export type AssembleMessageMutation =
       beforeLength: number
       afterLength: number
       messages: Message[]
+    }
+  | {
+      type: 'replace_by_id'
+      source: 'history_inject'
+      messageId: string
+      before: Message
+      message: Message
     }
 
 const MESSAGE_MUTATION_FIRST_CHANGED_INDEX = Symbol('messageMutationFirstChangedIndex')
@@ -403,16 +411,15 @@ export interface AssembleResult {
   /** Browser-visible state from before the server-owned mutations replay. */
   restoration?: AssembleRestorationPayload
   /**
-   * Submit-time transcript the route persists when {@link submitTranscriptChanged}
-   * is set. It contains the authoritative server-owned user-input transforms,
-   * including a successful before-main Agent Preset `userInput` destination.
-   * Route-only (not on the SSE wire).
+   * Optional full transcript snapshot used when persistence cannot be expressed
+   * as identity-addressed mutations alone. Route-only (not on the SSE wire).
    */
   submitMessages?: Message[]
   /**
-   * True when the submit-time input trigger, `editinput`, or a before-main Agent
-   * Preset transformed the user message — i.e. the route must persist
-   * {@link submitMessages}. Stays false for a plain send with no input transform.
+   * True when a submit-time input transform or history `@@inject` rewrite made
+   * the route responsible for transcript persistence, using either
+   * {@link submitMessages} or the message mutation payload. Stays false for
+   * plain prompt-local history regex transforms.
    */
   submitTranscriptChanged?: boolean
   /**
@@ -449,6 +456,17 @@ export interface AssemblyState {
   usingPromptTemplate: boolean
   /** Per-assembly cache for template cards stable across token preflight and final render. */
   stableCardCache: StableCardRenderCache
+  /**
+   * Scriptstate surrounding the speculative stable-card preflight. Preflight
+   * run-var writes are rolled back so the start trigger observes its baseline
+   * input; an unchanged final render replays `after`, while an invalidated
+   * render executes the cards once against the post-trigger state.
+   */
+  stableCardPreflightScriptstate?: {
+    before: Record<string, string | number | boolean>
+    after?: Record<string, string | number | boolean>
+  }
+  stableCardCacheInvalidated?: boolean
   formatOrder: FormatOrderKey[]
   /** `input.mode === 'continue'`; drives the `[Continue the last response]` marker. */
   isContinue: boolean
@@ -554,6 +572,10 @@ export interface AssemblyState {
   editInputTransformed?: boolean
   /** A before-main Agent Preset step replaced the latest user message. */
   agentPresetInputTransformed?: boolean
+  /** A matched history `@@inject` rewrote one or more persistence-eligible rows. */
+  historyInjectRewroteTranscript?: boolean
+  /** An injected row did not exist at assembly start and needs full transcript persistence. */
+  historyInjectRequiresTranscriptReplacement?: boolean
   /** Submit transcript snapshot used when a server-owned input transform changed it. */
   submitMessages?: Message[]
   messageMutations?: AssembleMessageMutation[]
@@ -796,6 +818,17 @@ function syncWorkingScriptstate(state: AssemblyState): void {
   }
 }
 
+function replaceWorkingScriptstate(state: AssemblyState, scriptstate: Record<string, string | number | boolean>): void {
+  const persisted = currentPersistedChat(state)
+  if (!persisted) return
+  if (Object.keys(scriptstate).length === 0) {
+    delete persisted.scriptstate
+  } else {
+    persisted.scriptstate = structuredClone(scriptstate)
+  }
+  syncWorkingScriptstate(state)
+}
+
 function syncWorkingTranscript(state: AssemblyState): void {
   const persisted = currentPersistedChat(state)
   if (persisted) {
@@ -808,6 +841,43 @@ function foldStableCardCacheVars(state: AssemblyState): void {
   if (!state.stableCardCache.dirty) return
   state.varChanged = true
   syncWorkingScriptstate(state)
+}
+
+function invalidateStableCardCache(state: AssemblyState): void {
+  state.stableCardCache.clear()
+  state.stableCardCacheInvalidated = true
+}
+
+function finishStableCardPreflight(state: AssemblyState, before: Record<string, string | number | boolean>): void {
+  const after = currentPersistedScriptstateSnapshot(state)
+  const changed = !scriptstateEqual(before, after)
+  state.stableCardPreflightScriptstate = {
+    before,
+    ...(changed ? { after } : {}),
+  }
+  if (changed) {
+    // The preflight is speculative. The final render either reuses its rows and
+    // replays this exact result, or invalidates the rows and executes run-var CBS
+    // once against the post-start-trigger state.
+    replaceWorkingScriptstate(state, before)
+  }
+}
+
+function prepareStableCardsForFinalRender(state: AssemblyState): void {
+  const preflight = state.stableCardPreflightScriptstate
+  if (!preflight) return
+
+  if (!state.stableCardCacheInvalidated) {
+    const live = currentPersistedScriptstateSnapshot(state)
+    if (!scriptstateEqual(live, preflight.before)) {
+      invalidateStableCardCache(state)
+    }
+  }
+
+  if (!state.stableCardCacheInvalidated && preflight.after) {
+    replaceWorkingScriptstate(state, preflight.after)
+    state.varChanged = true
+  }
 }
 
 function bumpHistoryCallbackMemo(state: Pick<AssemblyState, 'cbsCallbackMemo'>): void {
@@ -1221,21 +1291,36 @@ export function buildRestorationPayload(state: AssemblyState): AssembleRestorati
 }
 
 /**
- * Snapshot the submit-time transcript after a server-owned input rewrite. The
- * initial capture happens after the input trigger + `editinput`; a before-main
- * user-input modifier refreshes it after Agent Preset execution.
+ * Snapshot the submit-time transcript after a server-owned rewrite. The initial
+ * capture happens after the input trigger + `editinput`; Agent Preset and
+ * identity-addressed history `@@inject` mutations refresh it later.
  */
+function submitTranscriptReplacementRequired(state: AssemblyState): boolean {
+  return (
+    !!state.inputTriggerRewroteTranscript ||
+    !!state.editInputTransformed ||
+    !!state.agentPresetInputTransformed ||
+    !!state.historyInjectRequiresTranscriptReplacement
+  )
+}
+
 function captureSubmitTranscript(state: AssemblyState): void {
-  if (!submitTranscriptChanged(state)) return
+  if (!submitTranscriptReplacementRequired(state)) return
   state.submitMessages = cloneMessages(state.currentChat.message ?? [], 'submitTranscript')
 }
 
 /**
- * The route owns the transcript write only when a submit hook or before-main
- * Agent Preset changed the user input. Plain sends leave persistence to the browser.
+ * The route owns the transcript write only when a submit hook, before-main
+ * Agent Preset, or history `@@inject` changed it. Plain history regex transforms
+ * remain prompt-local.
  */
 function submitTranscriptChanged(state: AssemblyState): boolean {
-  return !!state.inputTriggerRewroteTranscript || !!state.editInputTransformed || !!state.agentPresetInputTransformed
+  return (
+    !!state.inputTriggerRewroteTranscript ||
+    !!state.editInputTransformed ||
+    !!state.agentPresetInputTransformed ||
+    !!state.historyInjectRewroteTranscript
+  )
 }
 
 /**
@@ -1504,6 +1589,7 @@ function applyLorebookReport(
   // Match the SPA prompt assembly: seed with the max response budget plus a
   // small headroom for unexpected error overhead.
   let currentTokens = (db.maxResponse ?? 0) + 50
+  const stableCardScriptstateBefore = currentPersistedScriptstateSnapshot(state)
   const preflight = preflightTemplateTokens({
     ctx,
     currentChar,
@@ -1514,7 +1600,7 @@ function applyLorebookReport(
     stableCardCache: state.stableCardCache,
   })
   currentTokens += preflight.addedTokens
-  foldStableCardCacheVars(state)
+  finishStableCardPreflight(state, stableCardScriptstateBefore)
 
   state.report = report
   state.positionParser = positionParser
@@ -1639,6 +1725,12 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   state.varChanged = !!state.varChanged || history.varChanged
   syncWorkingScriptstate(state)
 
+  if (history.triggerResult) {
+    // A start trigger can change chat rows, scriptstate, or request-local
+    // character state. Conservatively discard the pre-trigger stable rows.
+    invalidateStableCardCache(state)
+  }
+
   if (history.stopSending === true) {
     state.stopSending = true
     state.abortReason = 'trigger_stop'
@@ -1660,6 +1752,23 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   })
   if (history.triggerResult) {
     captureMessageReplacement(state, 'start_trigger')
+  }
+  if (history.injectMutations.length > 0) {
+    state.historyInjectRewroteTranscript = true
+    for (const mutation of history.injectMutations) {
+      const initial = state.initialMessages?.find((message) => message.chatId === mutation.messageId)
+      if (!initial) state.historyInjectRequiresTranscriptReplacement = true
+      state.messageMutations?.push({
+        type: 'replace_by_id',
+        source: 'history_inject',
+        messageId: mutation.messageId,
+        before: initial ? (structuredClone(initial) as Message) : mutation.before,
+        message: mutation.after,
+      })
+    }
+    captureSubmitTranscript(state)
+    bumpHistoryCallbackMemo(state)
+    invalidateStableCardCache(state)
   }
 }
 
@@ -2067,6 +2176,7 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
   const { ctx, currentChar, unformated } = state
   const db = state.database
 
+  prepareStableCardsForFinalRender(state)
   const lua = buildLuaEditRequest(state)
   const render = await measureAssemblyStageAsync(state, 'final_render', () =>
     renderFinalPrompt({

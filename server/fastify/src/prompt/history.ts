@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Chat, Message, character } from '../../../../src/ts/storage/database.svelte'
 import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { expandVariables, type ExpandContext } from './variables.js'
-import { processScriptAsync } from './scripts.js'
+import { processScriptAsync, type ScriptInjectMutation, type ScriptMutationHooks } from './scripts.js'
 import { getDepthPrompts, resolvePosition, type LoreEntryActive, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { ensureTokenizerLoadedForDb, tokenizerOptionsFromDb } from './tokenizerConfig.js'
@@ -306,6 +306,7 @@ async function formatHistoryMessage(
   assetDiagnostics: PromptAssetDropDiagnostic[],
   preparedSendNameWrapper?: string,
   sendNameRole?: OpenAIChat['role'],
+  scriptMutationHooks?: ScriptMutationHooks,
 ): Promise<OpenAIChat> {
   const db = ctx.database
   const maxThoughtDepth = db.promptSettings?.maxThoughtTagDepth ?? -1
@@ -332,6 +333,7 @@ async function formatHistoryMessage(
     { chatRole: msg.role },
     index,
     currentChat,
+    scriptMutationHooks,
   )
 
   const memo = msg.chatId || randomUUID()
@@ -405,6 +407,8 @@ export interface HistoryWindowResult {
   preparedDepthPrompts: PreparedDepthPrompt[]
   /** Prompt assets omitted while preserving the text-only history row. */
   assetDiagnostics: PromptAssetDropDiagnostic[]
+  /** Identity-addressed transcript rewrites caused only by matched `@@inject` scripts. */
+  injectMutations: ScriptInjectMutation[]
 }
 
 function groupOtherBotRole(value: unknown): OpenAIChat['role'] {
@@ -454,6 +458,7 @@ export async function buildHistoryWindow(
   const { encoding, options } = tokenizerOptionsFromDb(db)
   let addedTokens = 0
   const assetDiagnostics: PromptAssetDropDiagnostic[] = []
+  const injectMutations = new Map<string, ScriptInjectMutation>()
   const preparedSendNameWrapper =
     usingPromptTemplate && db.promptSettings?.sendName
       ? expandVariables(db.groupTemplate || SEND_NAME_WRAPPER, {
@@ -544,6 +549,7 @@ export async function buildHistoryWindow(
         varChanged,
         preparedDepthPrompts,
         assetDiagnostics,
+        injectMutations: [],
       }
     }
   }
@@ -563,6 +569,13 @@ export async function buildHistoryWindow(
       assetDiagnostics,
       preparedSendNameWrapper,
       sendNameRole,
+      {
+        injectTarget: ms[i],
+        onInject(mutation) {
+          const previous = injectMutations.get(mutation.messageId)
+          injectMutations.set(mutation.messageId, previous ? { ...mutation, before: previous.before } : mutation)
+        },
+      },
     )
     messages.push(formatted)
     addedTokens += tokenizeChat(formatted, encoding, options)
@@ -588,6 +601,7 @@ export async function buildHistoryWindow(
     varChanged,
     preparedDepthPrompts,
     assetDiagnostics,
+    injectMutations: [...injectMutations.values()],
   }
 }
 

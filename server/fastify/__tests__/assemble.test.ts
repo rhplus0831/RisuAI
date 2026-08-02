@@ -4044,6 +4044,66 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expectNoFullTranscriptStringify()
   })
 
+  it('captures only @@inject history rewrites by row identity and keeps stripped text prompt-local', async () => {
+    const result = await assemblePrompt(
+      baseInput({ mode: 'preview', userMessage: undefined }),
+      depsFor(
+        m1Db(
+          [
+            { role: 'user', data: 'disabled SECRET', chatId: 'disabled-row', disabled: true } as never,
+            msg('user', 'hello {{char}} SECRET', 'inject-row'),
+          ],
+          {
+            db: { formatingOrder: ['main', 'description', 'chats', 'lastChat'] },
+            char: {
+              customscript: [
+                { in: 'SECRET', out: '@@inject', type: 'editprocess', flag: '', ableFlag: false },
+              ] as never,
+            },
+          },
+        ),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated?.find((row) => row.memo === 'inject-row')?.content).toBe('hello Tess')
+    expect(result.submitTranscriptChanged).toBe(true)
+    expect(result.submitMessages).toBeUndefined()
+    expect(result.state?.currentChat.message.find((message) => message.chatId === 'inject-row')?.data).toBe(
+      'hello Tess SECRET',
+    )
+    expect(result.state?.currentChat.message.find((message) => message.chatId === 'disabled-row')?.data).toBe(
+      'disabled SECRET',
+    )
+    expect(result.mutations?.messageMutations).toContainEqual({
+      type: 'replace_by_id',
+      source: 'history_inject',
+      messageId: 'inject-row',
+      before: expect.objectContaining({ chatId: 'inject-row', data: 'hello {{char}} SECRET' }),
+      message: expect.objectContaining({ chatId: 'inject-row', data: 'hello Tess SECRET' }),
+    })
+  })
+
+  it('keeps plain editprocess regex history transforms prompt-local', async () => {
+    const result = await assemblePrompt(
+      baseInput({ mode: 'preview', userMessage: undefined }),
+      depsFor(
+        m1Db([msg('user', 'plain SECRET', 'plain-row')], {
+          db: { formatingOrder: ['main', 'description', 'chats', 'lastChat'] },
+          char: {
+            customscript: [{ in: 'SECRET', out: 'VISIBLE', type: 'editprocess', flag: '', ableFlag: false }] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.formated?.find((row) => row.memo === 'plain-row')?.content).toBe('plain VISIBLE')
+    expect(result.submitTranscriptChanged).toBe(false)
+    expect(result.submitMessages).toBeUndefined()
+    expect(result.mutations?.messageMutations).toEqual([])
+    expect(result.state?.currentChat.message[0].data).toBe('plain SECRET')
+  })
+
   it('persists chat-var-only dirty state without forcing a message replacement capture', async () => {
     resetAssemblyMessageCaptureInstrumentation()
 
@@ -4642,6 +4702,46 @@ describe('Phase 3 M3 stable card cache', () => {
           (expandCtx as { runVar?: boolean } | undefined)?.runVar === true,
       ),
     ).toHaveLength(1)
+  })
+
+  it('re-expands stable cards after a start-trigger write without double-applying run-var CBS', async () => {
+    const card = 'Mood={{getvar::mood}} {{addvar::count::1}}Count={{getvar::count}}'
+    const db = makeDatabase({
+      aiModel: 'gpt4',
+      maxContext: 100_000,
+      maxResponse: 50,
+      promptTemplate: [{ type: 'plain', type2: 'main', text: card, role: 'system' }],
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          triggerscript: [startTrigger([{ type: 'setvar', operator: '=', var: 'mood', value: 'after' }])] as never,
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [],
+              scriptstate: { $mood: 'before', $count: '0' },
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const spy = vi.spyOn(promptVariables, 'expandVariables')
+
+    const result = await assemblePrompt(baseInput({ userMessage: 'new user' }), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated?.map((row) => row.content)).toContain('Mood=after Count=1')
+    expect(result.mutations?.chatVarMutations).toEqual([
+      { key: '$count', before: '0', after: '1' },
+      { key: '$mood', before: 'before', after: 'after' },
+    ])
+    // Preflight executes speculatively and rolls back. The invalidated final
+    // render executes against post-trigger state, so addvar persists only once.
+    expect(
+      spy.mock.calls.filter(
+        ([input, expandCtx]) => input === card && (expandCtx as { runVar?: boolean } | undefined)?.runVar === true,
+      ),
+    ).toHaveLength(2)
   })
 })
 

@@ -53,8 +53,10 @@ import {
   clearAlternateMessages,
   countAlternateMessages,
   countChatMessages,
+  getActiveMessageLocationById,
   getChatMessages,
   replaceActiveChatMessages,
+  updateActiveMessageById,
   writeGenerationChatMessage,
 } from '../messageStore.js'
 import {
@@ -1362,6 +1364,7 @@ function canAppendAssemblyReplacement(
       if (mutation.index < persistedLength) return false
       continue
     }
+    if (mutation.type === 'replace_by_id') return false
     const firstChangedIndex = getMessageMutationFirstChangedIndex(mutation)
     if (firstChangedIndex === undefined || firstChangedIndex < persistedLength) {
       return false
@@ -1372,15 +1375,16 @@ function canAppendAssemblyReplacement(
 
 /**
  * Persist the assembly-time chat-var and chat-metadata deltas the assembler
- * computed and, when a submit-time input trigger,
- * `editinput`, or before-main Agent Preset rewrote the transcript — the
- * authoritative submit transcript (`submitMessages`), through a targeted command mutation:
+ * computed and, when a submit-time input transform or history `@@inject`
+ * rewrote the transcript, either the authoritative submit transcript
+ * (`submitMessages`) or identity-addressed injected rows, through a targeted
+ * command mutation:
  * one revision bump, one event, rollback on failure. The route owns these writes
  * and returns the new revision over SSE so the browser can reconcile its cached
  * command revision.
  *
  * The transcript is persisted only when `submitTranscriptChanged` is set; plain
- * sends without an input transform leave user-message persistence to the browser.
+ * history regex transforms stay request-local.
  * When both the transcript and chat vars change, they ride one command (one
  * revision); a composite chat-transcript event reconciles both writes.
  * Returns the bumped revision, or `undefined` when there is nothing to write.
@@ -1406,7 +1410,12 @@ function persistAssemblyMutations(args: {
   const hasVarWrite = Object.keys(patch).length > 0 || deleteKeys.length > 0
   const lastMemoryMutation = args.mutations.chatMetadataMutations?.find((mutation) => mutation.key === 'lastMemory')
   const hasMetadataWrite = lastMemoryMutation !== undefined
-  const persistMessages = !!args.submitTranscriptChanged && Array.isArray(args.submitMessages)
+  const injectReplacements = args.mutations.messageMutations.filter(
+    (mutation) => mutation.type === 'replace_by_id' && mutation.source === 'history_inject',
+  )
+  const persistReplacement = !!args.submitTranscriptChanged && Array.isArray(args.submitMessages)
+  const persistTargetedInjects = !!args.submitTranscriptChanged && !persistReplacement && injectReplacements.length > 0
+  const persistMessages = persistReplacement || persistTargetedInjects
   if (!hasVarWrite && !hasMetadataWrite && !persistMessages) {
     emitProtocolMetric('generation_assembly_persistence', {
       status: 'skipped',
@@ -1425,7 +1434,7 @@ function persistAssemblyMutations(args: {
   const persistStartedAt = protocolNowMs()
   let eventType = ''
   try {
-    const replacement = persistMessages
+    const replacement = persistReplacement
       ? args.submitMessages!.map((message, index) => createAssemblyTranscriptMessage(message, index))
       : undefined
     if (replacement) {
@@ -1463,6 +1472,28 @@ function persistAssemblyMutations(args: {
             appendActiveChatMessageTail(targetDb, args.input.chatId, replacement, persistedLength)
           if (!appended) {
             replaceActiveChatMessages(targetDb, args.input.chatId, replacement)
+          }
+        } else if (persistTargetedInjects) {
+          for (const mutation of injectReplacements) {
+            const location = getActiveMessageLocationById(targetDb, mutation.messageId)
+            if (!location || location.chatId !== args.input.chatId) {
+              throw new EntityNotFoundError(
+                `Message not found for history inject in chat ${args.input.chatId}: ${mutation.messageId}`,
+              )
+            }
+            if (!isDeepStrictEqual(location.message, mutation.before)) {
+              throw new ValidationError(`Stale history inject target: ${mutation.messageId}`)
+            }
+            const message = createMessageRecord(structuredClone(mutation.message), 'historyInject.message')
+            if (message.chatId !== mutation.messageId) {
+              throw new ValidationError(`History inject message id changed: ${mutation.messageId}`)
+            }
+            const updated = updateActiveMessageById(targetDb, mutation.messageId, message)
+            if (updated.ok === false || updated.chatId !== args.input.chatId) {
+              throw new EntityNotFoundError(
+                `Message not found for history inject in chat ${args.input.chatId}: ${mutation.messageId}`,
+              )
+            }
           }
         }
         if (lastMemoryMutation) {
@@ -1631,12 +1662,28 @@ function snapshotMessageRow(message: Message | undefined): GenerationFinalizatio
   return { message: structuredClone(message) }
 }
 
+function generationFinalizationSourceRows(state: AssemblyState): Message[] {
+  if (state.submitMessages) return state.submitMessages
+
+  const rows = structuredClone(state.initialMessages ?? []) as Message[]
+  for (const mutation of state.messageMutations ?? []) {
+    if (mutation.type !== 'replace_by_id' || mutation.source !== 'history_inject') continue
+    const index = rows.findIndex((message) => message.chatId === mutation.messageId)
+    if (index >= 0) rows[index] = structuredClone(mutation.message) as Message
+  }
+  return rows
+}
+
 function captureGenerationFinalizationTargetSnapshot(
   input: AssembleInput,
   state: AssemblyState,
 ): GenerationFinalizationTargetSnapshot | undefined {
   const mode = finalizationModeFromInput(input)
-  const sourceRows = state.submitMessages ?? state.initialMessages ?? []
+  // Assembly persistence runs before provider dispatch. Targeted history
+  // injects therefore have to be reflected in the freshness snapshot without
+  // adopting the assembler's mode-specific working truncation (notably
+  // regenerate, whose replacement target must remain present until finalization).
+  const sourceRows = generationFinalizationSourceRows(state)
   const transcriptLength = sourceRows.length
   const tail = sourceRows.at(-1)
 

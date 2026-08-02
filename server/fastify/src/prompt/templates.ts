@@ -300,6 +300,11 @@ export class StableCardRenderCache {
     this.entries.set(key, structuredClone(rows))
     this.dirtyState ||= dirty
   }
+
+  clear(): void {
+    this.entries.clear()
+    this.dirtyState = false
+  }
 }
 
 export function createStableCardRenderCache(): StableCardRenderCache {

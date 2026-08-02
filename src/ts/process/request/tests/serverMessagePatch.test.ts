@@ -179,6 +179,38 @@ describe('applyServerMessagePatch', () => {
     expect(chat.scriptstate).toEqual({ $old: '2' })
   })
 
+  it('applies @@inject rewrites by message identity after local rows shift', () => {
+    const chat = {
+      message: [
+        { role: 'user', data: 'inserted locally', chatId: 'local-row' },
+        { role: 'user', data: 'before inject', chatId: 'inject-row' },
+      ],
+      note: '',
+      name: '',
+      localLore: [],
+    } satisfies Chat
+
+    applyServerMessagePatch(
+      chat,
+      patch({
+        messageMutations: [
+          {
+            type: 'replace_by_id',
+            source: 'history_inject',
+            messageId: 'inject-row',
+            before: { role: 'user', data: 'before inject', chatId: 'inject-row' },
+            message: { role: 'user', data: 'expanded before inject', chatId: 'inject-row' },
+          },
+        ],
+      }),
+    )
+
+    expect(chat.message).toEqual([
+      { role: 'user', data: 'inserted locally', chatId: 'local-row' },
+      { role: 'user', data: 'expanded before inject', chatId: 'inject-row' },
+    ])
+  })
+
   it('applies the persisted memory cutoff to the live chat projection', () => {
     const chat = {
       message: [{ role: 'user', data: 'first', chatId: 'message-1' }],

@@ -27,6 +27,12 @@ function applyMessageMutation(chat: Chat, mutation: ServerChatMessageMutation): 
     return
   }
 
+  if (mutation.type === 'replace_by_id') {
+    const index = chat.message.findIndex((message) => message.chatId === mutation.messageId)
+    if (index >= 0) chat.message[index] = cloneMessage(mutation.message)
+    return
+  }
+
   const next = cloneMessage(mutation.message)
   const existing = chat.message[mutation.index]
   if (sameMessageContent(existing, next)) {

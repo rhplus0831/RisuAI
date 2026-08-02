@@ -2396,6 +2396,151 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     return db
   }
 
+  it.each([
+    {
+      mode: 'send' as const,
+      messages: [{ role: 'user', data: 'prior row', chatId: 'prior-send-row' }],
+      payload: { ...basePayload, userMessage: 'hello {{char}} SECRET' },
+      targetId: undefined as string | undefined,
+    },
+    {
+      mode: 'continue' as const,
+      messages: [
+        { role: 'user', data: 'hello {{char}} SECRET', chatId: 'inject-target-continue' },
+        { role: 'char', data: 'partial reply', chatId: 'continue-row' },
+      ],
+      payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'continue' },
+      targetId: 'inject-target-continue',
+    },
+    {
+      mode: 'regenerate' as const,
+      messages: [
+        { role: 'user', data: 'hello {{char}} SECRET', chatId: 'inject-target-regenerate' },
+        { role: 'char', data: 'old reply', chatId: 'regenerate-row' },
+      ],
+      payload: {
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'regenerate',
+        regenerateMessageId: 'regenerate-row',
+      },
+      targetId: 'inject-target-regenerate',
+    },
+  ])(
+    'persists an identity-addressed @@inject rewrite in $mode mode while stripping provider text',
+    async (testCase) => {
+      const providerPrompts: Array<Array<{ content: string }>> = []
+      await restartHarness({
+        dispatchProvider: (context) => {
+          providerPrompts.push(context.result.formated as Array<{ content: string }>)
+          return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+            yield { kind: 'token', content: 'provider reply' }
+            yield { kind: 'done', finishReason: 'stop' }
+          })()
+        },
+      })
+      const { assertion } = await setupAuthedClient(harness.app)
+      const db = dbWithHistoryMessage('unused') as typeof fixtureDatabase & {
+        aiModel: string
+        characters: Array<
+          (typeof fixtureDatabase.characters)[number] & {
+            customscript?: unknown
+            chats: Array<(typeof fixtureDatabase.characters)[number]['chats'][number]>
+          }
+        >
+      }
+      db.aiModel = 'echo_model'
+      db.formatingOrder = ['main', 'description', 'chats', 'lastChat']
+      db.characters[0].customscript = [
+        { in: 'SECRET', out: '@@inject', type: 'editprocess', flag: '', ableFlag: false },
+      ]
+      db.characters[0].chats[0].message = testCase.messages as never
+      await seedDatabase(harness.app, assertion, db)
+
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: testCase.payload,
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(providerPrompts).toHaveLength(1)
+      expect(providerPrompts[0].some((row) => row.content === 'hello Tess')).toBe(true)
+      expect(providerPrompts[0].every((row) => !row.content.includes('SECRET'))).toBe(true)
+      const events = parseEvents(response.body)
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+      const injectPatch = (
+        events.find((event) => event.type === 'message_patch')?.data.patch as {
+          messageMutations?: Array<{ type: string; source: string; messageId?: string }>
+        }
+      ).messageMutations?.find((mutation) => mutation.source === 'history_inject')
+      expect(injectPatch).toMatchObject({
+        type: 'replace_by_id',
+        source: 'history_inject',
+        messageId: testCase.targetId ?? expect.any(String),
+        before: expect.any(Object),
+        message: expect.any(Object),
+      })
+      const targetId = testCase.targetId ?? injectPatch?.messageId
+      expect(targetId).toEqual(expect.any(String))
+
+      // The hydration endpoint is authoritative after assembly + generation
+      // persistence, equivalent to observing the row after a browser reload.
+      const persisted = await persistedMessages(assertion)
+      expect(persisted.find((message) => message.chatId === targetId)?.data).toBe('hello Tess SECRET')
+      if (testCase.mode === 'send') {
+        expect(persisted.at(-1)?.data).toBe('provider reply')
+      } else if (testCase.mode === 'continue') {
+        expect(persisted.find((message) => message.chatId === 'continue-row')?.data).toContain('provider reply')
+      } else {
+        expect(persisted.some((message) => message.chatId === 'regenerate-row')).toBe(false)
+        expect(persisted.at(-1)?.data).toBe('provider reply')
+        expect(await persistedAlternates(assertion)).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ chatId: 'regenerate-row', data: 'old reply' }),
+            expect.objectContaining({ data: 'provider reply' }),
+          ]),
+        )
+      }
+    },
+  )
+
+  it('keeps a plain editprocess history regex prompt-local', async () => {
+    const providerPrompts: Array<Array<{ content: string }>> = []
+    await restartHarness({
+      dispatchProvider: (context) => {
+        providerPrompts.push(context.result.formated as Array<{ content: string }>)
+        return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'provider reply' }
+          yield { kind: 'done', finishReason: 'stop' }
+        })()
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = dbWithHistoryMessage('hello {{char}} SECRET', {
+      customscript: [{ in: 'SECRET', out: 'PROMPT_ONLY', type: 'editprocess', flag: '', ableFlag: false }],
+    }) as typeof fixtureDatabase & { aiModel: string }
+    db.aiModel = 'echo_model'
+    await seedDatabase(harness.app, assertion, db)
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, userMessage: 'new request' },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(providerPrompts[0].some((row) => row.content === 'hello Tess PROMPT_ONLY')).toBe(true)
+    const persisted = await persistedMessages(assertion)
+    expect(persisted.find((message) => message.chatId === 'msg-marker')?.data).toBe('hello {{char}} SECRET')
+    const patch = parseEvents(response.body).find((event) => event.type === 'message_patch')?.data.patch as {
+      messageMutations?: Array<{ source: string }>
+    }
+    expect(patch.messageMutations?.some((mutation) => mutation.source === 'history_inject')).toBe(false)
+  })
+
   // Submit-time input trigger + `editinput`.
   //
   // The server runs the chat-screen submit handler's input trigger and
@@ -3259,6 +3404,59 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(1)
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+  })
+
+  it('renders stable cards from post-start-trigger state in preview without persisting it', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      promptPresets: unknown[]
+      promptPresetsId: number
+      characters: Array<
+        (typeof fixtureDatabase.characters)[number] & {
+          triggerscript?: unknown
+          chats: Array<(typeof fixtureDatabase.characters)[number]['chats'][number] & { scriptstate?: unknown }>
+        }
+      >
+    }
+    db.promptPresets = [
+      {
+        id: 'stable-preview-prompt',
+        name: 'Stable preview prompt',
+        promptTemplate: [{ type: 'plain', type2: 'main', text: 'Score={{getvar::score}}', role: 'system' }],
+        promptSettings: db.promptSettings,
+        customPromptTemplateToggle: '',
+      },
+    ]
+    db.promptPresetsId = 0
+    db.characters[0].chats[0].scriptstate = { $score: 'before' }
+    db.characters[0].triggerscript = [
+      {
+        comment: '',
+        type: 'start',
+        conditions: [],
+        effect: [{ type: 'setvar', operator: '=', var: 'score', value: 'after' }],
+      },
+    ]
+    await seedDatabase(harness.app, assertion, db)
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { chatId: 'chat-1', characterId: 'char-1', mode: 'preview' },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const prompt = parseEvents(response.body).find((event) => event.type === 'prompt')
+    expect(prompt?.data.messages).toContainEqual({ role: 'system', content: 'Score=after' })
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: 'before' })
   })
 
   it('keeps preview-mode lorebook sticky writes read-only (L4)', async () => {
@@ -5899,6 +6097,42 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(Array.isArray(body.formated)).toBe(true)
     expect(body.formated.length).toBe(body.messages.length)
     expect((body as Record<string, unknown>).biases).toEqual([])
+  })
+
+  it('keeps @@inject transcript rewrites read-only while returning stripped preview rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const database = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      characters: Array<
+        (typeof fixtureDatabase.characters)[number] & {
+          customscript?: unknown
+          chats: Array<(typeof fixtureDatabase.characters)[number]['chats'][number]>
+        }
+      >
+    }
+    database.characters[0].customscript = [
+      { in: 'SECRET', out: '@@inject', type: 'editprocess', flag: '', ableFlag: false },
+    ]
+    database.characters[0].chats[0].message = [
+      { role: 'user', data: 'preview {{char}} SECRET', chatId: 'preview-inject-row' },
+    ] as never
+    database.formatingOrder = ['main', 'description', 'chats', 'lastChat']
+    await seedDatabase(harness.app, assertion, database)
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: previewPayload,
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().messages).toContainEqual({ role: 'user', content: 'preview Tess' })
+    expect(await readPersistedMessages(assertion)).toContainEqual(
+      expect.objectContaining({
+        chatId: 'preview-inject-row',
+        data: 'preview {{char}} SECRET',
+      }),
+    )
   })
 
   it('L6: returns only promptInfo.promptText from preview JSON for compact-capable clients', async () => {

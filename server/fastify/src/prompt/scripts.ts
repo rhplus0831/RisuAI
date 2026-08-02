@@ -1,4 +1,5 @@
-import type { Chat, Database, character, customscript } from '../../../../src/ts/storage/database.svelte'
+import { randomUUID } from 'node:crypto'
+import type { Chat, Database, Message, character, customscript } from '../../../../src/ts/storage/database.svelte'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import {
@@ -89,6 +90,18 @@ import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
  */
 
 export type ScriptMode = 'editinput' | 'editoutput' | 'editprocess' | 'editdisplay'
+
+export interface ScriptInjectMutation {
+  messageId: string
+  before: Message
+  after: Message
+}
+
+export interface ScriptMutationHooks {
+  /** The history row being formatted; avoids addressing a filtered transcript by index. */
+  injectTarget?: Message
+  onInject?: (mutation: ScriptInjectMutation) => void
+}
 
 const VALID_FLAG_CHARS = /[^dgimsuvy]/g
 const META_RE = /<(.+?)>/g
@@ -212,15 +225,41 @@ function applyMove(data: string, reg: RegExp, flag: string, outScript: string, t
   return next
 }
 
-function applyInject(currentChat: Chat | undefined, chatID: number, data: string, reg: RegExp): string {
+function injectTarget(
+  currentChat: Chat | undefined,
+  chatID: number,
+  hooks: ScriptMutationHooks | undefined,
+): Message | undefined {
+  return hooks?.injectTarget ?? (chatID >= 0 ? currentChat?.message?.[chatID] : undefined)
+}
+
+function writeInjectTarget(target: Message, data: string, hooks: ScriptMutationHooks | undefined): void {
+  const before = structuredClone(target) as Message
+  const messageId = target.chatId || randomUUID()
+  target.chatId = messageId
+  target.data = data
+  if (!before.chatId) before.chatId = messageId
+  hooks?.onInject?.({
+    messageId,
+    before,
+    after: structuredClone(target) as Message,
+  })
+}
+
+function applyInject(
+  currentChat: Chat | undefined,
+  chatID: number,
+  data: string,
+  reg: RegExp,
+  hooks?: ScriptMutationHooks,
+): string {
   assertBoundedRegexHaystack(data, 'customscript inject source')
-  if (!currentChat || chatID < 0) return data
-  const target = currentChat.message?.[chatID]
+  const target = injectTarget(currentChat, chatID, hooks)
   if (!target) return data
   // SPA mutates message[chatID].data with the FULL pre-strip data (yes,
   // that is intentional in scripts.ts). The assembled chat is
   // persisted after prompt assembly.
-  target.data = data
+  writeInjectTarget(target, data, hooks)
   return data.replace(reg, '')
 }
 
@@ -339,6 +378,7 @@ function applyOne(
   cbsConditions: CbsConditions | undefined,
   chatID: number,
   currentChat: Chat | undefined,
+  mutationHooks: ScriptMutationHooks | undefined,
 ): string {
   const script = prepared.script
   const actions = prepared.actions
@@ -376,7 +416,7 @@ function applyOne(
     if (matched) {
       if (outScript.startsWith('@@emo ')) return data
       if (outScript.startsWith('@@inject') || actions.includes('inject')) {
-        return applyInject(currentChat, chatID, data, reg)
+        return applyInject(currentChat, chatID, data, reg, mutationHooks)
       }
       if (isMoveTop || isMoveBottom) {
         return applyMove(data, reg, flag, outScript, isMoveTop)
@@ -427,14 +467,14 @@ async function applyInjectAsync(
   data: string,
   reg: BoundedRegexLike,
   options: BoundedRegexCompatibilityOptions,
+  hooks?: ScriptMutationHooks,
 ): Promise<string> {
-  if (!isComplexBoundedRegex(reg)) return applyInject(currentChat, chatID, data, reg)
+  if (!isComplexBoundedRegex(reg)) return applyInject(currentChat, chatID, data, reg, hooks)
 
   assertBoundedRegexHaystack(data, 'customscript inject source')
-  if (!currentChat || chatID < 0) return data
-  const target = currentChat.message?.[chatID]
+  const target = injectTarget(currentChat, chatID, hooks)
   if (!target) return data
-  target.data = data
+  writeInjectTarget(target, data, hooks)
   return replaceBoundedRegexWithCompatibility(
     reg,
     data,
@@ -501,6 +541,7 @@ async function applyOneAsync(
   chatID: number,
   currentChat: Chat | undefined,
   options: BoundedRegexCompatibilityOptions,
+  mutationHooks: ScriptMutationHooks | undefined,
 ): Promise<string> {
   const script = prepared.script
   const actions = prepared.actions
@@ -527,7 +568,7 @@ async function applyOneAsync(
     if (matched) {
       if (outScript.startsWith('@@emo ')) return data
       if (outScript.startsWith('@@inject') || actions.includes('inject')) {
-        return applyInjectAsync(currentChat, chatID, data, reg, options)
+        return applyInjectAsync(currentChat, chatID, data, reg, options, mutationHooks)
       }
       if (isMoveTop || isMoveBottom) {
         return applyMoveAsync(data, reg, outScript, isMoveTop, options)
@@ -630,6 +671,7 @@ export function processScript(
   cbsConditions: CbsConditions = {},
   chatID: number = -1,
   currentChat: Chat | undefined = undefined,
+  mutationHooks: ScriptMutationHooks | undefined = undefined,
 ): string {
   const prepared = getPreparedScripts(ctx.database, char, currentChat)
 
@@ -637,7 +679,7 @@ export function processScript(
   for (const p of prepared) {
     if (p.script.type !== mode) continue
     try {
-      current = applyOne(ctx, char, current, p, cbsConditions, chatID, currentChat)
+      current = applyOne(ctx, char, current, p, cbsConditions, chatID, currentChat, mutationHooks)
     } catch (err) {
       if (isBoundedRegexError(err)) throw err
       // Mirror SPA behavior: one bad regex should not stop the rest of the chain.
@@ -661,6 +703,7 @@ export async function processScriptAsync(
   cbsConditions: CbsConditions = {},
   chatID: number = -1,
   currentChat: Chat | undefined = undefined,
+  mutationHooks: ScriptMutationHooks | undefined = undefined,
 ): Promise<string> {
   const options = complexRegexCompatibilityOptions(ctx.database, stageForScriptMode(mode))
   const prepared = getPreparedScripts(ctx.database, char, currentChat, options)
@@ -679,7 +722,7 @@ export async function processScriptAsync(
   for (const p of prepared) {
     if (p.script.type !== mode) continue
     try {
-      current = await applyOneAsync(ctx, char, current, p, cbsConditions, chatID, currentChat, options)
+      current = await applyOneAsync(ctx, char, current, p, cbsConditions, chatID, currentChat, options, mutationHooks)
     } catch (err) {
       if (isBoundedRegexError(err)) throw err
     }

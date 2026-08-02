@@ -73,6 +73,7 @@ export type ServerChatMutationSource =
   | 'regenerate'
   | 'run_var'
   | 'history_normalize'
+  | 'history_inject'
   | 'start_trigger'
   | 'input_trigger'
   | 'editinput'
@@ -107,6 +108,13 @@ export type ServerChatMessageMutation =
       afterLength: number
       firstChangedIndex?: number
       messages: Message[]
+    }
+  | {
+      type: 'replace_by_id'
+      source: 'history_inject'
+      messageId: string
+      before: Message
+      message: Message
     }
 
 export interface ServerChatAdditionalSystemPromptMutation {
