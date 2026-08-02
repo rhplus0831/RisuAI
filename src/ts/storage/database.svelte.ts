@@ -3926,6 +3926,10 @@ export interface Database {
   colorScheme: ColorScheme
   colorSchemeName: string
   promptTemplate?: PromptItem[]
+  /** Legacy prompt-template speaker wrapper, also used by sendName history formatting. */
+  groupTemplate?: string
+  /** Role assigned to history rows wrapped by groupTemplate/sendName. */
+  groupOtherBotRole?: string
   forceProxyAsOpenAI?: boolean
   hypaModel: HypaModel
   saveTime?: number
@@ -4527,6 +4531,8 @@ export interface botPreset {
   autoSuggestPrefix?: string
   autoSuggestClean?: boolean
   promptTemplate?: PromptItem[]
+  groupTemplate?: string
+  groupOtherBotRole?: string
   NAIadventure?: boolean
   NAIappendName?: boolean
   localStopStrings?: string[]

@@ -3,7 +3,8 @@ import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { dateTimeFormat, makeArray, parseArray, parseDict } from '../../../../src/ts/parser/risuChatParserHelpers'
 import { calcString } from '../../../../src/ts/process/infunctions'
 import { getChatVar, getGlobalChatVar, setChatVar } from '../../../../src/ts/parser/chatVarBackend'
-import { getActiveDatabase, getActiveModelInfo, getActiveSelectedCharID } from './promptScope.js'
+import { getActiveChatPage, getActiveDatabase, getActiveModelInfo, getActiveSelectedCharID } from './promptScope.js'
+import { getActiveModules, getModuleLorebooks } from './modules.js'
 
 /**
  * Server-side `CBSRegisterArg` factory. Wires the DI fields the `registerCBS`
@@ -56,6 +57,14 @@ function pickHashRand(cid: number, word: string): number {
   return randF()
 }
 
+function getScopedModules() {
+  const database = getActiveDatabase()
+  if (!database) return []
+  const currentChar = database.characters[getActiveSelectedCharID()]
+  const currentChat = currentChar?.chats[getActiveChatPage()]
+  return getActiveModules(database, currentChar, currentChat)
+}
+
 export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
   return {
     getDatabase: () => {
@@ -100,10 +109,10 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     getGlobalChatVar,
     calcString: (str: string) => calcString(str) ?? 0,
     dateTimeFormat,
-    // Module + lorebook callbacks intentionally resolve to empty lists in server
-    // prompt assembly.
-    getModules: () => [],
-    getModuleLorebooks: () => [],
+    // Match the browser parser's module scope: database-enabled, current-chat,
+    // current-character, and effective prompt/agent module integration.
+    getModules: getScopedModules,
+    getModuleLorebooks: () => getModuleLorebooks(getScopedModules()),
     pickHashRand,
     getSelectedCharID: getActiveSelectedCharID,
     getModelInfo: getActiveModelInfo,

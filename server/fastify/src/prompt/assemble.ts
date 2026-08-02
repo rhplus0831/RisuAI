@@ -48,6 +48,7 @@ import {
   type AssetLookup,
   type EditProcessHook,
   type PreparedDepthPrompt,
+  type PromptAssetDropDiagnostic,
 } from './history.js'
 import { buildAssetLookup, type ResolveStoredAsset } from './assetLookup.js'
 import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
@@ -81,7 +82,7 @@ import { getActiveModules, getModuleTriggers } from './modules.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { getChatDefaultVariables } from './chatVarDefaults.js'
 import { modelInfoForPromptScope } from './promptScope.js'
-import type { PromptEvent } from './sseEvents.js'
+import type { PromptEvent, WarningEvent } from './sseEvents.js'
 import type { MemorySelectionInput } from '../memorySelectionService.js'
 import {
   cleanupOrphanedMemoryWithSummarySnapshot,
@@ -395,6 +396,8 @@ export interface AssembleResult {
   inputTokens?: number
   /** Clamped response budget from `finalizeRequestBudget`. */
   outputTokens?: number
+  /** Non-fatal assembly diagnostics emitted through the existing warning SSE channel. */
+  warnings?: Omit<WarningEvent, 'type'>[]
   /** Server-owned chat and variable mutations produced during assembly. */
   mutations?: AssembleMutationPayload
   /** Browser-visible state from before the server-owned mutations replay. */
@@ -565,6 +568,8 @@ export interface AssemblyState {
   assetLookup?: AssetLookup
   /** Char + module asset rows shared by `assetLookup` and the history walk. */
   promptAssetTable?: PromptAssetTable
+  /** Prompt asset markers dropped because metadata or stored bytes were unavailable. */
+  promptAssetDropDiagnostics?: PromptAssetDropDiagnostic[]
   resolveStoredAsset?: ResolveStoredAsset
 }
 
@@ -1635,6 +1640,7 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   state.currentTokens = (state.currentTokens ?? 0) + history.addedTokens
   state.historyMessages = history.messages
   state.preparedDepthPrompts = history.preparedDepthPrompts
+  state.promptAssetDropDiagnostics = history.assetDiagnostics
   const globalBias = Array.isArray(state.database.bias) ? state.database.bias : []
   const characterBias = Array.isArray(currentChar.bias) ? currentChar.bias : []
   state.biases = [...globalBias, ...characterBias].flatMap((row) => {
@@ -2180,6 +2186,16 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
   measureAssemblyStage(state, 'memory_bridge', () => fillMemoryAndPostHistory(state))
   await renderAndBudget(state)
 
+  const warnings: Omit<WarningEvent, 'type'>[] = (state.promptAssetDropDiagnostics ?? []).map((diagnostic) => ({
+    message: 'Prompt asset was omitted because its metadata or stored bytes were unavailable.',
+    context: {
+      kind: 'prompt_asset_dropped',
+      name: diagnostic.name,
+      ...(diagnostic.reference ? { reference: diagnostic.reference } : {}),
+      reason: diagnostic.reason,
+    },
+  }))
+
   if (state.stopSending) {
     return {
       stopSending: true,
@@ -2190,6 +2206,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
       restoration: buildRestorationPayload(state),
       submitMessages: state.submitMessages,
       submitTranscriptChanged: submitTranscriptChanged(state),
+      ...(warnings.length > 0 ? { warnings } : {}),
     }
   }
 
@@ -2216,6 +2233,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     promptSummary,
     inputTokens: state.inputTokens,
     outputTokens: state.outputTokens,
+    ...(warnings.length > 0 ? { warnings } : {}),
     mutations: buildMutationPayload(state),
     restoration: buildRestorationPayload(state),
     submitMessages: state.submitMessages,

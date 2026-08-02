@@ -413,6 +413,8 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'statics', { messages: 0, imports: 0 })
   setDefault(database, 'customQuotes', false)
   setDefault(database, 'customQuotesData', ['“', '”', '‘', '’'])
+  setDefault(database, 'groupOtherBotRole', 'user')
+  setDefault(database, 'groupTemplate', '')
   setDefault(database, 'customGUI', '')
   setDefault(database, 'customAPIFormat', LLMFormat.OpenAICompatible)
   setDefault(database, 'systemContentReplacement', 'system: {{slot}}')

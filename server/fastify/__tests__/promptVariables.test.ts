@@ -120,6 +120,80 @@ describe('Phase 7-2c expandVariables — basic substitution', () => {
   })
 })
 
+describe('HC-4 expandVariables — active module CBS visibility', () => {
+  it('exposes the baseline global/chat/character/integration module set to module and lore callbacks', () => {
+    const database = makeDatabase({
+      enabledModules: ['global-module'],
+      moduleIntergration: 'integration-space',
+      modules: [
+        {
+          id: 'character-module',
+          name: 'Character module',
+          description: '',
+          namespace: 'character-space',
+          lorebook: [{ content: 'Character module lore' }],
+        },
+        {
+          id: 'global-module',
+          name: 'Weather',
+          description: '',
+          namespace: 'weather',
+          assets: [
+            ['rain', 'rain-reference', 'image'],
+            ['sun', 'sun-reference', 'image'],
+          ],
+          lorebook: [{ content: 'Weather module lore' }],
+        },
+        {
+          id: 'chat-module',
+          name: 'Chat module',
+          description: '',
+          namespace: 'chat-space',
+          lorebook: [{ content: 'Chat module lore' }],
+        },
+        {
+          id: 'integration-module',
+          name: 'Integration module',
+          description: '',
+          namespace: 'integration-space',
+          lorebook: [{ content: 'Integration module lore' }],
+        },
+        {
+          id: 'inactive-module',
+          name: 'Inactive module',
+          description: '',
+          namespace: 'inactive-space',
+          lorebook: [{ content: 'Inactive module lore' }],
+        },
+      ] as Database['modules'],
+      characters: [
+        makeCharacter({
+          modules: ['character-module'],
+          chats: [makeChat({ modules: ['chat-module'] })],
+        }),
+      ],
+    })
+
+    expect(
+      expandVariables(
+        '{{moduleenabled::weather}}|{{moduleenabled::chat-space}}|{{moduleenabled::character-space}}|{{moduleenabled::integration-space}}|{{moduleenabled::inactive-space}}',
+        { database },
+      ).text,
+    ).toBe('1|1|1|1|0')
+    expect(JSON.parse(expandVariables('{{moduleassetlist::weather}}', { database }).text)).toEqual(['rain', 'sun'])
+
+    const lore = JSON.parse(expandVariables('{{lorebook}}', { database }).text).map((entry: string) =>
+      JSON.parse(entry),
+    )
+    expect(lore.map((entry: { content: string }) => entry.content)).toEqual([
+      'Character module lore',
+      'Weather module lore',
+      'Chat module lore',
+      'Integration module lore',
+    ])
+  })
+})
+
 describe('Phase 7-2c expandVariables — unknowns and trigger_id', () => {
   it('preserves unknown directives verbatim', () => {
     expect(expandVariables('{{totally_bogus_macro}} kept', ctx()).text).toBe('{{totally_bogus_macro}} kept')

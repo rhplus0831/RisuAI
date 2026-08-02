@@ -562,6 +562,64 @@ describe('Phase 7-5b buildHistoryWindow sendName wrapper', () => {
     expect(wrapped?.content).toBe("<Lyra's Message>\nhello\n</Lyra's Message>")
   })
 
+  it('assigns every wrapped row to the baseline-default user role', async () => {
+    const db = makeDatabase({
+      promptSettings: {
+        ...makeDatabase().promptSettings,
+        sendName: true,
+      } as Database['promptSettings'],
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({ role: 'user', data: 'question', chatId: 'user-row' }),
+                makeMessage({ role: 'char', data: 'answer', chatId: 'char-row' }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], true)
+    const wrappedRows = result.messages.filter((message) => message.memo === 'user-row' || message.memo === 'char-row')
+    expect(wrappedRows.map((message) => message.role)).toEqual(['user', 'user'])
+  })
+
+  it('expands a custom groupTemplate and overwrites every wrapped row with groupOtherBotRole', async () => {
+    const db = makeDatabase({
+      groupTemplate: '[{{user}} -> {{char}}]\n{{slot}}',
+      groupOtherBotRole: 'system',
+      promptSettings: {
+        ...makeDatabase().promptSettings,
+        sendName: true,
+      } as Database['promptSettings'],
+      characters: [
+        makeCharacter({
+          name: 'Lyra',
+          firstMessage: '',
+          chats: [
+            makeChat({
+              message: [
+                makeMessage({ role: 'user', data: 'question', chatId: 'user-row' }),
+                makeMessage({ role: 'char', data: 'answer', chatId: 'char-row' }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    })
+
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], true)
+    const wrappedRows = result.messages.filter((message) => message.memo === 'user-row' || message.memo === 'char-row')
+    expect(wrappedRows).toEqual([
+      expect.objectContaining({ role: 'system', content: '[Alex -> Lyra]\nquestion' }),
+      expect.objectContaining({ role: 'system', content: '[Alex -> Lyra]\nanswer' }),
+    ])
+  })
+
   it('resolves the wrapper `{{char}}` against currentChar (matches SPA behavior with the dead `chara: saying` override)', async () => {
     const db = makeDatabase({
       promptSettings: {
@@ -595,7 +653,7 @@ describe('Phase 7-5b buildHistoryWindow sendName wrapper', () => {
       ],
     })
     const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], true)
-    const wrapped = result.messages.find((m) => m.memo !== undefined && m.role === 'assistant')
+    const wrapped = result.messages.find((m) => m.memo !== undefined && m.role === 'user')
     expect(wrapped?.content).toBe("<Lyra's Message>\nhi\n</Lyra's Message>")
   })
 })
@@ -954,6 +1012,34 @@ describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
     const msg = findUser(result.messages)
     expect(msg?.content).toBe('pre  post')
     expect(msg?.multimodals).toBeUndefined()
+    expect(result.assetDiagnostics).toEqual([{ name: 'unknown', reason: 'metadata_missing' }])
+  })
+
+  it('keeps the silent drop and records a diagnostic when prompt-asset bytes are missing', async () => {
+    const db = makeDatabase({
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          additionalAssets: [['logo', 'missing-logo-reference', 'image']],
+          chats: [
+            makeChat({
+              message: [makeMessage({ role: 'user', data: 'pre {{asset_prompt::logo}} post' })],
+            }),
+          ],
+        } as Partial<character>),
+      ],
+    })
+    const lookup: AssetLookup = { getAsset: () => undefined }
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
+    const msg = findUser(result.messages)
+
+    // Accepted divergence: baseline index.svelte.ts:947 awaited the missing
+    // bytes and rejected assembly; Fastify deliberately keeps the text-only row.
+    expect(msg?.content).toBe('pre  post')
+    expect(msg?.multimodals).toBeUndefined()
+    expect(result.assetDiagnostics).toEqual([
+      { name: 'logo', reference: 'missing-logo-reference', reason: 'bytes_missing' },
+    ])
   })
 
   it('also matches the underscore-less {{assetprompt::name}} syntax (SPA `asset_?prompt`)', async () => {

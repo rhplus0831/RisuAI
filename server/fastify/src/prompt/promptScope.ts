@@ -44,6 +44,10 @@ export function getActiveSelectedCharID(): number {
   return activeScope?.selectedCharID ?? 0
 }
 
+export function getActiveChatPage(): number {
+  return activeScope?.chatPage ?? 0
+}
+
 export function modelInfoForPromptScope(profile: ResolvedModelProfile): LLMModel {
   return {
     ...profile.modelInfo,

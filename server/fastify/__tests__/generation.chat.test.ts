@@ -2655,6 +2655,51 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(userRow?.content).not.toContain('{{asset_prompt::hero}}')
   })
 
+  it('silently drops missing prompt-asset bytes and emits the established warning diagnostic (HC-8)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const missingAssetId = 'c'.repeat(64)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithHistoryMessage('show {{asset_prompt::hero}}', {
+        additionalAssets: [['hero', missingAssetId, 'image']],
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    const prompt = events.find((event) => event.type === 'prompt')!
+    const formated = prompt.data.formated as Array<{
+      role: string
+      content: unknown
+      multimodals?: unknown
+    }>
+    const userRow = formated.find(
+      (row) => row.role === 'user' && typeof row.content === 'string' && row.content.includes('show'),
+    )
+
+    // Accepted divergence: baseline index.svelte.ts:947 rejected prompt
+    // construction when the awaited asset read had no bytes.
+    expect(userRow?.content).toBe('show')
+    expect(userRow?.multimodals).toBeUndefined()
+    expect(events.find((event) => event.type === 'warning')?.data).toEqual({
+      message: 'Prompt asset was omitted because its metadata or stored bytes were unavailable.',
+      context: {
+        kind: 'prompt_asset_dropped',
+        name: 'hero',
+        reference: missingAssetId,
+        reason: 'bytes_missing',
+      },
+    })
+  })
+
   // `buildInlayViewInstruction` appends a static `system` row from `newGenData`
   // when `inlayViewScreen` is set. No request field is needed; the config is
   // already on the loaded character.

@@ -551,6 +551,12 @@ function promptEventForClient(
   return compactPrompt
 }
 
+function emitAssemblyWarnings(result: AssembleResult, emit: (event: PromptChatEvent) => void): void {
+  for (const warning of result.warnings ?? []) {
+    emit({ type: 'warning', ...warning })
+  }
+}
+
 function messagePatchForClient(
   mutations: AssembleMutationPayload,
   capabilities: GenerationClientCapabilities,
@@ -2134,6 +2140,7 @@ async function streamAssembly(
               submitTranscriptChanged: result.submitTranscriptChanged,
             })
           : undefined
+      emitAssemblyWarnings(result, emit)
       if (!result.stopSending && result.prompt) {
         const successfulResult: SuccessfulAssembleResult = {
           ...result,
@@ -3240,6 +3247,7 @@ async function runGenerationJob(args: {
               submitTranscriptChanged: result.submitTranscriptChanged,
             })
           : undefined
+      emitAssemblyWarnings(result, emit)
       if (!result.stopSending && result.prompt) {
         const successfulResult: SuccessfulAssembleResult = {
           ...result,

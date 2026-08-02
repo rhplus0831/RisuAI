@@ -530,8 +530,9 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
       if (usingPromptTemplate && db.promptSettings?.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
         // Clone before systemizing so the shared `unformated.chats` is
         // not mutated between the preflight pass and the render pass.
-        // The SPA mutates in place (`renderFinalPrompt.ts`); the
-        // output rows are identical either way.
+        // Accepted divergence: the baseline's shallow slice plus mutating
+        // `systemizeChat` (`index.svelte.ts:1324`, `:2030`) contaminated later
+        // chat cards over the same range. Card-local roles are intentional here.
         return systemizeChat(structuredClone(slice))
       }
       return slice

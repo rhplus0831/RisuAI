@@ -30,9 +30,10 @@ type MaybePromise<T> = T | Promise<T>
  *   - First message and per-message `sendName` wrapper (gated by
  *     `usingPromptTemplate && db.promptSettings.sendName`). The first
  *     message gets a `${char.name}: ` prefix and `attr: ['nameAdded']`.
- *     Per-message bodies get wrapped in
- *     `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>` with
- *     `{{char}}` resolved against the active `currentChar` (matches the
+ *     Per-message bodies use `db.groupTemplate` when present, otherwise
+ *     `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>`, and every
+ *     wrapped row uses `db.groupOtherBotRole` (normally defaulted to `user`).
+ *     `{{char}}` is resolved against the active `currentChar` (matches the
  *     SPA's effective behavior — the `chara: msg.saying` override at
  *     formatHistoryMessage.ts is shadowed by the cbs `char` callback
  *     reading currentChar from scope first; see cbs.ts).
@@ -112,6 +113,12 @@ export interface AssetLookup {
 }
 
 export const NO_ASSETS: AssetLookup = {}
+
+export interface PromptAssetDropDiagnostic {
+  name: string
+  reference?: string
+  reason: 'metadata_missing' | 'bytes_missing'
+}
 
 /**
  * The `editprocess` history-edit seam. Runs over each first-message /
@@ -251,6 +258,8 @@ async function processAssetPrompts(
   text: string,
   assetTable: PromptAssetTable,
   lookup: AssetLookup,
+  iconReference: string | undefined,
+  diagnostics: PromptAssetDropDiagnostic[],
 ): Promise<{ text: string; multimodals: MultiModal[] }> {
   const multimodals: MultiModal[] = []
   const matches = Array.from(text.matchAll(ASSET_PROMPT_RE))
@@ -259,10 +268,24 @@ async function processAssetPrompts(
     const asset = assetTable.find((v) => v[0] === name)
     if (asset) {
       const resolved = await lookup.getAsset?.(name)
-      if (resolved) multimodals.push(resolved)
+      if (resolved) {
+        multimodals.push(resolved)
+      } else {
+        diagnostics.push({ name, reference: asset[1], reason: 'bytes_missing' })
+      }
     } else if (name === 'icon') {
       const resolved = await lookup.getCharIcon?.()
-      if (resolved) multimodals.push(resolved)
+      if (resolved) {
+        multimodals.push(resolved)
+      } else {
+        diagnostics.push({
+          name,
+          ...(iconReference ? { reference: iconReference } : {}),
+          reason: iconReference ? 'bytes_missing' : 'metadata_missing',
+        })
+      }
+    } else {
+      diagnostics.push({ name, reason: 'metadata_missing' })
     }
   }
   const formatted = text.replace(ASSET_PROMPT_RE, '')
@@ -280,7 +303,9 @@ async function formatHistoryMessage(
   assetLookup: AssetLookup,
   assetTable: PromptAssetTable,
   editProcess: EditProcessHook,
+  assetDiagnostics: PromptAssetDropDiagnostic[],
   preparedSendNameWrapper?: string,
+  sendNameRole?: OpenAIChat['role'],
 ): Promise<OpenAIChat> {
   const db = ctx.database
   const maxThoughtDepth = db.promptSettings?.maxThoughtTagDepth ?? -1
@@ -324,12 +349,12 @@ async function formatHistoryMessage(
   const { content: postThoughts, thoughts } = extractThoughts(formatted, index, totalCount, maxThoughtDepth)
   formatted = postThoughts
 
-  const assetResult = await processAssetPrompts(formatted, assetTable, assetLookup)
+  const assetResult = await processAssetPrompts(formatted, assetTable, assetLookup, currentChar.image, assetDiagnostics)
   formatted = assetResult.text
   for (const m of assetResult.multimodals) pushMultimodal(multimodals, m)
 
   const chat: OpenAIChat = {
-    role: msg.role === 'user' ? 'user' : 'assistant',
+    role: sendNameRole ?? (msg.role === 'user' ? 'user' : 'assistant'),
     content: formatted,
     memo,
   }
@@ -378,6 +403,15 @@ export interface HistoryWindowResult {
    * message array.
    */
   preparedDepthPrompts: PreparedDepthPrompt[]
+  /** Prompt assets omitted while preserving the text-only history row. */
+  assetDiagnostics: PromptAssetDropDiagnostic[]
+}
+
+function groupOtherBotRole(value: unknown): OpenAIChat['role'] {
+  if (value === 'user' || value === 'assistant' || value === 'system') return value
+  if (value === undefined || value === null || value === '') return 'user'
+  // Baseline's switch fell back to assistant for an invalid persisted value.
+  return 'assistant'
 }
 
 export interface PreparedDepthPrompt {
@@ -419,13 +453,15 @@ export async function buildHistoryWindow(
     promptAssetTable ?? assetLookup.assetTable ?? buildPromptAssetTable({ database: db, currentChar, currentChat })
   const { encoding, options } = tokenizerOptionsFromDb(db)
   let addedTokens = 0
+  const assetDiagnostics: PromptAssetDropDiagnostic[] = []
   const preparedSendNameWrapper =
     usingPromptTemplate && db.promptSettings?.sendName
-      ? expandVariables(SEND_NAME_WRAPPER, {
+      ? expandVariables(db.groupTemplate || SEND_NAME_WRAPPER, {
           ...ctx,
           chara: currentChar,
         }).text
       : undefined
+  const sendNameRole = preparedSendNameWrapper ? groupOtherBotRole(db.groupOtherBotRole) : undefined
   let preparedDepthPrompts: PreparedDepthPrompt[] = []
 
   for (const example of exampleMessage(ctx, currentChar)) {
@@ -507,6 +543,7 @@ export async function buildHistoryWindow(
         triggerResult,
         varChanged,
         preparedDepthPrompts,
+        assetDiagnostics,
       }
     }
   }
@@ -523,7 +560,9 @@ export async function buildHistoryWindow(
       assetLookup,
       assetTable,
       editProcess,
+      assetDiagnostics,
       preparedSendNameWrapper,
+      sendNameRole,
     )
     messages.push(formatted)
     addedTokens += tokenizeChat(formatted, encoding, options)
@@ -548,6 +587,7 @@ export async function buildHistoryWindow(
     triggerResult,
     varChanged,
     preparedDepthPrompts,
+    assetDiagnostics,
   }
 }
 

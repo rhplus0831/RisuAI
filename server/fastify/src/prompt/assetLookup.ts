@@ -17,6 +17,8 @@ import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
  *    reads the store. Like the browser's `readImage(asset[1])` path
  *    (`formatHistoryMessage.ts`) the bytes are always re-wrapped as a
  *    `data:image/png;base64,` URI regardless of the stored content-type.
+ *    Unresolved references remain `undefined`; the history walk records the
+ *    corresponding non-fatal drop diagnostic before stripping the marker.
  */
 
 /** Legacy compatibility shape for old `/generate/chat` request-body inlay bytes. */

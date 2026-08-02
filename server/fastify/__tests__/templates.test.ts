@@ -615,6 +615,43 @@ describe('Phase 7-10c chat cards', () => {
     expect(unformated.chats.map((r) => r.role)).toEqual(['user', 'assistant', 'user'])
     expect(unformated.chats[0].content).toBe('u0')
   })
+
+  it('keeps repeated mixed chat cards role-independent (accepted PA-4 divergence)', () => {
+    const db = makeDatabase({
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: true,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: false,
+      },
+    } as Partial<Database>)
+    const unformated = makeSlots({
+      chats: [row({ role: 'user', content: 'u0' }), row({ role: 'assistant', content: 'a1' })],
+    })
+
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter(),
+      unformated,
+      [
+        { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+        { type: 'chat', rangeStart: 0, rangeEnd: 'end', chatAsOriginalOnSystem: true },
+      ],
+      true,
+    ).formated
+
+    // Accepted divergence from baseline index.svelte.ts:1324/:2030: its shallow
+    // slice let the first card's systemizeChat mutation contaminate the second.
+    expect(out).toEqual([
+      expect.objectContaining({ role: 'system', content: 'user: u0\n\nassistant: a1' }),
+      expect.objectContaining({ role: 'user', content: 'u0' }),
+      expect.objectContaining({ role: 'assistant', content: 'a1' }),
+    ])
+  })
 })
 
 describe('Phase 7-10d memory cards', () => {

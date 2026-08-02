@@ -132,6 +132,8 @@ export const PROMPT_PRESET_FIELDS = [
   'autoSuggestPrefix',
   'autoSuggestClean',
   'promptTemplate',
+  'groupTemplate',
+  'groupOtherBotRole',
   'NAIadventure',
   'NAIappendName',
   'promptSettings',
