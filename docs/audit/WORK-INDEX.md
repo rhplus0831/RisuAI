@@ -4,11 +4,11 @@ Generated 2026-08-02 from the six-agent parity review of the Fastify
 message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
-into **53 work items**: 7 in the active tiers, 2 deferred, and 44 resolved.
+into **53 work items**: 5 in the active tiers, 2 deferred, and 46 resolved.
 Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
 divergences, and the maintainer approved dispositions for every remaining
 `Needs decision` item plus the blanket implementation policy (see the
-maintenance rules) — all 7 remaining active items are `Needs design`. Tier 0 landed in `99a346377`; the
+maintenance rules) — all 5 remaining active items are `Needs design`. Tier 0 landed in `99a346377`; the
 Tier 1 CBS/assembly batch in `0c5ba0ac8`; the Gemini cluster in `db638a29c`.
 All items were classified on 2026-08-02 against `fbf750b24`;
 findings are point-in-time evidence and must be re-verified against current
@@ -72,9 +72,7 @@ valid work intentionally held outside the active execution order;
 | --- | --- | --- | --- | --- |
 | Durable Lua character/local-lore writes | [ST-3](docs/scripts-triggers-lua.md) | Needs design | `setName`, `setCharacterFirstMessage`, `setBackgroundEmbedding`, `upsertLocalLoreBook` mutate only the request snapshot and are lost. | Extend the assembly mutation payload to carry character-field and local-lore changes through persistence. |
 | Persist `@@inject` history mutations | [ST-4](docs/scripts-triggers-lua.md) | Needs design | The original durably rewrote the stored message; Fastify's rewrite is request-local. | Route the inject write through an assembly message mutation (`submitTranscriptChanged`); mind the lorebook identity-dirty and transcript-persistence rules. |
-| Resolve OpenRouter `risu/free` | [PR-6](docs/provider-adapters.md) | Needs design | "Free Auto" sends a literal `risu/free` model ID → invalid-model error. | Needs a server-side OpenRouter catalog fetch (cache/TTL/failure policy) mirroring `model/openrouter.ts`. |
 | Gemini response modalities and returned assets | [PR-5](docs/provider-adapters.md) | Needs design | Image/audio-output Gemini models lose their generated media (or fail with "no text content"). | Request `responseModalities`, disable streaming for those models, persist `inlineData` as inlay assets server-side. |
-| Strong-ban logit-bias parity | [PR-21](docs/provider-adapters.md) | Needs design | `-101` bans component tokens of variants (over-suppression); ordinary bias values are clamped where the original passed them through. | Port the original punctuation-variant first-token algorithm; decide whether the clamp is a deliberate guard. |
 
 ## Tier 3 — Legacy/niche surfaces and disputed edge cases
 
@@ -95,6 +93,8 @@ pinning test + area-doc intentional entry).
 
 | Work item | Findings | Status | Impact | Resolution |
 | --- | --- | --- | --- | --- |
+| Resolve OpenRouter `risu/free` | [PR-6](docs/provider-adapters.md) | Resolved | The sentinel went to OpenRouter literally → invalid-model error. | Fixed in `6e1df13b9`: dispatch-time resolution via a fixed catalog operation (15s timeout, credential-scoped 45-min TTL cache, stale-on-refresh-failure, baseline free-filter + largest-context/catalog-order selection). Metadata carries the resolved model — deliberate improvement; the baseline retained the sentinel label. |
+| Strong-ban logit-bias parity | [PR-21](docs/provider-adapters.md) | Resolved | -101 banned all variant tokens; ordinary bias was clamped. | Fixed in `6e1df13b9`: baseline six-variant construction with the exact punctuation set, first non-punctuation token only; clamping removed (baseline forwarded stored values unchanged — parity wins over the documented wire range, tested). |
 | Retire character additional-information retrieval | [PA-1](docs/prompt-assembly.md) | Resolved | The `additionalText` field was editable but never reached the prompt. | Retired per 2026-08-02 decision in `ec124302c`: editor replaced by a read-only unsupported notice when imported data exists (data preserved), prompt omission pinned, boundary documented. |
 | Surface and pin the V2 unsupported-effect no-ops | [ST-1](docs/scripts-triggers-lua.md), [ST-2](docs/scripts-triggers-lua.md) | Resolved | Unsupported V2 effects fell through silently. | Fixed in `ec124302c`: shared unsupported-effect catalog; one SSE warning per effect type per generation from assembly and output triggers; V2 editor annotates unsupported effects; boundary documented and no-ops pinned. |
 | Legacy model labels and stage timings in `generationInfo` | [OR-9](docs/orchestration-postgen.md) | Resolved | Provider-prefixed labels were lost; stage timings persisted as zero. | Fixed in `ec124302c`: baseline-format display labels persisted; stage 2 measures server-owned prefetch/memory-bridge work. Stage 4 (browser-owned) remains zero in server persistence by documented design — `updateMessage` rejects `generationInfo` and no telemetry-only mutation was added; pinned. |
