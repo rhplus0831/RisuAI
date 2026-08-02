@@ -206,12 +206,14 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
     }
   }
 
-  await evaluateIgp({
-    promptTemplate: getDatabase().igpPrompt ?? '',
-    abortSignal,
-    selectedChar,
-    selectedChat,
-  })
+  if (!serverOwnsPostGeneration) {
+    await evaluateIgp({
+      promptTemplate: getDatabase().igpPrompt ?? '',
+      abortSignal,
+      selectedChar,
+      selectedChat,
+    })
+  }
 
   return { status: 'done', currentChat, result, emoChanged, resendChat, streamProjection }
 }

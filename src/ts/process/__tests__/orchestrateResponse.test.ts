@@ -261,7 +261,7 @@ describe('orchestrateResponse - non-streaming branch', () => {
 })
 
 describe('orchestrateResponse - server-owned post-generation (A2)', () => {
-  it('skips applyOutputTrigger, inlay, and TTS on the server-owned path', async () => {
+  it('defers output trigger, inlay, TTS, and IGP to the server terminal path', async () => {
     // The server runs the run-var pass, `'output'` trigger, and `editoutput`;
     // the browser relays the stream for display only. Final text, inlay, and
     // resend are consumed from the terminal patch instead of derived here.
@@ -286,6 +286,7 @@ describe('orchestrateResponse - server-owned post-generation (A2)', () => {
     expect(fakes.output.calls).toBe(0)
     expect(fakes.inlay.calls).toBe(0)
     expect(fakes.tts.calls).toBe(0)
+    expect(fakes.igp.calls).toBe(0)
     // Resend is reported from the terminal, not derived here.
     expect(result.resendChat).toBe(false)
   })

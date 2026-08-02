@@ -5525,10 +5525,18 @@ function dispatchSanitizedUpdateMessageWithOutcome(
   rollback: () => void,
   optimisticProjection?: ChatBodyProjectionFence,
   onTransport?: (transport: ServerCommandTransportOptions) => void,
+  preconditions: MessageUpdatePreconditions = {},
 ): Promise<ChatMutationOutcome> | null {
   if (Object.keys(commandPatch).length === 0) return null
   if (optimisticProjection) markChatMessageMutationIntent(optimisticProjection.chatId)
-  const body = freezeDurableChatRequestBody({ patch: commandPatch })
+  const body = freezeDurableChatRequestBody({
+    patch: commandPatch,
+    ...(preconditions.expectedData !== undefined ? { expectedData: preconditions.expectedData } : {}),
+    ...(preconditions.expectedChatId !== undefined ? { expectedChatId: preconditions.expectedChatId } : {}),
+    ...(preconditions.expectedGenerationId !== undefined
+      ? { expectedGenerationId: preconditions.expectedGenerationId }
+      : {}),
+  })
   const intent = durableChatMutationIntent('PATCH', `/messages/${encodeURIComponent(messageId)}`, body)
   const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) => {
     onTransport?.(transport)
@@ -5538,6 +5546,9 @@ function dispatchSanitizedUpdateMessageWithOutcome(
           baseRevision,
           messageId,
           patch: body.patch,
+          expectedData: body.expectedData,
+          expectedChatId: body.expectedChatId,
+          expectedGenerationId: body.expectedGenerationId,
           optimisticChatId: optimisticProjection?.chatId,
           optimisticChatBodyProjectionEpoch: optimisticProjection?.projectionEpoch,
         }),
@@ -5574,7 +5585,16 @@ export function dispatchUpdateMessage(messageId: string, patch: MessageSnapshot,
   )
 }
 
-export interface DispatchUpdateMessageScopedOptions {
+export interface MessageUpdatePreconditions {
+  /** Reject the command if the durable message text is no longer this exact value. */
+  expectedData?: string
+  /** Reject the command if the message has moved to a different chat. */
+  expectedChatId?: string
+  /** Reject the command if the row no longer belongs to this generation. */
+  expectedGenerationId?: string
+}
+
+export interface DispatchUpdateMessageScopedOptions extends MessageUpdatePreconditions {
   /** The caller already painted the supplied patch and owns rolling it back if persistence fails. */
   optimisticPatchAlreadyApplied?: boolean
 }
@@ -5611,6 +5631,7 @@ export function dispatchUpdateMessageScoped(
     () => (pendingAttempt ? rollbackScopedTranscriptAttempt(pendingAttempt) : undefined),
     optimisticProjection,
     (transport) => bindScopedTranscriptAttemptDurability(pendingAttempt, transport),
+    options,
   )
   const result = outcome?.then((settled) => settled.result as ServerCommandResult) ?? null
   trackScopedTranscriptAttemptResult(pendingAttempt, result)

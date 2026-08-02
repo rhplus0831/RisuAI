@@ -30,6 +30,7 @@ import { captureChatMessageMutationIntentEpoch } from '../server/chatMessageMuta
 import { finalizeServerBackedInlayMessage } from './inlayFinalization'
 import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
 import type { StreamMessageProjection } from './postGeneration/streamResponse'
+import type { IgpMessageTarget } from './postGeneration/igp'
 import { clearGenerationPersistence, markGenerationPersistenceQueued } from './generationPersistenceState'
 
 export interface ServerBackedStageTimings {
@@ -88,7 +89,7 @@ export type ServerBackedAssemblyResult =
     }
 
 export type ServerBackedTerminalResult =
-  | { status: 'ok'; currentChat: Chat; resendChat: boolean }
+  | { status: 'ok'; currentChat: Chat; resendChat: boolean; igpTarget?: IgpMessageTarget }
   | { status: 'failed'; error: string; currentChat: Chat; resendChat: boolean }
 
 function numberFrom(value: unknown): number | undefined {
@@ -856,15 +857,40 @@ export async function applyServerBackedTerminal(args: {
     }
   }
 
+  const finalResolution = resolveServerBackedLiveChat({
+    selectedChar: args.selectedChar,
+    selectedChat: args.selectedChat,
+    characterId: terminalTarget.characterId,
+    chatId: terminalTarget.chatId,
+  })
+  const finalChat = finalResolution?.chat ?? args.currentChat
+  const finalAssistant =
+    findGeneratedAssistantMessage(finalChat, generationId) ??
+    (args.targetMessageId
+      ? finalChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
+      : undefined)
+  const finalMessageId = finalAssistant?.chatId ?? args.targetMessageId
+  const igpTarget =
+    finalResolution &&
+    finalAssistant &&
+    nonEmptyTargetId(finalResolution.character.chaId) &&
+    nonEmptyTargetId(finalResolution.chat.id) &&
+    nonEmptyTargetId(finalMessageId)
+      ? {
+          characterId: finalResolution.character.chaId,
+          chatId: finalResolution.chat.id,
+          messageId: finalMessageId,
+          expectedData: finalAssistant?.data ?? '',
+          ...(finalAssistant?.generationInfo?.generationId === generationId
+            ? { expectedGenerationId: generationId }
+            : {}),
+        }
+      : undefined
+
   return {
     status: 'ok',
-    currentChat: resolveServerBackedCurrentChat({
-      selectedChar: args.selectedChar,
-      selectedChat: args.selectedChat,
-      characterId: terminalTarget.characterId,
-      chatId: terminalTarget.chatId,
-      currentChat: args.currentChat,
-    }),
+    currentChat: finalChat,
     resendChat,
+    ...(igpTarget ? { igpTarget } : {}),
   }
 }

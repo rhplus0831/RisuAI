@@ -66,6 +66,20 @@ function stubCommandFetch(): CapturedFetch[] {
           event: { type: 'messages.replaced', revision: 11, resource: 'chat' },
         })
       }
+      if (url === '/api/v1/commands/messages/message-1') {
+        return jsonResponse({
+          revision: 11,
+          event: {
+            type: 'message.updated',
+            revision: 11,
+            resource: 'message',
+            id: 'message-1',
+            parentId: 'chat-1',
+          },
+          chatId: 'chat-1',
+          messageId: 'message-1',
+        })
+      }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
   )
@@ -79,6 +93,15 @@ async function waitForMessageCommand(calls: CapturedFetch[]): Promise<CapturedFe
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
   throw new Error(`message command not dispatched; saw ${JSON.stringify(calls)}`)
+}
+
+async function waitForTargetedMessageCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const match = calls.find((call) => call.url === '/api/v1/commands/messages/message-1' && call.method === 'PATCH')
+    if (match) return match
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error(`targeted message command not dispatched; saw ${JSON.stringify(calls)}`)
 }
 
 function makeChar(): character {
@@ -233,5 +256,85 @@ describe('evaluateIgp', () => {
       ],
     } as Database)
     expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
+  })
+
+  it('appends to the stable post-terminal row with durable terminal-state preconditions', async () => {
+    const calls = stubCommandFetch()
+    const char = makeChar()
+    char.chats[0].message = [
+      {
+        role: 'char',
+        data: 'derived final text',
+        time: 0,
+        chatId: 'message-1',
+        generationInfo: { generationId: 'generation-1' },
+      },
+    ]
+    seed(char)
+
+    await evaluateIgp({
+      ...baseOpts,
+      promptTemplate: CHATML_PROMPT,
+      target: {
+        characterId: 'cha-1',
+        chatId: 'chat-1',
+        messageId: 'message-1',
+        expectedData: 'derived final text',
+        expectedGenerationId: 'generation-1',
+      },
+    })
+
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('derived final textIGP-RESULT')
+    const command = await waitForTargetedMessageCommand(calls)
+    expect(command.body).toMatchObject({
+      patch: { data: 'derived final textIGP-RESULT' },
+      expectedData: 'derived final text',
+      expectedChatId: 'chat-1',
+      expectedGenerationId: 'generation-1',
+    })
+  })
+
+  it('does not overwrite a newer edit made while terminal-targeted IGP is evaluating', async () => {
+    const calls = stubCommandFetch()
+    const char = makeChar()
+    char.chats[0].message = [
+      {
+        role: 'char',
+        data: 'derived final text',
+        time: 0,
+        chatId: 'message-1',
+        generationInfo: { generationId: 'generation-1' },
+      },
+    ]
+    seed(char)
+    let resolveProvider!: (value: { type: 'success'; result: string }) => void
+    requestChatDataSpy.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveProvider = resolve
+        }),
+    )
+
+    const pending = evaluateIgp({
+      ...baseOpts,
+      promptTemplate: CHATML_PROMPT,
+      target: {
+        characterId: 'cha-1',
+        chatId: 'chat-1',
+        messageId: 'message-1',
+        expectedData: 'derived final text',
+        expectedGenerationId: 'generation-1',
+      },
+    })
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters[0].chats[0].message[0].data = 'newer user edit'
+    })
+    resolveProvider({ type: 'success', result: 'IGP-RESULT' })
+    await pending
+
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('newer user edit')
+    expect(calls).not.toContainEqual(
+      expect.objectContaining({ url: '/api/v1/commands/messages/message-1', method: 'PATCH' }),
+    )
   })
 })

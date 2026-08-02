@@ -4,6 +4,7 @@ import { getResourceDatabase as getDatabase } from '../server/resourceState.svel
 import { reportSendChatError } from './sendChatErrors'
 import { setupSendChatContext } from './sendChatContext'
 import { orchestrateResponse } from './postGeneration/orchestrateResponse'
+import { evaluateIgp } from './postGeneration/igp'
 import { runStage4 } from './postGeneration/runStage4'
 import { dispatchRequest } from './dispatch/dispatchRequest'
 import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
@@ -517,6 +518,19 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       if (terminalResult.status === 'failed') {
         throwError(terminalResult.error)
         return false
+      }
+      // Server-backed streams only expose the derived editoutput/trigger/inlay
+      // text after the terminal frame is reconciled. Append IGP to that exact
+      // stable row; if the terminal cannot identify it safely, do not fall back
+      // to whichever chat happens to be selected now.
+      if (terminalResult.igpTarget) {
+        await evaluateIgp({
+          promptTemplate: getDatabase().igpPrompt ?? '',
+          abortSignal,
+          selectedChar,
+          selectedChat,
+          target: terminalResult.igpTarget,
+        })
       }
       if (terminalResult.resendChat) {
         serverRequestedResend = true

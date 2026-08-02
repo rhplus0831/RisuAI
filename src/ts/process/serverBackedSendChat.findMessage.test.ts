@@ -267,6 +267,14 @@ describe('server-backed terminal stable chat target (R-02)', () => {
 
     expect(result.status).toBe('ok')
     expect(result.currentChat.id).toBe('chat-target')
+    if (result.status !== 'ok') throw new Error('unexpected terminal status')
+    expect(result.igpTarget).toEqual({
+      characterId: 'char-stable',
+      chatId: 'chat-target',
+      messageId: 'gen-stable',
+      expectedData: 'stable final text',
+      expectedGenerationId: 'gen-stable',
+    })
     expect(target.message[0].data).toBe('stable final text')
     expect(staleIndexChat.message[0].data).toBe('stale original')
   })

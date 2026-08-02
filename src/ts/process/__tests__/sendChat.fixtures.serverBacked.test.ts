@@ -8,9 +8,9 @@ import { get } from 'svelte/store'
 import type { FastifyInstance } from 'fastify'
 
 // Server-backed sendChat sweep. Unlike sendChat.fixtures.test.ts, this file does
-// NOT vi.mock('../request/request'): supported Fastify sends go through
-// `/api/v1/generate/chat`, so the browser-local assembler is never used in
-// server-backed mode.
+// Supported Fastify sends go through `/api/v1/generate/chat`, so the
+// browser-local assembler never consumes the request mock. The mock is kept for
+// the browser-owned IGP call that intentionally runs after terminal replay.
 
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
@@ -29,6 +29,7 @@ vi.mock('../inlayScreen', () => import('../__fixtures__/mocks/inlayScreen'))
 vi.mock('../stableDiff', () => import('../__fixtures__/mocks/stableDiff'))
 vi.mock('../prereroll', () => import('../__fixtures__/mocks/prereroll'))
 vi.mock('../files/inlays', () => import('../__fixtures__/mocks/inlays'))
+vi.mock('../request/request', () => import('../__fixtures__/mocks/request'))
 
 vi.mock('../memory/hypav3', async (importActual) => {
   const actual = await importActual<typeof import('../memory/hypav3')>()
@@ -100,7 +101,7 @@ import {
 } from '../__fixtures__/mocks/serverChatFetch'
 import { isTokenizerUrl, serveTokenizerFetch } from '../__fixtures__/mocks/tokenizerFetch'
 import { getSideEffectCalls, resetSideEffectCalls } from '../__fixtures__/sideEffects'
-import { resetProviderState } from '../__fixtures__/providerFake'
+import { getProviderCalls, installProviderScript, resetProviderState } from '../__fixtures__/providerFake'
 import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
 import { hypaV3ProgressStore } from '../../stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
@@ -265,6 +266,30 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
     }
     if (url.startsWith('/api/v1/commands/')) {
       commandCalls.push({ url, method, body: (payload ?? {}) as Record<string, unknown> })
+      const messageMatch = url.match(/^\/api\/v1\/commands\/messages\/([^/]+)$/)
+      if (messageMatch && method === 'PATCH') {
+        const messageId = decodeURIComponent(messageMatch[1])
+        const baseRevision =
+          payload && typeof payload === 'object' && typeof payload.baseRevision === 'number'
+            ? payload.baseRevision
+            : currentRevision
+        const revision = baseRevision + 1
+        return new Response(
+          JSON.stringify({
+            revision,
+            event: {
+              type: 'message.updated',
+              revision,
+              resource: 'message',
+              id: messageId,
+              parentId: 'chat-route-backed',
+            },
+            chatId: 'chat-route-backed',
+            messageId,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
       return new Response(
         JSON.stringify({
           revision: 2,
@@ -682,6 +707,55 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         .find((m: { role: string }) => m.role === 'char')
       expect(persistedAssistant?.data).toBe('route-backed REPLY')
       expect(getServerCompletionCalls()).toEqual([])
+    } finally {
+      await drainRouteBackedCommands()
+      await harness.close()
+    }
+  })
+
+  it('appends IGP to the streamed server terminal derived text with row preconditions (OR-1)', async () => {
+    const harness = await createRouteBackedHarness()
+    try {
+      const loaded = await loadFixture('simple-send')
+      cleanups.push(loaded.cleanup)
+      prepareRouteBackedFixture('simple-send')
+      testDatabaseState.db.characters[0].customscript = [
+        { comment: '', in: 'reply', out: 'REPLY', type: 'editoutput', flag: '', ableFlag: false },
+      ]
+      testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
+      installProviderScript([{ type: 'success', result: '::IGP' }])
+      await harness.seed(testDatabaseState.db)
+      vi.stubGlobal('fetch', harness.fetch)
+      harness.setDispatchText('route-backed reply')
+
+      clearCachedServerCommandRevision()
+      setResourceWriteGuardEnabled(true)
+      const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
+      await drainRouteBackedCommands()
+
+      expect(ok).toBe(true)
+      const assistant = [...testDatabaseState.db.characters[0].chats[0].message]
+        .reverse()
+        .find((message) => message.role === 'char')
+      expect(assistant?.data).toBe('route-backed REPLY::IGP')
+      expect(getProviderCalls()).toEqual([
+        {
+          arg: expect.objectContaining({
+            formated: [expect.objectContaining({ role: 'system', content: 'Append a marker.' })],
+          }),
+          model: 'emotion',
+        },
+      ])
+
+      const igpCommand = harness.commandCalls.find(
+        (call) => call.method === 'PATCH' && /^\/api\/v1\/commands\/messages\/[^/]+$/.test(call.url),
+      )
+      expect(igpCommand?.body).toMatchObject({
+        patch: { data: 'route-backed REPLY::IGP' },
+        expectedData: 'route-backed REPLY',
+        expectedChatId: 'chat-route-backed',
+        expectedGenerationId: expect.any(String),
+      })
     } finally {
       await drainRouteBackedCommands()
       await harness.close()
@@ -1131,6 +1205,8 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
       },
       'uuid-0',
     )
+    testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
+    installProviderScript([{ type: 'success', result: '::SHOULD-NOT-RUN' }])
 
     setResourceWriteGuardEnabled(true)
     const result = await sendChat(-1, {})
@@ -1144,6 +1220,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     })
     expect(getServerChatCalls()).toHaveLength(1)
     expect(getServerCompletionCalls()).toEqual([])
+    expect(getProviderCalls()).toEqual([])
   })
 
   it('forwards the synthetic say-nothing marker on the server-backed send', async () => {
@@ -1163,6 +1240,42 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
       userMessage: '*says nothing*',
       syntheticSayNothing: true,
     })
+  })
+
+  it('evaluates IGP once after a reattached stream applies its terminal derived text (OR-1)', async () => {
+    const loaded = await loadFixture('simple-send')
+    cleanups.push(loaded.cleanup)
+    testDatabaseState.db.characters[0].chats[0].id = 'chat-reattach'
+    markFixtureActiveChatGenerationSettingsReady()
+    testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
+    let textAtIgpEvaluation = ''
+    const requestModule = await import('../request/request')
+    const igpRequest = vi.spyOn(requestModule, 'requestChatData').mockImplementationOnce(async () => {
+      textAtIgpEvaluation =
+        [...testDatabaseState.db.characters[0].chats[0].message].reverse().find((message) => message.role === 'char')
+          ?.data ?? ''
+      return { type: 'success', result: '::IGP' }
+    })
+    try {
+      setServerChatDispatchResult(
+        'raw reattached reply',
+        { model: 'gpt-4o', generationId: 'reattached-generation' },
+        'reattached-generation',
+        { postGeneration: { finalText: 'derived reattached reply' } },
+      )
+
+      setResourceWriteGuardEnabled(true)
+      const result = await sendChat(-1, { reattachJobId: 'job-reattach' })
+
+      expect(result).toBe(true)
+      expect(igpRequest).toHaveBeenCalledTimes(1)
+      expect(textAtIgpEvaluation).toBe('derived reattached reply')
+      expect(igpRequest.mock.calls[0][1]).toBe('emotion')
+      expect(getServerChatCalls()).toHaveLength(1)
+      expect(getServerChatCalls()[0].url).toContain('/api/v1/generate/chat/job-reattach/stream')
+    } finally {
+      igpRequest.mockRestore()
+    }
   })
 
   it('speaks every server-derived choice after browser-owned inlay processing', async () => {
