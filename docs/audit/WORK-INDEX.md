@@ -4,12 +4,11 @@ Generated 2026-08-02 from the six-agent parity review of the Fastify
 message-generation flow against the original client implementation at fork
 point `71c476e9c` (evidence in [docs/](docs/README.md)). The review recorded
 **57 findings** plus ~30 confirmed-intentional divergences; they consolidate
-into **53 work items**: 12 in the active tiers, 2 deferred, and 39 resolved.
+into **53 work items**: 7 in the active tiers, 2 deferred, and 44 resolved.
 Work status was last updated 2026-08-02: ST-1/ST-2 are resolved as accepted
 divergences, and the maintainer approved dispositions for every remaining
 `Needs decision` item plus the blanket implementation policy (see the
-maintenance rules) — active items are now `Ready` (5) or `Needs design` (7)
-only, cleared for autonomous execution. Tier 0 landed in `99a346377`; the
+maintenance rules) — all 7 remaining active items are `Needs design`. Tier 0 landed in `99a346377`; the
 Tier 1 CBS/assembly batch in `0c5ba0ac8`; the Gemini cluster in `db638a29c`.
 All items were classified on 2026-08-02 against `fbf750b24`;
 findings are point-in-time evidence and must be re-verified against current
@@ -71,8 +70,6 @@ valid work intentionally held outside the active execution order;
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
-| Retire character additional-information retrieval | [PA-1](docs/prompt-assembly.md) | Ready | The `additionalText` field is editable in the UI but never reaches the prompt; the original similarity-searched and appended up to three blocks. | Decision 2026-08-02: remove, not port. Hide the UI field, add an unsupported notice (strings via `src/lang`), document, and record as an accepted divergence with pinning coverage. |
-| Surface and pin the V2 unsupported-effect no-ops | [ST-1](docs/scripts-triggers-lua.md), [ST-2](docs/scripts-triggers-lua.md) | Ready | Decision 2026-08-02: the effects stay no-op (see Completed items). Users currently get a silent fall-through — a card's trigger appears to run but doesn't, and getter-dependent triggers inject the literal string `null`. | Add a user-facing unsupported notice (trigger editor and/or runtime trigger diagnostic; new strings go in `src/lang`), record the boundary in `docs/structure/`, and pin the no-op arms with a regression test so the fall-through becomes a documented contract. |
 | Durable Lua character/local-lore writes | [ST-3](docs/scripts-triggers-lua.md) | Needs design | `setName`, `setCharacterFirstMessage`, `setBackgroundEmbedding`, `upsertLocalLoreBook` mutate only the request snapshot and are lost. | Extend the assembly mutation payload to carry character-field and local-lore changes through persistence. |
 | Persist `@@inject` history mutations | [ST-4](docs/scripts-triggers-lua.md) | Needs design | The original durably rewrote the stored message; Fastify's rewrite is request-local. | Route the inject write through an assembly message mutation (`submitTranscriptChanged`); mind the lorebook identity-dirty and transcript-persistence rules. |
 | Resolve OpenRouter `risu/free` | [PR-6](docs/provider-adapters.md) | Needs design | "Free Auto" sends a literal `risu/free` model ID → invalid-model error. | Needs a server-side OpenRouter catalog fetch (cache/TTL/failure policy) mirroring `model/openrouter.ts`. |
@@ -88,9 +85,6 @@ valid work intentionally held outside the active execution order;
 
 | Work item | Findings | Status | Impact | Risk / dependencies |
 | --- | --- | --- | --- | --- |
-| Legacy model labels and stage timings in `generationInfo` | [OR-9](docs/orchestration-postgen.md) | Ready | Exported metadata loses provider-prefixed model labels; `stageTiming.stage2/stage4` persist as zero. | Either persist the legacy display label and post-stage-4 timings, or document the new shape. |
-| Preserve the headroom clamp in `outputTokens` metadata | [PA-5](docs/prompt-assembly.md) | Ready | Persisted `outputTokens` reports `maxResponse` instead of the assembly-clamped value. | Keep the clamped value through provider-profile selection. |
-| Align the retry-count clamp with the UI | [OR-5](docs/orchestration-postgen.md) | Ready | UI accepts 20 retries; the server clamps to 10 silently. | Decision 2026-08-02: parity — raise the server clamp to the UI's 20. |
 
 ## Completed items
 
@@ -101,6 +95,11 @@ pinning test + area-doc intentional entry).
 
 | Work item | Findings | Status | Impact | Resolution |
 | --- | --- | --- | --- | --- |
+| Retire character additional-information retrieval | [PA-1](docs/prompt-assembly.md) | Resolved | The `additionalText` field was editable but never reached the prompt. | Retired per 2026-08-02 decision in `ec124302c`: editor replaced by a read-only unsupported notice when imported data exists (data preserved), prompt omission pinned, boundary documented. |
+| Surface and pin the V2 unsupported-effect no-ops | [ST-1](docs/scripts-triggers-lua.md), [ST-2](docs/scripts-triggers-lua.md) | Resolved | Unsupported V2 effects fell through silently. | Fixed in `ec124302c`: shared unsupported-effect catalog; one SSE warning per effect type per generation from assembly and output triggers; V2 editor annotates unsupported effects; boundary documented and no-ops pinned. |
+| Legacy model labels and stage timings in `generationInfo` | [OR-9](docs/orchestration-postgen.md) | Resolved | Provider-prefixed labels were lost; stage timings persisted as zero. | Fixed in `ec124302c`: baseline-format display labels persisted; stage 2 measures server-owned prefetch/memory-bridge work. Stage 4 (browser-owned) remains zero in server persistence by documented design — `updateMessage` rejects `generationInfo` and no telemetry-only mutation was added; pinned. |
+| Preserve the headroom clamp in `outputTokens` metadata | [PA-5](docs/prompt-assembly.md) | Resolved | Clamped value was overwritten with `maxResponse`. | Fixed in `ec124302c`: clamp preserved through BOTH overwrite sites (the finding missed the per-attempt dispatch context); pinned test updated to the parity behavior. |
+| Align the retry-count clamp with the UI | [OR-5](docs/orchestration-postgen.md) | Resolved | Server clamped to 10 while the UI allows 20. | Fixed in `ec124302c`: clamp raised to 20; 21-total-attempts regression pinned. |
 | Ooba legacy stop strings, cleanup, truncation, and args | [PR-19](docs/provider-adapters.md), [PR-8](docs/provider-adapters.md) | Resolved | Missing default stops/cleanup/truncation; configured Ooba args dropped. | Fixed in `d589297af`. Evidence corrections: baseline `truncation_length` was `maxTokens ?? maxResponse` (not the output-token claim as written), and `getStopStrings(false)` is a fixed 51-entry set (user/human/input/inst/instruction case-variants, markers, `username:`) that does NOT read the active character. Non-null Ooba args overlay in baseline object-key order before additionalParams. |
 | Horde cleanup uses the active character | [PR-20](docs/provider-adapters.md) | Resolved | Cleanup searched `characters[0]` instead of the active character. | Fixed in `d589297af`: effective generation character supplied by inline and durable dispatch; regression proves the active second character's turn is trimmed. |
 | Sunset non-ChatML instruct templates on legacy transports | [PR-18](docs/provider-adapters.md), [PR-7](docs/provider-adapters.md) | Resolved | Non-ChatML templates were silently degraded; `useInstructPrompt` was dead but enabled. | Sunset per 2026-08-02 decision in `d589297af`: current Kobold/Ooba/Horde output pinned with accepted-divergence notes; the OpenRouter toggle is disabled with a localized unsupported note; the degraded boundary is documented in `docs/structure/providers-and-models.md`. |
