@@ -136,10 +136,15 @@ Fastify side: `server/fastify/src/prompt/scripts.ts`, `triggers.ts`,
   alert/LLM/image/similarity arms were `lowLevelAccess`-gated upstream.
   Consequence to communicate: getter-dependent triggers inject the literal
   string `null`, and cards relying on these effects silently lose behavior.
-  Follow-up (user-facing unsupported notice, structure-doc entry, and a
-  pinning regression) is tracked in the WORK-INDEX Tier 2 item "Surface and
-  pin the V2 unsupported-effect no-ops"; the silent fall-through is not yet
-  a documented, tested contract until that lands.
+  The follow-up (WORK-INDEX Tier 2 item "Surface and pin the V2
+  unsupported-effect no-ops") landed 2026-08-02 in `ec124302c`: a shared
+  unsupported-effect catalog (`src/ts/process/triggerServerSupport.ts`)
+  drives one SSE warning per effect type per generation from both the
+  assembly and output trigger runs, the V2 editor annotates unsupported
+  effects (`src/lib/SideBars/Scripts/TriggerV2List.svelte`), and the no-op
+  boundary is pinned by
+  `server/fastify/__tests__/generation.chat.test.ts` (one-warning-per-type
+  + no-mutation coverage) — the fall-through is no longer silent.
 - **Global regex scripts execute** (the baseline stored `db.globalscript` but
   never ran it). Added deliberately in commit `9fde68341`; order pinned by
   `server/fastify/__tests__/scripts.test.ts:123`.
