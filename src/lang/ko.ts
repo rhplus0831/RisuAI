@@ -1050,6 +1050,8 @@ const languageKoreanBase = {
   customStopWords: '커스텀 정지 단어',
   defaultPrompt: '기본 프롬프트',
   additionalText: '추가 디스크립션',
+  additionalTextUnsupported:
+    '이 서버에서는 지원되지 않습니다: 가져온 추가 디스크립션 데이터는 보존되지만 프롬프트에는 추가되지 않습니다.',
   seed: '시드',
   charjs: '캐릭터JS',
   depthPrompt: '깊이 프롬프트',
@@ -1187,6 +1189,8 @@ const languageKoreanBase = {
   },
   chatFormating: '채팅 포맷',
   useInstructPrompt: '인스트럭트 프롬프트 사용',
+  openRouterInstructPromptUnsupported:
+    'Fastify 서버 모드에서는 지원되지 않습니다: OpenRouter는 항상 채팅 메시지를 전송하므로 이 토글은 효과가 없습니다.',
   textAreaSize: '텍스트 영역 크기',
   textAreaTextSize: '텍스트 영역 텍스트 크기',
   sideBarSize: '사이드바 크기',
@@ -1216,6 +1220,8 @@ const languageKoreanBase = {
   resultStoredVar: '결과 저장 변수',
   triggerEffRunLLM: '메인 모델 실행',
   triggerEffectSendAI: 'AI 재전송',
+  triggerEffectUnsupportedOnServer:
+    '이 서버에서는 지원되지 않습니다: 가져온 이 효과는 보존되지만 생성 중에는 아무 효과가 없습니다.',
   triggerEffCheckSim: '유사성 확인',
   triggerEffShowAlert: '알림 보이기',
   normal: '일반',
