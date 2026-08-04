@@ -12,6 +12,24 @@ const subtle = webcrypto.subtle
 const STALE_KEY = 'sk-stale-inline-secret-e2e'
 const STALE_VERTEX_EMAIL = 'stale-vertex-client@example.com'
 const STALE_VERTEX = 'stale-vertex-private-key-e2e'
+const STALE_BOT_PRESET_KEY = 'sk-stale-bot-preset-inline-secret-e2e'
+const STALE_BOT_PRESET_VERTEX_EMAIL = 'stale-bot-preset-vertex-client@example.com'
+const STALE_BOT_PRESET_VERTEX = 'stale-bot-preset-vertex-private-key-e2e'
+const STALE_MODEL_PRESET_KEY = 'sk-stale-model-preset-inline-secret-e2e'
+const STALE_MODEL_PRESET_VERTEX_EMAIL = 'stale-model-preset-vertex-client@example.com'
+const STALE_MODEL_PRESET_VERTEX = 'stale-model-preset-vertex-private-key-e2e'
+
+const ALL_STALE_SECRETS = [
+  STALE_KEY,
+  STALE_VERTEX_EMAIL,
+  STALE_VERTEX,
+  STALE_BOT_PRESET_KEY,
+  STALE_BOT_PRESET_VERTEX_EMAIL,
+  STALE_BOT_PRESET_VERTEX,
+  STALE_MODEL_PRESET_KEY,
+  STALE_MODEL_PRESET_VERTEX_EMAIL,
+  STALE_MODEL_PRESET_VERTEX,
+] as const
 
 async function startApp(dataDir: string): Promise<FastifyInstance> {
   process.env.LOG_LEVEL = 'silent'
@@ -73,7 +91,7 @@ describe('stale inline profile secrets in a pre-credential-store DB', () => {
     rmSync(dataDir, { recursive: true, force: true })
   })
 
-  it('does not serve stale secrets and keeps profile commands working', async () => {
+  it('durably scrubs settings and preset rows before reads, exports, or extraction', async () => {
     // 1. Seed a valid DB through the import route.
     const assertion1 = await signAssertion(keypair.privateKey, publicJwk)
     const imported = await app.inject({
@@ -83,6 +101,38 @@ describe('stale inline profile secrets in a pre-credential-store DB', () => {
       payload: {
         database: {
           modelProfiles: [{ id: 'profile-a', name: 'Legacy', providerId: 'openai', modelId: 'gpt-4.1' }],
+          botPresets: [
+            {
+              id: 'legacy-preset-a',
+              name: 'Legacy Preset',
+              temperature: 0.42,
+              modelProfiles: [
+                {
+                  id: 'legacy-preset-profile',
+                  name: 'Legacy Preset Profile',
+                  providerId: 'openai',
+                  modelId: 'gpt-4.1',
+                },
+              ],
+            },
+          ],
+          botPresetsId: 0,
+          modelPresets: [
+            {
+              id: 'model-preset-a',
+              name: 'Model Preset',
+              temperature: 0.81,
+              modelProfiles: [
+                {
+                  id: 'model-preset-profile',
+                  name: 'Model Preset Profile',
+                  providerId: 'anthropic',
+                  modelId: 'claude-sonnet-4',
+                },
+              ],
+            },
+          ],
+          modelPresetsId: 0,
         },
       },
     })
@@ -106,6 +156,40 @@ describe('stale inline profile secrets in a pre-credential-store DB', () => {
       },
     }
     sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+
+    const botPresetRow = sqlite.prepare('SELECT position, data_json FROM bot_presets').get() as {
+      position: number
+      data_json: string
+    }
+    const botPreset = JSON.parse(botPresetRow.data_json)
+    botPreset.modelProfiles[0].providerOptions = {
+      apiKey: STALE_BOT_PRESET_KEY,
+      vertex: {
+        projectId: 'preserved-bot-preset-project',
+        clientEmail: STALE_BOT_PRESET_VERTEX_EMAIL,
+        privateKey: STALE_BOT_PRESET_VERTEX,
+      },
+    }
+    sqlite
+      .prepare('UPDATE bot_presets SET data_json = ? WHERE position = ?')
+      .run(JSON.stringify(botPreset), botPresetRow.position)
+
+    const modelPresetRow = sqlite.prepare('SELECT position, data_json FROM model_presets').get() as {
+      position: number
+      data_json: string
+    }
+    const modelPreset = JSON.parse(modelPresetRow.data_json)
+    modelPreset.modelProfiles[0].providerOptions = {
+      apiKey: STALE_MODEL_PRESET_KEY,
+      vertex: {
+        projectId: 'preserved-model-preset-project',
+        clientEmail: STALE_MODEL_PRESET_VERTEX_EMAIL,
+        privateKey: STALE_MODEL_PRESET_VERTEX,
+      },
+    }
+    sqlite
+      .prepare('UPDATE model_presets SET data_json = ? WHERE position = ?')
+      .run(JSON.stringify(modelPreset), modelPresetRow.position)
     sqlite.close()
 
     // 3. Reopen the app on the tampered dataDir (same registered client key).
@@ -113,25 +197,54 @@ describe('stale inline profile secrets in a pre-credential-store DB', () => {
     const assertion2 = await signAssertion(keypair.privateKey, publicJwk)
 
     // 4. Resource reads must never expose the stale secrets.
-    for (const url of ['/api/v1/settings', '/api/v1/settings/providers', '/api/v1/settings/models']) {
+    for (const url of [
+      '/api/v1/settings',
+      '/api/v1/settings/providers',
+      '/api/v1/settings/models',
+      '/api/v1/collections',
+      '/api/v1/collections/modelPresets',
+      '/api/v1/legacy-presets/legacy-preset-a',
+    ]) {
       const res = await app.inject({ method: 'GET', url, headers: { 'risu-auth': assertion2 } })
       expect(res.statusCode).toBe(200)
-      expect(res.body).not.toContain(STALE_KEY)
-      expect(res.body).not.toContain(STALE_VERTEX_EMAIL)
-      expect(res.body).not.toContain(STALE_VERTEX)
+      for (const secret of ALL_STALE_SECRETS) expect(res.body).not.toContain(secret)
     }
 
-    // 5. The read-time repair is durable before any profile mutation runs.
+    const exported = await app.inject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=legacy-raw',
+      headers: { 'risu-auth': assertion2 },
+    })
+    expect(exported.statusCode).toBe(200)
+    const portablePayload = Buffer.from(exported.rawPayload).toString('utf8')
+    for (const secret of ALL_STALE_SECRETS) {
+      expect(portablePayload).not.toContain(secret)
+    }
+
+    // 5. The load-time repair is durable before any profile mutation runs.
     const repairedSqlite = new DatabaseSync(path.join(dataDir, 'risu.db'))
     const repairedRow = repairedSqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
       data_json: string
     }
+    const repairedBotPresetRow = repairedSqlite.prepare('SELECT data_json FROM bot_presets').get() as {
+      data_json: string
+    }
+    const repairedModelPresetRow = repairedSqlite.prepare('SELECT data_json FROM model_presets').get() as {
+      data_json: string
+    }
     repairedSqlite.close()
-    expect(repairedRow.data_json).not.toContain(STALE_KEY)
-    expect(repairedRow.data_json).not.toContain(STALE_VERTEX_EMAIL)
-    expect(repairedRow.data_json).not.toContain(STALE_VERTEX)
+    const durableRows = [repairedRow.data_json, repairedBotPresetRow.data_json, repairedModelPresetRow.data_json]
+    for (const secret of ALL_STALE_SECRETS) {
+      for (const durableRow of durableRows) expect(durableRow).not.toContain(secret)
+    }
     expect(JSON.parse(repairedRow.data_json).modelProfiles[0].providerOptions).toEqual({
       vertex: { projectId: 'preserved-project' },
+    })
+    expect(JSON.parse(repairedBotPresetRow.data_json).modelProfiles[0].providerOptions).toEqual({
+      vertex: { projectId: 'preserved-bot-preset-project' },
+    })
+    expect(JSON.parse(repairedModelPresetRow.data_json).modelProfiles[0].providerOptions).toEqual({
+      vertex: { projectId: 'preserved-model-preset-project' },
     })
 
     // 6. Profile commands must still work against the repaired legacy rows.
@@ -149,5 +262,35 @@ describe('stale inline profile secrets in a pre-credential-store DB', () => {
       payload: { baseRevision: revision, name: 'Copy A' },
     })
     expect(dup.statusCode).toBe(200)
+
+    // 7. Extracting the repaired legacy preset must not copy a stale secret
+    //    back into model_presets.
+    const extracted = await app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/legacy-bot-presets/legacy-preset-a/extract',
+      headers: { 'risu-auth': assertion2 },
+      payload: { baseRevision: dup.json().revision, mode: 'model' },
+    })
+    expect(extracted.statusCode).toBe(200)
+    expect(typeof extracted.json().modelPresetId).toBe('string')
+    for (const secret of ALL_STALE_SECRETS) expect(extracted.body).not.toContain(secret)
+
+    const extractedSqlite = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    const extractedRows = extractedSqlite
+      .prepare('SELECT data_json FROM model_presets ORDER BY position')
+      .all() as Array<{
+      data_json: string
+    }>
+    extractedSqlite.close()
+    const extractedPreset = extractedRows
+      .map((candidate) => JSON.parse(candidate.data_json))
+      .find((candidate) => candidate.id === extracted.json().modelPresetId)
+    expect(extractedPreset).toBeTruthy()
+    expect(extractedPreset.modelProfiles[0].providerOptions).toEqual({
+      vertex: { projectId: 'preserved-bot-preset-project' },
+    })
+    for (const secret of ALL_STALE_SECRETS) {
+      expect(JSON.stringify(extractedPreset)).not.toContain(secret)
+    }
   })
 })

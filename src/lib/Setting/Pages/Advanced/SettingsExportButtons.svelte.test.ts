@@ -100,6 +100,23 @@ describe('SettingsExportButtons bug-report export', () => {
           vertex: { clientEmail: 'vertex@example.com', privateKey: 'optimistic-vertex-secret' },
         },
       ],
+      modelPresets: [
+        {
+          id: 'model-preset-a',
+          modelProfiles: [
+            {
+              id: 'model-profile-a',
+              providerOptions: {
+                apiKey: 'optimistic-model-preset-api-secret',
+                vertex: {
+                  clientEmail: 'optimistic-model-preset-vertex@example.com',
+                  privateKey: 'optimistic-model-preset-vertex-secret',
+                },
+              },
+            },
+          ],
+        },
+      ],
     }
     const writeText = vi.fn(async (_text: string) => undefined)
     Object.defineProperty(navigator, 'clipboard', {
@@ -130,6 +147,21 @@ describe('SettingsExportButtons bug-report export', () => {
         },
         {
           vertex: { privateKey: MASKED_PROVIDER_SECRET },
+        },
+      ],
+      modelPresets: [
+        {
+          modelProfiles: [
+            {
+              providerOptions: {
+                apiKey: MASKED_PROVIDER_SECRET,
+                vertex: {
+                  clientEmail: MASKED_PROVIDER_SECRET,
+                  privateKey: MASKED_PROVIDER_SECRET,
+                },
+              },
+            },
+          ],
         },
       ],
     })

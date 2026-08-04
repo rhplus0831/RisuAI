@@ -13,6 +13,7 @@ const ARRAY_WILDCARD_ROOTS = new Set([
   'botPresets',
   'characters',
   'customModels',
+  'modelProfiles',
   'modelPresets',
   'providerCredentials',
 ])

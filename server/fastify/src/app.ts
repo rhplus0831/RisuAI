@@ -56,6 +56,7 @@ import {
   ensureDbJsonImported,
   loadPersistedWithMessages,
   recoverInterruptedRestoreSwaps,
+  repairPersistedModelProfileInlineSecretsInSqlite,
 } from './repository.js'
 import { ASSET_GC_INTERVAL_MS, type AssetGcOptions, runAssetGc } from './assetGc.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
@@ -185,6 +186,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // No-op once converged. Must run after the backfill above, which needs the
   // embedded messages before boot import retires a legacy db.json.
   ensureDbJsonImported(db, config.dataDir, app.log)
+  // Pre-credential-store preset copies must be repaired before routes or
+  // workers can load them into a response, command baseline, or export.
+  repairPersistedModelProfileInlineSecretsInSqlite(db)
   const memoryEventBus = createMemoryEventBus(app.log)
   const emitMemoryEvent: MemoryEventSink = (event) => {
     if (opts.memoryEvents) {

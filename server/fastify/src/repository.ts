@@ -176,6 +176,8 @@ const COLLECTION_TABLE_MAP: Record<string, string> = {
   hypaV3Presets: 'hypa_v3_presets',
 }
 
+const MODEL_PROFILE_INLINE_SECRET_PRESET_TABLES = ['bot_presets', 'model_presets'] as const
+
 export function createCollectionTables(db: DatabaseSync): void {
   for (const tableName of Object.values(COLLECTION_TABLE_MAP)) {
     db.exec(`
@@ -292,6 +294,60 @@ export function repairPersistedModelProfileInlineSecrets(settings: unknown): boo
   return changed
 }
 
+function repairPersistedPresetModelProfileInlineSecrets(database: unknown): boolean {
+  if (!isRecord(database)) return false
+
+  let changed = false
+  for (const field of ['botPresets', 'modelPresets'] as const) {
+    const presets = database[field]
+    if (!Array.isArray(presets)) continue
+    for (const preset of presets) {
+      if (repairPersistedModelProfileInlineSecrets(preset)) changed = true
+    }
+  }
+  return changed
+}
+
+/** Starts its own transaction at boot, or joins the caller's restore transaction. */
+export function repairPersistedModelProfileInlineSecretsInSqlite(db: DatabaseSync): boolean {
+  const ownsTransaction = !db.isTransaction
+  if (ownsTransaction) db.exec('BEGIN IMMEDIATE')
+
+  let changed = false
+  try {
+    const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+      | { data_json: string }
+      | undefined
+    if (settingsRow) {
+      const settings = JSON.parse(settingsRow.data_json)
+      if (repairPersistedModelProfileInlineSecrets(settings)) {
+        db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+        changed = true
+      }
+    }
+
+    for (const tableName of MODEL_PROFILE_INLINE_SECRET_PRESET_TABLES) {
+      const rows = db.prepare(`SELECT position, data_json FROM ${tableName} ORDER BY position`).all() as Array<{
+        position: number
+        data_json: string
+      }>
+      const update = db.prepare(`UPDATE ${tableName} SET data_json = ? WHERE position = ?`)
+      for (const row of rows) {
+        const preset = JSON.parse(row.data_json)
+        if (!repairPersistedModelProfileInlineSecrets(preset)) continue
+        update.run(JSON.stringify(preset), row.position)
+        changed = true
+      }
+    }
+
+    if (ownsTransaction) db.exec('COMMIT')
+    return changed
+  } catch (error) {
+    if (ownsTransaction && db.isTransaction) db.exec('ROLLBACK')
+    throw error
+  }
+}
+
 function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, unknown>): Record<string, unknown> {
   const merged = { ...database }
   for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
@@ -321,6 +377,7 @@ function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, un
 
 export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown): void {
   if (!isRecord(database)) return
+  repairPersistedPresetModelProfileInlineSecrets(database)
   for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
     const arr = database[field]
     writeCollectionTableRows(db, tableName, Array.isArray(arr) ? arr : [])
@@ -3347,6 +3404,7 @@ function restoreSqliteFromBackup(
       }
       databaseLineage = rotateDatabaseLineage(db)
       hooks.beforeCommit?.(databaseLineage)
+      repairPersistedModelProfileInlineSecretsInSqlite(db)
       db.exec('COMMIT')
       committed = true
     } catch (err) {
@@ -3409,6 +3467,7 @@ function restoreSqliteFromBackup(
       repairPersistedGlobalLorebookIdsInSqlite(db)
       databaseLineage = rotateDatabaseLineage(db)
       hooks.beforeCommit?.(databaseLineage)
+      repairPersistedModelProfileInlineSecretsInSqlite(db)
       db.exec('COMMIT')
       committed = true
     } catch (err) {
