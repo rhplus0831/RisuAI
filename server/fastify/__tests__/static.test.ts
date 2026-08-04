@@ -4,7 +4,7 @@ import type { OutgoingHttpHeaders } from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gunzipSync } from 'node:zlib'
-import { STATIC_ASSET_CACHE_CONTROL, buildApp } from '../src/app.js'
+import { STATIC_ASSET_CACHE_CONTROL, STATIC_TOKENIZER_CACHE_CONTROL, buildApp } from '../src/app.js'
 import type { FastifyInstance } from 'fastify'
 
 const STATIC_APP_JS =
@@ -15,6 +15,7 @@ const STATIC_INDEX_HTML =
   '<main data-test="spa-root">' +
   'static spa entry '.repeat(120) +
   '</main></body></html>'
+const STATIC_TOKENIZER_JSON = JSON.stringify({ model: { vocab: { hello: 1, world: 2 } } })
 
 interface Harness {
   app: FastifyInstance
@@ -43,6 +44,8 @@ async function startHarness(opts: { withStatic: boolean }): Promise<Harness> {
     writeFileSync(path.join(staticRoot, 'index.html'), STATIC_INDEX_HTML)
     mkdirSync(path.join(staticRoot, 'assets'))
     writeFileSync(path.join(staticRoot, 'assets', 'app.js'), STATIC_APP_JS)
+    mkdirSync(path.join(staticRoot, 'token', 'llama'), { recursive: true })
+    writeFileSync(path.join(staticRoot, 'token', 'llama', 'llama3.json'), STATIC_TOKENIZER_JSON)
   }
   const { app } = await buildApp({
     config: {
@@ -119,6 +122,15 @@ describe('Phase 2E static serving', () => {
       expect(res.statusCode).toBe(200)
       expect(cacheControl(res)).toBe(STATIC_ASSET_CACHE_CONTROL)
       expect(res.body).toBe(STATIC_APP_JS)
+    })
+
+    it('long-caches tokenizer vocab files under /token without immutable', async () => {
+      const res = await harness.app.inject({ method: 'GET', url: '/token/llama/llama3.json' })
+      expect(res.statusCode).toBe(200)
+      expect(res.body).toBe(STATIC_TOKENIZER_JSON)
+      expect(cacheControl(res)).toBe(STATIC_TOKENIZER_CACHE_CONTROL)
+      expect(cacheControl(res)).not.toContain('immutable')
+      expect(cacheControl(res)).not.toContain('max-age=0')
     })
 
     it('L19: gzip-compresses large static assets without changing the bytes', async () => {

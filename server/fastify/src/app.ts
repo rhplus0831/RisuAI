@@ -78,6 +78,12 @@ import { createPushNotificationService } from './pushNotifications.js'
 export const REQUEST_RECEIVE_TIMEOUT_MS = 600_000
 export const STATIC_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable'
 export const STATIC_REVALIDATE_CACHE_CONTROL = 'public, max-age=0'
+/**
+ * /token/** vocab files are multi-MB and unhashed, so they can't be
+ * immutable; 30 days keeps them out of the request path while capping
+ * staleness if a vocab file is ever replaced in place.
+ */
+export const STATIC_TOKENIZER_CACHE_CONTROL = 'public, max-age=2592000'
 
 export interface BuildAppOptions {
   config?: AppConfig
@@ -377,6 +383,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
 
   if (config.staticRoot && fs.existsSync(config.staticRoot)) {
     const staticAssetsRoot = path.join(config.staticRoot, 'assets')
+    const staticTokenizerRoot = path.join(config.staticRoot, 'token')
 
     await app.register(fastifyStatic, {
       root: config.staticRoot,
@@ -387,7 +394,11 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
       setHeaders: (res, filePath) => {
         res.setHeader(
           'Cache-Control',
-          isPathWithin(staticAssetsRoot, filePath) ? STATIC_ASSET_CACHE_CONTROL : STATIC_REVALIDATE_CACHE_CONTROL,
+          isPathWithin(staticAssetsRoot, filePath)
+            ? STATIC_ASSET_CACHE_CONTROL
+            : isPathWithin(staticTokenizerRoot, filePath)
+              ? STATIC_TOKENIZER_CACHE_CONTROL
+              : STATIC_REVALIDATE_CACHE_CONTROL,
         )
       },
     })
