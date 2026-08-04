@@ -198,6 +198,7 @@
   let showNewMessageButton = $state(false)
   let showFloatingInputButton = $state(false)
   let floatingInputOpen = $state(false)
+  let floatingInputCollapsed = $state(false)
   let floatingInputButton: HTMLButtonElement | null = $state(null)
   let chatScreenRoot: HTMLDivElement | null = $state(null)
   let chatScrollContainer: HTMLDivElement | null = $state(null)
@@ -470,6 +471,7 @@
     if (!floatingInputEnabled()) {
       showFloatingInputButton = false
       floatingInputOpen = false
+      floatingInputCollapsed = false
       return
     }
 
@@ -486,29 +488,44 @@
 
     const composerHeight = composerRow?.getBoundingClientRect().height ?? 0
     const revealThreshold = Math.max(24, composerHeight / 2)
-    showFloatingInputButton = distanceFromBottom >= revealThreshold
+    if (distanceFromBottom < revealThreshold) {
+      showFloatingInputButton = false
+      return
+    }
+
+    if (floatingInputCollapsed) {
+      showFloatingInputButton = true
+      return
+    }
+
+    void openFloatingInput(false)
   }
 
-  async function openFloatingInput(): Promise<void> {
+  async function openFloatingInput(focusInput = true): Promise<void> {
     if (!floatingInputEnabled()) return
 
-    const preservedScrollTop = chatScrollContainer?.scrollTop
+    const scrollContainer = chatScrollContainer
+    const preservedScrollTop = scrollContainer?.scrollTop
     refreshChatContentGeometry()
+    floatingInputCollapsed = false
     floatingInputOpen = true
     showFloatingInputButton = false
     await tick()
+    if (!floatingInputOpen || scrollContainer !== chatScrollContainer) return
+
     updateInputSize()
     refreshChatContentGeometry()
 
-    if (preservedScrollTop !== undefined && chatScrollContainer) {
-      chatScrollContainer.scrollTop = preservedScrollTop
+    if (preservedScrollTop !== undefined && scrollContainer) {
+      scrollContainer.scrollTop = preservedScrollTop
     }
-    inputEle?.focus({ preventScroll: true })
+    if (focusInput) inputEle?.focus({ preventScroll: true })
   }
 
   async function hideFloatingInput(): Promise<void> {
     const preservedScrollTop = chatScrollContainer?.scrollTop
     openMenu = false
+    floatingInputCollapsed = true
     floatingInputOpen = false
     showFloatingInputButton = true
     await tick()
@@ -949,6 +966,7 @@
     loadPages = configuredChatLoadPages
     showFloatingInputButton = false
     floatingInputOpen = false
+    floatingInputCollapsed = false
     openMenu = false
     untrack(() => restoreComposerDraft(nextIdentity))
 
@@ -962,6 +980,7 @@
 
     showFloatingInputButton = false
     floatingInputOpen = false
+    floatingInputCollapsed = false
   })
 
   $effect(() => {

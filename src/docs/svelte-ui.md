@@ -211,11 +211,12 @@ Transcript rendering then fans out through `Chats.svelte`, `Chat.svelte`,
 
 When the Accessibility setting `floatingChatInput` is enabled (the default)
 and `fixedChatTextarea` is off, scrolling far enough from the bottom promotes
-the existing composer into a floating overlay. The reveal threshold is the
-larger of 24 pixels or half the normal composer height. Opening or hiding it
-preserves transcript scroll and draft state; the floating overflow menu can
-return to the bottom or hide the composer, and chat changes or disabling the
-setting clear the floating state.
+the existing composer into a floating overlay by default. The reveal threshold
+is the larger of 24 pixels or half the normal composer height. Explicitly
+hiding the overlay collapses it into the floating icon until the user reopens
+it or changes chats. Opening or hiding it preserves transcript scroll and draft
+state; the floating overflow menu can return to the bottom or hide the
+composer, and chat changes or disabling the setting clear the floating state.
 `src/lib/ChatScreens/DefaultChatScreen.svelte` measures the
 rendered content column with `ResizeObserver` so the trigger, composer, and
 overflow menus stay aligned across `chatScreenWidth`, custom containing blocks,

@@ -733,7 +733,7 @@ describe('DefaultChatScreen floating action accessibility', () => {
     expect(newMessageButton.title).toBe('newMessage')
   })
 
-  it('opens and hides the floating input without moving the transcript or losing the draft', async () => {
+  it('opens the floating input by default and only collapses it after an explicit hide', async () => {
     seedDatabase([2])
     mountScreen()
 
@@ -749,16 +749,9 @@ describe('DefaultChatScreen floating action accessibility', () => {
     screen.dispatchEvent(new Event('scroll'))
     await settle()
 
-    const floatingButton = target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')
-    expect(floatingButton).toBeTruthy()
-    expect(floatingButton?.getAttribute('aria-label')).toBe('openFloatingChatInput')
-    expect(floatingButton?.title).toBe('openFloatingChatInput')
-
-    floatingButton!.click()
-    await settle()
-
     expect(screen.scrollTop).toBe(-80)
     expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeNull()
     expect(composer.value).toBe('unfinished draft')
 
     target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
@@ -777,8 +770,25 @@ describe('DefaultChatScreen floating action accessibility', () => {
 
     expect(screen.scrollTop).toBe(-80)
     expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
-    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeTruthy()
+    const floatingButton = target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')
+    expect(floatingButton).toBeTruthy()
+    expect(floatingButton?.getAttribute('aria-label')).toBe('openFloatingChatInput')
+    expect(floatingButton?.title).toBe('openFloatingChatInput')
     expect(composer.value).toBe('unfinished draft')
+
+    screen.scrollTop = -120
+    screen.dispatchEvent(new Event('scroll'))
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeNull()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBe(floatingButton)
+
+    floatingButton!.click()
+    await settle()
+
+    expect(screen.scrollTop).toBe(-120)
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    expect(target.querySelector('[data-testid="floating-chat-input-button"]')).toBeNull()
   })
 
   it('remeasures an empty composer after opening it as a floating input', async () => {
@@ -800,8 +810,6 @@ describe('DefaultChatScreen floating action accessibility', () => {
     screen.scrollTop = -80
     screen.dispatchEvent(new Event('scroll'))
     await settle()
-    target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')!.click()
-    await settle()
 
     expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
     expect(composer.value).toBe('')
@@ -821,8 +829,6 @@ describe('DefaultChatScreen floating action accessibility', () => {
     const revealFloatingInput = async () => {
       screen.scrollTop = -80
       screen.dispatchEvent(new Event('scroll'))
-      await settle()
-      target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')!.click()
       await settle()
       expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
     }
@@ -983,7 +989,13 @@ describe('DefaultChatScreen content width', () => {
 
     screen.scrollTop = -80
     screen.dispatchEvent(new Event('scroll'))
-    await tick()
+    await settle()
+
+    expect(target.querySelector('[data-floating-chat-input="true"]')).toBeTruthy()
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
+    await settle()
+    target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-hide"]')!.click()
+    await settle()
 
     const floatingInputButton = target.querySelector<HTMLButtonElement>('[data-testid="floating-chat-input-button"]')
     expect(floatingInputButton?.classList).toContain('floating-chat-input-button')
