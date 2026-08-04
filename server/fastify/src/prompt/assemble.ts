@@ -1085,13 +1085,19 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
   state.varChanged = !!state.varChanged || result.varChanged
   syncWorkingScriptstate(state)
 
+  // Lore upserts replace the array on the shallow trigger chat, so carry that
+  // durable field back independently of transcript bookkeeping.
+  if (result.chat.localLore !== state.currentChat.localLore) {
+    state.currentChat.localLore = result.chat.localLore
+  }
+
   // Adopt the rewritten transcript only on a real change (parity-preserving for
   // trigger-less chars). The user message — excluded above — is re-added by
   // `appendUserMessageRow`, mirroring the browser's `cha.push(...)` after the
   // trigger.
   const rewritten = result.chat.message ?? []
   if (firstChangedMessageIndex(priorMessages, rewritten) !== undefined) {
-    state.currentChat = result.chat
+    state.currentChat.message = rewritten
     state.inputTriggerRewroteTranscript = true
     syncWorkingTranscript(state)
     captureMessageReplacement(state, 'input_trigger')

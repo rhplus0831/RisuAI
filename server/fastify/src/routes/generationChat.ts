@@ -2743,20 +2743,29 @@ function applyGenerationCharacterFieldMutationsFresh(args: {
   }
 }
 
-function validateLocalLoreEntryIds(entries: readonly unknown[]): void {
-  const ids = new Set<string>()
+function repairGenerationLocalLoreEntryIds(entries: unknown[]): void {
+  const reservedIds = new Set<string>()
   for (const entry of entries) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       throw new ValidationError('Generation local lore entries must be objects')
     }
     const id = (entry as { id?: unknown }).id
-    if (typeof id !== 'string' || id.trim().length === 0) {
-      throw new ValidationError('Generation local lore entry id must be a non-empty string')
+    if (typeof id === 'string' && id.trim().length > 0) reservedIds.add(id)
+  }
+
+  const assignedIds = new Set<string>()
+  for (const entry of entries as Array<Record<string, unknown>>) {
+    const id = entry.id
+    if (typeof id === 'string' && id.trim().length > 0 && !assignedIds.has(id)) {
+      assignedIds.add(id)
+      continue
     }
-    if (ids.has(id)) {
-      throw new ValidationError(`Duplicate generation local lore entry id: ${id}`)
-    }
-    ids.add(id)
+
+    let replacementId = randomUUID()
+    while (reservedIds.has(replacementId)) replacementId = randomUUID()
+    entry.id = replacementId
+    reservedIds.add(replacementId)
+    assignedIds.add(replacementId)
   }
 }
 
@@ -2770,8 +2779,11 @@ function applyGenerationLocalLoreMutationFresh(args: {
   if (!isDeepStrictEqual(live, args.localLoreMutation.before)) {
     throw new ValidationError(`Generation local lore is stale for chat ${args.chatId}`)
   }
-  validateLocalLoreEntryIds(args.localLoreMutation.after)
-  args.chat.localLore = structuredClone(args.localLoreMutation.after)
+  // Keep the untouched snapshots as the freshness fence and repair only the
+  // cloned value that will be written.
+  const after = structuredClone(args.localLoreMutation.after)
+  repairGenerationLocalLoreEntryIds(after)
+  args.chat.localLore = after
 }
 
 /**

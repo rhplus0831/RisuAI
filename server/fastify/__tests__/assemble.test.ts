@@ -4210,6 +4210,50 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expectNoFullTranscriptStringify()
   })
 
+  it('emits input-trigger local lore writes without marking the transcript rewritten', async () => {
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'new user' }),
+      depsFor(
+        m1Db([], {
+          char: {
+            triggerscript: [
+              {
+                comment: '',
+                type: 'input',
+                conditions: [],
+                effect: [
+                  {
+                    type: 'triggerlua',
+                    code: `
+                      function onInput(triggerId)
+                        upsertLocalLoreBook(triggerId, 'input-lore', 'INPUT LORE', { key = 'input-key' })
+                      end
+                    `,
+                  },
+                ],
+              },
+            ] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.submitTranscriptChanged).toBe(false)
+    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual(['user_message'])
+    expect(result.mutations?.localLoreMutation).toEqual({
+      before: [],
+      after: [
+        expect.objectContaining({
+          id: expect.any(String),
+          comment: 'input-lore',
+          content: 'INPUT LORE',
+          key: 'input-key',
+        }),
+      ],
+    })
+  })
+
   it('bypasses input trigger and editinput only for the synthetic say-nothing send', async () => {
     const database = () =>
       m1Db([], {

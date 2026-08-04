@@ -281,6 +281,21 @@ async function seedDatabase(_app: FastifyInstance, _assertion: string, database:
   }
 }
 
+function overwritePersistedLocalLore(localLore: readonly unknown[]): void {
+  const db = openDatabase(harness.dataDir)
+  try {
+    const row = db.prepare('SELECT data_json FROM chats WHERE id = ?').get('chat-1') as
+      | { data_json: string }
+      | undefined
+    if (!row) throw new Error('chat-1 fixture row not found')
+    const chat = JSON.parse(row.data_json) as Record<string, unknown>
+    chat.localLore = localLore
+    db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chat), 'chat-1')
+  } finally {
+    db.close()
+  }
+}
+
 function seedSimilarMemoryRows(): void {
   const db = openDatabase(harness.dataDir)
   try {
@@ -2851,6 +2866,47 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(info?.data.revision).toBe(2)
   })
 
+  it('durably persists a lore-only Lua input trigger and exposes its assembly mutation', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithSubmitLua(`
+        function onInput(triggerId)
+          upsertLocalLoreBook(triggerId, 'input-lore', 'INPUT LORE', { key = 'input-key' })
+        end
+      `),
+    )
+
+    const events = await sendBase(assertion)
+    const patch = events.find((event) => event.type === 'message_patch')?.data.patch as
+      | {
+          localLoreMutation?: { before: unknown[]; after: Array<Record<string, unknown>> }
+          messageMutations?: Array<{ source: string }>
+        }
+      | undefined
+    expect(patch?.messageMutations?.map((mutation) => mutation.source)).toEqual(['user_message'])
+    expect(patch?.localLoreMutation).toEqual({
+      before: [],
+      after: [
+        expect.objectContaining({
+          id: expect.any(String),
+          comment: 'input-lore',
+          content: 'INPUT LORE',
+          key: 'input-key',
+        }),
+      ],
+    })
+
+    const character = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(character.statusCode).toBe(200)
+    expect(character.json().character.chats[0].localLore).toEqual(patch?.localLoreMutation?.after)
+  })
+
   it('runs a Lua editinput hook that rewrites the submitted user message (slice 3b-4)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     // `editInput` listeners transform the user text string. Render `lastChat` so
@@ -4198,6 +4254,123 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       })
     } finally {
       db.close()
+    }
+  })
+
+  it.each([
+    {
+      label: 'id-less',
+      localLore: [
+        {
+          key: 'legacy-key',
+          secondkey: '',
+          insertorder: 10,
+          comment: 'legacy-id-less',
+          content: 'legacy id-less content',
+          mode: 'normal',
+          alwaysActive: false,
+          selective: false,
+        },
+      ],
+    },
+    {
+      label: 'duplicate-id',
+      localLore: [
+        {
+          id: 'legacy-duplicate-id',
+          key: 'legacy-one-key',
+          secondkey: '',
+          insertorder: 10,
+          comment: 'legacy-duplicate-one',
+          content: 'legacy duplicate one content',
+          mode: 'normal',
+          alwaysActive: false,
+          selective: false,
+        },
+        {
+          id: 'legacy-duplicate-id',
+          key: 'legacy-two-key',
+          secondkey: '',
+          insertorder: 20,
+          comment: 'legacy-duplicate-two',
+          content: 'legacy duplicate two content',
+          mode: 'normal',
+          alwaysActive: false,
+          selective: false,
+        },
+      ],
+    },
+  ])('repairs $label local lore ids without rolling back generation finalization', async (testCase) => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        triggerscript: [
+          {
+            id: 'repair-lore-output',
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [
+              {
+                type: 'triggerlua',
+                code: `
+                  function onOutput(id)
+                    upsertLocalLoreBook(id, 'trigger-added', 'trigger-added content', { key = 'trigger-key' })
+                  end
+                `,
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    overwritePersistedLocalLore(testCase.localLore)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const done = doneFrame(parseEvents(res.body))
+    expect(done.postGeneration?.messagePatch?.localLoreMutation).toBeDefined()
+
+    expect((await persistedMessages(assertion)).at(-1)).toMatchObject({
+      role: 'char',
+      data: 'server echo reply',
+    })
+    const character = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(character.statusCode).toBe(200)
+    const persistedLore = character.json().character.chats[0].localLore as Array<Record<string, unknown>>
+    expect(persistedLore).toHaveLength(testCase.localLore.length + 1)
+    expect(persistedLore).toEqual(
+      expect.arrayContaining([
+        ...testCase.localLore.map((entry) =>
+          expect.objectContaining({ comment: entry.comment, content: entry.content }),
+        ),
+        expect.objectContaining({
+          comment: 'trigger-added',
+          content: 'trigger-added content',
+          key: 'trigger-key',
+        }),
+      ]),
+    )
+    const persistedIds = persistedLore.map((entry) => entry.id)
+    expect(persistedIds.every((id) => typeof id === 'string' && id.trim().length > 0)).toBe(true)
+    expect(new Set(persistedIds).size).toBe(persistedLore.length)
+    const repairedLegacyComment = testCase.label === 'id-less' ? 'legacy-id-less' : 'legacy-duplicate-two'
+    expect(persistedLore.find((entry) => entry.comment === repairedLegacyComment)?.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    )
+    if (testCase.label === 'duplicate-id') {
+      expect(persistedLore.find((entry) => entry.comment === 'legacy-duplicate-one')?.id).toBe('legacy-duplicate-id')
     }
   })
 
