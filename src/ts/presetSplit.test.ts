@@ -68,6 +68,34 @@ describe('preset split helpers', () => {
     expect(promptPreset).not.toHaveProperty('modelRuntimeDefaults')
   })
 
+  it('keeps groupTemplate and groupOtherBotRole on prompt presets through split and composition', () => {
+    const source = {
+      ...legacyPreset,
+      groupTemplate: '[{{user}} -> {{char}}]\n{{slot}}',
+      groupOtherBotRole: 'system',
+    }
+
+    const promptPreset = createExtractedPromptPreset(source, { id: 'prompt-a', name: 'Prompt A' })
+    expect(promptPreset).toMatchObject({
+      groupTemplate: '[{{user}} -> {{char}}]\n{{slot}}',
+      groupOtherBotRole: 'system',
+    })
+
+    const modelPreset = createExtractedModelPreset(source, { id: 'model-a', name: 'Model A' })
+    expect(modelPreset).not.toHaveProperty('groupTemplate')
+    expect(modelPreset).not.toHaveProperty('groupOtherBotRole')
+
+    const effective = composeEffectivePresetSettings({
+      base: { groupTemplate: 'BASE TEMPLATE', groupOtherBotRole: 'user' },
+      promptPreset,
+      scope: 'full-generation',
+    })
+    expect(effective).toMatchObject({
+      groupTemplate: '[{{user}} -> {{char}}]\n{{slot}}',
+      groupOtherBotRole: 'system',
+    })
+  })
+
   it('dedupes model presets by model fields rather than identity', () => {
     const first = createExtractedModelPreset(legacyPreset, { id: 'model-a', name: 'Model A' })
     const second = createExtractedModelPreset(
