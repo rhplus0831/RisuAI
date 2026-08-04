@@ -983,6 +983,7 @@ export const languageGerman = {
   ifRandom: 'Wenn zufällig',
   ifValue: 'Wenn Wert',
   hideRealm: 'RisuRealm verstecken',
+  openRisuRealm: 'Risu Realm öffnen',
   sendExternalServerWarning:
     'Wenn Sie fortfahren, wird eine Anfrage an einen externen Server gesendet, und Ihre IP-Adresse kann übertragen werden. Möchten Sie fortfahren?',
   hideAllImages: 'Alle Bilder ausblenden',

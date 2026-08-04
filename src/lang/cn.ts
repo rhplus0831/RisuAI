@@ -911,6 +911,7 @@ export const languageChinese = {
   ifRandom: '如果随机',
   ifValue: '如果值',
   hideRealm: '隐藏 RisuRealm',
+  openRisuRealm: '打开 Risu Realm',
   sendExternalServerWarning: '继续操作将向外部服务器发送请求，您的 IP 地址可能会被传输。是否继续？',
   hideAllImages: '隐藏所有图片',
   popularityLevel: '{} 人气',

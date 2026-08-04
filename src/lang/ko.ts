@@ -1007,6 +1007,7 @@ const languageKoreanBase = {
   ifRandom: '만약 랜덤',
   ifValue: '값이 다음과 같다면',
   hideRealm: 'RisuRealm 숨기기',
+  openRisuRealm: 'Risu Realm 열기',
   sendExternalServerWarning: '계속하면 외부 서버로 요청이 전송되며 IP 주소가 전달될 수 있습니다. 계속하시겠습니까?',
   hideAllImages: '모든 이미지 숨기기',
   popularityLevel: '{} 인기도',

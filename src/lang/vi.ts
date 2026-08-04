@@ -961,6 +961,7 @@ export const languageVietnamese = {
   ifRandom: 'Nếu ngẫu nhiên',
   ifValue: 'Nếu giá trị',
   hideRealm: 'Ẩn RisuRealm',
+  openRisuRealm: 'Mở Risu Realm',
   sendExternalServerWarning:
     'Tiếp tục sẽ gửi yêu cầu đến máy chủ bên ngoài và địa chỉ IP của bạn có thể được truyền đi. Bạn có muốn tiếp tục không?',
   hideAllImages: 'Ẩn tất cả hình ảnh',

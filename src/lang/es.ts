@@ -968,6 +968,7 @@ export const languageSpanish = {
   ifRandom: 'Si aleatorio',
   ifValue: 'Si valor',
   hideRealm: 'Ocultar RisuRealm',
+  openRisuRealm: 'Abrir Risu Realm',
   sendExternalServerWarning:
     'Continuar enviará una solicitud a un servidor externo y puede transmitir tu dirección IP. ¿Quieres continuar?',
   hideAllImages: 'Ocultar todas las imágenes',

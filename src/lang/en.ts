@@ -1425,6 +1425,7 @@ export const languageEnglish = {
   ifRandom: 'If random',
   ifValue: 'If Value',
   hideRealm: 'Hide RisuRealm',
+  openRisuRealm: 'Open Risu Realm',
   sendExternalServerWarning:
     'Continuing will send a request to an external server, and your IP address may be transmitted. Do you want to continue?',
   hideAllImages: 'Hide All Images',

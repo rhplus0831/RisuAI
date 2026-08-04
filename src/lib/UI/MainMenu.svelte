@@ -37,7 +37,7 @@
       <button
         class="w-full rounded-lg bg-darkbg px-5 py-4 text-left text-xl font-bold transition-colors hover:bg-selected"
         onclick={openRealm}>
-        Open Risu Realm
+        {language.openRisuRealm}
       </button>
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
       <div class="flex w-full max-w-md p-2">
