@@ -14,7 +14,9 @@ vi.mock('../router', () => ({
 
 import {
   disableChatCompletionPushNotifications,
+  dismissChatCompletionNotifications,
   enableChatCompletionPushNotifications,
+  installPushNotificationForegroundCleanup,
   installPushNotificationNavigationListener,
 } from './pushNotifications'
 
@@ -108,14 +110,17 @@ function setupPushFetch({ publicKey = 'AQIDBA', postStatus = 200, deleteStatus =
 
 describe('push notification browser helper', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
+  let removeForegroundCleanup: (() => void) | null
 
   beforeEach(() => {
     pushNotificationMocks.navigate.mockReset()
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    removeForegroundCleanup = null
   })
 
   afterEach(() => {
-    warnSpy.mockRestore()
+    removeForegroundCleanup?.()
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.clearAllMocks()
   })
@@ -243,6 +248,58 @@ describe('push notification browser helper', () => {
     expect(warnSpy).toHaveBeenCalledWith(
       '[push notifications] Failed to apply a notification route in-app.',
       routingError,
+    )
+  })
+
+  it('dismisses existing chat completion notifications when the app starts visible', async () => {
+    const notifications = [{ close: vi.fn() } as unknown as Notification, { close: vi.fn() } as unknown as Notification]
+    const getNotifications = vi.fn(async () => notifications)
+    const serviceWorker = setupServiceWorker({ getNotifications })
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+
+    removeForegroundCleanup = installPushNotificationForegroundCleanup()
+
+    await vi.waitFor(() => expect(getNotifications).toHaveBeenCalledOnce())
+    expect(serviceWorker.getRegistration).toHaveBeenCalledWith('/')
+    expect(getNotifications).toHaveBeenCalledWith({ tag: 'risuai-chat-completion' })
+    for (const notification of notifications) expect(notification.close).toHaveBeenCalledOnce()
+  })
+
+  it('waits until the app returns to the foreground before dismissing notifications', async () => {
+    let visibilityState: DocumentVisibilityState = 'hidden'
+    const notification = { close: vi.fn() } as unknown as Notification
+    const getNotifications = vi.fn(async () => [] as Notification[])
+    getNotifications.mockResolvedValueOnce([notification])
+    const serviceWorker = setupServiceWorker({ getNotifications })
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibilityState)
+    removeForegroundCleanup = installPushNotificationForegroundCleanup()
+
+    window.dispatchEvent(new Event('focus'))
+    window.dispatchEvent(new Event('pageshow'))
+    expect(serviceWorker.getRegistration).not.toHaveBeenCalled()
+
+    visibilityState = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    await vi.waitFor(() => expect(notification.close).toHaveBeenCalledOnce())
+
+    window.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => expect(getNotifications).toHaveBeenCalledTimes(2))
+
+    window.dispatchEvent(new Event('pageshow'))
+    await vi.waitFor(() => expect(getNotifications).toHaveBeenCalledTimes(3))
+  })
+
+  it('reports notification cleanup failures without rejecting the foreground task', async () => {
+    const cleanupError = new Error('notification lookup failed')
+    const serviceWorker = setupServiceWorker({})
+    serviceWorker.getRegistration.mockRejectedValueOnce(cleanupError)
+
+    await expect(dismissChatCompletionNotifications()).resolves.toBeUndefined()
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[push notifications] Failed to dismiss local chat completion notifications.',
+      cleanupError,
     )
   })
 

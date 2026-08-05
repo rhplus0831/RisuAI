@@ -6,6 +6,7 @@ const SERVICE_WORKER_SCOPE = '/'
 const VAPID_PUBLIC_KEY_ENDPOINT = '/api/v1/push/vapid-public-key'
 const PUSH_SUBSCRIPTIONS_ENDPOINT = '/api/v1/push/subscriptions'
 const LOG_PREFIX = '[push notifications]'
+const CHAT_COMPLETION_NOTIFICATION_TAG = 'risuai-chat-completion'
 const NOTIFICATION_ROUTE_MESSAGE_TYPE = 'risuai:notification-route'
 const NOTIFICATION_ROUTE_ACK_TYPE = 'risuai:notification-route-ack'
 
@@ -59,6 +60,41 @@ export function installPushNotificationNavigationListener(): void {
 
   navigator.serviceWorker.addEventListener('message', handleServiceWorkerNavigationMessage)
   serviceWorkerNavigationListenerTarget = navigator.serviceWorker
+}
+
+export function installPushNotificationForegroundCleanup(): () => void {
+  if (!canUseServiceWorker() || typeof document === 'undefined' || typeof window === 'undefined') {
+    return () => {}
+  }
+
+  const handleForeground = () => {
+    if (document.visibilityState === 'visible') void dismissChatCompletionNotifications()
+  }
+
+  document.addEventListener('visibilitychange', handleForeground)
+  window.addEventListener('focus', handleForeground)
+  window.addEventListener('pageshow', handleForeground)
+  handleForeground()
+
+  return () => {
+    document.removeEventListener('visibilitychange', handleForeground)
+    window.removeEventListener('focus', handleForeground)
+    window.removeEventListener('pageshow', handleForeground)
+  }
+}
+
+export async function dismissChatCompletionNotifications(): Promise<void> {
+  if (!canUseServiceWorker()) return
+
+  try {
+    const registration = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE)
+    if (!registration || typeof registration.getNotifications !== 'function') return
+
+    const notifications = await registration.getNotifications({ tag: CHAT_COMPLETION_NOTIFICATION_TAG })
+    for (const notification of notifications) notification.close()
+  } catch (error) {
+    warnPushError('Failed to dismiss local chat completion notifications.', error)
+  }
 }
 
 function handleServiceWorkerNavigationMessage(event: MessageEvent<unknown>): void {

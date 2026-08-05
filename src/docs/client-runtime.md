@@ -271,7 +271,9 @@ and local-subscription-inspection state persist in IndexedDB through
 reload. `public/service-worker.js` owns notification display plus the
 focus/open and message/ack handshake. A mounted app routes in place through
 `src/ts/server/pushNotifications.ts`; service-worker navigation/openWindow are
-fallbacks when no client acknowledges.
+fallbacks when no client acknowledges. On initial load and whenever the app
+returns to the foreground, the browser coordinator also closes chat-completion
+notifications from the current device's service-worker registration.
 
 The guard set is `src/ts/server/pushNotificationSetting.test.ts`,
 `src/ts/server/pushNotificationRetryStorage.test.ts`,
