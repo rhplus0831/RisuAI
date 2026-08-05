@@ -10,12 +10,19 @@ runs; the only new files are this workstream's briefs/reports.
 
 ## Headline verdict
 
-**Hold the beta tag until the three HIGH items land.** Two are silent
-generation-time data loss introduced by delta commits; one is a secret-residue
-disclosure. The medium cluster C4–C7 shares one root cause (assembly
-persistence not fenced to its own baseline) and should be fixed as one unit,
-ideally also pre-beta. Everything else can be batched post-tag or explicitly
-ACCEPTED.
+**AUDIT CLOSED 2026-08-05 — no data-loss blocker remains for the beta tag.**
+All 16 verified defects are fixed with regression pins (C1–C14, L1–L8 minus
+the ACCEPTED D2), both decisions are recorded (D1 keep+warn implemented;
+D2 ACCEPTED with evidence), and the Method §4 allowlist-completeness test is
+live in CI. Fix commits: `ce5d74b18` (C1+C2), `a72d0a680` (C3), `f4356c498`
+(C4–C6), `eb8136cde` (C7+L8), `932386424` (C9), `7f60b8585` (L1+L2+Method
+§4), `e8c038044` (C11+C13+C14+L7), `babaaa2db` (D1+C8+C12+L3+L4+L6),
+`24899a0dc` (L5).
+
+Original pre-remediation verdict kept below for the record: the three HIGH
+items were silent generation-time data loss (two) and a secret-residue
+disclosure (one); the C4–C7 cluster shared one root cause (assembly
+persistence not fenced to its own baseline).
 
 ## Cross-track agreement matrix
 
@@ -121,7 +128,7 @@ Messages landing between export completion and the double-confirmed reset
 exist in no export. Fix: compare per-chat last-message identity against the
 export-time snapshot at dispatch; abort and re-prompt on drift.
 
-### C8 — Cold-storage stub chats export as pointer stubs the reset then orphans
+### C8 — Cold-storage stub chats export as pointer stubs the reset then orphans — FIXED `babaaa2db`
 (claude-pass3 DL2-P3-1; probable; VERIFIED at mechanism level)
 `exportAllChats` serializes `char.chats` as-is (`characters.ts:1049-1060`);
 for upstream-migrated cold-storage chats the durable rows ARE the pointer
@@ -138,38 +145,59 @@ without them. Data-URI variant flashes an alert that progress/success
 overwrite. Fix: fail the import (mirror `risusave_incomplete_blocks`) when
 any card-referenced or module entry was excluded.
 
-### C10 — Server Lua `setDescription` is silently non-durable
+### C10 — Server Lua `setDescription` is silently non-durable — FIXED `ce5d74b18`
 (claude-pass2 DL2-P2-F1; certain; VERIFIED) `characterFieldSnapshot` tracks
 only `name`/`firstMessage`/`backgroundHTML` (`assemble.ts:788-794`);
 `setDescription` mutates only the request snapshot (`luaRuntime.ts:1788-1792`).
 SPA persisted it durably — a parity gap missed by ST-3's four-setter scope.
 Fix: add `desc` to the tracked field set.
 
-### C11 — `request_history` is count-bounded but not byte-bounded
+### C11 — `request_history` is count-bounded but not byte-bounded — FIXED `e8c038044`
 (codex-pass5 DL2-P5-2, severity settled medium: facts agreed by both tracks;
 default limit 20 caps typical growth, but 10,000×unbounded rows can exhaust
 the volume shared with `risu.db`). Fix: per-field byte caps + total byte
 budget in pruning.
 
-### C12 — Standalone preset export drops the `archived` flag
+### C12 — Standalone preset export drops the `archived` flag — FIXED `babaaa2db`
 (codex-pass3 DL2-P3-2; certain; VERIFIED — `archived` appears in
 `presetSplit.ts` only as a type at `:153`, never in `PROMPT_PRESET_FIELDS`;
 `promptPresetExportPayload` feeds both JSON and `.risup`). Organization
 metadata only. Fix: include+normalize `archived` in the export payload.
 
-### C13 — Duplicate-`chaId` portable import misassociates greeting translations
+### C13 — Duplicate-`chaId` portable import misassociates greeting translations — FIXED `e8c038044`
 (codex-pass4 DL2-P4-2; mechanism certain, narrow precondition; VERIFIED —
 extraction stamps rows with pre-normalization `chaId`
 (`importSnapshot.ts:243-253`, `:291-305`) before the dup remint
 (`commands/characters.ts:72-80`)). Cache-class rows; same-index+hash dups
 reject the whole import instead. Fix: normalize identities before extraction.
 
-### C14 — Asset-GC grace can reclaim staged assets of a >60-minute import
+### C14 — Asset-GC grace can reclaim staged assets of a >60-minute import — FIXED `e8c038044`
 (claude-pass4 DL2-P4-F2; speculative wall-time precondition; mechanism
 verified — `ASSET_GC_GRACE_MS` = 60 min by file mtime, no staged-asset
 refresh during import). Fix: refresh staged mtimes or take an import lease.
 
 ## DECISIONS for the maintainer (not defects)
+
+Both decided by the maintainer on 2026-08-05:
+
+- **D1 — DECIDED: keep + warn**, implemented in `babaaa2db`: the
+  whole-database bundle export (the only live client entry point; the
+  `/api/v1/export/risusave` route has no client caller) is gated behind a
+  confirmation that the file embeds API keys and must be handled as a
+  secret. The documented contract stands; a content-only export flavor
+  remains a possible post-beta enhancement.
+- **D2 — ACCEPTED (destroy-without-mint stands).** Factual basis, verified
+  2026-08-05: `modelProfiles` does not exist at the fork point
+  (`71c476e9c` — zero references; the feature was born post-fork in
+  `fea509ef6`), so upstream RisuAI saves cannot carry inline
+  `providerOptions` secrets — only fork-native saves created between the
+  model-profiles feature and the credential store (2026-07-23) can, and
+  with no external users that population is the maintainer alone. Upstream
+  migrants' legacy scalar keys are MINTED into credentials by
+  `convertLegacyModelProfilesCommand`, not scrubbed. Behavior stays pinned
+  by `staleInlineModelProfileSecrets.test.ts`. **Revisit trigger:** if any
+  pre-beta build turns out to have been distributed to another user,
+  reopen and implement mint-on-scrub.
 
 ### D1 — Portable `.risu` exports carry raw provider credentials
 (codex-pass1 DL2-P1-1 vs claude-pass1 refutation; facts agreed; VERIFIED —
@@ -200,17 +228,19 @@ preset rows.
   backups as device-local telemetry; both restore branches clear it; policy
   doc updated).
 - L3 `floatingChatInput` settings item lacks `getValue ?? true` fallback
-  (claude-pass1 DL2-P1-F1; VERIFIED; display-only).
+  (claude-pass1 DL2-P1-F1; VERIFIED; display-only) — FIXED `babaaa2db`.
 - L4 Import stores `__RISU_SECRET_MASKED__` placeholders as literal
-  credentials (claude-pass1 DL2-P1-F2; VERIFIED —
-  `resolveMaskedProviderSecretPlaceholders` is absent from the import path).
-- L5 Agent-only lorebook repair silently blanks activation fields on
+  credentials (claude-pass1 DL2-P1-F2; VERIFIED) — FIXED `babaaa2db`
+  (shared normalization drops sentinel-valued rows).
+- L5 — FIXED `24899a0dc` (repair/conversion boundaries preserve activation
+  fields; runtime gating verified on both resolvers; command validation
+  stays strict) — Agent-only lorebook repair silently blanks activation fields on
   imported third-party cards (claude-pass4 DL2-P4-F1; VERIFIED —
   `lorebooks.ts:608-615`).
 - L6 CharX importer ignores fflate's per-entry error argument
-  (claude-pass4 DL2-P4-F3; speculative; hygiene).
+  (claude-pass4 DL2-P4-F3; speculative; hygiene) — FIXED `babaaa2db`.
 - L7 One invalid `greeting_translations` row bricks every broad character
-  write (claude-pass5 DL2-P5-F2; mechanism VERIFIED —
+  write — FIXED `e8c038044` — (claude-pass5 DL2-P5-F2; mechanism VERIFIED —
   `replaceAllCharactersInTable` validates all rows up front,
   `repository.ts:505`; precondition speculative). Snapshot path should drop
   invalid cache rows instead of throwing.
