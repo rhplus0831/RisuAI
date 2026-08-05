@@ -42,7 +42,7 @@ import {
   type ModelProfileRecordProviderOptions,
   type ModelProfileRecordRuntimeOptions,
 } from './modelProfileRecords'
-import { normalizeProviderCredentials, type ProviderCredentialRecord } from './providerCredentialRecords'
+import { normalizeProjectedProviderCredentials, type ProviderCredentialRecord } from './providerCredentialRecords'
 
 export type ModelProfileSourceKind =
   | 'staticModel'
@@ -720,7 +720,7 @@ function resolveProfileCredential(database: Database, selection: ModelProfileSel
   const credentialId = nonBlankString(selection.profileProviderOptions?.credentialId)
   if (!credentialId) return selection
 
-  const credential = normalizeProviderCredentials(database.providerCredentials ?? []).find(
+  const credential = normalizeProjectedProviderCredentials(database.providerCredentials ?? []).find(
     (candidate) => candidate.id === credentialId,
   )
   if (!credential) {

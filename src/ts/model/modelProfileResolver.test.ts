@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 import type { Database } from '../storage/database.svelte'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, OpenAIParameters, type LLMModel } from './types'
 import {
@@ -1851,6 +1852,32 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
     expect(ready.providerOptions.apiKey).toBe('profile-openai-key')
     expect(ready.modelInfo.unsupportedReason).toBeUndefined()
+
+    const projected = resolveModelProfile({
+      database: db({
+        providerCredentials: [
+          { id: 'credential-openai', name: 'OpenAI', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
+        ],
+        modelProfiles: [
+          {
+            id: 'openai-profile',
+            name: 'OpenAI Profile',
+            providerId: 'openai',
+            modelId: 'gpt-5',
+            providerOptions: { credentialId: 'credential-openai' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openai-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(projected.status).toMatchObject({
+      bucket: 'ready',
+      providerId: 'openai',
+      providerIdSource: 'explicit',
+    })
+    expect(projected.providerOptions.apiKey).toBe(MASKED_PROVIDER_SECRET)
 
     const missingKey = resolveModelProfile({
       database: db({

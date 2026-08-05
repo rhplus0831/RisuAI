@@ -151,6 +151,9 @@
 <main
   class="flex bg-bg w-full h-full max-w-100vw text-textcolor"
   ondragover={(e) => {
+    if (e.dataTransfer.types.includes('application/x-risu-internal')) {
+      return
+    }
     e.preventDefault()
     e.dataTransfer.dropEffect = 'link'
   }}

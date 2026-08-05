@@ -24,6 +24,23 @@ const PROVIDER_CREDENTIAL_KEYS = new Set(['id', 'name', 'type', 'apiKey', 'verte
 const PROVIDER_CREDENTIAL_VERTEX_KEYS = new Set(['clientEmail', 'privateKey'])
 
 export function normalizeProviderCredentials(value: unknown): ProviderCredentialRecord[] {
+  return normalizeProviderCredentialRows(value, false)
+}
+
+/**
+ * Normalizes the server's browser projection, where stored secrets are
+ * represented by the shared masked placeholder. This is intentionally
+ * separate from persisted-data normalization so a masked placeholder can
+ * prove that a projected credential exists without becoming valid storage.
+ */
+export function normalizeProjectedProviderCredentials(value: unknown): ProviderCredentialRecord[] {
+  return normalizeProviderCredentialRows(value, true)
+}
+
+function normalizeProviderCredentialRows(
+  value: unknown,
+  allowMaskedSecretProjection: boolean,
+): ProviderCredentialRecord[] {
   if (!Array.isArray(value)) return []
 
   const credentials: ProviderCredentialRecord[] = []
@@ -36,7 +53,7 @@ export function normalizeProviderCredentials(value: unknown): ProviderCredential
 
     if (item.type === 'apiKey') {
       const apiKey = nonBlankString(item.apiKey)
-      if (!apiKey || isMaskedProviderSecret(apiKey)) continue
+      if (!apiKey || (!allowMaskedSecretProjection && isMaskedProviderSecret(apiKey))) continue
       credentials.push({ id, name, type: 'apiKey', apiKey })
       seen.add(id)
       continue
@@ -45,7 +62,12 @@ export function normalizeProviderCredentials(value: unknown): ProviderCredential
     if (item.type === 'vertexServiceAccount' && isRecord(item.vertex)) {
       const clientEmail = nonBlankString(item.vertex.clientEmail)
       const privateKey = nonBlankString(item.vertex.privateKey)
-      if (!clientEmail || !privateKey || isMaskedProviderSecret(clientEmail) || isMaskedProviderSecret(privateKey)) {
+      if (
+        !clientEmail ||
+        !privateKey ||
+        isMaskedProviderSecret(clientEmail) ||
+        (!allowMaskedSecretProjection && isMaskedProviderSecret(privateKey))
+      ) {
         continue
       }
       credentials.push({

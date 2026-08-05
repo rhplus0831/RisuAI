@@ -534,6 +534,23 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(appRouteDomMocks.closeGridRoute).toHaveBeenCalledOnce()
   })
 
+  it('does not override the negotiated operation for an internal drag', () => {
+    const main = target.querySelector('main')
+    expect(main).not.toBeNull()
+
+    const dataTransfer = {
+      dropEffect: 'move',
+      types: ['application/x-risu-internal'],
+    }
+    const dragOverEvent = new Event('dragover', { bubbles: true, cancelable: true })
+    Object.defineProperty(dragOverEvent, 'dataTransfer', { value: dataTransfer })
+
+    main?.dispatchEvent(dragOverEvent)
+
+    expect(dataTransfer.dropEffect).toBe('move')
+    expect(dragOverEvent.defaultPrevented).toBe(false)
+  })
+
   it('contains and restores focus while the responsive sidebar is open and closes it with Escape', async () => {
     const opener = document.createElement('button')
     opener.textContent = 'Open navigation'

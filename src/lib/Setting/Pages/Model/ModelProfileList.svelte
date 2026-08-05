@@ -336,6 +336,7 @@
     draggedProfileId = profileId
     event.dataTransfer?.setData('text', 'model-profile')
     event.dataTransfer?.setData('profileId', profileId)
+    event.dataTransfer?.setData('application/x-risu-internal', 'true')
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
   }
 

@@ -39,6 +39,7 @@ import ModelProfileList from './ModelProfileList.svelte'
 import { language } from 'src/lang'
 import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
+import { MASKED_PROVIDER_SECRET } from 'src/ts/providerSecretMask'
 import { getDatabase, setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -143,6 +144,34 @@ afterEach(() => {
 })
 
 describe('ModelProfileList', () => {
+  it('shows a profile with a masked linked API credential as ready', async () => {
+    getDatabase().providerCredentials = [
+      {
+        id: 'credential-api',
+        name: 'OpenAI',
+        type: 'apiKey',
+        apiKey: MASKED_PROVIDER_SECRET,
+      },
+    ]
+    getDatabase().modelProfiles = [
+      {
+        id: 'profile-openai',
+        name: 'OpenAI Profile',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        providerOptions: { credentialId: 'credential-api' },
+      },
+    ]
+
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const row = target.querySelector<HTMLElement>('[data-model-profile-row]')
+    expect(row?.textContent).toContain(language.modelProfiles.statusBuckets.ready)
+    expect(row?.textContent).not.toContain(language.modelProfiles.statusReasons['credential-missing'])
+    expect(row?.textContent).not.toContain(language.modelProfiles.statusReasons['api-key-missing'])
+  })
+
   it('hides generated profile IDs and removes Used By from cards and the editor', async () => {
     getDatabase().modelProfiles = [
       { id: 'mp_1234567890', name: 'Generated', providerId: 'debug-echo', modelId: 'debug-echo' },
@@ -179,6 +208,7 @@ describe('ModelProfileList', () => {
     dispatchProfileDragEvent(endDropZone, 'drop', dataTransfer)
     await flushAsync()
 
+    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-risu-internal', 'true')
     expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith(['profile-b', 'profile-c', 'profile-a'])
   })
 
