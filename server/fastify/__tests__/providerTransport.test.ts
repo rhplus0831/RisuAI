@@ -30,6 +30,33 @@ describe('emitProviderChunks', () => {
     expect(result).toEqual({ status: 'done', result: 'Hello', finishReason: 'stop' })
   })
 
+  it('reports token throughput for a gateway response batched into one frame', async () => {
+    const events: PromptChatEvent[] = []
+
+    await emitProviderChunks(
+      frames([
+        { kind: 'token', content: 'The gateway batched this whole response.' },
+        { kind: 'done', finishReason: 'stop' },
+      ]),
+      (event) => events.push(event),
+      undefined,
+      {
+        tokenProgress: {
+          startedAt: 1_000,
+          now: () => 3_000,
+          countTokens: () => 8,
+        },
+      },
+    )
+
+    expect(events[0]).toEqual({
+      type: 'token',
+      content: 'The gateway batched this whole response.',
+      generatedTokens: 8,
+      elapsedMs: 2_000,
+    })
+  })
+
   it('omits a negotiated duplicate done result after token frames delivered it', async () => {
     const events: PromptChatEvent[] = []
 

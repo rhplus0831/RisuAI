@@ -561,6 +561,52 @@ describe('requestServerChat', () => {
     await expect(res.terminal).resolves.toMatchObject({ status: 'done' })
   })
 
+  it('uses server progress for a half-streamed gateway response delivered in one token event', async () => {
+    const controlled = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => controlled.response)
+
+    const pending = requestServerChatGeneration(baseInput, null)
+    controlled.send('prompt', { messages: [{ role: 'user', content: 'hi' }] })
+    controlled.send('info', {
+      halfStreaming: true,
+      generationId: 'gateway-generation',
+      generationInfo: { generationId: 'gateway-generation', model: 'llmgateway/gpt-5' },
+    })
+
+    const res = await pending
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok' || res.req.type !== 'streaming') return
+
+    const reader = res.req.result.getReader()
+    let partialReadResolved = false
+    const partialRead = reader.read().then((value) => {
+      partialReadResolved = true
+      return value
+    })
+
+    controlled.send('token', {
+      content: 'A complete batched gateway response.',
+      generatedTokens: 9,
+      elapsedMs: 3_000,
+    })
+    await vi.waitFor(() => {
+      expect(get(halfStreamingProgress)).toMatchObject({ generatedTokens: 9, tokensPerSecond: 3 })
+    })
+    expect(partialReadResolved).toBe(false)
+
+    controlled.send('done', {
+      result: 'A complete batched gateway response.',
+      generationId: 'gateway-generation',
+    })
+    controlled.close()
+
+    await expect(partialRead).resolves.toEqual({
+      done: false,
+      value: { 'gateway-generation': 'A complete batched gateway response.' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+  })
+
   it('reattaches a durable stream after a mobile-style transport drop without duplicating replayed tokens', async () => {
     const first = controlledGenerationStream()
     const calls: Array<{ url: string; method: string }> = []

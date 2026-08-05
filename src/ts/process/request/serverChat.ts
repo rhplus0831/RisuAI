@@ -748,11 +748,18 @@ export async function requestServerChatGeneration(
                   tokenResult += content
                   if (halfStreaming) {
                     if (content.length > 0) {
-                      recordHalfStreamingToken({
-                        characterId: input.characterId,
-                        chatId: input.chatId,
-                        generationId: streamKey,
-                      })
+                      recordHalfStreamingToken(
+                        {
+                          characterId: input.characterId,
+                          chatId: input.chatId,
+                          generationId: streamKey,
+                        },
+                        Date.now(),
+                        {
+                          generatedTokens: typeof data.generatedTokens === 'number' ? data.generatedTokens : undefined,
+                          elapsedMs: typeof data.elapsedMs === 'number' ? data.elapsedMs : undefined,
+                        },
+                      )
                     }
                   } else {
                     enqueueToken({ [streamKey]: tokenResult })

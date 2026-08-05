@@ -12,6 +12,15 @@ export interface ProviderChunkTransportResult {
 
 export type ProviderDoneMetadata = (result: string) => Omit<DoneEvent, 'type' | 'result'> | undefined
 
+export interface ProviderTokenProgressOptions {
+  /** Wall-clock time immediately before provider dispatch. */
+  startedAt: number
+  /** Count tokenizer tokens in one non-empty provider delta. */
+  countTokens: (content: string) => number
+  /** Injectable clock for deterministic transport tests. */
+  now?: () => number
+}
+
 export interface ProviderPostGenerationResult {
   frame?: PostGenerationFrame
   /** Derived primary text used by post-generation side effects such as TTS. */
@@ -28,6 +37,8 @@ export interface ProviderChunkTransportOptions {
    * durable/replayable transports must retain the terminal result.
    */
   omitResultWhenStreamed?: boolean
+  /** Optional batching-safe token throughput metadata for half streaming. */
+  tokenProgress?: ProviderTokenProgressOptions
   /** Receives post-generation primary + alternates in provider choice order. */
   sideEffects?: (results: readonly string[]) => PromptChatEvent[]
   errorRestoration?: () => ErrorEvent['restoration']
@@ -77,6 +88,7 @@ export async function emitProviderChunks(
 ): Promise<ProviderChunkTransportResult> {
   let result = ''
   let alternates: string[] = []
+  let generatedTokens = 0
   const normalizedOptions: ProviderChunkTransportOptions =
     typeof options === 'function' ? { doneMetadata: options } : options
   const emitSideEffects = (results: readonly string[]): void => {
@@ -125,7 +137,21 @@ export async function emitProviderChunks(
       if (frame.kind === 'token') {
         const content = frame.content ?? ''
         result += content
-        emit({ type: 'token', content })
+        const tokenProgress = normalizedOptions.tokenProgress
+        if (content.length > 0 && tokenProgress) {
+          let deltaTokens = 1
+          try {
+            const counted = tokenProgress.countTokens(content)
+            if (Number.isFinite(counted)) deltaTokens = Math.max(1, Math.floor(counted))
+          } catch {
+            // Throughput telemetry must never interrupt the provider stream.
+          }
+          generatedTokens += deltaTokens
+          const elapsedMs = Math.max(1, Math.round((tokenProgress.now?.() ?? Date.now()) - tokenProgress.startedAt))
+          emit({ type: 'token', content, generatedTokens, elapsedMs })
+        } else {
+          emit({ type: 'token', content })
+        }
         continue
       }
       if (frame.kind === 'error') {

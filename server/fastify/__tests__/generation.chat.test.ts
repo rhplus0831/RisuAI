@@ -4090,7 +4090,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(typeof events.at(-1)?.data.generationId).toBe('string')
   })
 
-  it('marks half-streaming generations in prompt telemetry while keeping provider frames incremental', async () => {
+  it('marks half-streaming generations and includes tokenizer-aware provider progress', async () => {
     await restartHarness({
       dispatchProvider: () => {
         async function* source(): AsyncGenerator<CompletionStreamFrame> {
@@ -4122,6 +4122,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       'half',
       ' streamed',
     ])
+    const tokenEvents = events.filter((event) => event.type === 'token')
+    expect(tokenEvents[0]?.data.generatedTokens).toBeGreaterThan(0)
+    expect(tokenEvents[0]?.data.elapsedMs).toBeGreaterThan(0)
+    expect(tokenEvents[1]?.data.generatedTokens).toBeGreaterThan(tokenEvents[0]?.data.generatedTokens as number)
     expect(events.at(-1)?.data).toMatchObject({ result: 'half streamed' })
   })
 

@@ -75,6 +75,8 @@ import { risuEscape, risuUnescape } from '../../../../src/ts/parser/risuChatPars
 import { ServerLuaFailureError } from '../prompt/luaRuntime.js'
 import { isAgentPresetGenerationError, type AgentPresetProgressReporter } from '../prompt/agentPresetExecution.js'
 import { emitProviderChunks, type ProviderPostGenerationResult } from '../prompt/providerTransport.js'
+import { tokenize } from '../prompt/tokens.js'
+import { tokenizerEncodingFromDb } from '../prompt/tokenizerConfig.js'
 import { promptSummaryMetricFields, summarizePromptRows, type PromptRowsSummary } from '../prompt/promptSummary.js'
 import { triggerSourceMetricFields } from '../prompt/triggerSource.js'
 import {
@@ -256,6 +258,14 @@ function resolvePolicyFallback(database: Database, fallback: ModelProfileFallbac
 function configuredRequestRetries(database: Database): number {
   const value = typeof database.requestRetrys === 'number' ? Math.floor(database.requestRetrys) : 0
   return Math.max(0, Math.min(value, 20))
+}
+
+function halfStreamingTokenProgress(database: Database, startedAt: number) {
+  if (database.halfStreaming !== true) return undefined
+  return {
+    startedAt,
+    countTokens: (content: string) => tokenize(content, tokenizerEncodingFromDb(database)),
+  }
 }
 
 function materializePolicyProfileDatabase(
@@ -2408,6 +2418,7 @@ async function streamAssembly(
               // This inline stream cannot be reattached, so a capable client that
               // received token deltas does not need the full text repeated on done.
               omitResultWhenStreamed: clientCapabilities.omitDuplicateDoneResult,
+              tokenProgress: halfStreamingTokenProgress(database, providerStartedAt),
               doneMetadata: () => {
                 const stageTiming = generationInfo.stageTiming as Record<string, unknown> | undefined
                 if (stageTiming) {
@@ -3727,6 +3738,7 @@ async function runGenerationJob(args: {
           }
           if (frames) {
             const transportResult = await emitProviderChunks(frames, emit, signal, {
+              tokenProgress: halfStreamingTokenProgress(database, providerStartedAt),
               doneMetadata: () => {
                 const stageTiming = generationInfo.stageTiming as Record<string, unknown> | undefined
                 if (stageTiming) {

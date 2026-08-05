@@ -68,6 +68,10 @@ export interface InfoEvent {
 export interface TokenEvent {
   type: 'token'
   content: string
+  /** Cumulative server-tokenized completion count for half-streaming telemetry. */
+  generatedTokens?: number
+  /** Milliseconds since provider dispatch began. */
+  elapsedMs?: number
 }
 
 export type ServerChatMutationSource =

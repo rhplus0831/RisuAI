@@ -34,6 +34,17 @@ describe('halfStreamingProgress', () => {
     expect(get(halfStreamingProgress)).toMatchObject({ generatedTokens: 3, tokensPerSecond: 10 })
   })
 
+  it('uses server token counts when one gateway frame contains many tokens', () => {
+    beginHalfStreamingProgress(target)
+
+    recordHalfStreamingToken(target, 3_500, { generatedTokens: 12, elapsedMs: 2_500 })
+
+    expect(get(halfStreamingProgress)).toMatchObject({
+      generatedTokens: 12,
+      tokensPerSecond: 4.8,
+    })
+  })
+
   it('does not let an old generation clear a newer generation', () => {
     beginHalfStreamingProgress(target)
     beginHalfStreamingProgress({ ...target, generationId: 'generation-2' })
