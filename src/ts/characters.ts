@@ -1,4 +1,5 @@
 import { get, writable } from 'svelte/store'
+import { Sha256 } from '@aws-crypto/sha256-js'
 import {
   saveImage,
   type character,
@@ -1036,18 +1037,79 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-export async function exportAllChats(characterId: string): Promise<boolean> {
+export interface AllChatsExportFenceEntry {
+  chatId: string | null
+  messageCount: number
+  lastMessageId: string | null
+  lastMessageContentHash: string | null
+}
+
+export interface AllChatsExportFence {
+  chats: AllChatsExportFenceEntry[]
+}
+
+export type ExportAllChatsResult = { success: false } | { success: true; fence: AllChatsExportFence }
+
+function serializedMessageHash(message: Chat['message'][number] | undefined): string | null {
+  if (!message) return null
+  const hash = new Sha256()
+  hash.update(new TextEncoder().encode(JSON.stringify(message)))
+  return Array.from(hash.digestSync(), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function captureAllChatsExportFence(chats: readonly Chat[]): AllChatsExportFence {
+  return {
+    chats: chats.map((chat) => {
+      const lastMessage = chat.message.at(-1)
+      return {
+        chatId: chat.id ?? null,
+        messageCount: chat.message.length,
+        lastMessageId: lastMessage?.chatId ?? null,
+        lastMessageContentHash: serializedMessageHash(lastMessage),
+      }
+    }),
+  }
+}
+
+export function matchesAllChatsExportFence(chats: readonly Chat[], fence: AllChatsExportFence): boolean {
+  if (chats.length !== fence.chats.length) return false
+
+  const fencedChats = new Map(fence.chats.map((chat) => [chat.chatId, chat]))
+  if (fencedChats.size !== fence.chats.length) return false
+
+  const liveChatIds = new Set<string | null>()
+  for (const chat of chats) {
+    const chatId = chat.id ?? null
+    if (liveChatIds.has(chatId)) return false
+    liveChatIds.add(chatId)
+
+    const fencedChat = fencedChats.get(chatId)
+    if (!fencedChat || chat.message.length !== fencedChat.messageCount) return false
+    const lastMessage = chat.message.at(-1)
+    if (
+      (lastMessage?.chatId ?? null) !== fencedChat.lastMessageId ||
+      serializedMessageHash(lastMessage) !== fencedChat.lastMessageContentHash
+    ) {
+      return false
+    }
+  }
+
+  return true
+}
+
+export async function exportAllChats(characterId: string): Promise<ExportAllChatsResult> {
   const stableCharacterId = characterId
 
   try {
-    if (!resolveCharacterExportTarget(stableCharacterId)) return false
+    if (!resolveCharacterExportTarget(stableCharacterId)) return { success: false }
     // This serializes every chat's history, so hydrate lazy chats first.
     await ensureAllChatsHydrated({ strict: true })
     const char = resolveCharacterExportTarget(stableCharacterId)
-    if (!char) return false
+    if (!char) return { success: false }
     const date = new Date().toISOString().replace(/[:.]/g, '-')
     const allChats = char.chats
     const allFolders = char.chatFolders
+    const fence = captureAllChatsExportFence(allChats)
     const stringl = Buffer.from(
       JSON.stringify({
         type: 'risuAllChats',
@@ -1057,11 +1119,13 @@ export async function exportAllChats(characterId: string): Promise<boolean> {
       }),
       'utf-8',
     )
-    await downloadFile(`${char.name}_all_chats_${date}`.replace(/[<>:"/\\|?*.,]/g, '') + '.json', stringl)
-    return true
+    await downloadFile(`${char.name}_all_chats_${date}`.replace(/[<>:"/\\|?*.,]/g, '') + '.json', stringl, {
+      revokeObjectUrlAfterMs: null,
+    })
+    return { success: true, fence }
   } catch (error) {
     alertError(error)
-    return false
+    return { success: false }
   }
 }
 

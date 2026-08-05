@@ -72,7 +72,15 @@ interface fetchLog {
 
 let fetchLog: fetchLog[] = []
 
-export async function downloadFile(name: string, dat: Uint8Array | ArrayBuffer | string) {
+export interface DownloadFileOptions {
+  revokeObjectUrlAfterMs?: number | null
+}
+
+export async function downloadFile(
+  name: string,
+  dat: Uint8Array | ArrayBuffer | string,
+  options: DownloadFileOptions = {},
+) {
   if (typeof dat === 'string') {
     dat = Buffer.from(dat, 'utf-8')
   }
@@ -92,9 +100,12 @@ export async function downloadFile(name: string, dat: Uint8Array | ArrayBuffer |
 
   downloadURL(url, name)
 
-  setTimeout(() => {
-    URL.revokeObjectURL(url)
-  }, 10000)
+  const revokeObjectUrlAfterMs = options.revokeObjectUrlAfterMs === undefined ? 10000 : options.revokeObjectUrlAfterMs
+  if (revokeObjectUrlAfterMs !== null) {
+    setTimeout(() => {
+      URL.revokeObjectURL(url)
+    }, revokeObjectUrlAfterMs)
+  }
 }
 
 let fileCache: {

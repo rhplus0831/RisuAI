@@ -1009,6 +1009,7 @@ export const languageEnglish = {
     'All chats were downloaded. Do you want to delete every chat for this character?',
   chatListDeleteAllSecondConfirm:
     'This will permanently delete every chat for this character. Are you absolutely sure?',
+  chatListDeleteAllExportChanged: 'Chats changed since the export. Re-export them and try again.',
   chatListDeleteAllAction: 'Delete all chats',
   chatListImport: 'Import chat',
   chatListEdit: 'Edit chat list',

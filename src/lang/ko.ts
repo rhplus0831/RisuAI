@@ -717,6 +717,7 @@ const languageKoreanBase = {
   chatListExportAll: '모든 채팅 내보내기',
   chatListDeleteAllAfterExportConfirm: '모든 채팅을 다운로드했습니다. 이 캐릭터의 모든 채팅을 삭제하시겠습니까?',
   chatListDeleteAllSecondConfirm: '이 작업은 이 캐릭터의 모든 채팅을 영구적으로 삭제합니다. 정말 계속하시겠습니까?',
+  chatListDeleteAllExportChanged: '내보내기 이후 채팅이 변경되었습니다. 다시 내보낸 후 시도해주세요.',
   chatListDeleteAllAction: '모든 채팅 삭제',
   chatListImport: '채팅 가져오기',
   chatListEdit: '채팅 목록 편집',

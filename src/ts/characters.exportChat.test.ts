@@ -50,7 +50,7 @@ vi.mock('./process/scripts', () => ({
   resetScriptCache: vi.fn(),
 }))
 
-import { exportAllChats, exportChat } from './characters'
+import { exportAllChats, exportChat, matchesAllChatsExportFence } from './characters'
 import { replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import type { Chat, character, Database } from './storage/database.svelte'
@@ -204,7 +204,7 @@ describe('chat export stable targets', () => {
     setDatabase([characterB, { ...characterA, chats: [...characterA.chats].reverse() } as character])
     selectedCharID.set(0)
     hydration.resolve()
-    await expect(exporting).resolves.toBe(true)
+    const result = await exporting
 
     expect(exportMocks.ensureAllChatsHydrated).toHaveBeenCalledWith({ strict: true })
     expect(downloadedJson()).toMatchObject({
@@ -212,6 +212,57 @@ describe('chat export stable targets', () => {
       data: [{ id: 'chat-a-2' }, { id: 'chat-a-1' }],
     })
     expect(exportMocks.downloadFile.mock.calls[0]?.[0]).toContain('Character A_all_chats_')
+    expect(exportMocks.downloadFile.mock.calls[0]?.[2]).toEqual({ revokeObjectUrlAfterMs: null })
+    expect(result).toMatchObject({
+      success: true,
+      fence: {
+        chats: [
+          {
+            chatId: 'chat-a-2',
+            messageCount: 1,
+            lastMessageId: 'chat-a-2-message',
+            lastMessageContentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          },
+          {
+            chatId: 'chat-a-1',
+            messageCount: 1,
+            lastMessageId: 'chat-a-1-message',
+            lastMessageContentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          },
+        ],
+      },
+    })
+    if (!result.success) throw new Error('expected a successful export')
+    const exportedChats = [...characterA.chats].reverse()
+    expect(matchesAllChatsExportFence(exportedChats, result.fence)).toBe(true)
+    expect(
+      matchesAllChatsExportFence(
+        [
+          {
+            ...characterA.chats[0],
+            message: [...characterA.chats[0].message, { role: 'char', data: 'new', chatId: 'new-message' }],
+          } as Chat,
+          characterA.chats[1],
+        ],
+        result.fence,
+      ),
+    ).toBe(false)
+    expect(matchesAllChatsExportFence([...exportedChats, makeChat('chat-a-3', 'Chat A3', 'a3')], result.fence)).toBe(
+      false,
+    )
+    expect(matchesAllChatsExportFence(exportedChats.slice(1), result.fence)).toBe(false)
+    expect(
+      matchesAllChatsExportFence(
+        [
+          {
+            ...exportedChats[0],
+            message: [{ ...exportedChats[0].message[0], data: 'edited without changing the message id' }],
+          },
+          exportedChats[1],
+        ],
+        result.fence,
+      ),
+    ).toBe(false)
     expect(exportMocks.alertError).not.toHaveBeenCalled()
   })
 
@@ -281,7 +332,7 @@ describe('chat export stable targets', () => {
     const exporting = exportAllChats('char-a')
     setDatabase([])
     hydration.resolve()
-    await expect(exporting).resolves.toBe(false)
+    await expect(exporting).resolves.toEqual({ success: false })
 
     expect(exportMocks.downloadFile).not.toHaveBeenCalled()
     expect(exportMocks.alertError).not.toHaveBeenCalled()
@@ -292,7 +343,7 @@ describe('chat export stable targets', () => {
     setDatabase([makeCharacter('char-a', 'Character A', [makeChat('chat-a', 'Chat A', 'a')])])
     exportMocks.downloadFile.mockRejectedValueOnce(downloadError)
 
-    await expect(exportAllChats('char-a')).resolves.toBe(false)
+    await expect(exportAllChats('char-a')).resolves.toEqual({ success: false })
 
     expect(exportMocks.alertError).toHaveBeenCalledWith(downloadError)
   })

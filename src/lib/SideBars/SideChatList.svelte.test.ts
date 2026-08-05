@@ -9,6 +9,19 @@ const sidebarMocks = vi.hoisted(() => {
     resolve: (value: unknown) => void
     settled: boolean
   }
+  type ExportAllChatsResult =
+    | { success: false }
+    | {
+        success: true
+        fence: {
+          chats: Array<{
+            chatId: string | null
+            messageCount: number
+            lastMessageId: string | null
+            lastMessageContentHash: string | null
+          }>
+        }
+      }
 
   class SortableMock {
     static instances: SortableMock[] = []
@@ -181,11 +194,45 @@ const sidebarMocks = vi.hoisted(() => {
       }),
     ),
     ensureAllChatsHydrated: vi.fn(async () => undefined),
-    exportAllChats: vi.fn(async () => false),
+    exportAllChats: vi.fn(async (): Promise<ExportAllChatsResult> => ({ success: false })),
     exportChat: vi.fn(),
     forkChatCommand: unusedCommand,
     hydrateChatMessages: vi.fn(async (_chatId: string, _options?: { strict?: boolean }) => undefined),
     importChat: vi.fn(),
+    matchesAllChatsExportFence: vi.fn(
+      (
+        chats: Array<{ id?: string; message: Array<{ chatId?: string }> }>,
+        fence: {
+          chats: Array<{
+            chatId: string | null
+            messageCount: number
+            lastMessageId: string | null
+            lastMessageContentHash: string | null
+          }>
+        },
+      ) => {
+        if (chats.length !== fence.chats.length) return false
+        const fencedChats = new Map(fence.chats.map((chat) => [chat.chatId, chat]))
+        if (fencedChats.size !== fence.chats.length) return false
+        const liveChatIds = new Set<string | null>()
+        for (const chat of chats) {
+          const chatId = chat.id ?? null
+          if (liveChatIds.has(chatId)) return false
+          liveChatIds.add(chatId)
+          const fencedChat = fencedChats.get(chatId)
+          const lastMessage = chat.message.at(-1)
+          if (
+            !fencedChat ||
+            chat.message.length !== fencedChat.messageCount ||
+            (lastMessage?.chatId ?? null) !== fencedChat.lastMessageId ||
+            (lastMessage ? JSON.stringify(lastMessage) : null) !== fencedChat.lastMessageContentHash
+          ) {
+            return false
+          }
+        }
+        return true
+      },
+    ),
     navigate: vi.fn(),
     patchChatScriptstateCommand: unusedCommand,
     reorderChatFoldersCommand: unusedCommand,
@@ -278,6 +325,7 @@ vi.mock('src/lang', () => ({
     chatListExportAll: 'Export all chats',
     chatListDeleteAllAfterExportConfirm: 'Download finished. Delete every chat?',
     chatListDeleteAllSecondConfirm: 'Permanently delete every chat?',
+    chatListDeleteAllExportChanged: 'Chats changed since the export. Re-export them and try again.',
     chatListDeleteAllAction: 'Delete all chats',
     chatListImport: 'Import chat',
     chatStructureFailed: (action: string) => `${action} failed`,
@@ -325,6 +373,7 @@ vi.mock('src/ts/characters', () => ({
   exportAllChats: sidebarMocks.exportAllChats,
   exportChat: sidebarMocks.exportChat,
   importChat: sidebarMocks.importChat,
+  matchesAllChatsExportFence: sidebarMocks.matchesAllChatsExportFence,
 }))
 
 vi.mock('src/ts/chatCommands', async (importActual) => {
@@ -438,6 +487,23 @@ function makeChat(id: string, name: string, folderId: string | null = null): Cha
     fmIndex: -1,
     note: '',
   } as Chat
+}
+
+function successfulExport(chats: Chat[]) {
+  return {
+    success: true as const,
+    fence: {
+      chats: chats.map((chat) => {
+        const lastMessage = chat.message.at(-1)
+        return {
+          chatId: chat.id ?? null,
+          messageCount: chat.message.length,
+          lastMessageId: lastMessage?.chatId ?? null,
+          lastMessageContentHash: lastMessage ? JSON.stringify(lastMessage) : null,
+        }
+      }),
+    },
+  }
 }
 
 function seedSidebarDatabase(): character {
@@ -1093,12 +1159,14 @@ describe('SideChatList DOM contract harness', () => {
   })
 
   it.each([
-    { name: 'failed download', exported: false, confirmations: [] as boolean[], expectedConfirmations: 0 },
-    { name: 'first cancellation', exported: true, confirmations: [false], expectedConfirmations: 1 },
-    { name: 'second cancellation', exported: true, confirmations: [true, false], expectedConfirmations: 2 },
-  ])('does not reset chats after a $name', async ({ exported, confirmations, expectedConfirmations }) => {
+    { name: 'failed download', exportSucceeded: false, confirmations: [] as boolean[], expectedConfirmations: 0 },
+    { name: 'first cancellation', exportSucceeded: true, confirmations: [false], expectedConfirmations: 1 },
+    { name: 'second cancellation', exportSucceeded: true, confirmations: [true, false], expectedConfirmations: 2 },
+  ])('does not reset chats after a $name', async ({ exportSucceeded, confirmations, expectedConfirmations }) => {
     const chara = seedSidebarDatabase()
-    sidebarMocks.exportAllChats.mockResolvedValueOnce(exported)
+    sidebarMocks.exportAllChats.mockResolvedValueOnce(
+      exportSucceeded ? successfulExport(chara.chats) : { success: false },
+    )
     for (const confirmed of confirmations) sidebarMocks.alertConfirm.mockResolvedValueOnce(confirmed)
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -1113,7 +1181,7 @@ describe('SideChatList DOM contract harness', () => {
 
   it('resets every chat to an empty Chat 1 only after two confirmations', async () => {
     const chara = seedSidebarDatabase()
-    sidebarMocks.exportAllChats.mockResolvedValueOnce(true)
+    sidebarMocks.exportAllChats.mockResolvedValueOnce(successfulExport(chara.chats))
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(true)
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -1138,6 +1206,49 @@ describe('SideChatList DOM contract harness', () => {
     expect(chara.chatPage).toBe(0)
     expect(chara.chatFolders).toEqual([{ id: 'folder-a', name: 'Pinned Folder', folded: false }])
     expect(sidebarMocks.navigate).toHaveBeenCalledWith(`/character/char-a/${replacementChat.id}`, { replace: true })
+  })
+
+  it('aborts reset when a message is appended after the export fence is captured', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chats[0].message = [{ role: 'user', data: 'exported message', chatId: 'message-1' }]
+    sidebarMocks.exportAllChats.mockResolvedValueOnce(successfulExport(chara.chats))
+    sidebarMocks.alertConfirm.mockResolvedValueOnce(true).mockImplementationOnce(async () => {
+      chara.chats[0].message.push({ role: 'char', data: 'arrived after export', chatId: 'message-2' })
+      return true
+    })
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="export-all"]')!.click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.alertError).toHaveBeenCalledWith(language.chatListDeleteAllExportChanged)
+    expect(sidebarMocks.dispatchResetChatsWithOutcome).not.toHaveBeenCalled()
+    expect(chara.chats).toHaveLength(3)
+    expect(chara.chats[0].message.map((message) => message.data)).toEqual(['exported message', 'arrived after export'])
+  })
+
+  it.each(['added', 'removed'] as const)('aborts reset when a chat is %s after export', async (drift) => {
+    const chara = seedSidebarDatabase()
+    sidebarMocks.exportAllChats.mockResolvedValueOnce(successfulExport(chara.chats))
+    sidebarMocks.alertConfirm.mockResolvedValueOnce(true).mockImplementationOnce(async () => {
+      if (drift === 'added') chara.chats.push(makeChat('chat-new', 'New Chat'))
+      else chara.chats.splice(0, 1)
+      return true
+    })
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="export-all"]')!.click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.alertError).toHaveBeenCalledWith(language.chatListDeleteAllExportChanged)
+    expect(sidebarMocks.dispatchResetChatsWithOutcome).not.toHaveBeenCalled()
+    expect(chara.chats.map((chat) => chat.name)).toEqual(
+      drift === 'added'
+        ? ['Root Chat A', 'Foldered Chat', 'Root Chat B', 'New Chat']
+        : ['Foldered Chat', 'Root Chat B'],
+    )
   })
 
   it('remints copied message ids before dispatching a server-backed chat copy', async () => {

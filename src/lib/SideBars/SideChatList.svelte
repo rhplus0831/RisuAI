@@ -24,7 +24,7 @@
   import Button from '../UI/GUI/Button.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
 
-  import { exportChat, importChat, exportAllChats } from 'src/ts/characters'
+  import { exportChat, importChat, exportAllChats, matchesAllChatsExportFence } from 'src/ts/characters'
   import { alertChatOptions, alertConfirm, alertError, alertNormal, alertSelect, alertStore } from 'src/ts/alert'
   import { sleep, sortableOptions } from 'src/ts/util'
   import { bookmarkListOpen } from 'src/ts/stores.svelte'
@@ -999,7 +999,9 @@
 
   async function exportAllAndMaybeResetChats(): Promise<void> {
     const characterId = chara.chaId
-    if (!characterId || !(await exportAllChats(characterId))) return
+    if (!characterId) return
+    const exportResult = await exportAllChats(characterId)
+    if (!exportResult.success) return
 
     const firstConfirmed = await alertConfirm(language.chatListDeleteAllAfterExportConfirm)
     if (!firstConfirmed) return
@@ -1008,6 +1010,10 @@
 
     const liveCharacter = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!liveCharacter) return
+    if (!matchesAllChatsExportFence(liveCharacter.chats, exportResult.fence)) {
+      alertError(language.chatListDeleteAllExportChanged)
+      return
+    }
     const previousChatIds = liveCharacter.chats.map((candidate) => candidate.id)
     const previous = currentChatStateSnapshot()
     const chat: Chat = {
