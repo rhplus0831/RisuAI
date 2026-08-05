@@ -318,6 +318,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'modelProfile.duplicated',
     resource: 'modelProfile',
   },
+  modelProfilesReordered: {
+    type: 'modelProfile.reordered',
+    resource: 'modelProfile',
+  },
   modelProfileDeleted: {
     type: 'modelProfile.deleted',
     resource: 'modelProfile',

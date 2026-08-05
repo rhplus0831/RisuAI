@@ -6,6 +6,7 @@ const commandSpies = vi.hoisted(() => ({
   updateModelProfileDurably: vi.fn(),
   duplicateModelProfileDurably: vi.fn(),
   deleteModelProfileDurably: vi.fn(),
+  reorderModelProfilesDurably: vi.fn(),
   updateModelRuntimeDefaultsDurably: vi.fn(),
 }))
 
@@ -18,6 +19,7 @@ vi.mock('src/ts/model/modelProfileMutations', async (importOriginal) => ({
   updateModelProfileDurably: commandSpies.updateModelProfileDurably,
   duplicateModelProfileDurably: commandSpies.duplicateModelProfileDurably,
   deleteModelProfileDurably: commandSpies.deleteModelProfileDurably,
+  reorderModelProfilesDurably: commandSpies.reorderModelProfilesDurably,
   updateModelRuntimeDefaultsDurably: commandSpies.updateModelRuntimeDefaultsDurably,
 }))
 vi.mock('src/ts/process/modules', () => ({
@@ -79,6 +81,27 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve }
 }
 
+function createProfileDataTransfer(): DataTransfer {
+  const values = new Map<string, string>()
+  return {
+    effectAllowed: 'uninitialized',
+    getData: vi.fn((type: string) => values.get(type) ?? ''),
+    setData: vi.fn((type: string, value: string) => values.set(type, value)),
+  } as unknown as DataTransfer
+}
+
+function dispatchProfileDragEvent(
+  element: Element,
+  type: 'dragstart' | 'dragover' | 'drop',
+  dataTransfer: DataTransfer,
+  clientY = 0,
+): void {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+  Object.defineProperty(event, 'clientY', { value: clientY })
+  element.dispatchEvent(event)
+}
+
 function clearPendingModelMutations(): void {
   for (const lane of ['model-profiles', 'model-runtime-defaults'] as const) {
     for (const pending of getPendingModelMutations(lane)) finishPendingModelMutation(pending.token)
@@ -120,6 +143,67 @@ afterEach(() => {
 })
 
 describe('ModelProfileList', () => {
+  it('hides generated profile IDs and removes Used By from cards and the editor', async () => {
+    getDatabase().modelProfiles = [
+      { id: 'mp_1234567890', name: 'Generated', providerId: 'debug-echo', modelId: 'debug-echo' },
+      { id: 'custom-profile', name: 'Custom', providerId: 'debug-echo', modelId: 'debug-echo' },
+    ]
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    expect(target.textContent).not.toContain('mp_1234567890')
+    expect(target.textContent).toContain('custom-profile')
+    expect(target.textContent).not.toContain(language.modelProfiles.usedByColumn)
+
+    buttonsByText(language.modelProfiles.edit).at(-1)?.click()
+    await tick()
+
+    expect(target.querySelector('[role="dialog"]')?.textContent).not.toContain(language.modelProfiles.usedByColumn)
+  })
+
+  it('reorders profiles by stable ID after drag and drop', async () => {
+    getDatabase().modelProfiles = [
+      { id: 'profile-a', name: 'A', providerId: 'debug-echo', modelId: 'debug-echo' },
+      { id: 'profile-b', name: 'B', providerId: 'debug-echo', modelId: 'debug-echo' },
+      { id: 'profile-c', name: 'C', providerId: 'debug-echo', modelId: 'debug-echo' },
+    ]
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const rows = target.querySelectorAll<HTMLElement>('[data-model-profile-row]')
+    const list = target.querySelector<HTMLElement>('[role="list"]')
+    const endDropZone = list?.lastElementChild
+    if (!rows[0] || !endDropZone) throw new Error('Profile drag targets not found')
+    const dataTransfer = createProfileDataTransfer()
+    dispatchProfileDragEvent(rows[0], 'dragstart', dataTransfer)
+    dispatchProfileDragEvent(endDropZone, 'drop', dataTransfer)
+    await flushAsync()
+
+    expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith(['profile-b', 'profile-c', 'profile-a'])
+  })
+
+  it('blocks deletion when any Model Preset uses the profile', async () => {
+    getDatabase().modelPresets = [
+      { id: 'preset-a', name: 'Unrelated', modelRoleProfiles: {} },
+      {
+        id: 'preset-b',
+        name: 'Uses Profile',
+        modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-1' } },
+      },
+    ] as any
+    const confirm = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirm)
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    buttonByText(language.modelProfiles.delete).click()
+    await flushAsync()
+
+    expect(target.textContent).toContain(language.modelProfiles.profileUsedByModelPresets('Profile 1', 'Uses Profile'))
+    expect(confirm).not.toHaveBeenCalled()
+    expect(commandSpies.deleteModelProfileDurably).not.toHaveBeenCalled()
+  })
+
   it('keeps custom API capability labels readable in the responsive drawer grid', async () => {
     getDatabase().modelProfiles[0] = {
       id: 'profile-1',

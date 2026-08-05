@@ -1027,6 +1027,7 @@ describe('pending mutation outbox', () => {
     ['DELETE', '/model-profiles/profile-a'],
     ['POST', '/model-profiles/profile-a/duplicate'],
     ['POST', '/model-profiles/convert-legacy'],
+    ['POST', '/model-profiles/reorder'],
     ['PUT', '/model-role-profiles'],
     ['PUT', '/model-runtime-defaults'],
     ['POST', '/agents'],

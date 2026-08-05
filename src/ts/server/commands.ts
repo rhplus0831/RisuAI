@@ -1003,6 +1003,10 @@ export interface DuplicateModelProfileCommandInput extends ModelProfileCommandIn
   name?: string
 }
 
+export interface ReorderModelProfilesCommandInput extends ModelProfileCommandInput {
+  profileIds: string[]
+}
+
 export type ProviderCredentialSnapshot = Omit<ProviderCredentialRecord, 'id'> & {
   id?: string
 }
@@ -3023,6 +3027,20 @@ export async function duplicateModelProfileCommand(
     body: {
       baseRevision: input.baseRevision,
       name: input.name,
+    },
+    signal,
+  })
+}
+
+export async function reorderModelProfilesCommand(
+  input: ReorderModelProfilesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ profileIds: string[] }>> {
+  return requestCommandJson('/model-profiles/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      profileIds: input.profileIds,
     },
     signal,
   })

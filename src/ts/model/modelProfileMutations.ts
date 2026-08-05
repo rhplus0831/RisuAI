@@ -11,6 +11,7 @@ import {
   createModelProfileCommand,
   deleteModelProfileCommand,
   duplicateModelProfileCommand,
+  reorderModelProfilesCommand,
   runServerCommand,
   updateModelProfileCommand,
   updateModelRoleProfilesCommand,
@@ -45,6 +46,7 @@ export type PendingModelMutationProjection =
   | { kind: 'profile-create' | 'profile-duplicate'; baselineIds: string[]; attemptedFingerprint: string }
   | { kind: 'profile-update'; profileId: string; attemptedFingerprint: string }
   | { kind: 'profile-delete'; profileId: string }
+  | { kind: 'profile-reorder'; profileIds: string[] }
   | {
       kind: 'role-bindings'
       bindings: Partial<Record<ModelRole, ModelRoleProfileBinding>>
@@ -155,6 +157,9 @@ export function isPendingModelMutationProjectionApplied(
   }
 
   const profiles = snapshot.modelProfiles ?? []
+  if (projection.kind === 'profile-reorder') {
+    return jsonSnapshot(profiles.map((profile) => profile.id)) === jsonSnapshot(projection.profileIds)
+  }
   if (projection.kind === 'profile-delete') {
     return !profiles.some((profile) => profile.id === projection.profileId)
   }
@@ -326,6 +331,23 @@ export async function duplicateModelProfileDurably(
         requests: [{ method: 'POST', path, body: { name } }],
       },
       (baseRevision) => duplicateModelProfileCommand({ baseRevision, profileId, name }),
+    )
+  } catch {
+    return unavailableModelMutationOutcome()
+  }
+}
+
+export async function reorderModelProfilesDurably(
+  profileIds: string[],
+): Promise<ModelProfileMutationOutcome<{ profileIds: string[] }>> {
+  try {
+    const frozenProfileIds = cloneJsonValue(profileIds)
+    return await dispatchModelProfileMutation(
+      {
+        version: 1,
+        requests: [{ method: 'POST', path: '/model-profiles/reorder', body: { profileIds: frozenProfileIds } }],
+      },
+      (baseRevision) => reorderModelProfilesCommand({ baseRevision, profileIds: cloneJsonValue(frozenProfileIds) }),
     )
   } catch {
     return unavailableModelMutationOutcome()

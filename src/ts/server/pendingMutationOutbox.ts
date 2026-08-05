@@ -214,6 +214,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'DELETE', path: /^\/model-profiles\/[^/?#]+$/ },
   { method: 'POST', path: /^\/model-profiles\/[^/?#]+\/duplicate$/ },
   { method: 'POST', path: /^\/model-profiles\/convert-legacy$/ },
+  { method: 'POST', path: /^\/model-profiles\/reorder$/ },
   { method: 'POST', path: /^\/provider-credentials$/ },
   { method: 'PATCH', path: /^\/provider-credentials\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/provider-credentials\/[^/?#]+$/ },

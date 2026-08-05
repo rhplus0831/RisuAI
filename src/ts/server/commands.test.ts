@@ -107,6 +107,7 @@ import {
   reorderChatLorebookEntriesCommand,
   reorderModulesCommand,
   reorderModelPresetsCommand,
+  reorderModelProfilesCommand,
   reorderGlobalLorebookEntriesCommand,
   reorderModuleLorebookEntriesCommand,
   reorderPluginsCommand,
@@ -2546,27 +2547,31 @@ describe('server command API adapter', () => {
       profileId: 'source-profile',
       name: 'Copy',
     })
-    await deleteModelProfileCommand({
+    await reorderModelProfilesCommand({
       baseRevision: 4,
+      profileIds: ['profile-b', 'profile-a'],
+    })
+    await deleteModelProfileCommand({
+      baseRevision: 5,
       profileId: 'profile-a',
       reassignments: { memory: { mode: 'inherit' } },
     })
     await updateModelRoleProfilesCommand({
-      baseRevision: 5,
+      baseRevision: 6,
       bindings: { memory: { mode: 'profile', profileId: 'profile-a' } },
       modelPresetId: 'model-preset-a',
     })
     await createAndBindModelProfileCommand({
-      baseRevision: 6,
+      baseRevision: 7,
       role: 'memory',
       profile: { name: 'Bound', modelId: 'gpt-5' },
     })
     await updateModelRuntimeDefaultsCommand({
-      baseRevision: 7,
+      baseRevision: 8,
       runtimeDefaults: { temperature: 55, stripCoT: true },
     })
     await convertLegacyModelProfilesCommand({
-      baseRevision: 8,
+      baseRevision: 9,
     })
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
@@ -2596,10 +2601,18 @@ describe('server command API adapter', () => {
         },
       },
       {
+        url: '/api/v1/commands/model-profiles/reorder',
+        method: 'POST',
+        body: {
+          baseRevision: 4,
+          profileIds: ['profile-b', 'profile-a'],
+        },
+      },
+      {
         url: '/api/v1/commands/model-profiles/profile-a',
         method: 'DELETE',
         body: {
-          baseRevision: 4,
+          baseRevision: 5,
           reassignments: { memory: { mode: 'inherit' } },
         },
       },
@@ -2607,7 +2620,7 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/model-role-profiles',
         method: 'PUT',
         body: {
-          baseRevision: 5,
+          baseRevision: 6,
           bindings: { memory: { mode: 'profile', profileId: 'profile-a' } },
           modelPresetId: 'model-preset-a',
         },
@@ -2616,7 +2629,7 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/model-profiles/create-and-bind',
         method: 'POST',
         body: {
-          baseRevision: 6,
+          baseRevision: 7,
           role: 'memory',
           profile: { name: 'Bound', modelId: 'gpt-5' },
         },
@@ -2625,7 +2638,7 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/model-runtime-defaults',
         method: 'PUT',
         body: {
-          baseRevision: 7,
+          baseRevision: 8,
           runtimeDefaults: { temperature: 55, stripCoT: true },
         },
       },
@@ -2633,7 +2646,7 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/model-profiles/convert-legacy',
         method: 'POST',
         body: {
-          baseRevision: 8,
+          baseRevision: 9,
         },
       },
     ])

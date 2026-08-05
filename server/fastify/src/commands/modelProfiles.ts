@@ -218,50 +218,90 @@ export function duplicateModelProfileCommand(
   })
 }
 
+export function reorderModelProfilesCommand(
+  args: ModelProfileCommandArgs,
+): JsonCommandMutationResult<{ profileIds: string[] }> {
+  const body = readObject(args.body, 'request body')
+  const profileIds = readProfileIdOrder(body.profileIds)
+  return applyModelProfileMutation(args, (target) => {
+    const profiles = currentProfiles(target)
+    if (profileIds.length !== profiles.length) {
+      throw new ValidationError('profileIds must include every existing model profile exactly once')
+    }
+
+    const profilesById = new Map(profiles.map((profile) => [profile.id, profile]))
+    const seen = new Set<string>()
+    const reorderedProfiles = profileIds.map((profileId) => {
+      if (seen.has(profileId)) throw new ValidationError(`Duplicate model profile id: ${profileId}`)
+      seen.add(profileId)
+      const profile = profilesById.get(profileId)
+      if (!profile) throw new ValidationError(`Unknown model profile id: ${profileId}`)
+      return profile
+    })
+
+    target.modelProfiles = readProfilesForWrite(reorderedProfiles, target)
+    return {
+      event: COMMAND_EVENT_CATALOG.modelProfilesReordered,
+      extra: { profileIds: [...profileIds] },
+    }
+  })
+}
+
 export function deleteModelProfileCommand(
   args: ModelProfileCommandArgs & { profileId: string },
 ): JsonCommandMutationResult<{ profileId: string; reassignedRoles: ModelRole[] }> {
   const profileId = readNonEmptyString(args.profileId, 'profileId')
   const body = readObject(args.body, 'request body')
   const reassignments = readReassignmentMap(body.reassignments)
-  return applyModelProfileMutation(args, (target) => {
-    const profiles = currentProfiles(target)
-    if (!profiles.some((profile) => profile.id === profileId)) {
-      throw new EntityNotFoundError(`Model profile not found: ${profileId}`)
-    }
-
-    const remainingProfiles = profiles.filter((profile) => profile.id !== profileId)
-    const remainingIds = new Set(remainingProfiles.map((profile) => profile.id))
-    const bindings = currentRoleProfiles(target)
-    const reassignedRoles: ModelRole[] = []
-    const nextBindings: ModelRoleProfileMap = { ...bindings }
-
-    for (const role of MODEL_ROLES) {
-      const binding = bindings[role]
-      if (binding.mode !== 'profile' || binding.profileId !== profileId) continue
-      const reassignment = reassignments[role]
-      if (!reassignment) {
-        throw new ValidationError(`reassignments.${role} is required`)
+  return applyModelProfileMutation(
+    args,
+    (target) => {
+      const profiles = currentProfiles(target)
+      if (!profiles.some((profile) => profile.id === profileId)) {
+        throw new EntityNotFoundError(`Model profile not found: ${profileId}`)
       }
-      validateBindingTarget(role, reassignment, remainingIds, `reassignments.${role}`)
-      nextBindings[role] = reassignment
-      reassignedRoles.push(role)
-    }
 
-    for (const role of Object.keys(reassignments)) {
-      if (!reassignedRoles.includes(role as ModelRole)) {
-        throw new ValidationError(`reassignments.${role} does not target the deleted profile`)
+      const modelPresetLabels = modelPresetLabelsUsingProfile(target, profileId)
+      if (modelPresetLabels.length > 0) {
+        throw new ValidationError(
+          `Model profile ${profileId} is used by Model Presets: ${modelPresetLabels.join(', ')}`,
+        )
       }
-    }
 
-    target.modelProfiles = readProfilesForWrite(remainingProfiles, target)
-    target.modelRoleProfiles = nextBindings
-    if (reassignedRoles.includes('memory')) validateMemoryRoleCapability(target)
-    return {
-      event: { ...COMMAND_EVENT_CATALOG.modelProfileDeleted, id: profileId },
-      extra: { profileId, reassignedRoles },
-    }
-  })
+      const remainingProfiles = profiles.filter((profile) => profile.id !== profileId)
+      const remainingIds = new Set(remainingProfiles.map((profile) => profile.id))
+      const bindings = currentRoleProfiles(target)
+      const reassignedRoles: ModelRole[] = []
+      const nextBindings: ModelRoleProfileMap = { ...bindings }
+
+      for (const role of MODEL_ROLES) {
+        const binding = bindings[role]
+        if (binding.mode !== 'profile' || binding.profileId !== profileId) continue
+        const reassignment = reassignments[role]
+        if (!reassignment) {
+          throw new ValidationError(`reassignments.${role} is required`)
+        }
+        validateBindingTarget(role, reassignment, remainingIds, `reassignments.${role}`)
+        nextBindings[role] = reassignment
+        reassignedRoles.push(role)
+      }
+
+      for (const role of Object.keys(reassignments)) {
+        if (!reassignedRoles.includes(role as ModelRole)) {
+          throw new ValidationError(`reassignments.${role} does not target the deleted profile`)
+        }
+      }
+
+      target.modelProfiles = readProfilesForWrite(remainingProfiles, target)
+      target.modelRoleProfiles = nextBindings
+      if (reassignedRoles.includes('memory')) validateMemoryRoleCapability(target)
+      return {
+        event: { ...COMMAND_EVENT_CATALOG.modelProfileDeleted, id: profileId },
+        extra: { profileId, reassignedRoles },
+      }
+    },
+    'modelPresets',
+  )
 }
 
 export function updateModelRoleProfilesCommand(
@@ -444,6 +484,7 @@ export function convertLegacyModelProfilesCommand(
 function applyModelProfileMutation<TExtra extends ModelProfileMutationExtra = {}>(
   args: Omit<ModelProfileCommandArgs, 'body'>,
   mutateTarget: (target: Record<string, unknown>) => { event: CommandEventDraft; extra: TExtra },
+  readScope: 'settings' | 'modelPresets' = 'settings',
 ): JsonCommandMutationResult<TExtra> {
   return applyTargetedCommandMutation<TExtra>({
     db: args.db,
@@ -452,8 +493,10 @@ function applyModelProfileMutation<TExtra extends ModelProfileMutationExtra = {}
     eventSink: args.eventSink,
     ...(args.eventOrigin ? { eventOrigin: args.eventOrigin } : {}),
     ...(args.mutationReceiptKey ? { mutationReceiptKey: args.mutationReceiptKey } : {}),
-    mutationPath: TARGETED_MUTATION_PATHS.settings,
-    settingsScopedRead: true,
+    mutationPath: readScope === 'modelPresets' ? TARGETED_MUTATION_PATHS.collection : TARGETED_MUTATION_PATHS.settings,
+    ...(readScope === 'modelPresets'
+      ? { collectionScopedRead: ['modelPresets'] as const }
+      : { settingsScopedRead: true }),
     mutate(database, innerDb) {
       const target = readSettingsTarget(database)
       const result = mutateTarget(target)
@@ -476,6 +519,22 @@ function currentProfiles(target: Record<string, unknown>): ModelProfileRecord[] 
 
 function currentRoleProfiles(target: Record<string, unknown>): ModelRoleProfileMap {
   return normalizeModelRoleProfiles(target.modelRoleProfiles)
+}
+
+function modelPresetLabelsUsingProfile(target: Record<string, unknown>, profileId: string): string[] {
+  if (!Array.isArray(target.modelPresets)) return []
+  const labels: string[] = []
+  target.modelPresets.forEach((value, index) => {
+    if (!isRecord(value)) return
+    const bindings = normalizeModelRoleProfiles(value.modelRoleProfiles)
+    const referencesProfile = MODEL_ROLES.some((role) => {
+      const binding = bindings[role]
+      return binding.mode === 'profile' && binding.profileId === profileId
+    })
+    if (!referencesProfile) return
+    labels.push(nonBlankString(value.name) ?? `#${index + 1}`)
+  })
+  return labels
 }
 
 function readProfilesForWrite(value: unknown, sourceDatabase: unknown): ModelProfileRecord[] {
@@ -907,6 +966,11 @@ function validateProfileCredentialReference(
 function readObject(value: unknown, path: string): Record<string, unknown> {
   if (!isRecord(value)) throw new ValidationError(`${path} must be an object`)
   return value
+}
+
+function readProfileIdOrder(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new ValidationError('profileIds must be an array')
+  return value.map((profileId, index) => readNonEmptyString(profileId, `profileIds[${index}]`))
 }
 
 function readModelRole(value: unknown, path: string): ModelRole {

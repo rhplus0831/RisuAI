@@ -2679,6 +2679,85 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('reorders model profiles only with a complete stable-id order', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [
+        { id: 'profile-a', name: 'A', modelId: 'gpt-5' },
+        { id: 'profile-b', name: 'B', modelId: 'gpt-4o' },
+        { id: 'profile-c', name: 'C', modelId: 'claude-sonnet-4-5' },
+      ],
+    })
+
+    const incomplete = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, profileIds: ['profile-b', 'profile-a'] },
+    })
+    expect(incomplete.statusCode).toBe(400)
+    expect(incomplete.json().error).toBe('profileIds must include every existing model profile exactly once')
+
+    const duplicate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, profileIds: ['profile-a', 'profile-a', 'profile-c'] },
+    })
+    expect(duplicate.statusCode).toBe(400)
+    expect(duplicate.json().error).toBe('Duplicate model profile id: profile-a')
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, profileIds: ['profile-c', 'profile-a', 'profile-b'] },
+    })
+    expect(reordered.statusCode, reordered.body).toBe(200)
+    expect(reordered.json()).toMatchObject({
+      revision: revision + 1,
+      profileIds: ['profile-c', 'profile-a', 'profile-b'],
+      event: { type: 'modelProfile.reordered', resource: 'modelProfile' },
+    })
+    expect(
+      (loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, unknown>> })
+        .modelProfiles,
+    ).toMatchObject([{ id: 'profile-c' }, { id: 'profile-a' }, { id: 'profile-b' }])
+  })
+
+  it('blocks model profile deletion when any Model Preset role binding uses it', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [
+        { id: 'profile-main', name: 'Main', modelId: 'gpt-5' },
+        { id: 'profile-alt', name: 'Alt', modelId: 'gpt-4o' },
+      ],
+      modelRoleProfiles: {},
+      modelPresets: [
+        { id: 'model-a', name: 'Unrelated', modelRoleProfiles: {} },
+        {
+          id: 'model-b',
+          name: 'Uses Main',
+          modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-main' } },
+        },
+      ],
+      modelPresetsId: 0,
+    })
+
+    const blocked = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/model-profiles/profile-main',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, reassignments: {} },
+    })
+    expect(blocked.statusCode).toBe(400)
+    expect(blocked.json().error).toBe('Model profile profile-main is used by Model Presets: Uses Main')
+    expect(
+      (loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, unknown>> })
+        .modelProfiles,
+    ).toMatchObject([{ id: 'profile-main' }, { id: 'profile-alt' }])
+  })
+
   it('validates model profile delete reassignments and applies direct role updates atomically', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

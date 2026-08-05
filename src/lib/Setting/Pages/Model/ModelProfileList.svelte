@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CopyIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
+  import { CopyIcon, GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import {
@@ -23,6 +23,7 @@
     isPendingModelMutationProjectionApplied,
     modelProfileProjectionFingerprint as profileProjectionFingerprint,
     retainPendingModelMutation,
+    reorderModelProfilesDurably,
     subscribePendingModelMutations,
     updateModelProfileDurably,
     type PendingModelMutationProjection,
@@ -42,7 +43,7 @@
   type EditorMode = 'create' | 'edit' | null
   type ProfileListPendingProjection = Extract<
     PendingModelMutationProjection,
-    { kind: 'profile-create' | 'profile-update' | 'profile-duplicate' | 'profile-delete' }
+    { kind: 'profile-create' | 'profile-update' | 'profile-duplicate' | 'profile-delete' | 'profile-reorder' }
   >
 
   let editorMode = $state<EditorMode>(null)
@@ -52,6 +53,8 @@
   let busy = $state(false)
   let pendingMutations = $state(getPendingModelMutations('model-profiles'))
   let commandError = $state('')
+  let draggedProfileId = $state<string | null>(null)
+  let dragOverIndex = $state(-1)
 
   let profiles = $derived(getDatabase().modelProfiles ?? [])
   let credentials = $derived(getDatabase().providerCredentials ?? [])
@@ -129,6 +132,18 @@
     return roles.map((role) => language.modelRoles.roles[role]).join(', ')
   }
 
+  function modelPresetLabelsUsingProfile(profileId: string): string[] {
+    return (getDatabase().modelPresets ?? []).flatMap((preset, index) => {
+      const bindings = normalizeModelRoleProfiles(preset.modelRoleProfiles)
+      const referencesProfile = MODEL_ROLES.some((role) => {
+        const binding = bindings[role]
+        return binding.mode === 'profile' && binding.profileId === profileId
+      })
+      if (!referencesProfile) return []
+      return [preset.name?.trim() || language.modelProfiles.defaultPresetName(index + 1)]
+    })
+  }
+
   function openCreateEditor(): void {
     if (busy || mutationQueued) return
     editorMode = 'create'
@@ -165,7 +180,8 @@
       projection.kind === 'profile-create' ||
       projection.kind === 'profile-update' ||
       projection.kind === 'profile-duplicate' ||
-      projection.kind === 'profile-delete'
+      projection.kind === 'profile-delete' ||
+      projection.kind === 'profile-reorder'
     )
   }
 
@@ -275,6 +291,93 @@
     }
   }
 
+  async function reorderProfiles(profileIds: string[]): Promise<void> {
+    if (busy || mutationQueued) return
+    busy = true
+    commandError = ''
+    const pendingToken = beginPendingModelMutation('model-profiles', {
+      kind: 'profile-reorder',
+      profileIds,
+    })
+    if (!pendingToken) {
+      busy = false
+      return
+    }
+    try {
+      const outcome = await reorderModelProfilesDurably(profileIds)
+      if (outcome.status === 'accepted') {
+        finishPendingModelMutation(pendingToken)
+        return
+      }
+      if (outcome.status === 'queued') {
+        retainPendingModelMutation(pendingToken, outcome.mutationId)
+        return
+      }
+      finishPendingModelMutation(pendingToken)
+      commandError = commandErrorMessage(outcome.result)
+    } catch {
+      finishPendingModelMutation(pendingToken)
+      commandError = commandErrorMessage({ status: 'unavailable' })
+    } finally {
+      busy = false
+    }
+  }
+
+  function startProfileDrag(profileId: string, event: DragEvent): void {
+    if (busy || mutationQueued) {
+      event.preventDefault()
+      return
+    }
+    const target = event.target
+    if (target instanceof Element && target.closest('button')) {
+      event.preventDefault()
+      return
+    }
+    draggedProfileId = profileId
+    event.dataTransfer?.setData('text', 'model-profile')
+    event.dataTransfer?.setData('profileId', profileId)
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+  }
+
+  function finishProfileDrag(): void {
+    draggedProfileId = null
+    dragOverIndex = -1
+  }
+
+  function handleProfileDrop(targetProfileId: string | undefined, event: DragEvent): void {
+    event.preventDefault()
+    const draggedId = draggedProfileId
+    const transferredId = event.dataTransfer?.getData('profileId')
+    if (
+      event.dataTransfer?.getData('text') !== 'model-profile' ||
+      !draggedId ||
+      (transferredId && transferredId !== draggedId)
+    ) {
+      finishProfileDrag()
+      return
+    }
+
+    const sourceIndex = profiles.findIndex((profile) => profile.id === draggedId)
+    const targetIndex = targetProfileId
+      ? profiles.findIndex((profile) => profile.id === targetProfileId)
+      : profiles.length
+    if (sourceIndex < 0 || targetIndex < 0) {
+      finishProfileDrag()
+      return
+    }
+
+    const reordered = [...profiles]
+    const [moved] = reordered.splice(sourceIndex, 1)
+    const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
+    if (!moved || adjustedTargetIndex === sourceIndex) {
+      finishProfileDrag()
+      return
+    }
+    reordered.splice(adjustedTargetIndex, 0, moved)
+    finishProfileDrag()
+    void reorderProfiles(reordered.map((profile) => profile.id))
+  }
+
   function deleteReassignments(profileId: string): Partial<Record<ModelRole, ModelRoleProfileBinding>> {
     const reassignments: Partial<Record<ModelRole, ModelRoleProfileBinding>> = {}
     for (const role of rolesUsingProfile(profileId)) {
@@ -285,6 +388,11 @@
 
   async function deleteProfile(profile: ModelProfileRecord): Promise<void> {
     if (busy || mutationQueued) return
+    const usedByModelPresets = modelPresetLabelsUsingProfile(profile.id)
+    if (usedByModelPresets.length > 0) {
+      commandError = language.modelProfiles.profileUsedByModelPresets(profile.name, usedByModelPresets.join(', '))
+      return
+    }
     const usedByRoles = rolesUsingProfile(profile.id)
     const message =
       usedByRoles.length > 0
@@ -344,11 +452,41 @@
       {language.modelProfiles.noProfiles}
     </div>
   {:else}
-    <div class="flex flex-col gap-2">
-      {#each profiles as profile (profile.id)}
-        {@const usedByRoles = rolesUsingProfile(profile.id)}
-        <article class="risu-card flex flex-col gap-2 text-sm">
+    <div class="flex flex-col" role="list">
+      {#each profiles as profile, index (profile.id)}
+        <div
+          role="presentation"
+          class="h-1 transition-all"
+          class:h-2={draggedProfileId && dragOverIndex === index}
+          class:bg-blue-500={draggedProfileId && dragOverIndex === index}
+          ondragover={(event) => {
+            event.preventDefault()
+            dragOverIndex = index
+          }}
+          ondrop={(event) => handleProfileDrop(profile.id, event)}>
+        </div>
+        <article
+          class="risu-card flex cursor-move flex-col gap-2 text-sm"
+          role="listitem"
+          data-model-profile-row
+          data-profile-id={profile.id}
+          draggable={!busy && !mutationQueued}
+          ondragstart={(event) => startProfileDrag(profile.id, event)}
+          ondragend={finishProfileDrag}
+          ondragover={(event) => {
+            event.preventDefault()
+            const rect = event.currentTarget.getBoundingClientRect()
+            dragOverIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
+          }}
+          ondrop={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect()
+            const dropIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
+            handleProfileDrop(profiles[dropIndex]?.id, event)
+          }}>
           <div class="flex flex-wrap items-center gap-2">
+            <span class="text-textcolor2" title={language.modelProfiles.dragProfile} aria-hidden="true">
+              <GripVerticalIcon size={16} />
+            </span>
             <span class="font-medium">{profile.name}</span>
             <span class="rounded-sm bg-white/10 px-2 py-1 text-xs">
               {statusLabel(profile)}
@@ -380,16 +518,26 @@
               </Button>
             </div>
           </div>
-          <span class="break-all text-xs text-textcolor2">{profile.id}</span>
+          {#if !profile.id.startsWith('mp_')}
+            <span class="break-all text-xs text-textcolor2">{profile.id}</span>
+          {/if}
           <span class="break-all text-xs text-textcolor2">
             {providerLabel(profile.providerId)} · {modelLabel(profile)} · {requestModelLabel(profile)} ·
             {fallbackCount(profile)}
           </span>
-          <span class="text-xs text-textcolor2">
-            {language.modelProfiles.usedByColumn}: {roleListLabel(usedByRoles)}
-          </span>
         </article>
       {/each}
+      <div
+        role="presentation"
+        class="h-1 transition-all"
+        class:h-2={draggedProfileId && dragOverIndex === profiles.length}
+        class:bg-blue-500={draggedProfileId && dragOverIndex === profiles.length}
+        ondragover={(event) => {
+          event.preventDefault()
+          dragOverIndex = profiles.length
+        }}
+        ondrop={(event) => handleProfileDrop(undefined, event)}>
+      </div>
     </div>
   {/if}
 
@@ -400,7 +548,6 @@
         profile={editingProfileBaseline ?? editingProfile}
         {profiles}
         {credentials}
-        usedByRoles={editingProfile ? rolesUsingProfile(editingProfile.id) : []}
         statusText={editingProfile ? statusLabel(editingProfile) : language.modelProfiles.statusBuckets.incomplete}
         {busy}
         {commandError}

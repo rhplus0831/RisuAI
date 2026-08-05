@@ -26,7 +26,6 @@
     type ModelProfileRecordRuntimeOptions,
   } from 'src/ts/model/modelProfileRecords'
   import type { ProviderCredentialRecord, ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
-  import type { ModelRole } from 'src/ts/model/modelRoles'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { LLMFormat, type LLMFlags as LLMFlagValue, type LLMTokenizer as LLMTokenizerValue } from 'src/ts/model/types'
@@ -45,7 +44,6 @@
     profile?: ModelProfileRecord
     profiles: ModelProfileRecord[]
     credentials: ProviderCredentialRecord[]
-    usedByRoles: ModelRole[]
     statusText: string
     busy?: boolean
     commandError?: string
@@ -59,7 +57,6 @@
     profile,
     profiles = [],
     credentials = [],
-    usedByRoles = [],
     statusText,
     busy = false,
     commandError = '',
@@ -117,11 +114,6 @@
   let providerIsFirstClass = $derived(firstClassProviderIds.has(providerId))
   let drawerTitle = $derived(
     mode === 'create' ? language.modelProfiles.createProfile : language.modelProfiles.editProfile,
-  )
-  let usedByText = $derived(
-    usedByRoles.length === 0
-      ? language.modelProfiles.notUsedByRoles
-      : usedByRoles.map((role) => language.modelRoles.roles[role]).join(', '),
   )
   let isDirty = $derived(initialSnapshot !== '' && initialSnapshot !== snapshot(snapshotForSave()))
   let canSave = $derived(!busy && (mode === 'create' || isDirty))
@@ -395,7 +387,6 @@
     <div class="flex items-start justify-between gap-3 border-b border-darkborderc p-4">
       <div class="min-w-0">
         <h3 class="truncate text-xl font-semibold">{drawerTitle}</h3>
-        <span class="text-sm text-textcolor2">{language.modelProfiles.usedByColumn}: {usedByText}</span>
       </div>
       <button
         type="button"

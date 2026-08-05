@@ -52,6 +52,7 @@ vi.mock('../server/commands', () => {
     deleteModelProfileCommand: command('delete'),
     deleteProviderCredentialCommand: command('credential-delete'),
     duplicateModelProfileCommand: command('duplicate'),
+    reorderModelProfilesCommand: command('reorder'),
     updateModelProfileCommand: command('update'),
     updateModelRoleProfilesCommand: command('roles'),
     updateModelRuntimeDefaultsCommand: command('runtime'),
@@ -77,6 +78,7 @@ import {
   modelProfileProjectionFingerprint,
   providerCredentialProjectionFingerprint,
   retainPendingModelMutation,
+  reorderModelProfilesDurably,
   subscribePendingModelMutations,
   updateModelProfileDurably,
   updateModelRoleProfilesDurably,
@@ -99,6 +101,32 @@ beforeEach(() => {
 })
 
 describe('durable model-profile mutations', () => {
+  it('freezes and dispatches a durable profile reorder', async () => {
+    const profileIds = ['profile-b', 'profile-a']
+
+    await reorderModelProfilesDurably(profileIds)
+    profileIds.reverse()
+
+    expect(mutationMocks.staged).toEqual([
+      {
+        key: 'model-profiles',
+        intent: {
+          version: 1,
+          requests: [
+            {
+              method: 'POST',
+              path: '/model-profiles/reorder',
+              body: { profileIds: ['profile-b', 'profile-a'] },
+            },
+          ],
+        },
+      },
+    ])
+    expect(mutationMocks.commandCalls).toEqual([
+      { name: 'reorder', input: { baseRevision: 41, profileIds: ['profile-b', 'profile-a'] } },
+    ])
+  })
+
   it('freezes every replay body and dispatches the matching command', async () => {
     const profile = { id: 'profile-a', name: 'Profile A', providerOptions: { credentialId: 'credential-a' } }
     const expectedProfile = { ...profile, name: 'Old Profile' }
@@ -400,5 +428,27 @@ describe('durable model-profile mutations', () => {
         { modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'server-id' } } },
       ),
     ).toBe(true)
+    expect(
+      isPendingModelMutationProjectionApplied(
+        { kind: 'profile-reorder', profileIds: ['profile-b', 'profile-a'] },
+        {
+          modelProfiles: [
+            { id: 'profile-b', name: 'B' },
+            { id: 'profile-a', name: 'A' },
+          ],
+        },
+      ),
+    ).toBe(true)
+    expect(
+      isPendingModelMutationProjectionApplied(
+        { kind: 'profile-reorder', profileIds: ['profile-b', 'profile-a'] },
+        {
+          modelProfiles: [
+            { id: 'profile-a', name: 'A' },
+            { id: 'profile-b', name: 'B' },
+          ],
+        },
+      ),
+    ).toBe(false)
   })
 })

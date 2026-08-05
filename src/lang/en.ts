@@ -2765,6 +2765,9 @@ export const languageEnglish = {
     deleteProfileConfirm: (name: string) => `Delete "${name}"?`,
     deleteProfileReassignConfirm: (name: string, roles: string) =>
       `Delete "${name}"? Roles using it will be reassigned: ${roles}.`,
+    profileUsedByModelPresets: (name: string, presets: string) =>
+      `Cannot delete "${name}" because it is used by Model Presets: ${presets}.`,
+    dragProfile: 'Drag to reorder profile',
     bindingModes: {
       profile: 'Profile',
       inherit: 'Inherit',

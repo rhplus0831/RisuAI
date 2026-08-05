@@ -269,6 +269,7 @@ import {
   createModelProfileCommand,
   deleteModelProfileCommand,
   duplicateModelProfileCommand,
+  reorderModelProfilesCommand,
   updateModelProfileCommand,
   updateModelRoleProfilesCommand,
   updateModelRuntimeDefaultsCommand,
@@ -2495,6 +2496,29 @@ export function registerCommandRoutes(
       const body = req.body ?? {}
       const baseRevision = readBaseRevision(body)
       const result = convertLegacyModelProfilesCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/model-profiles/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = reorderModelProfilesCommand({
         db,
         dataDir,
         baseRevision,
