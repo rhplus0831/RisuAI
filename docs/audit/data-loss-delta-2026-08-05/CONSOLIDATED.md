@@ -192,10 +192,13 @@ preset rows.
 
 - L1 request_history absent from in-code exclusions comment + no allowlist
   test (claude-pass1 DL2-P1-1; VERIFIED — `repository.ts:2684-2689` lists
-  three of four exclusions). Superseded by the Method §4 test (below).
+  three of four exclusions) — FIXED `7f60b8585` (exclusions registry +
+  Method §4 test).
 - L2 request_history survives device restore across lineage rotation —
-  previous install's transcripts readable (claude-pass5 DL2-P5-F1; certain).
-  Input to L1's documented-exclusion decision: include, or clear on restore.
+  previous install's transcripts readable (claude-pass5 DL2-P5-F1; certain)
+  — FIXED `7f60b8585`: DECIDED clear-on-restore (stays excluded from
+  backups as device-local telemetry; both restore branches clear it; policy
+  doc updated).
 - L3 `floatingChatInput` settings item lacks `getValue ?? true` fallback
   (claude-pass1 DL2-P1-F1; VERIFIED; display-only).
 - L4 Import stores `__RISU_SECRET_MASKED__` placeholders as literal
@@ -217,12 +220,13 @@ preset rows.
 
 ## Structural deliverable (Method §4 — land regardless)
 
-A CI test diffing the live schema table list against
-`SQLITE_BACKUP_TABLES` + portable-export coverage, with an explicit
-documented-exclusion list (currently: `push_subscriptions`,
-`database_metadata`, `command_mutation_receipts`, `request_history`,
-`schema_version`). Closes the A-5 recurrence class that produced L1/L2 and
-the charter's Pass-1 suspicion.
+LANDED `7f60b8585`: `SQLITE_BACKUP_EXCLUDED_TABLES` (table → rationale:
+`push_subscriptions`, `database_metadata`, `command_mutation_receipts`,
+`request_history`, `schema_version`) exported beside the allowlist, plus a
+backups test that enumerates the production schema and fails on any table
+in neither set, in both sets, or stale in either. Closes the A-5 recurrence
+class that produced L1/L2 and the charter's Pass-1 suspicion. (The
+enumeration confirmed zero unclassified tables at landing time.)
 
 ## Suggested remediation order
 
