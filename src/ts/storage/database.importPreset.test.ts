@@ -24,7 +24,13 @@ vi.mock('../process/modules', async (importActual) => {
 import * as fflate from 'fflate'
 import { encode as encodeMsgpack } from 'msgpackr/index-no-eval'
 import { encryptBuffer } from '../util'
-import { downloadPreset, importPreset, presetTemplate, resetPendingPresetMutationsForTests } from './database.svelte'
+import {
+  addImportedLegacyPreset,
+  downloadPreset,
+  importPreset,
+  presetTemplate,
+  resetPendingPresetMutationsForTests,
+} from './database.svelte'
 import { clearCachedServerCommandRevision, setServerCommandSuccessReconciler } from '../server/commands'
 import {
   clearPendingMutationOutbox,
@@ -295,7 +301,7 @@ describe('importPreset warm-path logging (L37)', () => {
     }
   })
 
-  it('splits a full legacy binary preset into model and prompt presets without dropping runtime fields', async () => {
+  it('imports a full legacy binary preset as prompt-only and excludes its model selection', async () => {
     const calls = stubCommandFetch()
     const file = await buildRisupresetFile({
       id: 'legacy-source-id',
@@ -311,17 +317,7 @@ describe('importPreset warm-path logging (L37)', () => {
 
     await importPreset({ name: 'legacy-full.risupreset', data: file })
 
-    expect(getResourceDatabase().modelPresets).toHaveLength(1)
-    expect(getResourceDatabase().modelPresets[0]).toMatchObject({
-      name: 'Legacy Full',
-      apiType: 'openai',
-      aiModel: 'gpt-4o',
-      openrouterRequestModel: 'openai/gpt-4o',
-      temperature: 42,
-      maxContext: 16000,
-    })
-    expect(getResourceDatabase().modelPresets[0].id).not.toBe('legacy-source-id')
-
+    expect(getResourceDatabase().modelPresets).toHaveLength(0)
     expect(getResourceDatabase().promptPresets).toHaveLength(1)
     expect(getResourceDatabase().promptPresets[0]).toMatchObject({
       name: 'Legacy Full',
@@ -329,25 +325,26 @@ describe('importPreset warm-path logging (L37)', () => {
       jailbreak: 'Legacy jailbreak',
       temperature: 42,
       maxContext: 16000,
-      overrideModelParameters: true,
     })
-    expect(getResourceDatabase().promptPresets[0].id).not.toBe('legacy-source-id')
+    expect(getResourceDatabase().promptPresets[0].id).toBe('legacy-source-id')
+    expect(getResourceDatabase().promptPresets[0]).not.toHaveProperty('apiType')
+    expect(getResourceDatabase().promptPresets[0]).not.toHaveProperty('aiModel')
+    expect(getResourceDatabase().promptPresets[0]).not.toHaveProperty('openrouterRequestModel')
+    expect(getResourceDatabase().promptPresets[0]).not.toHaveProperty('overrideModelParameters')
 
     await vi.waitFor(() => {
-      expect(calls.filter((call) => call.url.endsWith('/model-presets'))).toHaveLength(1)
+      expect(calls.filter((call) => call.url.endsWith('/model-presets'))).toHaveLength(0)
       expect(calls.filter((call) => call.url.endsWith('/prompt-presets'))).toHaveLength(1)
     })
-    const [modelCommand, promptCommand] = calls.filter((call) => /\/commands\/(?:model|prompt)-presets$/.test(call.url))
-    expect(modelCommand.body.preset).toMatchObject({
-      aiModel: 'gpt-4o',
-      openrouterRequestModel: 'openai/gpt-4o',
-      maxContext: 16000,
-    })
+    const [promptCommand] = calls.filter((call) => /\/commands\/prompt-presets$/.test(call.url))
     expect(promptCommand.body.preset).toMatchObject({
       mainPrompt: 'Legacy main prompt',
-      overrideModelParameters: true,
       maxContext: 16000,
     })
+    expect(promptCommand.body.preset).not.toHaveProperty('apiType')
+    expect(promptCommand.body.preset).not.toHaveProperty('aiModel')
+    expect(promptCommand.body.preset).not.toHaveProperty('openrouterRequestModel')
+    expect(promptCommand.body.preset).not.toHaveProperty('overrideModelParameters')
   })
 
   it('imports a modern prompt export with blank redacted fields as prompt-only', async () => {
@@ -504,7 +501,7 @@ describe('importPreset warm-path logging (L37)', () => {
     })
   })
 
-  it('retries only the unaccepted legacy-import suffix without duplicating its accepted model row', async () => {
+  it('retries only the unaccepted split-preset suffix without duplicating its accepted model row', async () => {
     await prepareDurablePresetImport('accepted-prefix')
     let revision = 50
     let recoverPrompt = false
@@ -564,15 +561,15 @@ describe('importPreset warm-path logging (L37)', () => {
       // a sibling optimistic collection before the retained prompt settles.
       getResourceDatabase().promptPresets = []
     })
-    const file = await buildRisupresetFile({
+    const legacyPreset = {
       name: 'Durable legacy import',
       apiType: 'openai',
       aiModel: 'gpt-4o',
       mainPrompt: 'Keep the queued prompt visible',
       temperature: 57,
-    })
+    } as any
 
-    await expect(importPreset({ name: 'legacy.risupreset', data: file })).resolves.toBe('queued')
+    await expect(addImportedLegacyPreset(legacyPreset)).resolves.toBe('queued')
 
     expect(modelAttempts).toBe(1)
     expect(promptAttempts).toBe(1)

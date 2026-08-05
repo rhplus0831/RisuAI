@@ -147,7 +147,6 @@ import {
   createExtractedPromptPreset,
   databaseKeyForModelPresetField,
   findEquivalentModelPreset,
-  hasModelPresetOnlyFields,
   MODEL_PRESET_FIELDS,
   PROMPT_PRESET_FIELDS,
   PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
@@ -7056,11 +7055,10 @@ export async function importPreset(
       return reportPresetImportOutcome(await addImportedPromptPreset(pr))
     }
     pre.name ??= 'Imported'
-    if (hasModelPresetOnlyFields(importedSource)) {
-      return reportPresetImportOutcome(await addImportedLegacyPreset(pre))
-    } else {
-      return reportPresetImportOutcome(await addImportedPromptPreset(pre))
-    }
+    // Prompt Settings imports are intentionally prompt-only. Legacy preset files
+    // may contain provider/model-selection fields; addImportedPromptPreset filters
+    // those fields out instead of creating or changing a model preset.
+    return reportPresetImportOutcome(await addImportedPromptPreset(pre))
   } catch {
     alertError(language.errors.noData)
     return 'failed'
