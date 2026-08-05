@@ -34,6 +34,8 @@ describe('database defaults', () => {
     expect(database.translatorSendTextAsIs).toBe(false)
     expect(database.translatorExcludeThoughts).toBe(false)
     expect(database.showSavingIcon).toBe(true)
+    expect(database.useMonacoEditorOnDesktop).toBe(false)
+    expect(database.useMonacoEditorOnMobile).toBe(false)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
     expect(database.moodLightMembership).toEqual({ characterIds: [], folders: [] })
@@ -85,6 +87,16 @@ describe('database defaults', () => {
     const database = normalizeDatabaseDefaults({ showSavingIcon: false }, { providerDefaults: false })
 
     expect(database.showSavingIcon).toBe(false)
+  })
+
+  it('preserves explicit Monaco editor preferences', () => {
+    const database = normalizeDatabaseDefaults(
+      { useMonacoEditorOnDesktop: true, useMonacoEditorOnMobile: true },
+      { providerDefaults: false },
+    )
+
+    expect(database.useMonacoEditorOnDesktop).toBe(true)
+    expect(database.useMonacoEditorOnMobile).toBe(true)
   })
 
   it('preserves an existing chat screen width', () => {

@@ -3346,8 +3346,8 @@ export function setDatabase(data: Database) {
   data.loadouts ??= []
   data.longPressToPopupEditor ??= false
   data.disableAutoPopupMessageEditor ??= false
-  data.useMonacoEditorOnDesktop ??= true
-  data.useMonacoEditorOnMobile ??= true
+  data.useMonacoEditorOnDesktop ??= false
+  data.useMonacoEditorOnMobile ??= false
   data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
   data.moodLightMembership = normalizeMoodLightMembership(data.moodLightMembership)
   changeLanguage(data.language)

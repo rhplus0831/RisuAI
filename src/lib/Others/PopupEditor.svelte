@@ -10,6 +10,8 @@
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { isMobile } from 'src/ts/platform'
+  import Check from 'src/lib/UI/GUI/CheckInput.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
 
   let languageMode = $state(popUpEditorStore.language || 'markdown')
   let previewing = $state(false)
@@ -17,10 +19,28 @@
   let MonacoComponent: typeof MonacoEditorType | null = $state(null)
   let showToggles = $state(false)
   let tokenCountRun = 0
+  let monacoLoadPromise: Promise<void> | null = null
+  let destroyed = false
   const sessionId = untrack(() => popUpEditorStore.sessionId)
-  const useMonacoEditor = untrack(() =>
-    isMobile ? getDatabase().useMonacoEditorOnMobile !== false : getDatabase().useMonacoEditorOnDesktop !== false,
+  const monacoSettingKey = isMobile ? 'useMonacoEditorOnMobile' : 'useMonacoEditorOnDesktop'
+  let useMonacoEditor = $state(
+    untrack(() =>
+      isMobile ? (getDatabase().useMonacoEditorOnMobile ?? false) : (getDatabase().useMonacoEditorOnDesktop ?? false),
+    ),
   )
+
+  function loadMonacoEditor(): void {
+    if (MonacoComponent || monacoLoadPromise) return
+    monacoLoadPromise = import('./MonacoEditor.svelte').then((module) => {
+      if (!destroyed) MonacoComponent = module.default
+    })
+  }
+
+  function setUseMonacoEditor(enabled: boolean): void {
+    useMonacoEditor = enabled
+    applyServerBackedSetting(monacoSettingKey, enabled)
+    if (enabled) loadMonacoEditor()
+  }
 
   function close(): void {
     closePopupEditorSession(sessionId)
@@ -62,13 +82,11 @@
   })
 
   onMount(() => {
-    if (!useMonacoEditor) return
-    import('./MonacoEditor.svelte').then((module) => {
-      MonacoComponent = module.default
-    })
+    if (useMonacoEditor) loadMonacoEditor()
   })
 
   onDestroy(() => {
+    destroyed = true
     tokenCountRun += 1
   })
 </script>
@@ -88,9 +106,17 @@
     tabindex="-1"
     onkeydown={handleDialogKeydown}
     onclick={(e) => e.stopPropagation()}>
-    <div class="flex items-center justify-between">
-      <h2 id="risu-popup-editor-title" class="text-xl font-bold">Popup Editor</h2>
-      <div class="flex items-center gap-2">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <h2 id="risu-popup-editor-title" class="text-xl font-bold">{language.hotkeyDesc.popupEditor}</h2>
+      <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+        {#if !previewing}
+          <Check
+            check={useMonacoEditor}
+            name={language.monacoEditor}
+            margin={false}
+            className="rounded bg-bgcolor px-2 py-1 text-sm"
+            onChange={setUseMonacoEditor} />
+        {/if}
         {#if ['markdown', 'cbs'].includes(languageMode)}
           {#if !previewing}
             <select bind:value={languageMode} class="bg-bgcolor border-none rounded px-2 py-1 text-sm">
@@ -147,6 +173,7 @@
       {:else if !useMonacoEditor}
         <textarea
           bind:value={popUpEditorStore.value}
+          aria-label={language.plainTextEditor}
           class="w-full h-full resize-none bg-bgcolor text-textcolor font-mono p-4 border-none focus:outline-hidden"
         ></textarea>
       {:else if MonacoComponent}

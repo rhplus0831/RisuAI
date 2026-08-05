@@ -368,6 +368,24 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('defaults popup editing to plain text while preserving explicit Monaco preferences', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete legacyData.useMonacoEditorOnDesktop
+    delete legacyData.useMonacoEditorOnMobile
+
+    setDatabase(legacyData)
+    expect(getDatabase().useMonacoEditorOnDesktop).toBe(false)
+    expect(getDatabase().useMonacoEditorOnMobile).toBe(false)
+
+    const monacoData = clonePlain(getDatabase())
+    monacoData.useMonacoEditorOnDesktop = true
+    monacoData.useMonacoEditorOnMobile = true
+    setDatabase(monacoData)
+    expect(getDatabase().useMonacoEditorOnDesktop).toBe(true)
+    expect(getDatabase().useMonacoEditorOnMobile).toBe(true)
+  })
+
   it('defaults the saving icon on while preserving an explicit opt-out', () => {
     seedPresetDatabase()
     const legacyData = clonePlain(getDatabase())

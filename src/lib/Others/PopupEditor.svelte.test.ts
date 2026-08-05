@@ -2,10 +2,14 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const popupMocks = vi.hoisted(() => ({
+  applyServerBackedSetting: vi.fn(),
   tokenize: vi.fn(),
 }))
 
 vi.mock('src/ts/tokenizer', () => ({ tokenize: popupMocks.tokenize }))
+vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+  applyServerBackedSetting: popupMocks.applyServerBackedSetting,
+}))
 vi.mock('src/ts/parser/parser.svelte', () => ({
   ParseMarkdown: vi.fn(async (text: string) => text),
   risuChatParser: (text: string) => text,
@@ -27,7 +31,10 @@ vi.mock('src/lang', () => ({
     customPromptTemplateToggle: 'Toggles',
     close: 'Close',
     edit: 'Edit',
+    hotkeyDesc: { popupEditor: 'Popup Editor' },
     loading: 'Loading',
+    monacoEditor: 'Monaco editor',
+    plainTextEditor: 'Plain text editor',
     preview: 'Preview',
     tokens: 'tokens',
   },
@@ -56,8 +63,9 @@ async function settle(): Promise<void> {
 }
 
 beforeEach(() => {
+  popupMocks.applyServerBackedSetting.mockReset()
   popupMocks.tokenize.mockReset()
-  replaceResourceDatabase({ globalChatVariables: {}, useMonacoEditorOnDesktop: true } as never)
+  replaceResourceDatabase({ globalChatVariables: {} } as never)
   popUpEditorStore.open = true
   popUpEditorStore.language = 'markdown'
   popUpEditorStore.value = 'first text'
@@ -76,15 +84,15 @@ afterEach(() => {
   target.remove()
 })
 
-describe('PopupEditor token count', () => {
-  it('renders a plain textarea and keeps the popup value in sync when Monaco is disabled', async () => {
-    replaceResourceDatabase({ globalChatVariables: {}, useMonacoEditorOnDesktop: false } as never)
+describe('PopupEditor', () => {
+  it('renders an accessible plain textarea by default and keeps the popup value in sync', async () => {
     component = mount(PopupEditor, { target })
     await settle()
 
     const textarea = target.querySelector<HTMLTextAreaElement>('textarea')
     expect(textarea).not.toBeNull()
     expect(textarea?.value).toBe('first text')
+    expect(textarea?.getAttribute('aria-label')).toBe('Plain text editor')
 
     textarea!.value = 'edited text'
     textarea!.dispatchEvent(new Event('input', { bubbles: true }))
@@ -94,11 +102,47 @@ describe('PopupEditor token count', () => {
   })
 
   it('uses the Monaco path when the desktop setting is enabled', async () => {
+    replaceResourceDatabase({ globalChatVariables: {}, useMonacoEditorOnDesktop: true } as never)
     component = mount(PopupEditor, { target })
     await settle()
 
     expect(target.querySelector('textarea')).toBeNull()
     await vi.waitFor(() => expect(target.textContent).not.toContain('Loading'))
+  })
+
+  it('switches between plain text and Monaco and remembers the device preference', async () => {
+    component = mount(PopupEditor, { target })
+    await settle()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('textarea')
+    const monacoToggle = target.querySelector<HTMLInputElement>('input[aria-label="Monaco editor"]')
+    expect(textarea).not.toBeNull()
+    expect(monacoToggle?.checked).toBe(false)
+
+    textarea!.value = 'edited before switching'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    monacoToggle!.click()
+    await settle()
+
+    expect(popupMocks.applyServerBackedSetting).toHaveBeenLastCalledWith('useMonacoEditorOnDesktop', true)
+    expect(target.querySelector('textarea')).toBeNull()
+    await vi.waitFor(() => expect(target.querySelector('.risu-chat')).not.toBeNull())
+    expect(target.querySelector<HTMLInputElement>('input[aria-label="Monaco editor"]')?.checked).toBe(true)
+
+    target.querySelector<HTMLInputElement>('input[aria-label="Monaco editor"]')!.click()
+    await tick()
+
+    expect(popupMocks.applyServerBackedSetting).toHaveBeenLastCalledWith('useMonacoEditorOnDesktop', false)
+    expect(target.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('edited before switching')
+  })
+
+  it('offers the Monaco toggle for non-Markdown editor modes', async () => {
+    popUpEditorStore.language = 'json'
+    component = mount(PopupEditor, { target })
+    await settle()
+
+    expect(target.querySelector('input[aria-label="Monaco editor"]')).not.toBeNull()
+    expect(target.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('first text')
   })
 
   it('ignores a slower count for older preview text', async () => {

@@ -1310,6 +1310,8 @@ export const languageEnglish = {
   disableAutoPopupMessageEditor: 'Disable Auto Popup Editor When Editing Messages',
   useMonacoEditorOnDesktop: 'Use Monaco Editor on Desktop',
   useMonacoEditorOnMobile: 'Use Monaco Editor on Mobile',
+  monacoEditor: 'Monaco editor',
+  plainTextEditor: 'Plain text editor',
   enableBlockPartialEdit: 'Enable Block Partial Edit (Hover to edit individual blocks)',
   longPressToPopupEditor: 'Long Press to Open Popup Editor',
   enableDragPartialEdit: 'Enable Drag Partial Edit (Select text to edit)',

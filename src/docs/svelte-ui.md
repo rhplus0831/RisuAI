@@ -673,8 +673,9 @@ Settings risk areas:
   context menu, contenteditable mode, and cleanup share one primitive.
 - `src/lib/Others/PopupEditor.svelte` snapshots the device-specific
   `useMonacoEditorOnDesktop` or `useMonacoEditorOnMobile` setting when a popup
-  session opens. Accessibility settings own both toggles; disabled mode renders
-  a textarea instead of lazy-loading Monaco. See
+  session opens. Plain text is the default. The popup toolbar and accessibility
+  settings both update the device preference; Monaco is lazy-loaded only when
+  enabled, while disabled mode renders a full-size textarea. See
   `src/lib/Others/PopupEditor.svelte.test.ts`.
 - Fullscreen is browser-session state rendered by
   `src/lib/Setting/Pages/Display/FullscreenToggle.svelte`, not a persisted
