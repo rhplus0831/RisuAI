@@ -48,6 +48,7 @@ import {
 } from '../../../../src/ts/process/request/serverToolProtocol.js'
 import {
   completeRequestHistory,
+  createRequestHistoryResponseCapture,
   tryBeginRequestHistory,
   type RequestHistoryHandle,
   type RequestHistoryProfileSnapshot,
@@ -452,6 +453,8 @@ function finishLegacyRequestHistory(
     response?: string
     error?: string
     metadata?: Record<string, unknown>
+    apiMetadata?: Record<string, unknown>
+    responseTruncatedBytes?: number
   },
 ): void {
   const tracker = legacyRequestHistoryByReply.get(reply)
@@ -533,14 +536,16 @@ export async function pipeStream(
     'cache-control': 'no-store',
     connection: 'keep-alive',
   })
-  let response = ''
+  const response = createRequestHistoryResponseCapture()
   try {
     for await (const frame of frames) {
-      if (frame.kind === 'token') response += frame.content ?? ''
+      if (frame.kind === 'token') response.append(frame.content ?? '')
       if (frame.kind === 'done') {
+        const captured = response.snapshot()
         finishLegacyRequestHistory(reply, {
           status: 'success',
-          response,
+          response: captured.response,
+          responseTruncatedBytes: captured.truncatedBytes,
           ...(frame.apiMetadata ? { apiMetadata: frame.apiMetadata } : {}),
           metadata: {
             ...(frame.finishReason ? { finishReason: frame.finishReason } : {}),
@@ -550,9 +555,11 @@ export async function pipeStream(
         })
       }
       if (frame.kind === 'error') {
+        const captured = response.snapshot()
         finishLegacyRequestHistory(reply, {
           status: 'error',
-          response,
+          response: captured.response,
+          responseTruncatedBytes: captured.truncatedBytes,
           error: frame.error ?? 'Provider request failed',
           ...(frame.apiMetadata ? { apiMetadata: frame.apiMetadata } : {}),
           metadata: {
@@ -569,16 +576,20 @@ export async function pipeStream(
       }
     }
   } catch (error) {
+    const captured = response.snapshot()
     finishLegacyRequestHistory(reply, {
       status: 'error',
-      response,
+      response: captured.response,
+      responseTruncatedBytes: captured.truncatedBytes,
       error: error instanceof Error ? error.message : String(error),
     })
     throw error
   } finally {
+    const captured = response.snapshot()
     finishLegacyRequestHistory(reply, {
       status: 'cancelled',
-      response,
+      response: captured.response,
+      responseTruncatedBytes: captured.truncatedBytes,
       error: 'Completion stream ended before a terminal provider response',
     })
     reply.raw.end()

@@ -28,7 +28,6 @@ const SHARED = 'b'.repeat(64)
 const ORPHAN_OLD = 'c'.repeat(64)
 const ORPHAN_FRESH = 'd'.repeat(64)
 const STRAY_OLD = 'e'.repeat(64)
-const STRAY_FRESH = 'f'.repeat(64)
 const SETTINGS_REF = '1'.repeat(64)
 const COLLECTION_REF = '2'.repeat(64)
 const CHARACTER_REF = '3'.repeat(64)
@@ -114,34 +113,53 @@ afterEach(() => {
 })
 
 describe('runAssetGc', () => {
-  it('reclaims only orphaned assets past the grace window; keeps referenced + shared + fresh', () => {
+  it('reclaims only orphaned assets past the grace window and keeps referenced plus shared assets', () => {
     const database = {
       characters: [
         { chaId: 'char-a', image: REFERENCED, emotionImages: [['happy', SHARED]] },
         { chaId: 'char-b', image: SHARED },
       ],
     }
-    seedDatabase(database, [asset(REFERENCED), asset(SHARED), asset(ORPHAN_OLD), asset(ORPHAN_FRESH)])
+    seedDatabase(database, [asset(REFERENCED), asset(SHARED), asset(ORPHAN_OLD)])
     const refFile = writeAssetFile(REFERENCED, OLD_MTIME)
     const sharedFile = writeAssetFile(SHARED, OLD_MTIME)
     const orphanOldFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
-    const orphanFreshFile = writeAssetFile(ORPHAN_FRESH, FRESH_MTIME)
 
     const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
-    expect(result.skippedByGrace).toBe(1)
+    expect(result.skippedByGrace).toBe(0)
     expect(existsSync(orphanOldFile)).toBe(false)
 
     expect(existsSync(refFile)).toBe(true)
     expect(existsSync(sharedFile)).toBe(true)
-    expect(existsSync(orphanFreshFile)).toBe(true)
 
     expect(
       getAllAssetMetadata(db)
         .map((a) => a.id)
         .sort(),
-    ).toEqual([REFERENCED, SHARED, ORPHAN_FRESH].sort())
+    ).toEqual([REFERENCED, SHARED].sort())
+  })
+
+  it('defers old orphan reclamation while uploads are active and converges after quiescence', () => {
+    seedDatabase({ characters: [{ chaId: 'char-a', image: REFERENCED }] }, [asset(REFERENCED), asset(ORPHAN_OLD)])
+    const recentReferencedFile = writeAssetFile(REFERENCED, FRESH_MTIME)
+    const oldStagedFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
+
+    const active = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+
+    expect(active.deletedAssetIds).toEqual([])
+    expect(active.skippedByGrace).toBe(1)
+    expect(existsSync(oldStagedFile)).toBe(true)
+
+    const idle = runAssetGc(dataDir, {
+      db,
+      graceMs: GRACE_MS,
+      now: () => NOW + GRACE_MS + 60_000,
+    })
+    expect(idle.deletedAssetIds).toEqual([ORPHAN_OLD])
+    expect(existsSync(oldStagedFile)).toBe(false)
+    expect(existsSync(recentReferencedFile)).toBe(true)
   })
 
   it('never deletes a just-uploaded (within-grace) asset even if not yet referenced', () => {
@@ -187,13 +205,11 @@ describe('runAssetGc', () => {
   it('sweeps stray, unreferenced, grace-aged files with no metadata entry', () => {
     seedDatabase({ characters: [] }, [])
     const strayOld = writeAssetFile(STRAY_OLD, OLD_MTIME)
-    const strayFresh = writeAssetFile(STRAY_FRESH, FRESH_MTIME)
 
     const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedStrayFiles).toEqual([`${STRAY_OLD}.png`])
     expect(existsSync(strayOld)).toBe(false)
-    expect(existsSync(strayFresh)).toBe(true)
   })
 
   it('is a no-op when nothing is reclaimed', () => {

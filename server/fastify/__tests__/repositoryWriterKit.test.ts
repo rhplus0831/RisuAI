@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -8,6 +8,7 @@ import {
   deleteCharacterRow,
   deletePluginStorageKey,
   loadPersisted,
+  replaceAllCharactersInTable,
   writePersistedWithMessages,
   writePluginStorageKey,
   writeSettingsOnly,
@@ -17,6 +18,11 @@ import {
   writeSingleCollectionRow,
   writeSingleCollectionTable,
 } from '../src/repository.js'
+import {
+  getGreetingTranslation,
+  sourceHash,
+  upsertGreetingTranslation,
+} from '../src/translation/greetingTranslationStore.js'
 
 // Targeted writer kit: each writer must touch exactly its rows and leave every
 // unrelated character / chat / collection rowid stable. A SQLite rowid only
@@ -111,11 +117,64 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   db.close()
   rmSync(dataDir, { recursive: true, force: true })
 })
 
 describe('targeted writer kit', () => {
+  it('broad character rewrites drop poisoned greeting cache rows but preserve valid rows', () => {
+    const validTranslation = {
+      text: 'translated',
+      source: 'raw' as const,
+      sourceHash: sourceHash('source'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google' as const,
+      settingsHash: 'valid-settings',
+      updatedAt: 123,
+    }
+    upsertGreetingTranslation(db, 'char-a', -1, validTranslation)
+    db.prepare(
+      `INSERT INTO greeting_translations
+       (character_id, greeting_index, settings_hash, source_hash, translation_json, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'char-a',
+      0,
+      'poisoned-settings',
+      sourceHash('poisoned'),
+      JSON.stringify({ ...validTranslation, settingsHash: 'poisoned-settings', translatorType: 'future-provider' }),
+      123,
+    )
+    const database = loadPersisted(db, dataDir).database as { characters: Array<Record<string, unknown>> }
+    database.characters[0].name = 'A rewritten'
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    replaceAllCharactersInTable(db, database)
+
+    expect(
+      (loadPersisted(db, dataDir).database as { characters: Array<Record<string, unknown>> }).characters[0].name,
+    ).toBe('A rewritten')
+    expect(getGreetingTranslation(db, 'char-a', -1, 'valid-settings')?.translation).toEqual(validTranslation)
+    expect(
+      db
+        .prepare(
+          `SELECT 1 FROM greeting_translations
+           WHERE character_id = ? AND greeting_index = ? AND settings_hash = ?`,
+        )
+        .get('char-a', 0, 'poisoned-settings'),
+    ).toBeUndefined()
+    expect(warning).toHaveBeenCalledTimes(1)
+    expect(warning).toHaveBeenCalledWith(
+      'Dropped invalid greeting translation cache rows during broad character rewrite',
+      {
+        droppedKeys: [{ characterId: 'char-a', greetingIndex: 0, settingsHash: 'poisoned-settings' }],
+      },
+    )
+    warning.mockRestore()
+  })
+
   it('writeSettingsOnly rewrites only the settings row', () => {
     const charsBefore = rowids('characters', 'id')
     const chatsBefore = rowids('chats', 'id')

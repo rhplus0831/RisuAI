@@ -373,11 +373,33 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
   const report = buildAssetGcRisuSaveAssetReport(opts.db, assets)
   result.scannedOrphans = report.orphaned.length
 
+  const dir = assetsDir(dataDir)
+  let entries: string[] = []
+  try {
+    entries = fs.readdirSync(dir)
+  } catch {
+    entries = []
+  }
+  // An import can stage assets for much longer than the per-file grace of its
+  // earliest upload. Any recent upload means that staging is still active, so
+  // defer all orphan reclamation for this sweep; ordinary mtime aging makes the
+  // GC converge automatically after uploads become quiescent.
+  const uploadActive = entries.some((name) => {
+    const id = name.replace(/\.[^.]+$/, '')
+    if (!isValidAssetId(id)) return false
+    const age = fileAgeMs(path.join(dir, name), now)
+    return age !== null && age < graceMs
+  })
+
   const referencedIds = new Set(report.referenced.map((reference) => reference.id))
   const deletedIds = new Set<string>()
   const filesToDelete: string[] = []
 
   for (const orphan of report.orphaned) {
+    if (uploadActive) {
+      result.skippedByGrace++
+      continue
+    }
     const file = assetPath(dataDir, orphan)
     const age = fileAgeMs(file, now)
     if (age === null) {
@@ -407,17 +429,14 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
   }
 
   const storedIds = new Set(assets.map((asset) => asset.id))
-  const dir = assetsDir(dataDir)
-  let entries: string[] = []
-  try {
-    entries = fs.readdirSync(dir)
-  } catch {
-    entries = []
-  }
   for (const name of entries) {
     const id = name.replace(/\.[^.]+$/, '')
     if (!isValidAssetId(id)) continue
     if (storedIds.has(id) || referencedIds.has(id) || deletedIds.has(id)) continue
+    if (uploadActive) {
+      result.skippedByGrace++
+      continue
+    }
     const file = path.join(dir, name)
     const age = fileAgeMs(file, now)
     if (age === null) continue

@@ -19,8 +19,10 @@ import { attachAbort } from './requestAbort.js'
 import { loadServerIntentCompletionSettings } from './repository.js'
 import {
   completeRequestHistory,
+  createRequestHistoryResponseCapture,
   requestHistoryProfileSnapshot,
   tryBeginRequestHistory,
+  type RequestHistoryCapturedResponse,
   type RequestHistoryHandle,
 } from './requestHistory.js'
 
@@ -161,22 +163,26 @@ export async function handleOllamaCloudToolProxy(
     reply.code(upstream.status)
 
     if (!upstream.body) {
-      completeOllamaCloudHistory(historyHandle, upstream, '')
+      completeOllamaCloudHistory(historyHandle, upstream, {
+        response: '',
+        responseCharacters: 0,
+        truncatedBytes: 0,
+      })
       await reply.send()
       return
     }
 
     const stream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0])
     const decoder = new StringDecoder('utf8')
-    let response = ''
+    const response = createRequestHistoryResponseCapture()
     stream.on('data', (chunk: Uint8Array) => {
       refresh()
-      response += decoder.write(chunk)
+      response.append(decoder.write(chunk))
     })
     reply.send(stream)
     await finished(stream, { cleanup: true })
-    response += decoder.end()
-    completeOllamaCloudHistory(historyHandle, upstream, response)
+    response.append(decoder.end())
+    completeOllamaCloudHistory(historyHandle, upstream, response.snapshot())
   } catch (error) {
     completeRequestHistory(historyHandle, {
       status: signal.aborted ? 'cancelled' : 'error',
@@ -310,16 +316,21 @@ function ollamaCloudPrompt(protocol: OllamaCloudToolProtocol, payload: JsonRecor
   }
 }
 
-function completeOllamaCloudHistory(handle: RequestHistoryHandle | null, upstream: Response, response: string): void {
+function completeOllamaCloudHistory(
+  handle: RequestHistoryHandle | null,
+  upstream: Response,
+  captured: RequestHistoryCapturedResponse,
+): void {
   completeRequestHistory(handle, {
     status: upstream.ok ? 'success' : 'error',
-    response,
+    response: captured.response,
+    responseTruncatedBytes: captured.truncatedBytes,
     ...(upstream.ok ? {} : { error: `Ollama Cloud returned HTTP ${upstream.status}` }),
     metadata: {
       providerStatus: upstream.status,
       ...(upstream.statusText ? { providerStatusText: upstream.statusText } : {}),
       ...(upstream.headers.get('content-type') ? { responseContentType: upstream.headers.get('content-type') } : {}),
-      responseCharacters: response.length,
+      responseCharacters: captured.responseCharacters,
     },
   })
 }

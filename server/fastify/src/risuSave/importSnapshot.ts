@@ -244,13 +244,32 @@ function normalizeImportDatabase(database: unknown): RisuSaveImportDatabaseNorma
   const extracted = extractPortableMetadata(database)
   assertRecognizedImportDatabase(extracted.database)
   rejectUnsupportedGroupCharacters(extracted.database)
-  const portable = extractPortableGreetingTranslations(extracted.database)
-  const target = normalizeImportDatabaseShape(portable.database)
+  assertPortableGreetingTranslationCharacterIds(extracted.database)
+  const target = normalizeImportDatabaseShape(extracted.database)
+  const portable = extractPortableGreetingTranslations(target)
   return {
-    database: target,
+    database: portable.database,
     portableMetadata: extracted.portableMetadata,
     greetingTranslations: portable.rows,
     incompleteChatCount: normalizeImportedChatGenerationSettings(target),
+  }
+}
+
+function assertPortableGreetingTranslationCharacterIds(database: JsonRecord): void {
+  if (!Array.isArray(database.characters)) return
+  for (let characterIndex = 0; characterIndex < database.characters.length; characterIndex += 1) {
+    const character = database.characters[characterIndex]
+    if (!isJsonRecord(character)) continue
+    const portable = character[GREETING_TRANSLATIONS_PORTABLE_FIELD]
+    if (
+      Array.isArray(portable) &&
+      portable.length > 0 &&
+      (typeof character.chaId !== 'string' || character.chaId.trim() === '')
+    ) {
+      throw new ValidationError(
+        `database.characters[${characterIndex}].chaId must be a non-empty string when greeting translations exist`,
+      )
+    }
   }
 }
 

@@ -14,6 +14,12 @@ export interface GreetingTranslationRow {
   updatedAt: number
 }
 
+export interface GreetingTranslationKey {
+  characterId: string
+  greetingIndex: number
+  settingsHash: string
+}
+
 export interface PortableGreetingTranslation {
   greetingIndex: number
   settingsHash: string
@@ -227,6 +233,34 @@ export function listAllGreetingTranslations(db: DatabaseSync): GreetingTranslati
     )
     .all() as unknown as StoredGreetingTranslationRow[]
   return rows.map(rowFromStored)
+}
+
+export function listGreetingTranslationsForRewrite(db: DatabaseSync): {
+  rows: GreetingTranslationRow[]
+  droppedKeys: GreetingTranslationKey[]
+} {
+  const stored = db
+    .prepare(
+      `SELECT character_id, greeting_index, settings_hash, source_hash, translation_json, updated_at
+       FROM greeting_translations
+       ORDER BY character_id, greeting_index, settings_hash`,
+    )
+    .all() as unknown as StoredGreetingTranslationRow[]
+  const rows: GreetingTranslationRow[] = []
+  const droppedKeys: GreetingTranslationKey[] = []
+  for (const row of stored) {
+    try {
+      rows.push(rowFromStored(row))
+    } catch (error) {
+      if (!(error instanceof GreetingTranslationValidationError)) throw error
+      droppedKeys.push({
+        characterId: row.character_id,
+        greetingIndex: row.greeting_index,
+        settingsHash: row.settings_hash,
+      })
+    }
+  }
+  return { rows, droppedKeys }
 }
 
 export function upsertGreetingTranslation(

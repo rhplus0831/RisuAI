@@ -7,6 +7,13 @@ import {
   getRequestHistoryRecord,
   listRequestHistory,
   pruneRequestHistory,
+  REQUEST_HISTORY_AUXILIARY_JSON_MAX_BYTES,
+  REQUEST_HISTORY_API_METADATA_MAX_BYTES,
+  REQUEST_HISTORY_ERROR_MAX_BYTES,
+  REQUEST_HISTORY_METADATA_MAX_BYTES,
+  REQUEST_HISTORY_PROMPT_MAX_BYTES,
+  REQUEST_HISTORY_RESPONSE_MAX_BYTES,
+  REQUEST_HISTORY_SOURCE_MAX_BYTES,
   requestHistoryProfileSnapshot,
   wrapRequestHistoryFrames,
   type RequestHistoryProfileSnapshot,
@@ -147,6 +154,116 @@ describe('request history repository', () => {
       },
       apiMetadata: { usage: { inputTokens: 5, outputTokens: 2 } },
     })
+  })
+
+  it('caps UTF-8 history fields and exposes honest truncation metadata', async () => {
+    const handle = beginRequestHistory({
+      db,
+      limit: 5,
+      id: 'bounded',
+      startedAt: 100,
+      source: 's'.repeat(REQUEST_HISTORY_SOURCE_MAX_BYTES + 10),
+      profile: { ...profile, requestModel: 'r'.repeat(REQUEST_HISTORY_AUXILIARY_JSON_MAX_BYTES) },
+      prompt: { content: '😀'.repeat(Math.ceil(REQUEST_HISTORY_PROMPT_MAX_BYTES / 4) + 100) },
+      context: { characterName: 'c'.repeat(REQUEST_HISTORY_AUXILIARY_JSON_MAX_BYTES) },
+      toggles: { oversized: 't'.repeat(REQUEST_HISTORY_AUXILIARY_JSON_MAX_BYTES) },
+      metadata: { beginPayload: 'm'.repeat(REQUEST_HISTORY_METADATA_MAX_BYTES) },
+    })
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      yield { kind: 'token', content: '가'.repeat(Math.ceil(REQUEST_HISTORY_RESPONSE_MAX_BYTES / 3)) }
+      yield { kind: 'token', content: 'tail-that-must-not-grow-the-capture' }
+      yield {
+        kind: 'error',
+        error: 'e'.repeat(REQUEST_HISTORY_ERROR_MAX_BYTES + 100),
+        apiMetadata: { raw: 'a'.repeat(REQUEST_HISTORY_API_METADATA_MAX_BYTES) },
+      }
+    }
+
+    for await (const _frame of wrapRequestHistoryFrames(frames(), handle, new AbortController().signal)) {
+      // Drain the provider frames; capture must remain transparent to callers.
+    }
+
+    const record = getRequestHistoryRecord(db, 'bounded')
+    expect(Buffer.byteLength(record?.source ?? '', 'utf8')).toBe(REQUEST_HISTORY_SOURCE_MAX_BYTES)
+    expect(record?.profile.requestModel.length).toBeLessThan(REQUEST_HISTORY_AUXILIARY_JSON_MAX_BYTES)
+    expect(record?.context?.characterName?.length).toBeLessThan(REQUEST_HISTORY_AUXILIARY_JSON_MAX_BYTES)
+    expect(record?.toggles).toMatchObject({ requestHistoryTruncated: 'true' })
+    expect(record?.prompt).toMatchObject({ requestHistoryTruncated: true })
+    expect(Buffer.byteLength(record?.response ?? '', 'utf8')).toBeLessThanOrEqual(REQUEST_HISTORY_RESPONSE_MAX_BYTES)
+    expect(record?.response.endsWith('\ufffd')).toBe(false)
+    expect(Buffer.byteLength(record?.error ?? '', 'utf8')).toBeLessThanOrEqual(REQUEST_HISTORY_ERROR_MAX_BYTES)
+    expect(record?.apiMetadata).toMatchObject({ requestHistoryTruncated: true })
+    expect(record?.metadata.requestHistoryTruncation).toMatchObject({
+      source: { originalBytes: expect.any(Number), storedBytes: expect.any(Number), truncatedBytes: 10 },
+      profile: {
+        originalBytes: expect.any(Number),
+        storedBytes: expect.any(Number),
+        truncatedBytes: expect.any(Number),
+      },
+      prompt: {
+        originalBytes: expect.any(Number),
+        storedBytes: expect.any(Number),
+        truncatedBytes: expect.any(Number),
+      },
+      context: {
+        originalBytes: expect.any(Number),
+        storedBytes: expect.any(Number),
+        truncatedBytes: expect.any(Number),
+      },
+      toggles: {
+        originalBytes: expect.any(Number),
+        storedBytes: expect.any(Number),
+        truncatedBytes: expect.any(Number),
+      },
+      response: {
+        originalBytes: expect.any(Number),
+        storedBytes: REQUEST_HISTORY_RESPONSE_MAX_BYTES,
+        truncatedBytes: expect.any(Number),
+      },
+      metadata: {
+        originalBytes: expect.any(Number),
+        storedBytes: expect.any(Number),
+        truncatedBytes: expect.any(Number),
+      },
+      apiMetadata: {
+        originalBytes: expect.any(Number),
+        storedBytes: expect.any(Number),
+        truncatedBytes: expect.any(Number),
+      },
+      error: { originalBytes: expect.any(Number), storedBytes: expect.any(Number), truncatedBytes: 100 },
+    })
+  })
+
+  it('prunes oldest rows when their retained UTF-8 bytes exceed the total budget', () => {
+    for (let index = 1; index <= 3; index += 1) {
+      const handle = beginRequestHistory({
+        db,
+        limit: 10,
+        id: `byte-record-${index}`,
+        startedAt: index,
+        source: 'completion',
+        profile,
+        prompt: [{ role: 'user', content: `prompt-${index}` }],
+      })
+      completeRequestHistory(handle, { status: 'success', response: String(index).repeat(400), completedAt: index + 1 })
+    }
+    const rows = db
+      .prepare(
+        `SELECT id,
+                length(CAST(id AS BLOB)) + length(CAST(source AS BLOB)) +
+                length(CAST(profile_json AS BLOB)) + length(CAST(prompt_json AS BLOB)) +
+                length(CAST(COALESCE(context_json, '') AS BLOB)) +
+                length(CAST(COALESCE(toggles_json, '') AS BLOB)) +
+                length(CAST(COALESCE(response_text, '') AS BLOB)) +
+                length(CAST(metadata_json AS BLOB)) + length(CAST(api_metadata_json AS BLOB)) +
+                length(CAST(COALESCE(error_text, '') AS BLOB)) AS bytes
+         FROM request_history ORDER BY started_at DESC`,
+      )
+      .all() as Array<{ id: string; bytes: number }>
+    const newestTwoBudget = rows[0].bytes + rows[1].bytes
+
+    expect(pruneRequestHistory(db, 10, newestTwoBudget)).toBe(1)
+    expect(listRequestHistory(db, 10).map((record) => record.id)).toEqual(['byte-record-3', 'byte-record-2'])
   })
 
   it('builds a credential-free resolved-profile snapshot', () => {

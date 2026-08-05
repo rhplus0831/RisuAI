@@ -608,6 +608,99 @@ describe('server .risu fixture harness', () => {
     ).toThrow(/settingsHash must match/)
   })
 
+  it('remints duplicate character ids before attributing portable greeting rows', async () => {
+    const dataDir = makeDataDir()
+    const db = openDatabase(dataDir)
+    try {
+      const portableTranslation = (source: string, text: string) => ({
+        text,
+        source: 'raw' as const,
+        sourceHash: sourceHash(source),
+        targetLanguage: 'ko',
+        inputLanguage: 'en',
+        translatorType: 'google' as const,
+        settingsHash: 'shared-settings',
+        updatedAt: 123,
+      })
+      const decoded = decodeRisuSaveImportSnapshot(
+        encodeLegacyRisuSaveEnvelope({
+          characters: [
+            {
+              chaId: 'duplicate-character',
+              firstMessage: 'first source',
+              chats: [],
+              greetingTranslations: [
+                {
+                  greetingIndex: -1,
+                  settingsHash: 'shared-settings',
+                  translation: portableTranslation('first source', 'first translated'),
+                },
+              ],
+            },
+            {
+              chaId: 'duplicate-character',
+              firstMessage: 'second source',
+              chats: [],
+              greetingTranslations: [
+                {
+                  greetingIndex: -1,
+                  settingsHash: 'shared-settings',
+                  translation: portableTranslation('second source', 'second translated'),
+                },
+              ],
+            },
+          ],
+        }),
+      )
+      const characters = decoded.database.characters as Array<Record<string, unknown>>
+      const characterIds = characters.map((character) => character.chaId as string)
+      expect(characterIds[0]).toBe('duplicate-character')
+      expect(characterIds[1]).not.toBe('duplicate-character')
+      expect(new Set(characterIds).size).toBe(2)
+      expect(decoded.greetingTranslations.map((row) => row.characterId)).toEqual(characterIds)
+
+      await applyImport(db, dataDir, decoded.database, {
+        greetingTranslations: decoded.greetingTranslations,
+        automaticBackupRetention: 0,
+      })
+      expect(getGreetingTranslation(db, characterIds[0], -1, 'shared-settings')?.translation.text).toBe(
+        'first translated',
+      )
+      expect(getGreetingTranslation(db, characterIds[1], -1, 'shared-settings')?.translation.text).toBe(
+        'second translated',
+      )
+    } finally {
+      db.close()
+    }
+  })
+
+  it('still rejects duplicate portable greeting rows within one character', () => {
+    const translation = {
+      text: 'translated',
+      source: 'raw' as const,
+      sourceHash: sourceHash('primary'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google' as const,
+      settingsHash: 'settings-a',
+      updatedAt: 123,
+    }
+    const row = { greetingIndex: -1, settingsHash: 'settings-a', translation }
+    expect(() =>
+      decodeRisuSaveImportSnapshot(
+        encodeLegacyRisuSaveEnvelope({
+          characters: [
+            {
+              chaId: 'character-a',
+              firstMessage: 'primary',
+              greetingTranslations: [row, structuredClone(row)],
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/duplicates another greeting translation row/)
+  })
+
   it('atomically restores extracted greeting rows without retaining the portable character field', async () => {
     const dataDir = makeDataDir()
     const db = openDatabase(dataDir)

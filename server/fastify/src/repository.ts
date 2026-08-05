@@ -12,7 +12,7 @@ import { getDatabaseLineage, getDatabaseWriterMetadata, rotateDatabaseLineage } 
 import { recordTableWrite } from './protocolMetrics.js'
 import {
   GREETING_TRANSLATIONS_PORTABLE_FIELD,
-  listAllGreetingTranslations,
+  listGreetingTranslationsForRewrite,
   replaceGreetingTranslationsForImport,
   type GreetingTranslationRow,
 } from './translation/greetingTranslationStore.js'
@@ -559,7 +559,13 @@ function loadCharactersFromSqlite(db: DatabaseSync, options: { exactChatRows?: b
 
 export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown): void {
   const characters = isRecord(database) && Array.isArray(database.characters) ? database.characters : []
-  const greetingTranslations = listAllGreetingTranslations(db)
+  const greetingTranslationSnapshot = listGreetingTranslationsForRewrite(db)
+  const greetingTranslations = greetingTranslationSnapshot.rows
+  if (greetingTranslationSnapshot.droppedKeys.length > 0) {
+    console.warn('Dropped invalid greeting translation cache rows during broad character rewrite', {
+      droppedKeys: greetingTranslationSnapshot.droppedKeys,
+    })
+  }
 
   recordTableWrite('characters')
   recordTableWrite('chats')
