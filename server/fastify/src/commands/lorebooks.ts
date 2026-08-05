@@ -584,7 +584,9 @@ function repairLorebookEntry(input: unknown, label: string): LorebookEntryRecord
   if (typeof entry.id !== 'string' || entry.id.trim() === '') {
     entry.id = randomUUID()
   }
-  validateLorebookEntryRecord(entry, label)
+  // Imported state may retain author activation settings behind the inert
+  // Agent-only flag; command payload validation remains strict by default.
+  validateLorebookEntryRecord(entry, label, { allowAgentOnlyActivationFields: true })
   return entry
 }
 
@@ -607,11 +609,6 @@ function repairLorebookEntryFields(raw: JsonRecord): JsonRecord {
   const agentOnly = raw.agentOnly === true || extensions.risu_agent_only === true
   if (agentOnly) {
     repaired.agentOnly = true
-    repaired.alwaysActive = false
-    repaired.key = ''
-    repaired.secondkey = ''
-    repaired.selective = false
-    repaired.useRegex = false
   } else if (raw.agentOnly !== undefined) {
     repaired.agentOnly = false
   }
@@ -658,7 +655,11 @@ function validateGlobalLorebookRecord(record: GlobalLorebookRecord, label: strin
   }
 }
 
-function validateLorebookEntryRecord(record: JsonRecord, label: string): void {
+function validateLorebookEntryRecord(
+  record: JsonRecord,
+  label: string,
+  options: { allowAgentOnlyActivationFields?: boolean } = {},
+): void {
   for (const key of ['id', 'key', 'secondkey', 'comment', 'content', 'mode']) {
     if (typeof record[key] !== 'string') {
       throw new ValidationError(`${label}.${key} must be a string`)
@@ -682,7 +683,10 @@ function validateLorebookEntryRecord(record: JsonRecord, label: string): void {
   const extensions = readOptionalJsonObject(record.extentions ?? record.extensions)
   const agentOnly = record.agentOnly === true || extensions.risu_agent_only === true
   if (agentOnly) {
-    if (record.alwaysActive !== false || (record.key as string).trim() || (record.secondkey as string).trim()) {
+    if (
+      !options.allowAgentOnlyActivationFields &&
+      (record.alwaysActive !== false || (record.key as string).trim() || (record.secondkey as string).trim())
+    ) {
       throw new ValidationError(`${label} Agent-only entries must disable Always Active and have no activation keys`)
     }
     if (record.mode === 'folder' || record.mode === 'child') {

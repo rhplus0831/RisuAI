@@ -70,7 +70,7 @@ describe('command create lorebook identity repair', () => {
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('module.lorebook'))
   })
 
-  it('repairs portable Agent-only markers into inert entries', () => {
+  it('preserves activation fields while repairing portable Agent-only markers', () => {
     const chat = createChatRecord({
       id: 'chat-agent-input',
       name: 'Chat',
@@ -79,10 +79,18 @@ describe('command create lorebook identity repair', () => {
       localLore: [
         {
           ...lorebookEntry('agent-reference'),
-          key: 'must-be-cleared',
-          secondkey: 'also-cleared',
+          key: 'must-be-preserved',
+          secondkey: 'also-preserved',
           alwaysActive: true,
           selective: true,
+          useRegex: true,
+          extensions: { risu_agent_only: true },
+        },
+        {
+          ...lorebookEntry('native-agent-reference'),
+          key: '',
+          agentOnly: true,
+          useRegex: false,
           extentions: { risu_agent_only: true },
         },
       ],
@@ -90,10 +98,21 @@ describe('command create lorebook identity repair', () => {
 
     expect(chat.localLore[0]).toMatchObject({
       agentOnly: true,
+      key: 'must-be-preserved',
+      secondkey: 'also-preserved',
+      alwaysActive: true,
+      selective: true,
+      useRegex: true,
+      extensions: { risu_agent_only: true },
+    })
+    expect(chat.localLore[1]).toMatchObject({
+      agentOnly: true,
       key: '',
       secondkey: '',
       alwaysActive: false,
       selective: false,
+      useRegex: false,
+      extentions: { risu_agent_only: true },
     })
   })
 

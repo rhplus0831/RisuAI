@@ -254,6 +254,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 
 import {
   CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR,
+  createBaseV3,
   exportCharacterCard,
   importCharacter,
   importCharacterProcess,
@@ -428,7 +429,7 @@ describe('PNG character card import', () => {
     expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledWith(imported, expect.anything())
   })
 
-  it('imports portable Agent-only lorebook entries as inert named inputs', async () => {
+  it('preserves imported Agent-only activation fields and leaves native empty fields unchanged', async () => {
     const card = {
       spec: 'chara_card_v2',
       spec_version: '2.0',
@@ -450,14 +451,25 @@ describe('PNG character card import', () => {
         character_book: {
           entries: [
             {
-              keys: ['must-be-cleared'],
-              secondary_keys: ['also-cleared'],
+              keys: ['/must-be-preserved/'],
+              secondary_keys: ['also-preserved'],
               content: 'Agent reference',
               name: 'Reference Notes',
               insertion_order: 1,
               constant: true,
               selective: true,
               use_regex: true,
+              extensions: { risu_agent_only: true },
+            },
+            {
+              keys: [],
+              secondary_keys: [],
+              content: 'Native agent reference',
+              name: 'Native Reference Notes',
+              insertion_order: 2,
+              constant: false,
+              selective: false,
+              use_regex: false,
               extensions: { risu_agent_only: true },
             },
           ],
@@ -467,8 +479,18 @@ describe('PNG character card import', () => {
 
     await importCharacterProcess({ name: 'agent-input.json', data: Buffer.from(JSON.stringify(card)) })
 
+    expect(dbState.db.characters[0].globalLore).toHaveLength(2)
     expect(dbState.db.characters[0].globalLore[0]).toMatchObject({
       comment: 'Reference Notes',
+      agentOnly: true,
+      key: '/must-be-preserved/',
+      secondkey: 'also-preserved',
+      alwaysActive: true,
+      selective: true,
+      useRegex: true,
+    })
+    expect(dbState.db.characters[0].globalLore[1]).toMatchObject({
+      comment: 'Native Reference Notes',
       agentOnly: true,
       key: '',
       secondkey: '',
@@ -692,13 +714,65 @@ describe('v2 character card export assets', () => {
     ])
   })
 
-  it('exports Agent-only lorebook entries with a portable marker and no activation path', async () => {
+  it('exports Agent-only lorebook entries without erasing preserved activation fields', async () => {
     const char = createExportCharacter()
     char.globalLore = [
       {
         id: 'agent-reference',
-        key: 'must-not-export',
-        secondkey: 'also-must-not-export',
+        key: 'must-be-preserved',
+        secondkey: 'also-preserved',
+        insertorder: 100,
+        comment: 'Reference Notes',
+        content: 'Agent reference',
+        mode: 'normal',
+        alwaysActive: true,
+        selective: true,
+        useRegex: true,
+        agentOnly: true,
+      },
+      {
+        id: 'native-agent-reference',
+        key: '',
+        secondkey: '',
+        insertorder: 100,
+        comment: 'Native Reference Notes',
+        content: 'Native agent reference',
+        mode: 'normal',
+        alwaysActive: false,
+        selective: false,
+        useRegex: false,
+        agentOnly: true,
+      },
+    ]
+    globalApiState.readImage.mockImplementation(async (key: string) => readExportFixtureAsset(key))
+
+    await exportCharacterCard(char, 'json', { spec: 'v2' })
+
+    const exportedBytes = globalApiState.downloadFile.mock.calls[0][1] as Uint8Array
+    const entries = JSON.parse(Buffer.from(exportedBytes).toString('utf-8')).data.character_book.entries
+    expect(entries[0]).toMatchObject({
+      keys: ['must-be-preserved'],
+      secondary_keys: ['also-preserved'],
+      constant: true,
+      selective: true,
+      extensions: { risu_agent_only: true },
+    })
+    expect(entries[1]).toMatchObject({
+      keys: [],
+      constant: false,
+      selective: false,
+      extensions: { risu_agent_only: true },
+    })
+    expect(entries[1].secondary_keys).toBeUndefined()
+  })
+
+  it('preserves Agent-only activation fields in v3 card output', () => {
+    const char = createExportCharacter()
+    char.globalLore = [
+      {
+        id: 'agent-reference',
+        key: '/must-be-preserved/',
+        secondkey: 'also-preserved',
         insertorder: 100,
         comment: 'Reference Notes',
         content: 'Agent reference',
@@ -709,19 +783,15 @@ describe('v2 character card export assets', () => {
         agentOnly: true,
       },
     ]
-    globalApiState.readImage.mockImplementation(async (key: string) => readExportFixtureAsset(key))
 
-    await exportCharacterCard(char, 'json', { spec: 'v2' })
-
-    const exportedBytes = globalApiState.downloadFile.mock.calls[0][1] as Uint8Array
-    const entry = JSON.parse(Buffer.from(exportedBytes).toString('utf-8')).data.character_book.entries[0]
-    expect(entry).toMatchObject({
-      keys: [],
-      constant: false,
-      selective: false,
+    expect(createBaseV3(char).data.character_book?.entries[0]).toMatchObject({
+      keys: ['/must-be-preserved/'],
+      secondary_keys: ['also-preserved'],
+      constant: true,
+      selective: true,
+      use_regex: true,
       extensions: { risu_agent_only: true },
     })
-    expect(entry.secondary_keys).toBeUndefined()
   })
 })
 
