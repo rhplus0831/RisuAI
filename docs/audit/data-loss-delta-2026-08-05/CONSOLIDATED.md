@@ -34,7 +34,10 @@ verification; one charter hypothesis was refuted (D1).
 
 ## HIGH — fix before the beta tag
 
-### C1 — Input-trigger Lua lore writes are silently dropped
+All three RESOLVED 2026-08-05: C1+C2 in `ce5d74b18`, C3 in `a72d0a680`
+(regression-pinned; both typechecks green).
+
+### C1 — Input-trigger Lua lore writes are silently dropped — FIXED `ce5d74b18`
 (codex-pass2 DL2-P2-1; high/certain; VERIFIED)
 `applyInputTrigger` hands the trigger a shallow copy
 (`assemble.ts:1078-1080`); `upsertLocalLoreBook` reassigns `localLore` on that
@@ -47,7 +50,7 @@ Fix direction: merge durable non-transcript fields from the trigger result
 into assembly state unconditionally; keep the conditional adoption only for
 `message`.
 
-### C2 — Legacy id-less `localLore` + Lua lore upsert kills the whole finalization, silently inline
+### C2 — Legacy id-less `localLore` + Lua lore upsert kills the whole finalization, silently inline — FIXED `ce5d74b18`
 (claude-pass2 DL2-P2-1; high, mechanism certain / precondition probable; VERIFIED)
 `validateLocalLoreEntryIds` requires every entry to carry an id and throws
 `ValidationError` (`generationChat.ts:2746-2761`), which is terminal
@@ -58,7 +61,7 @@ chats keep id-less entries indefinitely (no load-path repair).
 Fix direction: mint ids for id-less pre-existing entries at the finalization
 boundary (repair-and-continue), never reject the message persist over them.
 
-### C3 — Pre-store inline secrets survive unmasked inside preset tables
+### C3 — Pre-store inline secrets survive unmasked inside preset tables — FIXED `a72d0a680`
 (codex-pass5 DL2-P5-1; high/certain; confidentiality loss; VERIFIED)
 At the delta base, preset save copied `modelProfiles` wholesale
 (`28eb3fb66:database.svelte.ts:4948+`), when profiles could carry inline
@@ -75,14 +78,21 @@ depth; regression-pin via a pre-store fixture row.
 
 ## MEDIUM — the assembly-persistence staleness cluster (fix as one unit)
 
-### C4 — Assembly scriptstate writes overwrite newer values
+All three RESOLVED 2026-08-05 in `f4356c498`: assembly persist is strict
+(per-key chat-var freshness + live-vs-`initialMessages` fence before the
+transcript replacement); finalization drops conflicting script mutations
+individually while always persisting the assistant message, surfacing drops
+via the additive `warning` SSE event (`stale_generation_script_mutations`),
+retry metrics/logs, and a persisted-only `messagePatch`.
+
+### C4 — Assembly scriptstate writes overwrite newer values — FIXED `f4356c498`
 (codex-pass2 DL2-P2-2; certain; VERIFIED) `persistAssemblyMutations` applies
 `Object.assign(chat.scriptstate, patch)` with no per-key `before` validation
 (`generationChat.ts:1469-1477`) and reads `baseRevision` only after assembly
 (`:1439`). The finalization-path validator
 (`validateGenerationChatVarMutationsFresh`) exists but is unused here.
 
-### C5 — Full-transcript replacement fallback clobbers concurrent writes
+### C5 — Full-transcript replacement fallback clobbers concurrent writes — FIXED `f4356c498`
 (codex-pass2 DL2-P2-3 + claude-pass2 DL2-P2-F2; cross-track agreement;
 certain; VERIFIED) When append isn't possible, persistence calls
 `replaceActiveChatMessages` with only id-uniqueness checks
@@ -91,7 +101,7 @@ commits widened the trigger surface (agent-preset before-main input modifier
 with awaited LLM calls; id-less `@@inject` fallback,
 `assemble.ts:1815-1831`).
 
-### C6 — Freshness checks that DO exist fail the whole generation, silently inline
+### C6 — Freshness checks that DO exist fail the whole generation, silently inline — FIXED `f4356c498`
 (claude-pass2 DL2-P2-2; certain; VERIFIED) Character-field/local-lore
 freshness runs unconditionally inside the finalization mutate
 (`generationChat.ts:2858-2867`); staleness (a routine concurrent user edit
