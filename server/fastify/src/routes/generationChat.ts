@@ -1397,6 +1397,7 @@ function persistAssemblyMutations(args: {
   eventSink: CommandEventSink
   input: AssembleInput
   mutations: AssembleMutationPayload
+  initialMessages: readonly Message[]
   submitMessages?: Message[]
   submitTranscriptChanged?: boolean
 }): number | undefined {
@@ -1456,6 +1457,11 @@ function persistAssemblyMutations(args: {
       mutate(database, targetDb) {
         const characters = normalizeAllCharacterChats(database)
         const { character, chat } = requireChatLocation(characters, args.input.chatId)
+        validateGenerationChatVarMutationsFresh({
+          chatId: args.input.chatId,
+          chat,
+          chatVarMutations: args.mutations.chatVarMutations,
+        })
         applyGenerationCharacterFieldMutationsFresh({
           characterId: character.chaId as string,
           character,
@@ -1487,6 +1493,9 @@ function persistAssemblyMutations(args: {
             canAppendAssemblyReplacement(args.mutations, replacement.length, persistedLength) &&
             appendActiveChatMessageTail(targetDb, args.input.chatId, replacement, persistedLength)
           if (!appended) {
+            if (!isDeepStrictEqual(getChatMessages(targetDb, args.input.chatId), args.initialMessages)) {
+              throw new ValidationError(`Generation assembly transcript is stale for chat ${args.input.chatId}`)
+            }
             replaceActiveChatMessages(targetDb, args.input.chatId, replacement)
           }
         } else if (persistTargetedInjects) {
@@ -1946,11 +1955,57 @@ async function resolvePostGenerationResult(args: {
 }
 
 /** Fold the post-gen derivation outputs onto the terminal `postGeneration` frame. */
+function persistedPostGenerationMutations(
+  mutations: AssembleMutationPayload,
+  persistence: AppliedGenerationScriptMutations,
+): AssembleMutationPayload {
+  const {
+    characterFieldMutations: _characterFieldMutations,
+    localLoreMutation: _localLoreMutation,
+    ...rest
+  } = mutations
+  return {
+    ...rest,
+    chatVarMutations: persistence.chatVarMutations,
+    ...(persistence.characterFieldMutations.length > 0
+      ? { characterFieldMutations: persistence.characterFieldMutations }
+      : {}),
+    ...(persistence.localLoreMutation ? { localLoreMutation: persistence.localLoreMutation } : {}),
+  }
+}
+
+function emitDroppedGenerationScriptMutationWarning(
+  emit: ((event: PromptChatEvent) => void) | undefined,
+  droppedScriptMutations: readonly GenerationScriptMutationConflict[],
+): void {
+  if (droppedScriptMutations.length === 0) return
+  emit?.({
+    type: 'warning',
+    message: 'Some server script updates were skipped because their targets changed during generation.',
+    context: {
+      kind: 'stale_generation_script_mutations',
+      droppedMutations: droppedScriptMutations,
+    },
+  })
+}
+
+function droppedGenerationScriptMutationMetricFields(
+  persistence: GenerationFinalizationPersistenceResult,
+): Record<string, unknown> {
+  return persistence.droppedScriptMutations.length > 0
+    ? {
+        droppedScriptMutationCount: persistence.droppedScriptMutations.length,
+        droppedScriptMutations: persistence.droppedScriptMutations,
+      }
+    : {}
+}
+
 function buildPostGenerationFrameBody(
   revision: number,
   postGen: Awaited<ReturnType<typeof runServerPostGeneration>> | undefined,
   messageId?: string,
   translation?: PostGenerationFrame['translation'],
+  persistence?: AppliedGenerationScriptMutations,
 ): PostGenerationFrame {
   const frame: PostGenerationFrame = {
     revision,
@@ -1958,14 +2013,15 @@ function buildPostGenerationFrameBody(
     ...(translation ? { translation } : {}),
   }
   if (postGen) {
+    const mutations = persistence ? persistedPostGenerationMutations(postGen.mutations, persistence) : postGen.mutations
     if (postGen.textChanged) frame.finalText = postGen.finalText
     if (
-      postGen.mutations.chatVarMutations.length > 0 ||
-      postGen.mutations.messageMutations.length > 0 ||
-      (postGen.mutations.characterFieldMutations?.length ?? 0) > 0 ||
-      postGen.mutations.localLoreMutation !== undefined
+      mutations.chatVarMutations.length > 0 ||
+      mutations.messageMutations.length > 0 ||
+      (mutations.characterFieldMutations?.length ?? 0) > 0 ||
+      mutations.localLoreMutation !== undefined
     ) {
-      frame.messagePatch = postGen.mutations
+      frame.messagePatch = mutations
     }
     if (postGen.resendChat) frame.resendChat = true
     if (postGen.agentPresetError) frame.agentPresetError = postGen.agentPresetError
@@ -2098,10 +2154,10 @@ async function buildPostGenerationFrame(args: {
     alternateTexts,
   })
 
-  let revision: number
+  let persistence: GenerationFinalizationPersistenceResult
   const persistStartedAt = protocolNowMs()
   try {
-    revision = persistServerGenerationResult({
+    persistence = persistServerGenerationResult({
       db: args.db,
       dataDir: args.dataDir,
       eventSink: args.eventSink,
@@ -2132,10 +2188,12 @@ async function buildPostGenerationFrame(args: {
     status: postGen ? 'inline_ok' : 'inline_raw_fallback',
     generationId: args.generationId,
     chatId: args.input.chatId,
-    revision,
+    revision: persistence.revision,
     durationMs: protocolDurationMs(persistStartedAt),
     ...(postGenMetricError ? { error: postGenMetricError } : {}),
+    ...droppedGenerationScriptMutationMetricFields(persistence),
   })
+  emitDroppedGenerationScriptMutationWarning(args.emit, persistence.droppedScriptMutations)
   if (!postGen) {
     args.emit?.({
       type: 'warning',
@@ -2160,10 +2218,11 @@ async function buildPostGenerationFrame(args: {
   })
   return {
     frame: buildPostGenerationFrameBody(
-      translationFollowup.revision ?? revision,
+      translationFollowup.revision ?? persistence.revision,
       postGen,
       messageId,
       translationFollowup.translation,
+      persistence,
     ),
     primary: message.data,
     alternates: alternateTexts,
@@ -2237,6 +2296,7 @@ async function streamAssembly(
               eventSink,
               input,
               mutations: result.mutations,
+              initialMessages: result.restoration?.messages ?? [],
               submitMessages: result.submitMessages,
               submitTranscriptChanged: result.submitTranscriptChanged,
             })
@@ -2717,11 +2777,54 @@ function validateGenerationChatVarMutationsFresh(args: {
   for (const mutation of args.chatVarMutations) {
     const before = liveChatVarMutationValue(args.chat.scriptstate?.[mutation.key])
     if (before !== mutation.before) {
-      throw new ValidationError(
-        `Generation finalization chat variable is stale for chat ${args.chatId}: ${mutation.key}`,
-      )
+      throw new ValidationError(`Generation chat variable is stale for chat ${args.chatId}: ${mutation.key}`)
     }
   }
+}
+
+type GenerationScriptMutationConflict =
+  | { scope: 'chat_variable'; key: string }
+  | { scope: 'character_field'; key: string }
+  | { scope: 'local_lore' }
+
+interface AppliedGenerationScriptMutations {
+  chatVarMutations: AssembleMutationPayload['chatVarMutations']
+  characterFieldMutations: NonNullable<AssembleMutationPayload['characterFieldMutations']>
+  localLoreMutation?: AssembleMutationPayload['localLoreMutation']
+}
+
+interface GenerationFinalizationPersistenceResult extends AppliedGenerationScriptMutations {
+  revision: number
+  droppedScriptMutations: GenerationScriptMutationConflict[]
+}
+
+function applyGenerationChatVarMutationsDroppingConflicts(args: {
+  chat: { scriptstate?: Record<string, unknown> }
+  chatVarMutations: AssembleMutationPayload['chatVarMutations']
+}): {
+  applied: AssembleMutationPayload['chatVarMutations']
+  dropped: GenerationScriptMutationConflict[]
+} {
+  const applied: AssembleMutationPayload['chatVarMutations'] = []
+  const dropped: GenerationScriptMutationConflict[] = []
+  for (const mutation of args.chatVarMutations) {
+    const before = liveChatVarMutationValue(args.chat.scriptstate?.[mutation.key])
+    if (before !== mutation.before) {
+      dropped.push({ scope: 'chat_variable', key: mutation.key })
+      continue
+    }
+    if (mutation.after === null) {
+      if (args.chat.scriptstate) delete args.chat.scriptstate[mutation.key]
+    } else {
+      args.chat.scriptstate ??= {}
+      args.chat.scriptstate[mutation.key] = mutation.after
+    }
+    applied.push(mutation)
+  }
+  if (args.chat.scriptstate && Object.keys(args.chat.scriptstate).length === 0) {
+    delete args.chat.scriptstate
+  }
+  return { applied, dropped }
 }
 
 function liveCharacterFieldValue(value: unknown): string | null {
@@ -2741,6 +2844,26 @@ function applyGenerationCharacterFieldMutationsFresh(args: {
     }
     args.character[mutation.key] = mutation.after
   }
+}
+
+function applyGenerationCharacterFieldMutationsDroppingConflicts(args: {
+  character: Record<string, unknown>
+  characterFieldMutations: AssembleMutationPayload['characterFieldMutations']
+}): {
+  applied: NonNullable<AssembleMutationPayload['characterFieldMutations']>
+  dropped: GenerationScriptMutationConflict[]
+} {
+  const applied: NonNullable<AssembleMutationPayload['characterFieldMutations']> = []
+  const dropped: GenerationScriptMutationConflict[] = []
+  for (const mutation of args.characterFieldMutations ?? []) {
+    if (liveCharacterFieldValue(args.character[mutation.key]) !== mutation.before) {
+      dropped.push({ scope: 'character_field', key: mutation.key })
+      continue
+    }
+    args.character[mutation.key] = mutation.after
+    applied.push(mutation)
+  }
+  return { applied, dropped }
 }
 
 function repairGenerationLocalLoreEntryIds(entries: unknown[]): void {
@@ -2786,6 +2909,31 @@ function applyGenerationLocalLoreMutationFresh(args: {
   args.chat.localLore = after
 }
 
+function applyGenerationLocalLoreMutationDroppingConflict(args: {
+  chat: Record<string, unknown>
+  localLoreMutation: AssembleMutationPayload['localLoreMutation']
+}): {
+  applied?: AssembleMutationPayload['localLoreMutation']
+  dropped: GenerationScriptMutationConflict[]
+} {
+  if (!args.localLoreMutation) return { dropped: [] }
+  const live = Array.isArray(args.chat.localLore) ? args.chat.localLore : []
+  if (!isDeepStrictEqual(live, args.localLoreMutation.before)) {
+    return { dropped: [{ scope: 'local_lore' }] }
+  }
+  const after = structuredClone(args.localLoreMutation.after)
+  repairGenerationLocalLoreEntryIds(after)
+  args.chat.localLore = after
+  return { applied: { before: args.localLoreMutation.before, after }, dropped: [] }
+}
+
+type GenerationFinalizationMutationExtra = Record<string, unknown> &
+  AppliedGenerationScriptMutations & {
+    chatId: string
+    messageId: string
+    droppedScriptMutations: GenerationScriptMutationConflict[]
+  }
+
 /**
  * Persist a durable generation result in one targeted command mutation against a
  * freshly read chat: apply post-gen scriptstate changes, append/replace the
@@ -2815,16 +2963,7 @@ function persistServerGenerationResult(args: {
   targetMessageId?: string
   mode?: GenerationFinalizationMode
   targetSnapshot?: GenerationFinalizationTargetSnapshot
-}): number {
-  const patch: Record<string, string | number | boolean> = {}
-  const deleteKeys: string[] = []
-  for (const mutation of args.chatVarMutations) {
-    if (mutation.after === null) {
-      deleteKeys.push(mutation.key)
-    } else {
-      patch[mutation.key] = mutation.after
-    }
-  }
+}): GenerationFinalizationPersistenceResult {
   if (args.targetSnapshot) {
     const replayRevision = readAlreadyPersistedGenerationFinalizationRevision({
       db: args.db,
@@ -2833,21 +2972,23 @@ function persistServerGenerationResult(args: {
       message: args.message,
     })
     if (replayRevision !== undefined) {
-      return replayRevision
+      return {
+        revision: replayRevision,
+        chatVarMutations: [],
+        characterFieldMutations: [],
+        droppedScriptMutations: [],
+      }
     }
   }
   const { revision: baseRevision } = getSchemaState(args.db)
-  const hasScriptstateWrite = Object.keys(patch).length > 0 || deleteKeys.length > 0
-  const hasCharacterWrite = (args.characterFieldMutations?.length ?? 0) > 0
-  const hasLocalLoreWrite = args.localLoreMutation !== undefined
   try {
-    const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
+    const result = applyTargetedCommandMutation<GenerationFinalizationMutationExtra>({
       db: args.db,
       dataDir: args.dataDir,
       baseRevision,
       eventSink: args.eventSink,
       mutationPath: 'targeted-generation',
-      chatScopedRead: { chatId: args.chatId, exactChatRow: hasLocalLoreWrite },
+      chatScopedRead: { chatId: args.chatId, exactChatRow: args.localLoreMutation !== undefined },
       mutate(database, targetDb) {
         const characters = normalizeAllCharacterChats(database)
         const { character, chat } = requireChatLocation(characters, args.chatId)
@@ -2861,32 +3002,27 @@ function persistServerGenerationResult(args: {
           if (freshness.alreadyPersisted) {
             throw new GenerationFinalizationAlreadyPersistedNoop(baseRevision)
           }
-          validateGenerationChatVarMutationsFresh({
-            chatId: args.chatId,
-            chat,
-            chatVarMutations: args.chatVarMutations,
-          })
         }
-        applyGenerationCharacterFieldMutationsFresh({
-          characterId: character.chaId as string,
+        const chatVarResult = applyGenerationChatVarMutationsDroppingConflicts({
+          chat,
+          chatVarMutations: args.chatVarMutations,
+        })
+        const characterFieldResult = applyGenerationCharacterFieldMutationsDroppingConflicts({
           character,
           characterFieldMutations: args.characterFieldMutations,
         })
-        applyGenerationLocalLoreMutationFresh({
-          chatId: args.chatId,
+        const localLoreResult = applyGenerationLocalLoreMutationDroppingConflict({
           chat,
           localLoreMutation: args.localLoreMutation,
         })
-        if (hasScriptstateWrite) {
-          chat.scriptstate ??= {}
-          for (const key of deleteKeys) {
-            delete chat.scriptstate[key]
-          }
-          Object.assign(chat.scriptstate, patch)
-          if (Object.keys(chat.scriptstate).length === 0) {
-            delete chat.scriptstate
-          }
-        }
+        const droppedScriptMutations = [
+          ...chatVarResult.dropped,
+          ...characterFieldResult.dropped,
+          ...localLoreResult.dropped,
+        ]
+        const hasScriptstateWrite = chatVarResult.applied.length > 0
+        const hasCharacterWrite = characterFieldResult.applied.length > 0
+        const hasLocalLoreWrite = localLoreResult.applied !== undefined
         const record = createMessageRecord(structuredClone(args.message), 'generationResult.message')
         const providerAlternates = (args.alternateMessages ?? []).map((message, index) =>
           createMessageRecord(structuredClone(message), `generationResult.alternateMessages[${index}]`),
@@ -2962,14 +3098,42 @@ function persistServerGenerationResult(args: {
               }
         return {
           event,
-          extra: { chatId: args.chatId, messageId: write.messageId },
+          extra: {
+            chatId: args.chatId,
+            messageId: write.messageId,
+            chatVarMutations: chatVarResult.applied,
+            characterFieldMutations: characterFieldResult.applied,
+            ...(localLoreResult.applied ? { localLoreMutation: localLoreResult.applied } : {}),
+            droppedScriptMutations,
+          },
         }
       },
     })
-    return result.revision
+    const persistence = {
+      revision: result.revision,
+      chatVarMutations: result.extra.chatVarMutations,
+      characterFieldMutations: result.extra.characterFieldMutations,
+      ...(result.extra.localLoreMutation ? { localLoreMutation: result.extra.localLoreMutation } : {}),
+      droppedScriptMutations: result.extra.droppedScriptMutations,
+    }
+    if (persistence.droppedScriptMutations.length > 0) {
+      emitProtocolMetric('generation_script_mutation_conflict', {
+        status: 'dropped',
+        chatId: args.chatId,
+        messageId: args.message.chatId,
+        droppedMutationCount: persistence.droppedScriptMutations.length,
+        droppedMutations: persistence.droppedScriptMutations,
+      })
+    }
+    return persistence
   } catch (err) {
     if (err instanceof GenerationFinalizationAlreadyPersistedNoop) {
-      return err.revision
+      return {
+        revision: err.revision,
+        chatVarMutations: [],
+        characterFieldMutations: [],
+        droppedScriptMutations: [],
+      }
     }
     throw err
   }
@@ -2988,7 +3152,7 @@ function persistGenerationFinalizationAttempt(args: {
   dataDir: string
   eventSink: CommandEventSink
   attempt: GenerationFinalizationAttempt
-}): number {
+}): GenerationFinalizationPersistenceResult {
   return persistServerGenerationResult({
     db: args.db,
     dataDir: args.dataDir,
@@ -3023,7 +3187,7 @@ function queueAndPersistGenerationFinalization(args: {
   dataDir: string
   eventSink: CommandEventSink
   attempt: GenerationFinalizationAttempt
-}): number {
+}): GenerationFinalizationPersistenceResult {
   // Shutdown guard an aborted runner's cancel-persist can land
   // after `onClose` closed the SQLite handle (the runner-settle wait covers
   // tracked runners; this covers any straggler). Fail with a clear error
@@ -3033,9 +3197,9 @@ function queueAndPersistGenerationFinalization(args: {
   }
   enqueueGenerationFinalizationRetry(args.db, args.attempt)
   try {
-    const revision = persistGenerationFinalizationAttempt(args)
+    const persistence = persistGenerationFinalizationAttempt(args)
     deleteGenerationFinalizationRetry(args.db, args.attempt.generationId)
-    return revision
+    return persistence
   } catch (err) {
     markQueuedGenerationFinalizationFailure({ db: args.db, attempt: args.attempt, err })
     throw err
@@ -3064,7 +3228,7 @@ export function retryQueuedGenerationFinalizations(args: {
   for (const attempt of attempts) {
     const startedAt = protocolNowMs()
     try {
-      const revision = persistGenerationFinalizationAttempt({
+      const persistence = persistGenerationFinalizationAttempt({
         db: args.db,
         dataDir: args.dataDir,
         eventSink: args.eventSink,
@@ -3090,9 +3254,20 @@ export function retryQueuedGenerationFinalizations(args: {
         status: 'ok',
         generationId: attempt.generationId,
         chatId: attempt.chatId,
-        revision,
+        revision: persistence.revision,
         durationMs: protocolDurationMs(startedAt),
+        ...droppedGenerationScriptMutationMetricFields(persistence),
       })
+      if (persistence.droppedScriptMutations.length > 0) {
+        args.logger?.warn(
+          {
+            generationId: attempt.generationId,
+            chatId: attempt.chatId,
+            droppedScriptMutations: persistence.droppedScriptMutations,
+          },
+          'generation finalization retry dropped stale script mutations',
+        )
+      }
     } catch (err) {
       const isTerminal = isTerminalGenerationFinalizationError(err)
       markGenerationFinalizationRetryFailure(
@@ -3198,10 +3373,10 @@ async function buildDurablePostGeneration(args: {
     alternateTexts,
   })
 
-  let revision: number
+  let persistence: GenerationFinalizationPersistenceResult
   const persistStartedAt = protocolNowMs()
   try {
-    revision = queueAndPersistGenerationFinalization({
+    persistence = queueAndPersistGenerationFinalization({
       db: args.db,
       dataDir: args.dataDir,
       eventSink: args.eventSink,
@@ -3249,10 +3424,12 @@ async function buildDurablePostGeneration(args: {
       status: 'raw_fallback',
       generationId: args.generationId,
       chatId: args.input.chatId,
-      revision,
+      revision: persistence.revision,
       durationMs: protocolDurationMs(persistStartedAt),
       ...(postGenMetricError ? { error: postGenMetricError } : {}),
+      ...droppedGenerationScriptMutationMetricFields(persistence),
     })
+    emitDroppedGenerationScriptMutationWarning(args.emit, persistence.droppedScriptMutations)
     args.emit({
       type: 'warning',
       message: 'server post-generation derivation failed; persisted the raw provider text.',
@@ -3275,10 +3452,11 @@ async function buildDurablePostGeneration(args: {
     })
     return {
       frame: buildPostGenerationFrameBody(
-        translationFollowup.revision ?? revision,
+        translationFollowup.revision ?? persistence.revision,
         undefined,
         messageId,
         translationFollowup.translation,
+        persistence,
       ),
       primary: message.data,
       alternates: alternateTexts,
@@ -3289,9 +3467,11 @@ async function buildDurablePostGeneration(args: {
     status: 'ok',
     generationId: args.generationId,
     chatId: args.input.chatId,
-    revision,
+    revision: persistence.revision,
     durationMs: protocolDurationMs(persistStartedAt),
+    ...droppedGenerationScriptMutationMetricFields(persistence),
   })
+  emitDroppedGenerationScriptMutationWarning(args.emit, persistence.droppedScriptMutations)
   const messageId = targetMessageId ?? message.chatId
   const translationFollowup = await handlePersistedGenerationCompletion({
     db: args.db,
@@ -3309,10 +3489,11 @@ async function buildDurablePostGeneration(args: {
   })
   return {
     frame: buildPostGenerationFrameBody(
-      translationFollowup.revision ?? revision,
+      translationFollowup.revision ?? persistence.revision,
       postGen,
       messageId,
       translationFollowup.translation,
+      persistence,
     ),
     primary: message.data,
     alternates: alternateTexts,
@@ -3440,6 +3621,7 @@ async function runGenerationJob(args: {
               eventSink,
               input,
               mutations: result.mutations,
+              initialMessages: result.restoration?.messages ?? [],
               submitMessages: result.submitMessages,
               submitTranscriptChanged: result.submitTranscriptChanged,
             })

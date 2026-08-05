@@ -1671,6 +1671,79 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
   })
 
+  it('C4: rejects a stale assembly chat-var write and preserves the newer durable value', async () => {
+    let releaseEmbedding!: () => void
+    let markEmbeddingStarted!: () => void
+    const embeddingStarted = new Promise<void>((resolve) => {
+      markEmbeddingStarted = resolve
+    })
+    const embeddingGate = new Promise<void>((resolve) => {
+      releaseEmbedding = resolve
+    })
+    await restartHarness({
+      embedPromptMemoryQueryTexts: async ({ input }) => {
+        markEmbeddingStarted()
+        await embeddingGate
+        return {
+          model: 'custom',
+          vectors: input.map(() => new Float32Array([1, 0])),
+          dim: 2,
+        }
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const database = structuredClone(similarityMemoryDatabase()) as JsonRecord
+    const character = (database.characters as Array<JsonRecord>)[0]!
+    const chat = (character.chats as Array<JsonRecord>)[0]!
+    chat.scriptstate = { $score: '0' }
+    character.triggerscript = [
+      {
+        comment: '',
+        type: 'start',
+        conditions: [],
+        effect: [{ type: 'setvar', operator: '=', var: 'score', value: '1' }],
+      },
+    ]
+    await seedDatabase(harness.app, assertion, database)
+    seedSimilarMemoryRows()
+
+    const generation = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, userMessage: 'Tell me about the cat.' },
+    })
+    await embeddingStarted
+
+    const bootstrapBeforeEdit = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const edit = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-1/scriptstate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: bootstrapBeforeEdit.json().revision, patch: { $score: '9' } },
+    })
+    expect(edit.statusCode).toBe(200)
+    releaseEmbedding()
+
+    const response = await generation
+    const events = parseEvents(response.body)
+    expect(events.find((event) => event.type === 'error')?.data.error).toContain(
+      'Generation chat variable is stale for chat chat-1: $score',
+    )
+    expect(events.at(-1)?.type).toBe('done')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $score: '9' })
+  })
+
   it('persists lorebook @@keep_activate_after_match and uses it on the next send (L4)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
@@ -2823,6 +2896,125 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const chat = res.json().database.characters[0].chats[0]
     return { ...chat, message: await persistedMessages(assertion, chat.id) }
   }
+
+  function transcriptReplacementDatabase(withMemoryPrefetch = false): JsonRecord {
+    const database = structuredClone(withMemoryPrefetch ? similarityMemoryDatabase() : fixtureDatabase) as JsonRecord
+    const character = (database.characters as Array<JsonRecord>)[0]!
+    const chat = (character.chats as Array<JsonRecord>)[0]!
+    chat.message = [{ role: 'user', data: 'original row', chatId: 'existing-row' }]
+    character.triggerscript = [
+      {
+        comment: '',
+        type: 'input',
+        conditions: [],
+        effect: [
+          {
+            type: 'triggerlua',
+            code: `
+              function onInput(id)
+                setChat(id, 0, 'assembly rewrite')
+              end
+            `,
+          },
+        ],
+      },
+    ]
+    return database
+  }
+
+  it('C5: replaces a transcript when the assembly-start baseline is unchanged', async () => {
+    await restartHarness({ dispatchProvider: () => null })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, transcriptReplacementDatabase())
+
+    const events = await sendBase(assertion)
+    expect(events.find((event) => event.type === 'error')?.data.error).not.toContain(
+      'Generation assembly transcript is stale',
+    )
+    expect((await persistedMessages(assertion)).map(({ data, chatId }) => ({ data, chatId }))).toEqual([
+      { data: 'assembly rewrite', chatId: 'existing-row' },
+      { data: 'hi', chatId: expect.any(String) },
+    ])
+  })
+
+  it.each(['append', 'edit'] as const)(
+    'C5: rejects a stale full-transcript replacement after a concurrent %s and preserves it',
+    async (concurrentMutation) => {
+      let releaseEmbedding!: () => void
+      let markEmbeddingStarted!: () => void
+      const embeddingStarted = new Promise<void>((resolve) => {
+        markEmbeddingStarted = resolve
+      })
+      const embeddingGate = new Promise<void>((resolve) => {
+        releaseEmbedding = resolve
+      })
+      await restartHarness({
+        embedPromptMemoryQueryTexts: async ({ input }) => {
+          markEmbeddingStarted()
+          await embeddingGate
+          return {
+            model: 'custom',
+            vectors: input.map(() => new Float32Array([1, 0])),
+            dim: 2,
+          }
+        },
+      })
+      const { assertion } = await setupAuthedClient(harness.app)
+      await seedDatabase(harness.app, assertion, transcriptReplacementDatabase(true))
+      seedSimilarMemoryRows()
+
+      const generation = harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      await embeddingStarted
+
+      const bootstrap = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': assertion },
+      })
+      const mutation =
+        concurrentMutation === 'append'
+          ? await harness.app.inject({
+              method: 'POST',
+              url: '/api/v1/commands/chats/chat-1/messages',
+              headers: { 'risu-auth': assertion },
+              payload: {
+                baseRevision: bootstrap.json().revision,
+                message: { role: 'char', data: 'concurrent append', chatId: 'concurrent-row' },
+              },
+            })
+          : await harness.app.inject({
+              method: 'PATCH',
+              url: '/api/v1/commands/messages/existing-row',
+              headers: { 'risu-auth': assertion },
+              payload: {
+                baseRevision: bootstrap.json().revision,
+                patch: { data: 'concurrent edit' },
+              },
+            })
+      expect(mutation.statusCode).toBe(200)
+      releaseEmbedding()
+
+      const response = await generation
+      const events = parseEvents(response.body)
+      expect(events.find((event) => event.type === 'error')?.data.error).toContain(
+        'Generation assembly transcript is stale for chat chat-1',
+      )
+      const persisted = await persistedMessages(assertion)
+      if (concurrentMutation === 'append') {
+        expect(persisted).toEqual([
+          expect.objectContaining({ data: 'original row', chatId: 'existing-row' }),
+          expect.objectContaining({ data: 'concurrent append', chatId: 'concurrent-row' }),
+        ])
+      } else {
+        expect(persisted).toEqual([expect.objectContaining({ data: 'concurrent edit', chatId: 'existing-row' })])
+      }
+    },
+  )
 
   it('runs a Lua input trigger that rewrites the transcript + persists it (slice 3b-4)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
@@ -4256,6 +4448,148 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       db.close()
     }
   })
+
+  it.each([
+    { scope: 'character_field', key: 'firstMessage' },
+    { scope: 'local_lore', key: undefined },
+    { scope: 'chat_variable', key: '$mood' },
+  ] as const)(
+    'C6: inline finalization drops a stale $scope mutation without losing the generated message',
+    async (testCase) => {
+      let applyConcurrentEdit: () => Promise<void> = async () => {
+        throw new Error('concurrent edit was not configured')
+      }
+      await restartHarness({
+        dispatchProvider: () =>
+          (async function* (): AsyncGenerator<CompletionStreamFrame> {
+            yield { kind: 'token', content: 'conflict-safe reply' }
+            await applyConcurrentEdit()
+            yield { kind: 'done', finishReason: 'stop' }
+          })(),
+      })
+      const { assertion } = await setupAuthedClient(harness.app)
+      const outputEffect =
+        testCase.scope === 'chat_variable'
+          ? [{ type: 'setvar', operator: '=', var: 'mood', value: 'script-value' }]
+          : [
+              {
+                type: 'triggerlua',
+                code:
+                  testCase.scope === 'character_field'
+                    ? `
+                        function onOutput(id)
+                          setName(id, 'script name')
+                          setCharacterFirstMessage(id, 'script greeting')
+                        end
+                      `
+                    : `function onOutput(id) upsertLocalLoreBook(id, 'script-lore', 'script lore') end`,
+              },
+            ]
+      await seedDatabase(
+        harness.app,
+        assertion,
+        dbWithServerDispatch({
+          triggerscript: [
+            {
+              comment: '',
+              type: 'output',
+              conditions: [],
+              effect: outputEffect,
+            },
+          ],
+        }),
+      )
+
+      applyConcurrentEdit = async () => {
+        const bootstrap = await harness.app.inject({
+          method: 'GET',
+          url: '/api/v1/bootstrap',
+          headers: { 'risu-auth': assertion },
+        })
+        const baseRevision = bootstrap.json().revision
+        const edit =
+          testCase.scope === 'character_field'
+            ? await harness.app.inject({
+                method: 'PATCH',
+                url: '/api/v1/commands/characters/char-1',
+                headers: { 'risu-auth': assertion },
+                payload: { baseRevision, patch: { firstMessage: 'user greeting' } },
+              })
+            : testCase.scope === 'local_lore'
+              ? await harness.app.inject({
+                  method: 'PUT',
+                  url: '/api/v1/commands/chats/chat-1/lorebooks',
+                  headers: { 'risu-auth': assertion },
+                  payload: {
+                    baseRevision,
+                    entries: [
+                      {
+                        id: 'user-lore-id',
+                        key: 'user',
+                        secondkey: '',
+                        insertorder: 100,
+                        comment: 'user-lore',
+                        content: 'user lore',
+                        mode: 'normal',
+                        alwaysActive: false,
+                        selective: false,
+                      },
+                    ],
+                  },
+                })
+              : await harness.app.inject({
+                  method: 'PATCH',
+                  url: '/api/v1/commands/chats/chat-1/scriptstate',
+                  headers: { 'risu-auth': assertion },
+                  payload: { baseRevision, patch: { $mood: 'user-value' } },
+                })
+        expect(edit.statusCode).toBe(200)
+      }
+
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(response.statusCode).toBe(200)
+      const events = parseEvents(response.body)
+      expect(events.find((event) => event.type === 'warning')?.data).toEqual({
+        message: 'Some server script updates were skipped because their targets changed during generation.',
+        context: {
+          kind: 'stale_generation_script_mutations',
+          droppedMutations: [
+            testCase.key === undefined ? { scope: testCase.scope } : { scope: testCase.scope, key: testCase.key },
+          ],
+        },
+      })
+      const patch = doneFrame(events).postGeneration?.messagePatch
+      if (testCase.scope === 'character_field') {
+        expect(patch?.characterFieldMutations).toEqual([{ key: 'name', before: 'Tess', after: 'script name' }])
+      }
+      if (testCase.scope === 'local_lore') expect(patch?.localLoreMutation).toBeUndefined()
+      if (testCase.scope === 'chat_variable') expect(patch?.chatVarMutations ?? []).toEqual([])
+      expect((await persistedMessages(assertion)).at(-1)).toMatchObject({
+        role: 'char',
+        data: 'conflict-safe reply',
+      })
+
+      const character = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/characters/char-1',
+        headers: { 'risu-auth': assertion },
+      })
+      if (testCase.scope === 'character_field') {
+        expect(character.json().character).toMatchObject({ name: 'script name', firstMessage: 'user greeting' })
+      } else if (testCase.scope === 'local_lore') {
+        expect(character.json().character.chats[0].localLore).toEqual([
+          expect.objectContaining({ id: 'user-lore-id', content: 'user lore' }),
+        ])
+      } else {
+        expect(character.json().character.chats[0].scriptstate).toEqual({ $mood: 'user-value' })
+      }
+    },
+  )
 
   it.each([
     {

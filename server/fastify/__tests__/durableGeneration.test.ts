@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -421,9 +421,11 @@ async function bootstrap(): Promise<{
   }>
   database: {
     characters: Array<{
+      firstMessage?: string
       chats: Array<{
         message: Array<Record<string, unknown>>
         scriptstate?: Record<string, unknown>
+        localLore?: Array<Record<string, unknown>>
       }>
     }>
   }
@@ -524,13 +526,17 @@ function commandEventTypeCount(type: string): number {
   }
 }
 
-function retryQueuedFinalizationsOnce(): ReturnType<typeof retryQueuedGenerationFinalizations> {
+function retryQueuedFinalizationsOnce(logger?: {
+  warn(obj: Record<string, unknown>, msg: string): void
+  error(obj: Record<string, unknown>, msg: string): void
+}): ReturnType<typeof retryQueuedGenerationFinalizations> {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
     return retryQueuedGenerationFinalizations({
       db,
       dataDir: harness.dataDir,
       eventSink: createCommandEventSink(),
+      logger,
       maxPerSweep: 10,
       messageTranslationJobs: new MessageTranslationJobRegistry(),
     })
@@ -568,6 +574,26 @@ async function patchChatScriptstate(patch: Record<string, string | number | bool
     method: 'PATCH',
     headers: authHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({ baseRevision: boot.revision, patch }),
+  })
+  expect(res.status).toBe(200)
+}
+
+async function patchCharacterFirstMessage(firstMessage: string): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(`${harness.baseUrl}/api/v1/commands/characters/char-1`, {
+    method: 'PATCH',
+    headers: authHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ baseRevision: boot.revision, patch: { firstMessage } }),
+  })
+  expect(res.status).toBe(200)
+}
+
+async function replaceChatLocalLore(entries: Array<Record<string, unknown>>): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(`${harness.baseUrl}/api/v1/commands/chats/chat-1/lorebooks`, {
+    method: 'PUT',
+    headers: authHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ baseRevision: boot.revision, entries }),
   })
   expect(res.status).toBe(200)
 }
@@ -840,6 +866,83 @@ describe('Durable generation (Milestone 1)', () => {
     expect(assistantMessages[0]).toMatchObject({ data: 'reply text', chatId: jobId })
     expect(commandEventTypeCount('generation.persisted')).toBe(1)
     controller.abort()
+  })
+
+  it('C6: a durable retry replay drops a newly stale chat-var write and persists the assistant row', async () => {
+    await harness.app.close()
+    rmSync(harness.dataDir, { recursive: true, force: true })
+    harness = await startHarness({ finalizationRetry: false })
+    ;({ assertion } = await setupAuthedClient(harness.app))
+    await seedDatabase(fixtureDatabase)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      enqueueGenerationFinalizationRetry(db, {
+        generationId: 'retry-stale-script',
+        chatId: 'chat-1',
+        mode: 'send',
+        message: {
+          role: 'char',
+          data: 'retry conflict-safe reply',
+          chatId: 'retry-stale-script',
+        } as never,
+        chatVarMutations: [{ key: '$mood', before: null, after: 'script-value' }],
+      })
+    } finally {
+      db.close()
+    }
+    await patchChatScriptstate({ $mood: 'user-value' })
+
+    const previousMetrics = process.env.RISU_PROTOCOL_METRICS
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    const metrics: Array<Record<string, unknown>> = []
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+      if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+      metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as Record<string, unknown>)
+    })
+    const logger = { warn: vi.fn(), error: vi.fn() }
+    try {
+      expect(retryQueuedFinalizationsOnce(logger)).toEqual({
+        attempted: 1,
+        persisted: 1,
+        terminal: 0,
+        retryable: 0,
+      })
+    } finally {
+      infoSpy.mockRestore()
+      if (previousMetrics === undefined) {
+        delete process.env.RISU_PROTOCOL_METRICS
+      } else {
+        process.env.RISU_PROTOCOL_METRICS = previousMetrics
+      }
+    }
+
+    expect(generationFinalizationRetryRows()).toEqual([])
+    const boot = await bootstrap()
+    expect(boot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'user-value' })
+    expect((await chatMessages(boot)).at(-1)).toMatchObject({
+      role: 'char',
+      data: 'retry conflict-safe reply',
+      chatId: 'retry-stale-script',
+    })
+    expect(metrics.find((metric) => metric.metric === 'generation_script_mutation_conflict')).toMatchObject({
+      status: 'dropped',
+      chatId: 'chat-1',
+      droppedMutationCount: 1,
+      droppedMutations: [{ scope: 'chat_variable', key: '$mood' }],
+    })
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence_retry')).toMatchObject({
+      status: 'ok',
+      droppedScriptMutationCount: 1,
+      droppedScriptMutations: [{ scope: 'chat_variable', key: '$mood' }],
+    })
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationId: 'retry-stale-script',
+        droppedScriptMutations: [{ scope: 'chat_variable', key: '$mood' }],
+      }),
+      'generation finalization retry dropped stale script mutations',
+    )
   })
 
   it('L2: prunes only terminal finalization retries older than retention', () => {
@@ -1180,6 +1283,122 @@ describe('Durable generation (Milestone 1)', () => {
     expect(assistant?.data).toBe('reply text')
     controller.abort()
   })
+
+  it.each([
+    { scope: 'character_field', key: 'firstMessage' },
+    { scope: 'local_lore', key: undefined },
+    { scope: 'chat_variable', key: '$mood' },
+  ] as const)(
+    'C6: durable finalization drops a stale $scope mutation without losing the generated message',
+    async (testCase) => {
+      const gated = makeGatedProvider({ before: 'durable conflict-safe', after: ' reply' })
+      providerImpl = gated.dispatchProvider
+      const outputEffect =
+        testCase.scope === 'chat_variable'
+          ? [{ type: 'setvar', operator: '=', var: 'mood', value: 'script-value' }]
+          : [
+              {
+                type: 'triggerlua',
+                code:
+                  testCase.scope === 'character_field'
+                    ? `function onOutput(id) setCharacterFirstMessage(id, 'script greeting') end`
+                    : `function onOutput(id) upsertLocalLoreBook(id, 'script-lore', 'script lore') end`,
+              },
+            ]
+      await seedDatabase({
+        ...fixtureDatabase,
+        characters: [
+          {
+            ...fixtureDatabase.characters[0],
+            triggerscript: [
+              {
+                comment: '',
+                type: 'output',
+                conditions: [],
+                effect: outputEffect,
+              },
+            ],
+          },
+        ],
+      })
+
+      const controller = newController()
+      const response = await postDurable({}, { signal: controller.signal })
+      const initialEvents = await readSse(response, (event) => event.type === 'token')
+      const jobId = jobIdFromEvents(initialEvents)
+      const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+        headers: authHeaders(),
+      })
+      expect(replay.status).toBe(200)
+
+      if (testCase.scope === 'character_field') {
+        await patchCharacterFirstMessage('user greeting')
+      } else if (testCase.scope === 'local_lore') {
+        await replaceChatLocalLore([
+          {
+            id: 'user-lore-id',
+            key: 'user',
+            secondkey: '',
+            insertorder: 100,
+            comment: 'user-lore',
+            content: 'user lore',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+          },
+        ])
+      } else {
+        await patchChatScriptstate({ $mood: 'user-value' })
+      }
+      gated.release()
+
+      const terminalEvents = await readSse(replay, (event) => event.type === 'done')
+      expect(terminalEvents.find((event) => event.type === 'error')).toBeUndefined()
+      expect(terminalEvents.find((event) => event.type === 'warning')?.data).toEqual({
+        message: 'Some server script updates were skipped because their targets changed during generation.',
+        context: {
+          kind: 'stale_generation_script_mutations',
+          droppedMutations: [
+            testCase.key === undefined ? { scope: testCase.scope } : { scope: testCase.scope, key: testCase.key },
+          ],
+        },
+      })
+      const done = terminalEvents.find((event) => event.type === 'done')
+      const postGeneration = done?.data.postGeneration as
+        | {
+            messagePatch?: {
+              chatVarMutations?: unknown[]
+              characterFieldMutations?: unknown[]
+              localLoreMutation?: unknown
+            }
+          }
+        | undefined
+      if (testCase.scope === 'character_field') {
+        expect(postGeneration?.messagePatch?.characterFieldMutations).toBeUndefined()
+      } else if (testCase.scope === 'local_lore') {
+        expect(postGeneration?.messagePatch?.localLoreMutation).toBeUndefined()
+      } else {
+        expect(postGeneration?.messagePatch?.chatVarMutations ?? []).toEqual([])
+      }
+
+      const boot = await bootstrap()
+      expect((await chatMessages(boot)).at(-1)).toMatchObject({
+        role: 'char',
+        data: 'durable conflict-safe reply',
+      })
+      if (testCase.scope === 'character_field') {
+        expect(boot.database.characters[0].firstMessage).toBe('user greeting')
+      } else if (testCase.scope === 'local_lore') {
+        expect(boot.database.characters[0].chats[0].localLore).toEqual([
+          expect.objectContaining({ id: 'user-lore-id', content: 'user lore' }),
+        ])
+      } else {
+        expect(boot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'user-value' })
+      }
+      expect(generationFinalizationRetryRows()).toEqual([])
+      controller.abort()
+    },
+  )
 
   it('rejects stale durable send finalization when the submitted user tail is truncated', async () => {
     await seedChatWithMessages([{ role: 'user', data: 'hi', chatId: 'msg-user-1' }])
