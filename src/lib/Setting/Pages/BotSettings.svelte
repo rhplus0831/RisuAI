@@ -207,6 +207,7 @@
     'auto',
   )
   const useStreamingDraft = createServerBackedSettingDraft<boolean>('useStreaming', false)
+  const halfStreamingDraft = createServerBackedSettingDraft<boolean>('halfStreaming', false)
   const streamGeminiThoughtsDraft = createServerBackedSettingDraft<boolean>('streamGeminiThoughts', false)
   const nanogptKeyDraft = createServerBackedSettingDraft<string>('nanogptKey', '')
   const nanogptUseSubscriptionEndpointDraft = createServerBackedSettingDraft<boolean>(
@@ -1539,6 +1540,7 @@
 
         <div class="mt-2">
           <CheckInput bind:check={useStreamingDraft.value} name={`Response ${language.streaming}`} />
+          <CheckInput bind:check={halfStreamingDraft.value} name={language.halfStreaming} />
         </div>
       {/if}
 
@@ -1681,8 +1683,9 @@
     <div class="py-2 flex flex-col gap-2 mb-4">
       {#if !usesOllamaCloud && usesStreamingModel}
         <Check bind:check={useStreamingDraft.value} name={`Response ${language.streaming}`} />
+        <Check bind:check={halfStreamingDraft.value} name={language.halfStreaming} />
 
-        {#if useStreamingDraft.value && usesGeminiThinkingModel}
+        {#if (useStreamingDraft.value || halfStreamingDraft.value) && usesGeminiThinkingModel}
           <Check bind:check={streamGeminiThoughtsDraft.value} name={`Stream Gemini Thoughts`} />
         {/if}
       {/if}

@@ -1113,7 +1113,8 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
         metadata: {
           responseBudget: args.outputTokens ?? args.database.maxResponse,
           maxContext: args.database.maxContext,
-          streamingRequested: args.database.useStreaming === true,
+          streamingRequested: args.database.useStreaming === true || args.database.halfStreaming === true,
+          halfStreamingRequested: args.database.halfStreaming === true,
           multiGenerationRequested: args.multiGeneration === true,
           toolCount: args.tools?.length ?? 0,
           toolRoundCount: args.toolRounds?.length ?? 0,
@@ -1223,7 +1224,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       : undefined
   const stream =
     !hasTools &&
-    db.useStreaming === true &&
+    (db.useStreaming === true || db.halfStreaming === true) &&
     generationCount === 1 &&
     extractJsonPath === undefined &&
     geminiResponseModalities === undefined

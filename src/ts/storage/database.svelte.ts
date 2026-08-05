@@ -3304,6 +3304,7 @@ export function setDatabase(data: Database) {
   data.authRefreshes ??= []
   data.rememberToolUsage ??= true
   data.simplifiedToolUse ??= false
+  data.halfStreaming ??= false
   data.streamGeminiThoughts ??= false
   data.settingsCloseButtonSize ??= 24
   data.hideAllImages ??= false
@@ -3846,6 +3847,7 @@ export interface Database {
   showMemoryLimit: boolean
   roundIcons: boolean
   useStreaming: boolean
+  halfStreaming: boolean
   supaMemoryKey: string
   hypaV3Key: string
   hypaMemoryKey: string

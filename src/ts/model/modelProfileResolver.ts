@@ -201,6 +201,7 @@ export interface ModelProfileRuntimeOptions {
   adaptiveThinkingEffort?: string
   deepseekReasoningEffort?: string
   verbosity?: number
+  halfStreaming?: boolean
   useStreaming?: boolean
   genTime?: number
   extractJson?: string
@@ -317,6 +318,7 @@ const HARD_RUNTIME_DEFAULTS: ModelProfileRecordRuntimeOptions = {
   adaptiveThinkingEffort: 'high',
   deepseekReasoningEffort: 'high',
   verbosity: 1,
+  halfStreaming: false,
   useStreaming: false,
   genTime: 1,
   extractJson: '',
@@ -2089,6 +2091,7 @@ function resolveRuntimeOptions(
     adaptiveThinkingEffort: value(durableRuntimeOptions?.adaptiveThinkingEffort, database.adaptiveThinkingEffort),
     deepseekReasoningEffort: value(durableRuntimeOptions?.deepseekReasoningEffort, database.deepseekReasoningEffort),
     verbosity: finiteNumber(value(durableRuntimeOptions?.verbosity, database.verbosity)),
+    halfStreaming: value(durableRuntimeOptions?.halfStreaming, database.halfStreaming),
     useStreaming: value(durableRuntimeOptions?.useStreaming, database.useStreaming),
     genTime: finiteNumber(value(durableRuntimeOptions?.genTime, database.genTime)),
     extractJson: value(durableRuntimeOptions?.extractJson, database.extractJson),

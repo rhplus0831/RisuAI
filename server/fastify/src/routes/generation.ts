@@ -345,6 +345,9 @@ function buildCompletionDatabase(db: Database, body: CompletionRequestBody, prof
   const next = {
     ...db,
     aiModel: profile.modelId,
+    // `/completion` callers explicitly negotiate their transport via `stream`.
+    // Half-streaming callers promote that flag before reaching this route.
+    halfStreaming: false,
     useStreaming: body.stream === true,
   } as Database
   const maxTokens = finiteNumber(body.maxTokens)

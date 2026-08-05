@@ -145,6 +145,7 @@ const MODEL_RUNTIME_DATABASE_EXTRA_FIELDS = [
   'cohereAPIKey',
   'mancerHeader',
   'hordeConfig',
+  'halfStreaming',
   'useStreaming',
   'genTime',
   'customTokenizer',

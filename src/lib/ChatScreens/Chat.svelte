@@ -189,6 +189,7 @@
     isComment?: boolean
     isGenerationLoading?: boolean
     isChatGenerating?: boolean
+    halfStreamingTokensPerSecond?: number
     isGenerationPersistenceQueued?: boolean
     generationStage?: number
     disabled?: boolean | 'allBefore'
@@ -253,6 +254,7 @@
     isComment = false,
     isGenerationLoading = false,
     isChatGenerating = false,
+    halfStreamingTokensPerSecond = undefined,
     isGenerationPersistenceQueued = false,
     generationStage = 0,
     disabled = false,
@@ -1471,6 +1473,11 @@
   let normalizedGenerationStage = $derived(normalizeChatGenerationLoadingStage(generationStage))
   let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationStage)])
   let generationLoadingProgress = $derived(getChatGenerationLoadingProgress(normalizedGenerationStage))
+  let halfStreamingLoadingText = $derived(
+    halfStreamingTokensPerSecond === undefined
+      ? undefined
+      : language.halfStreamingTokensPerSecond(halfStreamingTokensPerSecond),
+  )
 
   function ownsSucceededServerTranslation(
     jobId: string,
@@ -2134,14 +2141,16 @@
       <div class="chat-generation-loading" role="status" aria-live="polite" aria-busy="true">
         <div class="chat-generation-loading-header">
           <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
-          <span>{generationLoadingText}</span>
+          <span>{halfStreamingLoadingText ?? generationLoadingText}</span>
         </div>
-        <div class="chat-generation-loading-track">
-          <div
-            class={`risu-ongoing-pulse chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
-            style:width={`${generationLoadingProgress}%`}>
+        {#if halfStreamingLoadingText === undefined}
+          <div class="chat-generation-loading-track">
+            <div
+              class={`risu-ongoing-pulse chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
+              style:width={`${generationLoadingProgress}%`}>
+            </div>
           </div>
-        </div>
+        {/if}
       </div>
     {/if}
   {:else if blankMessage}
@@ -2207,6 +2216,14 @@
           on:save={handlePartialEditSave} />
       {/if}
     </span>
+    {#if halfStreamingLoadingText !== undefined && isChatGenerating}
+      <div class="chat-generation-loading" role="status" aria-live="polite" aria-busy="true">
+        <div class="chat-generation-loading-header">
+          <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
+          <span>{halfStreamingLoadingText}</span>
+        </div>
+      </div>
+    {/if}
   {/if}
 {/snippet}
 

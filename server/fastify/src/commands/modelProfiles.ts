@@ -124,6 +124,7 @@ const RUNTIME_DEFAULT_KEY_MAP = {
   extractJson: 'extractJson',
   jsonSchema: 'jsonSchema',
   customTokenizer: 'customTokenizer',
+  halfStreaming: 'halfStreaming',
   useStreaming: 'useStreaming',
   jsonSchemaEnabled: 'jsonSchemaEnabled',
   strictJsonSchema: 'strictJsonSchema',

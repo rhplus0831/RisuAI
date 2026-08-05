@@ -50,6 +50,7 @@ import {
   clearActiveMessageTranslation,
   setActiveMessageTranslations,
 } from '../../../server/messageTranslationJobs'
+import { clearHalfStreamingProgressForChat, halfStreamingProgress } from '../../halfStreamingProgress'
 
 const baseInput: ServerChatInput = {
   chatId: 'chat-1',
@@ -128,6 +129,7 @@ afterEach(() => {
   resetAutomaticTranslationEligibilityForTests()
   clearActiveMessageTranslation('message-1')
   setActiveMessageTranslations([])
+  clearHalfStreamingProgressForChat(baseInput.characterId, baseInput.chatId)
   vi.unstubAllGlobals()
 })
 
@@ -509,6 +511,54 @@ describe('requestServerChat', () => {
         generationId: 'uuid-0',
       },
     })
+  })
+
+  it('half-streaming reports throughput but releases response text only on done', async () => {
+    const controlled = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => controlled.response)
+
+    const pending = requestServerChatGeneration(baseInput, null)
+    controlled.send('prompt', { messages: [{ role: 'user', content: 'hi' }] })
+    controlled.send('info', {
+      halfStreaming: true,
+      generationId: 'half-generation',
+      generationInfo: { generationId: 'half-generation', model: 'm' },
+    })
+
+    const res = await pending
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok' || res.req.type !== 'streaming') return
+    expect(res.req).toMatchObject({ halfStreaming: true, halfStreamingProgressManaged: true })
+
+    const reader = res.req.result.getReader()
+    let partialReadResolved = false
+    const partialRead = reader.read().then((value) => {
+      partialReadResolved = true
+      return value
+    })
+
+    controlled.send('token', { content: 'Hel' })
+    controlled.send('token', { content: 'lo' })
+    await vi.waitFor(() => {
+      expect(get(halfStreamingProgress)?.generatedTokens).toBe(2)
+    })
+
+    expect(partialReadResolved).toBe(false)
+    expect(get(halfStreamingProgress)).toMatchObject({
+      chatId: baseInput.chatId,
+      generationId: 'half-generation',
+      generatedTokens: 2,
+    })
+
+    controlled.send('done', { result: 'Hello', generationId: 'half-generation' })
+    controlled.close()
+
+    await expect(partialRead).resolves.toEqual({
+      done: false,
+      value: { 'half-generation': 'Hello' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    await expect(res.terminal).resolves.toMatchObject({ status: 'done' })
   })
 
   it('reattaches a durable stream after a mobile-style transport drop without duplicating replayed tokens', async () => {

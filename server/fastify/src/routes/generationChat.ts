@@ -265,7 +265,10 @@ function materializePolicyProfileDatabase(
 ): Database {
   const effective = structuredClone(database)
   applyProfileBoundGenerationFields(effective, profile)
-  if (forceNonStreaming) effective.useStreaming = false
+  if (forceNonStreaming) {
+    effective.halfStreaming = false
+    effective.useStreaming = false
+  }
   return effective
 }
 
@@ -343,7 +346,7 @@ function dispatchProviderWithPolicies(
       const database =
         profileIndex === 0
           ? escape
-            ? ({ ...policyDatabase, useStreaming: false } as Database)
+            ? ({ ...policyDatabase, halfStreaming: false, useStreaming: false } as Database)
             : policyDatabase
           : materializePolicyProfileDatabase(policyDatabase, profile, escape)
       for (let attempt = 0; attempt <= retries; attempt++) {
@@ -2347,6 +2350,7 @@ async function streamAssembly(
           timings: { prompt: promptMs },
           tokens: { prompt: result.inputTokens, total: result.inputTokens },
           responseBudget: result.outputTokens,
+          ...(database?.halfStreaming === true ? { halfStreaming: true } : {}),
           generationId: shouldDispatch ? generationId : undefined,
           generationInfo,
           // Present only when a chat-var write actually persisted, so the browser
@@ -3670,6 +3674,7 @@ async function runGenerationJob(args: {
           timings: { prompt: promptMs },
           tokens: { prompt: result.inputTokens, total: result.inputTokens },
           responseBudget: result.outputTokens,
+          ...(database?.halfStreaming === true ? { halfStreaming: true } : {}),
           generationId: shouldDispatch ? generationId : undefined,
           generationInfo,
           revision: persistedRevision,

@@ -51,6 +51,8 @@ export interface InfoEvent {
   type: 'info'
   timings?: Record<string, number>
   tokens?: { prompt?: number; completion?: number; total?: number }
+  /** The provider stream is buffered for display while throughput remains live. */
+  halfStreaming?: boolean
   responseBudget?: number
   generationId?: string
   generationInfo?: Record<string, unknown>

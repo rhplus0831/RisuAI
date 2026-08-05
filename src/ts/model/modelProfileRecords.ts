@@ -107,6 +107,7 @@ export interface ModelProfileRecordRuntimeOptions {
   extractJson?: string
   jsonSchema?: string
   customTokenizer?: string
+  halfStreaming?: boolean
   useStreaming?: boolean
   jsonSchemaEnabled?: boolean
   strictJsonSchema?: boolean
@@ -205,6 +206,7 @@ const MODEL_PROFILE_RUNTIME_STRING_KEYS = [
   'customTokenizer',
 ] as const
 const MODEL_PROFILE_RUNTIME_BOOLEAN_KEYS = [
+  'halfStreaming',
   'useStreaming',
   'jsonSchemaEnabled',
   'strictJsonSchema',

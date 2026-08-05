@@ -85,6 +85,7 @@
   ]
 
   const booleanFields: RuntimeBooleanField[] = [
+    { key: 'halfStreaming', label: language.modelProfiles.runtimeFields.halfStreaming },
     { key: 'useStreaming', label: language.modelProfiles.runtimeFields.useStreaming },
     { key: 'jsonSchemaEnabled', label: language.modelProfiles.runtimeFields.jsonSchemaEnabled },
     { key: 'strictJsonSchema', label: language.modelProfiles.runtimeFields.strictJsonSchema },

@@ -13,6 +13,12 @@ import { processScriptFull } from '../scripts'
 import { createStreamRenderCoalescer, type RenderFlushScheduler } from './streamCoalescer'
 import { captureChatMessageMutationIntentEpoch } from '../../server/chatMessageMutationIntent'
 import { captureChatBodyProjectionEpoch, hasChatBodyProjectionEpochChanged } from '../../server/resourceState.svelte'
+import {
+  beginHalfStreamingProgress,
+  clearHalfStreamingProgress,
+  recordHalfStreamingToken,
+  type HalfStreamingProgressTarget,
+} from '../halfStreamingProgress'
 
 type StreamingResponse = Extract<requestDataResponse, { type: 'streaming' }>
 
@@ -104,6 +110,15 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     throw new Error('Active chat is unavailable for the streaming response')
   }
   streamChatId = initialChat.id
+  const halfStreaming = req.halfStreaming === true
+  const halfStreamingTarget: HalfStreamingProgressTarget = {
+    characterId: streamCharacterId,
+    chatId: streamChatId,
+    generationId,
+  }
+  if (halfStreaming && req.halfStreamingProgressManaged !== true) {
+    beginHalfStreamingProgress(halfStreamingTarget)
+  }
   const initialMessages = Array.isArray(initialChat.message) ? initialChat.message : []
   let msgIndex = initialMessages.length
   let prefix = ''
@@ -212,7 +227,9 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   })
   let lastResponseChunk: StreamResponseChunk = {}
   let streamAborted: boolean = abortSignal.aborted
+  let streamCompleted = false
   let result = ''
+  let lastObservedResult = ''
   let emoChanged = false
   // Every `.data` write + `reloadKeys` bump re-runs
   // `risuChatParser` + `ParseMarkdown` over the whole growing message, so apply
@@ -246,7 +263,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   const removeEmptyGeneratedMessage = (): void => {
     if (arg.continue) return
     if (streamDetached) return
-    if (result.length > 0 && !streamAborted && !abortSignal.aborted) return
+    if (result.length > 0 && (!halfStreaming || streamCompleted) && !streamAborted && !abortSignal.aborted) return
     const target = resolveStreamMessage()
     if (!ownsStreamTarget(target)) return
     if (target.message.role !== 'char') return
@@ -277,10 +294,20 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
         if (!result) {
           result = ''
         }
+        const rawStreamedResult = result
+        if (
+          halfStreaming &&
+          req.halfStreamingProgressManaged !== true &&
+          rawStreamedResult.length > 0 &&
+          rawStreamedResult !== lastObservedResult
+        ) {
+          recordHalfStreamingToken(halfStreamingTarget)
+        }
+        lastObservedResult = rawStreamedResult
         if (getDatabase().removeIncompleteResponse) {
           result = trimUntilPunctuation(result)
         }
-        renderCoalescer.notify()
+        if (!halfStreaming) renderCoalescer.notify()
         if (renderCoalescer.failed) {
           // An apply rejected (script error); stop reading and surface it via
           // `settle()` below, like the old per-chunk await failed fast.
@@ -288,8 +315,12 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
         }
       }
       if (readed.done) {
+        streamCompleted = true
         break
       }
+    }
+    if (halfStreaming && streamCompleted && !streamAborted && !abortSignal.aborted) {
+      renderCoalescer.notify()
     }
     await renderCoalescer.settle()
   } finally {
@@ -306,6 +337,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       if (targetChat) targetChat.isStreaming = false
       bumpReloadKey()
     })
+    if (halfStreaming) clearHalfStreamingProgress(halfStreamingTarget)
     void reader.cancel().catch(() => {})
   }
 

@@ -359,6 +359,7 @@ async function translateWithLlm(
   const database = {
     ...settings,
     characters: character ? [character] : [],
+    halfStreaming: false,
     useStreaming: false,
   } as unknown as Database
   const steps = resolveTranslatorPipeline(settings)

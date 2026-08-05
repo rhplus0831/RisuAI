@@ -309,6 +309,50 @@ afterEach(() => {
 })
 
 describe('dispatchChatProvider final wire controls', () => {
+  it('uses upstream streaming when half-streaming is enabled and normal streaming is off', async () => {
+    const database = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'wire-model',
+      customAPIFormat: LLMFormat.OpenAICompatible,
+      forceReplaceUrl: 'https://wire.example/v1/chat/completions',
+      proxyKey: 'sk-wire',
+      autofillRequestUrl: true,
+      useStreaming: false,
+      halfStreaming: true,
+    } as Partial<Database>)
+    const streamResponse = new Response(
+      [
+        'data: {"choices":[{"delta":{"content":"half"}}]}',
+        '',
+        'data: {"choices":[{"delta":{"content":" streamed"},"finish_reason":"stop"}]}',
+        '',
+        'data: [DONE]',
+        '',
+        '',
+      ].join('\n'),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    )
+    const captured = captureDispatchRequests(streamResponse)
+    const profile = resolveModelProfile({ database })
+
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of frames) emitted.push(frame)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.stream).toBe(true)
+    expect(emitted).toEqual([
+      { kind: 'token', content: 'half' },
+      { kind: 'token', content: ' streamed' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
   it('strips known CoT blocks when the effective profile runtime option is enabled', async () => {
     const database = db({
       echoMessage: '<Thoughts>private reasoning</Thoughts>\nVisible answer\n<think>private tail</think>',

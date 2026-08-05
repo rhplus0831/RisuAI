@@ -463,6 +463,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'authRefreshes', [])
   setDefault(database, 'rememberToolUsage', true)
   setDefault(database, 'simplifiedToolUse', false)
+  setDefault(database, 'halfStreaming', false)
   setDefault(database, 'streamGeminiThoughts', false)
   setDefault(database, 'settingsCloseButtonSize', 24)
   setDefault(database, 'hideAllImages', false)

@@ -14,6 +14,7 @@
   import { scrollElementToContainerStart } from './chatScroll'
   import { isMemoryLimitMessage } from './memoryLimitMarker'
   import { queuedGenerationPersistences } from 'src/ts/process/generationPersistenceState'
+  import { halfStreamingProgress } from 'src/ts/process/halfStreamingProgress'
   import {
     automaticTranslationMessageIds,
     consumeAutomaticTranslationEligibility,
@@ -59,6 +60,10 @@
   } = $props()
 
   let chatBody: HTMLDivElement
+  let activeHalfStreamingTokensPerSecond = $derived.by(() => {
+    const progress = $halfStreamingProgress
+    return progress?.chatId === getCurrentChatRoomId() ? progress.tokensPerSecond : undefined
+  })
 
   const chatRows = $derived.by(() => {
     void $RegexDisplayReloadPointer
@@ -229,6 +234,9 @@
           row.message.role === 'char' &&
           row.message.data === ''}
         isChatGenerating={isGenerationActive}
+        halfStreamingTokensPerSecond={row.idx === messages.length - 1 && row.message.role === 'char'
+          ? activeHalfStreamingTokensPerSecond
+          : undefined}
         autoTranslateOnReady={typeof row.message.chatId === 'string' &&
           $automaticTranslationMessageIds.includes(row.message.chatId) &&
           !$serverOwnedGeneratedMessageIds.has(row.message.chatId)}

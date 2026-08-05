@@ -705,6 +705,7 @@ describe('Agent Preset step execution', () => {
 
   it('executes a selected-profile step non-streaming with bounded output and no tools', async () => {
     const database = db({
+      halfStreaming: true,
       modelProfiles: [
         {
           id: 'ready-echo',
@@ -716,6 +717,7 @@ describe('Agent Preset step execution', () => {
       ],
     })
     const dispatch = vi.fn<AgentPresetProviderDispatcher>(async (args) => {
+      expect(args.database.halfStreaming).toBe(false)
       expect(args.database.useStreaming).toBe(false)
       expect(args.database.modelTools).toEqual([])
       expect(args.outputTokens).toBe(12)

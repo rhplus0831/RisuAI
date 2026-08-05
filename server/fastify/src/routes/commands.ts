@@ -1388,6 +1388,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
   ],
   models: MODEL_PROFILE_SETTINGS_KEYS,
   runtime: [
+    'halfStreaming',
     'useStreaming',
     'streamGeminiThoughts',
     'maxContext',
@@ -1784,6 +1785,7 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'useChatSticker',
   'useExperimental',
   'useExperimentalGoogleTranslator',
+  'halfStreaming',
   'useLegacyGUI',
   'usePlainFetch',
   'useSayNothing',

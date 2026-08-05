@@ -1040,6 +1040,7 @@ async function runLuaLlm(
     const database = {
       ...state.ctx.database,
       aiModel: profile.modelId,
+      halfStreaming: false,
       useStreaming: options.streaming === true,
     } as Database
     if (profile.runtimeOptions.maxResponse !== undefined) database.maxResponse = profile.runtimeOptions.maxResponse

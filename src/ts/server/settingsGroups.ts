@@ -347,6 +347,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   useMonacoEditorOnMobile: 'sidebar',
   usePlainFetch: 'runtime',
   useSayNothing: 'advanced',
+  halfStreaming: 'runtime',
   useStreaming: 'runtime',
   useTokenizerCaching: 'advanced',
   username: 'account',

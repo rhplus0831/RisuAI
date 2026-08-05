@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 const { processScriptFullSpy } = vi.hoisted(() => ({
   processScriptFullSpy: vi.fn(),
@@ -37,6 +38,7 @@ import type { StreamResponseChunk, requestDataResponse } from '../request/reques
 import { consumeStreamResponse } from '../postGeneration/streamResponse'
 import { markChatMessageMutationIntent } from '../../server/chatMessageMutationIntent'
 import { markChatBodyProjectionApplied } from '../../server/resourceState.svelte'
+import { halfStreamingProgress } from '../halfStreamingProgress'
 
 const testDatabaseState = {
   get db() {
@@ -122,8 +124,11 @@ function makeControlledStream(): StreamHandle {
   }
 }
 
-function streamingReq(stream: ReadableStream<StreamResponseChunk>): requestDataResponse & { type: 'streaming' } {
-  return { type: 'streaming', result: stream } as requestDataResponse & { type: 'streaming' }
+function streamingReq(
+  stream: ReadableStream<StreamResponseChunk>,
+  options: { halfStreaming?: boolean; halfStreamingProgressManaged?: boolean } = {},
+): requestDataResponse & { type: 'streaming' } {
+  return { type: 'streaming', result: stream, ...options } as requestDataResponse & { type: 'streaming' }
 }
 
 function callArgs(
@@ -157,6 +162,61 @@ describe('consumeStreamResponse', () => {
       data,
       emoChanged: false,
     }))
+    halfStreamingProgress.set(null)
+  })
+
+  it('half-streaming keeps partial text hidden, reports throughput, and applies the final response once', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { halfStreaming: true }), currentChar, ctrl.signal),
+    )
+
+    push({ msgKey: 'a' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('')
+    expect(get(halfStreamingProgress)).toMatchObject({ generatedTokens: 1, tokensPerSecond: 0 })
+    expect(processScriptFullSpy).not.toHaveBeenCalled()
+
+    vi.setSystemTime(new Date(1100))
+    push({ msgKey: 'ab' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('')
+    expect(get(halfStreamingProgress)).toMatchObject({ generatedTokens: 2, tokensPerSecond: 10 })
+
+    close()
+    const out = await promise
+    expect(out.result).toBe('ab')
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('ab')
+    expect(processScriptFullSpy).toHaveBeenCalledOnce()
+    expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'ab', 'editoutput', 1)
+    expect(get(halfStreamingProgress)).toBeNull()
+  })
+
+  it('half-streaming continue mode preserves the existing response until the continuation completes', async () => {
+    const currentChar = seed()
+    testDatabaseState.db.characters[0].chats[0].message.push({ role: 'char', data: 'existing' })
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { halfStreaming: true }), currentChar, ctrl.signal, {
+        arg: { continue: true },
+      }),
+    )
+
+    push({ msgKey: ' continuation' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('existing')
+    expect(processScriptFullSpy).not.toHaveBeenCalled()
+
+    close()
+    await promise
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('existing continuation')
+    expect(processScriptFullSpy).toHaveBeenCalledOnce()
   })
 
   it('single chunk: pushes initial message, writes processed data, returns lastResponseChunk', async () => {

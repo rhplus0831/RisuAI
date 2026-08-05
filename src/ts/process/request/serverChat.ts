@@ -32,6 +32,11 @@ import {
 } from '../agentPresetProgress'
 import { forgetActiveGenerationJob, rememberActiveGenerationJob } from '../reattach'
 import { handleServerGeneratedMessageTranslation } from '../serverGeneratedMessageTranslation'
+import {
+  beginHalfStreamingProgress,
+  clearHalfStreamingProgressForChat,
+  recordHalfStreamingToken,
+} from '../halfStreamingProgress'
 import { iterateSseEvents } from './sseParse'
 import type {
   AgentPresetProgressEvent,
@@ -465,6 +470,7 @@ export async function requestServerChatGeneration(
   if (opened.status !== 'ok') {
     clearAgentPresetProgress(agentPresetSession)
     clearPostGenerationProgress(postGenerationSession)
+    clearHalfStreamingProgressForChat(input.characterId, input.chatId)
     return opened.status === 'error' ? { status: 'error', error: opened.error } : opened
   }
 
@@ -484,6 +490,7 @@ export async function requestServerChatGeneration(
   let tokenStreamInactive = false
   let tokenResult = ''
   let streamKey = 'server-chat'
+  let halfStreaming = false
   // The server also returns the durable job id in the response headers. Unlike
   // the first `job_accepted` body frame, headers are available as soon as fetch
   // accepts the response, so Stop can cancel a job even while its first body
@@ -560,12 +567,24 @@ export async function requestServerChatGeneration(
         const generation = coerceGenerationInfo(info, donePayload)
         if (!generation) return
         streamKey = generation.generationId
+        halfStreaming = info.halfStreaming === true
+        if (halfStreaming) {
+          beginHalfStreamingProgress({
+            characterId: input.characterId,
+            chatId: input.chatId,
+            generationId: generation.generationId,
+          })
+        }
         resolveReadyOnce({
           status: 'ok',
           prompt,
           info,
           messagePatches,
-          req: { type: 'streaming', result: tokenStream },
+          req: {
+            type: 'streaming',
+            result: tokenStream,
+            ...(halfStreaming ? { halfStreaming: true, halfStreamingProgressManaged: true } : {}),
+          },
           generationId: generation.generationId,
           generationInfo: generation.generationInfo,
           terminal,
@@ -578,6 +597,7 @@ export async function requestServerChatGeneration(
         resolveReadyOnce({ status: 'aborted' })
         resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
         clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+        clearHalfStreamingProgressForChat(input.characterId, input.chatId)
         closeTokenStream()
         stopWatchingAbort()
       }
@@ -586,6 +606,7 @@ export async function requestServerChatGeneration(
         resolveReadyOnce({ status: 'error', error })
         resolveTerminalOnce({ status: 'error', error, warnings })
         clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+        clearHalfStreamingProgressForChat(input.characterId, input.chatId)
         closeTokenStream()
         stopWatchingAbort()
       }
@@ -615,6 +636,13 @@ export async function requestServerChatGeneration(
             // the accumulated text from zero so replayed deltas do not duplicate
             // the partial text rendered before mobile suspension.
             tokenResult = ''
+            if (halfStreaming) {
+              beginHalfStreamingProgress({
+                characterId: input.characterId,
+                chatId: input.chatId,
+                generationId: streamKey,
+              })
+            }
             debugServerChat('server-chat-stream-reattached', {
               requestUid: next.requestUid,
               jobId: durableJobId,
@@ -656,6 +684,7 @@ export async function requestServerChatGeneration(
                   break
                 case 'info':
                   info = data as unknown as ServerChatInfo
+                  halfStreaming = info.halfStreaming === true
                   reconcileServerCommandRevision(info)
                   maybeResolveReady()
                   break
@@ -717,7 +746,17 @@ export async function requestServerChatGeneration(
                 case 'token': {
                   const content = typeof data.content === 'string' ? data.content : ''
                   tokenResult += content
-                  enqueueToken({ [streamKey]: tokenResult })
+                  if (halfStreaming) {
+                    if (content.length > 0) {
+                      recordHalfStreamingToken({
+                        characterId: input.characterId,
+                        chatId: input.chatId,
+                        generationId: streamKey,
+                      })
+                    }
+                  } else {
+                    enqueueToken({ [streamKey]: tokenResult })
+                  }
                   break
                 }
                 case 'error': {
@@ -754,14 +793,20 @@ export async function requestServerChatGeneration(
                     warnings,
                   })
                   clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+                  clearHalfStreamingProgressForChat(input.characterId, input.chatId)
                   closeTokenStream()
                   stopWatchingAbort()
                   return
                 }
                 case 'done':
                   donePayload = data as unknown as Omit<DoneEvent, 'type'>
-                  if (typeof donePayload.result === 'string' && tokenResult.length === 0) {
+                  const needsTerminalResult = typeof donePayload.result === 'string' && tokenResult.length === 0
+                  if (needsTerminalResult) {
                     tokenResult = donePayload.result
+                  }
+                  if (halfStreaming) {
+                    enqueueToken({ [streamKey]: tokenResult })
+                  } else if (needsTerminalResult) {
                     enqueueToken({ [streamKey]: tokenResult })
                   }
                   // The post-gen pass may have persisted a scriptstate delta and
@@ -814,6 +859,7 @@ export async function requestServerChatGeneration(
       tokenStreamInactive = true
       resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
       clearLiveGenerationProgress(agentPresetSession, postGenerationSession)
+      clearHalfStreamingProgressForChat(input.characterId, input.chatId)
     },
   })
 

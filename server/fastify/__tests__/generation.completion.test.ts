@@ -713,6 +713,9 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       aiModel: 'gpt4o',
       subModel: 'gpt4om',
       openAIKey: 'sk-server-owned',
+      // `/completion` callers own their explicit stream flag; persisted
+      // half-streaming must not turn intentionally buffered auxiliary calls on.
+      halfStreaming: true,
       modelRoles: {
         scriptMain: 'gpt-5',
       },

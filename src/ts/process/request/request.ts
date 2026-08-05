@@ -98,6 +98,10 @@ export type requestDataResponse =
   | {
       type: 'streaming'
       result: ReadableStream<StreamResponseChunk>
+      /** Buffer visible text until the stream completes while reporting throughput. */
+      halfStreaming?: boolean
+      /** The server-chat adapter already owns throughput updates for this stream. */
+      halfStreamingProgressManaged?: boolean
       special?: {
         emotion?: string
       }
@@ -114,6 +118,15 @@ export type requestDataResponse =
 
 export interface StreamResponseChunk {
   [key: string]: string
+}
+
+async function withHalfStreamingMode(
+  response: Promise<requestDataResponse>,
+  halfStreaming: boolean,
+): Promise<requestDataResponse> {
+  const resolved = await response
+  if (resolved.type !== 'streaming' || !halfStreaming) return resolved
+  return { ...resolved, halfStreaming: true }
 }
 
 type OllamaThinkMode = boolean | 'low' | 'medium' | 'high'
@@ -873,6 +886,7 @@ export async function requestChatDataMain(
   }
   const runtimeOptions = resolvedProfile.runtimeOptions
   const providerOptions = resolvedProfile.providerOptions
+  const halfStreaming = runtimeOptions.halfStreaming ?? db.halfStreaming
 
   targ.aiModel = resolvedProfile.modelId
   targ.modelInfo = resolvedProfile.modelInfo
@@ -890,7 +904,9 @@ export async function requestChatDataMain(
   targ.temperature = arg.temperature ?? runtimeOptions.temperature ?? db.temperature / 100
   targ.bias = arg.bias
   targ.currentChar = arg.currentChar
-  targ.useStreaming = arg.forceStreaming ? true : (runtimeOptions.useStreaming ?? db.useStreaming) && arg.useStreaming
+  targ.useStreaming = arg.forceStreaming
+    ? true
+    : ((runtimeOptions.useStreaming ?? db.useStreaming) || halfStreaming) && arg.useStreaming
   targ.continue = arg.continue ?? false
   targ.biasString = arg.biasString ?? []
   targ.multiGen =
@@ -918,7 +934,7 @@ export async function requestChatDataMain(
 
   const serverRoute = forceLocalOllamaToolDispatch ? ({ type: 'local' } as const) : resolveServerCompletionRoute(targ)
   if (serverRoute.type === 'server') {
-    return requestServerCompletion(targ, abortSignal)
+    return withHalfStreamingMode(requestServerCompletion(targ, abortSignal), halfStreaming)
   }
   if (serverRoute.type === 'unsupported') {
     return {
@@ -935,53 +951,53 @@ export async function requestChatDataMain(
   targ.formated = reformater(targ.formated, targ.modelInfo)
 
   if (forceLocalOllamaToolDispatch) {
-    return requestOllama(targ)
+    return withHalfStreamingMode(requestOllama(targ), halfStreaming)
   }
 
   switch (format) {
     case LLMFormat.OpenAICompatible:
     case LLMFormat.Mistral:
     case LLMFormat.NanoGPT:
-      return requestOpenAI(targ)
+      return withHalfStreamingMode(requestOpenAI(targ), halfStreaming)
     case LLMFormat.NanoGPTResponses:
-      return requestOpenAIResponseAPI(targ)
+      return withHalfStreamingMode(requestOpenAIResponseAPI(targ), halfStreaming)
     case LLMFormat.NanoGPTMessages:
-      return requestClaude(targ)
+      return withHalfStreamingMode(requestClaude(targ), halfStreaming)
     case LLMFormat.NanoGPTLegacy:
-      return requestOpenAILegacyInstruct(targ)
+      return withHalfStreamingMode(requestOpenAILegacyInstruct(targ), halfStreaming)
     case LLMFormat.OpenAILegacyInstruct:
-      return requestOpenAILegacyInstruct(targ)
+      return withHalfStreamingMode(requestOpenAILegacyInstruct(targ), halfStreaming)
     case LLMFormat.NovelAI:
-      return requestNovelAI(targ)
+      return withHalfStreamingMode(requestNovelAI(targ), halfStreaming)
     case LLMFormat.OobaLegacy:
-      return requestOobaLegacy(targ)
+      return withHalfStreamingMode(requestOobaLegacy(targ), halfStreaming)
     case LLMFormat.Plugin:
-      return requestPlugin(targ)
+      return withHalfStreamingMode(requestPlugin(targ), halfStreaming)
     case LLMFormat.Ooba:
-      return requestOoba(targ)
+      return withHalfStreamingMode(requestOoba(targ), halfStreaming)
     case LLMFormat.VertexAIGemini:
     case LLMFormat.GoogleCloud:
-      return requestGoogleCloudVertex(targ)
+      return withHalfStreamingMode(requestGoogleCloudVertex(targ), halfStreaming)
     case LLMFormat.Kobold:
-      return requestKobold(targ)
+      return withHalfStreamingMode(requestKobold(targ), halfStreaming)
     case LLMFormat.NovelList:
-      return requestNovelList(targ)
+      return withHalfStreamingMode(requestNovelList(targ), halfStreaming)
     case LLMFormat.Ollama:
-      return requestOllama(targ)
+      return withHalfStreamingMode(requestOllama(targ), halfStreaming)
     case LLMFormat.Cohere:
-      return requestCohere(targ)
+      return withHalfStreamingMode(requestCohere(targ), halfStreaming)
     case LLMFormat.Anthropic:
     case LLMFormat.AnthropicLegacy:
     case LLMFormat.AWSBedrockClaude:
-      return requestClaude(targ)
+      return withHalfStreamingMode(requestClaude(targ), halfStreaming)
     case LLMFormat.Horde:
-      return requestHorde(targ)
+      return withHalfStreamingMode(requestHorde(targ), halfStreaming)
     case LLMFormat.WebLLM:
-      return requestWebLLM(targ)
+      return withHalfStreamingMode(requestWebLLM(targ), halfStreaming)
     case LLMFormat.OpenAIResponseAPI:
-      return requestOpenAIResponseAPI(targ)
+      return withHalfStreamingMode(requestOpenAIResponseAPI(targ), halfStreaming)
     case LLMFormat.Echo:
-      return requestEcho(targ)
+      return withHalfStreamingMode(requestEcho(targ), halfStreaming)
   }
 
   return {

@@ -246,6 +246,7 @@ export function applyProfileBoundGenerationFields(database: Database, profile: R
     runtime.deepseekReasoningEffort as Database['deepseekReasoningEffort'] | undefined,
   )
   assignIfDefined(database, 'verbosity', runtime.verbosity)
+  assignIfDefined(database, 'halfStreaming', runtime.halfStreaming)
   assignIfDefined(database, 'useStreaming', runtime.useStreaming)
   assignIfDefined(database, 'genTime', runtime.genTime)
   assignIfDefined(database, 'extractJson', runtime.extractJson)

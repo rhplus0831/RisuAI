@@ -4090,6 +4090,41 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(typeof events.at(-1)?.data.generationId).toBe('string')
   })
 
+  it('marks half-streaming generations in prompt telemetry while keeping provider frames incremental', async () => {
+    await restartHarness({
+      dispatchProvider: () => {
+        async function* source(): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'half' }
+          yield { kind: 'token', content: ' streamed' }
+          yield { kind: 'done', finishReason: 'stop' }
+        }
+        return source()
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      useStreaming: false,
+      halfStreaming: true,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    expect(events.find((event) => event.type === 'info')?.data).toMatchObject({ halfStreaming: true })
+    expect(events.filter((event) => event.type === 'token').map((event) => event.data.content)).toEqual([
+      'half',
+      ' streamed',
+    ])
+    expect(events.at(-1)?.data).toMatchObject({ result: 'half streamed' })
+  })
+
   it('lets an imported incomplete chat be configured and then sent through server generation', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importRisuSaveDatabase(harness.app, assertion, {

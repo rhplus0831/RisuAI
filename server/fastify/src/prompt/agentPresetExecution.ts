@@ -964,6 +964,7 @@ async function collectProviderOutput(
 
 function prepareDatabaseForStep(database: Database, step: AgentPresetStepRecord): Database {
   const copy = structuredClone(database) as Database
+  copy.halfStreaming = false
   copy.useStreaming = false
   copy.maxResponse = maxOutputCharsForStep(step)
   copy.temperature = temperatureForStep(step)
