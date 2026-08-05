@@ -269,6 +269,20 @@ afterEach(() => {
 })
 
 describe('createServerBackedCharacterDraft seed gating', () => {
+  it('normalizes the selected character synchronously before seed effects run', () => {
+    setupCharacters([characterRow('char-1', 'Initial', { bias: undefined })])
+
+    let draft: ServerBackedCharacterDraft | undefined
+    const stop = $effect.root(() => {
+      draft = createServerBackedCharacterDraft(['name', 'bias'])
+    })
+
+    expect(draft?.characterId).toBe('char-1')
+    expect(draft?.value.name).toBe('Initial')
+    expect(draft?.value.bias).toEqual([])
+    stop()
+  })
+
   it('L22: editing nested draft fields does not rerun the server seed path', async () => {
     let newGenDataReads = 0
     let projectedNewGenData = {

@@ -384,7 +384,11 @@ async function settleComponent(): Promise<void> {
   await tick()
 }
 
-async function mountCharConfig(subMenu: number, characterFields: Partial<character> = {}): Promise<void> {
+async function mountCharConfig(
+  subMenu: number,
+  characterFields: Partial<character> = {},
+  initialSubMenu = 0,
+): Promise<void> {
   setDatabaseLite({
     characters: [makeCharacter(characterFields)],
     currentChar: 0,
@@ -396,7 +400,7 @@ async function mountCharConfig(subMenu: number, characterFields: Partial<charact
     useAdditionalAssetsPreview: false,
   } as never)
   selectedCharID.set(0)
-  CharConfigSubMenu.set(0)
+  CharConfigSubMenu.set(initialSubMenu)
   MobileGUI.set(true)
 
   target = document.createElement('div')
@@ -404,8 +408,10 @@ async function mountCharConfig(subMenu: number, characterFields: Partial<charact
   component = mount(CharConfig, { target })
   await settleComponent()
 
-  CharConfigSubMenu.set(subMenu)
-  await settleComponent()
+  if (initialSubMenu !== subMenu) {
+    CharConfigSubMenu.set(subMenu)
+    await settleComponent()
+  }
 }
 
 function buttons(): HTMLButtonElement[] {
@@ -539,6 +545,15 @@ describe('CharConfig desktop section navigation', () => {
     await settleComponent()
     expect(target.querySelector('[data-char-config-section="profile"]')?.getAttribute('aria-pressed')).toBe('false')
     expect(target.querySelector('[data-char-config-section="scripts"]')?.getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
+describe('CharConfig initial draft rendering', () => {
+  it('mounts directly on Advanced when the selected character has no bias array', async () => {
+    await mountCharConfig(2, { bias: undefined }, 2)
+
+    expect(target.textContent).toContain(language.noBias)
+    expect(buttonByAccessibleName(`${language.add}: Bias`)).toBeTruthy()
   })
 })
 

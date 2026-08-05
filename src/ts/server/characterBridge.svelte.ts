@@ -68,9 +68,14 @@ export interface ServerBackedCharacterDraft {
 }
 
 export function createServerBackedCharacterDraft(keys: readonly string[]): ServerBackedCharacterDraft {
+  const initialSelected = get(selectedCharID)
+  const initialCharacter = getDatabase().characters?.[initialSelected]
+  const initialCharacterId =
+    initialCharacter && !isServerCharacterShell(initialCharacter) ? (initialCharacter.chaId ?? null) : null
+  const initialSeed = currentCharacterDraftSeed(initialSelected, initialCharacterId, keys)
   const draft = $state<ServerBackedCharacterDraft>({
-    characterId: null,
-    value: {},
+    characterId: initialCharacterId,
+    value: cloneJsonValue(initialSeed.serverValue),
   })
   let initialized = false
   let suppressDraftDispatch = false
