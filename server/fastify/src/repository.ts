@@ -2744,8 +2744,10 @@ function saveDir(dataDir: string): string {
 //   - database_metadata: live lineage/writer ownership; restore rotates lineage.
 //   - command_mutation_receipts: lineage-scoped idempotency records that must not
 //     cross a replacement boundary.
-const SQLITE_BACKUP_TABLES = [
-  'schema_version',
+//   - request_history: device-local diagnostic telemetry; restore clears it when
+//     rotating lineage.
+//   - schema_version: live schema metadata; only the snapshot revision is copied.
+export const SQLITE_BACKUP_TABLES = [
   'command_events',
   'generation_finalization_retries',
   'memory_chunks',
@@ -2775,10 +2777,15 @@ const SQLITE_BACKUP_TABLES = [
   'settings',
 ] as const
 
-const REQUIRED_SQLITE_BACKUP_TABLES = [
-  'schema_version',
-  'settings',
-] as const satisfies readonly (typeof SQLITE_BACKUP_TABLES)[number][]
+export const SQLITE_BACKUP_EXCLUDED_TABLES = {
+  push_subscriptions: 'Origin/device registrations bound to the live VAPID identity.',
+  database_metadata: 'Live lineage and writer ownership; restore rotates lineage.',
+  command_mutation_receipts: 'Lineage-scoped idempotency records; restore clears them.',
+  request_history: 'Device-local diagnostic telemetry; restore clears it when rotating lineage.',
+  schema_version: 'Live schema metadata; restore copies only the snapshot revision.',
+} as const satisfies Readonly<Record<string, string>>
+
+const REQUIRED_SQLITE_BACKUP_TABLES = ['schema_version', 'settings'] as const
 
 type BackupDatabasePayloadStatus = 'missing' | 'invalid' | 'usable'
 
@@ -3399,9 +3406,9 @@ function restoreSqliteFromBackup(
     let committed = false
     try {
       for (const table of SQLITE_BACKUP_TABLES) {
-        if (table === 'schema_version') continue
         db.exec(`DELETE FROM ${table}`)
       }
+      db.exec('DELETE FROM request_history')
       databaseLineage = rotateDatabaseLineage(db)
       hooks.beforeCommit?.(databaseLineage)
       repairPersistedModelProfileInlineSecretsInSqlite(db)
@@ -3435,26 +3442,25 @@ function restoreSqliteFromBackup(
   try {
     db.exec('BEGIN')
     try {
+      // Keep the live schema version current; only the snapshot's revision is
+      // part of the restored durable state.
+      const schemaVersionExists = db
+        .prepare("SELECT name FROM bak.sqlite_master WHERE type = 'table' AND name = 'schema_version'")
+        .get()
+      if (schemaVersionExists) {
+        db.exec(
+          `UPDATE main.schema_version
+           SET revision = COALESCE(
+             (SELECT revision FROM bak.schema_version WHERE id = 1),
+             revision
+           )
+           WHERE id = 1`,
+        )
+      }
       for (const table of SQLITE_BACKUP_TABLES) {
         // Verify the table exists in the backup; older snapshots may predate
         // memory tables.
         const exists = db.prepare(`SELECT name FROM bak.sqlite_master WHERE type = 'table' AND name = ?`).get(table)
-        if (table === 'schema_version') {
-          // The live schema stays current because restore swaps table data, not
-          // table definitions. Restore only the backup revision; copying an old
-          // version would bypass migrations until the next process restart.
-          if (exists) {
-            db.exec(
-              `UPDATE main.schema_version
-               SET revision = COALESCE(
-                 (SELECT revision FROM bak.schema_version WHERE id = 1),
-                 revision
-               )
-               WHERE id = 1`,
-            )
-          }
-          continue
-        }
         db.exec(`DELETE FROM main.${table}`)
         if (exists) {
           if (table === 'generation_finalization_retries') {
@@ -3464,6 +3470,7 @@ function restoreSqliteFromBackup(
           }
         }
       }
+      db.exec('DELETE FROM request_history')
       repairPersistedGlobalLorebookIdsInSqlite(db)
       databaseLineage = rotateDatabaseLineage(db)
       hooks.beforeCommit?.(databaseLineage)

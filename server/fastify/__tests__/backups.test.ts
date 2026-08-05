@@ -7,7 +7,14 @@ import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
-import { assetsDir, getAllAssetMetadata, listBackups, loadPersistedWithMessages } from '../src/repository.js'
+import {
+  SQLITE_BACKUP_EXCLUDED_TABLES,
+  SQLITE_BACKUP_TABLES,
+  assetsDir,
+  getAllAssetMetadata,
+  listBackups,
+  loadPersistedWithMessages,
+} from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
@@ -191,6 +198,26 @@ function insertPushSubscription(db: DatabaseSync, endpoint: string): void {
   )
 }
 
+function insertRequestHistory(db: DatabaseSync, id: string, prompt: string, response: string): void {
+  db.prepare(
+    `INSERT INTO request_history (
+       id, started_at, completed_at, status, source, profile_json, prompt_json,
+       response_text, metadata_json, api_metadata_json
+     ) VALUES (?, 1, 2, 'success', 'backup-test', ?, ?, ?, '{}', '{}')`,
+  ).run(
+    id,
+    JSON.stringify({
+      id: 'backup-test-profile',
+      role: 'primary',
+      sourceKind: 'settings',
+      modelId: 'backup-test-model',
+      requestModel: 'backup-test-model',
+    }),
+    JSON.stringify([{ role: 'user', content: prompt }]),
+    response,
+  )
+}
+
 let harness: Harness
 
 beforeEach(async () => {
@@ -203,6 +230,51 @@ afterEach(async () => {
 })
 
 describe('Phase 2D backups', () => {
+  describe('SQLite backup table ownership policy', () => {
+    it('classifies every production schema table as restored or deliberately device-local', () => {
+      const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+      try {
+        const liveTables = (
+          db
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+            .all() as Array<{ name: string }>
+        ).map((row) => row.name)
+        const backupTables = [...SQLITE_BACKUP_TABLES]
+        const excludedEntries = Object.entries(SQLITE_BACKUP_EXCLUDED_TABLES)
+        const excludedTables = excludedEntries.map(([table]) => table)
+        const liveTableSet = new Set(liveTables)
+        const backupTableSet = new Set<string>(backupTables)
+        const excludedTableSet = new Set(excludedTables)
+        const instructions =
+          'Add a new durable table to SQLITE_BACKUP_TABLES so it round-trips with backups, or add it to ' +
+          'SQLITE_BACKUP_EXCLUDED_TABLES with a rationale when it is deliberately device-local.'
+
+        expect(
+          liveTables.filter((table) => !backupTableSet.has(table) && !excludedTableSet.has(table)),
+          `Every production SQLite table must have an explicit backup policy. ${instructions}`,
+        ).toEqual([])
+        expect(
+          backupTables.filter((table) => excludedTableSet.has(table)).sort(),
+          'SQLITE_BACKUP_TABLES and SQLITE_BACKUP_EXCLUDED_TABLES must be disjoint; choose exactly one policy.',
+        ).toEqual([])
+        expect(
+          backupTables.filter((table) => !liveTableSet.has(table)).sort(),
+          `SQLITE_BACKUP_TABLES contains tables absent from the production schema. Remove renamed/dead entries, or update their schema creation. ${instructions}`,
+        ).toEqual([])
+        expect(
+          excludedTables.filter((table) => !liveTableSet.has(table)).sort(),
+          `SQLITE_BACKUP_EXCLUDED_TABLES contains tables absent from the production schema. Remove renamed/dead entries, or update their schema creation. ${instructions}`,
+        ).toEqual([])
+        expect(
+          excludedEntries.filter(([, reason]) => reason.trim().length === 0).map(([table]) => table),
+          'Every SQLITE_BACKUP_EXCLUDED_TABLES entry must document why the table is deliberately device-local.',
+        ).toEqual([])
+      } finally {
+        db.close()
+      }
+    })
+  })
+
   it('rejects all four routes without auth when password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -439,6 +511,56 @@ describe('Phase 2D backups', () => {
       pluginCustomStorage: {},
     })
     expect(afterRestore.json().revision).toBe(revisionAfter)
+  })
+
+  it('clears device-local request history when restoring a SQLite backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const snapshotDb = new DatabaseSync(liveDbPath)
+    try {
+      insertRequestHistory(snapshotDb, 'snapshot-history', 'snapshot prompt', 'snapshot response')
+    } finally {
+      snapshotDb.close()
+    }
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'request history exclusion snapshot' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'), {
+      readOnly: true,
+    })
+    try {
+      expect(backupDb.prepare('SELECT id FROM request_history').all()).toEqual([{ id: 'snapshot-history' }])
+    } finally {
+      backupDb.close()
+    }
+
+    const liveDb = new DatabaseSync(liveDbPath)
+    try {
+      liveDb.exec('DELETE FROM request_history')
+      insertRequestHistory(liveDb, 'live-history', 'live prompt', 'live response')
+    } finally {
+      liveDb.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(liveDbPath, { readOnly: true })
+    try {
+      expect(verify.prepare('SELECT id FROM request_history').all()).toEqual([])
+    } finally {
+      verify.close()
+    }
   })
 
   it('restores retry and tombstone snapshot state while preserving live push subscriptions', async () => {
@@ -1484,6 +1606,39 @@ describe('Phase 2D backups', () => {
     })
     expect(asset.statusCode).toBe(200)
     expect(Buffer.from(asset.rawPayload)).toEqual(PNG_BYTES)
+  })
+
+  it('clears device-local request history when restoring a legacy JSON backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const liveDb = new DatabaseSync(liveDbPath)
+    try {
+      insertRequestHistory(liveDb, 'live-legacy-history', 'legacy live prompt', 'legacy live response')
+    } finally {
+      liveDb.close()
+    }
+
+    const backupId = '2026-06-03-00-00-00-aabbcc'
+    const backupRoot = path.join(harness.dataDir, 'backups', backupId)
+    mkdirSync(backupRoot, { recursive: true })
+    writeFileSync(
+      path.join(backupRoot, 'db.json'),
+      JSON.stringify({ _version: 1, database: { characters: [] }, assets: [] }),
+    )
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(liveDbPath, { readOnly: true })
+    try {
+      expect(verify.prepare('SELECT id FROM request_history').all()).toEqual([])
+    } finally {
+      verify.close()
+    }
   })
 
   it('restores a legacy db.json backup into SQLite tables', async () => {
