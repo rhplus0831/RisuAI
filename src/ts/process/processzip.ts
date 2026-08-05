@@ -6,7 +6,7 @@ import { hasher } from '../parser/parser.svelte'
 import { hubURL } from '../characterCards'
 
 // File size and chunk size constants
-const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024 // 50MB
+export const DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES = 50 * 1024 * 1024 // 50 MiB
 const CHUNK_SIZE_BYTES = 1024 * 1024 // 1MB
 
 // Queue management constants
@@ -21,6 +21,15 @@ const HTTP_STATUS_OK_MAX = 300
 interface ActiveZipAsset {
   file: fflate.UnzipFile
   bytesRead: number
+}
+
+export interface CharXImporterOptions {
+  maxEntrySizeBytes?: number
+}
+
+export function formatCharXEntrySizeLimit(maxEntrySizeBytes: number): string {
+  const mib = 1024 * 1024
+  return maxEntrySizeBytes % mib === 0 ? `${maxEntrySizeBytes / mib} MiB` : `${maxEntrySizeBytes} bytes`
 }
 
 export async function processZip(dataArray: Uint8Array): Promise<string> {
@@ -194,7 +203,7 @@ export class CharXImporter {
   private activeAssets: { [key: string]: ActiveZipAsset } = {}
   private excludedFileNames: Set<string> = new Set()
 
-  // Files excluded due to size limits (> MAX_ASSET_SIZE_BYTES)
+  // Files excluded after exceeding the configured per-entry size limit.
   excludedFiles: string[] = []
 
   // Extracted character card JSON content
@@ -207,8 +216,14 @@ export class CharXImporter {
   alertInfo: boolean = false // Show progress alerts to user
   skipSaving: boolean = false // If true, only compute hashes without saving
   hashSignal: string | undefined // Hash to signal server for sync (when skipSaving is false)
+  readonly maxEntrySizeBytes: number
 
-  constructor() {
+  constructor(options: CharXImporterOptions = {}) {
+    const maxEntrySizeBytes = options.maxEntrySizeBytes ?? DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES
+    if (!Number.isSafeInteger(maxEntrySizeBytes) || maxEntrySizeBytes < 1) {
+      throw new Error('CharX entry size limit must be a positive safe integer')
+    }
+    this.maxEntrySizeBytes = maxEntrySizeBytes
     this.unzip = new fflate.Unzip()
     this.unzip.register(fflate.UnzipInflate)
     this.unzip.onfile = (file) => this.#handleFile(file)
@@ -349,7 +364,7 @@ export class CharXImporter {
   #handleFile(file: fflate.UnzipFile) {
     const assetIndex = file.name
     const originalSize = file.originalSize ?? 0
-    if (originalSize > MAX_ASSET_SIZE_BYTES) {
+    if (originalSize > this.maxEntrySizeBytes) {
       this.#markFileExcluded(assetIndex)
       return
     }
@@ -362,9 +377,8 @@ export class CharXImporter {
 
     file.ondata = (_err, dat, final) => this.#handleFileData(assetIndex, dat, final)
 
-    // Only process files within MAX_ASSET_SIZE_BYTES (50MB); unknown sizes
-    // are guarded cumulatively while streaming.
-    if ((file.originalSize ?? 0) <= MAX_ASSET_SIZE_BYTES) {
+    // Known sizes are checked here; unknown sizes are guarded cumulatively.
+    if ((file.originalSize ?? 0) <= this.maxEntrySizeBytes) {
       file.start()
     }
   }
@@ -380,7 +394,7 @@ export class CharXImporter {
     }
 
     activeAsset.bytesRead += data.byteLength
-    if (activeAsset.bytesRead > MAX_ASSET_SIZE_BYTES) {
+    if (activeAsset.bytesRead > this.maxEntrySizeBytes) {
       this.#terminateOversizedFile(fileName, activeAsset)
       return
     }
@@ -403,7 +417,7 @@ export class CharXImporter {
 
     const assetData = this.assetBuffers[fileName].buffer
 
-    if (assetData.byteLength > MAX_ASSET_SIZE_BYTES) {
+    if (assetData.byteLength > this.maxEntrySizeBytes) {
       this.#markFileExcluded(fileName)
     } else if (fileName === 'card.json') {
       this.cardData = new TextDecoder().decode(assetData)

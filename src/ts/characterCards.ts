@@ -51,7 +51,12 @@ import { type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
 import { reencodeImage } from './process/files/inlays'
 import { PngChunk } from './pngChunk'
 import type { OnnxModelFiles } from './process/transformers'
-import { CharXImporter, CharXWriter } from './process/processzip'
+import {
+  CharXImporter,
+  CharXWriter,
+  DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES,
+  formatCharXEntrySizeLimit,
+} from './process/processzip'
 import {
   exportModule,
   importRisuModuleData,
@@ -75,6 +80,27 @@ import {
 } from './server/scriptDefinitionBridge.svelte'
 
 export const hubURL = '/api/v1/hub'
+export const CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR = 'character_card_incomplete_import'
+
+export interface CharacterImportProcessOptions {
+  charXMaxEntrySizeBytes?: number
+  dataUriMaxBase64Length?: number
+}
+
+function incompleteCharXImportError(importer: CharXImporter): Error {
+  const files = importer.excludedFiles.map((fileName) => JSON.stringify(fileName)).join(', ')
+  return new Error(
+    `${CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR}: entries exceeded the ` +
+      `${formatCharXEntrySizeLimit(importer.maxEntrySizeBytes)} per-entry limit: ${files}`,
+  )
+}
+
+function oversizedDataUriImportError(index: number, maxBase64Length: number): Error {
+  return new Error(
+    `${CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR}: data.assets[${index}] exceeds the ` +
+      `${formatCharXEntrySizeLimit(maxBase64Length)} inline data-URI limit`,
+  )
+}
 
 export async function authenticatedHubFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
@@ -146,17 +172,28 @@ export async function importCharacter(): Promise<string | null | undefined> {
   }
 }
 
-export async function importCharacterProcess(f: {
-  name: string
-  data: Uint8Array | File | ReadableStream<Uint8Array>
-}): Promise<string | null | undefined> {
+export async function importCharacterProcess(
+  f: {
+    name: string
+    data: Uint8Array | File | ReadableStream<Uint8Array>
+  },
+  options: CharacterImportProcessOptions = {},
+): Promise<string | null | undefined> {
+  const dataUriMaxBase64Length = options.dataUriMaxBase64Length ?? DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES
   if (f.name.endsWith('json')) {
     if (f.data instanceof ReadableStream) {
       return null
     }
     const data = f.data instanceof Uint8Array ? f.data : new Uint8Array(await f.data.arrayBuffer())
     const da = JSON.parse(Buffer.from(data).toString('utf-8'))
-    const importedCharacterId = await importCharacterCardSpec(da)
+    const importedCharacterId = await importCharacterCardSpec(
+      da,
+      undefined,
+      'normal',
+      {},
+      undefined,
+      dataUriMaxBase64Length,
+    )
     if (importedCharacterId) {
       return importedCharacterId
     }
@@ -178,9 +215,19 @@ export async function importCharacterProcess(f: {
       msg: 'Loading... (Reading)',
     })
 
-    const importer = new CharXImporter()
+    const importer = new CharXImporter({ maxEntrySizeBytes: options.charXMaxEntrySizeBytes })
     importer.alertInfo = true
     await importer.parse(f.data)
+    let completionError: unknown
+    try {
+      await importer.done()
+    } catch (error) {
+      completionError = error
+    }
+    if (importer.excludedFiles.length > 0) {
+      throw incompleteCharXImportError(importer)
+    }
+    if (completionError) throw completionError
     const cardData = importer.cardData
     if (!cardData) {
       alertError(language.errors.noData)
@@ -195,7 +242,6 @@ export async function importCharacterProcess(f: {
     if (importer.moduleData) {
       const md = await readModule(Buffer.from(importer.moduleData))
       if (!md) {
-        await importer.done()
         return null
       }
       card.data.extensions ??= {}
@@ -206,8 +252,7 @@ export async function importCharacterProcess(f: {
         lorebook = md.lorebook
       }
     }
-    await importer.done()
-    return await importCharacterCardSpec(card, undefined, 'normal', importer.assets, lorebook)
+    return await importCharacterCardSpec(card, undefined, 'normal', importer.assets, lorebook, dataUriMaxBase64Length)
   }
 
   if (!f.name.endsWith('png')) {
@@ -328,7 +373,14 @@ export async function importCharacterProcess(f: {
           try {
             const decrypted = await decryptBuffer(encrypted, password)
             const charaData: CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
-            const importedCharacterId = await importCharacterCardSpec(charaData, img, 'normal', assets)
+            const importedCharacterId = await importCharacterCardSpec(
+              charaData,
+              img,
+              'normal',
+              assets,
+              undefined,
+              dataUriMaxBase64Length,
+            )
             if (importedCharacterId) {
               return importedCharacterId
             } else {
@@ -343,7 +395,14 @@ export async function importCharacterProcess(f: {
         const decrypted = await decryptBuffer(encrypted, 'RISU_NONE')
         try {
           const charaData: CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
-          const importedCharacterId = await importCharacterCardSpec(charaData, img, 'normal', assets)
+          const importedCharacterId = await importCharacterCardSpec(
+            charaData,
+            img,
+            'normal',
+            assets,
+            undefined,
+            dataUriMaxBase64Length,
+          )
           if (importedCharacterId) {
             return importedCharacterId
           }
@@ -372,7 +431,7 @@ export async function importCharacterProcess(f: {
     alertNormal(language.importedCharacter)
     return importedCharacterId
   }
-  return await importCharacterCardSpec(parsed, img, 'normal', assets)
+  return await importCharacterCardSpec(parsed, img, 'normal', assets, undefined, dataUriMaxBase64Length)
 }
 
 export const showRealmInfoStore: Writable<null | hubType> = writable(null)
@@ -655,6 +714,7 @@ async function importCharacterCardSpec(
   mode: 'hub' | 'normal' = 'normal',
   assetDict: { [key: string]: string } = {},
   overrideLorebook?: loreBook[],
+  dataUriMaxBase64Length = DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES,
 ): Promise<string | null> {
   if (!card || (card.spec !== 'chara_card_v2' && card.spec !== 'chara_card_v3')) {
     return null
@@ -876,13 +936,12 @@ async function importCharacterCardSpec(
         } else if (data.assets[i].uri.startsWith('data:')) {
           //data uri
           const b64 = data.assets[i].uri.split(',')[1] ?? ''
-          if (b64.length < 50 * 1024 * 1024) {
+          if (b64.length < dataUriMaxBase64Length) {
             // CCv3 inline data: URI assets are image
             // bytes by convention; PNG default is acceptable.
             dataUriUploads.push({ targetIndex: i, data: Buffer.from(b64, 'base64') })
           } else {
-            alertError('Data URI too large')
-            continue
+            throw oversizedDataUriImportError(i, dataUriMaxBase64Length)
           }
         } else {
           continue

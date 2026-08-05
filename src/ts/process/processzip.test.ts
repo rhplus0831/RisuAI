@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as fflate from 'fflate'
 
-const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024
 const ONE_MIB = 1024 * 1024
 
 const globalApiState = vi.hoisted(() => ({
@@ -101,7 +100,9 @@ vi.mock('../util', () => ({
   asBuffer: (data: Uint8Array) => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
 }))
 
-import { CharXImporter, CharXWriter } from './processzip'
+import { CharXImporter, CharXWriter, DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES } from './processzip'
+
+const MAX_ASSET_SIZE_BYTES = DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES
 
 const encoder = new TextEncoder()
 
@@ -235,6 +236,27 @@ function appendedTotalsByBuffer() {
 beforeEach(resetMocks)
 
 describe('CharXImporter stream caps', () => {
+  it('supports a small injected entry bound without allocating a production-sized fixture', async () => {
+    const cardJson = '{"spec":"chara_card_v3","data":{"name":"Known"}}'
+    const maxEntrySizeBytes = encoder.encode(cardJson).byteLength
+    const zipData = fflate.zipSync(
+      {
+        'card.json': encoder.encode(cardJson),
+        'module.risum': new Uint8Array(maxEntrySizeBytes + 1),
+      },
+      { level: 0 },
+    )
+    const importer = new CharXImporter({ maxEntrySizeBytes })
+
+    await importer.parse(zipData)
+    await importer.done()
+
+    expect(importer.maxEntrySizeBytes).toBe(maxEntrySizeBytes)
+    expect(importer.cardData).toBe(cardJson)
+    expect(importer.moduleData).toBeUndefined()
+    expect(importer.excludedFiles).toEqual(['module.risum'])
+  })
+
   it('M21: skips a known oversized CharX asset before allocating a buffer', async () => {
     const cardJson = '{"spec":"chara_card_v3","data":{"name":"Known"}}'
     const zipData = concatBytes([

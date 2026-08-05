@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as fflate from 'fflate'
 
 const dbState = vi.hoisted(() => ({
   db: {
@@ -28,10 +29,11 @@ const characterCommandState = vi.hoisted(() => ({
 }))
 
 const charxState = vi.hoisted(() => ({
-  assets: {} as Record<string, string>,
-  cardData: '',
-  moduleData: undefined as Uint8Array | undefined,
   module: undefined as Record<string, unknown> | undefined,
+}))
+
+const filePickerState = vi.hoisted(() => ({
+  selectFileByDom: vi.fn(),
 }))
 
 const clientIdentityState = vi.hoisted(() => ({ nextId: 0 }))
@@ -142,7 +144,7 @@ vi.mock('./util', () => ({
   sleep: vi.fn(),
 }))
 
-vi.mock('./filePicker', () => ({ selectFileByDom: vi.fn() }))
+vi.mock('./filePicker', () => ({ selectFileByDom: filePickerState.selectFileByDom }))
 
 vi.mock('src/lang', () => ({
   language: {
@@ -200,22 +202,6 @@ vi.mock('./process/files/inlays', () => ({
   reencodeImage: vi.fn(async (data: Uint8Array) => data),
 }))
 
-vi.mock('./process/processzip', () => ({
-  CharXImporter: class {
-    alertInfo = false
-    cardData = ''
-    moduleData: Uint8Array | undefined
-    assets = {}
-    async parse() {
-      this.assets = charxState.assets
-      this.cardData = charxState.cardData
-      this.moduleData = charxState.moduleData
-    }
-    async done() {}
-  },
-  CharXWriter: class {},
-}))
-
 vi.mock('./process/modules', () => ({
   exportModule: vi.fn(),
   readModule: vi.fn(async () => charxState.module),
@@ -266,8 +252,14 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: vi.fn(async () => 'test-token'),
 }))
 
-import { exportCharacterCard, importCharacterProcess } from './characterCards'
+import {
+  CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR,
+  exportCharacterCard,
+  importCharacter,
+  importCharacterProcess,
+} from './characterCards'
 import { PngChunk } from './pngChunk'
+import { DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES } from './process/processzip'
 
 const BASE_PNG = new Uint8Array(
   Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', 'base64'),
@@ -281,10 +273,8 @@ beforeEach(() => {
     characterOrder: [],
   }
   clientIdentityState.nextId = 0
-  charxState.cardData = ''
-  charxState.assets = {}
-  charxState.moduleData = undefined
   charxState.module = undefined
+  filePickerState.selectFileByDom.mockReset()
   characterCommandState.dispatchCreateCharacter.mockClear()
   alertState.alertStoreSet.mockClear()
   alertState.alertClear.mockClear()
@@ -490,8 +480,6 @@ describe('PNG character card import', () => {
 
   it('normalizes a charx module lorebook overlay after metadata replacement', async () => {
     const card = characterCardFixture('CharX Overlay')
-    charxState.cardData = JSON.stringify(card)
-    charxState.moduleData = new Uint8Array([1])
     charxState.module = {
       id: 'module-source',
       name: 'Overlay',
@@ -503,8 +491,12 @@ describe('PNG character card import', () => {
       regex: [{ comment: 'regex' }],
       trigger: [{ comment: 'trigger', type: 'manual', conditions: [], effect: [] }],
     }
+    const archive = createCharXArchive({
+      'card.json': Buffer.from(JSON.stringify(card)),
+      'module.risum': new Uint8Array([1]),
+    })
 
-    await importCharacterProcess({ name: 'overlay.charx', data: new Uint8Array([1]) })
+    await importCharacterProcess({ name: 'overlay.charx', data: archive })
 
     const imported = dbState.db.characters[0]
     const loreIds = imported.globalLore.map((entry: { id?: string }) => entry.id)
@@ -521,13 +513,13 @@ describe('PNG character card import', () => {
       { type: 'emotion', uri: 'embeded://assets/one.png', name: 'one', ext: 'png' },
       { type: 'icon', uri: 'embeded://assets/two.png', name: 'main', ext: 'png' },
     ]
-    charxState.cardData = JSON.stringify(card)
-    charxState.assets = {
-      'assets/one.png': 'asset-one',
-      'assets/two.png': 'asset-two',
-    }
+    const archive = createCharXArchive({
+      'card.json': Buffer.from(JSON.stringify(card)),
+      'assets/one.png': new Uint8Array([1]),
+      'assets/two.png': new Uint8Array([2]),
+    })
 
-    await importCharacterProcess({ name: 'low-level.charx', data: new Uint8Array([1]) })
+    await importCharacterProcess({ name: 'low-level.charx', data: archive })
 
     const assetProgress = alertState.alertStoreSet.mock.calls
       .map(([entry]) => entry)
@@ -540,6 +532,113 @@ describe('PNG character card import', () => {
       alertState.alertConfirm.mock.invocationCallOrder[0],
     )
     expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledOnce()
+  })
+
+  it('rejects a CharX whose module exceeds an injected entry bound', async () => {
+    const card = characterCardFixture('Oversized Module')
+    const cardBytes = Buffer.from(JSON.stringify(card))
+    const maxEntrySizeBytes = cardBytes.byteLength
+    const archive = createCharXArchive({
+      'card.json': cardBytes,
+      'module.risum': new Uint8Array(maxEntrySizeBytes + 1),
+    })
+
+    await expect(
+      importCharacterProcess(
+        { name: 'oversized-module.charx', data: archive },
+        { charXMaxEntrySizeBytes: maxEntrySizeBytes },
+      ),
+    ).rejects.toThrow(
+      `${CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR}: entries exceeded the ${maxEntrySizeBytes} bytes per-entry limit: "module.risum"`,
+    )
+
+    expect(dbState.db.characters).toEqual([])
+    expect(characterCommandState.dispatchCreateCharacter).not.toHaveBeenCalled()
+    expect(alertState.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('rejects a declared card asset that exceeds the injected entry bound', async () => {
+    const card = characterCardFixture('Oversized Asset')
+    card.data.assets = [{ type: 'emotion', uri: 'embeded://assets/oversized.png', name: 'oversized', ext: 'png' }]
+    const cardBytes = Buffer.from(JSON.stringify(card))
+    const maxEntrySizeBytes = cardBytes.byteLength
+    const archive = createCharXArchive({
+      'card.json': cardBytes,
+      'assets/oversized.png': new Uint8Array(maxEntrySizeBytes + 1),
+    })
+
+    await expect(
+      importCharacterProcess(
+        { name: 'oversized-asset.charx', data: archive },
+        { charXMaxEntrySizeBytes: maxEntrySizeBytes },
+      ),
+    ).rejects.toThrow('"assets/oversized.png"')
+
+    expect(dbState.db.characters).toEqual([])
+    expect(characterCommandState.dispatchCreateCharacter).not.toHaveBeenCalled()
+    expect(alertState.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('treats an oversized inline data-URI asset as a hard import failure', async () => {
+    const card = characterCardFixture('Oversized Data URI')
+    card.data.assets = [
+      {
+        type: 'emotion',
+        uri: 'data:application/octet-stream;base64,AQIDBA==',
+        name: 'oversized-inline',
+        ext: 'png',
+      },
+    ]
+    const archive = createCharXArchive({ 'card.json': Buffer.from(JSON.stringify(card)) })
+
+    await expect(
+      importCharacterProcess({ name: 'oversized-inline.charx', data: archive }, { dataUriMaxBase64Length: 7 }),
+    ).rejects.toThrow(
+      `${CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR}: data.assets[0] exceeds the 7 bytes inline data-URI limit`,
+    )
+
+    expect(dbState.db.characters).toEqual([])
+    expect(globalApiState.saveAssets).not.toHaveBeenCalled()
+    expect(characterCommandState.dispatchCreateCharacter).not.toHaveBeenCalled()
+    expect(alertState.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('still imports a complete CharX with a declared asset', async () => {
+    const card = characterCardFixture('Complete CharX')
+    card.data.assets = [{ type: 'emotion', uri: 'embeded://assets/smile.png', name: 'smile', ext: 'png' }]
+    const archive = createCharXArchive({
+      'card.json': Buffer.from(JSON.stringify(card)),
+      'assets/smile.png': new Uint8Array([1, 2, 3]),
+    })
+
+    const importedCharacterId = await importCharacterProcess({ name: 'complete.charx', data: archive })
+
+    expect(importedCharacterId).toBe(dbState.db.characters[0].chaId)
+    expect(dbState.db.characters[0].emotionImages).toEqual([['smile', 'asset-0-010203']])
+    expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledOnce()
+    expect(alertState.alertError).not.toHaveBeenCalled()
+    expect(alertState.alertNormal).toHaveBeenCalledWith('Imported character')
+  })
+
+  it('surfaces excluded CharX entries through the importCharacter alert boundary', async () => {
+    const cardBytes = Buffer.from(JSON.stringify(characterCardFixture('Alert Boundary')))
+    const archive = concatBytes([
+      storedLocalFile('module.risum', new Uint8Array(), DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES + 1, 0),
+      storedLocalFile('card.json', cardBytes),
+    ])
+    const selectedFile = Object.assign(archive, { name: 'oversized-module.charx' })
+    filePickerState.selectFileByDom.mockResolvedValueOnce([selectedFile])
+
+    await expect(importCharacter()).resolves.toBeNull()
+
+    expect(alertState.alertError).toHaveBeenCalledOnce()
+    const surfacedError = alertState.alertError.mock.calls[0][0] as Error
+    expect(surfacedError.message).toContain(CHARACTER_CARD_INCOMPLETE_IMPORT_ERROR)
+    expect(surfacedError.message).toContain('"module.risum"')
+    expect(surfacedError.message).toContain('50 MiB')
+    expect(dbState.db.characters).toEqual([])
+    expect(characterCommandState.dispatchCreateCharacter).not.toHaveBeenCalled()
+    expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 })
 
@@ -625,6 +724,54 @@ describe('v2 character card export assets', () => {
     expect(entry.secondary_keys).toBeUndefined()
   })
 })
+
+function createCharXArchive(entries: Record<string, Uint8Array>): Uint8Array {
+  return fflate.zipSync(entries, { level: 0 })
+}
+
+function writeUint16LE(target: Uint8Array, offset: number, value: number): void {
+  target[offset] = value & 0xff
+  target[offset + 1] = (value >>> 8) & 0xff
+}
+
+function writeUint32LE(target: Uint8Array, offset: number, value: number): void {
+  target[offset] = value & 0xff
+  target[offset + 1] = (value >>> 8) & 0xff
+  target[offset + 2] = (value >>> 16) & 0xff
+  target[offset + 3] = (value >>> 24) & 0xff
+}
+
+function storedLocalFile(
+  name: string,
+  data: Uint8Array,
+  originalSize = data.byteLength,
+  compressedSize = data.byteLength,
+): Uint8Array {
+  const nameBytes = new TextEncoder().encode(name)
+  const output = new Uint8Array(30 + nameBytes.byteLength + data.byteLength)
+  writeUint32LE(output, 0, 0x04034b50)
+  writeUint16LE(output, 4, 20)
+  writeUint16LE(output, 6, 0)
+  writeUint16LE(output, 8, 0)
+  writeUint32LE(output, 14, 0)
+  writeUint32LE(output, 18, compressedSize)
+  writeUint32LE(output, 22, originalSize)
+  writeUint16LE(output, 26, nameBytes.byteLength)
+  writeUint16LE(output, 28, 0)
+  output.set(nameBytes, 30)
+  output.set(data, 30 + nameBytes.byteLength)
+  return output
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const output = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0))
+  let offset = 0
+  for (const part of parts) {
+    output.set(part, offset)
+    offset += part.byteLength
+  }
+  return output
+}
 
 async function createPngCardFixture(options: { risuaiExtension?: Record<string, unknown> } = {}) {
   const assetPayloads = [new Uint8Array([7, 8, 9]), new Uint8Array([1, 3, 5, 7])]
