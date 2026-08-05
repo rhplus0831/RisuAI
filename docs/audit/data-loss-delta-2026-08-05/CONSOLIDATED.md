@@ -114,7 +114,7 @@ generated message.
 
 ## MEDIUM — other verified defects
 
-### C7 — Export-then-reset is not fenced to the exported state
+### C7 — Export-then-reset is not fenced to the exported state — FIXED `eb8136cde` (with L8)
 (codex-pass3 DL2-P3-1 + claude-pass3 DL2-P3-F1; agreement; VERIFIED)
 Messages landing between export completion and the double-confirmed reset
 (unbounded dialog dwell; SSE keeps the revision cursor fresh) are deleted and
@@ -129,7 +129,7 @@ stub; cold-storage GC/creation are no-ops in this fork
 (`coldstorage.svelte.ts:71-77`). Fix: detect `coldStorageHeader` pointers and
 inline-resolve or fail the export loudly.
 
-### C9 — CharX import silently truncates: oversized `module.risum` (scripts lost) and oversized data-URI assets
+### C9 — CharX import silently truncates: oversized `module.risum` (scripts lost) and oversized data-URI assets — FIXED `932386424`
 (codex-pass4 DL2-P4-1 + claude-pass4 DL2-P4-1/P4-2; agreement; VERIFIED)
 Entries >50MB are excluded with `excludedFiles` having zero consumers
 (`processzip.ts:349-355`); export moves trigger/regex scripts exclusively
@@ -212,8 +212,8 @@ preset rows.
   `repository.ts:505`; precondition speculative). Snapshot path should drop
   invalid cache rows instead of throwing.
 - L8 10-second blob-URL revoke vs slow save-as exports gating the reset
-  (claude-pass3 DL2-P3-F2; speculative browser-behavior link; fold into C7's
-  fix if pursued).
+  (claude-pass3 DL2-P3-F2; speculative browser-behavior link) — FIXED with
+  C7 in `eb8136cde` (reset-gating export skips revocation).
 
 ## Structural deliverable (Method §4 — land regardless)
 
