@@ -8,6 +8,11 @@ vi.mock('./fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'preset-import-token',
 }))
 
+vi.mock('../rpack/rpack_js', () => ({
+  encodeRPack: async (data: Uint8Array) => data,
+  decodeRPack: async (data: Uint8Array) => data,
+}))
+
 // Resource-state effects fire moduleUpdate when the database is seeded;
 // neutralize it so the import-order TDZ between modules.ts and this module
 // graph cannot crash the run (same pattern as command.resourceGuard.test.ts).
@@ -19,7 +24,7 @@ vi.mock('../process/modules', async (importActual) => {
 import * as fflate from 'fflate'
 import { encode as encodeMsgpack } from 'msgpackr/index-no-eval'
 import { encryptBuffer } from '../util'
-import { importPreset, presetTemplate, resetPendingPresetMutationsForTests } from './database.svelte'
+import { downloadPreset, importPreset, presetTemplate, resetPendingPresetMutationsForTests } from './database.svelte'
 import { clearCachedServerCommandRevision, setServerCommandSuccessReconciler } from '../server/commands'
 import {
   clearPendingMutationOutbox,
@@ -375,6 +380,45 @@ describe('importPreset warm-path logging (L37)', () => {
       expect(calls.filter((call) => call.url.endsWith('/model-presets'))).toHaveLength(0)
       expect(calls.filter((call) => call.url.endsWith('/prompt-presets'))).toHaveLength(1)
     })
+  })
+
+  it.each([
+    { format: 'json' as const, archived: true },
+    { format: 'json' as const, archived: false },
+    { format: 'risup' as const, archived: true },
+    { format: 'risup' as const, archived: false },
+  ])('round-trips archived=$archived through standalone $format export and import', async ({ format, archived }) => {
+    replaceResourceDatabase({
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [{ name: 'Archive round-trip', mainPrompt: 'Portable prompt', archived }],
+      promptPresetsId: 0,
+    } as any)
+    const exported = await downloadPreset(0, 'return')
+    if (!exported?.buf) throw new Error('expected a standalone preset export')
+
+    replaceResourceDatabase({
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const calls = stubCommandFetch()
+    const file =
+      format === 'json'
+        ? { name: 'archive-roundtrip.json', data: new TextEncoder().encode(JSON.stringify(exported.data)) }
+        : { name: 'archive-roundtrip.risup', data: exported.buf }
+
+    await expect(importPreset(file)).resolves.toBe('applied')
+
+    expect(getResourceDatabase().promptPresets).toHaveLength(1)
+    expect(getResourceDatabase().promptPresets[0]).toMatchObject({
+      name: 'Archive round-trip',
+      mainPrompt: 'Portable prompt',
+      archived,
+    })
+    const command = await waitForImportCommand(calls)
+    expect(command.body.preset.archived).toBe(archived)
   })
 
   it('keeps the import pending until the server has accepted it', async () => {

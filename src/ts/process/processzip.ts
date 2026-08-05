@@ -375,7 +375,13 @@ export class CharXImporter {
       bytesRead: 0,
     }
 
-    file.ondata = (_err, dat, final) => this.#handleFileData(assetIndex, dat, final)
+    file.ondata = (error, data, final) => {
+      if (error) {
+        this.#handleFileError(assetIndex, error)
+        return
+      }
+      this.#handleFileData(assetIndex, data, final)
+    }
 
     // Known sizes are checked here; unknown sizes are guarded cumulatively.
     if ((file.originalSize ?? 0) <= this.maxEntrySizeBytes) {
@@ -403,6 +409,19 @@ export class CharXImporter {
     if (final) {
       this.#handleFileComplete(fileName)
     }
+  }
+
+  #handleFileError(fileName: string, error: Error) {
+    const activeAsset = this.activeAssets[fileName]
+    if (!activeAsset) {
+      return
+    }
+
+    delete this.activeAssets[fileName]
+    delete this.assetBuffers[fileName]
+    this.errors.push(error)
+    activeAsset.file.terminate()
+    this.#checkCompletion()
   }
 
   /**

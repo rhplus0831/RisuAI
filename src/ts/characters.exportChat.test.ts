@@ -51,6 +51,8 @@ vi.mock('./process/scripts', () => ({
 }))
 
 import { exportAllChats, exportChat, matchesAllChatsExportFence } from './characters'
+import { language } from '../lang'
+import { coldStorageHeader } from './process/coldstorage.svelte'
 import { replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import type { Chat, character, Database } from './storage/database.svelte'
@@ -301,6 +303,23 @@ describe('chat export stable targets', () => {
     expect(exportMocks.alertNormal).not.toHaveBeenCalled()
   })
 
+  it('fails a single-chat export before creating an artifact when the chat is a cold-storage pointer', async () => {
+    const targetChat = makeChat('chat-a-target', 'Archived Chat', `${coldStorageHeader}archive-key`)
+    setDatabase([makeCharacter('char-a', 'Character A', [targetChat])])
+    exportMocks.alertSelect.mockResolvedValueOnce('0')
+
+    await exportChat({ characterId: 'char-a', chatId: 'chat-a-target' })
+
+    expect(exportMocks.alertError).toHaveBeenCalledOnce()
+    expect(exportMocks.alertError.mock.calls[0][0]).toMatchObject({
+      message: language.chatExportColdStorageBlocked(['Archived Chat']),
+    })
+    expect(exportMocks.downloadFile).not.toHaveBeenCalled()
+    expect(clipboardWrite).not.toHaveBeenCalled()
+    expect(exportMocks.alertNormal).not.toHaveBeenCalled()
+    expect(targetChat.message[0].data).toBe(`${coldStorageHeader}archive-key`)
+  })
+
   it('aborts without downloading when the chat vanishes during hydration', async () => {
     const targetChat = makeChat('chat-a-target', 'Target Chat', 'target')
     const characterA = makeCharacter('char-a', 'Character A', [targetChat])
@@ -336,6 +355,23 @@ describe('chat export stable targets', () => {
 
     expect(exportMocks.downloadFile).not.toHaveBeenCalled()
     expect(exportMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('fails an all-chat export before fence capture or download when any chat is a cold-storage pointer', async () => {
+    const liveChat = makeChat('chat-live', 'Live Chat', 'live message')
+    const firstStub = makeChat('chat-stub-a', 'Archived A', `${coldStorageHeader}archive-a`)
+    const secondStub = makeChat('chat-stub-b', 'Archived B', `${coldStorageHeader}archive-b`)
+    setDatabase([makeCharacter('char-a', 'Character A', [liveChat, firstStub, secondStub])])
+
+    await expect(exportAllChats('char-a')).resolves.toEqual({ success: false })
+
+    expect(exportMocks.alertError).toHaveBeenCalledOnce()
+    expect(exportMocks.alertError.mock.calls[0][0]).toMatchObject({
+      message: language.chatExportColdStorageBlocked(['Archived A', 'Archived B']),
+    })
+    expect(exportMocks.downloadFile).not.toHaveBeenCalled()
+    expect(firstStub.message[0].data).toBe(`${coldStorageHeader}archive-a`)
+    expect(secondStub.message[0].data).toBe(`${coldStorageHeader}archive-b`)
   })
 
   it('reports a failed all-chat download to its caller', async () => {

@@ -1,3 +1,5 @@
+import { isMaskedProviderSecret } from '../providerSecretMask'
+
 export type ProviderCredentialType = 'apiKey' | 'vertexServiceAccount'
 
 export interface ProviderCredentialRecord {
@@ -34,7 +36,7 @@ export function normalizeProviderCredentials(value: unknown): ProviderCredential
 
     if (item.type === 'apiKey') {
       const apiKey = nonBlankString(item.apiKey)
-      if (!apiKey) continue
+      if (!apiKey || isMaskedProviderSecret(apiKey)) continue
       credentials.push({ id, name, type: 'apiKey', apiKey })
       seen.add(id)
       continue
@@ -43,7 +45,9 @@ export function normalizeProviderCredentials(value: unknown): ProviderCredential
     if (item.type === 'vertexServiceAccount' && isRecord(item.vertex)) {
       const clientEmail = nonBlankString(item.vertex.clientEmail)
       const privateKey = nonBlankString(item.vertex.privateKey)
-      if (!clientEmail || !privateKey) continue
+      if (!clientEmail || !privateKey || isMaskedProviderSecret(clientEmail) || isMaskedProviderSecret(privateKey)) {
+        continue
+      }
       credentials.push({
         id,
         name,

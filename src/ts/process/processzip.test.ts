@@ -236,6 +236,38 @@ function appendedTotalsByBuffer() {
 beforeEach(resetMocks)
 
 describe('CharXImporter stream caps', () => {
+  it('rejects done() with the original per-entry decompression error and terminates that entry', async () => {
+    const importer = new CharXImporter()
+    const entryError = Object.assign(new Error('corrupt CharX entry'), {
+      code: fflate.FlateErrorCode.InvalidZipData,
+    })
+    const terminate = vi.fn()
+    const file = {
+      name: 'assets/broken.png',
+      compression: 8,
+      originalSize: 1,
+      ondata: vi.fn(),
+      start: vi.fn(),
+      terminate,
+    } as unknown as fflate.UnzipFile
+    file.start = vi.fn(() => file.ondata(entryError, new Uint8Array(), false))
+    let injected = false
+    vi.spyOn(importer.unzip, 'push').mockImplementation((_data, final) => {
+      if (final || injected) return
+      injected = true
+      importer.unzip.onfile(file)
+    })
+
+    const parsing = importer.parse(new Uint8Array([1]))
+    const completion = expect(importer.done()).rejects.toBe(entryError)
+    await parsing
+    await completion
+
+    expect(terminate).toHaveBeenCalledOnce()
+    expect(Object.keys(importer.assetBuffers)).toEqual([])
+    expect(globalApiState.saveAssets).not.toHaveBeenCalled()
+  })
+
   it('supports a small injected entry bound without allocating a production-sized fixture', async () => {
     const cardJson = '{"spec":"chara_card_v3","data":{"name":"Known"}}'
     const maxEntrySizeBytes = encoder.encode(cardJson).byteLength

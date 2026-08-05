@@ -33,7 +33,7 @@ import {
   dispatchCreateImportedChats,
 } from './chatCommands'
 import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from './chatGenerationSettings'
-import { recoverColdStorageCharacter } from './process/coldstorage.svelte'
+import { coldStorageHeader, recoverColdStorageCharacter } from './process/coldstorage.svelte'
 import {
   currentCharacterRowSnapshot,
   currentCharacterSelectionSnapshot,
@@ -459,6 +459,15 @@ function resolveCharacterExportTarget(characterId: string): character | null {
   return getDatabase().characters?.find((candidate) => candidate.chaId === characterId) ?? null
 }
 
+function assertChatsReadyForExport(chats: readonly Chat[]): void {
+  const affectedChats = chats
+    .filter((chat) => chat.message?.[0]?.data?.startsWith(coldStorageHeader))
+    .map((chat) => chat.name?.trim() || chat.id || language.Chat)
+  if (affectedChats.length > 0) {
+    throw new Error(language.chatExportColdStorageBlocked(affectedChats))
+  }
+}
+
 export async function exportChat(target: ChatExportTarget): Promise<void> {
   const stableTarget: ChatExportTarget = {
     characterId: target.characterId,
@@ -487,6 +496,7 @@ export async function exportChat(target: ChatExportTarget): Promise<void> {
     const resolvedTarget = resolveChatExportTarget(stableTarget)
     if (!resolvedTarget) return
     const { char, chat } = resolvedTarget
+    assertChatsReadyForExport([chat])
     const date = new Date().toJSON()
     const htmlChatParse = async (v: string) => {
       v = parseMarkdownSafe(v)
@@ -1109,6 +1119,7 @@ export async function exportAllChats(characterId: string): Promise<ExportAllChat
     const date = new Date().toISOString().replace(/[:.]/g, '-')
     const allChats = char.chats
     const allFolders = char.chatFolders
+    assertChatsReadyForExport(allChats)
     const fence = captureAllChatsExportFence(allChats)
     const stringl = Buffer.from(
       JSON.stringify({

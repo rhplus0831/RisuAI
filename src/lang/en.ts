@@ -1010,6 +1010,8 @@ export const languageEnglish = {
   chatListDeleteAllSecondConfirm:
     'This will permanently delete every chat for this character. Are you absolutely sure?',
   chatListDeleteAllExportChanged: 'Chats changed since the export. Re-export them and try again.',
+  chatExportColdStorageBlocked: (chats: string[]) =>
+    `Export stopped because these chats still use cold-storage pointers: ${chats.join(', ')}. Open each affected chat once to recover it, then export again.`,
   chatListDeleteAllAction: 'Delete all chats',
   chatListImport: 'Import chat',
   chatListEdit: 'Edit chat list',
@@ -1109,6 +1111,8 @@ export const languageEnglish = {
       groups.length > 0 ? ` (${groups.join(', ')})` : ''
     }. Nothing was imported.`,
   backupConfirm: 'Do you really want to save backup?',
+  portableSaveSecretsWarning:
+    'This export contains your API keys and other secrets. Handle the file like a password. Do you want to continue?',
   backupLoadConfirm: 'Do you really want to load backup? All datas will be lost!',
   backupLoadConfirm2: 'Do you really, really want to load backup? All datas will be lost!',
   pasteAuthCode: 'Please copy the auth code from popup and paste it in here:',

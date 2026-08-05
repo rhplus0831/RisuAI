@@ -7,6 +7,7 @@ import {
   findEquivalentModelPreset,
   hasModelPresetOnlyFields,
   modelPresetFingerprint,
+  PROMPT_PRESET_FIELDS,
   promptPresetExportPayload,
   resolvePromptPresetRegexField,
 } from './presetSplit'
@@ -154,6 +155,7 @@ describe('preset split helpers', () => {
     expect(
       promptPresetExportPayload({
         ...legacyPreset,
+        archived: true,
         overrideModelParameters: true,
       }),
     ).toEqual({
@@ -169,7 +171,15 @@ describe('preset split helpers', () => {
       additionalParams: [['temperature', '{{none}}']],
       enableCustomFlags: true,
       customFlags: [8],
+      archived: true,
     })
+  })
+
+  it('normalizes standalone archive metadata without making it an applied prompt field', () => {
+    expect(PROMPT_PRESET_FIELDS).not.toContain('archived')
+    expect(promptPresetExportPayload({ name: 'Active', archived: false })).toMatchObject({ archived: false })
+    expect(promptPresetExportPayload({ name: 'Legacy active' })).toMatchObject({ archived: false })
+    expect(promptPresetExportPayload({ name: 'Invalid', archived: 'true' })).toMatchObject({ archived: false })
   })
 
   it('distinguishes full legacy presets from modern prompt-only payloads', () => {

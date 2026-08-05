@@ -115,7 +115,7 @@
 
 <Button
   onclick={async () => {
-    if (await alertConfirm(language.backupConfirm)) {
+    if (await alertConfirm(language.portableSaveSecretsWarning)) {
       await runBackupOperation('localZipSave', 'Saving ZIP-style local backup', (onProgress) =>
         saveZipBackupToDevice({ onProgress }),
       )

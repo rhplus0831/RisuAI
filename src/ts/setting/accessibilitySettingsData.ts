@@ -68,6 +68,7 @@ export const accessibilitySettingsItems: SettingItem[] = [
     labelKey: 'floatingChatInput',
     helpKey: 'floatingChatInput',
     bindKey: 'floatingChatInput',
+    getValue: (db) => db.floatingChatInput ?? true,
     keywords: ['floating', 'chat', 'input', 'composer', 'accessibility'],
   },
   {

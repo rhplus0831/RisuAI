@@ -255,6 +255,7 @@ export function promptPresetExportPayload(promptPreset: unknown): JsonRecord {
   if (isRecord(promptPreset)) {
     if (typeof promptPreset.name === 'string') payload.name = promptPreset.name
     if (typeof promptPreset.id === 'string') payload.id = promptPreset.id
+    payload.archived = promptPreset.archived === true
   }
   return payload
 }

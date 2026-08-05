@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 import { normalizeProviderCredentials, readProviderCredentials } from './providerCredentialRecords'
 
 describe('provider credential records', () => {
@@ -46,6 +47,41 @@ describe('provider credential records', () => {
         name: 'Vertex',
         type: 'vertexServiceAccount',
         vertex: { clientEmail: 'service@example.com', privateKey: 'private-key' },
+      },
+    ])
+  })
+
+  it('drops whole credential rows containing masked secret placeholders and keeps every other valid row', () => {
+    expect(
+      normalizeProviderCredentials([
+        { id: 'valid-before', name: 'Valid Before', type: 'apiKey', apiKey: 'real-api-key' },
+        { id: 'masked-api', name: 'Masked API', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
+        {
+          id: 'masked-private-key',
+          name: 'Masked Private Key',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'service@example.com', privateKey: MASKED_PROVIDER_SECRET },
+        },
+        {
+          id: 'masked-client-email',
+          name: 'Masked Client Email',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: MASKED_PROVIDER_SECRET, privateKey: 'real-private-key' },
+        },
+        {
+          id: 'valid-after',
+          name: 'Valid After',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'other@example.com', privateKey: 'other-private-key' },
+        },
+      ]),
+    ).toEqual([
+      { id: 'valid-before', name: 'Valid Before', type: 'apiKey', apiKey: 'real-api-key' },
+      {
+        id: 'valid-after',
+        name: 'Valid After',
+        type: 'vertexServiceAccount',
+        vertex: { clientEmail: 'other@example.com', privateKey: 'other-private-key' },
       },
     ])
   })

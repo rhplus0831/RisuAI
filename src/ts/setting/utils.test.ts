@@ -344,12 +344,16 @@ describe('server-backed data-driven settings', () => {
   })
 
   it('exposes the default-enabled floating chat input under Accessibility', () => {
-    expect(accessibilitySettingsItems.find((item) => item.id === 'acc.floatingChatInput')).toMatchObject({
+    const item = accessibilitySettingsItems.find((candidate) => candidate.id === 'acc.floatingChatInput')
+
+    expect(item).toMatchObject({
       type: 'check',
       labelKey: 'floatingChatInput',
       helpKey: 'floatingChatInput',
       bindKey: 'floatingChatInput',
     })
+    expect(item?.getValue?.({ floatingChatInput: undefined } as never)).toBe(true)
+    expect(item?.getValue?.({ floatingChatInput: false } as never)).toBe(false)
   })
 
   it('keeps Display custom-control watchers disjoint from renderer-owned bindings', () => {

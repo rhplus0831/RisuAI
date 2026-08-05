@@ -718,6 +718,8 @@ const languageKoreanBase = {
   chatListDeleteAllAfterExportConfirm: '모든 채팅을 다운로드했습니다. 이 캐릭터의 모든 채팅을 삭제하시겠습니까?',
   chatListDeleteAllSecondConfirm: '이 작업은 이 캐릭터의 모든 채팅을 영구적으로 삭제합니다. 정말 계속하시겠습니까?',
   chatListDeleteAllExportChanged: '내보내기 이후 채팅이 변경되었습니다. 다시 내보낸 후 시도해주세요.',
+  chatExportColdStorageBlocked: (chats: string[]) =>
+    `다음 채팅이 아직 콜드 스토리지 포인터 상태이므로 내보내기를 중단했습니다: ${chats.join(', ')}. 각 채팅을 한 번씩 열어 복구한 다음 다시 내보내세요.`,
   chatListDeleteAllAction: '모든 채팅 삭제',
   chatListImport: '채팅 가져오기',
   chatListEdit: '채팅 목록 편집',
@@ -806,6 +808,8 @@ const languageKoreanBase = {
   files: '파일',
   backupRestore: '백업 및 복원',
   backupConfirm: '정말로 백업을 저장하시겠습니까?',
+  portableSaveSecretsWarning:
+    '이 내보내기 파일에는 API 키 및 기타 비밀 정보가 포함됩니다. 비밀번호처럼 안전하게 취급해야 합니다. 계속하시겠습니까?',
   backupLoadConfirm: '정말로 백업을 불러오시겠습니까? 현재 데이터가 모두 사라집니다!',
   backupLoadConfirm2: '정말로, 정말로 백업을 불러오시겠습니까? 현재 데이터가 모두 사라집니다!',
   pasteAuthCode: '팝업에서 Auth Code를 복사하여 붙여넣기 해 주세요:',
