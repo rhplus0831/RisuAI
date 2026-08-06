@@ -156,6 +156,37 @@ describe('request history repository', () => {
     })
   })
 
+  it('completes history when the terminal frame is observed instead of when its consumer resumes', async () => {
+    const handle = beginRequestHistory({
+      db,
+      limit: 5,
+      id: 'paused-after-done',
+      startedAt: Date.now(),
+      source: 'chat',
+      profile,
+      prompt: [{ role: 'user', content: 'hello' }],
+    })
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      yield { kind: 'token', content: 'provider result' }
+      yield { kind: 'done', finishReason: 'stop' }
+    }
+
+    const iterator = wrapRequestHistoryFrames(frames(), handle, new AbortController().signal)[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toMatchObject({ kind: 'token' })
+    expect((await iterator.next()).value).toMatchObject({ kind: 'done' })
+
+    const completedAt = getRequestHistoryRecord(db, 'paused-after-done')?.completedAt
+    expect(getRequestHistoryRecord(db, 'paused-after-done')).toMatchObject({
+      status: 'success',
+      response: 'provider result',
+      metadata: { finishReason: 'stop', responseCharacters: 15 },
+    })
+    expect(completedAt).toEqual(expect.any(Number))
+
+    await iterator.return?.()
+    expect(getRequestHistoryRecord(db, 'paused-after-done')?.completedAt).toBe(completedAt)
+  })
+
   it('caps UTF-8 history fields and exposes honest truncation metadata', async () => {
     const handle = beginRequestHistory({
       db,

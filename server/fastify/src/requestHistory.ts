@@ -302,36 +302,10 @@ export function wrapRequestHistoryFrames(
     let error: string | undefined
     let responseMetadata: Record<string, unknown> = {}
     let apiMetadata: Record<string, unknown> = {}
-    try {
-      for await (const frame of frames) {
-        if (frame.kind === 'token') response.append(frame.content ?? '')
-        if (frame.kind === 'done') {
-          status = 'success'
-          apiMetadata = frame.apiMetadata ?? {}
-          responseMetadata = {
-            ...(frame.finishReason ? { finishReason: frame.finishReason } : {}),
-            ...(frame.alternates ? { alternates: frame.alternates } : {}),
-            ...(frame.toolCalls ? { toolCalls: frame.toolCalls } : {}),
-          }
-        }
-        if (frame.kind === 'error') {
-          status = signal.aborted ? 'cancelled' : 'error'
-          error = frame.error ?? 'Provider request failed'
-          apiMetadata = frame.apiMetadata ?? {}
-          responseMetadata = {
-            ...(frame.status !== undefined ? { providerStatus: frame.status } : {}),
-            ...(frame.statusText ? { providerStatusText: frame.statusText } : {}),
-            ...(frame.code ? { providerCode: frame.code } : {}),
-            ...(frame.reason ? { providerReason: frame.reason } : {}),
-          }
-        }
-        yield frame
-      }
-    } catch (caught) {
-      status = signal.aborted ? 'cancelled' : 'error'
-      error = caught instanceof Error ? caught.message : String(caught)
-      throw caught
-    } finally {
+    let completed = false
+    const complete = (): void => {
+      if (completed) return
+      completed = true
       const finalStatus = status ?? 'cancelled'
       const captured = response.snapshot()
       completeRequestHistory(handle, {
@@ -346,6 +320,42 @@ export function wrapRequestHistoryFrames(
           ...(status === null ? { incomplete: true } : {}),
         },
       })
+    }
+    try {
+      for await (const frame of frames) {
+        if (frame.kind === 'token') response.append(frame.content ?? '')
+        if (frame.kind === 'done') {
+          status = 'success'
+          apiMetadata = frame.apiMetadata ?? {}
+          responseMetadata = {
+            ...(frame.finishReason ? { finishReason: frame.finishReason } : {}),
+            ...(frame.alternates ? { alternates: frame.alternates } : {}),
+            ...(frame.toolCalls ? { toolCalls: frame.toolCalls } : {}),
+          }
+          // Persist before yielding: the consumer may hold this provider terminal
+          // frame while it awaits unrelated post-generation work.
+          complete()
+        }
+        if (frame.kind === 'error') {
+          status = signal.aborted ? 'cancelled' : 'error'
+          error = frame.error ?? 'Provider request failed'
+          apiMetadata = frame.apiMetadata ?? {}
+          responseMetadata = {
+            ...(frame.status !== undefined ? { providerStatus: frame.status } : {}),
+            ...(frame.statusText ? { providerStatusText: frame.statusText } : {}),
+            ...(frame.code ? { providerCode: frame.code } : {}),
+            ...(frame.reason ? { providerReason: frame.reason } : {}),
+          }
+          complete()
+        }
+        yield frame
+      }
+    } catch (caught) {
+      status = signal.aborted ? 'cancelled' : 'error'
+      error = caught instanceof Error ? caught.message : String(caught)
+      throw caught
+    } finally {
+      complete()
     }
   })()
 }
