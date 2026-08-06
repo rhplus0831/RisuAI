@@ -54,7 +54,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import AgentPresetSettings from './AgentPresetSettings.svelte'
 import { language } from 'src/lang'
-import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import type { AgentPresetRecord, AgentRecord } from 'src/ts/agentPresetRecords'
 
 let target: HTMLElement
@@ -186,6 +186,44 @@ describe('modular Agent Preset settings', () => {
 
     expect(agentSpies.updateAgent).toHaveBeenCalledWith(agent.id, { instruction: 'Updated shared behavior.' })
     expect(agentSpies.updateAgentPresetUse).not.toHaveBeenCalled()
+  })
+
+  it('shows a profile divider without allowing it to replace an Agent model selection', async () => {
+    seed([{ ...agent, modelDefaults: { mode: 'modelProfile', profileId: 'profile-a' } }])
+    getDatabase().modelProfiles = [
+      { id: 'profile-a', name: 'Profile A' },
+      { id: 'profile-b', name: 'Profile B' },
+    ]
+    getDatabase().modelProfileOrder = [
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-b' },
+    ]
+    component = mount(AgentPresetSettings, { target })
+    await tick()
+
+    target.querySelectorAll<HTMLButtonElement>('[data-risu-agent-row] button')[2].click()
+    await tick()
+    const editor = target.querySelector<HTMLElement>('[data-risu-agent-editor]')!
+    const labeledSelect = (label: string) =>
+      Array.from(editor.querySelectorAll<HTMLLabelElement>('label'))
+        .find((candidate) => candidate.querySelector('span')?.textContent?.includes(label))
+        ?.querySelector<HTMLSelectElement>('select')
+    const profileSelect = labeledSelect(language.agentPresets.modelProfileLabel)
+    if (!profileSelect) throw new Error('Agent profile select not found')
+    expect(Array.from(profileSelect.options).map((option) => option.textContent)).toEqual([
+      language.agentPresets.noModelProfiles,
+      'Profile A',
+      '---',
+      'Profile B',
+    ])
+    const divider = profileSelect.querySelector<HTMLOptionElement>('[data-model-profile-divider="true"]')!
+    profileSelect.value = divider.value
+    profileSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    expect(labeledSelect(language.agentPresets.modelProfileLabel)?.value).toBe('profile-a')
+    expect(agentSpies.updateAgent).not.toHaveBeenCalled()
   })
 
   it('keeps the Agent drawer open when a text-selection drag ends on the backdrop', async () => {

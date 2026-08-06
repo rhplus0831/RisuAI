@@ -28,9 +28,11 @@ import {
   type NormalizedModelRoleOverrides,
 } from '../model/modelRoles'
 import {
+  normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
+  type ModelProfileOrderEntry,
   type ModelProfileRecord,
   type ModelProfileRecordRuntimeOptions,
   type ModelRoleProfileMap,
@@ -201,10 +203,16 @@ function normalizeModelRoleSettings(data: Partial<Pick<Database, 'modelRoles' | 
 }
 
 function normalizeModelProfileSettings(
-  data: Partial<Pick<Database, 'providerCredentials' | 'modelProfiles' | 'modelRoleProfiles' | 'modelRuntimeDefaults'>>,
+  data: Partial<
+    Pick<
+      Database,
+      'providerCredentials' | 'modelProfiles' | 'modelProfileOrder' | 'modelRoleProfiles' | 'modelRuntimeDefaults'
+    >
+  >,
 ): void {
   data.providerCredentials = normalizeProviderCredentials(data.providerCredentials)
   data.modelProfiles = normalizeModelProfiles(data.modelProfiles)
+  data.modelProfileOrder = normalizeModelProfileOrder(data.modelProfileOrder, data.modelProfiles)
   data.modelRoleProfiles = normalizeModelRoleProfiles(data.modelRoleProfiles)
   data.modelRuntimeDefaults = normalizeModelRuntimeDefaults(data.modelRuntimeDefaults)
 }
@@ -344,6 +352,7 @@ const BOT_PRESET_HYDRATION_SENTINEL_KEYS = [
   'globalNote',
   'temperature',
   'modelProfiles',
+  'modelProfileOrder',
   'modelRoleProfiles',
   'modelRuntimeDefaults',
   'promptTemplate',
@@ -462,6 +471,7 @@ const SET_PRESET_ROLLBACK_KEYS = [
   'subModel',
   'modelRoles',
   'modelProfiles',
+  'modelProfileOrder',
   'modelRoleProfiles',
   'modelRuntimeDefaults',
   'agents',
@@ -3752,6 +3762,7 @@ export interface Database {
   modelRoles: NormalizedModelRoleOverrides
   providerCredentials: ProviderCredentialRecord[]
   modelProfiles: ModelProfileRecord[]
+  modelProfileOrder: ModelProfileOrderEntry[]
   modelRoleProfiles: ModelRoleProfileMap
   modelRuntimeDefaults: ModelProfileRecordRuntimeOptions
   agents: AgentRecord[]
@@ -4509,6 +4520,7 @@ export interface botPreset {
   subModel?: string
   modelRoles?: NormalizedModelRoleOverrides
   modelProfiles?: ModelProfileRecord[]
+  modelProfileOrder?: ModelProfileOrderEntry[]
   modelRoleProfiles?: ModelRoleProfileMap
   modelRuntimeDefaults?: ModelProfileRecordRuntimeOptions
   agents?: AgentRecord[]
@@ -5012,6 +5024,7 @@ function saveCurrentPresetLocal(apply = true) {
     subModel: db.subModel,
     modelRoles: safeStructuredClone(db.modelRoles),
     modelProfiles: safeStructuredClone(db.modelProfiles),
+    modelProfileOrder: safeStructuredClone(db.modelProfileOrder),
     modelRoleProfiles: safeStructuredClone(db.modelRoleProfiles),
     modelRuntimeDefaults: safeStructuredClone(normalizeModelRuntimeDefaults(db.modelRuntimeDefaults)),
     agents: safeStructuredClone(db.agents),
@@ -6665,12 +6678,21 @@ function applySplitPresetFieldsToDatabase(
   for (const field of fields) {
     if (!Object.prototype.hasOwnProperty.call(preset, field)) continue
     const databaseKey = databaseKeyOverrides[field] ?? field
-    target[databaseKey] = normalizeSplitPresetAppliedValue(databaseKey, safeStructuredClone(preset[field]))
+    target[databaseKey] = normalizeSplitPresetAppliedValue(
+      databaseKey,
+      safeStructuredClone(preset[field]),
+      normalizeModelProfiles(target.modelProfiles),
+    )
   }
 }
 
-function normalizeSplitPresetAppliedValue(databaseKey: string, value: unknown): unknown {
+function normalizeSplitPresetAppliedValue(
+  databaseKey: string,
+  value: unknown,
+  profiles: readonly ModelProfileRecord[] = [],
+): unknown {
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
+  if (databaseKey === 'modelProfileOrder') return normalizeModelProfileOrder(value, profiles)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (databaseKey === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
   return value
@@ -6694,6 +6716,14 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.subModel = newPres.subModel ?? db.subModel
   db.modelRoles = normalizeModelRoleOverrides(newPres.modelRoles ?? db.modelRoles)
   db.modelProfiles = normalizeModelProfiles(newPres.modelProfiles ?? db.modelProfiles)
+  db.modelProfileOrder = normalizeModelProfileOrder(
+    Object.hasOwn(newPres, 'modelProfileOrder')
+      ? newPres.modelProfileOrder
+      : Object.hasOwn(newPres, 'modelProfiles')
+        ? undefined
+        : db.modelProfileOrder,
+    db.modelProfiles,
+  )
   db.modelRoleProfiles = normalizeModelRoleProfiles(newPres.modelRoleProfiles ?? db.modelRoleProfiles)
   db.modelRuntimeDefaults = normalizeModelRuntimeDefaults(newPres.modelRuntimeDefaults ?? db.modelRuntimeDefaults)
   if (

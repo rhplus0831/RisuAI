@@ -2711,18 +2711,39 @@ describe('Phase 9-2a scalar settings groups', () => {
       method: 'POST',
       url: '/api/v1/commands/model-profiles/reorder',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, profileIds: ['profile-c', 'profile-a', 'profile-b'] },
+      payload: {
+        baseRevision: revision,
+        order: [
+          { kind: 'profile', profileId: 'profile-c' },
+          { kind: 'divider', id: 'divider-a' },
+          { kind: 'profile', profileId: 'profile-a' },
+          { kind: 'profile', profileId: 'profile-b' },
+        ],
+      },
     })
     expect(reordered.statusCode, reordered.body).toBe(200)
     expect(reordered.json()).toMatchObject({
       revision: revision + 1,
       profileIds: ['profile-c', 'profile-a', 'profile-b'],
+      order: [
+        { kind: 'profile', profileId: 'profile-c' },
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-a' },
+        { kind: 'profile', profileId: 'profile-b' },
+      ],
       event: { type: 'modelProfile.reordered', resource: 'modelProfile' },
     })
-    expect(
-      (loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, unknown>> })
-        .modelProfiles,
-    ).toMatchObject([{ id: 'profile-c' }, { id: 'profile-a' }, { id: 'profile-b' }])
+    const database = loadPersistedFromDir(harness.dataDir).database as {
+      modelProfiles: Array<Record<string, unknown>>
+      modelProfileOrder: Array<Record<string, unknown>>
+    }
+    expect(database.modelProfiles).toMatchObject([{ id: 'profile-c' }, { id: 'profile-a' }, { id: 'profile-b' }])
+    expect(database.modelProfileOrder).toEqual([
+      { kind: 'profile', profileId: 'profile-c' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'profile', profileId: 'profile-b' },
+    ])
   })
 
   it('blocks model profile deletion when any Model Preset role binding uses it', async () => {
@@ -2731,6 +2752,11 @@ describe('Phase 9-2a scalar settings groups', () => {
       modelProfiles: [
         { id: 'profile-main', name: 'Main', modelId: 'gpt-5' },
         { id: 'profile-alt', name: 'Alt', modelId: 'gpt-4o' },
+      ],
+      modelProfileOrder: [
+        { kind: 'profile', profileId: 'profile-main' },
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-alt' },
       ],
       modelRoleProfiles: {},
       modelPresets: [
@@ -2764,6 +2790,11 @@ describe('Phase 9-2a scalar settings groups', () => {
       modelProfiles: [
         { id: 'profile-main', name: 'Main', modelId: 'gpt-5' },
         { id: 'profile-alt', name: 'Alt', modelId: 'gpt-4o' },
+      ],
+      modelProfileOrder: [
+        { kind: 'profile', profileId: 'profile-main' },
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-alt' },
       ],
       modelRoleProfiles: {
         chatMain: { mode: 'profile', profileId: 'profile-main' },
@@ -2830,6 +2861,10 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       modelProfiles: [{ id: 'profile-alt' }],
+      modelProfileOrder: [
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-alt' },
+      ],
       modelRoleProfiles: {
         chatMain: { mode: 'legacy' },
         memory: { mode: 'inherit' },

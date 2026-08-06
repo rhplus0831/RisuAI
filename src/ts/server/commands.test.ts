@@ -2549,7 +2549,11 @@ describe('server command API adapter', () => {
     })
     await reorderModelProfilesCommand({
       baseRevision: 4,
-      profileIds: ['profile-b', 'profile-a'],
+      order: [
+        { kind: 'profile', profileId: 'profile-b' },
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-a' },
+      ],
     })
     await deleteModelProfileCommand({
       baseRevision: 5,
@@ -2605,7 +2609,11 @@ describe('server command API adapter', () => {
         method: 'POST',
         body: {
           baseRevision: 4,
-          profileIds: ['profile-b', 'profile-a'],
+          order: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'divider', id: 'divider-a' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
         },
       },
       {

@@ -15,6 +15,7 @@ export const MODEL_PRESET_FIELDS = [
   'subModel',
   'modelRoles',
   'modelProfiles',
+  'modelProfileOrder',
   'modelRoleProfiles',
   'modelRuntimeDefaults',
   'currentPluginProvider',

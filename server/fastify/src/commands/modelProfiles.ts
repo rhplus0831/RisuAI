@@ -15,12 +15,15 @@ import {
 } from '../../../../src/ts/model/modelRoles.js'
 import {
   ModelProfileRecordValidationError,
+  normalizeModelProfileOrder,
   normalizeModelProfiles,
   normalizeModelProfileRuntimeOptions,
   normalizeModelRoleProfiles,
+  readModelProfileOrder,
   readModelProfiles,
   readModelRuntimeDefaults,
   readModelRoleProfiles,
+  type ModelProfileOrderEntry,
   type ModelProfileRecord,
   type ModelProfileRecordFallbackRef,
   type ModelProfileRecordProviderOptions,
@@ -161,11 +164,13 @@ export function createModelProfileCommand(
   const requestedProfile = readCreateProfileBody(body)
   return applyModelProfileMutation(args, (target) => {
     const profiles = currentProfiles(target)
+    const profileOrder = currentProfileOrder(target, profiles)
     const profileId = mintModelProfileId(profiles)
     const profile = readProfileRow({ ...requestedProfile, id: profileId })
     validateProfileCredentialReference(profile, target, 'profile.providerOptions.credentialId')
     const nextProfiles = readProfilesForWrite([...profiles, profile], target)
     target.modelProfiles = nextProfiles
+    target.modelProfileOrder = [...profileOrder, { kind: 'profile', profileId }]
     return {
       event: { ...COMMAND_EVENT_CATALOG.modelProfileCreated, id: profileId },
       extra: { profileId },
@@ -207,11 +212,13 @@ export function duplicateModelProfileCommand(
   const name = readOptionalNonEmptyString(body.name, 'name')
   return applyModelProfileMutation(args, (target) => {
     const profiles = currentProfiles(target)
+    const profileOrder = currentProfileOrder(target, profiles)
     const source = profiles.find((profile) => profile.id === sourceProfileId)
     if (!source) throw new EntityNotFoundError(`Model profile not found: ${sourceProfileId}`)
     const profileId = mintModelProfileId(profiles)
     const profile = duplicateProfile(source, profileId, name)
     target.modelProfiles = readProfilesForWrite([...profiles, profile], target)
+    target.modelProfileOrder = [...profileOrder, { kind: 'profile', profileId }]
     return {
       event: { ...COMMAND_EVENT_CATALOG.modelProfileDuplicated, id: profileId },
       extra: { profileId, sourceProfileId },
@@ -221,29 +228,20 @@ export function duplicateModelProfileCommand(
 
 export function reorderModelProfilesCommand(
   args: ModelProfileCommandArgs,
-): JsonCommandMutationResult<{ profileIds: string[] }> {
+): JsonCommandMutationResult<{ profileIds: string[]; order: ModelProfileOrderEntry[] }> {
   const body = readObject(args.body, 'request body')
-  const profileIds = readProfileIdOrder(body.profileIds)
   return applyModelProfileMutation(args, (target) => {
     const profiles = currentProfiles(target)
-    if (profileIds.length !== profiles.length) {
-      throw new ValidationError('profileIds must include every existing model profile exactly once')
-    }
-
+    const order = readProfileOrderBody(body, profiles)
     const profilesById = new Map(profiles.map((profile) => [profile.id, profile]))
-    const seen = new Set<string>()
-    const reorderedProfiles = profileIds.map((profileId) => {
-      if (seen.has(profileId)) throw new ValidationError(`Duplicate model profile id: ${profileId}`)
-      seen.add(profileId)
-      const profile = profilesById.get(profileId)
-      if (!profile) throw new ValidationError(`Unknown model profile id: ${profileId}`)
-      return profile
-    })
+    const profileIds = order.flatMap((entry) => (entry.kind === 'profile' ? [entry.profileId] : []))
+    const reorderedProfiles = profileIds.map((profileId) => profilesById.get(profileId)!)
 
     target.modelProfiles = readProfilesForWrite(reorderedProfiles, target)
+    target.modelProfileOrder = order
     return {
       event: COMMAND_EVENT_CATALOG.modelProfilesReordered,
-      extra: { profileIds: [...profileIds] },
+      extra: { profileIds: [...profileIds], order: cloneJsonValue(order) },
     }
   })
 }
@@ -258,6 +256,7 @@ export function deleteModelProfileCommand(
     args,
     (target) => {
       const profiles = currentProfiles(target)
+      const profileOrder = currentProfileOrder(target, profiles)
       if (!profiles.some((profile) => profile.id === profileId)) {
         throw new EntityNotFoundError(`Model profile not found: ${profileId}`)
       }
@@ -294,6 +293,9 @@ export function deleteModelProfileCommand(
       }
 
       target.modelProfiles = readProfilesForWrite(remainingProfiles, target)
+      target.modelProfileOrder = profileOrder.filter(
+        (entry) => entry.kind !== 'profile' || entry.profileId !== profileId,
+      )
       target.modelRoleProfiles = nextBindings
       if (reassignedRoles.includes('memory')) validateMemoryRoleCapability(target)
       return {
@@ -379,6 +381,7 @@ export function createAndBindModelProfileCommand(
   const requestedProfile = readCreateProfileBody(body)
   return applyModelProfileMutation(args, (target) => {
     const profiles = currentProfiles(target)
+    const profileOrder = currentProfileOrder(target, profiles)
     const profileId = mintModelProfileId(profiles)
     const profile = readProfileRow({ ...requestedProfile, id: profileId })
     validateProfileCredentialReference(profile, target, 'profile.providerOptions.credentialId')
@@ -386,6 +389,7 @@ export function createAndBindModelProfileCommand(
     const nextBindings = currentRoleProfiles(target)
     nextBindings[role] = { mode: 'profile', profileId }
     target.modelProfiles = nextProfiles
+    target.modelProfileOrder = [...profileOrder, { kind: 'profile', profileId }]
     target.modelRoleProfiles = nextBindings
     if (role === 'memory') validateMemoryRoleCapability(target)
     return {
@@ -412,6 +416,7 @@ export function convertLegacyModelProfilesCommand(
 ): JsonCommandMutationResult<{ profileIdsByRole: ProfileIdsByRole; convertedRoles: ModelRole[] }> {
   return applyModelProfileMutation(args, (target) => {
     const existingProfiles = currentProfiles(target)
+    const existingProfileOrder = currentProfileOrder(target, existingProfiles)
     const existingCredentials = currentProviderCredentials(target)
     const nextCredentials = [...existingCredentials]
     const credentialMinter = createLegacyCredentialMinter(nextCredentials)
@@ -469,6 +474,7 @@ export function convertLegacyModelProfilesCommand(
     }
 
     target.modelProfiles = readProfilesForWrite(nextProfiles, target)
+    target.modelProfileOrder = normalizeModelProfileOrder(existingProfileOrder, nextProfiles)
     target.providerCredentials = readProviderCredentialRows(nextCredentials)
     target.modelRoleProfiles = nextBindings
     target.modelRuntimeDefaults = runtimeDefaults
@@ -516,6 +522,13 @@ function readSettingsTarget(database: unknown): Record<string, unknown> {
 
 function currentProfiles(target: Record<string, unknown>): ModelProfileRecord[] {
   return normalizeModelProfiles(target.modelProfiles ?? [])
+}
+
+function currentProfileOrder(
+  target: Record<string, unknown>,
+  profiles: readonly ModelProfileRecord[] = currentProfiles(target),
+): ModelProfileOrderEntry[] {
+  return normalizeModelProfileOrder(target.modelProfileOrder, profiles)
 }
 
 function currentRoleProfiles(target: Record<string, unknown>): ModelRoleProfileMap {
@@ -972,6 +985,31 @@ function readObject(value: unknown, path: string): Record<string, unknown> {
 function readProfileIdOrder(value: unknown): string[] {
   if (!Array.isArray(value)) throw new ValidationError('profileIds must be an array')
   return value.map((profileId, index) => readNonEmptyString(profileId, `profileIds[${index}]`))
+}
+
+function readProfileOrderBody(
+  body: Record<string, unknown>,
+  profiles: readonly ModelProfileRecord[],
+): ModelProfileOrderEntry[] {
+  try {
+    if (Object.prototype.hasOwnProperty.call(body, 'order')) {
+      return readModelProfileOrder(body.order, profiles)
+    }
+    const legacyProfileIds = readProfileIdOrder(body.profileIds)
+    if (legacyProfileIds.length !== profiles.length) {
+      throw new ValidationError('profileIds must include every existing model profile exactly once')
+    }
+    const profileIds = new Set(profiles.map((profile) => profile.id))
+    const seen = new Set<string>()
+    return legacyProfileIds.map((profileId) => {
+      if (seen.has(profileId)) throw new ValidationError(`Duplicate model profile id: ${profileId}`)
+      seen.add(profileId)
+      if (!profileIds.has(profileId)) throw new ValidationError(`Unknown model profile id: ${profileId}`)
+      return { kind: 'profile' as const, profileId }
+    })
+  } catch (error) {
+    throwModelProfileValidationError(error)
+  }
 }
 
 function readModelRole(value: unknown, path: string): ModelRole {

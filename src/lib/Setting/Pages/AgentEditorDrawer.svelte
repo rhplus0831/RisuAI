@@ -33,6 +33,11 @@
   } from 'src/ts/agentPresetRecords'
   import type { AgentSnapshot } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
+  import {
+    isModelProfileDividerSelectValue,
+    modelProfileDividerSelectValue,
+    modelProfileListItems,
+  } from 'src/ts/model/modelProfileRecords'
 
   interface Props {
     mode: 'create' | 'edit'
@@ -54,6 +59,7 @@
   let useChatML = $state(initial?.useChatML ?? false)
   let modelMode = $state<AgentPresetStepModelSelection['mode']>(initial?.modelDefaults.mode ?? 'inheritMain')
   let profileId = $state(initial?.modelDefaults.mode === 'modelProfile' ? initial.modelDefaults.profileId : '')
+  let lastValidProfileId = $state(initial?.modelDefaults.mode === 'modelProfile' ? initial.modelDefaults.profileId : '')
   let outputFormat = $state<AgentPresetStepOutputFormat>(initial?.outputFormat ?? 'text')
   let timeoutMs = $state(initial?.runtimeDefaults.timeoutMs ?? 30_000)
   let maxInputChars = $state(initial?.runtimeDefaults.maxInputChars ?? 24_000)
@@ -72,6 +78,7 @@
   )
   let lorebookInputs = $state<AgentLorebookInput[]>((initial?.lorebookInputs ?? []).map((input) => ({ ...input })))
   let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
+  let modelProfileItems = $derived(modelProfileListItems(modelProfiles, getDatabase().modelProfileOrder))
   const initialSnapshot = agentSnapshotFromRecord(initial)
   let snapshot = $derived(agentSnapshot())
   let dirty = $derived(JSON.stringify(snapshot) !== JSON.stringify(initialSnapshot))
@@ -132,6 +139,17 @@
       })),
       outputFormat,
     }
+  }
+
+  function handleProfileChange(event: Event): void {
+    const select = event.currentTarget
+    if (!(select instanceof HTMLSelectElement)) return
+    if (isModelProfileDividerSelectValue(select.value)) {
+      profileId = lastValidProfileId
+      select.value = lastValidProfileId
+      return
+    }
+    lastValidProfileId = profileId
   }
 
   function agentSnapshotFromRecord(record: AgentRecord | undefined): AgentSnapshot {
@@ -419,11 +437,15 @@
         {#if modelMode === 'modelProfile'}
           <label class="flex flex-col gap-1">
             <span class="text-sm font-medium">{language.agentPresets.modelProfileLabel}</span>
-            <SelectInput bind:value={profileId} className="w-full">
+            <SelectInput bind:value={profileId} onchange={handleProfileChange} className="w-full">
               <option value="">{language.agentPresets.noModelProfiles}</option>
-              {#each modelProfiles as profile (profile.id)}<option value={profile.id}
-                  >{profile.name ?? profile.id}</option
-                >{/each}
+              {#each modelProfileItems as item (`${item.kind}:${item.kind === 'profile' ? item.profile.id : item.id}`)}
+                {#if item.kind === 'divider'}
+                  <option value={modelProfileDividerSelectValue(item.id)} data-model-profile-divider="true">---</option>
+                {:else}
+                  <option value={item.profile.id}>{item.profile.name ?? item.profile.id}</option>
+                {/if}
+              {/each}
             </SelectInput>
           </label>
         {/if}

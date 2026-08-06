@@ -43,9 +43,11 @@ import {
 } from '../../../../src/ts/model/modelRoles.js'
 import {
   ModelProfileRecordValidationError,
+  normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
+  readModelProfileOrder,
   readModelProfiles,
   readModelRuntimeDefaults,
   readModelRoleProfiles,
@@ -1303,6 +1305,7 @@ type SettingValueKind = 'boolean' | 'number' | 'string' | 'stringOrNull' | 'obje
 const MODEL_PROFILE_SETTINGS_KEYS = [
   'providerCredentials',
   'modelProfiles',
+  'modelProfileOrder',
   'modelRoleProfiles',
   'modelRuntimeDefaults',
 ] as const
@@ -1318,6 +1321,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'subModel',
     'modelRoles',
     'modelProfiles',
+    'modelProfileOrder',
     'providerCredentials',
     'modelRoleProfiles',
     'modelRuntimeDefaults',
@@ -1958,6 +1962,7 @@ const ARRAY_SETTING_KEYS = new Set([
   'globalscript',
   'hotkeys',
   'modelProfiles',
+  'modelProfileOrder',
   'providerCredentials',
   'modelTools',
   'hypaV3Presets',
@@ -9432,6 +9437,13 @@ function sanitizeSettingValue(key: string, value: unknown): unknown {
   if (key === 'modelProfiles') {
     return readSettingsModelProfiles(value)
   }
+  if (key === 'modelProfileOrder') {
+    try {
+      return readModelProfileOrder(value, referencedProfilesForOrder(value))
+    } catch (error) {
+      throwModelProfileValidationError(error)
+    }
+  }
   if (key === 'modelRoleProfiles') {
     return readSettingsModelRoleProfiles(value)
   }
@@ -9591,21 +9603,42 @@ function applySettingsPatch(database: unknown, patch: Record<string, unknown>): 
 
   const target = database as Record<string, unknown>
   const resolvedPatch = resolveMaskedProviderSecretPlaceholders(database, patch)
+  const nextProfiles = normalizeModelProfiles(resolvedPatch.modelProfiles ?? target.modelProfiles)
   for (const [key, value] of Object.entries(resolvedPatch)) {
-    target[key] = normalizeSettingsPatchValue(key, value)
+    target[key] = normalizeSettingsPatchValue(key, value, nextProfiles)
+  }
+  if (Object.prototype.hasOwnProperty.call(resolvedPatch, 'modelProfiles')) {
+    target.modelProfileOrder = normalizeModelProfileOrder(target.modelProfileOrder, nextProfiles)
   }
 }
 
-function normalizeSettingsPatchValue(key: string, value: unknown): unknown {
+function normalizeSettingsPatchValue(
+  key: string,
+  value: unknown,
+  profiles = normalizeModelProfiles(undefined),
+): unknown {
   if (key === 'providerCredentials') return normalizeProviderCredentials(value)
   if (key === 'modelRoles') return normalizeModelRoleOverrides(value)
   if (key === 'modelProfiles') return normalizeModelProfiles(value)
+  if (key === 'modelProfileOrder') return normalizeModelProfileOrder(value, profiles)
   if (key === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (key === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
   if (key === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (key === 'fallbackModels') return normalizeLegacyFallbackModels(value)
   if (key === 'seperateParameters') return normalizeSeperateParametersValue(value)
   return value
+}
+
+function referencedProfilesForOrder(value: unknown) {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  return value.flatMap((entry) => {
+    if (!isPlainObject(entry) || entry.kind !== 'profile' || typeof entry.profileId !== 'string') return []
+    const id = entry.profileId.trim()
+    if (!id || seen.has(id)) return []
+    seen.add(id)
+    return [{ id, name: id }]
+  })
 }
 
 function normalizeSeperateParametersValue(value: unknown): Record<string, unknown> {

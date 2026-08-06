@@ -24,6 +24,7 @@ export type SettingsGroupProjectionEpochs = Partial<Record<SettingsGroup, number
 export const MODEL_PROFILE_SETTINGS_KEYS = [
   'providerCredentials',
   'modelProfiles',
+  'modelProfileOrder',
   'modelRoleProfiles',
   'modelRuntimeDefaults',
 ] as const
@@ -193,6 +194,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   mistralKey: 'providers',
   modelRuntimeDefaults: 'providers',
   modelProfiles: 'providers',
+  modelProfileOrder: 'providers',
   modelRoleProfiles: 'providers',
   providerCredentials: 'providers',
   modelRoles: 'providers',

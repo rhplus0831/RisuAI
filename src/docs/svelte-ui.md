@@ -566,8 +566,10 @@ Model settings are profile-first:
   provider/model/request-model summary, status, and fallback count for each
   canonical role.
 - The Profiles tab uses `ModelProfileList.svelte` to show
-  `Database.modelProfiles`, status, create/edit/duplicate/delete actions,
-  durable drag-and-drop ordering, and the runtime defaults panel. Generated
+  `Database.modelProfiles`, status, create/edit/duplicate/delete actions, and
+  the runtime defaults panel. `Database.modelProfileOrder` adds durable UX-only
+  dividers to the same mouse/touch-sortable presentation order. Selectors show
+  dividers as `---` and restore their prior value if one is chosen. Generated
   `mp_` IDs and role-usage summaries stay hidden; deletion checks every Model
   Preset role-binding snapshot before dispatch and Fastify enforces the same
   guard authoritatively.

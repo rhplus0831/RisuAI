@@ -37,6 +37,11 @@
   } from 'src/ts/agentPresetRecords'
   import type { AgentPresetSnapshot, AgentPresetUseSnapshot } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
+  import {
+    isModelProfileDividerSelectValue,
+    modelProfileDividerSelectValue,
+    modelProfileListItems,
+  } from 'src/ts/model/modelProfileRecords'
   import AgentPresetDiagnosticsPanel from './AgentPresetDiagnosticsPanel.svelte'
   import type { AgentPresetGeneratedProjectionLatch } from 'src/ts/agentPresets'
 
@@ -92,6 +97,7 @@
   let overrideModel = $state(false)
   let modelMode = $state<AgentPresetStepModelSelection['mode']>('inheritMain')
   let modelProfileId = $state('')
+  let lastValidModelProfileId = $state('')
   let overrideRuntime = $state(false)
   let timeoutMs = $state(30_000)
   let maxInputChars = $state(24_000)
@@ -111,6 +117,7 @@
     ...new Set(resolvedSteps.filter((step) => step.enabled).map((step) => step.outputKey)),
   ])
   let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
+  let modelProfileItems = $derived(modelProfileListItems(modelProfiles, getDatabase().modelProfileOrder))
   let editingStep = $derived(editingUseId ? resolvedSteps.find((step) => step.id === editingUseId) : undefined)
   let metadataPatch = $derived(sparseMetadata(initialMetadata, metadataForSave()))
   let metadataDirty = $derived(Object.keys(metadataPatch).length > 0)
@@ -139,6 +146,17 @@
         ? clamp(maxConcurrency, AGENT_PRESET_MAX_CONCURRENCY_MIN, AGENT_PRESET_MAX_CONCURRENCY_MAX)
         : null,
     }
+  }
+
+  function handleModelProfileChange(event: Event): void {
+    const select = event.currentTarget
+    if (!(select instanceof HTMLSelectElement)) return
+    if (isModelProfileDividerSelectValue(select.value)) {
+      modelProfileId = lastValidModelProfileId
+      select.value = lastValidModelProfileId
+      return
+    }
+    lastValidModelProfileId = modelProfileId
   }
 
   function metadataSnapshot(record: AgentPresetRecord | undefined): AgentPresetSnapshot {
@@ -180,6 +198,7 @@
     overrideModel = use.modelOverride !== undefined
     modelMode = use.modelOverride?.mode ?? 'inheritMain'
     modelProfileId = use.modelOverride?.mode === 'modelProfile' ? use.modelOverride.profileId : ''
+    lastValidModelProfileId = modelProfileId
     overrideRuntime = use.runtimeOverride !== undefined
     timeoutMs = use.runtimeOverride?.timeoutMs ?? 30_000
     maxInputChars = use.runtimeOverride?.maxInputChars ?? 24_000
@@ -591,11 +610,16 @@
                 ><option value="inheritMain">{language.agentPresets.inheritMainModel}</option><option
                   value="modelProfile">{language.agentPresets.selectedModelProfile}</option
                 ></SelectInput
-              >{#if modelMode === 'modelProfile'}<SelectInput bind:value={modelProfileId}
+              >{#if modelMode === 'modelProfile'}<SelectInput
+                  bind:value={modelProfileId}
+                  onchange={handleModelProfileChange}
                   ><option value="">{language.agentPresets.noModelProfiles}</option
-                  >{#each modelProfiles as profile (profile.id)}<option value={profile.id}
-                      >{profile.name ?? profile.id}</option
-                    >{/each}</SelectInput
+                  >{#each modelProfileItems as item (`${item.kind}:${item.kind === 'profile' ? item.profile.id : item.id}`)}
+                    {#if item.kind === 'divider'}<option
+                        value={modelProfileDividerSelectValue(item.id)}
+                        data-model-profile-divider="true">---</option
+                      >{:else}<option value={item.profile.id}>{item.profile.name ?? item.profile.id}</option>{/if}
+                  {/each}</SelectInput
                 >{/if}
             </div>{/if}
           {#if overrideRuntime}<div class="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

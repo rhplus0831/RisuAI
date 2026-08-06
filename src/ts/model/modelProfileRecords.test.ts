@@ -3,9 +3,12 @@ import { MODEL_ROLES } from './modelRoles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from './types'
 import {
   createDefaultModelRoleProfiles,
+  modelProfileListItems,
+  normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
+  readModelProfileOrder,
   readModelRuntimeDefaults,
   readModelProfiles,
   readModelRoleProfiles,
@@ -16,6 +19,78 @@ describe('model profile records', () => {
     expect(createDefaultModelRoleProfiles()).toEqual(
       Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
     )
+  })
+
+  it('normalizes mixed profile and divider ordering without turning dividers into profiles', () => {
+    const profiles = [
+      { id: 'profile-a', name: 'A' },
+      { id: 'profile-b', name: 'B' },
+    ]
+    const order = normalizeModelProfileOrder(
+      [
+        { kind: 'profile', profileId: 'profile-b' },
+        { kind: 'divider', id: ' divider-a ' },
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'missing' },
+        { kind: 'unknown', id: 'drop' },
+      ],
+      profiles,
+    )
+
+    expect(order).toEqual([
+      { kind: 'profile', profileId: 'profile-b' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-a' },
+    ])
+    expect(modelProfileListItems(profiles, order)).toEqual([
+      { kind: 'profile', profile: profiles[1] },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profile: profiles[0] },
+    ])
+  })
+
+  it('strictly validates complete model profile ordering', () => {
+    const profiles = [
+      { id: 'profile-a', name: 'A' },
+      { id: 'profile-b', name: 'B' },
+    ]
+    expect(
+      readModelProfileOrder(
+        [
+          { kind: 'profile', profileId: 'profile-a' },
+          { kind: 'divider', id: 'divider-a' },
+          { kind: 'profile', profileId: 'profile-b' },
+        ],
+        profiles,
+      ),
+    ).toEqual([
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-b' },
+    ])
+    expect(() => readModelProfileOrder([{ kind: 'profile', profileId: 'profile-a' }], profiles)).toThrow(
+      'modelProfileOrder must include every model profile exactly once',
+    )
+    expect(() =>
+      readModelProfileOrder(
+        [
+          { kind: 'profile', profileId: 'profile-a' },
+          { kind: 'divider', id: 'divider-a' },
+          { kind: 'divider', id: 'divider-a' },
+          { kind: 'profile', profileId: 'profile-b' },
+        ],
+        profiles,
+      ),
+    ).toThrow('modelProfileOrder[2].id must not duplicate divider-a')
+    expect(() =>
+      readModelProfileOrder(
+        [
+          { kind: 'profile', profileId: 'profile-a' },
+          { kind: 'profile', profileId: 'missing' },
+        ],
+        profiles,
+      ),
+    ).toThrow('modelProfileOrder[1].profileId references an unknown model profile')
   })
 
   it('leniently normalizes missing and old persisted profile shapes', () => {

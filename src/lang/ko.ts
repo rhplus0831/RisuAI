@@ -2518,6 +2518,7 @@ export const languageKorean = {
     duplicate: '복제',
     delete: '삭제',
     createProfile: '프로필 만들기',
+    addDivider: '구분선 추가',
     newProfileDefaultName: '새 프로필',
     modelPlaceholder: '모델 ID',
     requestModelPlaceholder: '요청 모델 재정의',
@@ -2682,8 +2683,13 @@ export const languageKorean = {
     missingProfile: (profileId: string) => `누락된 프로필: ${profileId}`,
     copyName: (name: string) => `${name} 복사본`,
     deleteProfileConfirm: (name: string) => `"${name}"을(를) 삭제하시겠습니까?`,
+    deleteDividerConfirm: '이 구분선을 삭제하시겠습니까?',
     deleteProfileReassignConfirm: (name: string, roles: string) =>
       `"${name}"을(를) 삭제하시겠습니까? 이 프로필을 사용하는 역할은 다음과 같이 다시 지정됩니다: ${roles}.`,
+    profileUsedByModelPresets: (name: string, presets: string) =>
+      `"${name}"은(는) 다음 모델 프리셋에서 사용 중이므로 삭제할 수 없습니다: ${presets}.`,
+    dragProfile: '드래그하여 프로필 순서 변경',
+    dragDivider: '드래그하여 구분선 순서 변경',
     bindingModes: {
       profile: '프로필',
       inherit: '상속',

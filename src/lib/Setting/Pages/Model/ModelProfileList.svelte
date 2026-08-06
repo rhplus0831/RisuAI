@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CopyIcon, GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
+  import { CopyIcon, GripVerticalIcon, MinusIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import {
@@ -7,7 +7,12 @@
     type FirstClassModelProfileProviderId,
   } from 'src/ts/model/modelProfileResolver'
   import {
+    modelProfileListItemKey,
+    modelProfileListItems,
+    modelProfileOrderEntryKey,
+    normalizeModelProfileOrder,
     normalizeModelRoleProfiles,
+    type ModelProfileOrderEntry,
     type ModelProfileRecord,
     type ModelRoleProfileBinding,
   } from 'src/ts/model/modelProfileRecords'
@@ -31,6 +36,9 @@
   import type { ModelProfileSnapshot, ServerCommandResult } from 'src/ts/server/commands'
   import type { ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
+  import { sortableOptions } from 'src/ts/util'
+  import Sortable, { type SortableEvent } from 'sortablejs'
   import ModelProfileEditorDrawer from './ModelProfileEditorDrawer.svelte'
   import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
 
@@ -53,10 +61,15 @@
   let busy = $state(false)
   let pendingMutations = $state(getPendingModelMutations('model-profiles'))
   let commandError = $state('')
-  let draggedProfileId = $state<string | null>(null)
+  let draggedOrderKey = $state<string | null>(null)
   let dragOverIndex = $state(-1)
+  let profileListElement: HTMLDivElement | undefined = $state()
+  let touchSortable: Sortable | null = null
+  let suppressDividerClickId: string | null = null
 
   let profiles = $derived(getDatabase().modelProfiles ?? [])
+  let profileOrder = $derived(normalizeModelProfileOrder(getDatabase().modelProfileOrder, profiles))
+  let profileItems = $derived(modelProfileListItems(profiles, profileOrder))
   let credentials = $derived(getDatabase().providerCredentials ?? [])
   let mutationQueued = $derived(pendingMutations.length > 0)
   let editingProfile = $derived(
@@ -70,6 +83,31 @@
   })
 
   $effect(() => {
+    touchSortable?.option('disabled', busy || mutationQueued)
+  })
+
+  $effect(() => {
+    const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false
+    if (!profileListElement || (!coarsePointer && navigator.maxTouchPoints <= 0)) return
+    const sortable = Sortable.create(profileListElement, {
+      ...sortableOptions,
+      animation: 150,
+      draggable: '[data-model-profile-sortable-item]',
+      handle: '[data-model-profile-drag-handle]',
+      chosenClass: 'risu-chosen-item',
+      ghostClass: 'risu-ghost-item',
+      onEnd: handleTouchSortEnd,
+    })
+    touchSortable = sortable
+    return () => {
+      try {
+        sortable.destroy()
+      } catch {}
+      if (touchSortable === sortable) touchSortable = null
+    }
+  })
+
+  $effect(() => {
     for (const pending of pendingMutations) {
       if (pending.phase === 'discarded') {
         commandError = language.modelProfiles.commandReplayDiscarded
@@ -77,7 +115,12 @@
         continue
       }
       if (pending.phase === 'dispatching' || !isProfileListProjection(pending.projection)) continue
-      if (isPendingModelMutationProjectionApplied(pending.projection, { modelProfiles: profiles })) {
+      if (
+        isPendingModelMutationProjectionApplied(pending.projection, {
+          modelProfiles: profiles,
+          modelProfileOrder: profileOrder,
+        })
+      ) {
         finishPendingModelMutation(pending.token)
       }
     }
@@ -291,20 +334,20 @@
     }
   }
 
-  async function reorderProfiles(profileIds: string[]): Promise<void> {
+  async function reorderProfiles(order: ModelProfileOrderEntry[]): Promise<void> {
     if (busy || mutationQueued) return
     busy = true
     commandError = ''
     const pendingToken = beginPendingModelMutation('model-profiles', {
       kind: 'profile-reorder',
-      profileIds,
+      order,
     })
     if (!pendingToken) {
       busy = false
       return
     }
     try {
-      const outcome = await reorderModelProfilesDurably(profileIds)
+      const outcome = await reorderModelProfilesDurably(order)
       if (outcome.status === 'accepted') {
         finishPendingModelMutation(pendingToken)
         return
@@ -323,51 +366,87 @@
     }
   }
 
-  function startProfileDrag(profileId: string, event: DragEvent): void {
+  function startProfileDrag(orderKey: string, event: DragEvent, allowButton = false): void {
     if (busy || mutationQueued) {
       event.preventDefault()
       return
     }
     const target = event.target
-    if (target instanceof Element && target.closest('button')) {
+    if (!allowButton && target instanceof Element && target.closest('button')) {
       event.preventDefault()
       return
     }
-    draggedProfileId = profileId
-    event.dataTransfer?.setData('text', 'model-profile')
-    event.dataTransfer?.setData('profileId', profileId)
+    draggedOrderKey = orderKey
+    event.dataTransfer?.setData('text', 'model-profile-order')
+    event.dataTransfer?.setData('orderKey', orderKey)
     event.dataTransfer?.setData('application/x-risu-internal', 'true')
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
   }
 
   function finishProfileDrag(): void {
-    draggedProfileId = null
+    draggedOrderKey = null
     dragOverIndex = -1
   }
 
-  function handleProfileDrop(targetProfileId: string | undefined, event: DragEvent): void {
-    event.preventDefault()
-    const draggedId = draggedProfileId
-    const transferredId = event.dataTransfer?.getData('profileId')
+  function handleTouchSortEnd(event: SortableEvent): void {
+    const oldIndex = event.oldDraggableIndex
+    const newIndex = event.newDraggableIndex
+    const orderKey = (event.item as HTMLElement).dataset.modelProfileOrderKey
+    restoreTouchSortableDom(event, orderKey)
     if (
-      event.dataTransfer?.getData('text') !== 'model-profile' ||
-      !draggedId ||
-      (transferredId && transferredId !== draggedId)
+      busy ||
+      mutationQueued ||
+      oldIndex === undefined ||
+      newIndex === undefined ||
+      oldIndex === newIndex ||
+      !orderKey
+    ) {
+      return
+    }
+    const reordered = [...profileOrder]
+    const [moved] = reordered.splice(oldIndex, 1)
+    if (!moved) return
+    reordered.splice(newIndex, 0, moved)
+    if (moved.kind === 'divider') {
+      suppressDividerClickId = moved.id
+      window.setTimeout(() => {
+        if (suppressDividerClickId === moved.id) suppressDividerClickId = null
+      }, 0)
+    }
+    void reorderProfiles(reordered)
+  }
+
+  function restoreTouchSortableDom(event: SortableEvent, orderKey: string | undefined): void {
+    if (!orderKey) return
+    const originalDropZone = Array.from(event.from.querySelectorAll<HTMLElement>('[data-model-profile-drop-key]')).find(
+      (candidate) => candidate.dataset.modelProfileDropKey === orderKey,
+    )
+    originalDropZone?.after(event.item)
+  }
+
+  function handleProfileDrop(targetOrderKey: string | undefined, event: DragEvent): void {
+    event.preventDefault()
+    const draggedKey = draggedOrderKey
+    const transferredKey = event.dataTransfer?.getData('orderKey')
+    if (
+      event.dataTransfer?.getData('text') !== 'model-profile-order' ||
+      !draggedKey ||
+      (transferredKey && transferredKey !== draggedKey)
     ) {
       finishProfileDrag()
       return
     }
 
-    const sourceIndex = profiles.findIndex((profile) => profile.id === draggedId)
-    const targetIndex = targetProfileId
-      ? profiles.findIndex((profile) => profile.id === targetProfileId)
-      : profiles.length
+    const sourceIndex = profileOrder.findIndex((entry) => modelProfileOrderEntryKey(entry) === draggedKey)
+    const targetIndex = targetOrderKey
+      ? profileOrder.findIndex((entry) => modelProfileOrderEntryKey(entry) === targetOrderKey)
+      : profileOrder.length
     if (sourceIndex < 0 || targetIndex < 0) {
       finishProfileDrag()
       return
     }
 
-    const reordered = [...profiles]
+    const reordered = [...profileOrder]
     const [moved] = reordered.splice(sourceIndex, 1)
     const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
     if (!moved || adjustedTargetIndex === sourceIndex) {
@@ -376,7 +455,22 @@
     }
     reordered.splice(adjustedTargetIndex, 0, moved)
     finishProfileDrag()
-    void reorderProfiles(reordered.map((profile) => profile.id))
+    void reorderProfiles(reordered)
+  }
+
+  function addDivider(): void {
+    if (busy || mutationQueued) return
+    const id = `mpd_${createNonSecurityUuid()}`
+    void reorderProfiles([...profileOrder, { kind: 'divider', id }])
+  }
+
+  function deleteDivider(dividerId: string): void {
+    if (suppressDividerClickId === dividerId) {
+      suppressDividerClickId = null
+      return
+    }
+    if (busy || mutationQueued || !window.confirm(language.modelProfiles.deleteDividerConfirm)) return
+    void reorderProfiles(profileOrder.filter((entry) => entry.kind !== 'divider' || entry.id !== dividerId))
   }
 
   function deleteReassignments(profileId: string): Partial<Record<ModelRole, ModelRoleProfileBinding>> {
@@ -443,99 +537,154 @@
       <h3 class="text-lg font-semibold">{language.modelProfiles.profilesTabTitle}</h3>
       <span class="text-sm text-textcolor2">{language.modelProfiles.profilesTabDescription}</span>
     </div>
-    <Button size="sm" disabled={busy || mutationQueued} onclick={openCreateEditor}>
-      <span class="inline-flex items-center gap-2"><PlusIcon size={16} />{language.modelProfiles.createProfile}</span>
-    </Button>
+    <div class="flex flex-wrap gap-2">
+      <Button size="sm" styled="outlined" disabled={busy || mutationQueued} onclick={addDivider}>
+        <span class="inline-flex items-center gap-2"><MinusIcon size={16} />{language.modelProfiles.addDivider}</span>
+      </Button>
+      <Button size="sm" disabled={busy || mutationQueued} onclick={openCreateEditor}>
+        <span class="inline-flex items-center gap-2"><PlusIcon size={16} />{language.modelProfiles.createProfile}</span>
+      </Button>
+    </div>
   </div>
 
-  {#if profiles.length === 0}
+  {#if profileItems.length === 0}
     <div class="rounded-md border border-darkborderc p-4 text-sm text-textcolor2">
       {language.modelProfiles.noProfiles}
     </div>
   {:else}
-    <div class="flex flex-col" role="list">
-      {#each profiles as profile, index (profile.id)}
+    <div class="flex flex-col" role="list" bind:this={profileListElement}>
+      {#each profileItems as item, index (modelProfileListItemKey(item))}
+        {@const orderKey = modelProfileListItemKey(item)}
         <div
           role="presentation"
+          data-model-profile-drop-key={orderKey}
           class="h-1 transition-all"
-          class:h-2={draggedProfileId && dragOverIndex === index}
-          class:bg-blue-500={draggedProfileId && dragOverIndex === index}
+          class:h-2={draggedOrderKey && dragOverIndex === index}
+          class:bg-blue-500={draggedOrderKey && dragOverIndex === index}
           ondragover={(event) => {
             event.preventDefault()
             dragOverIndex = index
           }}
-          ondrop={(event) => handleProfileDrop(profile.id, event)}>
+          ondrop={(event) => handleProfileDrop(orderKey, event)}>
         </div>
-        <article
-          class="risu-card flex cursor-move flex-col gap-2 text-sm"
-          role="listitem"
-          data-model-profile-row
-          data-profile-id={profile.id}
-          draggable={!busy && !mutationQueued}
-          ondragstart={(event) => startProfileDrag(profile.id, event)}
-          ondragend={finishProfileDrag}
-          ondragover={(event) => {
-            event.preventDefault()
-            const rect = event.currentTarget.getBoundingClientRect()
-            dragOverIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
-          }}
-          ondrop={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect()
-            const dropIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
-            handleProfileDrop(profiles[dropIndex]?.id, event)
-          }}>
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-textcolor2" title={language.modelProfiles.dragProfile} aria-hidden="true">
-              <GripVerticalIcon size={16} />
-            </span>
-            <span class="font-medium">{profile.name}</span>
-            <span class="rounded-sm bg-white/10 px-2 py-1 text-xs">
-              {statusLabel(profile)}
-            </span>
-            <div class="ml-auto flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                styled="outlined"
-                disabled={busy || mutationQueued}
-                onclick={() => openEditEditor(profile)}>
-                <span class="inline-flex items-center gap-1"
-                  ><PencilIcon size={14} />{language.modelProfiles.edit}</span>
-              </Button>
-              <Button
-                size="sm"
-                styled="outlined"
-                disabled={busy || mutationQueued}
-                onclick={() => duplicateProfile(profile)}>
-                <span class="inline-flex items-center gap-1"
-                  ><CopyIcon size={14} />{language.modelProfiles.duplicate}</span>
-              </Button>
-              <Button
-                size="sm"
-                styled="danger"
-                disabled={busy || mutationQueued}
-                onclick={() => deleteProfile(profile)}>
-                <span class="inline-flex items-center gap-1"
-                  ><TrashIcon size={14} />{language.modelProfiles.delete}</span>
-              </Button>
+        {#if item.kind === 'profile'}
+          {@const profile = item.profile}
+          <article
+            class="risu-card flex cursor-move flex-col gap-2 text-sm"
+            role="listitem"
+            data-model-profile-row
+            data-model-profile-sortable-item
+            data-model-profile-order-key={orderKey}
+            data-profile-id={profile.id}
+            draggable={!busy && !mutationQueued}
+            ondragstart={(event) => startProfileDrag(orderKey, event)}
+            ondragend={finishProfileDrag}
+            ondragover={(event) => {
+              event.preventDefault()
+              const rect = event.currentTarget.getBoundingClientRect()
+              dragOverIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
+            }}
+            ondrop={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect()
+              const dropIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
+              handleProfileDrop(
+                profileItems[dropIndex] ? modelProfileListItemKey(profileItems[dropIndex]) : undefined,
+                event,
+              )
+            }}>
+            <div class="flex flex-wrap items-center gap-2">
+              <span
+                class="text-textcolor2"
+                title={language.modelProfiles.dragProfile}
+                data-model-profile-drag-handle
+                aria-hidden="true">
+                <GripVerticalIcon size={16} />
+              </span>
+              <span class="font-medium">{profile.name}</span>
+              <span class="rounded-sm bg-white/10 px-2 py-1 text-xs">
+                {statusLabel(profile)}
+              </span>
+              <div class="ml-auto flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  styled="outlined"
+                  disabled={busy || mutationQueued}
+                  onclick={() => openEditEditor(profile)}>
+                  <span class="inline-flex items-center gap-1"
+                    ><PencilIcon size={14} />{language.modelProfiles.edit}</span>
+                </Button>
+                <Button
+                  size="sm"
+                  styled="outlined"
+                  disabled={busy || mutationQueued}
+                  onclick={() => duplicateProfile(profile)}>
+                  <span class="inline-flex items-center gap-1"
+                    ><CopyIcon size={14} />{language.modelProfiles.duplicate}</span>
+                </Button>
+                <Button
+                  size="sm"
+                  styled="danger"
+                  disabled={busy || mutationQueued}
+                  onclick={() => deleteProfile(profile)}>
+                  <span class="inline-flex items-center gap-1"
+                    ><TrashIcon size={14} />{language.modelProfiles.delete}</span>
+                </Button>
+              </div>
             </div>
+            {#if !profile.id.startsWith('mp_')}
+              <span class="break-all text-xs text-textcolor2">{profile.id}</span>
+            {/if}
+            <span class="break-all text-xs text-textcolor2">
+              {providerLabel(profile.providerId)} · {modelLabel(profile)} · {requestModelLabel(profile)} ·
+              {fallbackCount(profile)}
+            </span>
+          </article>
+        {:else}
+          <div
+            role="listitem"
+            data-model-profile-divider-row
+            data-model-profile-sortable-item
+            data-model-profile-order-key={orderKey}
+            data-divider-id={item.id}
+            draggable={!busy && !mutationQueued}
+            ondragstart={(event) => startProfileDrag(orderKey, event, true)}
+            ondragend={finishProfileDrag}
+            ondragover={(event) => {
+              event.preventDefault()
+              const rect = event.currentTarget.getBoundingClientRect()
+              dragOverIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
+            }}
+            ondrop={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect()
+              const dropIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1
+              handleProfileDrop(
+                profileItems[dropIndex] ? modelProfileListItemKey(profileItems[dropIndex]) : undefined,
+                event,
+              )
+            }}>
+            <button
+              type="button"
+              class="flex w-full cursor-move items-center gap-3 rounded-md px-2 py-3 text-textcolor2 transition-colors hover:bg-white/5"
+              aria-label={language.modelProfiles.deleteDividerConfirm}
+              data-model-profile-drag-handle
+              disabled={busy || mutationQueued}
+              onclick={() => deleteDivider(item.id)}>
+              <span title={language.modelProfiles.dragDivider} aria-hidden="true"><GripVerticalIcon size={16} /></span>
+              <span class="h-px flex-1 bg-darkborderc"></span>
+              <span aria-hidden="true">---</span>
+              <span class="h-px flex-1 bg-darkborderc"></span>
+            </button>
           </div>
-          {#if !profile.id.startsWith('mp_')}
-            <span class="break-all text-xs text-textcolor2">{profile.id}</span>
-          {/if}
-          <span class="break-all text-xs text-textcolor2">
-            {providerLabel(profile.providerId)} · {modelLabel(profile)} · {requestModelLabel(profile)} ·
-            {fallbackCount(profile)}
-          </span>
-        </article>
+        {/if}
       {/each}
       <div
         role="presentation"
         class="h-1 transition-all"
-        class:h-2={draggedProfileId && dragOverIndex === profiles.length}
-        class:bg-blue-500={draggedProfileId && dragOverIndex === profiles.length}
+        class:h-2={draggedOrderKey && dragOverIndex === profileItems.length}
+        class:bg-blue-500={draggedOrderKey && dragOverIndex === profileItems.length}
         ondragover={(event) => {
           event.preventDefault()
-          dragOverIndex = profiles.length
+          dragOverIndex = profileItems.length
         }}
         ondrop={(event) => handleProfileDrop(undefined, event)}>
       </div>
@@ -548,6 +697,7 @@
         mode={editorMode}
         profile={editingProfileBaseline ?? editingProfile}
         {profiles}
+        {profileOrder}
         {credentials}
         statusText={editingProfile ? statusLabel(editingProfile) : language.modelProfiles.statusBuckets.incomplete}
         {busy}

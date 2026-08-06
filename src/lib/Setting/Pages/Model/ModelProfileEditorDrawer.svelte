@@ -20,6 +20,7 @@
     type LLMGatewayRoutingStrategy,
     type LLMGatewayServiceTier,
     type LLMGatewayVerbosity,
+    type ModelProfileOrderEntry,
     type ModelProfileRecord,
     type ModelProfileRecordFallbackRef,
     type ModelProfileRecordProviderOptions,
@@ -43,6 +44,7 @@
     mode: 'create' | 'edit'
     profile?: ModelProfileRecord
     profiles: ModelProfileRecord[]
+    profileOrder?: ModelProfileOrderEntry[]
     credentials: ProviderCredentialRecord[]
     statusText: string
     busy?: boolean
@@ -56,6 +58,7 @@
     mode,
     profile,
     profiles = [],
+    profileOrder = [],
     credentials = [],
     statusText,
     busy = false,
@@ -494,7 +497,7 @@
         </Accordion>
 
         <Accordion styled name={language.modelProfiles.fallbacksTitle}>
-          <ModelFallbackEditor profileId={initialProfile?.id} {profiles} bind:value={fallbacks} />
+          <ModelFallbackEditor profileId={initialProfile?.id} {profiles} {profileOrder} bind:value={fallbacks} />
         </Accordion>
       {:else}
         <div class="rounded-md border border-darkborderc p-3 text-sm text-textcolor2">

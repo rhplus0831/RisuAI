@@ -491,6 +491,12 @@ describe('model profile database normalization', () => {
         { id: 'profile-b', name: 'Identity Only', modelId: '   ' } as any,
         { id: 'profile-c' } as any,
       ],
+      modelProfileOrder: [
+        { kind: 'profile', profileId: 'profile-b' },
+        { kind: 'divider', id: ' divider-a ' },
+        { kind: 'profile', profileId: 'missing' },
+        { kind: 'profile', profileId: 'profile-a' },
+      ],
       modelRoleProfiles: {
         memory: { mode: 'profile', profileId: 'profile-a' },
         translate: { mode: 'legacy' },
@@ -539,6 +545,12 @@ describe('model profile database normalization', () => {
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
     ])
+    expect(getDatabase().modelProfileOrder).toEqual([
+      { kind: 'profile', profileId: 'profile-b' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'profile', profileId: 'profile-c' },
+    ])
     expect(getDatabase().modelRoleProfiles).toEqual({
       ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
       memory: { mode: 'profile', profileId: 'profile-a' },
@@ -556,6 +568,10 @@ describe('model profile database normalization', () => {
       modelProfiles: [
         { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
       ],
+      modelProfileOrder: [
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-a' },
+      ],
       modelRoleProfiles: normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'profile-a' },
       }) as Database['modelRoleProfiles'],
@@ -571,6 +587,10 @@ describe('model profile database normalization', () => {
     expect(command.body.patch).toMatchObject({
       modelProfiles: [
         { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+      ],
+      modelProfileOrder: [
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-a' },
       ],
       modelRoleProfiles: expect.objectContaining({
         memory: { mode: 'profile', profileId: 'profile-a' },
@@ -602,6 +622,10 @@ describe('model profile database normalization', () => {
           } as never,
           { id: 'target-profile', name: 'Duplicate' } as never,
         ],
+        modelProfileOrder: [
+          { kind: 'divider', id: 'target-divider' },
+          { kind: 'profile', profileId: 'target-profile' },
+        ],
         modelRoleProfiles: {
           memory: { mode: 'profile', profileId: ' target-profile ' },
           translate: { mode: 'legacy' },
@@ -625,6 +649,10 @@ describe('model profile database normalization', () => {
         modelId: 'target-model',
         providerOptions: { requestModel: 'target-wire' },
       },
+    ])
+    expect(getDatabase().modelProfileOrder).toEqual([
+      { kind: 'divider', id: 'target-divider' },
+      { kind: 'profile', profileId: 'target-profile' },
     ])
     expect(getDatabase().modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({

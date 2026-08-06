@@ -87,4 +87,38 @@ describe('ModelFallbackEditor row identity', () => {
     expect(target.querySelector(`input[aria-label="${language.modelProfiles.fallbackModelLabel(2)}"]`)).toBeTruthy()
     expect(target.querySelector(`select[aria-label="${language.modelProfiles.fallbackProfileLabel(3)}"]`)).toBeTruthy()
   })
+
+  it('renders dividers in order and restores the previous fallback profile when selected', async () => {
+    component = mount(ModelFallbackEditorTestHost, {
+      target,
+      props: {
+        profiles: [
+          { id: 'profile-a', name: 'A' },
+          { id: 'profile-b', name: 'B' },
+        ],
+        profileOrder: [
+          { kind: 'profile', profileId: 'profile-a' },
+          { kind: 'divider', id: 'divider-a' },
+          { kind: 'profile', profileId: 'profile-b' },
+        ],
+        initialValue: [{ mode: 'profile', profileId: 'profile-a' }],
+      },
+    }) as MountedHost
+    await tick()
+
+    const select = target.querySelector<HTMLSelectElement>(
+      `select[aria-label="${language.modelProfiles.fallbackProfileLabel(1)}"]`,
+    )
+    if (!select) throw new Error('Fallback profile select not found')
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual(['A', '---', 'B'])
+    const divider = select.querySelector<HTMLOptionElement>('[data-model-profile-divider="true"]')
+    if (!divider) throw new Error('Divider option not found')
+
+    select.value = divider.value
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    expect(select.value).toBe('profile-a')
+    expect(component.currentValue()).toEqual([{ mode: 'profile', profileId: 'profile-a' }])
+  })
 })

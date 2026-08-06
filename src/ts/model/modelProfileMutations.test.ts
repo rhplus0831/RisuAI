@@ -102,10 +102,14 @@ beforeEach(() => {
 
 describe('durable model-profile mutations', () => {
   it('freezes and dispatches a durable profile reorder', async () => {
-    const profileIds = ['profile-b', 'profile-a']
+    const order = [
+      { kind: 'profile' as const, profileId: 'profile-b' },
+      { kind: 'divider' as const, id: 'divider-a' },
+      { kind: 'profile' as const, profileId: 'profile-a' },
+    ]
 
-    await reorderModelProfilesDurably(profileIds)
-    profileIds.reverse()
+    await reorderModelProfilesDurably(order)
+    order.reverse()
 
     expect(mutationMocks.staged).toEqual([
       {
@@ -116,14 +120,30 @@ describe('durable model-profile mutations', () => {
             {
               method: 'POST',
               path: '/model-profiles/reorder',
-              body: { profileIds: ['profile-b', 'profile-a'] },
+              body: {
+                order: [
+                  { kind: 'profile', profileId: 'profile-b' },
+                  { kind: 'divider', id: 'divider-a' },
+                  { kind: 'profile', profileId: 'profile-a' },
+                ],
+              },
             },
           ],
         },
       },
     ])
     expect(mutationMocks.commandCalls).toEqual([
-      { name: 'reorder', input: { baseRevision: 41, profileIds: ['profile-b', 'profile-a'] } },
+      {
+        name: 'reorder',
+        input: {
+          baseRevision: 41,
+          order: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'divider', id: 'divider-a' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
+        },
+      },
     ])
   })
 
@@ -430,7 +450,13 @@ describe('durable model-profile mutations', () => {
     ).toBe(true)
     expect(
       isPendingModelMutationProjectionApplied(
-        { kind: 'profile-reorder', profileIds: ['profile-b', 'profile-a'] },
+        {
+          kind: 'profile-reorder',
+          order: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
+        },
         {
           modelProfiles: [
             { id: 'profile-b', name: 'B' },
@@ -441,7 +467,13 @@ describe('durable model-profile mutations', () => {
     ).toBe(true)
     expect(
       isPendingModelMutationProjectionApplied(
-        { kind: 'profile-reorder', profileIds: ['profile-b', 'profile-a'] },
+        {
+          kind: 'profile-reorder',
+          order: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
+        },
         {
           modelProfiles: [
             { id: 'profile-a', name: 'A' },
@@ -450,5 +482,28 @@ describe('durable model-profile mutations', () => {
         },
       ),
     ).toBe(false)
+    expect(
+      isPendingModelMutationProjectionApplied(
+        {
+          kind: 'profile-reorder',
+          order: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'divider', id: 'divider-a' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
+        },
+        {
+          modelProfiles: [
+            { id: 'profile-b', name: 'B' },
+            { id: 'profile-a', name: 'A' },
+          ],
+          modelProfileOrder: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'divider', id: 'divider-a' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
+        },
+      ),
+    ).toBe(true)
   })
 })

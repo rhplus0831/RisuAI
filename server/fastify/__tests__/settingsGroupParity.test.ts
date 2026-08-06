@@ -34,6 +34,7 @@ describe('settings group parity', () => {
     const modelProfileSettingsKeys = [
       'providerCredentials',
       'modelProfiles',
+      'modelProfileOrder',
       'modelRoleProfiles',
       'modelRuntimeDefaults',
     ]

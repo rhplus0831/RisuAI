@@ -209,7 +209,67 @@ describe('ModelProfileList', () => {
     await flushAsync()
 
     expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-risu-internal', 'true')
-    expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith(['profile-b', 'profile-c', 'profile-a'])
+    expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith([
+      { kind: 'profile', profileId: 'profile-b' },
+      { kind: 'profile', profileId: 'profile-c' },
+      { kind: 'profile', profileId: 'profile-a' },
+    ])
+  })
+
+  it('renders, reorders, and confirms deletion of a divider', async () => {
+    getDatabase().modelProfiles = [
+      { id: 'profile-a', name: 'A', providerId: 'debug-echo', modelId: 'debug-echo' },
+      { id: 'profile-b', name: 'B', providerId: 'debug-echo', modelId: 'debug-echo' },
+    ]
+    getDatabase().modelProfileOrder = [
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-b' },
+    ]
+    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
+    vi.stubGlobal('confirm', confirm)
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const divider = target.querySelector<HTMLElement>('[data-model-profile-divider-row]')
+    const endDropZone = target.querySelector<HTMLElement>('[role="list"]')?.lastElementChild
+    if (!divider || !endDropZone) throw new Error('Divider drag targets not found')
+    expect(divider.textContent).toContain('---')
+
+    const dataTransfer = createProfileDataTransfer()
+    dispatchProfileDragEvent(divider, 'dragstart', dataTransfer)
+    dispatchProfileDragEvent(endDropZone, 'drop', dataTransfer)
+    await flushAsync()
+    expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith([
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'profile', profileId: 'profile-b' },
+      { kind: 'divider', id: 'divider-a' },
+    ])
+
+    commandSpies.reorderModelProfilesDurably.mockClear()
+    divider.querySelector('button')?.click()
+    expect(confirm).toHaveBeenCalledWith(language.modelProfiles.deleteDividerConfirm)
+    expect(commandSpies.reorderModelProfilesDurably).not.toHaveBeenCalled()
+
+    divider.querySelector('button')?.click()
+    await flushAsync()
+    expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith([
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'profile', profileId: 'profile-b' },
+    ])
+  })
+
+  it('adds a divider at the end of the durable profile order', async () => {
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    buttonByText(language.modelProfiles.addDivider).click()
+    await flushAsync()
+
+    expect(commandSpies.reorderModelProfilesDurably).toHaveBeenCalledWith([
+      { kind: 'profile', profileId: 'profile-1' },
+      { kind: 'divider', id: expect.stringMatching(/^mpd_/) },
+    ])
   })
 
   it('blocks deletion when any Model Preset uses the profile', async () => {

@@ -18,6 +18,25 @@ export interface ModelProfileRecord {
   fallbacks?: ModelProfileRecordFallbackRef[]
 }
 
+export interface ModelProfileOrderProfileEntry {
+  kind: 'profile'
+  profileId: string
+}
+
+export interface ModelProfileOrderDividerEntry {
+  kind: 'divider'
+  id: string
+}
+
+export type ModelProfileOrderEntry = ModelProfileOrderProfileEntry | ModelProfileOrderDividerEntry
+
+export type ModelProfileListItem =
+  | {
+      kind: 'profile'
+      profile: ModelProfileRecord
+    }
+  | ModelProfileOrderDividerEntry
+
 export const LLM_GATEWAY_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 export const LLM_GATEWAY_VERBOSITIES = ['low', 'medium', 'high'] as const
 export const LLM_GATEWAY_SERVICE_TIERS = ['auto', 'default', 'flex', 'priority'] as const
@@ -156,6 +175,7 @@ const MODEL_PROFILE_RECORD_KEYS = new Set([
   'runtimeOptions',
   'fallbacks',
 ])
+const MODEL_PROFILE_ORDER_ENTRY_KEYS = new Set(['kind', 'profileId', 'id'])
 const MODEL_PROFILE_FALLBACK_REF_KEYS = new Set(['mode', 'profileId', 'modelId'])
 const MODEL_PROFILE_PROVIDER_OPTIONS_KEYS = new Set([
   'apiKey',
@@ -262,6 +282,131 @@ export function normalizeModelProfiles(value: unknown): ModelProfileRecord[] {
   }
 
   return profiles
+}
+
+export function normalizeModelProfileOrder(
+  value: unknown,
+  profiles: readonly ModelProfileRecord[],
+): ModelProfileOrderEntry[] {
+  const profileIds = new Set(profiles.map((profile) => profile.id))
+  const seenProfileIds = new Set<string>()
+  const seenDividerIds = new Set<string>()
+  const order: ModelProfileOrderEntry[] = []
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (!isRecord(item)) continue
+      if (item.kind === 'profile') {
+        const profileId = stringOrBlank(item.profileId)
+        if (!profileId || !profileIds.has(profileId) || seenProfileIds.has(profileId)) continue
+        order.push({ kind: 'profile', profileId })
+        seenProfileIds.add(profileId)
+        continue
+      }
+      if (item.kind === 'divider') {
+        const id = stringOrBlank(item.id)
+        if (!id || seenDividerIds.has(id)) continue
+        order.push({ kind: 'divider', id })
+        seenDividerIds.add(id)
+      }
+    }
+  }
+
+  for (const profile of profiles) {
+    if (seenProfileIds.has(profile.id)) continue
+    order.push({ kind: 'profile', profileId: profile.id })
+  }
+  return order
+}
+
+export function readModelProfileOrder(
+  value: unknown,
+  profiles: readonly ModelProfileRecord[],
+  path = 'modelProfileOrder',
+): ModelProfileOrderEntry[] {
+  if (!Array.isArray(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an array`)
+  }
+
+  const profileIds = new Set(profiles.map((profile) => profile.id))
+  const seenProfileIds = new Set<string>()
+  const seenDividerIds = new Set<string>()
+  const order: ModelProfileOrderEntry[] = []
+  value.forEach((item, index) => {
+    const rowPath = `${path}[${index}]`
+    if (!isRecord(item)) {
+      throw new ModelProfileRecordValidationError(`${rowPath} must be an object`)
+    }
+    for (const key of Object.keys(item)) {
+      if (!MODEL_PROFILE_ORDER_ENTRY_KEYS.has(key)) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.${key} is not supported`)
+      }
+    }
+    if (item.kind === 'profile') {
+      if (Object.prototype.hasOwnProperty.call(item, 'id')) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.id is only supported for divider entries`)
+      }
+      const profileId = stringOrBlank(item.profileId)
+      if (!profileId) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.profileId must be a non-empty string`)
+      }
+      if (!profileIds.has(profileId)) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.profileId references an unknown model profile`)
+      }
+      if (seenProfileIds.has(profileId)) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.profileId must not duplicate ${profileId}`)
+      }
+      seenProfileIds.add(profileId)
+      order.push({ kind: 'profile', profileId })
+      return
+    }
+    if (item.kind === 'divider') {
+      if (Object.prototype.hasOwnProperty.call(item, 'profileId')) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.profileId is only supported for profile entries`)
+      }
+      const id = stringOrBlank(item.id)
+      if (!id) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.id must be a non-empty string`)
+      }
+      if (seenDividerIds.has(id)) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.id must not duplicate ${id}`)
+      }
+      seenDividerIds.add(id)
+      order.push({ kind: 'divider', id })
+      return
+    }
+    throw new ModelProfileRecordValidationError(`${rowPath}.kind must be profile or divider`)
+  })
+
+  if (seenProfileIds.size !== profiles.length) {
+    throw new ModelProfileRecordValidationError(`${path} must include every model profile exactly once`)
+  }
+  return order
+}
+
+export function modelProfileListItems(profiles: readonly ModelProfileRecord[], value: unknown): ModelProfileListItem[] {
+  const profilesById = new Map(profiles.map((profile) => [profile.id, profile]))
+  return normalizeModelProfileOrder(value, profiles).flatMap<ModelProfileListItem>((entry) => {
+    if (entry.kind === 'divider') return [entry]
+    const profile = profilesById.get(entry.profileId)
+    return profile ? [{ kind: 'profile' as const, profile }] : []
+  })
+}
+
+export function modelProfileOrderEntryKey(entry: ModelProfileOrderEntry): string {
+  return entry.kind === 'profile' ? `profile:${entry.profileId}` : `divider:${entry.id}`
+}
+
+export function modelProfileListItemKey(item: ModelProfileListItem): string {
+  return item.kind === 'profile' ? `profile:${item.profile.id}` : `divider:${item.id}`
+}
+
+export function modelProfileDividerSelectValue(id: string): string {
+  return `__risu_model_profile_divider__:${id}`
+}
+
+export function isModelProfileDividerSelectValue(value: string): boolean {
+  return value.startsWith('__risu_model_profile_divider__:')
 }
 
 export function normalizeModelRoleProfiles(value: unknown): ModelRoleProfileMap {

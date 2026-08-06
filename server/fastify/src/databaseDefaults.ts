@@ -13,6 +13,7 @@ import {
 } from '../../../src/ts/model/modelRoles.js'
 import {
   createDefaultModelRoleProfiles,
+  normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
@@ -234,6 +235,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'modelRoles', createDefaultModelRoleOverrides())
   normalizeModelRoleSettings(database)
   setDefault(database, 'modelProfiles', [])
+  setDefault(database, 'modelProfileOrder', [])
   setDefault(database, 'providerCredentials', [])
   setDefault(database, 'modelRoleProfiles', createDefaultModelRoleProfiles())
   setDefault(database, 'modelRuntimeDefaults', {})
@@ -793,7 +795,9 @@ function normalizeModelRoleSettings(database: JsonRecord): void {
 
 function normalizeModelProfileSettings(database: JsonRecord): void {
   database.providerCredentials = normalizeProviderCredentials(database.providerCredentials)
-  database.modelProfiles = normalizeModelProfiles(database.modelProfiles)
+  const modelProfiles = normalizeModelProfiles(database.modelProfiles)
+  database.modelProfiles = modelProfiles
+  database.modelProfileOrder = normalizeModelProfileOrder(database.modelProfileOrder, modelProfiles)
   database.modelRoleProfiles = normalizeModelRoleProfiles(database.modelRoleProfiles)
   database.modelRuntimeDefaults = normalizeModelRuntimeDefaults(database.modelRuntimeDefaults)
 }

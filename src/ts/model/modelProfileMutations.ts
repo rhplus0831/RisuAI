@@ -1,6 +1,8 @@
 import {
+  normalizeModelProfileOrder,
   normalizeModelRoleProfiles,
   normalizeModelRuntimeDefaults,
+  type ModelProfileOrderEntry,
   type ModelProfileRecord,
   type ModelProfileRecordRuntimeOptions,
   type ModelRoleProfileBinding,
@@ -46,7 +48,7 @@ export type PendingModelMutationProjection =
   | { kind: 'profile-create' | 'profile-duplicate'; baselineIds: string[]; attemptedFingerprint: string }
   | { kind: 'profile-update'; profileId: string; attemptedFingerprint: string }
   | { kind: 'profile-delete'; profileId: string }
-  | { kind: 'profile-reorder'; profileIds: string[] }
+  | { kind: 'profile-reorder'; order: ModelProfileOrderEntry[] }
   | {
       kind: 'role-bindings'
       bindings: Partial<Record<ModelRole, ModelRoleProfileBinding>>
@@ -67,6 +69,7 @@ export interface PendingModelMutation {
 
 export interface ModelMutationProjectionSnapshot {
   modelProfiles?: ModelProfileRecord[]
+  modelProfileOrder?: ModelProfileOrderEntry[]
   modelRoleProfiles?: unknown
   modelRuntimeDefaults?: unknown
   providerCredentials?: ProviderCredentialRecord[]
@@ -158,7 +161,9 @@ export function isPendingModelMutationProjectionApplied(
 
   const profiles = snapshot.modelProfiles ?? []
   if (projection.kind === 'profile-reorder') {
-    return jsonSnapshot(profiles.map((profile) => profile.id)) === jsonSnapshot(projection.profileIds)
+    return (
+      jsonSnapshot(normalizeModelProfileOrder(snapshot.modelProfileOrder, profiles)) === jsonSnapshot(projection.order)
+    )
   }
   if (projection.kind === 'profile-delete') {
     return !profiles.some((profile) => profile.id === projection.profileId)
@@ -338,16 +343,16 @@ export async function duplicateModelProfileDurably(
 }
 
 export async function reorderModelProfilesDurably(
-  profileIds: string[],
-): Promise<ModelProfileMutationOutcome<{ profileIds: string[] }>> {
+  order: ModelProfileOrderEntry[],
+): Promise<ModelProfileMutationOutcome<{ profileIds: string[]; order: ModelProfileOrderEntry[] }>> {
   try {
-    const frozenProfileIds = cloneJsonValue(profileIds)
+    const frozenOrder = cloneJsonValue(order)
     return await dispatchModelProfileMutation(
       {
         version: 1,
-        requests: [{ method: 'POST', path: '/model-profiles/reorder', body: { profileIds: frozenProfileIds } }],
+        requests: [{ method: 'POST', path: '/model-profiles/reorder', body: { order: frozenOrder } }],
       },
-      (baseRevision) => reorderModelProfilesCommand({ baseRevision, profileIds: cloneJsonValue(frozenProfileIds) }),
+      (baseRevision) => reorderModelProfilesCommand({ baseRevision, order: cloneJsonValue(frozenOrder) }),
     )
   } catch {
     return unavailableModelMutationOutcome()

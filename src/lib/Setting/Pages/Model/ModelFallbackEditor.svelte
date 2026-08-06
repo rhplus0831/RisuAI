@@ -3,16 +3,27 @@
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
-  import type { ModelProfileRecord, ModelProfileRecordFallbackRef } from 'src/ts/model/modelProfileRecords'
+  import {
+    isModelProfileDividerSelectValue,
+    modelProfileDividerSelectValue,
+    modelProfileListItems,
+    type ModelProfileOrderEntry,
+    type ModelProfileRecord,
+    type ModelProfileRecordFallbackRef,
+  } from 'src/ts/model/modelProfileRecords'
   import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
 
   interface Props {
     profileId?: string
     profiles: ModelProfileRecord[]
+    profileOrder?: ModelProfileOrderEntry[]
     value: ModelProfileRecordFallbackRef[]
   }
 
-  let { profileId = '', profiles = [], value = $bindable([]) }: Props = $props()
+  type ProfileOption = { kind: 'profile'; id: string; name: string } | { kind: 'divider'; id: string }
+
+  let { profileId = '', profiles = [], profileOrder = [], value = $bindable([]) }: Props = $props()
+  let profileItems = $derived(modelProfileListItems(profiles, profileOrder))
 
   function profileName(id: string): string {
     return profiles.find((profile) => profile.id === id)?.name ?? language.modelProfiles.missingProfile(id)
@@ -26,23 +37,29 @@
     )
   }
 
-  function profileOptions(index: number): Array<{ id: string; name: string }> {
+  function profileOptions(index: number): ProfileOption[] {
     const current = value[index]
     const currentProfileId = current?.mode === 'profile' ? current.profileId : ''
     const used = usedProfileIds(index)
-    const options = profiles
-      .filter((profile) => profile.id !== profileId)
-      .filter((profile) => profile.id === currentProfileId || !used.has(profile.id))
-      .map((profile) => ({ id: profile.id, name: profile.name }))
-    if (currentProfileId && !options.some((option) => option.id === currentProfileId)) {
-      options.unshift({ id: currentProfileId, name: profileName(currentProfileId) })
+    const options = profileItems.flatMap<ProfileOption>((item) => {
+      if (item.kind === 'divider') return [{ kind: 'divider' as const, id: item.id }]
+      const profile = item.profile
+      if (profile.id === profileId || (profile.id !== currentProfileId && used.has(profile.id))) return []
+      return [{ kind: 'profile' as const, id: profile.id, name: profile.name }]
+    })
+    if (currentProfileId && !options.some((option) => option.kind === 'profile' && option.id === currentProfileId)) {
+      options.unshift({ kind: 'profile', id: currentProfileId, name: profileName(currentProfileId) })
     }
     return options
   }
 
   function firstAvailableProfileId(): string {
     const used = usedProfileIds()
-    return profiles.find((profile) => profile.id !== profileId && !used.has(profile.id))?.id ?? ''
+    return (
+      profileItems.flatMap((item) =>
+        item.kind === 'profile' && item.profile.id !== profileId && !used.has(item.profile.id) ? [item.profile.id] : [],
+      )[0] ?? ''
+    )
   }
 
   function setFallback(index: number, fallback: ModelProfileRecordFallbackRef): void {
@@ -73,6 +90,16 @@
     value = value.filter((_, itemIndex) => itemIndex !== index)
   }
 
+  function handleFallbackProfileChange(index: number, previousProfileId: string, event: Event): void {
+    const select = event.currentTarget
+    if (!(select instanceof HTMLSelectElement)) return
+    if (isModelProfileDividerSelectValue(select.value)) {
+      select.value = previousProfileId
+      return
+    }
+    setFallback(index, { mode: 'profile', profileId: select.value })
+  }
+
   let canAddProfileFallback = $derived(firstAvailableProfileId() !== '')
 </script>
 
@@ -95,11 +122,16 @@
           class="min-w-0 rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
           aria-label={language.modelProfiles.fallbackProfileLabel(index + 1)}
           value={fallback.profileId}
-          onchange={(event) => {
-            setFallback(index, { mode: 'profile', profileId: event.currentTarget.value })
-          }}>
-          {#each profileOptions(index) as option (option.id)}
-            <option value={option.id} class="bg-darkbg">{option.name}</option>
+          onchange={(event) => handleFallbackProfileChange(index, fallback.profileId, event)}>
+          {#each profileOptions(index) as option (`${option.kind}:${option.id}`)}
+            {#if option.kind === 'divider'}
+              <option
+                value={modelProfileDividerSelectValue(option.id)}
+                data-model-profile-divider="true"
+                class="bg-darkbg">---</option>
+            {:else}
+              <option value={option.id} class="bg-darkbg">{option.name}</option>
+            {/if}
           {/each}
         </select>
       {:else}

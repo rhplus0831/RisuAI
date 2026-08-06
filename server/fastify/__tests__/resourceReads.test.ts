@@ -99,6 +99,7 @@ beforeEach(async () => {
             },
           },
         ],
+        modelProfileOrder: [{ kind: 'profile', profileId: 'profile-a' }],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
         modelRuntimeDefaults: { maxContext: 8_192 },
         enabledModules: ['module-a'],
@@ -370,7 +371,7 @@ describe('authenticated resource read routes', () => {
       },
     })
     expect(Object.keys(models.json().settings).sort()).toEqual(
-      ['providerCredentials', 'modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'].sort(),
+      ['providerCredentials', 'modelProfiles', 'modelProfileOrder', 'modelRoleProfiles', 'modelRuntimeDefaults'].sort(),
     )
     expect(models.json().settings).not.toHaveProperty('openAIKey')
 

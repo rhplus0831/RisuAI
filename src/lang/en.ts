@@ -2601,6 +2601,7 @@ export const languageEnglish = {
     duplicate: 'Duplicate',
     delete: 'Delete',
     createProfile: 'Create Profile',
+    addDivider: 'Add Divider',
     newProfileDefaultName: 'New Profile',
     modelPlaceholder: 'Model id',
     requestModelPlaceholder: 'Request model override',
@@ -2766,11 +2767,13 @@ export const languageEnglish = {
     missingProfile: (profileId: string) => `Missing profile: ${profileId}`,
     copyName: (name: string) => `${name} Copy`,
     deleteProfileConfirm: (name: string) => `Delete "${name}"?`,
+    deleteDividerConfirm: 'Delete this divider?',
     deleteProfileReassignConfirm: (name: string, roles: string) =>
       `Delete "${name}"? Roles using it will be reassigned: ${roles}.`,
     profileUsedByModelPresets: (name: string, presets: string) =>
       `Cannot delete "${name}" because it is used by Model Presets: ${presets}.`,
     dragProfile: 'Drag to reorder profile',
+    dragDivider: 'Drag to reorder divider',
     bindingModes: {
       profile: 'Profile',
       inherit: 'Inherit',

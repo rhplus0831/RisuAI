@@ -21,6 +21,7 @@ import {
   normalizeModelRoleOverrides,
 } from '../../../../src/ts/model/modelRoles.js'
 import {
+  normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
@@ -378,7 +379,11 @@ function validateFullSplitPresetIdList<T extends { id: string }>(
 function applySplitPreset(database: JsonRecord, preset: JsonRecord, keys: ReadonlyArray<[string, string]>): void {
   for (const [presetKey, databaseKey] of keys) {
     if (Object.prototype.hasOwnProperty.call(preset, presetKey)) {
-      database[databaseKey] = normalizeSplitPresetAppliedValue(databaseKey, cloneJson(preset[presetKey]))
+      database[databaseKey] = normalizeSplitPresetAppliedValue(
+        databaseKey,
+        cloneJson(preset[presetKey]),
+        normalizeModelProfiles(database.modelProfiles),
+      )
     }
   }
 }
@@ -387,6 +392,7 @@ function normalizeSplitPresetRoleAdjacentFields(record: JsonRecord): void {
   for (const key of [
     'modelRoles',
     'modelProfiles',
+    'modelProfileOrder',
     'modelRoleProfiles',
     'modelRuntimeDefaults',
     'seperateModels',
@@ -394,14 +400,19 @@ function normalizeSplitPresetRoleAdjacentFields(record: JsonRecord): void {
     'seperateParameters',
   ]) {
     if (Object.prototype.hasOwnProperty.call(record, key)) {
-      record[key] = normalizeSplitPresetAppliedValue(key, record[key])
+      record[key] = normalizeSplitPresetAppliedValue(key, record[key], normalizeModelProfiles(record.modelProfiles))
     }
   }
 }
 
-function normalizeSplitPresetAppliedValue(databaseKey: string, value: unknown): unknown {
+function normalizeSplitPresetAppliedValue(
+  databaseKey: string,
+  value: unknown,
+  profiles = normalizeModelProfiles(undefined),
+): unknown {
   if (databaseKey === 'modelRoles') return normalizeModelRoleOverrides(value)
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
+  if (databaseKey === 'modelProfileOrder') return normalizeModelProfileOrder(value, profiles)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (databaseKey === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
   if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)

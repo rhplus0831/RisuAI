@@ -8,6 +8,7 @@ import {
   normalizeModelRoleOverrides,
 } from '../../../../src/ts/model/modelRoles.js'
 import {
+  normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
@@ -46,6 +47,7 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
   ['subModel', 'subModel'],
   ['modelRoles', 'modelRoles'],
   ['modelProfiles', 'modelProfiles'],
+  ['modelProfileOrder', 'modelProfileOrder'],
   ['modelRoleProfiles', 'modelRoleProfiles'],
   ['modelRuntimeDefaults', 'modelRuntimeDefaults'],
   ['agents', 'agents'],
@@ -259,7 +261,11 @@ export function applyPreset(database: JsonRecord, preset: PresetRecord): void {
   let appliedAgentPresetSettings = false
   for (const [presetKey, databaseKey] of APPLY_KEYS) {
     if (Object.prototype.hasOwnProperty.call(preset, presetKey)) {
-      database[databaseKey] = normalizePresetAppliedValue(databaseKey, cloneJson(preset[presetKey]))
+      database[databaseKey] = normalizePresetAppliedValue(
+        databaseKey,
+        cloneJson(preset[presetKey]),
+        normalizeModelProfiles(database.modelProfiles),
+      )
       if (databaseKey === 'agents' || databaseKey === 'agentPresets' || databaseKey === 'agentPresetDefaultId') {
         appliedAgentPresetSettings = true
       }
@@ -270,9 +276,14 @@ export function applyPreset(database: JsonRecord, preset: PresetRecord): void {
   }
 }
 
-function normalizePresetAppliedValue(databaseKey: string, value: unknown): unknown {
+function normalizePresetAppliedValue(
+  databaseKey: string,
+  value: unknown,
+  profiles = normalizeModelProfiles(undefined),
+): unknown {
   if (databaseKey === 'modelRoles') return normalizeModelRoleOverrides(value)
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
+  if (databaseKey === 'modelProfileOrder') return normalizeModelProfileOrder(value, profiles)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (databaseKey === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
   if (databaseKey === 'agents') return normalizeAgents(value)
@@ -286,6 +297,12 @@ function normalizePresetAppliedValue(databaseKey: string, value: unknown): unkno
 function normalizePresetProfileFields(record: JsonRecord): void {
   if (Object.prototype.hasOwnProperty.call(record, 'modelProfiles')) {
     record.modelProfiles = normalizeModelProfiles(record.modelProfiles)
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'modelProfileOrder')) {
+    record.modelProfileOrder = normalizeModelProfileOrder(
+      record.modelProfileOrder,
+      normalizeModelProfiles(record.modelProfiles),
+    )
   }
   if (Object.prototype.hasOwnProperty.call(record, 'modelRoleProfiles')) {
     record.modelRoleProfiles = normalizeModelRoleProfiles(record.modelRoleProfiles)

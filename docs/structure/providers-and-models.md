@@ -23,8 +23,10 @@ that decides whether a request shape can run on the server.
 | `src/ts/model/openrouter.ts`, `nanogpt.ts`, `llmgateway.ts`, `neuralwatt.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers, including keyed OpenRouter/NanoGPT/LLM Gateway/Neuralwatt/Ollama Cloud request reuse.                               |
 | `src/lib/UI/ModelList.svelte`, `ModelGrid.svelte`, `NanoGPT*`, `OpenrouterProviderList.svelte`  | Model-picker UI.                                                                                                                                      |
 
-`Database.modelProfiles` stores durable reusable profile records, and
-`Database.modelRoleProfiles` stores durable role bindings. A profile can own a
+`Database.modelProfiles` stores durable reusable profile records,
+`Database.modelProfileOrder` stores their mixed profile/divider presentation order,
+and `Database.modelRoleProfiles` stores durable role bindings. Divider entries are
+UX-only and never enter profile resolution or request execution. A profile can own a
 selected model id, provider/request options, provider endpoints, a
 shared provider-credential reference, runtime options that directly affect a
 request, and fallback profile refs. Inline API keys and Vertex private keys are
@@ -110,7 +112,7 @@ settings to `ModelSettingsShell.svelte`, which owns the visible workflow:
 | Surface                             | Role                                                                                                                                                                                                                         |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ModelProfileRoleList.svelte`       | Roles tab. Auto-applies valid `modelRoleProfiles` changes across `profile`, supported `inherit`, and `legacy` modes and shows effective profile/status/fallback summaries.                                                    |
-| `ModelProfileList.svelte`           | Profiles tab. Lists profile name, non-generated IDs, provider, model, request model, fallback count, and status; supports create/edit/duplicate/delete plus durable drag-and-drop ordering. Delete is blocked while any Model Preset role binding references the profile.                  |
+| `ModelProfileList.svelte`           | Profiles tab. Lists profile name, non-generated IDs, provider, model, request model, fallback count, and status; supports create/edit/duplicate/delete plus durable profile/divider drag-and-drop ordering with delayed touch drag. Delete is blocked while any Model Preset role binding references the profile. Dividers render as `---` in profile selectors and selecting one restores the prior value. |
 | `ModelProfileEditorDrawer.svelte`   | Command-backed profile drawer for first-class provider fields, shared credential selection, profile runtime overrides, and fallbacks.                                                                                         |
 | `ProviderCredentialList.svelte`     | API Credentials tab. Creates, updates, and deletes shared API-key/Vertex credential records, preserving masked values and blocking deletion while referenced.                                                                |
 | `ModelRuntimeDefaultsEditor.svelte` | Edits `modelRuntimeDefaults` with explicit Save/Cancel and a compact count summary.                                                                                                                                          |

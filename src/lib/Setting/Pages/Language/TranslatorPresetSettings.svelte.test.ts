@@ -663,6 +663,10 @@ describe('TranslatorPresetSettings server-backed edits', () => {
   it('validates output keys inline and persists a per-step model profile selection', async () => {
     withTrustedResourceWrite(() => {
       getDatabase().modelProfiles = [{ id: 'translator-profile', name: 'Translator Profile', modelId: 'echo_model' }]
+      getDatabase().modelProfileOrder = [
+        { kind: 'divider', id: 'translator-divider' },
+        { kind: 'profile', profileId: 'translator-profile' },
+      ]
     })
     await tick()
     const outputKeyInput = Array.from(target.querySelectorAll<HTMLInputElement>('input[type="text"]')).find((input) =>
@@ -683,8 +687,19 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     const modelSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).find((select) =>
       select.getAttribute('aria-label')?.startsWith(language.translatorPipeline.model),
     )!
-    modelSelect.value = 'translator-profile'
+    const divider = modelSelect.querySelector<HTMLOptionElement>('[data-model-profile-divider="true"]')!
+    expect(divider.textContent).toBe('---')
+    modelSelect.value = divider.value
     modelSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    expect(modelSelect.value).toBe('')
+    expect(getDatabase().translatorPresets[0].steps[0].model).toEqual({ mode: 'inheritTranslate' })
+
+    const refreshedModelSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).find((select) =>
+      select.getAttribute('aria-label')?.startsWith(language.translatorPipeline.model),
+    )!
+    refreshedModelSelect.value = 'translator-profile'
+    refreshedModelSelect.dispatchEvent(new Event('change', { bubbles: true }))
     await tick()
     expect(getDatabase().translatorPresets[0].steps[0].model).toEqual({
       mode: 'modelProfile',

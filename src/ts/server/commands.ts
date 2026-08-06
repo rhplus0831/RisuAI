@@ -27,6 +27,7 @@ import type { MessageTranslation } from '../storage/database.svelte'
 import type { AlternateGreetingMutation, ChatGreetingIndex } from '../alternateGreetingMutation'
 import type { ModelRole } from '../model/modelRoles'
 import type {
+  ModelProfileOrderEntry,
   ModelProfileRecord,
   ModelProfileRecordRuntimeOptions,
   ModelRoleProfileBinding,
@@ -1004,7 +1005,7 @@ export interface DuplicateModelProfileCommandInput extends ModelProfileCommandIn
 }
 
 export interface ReorderModelProfilesCommandInput extends ModelProfileCommandInput {
-  profileIds: string[]
+  order: ModelProfileOrderEntry[]
 }
 
 export type ProviderCredentialSnapshot = Omit<ProviderCredentialRecord, 'id'> & {
@@ -3035,12 +3036,12 @@ export async function duplicateModelProfileCommand(
 export async function reorderModelProfilesCommand(
   input: ReorderModelProfilesCommandInput,
   signal?: AbortSignal | null,
-): Promise<ServerCommandResult<{ profileIds: string[] }>> {
+): Promise<ServerCommandResult<{ profileIds: string[]; order: ModelProfileOrderEntry[] }>> {
   return requestCommandJson('/model-profiles/reorder', {
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
-      profileIds: input.profileIds,
+      order: input.order,
     },
     signal,
   })

@@ -163,6 +163,35 @@ describe('ModelProfileRoleList', () => {
     )
   })
 
+  it('shows dividers in profile order and immediately restores the previous role selection', async () => {
+    getDatabase().modelProfiles = [
+      ...getDatabase().modelProfiles,
+      { id: 'profile-2', name: 'Profile 2', providerId: 'debug-echo', modelId: 'echo_model' },
+    ]
+    getDatabase().modelProfileOrder = [
+      { kind: 'profile', profileId: 'profile-1' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-2' },
+    ]
+    getDatabase().modelRoleProfiles = normalizeModelRoleProfiles({
+      chatMain: { mode: 'profile', profileId: 'profile-1' },
+    })
+    component = mount(ModelProfileRoleList, { target })
+    await tick()
+
+    const select = roleProfileSelect(0)
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual(['Profile 1', '---', 'Profile 2'])
+    const dividerOption = select.querySelector<HTMLOptionElement>('[data-model-profile-divider="true"]')
+    if (!dividerOption) throw new Error('Divider option not found')
+
+    setSelectValue(select, dividerOption.value)
+    await tick()
+
+    expect(roleProfileSelect(0).value).toBe('profile-1')
+    expect(getDatabase().modelRoleProfiles.chatMain).toEqual({ mode: 'profile', profileId: 'profile-1' })
+    expect(commandSpies.updateModelRoleProfilesDurably).not.toHaveBeenCalled()
+  })
+
   it('reports an unavailable command transport without treating it as success', async () => {
     commandSpies.updateModelRoleProfilesDurably.mockResolvedValue({
       status: 'failed',

@@ -20,6 +20,11 @@
   import { downloadFile } from 'src/ts/globalApi.svelte'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
+  import {
+    isModelProfileDividerSelectValue,
+    modelProfileDividerSelectValue,
+    modelProfileListItems,
+  } from 'src/ts/model/modelProfileRecords'
   import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import {
     canUseServerCommands,
@@ -154,6 +159,25 @@
   let translatorPresetPersistenceState = $state<TranslatorPresetPersistenceState>('idle')
   let stepOutputKeyDrafts = $state<Record<string, string>>({})
   let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
+  let modelProfileItems = $derived(modelProfileListItems(modelProfiles, getDatabase().modelProfileOrder))
+
+  function handleTranslatorStepModelChange(
+    preset: TranslatorPreset,
+    stepIndex: number,
+    previousProfileId: string,
+    event: Event,
+  ): void {
+    const select = event.currentTarget
+    if (!(select instanceof HTMLSelectElement)) return
+    if (isModelProfileDividerSelectValue(select.value)) {
+      select.value = previousProfileId
+      return
+    }
+    const profileId = select.value
+    updateTranslatorPresetStep(preset, stepIndex, {
+      model: profileId ? { mode: 'modelProfile', profileId } : { mode: 'inheritTranslate' },
+    })
+  }
 
   async function runTranslatorPresetPersistenceAction(
     action: (feedbackOperationId: number) => Promise<TranslatorPresetPersistenceStatus>,
@@ -2224,15 +2248,20 @@
               class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-textcolor focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
               aria-label={`${language.translatorPipeline.model}: ${step.name}`}
               value={step.model.mode === 'modelProfile' ? step.model.profileId : ''}
-              onchange={(event) => {
-                const profileId = event.currentTarget.value
-                updateTranslatorPresetStep(preset, stepIndex, {
-                  model: profileId ? { mode: 'modelProfile', profileId } : { mode: 'inheritTranslate' },
-                })
-              }}>
+              onchange={(event) =>
+                handleTranslatorStepModelChange(
+                  preset,
+                  stepIndex,
+                  step.model.mode === 'modelProfile' ? step.model.profileId : '',
+                  event,
+                )}>
               <option value="">{language.translatorPipeline.inheritTranslateModel}</option>
-              {#each modelProfiles as profile (profile.id)}
-                <option value={profile.id}>{profile.name ?? profile.id}</option>
+              {#each modelProfileItems as item (`${item.kind}:${item.kind === 'profile' ? item.profile.id : item.id}`)}
+                {#if item.kind === 'divider'}
+                  <option value={modelProfileDividerSelectValue(item.id)} data-model-profile-divider="true">---</option>
+                {:else}
+                  <option value={item.profile.id}>{item.profile.name ?? item.profile.id}</option>
+                {/if}
               {/each}
             </select>
           </label>

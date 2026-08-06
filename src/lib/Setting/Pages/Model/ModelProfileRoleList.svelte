@@ -4,6 +4,9 @@
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
   import {
+    isModelProfileDividerSelectValue,
+    modelProfileDividerSelectValue,
+    modelProfileListItems,
     normalizeModelRoleProfiles,
     type ModelRoleProfileBinding,
     type ModelRoleProfileMap,
@@ -29,10 +32,12 @@
   let serverBaselineBindings = $state<ModelRoleProfileMap>(normalizeModelRoleProfiles(undefined))
   let lastServerSnapshot = $state('')
   let applying = $state(false)
+  let profileSelectRevisions = $state<Partial<Record<ModelRole, number>>>({})
   let pendingMutations = $state(getPendingModelMutations('model-profiles'))
   let commandError = $state('')
 
   let profiles = $derived(getDatabase().modelProfiles ?? [])
+  let profileItems = $derived(modelProfileListItems(profiles, getDatabase().modelProfileOrder))
   let profileIdSet = $derived(new Set(profiles.map((profile) => profile.id)))
   let resolverDatabase = $derived.by<Database>(() => ({
     ...getDatabase(),
@@ -170,10 +175,17 @@
     return language.modelRoles.fallbackCount(uiState.resolvedProfiles[role].fallbacks.length)
   }
 
-  function profileOptionsForBinding(binding: ModelRoleProfileBinding): Array<{ id: string; name: string }> {
-    const options = profiles.map((profile) => ({ id: profile.id, name: profile.name }))
+  function profileOptionsForBinding(
+    binding: ModelRoleProfileBinding,
+  ): Array<{ kind: 'profile'; id: string; name: string } | { kind: 'divider'; id: string }> {
+    const options = profileItems.map((item) =>
+      item.kind === 'profile'
+        ? { kind: 'profile' as const, id: item.profile.id, name: item.profile.name }
+        : { kind: 'divider' as const, id: item.id },
+    )
     if (binding.mode === 'profile' && binding.profileId && !profileIdSet.has(binding.profileId)) {
       options.unshift({
+        kind: 'profile',
         id: binding.profileId,
         name: language.modelProfiles.missingProfile(binding.profileId),
       })
@@ -182,7 +194,7 @@
   }
 
   function firstProfileId(): string {
-    return profiles[0]?.id ?? ''
+    return profileItems.find((item) => item.kind === 'profile')?.profile.id ?? ''
   }
 
   function setBinding(role: ModelRole, binding: ModelRoleProfileBinding): void {
@@ -214,6 +226,20 @@
 
   function setBindingProfile(role: ModelRole, profileId: string): void {
     setBinding(role, { mode: 'profile', profileId })
+  }
+
+  function handleBindingProfileChange(role: ModelRole, previousProfileId: string, event: Event): void {
+    const select = event.currentTarget
+    if (!(select instanceof HTMLSelectElement)) return
+    if (isModelProfileDividerSelectValue(select.value)) {
+      select.value = previousProfileId
+      profileSelectRevisions = {
+        ...profileSelectRevisions,
+        [role]: (profileSelectRevisions[role] ?? 0) + 1,
+      }
+      return
+    }
+    setBindingProfile(role, select.value)
   }
 
   function restoreBindingsIfCurrent(bindings: Partial<Record<ModelRole, ModelRoleProfileBinding>>): void {
@@ -322,20 +348,27 @@
           </div>
           {#if binding.mode === 'profile'}
             <div class="flex flex-1 basis-full sm:basis-0">
-              <SelectInput
-                size="sm"
-                className="w-full"
-                ariaLabel={`${roleLabel(role)}: ${language.modelProfiles.effectiveProfileColumn}`}
-                disabled={applying || applyQueued}
-                value={binding.profileId}
-                onchange={(event) => setBindingProfile(role, event.currentTarget.value)}>
-                {#if profiles.length === 0}
-                  <OptionInput value="">{language.modelProfiles.noProfiles}</OptionInput>
-                {/if}
-                {#each profileOptionsForBinding(binding) as profile (profile.id)}
-                  <OptionInput value={profile.id}>{profile.name}</OptionInput>
-                {/each}
-              </SelectInput>
+              {#key profileSelectRevisions[role] ?? 0}
+                <SelectInput
+                  size="sm"
+                  className="w-full"
+                  ariaLabel={`${roleLabel(role)}: ${language.modelProfiles.effectiveProfileColumn}`}
+                  disabled={applying || applyQueued}
+                  value={binding.profileId}
+                  onchange={(event) => handleBindingProfileChange(role, binding.profileId, event)}>
+                  {#if profiles.length === 0}
+                    <OptionInput value="">{language.modelProfiles.noProfiles}</OptionInput>
+                  {/if}
+                  {#each profileOptionsForBinding(binding) as profile (`${profile.kind}:${profile.id}`)}
+                    {#if profile.kind === 'divider'}
+                      <option value={modelProfileDividerSelectValue(profile.id)} data-model-profile-divider="true"
+                        >---</option>
+                    {:else}
+                      <OptionInput value={profile.id}>{profile.name}</OptionInput>
+                    {/if}
+                  {/each}
+                </SelectInput>
+              {/key}
             </div>
           {/if}
         </div>
