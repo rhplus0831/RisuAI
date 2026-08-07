@@ -302,6 +302,7 @@ function makePreset(id: string, name: string, patch: Partial<botPreset> = {}): b
         id: `${id}-prompt`,
         type: 'plain',
         text: `${name} prompt item`,
+        role: 'system',
       },
     ] as any,
     NAISettings: { cfg_scale: 4, mirostat_tau: 5, mirostat_lr: 6 } as any,
@@ -368,6 +369,44 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('normalizes prompt roles across top-level, legacy, and modern preset templates', () => {
+    seedPresetDatabase()
+    const data = clonePlain(getDatabase()) as unknown as Record<string, unknown>
+    data.promptTemplate = [{ id: 'top-row', type: 'description', role2: 'assistant' }]
+    ;(data.botPresets as Array<Record<string, unknown>>)[0].promptTemplate = [
+      { id: 'legacy-row', type: 'authornote', role2: 'char' },
+    ]
+    data.promptPresets = [
+      {
+        id: 'modern-preset',
+        name: 'Modern',
+        promptTemplate: [{ id: 'modern-row', type: 'cache', role: 'bot', name: '', depth: 1 }],
+      },
+    ]
+    data.promptPresetsId = 0
+
+    setDatabase(data as unknown as Database)
+
+    const normalized = getDatabase() as unknown as Record<string, unknown>
+    expect((normalized.promptTemplate as Array<Record<string, unknown>>)[0].role2).toBe('bot')
+    expect(((normalized.botPresets as Array<Record<string, unknown>>)[0].promptTemplate as any[])[0].role2).toBe('bot')
+    expect(((normalized.promptPresets as Array<Record<string, unknown>>)[0].promptTemplate as any[])[0].role).toBe(
+      'assistant',
+    )
+  })
+
+  it('keeps a present null top-level prompt template null', () => {
+    seedPresetDatabase()
+    const data = clonePlain(getDatabase()) as unknown as Record<string, unknown>
+    data.promptTemplate = null
+
+    setDatabase(data as unknown as Database)
+
+    const normalized = getDatabase() as unknown as Record<string, unknown>
+    expect(Object.prototype.hasOwnProperty.call(normalized, 'promptTemplate')).toBe(true)
+    expect(normalized.promptTemplate).toBeNull()
+  })
+
   it('defaults popup editing to plain text while preserving explicit Monaco preferences', () => {
     seedPresetDatabase()
     const legacyData = clonePlain(getDatabase())
@@ -4273,7 +4312,7 @@ describe('preset command rollback (L21)', () => {
     expect(getDatabase().modelPresets.some((preset) => preset.name === 'Alpha Model')).toBe(true)
     expect(getDatabase().promptPresets.some((preset) => preset.name === 'Alpha Prompt')).toBe(true)
     expect(getDatabase().promptPresets.find((preset) => preset.name === 'Alpha Prompt')?.promptTemplate).toEqual([
-      { id: 'preset-a-prompt', type: 'plain', text: 'Alpha prompt item' },
+      { id: 'preset-a-prompt', type: 'plain', text: 'Alpha prompt item', role: 'system' },
     ])
     await waitForPresetCommand(calls, '/legacy-bot-presets/preset-a/extract')
     await waitForState(() => {

@@ -315,9 +315,9 @@ describe('split preset command normalization', () => {
       id: 'prompt-template-a',
       name: 'Prompt Template A',
       promptTemplate: [
-        { type: 'plain', text: 'missing id' },
+        { type: 'plain', text: 'missing id', role: 'assistant' },
         { id: 'duplicate-row', type: 'plain', text: 'first duplicate' },
-        { id: 'duplicate-row', type: 'plain', text: 'second duplicate' },
+        { id: 'duplicate-row', type: 'description', text: 'second duplicate', role2: 'char' },
       ],
     })
 
@@ -326,18 +326,22 @@ describe('split preset command normalization', () => {
     expect(presetIds[1]).toBe('duplicate-row')
     expect(presetIds[2]).toEqual(expect.any(String))
     expect(new Set(presetIds).size).toBe(3)
+    expect((preset.promptTemplate as Array<Record<string, unknown>>)[0].role).toBe('bot')
+    expect((preset.promptTemplate as Array<Record<string, unknown>>)[2].role2).toBe('bot')
 
     const patch = readPromptPresetPatch({
-      promptTemplate: [{ type: 'plain', text: 'patched missing id' }],
+      promptTemplate: [{ type: 'memory', text: 'patched missing id', role2: 'assistant' }],
     })
     expect((patch.promptTemplate as Array<{ id?: string }>)[0].id).toEqual(expect.any(String))
+    expect((patch.promptTemplate as Array<Record<string, unknown>>)[0].role2).toBe('bot')
 
     const database: Record<string, unknown> = {}
     applyPromptPreset(database, {
       id: 'dirty-prompt-template',
-      promptTemplate: [{ type: 'plain', text: 'applied missing id' }],
+      promptTemplate: [{ type: 'authornote', text: 'applied missing id', role2: 'char' }],
     })
     expect((database.promptTemplate as Array<{ id?: string }>)[0].id).toEqual(expect.any(String))
+    expect((database.promptTemplate as Array<Record<string, unknown>>)[0].role2).toBe('bot')
   })
 
   it('preserves boolean prompt preset archive metadata and rejects invalid values', () => {

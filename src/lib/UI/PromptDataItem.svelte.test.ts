@@ -92,4 +92,42 @@ describe('PromptDataItem disclosure control', () => {
     expect(names).toEqual([language.name, language.type, language.depth, language.role])
     expect(names.every(Boolean)).toBe(true)
   })
+
+  it('uses the assistant wire role for cache-card character matching', async () => {
+    component = mount(PromptDataItemTestHost, { target })
+    await tick()
+    Array.from(target.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Cached context')
+      ?.click()
+    await tick()
+
+    const roleSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).at(-1)
+    expect(Array.from(roleSelect?.options ?? [], (option) => option.value)).toEqual([
+      'all',
+      'user',
+      'assistant',
+      'system',
+    ])
+  })
+
+  it('defaults block role2 to system and persists a selected block role', async () => {
+    component = mount(PromptDataItemTestHost, {
+      target,
+      props: { initialPrompt: { type: 'persona', name: 'Persona' } },
+    })
+    await tick()
+    Array.from(target.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Persona')
+      ?.click()
+    await tick()
+
+    const roleSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).at(-1)
+    expect(roleSelect?.value).toBe('system')
+    if (roleSelect) {
+      roleSelect.value = 'bot'
+      roleSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    await tick()
+    expect(target.querySelector('[data-testid="prompt-json"]')?.textContent).toContain('"role2":"bot"')
+  })
 })

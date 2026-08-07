@@ -358,6 +358,56 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
     expect(out.map((r) => r.content)).toEqual(['AN: fallback'])
   })
 
+  it('applies role2 to every persona and author-note row', () => {
+    const unformated = makeSlots({
+      personaPrompt: [row({ content: 'persona one' }), row({ content: 'persona two' })],
+      authorNote: [row({ content: 'author note' })],
+    })
+    const { formated } = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      unformated,
+      [
+        { type: 'persona', role2: 'bot' },
+        { type: 'authornote', role2: 'user' },
+      ],
+      true,
+    )
+
+    expect(formated).toEqual([
+      { role: 'assistant', content: 'persona one' },
+      { role: 'assistant', content: 'persona two' },
+      { role: 'user', content: 'author note' },
+    ])
+  })
+
+  it('applies description role2 only to the base description row', () => {
+    const unformated = makeSlots({
+      description: [
+        row({ content: 'before lore' }),
+        row({ content: 'base description' }),
+        row({ content: 'after lore' }),
+      ],
+    })
+    const { formated } = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      unformated,
+      [{ type: 'description', role2: 'user' }],
+      true,
+      undefined,
+      [],
+      undefined,
+      1,
+    )
+
+    expect(formated).toEqual([
+      { role: 'system', content: 'before lore' },
+      { role: 'user', content: 'base description' },
+      { role: 'system', content: 'after lore' },
+    ])
+  })
+
   it('renders a plain/main card and maps bot role to assistant', () => {
     const db = makeDatabase()
     const { formated: out } = renderByTemplate(
@@ -668,6 +718,19 @@ describe('Phase 7-10d memory cards', () => {
       mem(),
     )
     expect(out.map((r) => r.content)).toEqual(['m0', 'm1'])
+  })
+
+  it('applies role2 to every injected memory row', () => {
+    const { formated } = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      makeSlots(),
+      [{ type: 'memory', role2: 'user' }],
+      true,
+      undefined,
+      mem(),
+    )
+    expect(formated.map(({ role }) => role)).toEqual(['user', 'user'])
   })
 
   it('wraps each memory row via innerFormat {{slot}}', () => {

@@ -6,6 +6,7 @@ import { risuChatParser } from '../scripts'
 import type { ChatTokenizer } from '../../tokenizer'
 import { prebuiltAssetCommand } from '../../util'
 import { systemizeChat } from '../promptAssembly/systemizeChat'
+import { applyDescriptionPromptRole, applyPromptBlockRole } from '../promptBlockRole'
 
 export interface PromptUnformatedSlots {
   main: OpenAIChat[]
@@ -33,6 +34,7 @@ export async function preflightTemplateTokens(
   tokenizer: ChatTokenizer,
   currentChar: character,
   positionParser: (text: string, loc: string) => string,
+  descriptionBaseIndex?: number,
 ): Promise<PreflightResult> {
   let addedTokens = 0
   let memoryCardUsed = false
@@ -57,7 +59,7 @@ export async function preflightTemplateTokens(
   for (const card of promptTemplate) {
     switch (card.type) {
       case 'persona': {
-        const pmt = safeStructuredClone(unformated.personaPrompt)
+        const pmt = applyPromptBlockRole(safeStructuredClone(unformated.personaPrompt), card.role2)
         if (card.innerFormat && pmt.length > 0) {
           for (let i = 0; i < pmt.length; i++) {
             pmt[i].content = risuChatParser(positionParser(card.innerFormat, card.type), {
@@ -69,7 +71,11 @@ export async function preflightTemplateTokens(
         break
       }
       case 'description': {
-        const pmt = safeStructuredClone(unformated.description)
+        const pmt = applyDescriptionPromptRole(
+          safeStructuredClone(unformated.description),
+          card.role2,
+          descriptionBaseIndex,
+        )
         if (card.innerFormat && pmt.length > 0) {
           for (let i = 0; i < pmt.length; i++) {
             pmt[i].content = risuChatParser(positionParser(card.innerFormat, card.type), {
@@ -81,7 +87,7 @@ export async function preflightTemplateTokens(
         break
       }
       case 'authornote': {
-        const pmt = safeStructuredClone(unformated.authorNote)
+        const pmt = applyPromptBlockRole(safeStructuredClone(unformated.authorNote), card.role2)
         if (card.innerFormat && pmt.length > 0) {
           for (let i = 0; i < pmt.length; i++) {
             pmt[i].content = risuChatParser(positionParser(card.innerFormat, card.type), {

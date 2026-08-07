@@ -17,6 +17,7 @@ import type { NAISettings } from '../process/models/nai'
 import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templates'
 import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme'
 import type { PromptItem, PromptSettings } from '../process/prompt'
+import { normalizePromptTemplate } from '../process/promptTemplateNormalization'
 import type { OobaChatCompletionRequestParams } from '../model/ooba'
 import {
   createDefaultModelRoleOverrides,
@@ -172,6 +173,7 @@ function createClientPromptItemId() {
 }
 
 export function normalizePromptTemplateIds(data: Pick<Database, 'promptTemplate'>) {
+  normalizePromptTemplateRecord(data)
   if (!Array.isArray(data.promptTemplate)) return
 
   const seen = new Set<string>()
@@ -180,6 +182,20 @@ export function normalizePromptTemplateIds(data: Pick<Database, 'promptTemplate'
     const id = typeof item.id === 'string' && item.id.trim() ? item.id : createClientPromptItemId()
     item.id = seen.has(id) ? createClientPromptItemId() : id
     seen.add(item.id)
+  }
+}
+
+function normalizePromptTemplateRecord(record: unknown): void {
+  if (!isPlainRecord(record) || !Object.prototype.hasOwnProperty.call(record, 'promptTemplate')) return
+  record.promptTemplate = normalizePromptTemplate(record.promptTemplate)
+}
+
+function normalizeNestedPromptTemplates(data: unknown): void {
+  if (!isPlainRecord(data)) return
+  normalizePromptTemplateRecord(data)
+  for (const collection of [data.botPresets, data.promptPresets]) {
+    if (!Array.isArray(collection)) continue
+    for (const preset of collection) normalizePromptTemplateRecord(preset)
   }
 }
 
@@ -261,6 +277,7 @@ function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId
   const seen = new Set<string>()
   for (const preset of data.botPresets) {
     if (!preset) continue
+    normalizePromptTemplateRecord(preset)
     const id = typeof preset.id === 'string' && preset.id.trim() ? preset.id : createClientPresetId()
     const nextId = seen.has(id) ? createClientPresetId() : id
     if (preset.id !== nextId) {
@@ -285,6 +302,7 @@ function normalizeSplitPresetIds(
   normalizePresetCollectionIds(data.promptPresets, (next) => {
     data.promptPresets = next as PromptPreset[]
   })
+  for (const preset of data.promptPresets) normalizePromptTemplateRecord(preset)
   data.promptPresetsId = normalizedBotPresetsId(data.promptPresets.length, data.promptPresetsId)
 }
 
@@ -2785,6 +2803,7 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.proxyKey)) {
     data.proxyKey = ''
   }
+  normalizePromptTemplateIds(data)
   if (checkNullish(data.botPresets)) {
     data.botPresets = []
   }
@@ -3372,6 +3391,7 @@ export function applyServerResourceDatabase(data: Database, revision?: number) {
     data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
     data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
     data.moodLightMembership = normalizeMoodLightMembership(data.moodLightMembership)
+    normalizeNestedPromptTemplates(data)
     normalizeAgentPresetSettings(data)
     changeLanguage(data.language)
     setDatabaseLite(data, revision)
@@ -3397,13 +3417,15 @@ export function mergeServerResourceFields(fields: Partial<Database>) {
         continue
       }
       db[key] =
-        key === 'customSidebarItems'
-          ? normalizeCustomSidebarItems(value)
-          : key === 'chatGenerationTogglePresets'
-            ? normalizeChatGenerationTogglePresets(value)
-            : key === 'moodLightMembership'
-              ? normalizeMoodLightMembership(value)
-              : value
+        key === 'promptTemplate'
+          ? normalizePromptTemplate(value)
+          : key === 'customSidebarItems'
+            ? normalizeCustomSidebarItems(value)
+            : key === 'chatGenerationTogglePresets'
+              ? normalizeChatGenerationTogglePresets(value)
+              : key === 'moodLightMembership'
+                ? normalizeMoodLightMembership(value)
+                : value
     }
     if (typeof fields.language === 'string') {
       changeLanguage(fields.language)
@@ -5948,6 +5970,7 @@ export function createPromptPreset(preset: PromptPreset): Promise<PresetMutation
     normalizeSplitPresetIds(db)
     flushPendingSplitPresetPatchesForKind('prompt')
     const newPreset = safeStructuredClone(preset)
+    normalizePromptTemplateRecord(newPreset)
     newPreset.id ??= createClientPresetId()
     const attemptedPreset = safeStructuredClone(newPreset)
     db.promptPresets.push(newPreset)
@@ -6242,6 +6265,7 @@ export function updatePromptPreset(id: number, patch: Partial<PromptPreset>): Pr
     const promptPresetId = db.promptPresets[id]?.id
     if (!promptPresetId) return Promise.resolve({ status: 'failed' })
     const attempted = normalizePromptPresetPatchAliases(omitUndefinedSplitPresetPatchValues(safeStructuredClone(patch)))
+    normalizePromptTemplateRecord(attempted)
     const previousProjectionFields = captureSplitPresetProjectionFields('prompt', attempted as Record<string, unknown>)
     const pending = queueSplitPresetPatch(
       'prompt',
@@ -6692,6 +6716,7 @@ function normalizeSplitPresetAppliedValue(
   value: unknown,
   profiles: readonly ModelProfileRecord[] = [],
 ): unknown {
+  if (databaseKey === 'promptTemplate') return normalizePromptTemplate(value)
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
   if (databaseKey === 'modelProfileOrder') return normalizeModelProfileOrder(value, profiles)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)

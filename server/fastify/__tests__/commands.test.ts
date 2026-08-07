@@ -5921,9 +5921,9 @@ describe('Phase 9-2c prompt template and item commands', () => {
           promptTemplate: [
             {
               id: 'item-a',
-              type: 'plain',
+              type: 'description',
               text: 'before',
-              role: 'system',
+              role2: 'assistant',
               innerFormat: 'legacy format',
               removable: 'drop me',
               largeMetadata: 'x'.repeat(20_000),
@@ -5941,7 +5941,7 @@ describe('Phase 9-2c prompt template and item commands', () => {
       payload: {
         baseRevision: revision,
         promptPresetId: 'prompt-a',
-        patch: { id: 'item-a', text: 'after', innerFormat: null },
+        patch: { id: 'item-a', text: 'after', innerFormat: null, role2: 'char' },
         deleteKeys: ['removable'],
       },
     })
@@ -5968,9 +5968,9 @@ describe('Phase 9-2c prompt template and item commands', () => {
     expect(presetTemplate.json().promptTemplate).toEqual([
       {
         id: 'item-a',
-        type: 'plain',
+        type: 'description',
         text: 'after',
-        role: 'system',
+        role2: 'bot',
         innerFormat: null,
         largeMetadata: 'x'.repeat(20_000),
       },

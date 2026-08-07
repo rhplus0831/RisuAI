@@ -247,6 +247,9 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'waifuWidth2', 100)
   setDefault(database, 'emotionPrompt', '')
   setDefault(database, 'proxyKey', '')
+  if (Object.prototype.hasOwnProperty.call(database, 'promptTemplate')) {
+    database.promptTemplate = normalizePromptTemplateValue(database.promptTemplate)
+  }
   normalizeBotPresets(database)
   normalizeSplitPresets(database)
   setDefault(database, 'sdProvider', '')
@@ -549,6 +552,9 @@ function normalizeBotPresets(database: JsonRecord): void {
     seen.add(rawPreset.id as string)
     rawPreset.localNetworkMode ??= false
     rawPreset.localNetworkTimeoutSec ??= 600
+    if (Object.prototype.hasOwnProperty.call(rawPreset, 'promptTemplate')) {
+      rawPreset.promptTemplate = normalizePromptTemplateValue(rawPreset.promptTemplate)
+    }
     if (typeof rawPreset.localNetworkMode !== 'boolean') rawPreset.localNetworkMode = false
     if (!isFiniteNumber(rawPreset.localNetworkTimeoutSec)) rawPreset.localNetworkTimeoutSec = 600
   }

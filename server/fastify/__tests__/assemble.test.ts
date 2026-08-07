@@ -4790,6 +4790,40 @@ describe('Phase 3 M3 stable card cache', () => {
 })
 
 describe('Fastify lorebook template injection', () => {
+  it('keeps before_desc lore system-authored when description role2 changes the base row', async () => {
+    const beforeDescription = {
+      key: '',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Before description',
+      content: '@@position before_desc\nLORE BEFORE',
+      mode: 'normal',
+      alwaysActive: true,
+      selective: false,
+    } as loreBook
+    const db = makeDatabase({
+      aiModel: 'gpt4',
+      maxContext: 100_000,
+      maxResponse: 50,
+      promptTemplate: [{ type: 'description', role2: 'user' }],
+      characters: [
+        makeCharacter({
+          desc: 'BASE DESCRIPTION',
+          globalLore: [beforeDescription],
+          chats: [makeChat({ id: 'chat-1', message: [] })],
+        }),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated).toEqual([
+      { role: 'system', content: 'LORE BEFORE' },
+      { role: 'user', content: 'BASE DESCRIPTION' },
+    ])
+  })
+
   it('applies @@inject_at globalNote once through async activation, preflight, cache, and final render', async () => {
     const injector = {
       key: '',

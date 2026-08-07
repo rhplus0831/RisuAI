@@ -514,6 +514,10 @@ export interface AssemblyState {
   report?: LorebookActivationReport
   /** `{{position::}}` resolver shared by the template / render walkers. */
   positionParser?: (text: string, loc: string) => string
+  /** The base character-description row, retained across lorebook insertion. */
+  descriptionBasePrompt?: OpenAIChat
+  /** Index of the base character-description row after lorebook placement. */
+  descriptionBaseIndex?: number
   /** Depth-positioned lore the history splicer consumes. */
   depthPrompts?: LoreEntryActive[]
   /**
@@ -1413,7 +1417,9 @@ export function fillStaticSlots(state: AssemblyState): void {
 
   unformated.authorNote.push(...buildAuthorNote(ctx, currentChat))
   unformated.postEverything.push(...buildCotInstruction(ctx, usingPromptTemplate))
-  unformated.description.push(...buildDescription(ctx, currentChar))
+  const descriptionRows = buildDescription(ctx, currentChar)
+  state.descriptionBasePrompt = descriptionRows[0]
+  unformated.description.push(...descriptionRows)
   unformated.personaPrompt.push(...buildPersona(ctx))
   unformated.postEverything.push(...buildInlayViewInstruction(currentChar))
 }
@@ -1650,6 +1656,9 @@ function applyLorebookReport(
   }
 
   const { positionParser, depthPrompts } = buildLorebookContext(ctx, currentChar, report, unformated)
+  state.descriptionBaseIndex = state.descriptionBasePrompt
+    ? unformated.description.indexOf(state.descriptionBasePrompt)
+    : undefined
 
   // Match the SPA prompt assembly: seed with the max response budget plus a
   // small headroom for unexpected error overhead.
@@ -1663,6 +1672,7 @@ function applyLorebookReport(
     usingPromptTemplate,
     report,
     stableCardCache: state.stableCardCache,
+    descriptionBaseIndex: state.descriptionBaseIndex,
   })
   currentTokens += preflight.addedTokens
   finishStableCardPreflight(state, stableCardScriptstateBefore)
@@ -2256,6 +2266,7 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
       isContinue: state.isContinue,
       editRequest: lua.editRequest,
       stableCardCache: state.stableCardCache,
+      descriptionBaseIndex: state.descriptionBaseIndex,
     }),
   )
   state.promptText = render.promptText

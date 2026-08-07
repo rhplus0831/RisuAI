@@ -203,6 +203,64 @@ describe('renderFinalPrompt - continue marker', () => {
 })
 
 describe('renderFinalPrompt - template walker basics', () => {
+  it('applies role2 to browser persona, author-note, and memory rows', async () => {
+    seedDb()
+    const unformated = emptyUnformated()
+    unformated.personaPrompt.push({ role: 'system', content: 'persona' })
+    unformated.authorNote.push({ role: 'system', content: 'note' })
+
+    const result = await renderFinalPrompt({
+      currentChar: makeChar(),
+      unformated,
+      promptTemplate: [
+        { type: 'persona', role2: 'bot' },
+        { type: 'authornote', role2: 'user' },
+        { type: 'memory', role2: 'bot' },
+      ],
+      usingPromptTemplate: true,
+      formatOrder: DEFAULT_FORMAT_ORDER,
+      memories: [{ role: 'system', content: 'memory' }],
+      positionParser: passThrough,
+      hasCachePoint: false,
+      isContinue: false,
+    })
+
+    expect(result.formated).toEqual([
+      { role: 'assistant', content: 'persona' },
+      { role: 'user', content: 'note' },
+      { role: 'assistant', content: 'memory' },
+    ])
+  })
+
+  it('applies description role2 only to the browser base-description row', async () => {
+    seedDb()
+    const unformated = emptyUnformated()
+    unformated.description.push(
+      { role: 'system', content: 'before lore' },
+      { role: 'system', content: 'base description' },
+      { role: 'system', content: 'after lore' },
+    )
+
+    const result = await renderFinalPrompt({
+      currentChar: makeChar(),
+      unformated,
+      promptTemplate: [{ type: 'description', role2: 'user' }],
+      usingPromptTemplate: true,
+      formatOrder: DEFAULT_FORMAT_ORDER,
+      memories: [],
+      positionParser: passThrough,
+      hasCachePoint: false,
+      isContinue: false,
+      descriptionBaseIndex: 1,
+    })
+
+    expect(result.formated).toEqual([
+      { role: 'system', content: 'before lore' },
+      { role: 'user', content: 'base description' },
+      { role: 'system', content: 'after lore' },
+    ])
+  })
+
   it('persona + description + authornote innerFormat substitution', async () => {
     seedDb()
     const unformated = emptyUnformated()

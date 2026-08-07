@@ -67,6 +67,7 @@ import {
 import {
   createPromptItemRecord,
   ensurePromptTemplateCollection,
+  normalizePromptItemRecord,
   PROMPT_SETTINGS_KEYS,
   readPromptItemId,
   readPromptItemPatch,
@@ -4396,7 +4397,7 @@ export function registerCommandRoutes(
           for (const key of deleteKeys) delete updated[key]
           Object.assign(updated, patch)
           updated.id = itemId
-          items[index] = updated
+          items[index] = normalizePromptItemRecord(updated)
           if (scoped) {
             writeSingleCollectionRow(innerDb, 'promptPresets', scoped.index, scoped.preset)
           } else {

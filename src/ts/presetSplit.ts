@@ -1,3 +1,5 @@
+import { normalizePromptTemplate } from './process/promptTemplateNormalization'
+
 type JsonRecord = Record<string, unknown>
 
 export const MODEL_PRESET_FIELDS = [
@@ -186,7 +188,7 @@ export function extractModelPresetFields(source: unknown): JsonRecord {
 }
 
 export function extractPromptPresetFields(source: unknown): JsonRecord {
-  return pickPresetFields(source, PROMPT_PRESET_FIELDS)
+  return normalizePromptTemplateField(pickPresetFields(source, PROMPT_PRESET_FIELDS))
 }
 
 export function extractPromptPresetModelOverrideFields(source: unknown): JsonRecord {
@@ -312,7 +314,8 @@ function applyPromptPresetFields(target: JsonRecord, promptPreset: unknown): voi
   for (const field of PROMPT_PRESET_FIELDS) {
     if (field === 'regex' || field === 'presetRegex') continue
     if (!Object.prototype.hasOwnProperty.call(promptPreset, field)) continue
-    target[field] = cloneJsonValue(promptPreset[field])
+    target[field] =
+      field === 'promptTemplate' ? normalizePromptTemplate(promptPreset[field]) : cloneJsonValue(promptPreset[field])
   }
 
   const regexField = resolvePromptPresetRegexField(promptPreset)
@@ -353,6 +356,13 @@ function pickPresetFields(source: unknown, fields: readonly string[]): JsonRecor
     }
   }
   return picked
+}
+
+function normalizePromptTemplateField(record: JsonRecord): JsonRecord {
+  if (Object.prototype.hasOwnProperty.call(record, 'promptTemplate')) {
+    record.promptTemplate = normalizePromptTemplate(record.promptTemplate)
+  }
+  return record
 }
 
 function stableStringify(value: unknown): string {

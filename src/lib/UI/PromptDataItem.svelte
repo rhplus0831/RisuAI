@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PromptItem, PromptItemChat } from 'src/ts/process/prompt'
+  import type { PromptItem, PromptItemChat, PromptRole } from 'src/ts/process/prompt'
   import OptionInput from './GUI/OptionInput.svelte'
   import TextAreaInput from './GUI/TextAreaInput.svelte'
   import SelectInput from './GUI/SelectInput.svelte'
@@ -9,6 +9,7 @@
   import { ArrowDown, ArrowUp, XIcon } from '@lucide/svelte'
   import TextInput from './GUI/TextInput.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { normalizePromptBlockRoleForType } from 'src/ts/process/promptTemplateNormalization'
 
   interface Props {
     promptItem: PromptItem
@@ -82,6 +83,12 @@
       currentprompt.rangeEnd = 'end'
     }
     promptItem = currentprompt
+  }
+
+  const hasPromptBlockRole = (item: PromptItem): item is PromptItem & { role2?: PromptRole } => {
+    return (
+      item.type === 'persona' || item.type === 'description' || item.type === 'authornote' || item.type === 'memory'
+    )
   }
 
   function getName(promptItem: PromptItem) {
@@ -252,6 +259,7 @@
             promptItem.rangeStart = -1000
             promptItem.rangeEnd = 'end'
           }
+          normalizePromptBlockRoleForType(promptItem)
         }}>
         <OptionInput value="plain">{language.formating.plain}</OptionInput>
         <OptionInput value="jailbreak">{language.formating.jailbreak}</OptionInput>
@@ -297,7 +305,7 @@
         <SelectInput bind:value={promptItem.role} ariaLabel={language.role}>
           <OptionInput value="all">{language.all}</OptionInput>
           <OptionInput value="user">{language.user}</OptionInput>
-          <OptionInput value="bot">{language.character}</OptionInput>
+          <OptionInput value="assistant">{language.character}</OptionInput>
           <OptionInput value="system">{language.systemPrompt}</OptionInput>
         </SelectInput>
       {/if}
@@ -375,6 +383,21 @@
               }
             }} />
         {/if}
+      {/if}
+      {#if hasPromptBlockRole(promptItem)}
+        <span>{language.role}</span>
+        <SelectInput
+          value={promptItem.role2 ?? 'system'}
+          ariaLabel={language.role}
+          onchange={(event) => {
+            if (hasPromptBlockRole(promptItem)) {
+              promptItem.role2 = event.currentTarget.value as PromptRole
+            }
+          }}>
+          <OptionInput value="user">{language.user}</OptionInput>
+          <OptionInput value="bot">{language.character}</OptionInput>
+          <OptionInput value="system">{language.systemPrompt}</OptionInput>
+        </SelectInput>
       {/if}
     </fieldset>
   {/if}

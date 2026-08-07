@@ -4,6 +4,39 @@ import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
 import { LLMFlags } from '../../../src/ts/model/types.js'
 
 describe('database defaults', () => {
+  it('normalizes prompt roles at top-level, legacy-preset, and modern-preset entry points', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        promptTemplate: [{ id: 'top', type: 'description', role2: 'assistant' }],
+        botPresets: [
+          {
+            id: 'legacy',
+            promptTemplate: [{ id: 'legacy-row', type: 'authornote', role2: 'char' }],
+          },
+        ],
+        promptPresets: [
+          {
+            id: 'modern',
+            name: 'Modern',
+            promptTemplate: [{ id: 'modern-row', type: 'cache', role: 'bot' }],
+          },
+        ],
+      },
+      { providerDefaults: false },
+    )
+
+    expect((database.promptTemplate as Array<Record<string, unknown>>)[0].role2).toBe('bot')
+    expect(((database.botPresets as Array<Record<string, unknown>>)[0].promptTemplate as any[])[0].role2).toBe('bot')
+    expect(((database.promptPresets as Array<Record<string, unknown>>)[0].promptTemplate as any[])[0].role).toBe(
+      'assistant',
+    )
+  })
+
+  it('keeps a null prompt template null', () => {
+    const database = normalizeDatabaseDefaults({ promptTemplate: null }, { providerDefaults: false })
+    expect(database.promptTemplate).toBeNull()
+  })
+
   it('creates canonical model roles and script compatibility keys', () => {
     const database = createInitialDatabase()
 

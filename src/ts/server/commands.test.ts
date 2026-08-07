@@ -3470,7 +3470,7 @@ describe('server command API adapter', () => {
       createPromptItemCommand({
         baseRevision: 2,
         promptPresetId: 'prompt-preset-a',
-        promptItem: { id: 'item-b', type: 'memory' },
+        promptItem: { id: 'item-b', type: 'memory', role2: 'assistant' },
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 3, itemId: 'item-b' })
 
@@ -3479,7 +3479,7 @@ describe('server command API adapter', () => {
         baseRevision: 3,
         promptPresetId: 'prompt-preset-a',
         itemId: 'item-b',
-        patch: { type: 'description' },
+        patch: { type: 'description', role2: 'char' },
         deleteKeys: ['text'],
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 4, itemId: 'item-b' })
@@ -3528,7 +3528,11 @@ describe('server command API adapter', () => {
       {
         url: '/api/v1/commands/prompt-items',
         method: 'POST',
-        body: { baseRevision: 2, promptPresetId: 'prompt-preset-a', promptItem: { id: 'item-b', type: 'memory' } },
+        body: {
+          baseRevision: 2,
+          promptPresetId: 'prompt-preset-a',
+          promptItem: { id: 'item-b', type: 'memory', role2: 'bot' },
+        },
       },
       {
         url: '/api/v1/commands/prompt-items/item-b',
@@ -3536,7 +3540,7 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 3,
           promptPresetId: 'prompt-preset-a',
-          patch: { type: 'description' },
+          patch: { type: 'description', role2: 'bot' },
           deleteKeys: ['text'],
         },
       },

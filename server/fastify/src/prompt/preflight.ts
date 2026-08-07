@@ -56,6 +56,7 @@ export interface PreflightInput {
   usingPromptTemplate: boolean
   report?: LorebookActivationReport
   stableCardCache?: StableCardRenderCache
+  descriptionBaseIndex?: number
 }
 
 function positionParserFor(report: LorebookActivationReport | undefined): (text: string, loc: string) => string {
@@ -64,7 +65,16 @@ function positionParserFor(report: LorebookActivationReport | undefined): (text:
 }
 
 export function preflightTemplateTokens(input: PreflightInput): PreflightResult {
-  const { ctx, currentChar, unformated, promptTemplate, usingPromptTemplate, report, stableCardCache } = input
+  const {
+    ctx,
+    currentChar,
+    unformated,
+    promptTemplate,
+    usingPromptTemplate,
+    report,
+    stableCardCache,
+    descriptionBaseIndex,
+  } = input
   const db = ctx.database
   const { encoding, options } = tokenizerOptionsFromDb(db)
   const positionParser = positionParserFor(report)
@@ -101,6 +111,7 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
         unformated,
         usingPromptTemplate,
         positionParser,
+        descriptionBaseIndex,
       },
       stableCardCache,
       templateIndex,

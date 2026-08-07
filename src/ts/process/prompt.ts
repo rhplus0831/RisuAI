@@ -12,6 +12,7 @@ export type PromptItem =
   | PromptItemChatML
   | PromptItemCache
 export type PromptType = PromptItem['type']
+export type PromptRole = 'user' | 'bot' | 'system'
 export type PromptSettings = {
   assistantPrefill: string
   postEndInnerFormat: string
@@ -28,7 +29,7 @@ export interface PromptItemPlain {
   type: 'plain' | 'jailbreak' | 'cot'
   type2: 'normal' | 'globalNote' | 'main'
   text: string
-  role: 'user' | 'bot' | 'system'
+  role: PromptRole
   name?: string
 }
 
@@ -43,6 +44,7 @@ export interface PromptItemTyped {
   id?: string
   type: 'persona' | 'description' | 'lorebook' | 'postEverything' | 'memory'
   innerFormat?: string
+  role2?: PromptRole
   name?: string
 }
 
@@ -51,6 +53,7 @@ export interface PromptItemAuthorNote {
   type: 'authornote'
   innerFormat?: string
   defaultText?: string
+  role2?: PromptRole
   name?: string
 }
 

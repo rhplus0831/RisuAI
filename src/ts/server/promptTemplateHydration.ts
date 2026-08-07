@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store'
 import { getDatabase, mergeServerResourceFields, type Database, type PromptPreset } from '../storage/database.svelte'
+import { normalizePromptTemplate } from '../process/promptTemplateNormalization'
 import { peekCachedServerCommandRevision } from './commands'
 import { fetchServerPromptPresetTemplate } from './hydrationReads'
 import { withServerResourceApply } from './resourceWriteGuard.svelte'
@@ -306,6 +307,11 @@ export function applyPromptTemplateProjectionFields(
   const hasPromptTemplate = Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')
   const promptTemplate = (fields as Record<string, unknown>).promptTemplate
   if (hasPromptTemplate && promptTemplate !== null && !Array.isArray(promptTemplate)) return false
+  const normalizedPromptTemplate = hasPromptTemplate ? normalizePromptTemplate(promptTemplate) : null
+  const normalizedSelectedFallback =
+    options.selectedFallbackPromptTemplate === undefined
+      ? undefined
+      : normalizePromptTemplate(options.selectedFallbackPromptTemplate)
 
   return withServerResourceApply(() => {
     const database = getDatabase()
@@ -319,7 +325,7 @@ export function applyPromptTemplateProjectionFields(
       if (promptTemplate === null) {
         delete preset.promptTemplate
       } else {
-        preset.promptTemplate = promptTemplate as PromptPreset['promptTemplate']
+        preset.promptTemplate = normalizedPromptTemplate as PromptPreset['promptTemplate']
       }
     }
 
@@ -328,12 +334,12 @@ export function applyPromptTemplateProjectionFields(
       ownerId === currentPromptTemplateOwnerId() &&
       hasPromptTemplate
     ) {
-      if (options.selectedFallbackPromptTemplate !== undefined) {
-        database.promptTemplate = options.selectedFallbackPromptTemplate
+      if (normalizedSelectedFallback !== undefined) {
+        database.promptTemplate = normalizedSelectedFallback as Database['promptTemplate']
       } else if (promptTemplate === null) {
         delete (database as unknown as Record<string, unknown>).promptTemplate
       } else {
-        database.promptTemplate = promptTemplate as Database['promptTemplate']
+        database.promptTemplate = normalizedPromptTemplate as Database['promptTemplate']
       }
     }
     return true

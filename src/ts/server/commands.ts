@@ -58,6 +58,11 @@ import type { DurableMutationRequest } from './pendingMutationOutbox'
 import type { ServerInlayCatalogEntry } from './inlayCatalog'
 import type { TranslatorPresetStep } from '../translator/presets'
 import { beginPersistenceActivity } from './persistenceActivity.svelte'
+import {
+  normalizeCacheRole,
+  normalizePromptRole,
+  normalizePromptTemplate,
+} from '../process/promptTemplateNormalization'
 
 export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffectApplied }
 
@@ -811,6 +816,35 @@ export type AgentPresetSnapshot = Partial<AgentPresetRecord> & Record<string, un
 export type AgentPresetStepSnapshot = Partial<AgentPresetStepRecord> & Record<string, unknown>
 export type AgentSnapshot = Partial<AgentRecord> & Record<string, unknown>
 export type AgentPresetUseSnapshot = Partial<AgentPresetUseRecord> & Record<string, unknown>
+
+function normalizePromptTemplateProperty<T extends Record<string, unknown>>(record: T): T {
+  const normalized = { ...record }
+  if (Object.prototype.hasOwnProperty.call(normalized, 'promptTemplate')) {
+    const target = normalized as Record<string, unknown>
+    target.promptTemplate = normalizePromptTemplate(target.promptTemplate)
+  }
+  return normalized
+}
+
+function normalizePromptItemSnapshot(item: PromptItemSnapshot): PromptItemSnapshot {
+  const normalized = normalizePromptTemplate([item])?.[0]
+  return normalized && typeof normalized === 'object' ? (normalized as PromptItemSnapshot) : { ...item }
+}
+
+function normalizePromptItemPatch(patch: PromptItemSnapshot): PromptItemSnapshot {
+  const normalized = { ...patch }
+  if (Object.prototype.hasOwnProperty.call(normalized, 'role2')) {
+    normalized.role2 = normalizePromptRole(normalized.role2) ?? 'system'
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, 'role')) {
+    if (normalized.type === 'cache') {
+      normalized.role = normalizeCacheRole(normalized.role)
+    } else if (normalized.type === 'plain' || normalized.type === 'jailbreak' || normalized.type === 'cot') {
+      normalized.role = normalizePromptRole(normalized.role) ?? 'system'
+    }
+  }
+  return normalized
+}
 
 export interface ModelPresetCommandInput {
   baseRevision: number
@@ -2586,11 +2620,12 @@ export async function createPromptPresetCommand(
   input: CreatePromptPresetCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ promptPresetId: string }>> {
+  const preset = normalizePromptTemplateProperty(input.preset)
   return requestCommandJson('/prompt-presets', {
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
-      preset: input.preset,
+      preset,
     },
     signal,
   })
@@ -2601,11 +2636,12 @@ export async function updatePromptPresetCommand(
   signal?: AbortSignal | null,
   keepalive = false,
 ): Promise<ServerCommandResult<{ promptPresetId: string }>> {
+  const patch = normalizePromptTemplateProperty(input.patch)
   return requestCommandJson(`/prompt-presets/${encodeURIComponent(input.promptPresetId)}`, {
     method: 'PATCH',
     body: {
       baseRevision: input.baseRevision,
-      patch: input.patch,
+      patch,
     },
     signal,
     keepalive,
@@ -2613,7 +2649,7 @@ export async function updatePromptPresetCommand(
       readSplitPresetPatchLocalEffect(body, event, {
         presetKind: 'prompt',
         presetId: input.promptPresetId,
-        attemptedPatch: input.patch,
+        attemptedPatch: patch,
         acknowledgement: input.optimisticAcknowledgement,
       }),
   })
@@ -2658,11 +2694,12 @@ export async function importPromptPresetCommand(
   input: ImportPromptPresetCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ promptPresetId: string }>> {
+  const preset = normalizePromptTemplateProperty(input.preset)
   return requestCommandJson('/prompt-presets/import', {
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
-      preset: input.preset,
+      preset,
     },
     signal,
   })
@@ -3203,20 +3240,21 @@ export async function createPromptItemCommand(
   input: CreatePromptItemCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ itemId: string }>> {
+  const promptItem = normalizePromptItemSnapshot(input.promptItem)
   return requestCommandJson('/prompt-items', {
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
       ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
-      promptItem: input.promptItem,
+      promptItem,
     },
     signal,
     readLocalEffect: (body, event) =>
       readPromptItemMutationLocalEffect(body, event, {
         operation: 'create',
         promptPresetId: input.promptPresetId,
-        itemId: input.promptItem.id,
-        promptItem: input.promptItem,
+        itemId: promptItem.id,
+        promptItem,
         acknowledgement: input.optimisticAcknowledgement,
       }),
   })
@@ -3227,12 +3265,13 @@ export async function updatePromptItemCommand(
   signal?: AbortSignal | null,
   keepalive = false,
 ): Promise<ServerCommandResult<{ itemId: string }>> {
+  const patch = normalizePromptItemPatch(input.patch)
   return requestCommandJson(`/prompt-items/${encodeURIComponent(input.itemId)}`, {
     method: 'PATCH',
     body: {
       baseRevision: input.baseRevision,
       ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
-      patch: input.patch,
+      patch,
       ...(input.deleteKeys?.length ? { deleteKeys: input.deleteKeys } : {}),
     },
     signal,
@@ -3242,7 +3281,7 @@ export async function updatePromptItemCommand(
         operation: 'update',
         promptPresetId: input.promptPresetId,
         itemId: input.itemId,
-        patch: input.patch,
+        patch,
         deleteKeys: input.deleteKeys,
         acknowledgement: input.optimisticAcknowledgement,
       }),

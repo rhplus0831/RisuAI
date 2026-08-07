@@ -1,6 +1,7 @@
 import type { Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
+import { applyDescriptionPromptRole, applyPromptBlockRole } from '../../../../src/ts/process/promptBlockRole.js'
 import { parseChatMLRows } from '../../../../src/ts/parser/chatMLCore.js'
 import {
   resolveEffectivePromptTemplate,
@@ -263,6 +264,8 @@ export interface ContentCardDeps {
   usingPromptTemplate: boolean
   /** `{{position::}}` and `@@inject_at` substitution supplied by the caller. */
   positionParser: (text: string, loc: string) => string
+  /** Index of the base character-description row after lorebook placement. */
+  descriptionBaseIndex?: number
   /**
    * Prompt-info capture sink. When present, persona /
    * description / authornote (raw `innerFormat`) and non-globalNote
@@ -440,12 +443,20 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
 
   switch (card.type) {
     case 'persona':
-      return wrapInnerFormat(structuredClone(unformated.personaPrompt), card.innerFormat, card.type)
+      return wrapInnerFormat(
+        applyPromptBlockRole(structuredClone(unformated.personaPrompt), card.role2),
+        card.innerFormat,
+        card.type,
+      )
     case 'description':
-      return wrapInnerFormat(structuredClone(unformated.description), card.innerFormat, card.type)
+      return wrapInnerFormat(
+        applyDescriptionPromptRole(structuredClone(unformated.description), card.role2, deps.descriptionBaseIndex),
+        card.innerFormat,
+        card.type,
+      )
     case 'authornote':
       return wrapInnerFormat(
-        structuredClone(unformated.authorNote),
+        applyPromptBlockRole(structuredClone(unformated.authorNote), card.role2),
         card.innerFormat,
         card.type,
         (row) => row.content || card.defaultText || '',
@@ -566,6 +577,7 @@ export function renderByTemplate(
   positionParser: (text: string, loc: string) => string = (text) => text,
   memories: OpenAIChat[] = [],
   stableCardCache?: StableCardRenderCache,
+  descriptionBaseIndex?: number,
 ): RenderedTemplate {
   const db = ctx.database
   const aiModel = db.aiModel ?? ''
@@ -581,6 +593,7 @@ export function renderByTemplate(
     unformated,
     usingPromptTemplate,
     positionParser,
+    descriptionBaseIndex,
     promptInfo,
   }
 
@@ -600,7 +613,7 @@ export function renderByTemplate(
       // `renderFinalPrompt.ts`. Memory deliberately does **not**
       // run `positionParser` (unlike persona / description); it only
       // wraps each row via `innerFormat` + `{{slot}}`.
-      const rows = structuredClone(memories)
+      const rows = applyPromptBlockRole(structuredClone(memories), card.role2)
       if (card.innerFormat && rows.length > 0) {
         const wrap = expandVariables(card.innerFormat, {
           ...ctx,
@@ -686,6 +699,8 @@ export interface RenderFinalPromptArgs {
   editRequest?: (rows: OpenAIChat[]) => OpenAIChat[] | Promise<OpenAIChat[]>
   /** Per-assembly stable-card rows shared by template preflight and final render. */
   stableCardCache?: StableCardRenderCache
+  /** Index of the base character-description row after lorebook placement. */
+  descriptionBaseIndex?: number
 }
 
 export interface RenderFinalPromptResult {
@@ -732,6 +747,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
     isContinue = false,
     editRequest = (rows) => rows,
     stableCardCache,
+    descriptionBaseIndex,
   } = args
   const aiModel = ctx.database.aiModel ?? ''
 
@@ -757,6 +773,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
       positionParser,
       memories,
       stableCardCache,
+      descriptionBaseIndex,
     ))
   } else {
     formated = renderByFormatOrder(unformated, formatOrder, aiModel)

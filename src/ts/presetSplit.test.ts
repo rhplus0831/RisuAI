@@ -26,7 +26,7 @@ describe('preset split helpers', () => {
     mainPrompt: 'Prompt text',
     jailbreak: 'Jailbreak text',
     customPromptTemplateToggle: 'mode=Mode',
-    promptTemplate: [{ type: 'plain', text: 'Template row' }],
+    promptTemplate: [{ type: 'plain', text: 'Template row', role: 'system' }],
     proxyKey: 'secret',
   }
 
@@ -56,7 +56,7 @@ describe('preset split helpers', () => {
       mainPrompt: 'Prompt text',
       jailbreak: 'Jailbreak text',
       customPromptTemplateToggle: 'mode=Mode',
-      promptTemplate: [{ type: 'plain', text: 'Template row' }],
+      promptTemplate: [{ type: 'plain', text: 'Template row', role: 'system' }],
       temperature: 0.7,
       maxContext: 16000,
       additionalParams: [['temperature', '{{none}}']],
@@ -66,6 +66,32 @@ describe('preset split helpers', () => {
     expect(promptPreset).not.toHaveProperty('aiModel')
     expect(promptPreset).not.toHaveProperty('proxyKey')
     expect(promptPreset).not.toHaveProperty('modelRuntimeDefaults')
+  })
+
+  it('normalizes prompt-template roles through extract, export, and composition', () => {
+    const source = {
+      promptTemplate: [
+        { type: 'persona', role2: 'assistant' },
+        { type: 'cache', role: 'char', name: '', depth: 1 },
+      ],
+    }
+    const extracted = createExtractedPromptPreset(source, { id: 'prompt-role', name: 'Role preset' })
+    expect(extracted.promptTemplate).toEqual([
+      { type: 'persona', role2: 'bot' },
+      { type: 'cache', role: 'assistant', name: '', depth: 1 },
+    ])
+    expect(promptPresetExportPayload(source).promptTemplate).toEqual(extracted.promptTemplate)
+
+    const target: Record<string, unknown> = {}
+    applyEffectivePresetComposition(target, { promptPreset: source })
+    expect(target.promptTemplate).toEqual(extracted.promptTemplate)
+  })
+
+  it('keeps null prompt templates null through split-preset helpers', () => {
+    const extracted = createExtractedPromptPreset({ promptTemplate: null }, { id: 'disabled', name: 'Disabled' })
+    expect(extracted.promptTemplate).toBeNull()
+    expect(promptPresetExportPayload(extracted).promptTemplate).toBeNull()
+    expect(composeEffectivePresetSettings({ base: {}, promptPreset: extracted }).promptTemplate).toBeNull()
   })
 
   it('keeps groupTemplate and groupOtherBotRole on prompt presets through split and composition', () => {
@@ -163,7 +189,7 @@ describe('preset split helpers', () => {
       mainPrompt: 'Prompt text',
       jailbreak: 'Jailbreak text',
       customPromptTemplateToggle: 'mode=Mode',
-      promptTemplate: [{ type: 'plain', text: 'Template row' }],
+      promptTemplate: [{ type: 'plain', text: 'Template row', role: 'system' }],
       overrideModelParameters: true,
       temperature: 0.7,
       maxContext: 16000,

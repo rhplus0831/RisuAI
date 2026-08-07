@@ -3,6 +3,7 @@ import { prebuiltAssetCommand } from '../../util'
 import { getDatabase, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
+import { applyDescriptionPromptRole, applyPromptBlockRole } from '../promptBlockRole'
 import { risuChatParser } from '../scripts'
 import { runLuaEditTrigger } from '../scriptings'
 import { systemizeChat } from './systemizeChat'
@@ -37,6 +38,8 @@ export interface RenderFinalPromptArgs {
   hasCachePoint: boolean
   /** `arg.continue` from sendChat. Pushes a `[Continue the last response]` system entry under gpt/claude/openrouter/reverse_proxy. */
   isContinue: boolean
+  /** Index of the base character-description row after lorebook placement. */
+  descriptionBaseIndex?: number
 }
 
 export interface RenderFinalPromptResult {
@@ -67,6 +70,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
     positionParser,
     hasCachePoint,
     isContinue,
+    descriptionBaseIndex,
   } = args
 
   let formated: OpenAIChat[] = []
@@ -135,7 +139,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
     for (const card of template) {
       switch (card.type) {
         case 'persona': {
-          let pmt = safeStructuredClone(unformated.personaPrompt)
+          let pmt = applyPromptBlockRole(safeStructuredClone(unformated.personaPrompt), card.role2)
           if (card.innerFormat && pmt.length > 0) {
             for (let i = 0; i < pmt.length; i++) {
               pmt[i].content = risuChatParser(positionParser(card.innerFormat, card.type), {
@@ -152,7 +156,11 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
           break
         }
         case 'description': {
-          let pmt = safeStructuredClone(unformated.description)
+          let pmt = applyDescriptionPromptRole(
+            safeStructuredClone(unformated.description),
+            card.role2,
+            descriptionBaseIndex,
+          )
           if (card.innerFormat && pmt.length > 0) {
             for (let i = 0; i < pmt.length; i++) {
               pmt[i].content = risuChatParser(positionParser(card.innerFormat, card.type), {
@@ -169,7 +177,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
           break
         }
         case 'authornote': {
-          let pmt = safeStructuredClone(unformated.authorNote)
+          let pmt = applyPromptBlockRole(safeStructuredClone(unformated.authorNote), card.role2)
           if (card.innerFormat && pmt.length > 0) {
             for (let i = 0; i < pmt.length; i++) {
               pmt[i].content = risuChatParser(positionParser(card.innerFormat, card.type), {
@@ -302,7 +310,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
           break
         }
         case 'memory': {
-          let pmt = safeStructuredClone(memories)
+          let pmt = applyPromptBlockRole(safeStructuredClone(memories), card.role2)
           if (card.innerFormat && pmt.length > 0) {
             for (let i = 0; i < pmt.length; i++) {
               pmt[i].content = risuChatParser(card.innerFormat, { chara: currentChar }).replace(

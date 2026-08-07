@@ -285,6 +285,27 @@ describe('promptTemplate hydration', () => {
     expect(peekPromptTemplateOwnerRevision('preset-a')).toBe(7)
   })
 
+  it('normalizes role2 aliases while hydrating a prompt preset template', async () => {
+    setCachedServerCommandRevision(7)
+    ;(testDatabaseState as { db: unknown }).db = {
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    }
+    projectionState.fetchResource.mockResolvedValue({
+      status: 'ok',
+      revision: 7,
+      promptPresetId: 'preset-a',
+      promptTemplate: [{ id: 'role-row', type: 'memory', role2: 'assistant' }],
+    })
+
+    await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
+
+    expect(testDatabaseState.db.promptPresets[0].promptTemplate).toEqual([
+      { id: 'role-row', type: 'memory', role2: 'bot' },
+    ])
+    expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'role-row', type: 'memory', role2: 'bot' }])
+  })
+
   it('rejects hydration when the local preset owner id is duplicated', async () => {
     setCachedServerCommandRevision(7)
     ;(testDatabaseState as { db: unknown }).db = {

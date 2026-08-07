@@ -132,12 +132,14 @@ export async function assembleLocalSendChatPrompt(args: {
   unformated.authorNote.push(...buildAuthorNote(args.currentChar, currentChat))
   unformated.postEverything.push(...buildCotInstruction(usingPromptTemplate))
 
-  unformated.description.push(await buildDescription(args.currentChar, currentChat))
+  const descriptionBasePrompt = await buildDescription(args.currentChar, currentChat)
+  unformated.description.push(descriptionBasePrompt)
   unformated.personaPrompt.push(...buildPersona(args.currentChar))
   unformated.postEverything.push(...buildInlayViewInstruction(args.currentChar))
 
   const lore = await buildLorebookContext(args.currentChar, unformated)
   const { resolvePosition, positionParser, depthPrompts } = lore
+  const descriptionBaseIndex = unformated.description.indexOf(descriptionBasePrompt)
 
   let currentTokens = getDatabase().maxResponse + 50
 
@@ -148,6 +150,7 @@ export async function assembleLocalSendChatPrompt(args: {
     args.tokenizer,
     args.currentChar,
     positionParser,
+    descriptionBaseIndex,
   )
   currentTokens += preflight.addedTokens
 
@@ -240,6 +243,7 @@ export async function assembleLocalSendChatPrompt(args: {
     positionParser,
     hasCachePoint: preflight.hasCachePoint,
     isContinue: args.isContinue,
+    descriptionBaseIndex,
   })
   if (render.promptText) {
     args.promptInfo.promptText = render.promptText

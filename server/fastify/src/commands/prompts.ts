@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { PROMPT_SETTINGS_KEYS } from '../../../../src/ts/promptSettings.js'
+import { normalizePromptTemplate } from '../../../../src/ts/process/promptTemplateNormalization.js'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 
 export { PROMPT_SETTINGS_KEYS } from '../../../../src/ts/promptSettings.js'
@@ -29,12 +30,12 @@ export function normalizePromptTemplateValue(value: unknown[]): PromptItemRecord
 export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] | null
 export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] | null {
   // Browser assembly treats null as disabled, while an empty array is an active template.
-  if (value === null) return null
-  if (!Array.isArray(value)) return []
+  const normalized = normalizePromptTemplate(value)
+  if (!normalized) return null
 
   const seen = new Set<string>()
-  return value.map((raw) => {
-    const item = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
+  return normalized.map((raw) => {
+    const item = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as unknown as JsonRecord) : {}
     const rawId = typeof item.id === 'string' && item.id.trim() ? item.id : randomUUID()
     const id = seen.has(rawId) ? randomUUID() : rawId
     seen.add(id)
@@ -56,7 +57,12 @@ export function createPromptItemRecord(input: unknown): PromptItemRecord {
   if (typeof item.id !== 'string' || item.id.trim() === '') {
     throw new ValidationError('promptItem.id must be a non-empty string')
   }
-  return item
+  return normalizePromptItemRecord(item)
+}
+
+export function normalizePromptItemRecord(input: PromptItemRecord): PromptItemRecord {
+  const normalized = normalizePromptTemplate([input])?.[0]
+  return (normalized && typeof normalized === 'object' ? normalized : input) as PromptItemRecord
 }
 
 export function readPromptItemId(value: unknown, label = 'itemId'): string {
