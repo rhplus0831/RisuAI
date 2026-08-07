@@ -19,9 +19,10 @@ import type {
   Contents,
   OpenAIChatExtra,
   OpenAIChatFull,
+  ResponseFunctionCallItem,
   ResponseInputItem,
   ResponseItem,
-  ResponseOutputItem,
+  ResponseOutputContent,
   ToolCall,
 } from './types'
 
@@ -1185,8 +1186,251 @@ export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtend
   }
 }
 
+function responseTextContentToString(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((item) =>
+      item && typeof item === 'object' && typeof (item as { text?: unknown }).text === 'string'
+        ? (item as { text: string }).text
+        : '',
+    )
+    .join('\n')
+}
+
+async function decodeRememberedToolCallsForResponses(text: string): Promise<ResponseItem[]> {
+  const items: ResponseItem[] = []
+  const segments = text.split(/(<tool_call>.*?<\/tool_call>)/gms)
+  let currentContent = ''
+
+  for (const segment of segments) {
+    const toolCallMatch = segment.match(/<tool_call>(.*?)<\/tool_call>/s)
+    if (!toolCallMatch) {
+      currentContent += segment
+      continue
+    }
+    if (currentContent.trim()) {
+      items.push({
+        content: [{ type: 'output_text', text: currentContent, annotations: [] }],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      })
+      currentContent = ''
+    }
+
+    const decoded = await decodeToolCall(toolCallMatch[1])
+    if (!decoded) continue
+    items.push(
+      {
+        type: 'function_call',
+        call_id: decoded.call.id,
+        name: decoded.call.name,
+        arguments: decoded.call.arg,
+        status: 'completed',
+      },
+      {
+        type: 'function_call_output',
+        call_id: decoded.call.id,
+        output: decoded.response
+          .filter((item) => item.type === 'text')
+          .map((item) => item.text)
+          .join('\n'),
+      },
+    )
+  }
+
+  if (currentContent.trim()) {
+    items.push({
+      content: [{ type: 'output_text', text: currentContent, annotations: [] }],
+      role: 'assistant',
+      status: 'completed',
+      type: 'message',
+    })
+  }
+  return items
+}
+
+async function buildClientResponseInputItems(arg: RequestDataArgumentExtended): Promise<ResponseItem[]> {
+  const db = getDatabase()
+  const developerRole = arg.modelInfo.flags.includes(LLMFlags.DeveloperRole)
+  const detail = db.gptVisionQuality === 'low' || db.gptVisionQuality === 'high' ? db.gptVisionQuality : 'auto'
+  const items: ResponseItem[] = []
+
+  for (const message of arg.formated as OpenAIChatExtra[]) {
+    if (message.role === 'function') continue
+    if (message.role === 'tool') {
+      if (message.tool_call_id) {
+        items.push({
+          type: 'function_call_output',
+          call_id: message.tool_call_id,
+          output: responseTextContentToString(message.content),
+        })
+      }
+      continue
+    }
+    if (message.role === 'assistant') {
+      if (typeof message.content === 'string' && message.content.includes('<tool_call>')) {
+        items.push(...(await decodeRememberedToolCallsForResponses(message.content)))
+        continue
+      }
+      const text = responseTextContentToString(message.content)
+      items.push({
+        content: text ? [{ type: 'output_text', text, annotations: [] }] : [],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      })
+      for (const toolCall of message.tool_calls ?? []) {
+        if (!toolCall.id || !toolCall.function?.name) continue
+        items.push({
+          type: 'function_call',
+          call_id: toolCall.id,
+          name: toolCall.function.name,
+          arguments: toolCall.function.arguments,
+          status: 'completed',
+        })
+      }
+      continue
+    }
+    if (message.role !== 'user' && message.role !== 'system' && message.role !== 'developer') continue
+
+    const role = message.role === 'system' && developerRole ? 'developer' : message.role
+    const content: ResponseInputItem['content'] = []
+    const text = responseTextContentToString(message.content)
+    if (text || db.newOAIHandle === false) content.push({ type: 'input_text', text })
+    for (const multimodal of message.multimodals ?? []) {
+      if (multimodal.type === 'image') {
+        content.push({ type: 'input_image', detail, image_url: multimodal.base64 })
+      } else {
+        content.push({ type: 'input_file', file_data: multimodal.base64 })
+      }
+    }
+    if (content.length > 0) items.push({ role, content })
+  }
+
+  const last = items.at(-1)
+  if (last && 'type' in last && last.type === 'message') last.status = 'incomplete'
+  return items
+}
+
+function sanitizeResponsesContinuationItem(value: unknown): ResponseItem | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const item = value as Record<string, unknown>
+  if (item.type === 'function_call' && typeof item.call_id === 'string' && typeof item.name === 'string') {
+    let argumentsText = ''
+    if (typeof item.arguments === 'string') {
+      argumentsText = item.arguments
+    } else if (item.arguments && typeof item.arguments === 'object') {
+      try {
+        argumentsText = JSON.stringify(item.arguments)
+      } catch {
+        return null
+      }
+    }
+    return {
+      type: 'function_call',
+      call_id: item.call_id,
+      name: item.name,
+      arguments: argumentsText,
+      status: typeof item.status === 'string' ? item.status : 'completed',
+    }
+  }
+  if (item.type !== 'message') return null
+
+  const content: ResponseOutputContent[] = []
+  for (const rawContent of Array.isArray(item.content) ? item.content : []) {
+    if (!rawContent || typeof rawContent !== 'object' || Array.isArray(rawContent)) continue
+    const contentItem = rawContent as Record<string, unknown>
+    if (contentItem.type === 'output_text') {
+      content.push({
+        type: 'output_text',
+        text: typeof contentItem.text === 'string' ? contentItem.text : '',
+        annotations: Array.isArray(contentItem.annotations) ? contentItem.annotations : [],
+      })
+      continue
+    }
+    if (contentItem.type === 'refusal') {
+      content.push({ type: 'refusal', refusal: typeof contentItem.refusal === 'string' ? contentItem.refusal : '' })
+    }
+  }
+  return {
+    type: 'message',
+    role: 'assistant',
+    status: item.status === 'in_progress' || item.status === 'incomplete' ? item.status : 'completed',
+    content,
+  }
+}
+
+function collectResponsesReasoningText(value: unknown): string[] {
+  if (typeof value === 'string') return value.length > 0 ? [value] : []
+  if (Array.isArray(value)) return value.flatMap(collectResponsesReasoningText)
+  if (!value || typeof value !== 'object') return []
+  const record = value as Record<string, unknown>
+  return ['text', 'summary_text', 'reasoning_text', 'reasoning', 'summary'].flatMap((key) =>
+    collectResponsesReasoningText(record[key]),
+  )
+}
+
+function responseOutputRecords(data: unknown): Record<string, unknown>[] {
+  if (!data || typeof data !== 'object') return []
+  const output = (data as { output?: unknown }).output
+  return Array.isArray(output)
+    ? output.filter(
+        (item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item),
+      )
+    : []
+}
+
+function extractClientResponsesText(data: unknown, arg: RequestDataArgumentExtended): string {
+  if (!data || typeof data !== 'object') return ''
+  const body = data as Record<string, unknown>
+  const hasTopLevelOutputText = typeof body.output_text === 'string'
+  const texts = hasTopLevelOutputText ? [body.output_text as string] : []
+  const refusals: string[] = []
+  const thoughts: string[] = []
+
+  for (const item of responseOutputRecords(data)) {
+    if (item.type === 'reasoning') {
+      thoughts.push(
+        ...collectResponsesReasoningText(item.summary),
+        ...collectResponsesReasoningText(item.content),
+        ...collectResponsesReasoningText(item.text),
+        ...collectResponsesReasoningText(item.summary_text),
+        ...collectResponsesReasoningText(item.reasoning_text),
+        ...collectResponsesReasoningText(item.reasoning),
+      )
+    }
+    if (item.type !== 'message' || !Array.isArray(item.content)) continue
+    for (const rawContent of item.content) {
+      if (!rawContent || typeof rawContent !== 'object') continue
+      const content = rawContent as Record<string, unknown>
+      if (!hasTopLevelOutputText && content.type === 'output_text' && typeof content.text === 'string') {
+        texts.push(content.text)
+      }
+      if (content.type === 'refusal' && typeof content.refusal === 'string') refusals.push(content.refusal)
+    }
+  }
+
+  let result = texts.length > 0 ? texts.join('\n') : refusals.join('\n')
+  if (thoughts.length > 0 && !result.startsWith('<Thoughts>')) {
+    result = `<Thoughts>\n\n${thoughts.join('\n\n')}\n\n</Thoughts>\n${result}`
+  }
+  if (arg.extractJson && (getDatabase().jsonSchemaEnabled || arg.schema)) {
+    return extractJSON(result, arg.extractJson)
+  }
+  return result
+}
+
+function extractClientResponsesFunctionCalls(data: unknown): ResponseFunctionCallItem[] {
+  return responseOutputRecords(data)
+    .map(sanitizeResponsesContinuationItem)
+    .filter(
+      (item): item is ResponseFunctionCallItem => item !== null && 'type' in item && item.type === 'function_call',
+    )
+}
+
 export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
-  const formated = arg.formated
   const db = getDatabase()
   const aiModel = arg.aiModel
   const resolvedProfile = arg.resolvedProfile
@@ -1195,67 +1439,17 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
   const hasResolvedProfile = resolvedProfile !== undefined
   const maxTokens = arg.maxTokens
 
-  const items: ResponseItem[] = []
-
-  for (let i = 0; i < formated.length; i++) {
-    const content = formated[i]
-    switch (content.role) {
-      case 'function':
-        break
-      case 'assistant': {
-        const item: ResponseOutputItem = {
-          content: [],
-          role: content.role,
-          status: 'complete',
-          type: 'message',
-        }
-
-        item.content.push({
-          type: 'output_text',
-          text: content.content,
-          annotations: [],
-        })
-
-        items.push(item)
-        break
-      }
-      case 'user':
-      case 'system': {
-        const item: ResponseInputItem = {
-          content: [],
-          role: content.role,
-        }
-
-        item.content.push({
-          type: 'input_text',
-          text: content.content,
-        })
-
-        content.multimodals ??= []
-        for (const multimodal of content.multimodals) {
-          if (multimodal.type === 'image') {
-            item.content.push({
-              type: 'input_image',
-              detail: 'auto',
-              image_url: multimodal.base64,
-            })
-          } else {
-            item.content.push({
-              type: 'input_file',
-              file_data: multimodal.base64,
-            })
-          }
-        }
-
-        items.push(item)
-        break
-      }
-    }
-  }
-
-  if (items[items.length - 1].role === 'assistant') {
-    ;(items[items.length - 1] as ResponseOutputItem).status = 'incomplete'
-  }
+  const items = await buildClientResponseInputItems(arg)
+  const modelTools = hasResolvedProfile ? (runtimeOptions?.modelTools ?? []) : db.modelTools
+  const tools = [
+    ...(arg.tools ?? []).map((tool) => ({
+      type: 'function',
+      name: tool.name,
+      description: tool.description,
+      parameters: simplifySchema(tool.inputSchema),
+    })),
+    ...(modelTools.includes('search') ? [{ type: 'web_search_preview' }] : []),
+  ]
 
   let body = applyParameters(
     {
@@ -1264,7 +1458,7 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
         : (arg.modelInfo.internalID ?? aiModel),
       input: items,
       max_output_tokens: maxTokens,
-      tools: [],
+      tools,
       store: false,
     },
     ['temperature', 'top_p'],
@@ -1277,6 +1471,14 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
 
   if (aiModel === 'ollama-cloud') {
     delete body.store
+  }
+  if (body.tools.length === 0) delete body.tools
+  if ((db.jsonSchemaEnabled || arg.schema) && !arg.modelInfo.flags.includes(LLMFlags.noStructuredOutput)) {
+    body.text ??= {}
+    body.text.format = {
+      type: 'json_schema',
+      ...getOpenAIJSONSchema(arg.schema),
+    }
   }
 
   let requestURL = arg.customURL ?? 'https://api.openai.com/v1/responses'
@@ -1365,21 +1567,6 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     }
   }
 
-  const modelTools = hasResolvedProfile ? (runtimeOptions?.modelTools ?? []) : db.modelTools
-  if (modelTools.includes('search')) {
-    body.tools.push('web_search_preview')
-  }
-  if (arg.tools?.length) {
-    body.tools.push(
-      ...arg.tools.map((tool) => ({
-        type: 'function',
-        name: tool.name,
-        description: tool.description,
-        parameters: simplifySchema(tool.inputSchema),
-      })),
-    )
-  }
-
   const localNetworkOptions = arg.serverOwnedOllamaAuth ? {} : getLocalNetworkRequestOptions(requestURL, db, false)
   let prefix = ''
 
@@ -1403,34 +1590,25 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
       }
     }
 
-    const output = Array.isArray(response.data?.output) ? response.data.output : []
-    const result = output
-      .filter((item: unknown) => !!item && typeof item === 'object' && (item as { type?: unknown }).type === 'message')
-      .flatMap((item: { content?: unknown }) => (Array.isArray(item.content) ? item.content : []))
-      .filter(
-        (item: unknown): item is { type: 'output_text'; text: string } =>
-          !!item &&
-          typeof item === 'object' &&
-          (item as { type?: unknown }).type === 'output_text' &&
-          typeof (item as { text?: unknown }).text === 'string',
-      )
-      .map((item: { text: string }) => item.text)
-      .join('')
-    const functionCalls = output.filter(
-      (
-        item: unknown,
-      ): item is {
-        type: 'function_call'
-        call_id?: string
-        id?: string
-        name: string
-        arguments: string | Record<string, unknown>
-      } =>
-        !!item &&
-        typeof item === 'object' &&
-        (item as { type?: unknown }).type === 'function_call' &&
-        typeof (item as { name?: unknown }).name === 'string',
-    )
+    const data = response.data as unknown
+    const dataRecord = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+    const result = extractClientResponsesText(data, arg)
+    if (dataRecord.status === 'failed' || dataRecord.error) {
+      return { type: 'fail', result: JSON.stringify(dataRecord.error ?? data) }
+    }
+    if (dataRecord.status === 'incomplete') {
+      const incompleteDetails =
+        dataRecord.incomplete_details && typeof dataRecord.incomplete_details === 'object'
+          ? (dataRecord.incomplete_details as Record<string, unknown>)
+          : {}
+      const reason =
+        typeof incompleteDetails.reason === 'string'
+          ? `Incomplete response: ${incompleteDetails.reason}`
+          : 'Incomplete response'
+      return { type: 'fail', result: result ? `${reason}\n${result}` : reason }
+    }
+    const output = responseOutputRecords(data)
+    const functionCalls = extractClientResponsesFunctionCalls(data)
 
     if (functionCalls.length === 0) {
       const finalResult = [prefix, result].filter(Boolean).join('\n\n')
@@ -1444,18 +1622,25 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     }
 
     if (!db.simplifiedToolUse && result) prefix = [prefix, result].filter(Boolean).join('\n\n')
-    body.input.push(...output)
+    for (const outputItem of output) {
+      const sanitized = sanitizeResponsesContinuationItem(outputItem)
+      if (!sanitized) continue
+      if (db.simplifiedToolUse && 'type' in sanitized && sanitized.type === 'message') {
+        body.input.push({ ...sanitized, content: [] })
+      } else {
+        body.input.push(sanitized)
+      }
+    }
     const callCodes: string[] = []
     for (const functionCall of functionCalls) {
-      const callId = functionCall.call_id || functionCall.id
-      if (!callId) continue
+      const callId = functionCall.call_id
       const tool = arg.tools?.find((candidate) => candidate.name === functionCall.name)
       let parsedArguments: Record<string, unknown> = {}
       try {
-        parsedArguments =
-          typeof functionCall.arguments === 'string'
-            ? (JSON.parse(functionCall.arguments || '{}') as Record<string, unknown>)
-            : (functionCall.arguments ?? {})
+        const parsed = JSON.parse(functionCall.arguments || '{}') as unknown
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          parsedArguments = parsed as Record<string, unknown>
+        }
       } catch {
         parsedArguments = {}
       }
@@ -1474,10 +1659,7 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
                 call: {
                   id: callId,
                   name: functionCall.name,
-                  arg:
-                    typeof functionCall.arguments === 'string'
-                      ? functionCall.arguments
-                      : JSON.stringify(functionCall.arguments ?? {}),
+                  arg: functionCall.arguments,
                 },
                 response: toolResponse,
               }),

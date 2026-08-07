@@ -485,7 +485,9 @@ describe('requestOllama profile provider options through requestChatDataMain', (
       .mockResolvedValueOnce({
         json: async () => ({
           output: [
+            { id: 'rs_responses_stale', type: 'reasoning', summary: [] },
             {
+              id: 'fc_responses_stale',
               type: 'function_call',
               call_id: 'responses-call-1',
               name: 'lookup',
@@ -525,6 +527,14 @@ describe('requestOllama profile provider options through requestChatDataMain', (
       expect(JSON.stringify(options)).not.toContain('sk-responses-browser-must-not-send')
     }
     const secondBody = JSON.parse(String(fetchMock.mock.calls[1][1].body))
+    expect(JSON.stringify(secondBody.input)).not.toMatch(/rs_responses_stale|fc_responses_stale/u)
+    expect(secondBody.input).toContainEqual({
+      type: 'function_call',
+      call_id: 'responses-call-1',
+      name: 'lookup',
+      arguments: '{"query":"weather"}',
+      status: 'completed',
+    })
     expect(secondBody.input).toContainEqual({
       type: 'function_call_output',
       call_id: 'responses-call-1',

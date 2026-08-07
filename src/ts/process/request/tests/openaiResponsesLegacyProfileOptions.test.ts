@@ -286,7 +286,72 @@ describe('requestOpenAIResponseAPI profile provider options', () => {
       { body: Record<string, any>; headers: Record<string, string> },
     ]
     expect(requestOptions.headers.Authorization).toBe('Bearer sk-profile-openai')
-    expect(requestOptions.body.tools).toEqual(['web_search_preview'])
+    expect(requestOptions.body.tools).toEqual([{ type: 'web_search_preview' }])
+  })
+
+  it('preserves Responses JSON schema formatting and configured extraction on the retained client path', async () => {
+    const schema =
+      '{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}'
+    const database = db({
+      aiModel: 'gpt-5-response-api',
+      openAIKey: 'sk-profile-openai',
+      jsonSchemaEnabled: true,
+      jsonSchema: schema,
+      strictJsonSchema: true,
+      extractJson: 'answer',
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    setDatabase(database)
+
+    const preview = await previewResponse(makeArg(profile, { schema, extractJson: 'answer' }))
+    expect(preview.body.text).toEqual({
+      format: {
+        type: 'json_schema',
+        name: 'format',
+        strict: true,
+        schema: JSON.parse(schema),
+      },
+    })
+
+    globalFetchMock.mockResolvedValueOnce({ ok: true, data: { output_text: '{"answer":"extracted"}' } })
+    await expect(
+      requestOpenAIResponseAPI(makeArg(profile, { previewBody: false, schema, extractJson: 'answer' })),
+    ).resolves.toEqual({ type: 'success', result: 'extracted' })
+  })
+
+  it('parses buffered reasoning content and rejects incomplete or failed payloads', async () => {
+    const profile = resolveModelProfile({
+      database: db({ aiModel: 'gpt-5-response-api', openAIKey: 'sk-profile-openai' } as Partial<Database>),
+    })
+    setDatabase(db({ aiModel: 'gpt-5-response-api', openAIKey: 'sk-flat-openai' } as Partial<Database>))
+    globalFetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          output: [
+            { id: 'rs_stale', type: 'reasoning', content: [{ type: 'reasoning_text', text: 'reasoned' }] },
+            { type: 'message', content: [{ type: 'output_text', text: 'answer' }] },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output_text: 'partial' },
+      })
+      .mockResolvedValueOnce({ ok: true, data: { status: 'failed', error: { message: 'bad request' } } })
+
+    await expect(requestOpenAIResponseAPI(makeArg(profile, { previewBody: false }))).resolves.toEqual({
+      type: 'success',
+      result: '<Thoughts>\n\nreasoned\n\n</Thoughts>\nanswer',
+    })
+    await expect(requestOpenAIResponseAPI(makeArg(profile, { previewBody: false }))).resolves.toEqual({
+      type: 'fail',
+      result: 'Incomplete response: max_output_tokens\npartial',
+    })
+    await expect(requestOpenAIResponseAPI(makeArg(profile, { previewBody: false }))).resolves.toEqual({
+      type: 'fail',
+      result: '{"message":"bad request"}',
+    })
   })
 })
 

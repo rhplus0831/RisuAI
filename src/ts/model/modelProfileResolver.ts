@@ -1957,7 +1957,10 @@ function resolveProviderOptions(
       ...base,
       apiKey: durableApiKey ?? nonBlankString(database.nanogptKey),
       baseUrl: useSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
-      extraHeaders: providerHint ? { 'X-Provider': providerHint } : undefined,
+      extraHeaders:
+        providerHint && !(modelInfo.format === LLMFormat.NanoGPTResponses && useSubscriptionEndpoint === true)
+          ? { 'X-Provider': providerHint }
+          : undefined,
       nanogpt: {
         providerHint,
         useSubscriptionEndpoint,

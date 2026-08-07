@@ -46,7 +46,7 @@ import { encodeTokens, encodingForModel } from './tokens.js'
 import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import type { TokenEncoding } from './tokens.js'
 import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
-import { appendOpenAIToolRounds } from '../generation/serverTools.js'
+import { appendOpenAIToolRounds, openAIResponsesToolDefinitions } from '../generation/serverTools.js'
 import {
   buildAnthropicWireMessages,
   buildOpenAIWireMessages,
@@ -1247,7 +1247,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
     developerRole: info.flags.includes(LLMFlags.DeveloperRole),
   })
 
-  if (hasTools && !['openai', 'openrouter', 'nanogpt', 'anthropic', 'gemini'].includes(provider)) {
+  if (hasTools && !['openai', 'openrouter', 'nanogpt', 'openai-responses', 'anthropic', 'gemini'].includes(provider)) {
     throw new Error(`tools are not supported by the resolved ${provider} provider`)
   }
 
@@ -1510,6 +1510,10 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
   if (provider === 'openai-responses') {
     const variant = resolveProfileOpenAIVariant(db, profile)
     if (!variant) throw new Error('options["openai-responses"].apiKey is required')
+    const responseTools = [
+      ...openAIResponsesToolDefinitions(args.tools ?? []),
+      ...(profile.runtimeOptions.modelTools.includes('search') ? [{ type: 'web_search_preview' }] : []),
+    ]
     const request = resolveOpenAIResponsesRequest({
       model,
       messages,
@@ -1519,9 +1523,11 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       temperature,
       topP: parameters.topP,
       reasoningEffort: parameters.reasoningEffort,
+      reasoningSummary: info.parameters.includes('reasoning_effort'),
       verbosity: parameters.verbosity,
       responseFormat: openAIResponsesFormat(db),
-      tools: profile.runtimeOptions.modelTools.includes('search') ? [{ type: 'web_search_preview' }] : undefined,
+      tools: responseTools.length > 0 ? responseTools : undefined,
+      toolRounds: args.toolRounds,
       developerRole: info.flags.includes(LLMFlags.DeveloperRole),
       visionQuality: db.gptVisionQuality,
       newOAIHandle: db.newOAIHandle !== false,

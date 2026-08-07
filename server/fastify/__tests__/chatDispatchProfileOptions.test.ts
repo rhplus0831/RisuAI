@@ -1001,6 +1001,121 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.store).toBe(false)
   })
 
+  it.each([
+    ['gpt-5.1-response-api', -1, 'none'],
+    ['gpt-5.4-pro-response-api', 0, 'medium'],
+    ['gpt-5.5-response-api', 3, 'xhigh'],
+    ['gpt-5-response-api', 3, 'high'],
+  ])('preserves %s reasoning effort %i as %s on the Responses wire', async (model, value, expected) => {
+    const database = db({
+      aiModel: model,
+      openAIKey: 'sk-openai',
+      reasoningEffort: value,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okOpenAIResponsesResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.reasoning).toEqual({ effort: expected, summary: 'auto' })
+    expect(captured[0].body.text).toEqual({ verbosity: 'medium' })
+    expect(JSON.stringify(captured[0].body)).not.toMatch(/reasoning_effort_(?:none|xhigh|min_medium)/u)
+  })
+
+  it('uses Responses-native tools and sanitized bounded tool continuation input', async () => {
+    const database = db({
+      aiModel: 'gpt-5.5-response-api',
+      openAIKey: 'sk-openai',
+      modelTools: ['search'],
+      reasoningEffort: 3,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okOpenAIResponsesResponse())
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+      tools: [{ name: 'lookup', description: 'Lookup data', inputSchema: { type: 'object' } }],
+      toolRounds: [
+        {
+          assistantContent: '',
+          calls: [{ id: 'call-1', name: 'lookup', arguments: { query: 'weather' } }],
+          results: [{ callId: 'call-1', name: 'lookup', content: 'sunny' }],
+        },
+      ],
+    })
+    for await (const _frame of frames) {
+      // Consume the buffered adapter frames so the request completes.
+    }
+
+    expect(captured[0].body.tools).toEqual([
+      { type: 'function', name: 'lookup', description: 'Lookup data', parameters: { type: 'object' } },
+      { type: 'web_search_preview' },
+    ])
+    expect(captured[0].body.input).toEqual([
+      { role: 'user', content: [{ type: 'input_text', text: 'hello' }] },
+      {
+        type: 'function_call',
+        call_id: 'call-1',
+        name: 'lookup',
+        arguments: '{"query":"weather"}',
+        status: 'completed',
+      },
+      { type: 'function_call_output', call_id: 'call-1', output: 'sunny' },
+    ])
+    expect(captured[0].body.reasoning).toEqual({ effort: 'xhigh', summary: 'auto' })
+  })
+
+  it('preserves reasoning effort on the NanoGPT Responses remap without leaking capability markers', async () => {
+    const nanoResponsesInfo: LLMModel = {
+      id: 'nanogpt-responses-test',
+      name: 'NanoGPT Responses Test',
+      internalID: 'nanogpt',
+      provider: LLMProvider.NanoGPT,
+      format: LLMFormat.NanoGPTResponses,
+      flags: [LLMFlags.hasFullSystemPrompt],
+      parameters: ['temperature', 'top_p', 'reasoning_effort', 'reasoning_effort_none', 'reasoning_effort_xhigh'],
+      tokenizer: LLMTokenizer.Unknown,
+    }
+    const database = db({
+      aiModel: 'flat-main-model',
+      nanogptKey: 'sk-nano',
+      nanogptProvider: 'flat-provider-must-not-win',
+      nanogptUseSubscriptionEndpoint: false,
+      reasoningEffort: 3,
+      modelProfiles: [
+        {
+          id: 'nanogpt-responses-profile',
+          name: 'NanoGPT Responses Profile',
+          modelId: nanoResponsesInfo.id,
+          providerOptions: {
+            requestModel: 'provider/nano-model',
+            nanogpt: {
+              providerHint: 'must-not-be-sent-on-subscription',
+              useSubscriptionEndpoint: true,
+            },
+          },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'nanogpt-responses-profile' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({
+      database,
+      lookupModelInfo: (_database, id) => (id === nanoResponsesInfo.id ? nanoResponsesInfo : undefined),
+    })
+    const captured = captureDispatchRequests(okOpenAIResponsesResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured[0].url).toBe('https://nano-gpt.com/api/subscription/v1/responses')
+    expect(captured[0].headers['X-Provider']).toBeUndefined()
+    expect(captured[0].body.model).toBe('provider/nano-model')
+    expect(captured[0].body.reasoning).toEqual({ effort: 'xhigh', summary: 'auto' })
+    expect(JSON.stringify(captured[0].body)).not.toContain('reasoning_effort_xhigh')
+  })
+
   it('uses the profile model id for OpenAI Responses Ollama Cloud store ownership', async () => {
     const profile = resolveModelProfile({
       database: db({
@@ -1029,6 +1144,8 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].headers['X-Flat']).toBeUndefined()
     expect(captured[0].body.model).toBe('profile-ollama-responses')
     expect(captured[0].body.store).toBeUndefined()
+    expect(captured[0].body.reasoning).toBeUndefined()
+    expect(JSON.stringify(captured[0].body)).not.toMatch(/reasoning_effort_(?:none|xhigh|min_medium)/u)
   })
 
   it('uses Anthropic xcustom profile options over conflicting flat database fields', async () => {

@@ -78,6 +78,54 @@ describe('buildResponseInput', () => {
     ])
     expect(items.length).toBe(1)
   })
+
+  it('rebuilds only complete tool continuation pairs without stale provider item ids', () => {
+    const resolved = resolveOpenAIResponsesRequest({
+      model: 'gpt-5-responses',
+      messages: [{ id: 'msg_stale', role: 'user', content: 'continue' }],
+      apiKey: 'k',
+      tools: [{ type: 'function', name: 'lookup', description: 'Lookup', parameters: { type: 'object' } }],
+      toolRounds: [
+        {
+          assistantContent: 'Checking.',
+          calls: [
+            {
+              id: 'call-1',
+              name: 'lookup',
+              arguments: { query: 'weather' },
+              serverItemId: 'fc_stale',
+              reasoning: { id: 'rs_stale' },
+            },
+            { id: 'call-orphan', name: 'lookup', arguments: { query: 'orphan' } },
+          ],
+          results: [
+            { callId: 'call-1', name: 'lookup', content: 'sunny' },
+            { callId: 'result-orphan', name: 'lookup', content: 'ignored' },
+          ],
+        },
+      ] as never,
+      signal: new AbortController().signal,
+    })!
+
+    expect(resolved.input).toEqual([
+      { role: 'user', content: [{ type: 'input_text', text: 'continue' }] },
+      {
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'Checking.', annotations: [] }],
+      },
+      {
+        type: 'function_call',
+        call_id: 'call-1',
+        name: 'lookup',
+        arguments: '{"query":"weather"}',
+        status: 'completed',
+      },
+      { type: 'function_call_output', call_id: 'call-1', output: 'sunny' },
+    ])
+    expect(JSON.stringify(resolved.input)).not.toMatch(/msg_stale|fc_stale|rs_stale|call-orphan|result-orphan/u)
+  })
 })
 
 describe('resolveOpenAIResponsesRequest', () => {
@@ -108,6 +156,19 @@ describe('resolveOpenAIResponsesRequest', () => {
     expect(r?.temperature).toBe(0.4)
     expect(r?.topP).toBe(0.9)
     expect(r?.store).toBe(false)
+  })
+
+  it('can request a reasoning summary when the resolved effort is omitted', () => {
+    const r = resolveOpenAIResponsesRequest({
+      model: 'gpt-5-responses',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      reasoningSummary: true,
+      signal: new AbortController().signal,
+    })
+
+    expect(r?.reasoningEffort).toBeUndefined()
+    expect(r?.reasoningSummary).toBe(true)
   })
 })
 
@@ -152,6 +213,25 @@ describe('runOpenAIResponses', () => {
     expect(sent.input).toEqual([{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }])
   })
 
+  it('appends the Responses path before preserved endpoint query parameters', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ output_text: 'ok' })
+    })
+    const resolved = resolveOpenAIResponsesRequest({
+      model: 'azure-model',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'sk',
+      baseUrl: 'https://azure.example.com/openai/v1?api-version=2026-01-01',
+      signal: new AbortController().signal,
+    })!
+
+    await runOpenAIResponses(resolved)
+
+    expect(capturedUrl).toBe('https://azure.example.com/openai/v1/responses?api-version=2026-01-01')
+  })
+
   it('applies additionalParams to the body + headers after the default payload is built', async () => {
     let captured: { init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
@@ -181,6 +261,103 @@ describe('runOpenAIResponses', () => {
     const headers = captured!.init.headers as Record<string, string>
     expect(headers['X-Custom']).toBe('one')
     expect(headers.authorization).toBe('Bearer sk')
+  })
+
+  it('requests and parses all buffered reasoning summary shapes with double-newline separation', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = init
+      return ok({
+        output: [
+          {
+            id: 'rs_server_only',
+            type: 'reasoning',
+            summary: [{ type: 'summary_text', text: 'summary fragment' }],
+            content: [{ type: 'reasoning_text', text: 'reasoning fragment' }],
+          },
+          { type: 'message', content: [{ type: 'output_text', text: 'answer' }] },
+        ],
+      })
+    })
+    const resolved = resolveOpenAIResponsesRequest({
+      model: 'gpt-5-responses',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'sk',
+      reasoningSummary: true,
+      signal: new AbortController().signal,
+    })!
+
+    expect(await runOpenAIResponses(resolved)).toEqual({
+      type: 'success',
+      result: '<Thoughts>\n\nsummary fragment\n\nreasoning fragment\n\n</Thoughts>\nanswer',
+    })
+    expect(JSON.parse(captured!.body as string).reasoning).toEqual({ summary: 'auto' })
+  })
+
+  it('returns sanitized function calls and sends paired bounded tool continuation items', async () => {
+    const captured: Array<Record<string, any>> = []
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured.push(JSON.parse(init.body as string) as Record<string, any>)
+      if (captured.length === 1) {
+        return ok({
+          output: [
+            { id: 'rs_stale', type: 'reasoning', summary: [] },
+            {
+              id: 'fc_stale',
+              type: 'function_call',
+              call_id: 'call-lookup',
+              name: 'lookup',
+              arguments: '{"query":"weather"}',
+              status: 'completed',
+            },
+          ],
+        })
+      }
+      return ok({ output_text: 'final answer' })
+    })
+    const tools = [{ type: 'function', name: 'lookup', description: 'Lookup', parameters: { type: 'object' } }]
+    const first = resolveOpenAIResponsesRequest({
+      model: 'gpt-5-responses',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'sk',
+      tools,
+      signal: new AbortController().signal,
+    })!
+
+    const firstResult = await runOpenAIResponses(first)
+    expect(firstResult).toEqual({
+      type: 'success',
+      result: '',
+      toolCalls: [{ id: 'call-lookup', name: 'lookup', arguments: { query: 'weather' } }],
+    })
+
+    const second = resolveOpenAIResponsesRequest({
+      model: 'gpt-5-responses',
+      messages: [{ id: 'msg_stale', role: 'user', content: 'hi' }],
+      apiKey: 'sk',
+      tools,
+      toolRounds: [
+        {
+          assistantContent: '',
+          calls: firstResult.toolCalls!,
+          results: [{ callId: 'call-lookup', name: 'lookup', content: 'sunny' }],
+        },
+      ],
+      signal: new AbortController().signal,
+    })!
+    expect(await runOpenAIResponses(second)).toEqual({ type: 'success', result: 'final answer' })
+    expect(captured[1].input).toEqual([
+      { role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
+      {
+        type: 'function_call',
+        call_id: 'call-lookup',
+        name: 'lookup',
+        arguments: '{"query":"weather"}',
+        status: 'completed',
+      },
+      { type: 'function_call_output', call_id: 'call-lookup', output: 'sunny' },
+    ])
+    expect(JSON.stringify(captured[1].input)).not.toMatch(/msg_stale|rs_stale|fc_stale/u)
   })
 
   it('sends completed history, developer instructions, and configured native image detail on the final wire', async () => {
@@ -238,6 +415,27 @@ describe('runOpenAIResponses', () => {
       signal: new AbortController().signal,
     })!
     expect(await runOpenAIResponses(resolved)).toEqual({ type: 'fail', result: 'bad model' })
+  })
+
+  it('treats incomplete and failed 2xx Responses payloads as failures', async () => {
+    const responses = [
+      ok({ status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output_text: 'partial' }),
+      ok({ status: 'failed', error: { message: 'bad request' } }),
+    ]
+    vi.stubGlobal('fetch', async () => responses.shift()!)
+    const request = () =>
+      resolveOpenAIResponsesRequest({
+        model: 'm',
+        messages: [{ role: 'user', content: 'hi' }],
+        apiKey: 'k',
+        signal: new AbortController().signal,
+      })!
+
+    expect(await runOpenAIResponses(request())).toEqual({
+      type: 'fail',
+      result: 'Incomplete response: max_output_tokens\npartial',
+    })
+    expect(await runOpenAIResponses(request())).toEqual({ type: 'fail', result: '{"message":"bad request"}' })
   })
 
   it('returns fail when output contains no message-type item with output_text', async () => {

@@ -38,6 +38,15 @@ export function openAIToolDefinitions(tools: readonly ServerToolDefinition[]): J
   }))
 }
 
+export function openAIResponsesToolDefinitions(tools: readonly ServerToolDefinition[]): JsonRecord[] {
+  return tools.map((tool) => ({
+    type: 'function',
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.inputSchema,
+  }))
+}
+
 export function appendOpenAIToolRounds(messages: readonly unknown[], rounds: readonly ServerToolRound[]): unknown[] {
   const out = [...messages]
   for (const round of rounds) {
@@ -53,6 +62,90 @@ export function appendOpenAIToolRounds(messages: readonly unknown[], rounds: rea
     for (const result of round.results) {
       out.push({ role: 'tool', tool_call_id: result.callId, content: result.content })
     }
+  }
+  return out
+}
+
+/**
+ * Rebuild Responses continuation items from the bounded tool-round contract.
+ * Only complete call/result pairs are emitted, and provider output item ids are
+ * deliberately not representable on this path.
+ */
+export function appendOpenAIResponsesToolRounds(
+  input: readonly unknown[],
+  rounds: readonly ServerToolRound[],
+): unknown[] {
+  const out = [...input]
+  for (const round of rounds) {
+    const resultsByCallId = new Map<string, { name: string; content: string }>()
+    for (const rawResult of Array.isArray(round.results) ? round.results : []) {
+      if (
+        !plainRecord(rawResult) ||
+        typeof rawResult.callId !== 'string' ||
+        typeof rawResult.name !== 'string' ||
+        typeof rawResult.content !== 'string' ||
+        resultsByCallId.has(rawResult.callId)
+      ) {
+        continue
+      }
+      resultsByCallId.set(rawResult.callId, { name: rawResult.name, content: rawResult.content })
+    }
+
+    const pairs: Array<{
+      callId: string
+      name: string
+      arguments: string
+      output: string
+    }> = []
+    for (const rawCall of Array.isArray(round.calls) ? round.calls : []) {
+      if (
+        !plainRecord(rawCall) ||
+        typeof rawCall.id !== 'string' ||
+        rawCall.id.length === 0 ||
+        typeof rawCall.name !== 'string' ||
+        rawCall.name.length === 0 ||
+        !plainRecord(rawCall.arguments)
+      ) {
+        continue
+      }
+      const result = resultsByCallId.get(rawCall.id)
+      if (!result || result.name !== rawCall.name) continue
+      try {
+        pairs.push({
+          callId: rawCall.id,
+          name: rawCall.name,
+          arguments: JSON.stringify(rawCall.arguments),
+          output: result.content,
+        })
+      } catch {
+        // The route validator already requires JSON-safe arguments. Keep this
+        // helper defensive for internal/direct callers as well.
+      }
+    }
+    if (pairs.length === 0) continue
+
+    if (typeof round.assistantContent === 'string' && round.assistantContent.length > 0) {
+      out.push({
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: round.assistantContent, annotations: [] }],
+      })
+    }
+    out.push(
+      ...pairs.map((pair) => ({
+        type: 'function_call',
+        call_id: pair.callId,
+        name: pair.name,
+        arguments: pair.arguments,
+        status: 'completed',
+      })),
+      ...pairs.map((pair) => ({
+        type: 'function_call_output',
+        call_id: pair.callId,
+        output: pair.output,
+      })),
+    )
   }
   return out
 }
@@ -147,6 +240,25 @@ export function parseOpenAIToolCalls(
       return invalid('provider returned a malformed tool call')
     }
     calls.push({ id: raw.id, name: raw.function.name, arguments: args })
+  }
+  return validateServerToolCalls(calls, allowedToolNames)
+}
+
+export function parseOpenAIResponsesToolCalls(
+  value: unknown,
+  allowedToolNames: ReadonlySet<string>,
+): ServerToolValidation<ServerToolCall[]> {
+  if (!Array.isArray(value)) return invalid('provider returned malformed Responses output')
+  const rawCalls = value.filter((raw) => plainRecord(raw) && raw.type === 'function_call')
+  if (rawCalls.length === 0) return invalid('provider returned no tool calls')
+
+  const calls: ServerToolCall[] = []
+  for (const raw of rawCalls) {
+    const args = parseArguments(raw.arguments)
+    if (typeof raw.call_id !== 'string' || typeof raw.name !== 'string' || !args) {
+      return invalid('provider returned a malformed Responses tool call')
+    }
+    calls.push({ id: raw.call_id, name: raw.name, arguments: args })
   }
   return validateServerToolCalls(calls, allowedToolNames)
 }
