@@ -33,6 +33,14 @@ describe('resolveChatProviderRoute — routable', () => {
     })
   })
 
+  it('routes Claude Opus 4.8 through the Anthropic adapter', () => {
+    const database = db({ aiModel: 'claude-opus-4-8', claudeAPIKey: 'sk-anthropic' })
+    expect(resolveChatProviderRoute(database, resolveModelProfile({ database }))).toEqual({
+      routable: true,
+      provider: 'anthropic',
+    })
+  })
+
   it('routes a configured reverse_proxy under OpenAICompatible', () => {
     expect(
       resolveChatProviderRoute(

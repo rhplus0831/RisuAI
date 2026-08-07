@@ -87,6 +87,12 @@ describe('BotSettings pending prompt persistence', () => {
   })
 })
 
+describe('BotSettings custom model flags', () => {
+  it('exposes the Claude xhigh adaptive-effort capability flag', () => {
+    expect(source).toContain("{@render CustomFlagButton('claudeXHighEffort', 23)}")
+  })
+})
+
 describe('BotSettings preset regex ownership', () => {
   it('passes the selected prompt preset identity to RegexList', () => {
     expect(source).toContain(

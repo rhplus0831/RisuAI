@@ -569,6 +569,26 @@ describe('dispatchChatProvider final wire controls', () => {
     expect(captured[0].body.response_format).toBeUndefined()
   })
 
+  it('honors Claude Opus 4.8 adaptive thinking with xhigh effort on the live Anthropic path', async () => {
+    const database = db({
+      aiModel: 'claude-opus-4-8',
+      claudeAPIKey: 'sk-anthropic',
+      thinkingType: 'adaptive',
+      adaptiveThinkingEffort: 'xhigh',
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okAnthropicResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(profile.modelInfo.flags).toEqual(
+      expect.arrayContaining([LLMFlags.claudeAdaptiveThinking, LLMFlags.claudeXHighEffort]),
+    )
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(captured[0].body.output_config).toEqual({ effort: 'xhigh' })
+  })
+
   it('applies the configured JSON extraction path to buffered provider output', async () => {
     const database = db({
       aiModel: 'echo_model',
