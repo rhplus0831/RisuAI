@@ -1300,6 +1300,13 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
       ],
     },
     {
+      name: 'empty system role replacement',
+      db: makeDatabase({ systemRoleReplacement: '' as never }),
+      flags: [],
+      rows: [{ role: 'system', content: 'sys' }] satisfies OpenAIChat[],
+      expected: [{ role: 'user', content: 'system: sys' }],
+    },
+    {
       name: 'first system hoist',
       db: makeDatabase(),
       flags: [LLMFlags.hasFirstSystemPrompt],

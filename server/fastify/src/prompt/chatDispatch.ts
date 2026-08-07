@@ -648,7 +648,7 @@ export function reformatMessages(db: Database, rows: OpenAIChat[], flags: readon
         row.content = db.systemContentReplacement
           ? db.systemContentReplacement.replace('{{slot}}', row.content)
           : `system: ${row.content}`
-        const replacement = asString(db.systemRoleReplacement)
+        const replacement = asString(db.systemRoleReplacement) || 'user'
         row.role =
           replacement === 'assistant' ||
           replacement === 'user' ||

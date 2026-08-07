@@ -796,7 +796,7 @@ export function reformater(formated: OpenAIChat[], modelInfo: LLMModel | LLMFlag
         formated[i].content = db.systemContentReplacement
           ? db.systemContentReplacement.replace('{{slot}}', formated[i].content)
           : `system: ${formated[i].content}`
-        formated[i].role = db.systemRoleReplacement
+        formated[i].role = db.systemRoleReplacement || 'user'
       }
     }
   }

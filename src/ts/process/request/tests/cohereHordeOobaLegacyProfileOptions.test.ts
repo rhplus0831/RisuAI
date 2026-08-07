@@ -25,10 +25,10 @@ vi.mock('../../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {}, getModuleToggles: () => '', getModuleTriggers: () => [] }
 })
 
-import { LLMFormat } from '../../../model/types'
+import { LLMFlags, LLMFormat } from '../../../model/types'
 import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { selectedCharID } from '../../../stores.svelte'
-import { requestChatDataMain } from '../request'
+import { reformater, requestChatDataMain } from '../request'
 
 interface PreviewPayload {
   url: string
@@ -274,6 +274,16 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+})
+
+describe('client system-role replacement', () => {
+  it('falls back to user when the configured replacement is empty', () => {
+    setDatabase(db({ systemRoleReplacement: '' as never }))
+
+    const result = reformater([{ role: 'system', content: 'profile system' }], [] as LLMFlags[])
+
+    expect(result).toEqual([{ role: 'user', content: 'system: profile system' }])
+  })
 })
 
 describe('requestCohere profile provider options through requestChatDataMain', () => {
