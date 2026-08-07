@@ -514,6 +514,22 @@ describe('requestOpenAI profile provider options', () => {
     expect(payload.body.model).toBe('profile-keyed-model')
   })
 
+  it('omits json_schema response_format for models without structured-output support', async () => {
+    const database = db({
+      aiModel: 'gpt-5.4-pro',
+      openAIKey: 'sk-pro',
+      jsonSchemaEnabled: true,
+      jsonSchema: '{"type":"object"}',
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    setDatabase(database)
+
+    const payload = await preview(makeArg(profile))
+
+    expect(profile.modelInfo.flags).toContain(LLMFlags.noStructuredOutput)
+    expect(payload.body.response_format).toBeUndefined()
+  })
+
   it('uses ollama-cloud profile API key, request model, and base URL over flat conflicts', async () => {
     const profile = resolveModelProfile({
       database: db({

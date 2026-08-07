@@ -199,14 +199,20 @@ function dispatchParameterSource(db: Database, profile: ResolvedModelProfile): R
   return override && typeof override === 'object' ? (override as unknown as Record<string, unknown>) : db
 }
 
-function reasoningEffort(value: unknown): string | undefined {
+function reasoningEffort(
+  value: unknown,
+  disabledEffort: 'minimal' | 'none' = 'minimal',
+  supportsXHigh = false,
+  minEffort: 'low' | 'medium' = 'low',
+): string | undefined {
   const numeric = asNumber(value)
   if (numeric === undefined || numeric === DISABLED_SAMPLER_SENTINEL) return undefined
-  if (numeric < 0) return 'minimal'
-  if (numeric === 0) return 'low'
+  if (numeric === -1) return disabledEffort
+  if (numeric === 0) return minEffort
   if (numeric === 1) return 'medium'
   if (numeric === 2) return 'high'
-  return 'xhigh'
+  if (numeric === 3) return supportsXHigh ? 'xhigh' : 'high'
+  return 'medium'
 }
 
 function verbosity(value: unknown): string | undefined {
@@ -237,7 +243,8 @@ function geminiResponseSchema(db: Database, schemaOverride?: string): Record<str
   return schema ? (stripGeminiUnsupportedSchemaKeywords(schema) as Record<string, unknown>) : undefined
 }
 
-function openAIChatResponseFormat(db: Database): Record<string, unknown> | undefined {
+function openAIChatResponseFormat(db: Database, flags: readonly number[]): Record<string, unknown> | undefined {
+  if (flags.includes(LLMFlags.noStructuredOutput)) return undefined
   const schema = parseConfiguredJsonSchema(db)
   if (!schema) return undefined
   return {
@@ -328,8 +335,8 @@ export function resolveOpenAILogitBias(
 export function resolveDispatchParameters(db: Database, profile: ResolvedModelProfile): DispatchParameters {
   const supported = new Set(profile.modelInfo.parameters)
   const source = dispatchParameterSource(db, profile) as Record<string, unknown>
-  const from = (separateKey: string, databaseKey: keyof Database): unknown =>
-    source === (db as unknown as Record<string, unknown>) ? db[databaseKey] : source[separateKey]
+  const from = (separateKey: string, databaseKey: keyof Database, databaseDefault?: unknown): unknown =>
+    source === (db as unknown as Record<string, unknown>) ? (db[databaseKey] ?? databaseDefault) : source[separateKey]
   const out: DispatchParameters = {}
   if (supported.has('temperature'))
     out.temperature = normalizeDispatchSampler(from('temperature', 'temperature'), { scale: 100 })
@@ -347,12 +354,17 @@ export function resolveDispatchParameters(db: Database, profile: ResolvedModelPr
     out.presencePenalty = normalizeDispatchSampler(from('presence_penalty', 'PresensePenalty'), { scale: 100 })
   }
   if (supported.has('reasoning_effort')) {
-    out.reasoningEffort = reasoningEffort(from('reasoning_effort', 'reasoningEffort'))
+    out.reasoningEffort = reasoningEffort(
+      from('reasoning_effort', 'reasoningEffort'),
+      supported.has('reasoning_effort_none') ? 'none' : 'minimal',
+      supported.has('reasoning_effort_xhigh'),
+      supported.has('reasoning_effort_min_medium') ? 'medium' : 'low',
+    )
   }
   if (supported.has('thinking_tokens')) {
     out.thinkingTokens = normalizeDispatchSampler(from('thinking_tokens', 'thinkingTokens'))
   }
-  if (supported.has('verbosity')) out.verbosity = verbosity(from('verbosity', 'verbosity'))
+  if (supported.has('verbosity')) out.verbosity = verbosity(from('verbosity', 'verbosity', 1))
   return out
 }
 
@@ -1279,7 +1291,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       serviceTier: llmGatewayOptions?.serviceTier,
       routing: llmGatewayOptions?.routing,
       seed: db.generationSeed,
-      responseFormat: openAIChatResponseFormat(db),
+      responseFormat: openAIChatResponseFormat(db, info.flags),
       prediction: db.OAIPrediction,
       openRouter: resolveOpenRouterRequestOptions(provider, profile),
       n: generationCount,
@@ -1327,7 +1339,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       reasoningEffort: parameters.reasoningEffort,
       verbosity: parameters.verbosity,
       seed: db.generationSeed,
-      responseFormat: openAIChatResponseFormat(db),
+      responseFormat: openAIChatResponseFormat(db, info.flags),
       prediction: db.OAIPrediction,
       openRouter: resolveOpenRouterRequestOptions(provider, profile),
       n: generationCount,

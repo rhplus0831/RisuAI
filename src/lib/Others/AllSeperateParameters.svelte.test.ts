@@ -1,12 +1,16 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const separateParameterMocks = vi.hoisted(() => ({
+  parameters: ['temperature'] as string[],
+}))
+
 vi.mock('src/ts/server/resourceState.svelte', () => ({
   getResourceDatabase: () => ({}),
 }))
 
 vi.mock('src/ts/model/modellist', () => ({
-  getModelInfo: () => ({ flags: [], parameters: ['temperature'] }),
+  getModelInfo: () => ({ flags: [], parameters: separateParameterMocks.parameters }),
 }))
 
 vi.mock('src/ts/model/modelRoles', () => ({
@@ -40,6 +44,7 @@ let component: MountedComponent | undefined
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
+  separateParameterMocks.parameters = ['temperature']
 })
 
 afterEach(() => {
@@ -81,7 +86,6 @@ describe('separate parameter accessible names', () => {
       language.frequencyPenalty,
       language.modelProfiles.runtimeFields.presencePenalty,
       language.thinkingTokens,
-      language.modelProfiles.runtimeFields.verbosity,
     ]
     const sliderNames = Array.from(target.querySelectorAll<HTMLElement>('[role="slider"]'), (slider) =>
       slider.getAttribute('aria-label'),
@@ -133,5 +137,39 @@ describe('separate parameter accessible names', () => {
     await tick()
 
     expect(value.frequency_penalty).toBe(71)
+  })
+
+  it('renders capability-tiered reasoning and verbosity controls without sampler scaling', async () => {
+    separateParameterMocks.parameters = [
+      'reasoning_effort',
+      'reasoning_effort_min_medium',
+      'reasoning_effort_xhigh',
+      'verbosity',
+    ]
+    const value = {
+      thinking_type: 'off',
+      reasoning_effort: 0,
+      verbosity: 1,
+    } as any
+    component = mount(AllSeperateParameters, {
+      target,
+      props: { paramKey: 'test-model', value },
+    })
+    await tick()
+
+    expect(value.reasoning_effort).toBe(1)
+    const segments = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-segment-btn]'))
+    expect(segments.map((button) => button.textContent?.trim())).toEqual([
+      'Medium',
+      'High',
+      'XHigh',
+      'Low',
+      'Medium',
+      'High',
+    ])
+
+    segments.find((button) => button.textContent?.trim() === 'XHigh')?.click()
+    await tick()
+    expect(value.reasoning_effort).toBe(3)
   })
 })

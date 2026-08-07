@@ -131,4 +131,37 @@ describe('SettingSegmented initial values', () => {
     expect(segmentedMocks.setSettingValue).toHaveBeenCalledOnce()
     expect(action).toHaveBeenCalledOnce()
   })
+
+  it('chooses the nearest numeric value when a capability change hides the current option', async () => {
+    const item: SettingItem = {
+      id: 'test.reasoning-effort',
+      type: 'segmented',
+      fallbackLabel: 'Reasoning Effort',
+      options: {
+        segmentOptions: [
+          {
+            value: 0,
+            label: 'Low',
+            condition: (context) => Boolean((context.db as unknown as { low?: boolean }).low),
+          },
+          { value: 1, label: 'Medium' },
+          { value: 2, label: 'High' },
+        ],
+      },
+    }
+    segmentedMocks.currentValue = 0
+
+    component = mount(SettingConditionalOptionsTestHost, {
+      target,
+      props: { initialContext: { ...ctx, db: { low: true } as any }, item, kind: 'segmented' },
+    }) as MountedConditionalOptionsHost
+    await tick()
+
+    component.replaceContext({ ...ctx, db: { low: false } as any })
+    await tick()
+    await tick()
+
+    expect(segmentedMocks.currentValue).toBe(1)
+    expect(segmentedMocks.setSettingValue).toHaveBeenCalledOnce()
+  })
 })

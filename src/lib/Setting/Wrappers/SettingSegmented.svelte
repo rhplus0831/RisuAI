@@ -63,7 +63,15 @@
       currentVal !== undefined &&
       !availableOptions.some((o) => o.value === currentVal)
     ) {
-      localValue = availableOptions[availableOptions.length - 1].value
+      const numericOptions = availableOptions.filter(
+        (option): option is { value: number; label: string } => typeof option.value === 'number',
+      )
+      localValue =
+        typeof currentVal === 'number' && numericOptions.length > 0
+          ? numericOptions.reduce((closest, option) =>
+              Math.abs(option.value - currentVal) < Math.abs(closest.value - currentVal) ? option : closest,
+            ).value
+          : availableOptions[availableOptions.length - 1].value
     }
   })
 </script>

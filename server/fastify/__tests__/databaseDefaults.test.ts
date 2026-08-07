@@ -33,6 +33,8 @@ describe('database defaults', () => {
     expect(database.paragraphBreakSentenceCount).toBe(3)
     expect(database.translatorSendTextAsIs).toBe(false)
     expect(database.translatorExcludeThoughts).toBe(false)
+    expect(database.reasoningEffort).toBe(0)
+    expect(database.verbosity).toBe(1)
     expect(database.showSavingIcon).toBe(true)
     expect(database.useMonacoEditorOnDesktop).toBe(false)
     expect(database.useMonacoEditorOnMobile).toBe(false)

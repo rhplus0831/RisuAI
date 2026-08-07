@@ -530,6 +530,45 @@ describe('dispatchChatProvider final wire controls', () => {
     ])
   })
 
+  it.each([
+    ['gpt-5.1', -1, 'none'],
+    ['gpt-5.4-pro', 0, 'medium'],
+    ['gpt-5.5', 3, 'xhigh'],
+    ['gpt-5', 3, 'high'],
+  ])('maps %s reasoning effort %i to %s on the live OpenAI path', async (model, value, expected) => {
+    const database = db({
+      aiModel: model,
+      openAIKey: 'sk-openai',
+      reasoningEffort: value,
+      verbosity: undefined,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.reasoning_effort).toBe(expected)
+    expect(captured[0].body.verbosity).toBe('medium')
+  })
+
+  it('omits json_schema response_format for a noStructuredOutput model on the live OpenAI path', async () => {
+    const database = db({
+      aiModel: 'gpt-5.4-pro',
+      openAIKey: 'sk-openai',
+      jsonSchemaEnabled: true,
+      jsonSchema: '{"type":"object"}',
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(profile.modelInfo.flags).toContain(LLMFlags.noStructuredOutput)
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.response_format).toBeUndefined()
+  })
+
   it('applies the configured JSON extraction path to buffered provider output', async () => {
     const database = db({
       aiModel: 'echo_model',

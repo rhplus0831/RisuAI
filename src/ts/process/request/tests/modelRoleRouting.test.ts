@@ -590,4 +590,48 @@ describe('requestChatDataMain model-role routing', () => {
       temperature: 0.2,
     })
   })
+
+  it('maps reasoning effort through none, min-medium, and xhigh capability tiers', () => {
+    seedDb({ reasoningEffort: -1 })
+    expect(
+      applyParameters({}, ['reasoning_effort', 'reasoning_effort_none'], {}, 'model', { modelId: 'gpt-5.1' }),
+    ).toEqual({ reasoning_effort: 'none' })
+
+    seedDb({ reasoningEffort: 0 })
+    expect(
+      applyParameters({}, ['reasoning_effort', 'reasoning_effort_min_medium'], {}, 'model', {
+        modelId: 'gpt-5.4-pro',
+      }),
+    ).toEqual({ reasoning_effort: 'medium' })
+
+    seedDb({ reasoningEffort: 3 })
+    expect(
+      applyParameters({}, ['reasoning_effort', 'reasoning_effort_xhigh'], {}, 'model', { modelId: 'gpt-5.5' }),
+    ).toEqual({ reasoning_effort: 'xhigh' })
+    expect(applyParameters({}, ['reasoning_effort'], {}, 'model', { modelId: 'gpt-5' })).toEqual({
+      reasoning_effort: 'high',
+    })
+  })
+
+  it('skips reasoning capability pseudo-parameters for separate-by-model values', () => {
+    seedDb({
+      seperateParametersEnabled: true,
+      seperateParametersByModel: true,
+      seperateParameters: {
+        memory: {},
+        emotion: {},
+        translate: {},
+        otherAx: {},
+        scriptMain: {},
+        scriptAux: {},
+        overrides: { 'gpt-5.5': { reasoning_effort: 3 } },
+      },
+    })
+
+    expect(
+      applyParameters({}, ['reasoning_effort', 'reasoning_effort_none', 'reasoning_effort_xhigh'], {}, 'model', {
+        modelId: 'gpt-5.5',
+      }),
+    ).toEqual({ reasoning_effort: 'xhigh' })
+  })
 })

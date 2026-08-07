@@ -437,6 +437,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'showPromptComparison', false)
   setDefault(database, 'OaiCompAPIKeys', {})
   setDefault(database, 'reasoningEffort', 0)
+  setDefault(database, 'verbosity', 1)
   normalizeHypaV3Presets(database)
   normalizeTranslatorPresets(database)
   setDefault(database, 'showDeprecatedTriggerV2', false)

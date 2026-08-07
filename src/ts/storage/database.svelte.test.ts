@@ -790,6 +790,26 @@ describe('sentence paragraph database normalization', () => {
   })
 })
 
+describe('model parameter database normalization', () => {
+  it('defaults missing reasoning effort and verbosity without replacing configured values', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as unknown as Record<string, unknown>).reasoningEffort
+    delete (legacyData as unknown as Record<string, unknown>).verbosity
+
+    setDatabase(legacyData)
+    expect(getDatabase().reasoningEffort).toBe(0)
+    expect(getDatabase().verbosity).toBe(1)
+
+    const configuredData = clonePlain(getDatabase())
+    configuredData.reasoningEffort = 3
+    configuredData.verbosity = 2
+    setDatabase(configuredData)
+    expect(getDatabase().reasoningEffort).toBe(3)
+    expect(getDatabase().verbosity).toBe(2)
+  })
+})
+
 function seedPresetDatabase(patch: Partial<Database> = {}): void {
   setDatabaseLite({
     characters: [],

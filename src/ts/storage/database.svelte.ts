@@ -3252,6 +3252,7 @@ export function setDatabase(data: Database) {
   data.OaiCompAPIKeys ??= {}
   data.providerCredentials ??= []
   data.reasoningEffort ??= 0
+  data.verbosity ??= 1
   data.hypaV3Presets ??= [
     createHypaV3Preset('Default', {
       summarizationPrompt: (data as { supaMemoryPrompt?: string }).supaMemoryPrompt ?? '',

@@ -24,6 +24,15 @@ describe('resolveChatProviderRoute — routable', () => {
     })
   })
 
+  it.each(['gpt-5.5', 'gpt-5.5-2026-04-23'])('routes the registered OpenAI model %s', (aiModel) => {
+    const database = db({ aiModel, openAIKey: 'sk-openai' })
+    expect(resolveChatProviderRoute(database)).toEqual({ routable: true, provider: 'openai' })
+    expect(resolveChatProviderRoute(database, resolveModelProfile({ database }))).toEqual({
+      routable: true,
+      provider: 'openai',
+    })
+  })
+
   it('routes a configured reverse_proxy under OpenAICompatible', () => {
     expect(
       resolveChatProviderRoute(
