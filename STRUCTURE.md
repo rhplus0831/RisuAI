@@ -26,6 +26,7 @@ records past decisions and is not authoritative.
 | Run or extend checks, local dev, or CI                                                | [Testing And Operations](docs/structure/testing-and-operations.md) and the [Test Suite Guide](docs/tests/README.md)                                                            |
 | Trace data-dependent rendering or UI ownership                                        | [Data-Driven UI Inventory](docs/data-driven-ui.md)                                                                                                                             |
 | Classify generated, vendored, compatibility-only, or removed paths                    | [Generated Files And Legacy Caveats](docs/structure/generated-and-legacy.md)                                                                                                   |
+| Port an upstream RisuAI change into this fork                                         | [Upstream Sync](docs/upstream-sync/README.md) and the current sweep ledger there                                                                                               |
 
 ## Repository Map
 
