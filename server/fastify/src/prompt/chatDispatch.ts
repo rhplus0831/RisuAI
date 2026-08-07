@@ -1451,6 +1451,8 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       presencePenalty: parameters.presencePenalty,
       frequencyPenalty: parameters.frequencyPenalty,
       thinkingTokens: parameters.thinkingTokens,
+      thinkingLevel: parameters.reasoningEffort,
+      thinkingLevelNoMinimal: info.flags.includes(LLMFlags.geminiThinkingNoMinimal),
       geminiBlockOff: info.flags.includes(LLMFlags.geminiBlockOff),
       noCivilIntegrity: info.flags.includes(LLMFlags.noCivilIntegrity),
       responseSchema: geminiResponseSchema(db, args.schema),

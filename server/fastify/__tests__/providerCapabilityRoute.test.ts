@@ -41,6 +41,16 @@ describe('resolveChatProviderRoute — routable', () => {
     })
   })
 
+  it.each(['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'])(
+    'routes the registered Google model %s through the Gemini adapter',
+    (aiModel) => {
+      const database = db({ aiModel, google: { accessToken: 'studio-key', projectId: 'project' } })
+      const profile = resolveModelProfile({ database })
+      expect(profile.modelInfo.parameters).toContain('reasoning_effort')
+      expect(resolveChatProviderRoute(database, profile)).toEqual({ routable: true, provider: 'gemini' })
+    },
+  )
+
   it('routes a configured reverse_proxy under OpenAICompatible', () => {
     expect(
       resolveChatProviderRoute(

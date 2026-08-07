@@ -326,6 +326,7 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
 
   if (arg.modelInfo.flags.includes(LLMFlags.geminiThinking)) {
     para.push('thinking_tokens')
+    para.push('reasoning_effort')
   }
 
   para = para.filter((v) => {
@@ -345,6 +346,7 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
         presence_penalty: 'presencePenalty',
         frequency_penalty: 'frequencyPenalty',
         thinking_tokens: 'thinkingBudget',
+        reasoning_effort: 'thinkingConfig.thinkingLevel',
       },
       arg.mode,
       {
@@ -374,39 +376,25 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
   }
 
   if (arg.modelInfo.flags.includes(LLMFlags.geminiThinking)) {
-    const internalId = arg.modelInfo.internalID
-    const thinkingBudget = body.generation_config.thinkingBudget
+    const generationConfig = body.generation_config
 
-    // Gemini 3 models use `thinking_level` (via thinkingConfig.thinkingLevel) instead of `thinking_budget`.
-    // Keep UI/param name 'thinking_tokens' but translate it here for compatibility.
-    if (internalId && /^gemini-3-/.test(internalId)) {
-      const budgetNum = typeof thinkingBudget === 'number' ? thinkingBudget : Number(thinkingBudget)
-
-      // Conservative mapping: keep levels coarse to avoid model-specific strict validation.
-      // - gemini-3-flash-preview: LOW/MEDIUM/HIGH
-      // - gemini-3-pro* (incl. image): LOW/HIGH
-      let thinkingLevel: 'LOW' | 'MEDIUM' | 'HIGH' = 'HIGH'
-      if (internalId === 'gemini-3-flash-preview') {
-        if (!Number.isFinite(budgetNum) || budgetNum >= 16384) thinkingLevel = 'HIGH'
-        else if (budgetNum >= 4096) thinkingLevel = 'MEDIUM'
-        else thinkingLevel = 'LOW'
-      } else {
-        if (!Number.isFinite(budgetNum) || budgetNum >= 8192) thinkingLevel = 'HIGH'
-        else thinkingLevel = 'LOW'
-      }
-
-      body.generation_config.thinkingConfig = {
-        thinkingLevel: thinkingLevel,
+    // 2.5's flat thinkingBudget is wrapped into thinkingConfig here.
+    // 3.x's thinkingConfig.thinkingLevel was already set by the rename above.
+    if (generationConfig.thinkingBudget !== undefined) {
+      generationConfig.thinkingConfig = {
+        thinkingBudget: generationConfig.thinkingBudget,
         includeThoughts: true,
       }
-    } else {
-      body.generation_config.thinkingConfig = {
-        thinkingBudget: thinkingBudget,
-        includeThoughts: true,
+      delete generationConfig.thinkingBudget
+    } else if (generationConfig.thinkingConfig) {
+      if (
+        generationConfig.thinkingConfig.thinkingLevel === 'minimal' &&
+        arg.modelInfo.flags.includes(LLMFlags.geminiThinkingNoMinimal)
+      ) {
+        generationConfig.thinkingConfig.thinkingLevel = 'low'
       }
+      generationConfig.thinkingConfig.includeThoughts = true
     }
-
-    delete body.generation_config.thinkingBudget
   }
 
   if (systemPrompt === '') {
@@ -437,8 +425,9 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
   console.log(arg.modelInfo)
 
   const isVertexGlobalOnlyModel = (modelId: string) => {
-    // Route Gemini 3 preview model ids through the global Vertex endpoint.
-    return /^gemini-3-.*-preview$/.test(modelId)
+    // Gemini 3 preview models and the 3.5/3.6 Flash family are not served from the regions
+    // selectable in settings (us-central1, us-west1); route them through the global endpoint.
+    return /^gemini-3-.*-preview$/.test(modelId) || /^gemini-3\.[56]-flash/.test(modelId)
   }
 
   async function generateToken(email: string, key: string) {

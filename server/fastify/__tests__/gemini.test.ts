@@ -310,23 +310,22 @@ describe('runGemini', () => {
   })
 
   it.each([
-    { model: 'gemini-3-flash-preview', budget: 4095, level: 'LOW' },
-    { model: 'gemini-3-flash-preview', budget: 4096, level: 'MEDIUM' },
-    { model: 'gemini-3-flash-preview', budget: 16383, level: 'MEDIUM' },
-    { model: 'gemini-3-flash-preview', budget: 16384, level: 'HIGH' },
-    { model: 'gemini-3-pro-preview', budget: 8191, level: 'LOW' },
-    { model: 'gemini-3-pro-preview', budget: 8192, level: 'HIGH' },
-  ])('maps $model budget $budget to $level without a numeric budget or zero topK', async ({ model, budget, level }) => {
+    { model: 'gemini-3.6-flash', level: 'minimal' as const, noMinimal: false, expected: 'minimal' },
+    { model: 'gemini-3.1-pro-preview', level: 'minimal' as const, noMinimal: true, expected: 'low' },
+    { model: 'gemini-3-flash-preview', level: 'medium' as const, noMinimal: false, expected: 'medium' },
+    { model: 'gemini-3-pro-preview', level: 'high' as const, noMinimal: false, expected: 'high' },
+  ])('sends $model thinkingLevel $expected without a numeric budget or zero topK', async (testCase) => {
     let sent: Record<string, unknown> = {}
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
       sent = JSON.parse(String(init.body)) as Record<string, unknown>
       return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
     })
     const resolved = resolveGeminiRequest({
-      model,
+      model: testCase.model,
       messages: [{ role: 'user', content: 'hi' }],
       apiKey: 'k',
-      thinkingTokens: budget,
+      thinkingLevel: testCase.level,
+      thinkingLevelNoMinimal: testCase.noMinimal,
       topK: 0,
       signal: new AbortController().signal,
     })!
@@ -334,7 +333,10 @@ describe('runGemini', () => {
     await runGemini(resolved)
 
     const generationConfig = sent.generationConfig as Record<string, unknown>
-    expect(generationConfig.thinkingConfig).toEqual({ thinkingLevel: level, includeThoughts: true })
+    expect(generationConfig.thinkingConfig).toEqual({
+      thinkingLevel: testCase.expected,
+      includeThoughts: true,
+    })
     expect(generationConfig.thinkingConfig).not.toHaveProperty('thinkingBudget')
     expect(generationConfig).not.toHaveProperty('topK')
   })
@@ -1213,40 +1215,43 @@ describe('Vertex AI Gemini routing', () => {
     )
   })
 
-  it('forces gemini-3-* preview models onto the global endpoint regardless of region', async () => {
-    let predictionUrl = ''
-    vi.stubGlobal('fetch', async (url: string) => {
-      if (url === 'https://oauth2.googleapis.com/token') {
-        return new Response(JSON.stringify({ access_token: 't', expires_in: 3599 }), {
-          status: 200,
-        })
-      }
-      predictionUrl = url
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'g' }] } }] }), { status: 200 })
-    })
+  it.each(['gemini-3-pro-preview', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash'])(
+    'forces %s onto the global endpoint regardless of region',
+    async (model) => {
+      let predictionUrl = ''
+      vi.stubGlobal('fetch', async (url: string) => {
+        if (url === 'https://oauth2.googleapis.com/token') {
+          return new Response(JSON.stringify({ access_token: 't', expires_in: 3599 }), {
+            status: 200,
+          })
+        }
+        predictionUrl = url
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'g' }] } }] }), { status: 200 })
+      })
 
-    const { privateKey } = (await import('node:crypto')).generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    })
-    const { _resetVertexTokenCacheForTesting } = await import('../src/generation/vertexAuth.js')
-    _resetVertexTokenCacheForTesting()
+      const { privateKey } = (await import('node:crypto')).generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      })
+      const { _resetVertexTokenCacheForTesting } = await import('../src/generation/vertexAuth.js')
+      _resetVertexTokenCacheForTesting()
 
-    const resolved = resolveGeminiRequest({
-      model: 'gemini-3-pro-preview',
-      messages: [{ role: 'user', content: 'hi' }],
-      vertex: {
-        projectId: 'p',
-        region: 'us-east1',
-        clientEmail: 'svc@p.iam.gserviceaccount.com',
-        privateKey,
-      },
-      signal: new AbortController().signal,
-    })!
-    await runGemini(resolved)
-    expect(predictionUrl).toContain('https://aiplatform.googleapis.com/v1/projects/p/locations/global/')
-  })
+      const resolved = resolveGeminiRequest({
+        model,
+        messages: [{ role: 'user', content: 'hi' }],
+        vertex: {
+          projectId: 'p',
+          region: 'us-east1',
+          clientEmail: 'svc@p.iam.gserviceaccount.com',
+          privateKey,
+        },
+        signal: new AbortController().signal,
+      })!
+      await runGemini(resolved)
+      expect(predictionUrl).toContain('https://aiplatform.googleapis.com/v1/projects/p/locations/global/')
+    },
+  )
 
   it('returns fail with the vertexAuth error when token exchange fails', async () => {
     vi.stubGlobal('fetch', async (url: string) => {

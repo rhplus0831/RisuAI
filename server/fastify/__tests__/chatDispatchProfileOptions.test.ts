@@ -1587,6 +1587,28 @@ describe('dispatchChatProvider profile providerOptions', () => {
   })
 
   it.each([
+    { model: 'gemini-3.6-flash', reasoningEffort: -1, expectedLevel: 'minimal' },
+    { model: 'gemini-3.1-pro-preview', reasoningEffort: -1, expectedLevel: 'low' },
+    { model: 'gemini-3-flash-preview', reasoningEffort: 1, expectedLevel: 'medium' },
+  ])('maps $model reasoning effort to $expectedLevel on the live Gemini path', async (testCase) => {
+    const database = db({
+      aiModel: testCase.model,
+      google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      reasoningEffort: testCase.reasoningEffort,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect((captured[0].body.generationConfig as Record<string, unknown>).thinkingConfig).toEqual({
+      thinkingLevel: testCase.expectedLevel,
+      includeThoughts: true,
+    })
+  })
+
+  it.each([
     { label: 'missing', google: undefined },
     { label: 'blank', google: { accessToken: '   ', projectId: 'profile-project' } },
   ])('does not fall back to flat DB Google key when the profile key is $label', async (testCase) => {

@@ -26,7 +26,7 @@ vi.mock('../../modules', async (importActual) => {
 })
 
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
-import { LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from '../../../model/types'
+import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from '../../../model/types'
 import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
 import type { RequestDataArgumentExtended } from '../request'
 import { requestGoogleCloudVertex } from '../google'
@@ -224,6 +224,117 @@ describe('requestGoogleCloudVertex in Fastify mode', () => {
     expect(db.vertexAccessToken).toBe('old-projection-token')
     expect(db.vertexAccessTokenExpires).toBe(0)
   })
+
+  it.each([
+    {
+      model: 'gemini-3.6-flash',
+      reasoningEffort: -1,
+      flags: [LLMFlags.geminiThinking],
+      expectedLevel: 'minimal',
+    },
+    {
+      model: 'gemini-3.1-pro-preview',
+      reasoningEffort: -1,
+      flags: [LLMFlags.geminiThinking, LLMFlags.geminiThinkingNoMinimal],
+      expectedLevel: 'low',
+    },
+    {
+      model: 'gemini-3-flash-preview',
+      reasoningEffort: 1,
+      flags: [LLMFlags.geminiThinking],
+      expectedLevel: 'medium',
+    },
+  ])('maps $model reasoning effort to thinkingLevel $expectedLevel', async (testCase) => {
+    seedDb({
+      aiModel: testCase.model,
+      reasoningEffort: testCase.reasoningEffort,
+      google: { accessToken: 'studio-key', projectId: 'studio-project' },
+    } as Partial<Database>)
+
+    const result = await requestGoogleCloudVertex({
+      bias: {},
+      formated: [{ role: 'user', content: 'hello' }],
+      aiModel: testCase.model,
+      key: 'studio-key',
+      maxTokens: 32,
+      useStreaming: false,
+      previewBody: true,
+      mode: 'model',
+      modelInfo: geminiModelInfo({
+        id: testCase.model,
+        internalID: testCase.model,
+        flags: testCase.flags,
+        parameters: ['reasoning_effort'],
+      }) as RequestDataArgumentExtended['modelInfo'],
+    } as RequestDataArgumentExtended)
+
+    expect(result.type).toBe('success')
+    if (result.type !== 'success' || typeof result.result !== 'string') throw new Error('Expected preview payload')
+    const payload = JSON.parse(result.result) as { body: { generation_config: Record<string, unknown> } }
+    expect(payload.body.generation_config.thinkingConfig).toEqual({
+      thinkingLevel: testCase.expectedLevel,
+      includeThoughts: true,
+    })
+    expect(payload.body.generation_config).not.toHaveProperty('thinkingBudget')
+  })
+
+  it('keeps Gemini 2.5 thinking tokens as a wrapped thinkingBudget', async () => {
+    seedDb({
+      aiModel: 'gemini-2.5-flash',
+      thinkingTokens: 256,
+      google: { accessToken: 'studio-key', projectId: 'studio-project' },
+    } as Partial<Database>)
+
+    const result = await requestGoogleCloudVertex({
+      bias: {},
+      formated: [{ role: 'user', content: 'hello' }],
+      aiModel: 'gemini-2.5-flash',
+      key: 'studio-key',
+      maxTokens: 32,
+      useStreaming: false,
+      previewBody: true,
+      mode: 'model',
+      modelInfo: geminiModelInfo({
+        id: 'gemini-2.5-flash',
+        internalID: 'gemini-2.5-flash',
+        flags: [LLMFlags.geminiThinking],
+        parameters: ['thinking_tokens'],
+      }) as RequestDataArgumentExtended['modelInfo'],
+    } as RequestDataArgumentExtended)
+
+    expect(result.type).toBe('success')
+    if (result.type !== 'success' || typeof result.result !== 'string') throw new Error('Expected preview payload')
+    const payload = JSON.parse(result.result) as { body: { generation_config: Record<string, unknown> } }
+    expect(payload.body.generation_config.thinkingConfig).toEqual({
+      thinkingBudget: 256,
+      includeThoughts: true,
+    })
+    expect(payload.body.generation_config).not.toHaveProperty('thinkingBudget')
+  })
+
+  it.each(['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash'])(
+    'routes %s through the global Vertex endpoint',
+    async (model) => {
+      seedDb({ aiModel: model, vertexRegion: 'us-central1' } as Partial<Database>)
+
+      const result = await requestGoogleCloudVertex({
+        ...makeVertexArg(),
+        aiModel: model,
+        previewBody: true,
+        modelInfo: geminiModelInfo({
+          id: model,
+          internalID: model,
+          provider: LLMProvider.VertexAI,
+          format: LLMFormat.VertexAIGemini,
+        }) as RequestDataArgumentExtended['modelInfo'],
+      } as RequestDataArgumentExtended)
+
+      expect(result.type).toBe('success')
+      if (result.type !== 'success' || typeof result.result !== 'string') throw new Error('Expected preview payload')
+      const payload = JSON.parse(result.result) as { url: string }
+      expect(payload.url).toContain('https://aiplatform.googleapis.com/v1/projects/vertex-project/locations/global/')
+    },
+  )
 
   it('uses Google AI Studio profile API key and stripped request model over conflicting flat values', async () => {
     seedDb({

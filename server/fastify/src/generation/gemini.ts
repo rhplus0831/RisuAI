@@ -50,6 +50,8 @@ export interface GeminiRequest {
   presencePenalty?: number
   frequencyPenalty?: number
   thinkingTokens?: number
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
+  thinkingLevelNoMinimal?: boolean
   geminiBlockOff?: boolean
   noCivilIntegrity?: boolean
   responseSchema?: Record<string, unknown>
@@ -101,6 +103,8 @@ interface GeminiResolveInput {
   presencePenalty?: unknown
   frequencyPenalty?: unknown
   thinkingTokens?: unknown
+  thinkingLevel?: unknown
+  thinkingLevelNoMinimal?: unknown
   geminiBlockOff?: unknown
   noCivilIntegrity?: unknown
   responseSchema?: unknown
@@ -246,6 +250,13 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     typeof input.thinkingTokens === 'number' && Number.isFinite(input.thinkingTokens) && input.thinkingTokens >= 0
       ? input.thinkingTokens
       : undefined
+  const thinkingLevel =
+    input.thinkingLevel === 'minimal' ||
+    input.thinkingLevel === 'low' ||
+    input.thinkingLevel === 'medium' ||
+    input.thinkingLevel === 'high'
+      ? input.thinkingLevel
+      : undefined
 
   return {
     model: input.model,
@@ -261,6 +272,8 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     presencePenalty,
     frequencyPenalty,
     thinkingTokens,
+    thinkingLevel,
+    thinkingLevelNoMinimal: input.thinkingLevelNoMinimal === true,
     geminiBlockOff: input.geminiBlockOff === true,
     noCivilIntegrity: input.noCivilIntegrity === true,
     responseSchema:
@@ -295,21 +308,12 @@ function buildSafetySettings(req: GeminiRequest): Array<{ category: string; thre
 }
 
 function buildThinkingConfig(req: GeminiRequest): Record<string, unknown> | undefined {
-  if ((req.tools?.length ?? 0) > 0 || req.thinkingTokens === undefined) return undefined
-  if (!/^gemini-3-/u.test(req.model)) {
+  if ((req.tools?.length ?? 0) > 0) return undefined
+  if (req.thinkingTokens !== undefined) {
     return { thinkingBudget: req.thinkingTokens, includeThoughts: true }
   }
-
-  const thinkingLevel =
-    req.model === 'gemini-3-flash-preview'
-      ? req.thinkingTokens >= 16_384
-        ? 'HIGH'
-        : req.thinkingTokens >= 4_096
-          ? 'MEDIUM'
-          : 'LOW'
-      : req.thinkingTokens >= 8_192
-        ? 'HIGH'
-        : 'LOW'
+  if (req.thinkingLevel === undefined) return undefined
+  const thinkingLevel = req.thinkingLevel === 'minimal' && req.thinkingLevelNoMinimal ? 'low' : req.thinkingLevel
   return { thinkingLevel, includeThoughts: true }
 }
 
@@ -341,11 +345,11 @@ function buildPayload(req: GeminiRequest): Record<string, unknown> {
 }
 
 /**
- * Some Gemini 3 preview models are only available on the `global` Vertex
- * endpoint regardless of the user's configured region. Mirror the SPA's
- * `isVertexGlobalOnlyModel` check in `src/ts/process/request/google.ts`.
+ * Gemini 3 preview models and the Gemini 3.5/3.6 Flash family are only
+ * available on the `global` Vertex endpoint regardless of configured region.
+ * Mirror the SPA's `isVertexGlobalOnlyModel` check.
  */
-const VERTEX_GLOBAL_ONLY = /^gemini-3-.*-preview$/
+const VERTEX_GLOBAL_ONLY = /^(?:gemini-3-.*-preview$|gemini-3\.[56]-flash)/
 
 function endpointStudio(req: GeminiRequest, stream: boolean): string {
   const base = req.baseUrl.endsWith('/') ? req.baseUrl.slice(0, -1) : req.baseUrl
