@@ -54,7 +54,7 @@ const DEFAULT_COLOR_SCHEME = {
   selected: '#44475a',
   draculared: '#ff5555',
   textcolor: '#f8f8f2',
-  textcolor2: '#64748b',
+  textcolor2: '#94a3b8',
   darkBorderc: '#4b5563',
   darkbutton: '#374151',
   type: 'dark',
@@ -342,6 +342,11 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'reducedMotion', false)
   setDefault(database, 'colorScheme', DEFAULT_COLOR_SCHEME)
   setDefault(database, 'colorSchemeName', 'default')
+  setDefault(
+    database,
+    'customColorScheme',
+    database.colorSchemeName === 'custom' ? database.colorScheme : DEFAULT_COLOR_SCHEME,
+  )
   normalizeNAISettings(database)
   setDefault(database, 'hypaModel', 'MiniLM')
   setDefault(database, 'mancerHeader', '')

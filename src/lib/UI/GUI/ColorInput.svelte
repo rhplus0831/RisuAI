@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
 
   import ColorPicker from 'svelte-awesome-color-picker'
   import { language } from 'src/lang'
   interface Props {
-    value?: string
+    value?: string | null
     nullable?: boolean
     ariaLabel: string
     oninput?: () => void
@@ -12,9 +12,9 @@
   }
 
   let { value = $bindable('#000000'), nullable = false, ariaLabel, oninput, onchange }: Props = $props()
-  let initialized = false
+  let acceptsInput = false
   let pendingChangeTimer: ReturnType<typeof setTimeout> | undefined
-  let pendingChangeValue = value
+  let pendingChangeValue = value ?? ''
 
   function commitPendingChange() {
     if (pendingChangeTimer === undefined) return
@@ -25,21 +25,19 @@
 
   onDestroy(commitPendingChange)
 
-  $effect(() => {
-    //this is for updating
-    const currentValue = value
-
-    untrack(() => {
-      oninput?.()
-      if (!initialized) {
-        initialized = true
-        return
-      }
-      pendingChangeValue = currentValue
-      if (pendingChangeTimer !== undefined) clearTimeout(pendingChangeTimer)
-      pendingChangeTimer = setTimeout(commitPendingChange, 250)
+  onMount(() => {
+    void tick().then(() => {
+      acceptsInput = true
     })
   })
+
+  function handleInput() {
+    if (!acceptsInput) return
+    oninput?.()
+    pendingChangeValue = value ?? ''
+    if (pendingChangeTimer !== undefined) clearTimeout(pendingChangeTimer)
+    pendingChangeTimer = setTimeout(commitPendingChange, 250)
+  }
 </script>
 
 <div class="cl rounded-full bg-white">
@@ -47,7 +45,8 @@
     label={ariaLabel}
     texts={{ label: { withoutColor: `${language.disable}: ${ariaLabel}` } }}
     bind:hex={value}
-    {nullable} />
+    {nullable}
+    onInput={handleInput} />
 </div>
 
 <style>

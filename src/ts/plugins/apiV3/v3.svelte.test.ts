@@ -1116,6 +1116,41 @@ describe('V3 plugin settings rollback', () => {
     )
   })
 
+  it('keeps Plugin API custom color schemes in the saved custom palette', () => {
+    mockServerCommands.canUse = true
+    const scheme = {
+      bgcolor: '#111111',
+      darkbg: '#222222',
+      borderc: '#333333',
+      selected: '#444444',
+      draculared: '#555555',
+      textcolor: '#eeeeee',
+      textcolor2: '#dddddd',
+      darkBorderc: '#666666',
+      darkbutton: '#777777',
+      type: 'dark',
+    }
+    Object.assign(mockDbState.db, {
+      colorSchemeName: 'default',
+      colorScheme: { ...scheme, bgcolor: '#000000' },
+      customColorScheme: { ...scheme, bgcolor: '#999999' },
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    void api.setColorScheme(scheme)
+
+    expect(dispatchDurableServerBackedSettingsPatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        patch: {
+          colorSchemeName: 'custom',
+          colorScheme: scheme,
+          customColorScheme: scheme,
+        },
+      }),
+    )
+    expect((mockDbState.db as any).customColorScheme).toEqual(scheme)
+  })
+
   it('does not resolve a theme mutation before its durable command settles', async () => {
     mockServerCommands.canUse = true
     ;(mockDbState.db as any).textTheme = 'standard'

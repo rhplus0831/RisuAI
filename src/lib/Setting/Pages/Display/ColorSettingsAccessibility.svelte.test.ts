@@ -4,7 +4,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const colorSettingsState = vi.hoisted(() => ({
   database: {} as Record<string, any>,
   applyServerBackedSetting: vi.fn(),
+  changeColorScheme: vi.fn(),
+  updateCustomColorScheme: vi.fn(),
 }))
+
+const darkPalette = vi.hoisted(
+  () =>
+    ({
+      type: 'dark',
+      bgcolor: '#111111',
+      darkbg: '#222222',
+      borderc: '#333333',
+      selected: '#444444',
+      draculared: '#555555',
+      darkBorderc: '#666666',
+      darkbutton: '#777777',
+      textcolor: '#eeeeee',
+      textcolor2: '#dddddd',
+    }) as const,
+)
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
   getResourceDatabase: () => colorSettingsState.database,
@@ -16,12 +34,15 @@ vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   applyServerBackedSetting: colorSettingsState.applyServerBackedSetting,
 }))
 vi.mock('src/ts/gui/colorscheme', () => ({
-  changeColorScheme: vi.fn(),
+  changeColorScheme: colorSettingsState.changeColorScheme,
   changeColorSchemeType: vi.fn(),
   colorSchemeList: ['default', 'dark'],
+  colorSchemePresets: { default: darkPalette, dark: darkPalette },
+  defaultColorScheme: darkPalette,
   exportColorScheme: vi.fn(),
   importColorScheme: vi.fn(),
   updateColorScheme: vi.fn(),
+  updateCustomColorScheme: colorSettingsState.updateCustomColorScheme,
   updateTextThemeAndCSS: vi.fn(),
 }))
 
@@ -61,18 +82,8 @@ async function expectColorInputsMatchVisibleLabels(expectedCount: number): Promi
 beforeEach(() => {
   colorSettingsState.database = {
     colorSchemeName: 'custom',
-    colorScheme: {
-      type: 'dark',
-      bgcolor: '#111111',
-      darkbg: '#222222',
-      borderc: '#333333',
-      selected: '#444444',
-      draculared: '#555555',
-      darkBorderc: '#666666',
-      darkbutton: '#777777',
-      textcolor: '#eeeeee',
-      textcolor2: '#dddddd',
-    },
+    colorScheme: { ...darkPalette },
+    customColorScheme: { ...darkPalette },
     textTheme: 'custom',
     customTextTheme: {
       FontColorStandard: '#111111',
@@ -88,6 +99,8 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   colorSettingsState.applyServerBackedSetting.mockClear()
+  colorSettingsState.changeColorScheme.mockClear()
+  colorSettingsState.updateCustomColorScheme.mockClear()
 })
 
 afterEach(() => {
@@ -99,11 +112,21 @@ afterEach(() => {
 })
 
 describe('display color setting names', () => {
-  it('names the color-scheme selector from its visible label', async () => {
+  it('names the visual color-scheme cards and exposes their selected state', async () => {
     component = mount(ColorSchemeSelect, { target })
     await tick()
 
-    expect(target.querySelector('select')?.getAttribute('aria-label')).toBe(language.colorScheme)
+    const group = target.querySelector('[role="group"]')
+    const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button.risu-card'))
+
+    expect(group?.getAttribute('aria-label')).toBe(language.colorScheme)
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      language.colorSchemePresetNames.default,
+      language.colorSchemePresetNames.dark,
+      language.colorSchemePresetNames.custom,
+    ])
+    expect(buttons.map((button) => button.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true'])
+    expect(buttons.every((button) => button.querySelector('.palette-wheel-fill'))).toBe(true)
   })
 
   it('names every custom color-scheme input from its visible setting label', async () => {
@@ -111,6 +134,20 @@ describe('display color setting names', () => {
     await tick()
 
     await expectColorInputsMatchVisibleLabels(9)
+  })
+
+  it('updates a custom palette from the lightweight native color controls', async () => {
+    component = mount(CustomColorSchemeEditor, { target })
+    await tick()
+
+    const input = target.querySelector<HTMLInputElement>('input[type="color"]')!
+    input.value = '#abcdef'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(colorSettingsState.updateCustomColorScheme).toHaveBeenCalledOnce()
+    expect(colorSettingsState.updateCustomColorScheme).toHaveBeenCalledWith(
+      expect.objectContaining({ bgcolor: '#abcdef' }),
+    )
   })
 
   it('names every custom text-theme input from its visible setting label', async () => {

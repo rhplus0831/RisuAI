@@ -6,6 +6,7 @@ const COLOR_SCHEME_IMPORT_TARGET = 'colorSchemeImport' as const
 export interface ColorSchemeImportTarget {
   readonly colorSchemeNameSnapshot: string
   readonly colorSchemeSnapshot: string
+  readonly customColorSchemeSnapshot: string
 }
 
 export interface ColorSchemeImportOperation extends ColorSchemeImportTarget {
@@ -15,11 +16,13 @@ export interface ColorSchemeImportOperation extends ColorSchemeImportTarget {
 export interface ColorSchemeImportFreshness {
   readonly colorSchemeName: unknown
   readonly colorScheme: unknown
+  readonly customColorScheme: unknown
 }
 
 export type ColorSchemeImportPatch = Record<string, unknown> & {
   readonly colorSchemeName: 'custom'
   readonly colorScheme: ColorScheme
+  readonly customColorScheme: ColorScheme
 }
 
 const colorSchemeImportGuard = createLatestOperationGuard<typeof COLOR_SCHEME_IMPORT_TARGET>()
@@ -63,6 +66,7 @@ export function captureColorSchemeImportTarget(freshness: ColorSchemeImportFresh
   return {
     colorSchemeNameSnapshot: snapshotJson(freshness.colorSchemeName),
     colorSchemeSnapshot: snapshotJson(freshness.colorScheme),
+    customColorSchemeSnapshot: snapshotJson(freshness.customColorScheme),
   }
 }
 
@@ -83,7 +87,8 @@ export function isFreshColorSchemeImport(
 ): boolean {
   if (!colorSchemeImportGuard.isLatest(operation.token)) return false
   if (snapshotJson(freshness.colorSchemeName) !== operation.colorSchemeNameSnapshot) return false
-  return snapshotJson(freshness.colorScheme) === operation.colorSchemeSnapshot
+  if (snapshotJson(freshness.colorScheme) !== operation.colorSchemeSnapshot) return false
+  return snapshotJson(freshness.customColorScheme) === operation.customColorSchemeSnapshot
 }
 
 export function resolveFreshColorSchemeImportPatch(input: {
@@ -95,5 +100,6 @@ export function resolveFreshColorSchemeImportPatch(input: {
   return {
     colorSchemeName: 'custom',
     colorScheme: input.colorScheme,
+    customColorScheme: input.colorScheme,
   }
 }

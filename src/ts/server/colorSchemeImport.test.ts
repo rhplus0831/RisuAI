@@ -25,10 +25,16 @@ function scheme(seed: string): ColorScheme {
   }
 }
 
-function beginImport(input?: { colorSchemeName?: string; colorScheme?: ColorScheme }): ColorSchemeImportOperation {
+function beginImport(input?: {
+  colorSchemeName?: string
+  colorScheme?: ColorScheme
+  customColorScheme?: ColorScheme
+}): ColorSchemeImportOperation {
+  const colorScheme = input?.colorScheme ?? scheme('aaa')
   const target = captureColorSchemeImportTarget({
     colorSchemeName: input?.colorSchemeName ?? 'default',
-    colorScheme: input?.colorScheme ?? scheme('aaa'),
+    colorScheme,
+    customColorScheme: input?.customColorScheme ?? colorScheme,
   })
 
   return beginColorSchemeImport(target)
@@ -49,6 +55,7 @@ describe('color scheme import freshness', () => {
           freshness: {
             colorSchemeName: 'light',
             colorScheme: originalScheme,
+            customColorScheme: originalScheme,
           },
           colorScheme: scheme('bbb'),
         }),
@@ -71,6 +78,32 @@ describe('color scheme import freshness', () => {
           freshness: {
             colorSchemeName: 'custom',
             colorScheme: scheme('ccc'),
+            customColorScheme: scheme('aaa'),
+          },
+          colorScheme: scheme('bbb'),
+        }),
+      ).toBeNull()
+    } finally {
+      clearColorSchemeImport(operation)
+    }
+  })
+
+  it('rejects completion after the saved custom palette changes', () => {
+    const originalScheme = scheme('aaa')
+    const operation = beginImport({
+      colorSchemeName: 'default',
+      colorScheme: originalScheme,
+      customColorScheme: originalScheme,
+    })
+
+    try {
+      expect(
+        resolveFreshColorSchemeImportPatch({
+          operation,
+          freshness: {
+            colorSchemeName: 'default',
+            colorScheme: originalScheme,
+            customColorScheme: scheme('ccc'),
           },
           colorScheme: scheme('bbb'),
         }),
@@ -98,12 +131,14 @@ describe('color scheme import freshness', () => {
           freshness: {
             colorSchemeName: 'default',
             colorScheme: originalScheme,
+            customColorScheme: originalScheme,
           },
           colorScheme: scheme('bbb'),
         }),
       ).toEqual({
         colorSchemeName: 'custom',
         colorScheme: scheme('bbb'),
+        customColorScheme: scheme('bbb'),
       })
 
       expect(
@@ -112,6 +147,7 @@ describe('color scheme import freshness', () => {
           freshness: {
             colorSchemeName: 'default',
             colorScheme: originalScheme,
+            customColorScheme: originalScheme,
           },
           colorScheme: scheme('ccc'),
         }),
@@ -132,6 +168,7 @@ describe('color scheme import freshness', () => {
     captureColorSchemeImportTarget({
       colorSchemeName: 'default',
       colorScheme: originalScheme,
+      customColorScheme: originalScheme,
     })
 
     try {
@@ -141,12 +178,14 @@ describe('color scheme import freshness', () => {
           freshness: {
             colorSchemeName: 'default',
             colorScheme: originalScheme,
+            customColorScheme: originalScheme,
           },
           colorScheme: scheme('bbb'),
         }),
       ).toEqual({
         colorSchemeName: 'custom',
         colorScheme: scheme('bbb'),
+        customColorScheme: scheme('bbb'),
       })
     } finally {
       clearColorSchemeImport(older)

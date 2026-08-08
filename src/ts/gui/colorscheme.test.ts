@@ -58,9 +58,12 @@ vi.mock('../filePicker', () => ({
 
 import {
   builtInColorSchemes,
+  changeColorScheme,
+  exportColorScheme,
   importColorScheme,
   migrateLegacyBuiltInColorScheme,
   updateColorScheme,
+  updateCustomColorScheme,
   type ColorScheme,
 } from './colorscheme'
 import { language } from 'src/lang'
@@ -127,12 +130,53 @@ beforeEach(() => {
   colorSchemeMocks.database = {
     colorSchemeName: 'default',
     colorScheme: scheme('aaa'),
+    customColorScheme: scheme('aaa'),
   } as any
   colorSchemeMocks.alertError.mockReset()
   colorSchemeMocks.applyServerBackedSettingsPatch.mockReset()
+  colorSchemeMocks.downloadFile.mockReset()
   colorSchemeMocks.selectSingleFile.mockReset()
   colorSchemeMocks.applyServerBackedSettingsPatch.mockImplementation((patch: Record<string, unknown>) => {
     Object.assign(colorSchemeMocks.database, patch)
+  })
+})
+
+describe('custom color scheme persistence', () => {
+  it('restores the saved custom palette without replacing it when presets are selected', () => {
+    const custom = scheme('bbb')
+    colorSchemeMocks.database.customColorScheme = custom
+
+    changeColorScheme('light')
+    expect(colorSchemeMocks.database.colorScheme).toEqual(builtInColorSchemes.light)
+    expect(colorSchemeMocks.database.customColorScheme).toEqual(custom)
+
+    changeColorScheme('custom')
+    expect(colorSchemeMocks.database.colorSchemeName).toBe('custom')
+    expect(colorSchemeMocks.database.colorScheme).toEqual(custom)
+  })
+
+  it('updates the saved and active custom palettes together', () => {
+    const custom = scheme('ccc')
+
+    updateCustomColorScheme(custom)
+
+    expect(colorSchemeMocks.applyServerBackedSettingsPatch).toHaveBeenLastCalledWith({
+      customColorScheme: custom,
+      colorScheme: custom,
+      colorSchemeName: 'custom',
+    })
+    expect(colorSchemeMocks.database.customColorScheme).toEqual(custom)
+    expect(colorSchemeMocks.database.colorScheme).toEqual(custom)
+  })
+
+  it('exports the saved custom palette even while a preset is active', () => {
+    const custom = scheme('ddd')
+    colorSchemeMocks.database.customColorScheme = custom
+    colorSchemeMocks.database.colorScheme = builtInColorSchemes.light
+
+    exportColorScheme()
+
+    expect(colorSchemeMocks.downloadFile).toHaveBeenCalledWith('colorScheme.json', JSON.stringify(custom))
   })
 })
 
@@ -201,10 +245,12 @@ describe('importColorScheme freshness', () => {
         {
           colorSchemeName: 'custom',
           colorScheme: scheme('bbb'),
+          customColorScheme: scheme('bbb'),
         },
       ],
     ])
     expect(colorSchemeMocks.database.colorScheme).toEqual(scheme('bbb'))
+    expect(colorSchemeMocks.database.customColorScheme).toEqual(scheme('bbb'))
     expect(colorSchemeMocks.alertError).toHaveBeenCalledWith(language.fileSelectionStale)
   })
 })

@@ -72,6 +72,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   coldstorage: 'advanced',
   colorScheme: 'display',
   colorSchemeName: 'display',
+  customColorScheme: 'display',
   customTextTheme: 'display',
   cohereAPIKey: 'providers',
   combineTranslation: 'language',

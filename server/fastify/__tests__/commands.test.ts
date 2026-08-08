@@ -1446,6 +1446,18 @@ describe('Phase 9-2a scalar settings groups', () => {
 
   it('accepts grouped settings updates across resource families', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    const customColorScheme = {
+      bgcolor: '#111111',
+      darkbg: '#222222',
+      borderc: '#333333',
+      selected: '#444444',
+      draculared: '#555555',
+      textcolor: '#eeeeee',
+      textcolor2: '#dddddd',
+      darkBorderc: '#666666',
+      darkbutton: '#777777',
+      type: 'dark',
+    }
     const revision = await importDatabase(harness.app, assertion, {
       notification: false,
       useAutoSuggestions: false,
@@ -1464,6 +1476,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           textScreenColor: null,
           promptDiffPrefs: { diffStyle: 'line', contextRadius: 2 },
           customTextTheme: { FontColorStandard: '#ffffff' },
+          customColorScheme,
         },
       },
     })
@@ -1566,6 +1579,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       textScreenColor: null,
       promptDiffPrefs: { diffStyle: 'line', contextRadius: 2 },
       customTextTheme: { FontColorStandard: '#ffffff' },
+      customColorScheme,
       globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
       allowAllExtentionFiles: true,
       auxModelUnderModelSettings: true,

@@ -17,6 +17,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import {
+  displayNonRendererServerSettingKeys,
   displayOtherSettingsItems,
   displaySizeSettingsItems,
   displayThemeSettingsItems,
@@ -33,6 +34,12 @@ function contextForTheme(theme: string): SettingContext {
 }
 
 describe('display theme settings data', () => {
+  it('projects the saved custom palette with the custom display controls', () => {
+    expect(displayNonRendererServerSettingKeys).toEqual(
+      expect.arrayContaining(['colorScheme', 'colorSchemeName', 'customColorScheme']),
+    )
+  })
+
   it('gives the conditional custom-font field a visible and accessible label', () => {
     const customFont = displayThemeSettingsItems.find((item) => item.id === 'display.customFont')
 

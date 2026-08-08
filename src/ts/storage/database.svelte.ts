@@ -3097,6 +3097,9 @@ export function setDatabase(data: Database) {
   data.reducedMotion ??= false
   data.colorScheme ??= safeStructuredClone(defaultColorScheme)
   data.colorSchemeName ??= 'default'
+  data.customColorScheme ??= safeStructuredClone(
+    data.colorSchemeName === 'custom' ? data.colorScheme : defaultColorScheme,
+  )
   data.NAIsettings.starter ??= ''
   data.hypaModel ??= 'MiniLM'
   data.mancerHeader ??= ''
@@ -3977,6 +3980,7 @@ export interface Database {
   hideRealm: boolean
   colorScheme: ColorScheme
   colorSchemeName: string
+  customColorScheme: ColorScheme
   promptTemplate?: PromptItem[]
   /** Legacy prompt-template speaker wrapper, also used by sendName history formatting. */
   groupTemplate?: string

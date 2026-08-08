@@ -5,13 +5,11 @@
     changeColorSchemeType,
     exportColorScheme,
     importColorScheme,
-    updateColorScheme,
+    updateCustomColorScheme,
   } from 'src/ts/gui/colorscheme'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
-  import ColorInput from 'src/lib/UI/GUI/ColorInput.svelte'
   import { DownloadIcon, HardDriveUploadIcon } from '@lucide/svelte'
-  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
 
   const colors = [
     ['bgcolor', 'Background'],
@@ -26,11 +24,10 @@
   ] as const
 
   function setColorSchemeValue(key: (typeof colors)[number][0], value: string) {
-    applyServerBackedSetting('colorScheme', {
-      ...getDatabase().colorScheme,
+    updateCustomColorScheme({
+      ...getDatabase().customColorScheme,
       [key]: value,
     })
-    updateColorScheme()
   }
 </script>
 
@@ -38,7 +35,7 @@
   <div class="border border-darkborderc p-2 m-2 rounded-md">
     <SelectInput
       className="mt-2"
-      value={getDatabase().colorScheme.type}
+      value={getDatabase().customColorScheme.type}
       onchange={(e) => {
         changeColorSchemeType((e.target as HTMLInputElement).value as 'light' | 'dark')
       }}>
@@ -48,11 +45,12 @@
 
     {#each colors as color}
       <div class="flex items-center mt-2">
-        <ColorInput
-          value={getDatabase().colorScheme[color[0]]}
-          ariaLabel={color[1]}
-          oninput={() => updateColorScheme()}
-          onchange={(value) => setColorSchemeValue(color[0], value)} />
+        <input
+          type="color"
+          class="native-color-input"
+          value={getDatabase().customColorScheme[color[0]]}
+          aria-label={color[1]}
+          oninput={(event) => setColorSchemeValue(color[0], event.currentTarget.value)} />
         <span class="ml-2">{color[1]}</span>
       </div>
     {/each}
@@ -73,3 +71,31 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .native-color-input {
+    width: 1.8rem;
+    height: 1.8rem;
+    padding: 0;
+    border: 0;
+    border-radius: 9999px;
+    background: transparent;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .native-color-input::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  .native-color-input::-webkit-color-swatch {
+    border: 1px solid var(--risu-theme-darkborderc);
+    border-radius: 9999px;
+  }
+
+  .native-color-input::-moz-color-swatch {
+    border: 1px solid var(--risu-theme-darkborderc);
+    border-radius: 9999px;
+  }
+</style>

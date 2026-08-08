@@ -83,6 +83,7 @@ import { MODEL_ROLES } from '../model/modelRoles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
 import { changeLanguage, language as activeLanguage } from '../../lang'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from '../server/settingsMutationKey'
+import { defaultColorScheme } from '../gui/colorscheme'
 
 interface CapturedFetch {
   url: string
@@ -369,6 +370,28 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('preserves a legacy custom palette separately and defaults presets to the standard palette', () => {
+    seedPresetDatabase()
+    const legacyCustomData = clonePlain(getDatabase())
+    legacyCustomData.colorSchemeName = 'custom'
+    legacyCustomData.colorScheme = { ...defaultColorScheme, bgcolor: '#123456' }
+    delete (legacyCustomData as Partial<Database>).customColorScheme
+
+    setDatabase(legacyCustomData)
+
+    expect(getDatabase().customColorScheme).toEqual(legacyCustomData.colorScheme)
+    expect(getDatabase().customColorScheme).not.toBe(getDatabase().colorScheme)
+
+    const legacyPresetData = clonePlain(getDatabase())
+    legacyPresetData.colorSchemeName = 'light'
+    legacyPresetData.colorScheme = { ...defaultColorScheme, bgcolor: '#abcdef' }
+    delete (legacyPresetData as Partial<Database>).customColorScheme
+
+    setDatabase(legacyPresetData)
+
+    expect(getDatabase().customColorScheme).toEqual(defaultColorScheme)
+  })
+
   it('defaults OpenAI Flex processing off while preserving an explicit opt-in', () => {
     seedPresetDatabase()
     const legacyData = clonePlain(getDatabase())

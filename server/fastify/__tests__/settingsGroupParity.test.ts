@@ -65,6 +65,11 @@ describe('settings group parity', () => {
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('chatScreenWidth')
   })
 
+  it('keeps the saved custom palette in the display settings projection', () => {
+    expect(SETTINGS_GROUP_KEYS.display).toContain('customColorScheme')
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('customColorScheme')
+  })
+
   it('keeps chat load counts in the display settings projection', () => {
     for (const key of ['chatLoadInitialPages', 'chatLoadAdditionalPages']) {
       expect(SETTINGS_GROUP_KEYS.display).toContain(key)

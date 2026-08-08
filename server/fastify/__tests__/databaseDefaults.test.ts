@@ -75,6 +75,8 @@ describe('database defaults', () => {
     expect(database.useMonacoEditorOnMobile).toBe(false)
     expect(database.applyAdditionalParamsToAll).toBe(false)
     expect(database.openAIFlexProcessing).toBe(false)
+    expect(database.customColorScheme).toEqual(database.colorScheme)
+    expect(database.customColorScheme).not.toBe(database.colorScheme)
     expect(database.autoTranslate).toBeUndefined()
     expect(database.showGlobalLorebookAndRegex).toBe(false)
     expect(database.moodLightMembership).toEqual({ characterIds: [], folders: [] })
@@ -139,6 +141,28 @@ describe('database defaults', () => {
     const database = normalizeDatabaseDefaults({ openAIFlexProcessing: true }, { providerDefaults: false })
 
     expect(database.openAIFlexProcessing).toBe(true)
+  })
+
+  it('preserves legacy custom palettes separately from the active palette', () => {
+    const legacyCustom = {
+      bgcolor: '#111111',
+      darkbg: '#222222',
+      borderc: '#333333',
+      selected: '#444444',
+      draculared: '#555555',
+      textcolor: '#eeeeee',
+      textcolor2: '#dddddd',
+      darkBorderc: '#666666',
+      darkbutton: '#777777',
+      type: 'dark',
+    }
+    const database = normalizeDatabaseDefaults(
+      { colorSchemeName: 'custom', colorScheme: legacyCustom },
+      { providerDefaults: false },
+    )
+
+    expect(database.customColorScheme).toEqual(legacyCustom)
+    expect(database.customColorScheme).not.toBe(database.colorScheme)
   })
 
   it('preserves an explicit floating-input opt-out', () => {

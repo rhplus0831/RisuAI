@@ -135,7 +135,9 @@ async function dispatchPluginApiSettingsPatch(
           previous: rollbackPrevious,
           attempted,
         })
-        if (rolledBack.some((key) => key === 'colorScheme' || key === 'colorSchemeName')) {
+        if (
+          rolledBack.some((key) => key === 'colorScheme' || key === 'colorSchemeName' || key === 'customColorScheme')
+        ) {
           updateColorScheme()
         }
         if (rolledBack.some((key) => key === 'textTheme' || key === 'customTextTheme')) {
@@ -1166,7 +1168,10 @@ const makeRisuaiAPIV3 = (
 
     // --- Color Scheme APIs ---
     changeColorScheme: (name: string) => {
-      const colorScheme = name === 'custom' ? undefined : builtInColorSchemes[name as keyof typeof builtInColorSchemes]
+      const colorScheme =
+        name === 'custom'
+          ? getDatabase().customColorScheme
+          : builtInColorSchemes[name as keyof typeof builtInColorSchemes]
       if (name !== 'custom' && !colorScheme) {
         throw new Error(`Invalid color scheme: ${name}`)
       }
@@ -1176,7 +1181,7 @@ const makeRisuaiAPIV3 = (
       }
       const patch = {
         colorSchemeName: name,
-        ...(colorScheme ? { colorScheme: cloneJsonValue(colorScheme) } : {}),
+        colorScheme: cloneJsonValue(colorScheme),
       }
       withTrustedResourceWrite(() => {
         Object.assign(getDatabase(), patch)
@@ -1208,16 +1213,19 @@ const makeRisuaiAPIV3 = (
       const previous = {
         colorScheme: cloneJsonValue(getDatabase().colorScheme),
         colorSchemeName: getDatabase().colorSchemeName,
+        customColorScheme: cloneJsonValue(getDatabase().customColorScheme),
       }
       withTrustedResourceWrite(() => {
         getDatabase().colorSchemeName = 'custom'
-        getDatabase().colorScheme = scheme
+        getDatabase().customColorScheme = cloneJsonValue(scheme)
+        getDatabase().colorScheme = cloneJsonValue(scheme)
       })
       updateColorScheme()
       return dispatchPluginApiSettingsPatch(
         {
           colorScheme: cloneJsonValue(getDatabase().colorScheme),
           colorSchemeName: getDatabase().colorSchemeName,
+          customColorScheme: cloneJsonValue(getDatabase().customColorScheme),
         },
         previous,
       )

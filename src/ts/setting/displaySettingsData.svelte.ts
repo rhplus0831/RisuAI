@@ -15,6 +15,7 @@ import { reloadRegexDisplay } from '../process/regexDisplayReload'
 export const displayNonRendererServerSettingKeys = [
   'colorScheme',
   'colorSchemeName',
+  'customColorScheme',
   'customBackground',
   'customTextTheme',
 ] as const
