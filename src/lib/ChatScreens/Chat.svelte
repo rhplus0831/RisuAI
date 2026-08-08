@@ -2138,7 +2138,7 @@
     </div>
   {:else if isGenerationLoading}
     {#if !hasActiveAgentPresetProgress}
-      <div class="chat-generation-loading" role="status" aria-live="polite" aria-busy="true">
+      <div class="chat-generation-loading w-full" role="status" aria-live="polite" aria-busy="true">
         <div class="chat-generation-loading-header">
           <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
           <span>{halfStreamingLoadingText ?? generationLoadingText}</span>
@@ -2217,7 +2217,7 @@
       {/if}
     </span>
     {#if halfStreamingLoadingText !== undefined && isChatGenerating}
-      <div class="chat-generation-loading" role="status" aria-live="polite" aria-busy="true">
+      <div class="chat-generation-loading w-full" role="status" aria-live="polite" aria-busy="true">
         <div class="chat-generation-loading-header">
           <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
           <span>{halfStreamingLoadingText}</span>
@@ -3193,7 +3193,6 @@
 
 <style>
   .chat-generation-loading {
-    width: min(34rem, 100%);
     color: var(--risu-theme-textcolor2);
   }
 

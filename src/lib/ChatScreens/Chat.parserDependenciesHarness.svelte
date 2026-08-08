@@ -4,6 +4,8 @@
   export interface ParserDependencyRow {
     id: string
     data: string
+    generationStage?: number
+    isGenerationLoading?: boolean
     name: string
     parserIdx?: number
     role: string
@@ -54,6 +56,8 @@
     role={row.role}
     totalLength={rows.length}
     firstMessage={index === 0}
+    isGenerationLoading={row.isGenerationLoading}
+    generationStage={row.generationStage}
     img=""
     rerollIcon={false}
     disabled={false} />

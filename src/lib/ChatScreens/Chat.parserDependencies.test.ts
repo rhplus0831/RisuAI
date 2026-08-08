@@ -402,6 +402,26 @@ afterEach(() => {
 })
 
 describe('Chat parser dependencies', () => {
+  it('keeps the generation loading track at the full message content width', async () => {
+    const rows: ParserDependencyRow[] = [
+      {
+        id: 'loading-row',
+        data: '',
+        generationStage: 3,
+        isGenerationLoading: true,
+        name: 'Parser Bot',
+        role: 'char',
+      },
+    ]
+    seedDatabase(rows)
+    mountHarness(rows)
+    await settle()
+
+    const loading = target.querySelector<HTMLElement>('.chat-generation-loading')
+    expect(loading?.classList).toContain('w-full')
+    expect(loading?.querySelector('.chat-generation-loading-track')).toBeTruthy()
+  })
+
   it('does not re-run every visible row parser on unrelated guarded projection writes', async () => {
     const rows = makeRows(4)
     seedDatabase(rows)
